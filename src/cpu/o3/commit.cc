@@ -155,13 +155,15 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
       commitWidth(params.commitWidth),
       numThreads(params.numThreads),
       smtBorrowDonorHoldCycles(params.smtBorrowDonorHoldCycles),
+      mlpLongLatencyCacheDepth(params.mlpLongLatencyCacheDepth),
       drainPending(false),
       drainImminent(false),
       trapLatency(params.trapLatency),
       canHandleInterrupts(true),
       avoidQuiesceLiveLock(false),
       stats(_cpu, this),
-      archDBer(params.arch_db)
+      archDBer(params.arch_db),
+      mlpPredictor(nullptr)
 {
     if (commitWidth > MaxWidth)
         fatal("commitWidth (%d) is larger than compiled limit (%d),\n"
@@ -342,6 +344,8 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Total number of ROBFull"),
       ADD_STAT(smtRestEntryWhileROBFull, statistics::units::Count::get(),
                "Distribution of total rest entries while ROBFull in SMT mode"),
+      ADD_STAT(commitCacheAccessDepthDist, statistics::units::Count::get(),
+               "Distribution of cache access depth at commit (0=L1, 1=L2, 2+=L3/Mem)"),
       ADD_STAT(ROBBorrowingStateChange, statistics::units::Count::get(),
                "changing times of borrowing state"),
       ADD_STAT(smtStateHoldCycle, statistics::units::Count::get(),
@@ -474,6 +478,10 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
 
     smtRestEntryWhileROBFull
         .init(0, 160, 5)
+        .flags(statistics::pdf);
+
+    commitCacheAccessDepthDist
+        .init(0, 4, 1)
         .flags(statistics::pdf);
 
     ROBBorrowingStateChange
@@ -2278,6 +2286,37 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 
     if (head_inst->isLoad()) {
         head_inst->clearProducerStorePC();
+    }
+
+    // MLP predictor: set longLatencyLoad and generate load feedback
+    if (head_inst->isLoad() && !head_inst->isSquashed()) {
+        int depth = head_inst->cacheAccessDepth;
+        // VP hit (correct prediction) eliminates dependency chain
+        if (head_inst->vpResult.speculative && !head_inst->vpMisprediction) {
+            depth = 0;
+        }
+        int depthForStats = (depth < 0) ? 0 : depth;
+        stats.commitCacheAccessDepthDist.sample(depthForStats);
+        bool actualLongLatency = (depth >= (int)mlpLongLatencyCacheDepth);
+        head_inst->longLatencyLoad = actualLongLatency;
+
+        auto &fb = toIEW->iewInfo[tid];
+        fb.loadFeedback.push_back({
+            head_inst->pcState().instAddr(),
+            actualLongLatency,
+            head_inst->mlpPredictedLongLatency,
+            head_inst->mlpPredictedDistance});
+    }
+
+    // MLP predictor: record LLSR push for fetch to consume
+    if (mlpPredictor) {
+        bool isLL = head_inst->isLoad() && head_inst->longLatencyLoad;
+        Addr pc = head_inst->isLoad()
+            ? head_inst->pcState().instAddr() : 0;
+        auto &commitInfo = toIEW->commitInfo[tid];
+        assert(commitInfo.llsrPush.size() <
+               commitWidth * rob->getInstsPerGroup());
+        commitInfo.llsrPush.push_back({isLL, pc});
     }
 
     // Finally clear the head ROB entry.

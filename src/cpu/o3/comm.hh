@@ -304,6 +304,18 @@ struct TimeStruct
         unsigned iqCount;
         unsigned ldstqCount;
         unsigned robCount;
+
+        // MLP predictor training feedback
+        struct LoadCompleteFeedback
+        {
+            Addr loadPC = 0;
+            bool actualLongLatency = false;
+            bool predictedLongLatency = false;
+            uint32_t predictedDistance = 0;
+        };
+        // Dynamically sized, no compile-time limit needed.
+        // Runtime check: loadFeedback.size() < number of load pipes.
+        std::vector<LoadCompleteFeedback> loadFeedback;
     };
 
     IewComm iewInfo[MaxThreads]; // iew to rename, fetch
@@ -389,6 +401,16 @@ struct TimeStruct
         // Trace ctrl-flow faults: notify fetch how far to rollback trace reader.
         InstSeqNum traceTrapSeqNum; // *F
         bool traceTrapSkipInst;     // *F
+
+        // MLP predictor: LLSR push feedback from commit
+        struct LLSRPushEntry
+        {
+            bool isLongLatencyLoad = false;
+            Addr pc = 0;
+        };
+        // Dynamically sized, no compile-time limit needed.
+        // Runtime check: llsrPush.size() < commitWidth * instsPerGroup.
+        std::vector<LLSRPushEntry> llsrPush;
 
     };
 

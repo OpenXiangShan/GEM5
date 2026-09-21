@@ -95,6 +95,9 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       delayedSchedulerDelay(params.smtFetchDelayedSchedulerDelay),
       smtFetchBlockPolicy(params.smtFetchBlockPolicy),
       longLatencyThreshold(params.smtFetchBlockThreshold),
+      mlpPredictor(nullptr),
+      smtMlpFetchBlockPolicy(params.smtMlpFetchBlockPolicy),
+      mlpLongLatencyCacheDepth(params.mlpLongLatencyCacheDepth),
       cpu(_cpu),
       branchPred(nullptr),
       dbpbtb(nullptr),
@@ -181,11 +184,20 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         redirectPendingCycles[i] = 0;
         lastIcacheStall[i] = 0;
         smtBorrowThrottleCycles[i] = 0;
-        threadFetchBlocked[i] = false;
+        threadFetchThrottled[i] = false;
+        mlpThreadFetchThrottled[i] = false;
+        lastLoadHeadSeqNumForStats[i] = 0;
+        lqReasonForStats[i] = StallReason::NumStallReasons;
+        longLatencyStallReasonCyclesForStats[i] = 0;
+        longLatencyStallCyclesForStats[i] = 0;
         blockStateHoldCycles[i] = 0;
         longLatencyStallCycles[i] = 0;
         lastLoadHeadSeqNum[i] = UINT64_MAX;
+        mlpAwareMode[i] = false;
+        mlpRemainingInsts[i] = 0;
+        mlpLongLatencyLoadSeqNum[i] = 0;
         flushFromInitiated[i] = false;
+        mlpFlushFromInitiated[i] = false;
     }
     smtLdstqHighWater = params.smtBorrowLdstqHighWater;
     if (smtLdstqHighWater == 0) {
@@ -325,6 +337,16 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of outstanding ITLB misses that were squashed"),
     ADD_STAT(nisnDist, statistics::units::Count::get(),
              "Number of instructions fetched each cycle (Total)"),
+    ADD_STAT(loadFeedbackDist, statistics::units::Count::get(),
+             "Distribution of load feedback entries per cycle from IEW"),
+    ADD_STAT(llsrPushDist, statistics::units::Count::get(),
+             "Distribution of LLSR push entries per cycle from Commit"),
+    ADD_STAT(mlpLongLatencyPred, statistics::units::Count::get(),
+             "MLP predictor: long-latency prediction accuracy"),
+    ADD_STAT(mlpDistancePred, statistics::units::Count::get(),
+             "MLP predictor: MLP distance prediction accuracy"),
+    ADD_STAT(mlpDistanceOverPredDist, statistics::units::Count::get(),
+             "MLP predictor: distribution of over-prediction distance"),
     ADD_STAT(decodeThreadsPerCycle, statistics::units::Count::get(),
              "Distinct SMT threads sent to Decode in one cycle"),
     ADD_STAT(instsSentToDecodePerCycle, statistics::units::Count::get(),
@@ -414,13 +436,27 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Decode policy thread state combination per cycle, Th means "
              "uncandidated or throttled. (0=both not Th, 1=tid0 Th, 2=tid1 Th, 3=both Th)"),
     ADD_STAT(fetchBlockHoldCycle, statistics::units::Count::get(),
-             "Per-thread block/unblock state holding cycle distribution"),
+             "Per-thread block/unblock state holding cycle distribution in base mode"),
+    ADD_STAT(loadStallReasonHoldCycle, statistics::units::Count::get(),
+             "LqHead StallReason Holding cycle distribution"),
+    ADD_STAT(loadStallReasonRaiseCycle, statistics::units::Count::get(),
+             "LqHead StallReason Raise cycle distribution"),
     ADD_STAT(flushForFlushPolicy, statistics::units::Count::get(),
              "Number of long-latency load flush events per thread"),
     ADD_STAT(flushFromFirstUseFound, statistics::units::Count::get(),
              "FlushFromUse: first-use consumer found, squash initiated"),
     ADD_STAT(flushFromFirstUseNoConsumer, statistics::units::Count::get(),
-             "FlushFromUse: no consumer found, squash from ROB tail")
+             "FlushFromUse: no consumer found, squash from ROB tail"),
+    ADD_STAT(mlpAwarePolicyActive, statistics::units::Count::get(),
+             "Per-thread MlpAwarePolicy active/inactive state combination per cycle. "
+             "(0=both InActive, 1=tid0 Active, 2=tid1 Active, 3=both Active)"),
+    ADD_STAT(mlpFetchBlockState, statistics::units::Count::get(),
+             "Block policy thread state combination per cycle for mlp policy"
+             "(0=both unblocked, 1=tid0 blocked, 2=tid1 blocked, 3=both blocked)"),
+    ADD_STAT(mlpFetchBlockHoldCycle, statistics::units::Count::get(),
+             "Per-thread block/unblock state holding cycle distribution in mlp mode"),
+    ADD_STAT(mlpPolicyContribute, statistics::units::Count::get(),
+             "whether MlpPolicy find MLP behavior in block/flush Policy")
 {
         icacheStallCycles
             .prereq(icacheStallCycles);
@@ -462,6 +498,26 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .init(/* base value */ 0,
               /* last value */ fetch->fetchWidth,
               /* bucket size */ 1)
+            .flags(statistics::pdf);
+        loadFeedbackDist
+            .init(0, 4, 1)
+            .flags(statistics::pdf);
+        llsrPushDist
+            .init(0 ,159, 10)
+            .flags(statistics::pdf);
+        mlpLongLatencyPred
+            .init(4)
+            .subname(0, "TruePositive")
+            .subname(1, "TrueNegative")
+            .subname(2, "FalsePositive")
+            .subname(3, "FalseNegative");
+        mlpDistancePred
+            .init(3)
+            .subname(0, "FinePredicted")
+            .subname(1, "OverPredicted")
+            .subname(2, "MisPredicted");
+        mlpDistanceOverPredDist
+            .init(0, 128, 16)
             .flags(statistics::pdf);
         decodeThreadsPerCycle
             .init(0, fetch->numPreDispatchThreads, 1)
@@ -548,8 +604,14 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
         fetchBlockHoldCycle
             .init(2, 0, 999, 100)
             .flags(statistics::pdf);
-        fetchBlockHoldCycle.subname(0, "Unblocked");
+        fetchBlockHoldCycle.subname(0, "UnBlocked");
         fetchBlockHoldCycle.subname(1, "Blocked");
+        loadStallReasonHoldCycle
+            .init((int)(StallReason::NumStallReasons) + 1, 0, 8, 63)
+            .flags(statistics::pdf);
+        loadStallReasonRaiseCycle
+            .init((int)(StallReason::NumStallReasons) + 1, 0, 8, 63)
+            .flags(statistics::pdf);
         flushForFlushPolicy
             .init(cpu->numThreads)
             .flags(statistics::total);
@@ -557,6 +619,30 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .prereq(flushForFlushPolicy);
         flushFromFirstUseNoConsumer
             .prereq(flushFromFirstUseNoConsumer);
+        mlpAwarePolicyActive
+            .init(1 << cpu->numThreads)
+            .flags(statistics::total);
+        mlpAwarePolicyActive.subname(0, "BothInActive");
+        mlpAwarePolicyActive.subname(1, "Tid0Active");
+        mlpAwarePolicyActive.subname(2, "Tid1Active");
+        mlpAwarePolicyActive.subname(3, "BothActive");
+        mlpFetchBlockState
+            .init(1 << cpu->numThreads)
+            .flags(statistics::total);
+        mlpFetchBlockState.subname(0, "BothUnBlocked");
+        mlpFetchBlockState.subname(1, "Tid0Blocked");
+        mlpFetchBlockState.subname(2, "Tid1Blocked");
+        mlpFetchBlockState.subname(3, "BothBlocked");
+        mlpFetchBlockHoldCycle
+            .init(2, 0, 999, 100)
+            .flags(statistics::pdf);
+        mlpFetchBlockHoldCycle.subname(0, "UnBlocked");
+        mlpFetchBlockHoldCycle.subname(1, "Blocked");
+        mlpPolicyContribute
+            .init(2)
+            .flags(statistics::total);
+        mlpPolicyContribute.subname(0, "NoMLP");
+        mlpPolicyContribute.subname(1, "FindMLP");
 }
 
 void
@@ -1664,9 +1750,6 @@ Fetch::selectUnstalledThread()
     bool candidate[MaxThreads];
     bool throttled[MaxThreads];
 
-    // update smtBorrowThrottleCycles and check whether has candidate
-    const bool block_active = isBlockPolicyActive();
-
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         candidate[tid] = true;
         throttled[tid] = false;
@@ -1676,19 +1759,22 @@ Fetch::selectUnstalledThread()
         // Policy differences:
         //   BlockStallPolicy (Hold):
         //     - throttle_now uses BASE throttle (ROB/IQ full, memory pressure)
-        //     - block is an ADDITIONAL throttle source: when isBlockPolicyActive()
+        //     - block is an ADDITIONAL throttle source: when isThrottlePolicyActive()
         //       and thread is blocked, throttled[tid] is set directly (OR with base)
         //   BlockThrottlePolicy (Drive):
-        //     - throttle_now = threadFetchBlocked[tid] (block REPLACES base throttle)
+        //     - throttle_now = threadFetchThrottled[tid] (block REPLACES base throttle)
         //     - the block signal continuously refreshes smtBorrowThrottleCycles hold counter
         //   FlushFromLoadPolicy / FlushFromUsePolicy:
         //     - same throttle behavior as BlockThrottlePolicy (block drives throttle)
         //     - additionally initiates a squash to free pipeline resources
+        bool throttle_active = isThrottlePolicyActive(mlpAwareMode[tid]);
+        bool thread_fetch_throttled = mlpAwareMode[tid] ?
+            mlpThreadFetchThrottled[tid] : threadFetchThrottled[tid];
         {
             bool throttle_now = false;
-            if (smtFetchBlockPolicy == SMTFetchBlockPolicy::BlockThrottlePolicy) {
+            if (isBlockPolicy()) {
                 // BlockThrottlePolicy completely replaces base throttle policy
-                throttle_now = threadFetchBlocked[tid];
+                throttle_now = thread_fetch_throttled;
             } else {
                 // base throttle policy
                 throttle_now =
@@ -1702,8 +1788,8 @@ Fetch::selectUnstalledThread()
             }
             // BlockStallPolicy and Flush*Policy will directly set throttled[tid]
             if ((smtFetchBlockPolicy == SMTFetchBlockPolicy::BlockStallPolicy ||
-                 isFlushFromPolicy()) &&
-                block_active && threadFetchBlocked[tid]) {
+                 isFlushPolicy()) &&
+                throttle_active && thread_fetch_throttled) {
                 throttled[tid] = true;
             }
             throttled[tid] |= smtBorrowThrottleCycles[tid] > 0;
@@ -1719,7 +1805,9 @@ Fetch::selectUnstalledThread()
             continue;
         }
         // flush policy: should not pipedown insts
-        if (isFlushFromPolicy() && block_active && threadFetchBlocked[tid]) {
+        if ((smtFetchBlockPolicy == SMTFetchBlockPolicy::BlockStallPolicy ||
+             isFlushPolicy()) &&
+             throttle_active && thread_fetch_throttled) {
             smtBorrowThrottleCycles[tid] = 0;
             lsqCounter->setCounter(tid, UINT64_MAX);
             iqCounter->setCounter(tid, UINT64_MAX);
@@ -1732,6 +1820,8 @@ Fetch::selectUnstalledThread()
     if (has_candidate) {
         for (ThreadID tid = 0; tid < numThreads; ++tid) {
             if (!candidate[tid]) continue;
+            bool thread_fetch_throttled = mlpAwareMode[tid] ?
+                mlpThreadFetchThrottled[tid] : threadFetchThrottled[tid];
             lsqCounter->setCounter(tid, fromIEW->iewInfo[tid].ldstqCount);
             iqCounter->setCounter(tid, fromIEW->iewInfo[tid].iqCount);
             robCounter->setCounter(tid, fromIEW->iewInfo[tid].robCount);
@@ -1744,7 +1834,7 @@ Fetch::selectUnstalledThread()
             }
             DPRINTF(Fetch,
                     "[tid:%i] block=%u mem_pressure=%u hold=%u throttled=%u lsq=%u iq=%u rob=%u\n",
-                    tid, threadFetchBlocked[tid],
+                    tid, thread_fetch_throttled,
                     smtHasMemoryPressure(fromIEW->iewInfo[tid], smtLdstqHighWater),
                     smtBorrowThrottleCycles[tid], throttled[tid], fromIEW->iewInfo[tid].ldstqCount,
                     fromIEW->iewInfo[tid].iqCount, fromIEW->iewInfo[tid].robCount);
@@ -1771,19 +1861,18 @@ Fetch::selectUnstalledThread()
 }
 
 bool
-Fetch::isBlockPolicyActive() const
+Fetch::isThrottlePolicyActive(bool isMlp)
 {
-    if (smtFetchBlockPolicy != SMTFetchBlockPolicy::BlockStallPolicy &&
-        smtFetchBlockPolicy != SMTFetchBlockPolicy::BlockThrottlePolicy &&
-        smtFetchBlockPolicy != SMTFetchBlockPolicy::FlushFromLoadPolicy &&
-        smtFetchBlockPolicy != SMTFetchBlockPolicy::FlushFromUsePolicy) {
+    if (smtFetchBlockPolicy == SMTFetchBlockPolicy::BaseLine) {
         return false;
     }
     int blocked_count = 0;
     int unblocked_count = 0;
 
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        if (threadFetchBlocked[tid])
+        bool thread_fetch_throttled = isMlp ?
+            mlpThreadFetchThrottled[tid] : threadFetchThrottled[tid];
+        if (thread_fetch_throttled)
             blocked_count++;
         else
             unblocked_count++;
@@ -1810,13 +1899,50 @@ Fetch::sendInstructionsToDecode()
         }
 
         // === Flush Policy: initiate flush after asymmetric check passes ===
-        if (isFlushFromPolicy() && isBlockPolicyActive() &&
-            threadFetchBlocked[i] && !flushFromInitiated[i]) {
-            InstSeqNum loadSeqNum = iewStage->ldstQueue.getLoadHeadSeqNum(i);
-            DynInstPtr loadInst = iewStage->findRobInst(i, loadSeqNum);
-            if (loadInst && loadInst->isLoad()) {
-                bool fromUse = (smtFetchBlockPolicy == SMTFetchBlockPolicy::FlushFromUsePolicy);
-                flushFromInitiateFlush(loadInst, i, fromUse);
+        if (isFlushPolicy() && isThrottlePolicyActive(mlpAwareMode[i])) {
+            bool fromUse = smtFetchBlockPolicy == SMTFetchBlockPolicy::FlushFromUsePolicy;
+            bool isMlpDetect = smtMlpFetchBlockPolicy == SMTMLPFetchBlockPolicy::MlpDetectPolicy;
+            if (mlpAwareMode[i]) {
+                if (mlpThreadFetchThrottled[i] && !mlpFlushFromInitiated[i]) {
+                    DynInstPtr mlpInst = iewStage->findRobInst(i, mlpLongLatencyLoadSeqNum[i]);
+                    if (mlpInst) {
+                        flushFromInitiateFlush(mlpInst, i, fromUse, mlpAwareMode[i]);
+                    }
+                }
+            } else {
+                if (threadFetchThrottled[i] && !flushFromInitiated[i]) {
+                    if (isMlpDetect) {
+                        // MLP Detect: find the youngest miss Load in LoadQueue
+                        InstSeqNum loadSeqNum = iewStage->ldstQueue.getLoadHeadSeqNum(i);
+                        DynInstPtr loadInst = iewStage->findRobInst(i, loadSeqNum);
+                        bool findMlp = false;
+                        int lqSize = iewStage->ldstQueue.numLoads(i);
+                        for (int lqOffset = 0; lqOffset < lqSize; lqOffset++) {
+                            DynInstPtr inst =
+                                iewStage->ldstQueue.getLoadInst(i, lqOffset);
+                            if (!inst) continue;
+                            if (inst->seqNum <= loadSeqNum) continue;
+                            StallReason lqReason = iewStage->checkingLoadStoreInst(inst);
+                            if (isLongLatency(lqReason)) {
+                                loadSeqNum = inst->seqNum;
+                                loadInst = inst;
+                                findMlp = true;
+                            }
+                        }
+                        if (loadInst) {
+                            assert(!loadInst->isControl());
+                            flushFromInitiateFlush(loadInst, i, fromUse, mlpAwareMode[i]);
+                            fetchStats.mlpPolicyContribute[(int)findMlp]++;
+                        }
+                    } else {
+                        InstSeqNum loadSeqNum = iewStage->ldstQueue.getLoadHeadSeqNum(i);
+                        DynInstPtr loadInst = iewStage->findRobInst(i, loadSeqNum);
+                        if (loadInst) {
+                            assert(!loadInst->isControl());
+                            flushFromInitiateFlush(loadInst, i, fromUse, mlpAwareMode[i]);
+                        }
+                    }
+                }
             }
         }
     }
@@ -1904,6 +2030,28 @@ Fetch::sendInstructionsToDecode()
     if (wroteToTimeBuffer) {
         DPRINTF(Activity, "Activity this cycle.\n");
         cpu->activityThisCycle();
+    }
+
+    // MLP block: count instructions sent after LL load
+    if (smtMlpFetchBlockPolicy == SMTMLPFetchBlockPolicy::MlpAwarePolicy &&
+        isBlockPolicy() && mlpAwareMode[tid]) {
+        // Count instructions sent to decode this cycle
+        // Check if any were sent after the LL load
+        int instsAfterLL = 0;
+        for (int i = 0; i < insts_to_decode; i++) {
+            const auto &inst = toDecode->insts[toDecode->size - insts_to_decode + i];
+            if (inst->seqNum >= mlpLongLatencyLoadSeqNum[tid]) {
+                instsAfterLL++;
+            }
+        }
+        mlpRemainingInsts[tid] -= instsAfterLL;
+        if (mlpRemainingInsts[tid] <= 0) {
+            assert(toDecode->size >= 1);
+            mlpLongLatencyLoadSeqNum[tid] = toDecode->insts[toDecode->size-1]->seqNum;
+        }
+        DPRINTF(Fetch,
+            "[tid:%i] MLP-block: sent %d insts after LL, remaining=%d\n",
+            tid, instsAfterLL, mlpRemainingInsts[tid]);
     }
 }
 
@@ -2003,7 +2151,14 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
 
 
 bool
-Fetch::isFlushFromPolicy() const
+Fetch::isBlockPolicy() const
+{
+    return smtFetchBlockPolicy == SMTFetchBlockPolicy::BlockThrottlePolicy ||
+           smtFetchBlockPolicy == SMTFetchBlockPolicy::BlockStallPolicy;
+}
+
+bool
+Fetch::isFlushPolicy() const
 {
     return smtFetchBlockPolicy == SMTFetchBlockPolicy::FlushFromLoadPolicy ||
            smtFetchBlockPolicy == SMTFetchBlockPolicy::FlushFromUsePolicy;
@@ -2063,7 +2218,7 @@ Fetch::findFirstUse(const DynInstPtr &loadInst, ThreadID tid)
 }
 
 void
-Fetch::flushFromInitiateFlush(const DynInstPtr &loadInst, ThreadID tid, bool fromUse)
+Fetch::flushFromInitiateFlush(const DynInstPtr &loadInst, ThreadID tid, bool fromUse, bool isMlp)
 {
     DynInstPtr squashFromInst = nullptr;
     bool includeSquashInst = true;
@@ -2123,7 +2278,12 @@ Fetch::flushFromInitiateFlush(const DynInstPtr &loadInst, ThreadID tid, bool fro
         }
     }
 
-    flushFromInitiated[tid] = true;
+    if (isMlp) {
+        mlpFlushFromInitiated[tid] = true;
+    } else {
+        flushFromInitiated[tid] = true;
+    }
+
     fetchStats.flushForFlushPolicy[tid]++;
 
     iewStage->squashDueToLongLatencyLoad(loadInst, squashFromInst, tid,
@@ -2131,66 +2291,313 @@ Fetch::flushFromInitiateFlush(const DynInstPtr &loadInst, ThreadID tid, bool fro
 }
 
 void
+Fetch::fusionInstUpdate(ThreadID tid, InstSeqNum seqNum0, InstSeqNum seqNum1)
+{
+    if (seqNum1 == mlpLongLatencyLoadSeqNum[tid]) {
+        mlpLongLatencyLoadSeqNum[tid] = seqNum0;
+        DPRINTF(Fetch, "[tid:%d] updates mlpLongLatencyLoadSeqNum from [sn:%d] to [sn:%d] "
+                "for fusion\n", tid, seqNum1, seqNum0);
+    }
+}
+
+void
+Fetch::consumeLoadFeedback()
+{
+    assert(mlpPredictor);
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        // IEW load completion feedback (miss-pattern table update)
+        auto &iewInfo = fromIEW->iewInfo[tid];
+        fetchStats.loadFeedbackDist.sample(iewInfo.loadFeedback.size());
+        for (const auto &fb : iewInfo.loadFeedback) {
+            auto &pred = mlpPredictor->getPredictor(tid);
+            auto result = pred.updateOnLoadComplete(
+                fb.loadPC, fb.actualLongLatency,
+                fb.predictedLongLatency, fb.predictedDistance);
+            fetchStats.mlpLongLatencyPred[result]++;
+        }
+        iewInfo.loadFeedback.clear();
+
+        // Commit LLSR push feedback (MLP distance table update)
+        auto &commitInfo = fromCommit->commitInfo[tid];
+        fetchStats.llsrPushDist.sample(commitInfo.llsrPush.size());
+        for (const auto &entry : commitInfo.llsrPush) {
+            auto &pred = mlpPredictor->getPredictor(tid);
+            int result = pred.pushLLSR(entry.isLongLatencyLoad, entry.pc);
+            // result = predicted - actual if table was valid, INT32_MAX otherwise
+            if (result != INT32_MAX) {
+                if (result < 0) {
+                    fetchStats.mlpDistancePred[2]++;
+                } else {
+                    if (result >= 32) {
+                        fetchStats.mlpDistancePred[1]++;
+                    } else {
+                        fetchStats.mlpDistancePred[0]++;
+                    }
+                    fetchStats.mlpDistanceOverPredDist.sample(result);
+                }
+            }
+        }
+        commitInfo.llsrPush.clear();
+    }
+}
+
+bool
+Fetch::isLongLatency(StallReason lqReason)
+{
+    return (lqReason == StallReason::LoadL2Bound ||
+            lqReason == StallReason::LoadL3Bound ||
+            lqReason == StallReason::LoadMemBound);
+}
+
+void
 Fetch::checkLongLatencyLoads()
 {
-    if (smtFetchBlockPolicy == SMTFetchBlockPolicy::BaseLine) {
-        return;
-    }
+    // just for stats
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        blockStateHoldCycles[tid]++;
-
-        // Get LQ head stall reason for this thread
         StallReason lqReason = iewStage->ldstQueue.lqEmpty(tid)
             ? StallReason::NoStall
             : iewStage->checkLsqStall(tid, true);
+        InstSeqNum newLoadHead = iewStage->ldstQueue.getLoadHeadSeqNum(tid);
 
-        // Check if LQ head is stuck on a long-latency load
-        bool is_long_latency =
-            (lqReason == StallReason::LoadL2Bound ||
-            lqReason == StallReason::LoadL3Bound ||
-            lqReason == StallReason::LoadMemBound);
-
-        if (is_long_latency) {
-            InstSeqNum newLoadHead = iewStage->ldstQueue.getLoadHeadSeqNum(tid);
-            if (newLoadHead == lastLoadHeadSeqNum[tid]) {
-                if (!threadFetchBlocked[tid] &&
-                    longLatencyStallCycles[tid] >= longLatencyThreshold) {
-                    threadFetchBlocked[tid] = true;
-                    fetchStats.fetchBlockHoldCycle[0].sample(blockStateHoldCycles[tid]);
-                    blockStateHoldCycles[tid] = 0;
-                    DPRINTF(Fetch, "[tid:%i] Long-latency load detected: "
-                        "LQ head stalled for %llu cycles (reason=%d)\n",
-                        tid, longLatencyStallCycles[tid], (int)lqReason);
-                }
-                longLatencyStallCycles[tid]++;
+        if (newLoadHead == lastLoadHeadSeqNum[tid]) {
+            if (lqReason == lqReasonForStats[tid]) {
+                ;
             } else {
-                if (threadFetchBlocked[tid]) {
-                    threadFetchBlocked[tid] = false;
+                fetchStats.loadStallReasonHoldCycle[lqReasonForStats[tid]]
+                    .sample(longLatencyStallReasonCyclesForStats[tid]);
+                fetchStats.loadStallReasonRaiseCycle[lqReason]
+                    .sample(longLatencyStallCyclesForStats[tid]);
+                lqReasonForStats[tid] = lqReason;
+                longLatencyStallReasonCyclesForStats[tid] = 0;
+            }
+        } else {
+            fetchStats.loadStallReasonHoldCycle[lqReasonForStats[tid]]
+                .sample(longLatencyStallReasonCyclesForStats[tid]);
+            fetchStats.loadStallReasonRaiseCycle[lqReason]
+                .sample(longLatencyStallCyclesForStats[tid]);
+            lastLoadHeadSeqNumForStats[tid] = newLoadHead;
+            lqReasonForStats[tid] = lqReason;
+            longLatencyStallReasonCyclesForStats[tid] = 0;
+            longLatencyStallCyclesForStats[tid] = 0;
+        }
+        longLatencyStallReasonCyclesForStats[tid]++;
+        longLatencyStallCyclesForStats[tid]++;
+    }
+
+    if (smtFetchBlockPolicy == SMTFetchBlockPolicy::BaseLine) {
+        return;
+    }
+
+    if (mlpPredictor) {
+        // MLP prediction: get feedback for backend
+        consumeLoadFeedback();
+        // MLP prediction: query and record on DynInst
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            for (const auto &instruction : fetchQueue[tid]) {
+                if (instruction->isLoad()) {
+                    auto &pred = mlpPredictor->getPredictor(tid);
+                    Addr mlpPC = instruction->pcState().instAddr();
+                    instruction->mlpPredictionMade = true;
+                    instruction->mlpPredictedLongLatency = pred.predictLongLatency(mlpPC);
+                    instruction->mlpPredictedDistance = pred.predictMLPDistance(mlpPC);
+                }
+            }
+        }
+    }
+
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        blockStateHoldCycles[tid]++;
+        mlpBlockStateHoldCycles[tid]++;
+
+        // ========== MLP-aware path ==========
+        if (smtMlpFetchBlockPolicy == SMTMLPFetchBlockPolicy::MlpAwarePolicy) {
+            assert(mlpPredictor);
+            // =========== MlpBlockPolicy ==========
+            if (isBlockPolicy()) {
+                if (!mlpAwareMode[tid]) {
+                    // Pre-scan fetchQueue for predicted long-latency loads
+                    DynInstPtr predictedLongLatencyLoad = nullptr;
+                    for (const auto &inst : fetchQueue[tid]) {
+                        if (inst->mlpPredictionMade &&
+                            inst->mlpPredictedLongLatency &&
+                            inst->seqNum > mlpLongLatencyLoadSeqNum[tid]) {
+                            predictedLongLatencyLoad = inst;
+                            break;
+                        }
+                    }
+                    // MlpBlockPolicy: Track instructions sent after LL load
+                    if (predictedLongLatencyLoad) {
+                        // First time seeing this LL load
+                        mlpAwareMode[tid] = true;
+                        mlpRemainingInsts[tid] =
+                            predictedLongLatencyLoad->mlpPredictedDistance + 1;
+                        assert(mlpRemainingInsts[tid] >= 1);
+                        mlpLongLatencyLoadSeqNum[tid] = predictedLongLatencyLoad->seqNum;
+                        fetchStats.mlpPolicyContribute[(int)(mlpRemainingInsts[tid] > 1)]++;
+                        DPRINTF(Fetch,
+                            "[tid:%i] MLP-block ON: load [sn:%llu] "
+                            "PC=%#x dist=%u\n",
+                            tid, predictedLongLatencyLoad->seqNum,
+                            predictedLongLatencyLoad->pcState().instAddr(),
+                            mlpRemainingInsts[tid]);
+                    }
+                }
+
+                if (mlpAwareMode[tid] &&
+                    ((fromCommit->commitInfo[tid].squash &&
+                    fromCommit->commitInfo[tid].doneSeqNum < mlpLongLatencyLoadSeqNum[tid]) ||
+                    (fromDecode->decodeInfo[tid].squash &&
+                    fromDecode->decodeInfo[tid].doneSeqNum < mlpLongLatencyLoadSeqNum[tid]) ||
+                    (fromCommit->commitInfo[tid].doneSeqNum >= mlpLongLatencyLoadSeqNum[tid] &&
+                    fromCommit->commitInfo[tid].doneSeqNum != 0))) {
+                    // when mlp-inst is commited or squashed, release throttle
+                    if (mlpThreadFetchThrottled[tid]){
+                        mlpThreadFetchThrottled[tid] = false;
+                        fetchStats.mlpFetchBlockHoldCycle[1].sample(mlpBlockStateHoldCycles[tid]);
+                        mlpBlockStateHoldCycles[tid] = 0;
+                        mlpAwareMode[tid] = false;
+                        DPRINTF(Fetch, "[tid:%i] MLP-block: [sn:%d] commited, block Done\n",
+                                        tid, mlpLongLatencyLoadSeqNum[tid]);
+                    } else {
+                        // when mlp-inst is commited or squashed while
+                        // mlpRemainingInsts[tid] <= 0 firstly (!mlpThreadFetchThrottled[tid]),
+                        // no need to block
+                        mlpThreadFetchThrottled[tid] = false;
+                        mlpAwareMode[tid] = false;
+                        DPRINTF(Fetch, "[tid:%i] MLP-block: [sn:%d] is commited/squashed before try to triggered "
+                                        "block, so no need to block\n", tid, mlpLongLatencyLoadSeqNum[tid]);
+                    }
+                } else if (mlpAwareMode[tid] && !mlpThreadFetchThrottled[tid] &&
+                           mlpRemainingInsts[tid] <= 0) {
+                    // when mlpRemainingInsts[tid] <= 0 firstly (!mlpThreadFetchThrottled[tid]), set throttle
+                    mlpThreadFetchThrottled[tid] = true;
+                    fetchStats.mlpFetchBlockHoldCycle[0].sample(mlpBlockStateHoldCycles[tid]);
+                    mlpBlockStateHoldCycles[tid] = 0;
+                    DPRINTF(Fetch, "[tid:%i] MLP-block: [sn:%d] has been send to decode, "
+                                   "triggered block\n", tid, mlpLongLatencyLoadSeqNum[tid]);
+                }
+            }
+
+            // =========== MlpFlushPolicy ==========
+            if (isFlushPolicy()) {
+                // Check LQ head
+                InstSeqNum curLoadHead =
+                    iewStage->ldstQueue.getLoadHeadSeqNum(tid);
+                DynInstPtr loadInst =
+                    iewStage->findRobInst(tid, curLoadHead);
+
+                if (loadInst && loadInst->mlpPredictionMade &&
+                    loadInst->mlpPredictedLongLatency &&
+                    !mlpThreadFetchThrottled[tid]) {
+
+                    uint32_t mlpDist =
+                        loadInst->mlpPredictedDistance;
+                    // Traverse ROB from loadInst, find flushFromInst
+                    DynInstPtr flushFromInst = loadInst;
+                    // Get ROB iterator starting from loadInst
+                    auto &robList = iewStage->getRobInstList(tid);
+                    auto it = std::find_if(robList.begin(), robList.end(),
+                        [loadInst](const DynInstPtr &inst) {
+                            return inst == loadInst;
+                        });
+                    if (it != robList.end()) {
+                        // Skip the load itself
+                        ++it;
+                        // Traverse mlpDist instructions
+                        for (int instCount = 0; instCount < mlpDist;
+                            ++it, ++instCount) {
+                            if (it == robList.end()) break;
+                            // Track last non-control instruction
+                            if (!(*it)->isControl()) {
+                                flushFromInst = *it;
+                            }
+                        }
+                    }
+                    if (it == robList.end()) {
+                        // nothing need to do
+                    } else {
+                        // flush
+                        mlpThreadFetchThrottled[tid] = true;
+                        mlpAwareMode[tid] = true;
+                        fetchStats.mlpPolicyContribute[(int)(flushFromInst != loadInst)]++;
+                        mlpLongLatencyLoadSeqNum[tid] = flushFromInst->seqNum;
+                        fetchStats.mlpFetchBlockHoldCycle[0].sample(mlpBlockStateHoldCycles[tid]);
+                        mlpBlockStateHoldCycles[tid] = 0;
+                        DPRINTF(Fetch, "[tid:%i] MLP-flush: Long-latency load [sn:%d] detected: "
+                                       "MLP-dist:%d, flush after [sn:%d]",
+                                       tid, curLoadHead, mlpDist, mlpLongLatencyLoadSeqNum[tid]);
+                    }
+                }
+                // when mlpLongLatencyLoadSeqNum[i] leave rob, release throttle
+                if (mlpThreadFetchThrottled[tid] &&
+                    !(iewStage->findRobInst(tid, mlpLongLatencyLoadSeqNum[tid]))) {
+                    mlpThreadFetchThrottled[tid] = false;
+                    mlpAwareMode[tid] = false;
+                    mlpFlushFromInitiated[tid] = false;
+                    fetchStats.mlpFetchBlockHoldCycle[1].sample(mlpBlockStateHoldCycles[tid]);
+                    mlpBlockStateHoldCycles[tid] = 0;
+                    DPRINTF(Fetch, "[tid:%i] MLP-flush: Long-latency load with MLP "
+                                   "to [sn:%d] Done\n", tid, mlpLongLatencyLoadSeqNum[tid]);
+
+                }
+            }
+        }
+
+        // ========== Base/MlpDetect Block/Flush Polciy ==========
+        if (1) {
+            StallReason lqReason = iewStage->ldstQueue.lqEmpty(tid)
+                ? StallReason::NoStall
+                : iewStage->checkLsqStall(tid, true);
+            if (isLongLatency(lqReason)) {
+                InstSeqNum newLoadHead = iewStage->ldstQueue.getLoadHeadSeqNum(tid);
+                if (newLoadHead == lastLoadHeadSeqNum[tid]) {
+                    if (!threadFetchThrottled[tid] &&
+                        longLatencyStallCycles[tid] >= longLatencyThreshold) {
+                        threadFetchThrottled[tid] = true;
+                        fetchStats.fetchBlockHoldCycle[0].sample(blockStateHoldCycles[tid]);
+                        blockStateHoldCycles[tid] = 0;
+                        DPRINTF(Fetch, "[tid:%i] Long-latency load detected: "
+                            "LQ head stalled for %llu cycles (reason=%d)\n",
+                            tid, longLatencyStallCycles[tid], (int)lqReason);
+                    }
+                    longLatencyStallCycles[tid]++;
+                } else {
+                    if (threadFetchThrottled[tid]) {
+                        threadFetchThrottled[tid] = false;
+                        flushFromInitiated[tid] = false;
+                        fetchStats.fetchBlockHoldCycle[1].sample(blockStateHoldCycles[tid]);
+                        blockStateHoldCycles[tid] = 0;
+                        DPRINTF(Fetch, "[tid:%i] Long-latency load Done\n", tid);
+                    }
+                    longLatencyStallCycles[tid] = 0;
+                    lastLoadHeadSeqNum[tid] = newLoadHead;
+                }
+            } else {
+                if (threadFetchThrottled[tid]) {
+                    threadFetchThrottled[tid] = false;
                     flushFromInitiated[tid] = false;
                     fetchStats.fetchBlockHoldCycle[1].sample(blockStateHoldCycles[tid]);
                     blockStateHoldCycles[tid] = 0;
                     DPRINTF(Fetch, "[tid:%i] Long-latency load Done\n", tid);
                 }
                 longLatencyStallCycles[tid] = 0;
-                lastLoadHeadSeqNum[tid] = newLoadHead;
+                lastLoadHeadSeqNum[tid] = UINT64_MAX;
             }
-        } else {
-            if (threadFetchBlocked[tid]) {
-                threadFetchBlocked[tid] = false;
-                flushFromInitiated[tid] = false;
-                fetchStats.fetchBlockHoldCycle[1].sample(blockStateHoldCycles[tid]);
-                blockStateHoldCycles[tid] = 0;
-                DPRINTF(Fetch, "[tid:%i] Long-latency load Done\n", tid);
-            }
-            longLatencyStallCycles[tid] = 0;
-            lastLoadHeadSeqNum[tid] = UINT64_MAX;
         }
     }
+
+    // blockState 统计
     int blockState = 0;
+    int mlpBlockState = 0;
+    int mlpActiveState = 0;
     for (ThreadID tid = numThreads - 1; tid >= 0; tid--) {
-        blockState = (blockState << 1) + (int)(threadFetchBlocked[tid]);
+        blockState = (blockState << 1) + (int)(threadFetchThrottled[tid]);
+        mlpBlockState = (mlpBlockState << 1) + (int)(mlpThreadFetchThrottled[tid]);
+        mlpActiveState = (mlpActiveState << 1) + (int)(mlpAwareMode[tid]);
     }
     fetchStats.fetchBlockState[blockState]++;
+    fetchStats.mlpFetchBlockState[mlpBlockState]++;
+    fetchStats.mlpAwarePolicyActive[mlpActiveState]++;
 }
 
 void
