@@ -1,8 +1,14 @@
 name: Manual Performance Test
+run-name: ${{ github.event.inputs.note || 'Manual Performance Test' }} - ${{ github.event.inputs.configuration }} - ${{ github.event.inputs.benchmark_type }} - ${{ github.event.inputs.branch || github.ref_name }}
 
 on:
   workflow_dispatch:
     inputs:
+      note:
+        description: 'Title prefix for this manual perf run'
+        required: false
+        type: string
+        default: 'Manual Performance Test'
       configuration:
         description: 'Choose Kunminghu configuration'
         required: true
@@ -18,6 +24,7 @@ on:
         type: choice
         default: 'spec06-0.8c'
         options:
+          - spec06-rva23-novec-gcc16-0.3c
           - spec06-0.3c
           - spec06-0.8c
           - spec06-1.0c
@@ -32,6 +39,11 @@ on:
         options:
           - base
           - simple
+      extra_args:
+        description: 'Extra gem5 arguments appended to each configuration run'
+        required: false
+        type: string
+        default: ''
       branch:
         description: 'Branch, tag or SHA to test (leave empty for current branch)'
         required: false
@@ -62,5 +74,6 @@ jobs:
       config_path: ${{ needs.setup.outputs.config_path }}
       benchmark_type: ${{ github.event.inputs.benchmark_type }}
       vector_type: ${{ github.event.inputs.vector_type }}
+      extra_args: ${{ github.event.inputs.extra_args }}
       pr_sha: ${{ needs.setup.outputs.pr_sha }}
       check_result: true
