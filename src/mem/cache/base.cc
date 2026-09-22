@@ -3537,8 +3537,15 @@ BaseCache::CpuSidePort::recvTimingReq(PacketPtr pkt)
         if (!pkt->sbufferMergeFailed) {
             cache.recvTimingReq(pkt);
         }
+        // A same-line SBuffer store may be unable to merge into the
+        // predecessor MSHR even though the cache port itself accepted the
+        // request.  The LSQ owns replay for this case; do not schedule a
+        // cache-port retry that would unnecessarily block unrelated sends.
+        if (pkt->sbufferMergeFailed) {
+            return false;
+        }
         if (pkt->mshrArbFailed() || pkt->mshrAliasFailed() ||
-            pkt->isHitInWriteBuffer() || pkt->sbufferMergeFailed) {
+            pkt->isHitInWriteBuffer()) {
             // If the MSHR arbitration failed, we need to retry later.
             // We will schedule a retry event to try again.
             if (sendRetryEvent.scheduled()) {

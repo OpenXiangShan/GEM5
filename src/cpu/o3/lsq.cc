@@ -1773,7 +1773,9 @@ LSQ::issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt, Tick issue_tick)
     } else if (!cacheBlocked() && cachePortAvailable(false)) {
         if (!dcachePort.sendTimingReq(data_pkt)) {
             result = DcacheMainPipeS2Result::Blocked;
-            cache_got_blocked = true;
+            // A same-line SBuffer merge failure is replayed through S0 and
+            // does not mean that the cache port is unavailable.
+            cache_got_blocked = !data_pkt->sbufferMergeFailed;
         }
     } else {
         result = DcacheMainPipeS2Result::Blocked;
