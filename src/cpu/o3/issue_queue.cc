@@ -19,6 +19,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
+#include "cpu/o3/cpu.hh"
 #include "cpu/o3/inst_queue.hh"
 #include "cpu/reg_class.hh"
 #include "debug/Counters.hh"
@@ -35,6 +36,8 @@
         assert((*instNumClassify[x->opClass()]) != 0); \
         (*instNumClassify[x->opClass()])--;            \
         instNum--;                        \
+        assert(threadEntries[x->threadNumber] != 0);   \
+        threadEntries[x->threadNumber]--;              \
         selector->deallocate(x);          \
     } while (0)
 
@@ -213,6 +216,7 @@ IssueQue::IssueQue(const IssueQueParams& params)
 {
     panic_if(vectorSplitUnits == 0,
              "%s: vectorSplitUnits must be greater than 0\n", iqname);
+    smtIQWatermark = params.smtIQWatermark;
 
     if (deferNewEnqueueSelection) {
         enqueuedThisCycle.reserve(inports);
@@ -336,6 +340,30 @@ IssueQue::setCPU(CPU* cpu)
     _name = cpu->name() + ".scheduler." + getName();
     iqstats = new IssueQueStats(cpu, this, "scheduler." + this->getName());
     iqstats->instsNum.init(cpu->numThreads);
+
+    smtIQPolicy = scheduler->smtIQPolicy;
+    numThreads = cpu->numThreads;
+    for (int t = 0; t < MaxThreads; ++t) {
+        threadEntries[t] = 0;
+    }
+
+    if (smtIQWatermark < 0) {
+        warn("%s: negative SMT IQ watermark %d; using Dynamic sharing",
+             iqname, smtIQWatermark);
+        smtIQPolicy = SMTQueuePolicy::Dynamic;
+    } else if (static_cast<uint64_t>(numThreads) *
+                   static_cast<uint64_t>(smtIQWatermark) >
+               static_cast<uint64_t>(iqsize)) {
+        warn("%s: %d threads * watermark %d exceeds IQ size %d; "
+             "using Dynamic sharing",
+             iqname, numThreads, smtIQWatermark, iqsize);
+        smtIQPolicy = SMTQueuePolicy::Dynamic;
+    } else if (smtIQPolicy != SMTQueuePolicy::Dynamic &&
+               smtIQPolicy != SMTQueuePolicy::Watermark) {
+        warn("%s: SMT IQ policy %d is unsupported; using Dynamic sharing",
+             iqname, static_cast<int>(smtIQPolicy));
+        smtIQPolicy = SMTQueuePolicy::Dynamic;
+    }
 }
 
 void
@@ -1160,17 +1188,34 @@ IssueQue::tick()
 }
 
 bool
-IssueQue::ready()
+IssueQue::ready(ThreadID tid)
 {
     bool bwFull = instNumInsert >= inports;
-    bool full = (instNum >= iqsize) || (replayQ.size() > replayQsize);
+    bool globalFull = (instNum >= iqsize) || (replayQ.size() > replayQsize);
     if (bwFull) {
         DPRINTF(Schedule, "can't insert more due to inports exhausted\n");
     }
-    if (full) {
+    if (globalFull) {
         DPRINTF(Schedule, "has full!\n");
     }
-    return !full && !bwFull;
+    if (bwFull || globalFull) {
+        return false;
+    }
+
+    if (smtIQPolicy == SMTQueuePolicy::Watermark) {
+        uint64_t reserved = 0;
+        for (int t = 0; t < numThreads; ++t) {
+            if (t != tid) {
+                reserved += std::max(
+                    static_cast<uint64_t>(smtIQWatermark),
+                    static_cast<uint64_t>(threadEntries[t]));
+            }
+        }
+        const uint64_t size = static_cast<uint64_t>(iqsize);
+        const uint64_t limit = reserved < size ? size - reserved : 0;
+        return threadEntries[tid] < limit;
+    }
+    return true;
 }
 
 void
@@ -1180,6 +1225,7 @@ IssueQue::insert(const DynInstPtr& inst)
     (*instNumClassify[inst->opClass()])++;
     instNum++;
     instNumInsert++;
+    threadEntries[inst->threadNumber]++;
     if (deferNewEnqueueSelection) {
         enqueuedThisCycle.push_back(inst->seqNum);
     }
@@ -1615,6 +1661,9 @@ Scheduler::setCPU(CPU* cpu, LSQ* lsq)
 {
     this->cpu = cpu;
     this->lsq = lsq;
+    const auto& cpuParams =
+        dynamic_cast<const BaseO3CPUParams&>(cpu->params());
+    smtIQPolicy = cpuParams.smtIQPolicy;
     for (auto it : issueQues) {
         it->setCPU(cpu);
         it->selector->setparent(this, it);
@@ -1742,7 +1791,9 @@ Scheduler::lookahead(std::deque<DynInstPtr>& insts)
 bool
 Scheduler::ready(const DynInstPtr& inst, int disp_seq)
 {
-    if (inst->staticInst->isSplitStoreAddr() && !ready(StoreDataOp, disp_seq)) {
+    ThreadID tid = inst->threadNumber;
+    if (inst->staticInst->isSplitStoreAddr() &&
+        !ready(StoreDataOp, tid, disp_seq)) {
         return false;
     }
 
@@ -1751,12 +1802,12 @@ Scheduler::ready(const DynInstPtr& inst, int disp_seq)
 
     if (old_disp) [[unlikely]] {
         for (auto iq : iqs) {
-            if (iq->ready()) {
+            if (iq->ready(tid)) {
                 return true;
             }
         }
     } else {
-        if (iqs[dispSeqVec.at(disp_seq)]->ready()) {
+        if (iqs[dispSeqVec.at(disp_seq)]->ready(tid)) {
             return true;
         }
     }
@@ -1766,19 +1817,19 @@ Scheduler::ready(const DynInstPtr& inst, int disp_seq)
 }
 
 bool
-Scheduler::ready(OpClass op, int disp_seq)
+Scheduler::ready(OpClass op, ThreadID tid, int disp_seq)
 {
     auto& iqs = dispTable[op];
     assert(!iqs.empty());
 
     if (old_disp) {
         for (auto iq : iqs) {
-            if (iq->ready()) {
+            if (iq->ready(tid)) {
                 return true;
             }
         }
     } else {
-        if (iqs[dispSeqVec.at(disp_seq)]->ready()) {
+        if (iqs[dispSeqVec.at(disp_seq)]->ready(tid)) {
             return true;
         }
     }
@@ -1842,12 +1893,13 @@ Scheduler::insert(const DynInstPtr& inst, int disp_seq)
     }
 
     auto& iqs = dispTable[inst->opClass()];
+    ThreadID tid = inst->threadNumber;
 
     if (old_disp) {
         bool insert = false;
         std::sort(iqs.begin(), iqs.end(), disp_policy(inst->opClass()));
         for (auto iq : iqs) {
-            if (iq->ready()) {
+            if (iq->ready(tid)) {
                 insert = true;
                 iq->insert(inst);
                 break;
@@ -1855,7 +1907,7 @@ Scheduler::insert(const DynInstPtr& inst, int disp_seq)
         }
         panic_if(!insert, "can't find ready IQ to insert");
     } else {
-        assert(iqs[dispSeqVec.at(disp_seq)]->ready());
+        assert(iqs[dispSeqVec.at(disp_seq)]->ready(tid));
         iqs[dispSeqVec.at(disp_seq)]->insert(inst);
     }
 
@@ -1866,9 +1918,10 @@ void
 Scheduler::insertNonSpec(const DynInstPtr& inst)
 {
     auto& iqs = dispTable[inst->opClass()];
+    ThreadID tid = inst->threadNumber;
 
     for (auto iq : iqs) {
-        if (iq->ready()) {
+        if (iq->ready(tid)) {
             iq->insertNonSpec(inst);
             break;
         }
