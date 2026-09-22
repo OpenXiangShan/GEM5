@@ -458,14 +458,20 @@ def _configure_xs_composite_default(prefetcher, options):
     prefetcher.pht_pf_level = options.pht_pf_level
 
 def _configure_xs_composite_kmh_align(prefetcher):
+    # Keep the L1 profile limited to the stream prefetcher.  The BOP
+    # instances are owned by the L2 profile below; disabling the other
+    # components here keeps their training and request generation out of
+    # controlled PDB experiments.
     prefetcher.enable_activepage = False
-    prefetcher.enable_pht = True
+    prefetcher.enable_pht = False
     prefetcher.enable_berti = False
     prefetcher.enable_bop = False
     prefetcher.enable_temporal = False
-    prefetcher.enable_sstride = True
+    prefetcher.enable_sstride = False
     prefetcher.enable_xsstream = True
     prefetcher.enable_opt = False
+    prefetcher.enable_spp = False
+    prefetcher.enable_cplx = False
     prefetcher.pht_pf_level = 2
 
 def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
@@ -477,9 +483,9 @@ def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
     else:
         _configure_xs_composite_default(prefetcher, options)
 
-    if options.l1d_enable_spp:
+    if not options.kmh_align and options.l1d_enable_spp:
         prefetcher.enable_spp = True
-    if options.l1d_enable_cplx:
+    if not options.kmh_align and options.l1d_enable_cplx:
         prefetcher.enable_cplx = True
 
     _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled)
@@ -492,10 +498,10 @@ def _configure_l2_composite_default(prefetcher):
     prefetcher.enable_despacito_stream = True
 
 def _configure_l2_composite_kmh_align(prefetcher):
-    # RTL-aligned L2CompositeWithWorker profile.
+    # RTL-aligned L2CompositeWithWorker profile: retain only vBOP/pBOP.
     prefetcher.enable_cmc = False
     prefetcher.enable_bop = True
-    prefetcher.enable_cdp = True
+    prefetcher.enable_cdp = False
     prefetcher.enable_despacito_stream = False
     prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,
                                              enable_adaptoffset=False)
