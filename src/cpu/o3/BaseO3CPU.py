@@ -82,7 +82,7 @@ class SMTMLPFetchBlockPolicy(ScopedEnum):
     vals = [ 'DisableMlp', 'MlpAwarePolicy', 'MlpDetectPolicy' ]
 
 class SMTQueuePolicy(ScopedEnum):
-    vals = [ 'Dynamic', 'Partitioned', 'Threshold', 'DynamicBorrowing' ]
+    vals = [ 'Dynamic', 'Partitioned', 'Threshold', 'DynamicBorrowing', 'Watermark' ]
 
 class SMTLSQMode(ScopedEnum):
     vals = [ 'Independent', 'Shared' ]
@@ -333,7 +333,7 @@ class BaseO3CPU(BaseCPU):
                                            "SMT shared RARQ allocation policy")
     smtRAWQPolicy   = Param.SMTQueuePolicy('Dynamic',
                                            "SMT shared RAWQ allocation policy")
-    smtIQPolicy    = Param.SMTQueuePolicy('Partitioned',
+    smtIQPolicy    = Param.SMTQueuePolicy('Dynamic',
                                           "SMT IQ Sharing Policy")
     smtIQThreshold = Param.Int(100, "SMT IQ Threshold Sharing Parameter")
     smtROBPolicy   = Param.SMTQueuePolicy('Partitioned',
