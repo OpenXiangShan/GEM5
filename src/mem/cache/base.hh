@@ -1291,6 +1291,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
         statistics::Value mshrOccupancyRatio;
         /** Cycles for which the cache stayed blocked due to no free MSHR. */
         statistics::Scalar noMshrBlockedCycles;
+        /** Clean read hits served while the cache was blocked (hit-under-blocked). */
+        statistics::Scalar hitUnderBlockServed;
 
         /** The average bandwidth receiving data from lower cache. */
         statistics::Formula bytesRecvPerCycle;
@@ -1672,6 +1674,14 @@ public:
      * This cache should allocate a block on a line-sized write miss.
      */
     const bool doFastWriteline = false;
+
+    /** When true, serve clean read hits even while the cache is blocked
+     * (MSHR-exhausted / downstream backpressure). Misses still NAK+retry. */
+    bool hitUnderBlock = false;
+
+    /** Read-only hit probe (no LRU/writeback side effects) for hit-under-blocked. */
+    bool probeHit(const PacketPtr pkt) const;
+    void incHitUnderBlockServed() { stats.hitUnderBlockServed++; }
 
     // CacheAccessor overrided function
 
