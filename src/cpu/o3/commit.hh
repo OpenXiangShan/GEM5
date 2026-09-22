@@ -689,6 +689,7 @@ class Commit
         statistics::Vector squashDueToTrap;
         statistics::Vector squashDueToTC;
         statistics::Vector squashDueToSquashAfter;
+        statistics::Vector squashDueToLongLatencyFlush;
         statistics::Formula totalSquash;
 
         statistics::Vector ROBFull;

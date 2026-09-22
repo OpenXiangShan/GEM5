@@ -564,6 +564,8 @@ class IEW
         statistics::Scalar unblockCycles;
         /** Stat for total number of instructions dispatched. */
         statistics::Vector dispatchedInsts;
+        /** Dispatched ops counted with the same filters as committedOps. */
+        statistics::Vector dispatchedOps;
         /** Stat for total number of squashed instructions dispatch skips. */
         statistics::Scalar dispSquashedInsts;
         /** Stat for total number of dispatched load instructions. */
@@ -685,6 +687,19 @@ class IEW
     StallReason checkLsqStall(ThreadID tid, bool isLoad) {
       return checkLSQStall(tid, isLoad);
     }
+
+    /** Sends commit proper information for a squash due to a long-latency
+     * load detected by the fetch stage's flush policy.
+     */
+    void squashDueToLongLatencyLoad(const DynInstPtr &loadInst,
+                                    const DynInstPtr &squashFromInst,
+                                    ThreadID tid,
+                                    bool includeSquashInst);
+
+    /** ROB access wrappers for Fetch's FlushFrom policy. */
+    std::list<DynInstPtr>& getRobInstList(ThreadID tid);
+    DynInstPtr readRobTailInst(ThreadID tid);
+    DynInstPtr findRobInst(ThreadID tid, InstSeqNum seqNum);
 };
 
 } // namespace o3

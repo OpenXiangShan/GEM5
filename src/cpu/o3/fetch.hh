@@ -42,6 +42,7 @@
 #define __CPU_O3_FETCH_HH__
 
 #include <array>
+#include <cstdint>
 #include <cstring>
 #include <deque>
 #include <memory>
@@ -49,6 +50,7 @@
 
 #include "arch/generic/decoder.hh"
 #include "arch/generic/mmu.hh"
+#include "arch/riscv/pcstate.hh"
 #include "arch/riscv/types.hh"
 #include "base/statistics.hh"
 #include "config/the_isa.hh"
@@ -260,6 +262,14 @@ class Fetch
     /** Block Policy: per-thread state tracking for statistics */
     uint64_t blockStateHoldCycles[MaxThreads];
 
+    // === FlushFrom Policy state ===
+    bool flushFromInitiated[MaxThreads];
+
+    // FlushFrom Policy methods
+    bool isFlushFromPolicy() const;
+    DynInstPtr findFirstUse(const DynInstPtr &loadInst, ThreadID tid);
+    void flushFromInitiateFlush(const DynInstPtr &loadInst, ThreadID tid, bool fromUse);
+
     /** List that has the threads organized by priority. */
     std::list<ThreadID> priorityList;
 
@@ -415,11 +425,13 @@ class Fetch
      * @param allow_two_fetch Whether this buffer may cross an FTQ boundary.
      * @param continued_to_next_target Whether the current buffer was retained
      *        for the next FTQ target.
+     * @param prediction receives the prediction and false-BTB-hit result.
      * @return true if a branch was predicted taken.
      */
     bool lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
                                bool allow_two_fetch,
-                               bool &continued_to_next_target);
+                               bool &continued_to_next_target,
+                               bool &false_hit);
 
     /**
      * Fetches the cache line that contains the fetch PC.  Returns any
@@ -576,6 +588,44 @@ class Fetch
     DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
             StaticInstPtr curMacroop, const PCStateBase &this_pc,
             const PCStateBase &next_pc, bool trace);
+
+    enum class PredecodeFault : uint8_t
+    {
+        None,
+        DirectNotTaken,
+        DirectTargetMismatch,
+        NonCfiTaken,
+        ReturnNotTaken
+    };
+
+    struct PredecodeEntry
+    {
+        DynInstPtr instruction;
+
+        PredecodeEntry();
+        ~PredecodeEntry();
+    };
+
+    struct PredecodeStage
+    {
+        std::array<PredecodeEntry, MaxWidth> entries;
+        unsigned size = 0;
+
+        ~PredecodeStage();
+        void clear();
+    };
+
+    bool predecodePipelineEnabled(ThreadID tid) const;
+    bool predecodeEnabled(ThreadID tid, const StaticInstPtr &staticInst,
+                          const StaticInstPtr &curMacroop) const;
+    void advancePredecodePipeline();
+    bool processPredecodeStage(ThreadID tid);
+    void clearPredecodePipeline(ThreadID tid);
+    PredecodeFault classifyPredecodeFault(
+            const DynInstPtr &instruction,
+            const StaticInstPtr &staticInst) const;
+    void handlePredecodeFault(ThreadID tid, const DynInstPtr &instruction,
+                              PredecodeFault fault);
 
     /** Pipeline the next I-cache access to the current one. */
     void pipelineIcacheAccesses(ThreadID tid);
@@ -1001,6 +1051,10 @@ class Fetch
     /** Queue of fetched instructions. Per-thread to prevent HoL blocking. */
     std::deque<DynInstPtr> fetchQueue[MaxThreads];
 
+    /** Fixed two-cycle check pipeline; it neither queues nor backpressures. */
+    PredecodeStage predecodeStage0[MaxThreads];
+    PredecodeStage predecodeStage1[MaxThreads];
+
     unsigned currentLoopIter{0};  // todo: remove this
 
     /** Icache stall statistics. */
@@ -1017,6 +1071,9 @@ class Fetch
 
     /** Maximum number of threads that may start an FTQ fetch each cycle. */
     const unsigned numFetchTargetThreads;
+
+    /** Optional RISC-V predecode owner, disabled by default. */
+    bool enablePredecode;
 
     /** Thread ID being fetched. */
     ThreadID threadFetched;
@@ -1113,6 +1170,8 @@ class Fetch
         statistics::Scalar branches;
         /** Stat for total number of predicted branches. */
         statistics::Scalar predictedBranches;
+        /** RISC-V predecode-owned recovery events. */
+        statistics::Scalar predecodeRedirects;
         /** Stat for total number of cycles spent fetching. */
         statistics::Scalar cycles;
         /** Stat for total number of cycles spent squashing. */
@@ -1234,6 +1293,11 @@ class Fetch
         statistics::Vector fetchBlockState;
         statistics::Vector fetchThrottleState;
         statistics::VectorDistribution fetchBlockHoldCycle;  // [0]=Unblocked [1]=Blocked
+
+        // === FlushFrom Policy statistics ===
+        statistics::Vector flushForFlushPolicy;
+        statistics::Scalar flushFromFirstUseFound;
+        statistics::Scalar flushFromFirstUseNoConsumer;
     } fetchStats;
 
     SquashVersion localSquashVer[MaxThreads];

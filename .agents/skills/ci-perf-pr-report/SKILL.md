@@ -1,6 +1,6 @@
 ---
 name: ci-perf-pr-report
-description: 用于在 OpenXiangShan/GEM5 手动性能 CI 完成后，选择严格可比的 baseline，汇总总分、benchmark 子项和关键性能计数器，并生成或发布 PR 性能评论。适用于用户给出 candidate/baseline run、要求分析 CI 性能收益、准备会议数据，或要求把分析更新到 PR 时。
+description: 为 GEM5 PR 准备或发布性能对比报告，选择可比 baseline 并汇总分数与关键计数器证据。
 ---
 
 # CI 性能 PR 报告
@@ -21,10 +21,10 @@ description: 用于在 OpenXiangShan/GEM5 手动性能 CI 完成后，选择严�
 
 ## 工作流
 
-1. 完整读取 `../ci-perf-analysis/SKILL.md`，按其中流程定位归档并处理数据。
+1. 复用已有可追溯的归档和处理结果；需要定位或处理 CI 数据时读取 `../ci-perf-analysis/SKILL.md`。
 2. 检查 candidate 和 baseline 的 `status`、`conclusion`、SHA、workflow、配置、
-   benchmark/profile、coverage、extra args 和 abort 数。run 未完成时继续监控；不要把
-   “已创建”写成“已通过”。
+   benchmark/profile、coverage、extra args 和 abort 数。run 未完成时说明状态和缺口；
+   用户要求等待完成或持续跟进时才继续监控，不把“已创建”写成“已通过”。
 3. baseline 优先级：用户明确指定 > 同 SHA 的 feature-off control > 同配置的相邻
    main/weekly baseline。若编译器、checkpoint、coverage 或关键参数不同，明确标注
    confounder，不做严格因果归因。
@@ -36,7 +36,7 @@ description: 用于在 OpenXiangShan/GEM5 手动性能 CI 完成后，选择严�
    - 后端/访存：dispatch stall、core/memory bound、cache MPKI/latency。
    优先比较 rate、MPKI 或 weighted 指标；指令数不同时不要直接解释 raw count。
 6. 用重点 benchmark 和计数器证据解释收益/回退，区分确认事实、合理推断和未决问题。
-7. 生成简洁的英文 PR 评论；用户明确要求发布时再执行外部写入，并回查评论 URL。
+7. 生成简洁的英文 PR 评论；已有明确发布授权时直接发布并回查评论 URL，否则交付 draft。
 
 ## PR 评论结构
 
@@ -60,8 +60,7 @@ description: 用于在 OpenXiangShan/GEM5 手动性能 CI 完成后，选择严�
 <结论、因果边界和剩余风险>
 ```
 
-PR 评论中直接链接 Actions run；不要包含 Codex memory citation。若数据不完整，发布
-状态更新而非最终性能结论。除非用户明确要求更新既有评论，否则发布一条新评论。
+PR 评论中直接链接 Actions run；不要包含 Codex memory citation。若数据不完整，只准备状态更新；已有发布授权时才发布，不给最终性能结论。除非用户明确要求更新既有评论，否则发布一条新评论。
 
 ## 完成标准
 

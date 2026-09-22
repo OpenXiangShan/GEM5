@@ -158,6 +158,16 @@ class DynInst : public ExecContext, public RefCounted
     /** the xs metadata for this instruction */
     const XsDynInstMetaPtr xsMeta;
 
+    // One chain per source prevents an unrelated operand wake/cancel from
+    // overwriting the address dependency. Populated only for IQ wakeups.
+    std::vector<lldp::Chain> lldpInputs;
+    lldp::Chain lldpChain;
+    int lldpSource{-1};
+    bool lldpIssued{false};
+    bool lldpCounted{false};
+    void selectLldpChain();
+
+
     /** Pointer to the Impl's CPU object. */
     CPU *cpu = nullptr;
 
@@ -436,6 +446,10 @@ class DynInst : public ExecContext, public RefCounted
     std::unique_ptr<PCStateBase> predPC;
 
     Addr fallThruPC;
+
+    // Fetch-side RISC-V predecode has checked this instruction. Decode must
+    // not re-run its frontend redirect checks for it.
+    bool predecodeChecked = false;
 
     /** ftqId is used for squashing and committing */
     /** The fetch stream queue ID of the instruction. */
@@ -733,6 +747,12 @@ class DynInst : public ExecContext, public RefCounted
 
     /** Returns whether the instruction was predicted taken or not. */
     bool readPredTaken() { return instFlags[PredTaken]; }
+
+    void setPredecodeChecked() { predecodeChecked = true; }
+    bool isPredecodeChecked() const
+    {
+        return predecodeChecked;
+    }
 
     void
     setPredTaken(bool predicted_taken)

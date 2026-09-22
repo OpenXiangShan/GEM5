@@ -304,6 +304,10 @@ def addCommonOptions(parser, configure_xiangshan=False):
     parser.add_argument("--l1d-enable-cplx", action="store_true", default=False,
                         help="""
                         Enable complex stride component for L1 data prefetcher""")
+    parser.add_argument("--l1d-enable-lldp", action="store_true", default=False,
+                        help="Enable LLDP inside the L1 composite prefetcher")
+    parser.add_argument("--l2-enable-lldp", action="store_true", default=False,
+                        help="Enable LLDP inside the L2 composite prefetcher")
     parser.add_argument("--short-stride-thres", action="store", default=0, type=int,
                         help="""
                         Ignore short strides when seen long strides for stride, 0 for turning off""")
@@ -520,6 +524,25 @@ def addSEOptions(parser):
     # Benchmark options
     parser.add_argument("-c", "--cmd", default="",
                         help="The binary to run in syscall emulation mode.")
+    parser.add_argument(
+        "--workload", default="",
+        help="An upstream gem5 binary or workload resource ID to run in SE "
+             "mode.")
+    parser.add_argument(
+        "--suite", default="",
+        help="An upstream gem5 suite resource ID containing the workload.")
+    parser.add_argument(
+        "--suite-workload", default="",
+        help="The workload ID to select from --suite.")
+    parser.add_argument(
+        "--resource-version", default=None,
+        help="Exact version of --workload or --suite (latest if omitted).")
+    parser.add_argument(
+        "--resource-directory", default=None,
+        help="Directory used to cache downloaded modern resources.")
+    parser.add_argument(
+        "--resource-json", default=None,
+        help="Local flat modern resource JSON catalog (primarily for CI).")
     parser.add_argument("-o", "--options", default="",
                         help="""The options to pass to the binary, use " "
                               around the entire string""")
@@ -669,6 +692,9 @@ def addXiangshanCommonOptions(parser):
                         action="store",
                         default=None,
                         help="The shared lib file used to do difftest")
+    parser.add_argument("--enable-mem-dedup", action="store_true",
+                        help="Share initial memory through COW; requires a "
+                             "NEMU REF built with ENABLE_MEM_DEDUP")
 
 
 def addXiangshanFSOptions(parser):

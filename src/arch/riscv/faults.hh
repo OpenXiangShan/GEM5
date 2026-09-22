@@ -285,8 +285,14 @@ class SyscallFault : public RiscvFault
 
 class HVFault : public RiscvFault
 {
+  private:
+    const ExtMachInst _inst;
+
   public:
-    HVFault() : RiscvFault("HVFault", FaultType::OTHERS, VIRTUAL_INST) {}
+    explicit HVFault(const ExtMachInst inst)
+        : RiscvFault("HVFault", FaultType::OTHERS, VIRTUAL_INST), _inst(inst)
+    {}
+    RegVal trap_value() const override { return _inst.instBits; }
     void invokeSE(ThreadContext *tc, const StaticInstPtr &inst) override;
 };
 } // namespace RiscvISA

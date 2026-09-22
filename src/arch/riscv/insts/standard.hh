@@ -72,6 +72,9 @@ class ImmOp : public RiscvStaticInst
     int64_t getImm() const override {
         return imm;
     }
+
+  public:
+    bool isLldpImmediate() const override { return true; }
 };
 
 /**

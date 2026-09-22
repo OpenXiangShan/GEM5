@@ -2,7 +2,6 @@
 
 This file defines the collaboration rules and workflow entry points for this repository.
 
-- For complex tasks, follow the process first instead of jumping straight into code changes.
 - For non-trivial behavioral changes, explain the background, assumptions, risks, and validation plan.
 - If documentation conflicts, treat the source code as the ground truth, then consult architecture and process docs.
 
@@ -14,7 +13,7 @@ requested or the work needs to span multiple sessions or contributors.
 
 ## Repository Map
 
-Start with these directories first:
+Use the directories relevant to the task:
 
 - `src/`: core source code (C++ / Python), especially `arch/riscv/`, `cpu/o3/`, and `cpu/pred/`
 - `configs/`: runtime configurations, especially `configs/example/kmhv3.py`
@@ -22,8 +21,6 @@ Start with these directories first:
 - `util/`: helper scripts and tools
 - `docs/`: architecture, design, and other project documentation
   - `docs/design-docs/frontend/`: design-oriented Kunminghu v3 frontend/BPU notes; prefer this directory for design motivation, constraints, and tradeoffs
-
-For a higher-level map of the codebase, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Environment Assumptions
 
@@ -58,22 +55,19 @@ Common entry points:
 - Build all unit tests:
   `scons build/RISCV/unittests.opt -j100 --unit-test`
 
-If you need a more systematic understanding of module boundaries, configuration entry points, or execution flow, read [ARCHITECTURE.md](ARCHITECTURE.md) first.
+Use [ARCHITECTURE.md](ARCHITECTURE.md) when investigating module boundaries, configuration entry points, or execution flow.
 
 ## Style and Naming
 
 - C / C++: follow `.clang-format`
 - Python: follow the repository's existing formatting and checking workflow
-- Naming:
-  - types / classes: UpperCamelCase
-  - functions / methods: lower_snake_case
-  - constants: ALL_CAPS
+- Follow the naming conventions of the surrounding module; C++ and Python do not share one universal naming scheme.
 - Use English for code comments and commit messages
 - Keep changes simple and avoid introducing functionality unrelated to the current task
 
 ## Validation Expectations
 
-For non-trivial changes, do not stop at code edits alone. Validation should match the level of risk.
+Complete the requested change and relevant validation, including fixing failures caused by the change. Choose checks that match the affected behavior and risk; the full unit-test build above is an available entry point, not a default requirement for every edit.
 
 Prefer these principles:
 
@@ -82,7 +76,9 @@ Prefer these principles:
 - Frontend / BPU / timing-related changes: prefer targeted workloads, unit tests, or checkpoint-based regression
 - Analysis tasks: clearly distinguish confirmed facts, current hypotheses, and unresolved questions
 
-If full validation cannot be completed in the current environment, explicitly state the gap and the remaining risk.
+Once relevant checks pass, broaden or repeat them only for new changes, failures, or unresolved concerns. If validation is blocked, report the gap and remaining risk.
+
+For already-authorized local work, continue through inspection, edits, and affected checks without repeated confirmation. Ask when missing information materially changes the task; continue independent work while it is unresolved.
 
 ## Commit and PR Expectations
 
@@ -95,10 +91,6 @@ If full validation cannot be completed in the current environment, explicitly st
   - scope of impact
   - validation method and results
 - Run the repository's style checks and required tests before submission
-
-## Related Documents
-
-- [ARCHITECTURE.md](ARCHITECTURE.md): high-level architecture map of the repository
 
 ## Repository Skills
 

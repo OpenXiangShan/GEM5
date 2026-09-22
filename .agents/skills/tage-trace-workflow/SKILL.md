@@ -1,100 +1,19 @@
 ---
 name: tage-trace-workflow
-description: 用于编译 XiangShan RTL trace 版 emu、运行 RTL/gem5 的 TAGE trace、并对 gem5 stats/bp.db 与 RTL CondTrace 做共口径聚合比较。适用于 coremark、SPEC checkpoint slice、sjeng_22213 等单切片对拍与首轮分叉定位。
+description: 采集或分析 gem5/XiangShan TAGE trace，比较统计、热点分支和事件分叉。
 ---
 
 # TAGE Trace Workflow
 
-这个 skill 只做三件事：
+## 按现有产物选择入口
 
-- 编译能落 `CondTrace_*` / `microTageTrace` 的 RTL `emu`
-- 运行 gem5 / RTL 的 trace，并固定到相同 instruction window
-- 用脚本把 gem5 `stats.txt` / `bp.db` 和 RTL sqlite db 聚成同口径摘要
+- 已有 `stats.txt`、`bp.db` 或 RTL sqlite：直接使用下方分析脚本，不重新编译或采集。
+- 缺少所需 trace：读取 [capture-trace.md](references/capture-trace.md)，先复用版本和表支持匹配的 binary。
+- 需要构建 RTL trace binary：读取 [build-trace.md](references/build-trace.md)。
 
-## 1. RTL 编译
+比较前记录两边 commit、输入 checkpoint、配置和统计窗口；检查 restore/warmup 边界，相同 `-I` 不足以证明窗口一致。只生成结论所需的表和有界窗口。
 
-先固定 RTL checkout；显式路径优先，下面的个人 home 只作本机 fallback：
-
-```bash
-export XIANGSHAN_HOME="${XIANGSHAN_HOME:-/nfs/home/yanyue/workspace/xs-env/XiangShan}"
-git -C "$XIANGSHAN_HOME" rev-parse HEAD
-cd "$XIANGSHAN_HOME"
-```
-
-然后使用当前 trace 配置：
-
-```bash
-make clean
-make emu \
-  EMU_THREADS=8 \
-  EMU_TRACE=fst \
-  WITH_DRAMSIM3=1 \
-  WITH_CONSTANTIN=1 \
-  WITH_CHISELDB=1 \
-  WITH_ROLLINGDB=1 \
-  CONFIG=FrontendDebugConfig \
-  -j64
-```
-
-编完先做两个 sanity check：
-
-```bash
-rg -n "FrontendDebugConfig" build/time.log
-rg -n "CondTrace_0_write|BpuPredictionTrace_write|microTageTrace_write" build/chisel_db.cpp
-```
-
-如果 `CondTrace_0_write()` 仍然是空桩，就不要继续跑 trace。
-
-## 2. RTL 运行
-
-关键点：
-
-- `--dump-select-db` 必须是空格分隔的精确表名
-- 优先只打 `CondTrace_0..7`，需要更细再加 `microTageTrace`
-- 尽量先用 `-I` 把窗口限制住
-
-示例：
-
-```bash
-./build/emu \
-  --no-diff \
-  -I 200000 \
-  -i /nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin \
-  --dump-db \
-  --dump-select-db "CondTrace_0 CondTrace_1 CondTrace_2 CondTrace_3 CondTrace_4 CondTrace_5 CondTrace_6 CondTrace_7 microTageTrace" \
-  > /tmp/coremark_tage.out 2>&1
-```
-
-对 `.zstd` GCPT slice，直接把路径传给 `-i` 即可。
-
-## 3. gem5 运行
-
-`kmhv3.py` 需要 diff 环境变量。保留调用者已有设置，否则使用 CI 常见默认值：
-
-```bash
-export GCBV_REF_SO="${GCBV_REF_SO:-/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so}"
-test -f "$GCBV_REF_SO"
-```
-
-示例：
-
-```bash
-./build/RISCV/gem5.opt \
-  --outdir /tmp/debug/coremark_200k_basic \
-  ./configs/example/kmhv3.py \
-  -I 200000 \
-  --generic-rv-cpt /nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin \
-  --raw-cpt \
-  --enable-bp-db tage basic
-```
-
-说明：
-
-- `tage` 会生成 `TAGEMISSTRACE`
-- `basic` 会额外生成 `BPTRACE`
-- 先保证 gem5 和 RTL 用同一个 `-I`
-
-## 4. 分析顺序
+## 分析顺序
 
 先看计数器，再看 trace：
 
@@ -110,7 +29,7 @@ test -f "$GCBV_REF_SO"
 - `TAGEMISSTRACE.useAlt` 表示 `pred.useAlt`，不等于 stats 里的 `resolveBranchUseAltTable`
 - 要和 stats 对齐时，应该优先看 `useAlt && altFound`
 
-## 5. 脚本
+## 脚本
 
 - RTL 聚合：
   [scripts/aggregate_rtl_condtrace.py](scripts/aggregate_rtl_condtrace.py)

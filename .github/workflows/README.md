@@ -60,7 +60,7 @@
 - `rvv` 标签仍由独立的 RVV on-demand workflow 触发
 - Label 触发只允许同仓库 PR；外部 fork PR 需要先由维护者同步到受信任分支，再通过 label 或 `manual-perf.yml` 触发
 - 需要手动选择配置、benchmark 或 branch/SHA 时，请使用 `manual-perf.yml`
-- `manual-perf.yml` 和 `manual-solve.yml` 暂时保留 GCC15 SPEC06 选项供历史实验续跑；自动任务和默认选项使用 GCC16 RVA23 no-vector 切片
+- 手动性能和 solver workflow 使用 GCC16 RVA23 no-vector 切片，不再暴露旧的 GCC15 SPEC06 选项
 - `idealkmhv3.py` 默认关闭动态预取；`smt_idealkmhv3.py` 保持当前默认行为
 - 需要手动切换动态预取时，请在 `manual-perf.yml` 的 `extra_args` 中直接写 `--enable-dynamic-pf=True|False`
 
@@ -75,6 +75,45 @@
 
 如果 `extra_args` 没有显式传 `--enable-dynamic-pf`，`idealkmhv3.py` 会默认保持关闭。SMT 配置保持现有默认行为不变。
 
+### LLDP 与 kmhv3 预取器组合
+
+`manual-perf.yml` 的 `configuration` 选择 `kmhv3.py` 后，将下面整行分别填入
+`Extra gem5 args appended to config runs`。`-P` 参数不包含空格，因此可直接被
+workflow 的并行 runner 传递。
+
+1. 仅打开 L1 stream/stride，关闭其他 L1/L2/L3 预取器：
+
+```text
+--l1d-hwp-type=XSCompositePrefetcher --l2-hwp-type=PrefetcherForwarder --l2-wrapper-hwp-type=PrefetcherForwarder --l3-hwp-type=PrefetcherForwarder -P system.cpu.dcache.prefetcher.enable_activepage=False -P system.cpu.dcache.prefetcher.enable_pht=False -P system.cpu.dcache.prefetcher.enable_berti=False -P system.cpu.dcache.prefetcher.enable_bop=False -P system.cpu.dcache.prefetcher.enable_temporal=False -P system.cpu.dcache.prefetcher.enable_sstride=True -P system.cpu.dcache.prefetcher.enable_xsstream=True -P system.cpu.dcache.prefetcher.enable_spp=False -P system.cpu.dcache.prefetcher.enable_cplx=False -P system.cpu.dcache.prefetcher.enable_opt=False
+```
+
+2. 仅打开 L1 stream/stride + LLDP，关闭其他 L2 预取器：
+
+```text
+--l1d-hwp-type=XSCompositePrefetcher --l1d-enable-lldp --l2-hwp-type=PrefetcherForwarder --l2-wrapper-hwp-type=LLDPrefetcher --l3-hwp-type=PrefetcherForwarder -P system.cpu.dcache.prefetcher.enable_activepage=False -P system.cpu.dcache.prefetcher.enable_pht=False -P system.cpu.dcache.prefetcher.enable_berti=False -P system.cpu.dcache.prefetcher.enable_bop=False -P system.cpu.dcache.prefetcher.enable_temporal=False -P system.cpu.dcache.prefetcher.enable_sstride=True -P system.cpu.dcache.prefetcher.enable_xsstream=True -P system.cpu.dcache.prefetcher.enable_spp=False -P system.cpu.dcache.prefetcher.enable_cplx=False -P system.cpu.dcache.prefetcher.enable_opt=False
+```
+
+需要单独 L2 LLDP 时保留这组 L1 参数，把 `--l2-wrapper-hwp-type=LLDPrefetcher`
+作为独立 L2 LLDP；需要保留 kmhv3 L2 composite 并叠加 LLDP 时改回
+`--l2-wrapper-hwp-type=L2CompositeWithWorkerPrefetcher --l2-enable-lldp`。
+
+3. 保留 kmhv3 的 L1/L2 预取配置，额外打开 L1 LLDP：
+
+```text
+--l1d-enable-lldp
+```
+
+如果同时要在 kmhv3 的 L2 composite 中打开 LLDP，使用：
+
+```text
+--l1d-enable-lldp --l2-enable-lldp
+```
+
+如果需要保留 L2 composite 并同时打开 L2 LLDP，将 `--l2-wrapper-hwp-type=LLDPrefetcher`
+换成 `--l2-enable-lldp`；这会启用 L2 composite 内嵌的 LLDP 子组件。使用
+`--l1d-hwp-type=MultiPrefetcher --l1d-enable-lldp` 可启用 Multi 中的 LLDP 与其他
+子预取器，Multi 会把 CPU 的 `dependenceTrain`、TLB 和 PFQ ready 回调传给 LLDP 子组件。
+
 ### 性能结果
 
 由现有的性能评论机器人 (`actions_gem5.py`) 自动处理；label workflow 本身不再发送触发提示评论：
@@ -86,7 +125,7 @@
 
 - 只在需要时运行，节省资源
 - 支持多种 benchmark 类型
-- 添加新 benchmark 类型只需修改 template
+- 切片路径只在 `util/xs_scripts/perf_benchmarks.py` 维护，性能模板和 solver 共用
 
 ---
 
@@ -229,7 +268,8 @@ A: 在目标分支为 `xs-dev` 的同仓库 PR 上添加 `regression` 标签。w
 A: 性能测试会 checkout 并执行 PR 代码。为了避免 `pull_request_target` 执行外部 fork 代码，label 触发仅允许同仓库 PR。
 
 **Q: 新增 benchmark 类型需要修改哪些文件？**
-A: 只需修改 `gem5-perf-template.yml`
+A: 在 `util/xs_scripts/perf_benchmarks.py` 增加配置，并在需要暴露它的手动 workflow
+静态 `choice` 中增加类型名。只修改已有切片路径时只需改共享配置文件。
 
 **Q: 如何跑动态预取性能测试？**
 A: 使用 `manual-perf.yml`，在 `extra_args` 里直接传 `--enable-dynamic-pf=True`。base 对比请显式传 `--enable-dynamic-pf=False`。`idealkmhv3.py` 默认关闭动态预取，SMT 配置保持当前默认行为不变。
