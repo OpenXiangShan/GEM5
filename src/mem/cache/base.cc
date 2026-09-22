@@ -191,6 +191,8 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       doFastWriteline(p.do_fast_writeline),
       Prefetch_CanOffload(p.prefetch_can_offload)
 {
+    hitUnderBlock = p.hit_under_block;
+
     // the MSHR queue has no reserve entries as we check the MSHR
     // queue on every single allocation, whereas the write queue has
     // as many reserve entries as we have MSHRs, since every MSHR may
@@ -647,6 +649,29 @@ BaseCache::tryAccessTag(PacketPtr pkt)
         }
     }
     return true;
+}
+
+bool
+BaseCache::probeHit(const PacketPtr pkt) const
+{
+    // Read-only hit probe with no side effects (no LRU update, no
+    // writeback/victim selection). Used by tryTiming when the cache is
+    // blocked to decide whether a clean read hit can be served without
+    // an MSHR, rather than NAK-ing it.
+    if (!pkt->isRead() || pkt->needsWritable())
+        return false;
+    // Must agree with Cache::access(): requests that access() treats as
+    // miss despite a tag match must be rejected here, otherwise HUB admits
+    // them through the blocked gate and access() later needs an MSHR that
+    // is unavailable (assert failure).
+    if (pkt->req->isUncacheable())
+        return false;          // access() evicts resident block, treats as miss
+    if (pkt->req->isCacheMaintenance())
+        return false;          // always forwarded, not a hit
+    if (pkt->isEviction())
+        return false;          // writeback/clean-evict path, not a read hit
+    CacheBlk *blk = tags->findBlock(pkt->getAddr(), pkt->isSecure());
+    return blk && blk->isSet(CacheBlk::ReadableBit);
 }
 
 void
@@ -3119,6 +3144,8 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "average allocated MSHR entry ratio"),
     ADD_STAT(noMshrBlockedCycles, statistics::units::Cycle::get(),
              "number of cycles blocked by no MSHR entries"),
+    ADD_STAT(hitUnderBlockServed, statistics::units::Count::get(),
+             "clean read hits served while cache blocked (hit-under-blocked)"),
     ADD_STAT(bytesRecvPerCycle, statistics::units::Ratio::get(),
              "average bandwidth receiving data from lower cache."),
     ADD_STAT(replacements, statistics::units::Count::get(),
@@ -3475,7 +3502,18 @@ BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
         // always let express snoop packets through even if blocked
         return true;
     } else if (blocked || mustSendRetry) {
-        // either already committed to send a retry, or blocked
+        // either already committed to send a retry, or blocked. A clean
+        // read hit needs neither an MSHR nor downstream access, so when
+        // hitUnderBlock is enabled, probe for a hit and let it through to
+        // be served by handleTimingReqHit (no MSHR allocation, blocked
+        // state not worsened). Misses still NAK+retry. mustSendRetry is
+        // left untouched so the retry owed to NAK'd misses still fires
+        // when the cache unblocks.
+        if (cache.hitUnderBlock && cache.probeHit(pkt) &&
+            cache.tryAccessTag(pkt)) {
+            cache.incHitUnderBlockServed();
+            return true;
+        }
         mustSendRetry = true;
         return false;
     }

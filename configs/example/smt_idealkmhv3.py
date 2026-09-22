@@ -48,6 +48,14 @@ def setDualFrontendProbeParams(system):
         cpu.decodeWidth = 5
         cpu.renameWidth = 5
         cpu.icache.tag_load_read_ports = 4
+        # Serve clean read hits while icache is blocked (MSHR-exhausted /
+        # downstream backpressure); misses still NAK+retry. Lets B-thread
+        # fetch hits proceed during A's MSHR exhaustion (hit-under-blocked).
+        cpu.icache.hit_under_block = True
+        # Also serve clean read hits on dcache while blocked (MSHR-exhausted /
+        # downstream backpressure); misses still NAK+retry. Same probeHit gate
+        # (clean read, valid+readable) -> safe for dcache reads.
+        cpu.dcache.hit_under_block = True
 
         # Keep early-predictor training on the existing resolve/commit path.
         # Their per-thread ahead state is preserved while the shared tables
