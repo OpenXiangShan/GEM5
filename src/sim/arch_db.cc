@@ -138,6 +138,26 @@ ArchDBer::l1PFTraceWrite(Tick tick, Addr trigger_pc, Addr trigger_vaddr, Addr pf
 }
 
 void
+ArchDBer::lldpTrainTraceWrite(Tick tick, Addr addr_p, Addr addr_c,
+                              Addr producer_pc, Addr consumer_pc,
+                              ContextID context)
+{
+  if (!dumpGlobal || !dumpMemTrace)
+    return;
+
+  sprintf(memTraceSQLBuf,
+          "INSERT INTO LLDPTrainTrace(Tick,AddrP,AddrC,ProducerPC,ConsumerPC,Context,SITE) "
+          "VALUES(%lld,%lld,%lld,%lld,%lld,%d,'%s');",
+          sqliteSignedInt(tick), sqliteSignedInt(addr_p),
+          sqliteSignedInt(addr_c), sqliteSignedInt(producer_pc),
+          sqliteSignedInt(consumer_pc), int(context), "LLDPTrain");
+  rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  };
+}
+
+void
 ArchDBer::bopTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr offset, int score, bool miss)
 {
   bool dump_me = dumpGlobal && dumpBopTrainTrace;

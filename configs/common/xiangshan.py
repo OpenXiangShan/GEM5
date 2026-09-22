@@ -775,6 +775,16 @@ CREATE TABLE LoadLifeTimeCommitTrace(
             "PFSrc INT NOT NULL," \
             "SITE TEXT);"
             ,
+            "CREATE TABLE LLDPTrainTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
+            "AddrP INT NOT NULL," \
+            "AddrC INT NOT NULL," \
+            "ProducerPC INT NOT NULL," \
+            "ConsumerPC INT NOT NULL," \
+            "Context INT NOT NULL," \
+            "SITE TEXT);"
+            ,
             "CREATE TABLE L1PFTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
             "Tick INT NOT NULL," \

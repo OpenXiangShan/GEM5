@@ -99,6 +99,13 @@ class LLDPrefetcher : public Queued
         SamplerEntries / AddressTableWays;
     static constexpr unsigned MetaEntries = 1024;
     static constexpr unsigned MetaSets = MetaEntries / AddressTableWays;
+    // A 32-entry PC-pair trust table plus a 16-bit rank in each existing
+    // Sampler entry uses about 672 bytes of new predictor state.  It protects
+    // representative exact pairs across long scans without adding a request
+    // path or widening dynamic-instruction metadata.
+    static constexpr unsigned PairHintEntries = 32;
+    static constexpr unsigned PairHintSets =
+        PairHintEntries / AddressTableWays;
     static constexpr uint8_t SamplerThreshold = 3;
     struct SamplerEntry
     {
@@ -111,6 +118,7 @@ class LLDPrefetcher : public Queued
         uint8_t stableCount{0};
         uint8_t mismatchCount{0};
         uint8_t rrpv{3};
+        uint16_t reservoirRank{UINT16_MAX};
         uint8_t matchesSincePromotion{0};
         uint32_t lastSeenEpoch{0};
         uint32_t promotionVersion{0};
@@ -129,9 +137,17 @@ class LLDPrefetcher : public Queued
         uint8_t timelyConf{0};
         uint8_t tokens{0};
         uint8_t outstanding{0};
+        bool probation{false};
         uint8_t rrpv{3};
         uint32_t lastTrainEpoch{0};
         uint32_t lastUsefulEpoch{0};
+    };
+    struct PairHintEntry
+    {
+        bool valid{false};
+        uint32_t keyHash{0};
+        uint8_t temporalConf{0};
+        uint8_t rrpv{3};
     };
     std::array<std::array<SamplerEntry, AddressTableWays>, SamplerSets>
         samplerTable{};
@@ -140,6 +156,8 @@ class LLDPrefetcher : public Queued
     std::array<std::array<MetaEntry, AddressTableWays>, MetaSets>
         metaTable{};
     std::array<lldp::PLRU<AddressTableWays>, MetaSets> metaReplacement{};
+    std::array<std::array<PairHintEntry, AddressTableWays>, PairHintSets>
+        pairHintTable{};
     uint64_t generation{0};
     uint64_t candidateId{0};
     uint64_t version{0};
@@ -206,7 +224,9 @@ class LLDPrefetcher : public Queued
             metaTablePrefetches, samplerValidEntries, metaValidEntries;
         statistics::Scalar samplerTargetMismatch, samplerRepromotions,
             metaInvalidations, metaTargetSwitches, metaTokenStalls,
-            metaFallbacks;
+            metaFallbacks, samplerReservoirAdmissions,
+            samplerReservoirBypasses, pairTrustPromotions,
+            pairTrustReplacements, pairTrustProbes;
         statistics::Vector samplerReplacementCnt;
         statistics::Scalar candidateGenerated, candidateQueued, candidateIssued,
             candidateDropped, candidateMerged, candidateUseful, candidateUnused,
@@ -242,9 +262,21 @@ class LLDPrefetcher : public Queued
     unsigned metaSet(Addr addr_p) const;
     unsigned samplerVictim(unsigned set);
     unsigned metaVictim(unsigned set);
+    unsigned pairHintSet(uint32_t key_hash) const;
+    unsigned pairHintVictim(unsigned set);
+    static uint32_t pairHintHash(Addr producer_pc, Addr consumer_pc,
+                                 ContextID context);
+    static uint16_t samplerRank(Addr addr_p, Addr producer_pc,
+                                Addr consumer_pc, ContextID context);
+    bool pairTrusted(Addr producer_pc, Addr consumer_pc,
+                     ContextID context) const;
+    void recordPairEvidence(Addr producer_pc, Addr consumer_pc,
+                            ContextID context);
     void trainAddressPair(Addr addr_p, Addr addr_c, Addr producer_pc,
                           Addr consumer_pc, ContextID context);
     void updateMetaTable(const SamplerEntry &sample);
+    void installTrustedMeta(Addr addr_p, Addr addr_c, Addr producer_pc,
+                            Addr consumer_pc, ContextID context);
     struct MetaHit
     {
         Addr addrC{0};

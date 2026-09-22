@@ -70,6 +70,16 @@ LLDPrefetcher::LLDPStats::LLDPStats(statistics::Group *parent)
                "MetaTable lookups blocked by token or outstanding limits"),
       ADD_STAT(metaFallbacks, statistics::units::Count::get(),
                "LLDP hints retained for consumers not covered by MetaTable"),
+      ADD_STAT(samplerReservoirAdmissions, statistics::units::Count::get(),
+               "New exact keys admitted into the deterministic Sampler reservoir"),
+      ADD_STAT(samplerReservoirBypasses, statistics::units::Count::get(),
+               "New exact keys rejected by the deterministic Sampler reservoir"),
+      ADD_STAT(pairTrustPromotions, statistics::units::Count::get(),
+               "Promotions accelerated by stable PC-pair evidence"),
+      ADD_STAT(pairTrustReplacements, statistics::units::Count::get(),
+               "Compact PC-pair trust-table replacements"),
+      ADD_STAT(pairTrustProbes, statistics::units::Count::get(),
+               "Trusted PC pairs installing a one-token exact Meta probe"),
       ADD_STAT(samplerReplacementCnt, statistics::units::Count::get(),
                "SamplerTable victim count distribution"),
       ADD_STAT(candidateGenerated, statistics::units::Count::get(), "Candidate lifecycles generated"),
@@ -253,6 +263,109 @@ LLDPrefetcher::metaSet(Addr addr_p) const
 }
 
 unsigned
+LLDPrefetcher::pairHintSet(uint32_t key_hash) const
+{
+    return (key_hash ^ (key_hash >> 16)) & (PairHintSets - 1);
+}
+
+uint32_t
+LLDPrefetcher::pairHintHash(Addr producer_pc, Addr consumer_pc,
+                            ContextID context)
+{
+    uint64_t value = uint64_t(producer_pc) ^
+        (uint64_t(consumer_pc) * UINT64_C(0x9e3779b97f4a7c15)) ^
+        (uint64_t(context) * UINT64_C(0xbf58476d1ce4e5b9));
+    value ^= value >> 30;
+    value *= UINT64_C(0xbf58476d1ce4e5b9);
+    value ^= value >> 27;
+    value *= UINT64_C(0x94d049bb133111eb);
+    value ^= value >> 31;
+    return uint32_t(value) ^ uint32_t(value >> 32);
+}
+
+unsigned
+LLDPrefetcher::pairHintVictim(unsigned set)
+{
+    auto &ways = pairHintTable[set];
+    for (;;) {
+        unsigned victim = 0;
+        uint8_t best = 0;
+        for (unsigned way = 0; way < AddressTableWays; ++way) {
+            if (!ways[way].valid)
+                return way;
+            if (ways[way].rrpv > best) {
+                best = ways[way].rrpv;
+                victim = way;
+            }
+        }
+        if (best >= 3)
+            return victim;
+        for (auto &entry : ways)
+            entry.rrpv = std::min<uint8_t>(3, entry.rrpv + 1);
+    }
+}
+
+void
+LLDPrefetcher::recordPairEvidence(Addr producer_pc, Addr consumer_pc,
+                                  ContextID context)
+{
+    const uint32_t key_hash = pairHintHash(producer_pc, consumer_pc, context);
+    const unsigned set = pairHintSet(key_hash);
+    auto &ways = pairHintTable[set];
+    PairHintEntry *entry = nullptr;
+    for (auto &candidate : ways) {
+        if (candidate.valid && candidate.keyHash == key_hash) {
+            entry = &candidate;
+            break;
+        }
+    }
+    if (!entry) {
+        const unsigned victim = pairHintVictim(set);
+        entry = &ways[victim];
+        if (entry->valid)
+            stats.pairTrustReplacements++;
+        *entry = {};
+        entry->valid = true;
+        entry->keyHash = key_hash;
+        entry->rrpv = 0;
+        return;
+    }
+    entry->temporalConf = std::min<uint8_t>(7, entry->temporalConf + 1);
+    entry->rrpv = 0;
+}
+
+bool
+LLDPrefetcher::pairTrusted(Addr producer_pc, Addr consumer_pc,
+                           ContextID context) const
+{
+    const uint32_t key_hash = pairHintHash(producer_pc, consumer_pc, context);
+    const unsigned set = pairHintSet(key_hash);
+    const auto &ways = pairHintTable[set];
+    for (const auto &candidate : ways) {
+        if (candidate.valid && candidate.keyHash == key_hash) {
+            return candidate.temporalConf >= 4;
+        }
+    }
+    return false;
+}
+
+uint16_t
+LLDPrefetcher::samplerRank(Addr addr_p, Addr producer_pc,
+                           Addr consumer_pc, ContextID context)
+{
+    uint64_t value = uint64_t(addr_p) ^
+        (uint64_t(producer_pc) * UINT64_C(0x9e3779b97f4a7c15)) ^
+        (uint64_t(consumer_pc) * UINT64_C(0xbf58476d1ce4e5b9)) ^
+        uint64_t(context);
+    value ^= value >> 30;
+    value *= UINT64_C(0xbf58476d1ce4e5b9);
+    value ^= value >> 27;
+    value *= UINT64_C(0x94d049bb133111eb);
+    value ^= value >> 31;
+    return uint16_t(value) ^ uint16_t(value >> 16) ^ uint16_t(value >> 32);
+}
+
+unsigned
 LLDPrefetcher::samplerVictim(unsigned set)
 {
     auto &ways = samplerTable[set];
@@ -323,6 +436,7 @@ LLDPrefetcher::updateMetaTable(const SamplerEntry &sample)
             entry.producerPC == sample.producerPC &&
             entry.consumerPC == sample.consumerPC &&
             entry.context == sample.context) {
+            entry.probation = false;
             if (entry.addrC != sample.addrC) {
                 entry.trainConf = entry.trainConf > 1 ? entry.trainConf - 2 : 0;
                 entry.tokens = 0;
@@ -369,9 +483,48 @@ LLDPrefetcher::updateMetaTable(const SamplerEntry &sample)
 }
 
 void
+LLDPrefetcher::installTrustedMeta(Addr addr_p, Addr addr_c,
+                                  Addr producer_pc, Addr consumer_pc,
+                                  ContextID context)
+{
+    const unsigned set = metaSet(addr_p ^ producer_pc ^ consumer_pc ^
+                                 Addr(context));
+    auto &ways = metaTable[set];
+    for (auto &entry : ways) {
+        if (entry.valid && entry.addrP == addr_p &&
+            entry.producerPC == producer_pc &&
+            entry.consumerPC == consumer_pc && entry.context == context)
+            return;
+    }
+    const unsigned victim = metaVictim(set);
+    auto &entry = ways[victim];
+    const uint32_t next_generation = entry.generation + 1;
+    entry = {};
+    entry.valid = true;
+    entry.addrP = addr_p;
+    entry.addrC = addr_c;
+    entry.producerPC = producer_pc;
+    entry.consumerPC = consumer_pc;
+    entry.context = context;
+    entry.generation = next_generation;
+    entry.trainConf = SamplerThreshold - 1;
+    entry.qualityConf = 3;
+    entry.timelyConf = 4;
+    entry.tokens = 1;
+    entry.probation = true;
+    entry.lastTrainEpoch = tableEpoch;
+    entry.rrpv = 0;
+    stats.pairTrustProbes++;
+}
+
+void
 LLDPrefetcher::trainAddressPair(Addr addr_p, Addr addr_c, Addr producer_pc,
                                 Addr consumer_pc, ContextID context)
 {
+    if (archDBer) {
+        archDBer->lldpTrainTraceWrite(
+            curTick(), addr_p, addr_c, producer_pc, consumer_pc, context);
+    }
     const unsigned set = samplerSet(
         addr_p ^ producer_pc ^ consumer_pc ^ Addr(context));
     auto &ways = samplerTable[set];
@@ -397,9 +550,17 @@ LLDPrefetcher::trainAddressPair(Addr addr_p, Addr addr_c, Addr producer_pc,
             return;
         }
         entry.stableCount = std::min<uint8_t>(7, entry.stableCount + 1);
+        recordPairEvidence(producer_pc, consumer_pc, context);
+        if (entry.stableCount == 2 &&
+            pairTrusted(producer_pc, consumer_pc, context)) {
+            installTrustedMeta(addr_p, addr_c, producer_pc, consumer_pc,
+                               context);
+        }
         entry.mismatchCount = 0;
         entry.rrpv = 0;
         if (entry.stableCount == SamplerThreshold) {
+            if (pairTrusted(producer_pc, consumer_pc, context))
+                stats.pairTrustPromotions++;
             updateMetaTable(entry);
             stats.samplerOutputsToMeta++;
             entry.matchesSincePromotion = 0;
@@ -412,7 +573,23 @@ LLDPrefetcher::trainAddressPair(Addr addr_p, Addr addr_c, Addr producer_pc,
         return;
     }
 
-    const unsigned victim = samplerVictim(set);
+    const uint16_t rank = samplerRank(
+        addr_p, producer_pc, consumer_pc, context);
+    unsigned victim = 0;
+    bool found_invalid = false;
+    for (unsigned way = 0; way < AddressTableWays; ++way) {
+        if (!ways[way].valid) {
+            victim = way;
+            found_invalid = true;
+            break;
+        }
+        if (ways[way].reservoirRank > ways[victim].reservoirRank)
+            victim = way;
+    }
+    if (!found_invalid && rank >= ways[victim].reservoirRank) {
+        stats.samplerReservoirBypasses++;
+        return;
+    }
     if (ways[victim].valid)
         stats.samplerReplacementCnt[ways[victim].stableCount]++;
     ways[victim] = {};
@@ -422,9 +599,14 @@ LLDPrefetcher::trainAddressPair(Addr addr_p, Addr addr_c, Addr producer_pc,
     ways[victim].consumerPC = consumer_pc;
     ways[victim].context = context;
     ways[victim].addrC = addr_c;
-    ways[victim].stableCount = 1;
+    const bool trusted = pairTrusted(producer_pc, consumer_pc, context);
+    ways[victim].stableCount = trusted ? SamplerThreshold - 1 : 1;
     ways[victim].rrpv = 3;
+    ways[victim].reservoirRank = rank;
     ways[victim].lastSeenEpoch = tableEpoch;
+    stats.samplerReservoirAdmissions++;
+    if (trusted)
+        installTrustedMeta(addr_p, addr_c, producer_pc, consumer_pc, context);
 }
 
 std::optional<LLDPrefetcher::MetaHit>
@@ -440,8 +622,8 @@ LLDPrefetcher::lookupMetaTable(Addr addr_p, Addr producer_pc,
             entry.producerPC == producer_pc &&
             entry.consumerPC == consumer_pc && entry.context == context) {
             stats.metaTableHits++;
-            if (entry.trainConf < 3 || entry.qualityConf < 2 ||
-                !entry.tokens || entry.outstanding) {
+            if ((entry.trainConf < 3 && !entry.probation) ||
+                entry.qualityConf < 2 || !entry.tokens || entry.outstanding) {
                 stats.metaTokenStalls++;
                 return std::nullopt;
             }
@@ -483,6 +665,7 @@ LLDPrefetcher::updateMetaOwner(uint64_t candidate_id, int result)
     entry.outstanding = entry.outstanding ? entry.outstanding - 1 : 0;
     switch (result) {
       case 0: // useful
+        entry.probation = false;
         entry.qualityConf = std::min<uint8_t>(7, entry.qualityConf + 2);
         entry.timelyConf = std::min<uint8_t>(7, entry.timelyConf + 1);
         entry.tokens = std::min<uint8_t>(15, entry.tokens + 4);
@@ -490,6 +673,7 @@ LLDPrefetcher::updateMetaOwner(uint64_t candidate_id, int result)
         entry.rrpv = 0;
         break;
       case 1: // merged
+        entry.probation = false;
         entry.qualityConf = std::min<uint8_t>(7, entry.qualityConf + 1);
         entry.timelyConf = entry.timelyConf ? entry.timelyConf - 1 : 0;
         entry.tokens = std::min<uint8_t>(15, entry.tokens + 1);
@@ -923,11 +1107,12 @@ LLDPrefetcher::loadTrain(const PacketPtr &pkt, bool miss)
             const auto meta_hit = lookupMetaTable(
                 addr_p, hint.producerPC, sub.consumerPC,
                 pkt->req->contextId());
-            if (!meta_hit)
-                continue;
-            if (queueCandidate(pkt, hint, addr_p, meta_hit->addrC,
-                               PrefetchSourceType::LLDPT, col, meta_hit))
+            if (meta_hit && queueCandidate(pkt, hint, addr_p, meta_hit->addrC,
+                                           PrefetchSourceType::LLDPT, col,
+                                           meta_hit)) {
                 covered |= uint8_t(1U << col);
+                continue;
+            }
         }
         hint.metaCoveredMask = covered;
         if (eligible > unsigned(__builtin_popcount(covered)))
@@ -1014,14 +1199,24 @@ LLDPrefetcher::queueCandidate(const PacketPtr &demand,
         }
     }
     if (source == PrefetchSourceType::LLDPT && meta_hit) {
-        candidateOwners[id] = {
-            0, 0, hint.generation, metadata.prefetchConsumerPC, source,
-            true, meta_hit->set, meta_hit->way, meta_hit->generation};
+        CandidateOwner owner{};
+        owner.generation = hint.generation;
+        owner.consumerPC = metadata.prefetchConsumerPC;
+        owner.source = source;
+        owner.meta = true;
+        owner.metaSet = meta_hit->set;
+        owner.metaWay = meta_hit->way;
+        owner.metaGeneration = meta_hit->generation;
+        candidateOwners[id] = owner;
     } else if (row >= 0 && consumer && *consumer < SubEntries) {
         const auto &sub = table[row].consumers[*consumer];
-        candidateOwners[id] = {
-            unsigned(row), *consumer, hint.generation, sub.consumerPC,
-            source, false, 0, 0, 0};
+        CandidateOwner owner{};
+        owner.row = unsigned(row);
+        owner.col = *consumer;
+        owner.generation = hint.generation;
+        owner.consumerPC = sub.consumerPC;
+        owner.source = source;
+        candidateOwners[id] = owner;
     }
     return true;
 }

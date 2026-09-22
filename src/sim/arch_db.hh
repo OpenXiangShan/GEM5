@@ -101,6 +101,12 @@ class ArchDBer : public SimObject
 
     void l1PFTraceWrite(Tick tick, Addr trigger_pc, Addr trigger_vaddr, Addr pf_vaddr, int pf_src);
 
+    // LLDP-only offline analysis trace.  It is gated by dumpMemTrace and
+    // records the exact translated address-pair training observation.
+    void lldpTrainTraceWrite(Tick tick, Addr addr_p, Addr addr_c,
+                             Addr producer_pc, Addr consumer_pc,
+                             ContextID context);
+
     void bopTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr offset, int score, bool miss);
     void smsTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr trigger_offset, int conf, bool miss);
     void strideTraceWrite(Tick tick, Addr addr, Addr PC, Addr hashPC, bool hit, bool isFirstShot, bool miss, bool is_train);
