@@ -458,17 +458,17 @@ def _configure_xs_composite_default(prefetcher, options):
     prefetcher.pht_pf_level = options.pht_pf_level
 
 def _configure_xs_composite_kmh_align(prefetcher):
-    # Keep the L1 profile limited to the stream prefetcher.  The BOP
-    # instances are owned by the L2 profile below; disabling the other
-    # components here keeps their training and request generation out of
-    # controlled PDB experiments.
+    # Keep the L1 profile free of stream prefetching.  The BOP instances are
+    # owned by the L2 profile below; disabling the other components here
+    # keeps their training and request generation out of controlled PDB
+    # experiments.
     prefetcher.enable_activepage = False
     prefetcher.enable_pht = False
     prefetcher.enable_berti = False
     prefetcher.enable_bop = False
     prefetcher.enable_temporal = False
     prefetcher.enable_sstride = False
-    prefetcher.enable_xsstream = True
+    prefetcher.enable_xsstream = False
     prefetcher.enable_opt = False
     prefetcher.enable_spp = False
     prefetcher.enable_cplx = False
