@@ -203,7 +203,14 @@ class LSQ
         // must go to a vice entry instead of mutating this entry's payload.
         bool evictionInProgress() const
         {
-            return sending || inDcacheMainPipe || replayQueued;
+            // Once the Sbuffer request has been built, its packet byte-enable
+            // mask is a snapshot of validMask.  Even if admission to the
+            // fake DCache pipe is blocked at S0, later same-line stores must
+            // not merge into this entry or mutate data without updating that
+            // already-built request.  Treat request ownership as eviction
+            // progress and route such stores through a vice entry.
+            return request != nullptr || sending || inDcacheMainPipe ||
+                replayQueued;
         }
     };
 
