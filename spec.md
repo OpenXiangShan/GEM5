@@ -14,7 +14,7 @@
 
 ## 实现细节
 
-- `Cache` 增加 `pdb_entries` 参数。只在可写的 L1 Cache 中启用；`kmhv3.py` 的 DCache 设为 128，其他配置默认 0。PDB 以物理 cacheline 地址及 secure 位索引，保存完整数据和只读状态，按 LRU 逐出；不另设 MSHR 或下行端口。
+- `Cache` 增加 `pdb_entries` 参数。只在可写的 L1 Cache 中启用；`kmhv3.py` 的 DCache 设为 512，其他配置默认 0。PDB 以物理 cacheline 地址及 secure 位索引，保存完整数据和只读状态，按 LRU 逐出；不另设 MSHR 或下行端口。
 - 原有硬件预取仍通过 DCache MSHR 发出。仅当返回是干净、完整、只有预取目标且没有待处理失效的读响应时，将数据写入 PDB 并跳过 L1 tag 分配，同时保留预取来源元数据、按 L1 fill 的口径计算数据就绪时间并通知原有 Fill/refill 监听器。混合 demand/预取目标、失效中或来自其他 cache 的响应暂走原有 L1 fill 路径。预取入队和出队时同时查询 L1 和 PDB，命中则丢弃新预取，不更新 PDB 的替换位置。
 - Demand ReadReq 先按原路径查询 L1；L1 未命中、PDB 命中且没有同地址 MSHR/write buffer 冲突时，直接用 PDB 的数据响应，并更新 PDB LRU。命中通过现有 Hit probe 按 cacheline 地址向预取器提供来源等元数据用于训练；首次命中报告有用预取，之后清除未使用标记。延迟响应在 LSQ replay bus 中保留到 Load 提交或被 squash，供重放使用；普通 L1 回填仍按原路径清理对应 bus 记录。数据继续留在 PDB，不安排移入 L1。
 - 普通 WriteReq 命中 PDB 时，当前实现先在 L1 分配一条只读行并复制 PDB 数据，随即使 PDB entry 无效，不发送 CleanEvict；新 L1 行的就绪时间取当前 tick 与 PDB 数据就绪时间的较大值。成功移交计为一次有用预取，移交失败按未使用处理。原有 MSHR 随后发送 UpgradeReq 取得写权限；在途 snoop 若使 L1 行失效，原有 MSHR 逻辑将请求改为重新取数的 ReadExReq，不能使用旧数据完成 Store。这条只读 L1 行仅用于移交期间复用现有的权限和失效处理，并非 Load 命中后的异步迁移。
