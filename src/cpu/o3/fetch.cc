@@ -1998,7 +1998,7 @@ Fetch::sendInstructionsToDecode()
     for (ThreadID tid = 0;
          tid < numThreads && selected_tids.size() < numPreDispatchThreads;
          ++tid) {
-        bool block_policy_active = isThrottlePolicyActive(mlpAwareMode[i]);
+        bool block_policy_active = isThrottlePolicyActive(mlpAwareMode[tid]);
         if (tid != primary_tid && !stallSig->blockFetch[tid] &&
             !fetchQueue[tid].empty() &&
             !(block_policy_active && (mlpAwareMode[tid] ? 
@@ -2396,7 +2396,7 @@ Fetch::checkLongLatencyLoads()
             : iewStage->checkLsqStall(tid, true);
         InstSeqNum newLoadHead = iewStage->ldstQueue.getLoadHeadSeqNum(tid);
 
-        if (newLoadHead == lastLoadHeadSeqNum[tid]) {
+        if (newLoadHead == lastLoadHeadSeqNumForStats[tid]) {
             if (lqReason == lqReasonForStats[tid]) {
                 ;
             } else {
@@ -2623,7 +2623,7 @@ Fetch::checkLongLatencyLoads()
         }
     }
 
-    // blockState 统计
+    // blockState stats
     int blockState = 0;
     int mlpBlockState = 0;
     int mlpActiveState = 0;
