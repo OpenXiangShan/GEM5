@@ -133,7 +133,7 @@ LSQ::StoreBufferEntry::merge(uint64_t offset, uint8_t *datas, uint64_t size,
 
 bool
 LSQ::StoreBufferEntry::recordForward(RequestPtr req, LSQRequest *lsqreq,
-                                     ThreadID load_tid, InstSeqNum load_seq)
+                                     ThreadID load_tid)
 {
     int offset = req->getPaddr() & (validMask.size() - 1);
     // the offset in the split request
@@ -144,16 +144,16 @@ LSQ::StoreBufferEntry::recordForward(RequestPtr req, LSQRequest *lsqreq,
     bool full_forward = true;
     auto *lsq = lsqreq->_port.getLsq();
     auto *inflight_entry = lsq->find_inflight_store_buffer_entry(
-        blockPaddr, load_tid, load_seq);
+        blockPaddr, load_tid);
     bool miss_forward = false;
     auto byteEligible = [&](StoreBufferEntry *entry, int byte_idx) {
-        return entry && entry->tid == load_tid && entry->seqNum < load_seq &&
+        return entry && entry->tid == load_tid &&
                entry->validMask[byte_idx];
     };
     for (int i = 0; i < req->getSize(); i++) {
         assert(goffset + i < lsqreq->_size);
         auto *inflight_byte = lsq->find_inflight_store_buffer_entry(
-            blockPaddr, load_tid, load_seq, offset + i);
+            blockPaddr, load_tid, offset + i);
         const bool vice_eligible = byteEligible(vice, offset + i);
         const bool self_eligible = byteEligible(this, offset + i);
         if (vice_eligible) {
@@ -2871,31 +2871,18 @@ LSQ::flushStores(ThreadID tid, InstSeqNum seq_num)
 }
 
 LSQ::StoreBufferEntry *
-LSQ::findForwardingStoreBufferEntry(Addr block_paddr, ThreadID load_tid,
-                                    InstSeqNum load_seq) const
+LSQ::findForwardingStoreBufferEntry(Addr block_paddr, ThreadID load_tid) const
 {
     auto entry = storeBuffer.get(load_tid, block_paddr);
     if (!entry) {
-        entry = find_inflight_store_buffer_entry(block_paddr, load_tid, load_seq);
+        entry = find_inflight_store_buffer_entry(block_paddr, load_tid);
     }
-    if (!entry) {
-        return nullptr;
-    }
-
-    if (entry->seqNum < load_seq ||
-        (entry->vice && entry->vice->seqNum < load_seq)) {
-        return entry;
-    }
-
-    auto *inflight_entry = find_inflight_store_buffer_entry(
-        block_paddr, load_tid, load_seq);
-    return inflight_entry && inflight_entry->seqNum < load_seq ?
-        inflight_entry : nullptr;
+    return entry;
 }
 
 LSQ::StoreBufferEntry *
 LSQ::find_inflight_store_buffer_entry(Addr block_paddr, ThreadID load_tid,
-                                      InstSeqNum load_seq, int byte_idx) const
+                                      int byte_idx) const
 {
     auto pending = sbufferMissRequests.find(block_paddr);
     if (pending == sbufferMissRequests.end()) {
@@ -2905,7 +2892,7 @@ LSQ::find_inflight_store_buffer_entry(Addr block_paddr, ThreadID load_tid,
     for (auto it = pending->second.rbegin(); it != pending->second.rend();
          ++it) {
         auto *entry = (*it)->sbuffer_entry;
-        if (entry->tid == load_tid && entry->seqNum < load_seq &&
+        if (entry->tid == load_tid &&
             (byte_idx < 0 || entry->validMask[byte_idx])) {
             return entry;
         }

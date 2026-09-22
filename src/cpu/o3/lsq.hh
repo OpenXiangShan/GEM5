@@ -197,7 +197,7 @@ class LSQ
                    const std::vector<bool> &mask);
 
         bool recordForward(RequestPtr req, LSQRequest *lsqreq,
-                           ThreadID load_tid, InstSeqNum load_seq);
+                           ThreadID load_tid);
 
         // The eviction packet has been built or sent; younger same-line stores
         // must go to a vice entry instead of mutating this entry's payload.
@@ -1095,11 +1095,9 @@ class LSQ
     bool flushStores(ThreadID tid);
     bool flushStores(ThreadID tid, InstSeqNum seq_num);
     StoreBufferEntry *findForwardingStoreBufferEntry(Addr block_paddr,
-                                                     ThreadID load_tid,
-                                                     InstSeqNum load_seq) const;
+                                                     ThreadID load_tid) const;
     StoreBufferEntry *find_inflight_store_buffer_entry(
-        Addr block_paddr, ThreadID load_tid,
-        InstSeqNum load_seq, int byte_idx = -1) const;
+        Addr block_paddr, ThreadID load_tid, int byte_idx = -1) const;
     void notifyOtherThreadsStoreVisible(ThreadID tid, Addr store_paddr,
                                         const std::vector<bool> &byte_enable);
 
