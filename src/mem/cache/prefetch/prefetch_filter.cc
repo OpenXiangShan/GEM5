@@ -63,6 +63,68 @@ PrefetchFilter::PrefetchFilter(gem5::BaseIndexingPolicy *idx_policy,
 
 PrefetchFilter::~PrefetchFilter() = default;
 
+uint64_t
+PrefetchFilter::pendingForLevel(const Entry &e, int level) const
+{
+    uint64_t mask = (regionBlks >= 64) ? ~uint64_t(0) :
+        ((uint64_t(1) << regionBlks) - 1);
+    uint64_t bits = 0;
+    if (level == 1) {
+        bits = e.l1_bits;
+    } else if (level == 2) {
+        bits = e.l2_bits;
+    } else if (level == 3) {
+        bits = e.l3_bits;
+    }
+    return bits & (~e.filter_bits) & mask;
+}
+
+void
+PrefetchFilter::refreshDebugPFlevel(Entry &e)
+{
+    if (e.l1_bits) {
+        e.PFlevel = 1;
+    } else if (e.l2_bits) {
+        e.PFlevel = 2;
+    } else if (e.l3_bits) {
+        e.PFlevel = 3;
+    }
+}
+
+void
+PrefetchFilter::applyLevelBits(Entry &e, uint64_t incoming, int level)
+{
+    if (level < 1 || level > 3 || incoming == 0) {
+        return;
+    }
+    const unsigned limit = (regionBlks > 64) ? 64 : regionBlks;
+    for (unsigned idx = 0; idx < limit; ++idx) {
+        const uint64_t bit = uint64_t(1) << idx;
+        if (!(incoming & bit)) {
+            continue;
+        }
+        const int cur = (e.l1_bits & bit) ? 1 :
+                        (e.l2_bits & bit) ? 2 :
+                        (e.l3_bits & bit) ? 3 : 0;
+        if (cur != 0 && level >= cur) {
+            continue;
+        }
+        e.l1_bits &= ~bit;
+        e.l2_bits &= ~bit;
+        e.l3_bits &= ~bit;
+        if (level == 1) {
+            e.l1_bits |= bit;
+        } else if (level == 2) {
+            e.l2_bits |= bit;
+        } else {
+            e.l3_bits |= bit;
+        }
+        if (cur != 0 && (e.filter_bits & bit)) {
+            e.filter_bits &= ~bit;
+        }
+    }
+}
+
 // PrefetchFilter::Entry*
 // PrefetchFilter::findByVaddr(Addr vaddr, bool is_secure)
 // {
@@ -113,8 +175,6 @@ PrefetchFilter::GetPFAddrL1(std::vector<AddrPriority> &addresses)
     if (n == 0)
         return false;
 
-    uint64_t mask = (regionBlks >= 64) ? ~uint64_t(0) : ((uint64_t(1) << regionBlks) - 1);
-
     for (unsigned i = 0; i < static_cast<unsigned>(n); ++i) {
         unsigned idx = (rrIndex + i) % static_cast<unsigned>(n);
         auto it = it_begin;
@@ -125,9 +185,7 @@ PrefetchFilter::GetPFAddrL1(std::vector<AddrPriority> &addresses)
             continue;
         if (!e->paddr_valid)
             continue;
-        if (e->PFlevel != 1)
-            continue;
-        uint64_t pending = e->region_bits & (~e->filter_bits) & mask;
+        uint64_t pending = pendingForLevel(*e, 1);
         if (!pending)
             continue;
 
@@ -183,8 +241,6 @@ PrefetchFilter::GetPFAddrL2(std::vector<AddrPriority> &addresses)
     if (n == 0)
         return false;
 
-    uint64_t mask = (regionBlks >= 64) ? ~uint64_t(0) : ((uint64_t(1) << regionBlks) - 1);
-
     for (unsigned i = 0; i < static_cast<unsigned>(n); ++i) {
         unsigned idx = (rrIndex + i) % static_cast<unsigned>(n);
         auto it = it_begin;
@@ -195,9 +251,7 @@ PrefetchFilter::GetPFAddrL2(std::vector<AddrPriority> &addresses)
             continue;
         if (!e->paddr_valid)
             continue;
-        if (e->PFlevel != 2)
-            continue;
-        uint64_t pending = e->region_bits & (~e->filter_bits) & mask;
+        uint64_t pending = pendingForLevel(*e, 2);
         if (!pending)
             continue;
 
@@ -255,8 +309,6 @@ PrefetchFilter::GetPFAddrL3(std::vector<AddrPriority> &addresses)
     if (n == 0)
         return false;
 
-    uint64_t mask = (regionBlks >= 64) ? ~uint64_t(0) : ((uint64_t(1) << regionBlks) - 1);
-
     for (unsigned i = 0; i < static_cast<unsigned>(n); ++i) {
         unsigned idx = (rrIndex + i) % static_cast<unsigned>(n);
         auto it = it_begin;
@@ -267,9 +319,7 @@ PrefetchFilter::GetPFAddrL3(std::vector<AddrPriority> &addresses)
             continue;
         if (!e->paddr_valid)
             continue;
-        if (e->PFlevel != 3)
-            continue;
-        uint64_t pending = e->region_bits & (~e->filter_bits) & mask;
+        uint64_t pending = pendingForLevel(*e, 3);
         if (!pending)
             continue;
 
@@ -417,7 +467,8 @@ PrefetchFilter::Insert(Addr region_addr, uint64_t region_bits, uint8_t alias_bit
                        bool paddr_valid, bool decr_mode, 
                        bool is_secure, uint64_t PFlevel,
                        const TriggerInfo *trigger,
-                       const std::vector<sms::OrderScore> *order_scores)
+                       const std::vector<sms::OrderScore> *order_scores,
+                       uint64_t l1_bits, uint64_t l2_bits, uint64_t l3_bits)
 {
     stats.insertCount++;
     ContextID context_id = InvalidContextID;
@@ -425,6 +476,20 @@ PrefetchFilter::Insert(Addr region_addr, uint64_t region_bits, uint8_t alias_bit
         trigger->pfi_old->hasContextId()) {
         context_id = trigger->pfi_old->contextId();
     }
+
+    uint64_t in_l1 = l1_bits;
+    uint64_t in_l2 = l2_bits;
+    uint64_t in_l3 = l3_bits;
+    if ((in_l1 | in_l2 | in_l3) == 0) {
+        if (PFlevel == 1) {
+            in_l1 = region_bits;
+        } else if (PFlevel == 2) {
+            in_l2 = region_bits;
+        } else if (PFlevel == 3) {
+            in_l3 = region_bits;
+        }
+    }
+    const uint64_t incoming = in_l1 | in_l2 | in_l3 | region_bits;
 
     for (const auto &entry : table) {
         if (entry.isValid() && entry.region_addr == region_addr &&
@@ -439,7 +504,7 @@ PrefetchFilter::Insert(Addr region_addr, uint64_t region_bits, uint8_t alias_bit
     DPRINTF(HWPrefetch,
             "Insert called: region=%#lx tag=%#lx ctx=%d bits=%#lx "
             "level=%lu,name=%s\n",
-            region_addr, tag, context_id, region_bits, PFlevel,
+            region_addr, tag, context_id, incoming, PFlevel,
             table_name.c_str());
     if (e) {
         if (e->region_addr != region_addr ||
@@ -453,14 +518,17 @@ PrefetchFilter::Insert(Addr region_addr, uint64_t region_bits, uint8_t alias_bit
         }
     }
     if (e) {
-        storeTriggersForBits(*e, region_bits, trigger);
-        storeOrdersForBits(*e, e->region_bits, region_bits, order_scores);
-        e->region_bits |= region_bits;
+        storeTriggersForBits(*e, incoming, trigger);
+        storeOrdersForBits(*e, e->region_bits, incoming, order_scores);
+        applyLevelBits(*e, in_l3, 3);
+        applyLevelBits(*e, in_l2, 2);
+        applyLevelBits(*e, in_l1, 1);
+        e->region_bits |= incoming;
+        refreshDebugPFlevel(*e);
         table.accessEntry(e);
         stats.queryHitCount++;
         DPRINTF(HWPrefetch, "Insert hit: region=%#lx tag=%#lx bits=%#lx level=%lu\n",
-                region_addr, tag, region_bits, PFlevel);
-        //print all entry status
+                region_addr, tag, incoming, e->PFlevel);
         for (const auto &entry : table) {
             DPRINTF(HWPrefetch, "  Entry: region=%#lx tag=%#lx bits=%#lx filter=%#lx level=%lu valid=%d\n",
                     entry.region_addr, entry.getTag(), entry.region_bits,
@@ -471,8 +539,11 @@ PrefetchFilter::Insert(Addr region_addr, uint64_t region_bits, uint8_t alias_bit
     stats.replacementCount++;
     Entry *victim = table.findVictim(tag);
     victim->region_addr = region_addr;
-    victim->region_bits = region_bits;
+    victim->region_bits = 0;
     victim->filter_bits = 0;
+    victim->l1_bits = 0;
+    victim->l2_bits = 0;
+    victim->l3_bits = 0;
     victim->alias_bits = alias_bits;
     victim->paddr_valid = true;
     victim->decr_mode = decr_mode;
@@ -484,13 +555,17 @@ PrefetchFilter::Insert(Addr region_addr, uint64_t region_bits, uint8_t alias_bit
     for (auto &slot : victim->bitTriggers) {
         slot.reset();
     }
-    storeTriggersForBits(*victim, region_bits, trigger);
-    storeOrdersForBits(*victim, 0, region_bits, order_scores);
+    applyLevelBits(*victim, in_l3, 3);
+    applyLevelBits(*victim, in_l2, 2);
+    applyLevelBits(*victim, in_l1, 1);
+    victim->region_bits |= incoming;
+    refreshDebugPFlevel(*victim);
+    storeTriggersForBits(*victim, incoming, trigger);
+    storeOrdersForBits(*victim, 0, incoming, order_scores);
 
     table.insertEntry(tag, is_secure, victim);
     DPRINTF(HWPrefetch, "Insert miss: region=%#lx tag=%#lx bits=%#lx level=%lu\n",
-            region_addr, tag, region_bits, PFlevel);
-    //print all entry status
+            region_addr, tag, incoming, victim->PFlevel);
     for (const auto &entry : table) {
         DPRINTF(HWPrefetch, "  Entry: region=%#lx tag=%#lx bits=%#lx filter=%#lx level=%lu valid=%d\n",
                 entry.region_addr, entry.getTag(), entry.region_bits,
@@ -541,8 +616,6 @@ PrefetchFilter::hasPFRequestsInBuffer()
                 entry.region_addr, entry.getTag(), entry.region_bits,
                 entry.filter_bits, entry.PFlevel, entry.isValid());
     }
-    uint64_t mask = (regionBlks >= 64) ? ~uint64_t(0) : ((uint64_t(1) << regionBlks) - 1);
-
     for (unsigned i = 0; i < static_cast<unsigned>(n); ++i) {
         unsigned idx = (rrIndex + i) % static_cast<unsigned>(n);
         auto it = it_begin;
@@ -553,8 +626,8 @@ PrefetchFilter::hasPFRequestsInBuffer()
             continue;
         if (!e->paddr_valid)
             continue;
-        uint64_t pending = e->region_bits & (~e->filter_bits) & mask;
-        if (pending)
+        if (pendingForLevel(*e, 1) || pendingForLevel(*e, 2) ||
+            pendingForLevel(*e, 3))
             return true;
     }
 

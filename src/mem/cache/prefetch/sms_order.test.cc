@@ -104,6 +104,38 @@ TEST(SmsOrder, RepeatedInsertKeepsFirstOrder)
               (uint64_t(1) << 9));
 }
 
+TEST(SmsPhtDest, TriggerUsesHighMedLowLevels)
+{
+    EXPECT_EQ(phtDestLevel(7, true, DefaultHighConfThreshold,
+                           DefaultMedConfThreshold, DefaultLowConfThreshold), 1);
+    EXPECT_EQ(phtDestLevel(6, true, DefaultHighConfThreshold,
+                           DefaultMedConfThreshold, DefaultLowConfThreshold), 1);
+    EXPECT_EQ(phtDestLevel(5, true, DefaultHighConfThreshold,
+                           DefaultMedConfThreshold, DefaultLowConfThreshold), 2);
+    EXPECT_EQ(phtDestLevel(4, true, DefaultHighConfThreshold,
+                           DefaultMedConfThreshold, DefaultLowConfThreshold), 2);
+    EXPECT_EQ(phtDestLevel(3, true, DefaultHighConfThreshold,
+                           DefaultMedConfThreshold, DefaultLowConfThreshold), 3);
+    EXPECT_EQ(phtDestLevel(2, true, DefaultHighConfThreshold,
+                           DefaultMedConfThreshold, DefaultLowConfThreshold), 0);
+    EXPECT_EQ(phtDestLevel(0, true, DefaultHighConfThreshold,
+                           DefaultMedConfThreshold, DefaultLowConfThreshold), 0);
+}
+
+TEST(SmsPhtDest, NonTriggerSendsOnlyHighAndMedium)
+{
+    EXPECT_EQ(phtDestLevel(7, false, DefaultHighConfThreshold,
+                           DefaultMedConfThreshold, DefaultLowConfThreshold), 2);
+    EXPECT_EQ(phtDestLevel(6, false, DefaultHighConfThreshold,
+                           DefaultMedConfThreshold, DefaultLowConfThreshold), 2);
+    EXPECT_EQ(phtDestLevel(4, false, DefaultHighConfThreshold,
+                           DefaultMedConfThreshold, DefaultLowConfThreshold), 3);
+    EXPECT_EQ(phtDestLevel(3, false, DefaultHighConfThreshold,
+                           DefaultMedConfThreshold, DefaultLowConfThreshold), 0);
+    EXPECT_EQ(phtDestLevel(2, false, DefaultHighConfThreshold,
+                           DefaultMedConfThreshold, DefaultLowConfThreshold), 0);
+}
+
 } // namespace sms
 } // namespace prefetch
 } // namespace gem5

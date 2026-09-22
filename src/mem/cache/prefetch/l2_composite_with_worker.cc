@@ -26,7 +26,8 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
       enableCMC(p.enable_cmc),
       enableDespacitoStream(p.enable_despacito_stream),
       lldp(dynamic_cast<LLDPrefetcher *>(p.lldp)),
-      enableLLDP(p.enable_lldp)
+      enableLLDP(p.enable_lldp),
+      offloadLowAccuracy(p.offload_low_accuracy)
 {
     setSharedFilterContextQualified(true);
     cdp->setSharedFilterContextQualified(true);

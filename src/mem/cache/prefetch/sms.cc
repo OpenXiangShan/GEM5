@@ -34,6 +34,10 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
           PhtEntry(2 * (regionBlks - 1), SatCounter8(3, 2))),
       phtPFAhead(p.pht_pf_ahead),
       phtPFLevel(std::min(p.pht_pf_level, (int) 3)),
+      enablePhtConfDest(p.enable_pht_conf_dest),
+      phtHighConfThreshold(p.pht_high_conf_threshold),
+      phtMedConfThreshold(p.pht_med_conf_threshold),
+      phtLowConfThreshold(p.pht_low_conf_threshold),
       stats(this),
       pfBlockLRUFilter(pfFilterSize),
       sms_pfFilter(p.sms_filter_indexing_policy, p.sms_filter_replacement_policy, p.sms_filter_entries,
@@ -87,6 +91,8 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
     assert(lldp);
     assert(isPowerOf2(regionSize));
     assert(regionBlks <= 64);
+    assert(phtHighConfThreshold >= phtMedConfThreshold);
+    assert(phtMedConfThreshold >= phtLowConfThreshold);
 
     setSharedFilterContextQualified(true);
     largeBOP->setSharedFilterContextQualified(true);
@@ -289,7 +295,9 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         stride_pf_addr = phtPFAhead ? stride_pf_addr : 0;  // trigger addr sent to pht
         if (use_pht) {
             DPRINTF(XSCompositePrefetcher, "Do PHT lookup...\n");
-            trigger_pht = phtLookup(pfi, addresses, late && pf_source == PrefetchSourceType::SPht, stride_pf_addr);
+            trigger_pht = phtLookup(pfi, addresses,
+                                    late && pf_source == PrefetchSourceType::SPht,
+                                    stride_pf_addr, enter_new_region);
         }
         bool use_opt = enableOpt && !pfi.isStore() && is_first_64;
         if (use_opt){
@@ -361,14 +369,25 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
         in_active_page = entry->inActivePage(regionBlks);
         uint64_t region_bit_accessed = 1UL << region_offset;
         const bool first_touch = !(entry->regionBits & region_bit_accessed);
-        if (phtEarlyUpdate)
-            updatePht(entry, region_start, re_act_entry, true, region_offset);
-        if (first_touch) {
-            entry->touchOrder.at(region_offset) = entry->accessCount;
-            entry->accessCount += 1;
-            is_first_shot = true;
+        if (enablePhtConfDest) {
+            if (first_touch) {
+                entry->touchOrder.at(region_offset) = entry->accessCount;
+                entry->accessCount += 1;
+                is_first_shot = true;
+            }
+            entry->regionBits |= region_bit_accessed;
+            if (phtEarlyUpdate && first_touch)
+                updatePht(entry, region_start, false, true, region_offset);
+        } else {
+            if (phtEarlyUpdate)
+                updatePht(entry, region_start, false, true, region_offset);
+            if (first_touch) {
+                entry->touchOrder.at(region_offset) = entry->accessCount;
+                entry->accessCount += 1;
+                is_first_shot = true;
+            }
+            entry->regionBits |= region_bit_accessed;
         }
-        entry->regionBits |= region_bit_accessed;
         if (phtEarlyUpdate)
             trainPhtOrder(entry);
         // print bits
@@ -438,6 +457,7 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
     //entry->repeat_region_bits = 0;
     entry->accessCount = 1;
     entry->hasIncreasedPht = false;
+    entry->phtUpdatedBits = 0;
     std::fill(entry->touchOrder.begin(), entry->touchOrder.end(), UINT8_MAX);
     entry->touchOrder.at(region_offset) = 0;
     entry->orderTrainedBits = 0;
@@ -466,8 +486,176 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
 }
 
 void
+XSCompositePrefetcher::resetPhtEntry(PhtEntry *pht_entry, const ACTEntry *act_entry)
+{
+    for (uint8_t i = 0; i < 2 * (regionBlks - 1); i++) {
+        pht_entry->hist[i].reset();
+    }
+    resetPhtOrder(pht_entry);
+    pht_entry->pc = act_entry->pc;
+    pht_entry->contextId = act_entry->contextId;
+    pht_entry->decr_mode = act_entry->inBackwardMode;
+}
+
+bool
+XSCompositePrefetcher::regionOffsetToHistIdx(unsigned trigger_offset, unsigned offset,
+                                             uint8_t &hist_idx) const
+{
+    if (offset == trigger_offset || offset >= regionBlks) {
+        return false;
+    }
+    if (offset > trigger_offset) {
+        hist_idx = offset - trigger_offset + regionBlks - 2;
+    } else {
+        hist_idx = regionBlks - 1 - (trigger_offset - offset);
+    }
+    return hist_idx < 2 * (regionBlks - 1);
+}
+
+void
+XSCompositePrefetcher::updateInRegionPhtOffsets(ACTEntry *act_entry, PhtEntry *pht_entry,
+                                                bool is_eviction, bool re_act_mode)
+{
+    const unsigned trigger_offset = act_entry->regionOffset;
+    for (unsigned offset = 0; offset < regionBlks; ++offset) {
+        uint8_t hist_idx = 0;
+        if (!regionOffsetToHistIdx(trigger_offset, offset, hist_idx)) {
+            continue;
+        }
+        const uint64_t bit = uint64_t(1) << offset;
+        const bool accessed = act_entry->regionBits & bit;
+        const bool updated = act_entry->phtUpdatedBits & bit;
+        if (accessed) {
+            if (!updated) {
+                pht_entry->hist.at(hist_idx) += 2;
+                act_entry->phtUpdatedBits |= bit;
+            }
+            if (is_eviction && re_act_mode) {
+                pht_entry->hist.at(hist_idx) += 2;
+            }
+        } else if (is_eviction && !re_act_mode) {
+            pht_entry->hist.at(hist_idx) -= 2;
+        }
+    }
+}
+
+void
+XSCompositePrefetcher::updateNeighborPhtOnEvict(ACTEntry *act_entry, PhtEntry *pht_entry,
+                                                bool re_act_mode, bool already_early_updated)
+{
+    const Addr region_offset = act_entry->regionOffset;
+    const Addr region_addr_find = act_entry->regionAddr / regionSize;
+    ACTEntry *act_entry_f = nullptr;
+    ACTEntry *act_entry_b = nullptr;
+    if (neighborPhtUpdate) {
+        act_entry_f = act.findEntry(
+            contextKey(region_addr_find + 1, act_entry->contextId),
+            act_entry->isSecure());
+        act_entry_b = act.findEntry(
+            contextKey(region_addr_find - 1, act_entry->contextId),
+            act_entry->isSecure());
+    }
+
+    for (int i = region_offset + 1, j = 0; j < int(regionBlks) - 1; i++, j++) {
+        uint8_t hist_idx = j + (regionBlks - 1);
+        if (i < int(regionBlks)) {
+            continue;
+        }
+        if (act_entry_f) {
+            bool accessed = (act_entry_f->regionBits >> (i - regionBlks)) & 1;
+            updatePhtBits(accessed, false, re_act_mode, hist_idx, act_entry, pht_entry,
+                          already_early_updated);
+        } else {
+            pht_entry->hist.at(hist_idx) -= 1;
+        }
+    }
+
+    int i_b = 0;
+    for (int i = int(region_offset) - 1, j = int(regionBlks) - 2; j >= 0; i--, j--) {
+        if (i >= 0) {
+            continue;
+        }
+        if (act_entry_b) {
+            bool accessed = (act_entry_b->regionBits >> (regionBlks - 1 - i_b)) & 1;
+            i_b++;
+            updatePhtBits(accessed, false, re_act_mode, j, act_entry, pht_entry,
+                          already_early_updated);
+        }
+    }
+}
+
+void
 XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Addr current_region_addr,
                                  bool re_act_mode, bool early_update, Addr region_offset_now)
+{
+    if (!enablePhtConfDest) {
+        updatePhtLegacy(act_entry, current_region_addr, re_act_mode,
+                        early_update, region_offset_now);
+        return;
+    }
+    if (popCount(act_entry->regionBits) <= 1) {
+        return;
+    }
+    (void)region_offset_now;
+    Addr pht_key = contextKey(
+        phtHash(act_entry->pc, act_entry->regionOffset),
+        act_entry->contextId);
+    PhtEntry *pht_entry =
+        pht.findEntry(pht_key, act_entry->isSecure());
+    bool is_update = pht_entry != nullptr;
+
+    if (early_update) {
+        const int access_cnt_thres = 5;
+        if (!pht_entry) {
+            if (act_entry->accessCount <= access_cnt_thres) {
+                return;
+            }
+            pht_entry = pht.findVictim(pht_key);
+            resetPhtEntry(pht_entry, act_entry);
+        }
+        pht.accessEntry(pht_entry);
+        updateInRegionPhtOffsets(act_entry, pht_entry, false, false);
+        if (!is_update) {
+            DPRINTF(XSCompositePrefetcher, "Insert SMS PHT entry for PC %lx\n", act_entry->pc);
+            pht.insertEntry(pht_key, act_entry->isSecure(), pht_entry);
+        }
+        return;
+    }
+
+    if (!pht_entry) {
+        pht_entry = pht.findVictim(pht_key);
+        DPRINTF(XSCompositePrefetcher, "Evict PHT entry for PC %lx\n", pht_entry->pc);
+        resetPhtEntry(pht_entry, act_entry);
+    }
+
+    pht.accessEntry(pht_entry);
+    const bool already_early_updated = act_entry->phtUpdatedBits != 0;
+    updateInRegionPhtOffsets(act_entry, pht_entry, true, re_act_mode);
+    updateNeighborPhtOnEvict(act_entry, pht_entry, re_act_mode,
+                             already_early_updated);
+
+    DPRINTF(XSCompositePrefetcher, "Evict ACT region: %lx, offset: %lx, evicted by region %lx\n",
+            act_entry->regionAddr, act_entry->regionOffset, current_region_addr);
+    if (!is_update) {
+        DPRINTF(XSCompositePrefetcher, "Insert SMS PHT entry for PC %lx\n", act_entry->pc);
+        pht.insertEntry(pht_key, act_entry->isSecure(), pht_entry);
+    } else {
+        DPRINTF(XSCompositePrefetcher, "Update SMS PHT entry for PC %lx, after update:\n", act_entry->pc);
+    }
+
+    for (uint8_t i = 0; i < 2 * (regionBlks - 1); i++) {
+        DPRINTFR(XSCompositePrefetcher, "%.2f ", pht_entry->hist[i].calcSaturation());
+        if (i == regionBlks - 1) {
+            DPRINTFR(XSCompositePrefetcher, "| ");
+        }
+    }
+    DPRINTFR(XSCompositePrefetcher, "\n");
+}
+
+void
+XSCompositePrefetcher::updatePhtLegacy(ACTEntry *act_entry, Addr current_region_addr,
+                                       bool re_act_mode, bool early_update,
+                                       Addr region_offset_now)
 {
     if (popCount(act_entry->regionBits) <= 1) {
         return;
@@ -480,15 +668,13 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Add
     bool is_update = pht_entry != nullptr;
     if (pht_entry && early_update) {
         if (region_offset_now > act_entry->regionOffset) {
-            assert ((region_offset_now - act_entry->regionOffset + regionBlks - 2) > 14);
-            assert ((region_offset_now - act_entry->regionOffset + regionBlks - 2) <= 30);
-            pht_entry->hist[region_offset_now - act_entry->regionOffset + regionBlks - 2] += 2;
+            pht_entry->hist[region_offset_now - act_entry->regionOffset +
+                            regionBlks - 2] += 2;
             act_entry->hasIncreasedPht = true;
         }
         if (region_offset_now < act_entry->regionOffset) {
-            assert(regionBlks - 1 >= (act_entry->regionOffset - region_offset_now));
-            assert((regionBlks - 1 - (act_entry->regionOffset - region_offset_now)) <= 14);
-            pht_entry->hist[regionBlks - 1 - (act_entry->regionOffset - region_offset_now)] += 2;
+            pht_entry->hist[regionBlks - 1 -
+                            (act_entry->regionOffset - region_offset_now)] += 2;
             act_entry->hasIncreasedPht = true;
         }
         return;
@@ -497,14 +683,8 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Add
         const int access_cnt_thres = 5;
         if (act_entry->accessCount > access_cnt_thres && (!pht_entry)) {
             pht_entry = pht.findVictim(pht_key);
-            for (uint8_t i = 0; i < 2 * (regionBlks - 1); i++) {
-                pht_entry->hist[i].reset();
-            }
-            resetPhtOrder(pht_entry);
-            pht_entry->pc = act_entry->pc;
-            pht_entry->contextId = act_entry->contextId;
+            resetPhtEntry(pht_entry, act_entry);
             act_entry->hasIncreasedPht = true;
-            pht_entry->decr_mode = act_entry->inBackwardMode;
         } else {
             return;
         }
@@ -513,13 +693,7 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Add
     if (!pht_entry) {
         pht_entry = pht.findVictim(pht_key);
         DPRINTF(XSCompositePrefetcher, "Evict PHT entry for PC %lx\n", pht_entry->pc);
-        for (uint8_t i = 0; i < 2 * (regionBlks - 1); i++) {
-            pht_entry->hist[i].reset();
-        }
-        resetPhtOrder(pht_entry);
-        pht_entry->pc = act_entry->pc;
-        pht_entry->contextId = act_entry->contextId;
-        pht_entry->decr_mode = act_entry->inBackwardMode;
+        resetPhtEntry(pht_entry, act_entry);
     }
 
     pht.accessEntry(pht_entry);
@@ -535,7 +709,7 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Add
             contextKey(region_addr_find - 1, act_entry->contextId),
             act_entry->isSecure());
     }
-    //  incr part
+    const bool already_early = act_entry->hasIncreasedPht;
     if (act_entry_f) {
         for (int i = region_offset + 1, j = 0; j < regionBlks - 1; i++, j++) {
             uint8_t hist_idx = j + (regionBlks - 1);
@@ -544,14 +718,16 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Add
                 accessed = (act_entry_f->regionBits >> (i - 16)) & 1;
             else
                 accessed = (act_entry->regionBits >> i) & 1;
-            updatePhtBits(accessed, early_update, re_act_mode, hist_idx, act_entry, pht_entry);
+            updatePhtBits(accessed, early_update, re_act_mode, hist_idx,
+                          act_entry, pht_entry, already_early);
         }
     } else {
         for (int i = region_offset + 1, j = 0; j < regionBlks - 1; i++, j++) {
             uint8_t hist_idx = j + (regionBlks - 1);
             if (i < regionBlks) {
                 bool accessed = (act_entry->regionBits >> i) & 1;
-                updatePhtBits(accessed,early_update,re_act_mode,hist_idx,act_entry,pht_entry);
+                updatePhtBits(accessed, early_update, re_act_mode, hist_idx,
+                              act_entry, pht_entry, already_early);
             } else {
                 if (!early_update)
                     pht_entry->hist.at(hist_idx) -= 1;
@@ -559,30 +735,28 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Add
         }
     }
 
-    // decr part
     int i_b = 0;
     if (act_entry_b) {
         for (int i = int(region_offset) - 1, j = regionBlks - 2; j >= 0;
              i--, j--) {
             if (i >= 0) {
                 bool accessed = (act_entry->regionBits >> i) & 1;
-                updatePhtBits(accessed, early_update, re_act_mode, j, act_entry, pht_entry);
+                updatePhtBits(accessed, early_update, re_act_mode, j,
+                              act_entry, pht_entry, already_early);
             } else {
-                // TODO: unseen should be untouch?
                 bool accessed = (act_entry_b->regionBits >> (15 - i_b)) & 1;
                 i_b++;
-                updatePhtBits(accessed, early_update, re_act_mode, j, act_entry, pht_entry);
+                updatePhtBits(accessed, early_update, re_act_mode, j,
+                              act_entry, pht_entry, already_early);
             }
         }
-
     } else {
         for (int i = int(region_offset) - 1, j = regionBlks - 2; j >= 0;
              i--, j--) {
             if (i >= 0) {
                 bool accessed = (act_entry->regionBits >> i) & 1;
-                updatePhtBits(accessed, early_update, re_act_mode, j, act_entry, pht_entry);
-            } else {
-                // leave unseen untouched
+                updatePhtBits(accessed, early_update, re_act_mode, j,
+                              act_entry, pht_entry, already_early);
             }
         }
     }
@@ -704,17 +878,17 @@ XSCompositePrefetcher::trainPhtOrder(ACTEntry *act_entry)
 
 bool
 XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
-                         Addr look_ahead_addr)
+                         Addr look_ahead_addr, bool is_trigger)
 {
     Addr pc = pfi.getPC();
     Addr vaddr = look_ahead_addr ? look_ahead_addr : pfi.getAddr();
     Addr blk_addr = blockAddress(vaddr);
     Addr region_addr = regionAddress(vaddr);
     Addr region_offset = regionOffset(vaddr);
-    uint64_t region_bit_cur = 0;
-    uint64_t region_bit_inc = 0;
+    uint64_t cur_l1 = 0, cur_l2 = 0, cur_l3 = 0;
+    uint64_t inc_l1 = 0, inc_l2 = 0, inc_l3 = 0;
     Addr region_inc_addr = 0;
-    uint64_t region_bit_dec = 0;
+    uint64_t dec_l1 = 0, dec_l2 = 0, dec_l3 = 0;
     Addr region_dec_addr = 0;
     std::vector<sms::OrderScore> order_cur(regionBlks, sms::InvalidOrder);
     std::vector<sms::OrderScore> order_inc(regionBlks, sms::InvalidOrder);
@@ -733,94 +907,120 @@ XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<Addr
             }
             return pht_entry->orderScore.at(hist_idx);
         };
+        const auto add_level_bit = [](uint64_t &l1, uint64_t &l2, uint64_t &l3,
+                                      unsigned offset, int level) {
+            const uint64_t bit = uint64_t(1) << offset;
+            if (level == 1) {
+                l1 |= bit;
+            } else if (level == 2) {
+                l2 |= bit;
+            } else if (level == 3) {
+                l3 |= bit;
+            }
+        };
         pht.accessEntry(pht_entry);
-        DPRINTF(XSCompositePrefetcher, "Pht lookup hit: pc: %x, vaddr: %x (%s), offset: %x, late: %i\n", pc, vaddr,
-                look_ahead_addr ? "ahead" : "current", region_offset, late);
+        DPRINTF(XSCompositePrefetcher,
+                "Pht lookup hit: pc: %x, vaddr: %x (%s), offset: %x, late: %i, trigger: %i\n",
+                pc, vaddr, look_ahead_addr ? "ahead" : "current", region_offset,
+                late, is_trigger);
         int priority = 2 * (regionBlks - 1);
-        // find incr pattern
+        auto consider = [&](unsigned hist_idx, Addr pf_tgt_addr,
+                            uint64_t &l1, uint64_t &l2, uint64_t &l3,
+                            std::vector<sms::OrderScore> &orders) {
+            const unsigned raw = pht_entry->hist[hist_idx];
+            int level = 0;
+            if (enablePhtConfDest) {
+                level = sms::phtDestLevel(
+                    raw, is_trigger, phtHighConfThreshold,
+                    phtMedConfThreshold, phtLowConfThreshold);
+            } else if (pht_entry->hist[hist_idx].calcSaturation() > 0.5) {
+                level = phtPFLevel;
+            }
+            if (level == 0) {
+                return false;
+            }
+            const unsigned target_offset = regionOffset(pf_tgt_addr);
+            add_level_bit(l1, l2, l3, target_offset, level);
+            orders[target_offset] = learned_order(hist_idx);
+            sendPFWithFilter(pfi, pf_tgt_addr, addresses, priority--,
+                             PrefetchSourceType::SPht, level);
+            if (level == 1) {
+                stats.smsPhtIssuedL1++;
+            } else if (level == 2) {
+                stats.smsPhtIssuedL2++;
+            } else {
+                stats.smsPhtIssuedL3++;
+            }
+            return true;
+        };
+
         for (uint8_t i = 0; i < regionBlks - 1; i++) {
-            if (pht_entry->hist[i + regionBlks - 1].calcSaturation() > 0.5) {
-                Addr pf_tgt_addr = blk_addr + (i + 1) * blkSize;
-                if(regionAddress(pf_tgt_addr) == region_addr) {
-                    const unsigned target_offset = regionOffset(pf_tgt_addr);
-                    region_bit_cur |= (uint64_t(1) << target_offset);
-                    order_cur[target_offset] = learned_order(
-                        i + regionBlks - 1);
-                    sendPFWithFilter(pfi, pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
-                    found = true;
-                }
+            Addr pf_tgt_addr = blk_addr + (i + 1) * blkSize;
+            if (regionAddress(pf_tgt_addr) == region_addr) {
+                found |= consider(i + regionBlks - 1, pf_tgt_addr,
+                                  cur_l1, cur_l2, cur_l3, order_cur);
             }
         }
         for (int i = regionBlks - 2, j = 1; i >= 0; i--, j++) {
-            if (pht_entry->hist[i].calcSaturation() > 0.5) {
-                Addr pf_tgt_addr = blk_addr - j * blkSize;
-                if(regionAddress(pf_tgt_addr) == region_addr) {
-                    const unsigned target_offset = regionOffset(pf_tgt_addr);
-                    region_bit_cur |= (uint64_t(1) << target_offset);
-                    order_cur[target_offset] = learned_order(i);
-                    sendPFWithFilter(pfi, pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
-                    found = true;
-                }
+            Addr pf_tgt_addr = blk_addr - j * blkSize;
+            if (regionAddress(pf_tgt_addr) == region_addr) {
+                found |= consider(i, pf_tgt_addr, cur_l1, cur_l2, cur_l3,
+                                  order_cur);
             }
         }
-        if(found){
-            if(phtSentPrefetch[0].valid){
+        const uint64_t region_bit_cur = cur_l1 | cur_l2 | cur_l3;
+        if (region_bit_cur) {
+            if (phtSentPrefetch[0].valid) {
                 stats.smsCurRegionoverride++;
             }
-            phtSentPrefetch[0] = phtsentInfo(region_addr, region_bit_cur ,0, true,pht_entry->decr_mode,secure,phtPFLevel, &pfi.trigger_info);
+            phtSentPrefetch[0] = phtsentInfo(
+                region_addr, region_bit_cur, 0, true, pht_entry->decr_mode,
+                secure, 0, &pfi.trigger_info, cur_l1, cur_l2, cur_l3);
             phtSentPrefetch[0].orderScores = order_cur;
             phtSentPrefetch[0].trigger.pfSourceType = PrefetchSourceType::SPht;
         }
-        found = false;
         for (uint8_t i = 0; i < regionBlks - 1; i++) {
-            if (pht_entry->hist[i + regionBlks - 1].calcSaturation() > 0.5) {
-                Addr pf_tgt_addr = blk_addr + (i + 1) * blkSize;
-                if(regionAddress(pf_tgt_addr) != region_addr) {
-                    region_inc_addr = regionAddress(pf_tgt_addr);
-                    const unsigned target_offset = regionOffset(pf_tgt_addr);
-                    region_bit_inc |= (uint64_t(1) << target_offset);
-                    order_inc[target_offset] = learned_order(
-                        i + regionBlks - 1);
-                    sendPFWithFilter(pfi, pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
-                    found = true;
-                }
+            Addr pf_tgt_addr = blk_addr + (i + 1) * blkSize;
+            if (regionAddress(pf_tgt_addr) != region_addr) {
+                region_inc_addr = regionAddress(pf_tgt_addr);
+                found |= consider(i + regionBlks - 1, pf_tgt_addr,
+                                  inc_l1, inc_l2, inc_l3, order_inc);
             }
         }
-        if(found){
-            if(phtSentPrefetch[1].valid){
+        const uint64_t region_bit_inc = inc_l1 | inc_l2 | inc_l3;
+        if (region_bit_inc) {
+            if (phtSentPrefetch[1].valid) {
                 stats.smsIncrRegionoverride++;
             }
-            phtSentPrefetch[1] = phtsentInfo(region_inc_addr, region_bit_inc ,0, true,pht_entry->decr_mode,secure,phtPFLevel, &pfi.trigger_info);
+            phtSentPrefetch[1] = phtsentInfo(
+                region_inc_addr, region_bit_inc, 0, true, pht_entry->decr_mode,
+                secure, 0, &pfi.trigger_info, inc_l1, inc_l2, inc_l3);
             phtSentPrefetch[1].orderScores = order_inc;
             phtSentPrefetch[1].trigger.pfSourceType = PrefetchSourceType::SPht;
         }
-        
-        found = false;
         for (int i = regionBlks - 2, j = 1; i >= 0; i--, j++) {
-            if (pht_entry->hist[i].calcSaturation() > 0.5) {
-                Addr pf_tgt_addr = blk_addr - j * blkSize;
-                if(regionAddress(pf_tgt_addr) != region_addr) {
-                    region_dec_addr = regionAddress(pf_tgt_addr);
-                    const unsigned target_offset = regionOffset(pf_tgt_addr);
-                    region_bit_dec |= (uint64_t(1) << target_offset);
-                    order_dec[target_offset] = learned_order(i);
-                    sendPFWithFilter(pfi, pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
-                    found = true;
-                }
+            Addr pf_tgt_addr = blk_addr - j * blkSize;
+            if (regionAddress(pf_tgt_addr) != region_addr) {
+                region_dec_addr = regionAddress(pf_tgt_addr);
+                found |= consider(i, pf_tgt_addr, dec_l1, dec_l2, dec_l3,
+                                  order_dec);
             }
         }
-        if(found){
-            if(phtSentPrefetch[2].valid){
+        const uint64_t region_bit_dec = dec_l1 | dec_l2 | dec_l3;
+        if (region_bit_dec) {
+            if (phtSentPrefetch[2].valid) {
                 stats.smsDecrRegionoverride++;
             }
-            phtSentPrefetch[2] = phtsentInfo(region_dec_addr, region_bit_dec ,0, true,pht_entry->decr_mode,secure,phtPFLevel, &pfi.trigger_info);
+            phtSentPrefetch[2] = phtsentInfo(
+                region_dec_addr, region_bit_dec, 0, true, pht_entry->decr_mode,
+                secure, 0, &pfi.trigger_info, dec_l1, dec_l2, dec_l3);
             phtSentPrefetch[2].orderScores = order_dec;
             phtSentPrefetch[2].trigger.pfSourceType = PrefetchSourceType::SPht;
         }
-        if (!phtReqSendEvent.scheduled()){
+        if (!phtReqSendEvent.scheduled()) {
             phtSendEventWrapper();
         }
-        
+
         DPRINTF(XSCompositePrefetcher, "pht entry pattern:\n");
         for (uint8_t i = 0; i < 2 * (regionBlks - 1); i++) {
             DPRINTFR(XSCompositePrefetcher, "%.2f ", pht_entry->hist[i].calcSaturation());
@@ -924,14 +1124,16 @@ XSCompositePrefetcher::sendStreamPF(const PrefetchInfo &pfi, Addr pf_tgt_addr, s
 void
 XSCompositePrefetcher::updatePhtBits(bool accessed, bool early_update, bool re_act_mode, uint8_t hist_idx,
                                      XSCompositePrefetcher::ACTEntry *act_entry,
-                                     XSCompositePrefetcher::PhtEntry *pht_entry)
+                                     XSCompositePrefetcher::PhtEntry *pht_entry,
+                                     bool already_early_updated)
 {
+    (void)act_entry;
     if (accessed) {
         DPRINTF(XSCompositePrefetcher, "Inc conf hist_idx: %d\n", hist_idx);
         if (early_update) {
             pht_entry->hist.at(hist_idx) += 2;
         } else {
-            if ((!act_entry->hasIncreasedPht))
+            if (!already_early_updated)
                 pht_entry->hist.at(hist_idx) += 2;
             if (re_act_mode)
                 pht_entry->hist.at(hist_idx) += 2;
@@ -968,7 +1170,13 @@ XSCompositePrefetcher::XSCompositeStats::XSCompositeStats(statistics::Group *par
       ADD_STAT(streamTrainCount, statistics::units::Count::get(), "stream train count"),
       ADD_STAT(totalTrainCount, statistics::units::Count::get(), "total train count"),
       ADD_STAT(smsOrderUpdates, statistics::units::Count::get(),
-               "SMS first-touch order EWMA updates")
+               "SMS first-touch order EWMA updates"),
+      ADD_STAT(smsPhtIssuedL1, statistics::units::Count::get(),
+               "SMS PHT candidates classified to L1"),
+      ADD_STAT(smsPhtIssuedL2, statistics::units::Count::get(),
+               "SMS PHT candidates classified to L2"),
+      ADD_STAT(smsPhtIssuedL3, statistics::units::Count::get(),
+               "SMS PHT candidates classified to L3")
 {
 }
 
@@ -1147,7 +1355,8 @@ XSCompositePrefetcher::phtSendEventWrapper(){
             sms_pfFilter.Insert(phtSentPrefetch[i].region_addr, phtSentPrefetch[i].region_bits,
                 phtSentPrefetch[i].alias_bits,phtSentPrefetch[i].paddr_valid, phtSentPrefetch[i].decr_mode,
                 phtSentPrefetch[i].is_secure,phtSentPrefetch[i].PFlevel, &phtSentPrefetch[i].trigger,
-                &phtSentPrefetch[i].orderScores);
+                &phtSentPrefetch[i].orderScores, phtSentPrefetch[i].l1_bits,
+                phtSentPrefetch[i].l2_bits, phtSentPrefetch[i].l3_bits);
             phtSentPrefetch[i].valid = false;
             break;
         }

@@ -469,6 +469,7 @@ def _configure_xs_composite_kmh_align(prefetcher):
     prefetcher.enable_opt = False
     prefetcher.pht_pf_level = 2
     prefetcher.enable_sms_first_touch_order = True
+    prefetcher.enable_pht_conf_dest = False
 
 def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
     _configure_xs_composite_common(prefetcher, options)
@@ -478,6 +479,10 @@ def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
         _configure_xs_composite_kmh_align(prefetcher)
     else:
         _configure_xs_composite_default(prefetcher, options)
+
+    conf_dest = getattr(options, "enable_pht_conf_dest", None)
+    if conf_dest is not None:
+        prefetcher.enable_pht_conf_dest = (conf_dest == "True")
 
     if options.l1d_enable_spp:
         prefetcher.enable_spp = True
@@ -504,6 +509,7 @@ def _configure_l2_composite_kmh_align(prefetcher):
     prefetcher.enable_bop = True
     prefetcher.enable_cdp = True
     prefetcher.enable_despacito_stream = False
+    prefetcher.offload_low_accuracy = False
     prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,
                                              enable_adaptoffset=False)
     prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,

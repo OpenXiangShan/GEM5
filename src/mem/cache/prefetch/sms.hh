@@ -73,6 +73,7 @@ class XSCompositePrefetcher : public Queued
         uint32_t depth;
         SatCounter8 lateConf;
         bool hasIncreasedPht;
+        uint64_t phtUpdatedBits;
         std::vector<uint8_t> touchOrder;
         uint64_t orderTrainedBits;
         uint64_t orderPhtEpoch;
@@ -88,6 +89,7 @@ class XSCompositePrefetcher : public Queued
               depth(0),
               lateConf(4, 7),
               hasIncreasedPht(false),
+              phtUpdatedBits(0),
               touchOrder(region_blks, UINT8_MAX),
               orderTrainedBits(0),
               orderPhtEpoch(0)
@@ -126,6 +128,9 @@ class XSCompositePrefetcher : public Queued
     const unsigned streamDepthStep{4};  // # block changed in one step
 
     void updatePht(ACTEntry *act_entry, Addr region_addr,bool re_act_mode,bool signal_update,Addr region_offset_now);
+    void updatePhtLegacy(ACTEntry *act_entry, Addr current_region_addr,
+                         bool re_act_mode, bool early_update,
+                         Addr region_offset_now);
     // pattern history table
     class PhtEntry : public TaggedEntry
     {
@@ -155,15 +160,20 @@ class XSCompositePrefetcher : public Queued
     AssociativeSet<PhtEntry> pht;
 
     const bool phtPFAhead;
-
     const int phtPFLevel;
+    const bool enablePhtConfDest;
+
+    const unsigned phtHighConfThreshold;
+    const unsigned phtMedConfThreshold;
+    const unsigned phtLowConfThreshold;
 
     Addr pcHash(Addr pc) { return pc >> 1; }
 
     Addr phtHash(Addr pc, Addr region_offset) { return pc >> 1; }
 
     bool phtLookup(const PrefetchInfo &pfi,
-                   std::vector<AddrPriority> &addresses, bool late, Addr look_ahead_addr);
+                   std::vector<AddrPriority> &addresses, bool late,
+                   Addr look_ahead_addr, bool is_trigger);
 
     struct XSCompositeStats : public statistics::Group
     {
@@ -179,6 +189,9 @@ class XSCompositePrefetcher : public Queued
         statistics::Scalar streamTrainCount;
         statistics::Scalar totalTrainCount;
         statistics::Scalar smsOrderUpdates;
+        statistics::Scalar smsPhtIssuedL1;
+        statistics::Scalar smsPhtIssuedL2;
+        statistics::Scalar smsPhtIssuedL3;
     } stats;
 
   public:
@@ -227,7 +240,15 @@ class XSCompositePrefetcher : public Queued
     void sendStreamPF(const PrefetchInfo &pfi, Addr pf_tgt_addr, std::vector<AddrPriority> &addresses,
                       boost::compute::detail::lru_cache<Addr, Addr> &Filter, bool decr, int pf_level);
     void updatePhtBits(bool accessed, bool early_update, bool re_act_mode, uint8_t hist_idx,
-                       XSCompositePrefetcher::ACTEntry *act_entry, XSCompositePrefetcher::PhtEntry *pht_entry);
+                       XSCompositePrefetcher::ACTEntry *act_entry, XSCompositePrefetcher::PhtEntry *pht_entry,
+                       bool already_early_updated);
+    bool regionOffsetToHistIdx(unsigned trigger_offset, unsigned offset,
+                               uint8_t &hist_idx) const;
+    void updateInRegionPhtOffsets(ACTEntry *act_entry, PhtEntry *pht_entry,
+                                  bool is_eviction, bool re_act_mode);
+    void updateNeighborPhtOnEvict(ACTEntry *act_entry, PhtEntry *pht_entry,
+                                  bool re_act_mode, bool already_early_updated);
+    void resetPhtEntry(PhtEntry *pht_entry, const ACTEntry *act_entry);
 
     BOP *largeBOP;
 
@@ -284,6 +305,9 @@ class XSCompositePrefetcher : public Queued
         bool decr_mode;
         bool is_secure;
         uint64_t PFlevel;
+        uint64_t l1_bits;
+        uint64_t l2_bits;
+        uint64_t l3_bits;
         TriggerInfo trigger;
         std::vector<sms::OrderScore> orderScores;
         // phtsentInfo()
@@ -292,10 +316,12 @@ class XSCompositePrefetcher : public Queued
         phtsentInfo(Addr region_addr = 0, uint64_t region_bits = 0, uint8_t alias_bits = 0,
               bool paddr_valid = false, bool decr_mode = false,
               bool is_secure = false, uint64_t PFlevel = 0,
-              const TriggerInfo *trigger = nullptr)
+              const TriggerInfo *trigger = nullptr,
+              uint64_t l1_bits = 0, uint64_t l2_bits = 0, uint64_t l3_bits = 0)
             : valid(true), region_addr(region_addr), region_bits(region_bits), alias_bits(alias_bits),
               paddr_valid(paddr_valid), decr_mode(decr_mode), is_secure(is_secure),
-              PFlevel(PFlevel), trigger(trigger == nullptr ? TriggerInfo() : *trigger) {};
+              PFlevel(PFlevel), l1_bits(l1_bits), l2_bits(l2_bits), l3_bits(l3_bits),
+              trigger(trigger == nullptr ? TriggerInfo() : *trigger) {};
         ~phtsentInfo() = default;
     };
     std::vector<phtsentInfo> phtSentPrefetch;//0 cur ,1 inc ,2 dec

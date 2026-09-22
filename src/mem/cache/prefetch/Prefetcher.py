@@ -1289,7 +1289,18 @@ class XSCompositePrefetcher(QueuedPrefetcher):
         "Replacement policy of pattern history table"
     )
     pht_pf_ahead = Param.Bool(True, "Prefetch pattern region ahead with stride")
-    pht_pf_level = Param.Int(2, "Prefetch target level")
+    pht_pf_level = Param.Int(2, "Fixed PHT destination when enable_pht_conf_dest is false")
+    enable_pht_conf_dest = Param.Bool(
+        False,
+        "Use PHT confidence and trigger access to select L1/L2/L3 destinations "
+        "and per-offset first-touch PHT updates"
+    )
+    pht_high_conf_threshold = Param.Unsigned(
+        6, "PHT raw counter treated as near-saturated/high confidence")
+    pht_med_conf_threshold = Param.Unsigned(
+        4, "PHT raw counter treated as medium confidence")
+    pht_low_conf_threshold = Param.Unsigned(
+        3, "PHT raw counter treated as low confidence (trigger L3 only)")
     # pf gen table (full-assoc)
     # not implemented now, because queued prefetcher already had a filter
     pf_gen_entries = Param.MemorySize("16", "num of pf_gen entries")
@@ -1384,6 +1395,10 @@ class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     lldp = Param.LLDPrefetcher(LLDPrefetcher(is_sub_prefetcher=True),
                                "LLDP component")
     enable_lldp = Param.Bool(False, "Enable LLDP component")
+    offload_low_accuracy = Param.Bool(
+        True,
+        "Offload low-accuracy upstream pfahead sources to L3 when CDP dominates L2"
+    )
 
 class L3CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     type = 'L3CompositeWithWorkerPrefetcher'

@@ -35,7 +35,10 @@ class PrefetchFilter
         uint8_t alias_bits;   // Vaddr[13:12] for VIPT aliasing,not needed
         bool paddr_valid;     // true if region_addr is physical
         bool decr_mode;       // 1 if decrementing prefetch mode
-        uint64_t PFlevel;      // prefetch level for this region, L1/L2/L3
+        uint64_t PFlevel;      // debug/legacy: most aggressive pending level
+        uint64_t l1_bits;      // offsets destined for L1
+        uint64_t l2_bits;      // offsets destined for L2
+        uint64_t l3_bits;      // offsets destined for L3
         ContextID contextId;   // VA namespace of this region
         std::vector<std::unique_ptr<TriggerInfo>> bitTriggers;
         std::vector<sms::OrderScore> orderScores;
@@ -43,6 +46,7 @@ class PrefetchFilter
         Entry()
             : TaggedEntry(), region_addr(0), region_bits(0), filter_bits(0), alias_bits(0),
               paddr_valid(false), decr_mode(false), PFlevel(0),
+              l1_bits(0), l2_bits(0), l3_bits(0),
               contextId(InvalidContextID) {}
 
         Entry(const Entry &other)
@@ -54,6 +58,9 @@ class PrefetchFilter
               paddr_valid(other.paddr_valid),
               decr_mode(other.decr_mode),
               PFlevel(other.PFlevel),
+              l1_bits(other.l1_bits),
+              l2_bits(other.l2_bits),
+              l3_bits(other.l3_bits),
               contextId(other.contextId),
               orderScores(other.orderScores)
         {
@@ -71,6 +78,9 @@ class PrefetchFilter
                 paddr_valid = other.paddr_valid;
                 decr_mode = other.decr_mode;
                 PFlevel = other.PFlevel;
+                l1_bits = other.l1_bits;
+                l2_bits = other.l2_bits;
+                l3_bits = other.l3_bits;
                 contextId = other.contextId;
                 orderScores = other.orderScores;
                 copyTriggers(other);
@@ -137,7 +147,8 @@ class PrefetchFilter
       bool paddr_valid = false, bool decr_mode = false,
       bool is_secure = false, uint64_t PFlevel = 1,
       const TriggerInfo *trigger = nullptr,
-      const std::vector<sms::OrderScore> *order_scores = nullptr);
+      const std::vector<sms::OrderScore> *order_scores = nullptr,
+      uint64_t l1_bits = 0, uint64_t l2_bits = 0, uint64_t l3_bits = 0);
     // Get blocks still pending prefetch (region_bits & ~filter_bits)
     uint64_t pendingBlocks(Entry *e) const;
 
@@ -160,6 +171,9 @@ class PrefetchFilter
                             uint64_t incoming_bits,
                             const std::vector<sms::OrderScore> *order_scores);
     unsigned selectRegionOffset(Entry &e, uint64_t pending);
+    uint64_t pendingForLevel(const Entry &e, int level) const;
+    void applyLevelBits(Entry &e, uint64_t incoming, int level);
+    void refreshDebugPFlevel(Entry &e);
 
     // Compute region-hash tag as described by chisel:
     // low  = region_tag[BLK_ADDR_RAW_WIDTH-1:0]

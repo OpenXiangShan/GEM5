@@ -123,6 +123,28 @@ updateOrderScore(OrderScore old_score, bool valid, uint8_t touch_rank)
         delta / (1 << OrderEwmaShift));
 }
 
+constexpr unsigned DefaultHighConfThreshold = 6;
+constexpr unsigned DefaultMedConfThreshold = 4;
+constexpr unsigned DefaultLowConfThreshold = 3;
+
+// Map a PHT saturating counter to a prefetch destination.
+// 1/2/3 => L1/L2/L3, 0 => do not send.
+inline int
+phtDestLevel(unsigned raw, bool is_trigger, unsigned high_thres,
+             unsigned med_thres, unsigned low_thres)
+{
+    if (raw >= high_thres) {
+        return is_trigger ? 1 : 2;
+    }
+    if (raw >= med_thres) {
+        return is_trigger ? 2 : 3;
+    }
+    if (is_trigger && raw >= low_thres) {
+        return 3;
+    }
+    return 0;
+}
+
 inline void
 mergeNewOffsetOrders(uint64_t existing_bits, uint64_t incoming_bits,
                      const std::vector<OrderScore> &incoming_orders,

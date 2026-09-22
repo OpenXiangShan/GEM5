@@ -314,6 +314,14 @@ def addCommonOptions(parser, configure_xiangshan=False):
     parser.add_argument("--pht-pf-level", action="store", default=2,
                         help="""
                         Prefetching cache level for SMS'pht""")
+    parser.add_argument(
+        "--enable-pht-conf-dest",
+        type=str,
+        choices=("True", "False"),
+        default=None,
+        metavar="{True,False}",
+        help="Enable SMS PHT confidence-based L1/L2/L3 destinations "
+             "and per-offset first-touch PHT updates.")
 
     parser.add_argument("--disable-pf-buffer", action="store_false",
                         dest="enable_pf_buffer", default=True,
