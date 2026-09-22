@@ -2002,7 +2002,7 @@ Fetch::sendInstructionsToDecode()
         if (tid != primary_tid && !stallSig->blockFetch[tid] &&
             !fetchQueue[tid].empty() &&
             !(block_policy_active && (mlpAwareMode[tid] ? 
-                mlpThreadFetchThrottled[tid] : threadFetchThrottled))) {
+                mlpThreadFetchThrottled[tid] : threadFetchThrottled[tid]))) {
             selected_tids.push_back(tid);
         }
     }
