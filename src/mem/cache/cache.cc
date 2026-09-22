@@ -87,7 +87,8 @@ Cache::resetStats()
 }
 
 Cache::PdbLine::PdbLine(Addr addr, bool secure, unsigned size)
-    : addr(addr), secure(secure), data(size)
+    : addr(addr), secure(secure), data(size), refillTick(curTick()),
+      usefulRecorded(false)
 {
     blk.data = data.data();
     blk.insert(addr, secure);
@@ -105,14 +106,31 @@ Cache::PdbStats::PdbStats(Cache &cache)
       ADD_STAT(evictions, statistics::units::Count::get(), "PDB evictions"),
       ADD_STAT(snoopInvalidations, statistics::units::Count::get(),
                "PDB lines invalidated by snoops"),
-      ADD_STAT(occupancy, statistics::units::Count::get(), "Resident lines")
-{}
+      ADD_STAT(occupancy, statistics::units::Count::get(), "Resident lines"),
+      ADD_STAT(usefulLatency, statistics::units::Cycle::get(),
+               "Refill-to-use latency of useful PDB lines")
+{
+    usefulLatency.init(0, 65536, 64).flags(statistics::pdf);
+}
 
 Cache::PdbIterator
 Cache::findPdbLine(Addr addr, bool secure)
 {
     auto it = pdbIndex.find({addr, secure});
     return it == pdbIndex.end() ? pdbLines.end() : it->second;
+}
+
+void
+Cache::recordPdbUse(PdbIterator line)
+{
+    if (line == pdbLines.end() || !line->blk.wasPrefetched() ||
+        line->usefulRecorded) {
+        return;
+    }
+
+    pdbStats.usefulLatency.sample(
+        ticksToCycles(curTick() - line->refillTick));
+    line->usefulRecorded = true;
 }
 
 bool
@@ -387,6 +405,7 @@ Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
                         &line->blk, pkt->headerDelay, lookupLatency);
                     satisfyRequest(pkt, &line->blk);
                     if (pkt->cmd == MemCmd::ReadReq) {
+                        recordPdbUse(line);
                         pdbLines.splice(pdbLines.end(), pdbLines, line);
                         ++pdbStats.loadHits;
                     } else {
@@ -407,9 +426,13 @@ Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
                         promoted->setWhenReady(
                             std::max(curTick(), line->blk.getWhenReady()));
                         promoted->setXsMetadata(line->blk.getXsMetadata());
-                        if (prefetcher && line->blk.wasPrefetched()) {
-                            prefetcher->recordPrefetchUseful(
-                                line->blk.getXsMetadata().prefetchSource, true);
+                        if (line->blk.wasPrefetched()) {
+                            recordPdbUse(line);
+                            if (prefetcher) {
+                                prefetcher->recordPrefetchUseful(
+                                    line->blk.getXsMetadata().prefetchSource,
+                                    true);
+                            }
                         }
                         line->blk.clearPrefetched();
                         erasePdbLine(line);

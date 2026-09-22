@@ -80,6 +80,8 @@ class Cache : public BaseCache
         bool secure;
         std::vector<uint8_t> data;
         CacheBlk blk;
+        Tick refillTick;
+        bool usefulRecorded;
 
         PdbLine(Addr addr, bool secure, unsigned size);
     };
@@ -101,11 +103,13 @@ class Cache : public BaseCache
         statistics::Scalar evictions;
         statistics::Scalar snoopInvalidations;
         statistics::Scalar occupancy;
+        statistics::Distribution usefulLatency;
 
         explicit PdbStats(Cache &cache);
     } pdbStats;
 
     PdbIterator findPdbLine(Addr addr, bool secure);
+    void recordPdbUse(PdbIterator line);
     void queuePdbCleanEvict(Addr addr, bool secure, PacketList &writebacks);
     void erasePdbLine(PdbIterator line, PacketList *writebacks = nullptr);
     bool hasBeenPrefetched(Addr addr, bool secure) const override;
