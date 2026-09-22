@@ -283,7 +283,6 @@ class Fetch
     bool mlpAwareMode[MaxThreads];
     int32_t mlpRemainingInsts[MaxThreads];
     InstSeqNum mlpLongLatencyLoadSeqNum[MaxThreads];
-    bool MlpPolicyBusy[MaxThreads];
     void consumeLoadFeedback();
 
     /** per-thread state tracking for statistics */

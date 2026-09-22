@@ -191,6 +191,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         longLatencyStallReasonCyclesForStats[i] = 0;
         longLatencyStallCyclesForStats[i] = 0;
         blockStateHoldCycles[i] = 0;
+        mlpBlockStateHoldCycles[i] = 0;
         longLatencyStallCycles[i] = 0;
         lastLoadHeadSeqNum[i] = UINT64_MAX;
         mlpAwareMode[i] = false;
@@ -1994,13 +1995,14 @@ Fetch::sendInstructionsToDecode()
     }
 
     std::vector<ThreadID> selected_tids{primary_tid};
-    const bool block_policy_active = isBlockPolicyActive();
+    const bool block_policy_active = isThrottlePolicyActive(mlpAwareMode[i]);
     for (ThreadID tid = 0;
          tid < numThreads && selected_tids.size() < numPreDispatchThreads;
          ++tid) {
         if (tid != primary_tid && !stallSig->blockFetch[tid] &&
             !fetchQueue[tid].empty() &&
-            !(block_policy_active && threadFetchBlocked[tid])) {
+            !(block_policy_active && (mlpAwareMode[tid] ? 
+                mlpThreadFetchThrottled[tid] : threadFetchThrottled))) {
             selected_tids.push_back(tid);
         }
     }
@@ -2052,6 +2054,28 @@ Fetch::sendInstructionsToDecode()
 
         total_insts_to_decode += thread_insts;
         measureFrontendBubbles(thread_insts, tid);
+
+        // MLP block: count instructions sent after LL load
+        if (smtMlpFetchBlockPolicy == SMTMLPFetchBlockPolicy::MlpAwarePolicy &&
+            isBlockPolicy() && mlpAwareMode[tid]) {
+            // Count instructions sent to decode this cycle
+            // Check if any were sent after the LL load
+            int instsAfterLL = 0;
+            for (int i = 0; i < thread_insts; i++) {
+                const auto &inst = toDecode->insts[toDecode->size - thread_insts + i];
+                if (inst->seqNum >= mlpLongLatencyLoadSeqNum[tid]) {
+                    instsAfterLL++;
+                }
+            }
+            mlpRemainingInsts[tid] -= instsAfterLL;
+            if (mlpRemainingInsts[tid] <= 0) {
+                assert(toDecode->size >= 1);
+                mlpLongLatencyLoadSeqNum[tid] = toDecode->insts[toDecode->size-1]->seqNum;
+            }
+            DPRINTF(Fetch,
+                "[tid:%i] MLP-block: sent %d insts after LL, remaining=%d\n",
+                tid, instsAfterLL, mlpRemainingInsts[tid]);
+        }
     }
 
     // Legacy stall-reason vectors describe one logical decode lane. Keep
@@ -2065,28 +2089,6 @@ Fetch::sendInstructionsToDecode()
     if (wroteToTimeBuffer) {
         DPRINTF(Activity, "Activity this cycle.\n");
         cpu->activityThisCycle();
-    }
-
-    // MLP block: count instructions sent after LL load
-    if (smtMlpFetchBlockPolicy == SMTMLPFetchBlockPolicy::MlpAwarePolicy &&
-        isBlockPolicy() && mlpAwareMode[tid]) {
-        // Count instructions sent to decode this cycle
-        // Check if any were sent after the LL load
-        int instsAfterLL = 0;
-        for (int i = 0; i < insts_to_decode; i++) {
-            const auto &inst = toDecode->insts[toDecode->size - insts_to_decode + i];
-            if (inst->seqNum >= mlpLongLatencyLoadSeqNum[tid]) {
-                instsAfterLL++;
-            }
-        }
-        mlpRemainingInsts[tid] -= instsAfterLL;
-        if (mlpRemainingInsts[tid] <= 0) {
-            assert(toDecode->size >= 1);
-            mlpLongLatencyLoadSeqNum[tid] = toDecode->insts[toDecode->size-1]->seqNum;
-        }
-        DPRINTF(Fetch,
-            "[tid:%i] MLP-block: sent %d insts after LL, remaining=%d\n",
-            tid, instsAfterLL, mlpRemainingInsts[tid]);
     }
 }
 
