@@ -1995,10 +1995,6 @@ Fetch::sendInstructionsToDecode()
     }
 
     std::vector<ThreadID> selected_tids{primary_tid};
-<<<<<<< HEAD
-    const bool block_policy_active = isThrottlePolicyActive(mlpAwareMode[i]);
-=======
->>>>>>> 6cb6b8304b (cpu-o3: Fix Merge bug in fetch)
     for (ThreadID tid = 0;
          tid < numThreads && selected_tids.size() < numPreDispatchThreads;
          ++tid) {
