@@ -14,9 +14,10 @@ int
 CompositeValuePredictorFixedPriorityArb::choose(
         const std::vector<VPChooserCandidate> &candidates)
 {
+    // Only the listed types may win: a predictor whose type is absent from
+    // this table is never selected, even when it is the only candidate.
     constexpr ValuePredType priority[] = {
-        ValuePredType::VTAGE,
-        ValuePredType::EStride,
+        ValuePredType::IdealConstantLVP,
         ValuePredType::EgDiff,
     };
 

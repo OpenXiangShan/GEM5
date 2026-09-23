@@ -108,11 +108,11 @@ def setKmhV3IdealParams(args, system):
         if args.enable_vp:
             vp_type = getattr(args, "vp_type", "vtage")
             if vp_type == "all":
-                # Keep this order stable: it defines the fixed-priority order
-                # and the tie-break order for confidence arbitration.
+                # Order defines the child indices and the tie-break order for
+                # confidence arbitration; the fixed-priority order comes from
+                # the arbiter's own predictor-type table.
                 predictor_types = [
-                    "vtage",
-                    "estride",
+                    "ideal-constant",
                     "egdiff",
                 ]
             else:

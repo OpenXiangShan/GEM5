@@ -1048,8 +1048,9 @@ def xiangshan_system_init():
         type=str,
         default="vtage",
         choices=["vtage", "egdiff", "estride", "ideal-constant", "all"],
-        help="Value predictor used when --enable-vp is set. Use 'all' to "
-             "enable all composable predictors (default: vtage).",
+        help="Value predictor used when --enable-vp is set. Use 'all' for the "
+             "constant + EgDiff composite (default: vtage). The fixed-priority "
+             "arbiter only selects ideal-constant and egdiff candidates.",
     )
     parser.add_argument(
         "--vp-arb",
