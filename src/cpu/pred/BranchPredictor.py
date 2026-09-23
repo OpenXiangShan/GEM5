@@ -1231,6 +1231,8 @@ class DecoupledBPUWithBTB(BranchPredictor):
         "Number of H2P table cache-line entries")
     h2p_age_insts = Param.Unsigned(20000,
         "Committed instructions between H2P counter aging passes")
+    h2p_buffer_entries = Param.Unsigned(4,
+        "Number of metadata-only APF buffer entries to model")
 
     predictWidth = Param.Unsigned(64, "Maximum range in bytes that a single prediction can cover")
     numStages = Param.Unsigned(4, "Maximum number of stages in the pipeline")

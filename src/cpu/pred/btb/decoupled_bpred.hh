@@ -21,6 +21,7 @@
 #include "cpu/pred/btb/btb_ubtb.hh"
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/ftq.hh"
+#include "cpu/pred/btb/h2p_buffer_model.hh"
 #include "cpu/pred/btb/h2p_table.hh"
 #include "cpu/pred/btb/history_manager.hh"
 #include "cpu/pred/btb/mbtb.hh"
@@ -162,8 +163,10 @@ class DecoupledBPUWithBTB : public BPredUnit
     const bool enableH2PTable;
     const unsigned h2pTableEntries;
     const uint64_t h2pAgeInsts;
+    const unsigned h2pBufferEntries;
 
     H2PTable h2pTable;
+    H2PBufferModel h2pBufferModel;
     uint64_t h2pAgeRemaining = 0;
 
     bool sharedFTQMode() const;
@@ -175,6 +178,12 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool ftqFull(ThreadID tid) const;
     H2PTable::LookupResult lookupH2P(Addr pc);
     void trainH2P(const BranchOutcome &branch);
+    void recordH2PBufferCandidates(const FetchTarget &target,
+                                   FetchTargetId ftqId);
+    void resolveH2PBufferCandidate(const BranchOutcome &branch);
+    void commitH2PBufferCandidate(const BranchOutcome &branch);
+    void squashH2PBufferCandidates(ThreadID tid, FetchTargetId targetId,
+                                    SquashType squashType, Addr keepPc);
 
     bool isThreadActive(ThreadID tid) const;
     bool canStartPrediction(ThreadID tid) const;
@@ -296,6 +305,22 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar h2pReplacements;
         statistics::Scalar h2pAllocationDrops;
 
+        statistics::Scalar h2pMispredictPotential;
+        statistics::Scalar h2pMispredictAdmitted;
+        statistics::Scalar h2pMispredictRejected;
+        statistics::Scalar h2pEstimatedCorrectedBranches;
+        statistics::Scalar h2pBufferGenerated;
+        statistics::Scalar h2pBufferAdmitted;
+        statistics::Scalar h2pBufferRejectedFull;
+        statistics::Scalar h2pBufferSquashed;
+        statistics::Formula h2pPotentialCoverage;
+        statistics::Formula h2pBufferCoverage;
+        statistics::Formula h2pBufferUsefulRate;
+        statistics::Scalar h2pMaxOutstanding;
+        statistics::Scalar h2pBufferCapacityEntries;
+        statistics::Scalar h2pBufferCapacityUops;
+        statistics::Scalar h2pBufferStorageBytes;
+
         // Fine-grained branch classification statistics
         statistics::Vector branchClassCounts; ///< Classified branch occurrences
         statistics::Vector branchClassMisses; ///< Mispredictions per class
@@ -367,7 +392,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
         DBPBTBStats(statistics::Group* parent, unsigned numStages,
                     unsigned fsqSize, unsigned maxInstsNum,
-                    unsigned numThreads);
+                    unsigned numThreads, unsigned h2pBufferEntries);
     } dbpBtbStats;
 
   public:

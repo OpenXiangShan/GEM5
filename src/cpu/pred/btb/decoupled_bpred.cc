@@ -90,9 +90,12 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       enableH2PTable(p.enable_h2p_table),
       h2pTableEntries(p.h2p_table_entries),
       h2pAgeInsts(p.h2p_age_insts),
+      h2pBufferEntries(p.h2p_buffer_entries),
       h2pTable(p.h2p_table_entries),
+      h2pBufferModel(p.h2p_buffer_entries),
       h2pAgeRemaining(p.h2p_age_insts),
-      dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum, p.numThreads)
+      dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum, p.numThreads,
+                  p.h2p_buffer_entries)
 {
     panic_if(h2pTableEntries == 0 ||
              h2pTableEntries % H2PTable::Ways != 0,
@@ -100,6 +103,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
              h2pTableEntries, H2PTable::Ways);
     panic_if(enableH2PTable && h2pAgeInsts == 0,
              "H2P counter aging period must be non-zero when enabled");
+    panic_if(h2pBufferEntries == 0,
+             "H2P buffer entries must be non-zero");
     panic_if(numPredictingThreads == 0 ||
              numPredictingThreads > numThreads ||
              numPredictingThreads > 2,
@@ -644,6 +649,7 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
 
     // 5. Add entry to fetch target queue
     ftq.insert(std::move(entry));
+    recordH2PBufferCandidates(ftq.back(tid), ftq.backId(tid));
     threads[tid].nextPredictionAfterSquash = false;
     advancePairPhase(threads[tid].s0PairPhase);
     threads[tid].validprediction = false;
@@ -775,6 +781,7 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
     updateHistoryForPrediction(entry, secondPred);
     fillAheadPipeline(entry);
     ftq.insert(std::move(entry));
+    recordH2PBufferCandidates(ftq.back(tid), ftq.backId(tid));
     pairtage->recordTwoTakenBlockEnqueued();
     advancePairPhase(thread.s0PairPhase);
 
@@ -937,6 +944,7 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
                 "recovering predictor state from redirect PC %#lx\n",
                 tid, target_id, redirect_pc);
         ftq.clear(tid);
+        h2pBufferModel.clear(tid);
         clearPreds(tid);
         threads[tid].validprediction = false;
         threads[tid].s0PC = redirect_pc;
@@ -959,6 +967,8 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
 
     // Remove targets after the squashed one
     ftq.squashAfter(target_id, tid);
+    squashH2PBufferCandidates(tid, target_id, squash_type,
+                              squash_pc.instAddr());
 
     const auto &recovery_target = ftq.get(target_id, tid);
     const auto ghist_update = recovery_target.getGHistUpdateDuringSquash(
@@ -1203,6 +1213,9 @@ DecoupledBPUWithBTB::resolveUpdate(const std::vector<BranchOutcome> &events)
         }
     }
 
+    for (const auto &branch : events)
+        resolveH2PBufferCandidate(branch);
+
     return true;
 }
 
@@ -1374,6 +1387,70 @@ DecoupledBPUWithBTB::trainH2P(const BranchOutcome &branch)
     dbpBtbStats.h2pAllocations += result.allocated;
     dbpBtbStats.h2pReplacements += result.replaced;
     dbpBtbStats.h2pAllocationDrops += result.dropped;
+}
+
+void
+DecoupledBPUWithBTB::recordH2PBufferCandidates(
+    const FetchTarget &target, FetchTargetId ftqId)
+{
+    if (!enableH2PTable)
+        return;
+
+    for (const auto pc : target.h2pBranchPCs) {
+        const auto result = h2pBufferModel.add(target.tid, ftqId, pc);
+        if (!result.added)
+            continue;
+        dbpBtbStats.h2pBufferGenerated++;
+        dbpBtbStats.h2pBufferAdmitted += result.admitted;
+        dbpBtbStats.h2pBufferRejectedFull += result.rejectedFull;
+        dbpBtbStats.h2pMaxOutstanding = std::max(
+            dbpBtbStats.h2pMaxOutstanding.value(),
+            static_cast<double>(h2pBufferModel.maxOccupancy()));
+    }
+}
+
+void
+DecoupledBPUWithBTB::resolveH2PBufferCandidate(
+    const BranchOutcome &branch)
+{
+    if (!enableH2PTable || !branch.isCond)
+        return;
+
+    const auto result = h2pBufferModel.resolve(branch);
+    (void)result;
+}
+
+void
+DecoupledBPUWithBTB::commitH2PBufferCandidate(
+    const BranchOutcome &branch)
+{
+    if (!enableH2PTable || !branch.isCond)
+        return;
+
+    const auto result = h2pBufferModel.commit(branch);
+    if (!result.found || !branch.mispredicted)
+        return;
+
+    dbpBtbStats.h2pMispredictPotential++;
+    if (result.admitted) {
+        dbpBtbStats.h2pMispredictAdmitted++;
+        dbpBtbStats.h2pEstimatedCorrectedBranches++;
+    } else {
+        dbpBtbStats.h2pMispredictRejected++;
+    }
+}
+
+void
+DecoupledBPUWithBTB::squashH2PBufferCandidates(
+    ThreadID tid, FetchTargetId targetId, SquashType squashType, Addr keepPc)
+{
+    if (!enableH2PTable)
+        return;
+
+    unsigned removed = h2pBufferModel.squashAfter(targetId, tid);
+    if (squashType == SQUASH_CTRL)
+        removed += h2pBufferModel.squashTargetExcept(targetId, tid, keepPc);
+    dbpBtbStats.h2pBufferSquashed += removed;
 }
 
 /**

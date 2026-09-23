@@ -912,6 +912,12 @@ def xiangshan_system_init():
         help="Enable the APF hard-to-predict branch table",
     )
     parser.add_argument(
+        "--h2p-buffer-entries",
+        type=int,
+        default=4,
+        help="Number of metadata-only APF buffer entries to model",
+    )
+    parser.add_argument(
         "--disable-l1-direct-compression",
         action="store_false",
         dest="enable_l1_direct_compression",
