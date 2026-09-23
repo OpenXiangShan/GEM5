@@ -198,6 +198,16 @@ struct Hint
     }
 };
 
+// v2.0 Stream/Stride feedback is disabled for the v2.1 evaluation.  Keeping
+// the policy in the shared descriptor header makes every callback entry point
+// use the same fail-closed rule.
+constexpr bool
+spatialFeedbackAccepted(bool requested)
+{
+    (void)requested;
+    return false;
+}
+
 // A small binary tree PLRU, also used by the 4-way consumer subtable.
 // A bit points at the least recently used subtree.
 template <unsigned N> struct PLRU

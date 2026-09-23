@@ -138,3 +138,9 @@ TEST(LldpHint, ConsumerGenerationRejectsReplacedChild)
     EXPECT_TRUE(hint.consumerMatches(2, 0));
     EXPECT_FALSE(hint.consumerMatches(4, 0));
 }
+
+TEST(LldpFeedback, ValidSignalsAreDisabledByPolicy)
+{
+    EXPECT_FALSE(spatialFeedbackAccepted(false));
+    EXPECT_FALSE(spatialFeedbackAccepted(true));
+}

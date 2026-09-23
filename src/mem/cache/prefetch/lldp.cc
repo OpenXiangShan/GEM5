@@ -1283,16 +1283,23 @@ LLDPrefetcher::emitSpatialFeedback(const PacketPtr &demand, bool valid)
         source != PrefetchSourceType::StoreStream &&
         source != PrefetchSourceType::SStride)
         return;
+    // v2.0 spatial feedback is temporarily disabled.  Keep the callback and
+    // signal counter so the path remains observable, but never allow a
+    // successful LLDPS candidate to increase Stream/Stride L1 degree.
+    const bool feedback_valid = lldp::spatialFeedbackAccepted(valid);
     stats.spatialFeedbackSignals++;
-    stats.spatialFeedbackValid += valid;
-    spatialFeedback(source, demand->req->getPC(), valid);
+    stats.spatialFeedbackValid += feedback_valid;
+    spatialFeedback(source, demand->req->getPC(), feedback_valid);
 }
 
 void
 LLDPrefetcher::spatialFeedback(PrefetchSourceType source, Addr pc, bool valid)
 {
+    // Keep the public interface fail-closed as well as the internal emitter:
+    // callers cannot re-enable v2.0 feedback by passing valid=true here.
     if (spatialFeedbackHandler)
-        spatialFeedbackHandler(source, pc, valid);
+        spatialFeedbackHandler(source, pc,
+                               lldp::spatialFeedbackAccepted(valid));
 }
 
 void
