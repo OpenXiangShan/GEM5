@@ -80,6 +80,10 @@ LLDPrefetcher::LLDPStats::LLDPStats(statistics::Group *parent)
                "Compact PC-pair trust-table replacements"),
       ADD_STAT(pairTrustProbes, statistics::units::Count::get(),
                "Trusted PC pairs installing a one-token exact Meta probe"),
+      ADD_STAT(spatialFeedbackSignals, statistics::units::Count::get(),
+               "LLDPS feedback signals sent to stream/stride prefetchers"),
+      ADD_STAT(spatialFeedbackValid, statistics::units::Count::get(),
+               "LLDPS feedback signals accepted by the queue"),
       ADD_STAT(samplerReplacementCnt, statistics::units::Count::get(),
                "SamplerTable victim count distribution"),
       ADD_STAT(candidateGenerated, statistics::units::Count::get(), "Candidate lifecycles generated"),
@@ -227,6 +231,7 @@ LLDPrefetcher::isSpatialPrefetch(const PacketPtr &pkt) const
     switch (pkt->req->getXsMetadata().prefetchSource) {
       case PrefetchSourceType::SStream:
       case PrefetchSourceType::SStride:
+      case PrefetchSourceType::StoreStream:
       case PrefetchSourceType::SPht:
       case PrefetchSourceType::HWP_BOP:
       case PrefetchSourceType::SPP:
@@ -1146,8 +1151,11 @@ LLDPrefetcher::queueCandidate(const PacketPtr &demand,
 {
     stats.candidates++;
     stats.candidateGenerated++;
-    if (!admitPfControlCandidate(source))
+    if (!admitPfControlCandidate(source)) {
+        if (source == PrefetchSourceType::LLDPS)
+            emitSpatialFeedback(demand, false);
         return false;
+    }
     const Addr origin_addr = demand->req->hasVaddr() ?
         demand->req->getVaddr() : demand->req->getPaddr();
     PrefetchInfo origin(demand, origin_addr, true,
@@ -1184,8 +1192,11 @@ LLDPrefetcher::queueCandidate(const PacketPtr &demand,
         if (consumer && *consumer < SubEntries)
             table[row].consumers[*consumer].candidateCount++;
     }
-    if (!insert(demand, candidate, command))
+    if (!insert(demand, candidate, command)) {
+        if (source == PrefetchSourceType::LLDPS)
+            emitSpatialFeedback(demand, false);
         return false;
+    }
 
     stats.candidateQueued++;
     if (source == PrefetchSourceType::LLDPT)
@@ -1218,7 +1229,32 @@ LLDPrefetcher::queueCandidate(const PacketPtr &demand,
         owner.source = source;
         candidateOwners[id] = owner;
     }
+    if (source == PrefetchSourceType::LLDPS)
+        emitSpatialFeedback(demand, true);
     return true;
+}
+
+void
+LLDPrefetcher::emitSpatialFeedback(const PacketPtr &demand, bool valid)
+{
+    if (!spatialFeedbackHandler || !demand || !demand->req ||
+        !demand->req->hasPC() || !demand->req->hasXsMetadata())
+        return;
+    const auto source = demand->req->getXsMetadata().prefetchSource;
+    if (source != PrefetchSourceType::SStream &&
+        source != PrefetchSourceType::StoreStream &&
+        source != PrefetchSourceType::SStride)
+        return;
+    stats.spatialFeedbackSignals++;
+    stats.spatialFeedbackValid += valid;
+    spatialFeedback(source, demand->req->getPC(), valid);
+}
+
+void
+LLDPrefetcher::spatialFeedback(PrefetchSourceType source, Addr pc, bool valid)
+{
+    if (spatialFeedbackHandler)
+        spatialFeedbackHandler(source, pc, valid);
 }
 
 void

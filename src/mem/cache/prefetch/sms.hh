@@ -188,6 +188,7 @@ class XSCompositePrefetcher : public Queued
     lldp::Hint loadTrain(const PacketPtr &pkt, bool miss) override;
     void hintData(const lldp::Hint &hint, const PacketPtr &demand,
                   Addr addr_p, const uint8_t *data, unsigned size) override;
+    void spatialFeedback(PrefetchSourceType source, Addr pc, bool valid);
     void notifyPrefetchUseful(PrefetchSourceType source,
                               uint64_t candidate_id) override;
     void notifyPrefetchMerged(uint64_t candidate_id) override;

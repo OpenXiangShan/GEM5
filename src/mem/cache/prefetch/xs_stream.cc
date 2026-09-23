@@ -42,6 +42,7 @@ XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrP
         badPreNum++;
     }
     STREAMEntry *entry = streamLookup(pfi, in_active_page, decr);
+    const bool lldp_feedback = entry->lldpFeedback;
     if ((issuedPrefetches >= VALIDITYCHECKINTERVAL) && (enableAutoDepth)) {
         if ((double)late_num / issuedPrefetches >= LATECOVERAGE) {
             if (depth != DEPTHRIGHT)
@@ -58,7 +59,8 @@ XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrP
 
     if (in_active_page) {
         Addr pf_stream_l1 = decr ? block_addr - depth * blkSize : block_addr + depth * blkSize;
-        sendPFWithFilter(pfi, pf_stream_l1, addresses, 1, stream_type, L1BLKDEGREE, 1, entry);
+        sendPFWithFilter(pfi, pf_stream_l1, addresses, 1, stream_type,
+                         L1BLKDEGREE + (lldp_feedback ? 1 : 0), 1, entry);
         const auto l2_depth = l2Depth ? l2Depth : (depth << l2Ratio);
         Addr pf_stream_l2 = decr ? block_addr - l2_depth * blkSize :
                                    block_addr + l2_depth * blkSize;
@@ -68,6 +70,17 @@ XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrP
                 decr ? block_addr - (depth << l3Ratio) * blkSize : block_addr + (depth << l3Ratio) * blkSize;
             sendPFWithFilter(pfi, pf_stream_l3, addresses, 1, stream_type, L3BLKDEGREE, 3, entry);
         }
+    }
+}
+
+void
+XsStreamPrefetcher::spatialFeedback(Addr pc, bool valid)
+{
+    if (valid) {
+        lldpFeedbackPCs.insert(pc);
+        for (STREAMEntry &entry : stream_array)
+            if (entry.isValid() && entry.pc == pc)
+                entry.lldpFeedback = true;
     }
 }
 
@@ -94,6 +107,8 @@ XsStreamPrefetcher::streamLookup(const PrefetchInfo &pfi, bool &in_active_page, 
 
     if (entry) {
         stream_array.accessEntry(entry);
+        entry->pc = pc;
+        entry->lldpFeedback = lldpFeedbackPCs.count(pc) != 0;
         uint64_t region_bit_accessed = 1UL << vaddr_offset;
         if (entry_plus)
             entry->decrMode = true;
@@ -119,6 +134,8 @@ XsStreamPrefetcher::streamLookup(const PrefetchInfo &pfi, bool &in_active_page, 
     entry->cnt = 1;
     entry->active = in_active_page;
     entry->contextId = context_id;
+    entry->pc = pc;
+    entry->lldpFeedback = lldpFeedbackPCs.count(pc) != 0;
     stream_array.insertEntry(stream_key, secure, entry);
     return entry;
 }

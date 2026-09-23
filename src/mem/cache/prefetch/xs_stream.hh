@@ -1,6 +1,7 @@
 #ifndef __MEM_CACHE_PREFETCH_XSSTREAM_HH__
 #define __MEM_CACHE_PREFETCH_XSSTREAM_HH__
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <boost/compute/detail/lru_cache.hpp>
@@ -85,12 +86,18 @@ class XsStreamPrefetcher : public Queued
         int cnt;
         bool decrMode;
         ContextID contextId;
+        Addr pc;
+        bool lldpFeedback{false};
         STREAMEntry()
             : TaggedEntry(), tag(0), bitVec(0), active(false), cnt(0),
-              decrMode(false), contextId(InvalidContextID)
+              decrMode(false), contextId(InvalidContextID), pc(0),
+              lldpFeedback(false)
         {}
     };
     AssociativeSet<STREAMEntry> stream_array;
+    // One feedback bit per trigger PC.  A PC can move between regions, so the
+    // bit must not be tied to a single region-table way.
+    std::unordered_set<Addr> lldpFeedbackPCs;
     STREAMEntry *streamLookup(const PrefetchInfo &pfi, bool &in_active_page, bool &decr);
     void sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                           PrefetchSourceType src, int pf_degree, int ahead_level = -1, STREAMEntry *entry = nullptr);
@@ -106,6 +113,7 @@ class XsStreamPrefetcher : public Queued
         panic("not implemented");
     };
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, int late_num);
+    void spatialFeedback(Addr pc, bool valid);
     PrefetchFilter* stridestream_pfFilter_l1;
     PrefetchFilter* stridestream_pfFilter_l2l3;
 };

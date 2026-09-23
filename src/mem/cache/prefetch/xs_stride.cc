@@ -86,6 +86,7 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
             stats.strideRedundanthitCount++;
         }
         stride.accessEntry(entry);
+        entry->lldpFeedback = lldpFeedbackPCs.count(pfi.getPC()) != 0;
         int64_t new_stride = lookupAddr - entry->lastAddr;
         if (new_stride == 0 || (labs(new_stride) < 64 && (miss_repeat || entry->longStride.calcSaturation() >= 0.5))) {
             DPRINTF(XSStridePrefetcher, "Stride touch in the same blk, ignore redundant req\n");
@@ -176,6 +177,7 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
             }
         }
         if (entry->conf >= 2) {
+            const bool lldp_feedback = entry->lldpFeedback;
             // if miss send 1*stride ~ depth*stride, else send depth*stride
             unsigned start_depth = pfi.isCacheMiss() ? std::max(1, (entry->depth - 4)) : entry->depth;
             Addr pf_addr = 0;
@@ -204,6 +206,17 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
                         stride_hash_pc, true, is_first_shot,
                         pfi.isCacheMiss(), false);
                 }
+                if (lldp_feedback) {
+                    const Addr feedback_addr =
+                        lookupAddr + stride_offset * 8;
+                    sendPFWithFilter(pfi, blockAddress(feedback_addr),
+                                     addresses, 0,
+                                     PrefetchSourceType::SStride, 1);
+                    if (is_first_shot)
+                        stats.strideUniquepfCount++;
+                    else
+                        stats.strideRedundantpfCount++;
+                }
             } else {
                 for (unsigned i = start_depth; i <= entry->depth; i++) {
                     pf_addr = lookupAddr + entry->stride * i;
@@ -214,6 +227,17 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
                     } else {
                         stats.strideRedundantpfCount++;
                     }
+                }
+                if (lldp_feedback) {
+                    const Addr feedback_addr =
+                        lookupAddr + static_cast<Addr>(entry->stride) * 8;
+                    sendPFWithFilter(pfi, blockAddress(feedback_addr),
+                                     addresses, 0,
+                                     PrefetchSourceType::SStride, 1);
+                    if (is_first_shot)
+                        stats.strideUniquepfCount++;
+                    else
+                        stats.strideRedundantpfCount++;
                 }
                 stride_pf = pf_addr;  // the longest lookahead
             }
@@ -254,6 +278,7 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
         entry->lateConf.reset();
         entry->pc = pfi.getPC();
         entry->contextId = context_id;
+        entry->lldpFeedback = lldpFeedbackPCs.count(pfi.getPC()) != 0;
         entry->histStrides.clear();
         entry->matchedSinceAlloc = false;
         DPRINTF(XSStridePrefetcher, "Stride miss, insert with stride 0\n");
@@ -277,6 +302,20 @@ XSStridePrefetcher::periodStrideDepthDown()
             }
         }
         depthDownCounter = 0;
+    }
+}
+
+void
+XSStridePrefetcher::spatialFeedback(Addr pc, bool valid)
+{
+    if (valid) {
+        lldpFeedbackPCs.insert(pc);
+        for (StrideEntry &entry : strideUnique)
+            if (entry.isValid() && entry.pc == pc)
+                entry.lldpFeedback = true;
+        for (StrideEntry &entry : strideRedundant)
+            if (entry.isValid() && entry.pc == pc)
+                entry.lldpFeedback = true;
     }
 }
 

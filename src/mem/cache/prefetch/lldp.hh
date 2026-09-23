@@ -4,6 +4,7 @@
 
 #include <array>
 #include <deque>
+#include <functional>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
@@ -21,6 +22,8 @@ namespace prefetch
 class LLDPrefetcher : public Queued
 {
   private:
+    using SpatialFeedbackHandler =
+        std::function<void(PrefetchSourceType, Addr, bool)>;
     static constexpr unsigned TableEntries = 64;
     static constexpr unsigned SubEntries = 4;
     struct SubEntry
@@ -191,6 +194,7 @@ class LLDPrefetcher : public Queued
     const uint8_t consumerThreshold;
     const uint8_t immediateThreshold;
     BaseCPU *trainingCPU;
+    SpatialFeedbackHandler spatialFeedbackHandler;
 
     class DependenceListener : public ProbeListenerArgBase<o3::XsDynInstMetaPtr>
     {
@@ -227,6 +231,7 @@ class LLDPrefetcher : public Queued
             metaFallbacks, samplerReservoirAdmissions,
             samplerReservoirBypasses, pairTrustPromotions,
             pairTrustReplacements, pairTrustProbes;
+        statistics::Scalar spatialFeedbackSignals, spatialFeedbackValid;
         statistics::Vector samplerReplacementCnt;
         statistics::Scalar candidateGenerated, candidateQueued, candidateIssued,
             candidateDropped, candidateMerged, candidateUseful, candidateUnused,
@@ -288,6 +293,7 @@ class LLDPrefetcher : public Queued
                                            Addr consumer_pc, ContextID context);
     void ageMetaTable();
     void updateMetaOwner(uint64_t candidate_id, int result);
+    void emitSpatialFeedback(const PacketPtr &demand, bool valid);
     bool queueCandidate(const PacketPtr &demand, const lldp::Hint &hint,
                         Addr addr_p, Addr addr_c,
                         PrefetchSourceType source,
@@ -329,6 +335,13 @@ class LLDPrefetcher : public Queued
     void pfHitInWB(PrefetchSourceType source,
                    uint64_t candidate_id) override;
     void recordIssuedPrefetchStats(const PacketPtr &pkt) override;
+    // Report the result of an LLDPS trigger to the spatial prefetcher that
+    // supplied the original demand.  The callback is intentionally value-only
+    // so no packet or dynamic-instruction lifetime crosses this interface.
+    void spatialFeedback(PrefetchSourceType source, Addr pc, bool valid);
+    void setSpatialFeedbackHandler(
+        std::function<void(PrefetchSourceType, Addr, bool)> handler)
+    { spatialFeedbackHandler = std::move(handler); }
     void calculatePrefetch(const PrefetchInfo &,
                            std::vector<AddrPriority> &) override {}
     void addToQueue(std::list<DeferredPacket> &queue,

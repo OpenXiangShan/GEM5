@@ -123,6 +123,10 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
         Xsstream->filter = &this->pfBlockLRUFilter;
     }
     lldp->setSharedFilterContextQualified(true);
+    lldp->setSpatialFeedbackHandler(
+        [this](PrefetchSourceType source, Addr pc, bool valid) {
+            spatialFeedback(source, pc, valid);
+        });
 
     DPRINTF(XSCompositePrefetcher, "SMS: region_size: %d regionBlks: %d\n",
             regionSize, regionBlks);
@@ -902,6 +906,25 @@ lldp::Hint
 XSCompositePrefetcher::loadTrain(const PacketPtr &pkt, bool miss)
 {
     return enableLLDP ? lldp->loadTrain(pkt, miss) : lldp::Hint();
+}
+
+void
+XSCompositePrefetcher::spatialFeedback(PrefetchSourceType source, Addr pc,
+                                       bool valid)
+{
+    switch (source) {
+      case PrefetchSourceType::SStream:
+      case PrefetchSourceType::StoreStream:
+        if (Xsstream)
+            Xsstream->spatialFeedback(pc, valid);
+        break;
+      case PrefetchSourceType::SStride:
+        if (Sstride)
+            Sstride->spatialFeedback(pc, valid);
+        break;
+      default:
+        break;
+    }
 }
 
 void
