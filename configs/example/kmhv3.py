@@ -117,6 +117,7 @@ def setKmhV3Params(args, system):
         if args.bp_type == 'DecoupledBPUWithBTB':
             cpu.branchPred.ftq_size = 64
             cpu.branchPred.fsq_size = 64
+            cpu.branchPred.enable_h2p_table = args.enable_h2p_table
 
             if args.btb_tage_upper_bound:
                 cpu.branchPred.tage = BTBTAGEUpperBound(

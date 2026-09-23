@@ -451,6 +451,42 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(uncondMiss, statistics::units::Count::get(), "the number of uncond branch misses"),
     ADD_STAT(returnMiss, statistics::units::Count::get(), "the number of return branch misses"),
     ADD_STAT(otherMiss, statistics::units::Count::get(), "the number of other branch misses"),
+    ADD_STAT(h2pLookups, statistics::units::Count::get(),
+             "conditional branch predictions looked up in the H2P table"),
+    ADD_STAT(h2pCandidates, statistics::units::Count::get(),
+             "conditional branch predictions classified as H2P"),
+    ADD_STAT(h2pTruePositive, statistics::units::Count::get(),
+             "H2P-marked committed conditional branches that mispredicted"),
+    ADD_STAT(h2pFalsePositive, statistics::units::Count::get(),
+             "H2P-marked committed conditional branches that were correct"),
+    ADD_STAT(h2pFalseNegative, statistics::units::Count::get(),
+             "unmarked committed conditional branches that mispredicted"),
+    ADD_STAT(h2pTrueNegative, statistics::units::Count::get(),
+             "unmarked committed conditional branches that were correct"),
+    ADD_STAT(h2pCoverage, statistics::units::Ratio::get(),
+             "H2P misprediction coverage: TP / (TP + FN)",
+             h2pTruePositive / (h2pTruePositive + h2pFalseNegative)),
+    ADD_STAT(h2pPrecision, statistics::units::Ratio::get(),
+             "H2P precision: TP / (TP + FP)",
+             h2pTruePositive / (h2pTruePositive + h2pFalsePositive)),
+    ADD_STAT(h2pAccuracy, statistics::units::Ratio::get(),
+             "H2P classification accuracy: (TP + TN) / all samples",
+             (h2pTruePositive + h2pTrueNegative) /
+             (h2pTruePositive + h2pFalsePositive + h2pFalseNegative +
+              h2pTrueNegative)),
+    ADD_STAT(h2pFalsePositiveRate, statistics::units::Ratio::get(),
+             "H2P invalid marking ratio: FP / (TP + FP)",
+             h2pFalsePositive / (h2pTruePositive + h2pFalsePositive)),
+    ADD_STAT(h2pTrainMispredicts, statistics::units::Count::get(),
+             "committed conditional mispredictions used to train H2P"),
+    ADD_STAT(h2pAllocations, statistics::units::Count::get(),
+             "new H2P branch slots allocated"),
+    ADD_STAT(h2pCounterAges, statistics::units::Count::get(),
+             "H2P branch slots decremented by aging"),
+    ADD_STAT(h2pReplacements, statistics::units::Count::get(),
+             "H2P cache-line entries replaced"),
+    ADD_STAT(h2pAllocationDrops, statistics::units::Count::get(),
+             "H2P allocations dropped because a line has two live slots"),
     ADD_STAT(branchClassCounts, statistics::units::Count::get(), "branch counts by fine-grained class"),
     ADD_STAT(branchClassMisses, statistics::units::Count::get(), "branch mispredictions by fine-grained class"),
     ADD_STAT(branchClassCountsTotal, statistics::units::Count::get(), "total number of classified branches"),
@@ -530,6 +566,10 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     predictionsStartedByThread.init(numThreads);
     branchClassMisses.init(NumBranchClasses);
     controlSquashByClass.init(NumBranchClasses);
+    h2pCoverage.precision(6);
+    h2pPrecision.precision(6);
+    h2pAccuracy.precision(6);
+    h2pFalsePositiveRate.precision(6);
     for (int i = 0; i < NumS1SourceBuckets; ++i) {
         s1PredWrongBySourceAndReason.subname(i, S1SourceLabels[i]);
     }
@@ -872,6 +912,8 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     BranchInfo info(branchAddr, targetAddr, inst->staticInst, fallThruPC-branchAddr);
     bool taken = rv_pc.branching() || inst->isUncondCtrl();
 
+    trainH2P(outcome);
+
     // ---------- Process misprediction and update statistics ----------
     processMisprediction(entry, branchAddr, info, taken, mispred);
 
@@ -982,6 +1024,14 @@ DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
 
     // Update global committed instruction count
     numInstCommitted++;
+
+    if (enableH2PTable) {
+        assert(h2pAgeRemaining > 0);
+        if (--h2pAgeRemaining == 0) {
+            dbpBtbStats.h2pCounterAges += h2pTable.age();
+            h2pAgeRemaining = h2pAgeInsts;
+        }
+    }
 
     DPRINTF(Profiling, "notifyInstCommit, inst=%s, commitInstNum=%d\n",
             inst->staticInst->disassemble(inst->pcState().instAddr()),

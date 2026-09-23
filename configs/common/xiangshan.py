@@ -906,6 +906,12 @@ def xiangshan_system_init():
         help="Use BTBTAGEUpperBound in kmhv3 instead of the default BTBTAGE",
     )
     parser.add_argument(
+        "--enable-h2p-table",
+        action="store_true",
+        default=False,
+        help="Enable the APF hard-to-predict branch table",
+    )
+    parser.add_argument(
         "--disable-l1-direct-compression",
         action="store_false",
         dest="enable_l1_direct_compression",

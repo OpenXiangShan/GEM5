@@ -87,8 +87,19 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       smtFTQThreshold(p.smtFTQThreshold),
       ftq(p.numThreads, p.ftq_size),
       resolveBlockThreshold(p.resolveBlockThreshold),
+      enableH2PTable(p.enable_h2p_table),
+      h2pTableEntries(p.h2p_table_entries),
+      h2pAgeInsts(p.h2p_age_insts),
+      h2pTable(p.h2p_table_entries),
+      h2pAgeRemaining(p.h2p_age_insts),
       dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum, p.numThreads)
 {
+    panic_if(h2pTableEntries == 0 ||
+             h2pTableEntries % H2PTable::Ways != 0,
+             "H2P table entries (%u) must be a non-zero multiple of %u",
+             h2pTableEntries, H2PTable::Ways);
+    panic_if(enableH2PTable && h2pAgeInsts == 0,
+             "H2P counter aging period must be non-zero when enabled");
     panic_if(numPredictingThreads == 0 ||
              numPredictingThreads > numThreads ||
              numPredictingThreads > 2,
@@ -1110,6 +1121,25 @@ DecoupledBPUWithBTB::commit(
         if (block_idx < committedBlocks.size() &&
             committedBlocks[block_idx].ftqId == committed_id) {
             const auto &block = committedBlocks[block_idx];
+
+            if (enableH2PTable) {
+                for (const auto &branch : block.branches) {
+                    if (!branch.isCond)
+                        continue;
+                    const bool marked = std::find(
+                        target.h2pBranchPCs.begin(), target.h2pBranchPCs.end(),
+                        branch.pc) != target.h2pBranchPCs.end();
+                    if (marked && branch.mispredicted)
+                        dbpBtbStats.h2pTruePositive++;
+                    else if (marked)
+                        dbpBtbStats.h2pFalsePositive++;
+                    else if (branch.mispredicted)
+                        dbpBtbStats.h2pFalseNegative++;
+                    else
+                        dbpBtbStats.h2pTrueNegative++;
+                }
+            }
+
             const PredictionUpdateContext context(target);
             const PreparedUpdate update(block.branches);
 
@@ -1285,6 +1315,18 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     entry.isHit = !pred.btbEntries.empty() || pairtageFallThroughHit;
     entry.falseHit = false;
     entry.setPredictedBranches(pred.btbEntries);
+    entry.h2pBranchPCs.clear();
+    if (enableH2PTable) {
+        for (const auto &branch : pred.btbEntries) {
+            if (!branch.valid || !branch.isCond)
+                continue;
+            dbpBtbStats.h2pLookups++;
+            if (lookupH2P(branch.pc).h2p) {
+                entry.h2pBranchPCs.push_back(branch.pc);
+                dbpBtbStats.h2pCandidates++;
+            }
+        }
+    }
     entry.predTaken = taken;
     entry.predEndPC = fallThroughAddr;
 
@@ -1313,6 +1355,25 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     }
 
     return entry;
+}
+
+H2PTable::LookupResult
+DecoupledBPUWithBTB::lookupH2P(Addr pc)
+{
+    return enableH2PTable ? h2pTable.lookup(pc) : H2PTable::LookupResult{};
+}
+
+void
+DecoupledBPUWithBTB::trainH2P(const BranchOutcome &branch)
+{
+    if (!enableH2PTable || !branch.isCond || !branch.mispredicted)
+        return;
+
+    const auto result = h2pTable.trainMispred(branch.pc);
+    dbpBtbStats.h2pTrainMispredicts++;
+    dbpBtbStats.h2pAllocations += result.allocated;
+    dbpBtbStats.h2pReplacements += result.replaced;
+    dbpBtbStats.h2pAllocationDrops += result.dropped;
 }
 
 /**
