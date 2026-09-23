@@ -1524,11 +1524,15 @@ Scheduler::Scheduler(const SchedulerParams& params)
         loadPipeCount += iq_load_ports;
         storePipeCount += iq_store_ports;
         panic_if(issueQues[i]->fuDescs.size() == 0, "Empty config IssueQue: " + issueQues[i]->getName());
+        std::bitset<Num_OpClasses> registeredOpClasses;
         for (auto fu : issueQues[i]->fuDescs) {
             for (auto op : fu->opDescList) {
                 opExecTimeTable[op->opClass] = op->opLat;
                 opPipelined[op->opClass] = op->pipelined;
-                dispTable[op->opClass].push_back(issueQues[i]);
+                if (!registeredOpClasses.test(op->opClass)) {
+                    dispTable[op->opClass].push_back(issueQues[i]);
+                    registeredOpClasses.set(op->opClass);
+                }
                 opChecker.set(op->opClass);
             }
         }
