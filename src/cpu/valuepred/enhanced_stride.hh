@@ -113,6 +113,15 @@ class EStride : public VPUnit
     std::vector<InflightWindow> inflightWindows;
     const bool enableTimeMsgInUpdate;
 
+    // SafeStride: per-thread global safety net from the paper. Negative
+    // values suppress predictions while the table keeps training.
+    const bool enableSafeStride;
+    const int safeStridePenalty;
+    const int safeStrideBonusLoad;
+    const int safeStrideBonusOther;
+    const int safeStrideSaturation;
+    std::vector<int> safeStrides;
+
   private:
 
     // [tid][way][index]
@@ -185,12 +194,21 @@ class EStride : public VPUnit
         // inflight window is accessed for value prediction.
         statistics::SparseHistogram inflightSH;
 
+        // Predictions suppressed because SafeStride < 0.
+        statistics::Scalar safeStrideSuppressed;
+        // Applied EStride mispredictions (trigger the SafeStride penalty).
+        statistics::Scalar safeStrideMispredict;
+
         EStrideStats(statistics::Group *parent)
             : statistics::Group(parent),
               ADD_STAT(allocate, "Record the assignment of valuepred_unit entries"),
               ADD_STAT(strideNotEquals, "Record the situations of stride not equals"),
               ADD_STAT(strideEquals, "Record the situations of stride equals"),
-              ADD_STAT(inflightSH, "Records the number of inflight instructions")
+              ADD_STAT(inflightSH, "Records the number of inflight instructions"),
+              ADD_STAT(safeStrideSuppressed, statistics::units::Count::get(),
+                       "Predictions suppressed because SafeStride < 0"),
+              ADD_STAT(safeStrideMispredict, statistics::units::Count::get(),
+                       "Applied EStride mispredictions penalized in SafeStride")
         {
         }
     } esstats;

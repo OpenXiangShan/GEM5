@@ -40,6 +40,17 @@ class EStride(ValuePredictor):
     enableTimeMsgInUpdate = Param.Bool(True, "enable use instruction"
                                        "inflight time in update")
 
+    # SafeStride: the paper's global safety net (Seznec.txt:163-170).
+    # A per-thread saturating counter is incremented for every eligible
+    # instruction, rewarded on correct EStride predictions, and heavily
+    # penalized on mispredictions; while it is negative EStride predictions
+    # are suppressed (the table keeps training).
+    enableSafeStride = Param.Bool(True, "enable the paper SafeStride global gating")
+    safeStridePenalty = Param.Int(1024, "decrement on an EStride misprediction")
+    safeStrideBonusLoad = Param.Int(8, "increment on a correct EStride load prediction")
+    safeStrideBonusOther = Param.Int(4, "increment on a correct EStride non-load prediction")
+    safeStrideSaturation = Param.Int(32767, "upper saturation bound of SafeStride")
+
 class ExampleValuePredictor(ValuePredictor):
     type = "ExampleValuePredictor"
     cxx_class = "gem5::valuepred::ExampleValuePredictor"

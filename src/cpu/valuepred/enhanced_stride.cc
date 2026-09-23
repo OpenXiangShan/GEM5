@@ -110,6 +110,11 @@ EStride::EStride(const Params &params)
       confidenceThreshold(static_cast<int>(params.thresholdPercent * MAXCONFIDENCE)),
       inflightWindows(),
       enableTimeMsgInUpdate(params.enableTimeMsgInUpdate),
+      enableSafeStride(params.enableSafeStride),
+      safeStridePenalty(params.safeStridePenalty),
+      safeStrideBonusLoad(params.safeStrideBonusLoad),
+      safeStrideBonusOther(params.safeStrideBonusOther),
+      safeStrideSaturation(params.safeStrideSaturation),
       esstats(this)
 {
     // assertion
@@ -126,6 +131,8 @@ EStride::EStride(const Params &params)
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         inflightWindows.emplace_back(params.inflightWindowTagLength, params.idealWindow);
     }
+
+    safeStrides.assign(numThreads, 0);
 
     ESTables.resize(numThreads);
     for (auto &threadTables : ESTables) {
@@ -147,6 +154,9 @@ EStride::EStride(const Params &params)
     DPRINTF(EStride, "MAXCONFIDENCE: %7d | confidenceThreshold %7d\n", MAXCONFIDENCE, confidenceThreshold);
     DPRINTF(EStride, "inflightWindowTagLength: %7d \n", params.inflightWindowTagLength);
     DPRINTF(EStride, "enableTimeMsgInUpdate(need pmu support): %s\n", enableTimeMsgInUpdate ? "yes" : "no");
+    DPRINTF(EStride, "enableSafeStride: %s | penalty %d | bonus load %d other %d | saturation %d\n",
+            enableSafeStride ? "yes" : "no", safeStridePenalty,
+            safeStrideBonusLoad, safeStrideBonusOther, safeStrideSaturation);
     DPRINTF(EStride, "==================================  end of Params ==================================\n");
 
 }
@@ -320,6 +330,14 @@ EStride::doPredict(Addr pc, uint64_t seqNo, ThreadID tid, int inflights)
 
     uint64_t predValue = (uint64_t)((int64_t)entryCopy.lastValue + (inflights + 1) * extendStride(entryCopy.stride));
 
+    if (enableSafeStride && safeStrides[tid] < 0) {
+        esstats.safeStrideSuppressed++;
+        DPRINTF(EStride,
+                "[ESPredict]=> seq_no:%lu pc:%lX suppressed by SafeStride (%d) in ES[way: %d index: %u]\n",
+                seqNo, pc, safeStrides[tid], way, index);
+        return {false, predValue};
+    }
+
     if (entryCopy.confidence < confidenceThreshold) {
         DPRINTF(EStride,
                 "[ESPredict]=> seq_no:%lu pc:%lX confidence not enough in ES[way: %d index: %u inflights: %d]\n",
@@ -336,6 +354,9 @@ VPPredictionCandidate
 EStride::predict(const VPPredictRequest &request)
 {
     assertValidTid(request.tid);
+    if (enableSafeStride && safeStrides[request.tid] < safeStrideSaturation) {
+        ++safeStrides[request.tid];
+    }
     int inflights = inflightWindows[request.tid].addToInflightWindow(request.pc);
     esstats.inflightSH.sample(inflights, 1);
     VPPredictionCandidate candidate;
@@ -529,7 +550,6 @@ EStride::update(const VPUpdateInfo &updateInfo, const VPPredictionRecord *record
         const VPFeedback &feedback)
 {
     (void)record;
-    (void)feedback;
     UpdateContext updateContext;
     updateContext.pc = updateInfo.pc;
     updateContext.seqNo = updateInfo.seqNo;
@@ -541,6 +561,21 @@ EStride::update(const VPUpdateInfo &updateInfo, const VPPredictionRecord *record
         updateContext.disas = esExt->disas;
     }
     doUpdate(updateContext);
+
+    // SafeStride update at commit: reward applied correct predictions and
+    // penalize applied mispredictions. Unlike the paper, squashed
+    // mispredictions never reach commit and thus are not penalized.
+    if (enableSafeStride && feedback.applied) {
+        int &safeStride = safeStrides[updateContext.tid];
+        if (feedback.overallPredictionCorrect) {
+            const int bonus = updateContext.isLoadInst ? safeStrideBonusLoad
+                                                       : safeStrideBonusOther;
+            safeStride = std::min(safeStrideSaturation, safeStride + bonus);
+        } else {
+            safeStride -= safeStridePenalty;
+            esstats.safeStrideMispredict++;
+        }
+    }
 }
 
 void
