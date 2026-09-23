@@ -1125,7 +1125,7 @@ LSQUnit::checkLocalStoreVisible(Addr store_paddr,
             // A completed LR is still speculative until commit. Replay it
             // conservatively when another thread makes an overlapping store
             // visible; ordinary loads may legally retain their older value.
-            if (ld_inst->memReqFlags & Request::LLSC) {
+            if (ld_inst->isLoadReserved()) {
                 if (ld_inst->fault == NoFault) {
                     ld_inst->fault = std::make_shared<ReExec>();
                     request->setStateToFault();

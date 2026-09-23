@@ -338,6 +338,10 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Number of squash due to long-latency flush policy"),
       ADD_STAT(totalSquash, statistics::units::Count::get(),
                "Total number of squash"),
+      ADD_STAT(loadReservedStorePublishBarrierCycles,
+               statistics::units::Cycle::get(),
+               "Cycles where an uncommitted LR bounded speculative store "
+               "publication"),
       ADD_STAT(ROBFull, statistics::units::Count::get(),
                "Total number of ROBFull"),
       ADD_STAT(smtRestEntryWhileROBFull, statistics::units::Count::get(),
@@ -355,6 +359,10 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
     commitNonSpecStalls.prereq(commitNonSpecStalls);
 
     branchMispredicts
+        .init(cpu->numThreads)
+        .flags(total);
+
+    loadReservedStorePublishBarrierCycles
         .init(cpu->numThreads)
         .flags(total);
 
@@ -1916,8 +1924,19 @@ Commit::commitInsts()
     // if store was at head group and fronts were all readytocommit
     // then the store can be written to storebuffer
     for (int tid = 0; tid < MaxThreads; tid++) {
+        bool blocked_by_load_reserved = false;
+        const InstSeqNum head_group_done_seq =
+            rob->getHeadGroupLastDoneSeq(tid, &blocked_by_load_reserved);
         toIEW->commitInfo[tid].doneMemSeqNum =
-            std::max(toIEW->commitInfo[tid].doneSeqNum, rob->getHeadGroupLastDoneSeq(tid));
+            std::max(toIEW->commitInfo[tid].doneSeqNum,
+                     head_group_done_seq);
+        if (blocked_by_load_reserved) {
+            ++stats.loadReservedStorePublishBarrierCycles[tid];
+            DPRINTF(Commit,
+                    "[tid:%i] Bound speculative store publication at an "
+                    "uncommitted load-reserved instruction\n",
+                    tid);
+        }
 
         InstSeqNum robheadSeqNum = 0;
         if (auto& it = rob->readHeadInst(tid)) {
