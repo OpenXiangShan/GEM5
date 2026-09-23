@@ -109,6 +109,7 @@ class MemCmd
         UpgradeResp,
         StorePermReq,           // Permission-only request for a partial store
         StorePermResp,
+        StorePermGrantResp,     // Intermediate permission grant; data follows
         SCUpgradeFailReq,       // Failed SCUpgradeReq in MSHR (never sent)
         UpgradeFailResp,        // Valid for SCUpgradeReq only
         ReadExReq,
@@ -382,7 +383,13 @@ class Packet : public Printable
         DCACHE_MAINPIPE_SBUFFER_REQ = 0x00100000,
 
         // Record whether the fake-mainpipe StoreBuffer access hit in L1D.
-        DCACHE_MAINPIPE_SBUFFER_HIT = 0x00200000
+        DCACHE_MAINPIPE_SBUFFER_HIT = 0x00200000,
+
+        // Read-exclusive request whose permission and data responses split.
+        SPLIT_STORE_PERM_REQ = 0x00400000,
+
+        // The StorePerm target already received its permission response.
+        STORE_PERM_RESP_SENT = 0x00800000
     };
 
     Flags flags;
@@ -829,6 +836,13 @@ class Packet : public Printable
     { return flags.isSet(DCACHE_MAINPIPE_SBUFFER_HIT); }
     void clearDcacheMainPipeSbufferHit()
     { flags.clear(DCACHE_MAINPIPE_SBUFFER_HIT); }
+
+    void setSplitStorePermReq() { flags.set(SPLIT_STORE_PERM_REQ); }
+    bool isSplitStorePermReq() const
+    { return flags.isSet(SPLIT_STORE_PERM_REQ); }
+    void setStorePermRespSent() { flags.set(STORE_PERM_RESP_SENT); }
+    bool isStorePermRespSent() const
+    { return flags.isSet(STORE_PERM_RESP_SENT); }
 
     void setLSQPtr(o3::LSQ *lsq) { lsqPtr = lsq; }
     o3::LSQ *getLSQPtr() const { return lsqPtr; }

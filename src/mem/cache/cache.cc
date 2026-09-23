@@ -56,6 +56,7 @@
 #include "debug/Cache.hh"
 #include "debug/CacheTags.hh"
 #include "debug/CacheVerbose.hh"
+#include "debug/PartialStore.hh"
 #include "enums/Clusivity.hh"
 #include "mem/cache/base.hh"
 #include "mem/cache/cache_blk.hh"
@@ -538,6 +539,8 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
     assert(!cpu_pkt->isEviction());
 
     bool blkValid = blk && blk->isValid();
+    const bool split_store_perm_miss = level() == 2 && !blkValid &&
+        cpu_pkt->cmd == MemCmd::StorePermReq;
     const bool partial_store_miss = !blkValid &&
         isPartialStorePermissionRequest(cpu_pkt);
     const bool partial_data_fill = partialBlockEnabled() && blkValid &&
@@ -547,7 +550,7 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
         !blk->canWrite(cpu_pkt, blkSize);
 
     if (cpu_pkt->req->isUncacheable() ||
-        (!blkValid && cpu_pkt->isUpgrade()) ||
+        (!blkValid && cpu_pkt->isUpgrade() && !split_store_perm_miss) ||
         cpu_pkt->cmd == MemCmd::InvalidateReq || cpu_pkt->isClean()) {
         // uncacheable requests and upgrades from upper-level caches
         // that missed completely just go through as is
@@ -563,7 +566,9 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
     // which will clobber the owned copy.
     const bool useUpgrades = true;
     assert(cpu_pkt->cmd != MemCmd::WriteLineReq || is_whole_line_write);
-    if (partial_data_fill) {
+    if (split_store_perm_miss) {
+        cmd = MemCmd::ReadExReq;
+    } else if (partial_data_fill) {
         cmd = cpu_pkt->needsWritable() ? MemCmd::ReadExReq :
             MemCmd::ReadSharedReq;
     } else if (partial_write_fill) {
@@ -614,8 +619,11 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
         miss_req = std::make_shared<Request>(*cpu_pkt->req);
     }
     PacketPtr pkt = new Packet(miss_req, cmd, blkSize);
+    if (split_store_perm_miss) {
+        pkt->setSplitStorePermReq();
+    }
     pkt->setLSQPtr(cpu_pkt->getLSQPtr());
-    if (cmd == MemCmd::StorePermReq) {
+    if (cpu_pkt->isDcacheMainPipeSbufferReq()) {
         pkt->setDcacheMainPipeSbufferReq();
     }
 
@@ -799,6 +807,14 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
         Packet *tgt_pkt = target.pkt;
         switch (target.source) {
           case MSHR::Target::FromCPU:
+            if (tgt_pkt->isStorePermRespSent()) {
+                assert(tgt_pkt->cmd == MemCmd::StorePermReq);
+                DPRINTF(PartialStore,
+                        "Installed final split data for %#llx without "
+                        "re-sending StorePermResp\n", tgt_pkt->getAddr());
+                delete tgt_pkt;
+                break;
+            }
             from_core = true;
             if (partialStoreEnabled() &&
                 pkt->cmd == MemCmd::StorePermResp && tgt_pkt->isRead()) {

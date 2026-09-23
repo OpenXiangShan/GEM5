@@ -498,6 +498,9 @@ CoherentXBar::CustomHintEvent::description() const
 bool
 CoherentXBar::recvTimingResp(PacketPtr pkt, PortID mem_side_port_id)
 {
+    const bool intermediate_store_perm =
+        pkt->cmd == MemCmd::StorePermGrantResp;
+
     // determine the source port based on the id
     RequestPort *src_port = memSidePorts[mem_side_port_id];
 
@@ -536,8 +539,13 @@ CoherentXBar::recvTimingResp(PacketPtr pkt, PortID mem_side_port_id)
     DPRINTF(CoherentXBar, "Payload delay: %lu, header delay: %lu\n", pkt->payloadDelay, clockEdge(headerLatency));
 
     if (snoopFilter && !system->bypassCaches()) {
-        // let the snoop filter inspect the response and update its state
-        snoopFilter->updateResponse(pkt, *cpuSidePorts[cpu_side_port_id]);
+        if (intermediate_store_perm) {
+            snoopFilter->updateStorePermGrant(
+                pkt, *cpuSidePorts[cpu_side_port_id]);
+        } else {
+            snoopFilter->updateResponse(
+                pkt, *cpuSidePorts[cpu_side_port_id]);
+        }
     }
 
     // send the packet through the destination CPU-side port and pay for
@@ -546,14 +554,16 @@ CoherentXBar::recvTimingResp(PacketPtr pkt, PortID mem_side_port_id)
     pkt->headerDelay = 0;
     cpuSidePorts[cpu_side_port_id]->schedTimingResp(pkt, curTick()
                                         + latency);
-    if (hintWakeUpAheadCycles) {
+    if (hintWakeUpAheadCycles && !intermediate_store_perm) {
         // send Hint in advance to wake up cache missed load earlier before real TimingResp
         CustomHintEvent* hint = new CustomHintEvent(cpu_side_port_id, pkt, this);
         schedule(hint, curTick() + latency - (clockPeriod() * hintWakeUpAheadCycles));
     }
 
     // remove the request from the routing table
-    routeTo.erase(route_lookup);
+    if (!intermediate_store_perm) {
+        routeTo.erase(route_lookup);
+    }
 
     DPRINTF(CoherentXBar, "%s: will holdin the resp layer until %d\n", __func__, packetFinishTime);
     respLayers[cpu_side_port_id]->succeededTiming(packetFinishTime);

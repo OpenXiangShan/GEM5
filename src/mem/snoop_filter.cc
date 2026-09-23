@@ -401,6 +401,42 @@ SnoopFilter::updateResponse(const Packet* cpkt, const ResponsePort&
             __func__, sf_item.requested, sf_item.holder);
 }
 
+void
+SnoopFilter::updateStorePermGrant(const Packet* cpkt,
+                                  const ResponsePort& cpu_side_port)
+{
+    DPRINTF(SnoopFilter, "%s: src %s packet %s\n",
+            __func__, cpu_side_port.name(), cpkt->print());
+
+    assert(cpkt->cmd == MemCmd::StorePermGrantResp);
+
+    if (cpkt->req->isUncacheable() || !cpu_side_port.isSnooping())
+        return;
+
+    Addr line_addr = cpkt->getBlockAddr(linesize);
+    if (cpkt->isSecure()) {
+        line_addr |= LineSecure;
+    }
+    auto sf_it = cachedLocations.find(line_addr);
+    if (sf_it == cachedLocations.end())
+        return;
+
+    const SnoopMask response_mask = portToMask(cpu_side_port);
+    SnoopItem& sf_item = sf_it->second;
+
+    DPRINTF(SnoopFilter, "%s:   old SF value %x.%x\n",
+            __func__, sf_item.requested, sf_item.holder);
+    panic_if((sf_item.requested & response_mask).none(),
+             "SF value %x.%x missing split StorePerm request bit\n",
+             sf_item.requested, sf_item.holder);
+
+    // Permission is usable now, but the request remains outstanding until
+    // the data response arrives.
+    sf_item.holder |= response_mask;
+    DPRINTF(SnoopFilter, "%s:   new SF value %x.%x\n",
+            __func__, sf_item.requested, sf_item.holder);
+}
+
 SnoopFilter::SnoopFilterStats::SnoopFilterStats(statistics::Group *parent)
     : statistics::Group(parent),
       ADD_STAT(totRequests, statistics::units::Count::get(),

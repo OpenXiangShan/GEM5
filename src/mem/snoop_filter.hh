@@ -200,6 +200,10 @@ class SnoopFilter : public SimObject
      */
     void updateResponse(const Packet *cpkt, const ResponsePort& cpu_side_port);
 
+    /** Record an intermediate split StorePerm grant. */
+    void updateStorePermGrant(const Packet *cpkt,
+                              const ResponsePort& cpu_side_port);
+
     virtual void regStats();
 
   protected:
