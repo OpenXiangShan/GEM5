@@ -193,6 +193,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       cacheLevel(p.cache_level),
       enablePartialStore(p.enable_partial_store),
       partialStoreGranularityBytes(p.partial_store_granularity),
+      partialStoreDataPolicy(p.partial_store_data_policy),
       enablePartialWritebackAllocate(p.enable_partial_writeback_allocate),
       partialLineMeta(enablePartialWritebackAllocate ?
                       p.partial_writeback_capacity / blk_size : 0),
@@ -245,6 +246,11 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
     fatal_if(blkSize % partialStoreGranularityBytes != 0,
              "%s: partial store granularity must divide the cache line size",
              name());
+    fatal_if(partialStoreDataPolicy != "always-fetch" &&
+             partialStoreDataPolicy != "always-skip" &&
+             partialStoreDataPolicy != "adaptive",
+             "%s: partial store data policy must be always-fetch, "
+             "always-skip, or adaptive", name());
     fatal_if(enablePartialWritebackAllocate &&
              (cacheLevel <= 1 || isReadOnly || system->multiCore() ||
               compressor),
@@ -300,6 +306,16 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
         });
     }
 
+}
+
+bool
+BaseCache::shouldSkipPartialStoreDataFetch() const
+{
+    assert(cacheLevel == 1);
+    assert(enablePartialStore);
+
+    // Adaptive starts conservatively and is enabled by the predictor layer.
+    return partialStoreDataPolicy == "always-skip";
 }
 
 BaseCache::~BaseCache()

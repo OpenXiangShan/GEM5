@@ -389,7 +389,10 @@ class Packet : public Printable
         SPLIT_STORE_PERM_REQ = 0x00400000,
 
         // The StorePerm target already received its permission response.
-        STORE_PERM_RESP_SENT = 0x00800000
+        STORE_PERM_RESP_SENT = 0x00800000,
+
+        // L1 predicts that stores will cover the line before eviction.
+        STORE_PERM_SKIP_DATA_FETCH = 0x01000000
     };
 
     Flags flags;
@@ -843,6 +846,10 @@ class Packet : public Printable
     void setStorePermRespSent() { flags.set(STORE_PERM_RESP_SENT); }
     bool isStorePermRespSent() const
     { return flags.isSet(STORE_PERM_RESP_SENT); }
+    void setStorePermSkipDataFetch()
+    { flags.set(STORE_PERM_SKIP_DATA_FETCH); }
+    bool storePermSkipDataFetch() const
+    { return flags.isSet(STORE_PERM_SKIP_DATA_FETCH); }
 
     void setLSQPtr(o3::LSQ *lsq) { lsqPtr = lsq; }
     o3::LSQ *getLSQPtr() const { return lsqPtr; }

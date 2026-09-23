@@ -112,6 +112,10 @@ TEST(PartialStoreTest, SplitPermissionGrantIsIntermediateAndHasNoData)
     EXPECT_FALSE(target.isStorePermRespSent());
     target.setStorePermRespSent();
     EXPECT_TRUE(target.isStorePermRespSent());
+
+    EXPECT_FALSE(target.storePermSkipDataFetch());
+    target.setStorePermSkipDataFetch();
+    EXPECT_TRUE(target.storePermSkipDataFetch());
 }
 
 TEST(PartialStoreTest, ValidMaskGrowsAndBecomesFull)

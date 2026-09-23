@@ -1435,6 +1435,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
     }
 
     bool partialStoreEnabled() const { return enablePartialStore; }
+    bool shouldSkipPartialStoreDataFetch() const;
     bool isPartialStorePermissionRequest(PacketPtr pkt) const
     {
         return enablePartialStore && pkt->cmd == MemCmd::WriteReq &&
@@ -1735,6 +1736,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
     const bool enablePartialStore;
     const unsigned partialStoreGranularityBytes;
+    const std::string partialStoreDataPolicy;
     const bool enablePartialWritebackAllocate;
     PartialLineMetaTable partialLineMeta;
 

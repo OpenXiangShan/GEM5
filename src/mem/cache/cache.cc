@@ -540,7 +540,8 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
 
     bool blkValid = blk && blk->isValid();
     const bool split_store_perm_miss = level() == 2 && !blkValid &&
-        cpu_pkt->cmd == MemCmd::StorePermReq;
+        cpu_pkt->cmd == MemCmd::StorePermReq &&
+        !cpu_pkt->storePermSkipDataFetch();
     const bool partial_store_miss = !blkValid &&
         isPartialStorePermissionRequest(cpu_pkt);
     const bool partial_data_fill = partialBlockEnabled() && blkValid &&
@@ -621,6 +622,8 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
     PacketPtr pkt = new Packet(miss_req, cmd, blkSize);
     if (split_store_perm_miss) {
         pkt->setSplitStorePermReq();
+    } else if (partial_store_miss && shouldSkipPartialStoreDataFetch()) {
+        pkt->setStorePermSkipDataFetch();
     }
     pkt->setLSQPtr(cpu_pkt->getLSQPtr());
     if (cpu_pkt->isDcacheMainPipeSbufferReq()) {

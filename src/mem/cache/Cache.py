@@ -199,6 +199,11 @@ class BaseCache(ClockedObject):
         1,
         "Valid-data granularity for partial L1D stores in bytes (1, 4, or 8)",
     )
+    partial_store_data_policy = Param.String(
+        "always-skip",
+        "L2-miss data policy for partial stores: always-fetch, always-skip, "
+        "or adaptive",
+    )
     enable_partial_writeback_allocate = Param.Bool(
         False,
         "Allocate masked dirty writeback misses as partial local blocks",

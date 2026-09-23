@@ -165,6 +165,10 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--partial-store-granularity", type=int,
                         choices=(1, 4, 8), default=1,
                         help="Valid-data granularity for L1D partial stores")
+    parser.add_argument("--partial-store-data-policy", type=str,
+                        choices=("always-fetch", "always-skip", "adaptive"),
+                        default="always-skip",
+                        help="L2-miss data policy for partial stores")
     parser.add_argument("--partial-writeback-capacity", type=str,
                         default="64kB",
                         help="L2 capacity reserved for partial writeback lines")

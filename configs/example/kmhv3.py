@@ -160,6 +160,8 @@ def setKmhV3Params(args, system):
             )
             cpu.dcache.partial_store_granularity = \
                 args.partial_store_granularity
+            cpu.dcache.partial_store_data_policy = \
+                args.partial_store_data_policy
             cpu.dcache.prefetch_can_offload = False
             set_lsq_bank_conflict_cache_params(cpu, system)
 
