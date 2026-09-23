@@ -30,12 +30,15 @@ class LLDPrefetcher : public Queued
     {
         bool valid{false};
         Addr consumerPC{0};
+        uint64_t generation{0};
         lldp::Chain chain;
         int64_t loadImm{0};
         int64_t immLine{0};
         int64_t loadLine{0};
         uint8_t immOffset{0};
+        uint8_t loadOffset{0};
         uint8_t loadSize{0};
+        bool loadSigned{false};
         bool loadAddressValid{false};
         uint8_t immConf{0};
         uint8_t lineConf{0};
@@ -80,6 +83,7 @@ class LLDPrefetcher : public Queued
         ContextID context;
         int64_t loadImm;
         uint8_t loadSize{0};
+        bool loadSigned{false};
         int64_t loadLine{0};
         uint8_t loadOffset{0};
         bool loadAddressValid{false};
@@ -95,6 +99,7 @@ class LLDPrefetcher : public Queued
     };
     std::array<Entry, TableEntries> table{};
     lldp::PLRU<TableEntries> replacement;
+    uint64_t consumerGeneration{0};
 
     static constexpr unsigned AddressTableWays = 4;
     static constexpr unsigned SamplerEntries = 256;
@@ -175,6 +180,7 @@ class LLDPrefetcher : public Queued
         unsigned row;
         unsigned col;
         uint64_t generation;
+        uint64_t consumerGeneration;
         Addr consumerPC;
         PrefetchSourceType source;
         bool meta{false};
@@ -222,7 +228,7 @@ class LLDPrefetcher : public Queued
         statistics::Vector immValueHist, lineDeltaHist, offsetDeltaHist,
             byteOffsetHist;
         statistics::Scalar hints, hitHintsDiscarded, hitHintsRetained,
-            returnedHints, staleHints;
+            returnedHints, staleHints, staleHintConsumers;
         statistics::Scalar candidates, filtered, duplicates, unsupported;
         statistics::Scalar samplerOutputsToMeta, metaTableHits,
             metaTablePrefetches, samplerValidEntries, metaValidEntries;
@@ -298,7 +304,8 @@ class LLDPrefetcher : public Queued
                         Addr addr_p, Addr addr_c,
                         PrefetchSourceType source,
                         std::optional<unsigned> consumer,
-                        std::optional<MetaHit> meta_hit = std::nullopt);
+                        std::optional<MetaHit> meta_hit = std::nullopt,
+                        std::optional<uint8_t> data_offset = std::nullopt);
     bool filterCandidate(Addr line);
     bool rejectTranslatedPrefetch(const DeferredPacket &dpp,
                                   Addr paddr) override;

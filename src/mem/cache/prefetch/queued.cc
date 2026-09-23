@@ -145,13 +145,22 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID req
     metadata.instXsMetadata = nullptr;
     metadata.prefetchSource = safe_pf_src;
     metadata.prefetchDepth = prf_depth;
+    const auto source = metadata.prefetchSource;
+    const bool lldp_candidate =
+        source == PrefetchSourceType::LLDP ||
+        source == PrefetchSourceType::LLDPS ||
+        source == PrefetchSourceType::LLDPT ||
+        source == PrefetchSourceType::LLDPC;
     if (!metadata.prefetchProducerPC && pfInfo.hasPC())
         metadata.prefetchProducerPC = pfInfo.getPC();
-    metadata.prefetchDataOffset = pfInfo.getPaddr() & (blk_size - 1);
-    metadata.prefetchDataSize = pfInfo.getSize() <= 255 ? pfInfo.getSize() : 0;
-    if (pfInfo.getXsMetadata().instXsMetadata) {
-        metadata.prefetchDataSignExtend =
-            pfInfo.getXsMetadata().instXsMetadata->lldpSigned;
+    if (!lldp_candidate) {
+        metadata.prefetchDataOffset = pfInfo.getPaddr() & (blk_size - 1);
+        metadata.prefetchDataSize =
+            pfInfo.getSize() <= 255 ? pfInfo.getSize() : 0;
+        if (pfInfo.getXsMetadata().instXsMetadata) {
+            metadata.prefetchDataSignExtend =
+                pfInfo.getXsMetadata().instXsMetadata->lldpSigned;
+        }
     }
     req->setXsMetadata(metadata);
     DPRINTFR(HWPrefetch, "Create prefetch request for paddr %lx from prefetcher %i\n", paddr, safe_pf_src);
@@ -166,9 +175,12 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID req
     }
     pkt = new Packet(req, MemCmd::HardPFReq);
     pkt->allocate();
-    if (pfInfo.hasPC()) {
-        // Preserve the load PC which triggered this spatial prefetch.  LLDP
-        // uses it as the producer lookup key even when tag_prefetch is off.
+    if (lldp_candidate) {
+        // The next LLDP lookup is keyed by the consumer PC (PCc) learned in
+        // the LLDT child entry.  setPC also handles the valid PC == 0 case.
+        pkt->req->setPC(metadata.prefetchConsumerPC);
+    } else if (pfInfo.hasPC()) {
+        // Other spatial prefetchers retain the PC that triggered them.
         pkt->req->setPC(pfInfo.getPC());
     }
     tick = t;

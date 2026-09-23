@@ -127,3 +127,14 @@ TEST(LldpChain, MixedChainsStayExcludedAndLoadRestarts)
     EXPECT_EQ(invalid.length, 0);
     EXPECT_EQ(invalid.dualSrcRegisterOps, 0);
 }
+
+TEST(LldpHint, ConsumerGenerationRejectsReplacedChild)
+{
+    Hint hint;
+    hint.consumerGenerations = {11, 22, 0, 44};
+    EXPECT_TRUE(hint.consumerMatches(0, 11));
+    EXPECT_TRUE(hint.consumerMatches(1, 22));
+    EXPECT_FALSE(hint.consumerMatches(1, 23));
+    EXPECT_TRUE(hint.consumerMatches(2, 0));
+    EXPECT_FALSE(hint.consumerMatches(4, 0));
+}

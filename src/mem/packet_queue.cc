@@ -242,7 +242,15 @@ void
 PacketQueue::processSendEvent()
 {
     DPRINTF(PacketQueue, "Queue %s processing send event\n", name());
-    assert(!waitingOnRetry);
+    // A timing send can synchronously create a new prefetch and schedule this
+    // event before the original send returns a retry indication.  Once the
+    // port is waiting, that event is stale; recvReqRetry() will restart the
+    // queue through retry().
+    if (waitingOnRetry) {
+        DPRINTF(PacketQueue, "Queue %s defers send event until retry\n",
+                name());
+        return;
+    }
     sendDeferredPacket();
 }
 

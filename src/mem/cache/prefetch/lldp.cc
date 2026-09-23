@@ -38,12 +38,17 @@ LLDPrefetcher::LLDPStats::LLDPStats(statistics::Group *parent)
       ADD_STAT(lineDeltaHist, statistics::units::Count::get(), "Cacheline delta histogram"),
       ADD_STAT(offsetDeltaHist, statistics::units::Count::get(), "Byte-offset delta histogram"),
       ADD_STAT(byteOffsetHist, statistics::units::Count::get(), "Load-size and byte-offset histogram"),
-      ADD_STAT(hints, statistics::units::Count::get(), "Hints retained on cache misses"),
+      ADD_STAT(hints, statistics::units::Count::get(),
+               "Hints retained for miss return or LLDP-prefetch hit data"),
       ADD_STAT(hitHintsDiscarded, statistics::units::Count::get(), "Hints discarded on cache hits"),
       ADD_STAT(hitHintsRetained, statistics::units::Count::get(),
-               "Deprecated retained-hit counter (must remain zero)"),
-      ADD_STAT(returnedHints, statistics::units::Count::get(), "MSHR targets returning hinted data"),
-      ADD_STAT(staleHints, statistics::units::Count::get(), "Hints whose producer generation was evicted"),
+               "LLDP-prefetch cache-hit hints retained for chaining"),
+      ADD_STAT(returnedHints, statistics::units::Count::get(),
+               "Requests supplying cacheline data for a retained hint"),
+      ADD_STAT(staleHints, statistics::units::Count::get(),
+               "Hints invalidated by an LLDT producer or consumer update"),
+      ADD_STAT(staleHintConsumers, statistics::units::Count::get(),
+               "Hint consumer chains invalidated by LLDT replacement"),
       ADD_STAT(candidates, statistics::units::Count::get(), "LLDP virtual address candidates"),
       ADD_STAT(filtered, statistics::units::Count::get(), "Candidates filtered by recent TLB-line history"),
       ADD_STAT(duplicates, statistics::units::Count::get(), "Duplicate candidate cache lines"),
@@ -252,7 +257,8 @@ LLDPrefetcher::isLldpSource(PrefetchSourceType source)
 {
     return source == PrefetchSourceType::LLDP ||
         source == PrefetchSourceType::LLDPS ||
-        source == PrefetchSourceType::LLDPT;
+        source == PrefetchSourceType::LLDPT ||
+        source == PrefetchSourceType::LLDPC;
 }
 
 unsigned
@@ -727,9 +733,7 @@ LLDPrefetcher::rejectTranslatedPrefetch(const DeferredPacket &dpp,
     const auto metadata = dpp.pfInfo.getXsMetadata();
     if (!metadata.prefetchCandidateId)
         return false;
-    const bool translated_source =
-        metadata.prefetchSource == PrefetchSourceType::LLDP ||
-        metadata.prefetchSource == PrefetchSourceType::LLDPS;
+    const bool translated_source = metadata.prefetchLldpVirtual;
     if (translated_source) {
         trainAddressPair(metadata.prefetchLldpAddrP, blockAddress(paddr),
                          metadata.prefetchProducerPC,
@@ -750,9 +754,7 @@ bool
 LLDPrefetcher::rejectPrefetchCandidate(const PrefetchInfo &pfi,
                                        const AddrPriority &addr_prio)
 {
-    const bool translated_source =
-        addr_prio.pfSource == PrefetchSourceType::LLDP ||
-        addr_prio.pfSource == PrefetchSourceType::LLDPS;
+    const bool translated_source = pfi.getXsMetadata().prefetchLldpVirtual;
     const Addr virtual_line = blockAddress(pfi.getAddr());
     const bool reject = translated_source &&
         pfi.getXsMetadata().prefetchCandidateId &&
@@ -808,6 +810,7 @@ LLDPrefetcher::dependenceTrain(const o3::XsDynInstMetaPtr &meta)
     }
     input.push_back({meta, meta->lldpChain, meta->instAddr,
                      meta->lldpContext, meta->lldpLoadImm, meta->lldpSize,
+                     meta->lldpSigned,
                      int64_t(meta->lldpLoadLine), meta->lldpLoadOffset,
                      meta->lldpLoadAddressValid});
     stats.trainAccepted++;
@@ -871,16 +874,29 @@ LLDPrefetcher::makeUpdate(Training train)
         sub.replacementCount = replacements;
         sub.valid = true;
         sub.consumerPC = train.consumerPC;
+        sub.generation = ++consumerGeneration;
         sub.immLine = train.loadImm >= 0 ? train.loadImm / 64 :
             -(((-train.loadImm + 63) / 64));
         sub.loadLine = train.loadLine;
         sub.immOffset = uint8_t(uint64_t(train.loadImm) & 63);
+        sub.loadOffset = train.loadOffset;
         sub.loadSize = train.loadSize;
+        sub.loadSigned = train.loadSigned;
         sub.loadAddressValid = train.loadAddressValid;
         sub.cConf = sub.immConf = sub.lineConf = sub.offsetConf = initialConf;
         if (!allocate)
             entry.pConf = std::min<unsigned>(maxConf, entry.pConf + 1);
     } else {
+        // A hint may be waiting while the child is retrained.  Only a changed
+        // replay recipe invalidates it; identical confidence refreshes do not.
+        if (sub.chain.valid != train.chain.valid ||
+            sub.chain.replayable != train.chain.replayable ||
+            sub.chain.length != train.chain.length ||
+            sub.chain.ops != train.chain.ops ||
+            sub.loadImm != train.loadImm ||
+            sub.loadSize != train.loadSize ||
+            sub.loadSigned != train.loadSigned)
+            sub.generation = ++consumerGeneration;
         const int64_t newLine = train.loadImm >= 0 ? train.loadImm / 64 :
             -(((-train.loadImm + 63) / 64));
         const uint8_t newOffset = uint8_t(uint64_t(train.loadImm) & 63);
@@ -928,7 +944,9 @@ LLDPrefetcher::makeUpdate(Training train)
         -(((-train.loadImm + 63) / 64));
     sub.loadLine = train.loadLine;
     sub.immOffset = uint8_t(uint64_t(train.loadImm) & 63);
+    sub.loadOffset = train.loadOffset;
     sub.loadSize = train.loadSize;
+    sub.loadSigned = train.loadSigned;
     sub.loadAddressValid = train.loadAddressValid;
     sub.updateCount++;
     entry.updateCount++;
@@ -1054,6 +1072,8 @@ LLDPrefetcher::pfHint(const PacketPtr &pkt)
     hint.valid = true;
     hint.producerPC = entry.producerPC;
     hint.generation = entry.generation;
+    for (unsigned col = 0; col < SubEntries; ++col)
+        hint.consumerGenerations[col] = entry.consumers[col].generation;
     hint.offset = pkt->req->getPaddr() & (blkSize - 1);
     if (meta) {
         hint.size = meta->lldpSize;
@@ -1076,26 +1096,30 @@ lldp::Hint
 LLDPrefetcher::loadTrain(const PacketPtr &pkt, bool miss)
 {
     const bool spatial_pf = isSpatialPrefetch(pkt);
-    if (!pkt->isRead() || (!pkt->isDemand() && !spatial_pf) ||
+    const bool lldp_pf = pkt && pkt->req && pkt->req->isPrefetch() &&
+        pkt->req->hasXsMetadata() &&
+        isLldpSource(pkt->req->getXsMetadata().prefetchSource);
+    if (!pkt->isRead() || (!pkt->isDemand() && !spatial_pf && !lldp_pf) ||
         pkt->req->isInstFetch() || pkt->req->isUncacheable() ||
         pkt->req->isCacheMaintenance() ||
-        (!pkt->req->hasVaddr() && !spatial_pf) ||
+        (!pkt->req->hasVaddr() && !spatial_pf && !lldp_pf) ||
         !pkt->req->hasPC() || !pkt->req->hasContextId() ||
         !pkt->req->hasXsMetadata())
         return {};
     if (spatial_pf)
         stats.spatialLoadTrain++;
     const auto meta = pkt->req->getXsMetadata().instXsMetadata;
-    if (!spatial_pf && (!meta || !meta->lldpLoad || meta->squashed))
+    if (!spatial_pf && !lldp_pf && (!meta || !meta->lldpLoad || meta->squashed))
         return {};
     // L1 learns at successful IQ issue. L2 sees only requests forwarded by
     // L1, and learns those at its own tag-result boundary (hit or miss).
-    if (!spatial_pf && !trainingCPU)
+    if (!spatial_pf && !lldp_pf && !trainingCPU)
         dependenceTrain(meta);
     auto hint = pfHint(pkt);
     if (hint.valid) {
         ageMetaTable();
         hint.spatial = spatial_pf;
+        hint.chain = lldp_pf;
         const Addr addr_p = blockAddress(pkt->req->getPaddr()) | hint.offset;
         const int producer = findProducer(
             hint.producerPC, pkt->req->contextId());
@@ -1112,8 +1136,10 @@ LLDPrefetcher::loadTrain(const PacketPtr &pkt, bool miss)
             const auto meta_hit = lookupMetaTable(
                 addr_p, hint.producerPC, sub.consumerPC,
                 pkt->req->contextId());
+            const auto source = lldp_pf ? PrefetchSourceType::LLDPC :
+                PrefetchSourceType::LLDPT;
             if (meta_hit && queueCandidate(pkt, hint, addr_p, meta_hit->addrC,
-                                           PrefetchSourceType::LLDPT, col,
+                                           source, col,
                                            meta_hit)) {
                 covered |= uint8_t(1U << col);
                 continue;
@@ -1126,12 +1152,14 @@ LLDPrefetcher::loadTrain(const PacketPtr &pkt, bool miss)
             hint.valid = false;
             return hint;
         }
-        if (!miss && covered) {
+        if (!miss && covered && !lldp_pf) {
             hint.valid = false;
             return hint;
         }
-        if (miss) {
+        if (miss || lldp_pf) {
             stats.hints++;
+            if (!miss)
+                stats.hitHintsRetained++;
             if (spatial_pf)
                 stats.spatialHints++;
         } else {
@@ -1147,7 +1175,8 @@ LLDPrefetcher::queueCandidate(const PacketPtr &demand,
                               const lldp::Hint &hint, Addr addr_p,
                               Addr addr_c, PrefetchSourceType source,
                               std::optional<unsigned> consumer,
-                              std::optional<MetaHit> meta_hit)
+                              std::optional<MetaHit> meta_hit,
+                              std::optional<uint8_t> data_offset)
 {
     stats.candidates++;
     stats.candidateGenerated++;
@@ -1168,12 +1197,18 @@ LLDPrefetcher::queueCandidate(const PacketPtr &demand,
     auto metadata = Request::XsMetadata(
         source, 0, hint.producerPC, hint.generation, id);
     metadata.prefetchLldpAddrP = addr_p;
+    metadata.prefetchLldpVirtual = !meta_hit;
     if (consumer) {
         const int producer = findProducer(
             hint.producerPC, demand->req->contextId());
-        if (producer >= 0)
+        if (producer >= 0) {
+            const auto &sub = table[producer].consumers[*consumer];
             metadata.prefetchConsumerPC =
-                table[producer].consumers[*consumer].consumerPC;
+                sub.consumerPC;
+            metadata.prefetchDataOffset = data_offset.value_or(sub.loadOffset);
+            metadata.prefetchDataSize = sub.loadSize;
+            metadata.prefetchDataSignExtend = sub.loadSigned;
+        }
     } else if (meta_hit) {
         metadata.prefetchConsumerPC =
             metaTable[meta_hit->set][meta_hit->way].consumerPC;
@@ -1181,8 +1216,10 @@ LLDPrefetcher::queueCandidate(const PacketPtr &demand,
     candidate.setXsMetadata(metadata);
 
     AddrPriority command(addr_c, 0, source);
-    command.isVA = source != PrefetchSourceType::LLDPT;
+    command.isVA = metadata.prefetchLldpVirtual;
     command.forceTranslation = command.isVA;
+    command.depth = demand->req->hasXsMetadata() ?
+        demand->req->getXsMetadata().prefetchDepth + 1 : 1;
     statsQueued.pfIdentified++;
 
     const int row = findProducer(
@@ -1199,9 +1236,9 @@ LLDPrefetcher::queueCandidate(const PacketPtr &demand,
     }
 
     stats.candidateQueued++;
-    if (source == PrefetchSourceType::LLDPT)
+    if (meta_hit)
         stats.metaTablePrefetches++;
-    if (source == PrefetchSourceType::LLDPT && meta_hit) {
+    if (meta_hit) {
         auto &entry = metaTable[meta_hit->set][meta_hit->way];
         if (entry.valid && entry.generation == meta_hit->generation) {
             entry.tokens = entry.tokens ? entry.tokens - 1 : 0;
@@ -1209,7 +1246,7 @@ LLDPrefetcher::queueCandidate(const PacketPtr &demand,
             entry.rrpv = 0;
         }
     }
-    if (source == PrefetchSourceType::LLDPT && meta_hit) {
+    if (meta_hit) {
         CandidateOwner owner{};
         owner.generation = hint.generation;
         owner.consumerPC = metadata.prefetchConsumerPC;
@@ -1225,6 +1262,7 @@ LLDPrefetcher::queueCandidate(const PacketPtr &demand,
         owner.row = unsigned(row);
         owner.col = *consumer;
         owner.generation = hint.generation;
+        owner.consumerGeneration = sub.generation;
         owner.consumerPC = sub.consumerPC;
         owner.source = source;
         candidateOwners[id] = owner;
@@ -1279,11 +1317,22 @@ LLDPrefetcher::hintData(const lldp::Hint &hint, const PacketPtr &demand,
     if (hint.signExtend && hint.size < 8 &&
         (value & (uint64_t(1) << (hint.size * 8 - 1))))
         value |= (~uint64_t(0)) << (hint.size * 8);
+    const Addr hinted_addr_p = blockAddress(addr_p) | hint.offset;
     std::set<Addr> generated;
+    bool stale_consumer = false;
     for (unsigned col = 0; col < SubEntries; ++col) {
         auto &sub = table[row].consumers[col];
+        // A covered column already emitted its frozen MetaTable candidate at
+        // loadTrain time; it does not read the current consumer recipe here.
         if (hint.metaCoveredMask & uint8_t(1U << col))
             continue;
+        if (!hint.consumerMatches(col, sub.generation)) {
+            if (hint.consumerGenerations[col]) {
+                stats.staleHintConsumers++;
+                stale_consumer = true;
+            }
+            continue;
+        }
         if (!sub.valid || sub.cConf < consumerThreshold || sub.immConf < immediateThreshold)
             continue;
         bool valid = sub.chain.trainable();
@@ -1294,17 +1343,22 @@ LLDPrefetcher::hintData(const lldp::Hint &hint, const PacketPtr &demand,
             stats.unsupported++;
             continue;
         }
-        address = blockAddress(address + uint64_t(sub.loadImm));
+        const Addr load_addr = address + uint64_t(sub.loadImm);
+        address = blockAddress(load_addr);
         if (!generated.insert(address).second) {
             stats.duplicates++;
             continue;
         }
-        const auto source = hint.spatial ? PrefetchSourceType::LLDPS :
-            PrefetchSourceType::LLDP;
-        queueCandidate(demand, hint, addr_p, address, source, col);
+        const auto source = hint.chain ?
+            PrefetchSourceType::LLDPC :
+            (hint.spatial ? PrefetchSourceType::LLDPS :
+             PrefetchSourceType::LLDP);
+        queueCandidate(demand, hint, hinted_addr_p, address, source, col,
+                       std::nullopt, load_addr & (blkSize - 1));
         DPRINTF(LLDPrefetcher, "prefetch PCp=%#x PCc=%#x value=%#x va=%#x offset=%u\n",
                 hint.producerPC, sub.consumerPC, value, address, hint.offset);
     }
+    stats.staleHints += stale_consumer;
 }
 
 void
@@ -1423,6 +1477,8 @@ LLDPrefetcher::notifyPrefetchUseful(PrefetchSourceType source,
         const auto it = candidateOwners.find(candidate_id);
         if (it != candidateOwners.end() && !it->second.meta &&
             table[it->second.row].generation == it->second.generation &&
+            table[it->second.row].consumers[it->second.col].generation ==
+                it->second.consumerGeneration &&
             table[it->second.row].consumers[it->second.col].consumerPC ==
                 it->second.consumerPC) {
             table[it->second.row].usefulCount++;
@@ -1478,6 +1534,8 @@ LLDPrefetcher::notifyCandidateDemand(uint64_t candidate_id,
     const auto it = candidateOwners.find(candidate_id);
     if (it == candidateOwners.end() || it->second.meta ||
         table[it->second.row].generation != it->second.generation ||
+        table[it->second.row].consumers[it->second.col].generation !=
+            it->second.consumerGeneration ||
         table[it->second.row].consumers[it->second.col].consumerPC !=
             it->second.consumerPC)
         return;
@@ -1513,6 +1571,8 @@ LLDPrefetcher::pfHitInCache(PrefetchSourceType source,
         const auto it = candidateOwners.find(candidate_id);
         if (it != candidateOwners.end() && !it->second.meta &&
             table[it->second.row].generation == it->second.generation &&
+            table[it->second.row].consumers[it->second.col].generation ==
+                it->second.consumerGeneration &&
             table[it->second.row].consumers[it->second.col].consumerPC ==
                 it->second.consumerPC) {
             table[it->second.row].lateCount++;
@@ -1546,6 +1606,8 @@ LLDPrefetcher::pfHitInMSHR(PrefetchSourceType source,
         const auto it = candidateOwners.find(candidate_id);
         if (it != candidateOwners.end() && !it->second.meta &&
             table[it->second.row].generation == it->second.generation &&
+            table[it->second.row].consumers[it->second.col].generation ==
+                it->second.consumerGeneration &&
             table[it->second.row].consumers[it->second.col].consumerPC ==
                 it->second.consumerPC) {
             table[it->second.row].lateCount++;
@@ -1579,6 +1641,8 @@ LLDPrefetcher::pfHitInWB(PrefetchSourceType source,
         const auto it = candidateOwners.find(candidate_id);
         if (it != candidateOwners.end() && !it->second.meta &&
             table[it->second.row].generation == it->second.generation &&
+            table[it->second.row].consumers[it->second.col].generation ==
+                it->second.consumerGeneration &&
             table[it->second.row].consumers[it->second.col].consumerPC ==
                 it->second.consumerPC) {
             table[it->second.row].lateCount++;

@@ -184,7 +184,18 @@ struct Hint
     uint8_t size{0};
     bool signExtend{false};
     bool spatial{false};
+    bool chain{false};
     uint8_t metaCoveredMask{0};
+    // A hint can outlive the LLDT lookup that created it.  Keep the child
+    // generations so hintData never replays a consumer that was replaced in
+    // the meantime.
+    std::array<uint64_t, 4> consumerGenerations{};
+
+    bool consumerMatches(unsigned col, uint64_t current) const
+    {
+        return col < consumerGenerations.size() &&
+            consumerGenerations[col] == current;
+    }
 };
 
 // A small binary tree PLRU, also used by the 4-way consumer subtable.
