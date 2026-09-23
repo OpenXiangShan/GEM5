@@ -417,7 +417,10 @@ Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
             } else if (pkt->req->isUncacheable() ||
                        pkt->req->isCacheInvalidate()) {
                 erasePdbLine(line, &writebacks);
-            } else if (pkt->isWriteback()) {
+            } else if (pkt->isWriteback() ||
+                       pkt->cmd == MemCmd::WriteLineReq) {
+                // A full-line overwrite supersedes the PDB copy; retaining
+                // it could later issue a second CleanEvict.
                 erasePdbLine(line);
             } else if (!mshrQueue.findMatch(addr, pkt->isSecure()) &&
                        !writeBuffer.findMatch(addr, pkt->isSecure())) {
