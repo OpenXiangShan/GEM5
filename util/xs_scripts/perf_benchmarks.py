@@ -164,9 +164,18 @@ _BENCHMARKS = _index_benchmarks(
         ),
         BenchmarkConfig(
             benchmark_type="spec06-rvv-1.0c",
-            checkpoint_list="/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/checkpoint.lst",
-            checkpoint_root="/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/",
-            cluster_config="/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_single_core_NEMU_archgroup_2024-10-12-16-05/checkpoint06_rv64gcbv/cluster-0-0.json",
+            checkpoint_list=(
+                "/nfs/home/share/wujiabin/checkpoint-trigger/"
+                "spec06_gcc15_rva23u64_lmul8_260723/checkpoint/checkpoint.lst"
+            ),
+            checkpoint_root=(
+                "/nfs/home/share/wujiabin/checkpoint-trigger/"
+                "spec06_gcc15_rva23u64_lmul8_260723/checkpoint"
+            ),
+            cluster_config=(
+                "/nfs/home/share/wujiabin/checkpoint-trigger/"
+                "spec06_gcc15_rva23u64_lmul8_260723/json/checkpoints_all.json"
+            ),
             comment="run 100% coverage spec06 rvv checkpoints",
         ),
         BenchmarkConfig(
