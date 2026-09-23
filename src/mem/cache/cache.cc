@@ -88,7 +88,7 @@ Cache::resetStats()
 
 Cache::PdbLine::PdbLine(Addr addr, bool secure, unsigned size)
     : addr(addr), secure(secure), data(size), refillTick(curTick()),
-      usefulRecorded(false)
+      firstUseTick(0), usefulRecorded(false)
 {
     blk.data = data.data();
     blk.insert(addr, secure);
@@ -108,9 +108,15 @@ Cache::PdbStats::PdbStats(Cache &cache)
                "PDB lines invalidated by snoops"),
       ADD_STAT(occupancy, statistics::units::Count::get(), "Resident lines"),
       ADD_STAT(usefulLatency, statistics::units::Cycle::get(),
-               "Refill-to-use latency of useful PDB lines")
+               "Refill-to-use latency of useful PDB lines"),
+      ADD_STAT(refillToReplaceLatency, statistics::units::Cycle::get(),
+               "Refill-to-replace latency of replaced PDB lines"),
+      ADD_STAT(usedToReplaceLatency, statistics::units::Cycle::get(),
+               "First-use-to-replace latency of used PDB lines")
 {
     usefulLatency.init(0, 65536, 64).flags(statistics::pdf);
+    refillToReplaceLatency.init(0, 65536, 64).flags(statistics::pdf);
+    usedToReplaceLatency.init(0, 65536, 64).flags(statistics::pdf);
 }
 
 Cache::PdbIterator
@@ -128,9 +134,25 @@ Cache::recordPdbUse(PdbIterator line)
         return;
     }
 
+    const Tick first_use_tick = curTick();
     pdbStats.usefulLatency.sample(
-        ticksToCycles(curTick() - line->refillTick));
+        ticksToCycles(first_use_tick - line->refillTick));
+    line->firstUseTick = first_use_tick;
     line->usefulRecorded = true;
+}
+
+void
+Cache::recordPdbReplacement(PdbIterator line)
+{
+    assert(line != pdbLines.end());
+
+    const Tick replacement_tick = curTick();
+    pdbStats.refillToReplaceLatency.sample(
+        ticksToCycles(replacement_tick - line->refillTick));
+    if (line->usefulRecorded) {
+        pdbStats.usedToReplaceLatency.sample(
+            ticksToCycles(replacement_tick - line->firstUseTick));
+    }
 }
 
 bool
@@ -271,6 +293,7 @@ Cache::storePrefetchFill(PacketPtr pkt, MSHR *mshr,
         }
         if (victim == pdbLines.end())
             return false;
+        recordPdbReplacement(victim);
         erasePdbLine(victim, &writebacks);
         ++pdbStats.evictions;
     }

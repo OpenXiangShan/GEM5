@@ -146,7 +146,7 @@ def setKmhV3Params(args, system):
             cpu.dcache.size = '64kB'
             cpu.dcache.tag_load_read_ports = 100
             cpu.dcache.mshrs = 16
-            cpu.dcache.pdb_entries = 512
+            cpu.dcache.pdb_entries = 1024
             cpu.dcache.do_fast_writeline = True
             cpu.dcache.simulate_dcache_refill = True
             cpu.dcache.prefetch_can_offload = False
