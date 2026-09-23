@@ -129,6 +129,7 @@ def setKmhV3IdealParams(args, system):
             if args.classic_l2:
                 system.l2_caches[i].wpu = NULL
                 system.l2_caches[i].slice_num = 0 # 4 -> 0, no slice
+                l2_prefetcher = system.l2_caches[i].prefetcher
             else:
                 l2_wrapper = system.l2_wrappers[i]
                 l2_wrapper.data_sram_banks = 2
@@ -140,6 +141,9 @@ def setKmhV3IdealParams(args, system):
                     # Configure XSDRRIP replacement policy (DRRIP mode)
                     # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
                     l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
+                l2_prefetcher = l2_wrapper.prefetcher
+            if l2_prefetcher != NULL and hasattr(l2_prefetcher, 'offload_low_accuracy'):
+                l2_prefetcher.offload_low_accuracy = True
             system.tol2bus_list[i].forward_latency = 3  # 0->3
             system.tol2bus_list[i].response_latency = 3  # 0->3
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1  # 0->1
