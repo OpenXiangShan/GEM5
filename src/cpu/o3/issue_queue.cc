@@ -17,13 +17,15 @@
 #include "base/types.hh"
 #include "cpu/func_unit.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
-#include "cpu/o3/cpu.hh"
+#include "cpu/o3/iew.hh"
 #include "cpu/o3/inst_queue.hh"
 #include "cpu/reg_class.hh"
 #include "debug/Counters.hh"
 #include "debug/Dispatch.hh"
+#include "debug/EgDiff.hh"
 #include "debug/Schedule.hh"
 #include "enums/OpClass.hh"
 #include "params/BaseO3CPU.hh"
@@ -1661,10 +1663,11 @@ Scheduler::Scheduler(const SchedulerParams& params)
 }
 
 void
-Scheduler::setCPU(CPU* cpu, LSQ* lsq)
+Scheduler::setCPU(CPU* cpu, LSQ* lsq, IEW* iew)
 {
     this->cpu = cpu;
     this->lsq = lsq;
+    this->iew = iew;
     const auto& cpuParams =
         dynamic_cast<const BaseO3CPUParams&>(cpu->params());
     smtIQPolicy = cpuParams.smtIQPolicy;
@@ -1738,6 +1741,7 @@ void
 Scheduler::issueAndSelect()
 {
     // must wait for all insts was issued
+    latePredictReadyLoads();
     for (auto it : issueQues) {
         it->selectInst();
     }
@@ -1766,6 +1770,26 @@ Scheduler::issueAndSelect()
     } else if (instsToFu.size() < intel_fewops) {
         if (lsq->anyStoreNotExecute())
             stats.memstall_any_store++;
+    }
+}
+
+void
+Scheduler::latePredictReadyLoads()
+{
+    std::vector<DynInstPtr> candidates;
+    for (auto *iq : issueQues) {
+        for (const auto &inst : iq->instList) {
+            if (!inst || !inst->canLVP() ||
+                inst->vpApplied || inst->isScheduled() || inst->isIssued() ||
+                inst->isSquashed()) {
+                continue;
+            }
+            candidates.push_back(inst);
+        }
+    }
+
+    for (const auto &inst : candidates) {
+        iew->tryLateValuePrediction(inst);
     }
 }
 
@@ -2222,9 +2246,10 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
         bypassScoreboard[dst->flatIndex()] = true;
         DPRINTF(Schedule, "p%lu in bypassNetwork ready\n", dst->flatIndex());
     }
-    if (inst->canLVP()) {
+    if (inst->canLVP() && !inst->isSquashed()) {
         RegVal actualValue = cpu->getReg(inst->extRenamedDestIdx(0));
         inst->actualValue = actualValue;
+        iew->notifyValueAvailable(inst, actualValue);
         inst->vpMisprediction = false;
         if (inst->vpResult.speculative && inst->fault == NoFault &&
             actualValue != inst->vpResult.value) {
@@ -2232,7 +2257,23 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
                     inst->vpResult.value, inst->pcState().instAddr());
             inst->vpMisprediction = true;
             inst->vpResult.speculative = false;
+            iew->notifyValueMispredicted(inst);
         }
+        DPRINTF(EgDiff,
+                "[EgDiff][verify-result] tid=%u seq=%llu pc=%#lx "
+                "actual=%#llx applied=%d predicted=%#llx mispred=%d\n",
+                inst->threadNumber, inst->seqNum,
+                inst->pcState().instAddr(),
+                static_cast<unsigned long long>(actualValue),
+                inst->vpApplied,
+                static_cast<unsigned long long>(inst->vpResult.value),
+                inst->vpMisprediction);
+    } else if (inst->canLVP()) {
+        DPRINTF(EgDiff,
+                "[EgDiff][value-skip-squashed] tid=%u seq=%llu "
+                "pc=%#lx\n",
+                inst->threadNumber, inst->seqNum,
+                inst->pcState().instAddr());
     }
 }
 
