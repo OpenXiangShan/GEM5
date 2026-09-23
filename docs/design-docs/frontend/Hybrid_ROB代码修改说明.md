@@ -12,7 +12,7 @@ DynInst 表示一条动态指令；融合 DynInst 可能对应两条架构指令
 --param="system.cpu[0].RobCompressPolicy='hybrid'"
 ```
 
-内层引号必须保留，因为 gem5 将 `--param` 作为 Python 表达式求值。Hybrid 自动设置单线程、关闭 value predictor、Load fusion 和 Rename 消除，`renameWidth=8`、`CROB_instPerGroup=8`、`commitWidth=8`。物理 ROB 容量沿用 352 entries。
+内层引号必须保留，因为 gem5 将 `--param` 作为 Python 表达式求值。Hybrid 自动设置单线程、关闭 value predictor、Load fusion、Constant Folding 和 MOVI elimination，但保留 register move elimination；`renameWidth=8`、`CROB_instPerGroup=8`、`commitWidth=8`。物理 ROB 容量沿用 352 entries。
 
 `commitWidth` 在 Hybrid 下限制每拍处理的物理 entry 数。独立 DynInst 提交配额的参数、判断和满额统计已整体删除；非 Hybrid 保留原有 group-window 默认行为。默认非 Hybrid 策略没有因此切换。
 
@@ -85,6 +85,6 @@ ROB trace 记录分配 id、成员 slot、移除原因、保留边界及降级�
 
     --param="system.cpu[0].RobCompressPolicy='hybrid'"
 
-kmhv3.py 检测到这个参数后，会自动设置 Hybrid 所需的单线程、关闭 value predictor/Load fusion/Rename 消除、group 大小和提交参数；后续显式的 --param 设置仍可覆盖这些默认值。
+kmhv3.py 检测到这个参数后，会自动设置 Hybrid 所需的单线程、关闭 value predictor/Load fusion/Constant Folding/MOVI elimination、保留 register move elimination，并设置 group 大小和提交参数；后续显式的 --param 设置仍可覆盖这些默认值。
 
 [gem5-perf-template.yml](/nfs/home/kongqiuyuan/workspace/GEM5_20260909/GEM5/.github/workflows/gem5-perf-template.yml) 增加了 --param 参数的启动前检查。若输入被截断为 --param=system.cpu[0].numThrea 这类没有“参数值”的字符串，CI 会在启动 workload 前立即报出格式错误；否则每个 checkpoint 都会启动一次 gem5，再分别产生 KeyError，导致大量无关的 abort 文件。

@@ -56,7 +56,8 @@ def setKmhV3Params(args, system):
     for cpu in system.cpu:
 
         # Keep ROB compression comparisons on the same single-threaded
-        # execution model and disable optimizations that Hybrid cannot use.
+        # execution model; disable only optimizations that Hybrid cannot use.
+        # Register move elimination remains enabled.
         # Preserve the existing SMT configuration when this entry point is
         # explicitly invoked with --smt.
         if not args.smt:
