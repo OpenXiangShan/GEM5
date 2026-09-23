@@ -1128,6 +1128,8 @@ Cache::sendHintViaMSHRTargets(MSHR *mshr, const PacketPtr pkt)
 PacketPtr
 Cache::evictBlock(CacheBlk *blk)
 {
+    trainPartialStorePredictor(blk);
+
     PacketPtr pkt = (blk->isSet(CacheBlk::DirtyBit) || writebackClean) ?
         writebackBlk(blk) : cleanEvictBlk(blk);
 
@@ -1235,6 +1237,8 @@ Cache::handleTimingPartialSnoop(PacketPtr pkt, CacheBlk *blk, MSHR *mshr)
     panic_if(pkt->req->isUncacheable(),
              "%s: uncacheable shared snoop reached partial block %s",
              name(), blk->print());
+
+    markPartialStoreDataRequested(blk);
 
     PacketPtr snoop_copy = new Packet(pkt, true, true);
     MSHR *response_mshr = mshr;

@@ -162,6 +162,14 @@ def setKmhV3Params(args, system):
                 args.partial_store_granularity
             cpu.dcache.partial_store_data_policy = \
                 args.partial_store_data_policy
+            cpu.dcache.partial_store_predictor_window = \
+                args.partial_store_predictor_window
+            cpu.dcache.partial_store_predictor_min_samples = \
+                args.partial_store_predictor_min_samples
+            cpu.dcache.partial_store_predictor_enter_percent = \
+                args.partial_store_predictor_enter_percent
+            cpu.dcache.partial_store_predictor_exit_percent = \
+                args.partial_store_predictor_exit_percent
             cpu.dcache.prefetch_can_offload = False
             set_lsq_bank_conflict_cache_params(cpu, system)
 

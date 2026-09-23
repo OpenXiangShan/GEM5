@@ -69,6 +69,7 @@
 #include "mem/cache/compressors/base.hh"
 #include "mem/cache/mshr_queue.hh"
 #include "mem/cache/partial_line_meta.hh"
+#include "mem/cache/partial_store_predictor.hh"
 #include "mem/cache/prefetch/associative_set.hh"
 #include "mem/cache/prefetch/base.hh"
 #include "mem/cache/tags/base.hh"
@@ -1279,6 +1280,17 @@ class BaseCache : public ClockedObject, public CacheAccessor
         statistics::Scalar partialSnoopFillLatency;
         statistics::Scalar partialSnoopReserveFull;
         statistics::Scalar partialFillVictimConflicts;
+        statistics::Scalar partialStorePredictFetches;
+        statistics::Scalar partialStorePredictSkips;
+        statistics::Scalar partialStorePositiveOutcomes;
+        statistics::Scalar partialStorePartialOutcomes;
+        statistics::Scalar partialStoreDataNeededOutcomes;
+        statistics::Scalar partialStoreSkipCorrect;
+        statistics::Scalar partialStoreSkipIncorrect;
+        statistics::Scalar partialStoreFetchUseful;
+        statistics::Scalar partialStoreFetchUnnecessary;
+        statistics::Scalar partialStoreTransitionsToSkip;
+        statistics::Scalar partialStoreTransitionsToFetch;
 
         /** Demand misses that hit in the MSHRs. */
         statistics::Formula demandMshrHits;
@@ -1436,6 +1448,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
     bool partialStoreEnabled() const { return enablePartialStore; }
     bool shouldSkipPartialStoreDataFetch() const;
+    void markPartialStoreDataRequested(CacheBlk *blk);
+    void trainPartialStorePredictor(CacheBlk *blk);
     bool isPartialStorePermissionRequest(PacketPtr pkt) const
     {
         return enablePartialStore && pkt->cmd == MemCmd::WriteReq &&
@@ -1737,6 +1751,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
     const bool enablePartialStore;
     const unsigned partialStoreGranularityBytes;
     const std::string partialStoreDataPolicy;
+    PartialStorePredictor partialStorePredictor;
     const bool enablePartialWritebackAllocate;
     PartialLineMetaTable partialLineMeta;
 

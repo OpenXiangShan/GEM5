@@ -194,6 +194,11 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       enablePartialStore(p.enable_partial_store),
       partialStoreGranularityBytes(p.partial_store_granularity),
       partialStoreDataPolicy(p.partial_store_data_policy),
+      partialStorePredictor(
+          p.partial_store_predictor_window,
+          p.partial_store_predictor_min_samples,
+          p.partial_store_predictor_enter_percent,
+          p.partial_store_predictor_exit_percent),
       enablePartialWritebackAllocate(p.enable_partial_writeback_allocate),
       partialLineMeta(enablePartialWritebackAllocate ?
                       p.partial_writeback_capacity / blk_size : 0),
@@ -251,6 +256,19 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
              partialStoreDataPolicy != "adaptive",
              "%s: partial store data policy must be always-fetch, "
              "always-skip, or adaptive", name());
+    fatal_if(p.partial_store_predictor_window == 0,
+             "%s: partial store predictor window must be non-zero", name());
+    fatal_if(p.partial_store_predictor_min_samples == 0 ||
+             p.partial_store_predictor_min_samples >
+                 p.partial_store_predictor_window,
+             "%s: partial store predictor minimum samples must be in "
+             "[1, window]", name());
+    fatal_if(p.partial_store_predictor_enter_percent > 100 ||
+             p.partial_store_predictor_exit_percent > 100 ||
+             p.partial_store_predictor_exit_percent >=
+                 p.partial_store_predictor_enter_percent,
+             "%s: partial store predictor thresholds require "
+             "0 <= exit < enter <= 100", name());
     fatal_if(enablePartialWritebackAllocate &&
              (cacheLevel <= 1 || isReadOnly || system->multiCore() ||
               compressor),
@@ -314,8 +332,63 @@ BaseCache::shouldSkipPartialStoreDataFetch() const
     assert(cacheLevel == 1);
     assert(enablePartialStore);
 
-    // Adaptive starts conservatively and is enabled by the predictor layer.
-    return partialStoreDataPolicy == "always-skip";
+    if (partialStoreDataPolicy == "always-skip") {
+        return true;
+    }
+    if (partialStoreDataPolicy == "always-fetch") {
+        return false;
+    }
+    return partialStorePredictor.predictSkipDataFetch();
+}
+
+void
+BaseCache::markPartialStoreDataRequested(CacheBlk *blk)
+{
+    if (cacheLevel == 1 && blk && blk->isPartialStoreOrigin()) {
+        blk->markPartialStoreDataRequested();
+    }
+}
+
+void
+BaseCache::trainPartialStorePredictor(CacheBlk *blk)
+{
+    if (cacheLevel != 1 || !blk || !blk->isPartialStoreOrigin()) {
+        return;
+    }
+
+    const bool data_needed = blk->wasPartialStoreDataRequested();
+    const bool positive = !blk->isPartial() && !data_needed;
+    const bool predicted_skip = blk->partialStorePredictedSkipData();
+
+    if (positive) {
+        stats.partialStorePositiveOutcomes++;
+    } else if (data_needed) {
+        stats.partialStoreDataNeededOutcomes++;
+    } else {
+        assert(blk->isPartial());
+        stats.partialStorePartialOutcomes++;
+    }
+
+    if (predicted_skip) {
+        if (positive) {
+            stats.partialStoreSkipCorrect++;
+        } else {
+            stats.partialStoreSkipIncorrect++;
+        }
+    } else if (positive) {
+        stats.partialStoreFetchUnnecessary++;
+    } else {
+        stats.partialStoreFetchUseful++;
+    }
+
+    const auto update = partialStorePredictor.train(positive);
+    if (update.changed) {
+        if (update.skipDataFetch) {
+            stats.partialStoreTransitionsToSkip++;
+        } else {
+            stats.partialStoreTransitionsToFetch++;
+        }
+    }
 }
 
 BaseCache::~BaseCache()
@@ -617,6 +690,9 @@ BaseCache::handleSplitStorePermGrant(PacketPtr pkt)
         }
 
         PacketPtr response = new Packet(target_pkt, false, false);
+        if (target_pkt->storePermSkipDataFetch()) {
+            response->setStorePermSkipDataFetch();
+        }
         response->makeTimingResponse();
         response->headerDelay = response->payloadDelay = 0;
         target_pkt->setStorePermRespSent();
@@ -631,6 +707,12 @@ void
 BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                                Tick forward_time, Tick request_time)
 {
+    if (partialBlockEnabled() && blk && blk->isPartial() &&
+        (pkt->isRead() ||
+         (pkt->isWrite() && !blk->canWrite(pkt, blkSize)))) {
+        markPartialStoreDataRequested(blk);
+    }
+
     if (writeAllocator &&
         pkt && pkt->isWrite() && !pkt->req->isUncacheable()) {
         writeAllocator->updateMode(pkt->getAddr(), pkt->getSize(),
@@ -776,6 +858,7 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
             // lookupLatency component.
             MSHR *new_mshr = allocateMissBuffer(pkt, forward_time);
             if (cacheLevel == 2 && pkt->cmd == MemCmd::StorePermReq &&
+                !pkt->storePermSkipDataFetch() &&
                 (!blk || !blk->isValid())) {
                 new_mshr->markSplitStorePermData();
             }
@@ -1378,6 +1461,7 @@ BaseCache::recvTimingResp(PacketPtr pkt)
                 (mshr->getTarget()->pkt->isRead() ||
                  (mshr->getTarget()->pkt->isWrite() &&
                   !blk->canWrite(mshr->getTarget()->pkt, blkSize)))) {
+                markPartialStoreDataRequested(blk);
                 mshr->setMissKind(MSHR::MissKind::PartialDataFill);
             }
             mshrQueue.markPending(mshr);
@@ -2649,6 +2733,7 @@ BaseCache::handleFill(
     if (enablePartialStore && pkt->cmd == MemCmd::StorePermResp) {
         assert(!has_old_data);
         blk->markPartial(blkSize, partialStoreGranularityBytes);
+        blk->markPartialStoreOrigin(pkt->storePermSkipDataFetch());
     }
 
     blk->setCoherenceBits(CacheBlk::ReadableBit);
@@ -3233,6 +3318,7 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
     // The lower cache may mutate a request into its response before
     // sendTimingReq() returns. Preserve the command that actually left us.
     const MemCmd sent_cmd = pkt->cmd;
+    const bool store_perm_skip_data = pkt->storePermSkipDataFetch();
 
     if (!memSidePort.sendTimingReq(pkt)) {
         // we are awaiting a retry, but we
@@ -3263,10 +3349,18 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
                 mshr->setMissKind(MSHR::MissKind::PartialPermission);
                 if (enablePartialStore) {
                     stats.partialPermissionReqs++;
+                    if (cacheLevel == 1) {
+                        if (store_perm_skip_data) {
+                            stats.partialStorePredictSkips++;
+                        } else {
+                            stats.partialStorePredictFetches++;
+                        }
+                    }
                 }
             } else if (mshr->getMissKind() ==
                            MSHR::MissKind::PartialDataFill ||
                        (blk && blk->isPartial() && sent_cmd.isRead())) {
+                markPartialStoreDataRequested(blk);
                 mshr->setMissKind(MSHR::MissKind::PartialDataFill);
                 if (partialBlockEnabled()) {
                     stats.partialDataFillReqs++;
@@ -3656,6 +3750,28 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of partial snoops that exhausted reserved MSHRs"),
     ADD_STAT(partialFillVictimConflicts, statistics::units::Count::get(),
              "number of replacements blocked by active partial fills"),
+    ADD_STAT(partialStorePredictFetches, statistics::units::Count::get(),
+             "number of L1 partial stores predicted to need L2 data"),
+    ADD_STAT(partialStorePredictSkips, statistics::units::Count::get(),
+             "number of L1 partial stores predicted to skip L2 data"),
+    ADD_STAT(partialStorePositiveOutcomes, statistics::units::Count::get(),
+             "partial-store lines completed only by stores before eviction"),
+    ADD_STAT(partialStorePartialOutcomes, statistics::units::Count::get(),
+             "partial-store lines still partial at eviction"),
+    ADD_STAT(partialStoreDataNeededOutcomes, statistics::units::Count::get(),
+             "partial-store lines that required missing data"),
+    ADD_STAT(partialStoreSkipCorrect, statistics::units::Count::get(),
+             "skip-data predictions followed by store-only completion"),
+    ADD_STAT(partialStoreSkipIncorrect, statistics::units::Count::get(),
+             "skip-data predictions followed by a negative outcome"),
+    ADD_STAT(partialStoreFetchUseful, statistics::units::Count::get(),
+             "fetch-data predictions followed by a negative outcome"),
+    ADD_STAT(partialStoreFetchUnnecessary, statistics::units::Count::get(),
+             "fetch-data predictions followed by store-only completion"),
+    ADD_STAT(partialStoreTransitionsToSkip, statistics::units::Count::get(),
+             "predictor transitions into skip-data mode"),
+    ADD_STAT(partialStoreTransitionsToFetch, statistics::units::Count::get(),
+             "predictor transitions into fetch-data mode"),
     ADD_STAT(demandMshrHits, statistics::units::Count::get(),
              "number of demand (read+write) MSHR hits"),
     ADD_STAT(overallMshrHits, statistics::units::Count::get(),

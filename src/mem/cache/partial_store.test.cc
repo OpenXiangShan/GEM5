@@ -36,6 +36,7 @@
 #include "base/gtest/cur_tick_fake.hh"
 #include "mem/cache/cache_blk.hh"
 #include "mem/cache/partial_line_meta.hh"
+#include "mem/cache/partial_store_predictor.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
 
@@ -142,6 +143,56 @@ TEST(PartialStoreTest, ValidMaskGrowsAndBecomesFull)
 
     EXPECT_FALSE(blk.isPartial());
     EXPECT_TRUE(blk.hasValidData(0, BlkSize));
+}
+
+TEST(PartialStoreTest, PredictorUsesWindowAndHysteresis)
+{
+    PartialStorePredictor predictor(4, 4, 75, 50);
+
+    EXPECT_FALSE(predictor.predictSkipDataFetch());
+    predictor.train(true);
+    predictor.train(true);
+    predictor.train(true);
+    EXPECT_FALSE(predictor.predictSkipDataFetch());
+
+    auto update = predictor.train(false);
+    EXPECT_TRUE(update.changed);
+    EXPECT_TRUE(update.skipDataFetch);
+    EXPECT_EQ(predictor.samples(), 4);
+    EXPECT_EQ(predictor.positives(), 3);
+
+    update = predictor.train(false);
+    EXPECT_FALSE(update.changed);
+    EXPECT_TRUE(update.skipDataFetch);
+    EXPECT_EQ(predictor.positives(), 2);
+
+    update = predictor.train(false);
+    EXPECT_TRUE(update.changed);
+    EXPECT_FALSE(update.skipDataFetch);
+    EXPECT_EQ(predictor.positives(), 1);
+}
+
+TEST(PartialStoreTest, PartialStoreProvenanceTracksMissingData)
+{
+    CacheBlk blk;
+    std::vector<uint8_t> block_data(BlkSize, 0);
+    blk.data = block_data.data();
+    blk.insert(TestAddr, false);
+    blk.markPartial(BlkSize);
+    blk.markPartialStoreOrigin(true);
+
+    EXPECT_TRUE(blk.isPartialStoreOrigin());
+    EXPECT_TRUE(blk.partialStorePredictedSkipData());
+    EXPECT_FALSE(blk.wasPartialStoreDataRequested());
+
+    const std::vector<uint8_t> fill_data(BlkSize, 0x5a);
+    EXPECT_TRUE(blk.mergePartialFill(fill_data.data(), BlkSize));
+    EXPECT_TRUE(blk.wasPartialStoreDataRequested());
+
+    blk.invalidate();
+    EXPECT_FALSE(blk.isPartialStoreOrigin());
+    EXPECT_FALSE(blk.wasPartialStoreDataRequested());
+    EXPECT_FALSE(blk.partialStorePredictedSkipData());
 }
 
 TEST(PartialStoreTest, FullyCoveredBlockRejectsOlderPartialFill)

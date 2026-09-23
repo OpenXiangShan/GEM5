@@ -204,6 +204,14 @@ class BaseCache(ClockedObject):
         "L2-miss data policy for partial stores: always-fetch, always-skip, "
         "or adaptive",
     )
+    partial_store_predictor_window = Param.Unsigned(
+        64, "Number of recent partial-store evictions used for prediction")
+    partial_store_predictor_min_samples = Param.Unsigned(
+        16, "Samples required before adaptive mode may skip data")
+    partial_store_predictor_enter_percent = Param.Unsigned(
+        75, "Positive percentage that enters skip-data mode")
+    partial_store_predictor_exit_percent = Param.Unsigned(
+        50, "Positive percentage below which skip-data mode exits")
     enable_partial_writeback_allocate = Param.Bool(
         False,
         "Allocate masked dirty writeback misses as partial local blocks",

@@ -149,6 +149,11 @@ class CacheBlk : public TaggedEntry
     unsigned validGranularity = 1;
     std::vector<bool> validMask;
 
+    /** Predictor provenance for lines allocated by an L1 partial store. */
+    bool partialStoreOrigin = false;
+    bool partialStoreDataRequested = false;
+    bool partialStorePredictedSkip = false;
+
   protected:
     /**
      * Represents that the indicated thread context has a "lock" on
@@ -236,6 +241,9 @@ class CacheBlk : public TaggedEntry
         partialData = other.partialData;
         validGranularity = other.validGranularity;
         validMask = std::move(other.validMask);
+        partialStoreOrigin = other.partialStoreOrigin;
+        partialStoreDataRequested = other.partialStoreDataRequested;
+        partialStorePredictedSkip = other.partialStorePredictedSkip;
 
         other.invalidate();
 
@@ -264,9 +272,32 @@ class CacheBlk : public TaggedEntry
         partialData = false;
         validGranularity = 1;
         validMask.clear();
+        partialStoreOrigin = false;
+        partialStoreDataRequested = false;
+        partialStorePredictedSkip = false;
     }
 
     bool isPartial() const { return isValid() && partialData; }
+
+    void markPartialStoreOrigin(bool predicted_skip)
+    {
+        assert(isValid());
+        partialStoreOrigin = true;
+        partialStoreDataRequested = false;
+        partialStorePredictedSkip = predicted_skip;
+    }
+
+    bool isPartialStoreOrigin() const { return partialStoreOrigin; }
+    void markPartialStoreDataRequested()
+    {
+        if (partialStoreOrigin) {
+            partialStoreDataRequested = true;
+        }
+    }
+    bool wasPartialStoreDataRequested() const
+    { return partialStoreDataRequested; }
+    bool partialStorePredictedSkipData() const
+    { return partialStorePredictedSkip; }
 
     void
     markPartial(unsigned blk_size, unsigned granularity = 1)
@@ -416,6 +447,8 @@ class CacheBlk : public TaggedEntry
         if (!isPartial()) {
             return false;
         }
+
+        markPartialStoreDataRequested();
 
         assert(validMask.size() * validGranularity == blk_size);
         for (unsigned i = 0; i < blk_size; ++i) {
