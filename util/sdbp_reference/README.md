@@ -13,6 +13,10 @@
 新实现位于 `src/mem/cache/replacement_policies/sdbp_{core,rp}.{hh,cc}`，
 通过 `SDBPRP` 配置。它采用下述参数化设计，不是比赛源码的逐行移植。
 
+已完成的香山 `idealkmhv3.py` 六切片 LRU/SDBP 对照、计数器分析与验证记录
+见 [RESULTS.md](RESULTS.md)，完整数值见
+[results-20260924.csv](results-20260924.csv)。
+
 原始源码允许复制、修改和再发布，具体版权说明见上述压缩包中的 `replacement_state.cpp`
 和 `replacement_state.h`。
 
@@ -304,6 +308,10 @@ build/RISCV/mem/cache/replacement_policies/sdbp_rp.test.opt
 12；对 8-way L2 做实验时显式指定 6，并非声称 6 是最优值。其他表大小、
 hash seed 等参数可通过 `SDBPRP(...)` 或 gem5 `--param` 设置。
 
+当前 `xs-dev` 的 `idealkmhv3.py --classic-l2` 路径在平台默认配置中
+使用不存在的 `slice_num` 参数，会在应用替换策略之前失败；正式对照采用
+默认 sliced L2。普通 `BaseSetAssoc` 的策略接口另有单元和小型功能测试。
+
 Slice 模式下每个 inner cache 有独立 SDBP 实例。2 MiB、8-way、64-byte
 line、4 slice 对应每 slice 1024 sets，`num_sets` 从实际 cache 几何计算。
 `sampler_num=32` 表示**每 slice** 32 个 sampler sets，总计 128 个；
@@ -334,6 +342,7 @@ restorer，不加 `--raw-cpt` 或外部 restorer 参数。
 `tracked_changes.patch` 保存相对 HEAD 的改动，`untracked_sources.tar.gz`
 补充保存 `src/`、`configs/`、`util/` 下未跟踪的源码与脚本。
 汇总只取最后一个完整统计区间，检查实际测量指令数与正常退出条件。
+同时检查各组 `config.json`，拒绝被测 replacement policy 以外的配置差异。
 输出 `comparison.csv`、`comparison.json` 及对照表。此分支的 `demandMisses`
 也可能包含 L1 预取器 requestor 转换后的请求；CSV 另外列出
 `l2_cpu_data_misses`、`l2_cpu_data_mshr_misses` 和

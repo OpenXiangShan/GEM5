@@ -33,6 +33,46 @@ def read_stats(path):
     return blocks[-1], len(blocks)
 
 
+def normalized_config(directory, level, variant):
+    """Check the intended policies and remove only the tested policy nodes."""
+    config = json.loads((directory / "config.json").read_text())
+    policies = []
+
+    def visit(node):
+        if isinstance(node, list):
+            for child in node:
+                visit(child)
+        elif isinstance(node, dict):
+            policy = node.get("replacement_policy")
+            path = node.get("path", "")
+            selected = (
+                re.fullmatch(
+                    r"system\.(?:l2_wrappers\d*\.slices\d+\.inner_cache|"
+                    r"l2_caches\d*)",
+                    path,
+                )
+                if level == "l2"
+                else path == "system.l3"
+            )
+            if selected and policy is not None:
+                expected = "LRURP" if variant == "lru" else "SDBPRP"
+                if policy["type"] != expected:
+                    raise ValueError(f"Wrong policy at {path}: {directory}")
+                if expected == "SDBPRP" and policy["enable_bypass"] != (
+                    variant == "bypass"
+                ):
+                    raise ValueError(f"Wrong bypass setting: {directory}")
+                policies.append(path)
+                del node["replacement_policy"]
+            for child in node.values():
+                visit(child)
+
+    visit(config)
+    if not policies:
+        raise ValueError(f"No tested {level} cache found: {directory}")
+    return config
+
+
 def metrics(directory, manifest):
     status = json.loads((directory / "status.json").read_text())
     if not status["completed"] or status["returncode"] != 0:
@@ -74,6 +114,17 @@ def metrics(directory, manifest):
         ),
         "wall_seconds": status["wall_seconds"],
     }
+    for name in (
+        "memstall_any_load",
+        "memstall_l1miss",
+        "memstall_l2miss",
+        "memstall_l3miss",
+    ):
+        result[name] = stats.get("system.cpu.scheduler." + name, 0)
+    for name in ("numReads", "numWrites"):
+        result["memory_" + name] = total(
+            r"system\.mem_ctrls\d*\." + name + r"::total"
+        )
     for name in (
         "lookups",
         "eligibleAccesses",
@@ -117,10 +168,18 @@ def main():
     rows = []
     for point in manifest["checkpoints"]:
         measurements = {}
+        baseline_config = None
         for variant in manifest["variants"]:
             directory = (
                 args.directory / f"{point.replace('/', '_')}__{variant}"
             )
+            config = normalized_config(directory, manifest["level"], variant)
+            if baseline_config is None:
+                baseline_config = config
+            elif config != baseline_config:
+                raise ValueError(
+                    f"Configurations differ outside the tested policy: {point}"
+                )
             measurements[variant] = metrics(directory, manifest)
         baseline = measurements["lru"]
         for variant, values in measurements.items():
@@ -134,7 +193,9 @@ def main():
             )
             rows.append(row)
     with (args.directory / "comparison.csv").open("w", newline="") as output:
-        writer = csv.DictWriter(output, fieldnames=list(rows[0]))
+        writer = csv.DictWriter(
+            output, fieldnames=list(rows[0]), lineterminator="\n"
+        )
         writer.writeheader()
         writer.writerows(rows)
     (args.directory / "comparison.json").write_text(
