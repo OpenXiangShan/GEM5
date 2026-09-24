@@ -170,6 +170,16 @@ NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bo
         assert(nemuSetHartId);
         nemuPutGmaddr = (void (*)(uint8_t *))dlsym(handle, "difftest_put_gmaddr");
         assert(nemuPutGmaddr);
+
+        setMemObservationV1 =
+            (int (*)(const DifftestMemObservationV1 *))dlsym(
+                handle, "difftest_set_mem_observation_v1");
+        queryMemObservationV1 = (int (*)())dlsym(
+            handle, "difftest_query_mem_observation_v1");
+        if (!supportsMemObservationV1()) {
+            setMemObservationV1 = nullptr;
+            queryMemObservationV1 = nullptr;
+        }
     }
 
     if (enable_sdcard_diff) {

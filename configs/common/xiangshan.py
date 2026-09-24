@@ -414,6 +414,8 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
 
 def config_difftest(cpu_list, args, sys):
     if not args.enable_difftest:
+        if args.enable_difftest_mem_observation:
+            fatal("Memory observation requires difftest")
         return
     else:
         if len(cpu_list) > 1 or args.smt or args.enable_mem_dedup:
@@ -421,8 +423,13 @@ def config_difftest(cpu_list, args, sys):
             for cpu in cpu_list:
                 cpu.enable_mem_dedup = True
                 cpu.enable_difftest = True
+                cpu.enable_difftest_mem_observation = \
+                    args.enable_difftest_mem_observation
                 cpu.difftest_ref_so = args.difftest_ref_so
         else:
+            if args.enable_difftest_mem_observation:
+                fatal("Memory observation is only supported by multicore "
+                      "difftest")
             cpu_list[0].enable_difftest = True
             cpu_list[0].difftest_ref_so = args.difftest_ref_so
 

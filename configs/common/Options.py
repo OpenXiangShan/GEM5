@@ -692,6 +692,10 @@ def addXiangshanCommonOptions(parser):
                         action="store",
                         default=None,
                         help="The shared lib file used to do difftest")
+    parser.add_argument(
+        "--enable-difftest-mem-observation",
+        action="store_true",
+        help="Guide multicore NEMU scalar loads with GEM5 observations")
     parser.add_argument("--enable-mem-dedup", action="store_true",
                         help="Share initial memory through COW; requires a "
                              "NEMU REF built with ENABLE_MEM_DEDUP")
