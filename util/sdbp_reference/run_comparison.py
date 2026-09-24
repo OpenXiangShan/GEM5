@@ -81,8 +81,9 @@ def main():
     parser.add_argument(
         "--variants",
         nargs="+",
-        default=["lru", "sdbp", "bypass"],
+        default=["lru", "sdbp"],
         choices=("lru", "sdbp", "bypass"),
+        help="Policies to compare (default: lru sdbp; bypass is opt-in)",
     )
     parser.add_argument("--extra-arg", action="append", default=[])
     args = parser.parse_args()

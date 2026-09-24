@@ -331,8 +331,10 @@ python3 util/sdbp_reference/run_comparison.py \
 python3 util/sdbp_reference/summarize.py m5out/sdbp-ideal-comparison
 ```
 
-脚本默认跑 LRU、SDBP、SDBP+bypass，固定非被测层为 LRU，所有运行使用
+当前实验先聚焦替换策略，暂不继续尝试 bypass。脚本默认只跑 LRU、SDBP，
+两组均不启用 bypass，固定非被测层为 LRU，所有运行使用
 同一二进制、checkpoint、预取配置、warmup 和测量长度，并开启 difftest。
+既有三组实验结果保留为历史记录，不改变当前两组实验的默认配置。
 `--level=l3` 可改测 L3；L3 默认 mostly-exclusive，会过滤许多 PC 访问，
 需检查 samplerAccesses 而不能直接假设适合训练。普通 slice 使用内嵌
 restorer，不加 `--raw-cpt` 或外部 restorer 参数。

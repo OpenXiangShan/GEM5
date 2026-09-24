@@ -80,6 +80,8 @@ e5e58a35ae758b46de9c17cf8d30ef92e0a168d197939926a7185ee94a9315f3
 
 ## 复现命令与证据位置
 
+以下命令复现历史三组实验，显式列出当时的 variants。当前对照脚本已经
+默认只跑 LRU 与不启用 bypass 的 SDBP，后续实验暂不继续尝试 bypass。
 在仓库根目录执行：
 
 ```sh
@@ -93,6 +95,7 @@ python3 util/sdbp_reference/run_comparison.py \
   --checkpoint=hmmer_nph3/7894 \
   --checkpoint=omnetpp/18492 \
   --checkpoint=astar_biglakes/5863 \
+  --variants=lru sdbp bypass \
   --ref-so=/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so \
   --extra-arg=--enable-mem-dedup --jobs=6
 python3 util/sdbp_reference/summarize.py \
