@@ -161,6 +161,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     std::vector<unsigned> resolveDequeueFailCounters;
     const unsigned resolveBlockThreshold;
     const bool enableH2PTable;
+    const bool enableH2PWeakConfidence;
     const unsigned h2pTableEntries;
     const uint64_t h2pAgeInsts;
     const unsigned h2pBufferEntries;
@@ -290,7 +291,17 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar otherMiss;    ///< Other control mispredictions
 
         statistics::Scalar h2pLookups;
+        statistics::Scalar h2pTableCandidates;
         statistics::Scalar h2pCandidates;
+        statistics::Scalar h2pConfidenceRejected;
+        statistics::Scalar h2pConfidenceMissing;
+        statistics::Scalar h2pTableTruePositive;
+        statistics::Scalar h2pTableFalsePositive;
+        statistics::Scalar h2pTableFalseNegative;
+        statistics::Scalar h2pTableTrueNegative;
+        statistics::Formula h2pTableCoverage;
+        statistics::Formula h2pTablePrecision;
+        statistics::Formula h2pTableWastage;
         statistics::Scalar h2pTruePositive;
         statistics::Scalar h2pFalsePositive;
         statistics::Scalar h2pFalseNegative;

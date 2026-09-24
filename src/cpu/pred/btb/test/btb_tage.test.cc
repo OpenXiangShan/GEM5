@@ -546,6 +546,41 @@ TEST_F(BTBTAGETest, BasicPrediction) {
     EXPECT_GE(table, 0) << "No TAGE table entry was allocated";
 }
 
+TEST_F(BTBTAGETest, ReportsLowConfidenceForWeakProvider)
+{
+    const Addr pc = 0x1000;
+    const auto entry = createBTBEntry(pc);
+
+    predictTAGE(tage, pc, {entry}, history, stagePreds);
+    ASSERT_NE(stagePreds[1].tageInfoForMgscs.find(pc),
+              stagePreds[1].tageInfoForMgscs.end());
+    EXPECT_TRUE(stagePreds[1].tageInfoForMgscs.at(pc).tage_pred_conf_low);
+
+    setupTageEntry(tage, pc, 3, 0);
+    predictTAGE(tage, pc, {entry}, history, stagePreds);
+    EXPECT_TRUE(stagePreds[1].tageInfoForMgscs.at(pc).tage_pred_conf_low);
+
+    setupTageEntry(tage, pc, 3, -1);
+    predictTAGE(tage, pc, {entry}, history, stagePreds);
+    EXPECT_TRUE(stagePreds[1].tageInfoForMgscs.at(pc).tage_pred_conf_low);
+}
+
+TEST_F(BTBTAGETest, DoesNotReportLowConfidenceForMidOrStrongProvider)
+{
+    const Addr pc = 0x1000;
+    const auto entry = createBTBEntry(pc);
+
+    setupTageEntry(tage, pc, 3, 1);
+    predictTAGE(tage, pc, {entry}, history, stagePreds);
+    EXPECT_TRUE(stagePreds[1].tageInfoForMgscs.at(pc).tage_pred_conf_mid);
+    EXPECT_FALSE(stagePreds[1].tageInfoForMgscs.at(pc).tage_pred_conf_low);
+
+    setupTageEntry(tage, pc, 3, 3);
+    predictTAGE(tage, pc, {entry}, history, stagePreds);
+    EXPECT_TRUE(stagePreds[1].tageInfoForMgscs.at(pc).tage_pred_conf_high);
+    EXPECT_FALSE(stagePreds[1].tageInfoForMgscs.at(pc).tage_pred_conf_low);
+}
+
 // Test basic history update functionality (PHR semantics)
 TEST_F(BTBTAGETest, HistoryUpdate) {
     // Use a fixed control PC to derive PHR bits

@@ -919,6 +919,19 @@ def xiangshan_system_init():
         help="Disable the APF hard-to-predict branch table",
     )
     parser.add_argument(
+        "--enable-h2p-weak-confidence",
+        action="store_true",
+        dest="enable_h2p_weak_confidence",
+        default=True,
+        help="Require TAGE low confidence for PC-H2P candidates",
+    )
+    parser.add_argument(
+        "--disable-h2p-weak-confidence",
+        action="store_false",
+        dest="enable_h2p_weak_confidence",
+        help="Classify H2P candidates using the PC-only table",
+    )
+    parser.add_argument(
         "--h2p-buffer-entries",
         type=int,
         default=4,

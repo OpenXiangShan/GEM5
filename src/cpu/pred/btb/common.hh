@@ -342,6 +342,7 @@ struct FetchTarget
     bool isHit;          // whether the predicted btb entry is hit
     bool falseHit;       // not used
     std::vector<Addr> predictedBranchPCs;
+    std::vector<Addr> h2pTableBranchPCs;
     std::vector<Addr> h2pBranchPCs;
 
     unsigned predSource;   // source of the prediction(numStage)

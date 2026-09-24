@@ -1227,6 +1227,8 @@ class DecoupledBPUWithBTB(BranchPredictor):
     maxHistLen = Param.Unsigned(970, "The length of history")
     enable_h2p_table = Param.Bool(True,
         "Enable the APF hard-to-predict branch table")
+    enable_h2p_weak_confidence = Param.Bool(True,
+        "Require TAGE low confidence for PC-H2P candidates")
     h2p_table_entries = Param.Unsigned(128,
         "Number of H2P table cache-line entries")
     h2p_age_insts = Param.Unsigned(20000,

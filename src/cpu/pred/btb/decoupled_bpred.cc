@@ -88,6 +88,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       ftq(p.numThreads, p.ftq_size),
       resolveBlockThreshold(p.resolveBlockThreshold),
       enableH2PTable(p.enable_h2p_table),
+      enableH2PWeakConfidence(p.enable_h2p_weak_confidence),
       h2pTableEntries(p.h2p_table_entries),
       h2pAgeInsts(p.h2p_age_insts),
       h2pBufferEntries(p.h2p_buffer_entries),
@@ -1136,9 +1137,22 @@ DecoupledBPUWithBTB::commit(
                 for (const auto &branch : block.branches) {
                     if (!branch.isCond)
                         continue;
+                    const bool tableMarked = std::find(
+                        target.h2pTableBranchPCs.begin(),
+                        target.h2pTableBranchPCs.end(), branch.pc) !=
+                        target.h2pTableBranchPCs.end();
                     const bool marked = std::find(
                         target.h2pBranchPCs.begin(), target.h2pBranchPCs.end(),
                         branch.pc) != target.h2pBranchPCs.end();
+                    if (tableMarked && branch.mispredicted)
+                        dbpBtbStats.h2pTableTruePositive++;
+                    else if (tableMarked)
+                        dbpBtbStats.h2pTableFalsePositive++;
+                    else if (branch.mispredicted)
+                        dbpBtbStats.h2pTableFalseNegative++;
+                    else
+                        dbpBtbStats.h2pTableTrueNegative++;
+
                     if (marked && branch.mispredicted)
                         dbpBtbStats.h2pTruePositive++;
                     else if (marked)
@@ -1328,16 +1342,33 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     entry.isHit = !pred.btbEntries.empty() || pairtageFallThroughHit;
     entry.falseHit = false;
     entry.setPredictedBranches(pred.btbEntries);
+    entry.h2pTableBranchPCs.clear();
     entry.h2pBranchPCs.clear();
     if (enableH2PTable) {
         for (const auto &branch : pred.btbEntries) {
             if (!branch.valid || !branch.isCond)
                 continue;
             dbpBtbStats.h2pLookups++;
-            if (lookupH2P(branch.pc).h2p) {
-                entry.h2pBranchPCs.push_back(branch.pc);
-                dbpBtbStats.h2pCandidates++;
+            if (!lookupH2P(branch.pc).h2p)
+                continue;
+
+            dbpBtbStats.h2pTableCandidates++;
+            entry.h2pTableBranchPCs.push_back(branch.pc);
+            if (enableH2PWeakConfidence) {
+                const auto tageInfo = pred.tageInfoForMgscs.find(branch.pc);
+                if (tageInfo == pred.tageInfoForMgscs.end()) {
+                    dbpBtbStats.h2pConfidenceMissing++;
+                    dbpBtbStats.h2pConfidenceRejected++;
+                    continue;
+                }
+                if (!tageInfo->second.tage_pred_conf_low) {
+                    dbpBtbStats.h2pConfidenceRejected++;
+                    continue;
+                }
             }
+
+            entry.h2pBranchPCs.push_back(branch.pc);
+            dbpBtbStats.h2pCandidates++;
         }
     }
     entry.predTaken = taken;
