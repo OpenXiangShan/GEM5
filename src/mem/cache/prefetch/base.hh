@@ -97,9 +97,6 @@ struct FDIPPrefetchHint
     uint64_t generation = 0;
     Addr vaddr = 0;
     Addr pc = 0;
-    Addr predEndPC = 0;
-    Addr target = 0;
-    bool predTaken = false;
     ContextID contextId = InvalidContextID;
     int32_t priority = 0;
     FDIPTwoPrefetchCase twoPrefetchCase = FDIPTwoPrefetchCase::Conflict;
@@ -1247,20 +1244,6 @@ class Base : public ClockedObject
      * @param tlb pointer to the BaseTLB object to add
      */
     virtual void addTLB(BaseTLB *tlb, bool functional);
-
-    /** Submit a frontend FDIP instruction-cache prefetch hint. */
-    virtual bool submitFDIPHint(const FDIPPrefetchHint &hint) { return false; }
-    virtual bool submitFDIPBundle(const std::vector<FDIPPrefetchHint> &hints)
-    {
-        for (const auto &hint : hints) {
-            if (!submitFDIPHint(hint))
-                return false;
-        }
-        return true;
-    }
-
-    /** Drop queued frontend hints older than the supplied generation. */
-    virtual void squashFDIPHints(ThreadID tid, uint64_t generation) {}
 
   protected:
     Base *hintDownStream{nullptr};

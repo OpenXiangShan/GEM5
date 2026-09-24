@@ -62,9 +62,8 @@ class FDIPPrefetcher : public Queued
     {}
     void notify(const PacketPtr &, const PrefetchInfo &) override {}
 
-    bool submitFDIPHint(const FDIPPrefetchHint &hint) override;
-    bool submitFDIPBundle(const std::vector<FDIPPrefetchHint> &hints) override;
-    void squashFDIPHints(ThreadID tid, uint64_t generation) override;
+    bool submitFDIPBundle(const std::vector<FDIPPrefetchHint> &hints);
+    void squashFDIPHints(ThreadID tid, uint64_t generation);
     void pfHitNotify(float, PrefetchSourceType, const PacketPtr &) override {}
 };
 

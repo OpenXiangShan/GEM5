@@ -120,10 +120,6 @@ class CPU : public BaseCPU
     {
         fdipPrefetcher = prefetcher;
     }
-    bool hasFDIPPrefetcher() const
-    {
-        return fdipPrefetcher != nullptr;
-    }
     enum Status
     {
         Running,

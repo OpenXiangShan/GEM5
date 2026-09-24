@@ -447,9 +447,6 @@ struct FetchBlockPrediction
     bool taken = false;
     Addr controlPC = 0;
     Addr target = 0;
-    Addr line0 = 0;
-    Addr line1 = 0;
-    bool isCrossLine = false;
 };
 
 /**

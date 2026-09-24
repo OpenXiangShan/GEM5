@@ -77,18 +77,12 @@ FDIPPrefetcher::enqueuePendingHint(const FDIPPrefetchHint &hint)
     if (!hintEvent.scheduled())
         schedule(hintEvent, pendingHints.back().readyAt);
     DPRINTF(FDIP,
-            "S0 accept tid=%u ftq=%llu gen=%llu start=%#lx end=%#lx "
-            "line=%#lx ready=%llu\n",
+            "S0 accept tid=%u ftq=%llu gen=%llu pc=%#lx line=%#lx "
+            "ready=%llu\n",
             hint.tid, static_cast<unsigned long long>(hint.ftqId),
             static_cast<unsigned long long>(hint.generation), hint.pc,
-            hint.predEndPC, hint.vaddr,
+            hint.vaddr,
             static_cast<unsigned long long>(pendingHints.back().readyAt));
-}
-
-bool
-FDIPPrefetcher::submitFDIPHint(const FDIPPrefetchHint &hint)
-{
-    return submitFDIPBundle({hint});
 }
 
 bool

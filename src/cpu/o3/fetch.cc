@@ -641,13 +641,7 @@ Fetch::clearStates(ThreadID tid)
     threads[tid].cacheReq.reset();
     threads[tid].reset();
     fetchQueue[tid].clear();
-    ++icachePrefetchGeneration[tid];
-    icachePrefetchPtr[tid] = 1;
-    icachePrefetchNeedsResync[tid] = true;
-    if (cpu->fdipPrefetcher) {
-        cpu->fdipPrefetcher->squashFDIPHints(
-            tid, icachePrefetchGeneration[tid]);
-    }
+    squashIcachePrefetchHints(tid);
 
     // TODO not sure what to do with priorityList for now
     // priorityList.push_back(tid);
@@ -679,9 +673,6 @@ Fetch::resetStage()
 
         threads[tid].reset();
         ftqEntryFetchedInsts[tid] = 0;
-        icachePrefetchPtr[tid] = 1;
-        ++icachePrefetchGeneration[tid];
-        icachePrefetchNeedsResync[tid] = true;
 
         fetchQueue[tid].clear();
 
@@ -700,10 +691,7 @@ Fetch::resetStage()
     assert(dbpbtb);
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         dbpbtb->resetPC(tid, threads[tid].fetchpc->instAddr());
-        if (cpu->fdipPrefetcher) {
-            cpu->fdipPrefetcher->squashFDIPHints(tid,
-                                               icachePrefetchGeneration[tid]);
-        }
+        squashIcachePrefetchHints(tid);
     }
 }
 
@@ -1085,11 +1073,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
                 curr_pc, next_pc);
         // nonControlSquash mutates the FTQ without entering Fetch::doSquash;
         // advance FDIP's epoch here so delayed wrong-path hints are removed.
-        ++icachePrefetchGeneration[tid];
-        if (cpu->fdipPrefetcher) {
-            cpu->fdipPrefetcher->squashFDIPHints(
-                tid, icachePrefetchGeneration[tid]);
-        }
+        squashIcachePrefetchHints(tid);
         dbpbtb->nonControlSquash(prediction.ftqId, next_pc,
                                  inst->seqNum, tid, currentLoopIter);
         ftqEntryFetchedInsts[tid] = 0;
@@ -1461,13 +1445,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     // Force a new I-cache request for the next FTQ head after squash.
     threads[tid].valid = false;
     ftqEntryFetchedInsts[tid] = 0;
-    ++icachePrefetchGeneration[tid];
-    icachePrefetchPtr[tid] = dbpbtb ? dbpbtb->ftqFetchId(tid) + 1 : 1;
-    icachePrefetchNeedsResync[tid] = true;
-    if (cpu->fdipPrefetcher) {
-        cpu->fdipPrefetcher->squashFDIPHints(
-            tid, icachePrefetchGeneration[tid]);
-    }
+    squashIcachePrefetchHints(tid);
 
     if (traceFetch) {
         traceFetch->handleTraceSquash(tid, new_pc, squashInst, seqNum);
@@ -1574,6 +1552,17 @@ Fetch::tick()
 }
 
 void
+Fetch::squashIcachePrefetchHints(ThreadID tid)
+{
+    ++icachePrefetchGeneration[tid];
+    icachePrefetchNeedsResync[tid] = true;
+    if (cpu->fdipPrefetcher) {
+        cpu->fdipPrefetcher->squashFDIPHints(
+            tid, icachePrefetchGeneration[tid]);
+    }
+}
+
+void
 Fetch::issueIcachePrefetchHints()
 {
     if (cpu->fdipPrefetcher == nullptr || dbpbtb == nullptr) {
@@ -1599,7 +1588,6 @@ Fetch::issueIcachePrefetchHints()
         }
 
         const FetchTargetId bpu = dbpbtb->ftqBpuPtr(tid);
-        const FetchTargetId pnr = dbpbtb->ftqPnrPtr(tid);
         if (bpu == 0 || icachePrefetchPtr[tid] >= bpu ||
             icachePrefetchPtr[tid] - demand > MaxAhead ||
             !dbpbtb->ftqHasTarget(tid, icachePrefetchPtr[tid])) {
@@ -1622,52 +1610,56 @@ Fetch::issueIcachePrefetchHints()
             hint.generation = icachePrefetchGeneration[tid];
             hint.vaddr = line;
             hint.pc = target.startPC;
-            hint.predEndPC = target.endPC;
-            hint.target = target.target;
-            hint.predTaken = target.taken;
             hint.contextId = cpu->thread[tid]->contextId();
             hint.priority = -static_cast<int32_t>(id - demand);
             hints.push_back(hint);
         };
         auto append_target = [&](const auto &target, FetchTargetId id) {
-            add_line(target, id, target.line0);
-            if (target.isCrossLine)
-                add_line(target, id, target.line1);
+            const Addr line0 = target.startPC & ~(CacheLineSize - 1);
+            add_line(target, id, line0);
+            if (target.endPC > line0 + CacheLineSize)
+                add_line(target, id, line0 + CacheLineSize);
         };
 
         const FetchTargetId first_id = icachePrefetchPtr[tid];
         const auto first = dbpbtb->ftqFetchBlockById(tid, first_id);
         FetchTargetId advance = 1;
         const FetchTargetId next_id = icachePrefetchPtr[tid] + 1;
-        if (dbpbtb->ftqHasTarget(tid, next_id) && next_id < pnr &&
+        if (dbpbtb->ftqHasTarget(tid, next_id) && next_id < bpu &&
             (first.startPC / PageSize) ==
                 (dbpbtb->ftqFetchBlockById(tid, next_id).startPC / PageSize) &&
             icachePrefetchPtr[tid] - demand + 1 <= MaxAhead) {
             const auto second = dbpbtb->ftqFetchBlockById(tid, next_id);
-            if (first.line0 == second.line0) {
+            const Addr first_line = first.startPC & ~(CacheLineSize - 1);
+            const Addr second_line = second.startPC & ~(CacheLineSize - 1);
+            const bool first_cross =
+                first.endPC > first_line + CacheLineSize;
+            const bool second_cross =
+                second.endPC > second_line + CacheLineSize;
+            if (first_line == second_line) {
                 two_case = FDIPTwoPrefetchCase::SameLine;
-                add_line(first, first_id, first.line0);
-                if (first.isCrossLine) {
-                    add_line(first, first_id, first.line1);
-                } else if (second.isCrossLine) {
-                    add_line(second, next_id, second.line1);
+                add_line(first, first_id, first_line);
+                if (first_cross) {
+                    add_line(first, first_id, first_line + CacheLineSize);
+                } else if (second_cross) {
+                    add_line(second, next_id, second_line + CacheLineSize);
                 }
-            } else if (first.isCrossLine && !second.isCrossLine &&
-                       first.line1 == second.line0) {
+            } else if (first_cross && !second_cross &&
+                       first_line + CacheLineSize == second_line) {
                 two_case = FDIPTwoPrefetchCase::Overlap1;
-                add_line(first, first_id, first.line0);
-                add_line(first, first_id, first.line1);
-            } else if (!first.isCrossLine && second.isCrossLine &&
-                       second.line1 == first.line0) {
+                add_line(first, first_id, first_line);
+                add_line(first, first_id, first_line + CacheLineSize);
+            } else if (!first_cross && second_cross &&
+                       second_line + CacheLineSize == first_line) {
                 two_case = FDIPTwoPrefetchCase::Overlap2;
-                add_line(second, next_id, second.line0);
-                add_line(second, next_id, second.line1);
-            } else if (!first.isCrossLine && !second.isCrossLine &&
-                       ((first.line0 / CacheLineSize) & 1) !=
-                           ((second.line0 / CacheLineSize) & 1)) {
+                add_line(second, next_id, second_line);
+                add_line(second, next_id, second_line + CacheLineSize);
+            } else if (!first_cross && !second_cross &&
+                       ((first_line / CacheLineSize) & 1) !=
+                           ((second_line / CacheLineSize) & 1)) {
                 two_case = FDIPTwoPrefetchCase::Interleave;
-                add_line(first, first_id, first.line0);
-                add_line(second, next_id, second.line0);
+                add_line(first, first_id, first_line);
+                add_line(second, next_id, second_line);
             }
             if (two_case != FDIPTwoPrefetchCase::Conflict)
                 advance = 2;
@@ -1678,12 +1670,11 @@ Fetch::issueIcachePrefetchHints()
             hint.twoPrefetchCase = two_case;
         if (hints.empty() || !cpu->fdipPrefetcher->submitFDIPBundle(hints))
             continue;
-        DPRINTF(FDIP, "bundle tid=%d pf=%llu bpu=%llu pnr=%llu "
+        DPRINTF(FDIP, "bundle tid=%d pf=%llu bpu=%llu "
                 "targets=%u lines=%zu case=%u gen=%llu\n",
                 tid, static_cast<unsigned long long>(first_id),
                 static_cast<unsigned long long>(bpu),
-                static_cast<unsigned long long>(pnr), advance,
-                hints.size(), static_cast<unsigned>(two_case),
+                advance, hints.size(), static_cast<unsigned>(two_case),
                 static_cast<unsigned long long>(
                     icachePrefetchGeneration[tid]));
         icachePrefetchPtr[tid] += advance;
@@ -2588,11 +2579,7 @@ Fetch::handleDecodeSquash(ThreadID tid)
         } else {
             // The older squash already owns Fetch's state machine, but this
             // decode event still changes the BPU cutoff and needs one epoch.
-            ++icachePrefetchGeneration[tid];
-            if (cpu->fdipPrefetcher) {
-                cpu->fdipPrefetcher->squashFDIPHints(
-                    tid, icachePrefetchGeneration[tid]);
-            }
+            squashIcachePrefetchHints(tid);
         }
     }
 

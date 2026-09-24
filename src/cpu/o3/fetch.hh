@@ -502,6 +502,9 @@ class Fetch
 
     void issueIcachePrefetchHints();
 
+    /** Invalidate wrong-path FDIP state after an FTQ redirect. */
+    void squashIcachePrefetchHints(ThreadID tid);
+
     /** Squashes a specific thread and resets the PC. Also tells the CPU to
      * remove any instructions between fetch and decode
      *  that should be sqaushed.

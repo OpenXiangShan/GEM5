@@ -62,23 +62,6 @@ PrefetcherForwarder::rxHint(BaseMMU::Translation *dpp)
     }
 }
 
-bool
-PrefetcherForwarder::submitFDIPHint(const FDIPPrefetchHint &hint)
-{
-    if (real_pf) {
-        return real_pf->submitFDIPHint(hint);
-    }
-    return false;
-}
-
-void
-PrefetcherForwarder::squashFDIPHints(ThreadID tid, uint64_t generation)
-{
-    if (real_pf) {
-        real_pf->squashFDIPHints(tid, generation);
-    }
-}
-
 void
 PrefetcherForwarder::notifyIns(int ins_num)
 {

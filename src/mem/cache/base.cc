@@ -932,12 +932,7 @@ BaseCache::dcacheMainPipeEffectiveMSHRFull() const
 bool
 BaseCache::dcacheMainPipeCanPrefetch() const
 {
-    if (typedMshrAdmissionEnabled) {
-        return mshrQueue.getAllocated() < 14 &&
-            mshrQueue.getPrefetchAllocated() < 10;
-    }
-    return mshrQueue.canPrefetchWithExtraAllocated(
-        dcacheMainPipeHeldMSHRCredits);
+    return canPrefetch();
 }
 
 void
