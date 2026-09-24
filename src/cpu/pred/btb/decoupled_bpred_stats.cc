@@ -383,7 +383,18 @@ DecoupledBPUWithBTB::BpTrace::BpTrace(uint64_t fsqId, FetchTarget &target, const
     Addr targetpc = rv_pc.npc();
     Addr fallThru = rv_pc.getFallThruPC();
     BranchInfo info(pc, targetpc, inst->staticInst, fallThru-pc);
-    set(fsqId, target.startPC, pc, info.getType(), inst->branching(), mispred, fallThru, target.predSource, targetpc);
+    bool taken = inst->branching();
+    if (inst->hasTraceBranchInfo()) {
+        targetpc = inst->traceBranchNextPC();
+        info.isCond = inst->traceIsCond();
+        info.isIndirect = inst->traceIsIndirect();
+        info.isDirect = !info.isIndirect;
+        info.isCall = inst->traceIsCall();
+        info.isReturn = inst->traceIsReturn();
+        taken = inst->traceBranchTaken();
+    }
+    set(fsqId, target.startPC, pc, info.getType(), taken, mispred,
+        fallThru, target.predSource, targetpc);
     // for (auto it = _uint64_data.begin(); it != _uint64_data.end(); it++) {
     //     printf("%s: %ld\n", it->first.c_str(), it->second);
     // }
@@ -869,8 +880,13 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     const auto &rv_pc = inst->pcState().as<RiscvISA::PCState>();
     Addr targetAddr = rv_pc.npc();
     Addr fallThruPC = rv_pc.getFallThruPC();
-    BranchInfo info(branchAddr, targetAddr, inst->staticInst, fallThruPC-branchAddr);
-    bool taken = rv_pc.branching() || inst->isUncondCtrl();
+    if (inst->hasTraceBranchInfo()) {
+        targetAddr = inst->traceBranchNextPC();
+    }
+    BranchInfo info = makeBranchInfo(
+        branchAddr, targetAddr, inst, inst->staticInst, fallThruPC - branchAddr);
+    bool taken = inst->hasTraceBranchInfo() ? inst->traceBranchTaken() :
+        rv_pc.branching() || inst->isUncondCtrl();
 
     // ---------- Process misprediction and update statistics ----------
     processMisprediction(entry, branchAddr, info, taken, mispred);
