@@ -22,6 +22,24 @@ from common.Caches import *
 from common.xiangshan import *
 from util.solver.runtime.integration import maybe_handle_solver_runtime
 
+
+def hybrid_policy_requested(args):
+    """Return whether command-line --param selects the Hybrid ROB policy.
+
+    The common XiangShan option parser already exposes --param, so KMHV3 can
+    opt into Hybrid without adding a second, config-specific parser.
+    """
+    import re
+
+    pattern = re.compile(
+        r"(?:^|\.)RobCompressPolicy\s*=\s*['\"]?hybrid['\"]?\s*$"
+    )
+    return any(
+        pattern.search(param.strip())
+        for param in getattr(args, "param", [])
+    )
+
+
 def setPtwLevelLimitParams(args, tlb):
     tlb.walker.enable_ptw_level_limit = args.enable_ptw_level_limit
     tlb.walker.ptw_level0_limit = args.ptw_level0_limit
@@ -31,6 +49,10 @@ def setPtwLevelLimitParams(args, tlb):
     tlb.walker.ptw_miss_queue_size = args.ptw_miss_queue_size
 
 def setKmhV3Params(args, system):
+    hybrid = hybrid_policy_requested(args)
+    if hybrid and args.smt:
+        fatal("Hybrid ROB compression requires numThreads=1")
+
     for cpu in system.cpu:
 
         # fetch (idealfetch not care)
@@ -90,6 +112,21 @@ def setKmhV3Params(args, system):
         cpu.numROBEntries = 352
         cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
         cpu.robWalkPolicy = args.rob_walk_policy
+
+        if hybrid:
+            # --param can select Hybrid while retaining the normal KMHV3
+            # entry point.  Apply all required defaults before root.apply_config
+            # runs, so explicit --param overrides still take precedence.
+            cpu.numThreads = 1
+            cpu.valuePred = NULL
+            cpu.enable_loadFusion = False
+            cpu.enableConstantFolding = False
+            cpu.enableMoveElimination = True
+            cpu.enableMovImmElimination = False
+            cpu.RobCompressPolicy = 'hybrid'
+            cpu.CROB_instPerGroup = 8
+            cpu.renameWidth = 8
+            cpu.commitWidth = 8
 
         # lsu
         cpu.StoreWbStage = 4
