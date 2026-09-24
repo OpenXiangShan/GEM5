@@ -459,6 +459,13 @@ TraceFetch::fetchTraceInstruction(ThreadID tid, PCStateBase &this_pc)
     if (wrong_path) {
         const unsigned nop_size =
             chooseWrongPathNopSize(tid, this_pc.instAddr());
+        fetch.pendingTraceInstructionPc[tid] = this_pc.instAddr();
+        fetch.pendingTraceSupplyValid[tid] = true;
+        if (!fetch.traceInstructionBytesReady(
+                tid, this_pc.instAddr(), nop_size)) {
+            fetch.threads[tid].valid = false;
+            return StallReason::IcacheStall;
+        }
         // RISC-V 32b nop: 0x00000013; 16b compressed nop: 0x0001
         TheISA::MachInst nop = (nop_size == 2)
             ? static_cast<TheISA::MachInst>(0x0001u)
@@ -500,6 +507,15 @@ TraceFetch::fetchTraceInstruction(ThreadID tid, PCStateBase &this_pc)
         rv_pc.uReset();
         rv_pc.compressed(false);
     }
+    const unsigned instruction_size = pendingTraceInstr.getInstSizeBytes() ?
+        pendingTraceInstr.getInstSizeBytes() : 4;
+    fetch.pendingTraceInstructionPc[tid] = pendingTraceInstr.getPC();
+    fetch.pendingTraceSupplyValid[tid] = true;
+    if (!fetch.traceInstructionBytesReady(
+            tid, pendingTraceInstr.getPC(), instruction_size)) {
+        fetch.threads[tid].valid = false;
+        return StallReason::IcacheStall;
+    }
     TheISA::MachInst machInst = createMachInstFromTrace(pendingTraceInstr);
     supplyTraceToDecoder(tid, this_pc, machInst, pendingTraceInstr.getPC(),
                          "supplied 4B to decoder (from expected stream head)");
@@ -514,8 +530,7 @@ TraceFetch::supplyTraceToDecoder(ThreadID tid, const PCStateBase &this_pc,
     auto *dec_ptr = fetch.decoder[tid];
     memcpy(dec_ptr->moreBytesPtr(), &machInst, sizeof(machInst));
     fetch.decoder[tid]->moreBytes(this_pc, instrPC);
-    fetch.threads[tid].startPC = instrPC;
-    fetch.threads[tid].valid = true;
+    fetch.pendingTraceSupplyValid[tid] = false;
     DPRINTF(Fetch, "[tid:%i] Trace on-demand: %s at PC=0x%llx\n",
             tid, tag, (unsigned long long)instrPC);
 }
