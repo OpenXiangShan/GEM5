@@ -268,6 +268,25 @@ TEST(ChampSimTraceReaderTest, HashMappingProducesAlignedInRegion)
     EXPECT_EQ(pc, mapHash(x.ip));
 }
 
+TEST(ChampSimTraceReaderTest, MarksNonBranchDiscontinuityForTraceRecovery)
+{
+    const std::string path = "champsim_reader_test_ctrl_flow_change.bin";
+    TraceFileGuard guard(path);
+    const CSInstr first = makeInstr(0x1000);
+    const CSInstr successor = makeInstr(0x2000);
+    ASSERT_TRUE(writeTraceFile(path, {first, successor}));
+
+    ChampSimTraceReader reader(path, "unit.reader.ctrl_flow_change");
+    ASSERT_TRUE(reader.init());
+
+    const auto record = reader.getNextInstruction();
+    ASSERT_TRUE(record.isValid());
+    EXPECT_FALSE(record.getBranch());
+    EXPECT_TRUE(record.isCtrlFlowChange());
+    EXPECT_TRUE(record.getHasCtrlFlowTarget());
+    EXPECT_EQ(record.getCtrlFlowTarget(), mapHash(successor.ip));
+}
+
 TEST(ChampSimTraceReaderTest, TakenBranchWithoutLookaheadHasNoTarget)
 {
     const std::string path = "champsim_reader_test_branch_eof.bin";

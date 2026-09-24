@@ -384,7 +384,8 @@ class Commit
     /** Tries to commit the head ROB instruction passed in.
      * @param head_inst The instruction to be committed.
      */
-    bool commitHead(const DynInstPtr &head_inst, unsigned inst_num);
+    bool commitHead(const DynInstPtr &head_inst, unsigned inst_num,
+                    bool &logical_trace_record_retired);
 
     /** Gets instructions from rename and inserts them into the ROB. */
     void moveInstsToBuffer();
@@ -716,6 +717,8 @@ class Commit
     bool traceMaybeExitOnEofDrainFromTick();
     void traceUpdateSquashInfo(ThreadID tid, InstSeqNum squashed_inst);
     void traceMaybeInjectCtrlFlowChangeFault(
+        ThreadID tid, const DynInstPtr &head_inst);
+    bool traceAccountInjectedCtrlFlowRecord(
         ThreadID tid, const DynInstPtr &head_inst);
     bool traceMaybeExitOnLastTraceInst(const DynInstPtr &head_inst);
     void traceOnCommit(ThreadID tid, const DynInstPtr &head_inst);

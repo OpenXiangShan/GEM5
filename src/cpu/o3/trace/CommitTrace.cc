@@ -111,6 +111,37 @@ Commit::traceMaybeInjectCtrlFlowChangeFault(ThreadID tid, const DynInstPtr &head
 }
 
 bool
+Commit::traceAccountInjectedCtrlFlowRecord(
+    ThreadID tid, const DynInstPtr &head_inst)
+{
+    if (!cpu->isTraceMode() || !traceCtrlFaultPending[tid] ||
+        traceCtrlFaultSeqNum[tid] != head_inst->seqNum ||
+        !head_inst->hasTraceCtrlFlowChange()) {
+        return false;
+    }
+
+    panic_if(!cpu->isTraceInstruction(head_inst->seqNum),
+             "Trace control-flow fault [sn:%llu] has no trace metadata",
+             head_inst->seqNum);
+    panic_if(head_inst->isMicroop() && !head_inst->isLastMicroop(),
+             "Trace control-flow fault [sn:%llu] is not an instruction boundary",
+             head_inst->seqNum);
+
+    // The fault already applied the recorded target. Account the source record
+    // exactly once while preserving the existing trap squash and ROB removal.
+    updateComInstStats(head_inst);
+    stats.committedInstType[tid][head_inst->opClass()]++;
+    traceOnCommit(tid, head_inst);
+    traceOnMacroCommit(tid);
+
+    DPRINTF(CommitTrace,
+            "[tid:%d idx:%llu sn:%llu] Logically retired trace control-flow record\n",
+            tid, (unsigned long long)cpu->getTraceIndexForSeqNum(head_inst->seqNum),
+            (unsigned long long)head_inst->seqNum);
+    return true;
+}
+
+bool
 Commit::traceMaybeExitOnLastTraceInst(const DynInstPtr &head_inst)
 {
     if (cpu->isTraceMode() && head_inst->isLastTraceInst()) {
