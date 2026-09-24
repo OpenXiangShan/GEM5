@@ -48,6 +48,7 @@
 #include <string>
 
 #include "base/intmath.hh"
+#include "mem/cache/tags/indexing_policies/set_associative.hh"
 
 namespace gem5
 {
@@ -55,7 +56,8 @@ namespace gem5
 BaseSetAssoc::BaseSetAssoc(const Params &p)
     :BaseTags(p), allocAssoc(p.assoc), blks(p.size / p.block_size),
      sequentialAccess(p.sequential_access),
-     replacementPolicy(p.replacement_policy)
+     replacementPolicy(p.replacement_policy),
+     sdbpPolicy(dynamic_cast<replacement_policy::SDBP *>(replacementPolicy))
 {
     // There must be a indexing policy
     fatal_if(!p.indexing_policy, "An indexing policy is required");
@@ -69,6 +71,12 @@ BaseSetAssoc::BaseSetAssoc(const Params &p)
 void
 BaseSetAssoc::tagsInit()
 {
+    if (sdbpPolicy) {
+        fatal_if(typeid(*this) != typeid(BaseSetAssoc) ||
+                 typeid(*indexingPolicy) != typeid(SetAssociative),
+                 "SDBP requires BaseSetAssoc with SetAssociative indexing");
+        sdbpPolicy->bindCache(numBlocks / allocAssoc);
+    }
     // Initialize all blocks
     for (unsigned blk_index = 0; blk_index < numBlocks; blk_index++) {
         // Locate next cache block
@@ -83,6 +91,21 @@ BaseSetAssoc::tagsInit()
         // Associate a replacement data entry to the block
         blk->replacementData = replacementPolicy->instantiateEntry();
     }
+}
+
+CacheBlk *
+BaseSetAssoc::findVictim(PacketPtr pkt, const bool is_secure,
+                        const std::size_t size,
+                        std::vector<CacheBlk *> &evict_blks)
+{
+    if (!sdbpPolicy)
+        return findVictim(pkt->getAddr(), is_secure, size, evict_blks);
+
+    auto *victim = static_cast<CacheBlk *>(sdbpPolicy->getVictim(
+        indexingPolicy->getPossibleEntries(pkt->getAddr()), pkt));
+    if (victim)
+        evict_blks.push_back(victim);
+    return victim;
 }
 
 void

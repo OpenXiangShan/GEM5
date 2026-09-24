@@ -9,6 +9,7 @@ addToPath('../../')
 
 from ruby import Ruby
 from common.LSQBankConflict import set_lsq_bank_conflict_cache_params
+from common.SDBP import configure_sdbp
 
 from common.FSConfig import *
 from common.SysPaths import *
@@ -177,6 +178,7 @@ if __name__ == '__m5_main__':
     test_sys = build_xiangshan_system(args)
     # Set ideal parameters here with the highest priority, over command-line arguments
     setKmhV3IdealParams(args, test_sys)
+    configure_sdbp(args, test_sys)
 
     root = Root(full_system=True, system=test_sys)
     if maybe_handle_solver_runtime(root, args):

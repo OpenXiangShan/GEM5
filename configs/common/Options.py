@@ -662,6 +662,9 @@ def addFSOptions(parser):
                         help="Wait for remote GDB to connect.")
 
 def addXiangshanCommonOptions(parser):
+    from common.SDBP import add_sdbp_options
+
+    add_sdbp_options(parser)
     # Xiangshan related options
     parser.add_argument("--xiangshan-system", action="store_true",
                         help="Use memory layout of Xiangshan system")

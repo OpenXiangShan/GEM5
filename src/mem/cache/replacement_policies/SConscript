@@ -31,7 +31,8 @@ Import('*')
 SimObject('ReplacementPolicies.py', sim_objects=[
     'BaseReplacementPolicy', 'DuelingRP', 'FIFORP', 'SecondChanceRP',
     'LFURP', 'LRURP', 'BIPRP', 'MRURP', 'RandomRP', 'BRRIPRP', 'SHiPRP',
-    'SHiPMemRP', 'SHiPPCRP', 'TreePLRURP', 'WeightedLRURP', 'XSDRRIPRP'])
+    'SHiPMemRP', 'SHiPPCRP', 'TreePLRURP', 'WeightedLRURP', 'XSDRRIPRP',
+    'SDBPRP'])
 
 Source('bip_rp.cc')
 Source('brrip_rp.cc')
@@ -43,8 +44,23 @@ Source('mru_rp.cc')
 Source('random_rp.cc')
 Source('second_chance_rp.cc')
 Source('ship_rp.cc')
+Source('sdbp_core.cc')
+Source('sdbp_rp.cc')
+DebugFlag('SDBP')
 Source('tree_plru_rp.cc')
 Source('weighted_lru_rp.cc')
 Source('xs_drrip_rp.cc')
 
 GTest('replaceable_entry.test', 'replaceable_entry.test.cc')
+GTest('sdbp_core.test', 'sdbp_core.test.cc', 'sdbp_core.cc')
+GTest('sdbp_rp.test', 'sdbp_rp.test.cc', 'sdbp_core.cc', 'sdbp_rp.cc',
+      '../../../base/stats/group.cc', '../../../base/stats/info.cc',
+      '../../../base/stats/storage.cc', '../../../base/statistics.cc',
+      '../../../base/time.cc', '../../../base/hostinfo.cc',
+      '../../../base/output.cc', '../../../sim/core.cc',
+      '../../../sim/sim_object.cc', '../../../sim/globals.cc',
+      '../../../sim/tags.cc', '../../../sim/root.cc',
+      '../../../sim/probe/probe.cc', '../../../sim/port.cc',
+      '../../../sim/bufval.cc', '../../packet.cc',
+      with_any_tags('gem5 trace', 'gem5 events',
+                    'gem5 drain', 'gem5 serialize'))

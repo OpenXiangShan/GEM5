@@ -57,6 +57,7 @@
 #include "mem/cache/cache_blk.hh"
 #include "mem/cache/replacement_policies/base.hh"
 #include "mem/cache/replacement_policies/replaceable_entry.hh"
+#include "mem/cache/replacement_policies/sdbp_rp.hh"
 #include "mem/cache/tags/base.hh"
 #include "mem/cache/tags/indexing_policies/base.hh"
 #include "mem/packet.hh"
@@ -86,6 +87,9 @@ class BaseSetAssoc : public BaseTags
 
     /** Replacement policy */
     replacement_policy::Base *replacementPolicy;
+
+    /** Optional sampler hook, bound once for conventional tag stores. */
+    replacement_policy::SDBP *sdbpPolicy;
 
   public:
     /** Convenience typedef. */
@@ -127,6 +131,11 @@ class BaseSetAssoc : public BaseTags
     CacheBlk* accessBlock(const PacketPtr pkt, Cycles &lat) override
     {
         CacheBlk *blk = findBlock(pkt->getAddr(), pkt->isSecure());
+
+        if (sdbpPolicy) {
+            sdbpPolicy->observe(pkt, indexingPolicy->extractSet(pkt->getAddr()),
+                                extractTag(pkt->getAddr()), blk != nullptr);
+        }
 
         // Access all tags in parallel, hence one in each way.  The data side
         // either accesses all blocks in parallel, or one block sequentially on
@@ -206,6 +215,10 @@ class BaseSetAssoc : public BaseTags
     }
 
     void moveBlock(CacheBlk *src_blk, CacheBlk *dest_blk) override;
+
+    CacheBlk *findVictim(PacketPtr pkt, const bool is_secure,
+                         const std::size_t size,
+                         std::vector<CacheBlk *> &evict_blks) override;
 
     /**
      * Limit the allocation for the cache ways.

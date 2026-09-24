@@ -1,0 +1,27 @@
+Title:
+Dead Block Replacement and Bypass with a Sampling Predictor
+
+Abstract:
+We present a cache replacement and bypass policy driven by dead block
+prediction.  A block is considered dead is it will be replaced before it
+will be used again.  If dead blocks can be identified, then they can be
+replaced early.  If a block is predicted to be "dead on arrival," i.e.,
+it will not be accessed again after it is placed in the cache, then it
+can bypass the cache.  The predictor is based on one simple observation:
+if a block becomes dead after being touched by a particular instruction,
+then other blocks touched by that instruction are also likely to become dead.
+
+Ideally, we would track the tendency of blocks to become dead for every
+instruction accessing the cache.  However, to fit within a realistic
+hardware budget, we sample only a few sets from the cache.  This paper
+describes our sampling dead block predictor and the techniques used to make
+it fit within the allow hardware budget for the cache replacement contest.
+
+Author:
+Daniel A. Jimenez
+djimenez@acm.org
+The University of Texas at San Antonio
+
+Contact Info:
+Daniel A. Jimenez
+djimenez@acm.org

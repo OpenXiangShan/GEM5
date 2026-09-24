@@ -78,6 +78,28 @@ class BIPRP(LRURP):
     cxx_header = "mem/cache/replacement_policies/bip_rp.hh"
     btp = Param.Percent(3, "Percentage of blocks to be inserted as MRU")
 
+class SDBPRP(BaseReplacementPolicy):
+    type = 'SDBPRP'
+    cxx_class = 'gem5::replacement_policy::SDBP'
+    cxx_header = "mem/cache/replacement_policies/sdbp_rp.hh"
+
+    num_sets = Param.Unsigned("Number of sets in the attached cache")
+    sampler_num = Param.Unsigned(32, "Target number of sampled sets")
+    sampler_assoc = Param.Unsigned(12, "Associativity of the independent sampler")
+    predictor_tables = Param.Unsigned(3, "Number of skewed prediction tables")
+    predictor_entries = Param.Unsigned(4096, "Counters per prediction table")
+    counter_bits = Param.Unsigned(2, "Saturating counter width")
+    dead_threshold = Param.Unsigned(8, "Minimum confidence sum predicting dead")
+    partial_tag_bits = Param.Unsigned(15, "Sampler partial tag width")
+    partial_pc_bits = Param.Unsigned(15, "Stored PC signature width")
+    pc_shift = Param.Unsigned(1, "PC low bits removed before hashing")
+    pc_hash_type = Param.String("xor_fold", "xor_fold, mixed, or low_bits")
+    pc_hash_seed = Param.UInt64(0, "PC signature hash seed")
+    index_hash_type = Param.String("mixed", "mixed or jwac")
+    table_hash_seeds = VectorParam.UInt64([], "Distinct per-table hash seeds")
+    crc_live_update = Param.Bool(True, "Halve odd tables on live training")
+    enable_bypass = Param.Bool(False, "Bypass predicted-dead fills to full sets")
+
 class LIPRP(BIPRP):
     btp = 0
 
