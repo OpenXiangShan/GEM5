@@ -21,9 +21,10 @@ inner quotes because `--param` evaluates a Python expression):
 --param="system.cpu[0].RobCompressPolicy='hybrid'"
 ```
 
-The configuration supplies one thread, no value predictor, no Load fusion or
-Rename elimination, group length 8, rename width 8, and physical commit width
-8. Existing non-Load fusion remains active. Other `--param` assignments can
+The configuration supplies one thread and no value predictor or Load fusion.
+Constant folding and MOVI elimination are disabled; register move elimination
+remains enabled. The group length is 8, rename width is 8, and physical commit
+width is 8. Existing non-Load fusion remains active. Other `--param` assignments can
 override group size and entry width afterward. `numROBEntries` is physical
 capacity (352 in this configuration).
 

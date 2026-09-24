@@ -303,9 +303,10 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
                  "Hybrid CROB requires valuePred = NULL");
         fatal_if(params.enable_loadFusion,
                  "Hybrid CROB requires enable_loadFusion = False");
-        fatal_if(params.enableConstantFolding || params.enableMoveElimination ||
+        fatal_if(params.enableConstantFolding ||
                  params.enableMovImmElimination,
-                 "Hybrid CROB requires all Rename elimination options off");
+                 "Hybrid CROB requires enableConstantFolding = False and "
+                 "enableMovImmElimination = False");
         fatal_if(instsPerGroup == 0,
                  "Hybrid CROB requires CROB_instPerGroup > 0");
     }

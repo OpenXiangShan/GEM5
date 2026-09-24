@@ -121,7 +121,7 @@ def setKmhV3Params(args, system):
             cpu.valuePred = NULL
             cpu.enable_loadFusion = False
             cpu.enableConstantFolding = False
-            cpu.enableMoveElimination = False
+            cpu.enableMoveElimination = True
             cpu.enableMovImmElimination = False
             cpu.RobCompressPolicy = 'hybrid'
             cpu.CROB_instPerGroup = 8
