@@ -902,6 +902,12 @@ class LSQUnit
         /** Load-load/snoop ordering violations. */
         statistics::Scalar loadOrderViolation;
 
+        /** Executed LR replayed by a conflicting store from another thread. */
+        statistics::Scalar smtVisibleStoreLrReexec;
+
+        /** Executed non-LR loads kept across another thread's visible store. */
+        statistics::Scalar smtVisibleStoreExecutedLoadIgnored;
+
         /** Tota number of successfully forwarding from bus. */
         statistics::Scalar busForwardSuccess;
 

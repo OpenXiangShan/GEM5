@@ -692,6 +692,9 @@ class Commit
         statistics::Vector squashDueToLongLatencyFlush;
         statistics::Formula totalSquash;
 
+        /** Cycles where an uncommitted LR bounded early store publication. */
+        statistics::Vector loadReservedStorePublishBarrierCycles;
+
         statistics::Vector ROBFull;
         statistics::Distribution smtRestEntryWhileROBFull;
         statistics::Vector ROBBorrowingStateChange;
