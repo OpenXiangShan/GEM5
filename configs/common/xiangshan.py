@@ -908,8 +908,15 @@ def xiangshan_system_init():
     parser.add_argument(
         "--enable-h2p-table",
         action="store_true",
-        default=False,
+        dest="enable_h2p_table",
+        default=True,
         help="Enable the APF hard-to-predict branch table",
+    )
+    parser.add_argument(
+        "--disable-h2p-table",
+        action="store_false",
+        dest="enable_h2p_table",
+        help="Disable the APF hard-to-predict branch table",
     )
     parser.add_argument(
         "--h2p-buffer-entries",
