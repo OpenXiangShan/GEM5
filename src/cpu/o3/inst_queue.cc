@@ -167,7 +167,7 @@ InstructionQueue::InstructionQueue(CPU *cpu_ptr, IEW *iew_ptr,
         memDepUnit[tid].setIQ(this);
     }
 
-    scheduler->setCPU(cpu_ptr, &iew_ptr->ldstQueue);
+    scheduler->setCPU(cpu_ptr, &iew_ptr->ldstQueue, iew_ptr);
     scheduler->resetDepGraph(numPhysRegs);
     scheduler->setMemDepUnit(memDepUnit);
 
