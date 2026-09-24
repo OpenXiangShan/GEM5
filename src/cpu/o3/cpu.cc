@@ -114,6 +114,11 @@ CPU::CPU(const BaseO3CPUParams &params)
 
       isa(numThreads, NULL),
 
+      mlpPredictor(params.numThreads,
+                  params.mlpMissPatternTableSize,
+                  params.mlpDistanceTableSize,
+                  params.numROBEntries),
+
       timeBuffer(params.backComSize, params.forwardComSize),
       fetchTimebuffer(params.backComSize, params.forwardComSize),
       decodeTimebuffer(params.backComSize, params.forwardComSize),
@@ -166,6 +171,12 @@ CPU::CPU(const BaseO3CPUParams &params)
     rename.setActiveThreads(&activeThreads);
     iew.setActiveThreads(&activeThreads);
     commit.setActiveThreads(&activeThreads);
+    // Set up MLP predictor if enabled
+    if (params.mlpPredictorEnable) {
+        fetch.setMlpPredictor(&mlpPredictor);
+        commit.setMlpPredictor(&mlpPredictor);
+    }
+
     freeList.setActiveThreads(&activeThreads);
 
     // Give each of the stages the time buffer they will use.

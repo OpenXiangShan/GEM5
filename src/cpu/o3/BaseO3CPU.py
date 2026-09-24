@@ -64,19 +64,22 @@ class SMTFetchBlockPolicy(ScopedEnum):
     #
     # BlockThrottlePolicy (Throttle):
     #   The block signal REPLACES the base throttle entirely. throttle_now is driven
-    #   solely by threadFetchBlocked[tid]. The block state continuously refreshes the
+    #   solely by threadFetchThrottled[tid]. The block state continuously refreshes the
     #   smtBorrowThrottleCycles hold counter, keeping the thread throttled.
     #
-    # FlushFromLoadPolicy (Flush V1):
+    # FlushFromLoadPolicy:
     #   Squash ALL instructions after the long-latency load (including pipeline in-flight).
     #   Same throttle behavior as BlockThrottlePolicy, plus resource reclamation via squash.
     #
-    # FlushFromUsePolicy (Flush V2):
+    # FlushFromUsePolicy:
     #   Squash from the first consumer of the load's result. If no consumer exists in the
     #   ROB, squash from ROB tail (preserving independent instructions). Same throttle
     #   behavior as BlockThrottlePolicy.
-    vals = [ 'BaseLine', 'BlockStallPolicy', 'BlockThrottlePolicy',
-             'FlushFromLoadPolicy', 'FlushFromUsePolicy' ]
+    vals = [ 'BaseLine', 'BlockThrottlePolicy', 'BlockStallPolicy',
+             'FlushFromLoadPolicy', 'FlushFromUsePolicy', ]
+
+class SMTMLPFetchBlockPolicy(ScopedEnum):
+    vals = [ 'DisableMlp', 'MlpAwarePolicy', 'MlpDetectPolicy' ]
 
 class SMTQueuePolicy(ScopedEnum):
     vals = [ 'Dynamic', 'Partitioned', 'Threshold', 'DynamicBorrowing', 'Watermark' ]
@@ -353,10 +356,23 @@ class BaseO3CPU(BaseCPU):
     smtFetchBlockThreshold = Param.Unsigned(15,
         "Number of cycles a load must wait in the LQ before it is considered "
         "long-latency and triggers fetch blocking (T15 from Tullsen & Brown's paper)")
+    smtMlpFetchBlockPolicy = Param.SMTMLPFetchBlockPolicy('DisableMlp',
+        "SMT fetch block policy for long-latency loads")
+    mlpPredictorEnable = Param.Bool(False,
+        "Enable MLP-aware fetch predictor (HPCA07)")
+    mlpMissPatternTableSize = Param.Unsigned(2048,
+        "Miss-pattern predictor table size per thread")
+    mlpDistanceTableSize = Param.Unsigned(2048,
+        "MLP distance predictor table size per thread")
+    mlpLongLatencyCacheDepth = Param.Unsigned(3,
+        "Cache depth threshold to classify a load as long-latency. "
+        "Loads with depth >= this value are long-latency. "
+        "For example, 2 means L2 miss (L3/mem access).")
+
     smtFetchDelayedSchedulerDelay = Param.Unsigned(2,
         "Number of cycles the DelayedICount Policy delayed")
     smtBorrowThrottleCycles = Param.Unsigned(
-        8, "Cycles to keep a backend-stalled SMT thread throttled at fetch, 0 means disable throttle")
+        8, "Cycles to keep a backend-stalled SMT thread throttled at fetch")
 
     smtPregPolicy = Param.SMTQueuePolicy('Dynamic',
                                          "SMT Preg (physical register) Sharing Policy")

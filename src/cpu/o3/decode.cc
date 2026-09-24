@@ -1130,6 +1130,15 @@ Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
     arrays.numSrcs = fused_inst->numSrcRegs();
     arrays.numDests = fused_inst->numDestRegs();
 
+    DPRINTF(Decode, "fusion [sn:%d] and [sn:%d]\n",
+        inst_pair[0]->seqNum, inst_pair[1]->seqNum);
+
+    // ugly but works ^_^
+    {
+        fetch_ptr->fusionInstUpdate(
+            inst_pair[1]->threadNumber, inst_pair[0]->seqNum, inst_pair[1]->seqNum);
+    }
+
     // ugly but works for now
     RiscvISA::PCState thispc, predPC;
     thispc.set(inst_pair[0]->getPC());

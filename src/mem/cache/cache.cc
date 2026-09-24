@@ -959,6 +959,10 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
                         tgt_pkt->print());
             }
 
+            // Propagate cache access depth from response packet to target packet
+            tgt_pkt->cacheAccessDepth = std::max(tgt_pkt->cacheAccessDepth,
+                                                  pkt->cacheAccessDepth);
+
             // Reset the bus additional time as it is now accounted for
             tgt_pkt->headerDelay = tgt_pkt->payloadDelay = 0;
             DPRINTF(Cache, "Scheduling %#lx to response to sender %#lx at tick %lu\n",

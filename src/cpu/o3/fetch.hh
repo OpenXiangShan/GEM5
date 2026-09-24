@@ -58,6 +58,7 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/iew.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/mlp_predictor.hh"
 #include "cpu/o3/smt_sched.hh"
 #include "cpu/pc_event.hh"
 #include "cpu/pred/bpred_unit.hh"
@@ -68,6 +69,7 @@
 #include "enums/SMTDecodePolicy.hh"
 #include "enums/SMTFetchBlockPolicy.hh"
 #include "enums/SMTFetchPolicy.hh"
+#include "enums/SMTMLPFetchBlockPolicy.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
 #include "sim/eventq.hh"
@@ -250,25 +252,42 @@ class Fetch
     unsigned smtLdstqHighWater;
     int delayedSchedulerDelay; // only for DelayedICcountPolicy
 
-    /**  Block Policy: long-latency load fetch blocking */
+    // ===  Block Policy: long-latency load fetch blocking ===
     SMTFetchBlockPolicy smtFetchBlockPolicy;
+    bool isLongLatency(StallReason lqReason);
     void checkLongLatencyLoads();
-    bool isBlockPolicyActive() const;
+    bool isThrottlePolicyActive(bool isMlp);
     unsigned longLatencyThreshold;
     InstSeqNum lastLoadHeadSeqNum[MaxThreads];
     uint64_t longLatencyStallCycles[MaxThreads];
-    bool threadFetchBlocked[MaxThreads];
+    bool threadFetchThrottled[MaxThreads];
+    bool mlpThreadFetchThrottled[MaxThreads];
+    // / for stats
+    InstSeqNum lastLoadHeadSeqNumForStats[MaxThreads];
+    StallReason lqReasonForStats[MaxThreads];
+    uint64_t longLatencyStallReasonCyclesForStats[MaxThreads];
+    uint64_t longLatencyStallCyclesForStats[MaxThreads];
 
-    /** Block Policy: per-thread state tracking for statistics */
-    uint64_t blockStateHoldCycles[MaxThreads];
-
-    // === FlushFrom Policy state ===
+    // === Flush Policy status and methods ===
     bool flushFromInitiated[MaxThreads];
-
-    // FlushFrom Policy methods
-    bool isFlushFromPolicy() const;
+    bool mlpFlushFromInitiated[MaxThreads];
+    bool isBlockPolicy() const;
+    bool isFlushPolicy() const;
     DynInstPtr findFirstUse(const DynInstPtr &loadInst, ThreadID tid);
-    void flushFromInitiateFlush(const DynInstPtr &loadInst, ThreadID tid, bool fromUse);
+    void flushFromInitiateFlush(const DynInstPtr &loadInst, ThreadID tid, bool fromUse, bool isMlp);
+
+    // === MLP Aware Policy: MLP predictor ===
+    o3::MLPredictor *mlpPredictor = nullptr;
+    SMTMLPFetchBlockPolicy smtMlpFetchBlockPolicy;
+    unsigned mlpLongLatencyCacheDepth;
+    bool mlpAwareMode[MaxThreads];
+    int32_t mlpRemainingInsts[MaxThreads];
+    InstSeqNum mlpLongLatencyLoadSeqNum[MaxThreads];
+    void consumeLoadFeedback();
+
+    /** per-thread state tracking for statistics */
+    uint64_t blockStateHoldCycles[MaxThreads];
+    uint64_t mlpBlockStateHoldCycles[MaxThreads];
 
     /** List that has the threads organized by priority. */
     std::list<ThreadID> priorityList;
@@ -300,6 +319,9 @@ class Fetch
 
     /** Sets ptr to iew. */
     void setIEWStage(IEW *iew_stage);
+    /** Sets ptr to MLP predictor. */
+    void setMlpPredictor(MLPredictor *mlp_predictor) { mlpPredictor = mlp_predictor; }
+
 
     /** Sets the main backwards communication time buffer pointer. */
     void setTimeBuffer(TimeBuffer<TimeStruct> *time_buffer);
@@ -361,6 +383,10 @@ class Fetch
 
     // Select a thread that is not fetch-blocked, using scheduler
     ThreadID selectUnstalledThread();
+
+    // Decode update mlpLongLatencyLoadSeqNum for MlpAwarePoilcy while fusion
+    void fusionInstUpdate(ThreadID tid, InstSeqNum seqNum0, InstSeqNum seqNum1);
+
   private:
     /** Reset this pipeline stage */
     void resetStage();
@@ -1214,6 +1240,16 @@ class Fetch
         statistics::Scalar tlbSquashes;
         /** Distribution of number of instructions fetched each cycle. */
         statistics::Distribution nisnDist;
+        /** Distribution of load feedback entries per cycle from IEW */
+        statistics::Distribution loadFeedbackDist;
+        /** Distribution of LLSR push entries per cycle from Commit */
+        statistics::Distribution llsrPushDist;
+        /** MLP predictor: long-latency prediction accuracy */
+        statistics::Vector mlpLongLatencyPred;
+        /** MLP predictor: MLP distance prediction accuracy */
+        statistics::Vector mlpDistancePred;
+        /** MLP predictor: MLP distance over prediction distribution */
+        statistics::Distribution mlpDistanceOverPredDist;
         /** Distinct SMT threads sent to Decode in one cycle. */
         statistics::Distribution decodeThreadsPerCycle;
         /** Instructions sent from per-thread fetch queues to Decode. */
@@ -1293,11 +1329,19 @@ class Fetch
         statistics::Vector fetchBlockState;
         statistics::Vector fetchThrottleState;
         statistics::VectorDistribution fetchBlockHoldCycle;  // [0]=Unblocked [1]=Blocked
+        statistics::VectorDistribution loadStallReasonHoldCycle;
+        statistics::VectorDistribution loadStallReasonRaiseCycle;
 
         // === FlushFrom Policy statistics ===
         statistics::Vector flushForFlushPolicy;
         statistics::Scalar flushFromFirstUseFound;
         statistics::Scalar flushFromFirstUseNoConsumer;
+
+        // === MLP Policy statistics ===
+        statistics::Vector mlpAwarePolicyActive;
+        statistics::Vector mlpFetchBlockState;
+        statistics::VectorDistribution mlpFetchBlockHoldCycle;  // [0]=Unblocked [1]=Blocked
+        statistics::Vector mlpPolicyContribute;
     } fetchStats;
 
     SquashVersion localSquashVer[MaxThreads];

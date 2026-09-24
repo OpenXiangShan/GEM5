@@ -1906,6 +1906,12 @@ LSQ::getLoadHeadSeqNum(ThreadID tid)
     return thread.at(tid).getLoadHeadSeqNum();
 }
 
+DynInstPtr
+LSQ::getLoadInst(ThreadID tid, int offset)
+{
+    return thread.at(tid).getLoadInst(offset);
+}
+
 int
 LSQ::getStoreHead(ThreadID tid)
 {
@@ -3638,6 +3644,10 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
     LSQ* lsq = this->_port.getLsq();
     bool isNormalLd = this->isNormalLd();
     bool enableLdMissReplay = lsq->enableLdMissReplay();
+    // Propagate cache access depth from response packet to DynInst
+    // before the packet is discarded or replayed
+    LSQRequest::_inst->cacheAccessDepth = std::max(
+        LSQRequest::_inst->cacheAccessDepth, pkt->cacheAccessDepth);
     // All responses received in 1 cycle are cache hit.
     bool cacheHit = LSQRequest::_inst->getCpuPtr()->ticksToCycles(curTick() - pkt->sendTick) <= 1;
     // Dump inst num, request addr, and packet addr
@@ -3712,6 +3722,9 @@ LSQ::SplitDataRequest::recvTimingResp(PacketPtr pkt)
 {
     DPRINTF(LSQ, "Spilt Req::recvTimingResp: inst: %llu, pkt: %#lx\n", pkt->req->getReqInstSeqNum(),
             pkt->getAddr());
+    // Propagate cache access depth from response packet to DynInst
+    LSQRequest::_inst->cacheAccessDepth = std::max(
+        LSQRequest::_inst->cacheAccessDepth, pkt->cacheAccessDepth);
     uint32_t pktIdx = 0;
     while (pktIdx < _packets.size() && pkt != _packets[pktIdx])
         pktIdx++;
