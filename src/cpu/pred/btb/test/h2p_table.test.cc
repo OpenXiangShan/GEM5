@@ -67,16 +67,51 @@ TEST(H2PTableTest, DifferentLinesDoNotAlias)
     EXPECT_FALSE(table.lookup(second).hit);
 }
 
-TEST(H2PTableTest, SetUsesDeterministicLruReplacement)
+TEST(H2PTableTest, SetUsesLruWhenAllCountersAreActive)
 {
     H2PTable table(128);
     constexpr Addr setStride = H2PTable::LineBytes * 16;
-    for (unsigned way = 0; way < H2PTable::Ways; ++way)
-        table.trainMispred(0x1000 + way * setStride);
+    for (unsigned way = 0; way < H2PTable::Ways; ++way) {
+        const Addr pc = 0x1000 + way * setStride;
+        table.trainMispred(pc);
+        table.trainMispred(pc);
+    }
 
     const auto result = table.trainMispred(0x1000 + H2PTable::Ways * setStride);
     EXPECT_TRUE(result.replaced);
     EXPECT_TRUE(table.lookup(0x1000 + H2PTable::Ways * setStride).hit);
+}
+
+TEST(H2PTableTest, SetPrioritizesEntryWithZeroCounters)
+{
+    H2PTable table(128);
+    constexpr Addr setStride = H2PTable::LineBytes * 16;
+    const Addr reusable = 0x1000;
+    const Addr oldestActive = reusable + setStride;
+
+    table.trainMispred(reusable);
+    for (unsigned way = 1; way < H2PTable::Ways; ++way) {
+        const Addr pc = reusable + way * setStride;
+        for (int i = 0; i < 3; ++i)
+            table.trainMispred(pc);
+    }
+
+    table.age();
+    EXPECT_FALSE(table.lookup(reusable).hit);
+
+    // Make the reusable entry newer than an active entry. Counter state must
+    // still take priority over the normal LRU order.
+    table.trainMispred(reusable);
+    table.age();
+    EXPECT_FALSE(table.lookup(reusable).hit);
+
+    const Addr replacement = reusable + H2PTable::Ways * setStride;
+    const auto result = table.trainMispred(replacement);
+
+    EXPECT_TRUE(result.replaced);
+    EXPECT_TRUE(table.lookup(replacement).hit);
+    EXPECT_FALSE(table.lookup(reusable).hit);
+    EXPECT_TRUE(table.lookup(oldestActive).hit);
 }
 
 } // namespace gem5::branch_prediction::btb_pred::test
