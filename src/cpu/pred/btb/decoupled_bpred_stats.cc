@@ -532,7 +532,7 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(h2pBufferRejectedFull, statistics::units::Count::get(),
              "H2P candidates rejected because the metadata-only buffer was full"),
     ADD_STAT(h2pBufferSquashed, statistics::units::Count::get(),
-             "H2P buffer candidates removed by a squash"),
+             "Admitted unresolved H2P buffer entries freed by a squash"),
     ADD_STAT(h2pPotentialCoverage, statistics::units::Ratio::get(),
              "Potential H2P coverage: marked mispredictions / all conditional misses",
              h2pMispredictPotential / condMiss),
