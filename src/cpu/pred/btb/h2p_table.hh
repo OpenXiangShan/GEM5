@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 #include "base/types.hh"
@@ -59,6 +60,8 @@ class H2PTable
 
     const unsigned numEntries;
     std::vector<SetEntry> table;
+    // Fully-associative lookup index; the vector remains the replacement store.
+    std::unordered_map<Addr, unsigned> lineToIndex;
     uint64_t useClock = 0;
 
     SetEntry *findLine(Addr pc);
