@@ -7,23 +7,16 @@ namespace gem5::branch_prediction::btb_pred
 {
 
 H2PTable::H2PTable(unsigned entries)
-    : numEntries(entries), numSets(std::max(1u, entries / Ways)),
-      table(numSets)
+    : numEntries(entries), table(entries)
 {
-    assert(entries > 0 && entries % Ways == 0);
-}
-
-unsigned
-H2PTable::setIndex(Addr pc) const
-{
-    return (pc / LineBytes) % numSets;
+    assert(entries > 0);
 }
 
 H2PTable::SetEntry *
 H2PTable::findLine(Addr pc)
 {
     const Addr line = pc / LineBytes;
-    for (auto &entry : table[setIndex(pc)]) {
+    for (auto &entry : table) {
         if (entry.valid && entry.line == line)
             return &entry;
     }
@@ -34,7 +27,7 @@ const H2PTable::SetEntry *
 H2PTable::findLine(Addr pc) const
 {
     const Addr line = pc / LineBytes;
-    for (const auto &entry : table[setIndex(pc)]) {
+    for (const auto &entry : table) {
         if (entry.valid && entry.line == line)
             return &entry;
     }
@@ -66,9 +59,8 @@ H2PTable::trainMispred(Addr pc)
     ++useClock;
     auto *line = findLine(pc);
     if (!line) {
-        auto &set = table[setIndex(pc)];
-        line = &set[0];
-        for (auto &candidate : set) {
+        line = &table[0];
+        for (auto &candidate : table) {
             if (!candidate.valid) {
                 line = &candidate;
                 break;
@@ -125,18 +117,16 @@ unsigned
 H2PTable::age()
 {
     unsigned aged = 0;
-    for (auto &set : table) {
-        for (auto &line : set) {
-            if (!line.valid)
+    for (auto &line : table) {
+        if (!line.valid)
+            continue;
+        for (auto &branch : line.branches) {
+            if (!branch.valid || branch.counter == 0)
                 continue;
-            for (auto &branch : line.branches) {
-                if (!branch.valid || branch.counter == 0)
-                    continue;
-                --branch.counter;
-                ++aged;
-                if (branch.counter == 0)
-                    branch.valid = false;
-            }
+            --branch.counter;
+            ++aged;
+            if (branch.counter == 0)
+                branch.valid = false;
         }
     }
     return aged;

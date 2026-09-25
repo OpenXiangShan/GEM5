@@ -67,45 +67,60 @@ TEST(H2PTableTest, DifferentLinesDoNotAlias)
     EXPECT_FALSE(table.lookup(second).hit);
 }
 
-TEST(H2PTableTest, SetUsesLruWhenAllCountersAreActive)
+TEST(H2PTableTest, FullyAssociativeTableAvoidsSetConflicts)
 {
-    H2PTable table(128);
-    constexpr Addr setStride = H2PTable::LineBytes * 16;
-    for (unsigned way = 0; way < H2PTable::Ways; ++way) {
-        const Addr pc = 0x1000 + way * setStride;
+    H2PTable table(4);
+    constexpr Addr oldSetStride = H2PTable::LineBytes * 16;
+    for (unsigned entry = 0; entry < 4; ++entry) {
+        const Addr pc = 0x1000 + entry * oldSetStride;
+        table.trainMispred(pc);
+    }
+
+    for (unsigned entry = 0; entry < 4; ++entry)
+        EXPECT_TRUE(table.lookup(0x1000 + entry * oldSetStride).hit);
+}
+
+TEST(H2PTableTest, FullTableUsesLruWhenAllCountersAreActive)
+{
+    H2PTable table(4);
+    constexpr Addr lineStride = H2PTable::LineBytes;
+    for (unsigned entry = 0; entry < 4; ++entry) {
+        const Addr pc = 0x1000 + entry * lineStride;
         table.trainMispred(pc);
         table.trainMispred(pc);
     }
 
-    const auto result = table.trainMispred(0x1000 + H2PTable::Ways * setStride);
+    const Addr replacement = 0x1000 + 4 * lineStride;
+    const auto result = table.trainMispred(replacement);
+
     EXPECT_TRUE(result.replaced);
-    EXPECT_TRUE(table.lookup(0x1000 + H2PTable::Ways * setStride).hit);
+    EXPECT_TRUE(table.lookup(replacement).hit);
+    EXPECT_FALSE(table.lookup(0x1000).hit);
 }
 
-TEST(H2PTableTest, SetPrioritizesEntryWithZeroCounters)
+TEST(H2PTableTest, FullTablePrioritizesEntryWithZeroCounters)
 {
-    H2PTable table(128);
-    constexpr Addr setStride = H2PTable::LineBytes * 16;
+    H2PTable table(4);
+    constexpr Addr lineStride = H2PTable::LineBytes;
     const Addr reusable = 0x1000;
-    const Addr oldestActive = reusable + setStride;
+    const Addr oldestActive = reusable + lineStride;
 
     table.trainMispred(reusable);
-    for (unsigned way = 1; way < H2PTable::Ways; ++way) {
-        const Addr pc = reusable + way * setStride;
+    for (unsigned entry = 1; entry < 4; ++entry) {
+        const Addr pc = reusable + entry * lineStride;
         for (int i = 0; i < 3; ++i)
             table.trainMispred(pc);
     }
-
     table.age();
     EXPECT_FALSE(table.lookup(reusable).hit);
 
     // Make the reusable entry newer than an active entry. Counter state must
-    // still take priority over the normal LRU order.
+    // still take priority over the global LRU order.
     table.trainMispred(reusable);
     table.age();
     EXPECT_FALSE(table.lookup(reusable).hit);
 
-    const Addr replacement = reusable + H2PTable::Ways * setStride;
+    const Addr replacement = reusable + 4 * lineStride;
     const auto result = table.trainMispred(replacement);
 
     EXPECT_TRUE(result.replaced);

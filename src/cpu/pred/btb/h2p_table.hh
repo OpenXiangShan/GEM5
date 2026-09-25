@@ -14,7 +14,6 @@ class H2PTable
 {
   public:
     static constexpr unsigned LineBytes = 64;
-    static constexpr unsigned Ways = 8;
     static constexpr unsigned BranchesPerLine = 2;
     static constexpr unsigned CounterMax = 7;
 
@@ -58,11 +57,9 @@ class H2PTable
     };
 
     const unsigned numEntries;
-    const unsigned numSets;
-    std::vector<std::array<SetEntry, Ways>> table;
+    std::vector<SetEntry> table;
     uint64_t useClock = 0;
 
-    unsigned setIndex(Addr pc) const;
     SetEntry *findLine(Addr pc);
     const SetEntry *findLine(Addr pc) const;
 };

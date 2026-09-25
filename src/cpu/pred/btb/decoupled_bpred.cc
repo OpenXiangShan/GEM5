@@ -98,10 +98,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum, p.numThreads,
                   p.h2p_buffer_entries)
 {
-    panic_if(h2pTableEntries == 0 ||
-             h2pTableEntries % H2PTable::Ways != 0,
-             "H2P table entries (%u) must be a non-zero multiple of %u",
-             h2pTableEntries, H2PTable::Ways);
+    panic_if(h2pTableEntries == 0,
+             "H2P table entries must be non-zero");
     panic_if(enableH2PTable && h2pAgeInsts == 0,
              "H2P counter aging period must be non-zero when enabled");
     panic_if(h2pBufferEntries == 0,
