@@ -537,6 +537,11 @@ TEST_F(BTBTAGETest, BasicPrediction) {
 
     // Should predict taken due to initial counter bias
     EXPECT_TRUE(taken) << "Initial prediction should be taken";
+    ASSERT_NE(stagePreds[1].tageInfoForMgscs.find(0x1000),
+              stagePreds[1].tageInfoForMgscs.end());
+    EXPECT_EQ(stagePreds[1].tageInfoForMgscs.at(0x1000)
+                  .tage_final_provider_table,
+              -1);
 
     // Update predictor with actual outcome Not taken
     predictUpdateCycle(tage, 0x1000, entry, false, history, stagePreds);
@@ -579,6 +584,9 @@ TEST_F(BTBTAGETest, DoesNotReportLowConfidenceForMidOrStrongProvider)
     predictTAGE(tage, pc, {entry}, history, stagePreds);
     EXPECT_TRUE(stagePreds[1].tageInfoForMgscs.at(pc).tage_pred_conf_high);
     EXPECT_FALSE(stagePreds[1].tageInfoForMgscs.at(pc).tage_pred_conf_low);
+    EXPECT_EQ(stagePreds[1].tageInfoForMgscs.at(pc)
+                  .tage_final_provider_table,
+              3);
 }
 
 // Test basic history update functionality (PHR semantics)

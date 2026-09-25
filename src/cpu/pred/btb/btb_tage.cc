@@ -447,6 +447,8 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
                                          (abs(pred.mainInfo.entry.counter*2 + 1) <= 1); // counter initialized, -1 or 0
             // main predict is different from alt predict/base predict
             tageInfoForMgscs[btb_entry.pc].tage_pred_alt_diff = pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
+            tageInfoForMgscs[btb_entry.pc].tage_final_provider_table =
+                pred.finalProviderTable;
         }
     }
 }
@@ -569,6 +571,7 @@ BTBTAGE::refreshPredictionMeta(Addr startPC,
             (abs(tage_pred.mainInfo.entry.counter * 2 + 1) <= 1);
         tage_info.tage_pred_alt_diff = tage_pred.mainInfo.found &&
             tage_pred.mainInfo.taken() != tage_pred.altPred;
+        tage_info.tage_final_provider_table = tage_pred.finalProviderTable;
     }
 }
 

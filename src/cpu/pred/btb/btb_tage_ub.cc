@@ -282,6 +282,8 @@ BTBTAGEUpperBound::notePredictionResult(
         (abs(pred.mainInfo.entry.counter * 2 + 1) <= 1);
     tageInfoForMgscs[btbEntry.pc].tage_pred_alt_diff =
         pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
+    tageInfoForMgscs[btbEntry.pc].tage_final_provider_table =
+        pred.finalProviderTable;
 }
 
 void

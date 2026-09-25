@@ -178,7 +178,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     unsigned logicalFreeFTQEntries(ThreadID tid) const;
     bool ftqFull(ThreadID tid) const;
     H2PTable::LookupResult lookupH2P(Addr pc);
-    void trainH2P(const BranchOutcome &branch);
+    void trainH2P(const BranchOutcome &branch, const FetchTarget &target);
     void recordH2PBufferCandidates(const FetchTarget &target,
                                    FetchTargetId ftqId);
     void resolveH2PBufferCandidate(const BranchOutcome &branch);
@@ -311,6 +311,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Formula h2pAccuracy;
         statistics::Formula h2pFalsePositiveRate;
         statistics::Scalar h2pTrainMispredicts;
+        statistics::Scalar h2pTrainProviderRejected;
         statistics::Scalar h2pAllocations;
         statistics::Scalar h2pCounterAges;
         statistics::Scalar h2pReplacements;

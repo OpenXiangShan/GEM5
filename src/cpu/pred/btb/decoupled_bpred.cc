@@ -1342,10 +1342,18 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     entry.setPredictedBranches(pred.btbEntries);
     entry.h2pTableBranchPCs.clear();
     entry.h2pBranchPCs.clear();
+    entry.h2pAllocateBranchPCs.clear();
     if (enableH2PTable) {
         for (const auto &branch : pred.btbEntries) {
             if (!branch.valid || !branch.isCond)
                 continue;
+
+            const auto tageInfo = pred.tageInfoForMgscs.find(branch.pc);
+            if (tageInfo != pred.tageInfoForMgscs.end() &&
+                tageInfo->second.tage_final_provider_table >= 2) {
+                entry.h2pAllocateBranchPCs.push_back(branch.pc);
+            }
+
             dbpBtbStats.h2pLookups++;
             if (!lookupH2P(branch.pc).h2p)
                 continue;
@@ -1353,7 +1361,6 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
             dbpBtbStats.h2pTableCandidates++;
             entry.h2pTableBranchPCs.push_back(branch.pc);
             if (enableH2PWeakConfidence) {
-                const auto tageInfo = pred.tageInfoForMgscs.find(branch.pc);
                 if (tageInfo == pred.tageInfoForMgscs.end()) {
                     dbpBtbStats.h2pConfidenceMissing++;
                     dbpBtbStats.h2pConfidenceRejected++;
@@ -1406,12 +1413,22 @@ DecoupledBPUWithBTB::lookupH2P(Addr pc)
 }
 
 void
-DecoupledBPUWithBTB::trainH2P(const BranchOutcome &branch)
+DecoupledBPUWithBTB::trainH2P(
+    const BranchOutcome &branch, const FetchTarget &target)
 {
     if (!enableH2PTable || !branch.isCond || !branch.mispredicted)
         return;
 
-    const auto result = h2pTable.trainMispred(branch.pc);
+    const bool allowAllocate = std::find(
+        target.h2pAllocateBranchPCs.begin(),
+        target.h2pAllocateBranchPCs.end(), branch.pc) !=
+        target.h2pAllocateBranchPCs.end();
+    const auto result = h2pTable.trainMispred(branch.pc, allowAllocate);
+    if (result.allocationFiltered) {
+        dbpBtbStats.h2pTrainProviderRejected++;
+        return;
+    }
+
     dbpBtbStats.h2pTrainMispredicts++;
     dbpBtbStats.h2pAllocations += result.allocated;
     dbpBtbStats.h2pReplacements += result.replaced;

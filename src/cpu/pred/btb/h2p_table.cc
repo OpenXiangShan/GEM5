@@ -53,11 +53,29 @@ H2PTable::lookup(Addr pc)
 }
 
 H2PTable::TrainResult
-H2PTable::trainMispred(Addr pc)
+H2PTable::trainMispred(Addr pc, bool allowAllocate)
 {
     TrainResult result;
     ++useClock;
     auto *line = findLine(pc);
+    if (line) {
+        line->lastUse = useClock;
+        for (auto &branch : line->branches) {
+            if (branch.valid && branch.pc == pc) {
+                branch.counter = std::min<uint8_t>(
+                    CounterMax, branch.counter + 1);
+                branch.lastUse = useClock;
+                result.incremented = true;
+                return result;
+            }
+        }
+    }
+
+    if (!allowAllocate) {
+        result.allocationFiltered = true;
+        return result;
+    }
+
     if (!line) {
         line = &table[0];
         for (auto &candidate : table) {
@@ -86,15 +104,6 @@ H2PTable::trainMispred(Addr pc)
     }
 
     line->lastUse = useClock;
-    for (auto &branch : line->branches) {
-        if (branch.valid && branch.pc == pc) {
-            branch.counter = std::min<uint8_t>(CounterMax, branch.counter + 1);
-            branch.lastUse = useClock;
-            result.incremented = true;
-            return result;
-        }
-    }
-
     auto *slot = &line->branches[0];
     bool hasFreeSlot = false;
     for (auto &branch : line->branches) {

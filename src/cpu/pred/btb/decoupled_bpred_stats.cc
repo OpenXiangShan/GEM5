@@ -504,7 +504,9 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
              "H2P invalid marking ratio: FP / (TP + FP)",
              h2pFalsePositive / (h2pTruePositive + h2pFalsePositive)),
     ADD_STAT(h2pTrainMispredicts, statistics::units::Count::get(),
-             "committed conditional mispredictions used to train H2P"),
+             "committed conditional mispredictions used to allocate or increment H2P entries"),
+    ADD_STAT(h2pTrainProviderRejected, statistics::units::Count::get(),
+             "new H2P allocations filtered because the final TAGE provider was below T2"),
     ADD_STAT(h2pAllocations, statistics::units::Count::get(),
              "new H2P branch slots allocated"),
     ADD_STAT(h2pCounterAges, statistics::units::Count::get(),
@@ -987,7 +989,7 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     bool taken = rv_pc.branching() || inst->isUncondCtrl();
 
     commitH2PBufferCandidate(outcome);
-    trainH2P(outcome);
+    trainH2P(outcome, entry);
 
     // ---------- Process misprediction and update statistics ----------
     processMisprediction(entry, branchAddr, info, taken, mispred);

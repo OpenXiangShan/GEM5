@@ -67,6 +67,29 @@ TEST(H2PTableTest, DifferentLinesDoNotAlias)
     EXPECT_FALSE(table.lookup(second).hit);
 }
 
+TEST(H2PTableTest, AllocationFilterRejectsNewBranch)
+{
+    H2PTable table(4);
+    const Addr pc = 0x1000;
+
+    const auto result = table.trainMispred(pc, false);
+
+    EXPECT_TRUE(result.allocationFiltered);
+    EXPECT_FALSE(result.allocated);
+    EXPECT_FALSE(table.lookup(pc).hit);
+}
+
+TEST(H2PTableTest, AllocationFilterStillUpdatesExistingBranch)
+{
+    H2PTable table(4);
+    const Addr pc = 0x1000;
+
+    EXPECT_TRUE(table.trainMispred(pc, true).allocated);
+    EXPECT_TRUE(table.trainMispred(pc, false).incremented);
+    EXPECT_TRUE(table.trainMispred(pc, false).incremented);
+    EXPECT_TRUE(table.lookup(pc).h2p);
+}
+
 TEST(H2PTableTest, FullyAssociativeTableAvoidsSetConflicts)
 {
     H2PTable table(4);

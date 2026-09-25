@@ -32,9 +32,10 @@ class H2PTable
         bool incremented = false;
         bool replaced = false;
         bool dropped = false;
+        bool allocationFiltered = false;
     };
 
-    TrainResult trainMispred(Addr pc);
+    TrainResult trainMispred(Addr pc, bool allowAllocate = true);
     unsigned age();
 
     unsigned entries() const { return numEntries; }
