@@ -217,6 +217,15 @@ Root::unserialize(CheckpointIn &cp)
         mainEventQueue[i]->setCurTick(globals.unserializedCurTick);
 }
 
+void
+Root::memtrace_init()
+{
+    globals.memtrace_init();
+
+    for (uint32_t i = 0; i < numMainEventQueues; ++i)
+        mainEventQueue[i]->setCurTick(globals.unserializedCurTick);
+}
+
 bool FullSystem;
 unsigned int FullSystemInt;
 

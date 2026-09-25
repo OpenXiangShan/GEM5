@@ -153,6 +153,14 @@ class SectorTags : public BaseTags
      */
     void insertBlock(const PacketPtr pkt, CacheBlk *blk) override;
 
+    /**
+     * Update the replacement policy for a block.
+     * 
+     * @param blk The block to update.
+     * @param priority The priority to set for the block in the replacement policy.
+     */
+    void updateRp(CacheBlk *blk,int priority) override;
+
     void moveBlock(CacheBlk *src_blk, CacheBlk *dest_blk) override;
 
     /**

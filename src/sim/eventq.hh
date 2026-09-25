@@ -766,7 +766,6 @@ class EventQueue
         assert(when >= getCurTick());
         assert(!event->scheduled());
         assert(event->initialized());
-
         event->setWhen(when, this);
 
         // The check below is to make sure of two things

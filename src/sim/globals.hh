@@ -59,6 +59,7 @@ class Globals : public Serializable
 
     void serialize(CheckpointOut &cp) const override;
     void unserialize(CheckpointIn &cp) override;
+    void memtrace_init();
 
     Tick unserializedCurTick;
 };
