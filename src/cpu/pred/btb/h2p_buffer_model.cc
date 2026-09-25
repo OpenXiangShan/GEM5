@@ -37,26 +37,15 @@ H2PBufferModel::resolve(const BranchOutcome &branch)
     if (it == entries.end())
         return {};
 
-    const bool admitted = it->second.admitted;
-    if (admitted)
-        --admittedEntries;
-    resolvedEntries.emplace(key, it->second);
-    entries.erase(it);
-    return {true, admitted};
+    // Keep the slot occupied until commit.
+    return {true, it->second.admitted};
 }
 
 H2PBufferModel::ResolveResult
 H2PBufferModel::commit(const BranchOutcome &branch)
 {
     const Key key{branch.tid, branch.ftqId, branch.pc};
-    auto it = resolvedEntries.find(key);
-    if (it != resolvedEntries.end()) {
-        const bool admitted = it->second.admitted;
-        resolvedEntries.erase(it);
-        return {true, admitted};
-    }
-
-    it = entries.find(key);
+    auto it = entries.find(key);
     if (it == entries.end())
         return {};
 
@@ -81,14 +70,6 @@ H2PBufferModel::squashAfter(FetchTargetId targetId, ThreadID tid)
             ++it;
         }
     }
-    for (auto it = resolvedEntries.begin(); it != resolvedEntries.end();) {
-        if (it->first.tid == tid && it->first.ftqId > targetId) {
-            it = resolvedEntries.erase(it);
-            ++removed;
-        } else {
-            ++it;
-        }
-    }
     return removed;
 }
 
@@ -108,15 +89,6 @@ H2PBufferModel::squashTargetExcept(FetchTargetId targetId, ThreadID tid,
             ++it;
         }
     }
-    for (auto it = resolvedEntries.begin(); it != resolvedEntries.end();) {
-        if (it->first.tid == tid && it->first.ftqId == targetId &&
-            it->first.pc != keepPc) {
-            it = resolvedEntries.erase(it);
-            ++removed;
-        } else {
-            ++it;
-        }
-    }
     return removed;
 }
 
@@ -129,14 +101,6 @@ H2PBufferModel::clear(ThreadID tid)
             if (it->second.admitted)
                 --admittedEntries;
             it = entries.erase(it);
-            ++removed;
-        } else {
-            ++it;
-        }
-    }
-    for (auto it = resolvedEntries.begin(); it != resolvedEntries.end();) {
-        if (it->first.tid == tid) {
-            it = resolvedEntries.erase(it);
             ++removed;
         } else {
             ++it;

@@ -31,17 +31,20 @@ TEST(H2PBufferModelTest, AdmitsAndCountsCapacity)
     EXPECT_EQ(model.maxOccupancy(), 1u);
 
     EXPECT_TRUE(model.resolve(outcome(0, 1, 0x1000, true)).admitted);
+    EXPECT_EQ(model.occupancy(), 1u);
     EXPECT_FALSE(model.commit(outcome(0, 2, 0x2000, true)).admitted);
     EXPECT_TRUE(model.commit(outcome(0, 1, 0x1000, true)).found);
     EXPECT_EQ(model.occupancy(), 0u);
 }
 
-TEST(H2PBufferModelTest, CorrectResolutionFreesEntry)
+TEST(H2PBufferModelTest, CommitFreesEntryAfterResolution)
 {
     H2PBufferModel model(1);
     EXPECT_TRUE(model.add(0, 1, 0x1000).admitted);
     EXPECT_TRUE(model.resolve(outcome(0, 1, 0x1000, false)).found);
+    EXPECT_EQ(model.occupancy(), 1u);
     EXPECT_TRUE(model.commit(outcome(0, 1, 0x1000, false)).found);
+    EXPECT_EQ(model.occupancy(), 0u);
     EXPECT_TRUE(model.add(0, 2, 0x2000).admitted);
 }
 

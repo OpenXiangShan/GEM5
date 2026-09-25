@@ -320,6 +320,8 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar h2pMispredictAdmitted;
         statistics::Scalar h2pMispredictRejected;
         statistics::Scalar h2pEstimatedCorrectedBranches;
+        statistics::Scalar h2pBufferTruePositive;
+        statistics::Scalar h2pBufferFalsePositive;
         statistics::Scalar h2pBufferGenerated;
         statistics::Scalar h2pBufferAdmitted;
         statistics::Scalar h2pBufferRejectedFull;
@@ -327,6 +329,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Formula h2pPotentialCoverage;
         statistics::Formula h2pBufferCoverage;
         statistics::Formula h2pBufferUsefulRate;
+        statistics::Formula h2pBufferPrecision;
         statistics::Scalar h2pMaxOutstanding;
         statistics::Scalar h2pBufferCapacityEntries;
         statistics::Scalar h2pBufferCapacityUops;

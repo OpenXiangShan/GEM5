@@ -521,6 +521,10 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
              "H2P mispredictions rejected because the buffer model was full"),
     ADD_STAT(h2pEstimatedCorrectedBranches, statistics::units::Count::get(),
              "Estimated H2P mispredictions that APF could correct"),
+    ADD_STAT(h2pBufferTruePositive, statistics::units::Count::get(),
+             "Admitted H2P buffer entries that later mispredicted"),
+    ADD_STAT(h2pBufferFalsePositive, statistics::units::Count::get(),
+             "Admitted H2P buffer entries that later predicted correctly"),
     ADD_STAT(h2pBufferGenerated, statistics::units::Count::get(),
              "H2P candidates inserted into the metadata-only buffer model"),
     ADD_STAT(h2pBufferAdmitted, statistics::units::Count::get(),
@@ -538,6 +542,10 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(h2pBufferUsefulRate, statistics::units::Ratio::get(),
              "Useful buffer rate: admitted H2P mispredictions / potential H2P mispredictions",
              h2pMispredictAdmitted / h2pMispredictPotential),
+    ADD_STAT(h2pBufferPrecision, statistics::units::Ratio::get(),
+             "Admitted H2P buffer precision: TP / (TP + FP)",
+             h2pBufferTruePositive /
+                 (h2pBufferTruePositive + h2pBufferFalsePositive)),
     ADD_STAT(h2pMaxOutstanding, statistics::units::Count::get(),
              "Maximum outstanding admitted H2P buffer candidates"),
     ADD_STAT(h2pBufferCapacityEntries, statistics::units::Count::get(),
@@ -632,6 +640,7 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     h2pPotentialCoverage.precision(6);
     h2pBufferCoverage.precision(6);
     h2pBufferUsefulRate.precision(6);
+    h2pBufferPrecision.precision(6);
     h2pBufferCapacityEntries = h2pBufferEntries;
     h2pBufferCapacityUops = h2pBufferEntries * H2PBufferModel::UopsPerBuffer;
     h2pBufferStorageBytes = h2pBufferEntries * H2PBufferModel::BytesPerBuffer;

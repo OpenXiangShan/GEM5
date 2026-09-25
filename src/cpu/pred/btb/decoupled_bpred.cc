@@ -1459,15 +1459,20 @@ DecoupledBPUWithBTB::commitH2PBufferCandidate(
         return;
 
     const auto result = h2pBufferModel.commit(branch);
-    if (!result.found || !branch.mispredicted)
+    if (!result.found)
         return;
 
-    dbpBtbStats.h2pMispredictPotential++;
-    if (result.admitted) {
-        dbpBtbStats.h2pMispredictAdmitted++;
-        dbpBtbStats.h2pEstimatedCorrectedBranches++;
-    } else {
-        dbpBtbStats.h2pMispredictRejected++;
+    if (branch.mispredicted) {
+        dbpBtbStats.h2pMispredictPotential++;
+        if (result.admitted) {
+            dbpBtbStats.h2pBufferTruePositive++;
+            dbpBtbStats.h2pMispredictAdmitted++;
+            dbpBtbStats.h2pEstimatedCorrectedBranches++;
+        } else {
+            dbpBtbStats.h2pMispredictRejected++;
+        }
+    } else if (result.admitted) {
+        dbpBtbStats.h2pBufferFalsePositive++;
     }
 }
 

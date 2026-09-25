@@ -14,9 +14,9 @@ namespace gem5::branch_prediction::btb_pred
 /**
  * Metadata-only model of APF alternate path buffer occupancy.
  *
- * It tracks outstanding H2P branches, not alternate-path instructions. The
- * model is intentionally performance-neutral and is used only to estimate how
- * many marked mispredictions could be covered by a finite buffer capacity.
+ * It tracks admitted H2P branches until commit. The model is intentionally
+ * performance-neutral: capacity rejection is recorded, but it does not stall
+ * the main fetch/decode pipeline.
  */
 class H2PBufferModel
 {
@@ -87,7 +87,6 @@ class H2PBufferModel
     unsigned admittedEntries = 0;
     unsigned peakOccupancy = 0;
     std::unordered_map<Key, Entry, KeyHash> entries;
-    std::unordered_map<Key, Entry, KeyHash> resolvedEntries;
 };
 
 } // namespace gem5::branch_prediction::btb_pred
