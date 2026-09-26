@@ -571,6 +571,7 @@ private:
     // rs1, rs2, vd, vm
     RegId srcRegIdxArr[8];
     RegId destRegIdxArr[1];
+    bool illegalOperands = false;
 public:
     %(class_name)s(ExtMachInst _machInst, uint8_t _microIdx, VectorMicroInfo& _vmi)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s, _microIdx)
@@ -581,13 +582,18 @@ public:
         assert(~vmi.offset);
         _numSrcRegs = 0;
         _numDestRegs = 0;
-        setDestRegIdx(_numDestRegs++, RegId(VecRegClass, vmi.microVd));
-        _numTypedDestRegs[VecRegClass]++;
+        illegalOperands = vmi.microVd >= NumVecRegs;
+        if (!illegalOperands) {
+            setDestRegIdx(_numDestRegs++, RegId(VecRegClass, vmi.microVd));
+            _numTypedDestRegs[VecRegClass]++;
+        }
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs1));
         setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, _machInst.rs2));
         SET_VL_SRC();
-        SET_OLDDST_SRC();
-        SET_VM_SRC();
+        if (!illegalOperands) {
+            SET_OLDDST_SRC();
+            SET_VM_SRC();
+        }
         this->flags[IsLoad] = true;
     }
 
@@ -605,6 +611,10 @@ def template VlStrideMicroExecute {{
 Fault
 %(class_name)s::execute(ExecContext *xc, Trace::InstRecord *traceData) const
 {
+    if (illegalOperands)
+        return std::make_shared<IllegalInstFault>(
+            "vector register operand out of range", machInst);
+
     %(op_decl)s;
     %(op_rd)s;
 
