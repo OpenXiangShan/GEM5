@@ -532,6 +532,18 @@ class DynInst : public ExecContext, public RefCounted
     uint8_t goldenData[16] = {0};
 
     int pf_source  = -1; // if load cache line is prefetched
+
+    // MLP predictor: frontend prediction results
+    bool mlpPredictionMade = false;
+    bool mlpPredictedLongLatency = false;
+    uint32_t mlpPredictedDistance = 0;
+
+    // MLP predictor: actual outcome (set by IEW writebackInsts)
+    bool longLatencyLoad = false;
+
+    /// Cache access depth for MLP predictor
+    /// Records the deepest cache level accessed by this load
+    int cacheAccessDepth = 0;
     /////////////////////// TLB Miss //////////////////////
     /**
      * Saved memory request (needed when the DTB address translation is

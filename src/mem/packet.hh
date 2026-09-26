@@ -476,6 +476,10 @@ class Packet : public Printable
      */
     uint32_t payloadDelay;
 
+    /// Cache access depth for MLP predictor
+    /// Tracks the deepest cache level accessed by this packet
+    int cacheAccessDepth = 0;
+
     /**
      * A virtual base opaque structure used to hold state associated
      * with the packet (e.g., an MSHR), specific to a SimObject that

@@ -233,6 +233,9 @@ class Commit
     /** Sets the pointer to the queue coming from IEW. */
     void setIEWQueue(TimeBuffer<IEWStruct> *iq_ptr);
 
+    /** Sets ptr to MLP predictor. */
+    void setMlpPredictor(MLPredictor *mlp_predictor) { mlpPredictor = mlp_predictor; }
+
     /** Sets the pointer to the IEW stage. */
     void setIEWStage(IEW *iew_stage);
 
@@ -532,6 +535,9 @@ class Commit
     /** Cycles to keep a stalled thread marked as a ROB borrowing donor. */
     const unsigned smtBorrowDonorHoldCycles;
 
+    /** cache depth to be consider as long latency for MLP Policy */
+    unsigned mlpLongLatencyCacheDepth;
+
     /** Is a drain pending? Commit is looking for an instruction boundary while
      * there are no pending interrupts
      */
@@ -694,6 +700,7 @@ class Commit
 
         statistics::Vector ROBFull;
         statistics::Distribution smtRestEntryWhileROBFull;
+        statistics::Distribution commitCacheAccessDepthDist;
         statistics::Vector ROBBorrowingStateChange;
         statistics::VectorDistribution smtStateHoldCycle;
         statistics::VectorDistribution smtROBEntriesWhileStateChange;
@@ -707,6 +714,7 @@ class Commit
 
     ArchDBer *archDBer;
 
+    MLPredictor *mlpPredictor;
     // Trace-mode commit stream index per thread: expected next trace instruction index
     uint64_t traceCommitIndex[MaxThreads] = {0};
 

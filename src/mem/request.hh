@@ -1159,6 +1159,7 @@ class Request
      */
     void incAccessDepth() const { depth++; }
     int getAccessDepth() const { return depth; }
+    void setAccessDepth(int newDepth) const { depth = newDepth; }
     void decAccessDepth() const { assert(depth > -1); if (depth > 0) depth--; }
 
 

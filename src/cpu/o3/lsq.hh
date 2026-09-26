@@ -971,6 +971,9 @@ class LSQ
     /** Returns the sequence number of the head of the load queue. */
     InstSeqNum getLoadHeadSeqNum(ThreadID tid);
 
+    /** Returns the DynInst at a relative offset from the LQ head. */
+    DynInstPtr getLoadInst(ThreadID tid, int offset);
+
     /** Returns the head index of the store queue. */
     int getStoreHead(ThreadID tid);
 
