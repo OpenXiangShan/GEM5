@@ -399,6 +399,11 @@ class Packet : public Printable
     /// The tick when the packet is sent
     Tick sendTick = 0;
 
+    // LSQ-to-L1D admission metadata only; never copied to downstream packets.
+    // A same-line store must join the MSHR that still owns this predecessor.
+    Packet *sbufferMergeTarget = nullptr;
+    bool sbufferMergeFailed = false;
+
     const PacketId id;
 
     /// A pointer to the original request.
