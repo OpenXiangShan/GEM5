@@ -182,7 +182,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     void recordH2PBufferCandidates(const FetchTarget &target,
                                    FetchTargetId ftqId);
     void resolveH2PBufferCandidate(const BranchOutcome &branch);
-    void commitH2PBufferCandidate(const BranchOutcome &branch);
+    void commitH2PBufferCandidate(const BranchOutcome &branch,
+                                  const FetchTarget &target);
     void squashH2PBufferCandidates(ThreadID tid, FetchTargetId targetId,
                                     SquashType squashType, Addr keepPc);
 
@@ -327,6 +328,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar h2pBufferAdmitted;
         statistics::Scalar h2pBufferRejectedFull;
         statistics::Scalar h2pBufferSquashed;
+        statistics::Scalar h2pBufferRetired;
         statistics::Formula h2pPotentialCoverage;
         statistics::Formula h2pBufferCoverage;
         statistics::Formula h2pBufferUsefulRate;

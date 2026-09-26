@@ -535,6 +535,8 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
              "H2P candidates rejected because the metadata-only buffer was full"),
     ADD_STAT(h2pBufferSquashed, statistics::units::Count::get(),
              "Admitted unresolved H2P buffer entries freed by a squash"),
+    ADD_STAT(h2pBufferRetired, statistics::units::Count::get(),
+             "Admitted H2P buffer entries freed when their FTQ target retires"),
     ADD_STAT(h2pPotentialCoverage, statistics::units::Ratio::get(),
              "Potential H2P coverage: marked mispredictions / all conditional misses",
              h2pMispredictPotential / condMiss),
@@ -988,7 +990,7 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     BranchInfo info(branchAddr, targetAddr, inst->staticInst, fallThruPC-branchAddr);
     bool taken = rv_pc.branching() || inst->isUncondCtrl();
 
-    commitH2PBufferCandidate(outcome);
+    commitH2PBufferCandidate(outcome, entry);
     trainH2P(outcome, entry);
 
     // ---------- Process misprediction and update statistics ----------

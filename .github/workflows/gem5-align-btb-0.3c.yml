@@ -13,6 +13,13 @@ permissions:
   contents: read
   pull-requests: read
 
+# Align performance runs are exploratory and share a finite self-hosted node
+# pool.  Keep only the newest run for a branch/PR so stale pushes cannot
+# multiply the 145-checkpoint workload and trigger the six-hour timeout.
+concurrency:
+  group: gem5-align-btb-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   perf_test:
     if: |

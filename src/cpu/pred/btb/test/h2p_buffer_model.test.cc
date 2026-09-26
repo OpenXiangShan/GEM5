@@ -90,4 +90,16 @@ TEST(H2PBufferModelTest, SquashCountsOnlyAdmittedActiveEntries)
     EXPECT_FALSE(model.commit(outcome(0, 2, 0x2000, true)).found);
 }
 
+TEST(H2PBufferModelTest, RetireDropsUnresolvedEntries)
+{
+    H2PBufferModel model(1);
+    EXPECT_TRUE(model.add(0, 7, 0x7000).admitted);
+    EXPECT_TRUE(model.add(0, 7, 0x7010).rejectedFull);
+
+    EXPECT_EQ(model.retireTarget(0, 7), 1u);
+    EXPECT_EQ(model.occupancy(), 0u);
+    EXPECT_TRUE(model.add(0, 8, 0x8000).admitted);
+    EXPECT_FALSE(model.commit(outcome(0, 7, 0x7000, true)).found);
+}
+
 } // namespace gem5::branch_prediction::btb_pred::test

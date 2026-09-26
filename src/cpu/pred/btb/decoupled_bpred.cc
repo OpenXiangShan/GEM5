@@ -1171,6 +1171,12 @@ DecoupledBPUWithBTB::commit(
             block_idx++;
         }
 
+        // A fetch target may contain predicted BTB entries that never become
+        // dynamic branches (for example entries after the first taken branch).
+        // Release their metadata when the target retires so they cannot pin
+        // the bounded H2P buffer indefinitely.
+        dbpBtbStats.h2pBufferRetired +=
+            h2pBufferModel.retireTarget(tid, committed_id);
         ftq.commitTarget(tid);
         dbpBtbStats.fsqEntryCommitted++;
     }
@@ -1344,36 +1350,47 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     entry.h2pBranchPCs.clear();
     entry.h2pAllocateBranchPCs.clear();
     if (enableH2PTable) {
+        // Entries after the first taken/unconditional branch are not fetched
+        // on this path and therefore cannot produce a later branch outcome.
+        // Do not let them occupy the metadata-only H2P buffer.
+        const auto takenEntry = pred.getTakenEntry();
         for (const auto &branch : pred.btbEntries) {
-            if (!branch.valid || !branch.isCond)
+            if (!branch.valid)
                 continue;
 
-            const auto tageInfo = pred.tageInfoForMgscs.find(branch.pc);
-            if (tageInfo != pred.tageInfoForMgscs.end() &&
-                tageInfo->second.tage_final_provider_table >= 2) {
-                entry.h2pAllocateBranchPCs.push_back(branch.pc);
+            if (branch.isCond) {
+                const auto tageInfo = pred.tageInfoForMgscs.find(branch.pc);
+                if (tageInfo != pred.tageInfoForMgscs.end() &&
+                    tageInfo->second.tage_final_provider_table >= 2) {
+                    entry.h2pAllocateBranchPCs.push_back(branch.pc);
+                }
+
+                dbpBtbStats.h2pLookups++;
+                if (lookupH2P(branch.pc).h2p) {
+                    dbpBtbStats.h2pTableCandidates++;
+                    entry.h2pTableBranchPCs.push_back(branch.pc);
+
+                    bool accepted = true;
+                    if (enableH2PWeakConfidence) {
+                        if (tageInfo == pred.tageInfoForMgscs.end()) {
+                            dbpBtbStats.h2pConfidenceMissing++;
+                            dbpBtbStats.h2pConfidenceRejected++;
+                            accepted = false;
+                        } else if (!tageInfo->second.tage_pred_conf_low) {
+                            dbpBtbStats.h2pConfidenceRejected++;
+                            accepted = false;
+                        }
+                    }
+
+                    if (accepted) {
+                        entry.h2pBranchPCs.push_back(branch.pc);
+                        dbpBtbStats.h2pCandidates++;
+                    }
+                }
             }
 
-            dbpBtbStats.h2pLookups++;
-            if (!lookupH2P(branch.pc).h2p)
-                continue;
-
-            dbpBtbStats.h2pTableCandidates++;
-            entry.h2pTableBranchPCs.push_back(branch.pc);
-            if (enableH2PWeakConfidence) {
-                if (tageInfo == pred.tageInfoForMgscs.end()) {
-                    dbpBtbStats.h2pConfidenceMissing++;
-                    dbpBtbStats.h2pConfidenceRejected++;
-                    continue;
-                }
-                if (!tageInfo->second.tage_pred_conf_low) {
-                    dbpBtbStats.h2pConfidenceRejected++;
-                    continue;
-                }
-            }
-
-            entry.h2pBranchPCs.push_back(branch.pc);
-            dbpBtbStats.h2pCandidates++;
+            if (takenEntry.valid && branch.pc == takenEntry.pc)
+                break;
         }
     }
     entry.predTaken = taken;
@@ -1468,25 +1485,29 @@ DecoupledBPUWithBTB::resolveH2PBufferCandidate(
 
 void
 DecoupledBPUWithBTB::commitH2PBufferCandidate(
-    const BranchOutcome &branch)
+    const BranchOutcome &branch, const FetchTarget &target)
 {
     if (!enableH2PTable || !branch.isCond)
         return;
 
-    const auto result = h2pBufferModel.commit(branch);
-    if (!result.found)
+    const bool marked = std::find(
+        target.h2pBranchPCs.begin(), target.h2pBranchPCs.end(), branch.pc) !=
+        target.h2pBranchPCs.end();
+    if (!marked)
         return;
+
+    const auto result = h2pBufferModel.commit(branch);
 
     if (branch.mispredicted) {
         dbpBtbStats.h2pMispredictPotential++;
-        if (result.admitted) {
+        if (result.found && result.admitted) {
             dbpBtbStats.h2pBufferTruePositive++;
             dbpBtbStats.h2pMispredictAdmitted++;
             dbpBtbStats.h2pEstimatedCorrectedBranches++;
         } else {
             dbpBtbStats.h2pMispredictRejected++;
         }
-    } else if (result.admitted) {
+    } else if (result.found && result.admitted) {
         dbpBtbStats.h2pBufferFalsePositive++;
     }
 }

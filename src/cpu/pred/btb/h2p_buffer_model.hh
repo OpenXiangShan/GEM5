@@ -16,9 +16,10 @@ namespace gem5::branch_prediction::btb_pred
  *
  * It tracks admitted H2P branches until resolution. Resolved metadata remains
  * available until commit so final-path statistics can exclude branches later
- * removed by an older squash. The model is intentionally performance-neutral:
- * capacity rejection is recorded, but it does not stall the main fetch/decode
- * pipeline.
+ * removed by an older squash. Rejected candidates are reported to the caller
+ * but are not retained, since they cannot affect later buffer decisions.
+ * The model is intentionally performance-neutral: capacity rejection is
+ * recorded, but it does not stall the main fetch/decode pipeline.
  */
 class H2PBufferModel
 {
@@ -48,6 +49,7 @@ class H2PBufferModel
     unsigned squashAfter(FetchTargetId targetId, ThreadID tid);
     unsigned squashTargetExcept(FetchTargetId targetId, ThreadID tid,
                                 Addr keepPc);
+    unsigned retireTarget(ThreadID tid, FetchTargetId ftqId);
     unsigned clear(ThreadID tid);
 
     unsigned capacity() const { return bufferCapacity; }

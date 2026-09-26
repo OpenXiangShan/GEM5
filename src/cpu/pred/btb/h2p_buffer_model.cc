@@ -10,6 +10,10 @@ H2PBufferModel::H2PBufferModel(unsigned capacity)
     : bufferCapacity(capacity)
 {
     assert(capacity > 0);
+    // Only admitted entries are retained.  Rejected candidates are accounted
+    // for by the caller and must not cause an unbounded stream of allocations.
+    entries.reserve(capacity);
+    resolvedEntries.reserve(capacity);
 }
 
 H2PBufferModel::AddResult
@@ -19,14 +23,16 @@ H2PBufferModel::add(ThreadID tid, FetchTargetId ftqId, Addr pc)
     if (entries.find(key) != entries.end())
         return {};
 
-    const bool admitted = admittedEntries < bufferCapacity;
-    entries.emplace(key, Entry{admitted});
-    if (admitted) {
-        ++admittedEntries;
-        peakOccupancy = std::max(peakOccupancy, admittedEntries);
-    }
+    // A rejected candidate has no state that can affect later buffer
+    // decisions.  Avoid inserting it into the map: H2P candidates arrive at
+    // a much higher rate than the four-entry model can retain.
+    if (admittedEntries >= bufferCapacity)
+        return {true, false, true};
 
-    return {true, admitted, !admitted};
+    entries.emplace(key, Entry{true});
+    ++admittedEntries;
+    peakOccupancy = std::max(peakOccupancy, admittedEntries);
+    return {true, true, false};
 }
 
 H2PBufferModel::ResolveResult
@@ -123,6 +129,31 @@ H2PBufferModel::squashTargetExcept(FetchTargetId targetId, ThreadID tid,
         } else {
             ++it;
         }
+    }
+    return removed;
+}
+
+unsigned
+H2PBufferModel::retireTarget(ThreadID tid, FetchTargetId ftqId)
+{
+    unsigned removed = 0;
+    for (auto it = entries.begin(); it != entries.end();) {
+        if (it->first.tid == tid && it->first.ftqId == ftqId) {
+            if (it->second.admitted) {
+                --admittedEntries;
+                ++removed;
+            }
+            it = entries.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    for (auto it = resolvedEntries.begin();
+         it != resolvedEntries.end();) {
+        if (it->first.tid == tid && it->first.ftqId == ftqId)
+            it = resolvedEntries.erase(it);
+        else
+            ++it;
     }
     return removed;
 }
