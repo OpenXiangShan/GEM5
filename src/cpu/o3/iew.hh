@@ -465,6 +465,10 @@ class IEW
   public:
 
     Scheduler* getScheduler() { return scheduler; }
+    void tryLateValuePrediction(const DynInstPtr &inst);
+    void notifyPredictionApplied(const DynInstPtr &inst);
+    void notifyValueAvailable(const DynInstPtr &inst, RegVal actualValue);
+    void notifyValueMispredicted(const DynInstPtr &inst);
     /** Instruction queue. */
     InstructionQueue instQueue;
 
