@@ -350,7 +350,7 @@ class XsStreamPrefetcher(QueuedPrefetcher):
         640,
         "L2 stream lookahead in cache blocks; zero derives from depth << 2"
     )
-    enable_auto_depth = Param.Bool(False, "enable autp depth.")
+    enable_auto_depth = Param.Bool(True, "Enable automatic stream prefetch depth")
     enable_l3_stream_pre = Param.Bool(False, "enable l3 stream pre.")
     xs_stream_entries = Param.MemorySize(
         "16",
