@@ -934,7 +934,7 @@ def xiangshan_system_init():
     parser.add_argument(
         "--h2p-buffer-entries",
         type=int,
-        default=4,
+        default=8,
         help="Number of metadata-only APF buffer entries to model",
     )
     parser.add_argument(
