@@ -38,7 +38,8 @@ XsStreamPrefetcher::FeedbackStats::FeedbackStats(XsStreamPrefetcher *parent)
       ADD_STAT(pdbHits, statistics::units::Count::get(),
                "Stream prefetches dropped by a PDB hit in the last window"),
       ADD_STAT(mshrHits, statistics::units::Count::get(),
-               "Stream prefetches dropped by a MSHR hit in the last window"),
+               "Stream prefetches dropped by a demand MSHR hit "
+               "in the last window"),
       ADD_STAT(demandMshrHits, statistics::units::Count::get(),
                "First demand hits on in-flight stream prefetch MSHRs "
                "in the last window"),
@@ -84,8 +85,10 @@ XsStreamPrefetcher::recordStreamProbe(
       case Base::PrefetchProbeResult::PdbHit:
         ++feedback.pdbHits;
         break;
-      case Base::PrefetchProbeResult::MshrHit:
+      case Base::PrefetchProbeResult::DemandMshrHit:
         ++feedback.mshrHits;
+        break;
+      case Base::PrefetchProbeResult::PrefetchMshrHit:
         break;
       case Base::PrefetchProbeResult::WriteBufferHit:
       case Base::PrefetchProbeResult::Sent:

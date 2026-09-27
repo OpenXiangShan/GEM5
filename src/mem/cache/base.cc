@@ -1576,16 +1576,22 @@ BaseCache::getNextQueueEntry()
                 delete pkt;
                 prefetcher->notifyPrefetchProbe(
                     pf_type, prefetch::Base::PrefetchProbeResult::PdbHit);
-            } else if (mshrQueue.findMatch(pf_addr, pkt->isSecure())) {
-                DPRINTF(HWPrefetch, "Prefetch %#x has hit in a MSHR, "
-                        "dropped.\n", pf_addr);
+            } else if (MSHR *matching_mshr =
+                           mshrQueue.findMatch(pf_addr, pkt->isSecure())) {
+                const bool has_demand = matching_mshr->hasFromCPU();
+                DPRINTF(HWPrefetch,
+                        "Prefetch %#x has hit in a %s MSHR, dropped.\n",
+                        pf_addr, has_demand ? "demand" : "prefetch-only");
                 prefetcher->pfHitInMSHR(pf_type);
                 if (pf_type == PrefetchSourceType::SStream)
                     prefetcher->streamPflate();
                 // free the request and packet
                 delete pkt;
                 prefetcher->notifyPrefetchProbe(
-                    pf_type, prefetch::Base::PrefetchProbeResult::MshrHit);
+                    pf_type,
+                    has_demand ?
+                        prefetch::Base::PrefetchProbeResult::DemandMshrHit :
+                        prefetch::Base::PrefetchProbeResult::PrefetchMshrHit);
             } else if (writeBuffer.findMatch(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in the "
                         "Write Buffer, dropped.\n", pf_addr);

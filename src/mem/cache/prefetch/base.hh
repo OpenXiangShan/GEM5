@@ -1170,7 +1170,8 @@ class Base : public ClockedObject
     {
         DcacheHit,
         PdbHit,
-        MshrHit,
+        DemandMshrHit,
+        PrefetchMshrHit,
         WriteBufferHit,
         Sent
     };
