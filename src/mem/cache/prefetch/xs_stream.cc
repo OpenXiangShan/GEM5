@@ -14,6 +14,7 @@ XsStreamPrefetcher::XsStreamPrefetcher(const XsStreamPrefetcherParams &p)
       regionBlks(p.region_size / p.block_size),    
       depth(p.xs_stream_depth),
       badPreNum(0),
+      lastLateCount(0),
       enableAutoDepth(p.enable_auto_depth),
       enableL3StreamPre(p.enable_l3_stream_pre),
       l2Depth(p.xs_stream_l2_depth),
@@ -23,7 +24,7 @@ XsStreamPrefetcher::XsStreamPrefetcher(const XsStreamPrefetcherParams &p)
 {
 }
 void
-XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, int late_num)
+XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, uint64_t late_num)
 {
     Addr pc = pfi.getPC();
     Addr vaddr = pfi.getAddr();
@@ -43,16 +44,22 @@ XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrP
     }
     STREAMEntry *entry = streamLookup(pfi, in_active_page, decr);
     if ((issuedPrefetches >= VALIDITYCHECKINTERVAL) && (enableAutoDepth)) {
-        if ((double)late_num / issuedPrefetches >= LATECOVERAGE) {
+        const uint64_t window_late = late_num - lastLateCount;
+        const int old_depth = depth;
+        if ((double)window_late / issuedPrefetches >= LATECOVERAGE) {
             if (depth != DEPTHRIGHT)
                 depth = depth << DEPTHSTEP;
         }
         if (badPreNum > LATEMISSTHRESHOLD) {
-            badPreNum = 0;
             if (depth != DEPTHLEFT) {
                 depth = depth >> DEPTHSTEP;
             }
         }
+        DPRINTF(XsStreamPrefetcher,
+                "auto depth: %d -> %d, issued=%llu late=%llu bad=%d\n",
+                old_depth, depth, issuedPrefetches, window_late, badPreNum);
+        lastLateCount = late_num;
+        badPreNum = 0;
         issuedPrefetches = 0;
     }
 

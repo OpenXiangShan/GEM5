@@ -33,6 +33,7 @@ class XsStreamPrefetcher : public Queued
   protected:
     int depth;
     int badPreNum;
+    uint64_t lastLateCount;
     bool enableAutoDepth;
     bool enableL3StreamPre;
     const unsigned l2Depth;
@@ -105,7 +106,11 @@ class XsStreamPrefetcher : public Queued
     {
         panic("not implemented");
     };
-    void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, int late_num);
+    void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, uint64_t late_num);
+    void recordStreamDequeued(PrefetchSourceType source)
+    {
+        Base::recordPrefetchDequeued(source);
+    }
     PrefetchFilter* stridestream_pfFilter_l1;
     PrefetchFilter* stridestream_pfFilter_l2l3;
 };
