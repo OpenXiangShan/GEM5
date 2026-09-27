@@ -335,6 +335,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Formula h2pPotentialCoverage;
         statistics::Formula h2pBufferCoverage;
         statistics::Formula h2pBufferUsefulRate;
+        statistics::Formula h2pBufferUsefulAdmissionRate;
         statistics::Formula h2pBufferPrecision;
         statistics::Scalar h2pMaxOutstanding;
         statistics::Scalar h2pBufferCapacityEntries;
