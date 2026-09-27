@@ -1164,6 +1164,8 @@ class Base : public ClockedObject
     virtual void notifyPrefetchDownstreamResponse(
         PrefetchSourceType source, uint64_t latency_cycles) {}
 
+    virtual void notifyDemandHitPrefetchMshr(PrefetchSourceType source) {}
+
     enum class PrefetchProbeResult
     {
         DcacheHit,

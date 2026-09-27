@@ -182,6 +182,7 @@ class XSCompositePrefetcher : public Queued
     void notifyPdbPrefetchFill(PrefetchSourceType source) override;
     void notifyPrefetchDownstreamResponse(
         PrefetchSourceType source, uint64_t latency_cycles) override;
+    void notifyDemandHitPrefetchMshr(PrefetchSourceType source) override;
     void notifyPrefetchProbe(PrefetchSourceType source,
                              PrefetchProbeResult result) override;
     void notifyPdbFirstUse(PrefetchSourceType source, bool load,

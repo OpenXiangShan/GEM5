@@ -66,6 +66,7 @@ class XsStreamPrefetcher : public Queued
         uint64_t dcacheHits = 0;
         uint64_t pdbHits = 0;
         uint64_t mshrHits = 0;
+        uint64_t demandMshrHits = 0;
         uint64_t pdbLoadUses = 0;
         uint64_t pdbUnusedReplacements = 0;
         uint64_t pdbRefills = 0;
@@ -92,6 +93,7 @@ class XsStreamPrefetcher : public Queued
         statistics::Scalar dcacheHits;
         statistics::Scalar pdbHits;
         statistics::Scalar mshrHits;
+        statistics::Scalar demandMshrHits;
         statistics::Scalar pdbLoadUses;
         statistics::Scalar pdbUnusedReplacements;
         statistics::Scalar pdbRefills;
@@ -162,6 +164,7 @@ class XsStreamPrefetcher : public Queued
     void recordStreamTlbMiss() { ++feedback.tlbMisses; }
     void recordStreamPdbRefill();
     void recordStreamMshrResponse(uint64_t latency_cycles);
+    void recordStreamDemandMshrHit() { ++feedback.demandMshrHits; }
     void recordStreamProbe(PrefetchSourceType source,
                            Base::PrefetchProbeResult result);
     void recordStreamPdbFirstUse(bool load, uint64_t refill_to_use);

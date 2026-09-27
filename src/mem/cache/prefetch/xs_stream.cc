@@ -39,6 +39,9 @@ XsStreamPrefetcher::FeedbackStats::FeedbackStats(XsStreamPrefetcher *parent)
                "Stream prefetches dropped by a PDB hit in the last window"),
       ADD_STAT(mshrHits, statistics::units::Count::get(),
                "Stream prefetches dropped by a MSHR hit in the last window"),
+      ADD_STAT(demandMshrHits, statistics::units::Count::get(),
+               "First demand hits on in-flight stream prefetch MSHRs "
+               "in the last window"),
       ADD_STAT(pdbLoadUses, statistics::units::Count::get(),
                "Stream PDB lines first used by a load in the last window"),
       ADD_STAT(pdbUnusedReplacements, statistics::units::Count::get(),
@@ -159,7 +162,8 @@ XsStreamPrefetcher::completeFeedbackWindow()
         window.mshrResponseCycles, window.mshrResponseSamples);
 
     // A new depth rule can use window.tlbMisses, dcacheHits, pdbHits,
-    // mshrHits, pdbLoadUses, pdbUnusedReplacements, pdb_refill_interval,
+    // mshrHits, demandMshrHits, pdbLoadUses, pdbUnusedReplacements,
+    // pdb_refill_interval,
     // mshr_response_latency,
     // and the three latency means above.
     // Each mean is zero when its corresponding sample count is zero.
@@ -179,6 +183,7 @@ XsStreamPrefetcher::completeFeedbackWindow()
     feedbackStats.dcacheHits = window.dcacheHits;
     feedbackStats.pdbHits = window.pdbHits;
     feedbackStats.mshrHits = window.mshrHits;
+    feedbackStats.demandMshrHits = window.demandMshrHits;
     feedbackStats.pdbLoadUses = window.pdbLoadUses;
     feedbackStats.pdbUnusedReplacements = window.pdbUnusedReplacements;
     feedbackStats.pdbRefills = window.pdbRefills;
@@ -196,14 +201,16 @@ XsStreamPrefetcher::completeFeedbackWindow()
 
     DPRINTF(XsStreamPrefetcher,
             "auto depth: %d -> %d, sent=%llu late=%llu bad=%d "
-            "tlbMiss=%llu dcache=%llu pdb=%llu mshr=%llu loadUse=%llu "
+            "tlbMiss=%llu dcache=%llu pdb=%llu mshr=%llu demandMshr=%llu "
+            "loadUse=%llu "
             "unusedReplace=%llu pdbRefills=%llu pdbRefillInterval=%.3f/%llu "
             "mshrResponse=%.3f/%llu "
             "refillToUse=%.3f/%llu "
             "refillToReplace=%.3f/%llu useToReplace=%.3f/%llu\n",
             old_depth, depth, window.sent, window.lateHits, badPreNum,
             window.tlbMisses, window.dcacheHits, window.pdbHits,
-            window.mshrHits, window.pdbLoadUses, window.pdbUnusedReplacements,
+            window.mshrHits, window.demandMshrHits, window.pdbLoadUses,
+            window.pdbUnusedReplacements,
             window.pdbRefills, pdb_refill_interval,
             window.pdbRefillIntervalSamples,
             mshr_response_latency, window.mshrResponseSamples,

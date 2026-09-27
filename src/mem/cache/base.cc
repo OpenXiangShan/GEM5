@@ -542,19 +542,14 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
 
                 assert(pkt->req->requestorId() < system->maxRequestors());
                 stats.cmdStats(pkt).mshrHits[pkt->req->requestorId()]++;
+                const bool first_demand_hit_prefetch_mshr =
+                    !mshr->hasFromCPU() && mshr->hasFromPref() &&
+                    pkt->cmd != MemCmd::HardPFReq && pkt->isDemand();
                 if (!mshr->hasFromCPU() && mshr->hasFromPref() &&  // and from cpu
                     (pkt->cmd != MemCmd::HardPFReq)) {
                     pkt->missOnLatePf = true;
                     pkt->pfSource = mshr->getPFSource();
                     pkt->pfDepth = mshr->getPFDepth();
-
-                    // Demand request merging into prefetch-only MSHR
-                    if (pkt->isDemand()) {
-                        stats.demandMergedIntoPfMSHR++;
-                        DPRINTF(Cache, "Demand request %#lx merged into prefetch MSHR\n",
-                                pkt->getAddr());
-                    }
-
                 } else if (mshr->hasFromCPU()) {
                     // no pkt in mshr originated from cache; all of them are from cpu
                     pkt->coalescingMSHR = true;
@@ -566,6 +561,16 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 // mshr_alloc_per_cycle (-1 = unlimited)
                 if (!checkAndAllocateMSHRCycle(pkt)) {
                     return;
+                }
+                if (first_demand_hit_prefetch_mshr) {
+                    const auto source = mshr->getPFSource();
+                    ++stats.demandMergedIntoPfMSHR;
+                    if (prefetcher)
+                        prefetcher->notifyDemandHitPrefetchMshr(source);
+                    DPRINTF(Cache,
+                            "Demand request %#lx first merged into prefetch "
+                            "MSHR from source %i\n",
+                            pkt->getAddr(), source);
                 }
                 // We use forward_time here because it is the same
                 // considering new targets. We have multiple

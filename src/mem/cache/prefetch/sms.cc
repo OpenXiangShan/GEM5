@@ -178,6 +178,17 @@ XSCompositePrefetcher::notifyPrefetchDownstreamResponse(
 }
 
 void
+XSCompositePrefetcher::notifyDemandHitPrefetchMshr(
+    PrefetchSourceType source)
+{
+    if (enableXsstream && Xsstream &&
+        (source == PrefetchSourceType::SStream ||
+         source == PrefetchSourceType::StoreStream)) {
+        Xsstream->recordStreamDemandMshrHit();
+    }
+}
+
+void
 XSCompositePrefetcher::notifyPrefetchProbe(
     PrefetchSourceType source, PrefetchProbeResult result)
 {
