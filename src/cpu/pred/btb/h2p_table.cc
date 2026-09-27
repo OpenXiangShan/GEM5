@@ -16,24 +16,22 @@ H2PTable::SetEntry *
 H2PTable::findLine(Addr pc)
 {
     const Addr line = pc / LineBytes;
-    const auto it = lineToIndex.find(line);
-    if (it == lineToIndex.end())
-        return nullptr;
-
-    auto &entry = table[it->second];
-    return entry.valid && entry.line == line ? &entry : nullptr;
+    for (auto &entry : table) {
+        if (entry.valid && entry.line == line)
+            return &entry;
+    }
+    return nullptr;
 }
 
 const H2PTable::SetEntry *
 H2PTable::findLine(Addr pc) const
 {
     const Addr line = pc / LineBytes;
-    const auto it = lineToIndex.find(line);
-    if (it == lineToIndex.end())
-        return nullptr;
-
-    const auto &entry = table[it->second];
-    return entry.valid && entry.line == line ? &entry : nullptr;
+    for (const auto &entry : table) {
+        if (entry.valid && entry.line == line)
+            return &entry;
+    }
+    return nullptr;
 }
 
 H2PTable::LookupResult
@@ -100,13 +98,9 @@ H2PTable::trainMispred(Addr pc, bool allowAllocate)
                 line = &candidate;
         }
         result.replaced = line->valid;
-        if (line->valid)
-            lineToIndex.erase(line->line);
         *line = SetEntry{};
         line->valid = true;
         line->line = pc / LineBytes;
-        lineToIndex[line->line] =
-            static_cast<unsigned>(line - table.data());
     }
 
     line->lastUse = useClock;
