@@ -179,6 +179,9 @@ class XSCompositePrefetcher : public Queued
     void notifyFill(const PacketPtr& pkt) override;
     void recordPrefetchDequeued(PrefetchSourceType source) override;
     void notifyPrefetchTlbMiss(PrefetchSourceType source) override;
+    void notifyPdbPrefetchFill(PrefetchSourceType source) override;
+    void notifyPrefetchDownstreamResponse(
+        PrefetchSourceType source, uint64_t latency_cycles) override;
     void notifyPrefetchProbe(PrefetchSourceType source,
                              PrefetchProbeResult result) override;
     void notifyPdbFirstUse(PrefetchSourceType source, bool load,

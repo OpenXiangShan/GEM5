@@ -321,8 +321,11 @@ Cache::storePrefetchFill(PacketPtr pkt, MSHR *mshr,
     pdbStats.occupancy = pdbLines.size();
     ++pdbStats.fills;
     ++stats.pfOnlyFill;
-    if (prefetcher)
+    if (prefetcher) {
+        prefetcher->notifyPdbPrefetchFill(
+            line->blk.getXsMetadata().prefetchSource);
         prefetcher->notifyCachelineRefill(addr, secure);
+    }
     ppFill->notify(pkt);
     return true;
 }

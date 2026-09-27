@@ -64,7 +64,8 @@ MSHR::MSHR(const std::string &name)
         downstreamPending(false),
         pendingModified(false),
         postInvalidate(false), postDowngrade(false),
-        wasWholeLineWrite(false), isForward(false),
+        wasWholeLineWrite(false), downstreamSendTick(0),
+        downstreamPrefetchSource(PF_NONE), isForward(false),
         targets(name + ".targets"),
         deferredTargets(name + ".deferredTargets")
 {
@@ -335,6 +336,8 @@ MSHR::allocate(Addr blk_addr, unsigned blk_size, PacketPtr target,
     assert(target);
     isForward = false;
     wasWholeLineWrite = false;
+    downstreamSendTick = 0;
+    downstreamPrefetchSource = PF_NONE;
     _isUncacheable = target->req->isUncacheable();
     inService = false;
     downstreamPending = false;

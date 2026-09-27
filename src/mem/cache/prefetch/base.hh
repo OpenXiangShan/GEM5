@@ -1159,6 +1159,11 @@ class Base : public ClockedObject
 
     virtual void notifyCachelineRefill(Addr paddr, bool is_secure) {}
 
+    virtual void notifyPdbPrefetchFill(PrefetchSourceType source) {}
+
+    virtual void notifyPrefetchDownstreamResponse(
+        PrefetchSourceType source, uint64_t latency_cycles) {}
+
     enum class PrefetchProbeResult
     {
         DcacheHit,

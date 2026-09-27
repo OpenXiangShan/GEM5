@@ -123,6 +123,10 @@ class MSHR : public QueueEntry, public Printable
     /** Track if we sent this as a whole line write or not */
     bool wasWholeLineWrite;
 
+    /** Timing of the current downstream prefetch request, if any. */
+    Tick downstreamSendTick;
+    PrefetchSourceType downstreamPrefetchSource;
+
     /** True if the entry is just a simple forward from an upper level */
     bool isForward;
 

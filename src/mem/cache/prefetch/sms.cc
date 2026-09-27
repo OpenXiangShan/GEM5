@@ -157,6 +157,27 @@ XSCompositePrefetcher::notifyPrefetchTlbMiss(PrefetchSourceType source)
 }
 
 void
+XSCompositePrefetcher::notifyPdbPrefetchFill(PrefetchSourceType source)
+{
+    if (enableXsstream && Xsstream &&
+        (source == PrefetchSourceType::SStream ||
+         source == PrefetchSourceType::StoreStream)) {
+        Xsstream->recordStreamPdbRefill();
+    }
+}
+
+void
+XSCompositePrefetcher::notifyPrefetchDownstreamResponse(
+    PrefetchSourceType source, uint64_t latency_cycles)
+{
+    if (enableXsstream && Xsstream &&
+        (source == PrefetchSourceType::SStream ||
+         source == PrefetchSourceType::StoreStream)) {
+        Xsstream->recordStreamMshrResponse(latency_cycles);
+    }
+}
+
+void
 XSCompositePrefetcher::notifyPrefetchProbe(
     PrefetchSourceType source, PrefetchProbeResult result)
 {

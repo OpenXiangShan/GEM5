@@ -1010,6 +1010,15 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     DPRINTF(Cache, "MSHR addr: %#lx\n", mshr);
     assert(mshr);
 
+    if (prefetcher && !is_error && pkt->hasData() &&
+        mshr->downstreamPrefetchSource != PrefetchSourceType::PF_NONE) {
+        prefetcher->notifyPrefetchDownstreamResponse(
+            mshr->downstreamPrefetchSource,
+            ticksToCycles(curTick() + pkt->payloadDelay -
+                          mshr->downstreamSendTick));
+    }
+    mshr->downstreamPrefetchSource = PrefetchSourceType::PF_NONE;
+
     if (mshr == noTargetMSHR) {
         // we always clear at least one target
         clearBlocked(Blocked_NoTargets);
@@ -2782,7 +2791,13 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
         pkt->setSatisfied();
     }
 
+    mshr->downstreamPrefetchSource =
+        tgt_pkt->cmd == MemCmd::HardPFReq ?
+        mshr->getPFSource() : PrefetchSourceType::PF_NONE;
+    mshr->downstreamSendTick = curTick();
+
     if (!memSidePort.sendTimingReq(pkt)) {
+        mshr->downstreamPrefetchSource = PrefetchSourceType::PF_NONE;
         // we are awaiting a retry, but we
         // delete the packet and will be creating a new packet
         // when we get the opportunity

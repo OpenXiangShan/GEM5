@@ -68,6 +68,12 @@ class XsStreamPrefetcher : public Queued
         uint64_t mshrHits = 0;
         uint64_t pdbLoadUses = 0;
         uint64_t pdbUnusedReplacements = 0;
+        uint64_t pdbRefills = 0;
+        uint64_t pdbRefillIntervalSamples = 0;
+        uint64_t pdbRefillIntervalCycles = 0;
+        Tick lastPdbRefillTick = 0;
+        uint64_t mshrResponseSamples = 0;
+        uint64_t mshrResponseCycles = 0;
         uint64_t refillToUseSamples = 0;
         uint64_t refillToUseCycles = 0;
         uint64_t refillToReplaceSamples = 0;
@@ -88,6 +94,11 @@ class XsStreamPrefetcher : public Queued
         statistics::Scalar mshrHits;
         statistics::Scalar pdbLoadUses;
         statistics::Scalar pdbUnusedReplacements;
+        statistics::Scalar pdbRefills;
+        statistics::Scalar pdbRefillIntervalSamples;
+        statistics::Scalar pdbRefillIntervalAvgCycles;
+        statistics::Scalar mshrResponseSamples;
+        statistics::Scalar mshrResponseAvgCycles;
         statistics::Scalar refillToUseSamples;
         statistics::Scalar refillToUseAvgCycles;
         statistics::Scalar refillToReplaceSamples;
@@ -149,6 +160,8 @@ class XsStreamPrefetcher : public Queued
         ++feedback.sent;
     }
     void recordStreamTlbMiss() { ++feedback.tlbMisses; }
+    void recordStreamPdbRefill();
+    void recordStreamMshrResponse(uint64_t latency_cycles);
     void recordStreamProbe(PrefetchSourceType source,
                            Base::PrefetchProbeResult result);
     void recordStreamPdbFirstUse(bool load, uint64_t refill_to_use);
