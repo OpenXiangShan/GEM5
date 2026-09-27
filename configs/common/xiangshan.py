@@ -909,7 +909,7 @@ def xiangshan_system_init():
         "--enable-h2p-table",
         action="store_true",
         dest="enable_h2p_table",
-        default=True,
+        default=False,
         help="Enable the APF hard-to-predict branch table",
     )
     parser.add_argument(

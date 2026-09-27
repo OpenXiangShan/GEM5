@@ -1225,7 +1225,7 @@ class DecoupledBPUWithBTB(BranchPredictor):
         1, "Maximum number of distinct SMT threads predicted per cycle")
     fsq_size = Param.Unsigned(64, "Fetch stream queue size")
     maxHistLen = Param.Unsigned(970, "The length of history")
-    enable_h2p_table = Param.Bool(True,
+    enable_h2p_table = Param.Bool(False,
         "Enable the APF hard-to-predict branch table")
     enable_h2p_weak_confidence = Param.Bool(True,
         "Require TAGE low confidence for PC-H2P candidates")
