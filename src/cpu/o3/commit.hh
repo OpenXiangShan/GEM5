@@ -523,7 +523,7 @@ class Commit
     /** Aggregate Rename->ROB admission width across SMT threads. */
     const unsigned aggregateRenameWidth;
 
-    /** Commit width, in instructions. */
+    /** Physical entry width for Hybrid; expanded group window otherwise. */
     const unsigned commitWidth;
 
     /** Number of Active Threads */
@@ -666,6 +666,9 @@ class Commit
 
         /** Number of cycles where the commit bandwidth limit is reached. */
         statistics::Scalar commitEligibleSamples;
+        /** Physical Hybrid entries released by commit or squash draining. */
+        statistics::Scalar hybridCommittedEntries;
+        statistics::Scalar hybridDrainedEntries;
         /** Number of load get the same pc && addr && value*/
         statistics::Scalar loadTriple;
         statistics::Scalar loadEAReused;
