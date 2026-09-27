@@ -85,17 +85,6 @@ H2PTable::trainMispred(Addr pc, bool allowAllocate)
                 line = &candidate;
                 break;
             }
-            // Reclaim entries whose branch counters have both aged to zero
-            // before evicting an entry that still tracks active branches.
-            const bool countersAvailable = std::all_of(
-                candidate.branches.begin(), candidate.branches.end(),
-                [](const auto &branch) {
-                    return !branch.valid || branch.counter == 0;
-                });
-            if (countersAvailable) {
-                line = &candidate;
-                break;
-            }
             if (candidate.lastUse < line->lastUse)
                 line = &candidate;
         }
