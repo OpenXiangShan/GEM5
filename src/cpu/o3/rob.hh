@@ -193,7 +193,8 @@ class ROB
     /** Is the oldest group of instructions across a particular thread ready. */
     bool isHeadGroupReady(ThreadID tid);
 
-    InstSeqNum getHeadGroupLastDoneSeq(ThreadID tid);
+    InstSeqNum getHeadGroupLastDoneSeq(
+        ThreadID tid, bool *blocked_by_load_reserved = nullptr);
 
     /** Re-adjust ROB partitioning. */
     void resetEntries();

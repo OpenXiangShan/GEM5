@@ -616,6 +616,13 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent,
                "Number of RAW violations where replay-based MDP used strict wait"),
       ADD_STAT(loadOrderViolation, statistics::units::Count::get(),
                "Number of load-load or snoop ordering violations"),
+      ADD_STAT(smtVisibleStoreLrReexec, statistics::units::Count::get(),
+               "Number of executed LRs replayed by another thread's "
+               "visible store"),
+      ADD_STAT(smtVisibleStoreExecutedLoadIgnored,
+               statistics::units::Count::get(),
+               "Number of executed non-LR loads kept across another "
+               "thread's visible store"),
       ADD_STAT(busForwardSuccess, statistics::units::Count::get(),
                "Number of successfully forwarding from bus"),
       ADD_STAT(cacheMissReplayEarly, statistics::units::Count::get(),
@@ -1115,6 +1122,23 @@ LSQUnit::checkLocalStoreVisible(Addr store_paddr,
         }
 
         if (ld_inst->isExecuted()) {
+            // A completed LR is still speculative until commit. Replay it
+            // conservatively when another thread makes an overlapping store
+            // visible; ordinary loads may legally retain their older value.
+            if (ld_inst->isLoadReserved()) {
+                if (ld_inst->fault == NoFault) {
+                    ld_inst->fault = std::make_shared<ReExec>();
+                    request->setStateToFault();
+                    ++stats.smtVisibleStoreLrReexec;
+                    DPRINTF(LSQUnit,
+                            "Local visible store reexecutes completed LR "
+                            "[sn:%lli] on addr %#x\n",
+                            ld_inst->seqNum, store_paddr);
+                }
+                continue;
+            }
+
+            ++stats.smtVisibleStoreExecutedLoadIgnored;
             DPRINTF(LSQUnit,
                     "Local visible store ignores already executed load "
                     "[sn:%lli] on addr %#x\n",

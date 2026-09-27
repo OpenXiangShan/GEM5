@@ -617,8 +617,12 @@ ROB::isHeadGroupReady(ThreadID tid)
 }
 
 InstSeqNum
-ROB::getHeadGroupLastDoneSeq(ThreadID tid)
+ROB::getHeadGroupLastDoneSeq(ThreadID tid, bool *blocked_by_load_reserved)
 {
+    if (blocked_by_load_reserved) {
+        *blocked_by_load_reserved = false;
+    }
+
     if (!threadGroups[tid].empty() && threadGroups[tid].front() != 0) {
         auto it = instList[tid].begin();
         InstSeqNum seqnum = 0;
@@ -632,6 +636,15 @@ ROB::getHeadGroupLastDoneSeq(ThreadID tid)
                  // ReExec fault. Keep younger stores out of the SBuffer until the
                  // load either commits or is squashed.
                  inst->possibleLoadViolation()) {
+                break;
+            }
+            // A completed LR can still acquire ReExec before architectural
+            // commit. Do not let the speculative head-group shortcut publish
+            // younger stores past a load whose result may still be replayed.
+            if (inst->isLoadReserved()) {
+                if (blocked_by_load_reserved) {
+                    *blocked_by_load_reserved = true;
+                }
                 break;
             }
             seqnum = inst->seqNum;
