@@ -922,7 +922,7 @@ def xiangshan_system_init():
         "--enable-h2p-weak-confidence",
         action="store_true",
         dest="enable_h2p_weak_confidence",
-        default=True,
+        default=False,
         help="Require TAGE low confidence for PC-H2P candidates",
     )
     parser.add_argument(
