@@ -178,6 +178,14 @@ class XSCompositePrefetcher : public Queued
     /** Update the RR right table after a prefetch fill */
     void notifyFill(const PacketPtr& pkt) override;
     void recordPrefetchDequeued(PrefetchSourceType source) override;
+    void notifyPrefetchTlbMiss(PrefetchSourceType source) override;
+    void notifyPrefetchProbe(PrefetchSourceType source,
+                             PrefetchProbeResult result) override;
+    void notifyPdbFirstUse(PrefetchSourceType source, bool load,
+                           uint64_t refill_to_use) override;
+    void notifyPdbReplacement(PrefetchSourceType source, bool used,
+                              uint64_t refill_to_replace,
+                              uint64_t use_to_replace) override;
 
   private:
     const unsigned pfFilterSize{256};

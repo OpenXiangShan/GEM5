@@ -147,6 +147,51 @@ XSCompositePrefetcher::recordPrefetchDequeued(PrefetchSourceType source)
 }
 
 void
+XSCompositePrefetcher::notifyPrefetchTlbMiss(PrefetchSourceType source)
+{
+    if (enableXsstream && Xsstream &&
+        (source == PrefetchSourceType::SStream ||
+         source == PrefetchSourceType::StoreStream)) {
+        Xsstream->recordStreamTlbMiss();
+    }
+}
+
+void
+XSCompositePrefetcher::notifyPrefetchProbe(
+    PrefetchSourceType source, PrefetchProbeResult result)
+{
+    if (enableXsstream && Xsstream &&
+        (source == PrefetchSourceType::SStream ||
+         source == PrefetchSourceType::StoreStream)) {
+        Xsstream->recordStreamProbe(source, result);
+    }
+}
+
+void
+XSCompositePrefetcher::notifyPdbFirstUse(
+    PrefetchSourceType source, bool load, uint64_t refill_to_use)
+{
+    if (enableXsstream && Xsstream &&
+        (source == PrefetchSourceType::SStream ||
+         source == PrefetchSourceType::StoreStream)) {
+        Xsstream->recordStreamPdbFirstUse(load, refill_to_use);
+    }
+}
+
+void
+XSCompositePrefetcher::notifyPdbReplacement(
+    PrefetchSourceType source, bool used, uint64_t refill_to_replace,
+    uint64_t use_to_replace)
+{
+    if (enableXsstream && Xsstream &&
+        (source == PrefetchSourceType::SStream ||
+         source == PrefetchSourceType::StoreStream)) {
+        Xsstream->recordStreamPdbReplacement(
+            used, refill_to_replace, use_to_replace);
+    }
+}
+
+void
 XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
                                  PrefetchSourceType pf_source, bool miss_repeat)
 {
@@ -178,7 +223,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     if (pfi.isCacheMiss() || pfi.isPfFirstHit()) {
         assert(!(enableActivepage && enableXsstream));
         if (enableXsstream) {
-            Xsstream->calculatePrefetch(pfi, addresses, streamlatenum);
+            Xsstream->calculatePrefetch(pfi, addresses);
             stats.streamTrainCount++;
         }
         act_match_entry = actLookup(pfi, is_active_page, enter_new_region, is_first_shot);

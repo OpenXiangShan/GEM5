@@ -1159,6 +1159,24 @@ class Base : public ClockedObject
 
     virtual void notifyCachelineRefill(Addr paddr, bool is_secure) {}
 
+    enum class PrefetchProbeResult
+    {
+        DcacheHit,
+        PdbHit,
+        MshrHit,
+        WriteBufferHit,
+        Sent
+    };
+
+    virtual void notifyPrefetchTlbMiss(PrefetchSourceType source) {}
+    virtual void notifyPrefetchProbe(PrefetchSourceType source,
+                                     PrefetchProbeResult result) {}
+    virtual void notifyPdbFirstUse(PrefetchSourceType source, bool load,
+                                   uint64_t refill_to_use) {}
+    virtual void notifyPdbReplacement(PrefetchSourceType source, bool used,
+                                      uint64_t refill_to_replace,
+                                      uint64_t use_to_replace) {}
+
     virtual void
     pfHitInCache(PrefetchSourceType pf_type)
     {

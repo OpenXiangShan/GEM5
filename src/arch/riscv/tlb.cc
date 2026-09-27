@@ -1968,6 +1968,8 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
     else
         e[0] = lookup(vaddr, hgatp.vmid, mode, false, true, gstage,
                       is_prefetch);
+    if (!e[0] && is_prefetch && translation)
+        translation->markTlbMiss();
 
     vs_top_level = PTW_TOP_LEVEL(vsatp.mode);
     g_top_level = PTW_TOP_LEVEL(hgatp.mode);
@@ -2477,6 +2479,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     TlbEntry *back_pre[L_L2SUM] = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
     const bool is_prefetch = req->isPrefetch();
     e[0] = lookup(vaddr, satp.asid, mode, false, true, direct, is_prefetch);
+    if (!e[0] && is_prefetch && translation && !from_miss_queue)
+        translation->markTlbMiss();
     if (!is_prefetch) {
         if (e[0]) {
             stats.l1InitialLookupHits++;

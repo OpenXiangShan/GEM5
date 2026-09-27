@@ -161,6 +161,12 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID req
 }
 
 void
+Queued::DeferredPacket::markTlbMiss()
+{
+    tlbMissRecorded = true;
+}
+
+void
 Queued::DeferredPacket::startTranslation(BaseTLB *tlb)
 {
     assert(translationRequest != nullptr);
@@ -1139,12 +1145,15 @@ Queued::getPacket()
     }
 
     PacketPtr pkt = pfq.front().pkt;
+    assert(pkt != nullptr);
+    if (pfq.front().tlbMissRecorded) {
+        notifyPrefetchTlbMiss(pkt->req->getXsMetadata().prefetchSource);
+    }
     if (pfq.front().pfahead) {
         prefetchStats.pfaheadProcess++;
     }
     pfq.pop_front();
 
-    assert(pkt != nullptr);
     if (issueStatsAreAtForwarder()) {
         recordPrefetchDequeued(pkt);
     } else {

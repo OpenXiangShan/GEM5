@@ -127,7 +127,7 @@ Cache::findPdbLine(Addr addr, bool secure)
 }
 
 void
-Cache::recordPdbUse(PdbIterator line)
+Cache::recordPdbUse(PdbIterator line, bool load)
 {
     if (line == pdbLines.end() || !line->blk.wasPrefetched() ||
         line->usefulRecorded) {
@@ -135,10 +135,15 @@ Cache::recordPdbUse(PdbIterator line)
     }
 
     const Tick first_use_tick = curTick();
-    pdbStats.usefulLatency.sample(
-        ticksToCycles(first_use_tick - line->refillTick));
+    const uint64_t refill_to_use =
+        ticksToCycles(first_use_tick - line->refillTick);
+    pdbStats.usefulLatency.sample(refill_to_use);
     line->firstUseTick = first_use_tick;
     line->usefulRecorded = true;
+    if (prefetcher) {
+        prefetcher->notifyPdbFirstUse(
+            line->blk.getXsMetadata().prefetchSource, load, refill_to_use);
+    }
 }
 
 void
@@ -147,11 +152,18 @@ Cache::recordPdbReplacement(PdbIterator line)
     assert(line != pdbLines.end());
 
     const Tick replacement_tick = curTick();
-    pdbStats.refillToReplaceLatency.sample(
-        ticksToCycles(replacement_tick - line->refillTick));
+    const uint64_t refill_to_replace =
+        ticksToCycles(replacement_tick - line->refillTick);
+    uint64_t use_to_replace = 0;
+    pdbStats.refillToReplaceLatency.sample(refill_to_replace);
     if (line->usefulRecorded) {
-        pdbStats.usedToReplaceLatency.sample(
-            ticksToCycles(replacement_tick - line->firstUseTick));
+        use_to_replace = ticksToCycles(replacement_tick - line->firstUseTick);
+        pdbStats.usedToReplaceLatency.sample(use_to_replace);
+    }
+    if (prefetcher) {
+        prefetcher->notifyPdbReplacement(
+            line->blk.getXsMetadata().prefetchSource, line->usefulRecorded,
+            refill_to_replace, use_to_replace);
     }
 }
 
@@ -431,7 +443,7 @@ Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
                         &line->blk, pkt->headerDelay, lookupLatency);
                     satisfyRequest(pkt, &line->blk);
                     if (pkt->cmd == MemCmd::ReadReq) {
-                        recordPdbUse(line);
+                        recordPdbUse(line, true);
                         pdbLines.splice(pdbLines.end(), pdbLines, line);
                         ++pdbStats.loadHits;
                     } else {
@@ -453,7 +465,7 @@ Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
                             std::max(curTick(), line->blk.getWhenReady()));
                         promoted->setXsMetadata(line->blk.getXsMetadata());
                         if (line->blk.wasPrefetched()) {
-                            recordPdbUse(line);
+                            recordPdbUse(line, false);
                             if (prefetcher) {
                                 prefetcher->recordPrefetchUseful(
                                     line->blk.getXsMetadata().prefetchSource,

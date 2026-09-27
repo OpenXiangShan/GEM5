@@ -1543,8 +1543,7 @@ BaseCache::getNextQueueEntry()
         if (pkt) {
             Addr pf_addr = pkt->getBlockAddr(blkSize);
             PrefetchSourceType pf_type = pkt->req->getXsMetadata().prefetchSource;
-            if (tags->findBlock(pf_addr, pkt->isSecure()) ||
-                hasPrefetchData(pf_addr, pkt->isSecure())) {
+            if (tags->findBlock(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in cache, "
                         "dropped.\n", pf_addr);
                 prefetcher->pfHitInCache(pf_type);
@@ -1552,6 +1551,17 @@ BaseCache::getNextQueueEntry()
                     prefetcher->streamPflate();
                 // free the request and packet
                 delete pkt;
+                prefetcher->notifyPrefetchProbe(
+                    pf_type, prefetch::Base::PrefetchProbeResult::DcacheHit);
+            } else if (hasPrefetchData(pf_addr, pkt->isSecure())) {
+                DPRINTF(HWPrefetch, "Prefetch %#x has hit in PDB, "
+                        "dropped.\n", pf_addr);
+                prefetcher->pfHitInCache(pf_type);
+                if (pf_type == PrefetchSourceType::SStream)
+                    prefetcher->streamPflate();
+                delete pkt;
+                prefetcher->notifyPrefetchProbe(
+                    pf_type, prefetch::Base::PrefetchProbeResult::PdbHit);
             } else if (mshrQueue.findMatch(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in a MSHR, "
                         "dropped.\n", pf_addr);
@@ -1560,6 +1570,8 @@ BaseCache::getNextQueueEntry()
                     prefetcher->streamPflate();
                 // free the request and packet
                 delete pkt;
+                prefetcher->notifyPrefetchProbe(
+                    pf_type, prefetch::Base::PrefetchProbeResult::MshrHit);
             } else if (writeBuffer.findMatch(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in the "
                         "Write Buffer, dropped.\n", pf_addr);
@@ -1568,6 +1580,9 @@ BaseCache::getNextQueueEntry()
                     prefetcher->streamPflate();
                 // free the request and packet
                 delete pkt;
+                prefetcher->notifyPrefetchProbe(
+                    pf_type,
+                    prefetch::Base::PrefetchProbeResult::WriteBufferHit);
             } else {
                 // Update statistic on number of prefetches issued
                 // (hwpf_mshr_misses)
@@ -1579,6 +1594,8 @@ BaseCache::getNextQueueEntry()
                 // schedule the send
                 DPRINTF(HWPrefetch, "Allocating MSHR for prefetching addr %#x\n", pf_addr);
                 auto buf = allocateMissBuffer(pkt, curTick(), false);
+                prefetcher->notifyPrefetchProbe(
+                    pf_type, prefetch::Base::PrefetchProbeResult::Sent);
                 return buf;
             }
             // if (prefetcher->hasHintsWaiting() && !memSidePort.hasSchedSendEvent()) {

@@ -112,7 +112,7 @@ class Cache : public BaseCache
     } pdbStats;
 
     PdbIterator findPdbLine(Addr addr, bool secure);
-    void recordPdbUse(PdbIterator line);
+    void recordPdbUse(PdbIterator line, bool load);
     void recordPdbReplacement(PdbIterator line);
     void queuePdbCleanEvict(Addr addr, bool secure, PacketList &writebacks);
     void erasePdbLine(PdbIterator line, PacketList *writebacks = nullptr);

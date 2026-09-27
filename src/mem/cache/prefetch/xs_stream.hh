@@ -33,7 +33,6 @@ class XsStreamPrefetcher : public Queued
   protected:
     int depth;
     int badPreNum;
-    uint64_t lastLateCount;
     bool enableAutoDepth;
     bool enableL3StreamPre;
     const unsigned l2Depth;
@@ -59,6 +58,46 @@ class XsStreamPrefetcher : public Queued
     const int HIGHMASK = 0x7ff;
     const int VADDRHASHOFFSET = 5;
     const int VADDRHASHOFFSETMASK = 0x1f;
+
+    struct StreamFeedback
+    {
+        uint64_t sent = 0;
+        uint64_t tlbMisses = 0;
+        uint64_t dcacheHits = 0;
+        uint64_t pdbHits = 0;
+        uint64_t mshrHits = 0;
+        uint64_t pdbLoadUses = 0;
+        uint64_t pdbUnusedReplacements = 0;
+        uint64_t refillToUseSamples = 0;
+        uint64_t refillToUseCycles = 0;
+        uint64_t refillToReplaceSamples = 0;
+        uint64_t refillToReplaceCycles = 0;
+        uint64_t useToReplaceSamples = 0;
+        uint64_t useToReplaceCycles = 0;
+        uint64_t lateHits = 0;
+    } feedback;
+
+    struct FeedbackStats : statistics::Group
+    {
+        explicit FeedbackStats(XsStreamPrefetcher *parent);
+        statistics::Scalar windows;
+        statistics::Scalar sent;
+        statistics::Scalar tlbMisses;
+        statistics::Scalar dcacheHits;
+        statistics::Scalar pdbHits;
+        statistics::Scalar mshrHits;
+        statistics::Scalar pdbLoadUses;
+        statistics::Scalar pdbUnusedReplacements;
+        statistics::Scalar refillToUseSamples;
+        statistics::Scalar refillToUseAvgCycles;
+        statistics::Scalar refillToReplaceSamples;
+        statistics::Scalar refillToReplaceAvgCycles;
+        statistics::Scalar useToReplaceSamples;
+        statistics::Scalar useToReplaceAvgCycles;
+        statistics::Scalar depth;
+    } feedbackStats;
+
+    void completeFeedbackWindow();
 
 
     Addr tagAddress(Addr a) { return a >> REGIONTAGOFFSET; };
@@ -102,15 +141,19 @@ class XsStreamPrefetcher : public Queued
     boost::compute::detail::lru_cache<Addr, Addr> streamBlkFilter;
     XsStreamPrefetcher(const XsStreamPrefetcherParams &p);
     using Queued::calculatePrefetch;
-    void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override
-    {
-        panic("not implemented");
-    };
-    void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, uint64_t late_num);
+    void calculatePrefetch(const PrefetchInfo &pfi,
+                           std::vector<AddrPriority> &addresses) override;
     void recordStreamDequeued(PrefetchSourceType source)
     {
         Base::recordPrefetchDequeued(source);
+        ++feedback.sent;
     }
+    void recordStreamTlbMiss() { ++feedback.tlbMisses; }
+    void recordStreamProbe(PrefetchSourceType source,
+                           Base::PrefetchProbeResult result);
+    void recordStreamPdbFirstUse(bool load, uint64_t refill_to_use);
+    void recordStreamPdbReplacement(bool used, uint64_t refill_to_replace,
+                                    uint64_t use_to_replace);
     PrefetchFilter* stridestream_pfFilter_l1;
     PrefetchFilter* stridestream_pfFilter_l2l3;
 };

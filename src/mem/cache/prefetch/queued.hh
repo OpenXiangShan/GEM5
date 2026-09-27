@@ -114,6 +114,7 @@ class Queued : public Base
         RequestPtr translationRequest;
         ThreadContext *tc;
         bool ongoingTranslation;
+        bool tlbMissRecorded;
 
         /**
          * Constructor
@@ -126,7 +127,7 @@ class Queued : public Base
         DeferredPacket(Queued *o, PrefetchInfo const &pfi, Tick t,
             int32_t prio) : owner(o), pfInfo(pfi), tick(t), pkt(nullptr),
             priority(prio), translationRequest(), tc(nullptr),
-            ongoingTranslation(false) {
+            ongoingTranslation(false), tlbMissRecorded(false) {
         }
 
         bool operator>(const DeferredPacket& that) const
@@ -168,6 +169,8 @@ class Queued : public Base
 
         void markDelayed() override
         {}
+
+        void markTlbMiss() override;
 
         void finish(const Fault &fault, const RequestPtr &req,
                             ThreadContext *tc, BaseMMU::Mode mode) override;

@@ -67,6 +67,9 @@ class BaseMMU : public SimObject
          */
         virtual void markDelayed() = 0;
 
+        /** Signal a miss in the first-level TLB lookup. */
+        virtual void markTlbMiss() {}
+
         /*
          * The memory for this object may be dynamically allocated, and it may
          * be responsible for cleaning itself up which will happen in this
