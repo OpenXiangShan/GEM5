@@ -329,6 +329,9 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar h2pBufferRejectedFull;
         statistics::Scalar h2pBufferSquashed;
         statistics::Scalar h2pBufferRetired;
+        statistics::Scalar h2pBufferSampledCycles;
+        statistics::Scalar h2pBufferIdleCycles;
+        statistics::Formula h2pBufferIdleRatio;
         statistics::Formula h2pPotentialCoverage;
         statistics::Formula h2pBufferCoverage;
         statistics::Formula h2pBufferUsefulRate;

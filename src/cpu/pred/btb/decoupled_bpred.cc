@@ -414,6 +414,13 @@ DecoupledBPUWithBTB::tick()
         }
     }
 
+    if (enableH2PTable) {
+        dbpBtbStats.h2pBufferSampledCycles++;
+        if (h2pBufferModel.occupancy() == 0) {
+            dbpBtbStats.h2pBufferIdleCycles++;
+        }
+    }
+
     DPRINTF(Override, "Prediction cycle complete\n");
 }
 

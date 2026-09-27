@@ -537,6 +537,13 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
              "Admitted unresolved H2P buffer entries freed by a squash"),
     ADD_STAT(h2pBufferRetired, statistics::units::Count::get(),
              "Admitted H2P buffer entries freed when their FTQ target retires"),
+    ADD_STAT(h2pBufferSampledCycles, statistics::units::Cycle::get(),
+             "Active BPU cycles sampled for H2P buffer occupancy"),
+    ADD_STAT(h2pBufferIdleCycles, statistics::units::Cycle::get(),
+             "Sampled cycles with no admitted H2P buffer entries"),
+    ADD_STAT(h2pBufferIdleRatio, statistics::units::Ratio::get(),
+             "H2P buffer idle ratio: empty sampled cycles / sampled cycles",
+             h2pBufferIdleCycles / h2pBufferSampledCycles),
     ADD_STAT(h2pPotentialCoverage, statistics::units::Ratio::get(),
              "Potential H2P coverage: marked mispredictions / all conditional misses",
              h2pMispredictPotential / condMiss),
@@ -645,6 +652,7 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     h2pBufferCoverage.precision(6);
     h2pBufferUsefulRate.precision(6);
     h2pBufferPrecision.precision(6);
+    h2pBufferIdleRatio.precision(6);
     h2pBufferCapacityEntries = h2pBufferEntries;
     h2pBufferCapacityUops = h2pBufferEntries * H2PBufferModel::UopsPerBuffer;
     h2pBufferStorageBytes = h2pBufferEntries * H2PBufferModel::BytesPerBuffer;
