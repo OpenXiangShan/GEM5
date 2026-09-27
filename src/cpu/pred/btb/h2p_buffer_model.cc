@@ -13,7 +13,6 @@ H2PBufferModel::H2PBufferModel(unsigned capacity)
     // Only admitted entries are retained.  Rejected candidates are accounted
     // for by the caller and must not cause an unbounded stream of allocations.
     entries.reserve(capacity);
-    resolvedEntries.reserve(capacity);
 }
 
 H2PBufferModel::AddResult
@@ -39,34 +38,19 @@ H2PBufferModel::ResolveResult
 H2PBufferModel::resolve(const BranchOutcome &branch)
 {
     const Key key{branch.tid, branch.ftqId, branch.pc};
-    auto it = entries.find(key);
-    if (it == entries.end()) {
-        const auto resolved = resolvedEntries.find(key);
-        if (resolved != resolvedEntries.end())
-            return {true, resolved->second.admitted};
+    const auto it = entries.find(key);
+    if (it == entries.end())
         return {};
-    }
 
-    const bool admitted = it->second.admitted;
-    if (admitted)
-        --admittedEntries;
-    resolvedEntries.emplace(key, it->second);
-    entries.erase(it);
-    return {true, admitted};
+    // Keep the slot occupied until commit so the metadata models the full
+    // speculative lifetime of the alternate-path entry.
+    return {true, it->second.admitted};
 }
 
 H2PBufferModel::ResolveResult
 H2PBufferModel::commit(const BranchOutcome &branch)
 {
     const Key key{branch.tid, branch.ftqId, branch.pc};
-    auto resolved = resolvedEntries.find(key);
-    if (resolved != resolvedEntries.end()) {
-        const bool admitted = resolved->second.admitted;
-        resolvedEntries.erase(resolved);
-        return {true, admitted};
-    }
-
-    // Fall back to an unresolved entry if its resolve update was unavailable.
     auto it = entries.find(key);
     if (it == entries.end())
         return {};
@@ -93,14 +77,6 @@ H2PBufferModel::squashAfter(FetchTargetId targetId, ThreadID tid)
             ++it;
         }
     }
-    for (auto it = resolvedEntries.begin();
-         it != resolvedEntries.end();) {
-        if (it->first.tid == tid && it->first.ftqId > targetId) {
-            it = resolvedEntries.erase(it);
-        } else {
-            ++it;
-        }
-    }
     return removed;
 }
 
@@ -117,15 +93,6 @@ H2PBufferModel::squashTargetExcept(FetchTargetId targetId, ThreadID tid,
                 ++removed;
             }
             it = entries.erase(it);
-        } else {
-            ++it;
-        }
-    }
-    for (auto it = resolvedEntries.begin();
-         it != resolvedEntries.end();) {
-        if (it->first.tid == tid && it->first.ftqId == targetId &&
-            it->first.pc != keepPc) {
-            it = resolvedEntries.erase(it);
         } else {
             ++it;
         }
@@ -148,13 +115,6 @@ H2PBufferModel::retireTarget(ThreadID tid, FetchTargetId ftqId)
             ++it;
         }
     }
-    for (auto it = resolvedEntries.begin();
-         it != resolvedEntries.end();) {
-        if (it->first.tid == tid && it->first.ftqId == ftqId)
-            it = resolvedEntries.erase(it);
-        else
-            ++it;
-    }
     return removed;
 }
 
@@ -169,14 +129,6 @@ H2PBufferModel::clear(ThreadID tid)
                 ++removed;
             }
             it = entries.erase(it);
-        } else {
-            ++it;
-        }
-    }
-    for (auto it = resolvedEntries.begin();
-         it != resolvedEntries.end();) {
-        if (it->first.tid == tid) {
-            it = resolvedEntries.erase(it);
         } else {
             ++it;
         }

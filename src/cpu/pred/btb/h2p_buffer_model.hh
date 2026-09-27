@@ -14,10 +14,9 @@ namespace gem5::branch_prediction::btb_pred
 /**
  * Metadata-only model of APF alternate path buffer occupancy.
  *
- * It tracks admitted H2P branches until resolution. Resolved metadata remains
- * available until commit so final-path statistics can exclude branches later
- * removed by an older squash. Rejected candidates are reported to the caller
- * but are not retained, since they cannot affect later buffer decisions.
+ * It tracks admitted H2P branches until commit. Rejected candidates are
+ * reported to the caller but are not retained, since they cannot affect later
+ * buffer decisions.
  * The model is intentionally performance-neutral: capacity rejection is
  * recorded, but it does not stall the main fetch/decode pipeline.
  */
@@ -91,7 +90,6 @@ class H2PBufferModel
     unsigned admittedEntries = 0;
     unsigned peakOccupancy = 0;
     std::unordered_map<Key, Entry, KeyHash> entries;
-    std::unordered_map<Key, Entry, KeyHash> resolvedEntries;
 };
 
 } // namespace gem5::branch_prediction::btb_pred

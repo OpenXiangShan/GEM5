@@ -31,22 +31,24 @@ TEST(H2PBufferModelTest, AdmitsAndCountsCapacity)
     EXPECT_EQ(model.maxOccupancy(), 1u);
 
     EXPECT_TRUE(model.resolve(outcome(0, 1, 0x1000, true)).admitted);
-    EXPECT_EQ(model.occupancy(), 0u);
-    EXPECT_TRUE(model.add(0, 3, 0x3000).admitted);
+    EXPECT_EQ(model.occupancy(), 1u);
+    EXPECT_TRUE(model.add(0, 3, 0x3000).rejectedFull);
     EXPECT_FALSE(model.commit(outcome(0, 2, 0x2000, true)).admitted);
     EXPECT_TRUE(model.commit(outcome(0, 1, 0x1000, true)).found);
-    EXPECT_EQ(model.occupancy(), 1u);
+    EXPECT_EQ(model.occupancy(), 0u);
+    EXPECT_TRUE(model.add(0, 3, 0x3000).admitted);
 }
 
-TEST(H2PBufferModelTest, ResolutionFreesEntryAndKeepsCommitMetadata)
+TEST(H2PBufferModelTest, ResolutionKeepsEntryUntilCommit)
 {
     H2PBufferModel model(1);
     EXPECT_TRUE(model.add(0, 1, 0x1000).admitted);
     EXPECT_TRUE(model.resolve(outcome(0, 1, 0x1000, false)).found);
+    EXPECT_EQ(model.occupancy(), 1u);
+    EXPECT_TRUE(model.add(0, 2, 0x2000).rejectedFull);
+    EXPECT_TRUE(model.commit(outcome(0, 1, 0x1000, false)).found);
     EXPECT_EQ(model.occupancy(), 0u);
     EXPECT_TRUE(model.add(0, 2, 0x2000).admitted);
-    EXPECT_TRUE(model.commit(outcome(0, 1, 0x1000, false)).found);
-    EXPECT_EQ(model.occupancy(), 1u);
 }
 
 TEST(H2PBufferModelTest, SquashRemovesYoungerTargets)
@@ -74,9 +76,11 @@ TEST(H2PBufferModelTest, SquashDropsResolvedCommitMetadata)
     H2PBufferModel model(1);
     EXPECT_TRUE(model.add(0, 2, 0x2000).admitted);
     EXPECT_TRUE(model.resolve(outcome(0, 2, 0x2000, true)).found);
-    EXPECT_EQ(model.occupancy(), 0u);
+    EXPECT_EQ(model.occupancy(), 1u);
     EXPECT_EQ(model.squashAfter(1, 0), 0u);
+    EXPECT_EQ(model.squashAfter(0, 0), 1u);
     EXPECT_FALSE(model.commit(outcome(0, 2, 0x2000, true)).found);
+    EXPECT_EQ(model.occupancy(), 0u);
 }
 
 TEST(H2PBufferModelTest, SquashCountsOnlyAdmittedActiveEntries)
