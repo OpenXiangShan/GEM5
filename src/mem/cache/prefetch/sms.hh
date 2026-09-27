@@ -177,6 +177,7 @@ class XSCompositePrefetcher : public Queued
 
     /** Update the RR right table after a prefetch fill */
     void notifyFill(const PacketPtr& pkt) override;
+    void recordPrefetchDequeued(PrefetchSourceType source) override;
 
   private:
     const unsigned pfFilterSize{256};

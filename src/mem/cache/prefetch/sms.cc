@@ -136,6 +136,17 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
 }
 
 void
+XSCompositePrefetcher::recordPrefetchDequeued(PrefetchSourceType source)
+{
+    Queued::recordPrefetchDequeued(source);
+    if (enableXsstream && Xsstream &&
+        (source == PrefetchSourceType::SStream ||
+         source == PrefetchSourceType::StoreStream)) {
+        Xsstream->recordStreamDequeued(source);
+    }
+}
+
+void
 XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
                                  PrefetchSourceType pf_source, bool miss_repeat)
 {
