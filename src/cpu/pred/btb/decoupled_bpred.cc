@@ -1366,6 +1366,7 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
                 continue;
 
             if (branch.isCond) {
+                const auto tageInfo = pred.tageInfoForMgscs.find(branch.pc);
                 dbpBtbStats.h2pLookups++;
                 if (lookupH2P(branch.pc).h2p) {
                     dbpBtbStats.h2pTableCandidates++;
