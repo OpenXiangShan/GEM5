@@ -1366,12 +1366,6 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
                 continue;
 
             if (branch.isCond) {
-                const auto tageInfo = pred.tageInfoForMgscs.find(branch.pc);
-                if (tageInfo != pred.tageInfoForMgscs.end() &&
-                    tageInfo->second.tage_final_provider_table >= 2) {
-                    entry.h2pAllocateBranchPCs.push_back(branch.pc);
-                }
-
                 dbpBtbStats.h2pLookups++;
                 if (lookupH2P(branch.pc).h2p) {
                     dbpBtbStats.h2pTableCandidates++;
@@ -1443,16 +1437,7 @@ DecoupledBPUWithBTB::trainH2P(
     if (!enableH2PTable || !branch.isCond || !branch.mispredicted)
         return;
 
-    const bool allowAllocate = std::find(
-        target.h2pAllocateBranchPCs.begin(),
-        target.h2pAllocateBranchPCs.end(), branch.pc) !=
-        target.h2pAllocateBranchPCs.end();
-    const auto result = h2pTable.trainMispred(branch.pc, allowAllocate);
-    if (result.allocationFiltered) {
-        dbpBtbStats.h2pTrainProviderRejected++;
-        return;
-    }
-
+    const auto result = h2pTable.trainMispred(branch.pc, true);
     dbpBtbStats.h2pTrainMispredicts++;
     dbpBtbStats.h2pAllocations += result.allocated;
     dbpBtbStats.h2pReplacements += result.replaced;
