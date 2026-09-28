@@ -364,7 +364,7 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     bdp_window_sent = Param.Unsigned(500, "Requests per BDP control window")
     bdp_min_mshr_samples = Param.Unsigned(32, "Minimum MSHR samples for BDP")
     bdp_min_refill_samples = Param.Unsigned(32, "Minimum refill samples for BDP")
-    bdp_calibration_factor = Param.Float(8.0, "BDP to stream-block calibration")
+    bdp_calibration_factor = Param.Float(10.0, "BDP to stream-block calibration")
     bdp_up_ratio = Param.Float(1.25, "BDP upshift ratio")
     bdp_down_ratio = Param.Float(0.80, "BDP downshift ratio")
     bdp_up_confirm_windows = Param.Unsigned(2, "BDP upshift confirmations")
@@ -378,7 +378,7 @@ class XsStreamPrefetcher(QueuedPrefetcher):
         32, "Minimum refill-to-use samples for delta"
     )
     delta_step = Param.Int(4, "Delta adjustment step")
-    delta_max_abs = Param.Unsigned(4, "Absolute delta limit")
+    delta_max_abs = Param.Unsigned(8, "Absolute delta limit")
     delta_up_confirm_windows = Param.Unsigned(2, "Delta upshift confirmations")
     delta_down_confirm_windows = Param.Unsigned(2, "Delta downshift confirmations")
     delta_hold_windows = Param.Unsigned(1, "Delta post-change hold windows")
