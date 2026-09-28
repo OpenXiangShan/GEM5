@@ -104,12 +104,12 @@ TEST(SmsOrder, RepeatedInsertKeepsFirstOrder)
               (uint64_t(1) << 9));
 }
 
-TEST(SmsPhtDest, TriggerUsesHighMedLowLevels)
+TEST(SmsPhtDest, TriggerSendsHighAndMediumToL2AndLowToL3)
 {
     EXPECT_EQ(phtDestLevel(7, true, DefaultHighConfThreshold,
-                           DefaultMedConfThreshold, DefaultLowConfThreshold), 1);
+                           DefaultMedConfThreshold, DefaultLowConfThreshold), 2);
     EXPECT_EQ(phtDestLevel(6, true, DefaultHighConfThreshold,
-                           DefaultMedConfThreshold, DefaultLowConfThreshold), 1);
+                           DefaultMedConfThreshold, DefaultLowConfThreshold), 2);
     EXPECT_EQ(phtDestLevel(5, true, DefaultHighConfThreshold,
                            DefaultMedConfThreshold, DefaultLowConfThreshold), 2);
     EXPECT_EQ(phtDestLevel(4, true, DefaultHighConfThreshold,
@@ -122,14 +122,16 @@ TEST(SmsPhtDest, TriggerUsesHighMedLowLevels)
                            DefaultMedConfThreshold, DefaultLowConfThreshold), 0);
 }
 
-TEST(SmsPhtDest, NonTriggerSendsOnlyHighAndMedium)
+TEST(SmsPhtDest, NonTriggerSendsOnlyHighToL3)
 {
     EXPECT_EQ(phtDestLevel(7, false, DefaultHighConfThreshold,
-                           DefaultMedConfThreshold, DefaultLowConfThreshold), 2);
-    EXPECT_EQ(phtDestLevel(6, false, DefaultHighConfThreshold,
-                           DefaultMedConfThreshold, DefaultLowConfThreshold), 2);
-    EXPECT_EQ(phtDestLevel(4, false, DefaultHighConfThreshold,
                            DefaultMedConfThreshold, DefaultLowConfThreshold), 3);
+    EXPECT_EQ(phtDestLevel(6, false, DefaultHighConfThreshold,
+                           DefaultMedConfThreshold, DefaultLowConfThreshold), 3);
+    EXPECT_EQ(phtDestLevel(5, false, DefaultHighConfThreshold,
+                           DefaultMedConfThreshold, DefaultLowConfThreshold), 0);
+    EXPECT_EQ(phtDestLevel(4, false, DefaultHighConfThreshold,
+                           DefaultMedConfThreshold, DefaultLowConfThreshold), 0);
     EXPECT_EQ(phtDestLevel(3, false, DefaultHighConfThreshold,
                            DefaultMedConfThreshold, DefaultLowConfThreshold), 0);
     EXPECT_EQ(phtDestLevel(2, false, DefaultHighConfThreshold,

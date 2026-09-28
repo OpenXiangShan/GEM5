@@ -128,16 +128,19 @@ constexpr unsigned DefaultMedConfThreshold = 4;
 constexpr unsigned DefaultLowConfThreshold = 3;
 
 // Map a PHT saturating counter to a prefetch destination.
-// 1/2/3 => L1/L2/L3, 0 => do not send.
+// High-confidence offsets are sent to L2 for trigger lookups and L3 for
+// non-trigger lookups. Medium-confidence offsets are only sent to L2 for
+// trigger lookups, while low-confidence offsets are only sent to L3 for
+// trigger lookups. 1/2/3 => L1/L2/L3, 0 => do not send.
 inline int
 phtDestLevel(unsigned raw, bool is_trigger, unsigned high_thres,
              unsigned med_thres, unsigned low_thres)
 {
     if (raw >= high_thres) {
-        return is_trigger ? 1 : 2;
+        return is_trigger ? 2 : 3;
     }
     if (raw >= med_thres) {
-        return is_trigger ? 2 : 3;
+        return is_trigger ? 2 : 0;
     }
     if (is_trigger && raw >= low_thres) {
         return 3;

@@ -320,7 +320,7 @@ def addCommonOptions(parser, configure_xiangshan=False):
         choices=("True", "False"),
         default=None,
         metavar="{True,False}",
-        help="Enable SMS PHT confidence-based L1/L2/L3 destinations "
+        help="Enable SMS PHT confidence-based L2/L3 destinations or filtering "
              "and per-offset first-touch PHT updates.")
 
     parser.add_argument("--disable-pf-buffer", action="store_false",

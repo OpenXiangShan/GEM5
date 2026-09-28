@@ -1292,7 +1292,8 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     pht_pf_level = Param.Int(2, "Fixed PHT destination when enable_pht_conf_dest is false")
     enable_pht_conf_dest = Param.Bool(
         False,
-        "Use PHT confidence and trigger access to select L1/L2/L3 destinations "
+        "Use PHT confidence and trigger access to select L2/L3 destinations "
+        "or suppress candidates, "
         "and per-offset first-touch PHT updates"
     )
     enable_pht_l3_dest = Param.Bool(
