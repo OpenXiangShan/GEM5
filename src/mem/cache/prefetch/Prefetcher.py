@@ -364,7 +364,7 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     bdp_window_sent = Param.Unsigned(500, "Requests per BDP control window")
     bdp_min_mshr_samples = Param.Unsigned(32, "Minimum MSHR samples for BDP")
     bdp_min_refill_samples = Param.Unsigned(32, "Minimum refill samples for BDP")
-    bdp_calibration_factor = Param.Float(8.0, "BDP to stream-block calibration")
+    bdp_calibration_factor = Param.Float(10.0, "BDP to stream-block calibration")
     bdp_up_ratio = Param.Float(1.25, "BDP upshift ratio")
     bdp_down_ratio = Param.Float(0.80, "BDP downshift ratio")
     bdp_up_confirm_windows = Param.Unsigned(2, "BDP upshift confirmations")
