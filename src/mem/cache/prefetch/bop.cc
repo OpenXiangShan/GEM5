@@ -55,7 +55,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
       restoreCycle(p.restoreCycle),
       delayQueueEvent([this]{ delayQueueEventWrapper(); }, name()),
       issuePrefetchRequests(false), bestOffset(1), phaseBestOffset(0),
-      bestScore(0), round(0), stats(this)
+      autoLearning(p.autoLearning), bestScore(0), round(0), stats(this)
 {
     if (!isPowerOf2(rrEntries)) {
         fatal("%s: number of RR entries is not power of 2\n", name());
@@ -233,6 +233,10 @@ BOP::testRR(Addr addr) const
 bool
 BOP::tryAddOffset(int64_t offset, bool late)
 {
+    if (!autoLearning) {
+        return false;
+    }
+
     assert(offset != 0);
     bool find_it = std::find(offsetsList.begin(), offsetsList.end(), offset) != offsetsList.end();
     if (find_it) {
