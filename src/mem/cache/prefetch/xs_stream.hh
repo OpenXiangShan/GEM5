@@ -1,6 +1,5 @@
 #ifndef __MEM_CACHE_PREFETCH_XSSTREAM_HH__
 #define __MEM_CACHE_PREFETCH_XSSTREAM_HH__
-#include <array>
 #include <unordered_map>
 #include <vector>
 
@@ -65,10 +64,6 @@ class XsStreamPrefetcher : public Queued
     const int l2Ratio = 2;
     const int l3Ratio = 3;
     const std::vector<int> depthLevels;
-    // Retained only for the legacy feedback dump path below.
-    static constexpr std::array<int, 7> DEPTH_LEVELS{
-        4, 8, 16, 32, 64, 96, 128
-    };
     const unsigned bdpWindowSent;
     const unsigned bdpMinMshrSamples;
     const unsigned bdpMinRefillSamples;
@@ -287,7 +282,6 @@ class XsStreamPrefetcher : public Queued
         Base::recordPrefetchDequeued(source);
         ++feedback.sent;
         ++feedbackStats.cumulativeSent;
-        maybeUpdateControllers();
     }
     void recordStreamTlbMiss() { ++feedback.tlbMisses; }
     void recordStreamPdbRefill();

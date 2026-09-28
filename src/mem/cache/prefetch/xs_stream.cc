@@ -65,13 +65,20 @@ XsStreamPrefetcher::XsStreamPrefetcher(const XsStreamPrefetcherParams &p)
       streamBlkFilter(pfFilterSize)
 {
     fatal_if(depthLevels.empty(), "depth_levels must not be empty");
-    fatal_if(!std::is_sorted(depthLevels.begin(), depthLevels.end()),
-             "depth_levels must be sorted");
+    fatal_if(std::adjacent_find(
+                 depthLevels.begin(), depthLevels.end(),
+                 [](int left, int right) { return left >= right; }) !=
+                 depthLevels.end(),
+             "depth_levels must be strictly increasing");
     fatal_if(std::find(depthLevels.begin(), depthLevels.end(), depth) ==
                  depthLevels.end(),
              "initial stream depth %d must be present in depth_levels", depth);
     fatal_if(bdpWindowSent == 0 || deltaWindowSent == 0,
              "controller windows must be non-zero");
+    fatal_if(bdpMaxLevelStep == 0,
+             "bdp_max_level_step must be non-zero");
+    fatal_if(bdpUpConfirmWindows == 0 || bdpDownConfirmWindows == 0,
+             "BDP confirmation windows must be non-zero");
     fatal_if(disabledProbeIntervalCalls == 0,
              "disabled_probe_interval_calls must be non-zero");
 }
@@ -246,6 +253,8 @@ XsStreamPrefetcher::recordStreamProbe(
         result != Base::PrefetchProbeResult::Sent) {
         ++feedback.lateHits;
     }
+    if (feedback.sent == bdpWindowSent)
+        completeFeedbackWindow();
 }
 
 void
@@ -322,8 +331,6 @@ XsStreamPrefetcher::completeFeedbackWindow()
         window.mshrHits + window.demandMshrHits;
     const double late_rate = window.sent ?
         double(late_events) / window.sent : 0.0;
-    constexpr uint64_t MIN_CONTROLLER_SAMPLES = 64;
-    constexpr double EWMA_ALPHA = 0.25;
     constexpr double MIN_BDP_FILTER_GAIN = 0.125;
     constexpr double MAX_BDP_FILTER_GAIN = 0.75;
     constexpr double BDP_INNOVATION_GAIN = 0.5;
@@ -331,25 +338,22 @@ XsStreamPrefetcher::completeFeedbackWindow()
     constexpr double BDP_TREND_GAIN = 0.25;
     constexpr double BDP_FORECAST_WINDOWS = 2.0;
     constexpr double MAX_BDP_FORECAST_DELTA = 0.5;
-    constexpr double BDP_HEADROOM = 8.0;
     constexpr double HIGH_LATE_RATE = 0.05;
     constexpr double VERY_HIGH_LATE_RATE = 0.10;
-    constexpr double UPSHIFT_HYSTERESIS = 1.25;
     constexpr int MAX_FEEDFORWARD_DEPTH = 32;
-    constexpr int CONFIRM_WINDOWS = 2;
 
     if (!feedbackEwmaValid) {
         usefulRateEwma = useful_rate;
         lateRateEwma = late_rate;
         feedbackEwmaValid = true;
     } else {
-        usefulRateEwma += EWMA_ALPHA * (useful_rate - usefulRateEwma);
-        lateRateEwma += EWMA_ALPHA * (late_rate - lateRateEwma);
+        usefulRateEwma += bdpEwmaAlpha * (useful_rate - usefulRateEwma);
+        lateRateEwma += bdpEwmaAlpha * (late_rate - lateRateEwma);
     }
 
     const bool bdp_valid =
-        window.pdbRefillIntervalSamples >= MIN_CONTROLLER_SAMPLES &&
-        window.mshrResponseSamples >= MIN_CONTROLLER_SAMPLES &&
+        window.pdbRefillIntervalSamples >= bdpMinRefillSamples &&
+        window.mshrResponseSamples >= bdpMinMshrSamples &&
         pdb_refill_interval > 0.0;
     bool forecast_clamped = false;
     if (bdp_valid) {
@@ -384,33 +388,37 @@ XsStreamPrefetcher::completeFeedbackWindow()
 
     const int old_depth = depth;
     const auto depth_level =
-        std::find(DEPTH_LEVELS.begin(), DEPTH_LEVELS.end(), depth);
-    assert(depth_level != DEPTH_LEVELS.end());
+        std::find(depthLevels.begin(), depthLevels.end(), depth);
+    assert(depth_level != depthLevels.end());
     const auto depth_level_index =
-        std::distance(DEPTH_LEVELS.begin(), depth_level);
+        std::distance(depthLevels.begin(), depth_level);
     auto target_level = depth_level;
     int model_desired_depth = depth;
     bool hysteresis_hold = false;
     if (bdpEwmaValid) {
         model_desired_depth = std::min(
             MAX_FEEDFORWARD_DEPTH,
-            std::max(DEPTH_LEVELS.front(),
-                     int(std::ceil(BDP_HEADROOM * bdpForecast))));
+            std::max(depthLevels.front(),
+                     int(std::ceil(bdpCalibrationFactor * bdpForecast))));
         target_level = std::lower_bound(
-            DEPTH_LEVELS.begin(), DEPTH_LEVELS.end(), model_desired_depth);
+            depthLevels.begin(), depthLevels.end(), model_desired_depth);
 
         if (target_level > depth_level &&
-            model_desired_depth < depth * UPSHIFT_HYSTERESIS) {
+            model_desired_depth < depth * bdpUpRatio) {
             target_level = depth_level;
             hysteresis_hold = true;
         }
 
         if (usefulRateEwma < 0.20) {
-            target_level = DEPTH_LEVELS.begin();
+            target_level = depthLevels.begin();
         } else if (usefulRateEwma < 0.40) {
-            target_level = std::min(target_level, DEPTH_LEVELS.begin() + 1);
+            const auto cap = depthLevels.begin() +
+                std::min<size_t>(1, depthLevels.size() - 1);
+            target_level = std::min(target_level, cap);
         } else if (usefulRateEwma < 0.65) {
-            target_level = std::min(target_level, DEPTH_LEVELS.begin() + 2);
+            const auto cap = depthLevels.begin() +
+                std::min<size_t>(2, depthLevels.size() - 1);
+            target_level = std::min(target_level, cap);
         }
 
     }
@@ -418,10 +426,10 @@ XsStreamPrefetcher::completeFeedbackWindow()
         2 : lateRateEwma >= HIGH_LATE_RATE ? 1 : 0;
     if (emergency_step) {
         const size_t emergency_index = std::min(
-            DEPTH_LEVELS.size() - 1,
+            depthLevels.size() - 1,
             size_t(depth_level_index) + emergency_step);
         target_level = std::max(
-            target_level, DEPTH_LEVELS.begin() + emergency_index);
+            target_level, depthLevels.begin() + emergency_index);
     }
     const int target_depth = *target_level;
     const char *depth_decision = "disabled";
@@ -434,9 +442,13 @@ XsStreamPrefetcher::completeFeedbackWindow()
             depthDecisionScore = depthDecisionScore < 0 ?
                 1 : depthDecisionScore + 1;
             depth_decision = "confirm-increase";
-            if (depthDecisionScore >= CONFIRM_WINDOWS) {
-                if (depth_level + 1 != DEPTH_LEVELS.end()) {
-                    depth = *(depth_level + 1);
+            if (depthDecisionScore >= int(bdpUpConfirmWindows)) {
+                if (depth_level + 1 != depthLevels.end()) {
+                    const size_t distance = std::distance(
+                        depth_level, target_level);
+                    const size_t step = std::min(
+                        distance, size_t(bdpMaxLevelStep));
+                    depth = *(depth_level + step);
                     depth_decision = "increase";
                 } else {
                     depth_decision = "max-depth";
@@ -447,9 +459,13 @@ XsStreamPrefetcher::completeFeedbackWindow()
             depthDecisionScore = depthDecisionScore > 0 ?
                 -1 : depthDecisionScore - 1;
             depth_decision = "confirm-decrease";
-            if (depthDecisionScore <= -CONFIRM_WINDOWS) {
-                if (depth_level != DEPTH_LEVELS.begin()) {
-                    depth = *(depth_level - 1);
+            if (depthDecisionScore <= -int(bdpDownConfirmWindows)) {
+                if (depth_level != depthLevels.begin()) {
+                    const size_t distance = std::distance(
+                        target_level, depth_level);
+                    const size_t step = std::min(
+                        distance, size_t(bdpMaxLevelStep));
+                    depth = *(depth_level - step);
                     depth_decision = "decrease";
                 } else {
                     depth_decision = "min-depth";
@@ -463,7 +479,12 @@ XsStreamPrefetcher::completeFeedbackWindow()
     }
 
     ++feedbackStats.windows;
+    ++feedbackStats.bdpWindows;
     ++feedbackStats.windowsAtDepth[depth_level_index];
+    if (target_level > depth_level)
+        ++feedbackStats.bdpIncreaseRequests;
+    if (target_level < depth_level)
+        ++feedbackStats.bdpDecreaseRequests;
     if (depth > old_depth) {
         ++feedbackStats.depthIncreases;
     } else if (depth < old_depth) {
@@ -475,8 +496,13 @@ XsStreamPrefetcher::completeFeedbackWindow()
         ++feedbackStats.hysteresisHolds;
     if (forecast_clamped)
         ++feedbackStats.forecastClampedWindows;
-    if (depth != old_depth)
-        depthSettlingWindows = 4;
+    if (depth != old_depth) {
+        ++feedbackStats.bdpDepthChanges;
+        ++feedbackStats.finalDepthUpdates;
+        depthSettlingWindows = bdpStableWindowCount;
+    }
+    bdpDepth = depth;
+    delta = 0;
     feedbackStats.sent = window.sent;
     feedbackStats.tlbMisses = window.tlbMisses;
     feedbackStats.dcacheHits = window.dcacheHits;
@@ -507,6 +533,9 @@ XsStreamPrefetcher::completeFeedbackWindow()
     feedbackStats.usefulRateEwma = usefulRateEwma;
     feedbackStats.lateRateEwma = lateRateEwma;
     feedbackStats.depth = depth;
+    feedbackStats.bdpDepth = bdpDepth;
+    feedbackStats.delta = delta;
+    feedbackStats.finalDepth = depth;
 
     DPRINTF(XsStreamPrefetcher,
             "auto depth: %d -> %d, sent=%llu late=%llu bad=%d "
