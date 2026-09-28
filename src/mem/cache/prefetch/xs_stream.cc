@@ -1,5 +1,9 @@
 #include "mem/cache/prefetch/xs_stream.hh"
 
+#include <algorithm>
+#include <cmath>
+
+#include "base/logging.hh"
 #include "debug/XsStreamPrefetcher.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
 #include "sim/core.hh"
@@ -23,12 +27,46 @@ XsStreamPrefetcher::XsStreamPrefetcher(const XsStreamPrefetcherParams &p)
                    p.xs_stream_replacement_policy, STREAMEntry()),
       streamBlkFilter(pfFilterSize)
 {
+    fatal_if(std::find(DEPTH_LEVELS.begin(), DEPTH_LEVELS.end(), depth) ==
+                 DEPTH_LEVELS.end(),
+             "xs_stream_depth must be one of 4, 8, 16, 32, 64, 96, or 128; "
+             "got %d", depth);
 }
 
 XsStreamPrefetcher::FeedbackStats::FeedbackStats(XsStreamPrefetcher *parent)
     : statistics::Group(parent, "feedback"),
       ADD_STAT(windows, statistics::units::Count::get(),
                "Completed stream feedback windows"),
+      ADD_STAT(cumulativeSent, statistics::units::Count::get(),
+               "Stream prefetches dequeued since the last stats reset"),
+      ADD_STAT(cumulativePdbLoadUses, statistics::units::Count::get(),
+               "Stream PDB load uses since the last stats reset"),
+      ADD_STAT(cumulativeLateEvents, statistics::units::Count::get(),
+               "Stream late events since the last stats reset"),
+      ADD_STAT(cumulativeRefillToUseSamples,
+               statistics::units::Count::get(),
+               "Stream PDB refill-to-first-use samples since stats reset"),
+      ADD_STAT(cumulativeRefillToUseCycles,
+               statistics::units::Cycle::get(),
+               "Stream PDB refill-to-first-use cycles since stats reset"),
+      ADD_STAT(cumulativeMshrResponseSamples,
+               statistics::units::Count::get(),
+               "Stream MSHR response samples since the last stats reset"),
+      ADD_STAT(cumulativeMshrResponseCycles,
+               statistics::units::Cycle::get(),
+               "Stream MSHR response cycles since the last stats reset"),
+      ADD_STAT(depthIncreases, statistics::units::Count::get(),
+               "Automatic stream depth increases"),
+      ADD_STAT(depthDecreases, statistics::units::Count::get(),
+               "Automatic stream depth decreases"),
+      ADD_STAT(highGainWindows, statistics::units::Count::get(),
+               "BDP windows using at least 0.5 adaptive filter gain"),
+      ADD_STAT(hysteresisHolds, statistics::units::Count::get(),
+               "BDP upshift requests suppressed by hysteresis"),
+      ADD_STAT(forecastClampedWindows, statistics::units::Count::get(),
+               "BDP windows whose trend forecast reached its safety bound"),
+      ADD_STAT(windowsAtDepth, statistics::units::Count::get(),
+               "Complete feedback windows by stream depth"),
       ADD_STAT(sent, statistics::units::Count::get(),
                "Stream prefetches dequeued in the last complete window"),
       ADD_STAT(tlbMisses, statistics::units::Count::get(),
@@ -69,9 +107,33 @@ XsStreamPrefetcher::FeedbackStats::FeedbackStats(XsStreamPrefetcher *parent)
                "Used stream PDB replacement latency samples in the last window"),
       ADD_STAT(useToReplaceAvgCycles, statistics::units::Cycle::get(),
                "Mean stream PDB first-use-to-replacement cycles in the last window"),
+      ADD_STAT(controllerTargetDepth, statistics::units::Count::get(),
+               "BDP controller target depth after the last complete window"),
+      ADD_STAT(modelDesiredDepth, statistics::units::Count::get(),
+               "Continuous BDP depth demand before legal-level quantization"),
+      ADD_STAT(hysteresisActive, statistics::units::Count::get(),
+               "Whether upshift hysteresis held the last BDP request"),
+      ADD_STAT(bandwidthDelayProduct, statistics::units::Ratio::get(),
+               "EWMA memory-response bandwidth-delay product in stream blocks"),
+      ADD_STAT(bdpFilterGain, statistics::units::Ratio::get(),
+               "Adaptive BDP filter gain in the last valid window"),
+      ADD_STAT(bdpInnovation, statistics::units::Ratio::get(),
+               "Normalized BDP prediction error in the last valid window"),
+      ADD_STAT(bdpTrend, statistics::units::Ratio::get(),
+               "Smoothed per-window change in the BDP estimate"),
+      ADD_STAT(bdpForecast, statistics::units::Ratio::get(),
+               "Bounded BDP forecast used by the depth controller"),
+      ADD_STAT(usefulRateEwma, statistics::units::Ratio::get(),
+               "EWMA stream PDB load-use rate used by the controller"),
+      ADD_STAT(lateRateEwma, statistics::units::Ratio::get(),
+               "EWMA stream late rate used by the controller"),
       ADD_STAT(depth, statistics::units::Count::get(),
                "Stream prefetch depth after the last complete window")
 {
+    windowsAtDepth.init(DEPTH_LEVELS.size());
+    for (size_t i = 0; i < DEPTH_LEVELS.size(); ++i) {
+        windowsAtDepth.subname(i, std::to_string(DEPTH_LEVELS[i]));
+    }
 }
 
 void
@@ -87,6 +149,7 @@ XsStreamPrefetcher::recordStreamProbe(
         break;
       case Base::PrefetchProbeResult::DemandMshrHit:
         ++feedback.mshrHits;
+        ++feedbackStats.cumulativeLateEvents;
         break;
       case Base::PrefetchProbeResult::PrefetchMshrHit:
         break;
@@ -120,6 +183,8 @@ XsStreamPrefetcher::recordStreamMshrResponse(uint64_t latency_cycles)
 {
     ++feedback.mshrResponseSamples;
     feedback.mshrResponseCycles += latency_cycles;
+    ++feedbackStats.cumulativeMshrResponseSamples;
+    feedbackStats.cumulativeMshrResponseCycles += latency_cycles;
 }
 
 void
@@ -130,6 +195,10 @@ XsStreamPrefetcher::recordStreamPdbFirstUse(bool load,
         ++feedback.pdbLoadUses;
     ++feedback.refillToUseSamples;
     feedback.refillToUseCycles += refill_to_use;
+    if (load)
+        ++feedbackStats.cumulativePdbLoadUses;
+    ++feedbackStats.cumulativeRefillToUseSamples;
+    feedbackStats.cumulativeRefillToUseCycles += refill_to_use;
 }
 
 void
@@ -164,23 +233,167 @@ XsStreamPrefetcher::completeFeedbackWindow()
     const double mshr_response_latency = mean(
         window.mshrResponseCycles, window.mshrResponseSamples);
 
-    // A new depth rule can use window.tlbMisses, dcacheHits, pdbHits,
-    // mshrHits, demandMshrHits, pdbLoadUses, pdbUnusedReplacements,
-    // pdb_refill_interval,
-    // mshr_response_latency,
-    // and the three latency means above.
-    // Each mean is zero when its corresponding sample count is zero.
-    const int old_depth = depth;
-    if (enableAutoDepth) {
-        if (double(window.lateHits) / window.sent >= LATECOVERAGE &&
-            depth != DEPTHRIGHT) {
-            depth <<= DEPTHSTEP;
+    const double useful_rate = window.sent ?
+        double(window.pdbLoadUses) / window.sent : 0.0;
+    const uint64_t late_events =
+        window.mshrHits + window.demandMshrHits;
+    const double late_rate = window.sent ?
+        double(late_events) / window.sent : 0.0;
+    constexpr uint64_t MIN_CONTROLLER_SAMPLES = 64;
+    constexpr double EWMA_ALPHA = 0.25;
+    constexpr double MIN_BDP_FILTER_GAIN = 0.125;
+    constexpr double MAX_BDP_FILTER_GAIN = 0.75;
+    constexpr double BDP_INNOVATION_GAIN = 0.5;
+    constexpr double HIGH_FILTER_GAIN = 0.5;
+    constexpr double BDP_TREND_GAIN = 0.25;
+    constexpr double BDP_FORECAST_WINDOWS = 2.0;
+    constexpr double MAX_BDP_FORECAST_DELTA = 0.5;
+    constexpr double BDP_HEADROOM = 8.0;
+    constexpr double HIGH_LATE_RATE = 0.05;
+    constexpr double VERY_HIGH_LATE_RATE = 0.10;
+    constexpr double UPSHIFT_HYSTERESIS = 1.25;
+    constexpr int MAX_FEEDFORWARD_DEPTH = 32;
+    constexpr int CONFIRM_WINDOWS = 2;
+
+    if (!feedbackEwmaValid) {
+        usefulRateEwma = useful_rate;
+        lateRateEwma = late_rate;
+        feedbackEwmaValid = true;
+    } else {
+        usefulRateEwma += EWMA_ALPHA * (useful_rate - usefulRateEwma);
+        lateRateEwma += EWMA_ALPHA * (late_rate - lateRateEwma);
+    }
+
+    const bool bdp_valid =
+        window.pdbRefillIntervalSamples >= MIN_CONTROLLER_SAMPLES &&
+        window.mshrResponseSamples >= MIN_CONTROLLER_SAMPLES &&
+        pdb_refill_interval > 0.0;
+    bool forecast_clamped = false;
+    if (bdp_valid) {
+        const double bdp = mshr_response_latency / pdb_refill_interval;
+        if (!bdpEwmaValid) {
+            bdpEwma = bdp;
+            bdpTrend = 0.0;
+            bdpForecast = bdp;
+            bdpFilterGain = 1.0;
+            bdpInnovation = 0.0;
+            bdpEwmaValid = true;
+        } else {
+            bdpInnovation = std::abs(bdp - bdpEwma) /
+                std::max(0.5, bdpEwma);
+            bdpFilterGain = std::clamp(
+                MIN_BDP_FILTER_GAIN +
+                    BDP_INNOVATION_GAIN * bdpInnovation,
+                MIN_BDP_FILTER_GAIN, MAX_BDP_FILTER_GAIN);
+            const double previous_bdp = bdpEwma;
+            bdpEwma += bdpFilterGain * (bdp - bdpEwma);
+            bdpTrend += BDP_TREND_GAIN *
+                ((bdpEwma - previous_bdp) - bdpTrend);
+            const double raw_forecast =
+                bdpEwma + BDP_FORECAST_WINDOWS * bdpTrend;
+            bdpForecast = std::clamp(
+                raw_forecast,
+                (1.0 - MAX_BDP_FORECAST_DELTA) * bdpEwma,
+                (1.0 + MAX_BDP_FORECAST_DELTA) * bdpEwma);
+            forecast_clamped = bdpForecast != raw_forecast;
         }
-        if (badPreNum > LATEMISSTHRESHOLD && depth != DEPTHLEFT)
-            depth >>= DEPTHSTEP;
+    }
+
+    const int old_depth = depth;
+    const auto depth_level =
+        std::find(DEPTH_LEVELS.begin(), DEPTH_LEVELS.end(), depth);
+    assert(depth_level != DEPTH_LEVELS.end());
+    const auto depth_level_index =
+        std::distance(DEPTH_LEVELS.begin(), depth_level);
+    auto target_level = depth_level;
+    int model_desired_depth = depth;
+    bool hysteresis_hold = false;
+    if (bdpEwmaValid) {
+        model_desired_depth = std::min(
+            MAX_FEEDFORWARD_DEPTH,
+            std::max(DEPTH_LEVELS.front(),
+                     int(std::ceil(BDP_HEADROOM * bdpForecast))));
+        target_level = std::lower_bound(
+            DEPTH_LEVELS.begin(), DEPTH_LEVELS.end(), model_desired_depth);
+
+        if (target_level > depth_level &&
+            model_desired_depth < depth * UPSHIFT_HYSTERESIS) {
+            target_level = depth_level;
+            hysteresis_hold = true;
+        }
+
+        if (usefulRateEwma < 0.20) {
+            target_level = DEPTH_LEVELS.begin();
+        } else if (usefulRateEwma < 0.40) {
+            target_level = std::min(target_level, DEPTH_LEVELS.begin() + 1);
+        } else if (usefulRateEwma < 0.65) {
+            target_level = std::min(target_level, DEPTH_LEVELS.begin() + 2);
+        }
+
+    }
+    const size_t emergency_step = lateRateEwma >= VERY_HIGH_LATE_RATE ?
+        2 : lateRateEwma >= HIGH_LATE_RATE ? 1 : 0;
+    if (emergency_step) {
+        const size_t emergency_index = std::min(
+            DEPTH_LEVELS.size() - 1,
+            size_t(depth_level_index) + emergency_step);
+        target_level = std::max(
+            target_level, DEPTH_LEVELS.begin() + emergency_index);
+    }
+    const int target_depth = *target_level;
+    const char *depth_decision = "disabled";
+    if (enableAutoDepth) {
+        if (depthSettlingWindows) {
+            --depthSettlingWindows;
+            depthDecisionScore = 0;
+            depth_decision = "settle";
+        } else if (target_level > depth_level) {
+            depthDecisionScore = depthDecisionScore < 0 ?
+                1 : depthDecisionScore + 1;
+            depth_decision = "confirm-increase";
+            if (depthDecisionScore >= CONFIRM_WINDOWS) {
+                if (depth_level + 1 != DEPTH_LEVELS.end()) {
+                    depth = *(depth_level + 1);
+                    depth_decision = "increase";
+                } else {
+                    depth_decision = "max-depth";
+                }
+                depthDecisionScore = 0;
+            }
+        } else if (target_level < depth_level) {
+            depthDecisionScore = depthDecisionScore > 0 ?
+                -1 : depthDecisionScore - 1;
+            depth_decision = "confirm-decrease";
+            if (depthDecisionScore <= -CONFIRM_WINDOWS) {
+                if (depth_level != DEPTH_LEVELS.begin()) {
+                    depth = *(depth_level - 1);
+                    depth_decision = "decrease";
+                } else {
+                    depth_decision = "min-depth";
+                }
+                depthDecisionScore = 0;
+            }
+        } else {
+            depthDecisionScore = 0;
+            depth_decision = "hold";
+        }
     }
 
     ++feedbackStats.windows;
+    ++feedbackStats.windowsAtDepth[depth_level_index];
+    if (depth > old_depth) {
+        ++feedbackStats.depthIncreases;
+    } else if (depth < old_depth) {
+        ++feedbackStats.depthDecreases;
+    }
+    if (bdp_valid && bdpFilterGain >= HIGH_FILTER_GAIN)
+        ++feedbackStats.highGainWindows;
+    if (hysteresis_hold)
+        ++feedbackStats.hysteresisHolds;
+    if (forecast_clamped)
+        ++feedbackStats.forecastClampedWindows;
+    if (depth != old_depth)
+        depthSettlingWindows = 4;
     feedbackStats.sent = window.sent;
     feedbackStats.tlbMisses = window.tlbMisses;
     feedbackStats.dcacheHits = window.dcacheHits;
@@ -200,6 +413,16 @@ XsStreamPrefetcher::completeFeedbackWindow()
     feedbackStats.refillToReplaceAvgCycles = refill_to_replace;
     feedbackStats.useToReplaceSamples = window.useToReplaceSamples;
     feedbackStats.useToReplaceAvgCycles = use_to_replace;
+    feedbackStats.controllerTargetDepth = target_depth;
+    feedbackStats.modelDesiredDepth = model_desired_depth;
+    feedbackStats.hysteresisActive = hysteresis_hold;
+    feedbackStats.bandwidthDelayProduct = bdpEwma;
+    feedbackStats.bdpFilterGain = bdpFilterGain;
+    feedbackStats.bdpInnovation = bdpInnovation;
+    feedbackStats.bdpTrend = bdpTrend;
+    feedbackStats.bdpForecast = bdpForecast;
+    feedbackStats.usefulRateEwma = usefulRateEwma;
+    feedbackStats.lateRateEwma = lateRateEwma;
     feedbackStats.depth = depth;
 
     DPRINTF(XsStreamPrefetcher,
@@ -209,7 +432,11 @@ XsStreamPrefetcher::completeFeedbackWindow()
             "unusedReplace=%llu pdbRefills=%llu pdbRefillInterval=%.3f/%llu "
             "mshrResponse=%.3f/%llu "
             "refillToUse=%.3f/%llu "
-            "refillToReplace=%.3f/%llu useToReplace=%.3f/%llu\n",
+            "refillToReplace=%.3f/%llu useToReplace=%.3f/%llu "
+            "policyUse=%.3f policyLate=%.3f bdp=%.3f "
+            "bdpGain=%.3f innovation=%.3f trend=%.3f forecast=%.3f "
+            "forecastClamped=%d desired=%d hysteresis=%d target=%d "
+            "score=%d decision=%s\n",
             old_depth, depth, window.sent, window.lateHits, badPreNum,
             window.tlbMisses, window.dcacheHits, window.pdbHits,
             window.mshrHits, window.demandMshrHits, window.pdbLoadUses,
@@ -219,7 +446,12 @@ XsStreamPrefetcher::completeFeedbackWindow()
             mshr_response_latency, window.mshrResponseSamples,
             refill_to_use, window.refillToUseSamples,
             refill_to_replace, window.refillToReplaceSamples,
-            use_to_replace, window.useToReplaceSamples);
+            use_to_replace, window.useToReplaceSamples,
+            usefulRateEwma, lateRateEwma, bdpEwma, bdpFilterGain,
+            bdpInnovation, bdpTrend, bdpForecast, forecast_clamped,
+            model_desired_depth, hysteresis_hold, target_depth,
+            depthDecisionScore,
+            depth_decision);
 
     feedback = {};
     badPreNum = 0;

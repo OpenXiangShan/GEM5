@@ -345,7 +345,11 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     on_write = False
     on_data  = True
     on_inst  = False
-    xs_stream_depth = Param.Int(64, "The depth of xs_stream_depth")
+    xs_stream_depth = Param.Int(
+        16,
+        "Stream lookahead in cache blocks; allowed values: "
+        "4, 8, 16, 32, 64, 96, 128"
+    )
     xs_stream_l2_depth = Param.Unsigned(
         640,
         "L2 stream lookahead in cache blocks; zero derives from depth << 2"

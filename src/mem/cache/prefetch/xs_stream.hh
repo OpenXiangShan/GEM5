@@ -1,5 +1,6 @@
 #ifndef __MEM_CACHE_PREFETCH_XSSTREAM_HH__
 #define __MEM_CACHE_PREFETCH_XSSTREAM_HH__
+#include <array>
 #include <unordered_map>
 #include <vector>
 
@@ -33,14 +34,25 @@ class XsStreamPrefetcher : public Queued
   protected:
     int depth;
     int badPreNum;
+    int depthDecisionScore = 0;
+    unsigned depthSettlingWindows = 0;
+    bool feedbackEwmaValid = false;
+    bool bdpEwmaValid = false;
+    double usefulRateEwma = 0.0;
+    double lateRateEwma = 0.0;
+    double bdpEwma = 0.0;
+    double bdpFilterGain = 1.0;
+    double bdpInnovation = 0.0;
+    double bdpTrend = 0.0;
+    double bdpForecast = 0.0;
     bool enableAutoDepth;
     bool enableL3StreamPre;
     const unsigned l2Depth;
     const int l2Ratio = 2;
     const int l3Ratio = 3;
-    const int DEPTHRIGHT = 1 << 9;
-    const int DEPTHLEFT = 1;
-    const int DEPTHSTEP = 1;
+    static constexpr std::array<int, 7> DEPTH_LEVELS{
+        4, 8, 16, 32, 64, 96, 128
+    };
     const int L1BLKDEGREE = 2;
     const int L2BLKDEGREE = 4;
     const int L3BLKDEGREE = 8;
@@ -51,9 +63,6 @@ class XsStreamPrefetcher : public Queued
     const int REGIONTAGNUM = 16;
     const int ACTIVETHRESHOLD = 12;
     const int VALIDITYCHECKINTERVAL = 1000;
-    const double LATECOVERAGE = 0.4;
-    const int LATEMISSTHRESHOLD = 200;
-    const int LATEHITTHRESHOLD = 900;
     const int LOWMASK = 0x3ff;
     const int HIGHMASK = 0x7ff;
     const int VADDRHASHOFFSET = 5;
@@ -88,6 +97,19 @@ class XsStreamPrefetcher : public Queued
     {
         explicit FeedbackStats(XsStreamPrefetcher *parent);
         statistics::Scalar windows;
+        statistics::Scalar cumulativeSent;
+        statistics::Scalar cumulativePdbLoadUses;
+        statistics::Scalar cumulativeLateEvents;
+        statistics::Scalar cumulativeRefillToUseSamples;
+        statistics::Scalar cumulativeRefillToUseCycles;
+        statistics::Scalar cumulativeMshrResponseSamples;
+        statistics::Scalar cumulativeMshrResponseCycles;
+        statistics::Scalar depthIncreases;
+        statistics::Scalar depthDecreases;
+        statistics::Scalar highGainWindows;
+        statistics::Scalar hysteresisHolds;
+        statistics::Scalar forecastClampedWindows;
+        statistics::Vector windowsAtDepth;
         statistics::Scalar sent;
         statistics::Scalar tlbMisses;
         statistics::Scalar dcacheHits;
@@ -107,6 +129,16 @@ class XsStreamPrefetcher : public Queued
         statistics::Scalar refillToReplaceAvgCycles;
         statistics::Scalar useToReplaceSamples;
         statistics::Scalar useToReplaceAvgCycles;
+        statistics::Scalar controllerTargetDepth;
+        statistics::Scalar modelDesiredDepth;
+        statistics::Scalar hysteresisActive;
+        statistics::Scalar bandwidthDelayProduct;
+        statistics::Scalar bdpFilterGain;
+        statistics::Scalar bdpInnovation;
+        statistics::Scalar bdpTrend;
+        statistics::Scalar bdpForecast;
+        statistics::Scalar usefulRateEwma;
+        statistics::Scalar lateRateEwma;
         statistics::Scalar depth;
     } feedbackStats;
 
@@ -160,11 +192,16 @@ class XsStreamPrefetcher : public Queued
     {
         Base::recordPrefetchDequeued(source);
         ++feedback.sent;
+        ++feedbackStats.cumulativeSent;
     }
     void recordStreamTlbMiss() { ++feedback.tlbMisses; }
     void recordStreamPdbRefill();
     void recordStreamMshrResponse(uint64_t latency_cycles);
-    void recordStreamDemandMshrHit() { ++feedback.demandMshrHits; }
+    void recordStreamDemandMshrHit()
+    {
+        ++feedback.demandMshrHits;
+        ++feedbackStats.cumulativeLateEvents;
+    }
     void recordStreamProbe(PrefetchSourceType source,
                            Base::PrefetchProbeResult result);
     void recordStreamPdbFirstUse(bool load, uint64_t refill_to_use);
