@@ -348,14 +348,75 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     xs_stream_depth = Param.Int(
         16,
         "Stream lookahead in cache blocks; allowed values: "
-        "4, 8, 16, 32, 64, 96, 128"
+        "legacy fixed depth when automatic control is disabled"
     )
+    depth_levels = VectorParam.Int(
+        [4, 8, 16, 24, 32, 48, 64, 80, 96],
+        "Legal BDP base-depth levels"
+    )
+    initial_bdp_depth = Param.Int(16, "Initial automatic BDP depth")
     xs_stream_l2_depth = Param.Unsigned(
         640,
         "L2 stream lookahead in cache blocks; zero derives from depth << 2"
     )
     enable_auto_depth = Param.Bool(True, "Enable automatic stream prefetch depth")
     enable_l3_stream_pre = Param.Bool(False, "enable l3 stream pre.")
+    bdp_window_sent = Param.Unsigned(500, "Requests per BDP control window")
+    bdp_min_mshr_samples = Param.Unsigned(32, "Minimum MSHR samples for BDP")
+    bdp_min_refill_samples = Param.Unsigned(32, "Minimum refill samples for BDP")
+    bdp_calibration_factor = Param.Float(8.0, "BDP to stream-block calibration")
+    bdp_up_ratio = Param.Float(1.25, "BDP upshift ratio")
+    bdp_down_ratio = Param.Float(0.80, "BDP downshift ratio")
+    bdp_up_confirm_windows = Param.Unsigned(2, "BDP upshift confirmations")
+    bdp_down_confirm_windows = Param.Unsigned(3, "BDP downshift confirmations")
+    bdp_stable_windows = Param.Unsigned(2, "BDP post-change stable windows")
+    bdp_ewma_alpha = Param.Float(0.25, "BDP EWMA alpha")
+    bdp_max_level_step = Param.Unsigned(1, "Maximum BDP levels per update")
+    delta_window_sent = Param.Unsigned(250, "Requests per delta control window")
+    delta_min_late_samples = Param.Unsigned(64, "Minimum late samples for delta")
+    delta_min_refill_to_use_samples = Param.Unsigned(
+        32, "Minimum refill-to-use samples for delta"
+    )
+    delta_step = Param.Int(4, "Delta adjustment step")
+    delta_max_abs = Param.Unsigned(4, "Absolute delta limit")
+    delta_up_confirm_windows = Param.Unsigned(2, "Delta upshift confirmations")
+    delta_down_confirm_windows = Param.Unsigned(2, "Delta downshift confirmations")
+    delta_hold_windows = Param.Unsigned(1, "Delta post-change hold windows")
+    late_target_rate = Param.Float(0.05, "Target late rate")
+    late_upper_threshold = Param.Float(0.08, "Late increase threshold")
+    late_lower_threshold = Param.Float(0.03, "Late decrease threshold")
+    late_weight = Param.Float(1.0, "Late pressure weight")
+    refill_to_use_target_cycles = Param.Float(
+        0.0, "Fixed refill-to-use target; zero learns a target"
+    )
+    refill_to_use_target_alpha = Param.Float(
+        0.25, "Refill-to-use target EWMA alpha"
+    )
+    refill_to_use_early_ratio = Param.Float(
+        1.50, "Ratio above target that indicates early refill-to-use"
+    )
+    refill_to_use_late_ratio = Param.Float(
+        0.75, "Ratio below target that indicates late refill-to-use"
+    )
+    refill_to_use_weight = Param.Float(1.0, "Refill-to-use pressure weight")
+    delta_pressure_threshold = Param.Float(
+        0.25, "Absolute pressure threshold for delta"
+    )
+    accuracy_min_samples = Param.Unsigned(64, "Minimum samples for accuracy")
+    accuracy_confirm_windows = Param.Unsigned(2, "Accuracy disable confirmations")
+    useful_accuracy_threshold = Param.Float(0.20, "Low useful accuracy threshold")
+    unused_replacement_threshold = Param.Float(
+        0.50, "High unused replacement threshold"
+    )
+    disabled_probe_interval_calls = Param.Unsigned(
+        128, "Calls between disabled stream probes"
+    )
+    reenable_useful_threshold = Param.Float(
+        0.35, "Useful rate needed to re-enable stream prefetch"
+    )
+    reenable_confirm_windows = Param.Unsigned(
+        2, "Re-enable confirmation windows"
+    )
     xs_stream_entries = Param.MemorySize(
         "16",
         "num of active generation table entries"

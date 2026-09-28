@@ -33,26 +33,78 @@ class XsStreamPrefetcher : public Queued
     Addr regionOffset(Addr a) { return (a / blkSize) % regionBlks; }
   protected:
     int depth;
-    int badPreNum;
+    int bdpDepth;
+    int badPreNum = 0;
     int depthDecisionScore = 0;
     unsigned depthSettlingWindows = 0;
     bool feedbackEwmaValid = false;
-    bool bdpEwmaValid = false;
+    int delta = 0;
+    int bdpUpScore = 0;
+    int bdpDownScore = 0;
+    int deltaUpScore = 0;
+    int deltaDownScore = 0;
+    unsigned bdpStableWindows = 0;
+    unsigned deltaHoldWindows = 0;
+    unsigned accuracyBadWindows = 0;
+    unsigned accuracyGoodWindows = 0;
+    bool accuracyDisabled = false;
+    uint64_t disabledProbeCalls = 0;
+    double bdpEwma = 0.0;
     double usefulRateEwma = 0.0;
     double lateRateEwma = 0.0;
-    double bdpEwma = 0.0;
     double bdpFilterGain = 1.0;
     double bdpInnovation = 0.0;
     double bdpTrend = 0.0;
     double bdpForecast = 0.0;
+    double refillToUseTarget = 0.0;
+    bool bdpEwmaValid = false;
+    bool refillToUseTargetValid = false;
     bool enableAutoDepth;
     bool enableL3StreamPre;
     const unsigned l2Depth;
     const int l2Ratio = 2;
     const int l3Ratio = 3;
+    const std::vector<int> depthLevels;
+    // Retained only for the legacy feedback dump path below.
     static constexpr std::array<int, 7> DEPTH_LEVELS{
         4, 8, 16, 32, 64, 96, 128
     };
+    const unsigned bdpWindowSent;
+    const unsigned bdpMinMshrSamples;
+    const unsigned bdpMinRefillSamples;
+    const double bdpCalibrationFactor;
+    const double bdpUpRatio;
+    const double bdpDownRatio;
+    const unsigned bdpUpConfirmWindows;
+    const unsigned bdpDownConfirmWindows;
+    const unsigned bdpStableWindowCount;
+    const double bdpEwmaAlpha;
+    const unsigned bdpMaxLevelStep;
+    const unsigned deltaWindowSent;
+    const unsigned deltaMinLateSamples;
+    const unsigned deltaMinRefillToUseSamples;
+    const int deltaStep;
+    const unsigned deltaMaxAbs;
+    const unsigned deltaUpConfirmWindows;
+    const unsigned deltaDownConfirmWindows;
+    const unsigned deltaHoldWindowCount;
+    const double lateTargetRate;
+    const double lateUpperThreshold;
+    const double lateLowerThreshold;
+    const double lateWeight;
+    const double refillToUseTargetCycles;
+    const double refillToUseTargetAlpha;
+    const double refillToUseEarlyRatio;
+    const double refillToUseLateRatio;
+    const double refillToUseWeight;
+    const double deltaPressureThreshold;
+    const unsigned accuracyMinSamples;
+    const unsigned accuracyConfirmWindows;
+    const double usefulAccuracyThreshold;
+    const double unusedReplacementThreshold;
+    const unsigned disabledProbeIntervalCalls;
+    const double reenableUsefulThreshold;
+    const unsigned reenableConfirmWindows;
     const int L1BLKDEGREE = 2;
     const int L2BLKDEGREE = 4;
     const int L3BLKDEGREE = 8;
@@ -109,6 +161,18 @@ class XsStreamPrefetcher : public Queued
         statistics::Scalar highGainWindows;
         statistics::Scalar hysteresisHolds;
         statistics::Scalar forecastClampedWindows;
+        statistics::Scalar bdpWindows;
+        statistics::Scalar bdpIncreaseRequests;
+        statistics::Scalar bdpDecreaseRequests;
+        statistics::Scalar bdpDepthChanges;
+        statistics::Scalar deltaWindows;
+        statistics::Scalar deltaIncreaseRequests;
+        statistics::Scalar deltaDecreaseRequests;
+        statistics::Scalar deltaHolds;
+        statistics::Scalar accuracyWindows;
+        statistics::Scalar accuracyDisableEvents;
+        statistics::Scalar accuracyReenableEvents;
+        statistics::Scalar finalDepthUpdates;
         statistics::Vector windowsAtDepth;
         statistics::Scalar sent;
         statistics::Scalar tlbMisses;
@@ -140,9 +204,39 @@ class XsStreamPrefetcher : public Queued
         statistics::Scalar usefulRateEwma;
         statistics::Scalar lateRateEwma;
         statistics::Scalar depth;
+        statistics::Scalar bdpDepth;
+        statistics::Scalar delta;
+        statistics::Scalar finalDepth;
+        statistics::Scalar lateRate;
+        statistics::Scalar refillToUseTarget;
+        statistics::Scalar deltaPressure;
+        statistics::Scalar accuracy;
+        statistics::Scalar unusedReplacementRate;
+        statistics::Scalar accuracyDisabled;
     } feedbackStats;
 
     void completeFeedbackWindow();
+    void updateBdpController();
+    void updateDeltaController();
+    void updateAccuracyController();
+    void recomputeDepth(const char *reason);
+    void maybeUpdateControllers();
+
+    struct ControlSnapshot
+    {
+        uint64_t sent = 0;
+        uint64_t mshrHits = 0;
+        uint64_t demandMshrHits = 0;
+        uint64_t mshrResponseSamples = 0;
+        uint64_t mshrResponseCycles = 0;
+        uint64_t pdbRefillIntervalSamples = 0;
+        uint64_t pdbRefillIntervalCycles = 0;
+        uint64_t refillToUseSamples = 0;
+        uint64_t refillToUseCycles = 0;
+        uint64_t pdbLoadUses = 0;
+        uint64_t pdbUnusedReplacements = 0;
+        uint64_t pdbRefills = 0;
+    } bdpSnapshot, deltaSnapshot, accuracySnapshot;
 
 
     Addr tagAddress(Addr a) { return a >> REGIONTAGOFFSET; };
@@ -193,6 +287,7 @@ class XsStreamPrefetcher : public Queued
         Base::recordPrefetchDequeued(source);
         ++feedback.sent;
         ++feedbackStats.cumulativeSent;
+        maybeUpdateControllers();
     }
     void recordStreamTlbMiss() { ++feedback.tlbMisses; }
     void recordStreamPdbRefill();

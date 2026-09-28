@@ -17,20 +17,63 @@ XsStreamPrefetcher::XsStreamPrefetcher(const XsStreamPrefetcherParams &p)
     : Queued(p),
       regionSize(p.region_size),
       regionBlks(p.region_size / p.block_size),    
-      depth(p.xs_stream_depth),
-      badPreNum(0),
+      depth(p.enable_auto_depth ? p.initial_bdp_depth : p.xs_stream_depth),
+      bdpDepth(depth),
       enableAutoDepth(p.enable_auto_depth),
       enableL3StreamPre(p.enable_l3_stream_pre),
       l2Depth(p.xs_stream_l2_depth),
+      depthLevels(p.depth_levels),
+      bdpWindowSent(p.bdp_window_sent),
+      bdpMinMshrSamples(p.bdp_min_mshr_samples),
+      bdpMinRefillSamples(p.bdp_min_refill_samples),
+      bdpCalibrationFactor(p.bdp_calibration_factor),
+      bdpUpRatio(p.bdp_up_ratio),
+      bdpDownRatio(p.bdp_down_ratio),
+      bdpUpConfirmWindows(p.bdp_up_confirm_windows),
+      bdpDownConfirmWindows(p.bdp_down_confirm_windows),
+      bdpStableWindowCount(p.bdp_stable_windows),
+      bdpEwmaAlpha(p.bdp_ewma_alpha),
+      bdpMaxLevelStep(p.bdp_max_level_step),
+      deltaWindowSent(p.delta_window_sent),
+      deltaMinLateSamples(p.delta_min_late_samples),
+      deltaMinRefillToUseSamples(p.delta_min_refill_to_use_samples),
+      deltaStep(p.delta_step),
+      deltaMaxAbs(p.delta_max_abs),
+      deltaUpConfirmWindows(p.delta_up_confirm_windows),
+      deltaDownConfirmWindows(p.delta_down_confirm_windows),
+      deltaHoldWindowCount(p.delta_hold_windows),
+      lateTargetRate(p.late_target_rate),
+      lateUpperThreshold(p.late_upper_threshold),
+      lateLowerThreshold(p.late_lower_threshold),
+      lateWeight(p.late_weight),
+      refillToUseTargetCycles(p.refill_to_use_target_cycles),
+      refillToUseTargetAlpha(p.refill_to_use_target_alpha),
+      refillToUseEarlyRatio(p.refill_to_use_early_ratio),
+      refillToUseLateRatio(p.refill_to_use_late_ratio),
+      refillToUseWeight(p.refill_to_use_weight),
+      deltaPressureThreshold(p.delta_pressure_threshold),
+      accuracyMinSamples(p.accuracy_min_samples),
+      accuracyConfirmWindows(p.accuracy_confirm_windows),
+      usefulAccuracyThreshold(p.useful_accuracy_threshold),
+      unusedReplacementThreshold(p.unused_replacement_threshold),
+      disabledProbeIntervalCalls(p.disabled_probe_interval_calls),
+      reenableUsefulThreshold(p.reenable_useful_threshold),
+      reenableConfirmWindows(p.reenable_confirm_windows),
       feedbackStats(this),
       stream_array(p.xs_stream_entries, p.xs_stream_entries, p.xs_stream_indexing_policy,
                    p.xs_stream_replacement_policy, STREAMEntry()),
       streamBlkFilter(pfFilterSize)
 {
-    fatal_if(std::find(DEPTH_LEVELS.begin(), DEPTH_LEVELS.end(), depth) ==
-                 DEPTH_LEVELS.end(),
-             "xs_stream_depth must be one of 4, 8, 16, 32, 64, 96, or 128; "
-             "got %d", depth);
+    fatal_if(depthLevels.empty(), "depth_levels must not be empty");
+    fatal_if(!std::is_sorted(depthLevels.begin(), depthLevels.end()),
+             "depth_levels must be sorted");
+    fatal_if(std::find(depthLevels.begin(), depthLevels.end(), depth) ==
+                 depthLevels.end(),
+             "initial stream depth %d must be present in depth_levels", depth);
+    fatal_if(bdpWindowSent == 0 || deltaWindowSent == 0,
+             "controller windows must be non-zero");
+    fatal_if(disabledProbeIntervalCalls == 0,
+             "disabled_probe_interval_calls must be non-zero");
 }
 
 XsStreamPrefetcher::FeedbackStats::FeedbackStats(XsStreamPrefetcher *parent)
@@ -65,6 +108,30 @@ XsStreamPrefetcher::FeedbackStats::FeedbackStats(XsStreamPrefetcher *parent)
                "BDP upshift requests suppressed by hysteresis"),
       ADD_STAT(forecastClampedWindows, statistics::units::Count::get(),
                "BDP windows whose trend forecast reached its safety bound"),
+      ADD_STAT(bdpWindows, statistics::units::Count::get(),
+               "BDP control windows"),
+      ADD_STAT(bdpIncreaseRequests, statistics::units::Count::get(),
+               "BDP windows requesting an increase"),
+      ADD_STAT(bdpDecreaseRequests, statistics::units::Count::get(),
+               "BDP windows requesting a decrease"),
+      ADD_STAT(bdpDepthChanges, statistics::units::Count::get(),
+               "Committed BDP base-depth changes"),
+      ADD_STAT(deltaWindows, statistics::units::Count::get(),
+               "Delta control windows"),
+      ADD_STAT(deltaIncreaseRequests, statistics::units::Count::get(),
+               "Delta windows requesting an increase"),
+      ADD_STAT(deltaDecreaseRequests, statistics::units::Count::get(),
+               "Delta windows requesting a decrease"),
+      ADD_STAT(deltaHolds, statistics::units::Count::get(),
+               "Delta windows holding the current offset"),
+      ADD_STAT(accuracyWindows, statistics::units::Count::get(),
+               "Accuracy protection windows"),
+      ADD_STAT(accuracyDisableEvents, statistics::units::Count::get(),
+               "Accuracy protection disable events"),
+      ADD_STAT(accuracyReenableEvents, statistics::units::Count::get(),
+               "Accuracy protection re-enable events"),
+      ADD_STAT(finalDepthUpdates, statistics::units::Count::get(),
+               "Immediate final-depth recomputations"),
       ADD_STAT(windowsAtDepth, statistics::units::Count::get(),
                "Complete feedback windows by stream depth"),
       ADD_STAT(sent, statistics::units::Count::get(),
@@ -128,11 +195,29 @@ XsStreamPrefetcher::FeedbackStats::FeedbackStats(XsStreamPrefetcher *parent)
       ADD_STAT(lateRateEwma, statistics::units::Ratio::get(),
                "EWMA stream late rate used by the controller"),
       ADD_STAT(depth, statistics::units::Count::get(),
-               "Stream prefetch depth after the last complete window")
-{
-    windowsAtDepth.init(DEPTH_LEVELS.size());
-    for (size_t i = 0; i < DEPTH_LEVELS.size(); ++i) {
-        windowsAtDepth.subname(i, std::to_string(DEPTH_LEVELS[i]));
+               "Stream prefetch depth after the last complete window"),
+      ADD_STAT(bdpDepth, statistics::units::Count::get(),
+               "Current BDP base depth"),
+      ADD_STAT(delta, statistics::units::Count::get(),
+               "Current late/lead depth offset"),
+      ADD_STAT(finalDepth, statistics::units::Count::get(),
+               "Current BDP depth plus delta"),
+      ADD_STAT(lateRate, statistics::units::Ratio::get(),
+               "Late rate in the latest delta window"),
+      ADD_STAT(refillToUseTarget, statistics::units::Cycle::get(),
+               "Refill-to-use target used by delta control"),
+      ADD_STAT(deltaPressure, statistics::units::Ratio::get(),
+               "Latest normalized late/lead competition pressure"),
+      ADD_STAT(accuracy, statistics::units::Ratio::get(),
+               "PDB useful accuracy in the latest accuracy window"),
+      ADD_STAT(unusedReplacementRate, statistics::units::Ratio::get(),
+               "Unused PDB replacement rate in the latest window"),
+      ADD_STAT(accuracyDisabled, statistics::units::Count::get(),
+               "Whether accuracy protection disabled stream prefetching")
+    {
+    windowsAtDepth.init(parent->depthLevels.size());
+    for (size_t i = 0; i < parent->depthLevels.size(); ++i) {
+        windowsAtDepth.subname(i, std::to_string(parent->depthLevels[i]));
     }
 }
 
@@ -161,8 +246,6 @@ XsStreamPrefetcher::recordStreamProbe(
         result != Base::PrefetchProbeResult::Sent) {
         ++feedback.lateHits;
     }
-    if (feedback.sent == VALIDITYCHECKINTERVAL)
-        completeFeedbackWindow();
 }
 
 void
@@ -459,9 +542,272 @@ XsStreamPrefetcher::completeFeedbackWindow()
 }
 
 void
+XsStreamPrefetcher::recomputeDepth(const char *reason)
+{
+    const int old_depth = depth;
+    const int min_depth = depthLevels.front();
+    const int max_depth = depthLevels.back();
+    depth = std::clamp(bdpDepth + delta, min_depth, max_depth);
+    feedbackStats.bdpDepth = bdpDepth;
+    feedbackStats.delta = delta;
+    feedbackStats.finalDepth = depth;
+    feedbackStats.depth = depth;
+    if (depth != old_depth) {
+        ++feedbackStats.finalDepthUpdates;
+        DPRINTF(XsStreamPrefetcher,
+                "depth control: reason=%s bdpDepth=%d delta=%d depth=%d->%d\n",
+                reason, bdpDepth, delta, old_depth, depth);
+    }
+}
+
+void
+XsStreamPrefetcher::updateBdpController()
+{
+    const auto diff = [](uint64_t now, uint64_t old) { return now - old; };
+    const uint64_t sent = diff(feedback.sent, bdpSnapshot.sent);
+    const uint64_t response_samples = diff(
+        feedback.mshrResponseSamples, bdpSnapshot.mshrResponseSamples);
+    const uint64_t response_cycles = diff(
+        feedback.mshrResponseCycles, bdpSnapshot.mshrResponseCycles);
+    const uint64_t refill_samples = diff(
+        feedback.pdbRefillIntervalSamples, bdpSnapshot.pdbRefillIntervalSamples);
+    const uint64_t refill_cycles = diff(
+        feedback.pdbRefillIntervalCycles, bdpSnapshot.pdbRefillIntervalCycles);
+    bdpSnapshot.sent = feedback.sent;
+    bdpSnapshot.mshrResponseSamples = feedback.mshrResponseSamples;
+    bdpSnapshot.mshrResponseCycles = feedback.mshrResponseCycles;
+    bdpSnapshot.pdbRefillIntervalSamples = feedback.pdbRefillIntervalSamples;
+    bdpSnapshot.pdbRefillIntervalCycles = feedback.pdbRefillIntervalCycles;
+    ++feedbackStats.bdpWindows;
+    if (response_samples < bdpMinMshrSamples ||
+        refill_samples < bdpMinRefillSamples || refill_cycles == 0) {
+        DPRINTF(XsStreamPrefetcher,
+                "BDP window invalid: sent=%llu response=%llu refill=%llu\n",
+                sent, response_samples, refill_samples);
+        return;
+    }
+
+    const double raw_bdp = double(response_cycles) / refill_cycles;
+    const double bdp_blocks = raw_bdp * bdpCalibrationFactor;
+    if (!bdpEwmaValid) {
+        bdpEwma = bdp_blocks;
+        bdpEwmaValid = true;
+    } else {
+        bdpEwma += bdpEwmaAlpha * (bdp_blocks - bdpEwma);
+    }
+    feedbackStats.bandwidthDelayProduct = bdpEwma;
+
+    const bool request_up = bdpEwma > bdpUpRatio * bdpDepth;
+    const bool request_down = bdpEwma < bdpDownRatio * bdpDepth;
+    if (request_up)
+        ++feedbackStats.bdpIncreaseRequests;
+    if (request_down)
+        ++feedbackStats.bdpDecreaseRequests;
+    if (bdpStableWindows) {
+        --bdpStableWindows;
+        bdpUpScore = bdpDownScore = 0;
+        return;
+    }
+
+    if (request_up) {
+        ++bdpUpScore;
+        bdpDownScore = 0;
+    } else if (request_down) {
+        ++bdpDownScore;
+        bdpUpScore = 0;
+    } else {
+        bdpUpScore = bdpDownScore = 0;
+    }
+
+    auto level = std::lower_bound(depthLevels.begin(), depthLevels.end(), bdpEwma);
+    size_t target_index = level == depthLevels.end() ? depthLevels.size() - 1 :
+        size_t(std::distance(depthLevels.begin(), level));
+    if (target_index > 0 && level != depthLevels.end() &&
+        (target_index == depthLevels.size() - 1 ||
+         bdpEwma - depthLevels[target_index - 1] <
+             depthLevels[target_index] - bdpEwma)) {
+        --target_index;
+    }
+    const auto current = std::find(depthLevels.begin(), depthLevels.end(), bdpDepth);
+    const size_t current_index = std::distance(depthLevels.begin(), current);
+    if (request_up && bdpUpScore >= int(bdpUpConfirmWindows) &&
+        target_index > current_index) {
+        const size_t next = std::min(target_index,
+            current_index + size_t(bdpMaxLevelStep));
+        bdpDepth = depthLevels[next];
+        ++feedbackStats.bdpDepthChanges;
+        bdpStableWindows = bdpStableWindowCount;
+        bdpUpScore = bdpDownScore = 0;
+        recomputeDepth("bdp-up");
+    } else if (request_down && bdpDownScore >= int(bdpDownConfirmWindows) &&
+               target_index < current_index) {
+        const size_t next = current_index > bdpMaxLevelStep ?
+            std::max(target_index, current_index - size_t(bdpMaxLevelStep)) : 0;
+        bdpDepth = depthLevels[next];
+        ++feedbackStats.bdpDepthChanges;
+        bdpStableWindows = bdpStableWindowCount;
+        bdpUpScore = bdpDownScore = 0;
+        recomputeDepth("bdp-down");
+    }
+    DPRINTF(XsStreamPrefetcher,
+            "BDP control: sent=%llu bdp=%.3f base=%d request=%s upScore=%d downScore=%d\n",
+            sent, bdpEwma, bdpDepth,
+            request_up ? "up" : request_down ? "down" : "hold",
+            bdpUpScore, bdpDownScore);
+}
+
+void
+XsStreamPrefetcher::updateDeltaController()
+{
+    const auto diff = [](uint64_t now, uint64_t old) { return now - old; };
+    const uint64_t sent = diff(feedback.sent, deltaSnapshot.sent);
+    const uint64_t late = diff(feedback.mshrHits, deltaSnapshot.mshrHits) +
+        diff(feedback.demandMshrHits, deltaSnapshot.demandMshrHits);
+    const uint64_t use_samples = diff(
+        feedback.refillToUseSamples, deltaSnapshot.refillToUseSamples);
+    const uint64_t use_cycles = diff(
+        feedback.refillToUseCycles, deltaSnapshot.refillToUseCycles);
+    deltaSnapshot.sent = feedback.sent;
+    deltaSnapshot.mshrHits = feedback.mshrHits;
+    deltaSnapshot.demandMshrHits = feedback.demandMshrHits;
+    deltaSnapshot.refillToUseSamples = feedback.refillToUseSamples;
+    deltaSnapshot.refillToUseCycles = feedback.refillToUseCycles;
+    ++feedbackStats.deltaWindows;
+    if (sent < deltaMinLateSamples ||
+        use_samples < deltaMinRefillToUseSamples) {
+        ++feedbackStats.deltaHolds;
+        return;
+    }
+
+    const double late_rate = double(late) / sent;
+    const double refill_to_use = double(use_cycles) / use_samples;
+    if (refillToUseTargetCycles > 0.0) {
+        refillToUseTarget = refillToUseTargetCycles;
+        refillToUseTargetValid = true;
+    } else if (!refillToUseTargetValid) {
+        refillToUseTarget = refill_to_use;
+        refillToUseTargetValid = true;
+    } else {
+        refillToUseTarget += refillToUseTargetAlpha *
+            (refill_to_use - refillToUseTarget);
+    }
+    const double late_pressure = late_rate >= lateUpperThreshold ? 1.0 :
+        late_rate <= lateLowerThreshold ? -1.0 :
+        (late_rate - lateTargetRate) /
+            std::max(1e-9, lateUpperThreshold - lateLowerThreshold);
+    const double lead_ratio = refill_to_use / refillToUseTarget;
+    const double lead_pressure = lead_ratio >= refillToUseEarlyRatio ? -1.0 :
+        lead_ratio <= refillToUseLateRatio ? 1.0 : 0.0;
+    const double pressure = lateWeight * late_pressure +
+        refillToUseWeight * lead_pressure;
+    feedbackStats.lateRate = late_rate;
+    feedbackStats.refillToUseTarget = refillToUseTarget;
+    feedbackStats.deltaPressure = pressure;
+    if (deltaHoldWindows) {
+        --deltaHoldWindows;
+        ++feedbackStats.deltaHolds;
+        return;
+    }
+
+    const bool request_up = pressure > deltaPressureThreshold;
+    const bool request_down = pressure < -deltaPressureThreshold;
+    if (request_up) {
+        ++feedbackStats.deltaIncreaseRequests;
+        ++deltaUpScore;
+        deltaDownScore = 0;
+    } else if (request_down) {
+        ++feedbackStats.deltaDecreaseRequests;
+        ++deltaDownScore;
+        deltaUpScore = 0;
+    } else {
+        ++feedbackStats.deltaHolds;
+        deltaUpScore = deltaDownScore = 0;
+    }
+    if (request_up && deltaUpScore >= int(deltaUpConfirmWindows)) {
+        delta = std::min<int>(deltaMaxAbs, delta + deltaStep);
+        deltaUpScore = deltaDownScore = 0;
+        deltaHoldWindows = deltaHoldWindowCount;
+        recomputeDepth("delta-up");
+    } else if (request_down && deltaDownScore >= int(deltaDownConfirmWindows)) {
+        delta = std::max<int>(-int(deltaMaxAbs), delta - deltaStep);
+        deltaUpScore = deltaDownScore = 0;
+        deltaHoldWindows = deltaHoldWindowCount;
+        recomputeDepth("delta-down");
+    }
+    DPRINTF(XsStreamPrefetcher,
+            "delta control: sent=%llu late=%.4f refillToUse=%.3f target=%.3f pressure=%.3f delta=%d\n",
+            sent, late_rate, refill_to_use, refillToUseTarget, pressure, delta);
+}
+
+void
+XsStreamPrefetcher::updateAccuracyController()
+{
+    const auto diff = [](uint64_t now, uint64_t old) { return now - old; };
+    const uint64_t sent = diff(feedback.sent, accuracySnapshot.sent);
+    const uint64_t uses = diff(feedback.pdbLoadUses, accuracySnapshot.pdbLoadUses);
+    const uint64_t unused = diff(feedback.pdbUnusedReplacements,
+        accuracySnapshot.pdbUnusedReplacements);
+    const uint64_t refills = diff(feedback.pdbRefills, accuracySnapshot.pdbRefills);
+    accuracySnapshot.sent = feedback.sent;
+    accuracySnapshot.pdbLoadUses = feedback.pdbLoadUses;
+    accuracySnapshot.pdbUnusedReplacements = feedback.pdbUnusedReplacements;
+    accuracySnapshot.pdbRefills = feedback.pdbRefills;
+    ++feedbackStats.accuracyWindows;
+    const uint64_t samples = uses + unused;
+    if (sent < accuracyMinSamples || samples < accuracyMinSamples) {
+        return;
+    }
+    const double accuracy = double(uses) / samples;
+    const double unused_rate = refills ? double(unused) / refills : 0.0;
+    feedbackStats.accuracy = accuracy;
+    feedbackStats.unusedReplacementRate = unused_rate;
+    const bool bad = accuracy < usefulAccuracyThreshold &&
+        unused_rate > unusedReplacementThreshold;
+    if (!accuracyDisabled) {
+        accuracyBadWindows = bad ? accuracyBadWindows + 1 : 0;
+        if (accuracyBadWindows >= accuracyConfirmWindows) {
+            accuracyDisabled = true;
+            accuracyBadWindows = 0;
+            accuracyGoodWindows = 0;
+            ++feedbackStats.accuracyDisableEvents;
+            DPRINTF(XsStreamPrefetcher,
+                    "accuracy protection: disable accuracy=%.4f unused=%.4f\n",
+                    accuracy, unused_rate);
+        }
+    } else {
+        accuracyGoodWindows = accuracy >= reenableUsefulThreshold ?
+            accuracyGoodWindows + 1 : 0;
+        if (accuracyGoodWindows >= reenableConfirmWindows) {
+            accuracyDisabled = false;
+            accuracyGoodWindows = 0;
+            ++feedbackStats.accuracyReenableEvents;
+            DPRINTF(XsStreamPrefetcher,
+                    "accuracy protection: re-enable accuracy=%.4f\n", accuracy);
+        }
+    }
+    feedbackStats.accuracyDisabled = accuracyDisabled;
+}
+
+void
+XsStreamPrefetcher::maybeUpdateControllers()
+{
+    if (!enableAutoDepth)
+        return;
+    if (feedback.sent % deltaWindowSent == 0)
+        updateDeltaController();
+    if (feedback.sent % bdpWindowSent == 0)
+        updateBdpController();
+}
+
+void
 XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi,
                                       std::vector<AddrPriority> &addresses)
 {
+    if (accuracyDisabled) {
+        ++disabledProbeCalls;
+        if (disabledProbeCalls % disabledProbeIntervalCalls != 0)
+            return;
+    }
     Addr pc = pfi.getPC();
     Addr vaddr = pfi.getAddr();
     Addr block_addr = blockAddress(vaddr);
