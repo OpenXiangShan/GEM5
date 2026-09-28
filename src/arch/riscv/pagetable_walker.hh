@@ -317,6 +317,7 @@ namespace RiscvISA
 
             statistics::Scalar ptwMemCount;
             statistics::Scalar ptwMemCycle;
+            statistics::Scalar droppedSpecWalks;
             statistics::Formula ptwAvgMemLatency;
         } stats;
 
@@ -384,6 +385,28 @@ namespace RiscvISA
         Tick lastPtwMemCycleTick;
         /** Number of PTW memory requests currently in flight. */
         unsigned outstandingPtwMemReqs;
+
+        /** Cap on concurrent speculative (prefetch / pre-req) walks. */
+        unsigned ptwMaxSpecWalks;
+
+        /**
+         * Speculative walks dropped by the start() admission check. Their
+         * translations are finished asynchronously (with a page fault) from
+         * an event, never synchronously inside the translateTiming call
+         * stack (the DeferredPacket could be freed already).
+         */
+        struct SpecDropEntry
+        {
+            ThreadContext *tc;
+            BaseMMU::Translation *translation;
+            RequestPtr req;
+            BaseMMU::Mode mode;
+            Fault fault;
+        };
+        std::list<SpecDropEntry> specDropQueue;
+        unsigned countSpecWalks() const;
+        void processSpecDrops();
+        EventFunctionWrapper specDropEvent;
 
         void updatePtwMemCycleStats();
         bool ptwLevelAvailable(WalkerState *state, int level) const;
@@ -474,6 +497,8 @@ namespace RiscvISA
             ptwMissQueueHeadRequeued(false),
             lastPtwMemCycleTick(0),
             outstandingPtwMemReqs(0),
+            ptwMaxSpecWalks(params.ptw_max_spec_walks),
+            specDropEvent([this]{processSpecDrops();},name()),
             doL2TLBHitEvent([this]{dol2TLBHit();},name())
         {
         }
