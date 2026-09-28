@@ -371,7 +371,7 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     bdp_down_confirm_windows = Param.Unsigned(2, "BDP downshift confirmations")
     bdp_stable_windows = Param.Unsigned(4, "BDP post-change stable windows")
     bdp_ewma_alpha = Param.Float(0.25, "BDP EWMA alpha")
-    bdp_max_level_step = Param.Unsigned(1, "Maximum BDP levels per update")
+    bdp_max_level_step = Param.Unsigned(2, "Maximum BDP levels per update")
     delta_window_sent = Param.Unsigned(250, "Requests per delta control window")
     delta_min_late_samples = Param.Unsigned(64, "Minimum late samples for delta")
     delta_min_refill_to_use_samples = Param.Unsigned(
