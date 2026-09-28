@@ -346,7 +346,7 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     on_data  = True
     on_inst  = False
     xs_stream_depth = Param.Int(
-        16,
+        4,
         "Stream lookahead in cache blocks; allowed values: "
         "legacy fixed depth when automatic control is disabled"
     )
@@ -359,7 +359,7 @@ class XsStreamPrefetcher(QueuedPrefetcher):
         640,
         "L2 stream lookahead in cache blocks; zero derives from depth << 2"
     )
-    enable_auto_depth = Param.Bool(True, "Enable automatic stream prefetch depth")
+    enable_auto_depth = Param.Bool(False, "Enable automatic stream prefetch depth")
     enable_l3_stream_pre = Param.Bool(False, "enable l3 stream pre.")
     bdp_window_sent = Param.Unsigned(1000, "Requests per BDP control window")
     bdp_min_mshr_samples = Param.Unsigned(64, "Minimum MSHR samples for BDP")
