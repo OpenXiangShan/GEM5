@@ -162,6 +162,7 @@ class XSCompositePrefetcher : public Queued
     const bool phtPFAhead;
     const int phtPFLevel;
     const bool enablePhtConfDest;
+    const bool enablePhtL3Dest;
 
     const unsigned phtHighConfThreshold;
     const unsigned phtMedConfThreshold;
@@ -192,6 +193,7 @@ class XSCompositePrefetcher : public Queued
         statistics::Scalar smsPhtIssuedL1;
         statistics::Scalar smsPhtIssuedL2;
         statistics::Scalar smsPhtIssuedL3;
+        statistics::Scalar smsPhtFilteredL3;
     } stats;
 
   public:

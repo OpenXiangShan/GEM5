@@ -35,6 +35,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       phtPFAhead(p.pht_pf_ahead),
       phtPFLevel(std::min(p.pht_pf_level, (int) 3)),
       enablePhtConfDest(p.enable_pht_conf_dest),
+      enablePhtL3Dest(p.enable_pht_l3_dest),
       phtHighConfThreshold(p.pht_high_conf_threshold),
       phtMedConfThreshold(p.pht_med_conf_threshold),
       phtLowConfThreshold(p.pht_low_conf_threshold),
@@ -936,6 +937,10 @@ XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<Addr
             } else if (pht_entry->hist[hist_idx].calcSaturation() > 0.5) {
                 level = phtPFLevel;
             }
+            if (!sms::phtDestAllowed(level, enablePhtL3Dest)) {
+                stats.smsPhtFilteredL3++;
+                return false;
+            }
             if (level == 0) {
                 return false;
             }
@@ -1176,7 +1181,9 @@ XSCompositePrefetcher::XSCompositeStats::XSCompositeStats(statistics::Group *par
       ADD_STAT(smsPhtIssuedL2, statistics::units::Count::get(),
                "SMS PHT candidates classified to L2"),
       ADD_STAT(smsPhtIssuedL3, statistics::units::Count::get(),
-               "SMS PHT candidates classified to L3")
+               "SMS PHT candidates classified to L3"),
+      ADD_STAT(smsPhtFilteredL3, statistics::units::Count::get(),
+               "SMS PHT L3 candidates dropped by destination policy")
 {
 }
 

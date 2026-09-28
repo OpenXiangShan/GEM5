@@ -1295,6 +1295,8 @@ class XSCompositePrefetcher(QueuedPrefetcher):
         "Use PHT confidence and trigger access to select L1/L2/L3 destinations "
         "and per-offset first-touch PHT updates"
     )
+    enable_pht_l3_dest = Param.Bool(
+        True, "Allow SMS PHT candidates classified for L3 to be issued")
     pht_high_conf_threshold = Param.Unsigned(
         6, "PHT raw counter treated as near-saturated/high confidence")
     pht_med_conf_threshold = Param.Unsigned(

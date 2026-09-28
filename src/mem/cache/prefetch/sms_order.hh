@@ -145,6 +145,12 @@ phtDestLevel(unsigned raw, bool is_trigger, unsigned high_thres,
     return 0;
 }
 
+inline bool
+phtDestAllowed(int level, bool enable_l3_dest)
+{
+    return level != 3 || enable_l3_dest;
+}
+
 inline void
 mergeNewOffsetOrders(uint64_t existing_bits, uint64_t incoming_bits,
                      const std::vector<OrderScore> &incoming_orders,

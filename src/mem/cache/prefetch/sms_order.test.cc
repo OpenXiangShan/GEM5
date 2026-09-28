@@ -136,6 +136,15 @@ TEST(SmsPhtDest, NonTriggerSendsOnlyHighAndMedium)
                            DefaultMedConfThreshold, DefaultLowConfThreshold), 0);
 }
 
+TEST(SmsPhtDest, L3GateDoesNotAffectOtherDestinations)
+{
+    EXPECT_TRUE(phtDestAllowed(0, false));
+    EXPECT_TRUE(phtDestAllowed(1, false));
+    EXPECT_TRUE(phtDestAllowed(2, false));
+    EXPECT_FALSE(phtDestAllowed(3, false));
+    EXPECT_TRUE(phtDestAllowed(3, true));
+}
+
 } // namespace sms
 } // namespace prefetch
 } // namespace gem5
