@@ -382,9 +382,9 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     delta_up_confirm_windows = Param.Unsigned(2, "Delta upshift confirmations")
     delta_down_confirm_windows = Param.Unsigned(2, "Delta downshift confirmations")
     delta_hold_windows = Param.Unsigned(1, "Delta post-change hold windows")
-    late_target_rate = Param.Float(0.05, "Target late rate")
-    late_upper_threshold = Param.Float(0.08, "Late increase threshold")
-    late_lower_threshold = Param.Float(0.03, "Late decrease threshold")
+    late_target_rate = Param.Float(0.03, "Target late rate")
+    late_upper_threshold = Param.Float(0.05, "Late increase threshold")
+    late_lower_threshold = Param.Float(0.02, "Late decrease threshold")
     late_weight = Param.Float(1.0, "Late pressure weight")
     refill_to_use_target_cycles = Param.Float(
         0.0, "Fixed refill-to-use target; zero learns a target"
