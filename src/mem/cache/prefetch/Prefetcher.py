@@ -393,10 +393,10 @@ class XsStreamPrefetcher(QueuedPrefetcher):
         0.25, "Refill-to-use target EWMA alpha"
     )
     refill_to_use_early_ratio = Param.Float(
-        1.50, "Ratio above target that indicates early refill-to-use"
+        1.25, "Ratio above target that indicates early refill-to-use"
     )
     refill_to_use_late_ratio = Param.Float(
-        0.75, "Ratio below target that indicates late refill-to-use"
+        0.85, "Ratio below target that indicates late refill-to-use"
     )
     refill_to_use_weight = Param.Float(1.0, "Refill-to-use pressure weight")
     delta_pressure_threshold = Param.Float(
