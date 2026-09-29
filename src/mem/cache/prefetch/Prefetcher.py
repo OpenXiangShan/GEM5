@@ -373,7 +373,7 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     bdp_ewma_alpha = Param.Float(0.25, "BDP EWMA alpha")
     bdp_max_level_step = Param.Unsigned(2, "Maximum BDP levels per up update")
     bdp_max_down_level_step = Param.Unsigned(
-        1, "Maximum BDP levels per down update"
+        2, "Maximum BDP levels per down update"
     )
     bdp_fast_up_min_depth = Param.Unsigned(
         32, "Minimum target depth that permits a multi-level up update"
