@@ -75,6 +75,7 @@ class XsStreamPrefetcher : public Queued
     const unsigned bdpStableWindowCount;
     const double bdpEwmaAlpha;
     const unsigned bdpMaxLevelStep;
+    const unsigned bdpMaxDownLevelStep;
     const unsigned deltaWindowSent;
     const unsigned deltaMinLateSamples;
     const unsigned deltaMinRefillToUseSamples;

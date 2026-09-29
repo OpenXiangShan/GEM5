@@ -34,6 +34,7 @@ XsStreamPrefetcher::XsStreamPrefetcher(const XsStreamPrefetcherParams &p)
       bdpStableWindowCount(p.bdp_stable_windows),
       bdpEwmaAlpha(p.bdp_ewma_alpha),
       bdpMaxLevelStep(p.bdp_max_level_step),
+      bdpMaxDownLevelStep(p.bdp_max_down_level_step),
       deltaWindowSent(p.delta_window_sent),
       deltaMinLateSamples(p.delta_min_late_samples),
       deltaMinRefillToUseSamples(p.delta_min_refill_to_use_samples),
@@ -75,8 +76,8 @@ XsStreamPrefetcher::XsStreamPrefetcher(const XsStreamPrefetcherParams &p)
              "initial stream depth %d must be present in depth_levels", depth);
     fatal_if(bdpWindowSent == 0 || deltaWindowSent == 0,
              "controller windows must be non-zero");
-    fatal_if(bdpMaxLevelStep == 0,
-             "bdp_max_level_step must be non-zero");
+    fatal_if(bdpMaxLevelStep == 0 || bdpMaxDownLevelStep == 0,
+             "BDP level steps must be non-zero");
     fatal_if(bdpUpConfirmWindows == 0 || bdpDownConfirmWindows == 0,
              "BDP confirmation windows must be non-zero");
     fatal_if(disabledProbeIntervalCalls == 0,
@@ -464,7 +465,7 @@ XsStreamPrefetcher::completeFeedbackWindow()
                     const size_t distance = std::distance(
                         target_level, depth_level);
                     const size_t step = std::min(
-                        distance, size_t(bdpMaxLevelStep));
+                        distance, size_t(bdpMaxDownLevelStep));
                     depth = *(depth_level - step);
                     depth_decision = "decrease";
                 } else {
@@ -670,8 +671,9 @@ XsStreamPrefetcher::updateBdpController()
         recomputeDepth("bdp-up");
     } else if (request_down && bdpDownScore >= int(bdpDownConfirmWindows) &&
                target_index < current_index) {
-        const size_t next = current_index > bdpMaxLevelStep ?
-            std::max(target_index, current_index - size_t(bdpMaxLevelStep)) : 0;
+        const size_t next = current_index > bdpMaxDownLevelStep ?
+            std::max(target_index,
+                     current_index - size_t(bdpMaxDownLevelStep)) : 0;
         bdpDepth = depthLevels[next];
         ++feedbackStats.bdpDepthChanges;
         bdpStableWindows = bdpStableWindowCount;
