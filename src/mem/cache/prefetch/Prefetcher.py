@@ -377,7 +377,7 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     delta_min_refill_to_use_samples = Param.Unsigned(
         32, "Minimum refill-to-use samples for delta"
     )
-    delta_step = Param.Int(4, "Delta adjustment step")
+    delta_step = Param.Int(2, "Delta adjustment step")
     delta_max_abs = Param.Unsigned(4, "Absolute delta limit")
     delta_up_confirm_windows = Param.Unsigned(2, "Delta upshift confirmations")
     delta_down_confirm_windows = Param.Unsigned(2, "Delta downshift confirmations")
