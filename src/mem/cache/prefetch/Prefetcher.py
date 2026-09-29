@@ -387,7 +387,7 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     late_lower_threshold = Param.Float(0.03, "Late decrease threshold")
     late_weight = Param.Float(1.0, "Late pressure weight")
     refill_to_use_target_cycles = Param.Float(
-        0.0, "Fixed refill-to-use target; zero learns a target"
+        3000.0, "Fixed refill-to-use target; zero learns a target"
     )
     refill_to_use_target_alpha = Param.Float(
         0.25, "Refill-to-use target EWMA alpha"
