@@ -390,7 +390,7 @@ class XsStreamPrefetcher(QueuedPrefetcher):
         0.0, "Fixed refill-to-use target; zero learns a target"
     )
     refill_to_use_target_alpha = Param.Float(
-        0.25, "Refill-to-use target EWMA alpha"
+        0.5, "Refill-to-use target EWMA alpha"
     )
     refill_to_use_early_ratio = Param.Float(
         1.50, "Ratio above target that indicates early refill-to-use"
