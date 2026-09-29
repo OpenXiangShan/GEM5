@@ -381,7 +381,7 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     delta_max_abs = Param.Unsigned(4, "Absolute delta limit")
     delta_up_confirm_windows = Param.Unsigned(2, "Delta upshift confirmations")
     delta_down_confirm_windows = Param.Unsigned(2, "Delta downshift confirmations")
-    delta_hold_windows = Param.Unsigned(1, "Delta post-change hold windows")
+    delta_hold_windows = Param.Unsigned(2, "Delta post-change hold windows")
     late_target_rate = Param.Float(0.05, "Target late rate")
     late_upper_threshold = Param.Float(0.08, "Late increase threshold")
     late_lower_threshold = Param.Float(0.03, "Late decrease threshold")
