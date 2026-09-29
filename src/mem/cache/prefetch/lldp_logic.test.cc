@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include "mem/cache/prefetch/quality_control.hh"
 #include "mem/lldp.hh"
 
 using namespace gem5::lldp;
@@ -139,8 +140,64 @@ TEST(LldpHint, ConsumerGenerationRejectsReplacedChild)
     EXPECT_FALSE(hint.consumerMatches(4, 0));
 }
 
-TEST(LldpFeedback, ValidSignalsAreDisabledByPolicy)
+TEST(LldpQuality, SaturationAndGenerationSafety)
 {
-    EXPECT_FALSE(spatialFeedbackAccepted(false));
-    EXPECT_FALSE(spatialFeedbackAccepted(true));
+    gem5::prefetch::PrefetchQualityControl control;
+    gem5::prefetch::PrefetchQualityControl::Policy policy;
+    policy.minSamples = 2;
+    policy.minAccuracyPct = 50;
+    policy.maxLatePct = 50;
+    const gem5::prefetch::PrefetchQualityControl::Key key{
+        gem5::enums::PrefetchSourceType::LLDPC, 0x100, 0x200, 0};
+    auto handle = control.touch(key);
+    EXPECT_TRUE(control.admit(handle, policy, 0));
+    control.issued(handle);
+    control.observe(handle,
+                    gem5::prefetch::PrefetchQualityControl::Outcome::Useful);
+    control.issued(handle);
+    control.observe(handle,
+                    gem5::prefetch::PrefetchQualityControl::Outcome::Useful);
+    EXPECT_EQ(control.updateBoost(handle, policy), 1);
+    EXPECT_TRUE(control.valid(handle));
+    auto replacement = control.touch({
+        gem5::enums::PrefetchSourceType::LLDPC, 0x100, 0x200, 0});
+    EXPECT_EQ(replacement.generation, handle.generation);
+}
+
+TEST(LldpQuality, SpatialBoostRequiresIndependentEvidence)
+{
+    using Control = gem5::prefetch::PrefetchQualityControl;
+    Control control;
+    Control::Policy strict;
+    strict.minSamples = 32;
+    strict.minAccuracyPct = 75;
+    strict.maxLatePct = 10;
+    auto handle = control.touch({
+        gem5::enums::PrefetchSourceType::LLDPS, 0x300, 0, 0});
+    for (unsigned i = 0; i < 31; ++i) {
+        control.issued(handle);
+        control.observe(handle, Control::Outcome::Useful);
+    }
+    EXPECT_EQ(control.updateBoost(handle, strict), 0);
+    control.issued(handle);
+    control.observe(handle, Control::Outcome::Useful);
+    EXPECT_EQ(control.updateBoost(handle, strict), 1);
+    for (unsigned i = 0; i < 12; ++i) {
+        control.issued(handle);
+        control.observe(handle, Control::Outcome::Unused);
+    }
+    EXPECT_EQ(control.updateBoost(handle, strict), -1);
+}
+
+TEST(LldpChainDepth, OnlyFirstFamilyHopAllowed)
+{
+    using gem5::enums::PrefetchSourceType;
+    using gem5::prefetch::allowLldpChainTrigger;
+    EXPECT_TRUE(allowLldpChainTrigger(PrefetchSourceType::LLDP, 0, 1));
+    EXPECT_TRUE(allowLldpChainTrigger(PrefetchSourceType::LLDPS, 0, 1));
+    EXPECT_TRUE(allowLldpChainTrigger(PrefetchSourceType::LLDPT, 0, 1));
+    EXPECT_FALSE(allowLldpChainTrigger(PrefetchSourceType::LLDPC, 1, 1));
+    EXPECT_FALSE(allowLldpChainTrigger(PrefetchSourceType::LLDPC, 0, 1));
+    EXPECT_FALSE(allowLldpChainTrigger(PrefetchSourceType::SStream, 0, 1));
+    EXPECT_TRUE(allowLldpChainTrigger(PrefetchSourceType::LLDPC, 1, 2));
 }

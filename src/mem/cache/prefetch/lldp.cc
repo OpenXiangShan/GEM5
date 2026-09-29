@@ -89,6 +89,18 @@ LLDPrefetcher::LLDPStats::LLDPStats(statistics::Group *parent)
                "LLDPS feedback signals sent to stream/stride prefetchers"),
       ADD_STAT(spatialFeedbackValid, statistics::units::Count::get(),
                "LLDPS feedback signals accepted by the queue"),
+      ADD_STAT(chainTriggerAccepted, statistics::units::Count::get(),
+               "LLDP-family prefetch triggers admitted for one more chain hop"),
+      ADD_STAT(chainStoppedBySource, statistics::units::Count::get(),
+               "LLDP-family prefetch triggers rejected by source policy"),
+      ADD_STAT(chainStoppedByDepth, statistics::units::Count::get(),
+               "LLDP-family prefetch triggers rejected by chain-depth limit"),
+      ADD_STAT(qualityRejected, statistics::units::Count::get(),
+               "LLDP candidates rejected by bounded quality control"),
+      ADD_STAT(qualityBoosts, statistics::units::Count::get(),
+               "LLDPS quality feedback boosts"),
+      ADD_STAT(qualityRevokes, statistics::units::Count::get(),
+               "LLDPS quality feedback revocations"),
       ADD_STAT(samplerReplacementCnt, statistics::units::Count::get(),
                "SamplerTable victim count distribution"),
       ADD_STAT(candidateGenerated, statistics::units::Count::get(), "Candidate lifecycles generated"),
@@ -187,13 +199,68 @@ LLDPrefetcher::LLDPrefetcher(const LLDPrefetcherParams &p)
       maxConf((1U << std::min(p.confidence_bits, 8U)) - 1),
       initialConf(p.initial_confidence), producerInitialConf(p.producer_initial_confidence),
       producerThreshold(p.producer_threshold), consumerThreshold(p.consumer_threshold),
-      immediateThreshold(p.immediate_threshold), trainingCPU(p.training_cpu), stats(this)
+      immediateThreshold(p.immediate_threshold),
+      enableSpatialFeedback(p.enable_spatial_feedback),
+      maxLldpcChainDepth(p.max_lldpc_chain_depth),
+      enableQualityControl(p.enable_quality_control),
+      enableLldpcQuality(p.enable_lldpc_quality),
+      enableLldpsFeedbackQuality(p.enable_lldps_feedback_quality),
+      qualityPolicy{p.quality_min_samples, p.quality_min_accuracy_pct,
+                    p.quality_max_late_pct, p.quality_probe_interval,
+                    p.quality_max_outstanding,
+                    p.quality_max_pressure_pct},
+      lldpsFeedbackPolicy{p.lldps_feedback_min_samples,
+                          p.lldps_feedback_min_accuracy_pct,
+                          p.lldps_feedback_max_late_pct,
+                          p.quality_probe_interval,
+                          p.quality_max_outstanding,
+                          p.quality_max_pressure_pct},
+      trainingCPU(p.training_cpu), stats(this)
 {
     fatal_if(p.confidence_bits == 0 || p.confidence_bits > 8 || !trainingQueueSize ||
         initialConf > maxConf || producerInitialConf > maxConf ||
         producerThreshold > maxConf || consumerThreshold > maxConf ||
         immediateThreshold > maxConf, "Invalid LLDP confidence/FIFO parameters");
     fatal_if(!useVirtualAddresses, "LLDP replay generates virtual addresses");
+    fatal_if(qualityPolicy.minAccuracyPct > 100 ||
+             qualityPolicy.maxLatePct > 100 ||
+             qualityPolicy.maxPressurePct > 100 ||
+             lldpsFeedbackPolicy.minAccuracyPct > 100 ||
+             lldpsFeedbackPolicy.maxLatePct > 100,
+             "Invalid LLDP quality percentages");
+}
+
+PrefetchQualityControl::Key
+LLDPrefetcher::qualityKey(PrefetchSourceType source, Addr producer_pc,
+                          Addr consumer_pc, ContextID context) const
+{
+    return {source, producer_pc, consumer_pc, context};
+}
+
+void
+LLDPrefetcher::observeQuality(
+    uint64_t candidate_id, PrefetchQualityControl::Outcome outcome)
+{
+    if (!enableQualityControl || !candidate_id)
+        return;
+    const auto it = candidateOwners.find(candidate_id);
+    if (it == candidateOwners.end() || !it->second.hasQualityHandle)
+        return;
+    const auto owner = it->second;
+    qualityControl.observe(owner.qualityHandle, outcome);
+    if (owner.source == PrefetchSourceType::LLDPS &&
+        enableLldpsFeedbackQuality && owner.feedbackSource !=
+        PrefetchSourceType::PF_NONE) {
+        const int change = qualityControl.updateBoost(
+            owner.qualityHandle, lldpsFeedbackPolicy);
+        if (change > 0) {
+            stats.qualityBoosts++;
+            sendSpatialFeedback(owner.feedbackSource, owner.feedbackPC, true);
+        } else if (change < 0) {
+            stats.qualityRevokes++;
+            sendSpatialFeedback(owner.feedbackSource, owner.feedbackPC, false);
+        }
+    }
 }
 
 void
@@ -779,6 +846,8 @@ LLDPrefetcher::prefetchDropped(const DeferredPacket &dpp)
 {
     const auto metadata = dpp.pfInfo.getXsMetadata();
     if (metadata.prefetchCandidateId) {
+        observeQuality(metadata.prefetchCandidateId,
+                       PrefetchQualityControl::Outcome::Dropped);
         updateMetaOwner(metadata.prefetchCandidateId, 4);
         if (candidateOwners.erase(metadata.prefetchCandidateId))
             stats.candidateDropped++;
@@ -1099,6 +1168,19 @@ LLDPrefetcher::loadTrain(const PacketPtr &pkt, bool miss)
     const bool lldp_pf = pkt && pkt->req && pkt->req->isPrefetch() &&
         pkt->req->hasXsMetadata() &&
         isLldpSource(pkt->req->getXsMetadata().prefetchSource);
+    if (lldp_pf) {
+        const auto &metadata = pkt->req->getXsMetadata();
+        if (!allowLldpChainTrigger(metadata.prefetchSource,
+                                   metadata.prefetchLldpChainDepth,
+                                   maxLldpcChainDepth)) {
+            if (metadata.prefetchSource == PrefetchSourceType::LLDPC)
+                stats.chainStoppedBySource++;
+            else
+                stats.chainStoppedByDepth++;
+            return {};
+        }
+        stats.chainTriggerAccepted++;
+    }
     if (!pkt->isRead() || (!pkt->isDemand() && !spatial_pf && !lldp_pf) ||
         pkt->req->isInstFetch() || pkt->req->isUncacheable() ||
         pkt->req->isCacheMaintenance() ||
@@ -1185,6 +1267,28 @@ LLDPrefetcher::queueCandidate(const PacketPtr &demand,
             emitSpatialFeedback(demand, false);
         return false;
     }
+    PrefetchQualityControl::Handle quality_handle{};
+    bool has_quality_handle = false;
+    if (enableQualityControl && (source == PrefetchSourceType::LLDPC ||
+                                 source == PrefetchSourceType::LLDPS)) {
+        const Addr consumer_pc = source == PrefetchSourceType::LLDPC && consumer ?
+            (findProducer(hint.producerPC, demand->req->contextId()) >= 0 ?
+             table[findProducer(hint.producerPC, demand->req->contextId())]
+                 .consumers[*consumer].consumerPC : 0) : 0;
+        const Addr producer_pc = source == PrefetchSourceType::LLDPS &&
+            demand->req->hasPC() ? demand->req->getPC() : hint.producerPC;
+        quality_handle = qualityControl.touch(qualityKey(
+            source, producer_pc, consumer_pc, demand->req->contextId()));
+        const unsigned pressure = queueSize ?
+            unsigned(std::min<size_t>(100, (pfq.size() * 100) / queueSize)) : 100;
+        if (source == PrefetchSourceType::LLDPC && enableLldpcQuality &&
+            !qualityControl.admit(
+                quality_handle, qualityPolicy, pressure)) {
+            stats.qualityRejected++;
+            return false;
+        }
+        has_quality_handle = true;
+    }
     const Addr origin_addr = demand->req->hasVaddr() ?
         demand->req->getVaddr() : demand->req->getPaddr();
     PrefetchInfo origin(demand, origin_addr, true,
@@ -1196,6 +1300,16 @@ LLDPrefetcher::queueCandidate(const PacketPtr &demand,
     const uint64_t id = (uint64_t(requestorId) << 48) | candidateId;
     auto metadata = Request::XsMetadata(
         source, 0, hint.producerPC, hint.generation, id);
+    if (source == PrefetchSourceType::LLDPC) {
+        const unsigned prior = demand->req->getXsMetadata().prefetchLldpChainDepth;
+        if (!allowLldpChainTrigger(
+                demand->req->getXsMetadata().prefetchSource,
+                prior, maxLldpcChainDepth)) {
+            stats.chainStoppedByDepth++;
+            return false;
+        }
+        metadata.prefetchLldpChainDepth = prior + 1;
+    }
     metadata.prefetchLldpAddrP = addr_p;
     metadata.prefetchLldpVirtual = !meta_hit;
     if (consumer) {
@@ -1255,6 +1369,12 @@ LLDPrefetcher::queueCandidate(const PacketPtr &demand,
         owner.metaSet = meta_hit->set;
         owner.metaWay = meta_hit->way;
         owner.metaGeneration = meta_hit->generation;
+        owner.feedbackPC = demand->req->hasPC() ? demand->req->getPC() : 0;
+        owner.feedbackSource = demand->req->hasXsMetadata() ?
+            demand->req->getXsMetadata().prefetchSource :
+            PrefetchSourceType::PF_NONE;
+        owner.qualityHandle = quality_handle;
+        owner.hasQualityHandle = has_quality_handle;
         candidateOwners[id] = owner;
     } else if (row >= 0 && consumer && *consumer < SubEntries) {
         const auto &sub = table[row].consumers[*consumer];
@@ -1265,9 +1385,16 @@ LLDPrefetcher::queueCandidate(const PacketPtr &demand,
         owner.consumerGeneration = sub.generation;
         owner.consumerPC = sub.consumerPC;
         owner.source = source;
+        owner.feedbackPC = demand->req->hasPC() ? demand->req->getPC() : 0;
+        owner.feedbackSource = demand->req->hasXsMetadata() ?
+            demand->req->getXsMetadata().prefetchSource :
+            PrefetchSourceType::PF_NONE;
+        owner.qualityHandle = quality_handle;
+        owner.hasQualityHandle = has_quality_handle;
         candidateOwners[id] = owner;
     }
-    if (source == PrefetchSourceType::LLDPS)
+    if (source == PrefetchSourceType::LLDPS &&
+        (!enableQualityControl || !enableLldpsFeedbackQuality))
         emitSpatialFeedback(demand, true);
     return true;
 }
@@ -1275,7 +1402,7 @@ LLDPrefetcher::queueCandidate(const PacketPtr &demand,
 void
 LLDPrefetcher::emitSpatialFeedback(const PacketPtr &demand, bool valid)
 {
-    if (!spatialFeedbackHandler || !demand || !demand->req ||
+    if (!enableSpatialFeedback || !spatialFeedbackHandler || !demand || !demand->req ||
         !demand->req->hasPC() || !demand->req->hasXsMetadata())
         return;
     const auto source = demand->req->getXsMetadata().prefetchSource;
@@ -1283,23 +1410,25 @@ LLDPrefetcher::emitSpatialFeedback(const PacketPtr &demand, bool valid)
         source != PrefetchSourceType::StoreStream &&
         source != PrefetchSourceType::SStride)
         return;
-    // v2.0 spatial feedback is temporarily disabled.  Keep the callback and
-    // signal counter so the path remains observable, but never allow a
-    // successful LLDPS candidate to increase Stream/Stride L1 degree.
-    const bool feedback_valid = lldp::spatialFeedbackAccepted(valid);
+    sendSpatialFeedback(source, demand->req->getPC(), valid);
+}
+
+void
+LLDPrefetcher::sendSpatialFeedback(PrefetchSourceType source, Addr pc,
+                                    bool valid)
+{
+    if (!enableSpatialFeedback || !spatialFeedbackHandler)
+        return;
     stats.spatialFeedbackSignals++;
-    stats.spatialFeedbackValid += feedback_valid;
-    spatialFeedback(source, demand->req->getPC(), feedback_valid);
+    stats.spatialFeedbackValid += valid;
+    spatialFeedback(source, pc, valid);
 }
 
 void
 LLDPrefetcher::spatialFeedback(PrefetchSourceType source, Addr pc, bool valid)
 {
-    // Keep the public interface fail-closed as well as the internal emitter:
-    // callers cannot re-enable v2.0 feedback by passing valid=true here.
-    if (spatialFeedbackHandler)
-        spatialFeedbackHandler(source, pc,
-                               lldp::spatialFeedbackAccepted(valid));
+    if (enableSpatialFeedback && spatialFeedbackHandler)
+        spatialFeedbackHandler(source, pc, valid);
 }
 
 void
@@ -1308,6 +1437,18 @@ LLDPrefetcher::hintData(const lldp::Hint &hint, const PacketPtr &demand,
 {
     if (!hint.valid || !data || hint.offset + hint.size > size)
         return;
+    if (hint.chain && demand->req->hasXsMetadata() &&
+        !allowLldpChainTrigger(
+            demand->req->getXsMetadata().prefetchSource,
+            demand->req->getXsMetadata().prefetchLldpChainDepth,
+            maxLldpcChainDepth)) {
+        const auto source = demand->req->getXsMetadata().prefetchSource;
+        if (source == PrefetchSourceType::LLDPC)
+            stats.chainStoppedBySource++;
+        else
+            stats.chainStoppedByDepth++;
+        return;
+    }
     const auto meta = demand->req->hasXsMetadata() ?
         demand->req->getXsMetadata().instXsMetadata : nullptr;
     if (meta && meta->squashed)
@@ -1480,6 +1621,8 @@ LLDPrefetcher::notifyPrefetchUseful(PrefetchSourceType source,
     Queued::notifyPrefetchUseful(source);
     if (isLldpSource(source) && candidate_id) {
         stats.candidateUseful++;
+        observeQuality(candidate_id,
+                       PrefetchQualityControl::Outcome::Useful);
         updateMetaOwner(candidate_id, 0);
         const auto it = candidateOwners.find(candidate_id);
         if (it != candidateOwners.end() && !it->second.meta &&
@@ -1510,6 +1653,8 @@ LLDPrefetcher::prefetchUnused(PrefetchSourceType source,
     Queued::prefetchUnused(source);
     if (isLldpSource(source) && candidate_id) {
         stats.candidateUnused++;
+        observeQuality(candidate_id,
+                       PrefetchQualityControl::Outcome::Unused);
         updateMetaOwner(candidate_id, 3);
         candidateOwners.erase(candidate_id);
     }
@@ -1528,6 +1673,8 @@ LLDPrefetcher::notifyPrefetchMerged(uint64_t candidate_id)
     if (!candidate_id)
         return;
     stats.candidateMerged++;
+    observeQuality(candidate_id,
+                   PrefetchQualityControl::Outcome::DemandMerged);
     updateMetaOwner(candidate_id, 1);
     candidateOwners.erase(candidate_id);
 }
@@ -1575,6 +1722,8 @@ LLDPrefetcher::pfHitInCache(PrefetchSourceType source,
     }
     if (isLldpSource(source) && candidate_id) {
         updateMetaOwner(candidate_id, 2);
+        observeQuality(candidate_id,
+                       PrefetchQualityControl::Outcome::DemandMerged);
         const auto it = candidateOwners.find(candidate_id);
         if (it != candidateOwners.end() && !it->second.meta &&
             table[it->second.row].generation == it->second.generation &&
@@ -1610,6 +1759,8 @@ LLDPrefetcher::pfHitInMSHR(PrefetchSourceType source,
     }
     if (isLldpSource(source) && candidate_id) {
         updateMetaOwner(candidate_id, 2);
+        observeQuality(candidate_id,
+                       PrefetchQualityControl::Outcome::DemandMerged);
         const auto it = candidateOwners.find(candidate_id);
         if (it != candidateOwners.end() && !it->second.meta &&
             table[it->second.row].generation == it->second.generation &&
@@ -1645,6 +1796,8 @@ LLDPrefetcher::pfHitInWB(PrefetchSourceType source,
     }
     if (isLldpSource(source) && candidate_id) {
         updateMetaOwner(candidate_id, 2);
+        observeQuality(candidate_id,
+                       PrefetchQualityControl::Outcome::DemandMerged);
         const auto it = candidateOwners.find(candidate_id);
         if (it != candidateOwners.end() && !it->second.meta &&
             table[it->second.row].generation == it->second.generation &&
@@ -1664,8 +1817,13 @@ LLDPrefetcher::recordIssuedPrefetchStats(const PacketPtr &pkt)
 {
     Base::recordIssuedPrefetchStats(pkt);
     if (pkt && pkt->req && pkt->req->hasXsMetadata() &&
-        pkt->req->getXsMetadata().prefetchCandidateId)
+        pkt->req->getXsMetadata().prefetchCandidateId) {
         stats.candidateIssued++;
+        const auto it = candidateOwners.find(
+            pkt->req->getXsMetadata().prefetchCandidateId);
+        if (it != candidateOwners.end() && it->second.hasQualityHandle)
+            qualityControl.issued(it->second.qualityHandle);
+    }
 }
 } // namespace prefetch
 } // namespace gem5

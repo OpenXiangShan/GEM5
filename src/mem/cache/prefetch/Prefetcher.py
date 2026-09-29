@@ -257,6 +257,34 @@ class LLDPrefetcher(QueuedPrefetcher):
     producer_threshold = Param.Unsigned(2, "Producer hint confidence threshold")
     consumer_threshold = Param.Unsigned(3, "Consumer replay confidence threshold")
     immediate_threshold = Param.Unsigned(3, "Load immediate stability threshold")
+    enable_spatial_feedback = Param.Bool(True,
+        "Allow useful LLDPS candidates to adjust Stream/Stride degree")
+    max_lldpc_chain_depth = Param.Unsigned(1,
+        "Maximum extra LLDP-prefetch-triggered chain hops")
+    enable_quality_control = Param.Bool(True,
+        "Enable bounded LLDP quality admission and feedback state")
+    enable_lldpc_quality = Param.Bool(True,
+        "Use quality feedback to admit LLDPC candidates")
+    enable_lldps_feedback_quality = Param.Bool(True,
+        "Require useful LLDPS evidence before degree feedback")
+    quality_min_samples = Param.Unsigned(8,
+        "Completed LLDP samples before quality decisions")
+    quality_min_accuracy_pct = Param.Unsigned(50,
+        "Minimum useful fraction for LLDP quality admission")
+    quality_max_late_pct = Param.Unsigned(25,
+        "Maximum demand-merged fraction for LLDP quality admission")
+    lldps_feedback_min_samples = Param.Unsigned(32,
+        "Completed LLDPS samples required before spatial degree feedback")
+    lldps_feedback_min_accuracy_pct = Param.Unsigned(75,
+        "Minimum useful fraction for LLDPS degree feedback")
+    lldps_feedback_max_late_pct = Param.Unsigned(10,
+        "Maximum demand-merged fraction for LLDPS degree feedback")
+    quality_probe_interval = Param.Unsigned(16,
+        "Cold quality entry probe interval")
+    quality_max_outstanding = Param.Unsigned(4,
+        "Maximum outstanding candidates tracked per quality key")
+    quality_max_pressure_pct = Param.Unsigned(75,
+        "PFQ pressure percentage at which quality admission stops")
 
 
 class XSStridePrefetcher(QueuedPrefetcher):

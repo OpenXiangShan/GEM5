@@ -395,6 +395,7 @@ class Request
         o3::XsDynInstMetaPtr instXsMetadata;
         PrefetchSourceType prefetchSource;
         int prefetchDepth;
+        uint8_t prefetchLldpChainDepth;
         // Provenance for hardware-prefetch requests.  The producer PC is
         // the PC of the demand which triggered a spatial prefetch; the
         // remaining fields identify one LLDP candidate across its lifetime.
@@ -417,7 +418,8 @@ class Request
             validXsMetadata(false),
             instXsMetadata(nullptr),
             prefetchSource(PF_NONE),
-            prefetchDepth(0), prefetchProducerPC(0), prefetchConsumerPC(0),
+            prefetchDepth(0), prefetchLldpChainDepth(0),
+            prefetchProducerPC(0), prefetchConsumerPC(0),
             prefetchGeneration(0),
             prefetchCandidateId(0), prefetchLldpAddrP(0),
             prefetchLldpVirtual(false),
@@ -428,6 +430,7 @@ class Request
             validXsMetadata(true),
             instXsMetadata(instMeta),
             prefetchSource(PF_NONE), prefetchDepth(0),
+            prefetchLldpChainDepth(0),
             prefetchProducerPC(0), prefetchConsumerPC(0), prefetchGeneration(0),
             prefetchCandidateId(0), prefetchLldpAddrP(0),
             prefetchLldpVirtual(false),
@@ -438,6 +441,7 @@ class Request
             validXsMetadata(true),
             instXsMetadata(nullptr),
             prefetchSource(pfSource), prefetchDepth(0),
+            prefetchLldpChainDepth(0),
             prefetchProducerPC(0), prefetchConsumerPC(0), prefetchGeneration(0),
             prefetchCandidateId(0), prefetchLldpAddrP(0),
             prefetchLldpVirtual(false),
@@ -448,6 +452,7 @@ class Request
             validXsMetadata(true),
             instXsMetadata(nullptr),
             prefetchSource(pfSource), prefetchDepth(pfDepth),
+            prefetchLldpChainDepth(0),
             prefetchProducerPC(0), prefetchConsumerPC(0), prefetchGeneration(0),
             prefetchCandidateId(0), prefetchLldpAddrP(0),
             prefetchLldpVirtual(false),
@@ -459,6 +464,7 @@ class Request
                    uint64_t candidate_id)
             : validXsMetadata(true), instXsMetadata(nullptr),
               prefetchSource(pfSource), prefetchDepth(pfDepth),
+              prefetchLldpChainDepth(0),
               prefetchProducerPC(producer_pc),
               prefetchConsumerPC(0),
               prefetchGeneration(generation),
@@ -472,6 +478,7 @@ class Request
             instXsMetadata = nullptr;
             prefetchSource = PF_NONE;
             prefetchDepth = 0;
+            prefetchLldpChainDepth = 0;
             prefetchProducerPC = 0;
             prefetchConsumerPC = 0;
             prefetchGeneration = 0;

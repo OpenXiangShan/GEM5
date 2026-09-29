@@ -316,6 +316,14 @@ XSStridePrefetcher::spatialFeedback(Addr pc, bool valid)
         for (StrideEntry &entry : strideRedundant)
             if (entry.isValid() && entry.pc == pc)
                 entry.lldpFeedback = true;
+    } else {
+        lldpFeedbackPCs.erase(pc);
+        for (StrideEntry &entry : strideUnique)
+            if (entry.isValid() && entry.pc == pc)
+                entry.lldpFeedback = false;
+        for (StrideEntry &entry : strideRedundant)
+            if (entry.isValid() && entry.pc == pc)
+                entry.lldpFeedback = false;
     }
 }
 

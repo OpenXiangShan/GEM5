@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "cpu/o3/dyn_inst_xsmeta.hh"
+#include "mem/cache/prefetch/quality_control.hh"
 #include "mem/cache/prefetch/queued.hh"
 
 namespace gem5
@@ -187,6 +188,10 @@ class LLDPrefetcher : public Queued
         unsigned metaSet{0};
         unsigned metaWay{0};
         uint32_t metaGeneration{0};
+        Addr feedbackPC{0};
+        PrefetchSourceType feedbackSource{PrefetchSourceType::PF_NONE};
+        PrefetchQualityControl::Handle qualityHandle{};
+        bool hasQualityHandle{false};
     };
     std::unordered_map<uint64_t, CandidateOwner> candidateOwners;
     std::optional<Training> s0;
@@ -199,6 +204,14 @@ class LLDPrefetcher : public Queued
     const uint8_t producerThreshold;
     const uint8_t consumerThreshold;
     const uint8_t immediateThreshold;
+    const bool enableSpatialFeedback;
+    const unsigned maxLldpcChainDepth;
+    const bool enableQualityControl;
+    const bool enableLldpcQuality;
+    const bool enableLldpsFeedbackQuality;
+    const PrefetchQualityControl::Policy qualityPolicy;
+    const PrefetchQualityControl::Policy lldpsFeedbackPolicy;
+    PrefetchQualityControl qualityControl;
     BaseCPU *trainingCPU;
     SpatialFeedbackHandler spatialFeedbackHandler;
 
@@ -238,6 +251,9 @@ class LLDPrefetcher : public Queued
             samplerReservoirBypasses, pairTrustPromotions,
             pairTrustReplacements, pairTrustProbes;
         statistics::Scalar spatialFeedbackSignals, spatialFeedbackValid;
+        statistics::Scalar chainTriggerAccepted, chainStoppedBySource,
+            chainStoppedByDepth;
+        statistics::Scalar qualityRejected, qualityBoosts, qualityRevokes;
         statistics::Vector samplerReplacementCnt;
         statistics::Scalar candidateGenerated, candidateQueued, candidateIssued,
             candidateDropped, candidateMerged, candidateUseful, candidateUnused,
@@ -300,6 +316,12 @@ class LLDPrefetcher : public Queued
     void ageMetaTable();
     void updateMetaOwner(uint64_t candidate_id, int result);
     void emitSpatialFeedback(const PacketPtr &demand, bool valid);
+    void sendSpatialFeedback(PrefetchSourceType source, Addr pc, bool valid);
+    void observeQuality(uint64_t candidate_id,
+                        PrefetchQualityControl::Outcome outcome);
+    PrefetchQualityControl::Key qualityKey(PrefetchSourceType source,
+                                           Addr producer_pc, Addr consumer_pc,
+                                           ContextID context) const;
     bool queueCandidate(const PacketPtr &demand, const lldp::Hint &hint,
                         Addr addr_p, Addr addr_c,
                         PrefetchSourceType source,

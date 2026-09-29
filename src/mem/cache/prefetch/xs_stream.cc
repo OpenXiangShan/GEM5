@@ -81,6 +81,11 @@ XsStreamPrefetcher::spatialFeedback(Addr pc, bool valid)
         for (STREAMEntry &entry : stream_array)
             if (entry.isValid() && entry.pc == pc)
                 entry.lldpFeedback = true;
+    } else {
+        lldpFeedbackPCs.erase(pc);
+        for (STREAMEntry &entry : stream_array)
+            if (entry.isValid() && entry.pc == pc)
+                entry.lldpFeedback = false;
     }
 }
 
