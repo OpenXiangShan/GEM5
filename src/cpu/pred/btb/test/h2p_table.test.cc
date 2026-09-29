@@ -33,7 +33,7 @@ TEST(H2PTableTest, TwoBranchesShareLine)
 {
     H2PTable table(128);
     const Addr first = 0x1040;
-    const Addr second = 0x107c;
+    const Addr second = 0x105c;
     for (int i = 0; i < 3; ++i) {
         table.trainMispred(first);
         table.trainMispred(second);
@@ -46,8 +46,8 @@ TEST(H2PTableTest, ThirdBranchInLineIsDropped)
 {
     H2PTable table(128);
     const Addr first = 0x1040;
-    const Addr second = 0x107c;
-    const Addr third = 0x1060;
+    const Addr second = 0x105c;
+    const Addr third = 0x1050;
     for (int i = 0; i < 3; ++i) {
         table.trainMispred(first);
         table.trainMispred(second);
@@ -90,17 +90,16 @@ TEST(H2PTableTest, AllocationFilterStillUpdatesExistingBranch)
     EXPECT_TRUE(table.lookup(pc).h2p);
 }
 
-TEST(H2PTableTest, FullyAssociativeTableAvoidsSetConflicts)
+TEST(H2PTableTest, TwoWaySetAssociativityHandlesDistinctLines)
 {
     H2PTable table(4);
-    constexpr Addr oldSetStride = H2PTable::LineBytes * 16;
-    for (unsigned entry = 0; entry < 4; ++entry) {
-        const Addr pc = 0x1000 + entry * oldSetStride;
+    const std::array<Addr, 4> pcs = {
+        0x1000, 0x1040, 0x1020, 0x1060};
+    for (const auto pc : pcs)
         table.trainMispred(pc);
-    }
 
-    for (unsigned entry = 0; entry < 4; ++entry)
-        EXPECT_TRUE(table.lookup(0x1000 + entry * oldSetStride).hit);
+    for (const auto pc : pcs)
+        EXPECT_TRUE(table.lookup(pc).hit);
 }
 
 TEST(H2PTableTest, FullTableUsesLruWhenAllCountersAreActive)

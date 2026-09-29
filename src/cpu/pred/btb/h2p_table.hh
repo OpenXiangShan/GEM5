@@ -3,7 +3,6 @@
 
 #include <array>
 #include <cstdint>
-#include <unordered_map>
 #include <vector>
 
 #include "base/types.hh"
@@ -14,7 +13,9 @@ namespace gem5::branch_prediction::btb_pred
 class H2PTable
 {
   public:
-    static constexpr unsigned LineBytes = 64;
+    // Match the 32-byte alignment used by TAGE/MBTB fetch blocks.
+    static constexpr unsigned LineBytes = 32;
+    static constexpr unsigned Ways = 2;
     static constexpr unsigned BranchesPerLine = 2;
     static constexpr unsigned CounterMax = 7;
 
@@ -59,11 +60,11 @@ class H2PTable
     };
 
     const unsigned numEntries;
-    std::vector<SetEntry> table;
-    // Fully-associative lookup index; the vector remains the replacement store.
-    std::unordered_map<Addr, unsigned> lineToIndex;
+    const unsigned numSets;
+    std::vector<std::array<SetEntry, Ways>> table;
     uint64_t useClock = 0;
 
+    unsigned setIndex(Addr pc) const;
     SetEntry *findLine(Addr pc);
     const SetEntry *findLine(Addr pc) const;
 };

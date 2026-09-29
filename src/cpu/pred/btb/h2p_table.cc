@@ -7,33 +7,38 @@ namespace gem5::branch_prediction::btb_pred
 {
 
 H2PTable::H2PTable(unsigned entries)
-    : numEntries(entries), table(entries)
+    : numEntries(entries), numSets(std::max(1u, entries / Ways)),
+      table(numSets)
 {
-    assert(entries > 0);
+    assert(entries > 0 && entries % Ways == 0);
+}
+
+unsigned
+H2PTable::setIndex(Addr pc) const
+{
+    return (pc / LineBytes) % numSets;
 }
 
 H2PTable::SetEntry *
 H2PTable::findLine(Addr pc)
 {
     const Addr line = pc / LineBytes;
-    const auto it = lineToIndex.find(line);
-    if (it == lineToIndex.end())
-        return nullptr;
-
-    auto &entry = table[it->second];
-    return entry.valid && entry.line == line ? &entry : nullptr;
+    for (auto &entry : table[setIndex(pc)]) {
+        if (entry.valid && entry.line == line)
+            return &entry;
+    }
+    return nullptr;
 }
 
 const H2PTable::SetEntry *
 H2PTable::findLine(Addr pc) const
 {
     const Addr line = pc / LineBytes;
-    const auto it = lineToIndex.find(line);
-    if (it == lineToIndex.end())
-        return nullptr;
-
-    const auto &entry = table[it->second];
-    return entry.valid && entry.line == line ? &entry : nullptr;
+    for (const auto &entry : table[setIndex(pc)]) {
+        if (entry.valid && entry.line == line)
+            return &entry;
+    }
+    return nullptr;
 }
 
 H2PTable::LookupResult
@@ -79,8 +84,9 @@ H2PTable::trainMispred(Addr pc, bool allowAllocate)
     }
 
     if (!line) {
-        line = &table[0];
-        for (auto &candidate : table) {
+        auto &set = table[setIndex(pc)];
+        line = &set[0];
+        for (auto &candidate : set) {
             if (!candidate.valid) {
                 line = &candidate;
                 break;
@@ -100,13 +106,9 @@ H2PTable::trainMispred(Addr pc, bool allowAllocate)
                 line = &candidate;
         }
         result.replaced = line->valid;
-        if (line->valid)
-            lineToIndex.erase(line->line);
         *line = SetEntry{};
         line->valid = true;
         line->line = pc / LineBytes;
-        lineToIndex[line->line] =
-            static_cast<unsigned>(line - table.data());
     }
 
     line->lastUse = useClock;
@@ -132,16 +134,18 @@ unsigned
 H2PTable::age()
 {
     unsigned aged = 0;
-    for (auto &line : table) {
-        if (!line.valid)
-            continue;
-        for (auto &branch : line.branches) {
-            if (!branch.valid || branch.counter == 0)
+    for (auto &set : table) {
+        for (auto &line : set) {
+            if (!line.valid)
                 continue;
-            --branch.counter;
-            ++aged;
-            if (branch.counter == 0)
-                branch.valid = false;
+            for (auto &branch : line.branches) {
+                if (!branch.valid || branch.counter == 0)
+                    continue;
+                --branch.counter;
+                ++aged;
+                if (branch.counter == 0)
+                    branch.valid = false;
+            }
         }
     }
     return aged;
