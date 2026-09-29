@@ -385,7 +385,7 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     late_target_rate = Param.Float(0.08, "Target late rate")
     late_upper_threshold = Param.Float(0.12, "Late increase threshold")
     late_lower_threshold = Param.Float(0.05, "Late decrease threshold")
-    late_weight = Param.Float(1.0, "Late pressure weight")
+    late_weight = Param.Float(1.5, "Late pressure weight")
     refill_to_use_target_cycles = Param.Float(
         0.0, "Fixed refill-to-use target; zero learns a target"
     )
@@ -398,7 +398,7 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     refill_to_use_late_ratio = Param.Float(
         0.75, "Ratio below target that indicates late refill-to-use"
     )
-    refill_to_use_weight = Param.Float(1.0, "Refill-to-use pressure weight")
+    refill_to_use_weight = Param.Float(0.75, "Refill-to-use pressure weight")
     delta_pressure_threshold = Param.Float(
         0.25, "Absolute pressure threshold for delta"
     )
