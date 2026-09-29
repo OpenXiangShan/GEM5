@@ -375,6 +375,9 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     bdp_max_down_level_step = Param.Unsigned(
         1, "Maximum BDP levels per down update"
     )
+    bdp_fast_up_min_depth = Param.Unsigned(
+        32, "Minimum target depth that permits a multi-level up update"
+    )
     delta_window_sent = Param.Unsigned(250, "Requests per delta control window")
     delta_min_late_samples = Param.Unsigned(64, "Minimum late samples for delta")
     delta_min_refill_to_use_samples = Param.Unsigned(

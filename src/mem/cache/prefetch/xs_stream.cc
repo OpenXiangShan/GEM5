@@ -35,6 +35,7 @@ XsStreamPrefetcher::XsStreamPrefetcher(const XsStreamPrefetcherParams &p)
       bdpEwmaAlpha(p.bdp_ewma_alpha),
       bdpMaxLevelStep(p.bdp_max_level_step),
       bdpMaxDownLevelStep(p.bdp_max_down_level_step),
+      bdpFastUpMinDepth(p.bdp_fast_up_min_depth),
       deltaWindowSent(p.delta_window_sent),
       deltaMinLateSamples(p.delta_min_late_samples),
       deltaMinRefillToUseSamples(p.delta_min_refill_to_use_samples),
@@ -447,8 +448,11 @@ XsStreamPrefetcher::completeFeedbackWindow()
                 if (depth_level + 1 != depthLevels.end()) {
                     const size_t distance = std::distance(
                         depth_level, target_level);
+                    const size_t max_step =
+                        target_depth >= int(bdpFastUpMinDepth) ?
+                        bdpMaxLevelStep : 1;
                     const size_t step = std::min(
-                        distance, size_t(bdpMaxLevelStep));
+                        distance, max_step);
                     depth = *(depth_level + step);
                     depth_decision = "increase";
                 } else {
@@ -662,8 +666,11 @@ XsStreamPrefetcher::updateBdpController()
     const size_t current_index = std::distance(depthLevels.begin(), current);
     if (request_up && bdpUpScore >= int(bdpUpConfirmWindows) &&
         target_index > current_index) {
+        const size_t max_step =
+            depthLevels[target_index] >= int(bdpFastUpMinDepth) ?
+            bdpMaxLevelStep : 1;
         const size_t next = std::min(target_index,
-            current_index + size_t(bdpMaxLevelStep));
+            current_index + max_step);
         bdpDepth = depthLevels[next];
         ++feedbackStats.bdpDepthChanges;
         bdpStableWindows = bdpStableWindowCount;
