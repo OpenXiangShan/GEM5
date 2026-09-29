@@ -373,9 +373,9 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     bdp_ewma_alpha = Param.Float(0.25, "BDP EWMA alpha")
     bdp_max_level_step = Param.Unsigned(1, "Maximum BDP levels per update")
     delta_window_sent = Param.Unsigned(250, "Requests per delta control window")
-    delta_min_late_samples = Param.Unsigned(64, "Minimum late samples for delta")
+    delta_min_late_samples = Param.Unsigned(128, "Minimum late samples for delta")
     delta_min_refill_to_use_samples = Param.Unsigned(
-        32, "Minimum refill-to-use samples for delta"
+        64, "Minimum refill-to-use samples for delta"
     )
     delta_step = Param.Int(4, "Delta adjustment step")
     delta_max_abs = Param.Unsigned(4, "Absolute delta limit")
