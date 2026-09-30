@@ -8,14 +8,18 @@ namespace gem5::branch_prediction::btb_pred::test
 TEST(H2PTableTest, ShadowLookupDoesNotChangeReplacementOrder)
 {
     H2PTable table(4);
-    for (Addr pc : {0x1000, 0x1040}) {
+    constexpr Addr setStride = 2 * H2PTable::LineBytes;
+    const Addr first = 0x1000;
+    const Addr second = first + setStride;
+    const Addr replacement = second + setStride;
+    for (Addr pc : {first, second}) {
         for (int i = 0; i < 3; ++i)
             table.trainMispred(pc);
     }
-    EXPECT_TRUE(table.peek(0x1000).h2p);
-    table.trainMispred(0x1080);
-    EXPECT_FALSE(table.peek(0x1000).hit);
-    EXPECT_TRUE(table.peek(0x1040).h2p);
+    EXPECT_TRUE(table.peek(first).h2p);
+    table.trainMispred(replacement);
+    EXPECT_FALSE(table.peek(first).hit);
+    EXPECT_TRUE(table.peek(second).h2p);
 }
 
 TEST(H2PTableTest, RequiresThreeMispredictions)
@@ -53,6 +57,18 @@ TEST(H2PTableTest, TwoBranchesShareLine)
     }
     EXPECT_TRUE(table.lookup(first).h2p);
     EXPECT_TRUE(table.lookup(second).h2p);
+}
+
+TEST(H2PTableTest, BranchesAcross32ByteBoundaryShare64ByteLine)
+{
+    static_assert(H2PTable::LineBytes == 64);
+    H2PTable table(128);
+    const Addr first = 0x101c;
+    const Addr second = 0x1020;
+    EXPECT_TRUE(table.trainMispred(first).allocated);
+    EXPECT_TRUE(table.trainMispred(second).allocated);
+    EXPECT_TRUE(table.lookup(first).hit);
+    EXPECT_TRUE(table.lookup(second).hit);
 }
 
 TEST(H2PTableTest, ThirdBranchInLineIsDropped)
@@ -106,8 +122,10 @@ TEST(H2PTableTest, AllocationFilterStillUpdatesExistingBranch)
 TEST(H2PTableTest, TwoWaySetAssociativityHandlesDistinctLines)
 {
     H2PTable table(4);
+    constexpr Addr lineStride = H2PTable::LineBytes;
     const std::array<Addr, 4> pcs = {
-        0x1000, 0x1040, 0x1020, 0x1060};
+        0x1000, 0x1000 + lineStride, 0x1000 + 2 * lineStride,
+        0x1000 + 3 * lineStride};
     for (const auto pc : pcs)
         table.trainMispred(pc);
 
