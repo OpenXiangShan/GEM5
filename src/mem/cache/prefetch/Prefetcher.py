@@ -1384,6 +1384,9 @@ class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
         False,
         "Offload low-accuracy upstream pfahead sources to L3 when CDP dominates L2"
     )
+    offload_stream_only = Param.Bool(False, "Only offload SStride and SPht source hints")
+    cdp_ratio_threshold = Param.Float(0.5, "CDP dequeue ratio required for offload")
+    accuracy_threshold = Param.Float(0.5, "Source accuracy below which offload is allowed")
 
 class L3CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     type = 'L3CompositeWithWorkerPrefetcher'

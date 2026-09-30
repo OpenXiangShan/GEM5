@@ -27,7 +27,10 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
       enableDespacitoStream(p.enable_despacito_stream),
       lldp(dynamic_cast<LLDPrefetcher *>(p.lldp)),
       enableLLDP(p.enable_lldp),
-      offloadLowAccuracy(p.offload_low_accuracy)
+      offloadLowAccuracy(p.offload_low_accuracy),
+      cdpRatioThreshold(p.cdp_ratio_threshold),
+      accuracyThreshold(p.accuracy_threshold),
+      offloadStreamOnly(p.offload_stream_only)
 {
     setSharedFilterContextQualified(true);
     cdp->setSharedFilterContextQualified(true);
@@ -92,13 +95,17 @@ L2CompositeWithWorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
 {
     if (offloadLowAccuracy) {
         auto ptr = reinterpret_cast<DeferredPacket *>(dpp);
+        if (offloadStreamOnly && ptr->pfInfo.getXsMetadata().prefetchSource != PrefetchSourceType::SStride && ptr->pfInfo.getXsMetadata().prefetchSource != PrefetchSourceType::SPht) {
+            WorkerPrefetcher::rxHint(dpp);
+            return;
+        }
         float cdp_ratio =
             (prefetchStats.pfDequeued_srcs[PrefetchSourceType::CDP].value()) /
             (prefetchStats.pfDequeued.value());
         float acc = (prefetchStats.pfUseful_srcs[ptr->pfInfo.getXsMetadata().prefetchSource].value()) /
                     (prefetchStats.pfDequeued_srcs[ptr->pfInfo.getXsMetadata().prefetchSource].value());
 
-        if (hasHintDownStream() && cdp_ratio > 0.5 && acc < 0.5) {
+        if (hasHintDownStream() && cdp_ratio > cdpRatioThreshold && acc < accuracyThreshold) {
             hintDownStream->rxHint(dpp);
             return;
         }
