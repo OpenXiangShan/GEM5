@@ -59,6 +59,18 @@ H2PTable::lookup(Addr pc)
     return {};
 }
 
+H2PTable::LookupResult
+H2PTable::peek(Addr pc) const
+{
+    const auto *line = findLine(pc);
+    if (!line)
+        return {};
+    for (const auto &branch : line->branches)
+        if (branch.valid && branch.pc == pc)
+            return {branch.counter > 2, true};
+    return {};
+}
+
 H2PTable::TrainResult
 H2PTable::trainMispred(Addr pc, bool allowAllocate)
 {

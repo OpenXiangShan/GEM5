@@ -187,6 +187,7 @@ class Decode
 
     void squashBranchHistory(ThreadID tid, InstSeqNum squash_seq_num,
                              bool include_squash_inst);
+    void recordAPFBranch(const DynInstPtr &inst);
 
     void setFetchStage(Fetch *fetch_stage)
     {

@@ -382,6 +382,8 @@ Rename::drainSanityCheck() const
 void
 Rename::squash(const InstSeqNum &squash_seq_num, ThreadID tid)
 {
+    if (tid == 0)
+        cpu->getFetch()->squashAPFReplay(squash_seq_num);
     DPRINTF(Rename, "[tid:%i] [squash sn:%llu] Squashing instructions.\n",
         tid,squash_seq_num);
 
@@ -410,6 +412,19 @@ Rename::tick()
     moveInstsToBuffer();
 
     checkSquash();
+
+    // APF feeds already-decoded uops through the existing bounded Rename FIFO.
+    // Do not admit them on a squash/ROB-walk cycle.
+    if (!fromCommit->commitInfo[0].squash &&
+        !fromCommit->commitInfo[0].robSquashing) {
+        auto *fetch = cpu->getFetch();
+        for (unsigned n = 0; n < renameWidth && !fixedbuffer[0].full(); ++n) {
+            auto inst = fetch->takeAPFReplay(localSquashVer[0]);
+            if (!inst)
+                break;
+            fixedbuffer[0].push_back(inst);
+        }
+    }
 
     releasePhysRegs();
 

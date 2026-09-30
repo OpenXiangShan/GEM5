@@ -159,6 +159,37 @@ class BTBMGSC : public TimedBaseBTBPredictor
     void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;
 
+    void predictShadow(Addr pc, const boost::dynamic_bitset<> &history,
+                       FullBTBPrediction &pred) override
+    {
+        if (!isEnabled())
+            return;
+        refreshPredictionMeta(pc, history, pred);
+        for (auto &direction : pred.condTakens) {
+            auto it = threadMeta[pred.tid]->preds.find(direction.first);
+            if (it != threadMeta[pred.tid]->preds.end())
+                direction.second = it->second.taken;
+        }
+    }
+
+    SpeculativeCheckpoint saveSpeculativeState(ThreadID tid) override
+    {
+        auto history = threadHistory[tid];
+        auto meta = threadMeta[tid];
+        auto bw = bwIndex, local = lIndex, imli = iIndex;
+        auto global = gIndex, path = pIndex, bias = biasIndex;
+        return [this, tid, history, meta, bw, local, imli, global, path, bias] {
+            threadHistory[tid] = history;
+            threadMeta[tid] = meta;
+            bwIndex = bw;
+            lIndex = local;
+            iIndex = imli;
+            gIndex = global;
+            pIndex = path;
+            biasIndex = bias;
+        };
+    }
+
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
     void refreshPredictionMeta(Addr startAddr,
                                const boost::dynamic_bitset<> &history,

@@ -145,6 +145,32 @@ class BTBTAGE : public TimedBaseBTBPredictor
     void tick() override;
     void dryRunCycle(Addr startAddr) override;
     // Make predictions for a stream of instructions and record in stage preds
+    void predictShadow(Addr pc, const boost::dynamic_bitset<> &history,
+                       FullBTBPrediction &pred) override
+    {
+        refreshPredictionMeta(pc, history, pred);
+        pred.condTakens.clear();
+        for (const auto &entry : pred.btbEntries) {
+            if (entry.valid && entry.isCond)
+                pred.condTakens.emplace_back(entry.pc,
+                    threadMeta[pred.tid]->preds.at(entry.pc).taken);
+        }
+    }
+
+    SpeculativeCheckpoint saveSpeculativeState(ThreadID tid) override
+    {
+        auto history = threadHistory[tid];
+        auto meta = threadMeta[tid];
+        auto bank = lastPredBankId;
+        auto valid = predBankValid;
+        return [this, tid, history, meta, bank, valid] {
+            threadHistory[tid] = history;
+            threadMeta[tid] = meta;
+            lastPredBankId = bank;
+            predBankValid = valid;
+        };
+    }
+
     void putPCHistory(Addr startAddr,
                       const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;

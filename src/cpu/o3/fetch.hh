@@ -54,6 +54,7 @@
 #include "arch/riscv/types.hh"
 #include "base/statistics.hh"
 #include "config/the_isa.hh"
+#include "cpu/o3/alternate_path.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/iew.hh"
@@ -70,6 +71,7 @@
 #include "enums/SMTFetchPolicy.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
+#include "params/RiscvDecoder.hh"
 #include "sim/eventq.hh"
 #include "sim/probe/probe.hh"
 
@@ -103,6 +105,41 @@ struct ResolveQueueEntry
  */
 class Fetch
 {
+  public:
+    bool apfReplayPending() const;
+    DynInstPtr takeAPFReplay(const SquashVersion &version);
+    void squashAPFReplay(InstSeqNum seq);
+    void commitAPFUop(const DynInstPtr &inst);
+    // Discard shadow paths; return whether promoted state needs a squash.
+    bool invalidateAPF();
+    void resolveAPF(const branch_prediction::btb_pred::BranchOutcome &branch);
+
+  private:
+    bool apfEnabled = false;
+    bool apfInvalidated = false;
+    unsigned apfBufferEntries = 0, apfBufferUops = 0, apfWidth = 0;
+    unsigned apfGenerationCycles = 0, apfBranchEntries = 0;
+    unsigned apfReplayWidth = 0;
+    Cycles apfFetchLatency = Cycles(1);
+    std::unique_ptr<RiscvDecoderParams> apfDecoderParams;
+    std::unique_ptr<InstDecoder> apfDecoder;
+    std::unique_ptr<APFStats> apfStats;
+    std::unique_ptr<AlternatePathContext> apfActive;
+    std::vector<std::unique_ptr<AlternatePathContext>> apfBuffers;
+    std::unique_ptr<AlternatePathContext> apfRecovery;
+    DynInstPtr apfRecoverySource;
+    std::deque<DynInstPtr> apfReplay;
+    uint64_t apfEpoch = 0;
+    unsigned apfReplayThisCycle = 0;
+    Tick apfReplayTick = 0;
+    void initAPF(const BaseO3CPUParams &params);
+    void tickAPF();
+    bool readAPFBytes(Addr pc, uint32_t &bits);
+    void generateAPF(AlternatePathContext &path);
+    void squashAPF(const DynInstPtr &inst, Addr redirect, InstSeqNum seq);
+    void promoteAPF();
+    void clearAPF();
+
   public:
     /**
      * IcachePort class for instruction fetch.

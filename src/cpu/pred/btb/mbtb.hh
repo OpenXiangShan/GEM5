@@ -153,6 +153,20 @@ class MBTB : public TimedBaseBTBPredictor
     /** Get prediction BTBMeta
      *  @return Returns the prediction meta
      */
+    void predictShadow(Addr pc, const boost::dynamic_bitset<> &history,
+                       FullBTBPrediction &pred) override
+    {
+        pred.btbEntries = getPredictedEntriesNoSideEffect(
+            pc, pred.tid, pred.asidHash);
+        refreshPredictionMeta(pc, history, pred);
+    }
+
+    SpeculativeCheckpoint saveSpeculativeState(ThreadID tid) override
+    {
+        auto meta = threadMeta[tid];
+        return [this, tid, meta] { threadMeta[tid] = meta; };
+    }
+
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
     void refreshPredictionMeta(Addr startAddr,
                                const boost::dynamic_bitset<> &history,

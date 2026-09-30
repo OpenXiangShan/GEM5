@@ -355,6 +355,34 @@ struct MgscHarness
 
 } // namespace
 
+TEST(BTBMGSCTest, ShadowCheckpointRestoresHistoryMetaAndPrediction)
+{
+    MgscHarness harness;
+    auto &mgsc = harness.mgsc;
+    const auto entry = makeCondBTBEntry(0x1000);
+    FullBTBPrediction pred;
+    pred.bbStart = entry.pc;
+    pred.tid = 0;
+    pred.btbEntries = {entry};
+    pred.condTakens = {{entry.pc, false}};
+    pred.tageInfoForMgscs[entry.pc] = TageInfoForMGSC{};
+    mgsc.predictShadow(entry.pc, harness.ghr, pred);
+    auto before = mgsc.getPredictionMeta();
+    const auto saved = BTBMGSC::TestAccess::preds(mgsc).at(entry.pc);
+    auto restore = mgsc.saveSpeculativeState(0);
+    mgsc.specUpdateGHist(harness.ghr, pred, DirectionHistoryUpdate{1, true});
+    auto shadowHistory = harness.ghr;
+    histShiftIn(1, true, shadowHistory);
+    mgsc.predictShadow(0x2040, shadowHistory, pred);
+    EXPECT_NE(mgsc.getPredictionMeta(), before);
+    restore();
+    EXPECT_EQ(mgsc.getPredictionMeta(), before);
+    mgsc.predictShadow(entry.pc, harness.ghr, pred);
+    const auto &after = BTBMGSC::TestAccess::preds(mgsc).at(entry.pc);
+    EXPECT_EQ(after.gIndex, saved.gIndex);
+    EXPECT_EQ(after.taken, saved.taken);
+}
+
 TEST(BTBMGSCTest, CanConstructAndCreateMetaOnEmptyInput)
 {
     BTBMGSC mgsc;

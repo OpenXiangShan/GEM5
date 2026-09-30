@@ -208,6 +208,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
             branchPred);
     assert(dbpbtb);
     dbpbtb->setCpu(_cpu);
+    initAPF(params);
 
     assert(params.decoder.size());
     for (ThreadID tid = 0; tid < numThreads; tid++) {
@@ -646,6 +647,7 @@ Fetch::startupStage()
 void
 Fetch::clearStates(ThreadID tid)
 {
+    clearAPF();
     clearResolveQueue(tid);
     setThreadStatus(tid, Running);
     set(threads[tid].fetchpc, cpu->pcState(tid));
@@ -664,6 +666,7 @@ Fetch::clearStates(ThreadID tid)
 void
 Fetch::resetStage()
 {
+    clearAPF();
     numInst = 0;
     interruptPending = false;
     for (auto *pkt : retryPkt) {
@@ -1372,6 +1375,7 @@ void
 Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqNum seqNum,
         ThreadID tid)
 {
+    squashAPF(squashInst, new_pc.instAddr(), seqNum);
     DPRINTF(Fetch, "[tid:%i] Squashing, setting PC to: %s. seqNum: %lu\n",
             tid, new_pc, seqNum);
     squashResolveQueue(tid, seqNum);
@@ -1470,6 +1474,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
 void
 Fetch::flushFetchBuffer()
 {
+    invalidateAPF();
     for (ThreadID i = 0; i < numThreads; ++i) {
         threads[i].valid = false;
     }
@@ -1558,6 +1563,7 @@ Fetch::tick()
     // - then run fetch using the supplied FTQ entry (if any)
     assert(dbpbtb);
     dbpbtb->tick();
+    tickAPF();
 
     // Perform fetch operations and instruction delivery
     fetchAndProcessInstructions(status_change);
@@ -1615,7 +1621,7 @@ Fetch::fetchAndProcessInstructions(bool status_change)
     advancePredecodePipeline();
 
     // Fetch instructions from active threads
-    for (threadFetched = 0; threadFetched < numFetchingThreads;
+    for (threadFetched = 0; !apfReplayPending() && threadFetched < numFetchingThreads;
          threadFetched++) {
         // Fetch each of the actively fetching threads.
         fetch(status_change);
@@ -2240,6 +2246,7 @@ Fetch::processResolveUpdates()
             if (!iewInfo.redirectPending ||
                 resolved.seqNum <= iewInfo.redirectLastValidSeqNum) {
                 enqueueSize++;
+                resolveAPF(resolved);
             } else {
                 fetchStats.resolveSquashedEvents++;
             }

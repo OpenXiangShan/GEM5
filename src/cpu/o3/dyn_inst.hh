@@ -450,6 +450,8 @@ class DynInst : public ExecContext, public RefCounted
     // Fetch-side RISC-V predecode has checked this instruction. Decode must
     // not re-run its frontend redirect checks for it.
     bool predecodeChecked = false;
+    bool apfReplayed = false;
+    bool apfRecoverySource = false;
 
     /** ftqId is used for squashing and committing */
     /** The fetch stream queue ID of the instruction. */

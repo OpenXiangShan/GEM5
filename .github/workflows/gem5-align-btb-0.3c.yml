@@ -30,5 +30,6 @@ jobs:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/kmhv3.py
+      extra_args: ${{ github.ref == 'refs/heads/apf-align' && '--param=system.cpu[0].enableAPF=True' || '' }}
       benchmark_type: "spec06-rva23-novec-gcc16-0.3c"
       pr_sha: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}

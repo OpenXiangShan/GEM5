@@ -15,6 +15,7 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/btb/abtb.hh"
+#include "cpu/pred/btb/alternate_path.hh"
 #include "cpu/pred/btb/btb_ittage.hh"
 #include "cpu/pred/btb/btb_mgsc.hh"
 #include "cpu/pred/btb/btb_tage.hh"
@@ -169,6 +170,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     H2PTable h2pTable;
     H2PBufferModel h2pBufferModel;
     uint64_t h2pAgeRemaining = 0;
+    bool alternateQuery = false;
+    bool alternateReplay = false;
+    bool alternateEnabled = false;
 
     bool sharedFTQMode() const;
     unsigned activeFTQThreads() const;
@@ -427,6 +431,22 @@ class DecoupledBPUWithBTB : public BPredUnit
      * - Statistics collection
      */
     void tick();
+
+    void enableAlternatePaths() { alternateEnabled = true; }
+    void holdForAlternateReplay(bool hold) { alternateReplay = hold; }
+    unsigned alternatePredictWidth() const { return predictWidth; }
+    bool alternateSourceLive(const AlternateCandidate &candidate) const;
+    void resolveAlternateCandidate(const BranchOutcome &branch);
+    bool nextAlternateCandidate(AlternateCandidate &candidate);
+    AlternateCheckpoint checkpointAlternateState();
+    AlternateCheckpoint startAlternate(const AlternateCandidate &candidate);
+    AlternatePrediction predictAlternate(const AlternateCheckpoint &state,
+                                          Addr pc);
+    void advanceAlternate(AlternateCheckpoint &state,
+                          AlternatePrediction &prediction, Addr nextPC);
+    bool canPromoteAlternate(unsigned targets) const;
+    FetchTargetId promoteAlternate(AlternatePrediction &prediction,
+                                   Addr nextPC);
 
     void squash(const InstSeqNum &squashed_sn, ThreadID tid)
     {

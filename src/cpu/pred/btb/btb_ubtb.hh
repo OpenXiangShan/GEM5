@@ -152,6 +152,16 @@ class UBTB : public TimedBaseBTBPredictor
     /** Get prediction BTBMeta
      *  @return Returns the prediction meta
      */
+    SpeculativeCheckpoint saveSpeculativeState(ThreadID tid) override
+    {
+        auto meta = threadMeta[tid];
+        auto last = lastPred[tid];
+        return [this, tid, meta, last] {
+            threadMeta[tid] = meta;
+            lastPred[tid] = last;
+        };
+    }
+
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override
     {
         if (tid >= threadMeta.size()) {

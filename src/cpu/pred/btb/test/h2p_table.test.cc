@@ -5,6 +5,19 @@
 namespace gem5::branch_prediction::btb_pred::test
 {
 
+TEST(H2PTableTest, ShadowLookupDoesNotChangeReplacementOrder)
+{
+    H2PTable table(4);
+    for (Addr pc : {0x1000, 0x1040}) {
+        for (int i = 0; i < 3; ++i)
+            table.trainMispred(pc);
+    }
+    EXPECT_TRUE(table.peek(0x1000).h2p);
+    table.trainMispred(0x1080);
+    EXPECT_FALSE(table.peek(0x1000).hit);
+    EXPECT_TRUE(table.peek(0x1040).h2p);
+}
+
 TEST(H2PTableTest, RequiresThreeMispredictions)
 {
     H2PTable table(128);

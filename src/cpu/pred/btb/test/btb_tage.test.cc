@@ -527,6 +527,45 @@ protected:
     std::vector<FullBTBPrediction> stagePreds;
 };
 
+TEST_F(BTBTAGETest, ShadowCheckpointRestoresHistoryAndMeta)
+{
+    auto entry = createBTBEntry(0x1000, true, true, 1, 0x2000);
+    predictTAGE(tage, entry.pc, {entry}, history, stagePreds);
+    auto mainMeta = tage->getPredictionMeta();
+    auto restore = tage->saveSpeculativeState(0);
+
+    FullBTBPrediction shadow = stagePreds[1];
+    shadow.tid = 0;
+    shadow.bbStart = entry.pc;
+    specUpdateSelectedHistory(tage, history, shadow);
+    auto shadowHistory = history;
+    applyPredictedHistory(tage, shadowHistory, shadow);
+    tage->predictShadow(entry.pc, shadowHistory, shadow);
+    EXPECT_NE(tage->getPredictionMeta(), mainMeta);
+    auto shadowMeta = tage->getPredictionMeta();
+    restore();
+    EXPECT_EQ(tage->getPredictionMeta(), mainMeta);
+    tage->checkFoldedHist(history, "APF restored main history");
+    EXPECT_NE(shadowMeta, mainMeta);
+    EXPECT_TRUE(predictTAGE(tage, entry.pc, {entry}, history, stagePreds));
+}
+
+TEST_F(BTBTAGETest, ShadowCheckpointDoesNotUndoTableTraining)
+{
+    auto entry = createBTBEntry(0x1000, true, true, 1, 0x2000);
+    predictTAGE(tage, entry.pc, {entry}, history, stagePreds);
+    auto restore = tage->saveSpeculativeState(0);
+    setupTageEntry(tage, entry.pc, 3, -4);
+    restore();
+    FullBTBPrediction prediction;
+    prediction.tid = 0;
+    prediction.bbStart = entry.pc;
+    prediction.btbEntries = {entry};
+    tage->predictShadow(entry.pc, history, prediction);
+    ASSERT_EQ(prediction.condTakens.size(), 1u);
+    EXPECT_FALSE(prediction.condTakens.front().second);
+}
+
 // Test basic prediction functionality
 TEST_F(BTBTAGETest, BasicPrediction) {
     // Create a conditional branch entry biased towards taken

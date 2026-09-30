@@ -28,6 +28,7 @@ class H2PTable
     explicit H2PTable(unsigned entries = 128);
 
     LookupResult lookup(Addr pc);
+    LookupResult peek(Addr pc) const;
     struct TrainResult
     {
         bool allocated = false;

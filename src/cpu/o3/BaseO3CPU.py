@@ -151,6 +151,14 @@ class BaseO3CPU(BaseCPU):
     iewToFetchDelay = Param.Cycles(1, "Issue/Execute/Writeback to fetch "
                                    "delay")
     commitToFetchDelay = Param.Cycles(3, "Commit to fetch delay")
+    enableAPF = Param.Bool(False, "Ideal alternate-path generation and pre-rename replay")
+    apfBufferEntries = Param.Unsigned(4, "Completed alternate-path buffers")
+    apfBufferUops = Param.Unsigned(104, "Maximum uops per alternate path")
+    apfWidth = Param.Unsigned(8, "Maximum alternate uops generated per cycle")
+    apfGenerationCycles = Param.Unsigned(13, "Maximum generation cycles per path")
+    apfFetchLatency = Param.Cycles(1, "Ideal alternate instruction-read latency")
+    apfBranchEntries = Param.Unsigned(20, "Shadow branch queue entries per path")
+
     fetchWidth = Param.Unsigned(16, "Fetch width")
     fetchBufferSize = Param.Unsigned(66, "Fetch buffer size in bytes")
     enableTwoFetch = Param.Bool(False,

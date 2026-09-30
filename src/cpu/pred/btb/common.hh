@@ -346,6 +346,9 @@ struct FetchTarget
     std::vector<Addr> h2pTableBranchPCs;
     std::vector<Addr> h2pBranchPCs;
     std::vector<Addr> h2pAllocateBranchPCs;
+    std::vector<BTBEntry> apfBranches;
+    std::vector<Addr> apfAttemptedPCs;
+    std::vector<Addr> apfResolvedPCs;
 
     unsigned predSource;   // source of the prediction(numStage)
     OverrideReason overrideReason; // reason of the override(for profiling)
