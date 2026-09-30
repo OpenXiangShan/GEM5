@@ -963,13 +963,8 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
             control_inst_size);
     }
 
-    if (squash_type == SQUASH_CTRL && static_inst) {
-        // Use full branch info with static_inst if available
-        target.exeBranchInfo = makeBranchInfo(
-            squash_pc.instAddr(), redirect_pc, inst, static_inst,
-            control_inst_size);
+    if (squash_type == SQUASH_CTRL && static_inst)
         dumpFsq("Before control squash");
-    }
 
     // Remove targets after the squashed one
     ftq.squashAfter(target_id, tid);
