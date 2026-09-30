@@ -167,6 +167,10 @@ def setKmhV3Params(args, system):
                 system.l2_caches[i].replacement_policy = XSDRRIPRP(mode=2, num_sets=4096)
             else:
                 l2_wrapper = system.l2_wrappers[i]
+                l2_wrapper.prefetcher.offload_low_accuracy = True
+                l2_wrapper.prefetcher.cdp_ratio_threshold = 0.2
+                l2_wrapper.prefetcher.accuracy_threshold = 0.8
+                l2_wrapper.prefetcher.offload_stream_only = True
                 l2_wrapper.data_sram_banks = 1
                 l2_wrapper.dir_sram_banks = 1
                 l2_wrapper.pipe_dir_write_stage = 3

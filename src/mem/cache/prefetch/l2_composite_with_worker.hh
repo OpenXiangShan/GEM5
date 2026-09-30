@@ -76,6 +76,9 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     bool preferLLDP{false};
 
     const bool offloadLowAccuracy;
+    const double cdpRatioThreshold;
+    const double accuracyThreshold;
+    const bool offloadStreamOnly;
     protected:
     void InsertPFRequestToBuffer(const AddrPriority &addr_prio) override{
       panic("SMS:InsertPFRequestToBuffer not implemented");
