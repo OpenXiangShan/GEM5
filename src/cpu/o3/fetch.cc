@@ -2703,6 +2703,7 @@ Fetch::handlePredecodeFault(ThreadID tid, const DynInstPtr &instruction,
     } else {
         dbpbtb->controlSquash(
             instruction->getFtqId(), instruction->pcState(), target,
+            instruction,
             instruction->staticInst, instruction->getInstBytes(),
             actuallyTaken, instruction->seqNum, tid,
             instruction->getLoopIteration(), false, true);
