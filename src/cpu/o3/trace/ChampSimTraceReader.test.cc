@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "cpu/o3/trace/CBP2025TraceReader.hh"
 #include "cpu/o3/trace/ChampSimTraceReader.hh"
 #include "ext/iostream3/zfstream.h"
 #include "gtest/gtest.h"
@@ -99,6 +100,45 @@ writeTraceFile(const std::string &path, const std::vector<CSInstr> &insts,
     return gz.good();
 }
 
+enum class CBPInstClass : uint8_t
+{
+    ALU = 0,
+};
+
+static bool
+writeCBPTraceFile(const std::string &path, const std::vector<uint64_t> &pcs,
+                  TraceFileMode mode = TraceFileMode::Binary)
+{
+    auto writeOne = [](auto &stream, uint64_t pc) {
+        const auto type = static_cast<uint8_t>(CBPInstClass::ALU);
+        const uint8_t numInRegs = 0;
+        const uint8_t numOutRegs = 0;
+        stream.write(reinterpret_cast<const char*>(&pc), sizeof(pc));
+        stream.write(reinterpret_cast<const char*>(&type), sizeof(type));
+        stream.write(reinterpret_cast<const char*>(&numInRegs), sizeof(numInRegs));
+        stream.write(reinterpret_cast<const char*>(&numOutRegs), sizeof(numOutRegs));
+        return stream.good();
+    };
+
+    if (mode == TraceFileMode::Binary) {
+        std::ofstream ofs(path, std::ios::binary);
+        if (!ofs.is_open()) return false;
+        for (const auto pc : pcs) {
+            if (!writeOne(ofs, pc)) return false;
+        }
+        ofs.close();
+        return ofs.good();
+    }
+
+    gzofstream gz(path.c_str());
+    if (!gz.good()) return false;
+    for (const auto pc : pcs) {
+        if (!writeOne(gz, pc)) return false;
+    }
+    gz.close();
+    return gz.good();
+}
+
 // Replicate the reader's hash mapping to validate expectations.
 static inline uint64_t
 mapHash(uint64_t trace_addr,
@@ -161,6 +201,7 @@ class TraceFileGuard
 } // anonymous namespace
 
 using gem5::o3::ChampSimTraceReader;
+using gem5::o3::CBP2025TraceReader;
 using gem5::o3::TraceInstruction;
 
 TEST(ChampSimTraceReaderTest, ReadsTwoInstructionsAndSetsBranchTargetFromLookahead)
@@ -225,6 +266,25 @@ TEST(ChampSimTraceReaderTest, HashMappingProducesAlignedInRegion)
     EXPECT_GE(pc, 0x10000000ULL);
     EXPECT_LT(pc, 0x10000000ULL + 0x40000000ULL);
     EXPECT_EQ(pc, mapHash(x.ip));
+}
+
+TEST(ChampSimTraceReaderTest, MarksNonBranchDiscontinuityForTraceRecovery)
+{
+    const std::string path = "champsim_reader_test_ctrl_flow_change.bin";
+    TraceFileGuard guard(path);
+    const CSInstr first = makeInstr(0x1000);
+    const CSInstr successor = makeInstr(0x2000);
+    ASSERT_TRUE(writeTraceFile(path, {first, successor}));
+
+    ChampSimTraceReader reader(path, "unit.reader.ctrl_flow_change");
+    ASSERT_TRUE(reader.init());
+
+    const auto record = reader.getNextInstruction();
+    ASSERT_TRUE(record.isValid());
+    EXPECT_FALSE(record.getBranch());
+    EXPECT_TRUE(record.isCtrlFlowChange());
+    EXPECT_TRUE(record.getHasCtrlFlowTarget());
+    EXPECT_EQ(record.getCtrlFlowTarget(), mapHash(successor.ip));
 }
 
 TEST(ChampSimTraceReaderTest, TakenBranchWithoutLookaheadHasNoTarget)
@@ -465,6 +525,25 @@ TEST(ChampSimTraceReaderTest, SeekToInstructionWithoutCheckpointsResetsStream)
     auto instr = reader.getNextInstruction();
     ASSERT_TRUE(instr.isValid());
     EXPECT_EQ(instr.getPC(), mapHash(insts[2].ip));
+}
+
+TEST(CBP2025TraceReaderTest, SoftSeekFallbackUsesHardSeekWithoutRecursion)
+{
+    const std::string path = "cbp2025_reader_test_seek.bin";
+    TraceFileGuard guard(path);
+    std::vector<uint64_t> pcs;
+    for (int index = 0; index < 16; ++index) {
+        pcs.push_back(0x80001000ULL + index * 0x10ULL);
+    }
+    ASSERT_TRUE(writeCBPTraceFile(path, pcs));
+
+    CBP2025TraceReader reader(path, "unit.cbp.reader.seek");
+    ASSERT_TRUE(reader.init());
+
+    ASSERT_TRUE(reader.softSeekToInstruction(2));
+    auto instr = reader.getNextInstruction();
+    ASSERT_TRUE(instr.isValid());
+    EXPECT_EQ(instr.getPC(), mapHash(pcs[2], 0x80000000ULL));
 }
 
 TEST(ChampSimTraceReaderTest, HandlesCompressedTraceInput)

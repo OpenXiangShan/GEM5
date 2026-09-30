@@ -111,6 +111,37 @@ Commit::traceMaybeInjectCtrlFlowChangeFault(ThreadID tid, const DynInstPtr &head
 }
 
 bool
+Commit::traceAccountInjectedCtrlFlowRecord(
+    ThreadID tid, const DynInstPtr &head_inst)
+{
+    if (!cpu->isTraceMode() || !traceCtrlFaultPending[tid] ||
+        traceCtrlFaultSeqNum[tid] != head_inst->seqNum ||
+        !head_inst->hasTraceCtrlFlowChange()) {
+        return false;
+    }
+
+    panic_if(!cpu->isTraceInstruction(head_inst->seqNum),
+             "Trace control-flow fault [sn:%llu] has no trace metadata",
+             head_inst->seqNum);
+    panic_if(head_inst->isMicroop() && !head_inst->isLastMicroop(),
+             "Trace control-flow fault [sn:%llu] is not an instruction boundary",
+             head_inst->seqNum);
+
+    // The fault already applied the recorded target. Account the source record
+    // exactly once while preserving the existing trap squash and ROB removal.
+    updateComInstStats(head_inst);
+    stats.committedInstType[tid][head_inst->opClass()]++;
+    traceOnCommit(tid, head_inst);
+    traceOnMacroCommit(tid);
+
+    DPRINTF(CommitTrace,
+            "[tid:%d idx:%llu sn:%llu] Logically retired trace control-flow record\n",
+            tid, (unsigned long long)cpu->getTraceIndexForSeqNum(head_inst->seqNum),
+            (unsigned long long)head_inst->seqNum);
+    return true;
+}
+
+bool
 Commit::traceMaybeExitOnLastTraceInst(const DynInstPtr &head_inst)
 {
     if (cpu->isTraceMode() && head_inst->isLastTraceInst()) {
@@ -137,6 +168,24 @@ Commit::traceOnCommit(ThreadID tid, const DynInstPtr &head_inst)
     // a sliding window based on the oldest in-flight seqNum and a guard distance.
     if (cpu->isTraceInstruction(head_inst->seqNum)) {
         cpu->cleanupTraceMetadataOnCommit(head_inst->seqNum);
+    }
+
+    static constexpr uint64_t TraceHeartbeatInterval = 5000000;
+    const uint64_t current_idx = traceCommitIndex[tid];
+    const bool first_heartbeat =
+        (current_idx != 0 && traceLastHeartbeatIndex[tid] == 0);
+    const bool periodic_heartbeat =
+        (current_idx != 0 &&
+         (current_idx / TraceHeartbeatInterval) >
+             (traceLastHeartbeatIndex[tid] / TraceHeartbeatInterval));
+    if (first_heartbeat || periodic_heartbeat) {
+        traceLastHeartbeatIndex[tid] = current_idx;
+        warn("[TraceHeartbeat][tid:%d] idx=%llu sn=%llu pc=0x%lx tick=%llu\n",
+             tid,
+             (unsigned long long)current_idx,
+             (unsigned long long)head_inst->seqNum,
+             (unsigned long)head_inst->pcState().instAddr(),
+             (unsigned long long)curTick());
     }
 }
 
@@ -256,15 +305,22 @@ Commit::traceCommitDifftest(ThreadID tid, const DynInstPtr &head_inst)
         };
 
         auto commit_type = classifyInstType(head_inst->staticInst);
-        auto trace_type = ti_meta->getInstType();
-        // Allow trace hints to override static decode for call/return/indirect
-        if (head_inst->traceIsCall()) {
-            trace_type = head_inst->traceIsIndirect()
-                ? o3::TraceInstruction::InstType::CALL_INDIRECT
-                : o3::TraceInstruction::InstType::CALL_DIRECT;
-        } else if (head_inst->traceIsReturn()) {
-            trace_type = o3::TraceInstruction::InstType::RETURN;
+        if (head_inst->hasTraceBranchInfo()) {
+            if (head_inst->traceIsCond()) {
+                commit_type = o3::TraceInstruction::InstType::COND_BRANCH;
+            } else if (head_inst->traceIsCall()) {
+                commit_type = head_inst->traceIsIndirect()
+                    ? o3::TraceInstruction::InstType::CALL_INDIRECT
+                    : o3::TraceInstruction::InstType::CALL_DIRECT;
+            } else if (head_inst->traceIsReturn()) {
+                commit_type = o3::TraceInstruction::InstType::RETURN;
+            } else {
+                commit_type = head_inst->traceIsIndirect()
+                    ? o3::TraceInstruction::InstType::UNCOND_INDIRECT_BRANCH
+                    : o3::TraceInstruction::InstType::UNCOND_DIRECT_BRANCH;
+            }
         }
+        auto trace_type = ti_meta->getInstType();
         const bool skip_type_check =
             (ti_meta->getInstSizeBytes() == 2 &&
              ti_meta->getInstType() == o3::TraceInstruction::InstType::FP);

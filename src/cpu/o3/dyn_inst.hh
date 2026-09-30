@@ -768,6 +768,7 @@ class DynInst : public ExecContext, public RefCounted
     Addr traceBranchNextPCValue = 0;
     // trace 侧标记该指令是否触发非普通顺序的控制流改变（例如 trap/异常）。
     bool traceCtrlFlowChangeValue = false;
+    bool traceIsCondValue = false;
     bool traceIsCallValue = false;
     bool traceIsReturnValue = false;
     bool traceIsIndirectValue = false;
@@ -780,6 +781,7 @@ class DynInst : public ExecContext, public RefCounted
         traceBranchTargetValue = 0;
         traceBranchNextPCValue = 0;
         traceCtrlFlowChangeValue = false;
+        traceIsCondValue = false;
         traceIsCallValue = false;
         traceIsReturnValue = false;
         traceIsIndirectValue = false;
@@ -801,6 +803,7 @@ class DynInst : public ExecContext, public RefCounted
     {
         traceCtrlFlowChangeValue = hasCtrlFlowChange;
     }
+    void setTraceIsCond(bool v) { traceIsCondValue = v; }
     void setTraceIsCall(bool v) { traceIsCallValue = v; }
     void setTraceIsReturn(bool v) { traceIsReturnValue = v; }
     void setTraceIsIndirect(bool v) { traceIsIndirectValue = v; }
@@ -811,6 +814,7 @@ class DynInst : public ExecContext, public RefCounted
     Addr traceBranchTarget() const { return traceBranchHasTargetValue ? traceBranchTargetValue : 0; }
     Addr traceBranchNextPC() const { return traceBranchInfoValid ? traceBranchNextPCValue : 0; }
     bool hasTraceCtrlFlowChange() const { return traceCtrlFlowChangeValue; }
+    bool traceIsCond() const { return traceBranchInfoValid && traceIsCondValue; }
     bool traceIsCall() const { return traceIsCallValue; }
     bool traceIsReturn() const { return traceIsReturnValue; }
     bool traceIsIndirect() const { return traceIsIndirectValue; }
@@ -851,13 +855,39 @@ class DynInst : public ExecContext, public RefCounted
     bool isInteger()      const { return staticInst->isInteger(); }
     bool isFloating()     const { return staticInst->isFloating(); }
     bool isVector()       const { return staticInst->isVector(); }
-    bool isControl()      const { return staticInst->isControl(); }
-    bool isCall()         const { return staticInst->isCall(); }
-    bool isReturn()       const { return staticInst->isReturn(); }
-    bool isDirectCtrl()   const { return staticInst->isDirectCtrl(); }
-    bool isIndirectCtrl() const { return staticInst->isIndirectCtrl(); }
-    bool isCondCtrl()     const { return staticInst->isCondCtrl(); }
-    bool isUncondCtrl()   const { return staticInst->isUncondCtrl(); }
+    bool isControl()      const
+    {
+        return traceBranchInfoValid || staticInst->isControl();
+    }
+    bool isCall()         const
+    {
+        return traceBranchInfoValid ? traceIsCallValue : staticInst->isCall();
+    }
+    bool isReturn()       const
+    {
+        return traceBranchInfoValid ?
+            traceIsReturnValue : staticInst->isReturn();
+    }
+    bool isDirectCtrl()   const
+    {
+        return traceBranchInfoValid ?
+            !traceIsIndirectValue : staticInst->isDirectCtrl();
+    }
+    bool isIndirectCtrl() const
+    {
+        return traceBranchInfoValid ?
+            traceIsIndirectValue : staticInst->isIndirectCtrl();
+    }
+    bool isCondCtrl()     const
+    {
+        return traceBranchInfoValid ?
+            traceIsCondValue : staticInst->isCondCtrl();
+    }
+    bool isUncondCtrl()   const
+    {
+        return traceBranchInfoValid ?
+            !traceIsCondValue : staticInst->isUncondCtrl();
+    }
     bool isSerializing()  const { return staticInst->isSerializing(); }
     bool isMov()          const { return staticInst->isMov(); }
     bool isAddImm()       const { return staticInst->isAddImm(); }
