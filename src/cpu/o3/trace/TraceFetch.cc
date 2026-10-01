@@ -1156,18 +1156,42 @@ TraceFetch::cleanupTraceMetadata(InstSeqNum seqNum)
 }
 
 void
-TraceFetch::cleanupTraceMetadataOnCommit(InstSeqNum /*seqNum*/)
+TraceFetch::cleanupTraceMetadataOnCommit(InstSeqNum seqNum)
 {
     // Sliding-window cleanup: keep a guard window behind the oldest in-flight
     // instruction and (if active) behind the wrong-path boundary. This avoids
     // removing metadata that may still be needed by a late-arriving squash.
 
-    static constexpr uint64_t TRACE_META_GUARD = 256; // conservative default
+    // Backend squashes can anchor on instructions far behind the current
+    // frontier: a branch resolution, deferred MDP violation, or order
+    // violation squash can reference an instruction that committed hundreds
+    // of sequence numbers ago (wrong-path supplies inflate the seqNum
+    // distance without occupying ROB entries; observed gaps exceed 600).
+    // Align the guard with TraceReader's HISTORY_CAPACITY so metadata
+    // retention covers exactly the range the reader can soft-replay: a
+    // squash anchored deeper than this cannot be served by history replay
+    // anyway, and pipeline depth bounds in-flight seqNum spans well below it.
+    static constexpr uint64_t TRACE_META_GUARD = 4096;
 
     const InstSeqNum oldest_inflight = fetch.cpu->getOldestInFlightSeqNum();
     const InstSeqNum wp_boundary = traceWrongPathActive ? traceWrongPathBranchSeqNum
                                                         : std::numeric_limits<InstSeqNum>::max();
-    const InstSeqNum keep_min = std::min(oldest_inflight, wp_boundary);
+    InstSeqNum keep_min = std::min(oldest_inflight, wp_boundary);
+    if (keep_min == std::numeric_limits<InstSeqNum>::max()) {
+        // The in-flight list can be empty while a backend squash (branch
+        // resolution, deferred MDP violation, squash-after serializing
+        // commit) has already removed every younger instruction, but its
+        // frontend squash has not reached Fetch yet (fetch consumes commit
+        // squashes at least one stage later). That squash rolls the trace
+        // reader back to its anchor instruction, which needs the metadata of
+        // the last committed instruction (and possibly the following one for
+        // target resolution). Anchor the guard window to the just-committed
+        // instruction instead of treating the drained pipeline as a license
+        // to wipe every entry: wiping desynchronized trace replay and tripped
+        // the "trace squash target PC ... not in the buffered expected
+        // stream" panic.
+        keep_min = seqNum;
+    }
     const InstSeqNum safe_threshold = (keep_min > TRACE_META_GUARD)
                                           ? (keep_min - TRACE_META_GUARD)
                                           : 0;
