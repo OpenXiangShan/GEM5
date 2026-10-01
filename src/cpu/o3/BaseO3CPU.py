@@ -152,7 +152,7 @@ class BaseO3CPU(BaseCPU):
                                    "delay")
     commitToFetchDelay = Param.Cycles(3, "Commit to fetch delay")
     enableAPF = Param.Bool(False, "Ideal alternate-path generation and pre-rename replay")
-    apfBufferEntries = Param.Unsigned(4, "Completed alternate-path buffers")
+    apfBufferEntries = Param.Unsigned(6, "Completed alternate-path buffers")
     apfBufferUops = Param.Unsigned(104, "Maximum uops per alternate path")
     apfWidth = Param.Unsigned(8, "Maximum alternate uops generated per cycle")
     apfGenerationCycles = Param.Unsigned(13, "Maximum generation cycles per path")

@@ -7,7 +7,7 @@ Import('*')
 GTest('uras.test', 'uras_test.cc')
 
 # Add BTB test with minimal dependencies
-GTest('btb.test', 
+GTest('btb.test',
     '../mbtb.cc',
     'btb.test.cc',
     '../timed_base_pred.cc',
@@ -21,7 +21,7 @@ GTest('abtb.test',
 )
 
 # Add TAGE test with necessary dependencies
-GTest('tage.test', 
+GTest('tage.test',
     '../btb_tage.cc',
     '../btb_tage_ub.cc',
     'btb_tage.test.cc',
@@ -57,11 +57,6 @@ GTest('h2p_table.test',
     'h2p_table.test.cc',
 )
 
-GTest('h2p_buffer_model.test',
-    '../h2p_buffer_model.cc',
-    'h2p_buffer_model.test.cc',
-)
-
 # add --unit-test to enable unit test mode for RAS
 # TODO: Fix RAS test
 # GTest('ras.test',
@@ -86,7 +81,6 @@ env.Append(UNITTESTS=['uras.test',
         'folded_hist.test',
         'history_manager.test',
         'h2p_table.test',
-        'h2p_buffer_model.test',
         'jump_ahead.test',
         'fetch_target_queue.test',
         'decoupled_bpred.test'])

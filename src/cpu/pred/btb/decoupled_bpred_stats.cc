@@ -441,7 +441,7 @@ classifyBranchImpl(const InstPtr &inst)
 
 DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     statistics::Group* parent, unsigned numStages, unsigned fsqSize,
-    unsigned maxInstsNum, unsigned numThreads, unsigned h2pBufferEntries):
+    unsigned maxInstsNum, unsigned numThreads):
     statistics::Group(parent),
     ADD_STAT(condNum, statistics::units::Count::get(), "the number of cond branches"),
     ADD_STAT(uncondNum, statistics::units::Count::get(), "the number of uncond branches"),
@@ -515,59 +515,6 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
              "H2P cache-line entries replaced"),
     ADD_STAT(h2pAllocationDrops, statistics::units::Count::get(),
              "H2P allocations dropped because a line has two live slots"),
-    ADD_STAT(h2pMispredictPotential, statistics::units::Count::get(),
-             "H2P-marked conditional mispredictions before buffer capacity"),
-    ADD_STAT(h2pMispredictAdmitted, statistics::units::Count::get(),
-             "H2P mispredictions admitted by the metadata-only buffer model"),
-    ADD_STAT(h2pMispredictRejected, statistics::units::Count::get(),
-             "H2P mispredictions rejected because the buffer model was full"),
-    ADD_STAT(h2pEstimatedCorrectedBranches, statistics::units::Count::get(),
-             "Estimated H2P mispredictions that APF could correct"),
-    ADD_STAT(h2pBufferTruePositive, statistics::units::Count::get(),
-             "Admitted H2P buffer entries that later mispredicted"),
-    ADD_STAT(h2pBufferFalsePositive, statistics::units::Count::get(),
-             "Admitted H2P buffer entries that later predicted correctly"),
-    ADD_STAT(h2pBufferGenerated, statistics::units::Count::get(),
-             "H2P candidates inserted into the metadata-only buffer model"),
-    ADD_STAT(h2pBufferAdmitted, statistics::units::Count::get(),
-             "H2P candidates admitted by the metadata-only buffer model"),
-    ADD_STAT(h2pBufferRejectedFull, statistics::units::Count::get(),
-             "H2P candidates rejected because the metadata-only buffer was full"),
-    ADD_STAT(h2pBufferSquashed, statistics::units::Count::get(),
-             "Admitted unresolved H2P buffer entries freed by a squash"),
-    ADD_STAT(h2pBufferRetired, statistics::units::Count::get(),
-             "Admitted H2P buffer entries freed when their FTQ target retires"),
-    ADD_STAT(h2pBufferSampledCycles, statistics::units::Cycle::get(),
-             "Active BPU cycles sampled for H2P buffer occupancy"),
-    ADD_STAT(h2pBufferIdleCycles, statistics::units::Cycle::get(),
-             "Sampled cycles with no admitted H2P buffer entries"),
-    ADD_STAT(h2pBufferIdleRatio, statistics::units::Ratio::get(),
-             "H2P buffer idle ratio: empty sampled cycles / sampled cycles",
-             h2pBufferIdleCycles / h2pBufferSampledCycles),
-    ADD_STAT(h2pPotentialCoverage, statistics::units::Ratio::get(),
-             "Potential H2P coverage: marked mispredictions / all conditional misses",
-             h2pMispredictPotential / condMiss),
-    ADD_STAT(h2pBufferCoverage, statistics::units::Ratio::get(),
-             "Capacity-limited H2P coverage: admitted mispredictions / all conditional misses",
-             h2pMispredictAdmitted / condMiss),
-    ADD_STAT(h2pBufferUsefulRate, statistics::units::Ratio::get(),
-             "Useful buffer rate: admitted H2P mispredictions / potential H2P mispredictions",
-             h2pMispredictAdmitted / h2pMispredictPotential),
-    ADD_STAT(h2pBufferUsefulAdmissionRate, statistics::units::Ratio::get(),
-             "Useful admitted-entry rate: useful H2P buffer entries / all admitted entries",
-             h2pBufferTruePositive / h2pBufferAdmitted),
-    ADD_STAT(h2pBufferPrecision, statistics::units::Ratio::get(),
-             "Admitted H2P buffer precision: TP / (TP + FP)",
-             h2pBufferTruePositive /
-                 (h2pBufferTruePositive + h2pBufferFalsePositive)),
-    ADD_STAT(h2pMaxOutstanding, statistics::units::Count::get(),
-             "Maximum outstanding admitted H2P buffer candidates"),
-    ADD_STAT(h2pBufferCapacityEntries, statistics::units::Count::get(),
-             "Configured metadata-only APF buffer entry count"),
-    ADD_STAT(h2pBufferCapacityUops, statistics::units::Count::get(),
-             "Configured APF buffer capacity in uops"),
-    ADD_STAT(h2pBufferStorageBytes, statistics::units::Byte::get(),
-             "Approximate APF buffer storage in bytes"),
     ADD_STAT(branchClassCounts, statistics::units::Count::get(), "branch counts by fine-grained class"),
     ADD_STAT(branchClassMisses, statistics::units::Count::get(), "branch mispredictions by fine-grained class"),
     ADD_STAT(branchClassCountsTotal, statistics::units::Count::get(), "total number of classified branches"),
@@ -651,15 +598,6 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     h2pPrecision.precision(6);
     h2pAccuracy.precision(6);
     h2pFalsePositiveRate.precision(6);
-    h2pPotentialCoverage.precision(6);
-    h2pBufferCoverage.precision(6);
-    h2pBufferUsefulRate.precision(6);
-    h2pBufferUsefulAdmissionRate.precision(6);
-    h2pBufferPrecision.precision(6);
-    h2pBufferIdleRatio.precision(6);
-    h2pBufferCapacityEntries = h2pBufferEntries;
-    h2pBufferCapacityUops = h2pBufferEntries * H2PBufferModel::UopsPerBuffer;
-    h2pBufferStorageBytes = h2pBufferEntries * H2PBufferModel::BytesPerBuffer;
     for (int i = 0; i < NumS1SourceBuckets; ++i) {
         s1PredWrongBySourceAndReason.subname(i, S1SourceLabels[i]);
     }
@@ -1002,7 +940,6 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     BranchInfo info(branchAddr, targetAddr, inst->staticInst, fallThruPC-branchAddr);
     bool taken = rv_pc.branching() || inst->isUncondCtrl();
 
-    commitH2PBufferCandidate(outcome, entry);
     trainH2P(outcome, entry);
 
     // ---------- Process misprediction and update statistics ----------
@@ -1110,16 +1047,6 @@ DecoupledBPUWithBTB::commitPredWrongSource(
 void
 DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
 {
-    if (enableH2PTable) {
-        // Statistics are reset after construction; publish configured buffer
-        // capacity once execution has started.
-        dbpBtbStats.h2pBufferCapacityEntries = h2pBufferEntries;
-        dbpBtbStats.h2pBufferCapacityUops =
-            h2pBufferEntries * H2PBufferModel::UopsPerBuffer;
-        dbpBtbStats.h2pBufferStorageBytes =
-            h2pBufferEntries * H2PBufferModel::BytesPerBuffer;
-    }
-
     // Update committed instruction count for target
     ftq.get(inst->ftqId, inst->threadNumber).commitInstNum++;
 

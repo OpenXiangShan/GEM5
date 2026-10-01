@@ -6,15 +6,15 @@ This is a single-thread, instruction-driven, scalar APF model. It generates real
 decoded instructions before a redirect and replays them at the Rename input.
 It is not a PC-only recovery shortcut or a cycle-accurate implementation of the
 paper's pipeline. Existing H2P classification, confidence and allocation filters
-are unchanged. `enableAPF` defaults to false; the existing metadata-only H2P
-buffer remains an independent classification/admission experiment.
+are unchanged. `enableAPF` defaults to false. The old metadata-only H2P buffer
+has been removed; only the real decoded-path APF buffer is modeled.
 
 Enable with `--param='system.cpu[0].enableAPF=True'` on `kmhv3.py`.
 
 | CPU parameter | Default | Meaning |
 | --- | ---: | --- |
 | `enableAPF` | false | Generate and replay alternate paths |
-| `apfBufferEntries` | 4 | Saved paths, excluding the one active slot |
+| `apfBufferEntries` | 6 | Saved paths, excluding the one active slot |
 | `apfBufferUops` | 104 | Maximum decoded uops per path |
 | `apfWidth` | 8 | Maximum uops generated per generation cycle |
 | `apfGenerationCycles` | 13 | Maximum generation steps per path |
@@ -26,6 +26,12 @@ generation steps. A step can stop at a taken branch or the predictor's aligned
 block boundary, so 104 uops is a capacity, not a promised fill amount. Increasing
 read latency spaces steps further apart. Full saved buffers retain a completed
 active path and prevent starting a new path, without stalling the main frontend.
+
+The `apf-h2p-64b-6plus1` experiment increases saved paths from four to six,
+while keeping the single active slot, 104-uop path limit and H2P classification
+unchanged. It also removes the independent metadata-only buffer, which did not
+control APF admission, recovery or simulated timing. Its comparison baseline
+is the 64B two-way APF commit `966ecb5bae` (manual perf run 1352).
 
 ## Predictor and instruction state
 
@@ -104,9 +110,12 @@ Discarding only shadow paths does not add a main-path squash.
 
 ## Statistics
 
-The old `h2pTable*`, `h2p*` and metadata `h2pBuffer*` precision statistics retain
-their original meaning. `commitH2PBufferCandidate()` already has a caller in
-`commitBranch()`; no duplicate commit call was added.
+H2P table and filtered-classifier confusion counts, coverage and precision retain
+their original meaning. Metadata-only `h2pBuffer*`, `h2pMispredict*`,
+`h2pEstimatedCorrectedBranches`, `h2pPotentialCoverage` and `h2pMaxOutstanding`
+statistics have been removed, along with the `--h2p-buffer-entries` option and
+`branchPred.h2p_buffer_entries` parameter. Scripts must use real `apf.*` counters
+for path storage and recovery; these are not direct aliases for the old model.
 
 New `system.cpu.apf.*` counters include:
 
@@ -133,7 +142,8 @@ Counters follow normal gem5 reset/dump boundaries; production before a reset and
 commit after it can cross measurement intervals. Ratios are most directly
 interpretable over complete runs. No counter controls progress. Work per tick is
 bounded by FTQ size for candidate selection, configured uop/branch limits for
-generation and replay, and four plus one path slots for storage management.
+generation and replay, and the configured saved slots plus one active path for
+storage management.
 
 ## Validation
 
@@ -153,7 +163,7 @@ python3 util/apf/run_smoke.py \
   --out=/tmp/apf-smoke-validation
 ```
 
-Targeted TAGE, MGSC, RAS, H2P table and metadata-buffer unit tests cover context
+Targeted TAGE, MGSC, RAS and H2P table unit tests cover context
 restoration, retained table training and non-mutating H2P lookup. Checkpoint
 validation must use the matching reference library and memory size. In particular,
 the gcc16 RVA23 checkpoints require the CI pinned deduplicating reference with
