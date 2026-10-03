@@ -55,6 +55,16 @@
 #include "sim/sim_exit.hh"
 #include "sim/system.hh"
 
+#include <iostream>
+#include <zlib.h>
+#include <cstdio>
+#include <fstream>
+#include <vector>
+#include <stdexcept>
+#include <cstdint>
+#include <iomanip>
+#include "sim/root.hh"
+
 namespace gem5
 {
 
@@ -309,6 +319,188 @@ BaseTags::BaseTagStats::preDumpStats()
     statistics::Group::preDumpStats();
 
     tags.computeStats();
+}
+
+
+// restore L3 cache microarchitecture states based on memtrace
+void
+BaseTags::warmupState(const std::string &pmem_file,const std::string &memtrace_file)
+{
+     std::ifstream file(memtrace_file);         // the file contains the microarchitecture states from memtrace
+     if(!file.is_open())
+     {
+        std::cout << "File open failed:" << memtrace_file << std::endl;
+     };
+     std::string line;
+    std::string taskid;
+    std::string requestorid;
+    std::string rank;
+     int line_max = this->size / this->blkSize; //compute the number of cache lines
+     volatile int offset_num=0;
+     int num = this->blkMask;
+     while(num)                                 //compute tag+set bits
+     {
+        offset_num += num & 1;
+        num >>= 1;
+     }
+
+     int total_num =64;                            //compute set bits
+
+     int assoc = this->indexingPolicy->getAssoc();
+
+     num = size/assoc;
+     num = num/blkSize;
+     volatile int set_num=0;
+     while(num)
+     {
+        num >>= 1;
+        set_num++;
+     }
+     set_num--;
+     volatile int tag_num= total_num-set_num-offset_num;
+
+     std::vector<char> decompressed_data = decompress_gz_to_memory(pmem_file);
+    for(int line_num=0;line_num<line_max;line_num++)
+    {
+        std::getline(file,line);
+        std::getline(file,taskid);
+        std::getline(file,requestorid);
+        std::getline(file,rank);
+        int memtrace_priority = std::stoi(rank);
+        char myvalid = line[0];
+        char myhit = line[1];
+        if( myhit == '1')
+        {
+        std::string mytag = line.substr(3,tag_num); // paddr
+        int myset = line_num / assoc; // paddr
+        std::bitset<32> setbin(myset);
+        std::string myset_str = setbin.to_string();
+
+        myset_str=myset_str.substr(myset_str.size()-set_num,set_num);
+        std::string myaddr = mytag+myset_str;
+        myaddr.append(offset_num,'0');//paddr
+
+        const Addr p_addr = std::stoull(myaddr, nullptr, 2);
+        const Addr h_addr = p_addr - 0x100000000 + 0x80000000;// host
+        Addr tag = std::stoull(mytag, nullptr, 2);
+        uint32_t set = indexingPolicy->myextractSet(p_addr);
+        const bool is_secure = false;
+
+    std::size_t blk_size_bits = blkSize*8;
+
+
+    // Find replacement victim
+    std::vector<CacheBlk*> evict_blks;
+    CacheBlk *victim = this->findVictim(p_addr, is_secure, blk_size_bits,
+                                            evict_blks);
+    this->updateRp(victim,memtrace_priority);//replacement policy state update
+    victim->insert(tag, is_secure);
+    victim->setSrcRequestorId_pub(static_cast<uint16_t>(std::stoul(requestorid)));
+    victim->setTaskId_pub(static_cast<uint32_t>(std::stoul(taskid)));
+    victim->setTickInserted_pub();
+    victim->setCoherenceBits(CacheBlk::WritableBit);
+    victim->setCoherenceBits(CacheBlk::ReadableBit);
+
+    Addr offset = p_addr & Addr (blkSize - 1);
+    unsigned size = this->blkSize;
+    char result_buffer[size + 1];
+    size_t bytes_read = query_in_memory(decompressed_data, h_addr, result_buffer, size);
+    std::memcpy(victim->data + offset, result_buffer, size);
+    victim->setWhenReady(curTick());
+        }
+        else if(myvalid != '1')
+        {
+            break;
+        }
+    }
+    file.close();
+}
+
+
+std::vector<char>
+BaseTags::decompress_gz_to_memory(const std::string& gz_path) {
+    std::vector<char> decompressed_data;
+    const size_t CHUNK_SIZE = 32 * 1024;
+    std::vector<char> in_buffer(CHUNK_SIZE);
+    std::vector<char> out_buffer(CHUNK_SIZE * 2);
+    std::ifstream gz_file(gz_path, std::ios_base::binary);
+    if (!gz_file.is_open()) {
+        throw std::runtime_error("File open failed: " + gz_path);
+    }
+    z_stream strm;
+    strm.zalloc = Z_NULL;
+    strm.zfree = Z_NULL;
+    strm.opaque = Z_NULL;
+    int ret = inflateInit2(&strm, MAX_WBITS | 16);
+    if (ret != Z_OK) {
+        throw std::runtime_error("inflateInit2 falied: " + std::to_string(ret));
+    }
+
+    while (true) {
+        gz_file.read(in_buffer.data(), in_buffer.size());
+        std::streamsize bytes_read = gz_file.gcount();
+
+        strm.avail_in = static_cast<uInt>(bytes_read);
+        strm.next_in = reinterpret_cast<Bytef*>(in_buffer.data());
+
+        if (strm.avail_in == 0 && strm.avail_out == 0) {
+            break;
+        }
+
+        do {
+            strm.avail_out = static_cast<uInt>(out_buffer.size());
+            strm.next_out = reinterpret_cast<Bytef*>(out_buffer.data());
+
+            ret = inflate(&strm, Z_NO_FLUSH);
+
+            if (ret == Z_STREAM_ERROR) {
+                inflateEnd(&strm);
+                gz_file.close();
+                throw std::runtime_error("inflate failed: " + std::to_string(ret));
+            }
+
+            size_t bytes_decompressed = out_buffer.size() - strm.avail_out;
+            if (bytes_decompressed > 0) {
+                decompressed_data.insert(decompressed_data.end(),
+                                         out_buffer.begin(),
+                                         out_buffer.begin() + bytes_decompressed);
+            }
+
+        } while (strm.avail_out == 0);
+
+        if (bytes_read == 0) {
+            break;
+        }
+    }
+
+    if (ret != Z_STREAM_END) {
+         inflateEnd(&strm);
+         gz_file.close();
+         throw std::runtime_error("Decompression did not complete normally, the file may be corrupted. zlib return code: " + std::to_string(ret));
+    }
+
+    inflateEnd(&strm);
+    gz_file.close();
+    return decompressed_data;
+}
+size_t
+BaseTags::query_in_memory(const std::vector<char>& data,
+                       uint64_t target_address,
+                       char* result,
+                       size_t max_result_length) {
+    if (max_result_length == 0 || result == nullptr) {
+        return 0;
+    }
+
+    if (target_address >= data.size()) {
+        throw std::out_of_range("The destination address 0x "+ std::to_string(target_address) + " is out of the unzipped data range.");
+    }
+
+    size_t bytes_to_copy = std::min(max_result_length, data.size() - static_cast<size_t>(target_address));
+
+    std::memcpy(result, data.data() + target_address, bytes_to_copy);
+
+    return bytes_to_copy;
 }
 
 } // namespace gem5

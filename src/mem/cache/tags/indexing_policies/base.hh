@@ -126,6 +126,41 @@ class BaseIndexingPolicy : public SimObject
     void setEntry(ReplaceableEntry* entry, const uint64_t index);
 
     /**
+     * Get the set index for a given address.
+     * 
+     * @param addr The address to calculate the set for.
+     * @return The set index for given address.
+     */
+    virtual uint32_t myextractSet(const Addr addr) const;
+
+    /**
+     * Get the associativity of the cache.
+     * 
+     * @return The associativity of the cache.
+     */
+    int getAssoc(){ return assoc; }
+
+    /**
+     * Get the number of sets in the cache.
+     * 
+     * @return The number of sets in the cache.
+     */
+    uint32_t getnumSets()
+    {
+      return numSets;
+    }
+
+    /**
+     * Get the cache sets.
+     * 
+     * @return The cache sets.
+     */
+    std::vector<std::vector<ReplaceableEntry*>> getsets()
+    {
+      return sets;
+    }
+
+    /**
      * Get an entry based on its set and way. All entries must have been set
      * already before calling this function.
      *

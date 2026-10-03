@@ -177,6 +177,8 @@ class PhysicalMemory : public Serializable
     bool enableHGcpt;
     // Restore from Xiangshan checkpoint image
     bool restoreFromXiangshanCpt;
+    bool restoreFromMemtrace;
+    std::string memtraceFile;
 
     std::string gCptRestorerPath;
 
@@ -221,6 +223,8 @@ class PhysicalMemory : public Serializable
                    const std::string& shared_backstore,
                    bool enable_h_gcpt,
                    bool restore_from_gcpt,
+                   bool restore_from_memtrace,
+                   const std::string& memtrace_file,
                    const std::string& gcpt_restorer_path,
                    const std::string&gcpt_path,
                    bool map_to_raw_cpt,

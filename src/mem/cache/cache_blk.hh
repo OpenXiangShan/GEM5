@@ -499,6 +499,16 @@ class CacheBlk : public TaggedEntry
         }
     }
 
+    // Public versions of some protected setters for use in restore L3 microarchitectural state
+    /** Set the task id value. */
+    void setTaskId_pub(const uint32_t task_id) { _taskId = task_id; }
+
+    /** Set the source requestor id. */
+    void setSrcRequestorId_pub(const uint32_t id) { _srcRequestorId = id; }
+
+    /** Set the current tick as this block's insertion tick. */
+    void setTickInserted_pub() { _tickInserted = curTick(); }
+    
     /** Set the XS metadata. */
     void setXsMetadata(const Request::XsMetadata &xs_meta)
     {
