@@ -157,12 +157,13 @@ XSCompositePrefetcher::notifyPrefetchTlbMiss(PrefetchSourceType source)
 }
 
 void
-XSCompositePrefetcher::notifyPdbPrefetchFill(PrefetchSourceType source)
+XSCompositePrefetcher::notifyPdbPrefetchFill(
+    PrefetchSourceType source, uint32_t depth_epoch)
 {
     if (enableXsstream && Xsstream &&
         (source == PrefetchSourceType::SStream ||
          source == PrefetchSourceType::StoreStream)) {
-        Xsstream->recordStreamPdbRefill();
+        Xsstream->recordStreamPdbRefill(source, depth_epoch);
     }
 }
 
@@ -179,23 +180,24 @@ XSCompositePrefetcher::notifyPrefetchDownstreamResponse(
 
 void
 XSCompositePrefetcher::notifyDemandHitPrefetchMshr(
-    PrefetchSourceType source)
+    PrefetchSourceType source, uint32_t depth_epoch)
 {
     if (enableXsstream && Xsstream &&
         (source == PrefetchSourceType::SStream ||
          source == PrefetchSourceType::StoreStream)) {
-        Xsstream->recordStreamDemandMshrHit();
+        Xsstream->recordStreamDemandMshrHit(source, depth_epoch);
     }
 }
 
 void
 XSCompositePrefetcher::notifyPrefetchProbe(
-    PrefetchSourceType source, PrefetchProbeResult result)
+    PrefetchSourceType source, PrefetchProbeResult result,
+    uint32_t depth_epoch)
 {
     if (enableXsstream && Xsstream &&
         (source == PrefetchSourceType::SStream ||
          source == PrefetchSourceType::StoreStream)) {
-        Xsstream->recordStreamProbe(source, result);
+        Xsstream->recordStreamProbe(source, result, depth_epoch);
     }
 }
 
@@ -220,6 +222,49 @@ XSCompositePrefetcher::notifyPdbReplacement(
          source == PrefetchSourceType::StoreStream)) {
         Xsstream->recordStreamPdbReplacement(
             used, refill_to_replace, use_to_replace);
+    }
+}
+
+bool
+XSCompositePrefetcher::pdbVictimObserverEnabled(
+    PrefetchSourceType source) const
+{
+    return enableXsstream && Xsstream &&
+        source == PrefetchSourceType::SStream &&
+        Xsstream->reuseObserverEnabled();
+}
+
+uint32_t
+XSCompositePrefetcher::currentPdbDepthEpoch(
+    PrefetchSourceType source) const
+{
+    return pdbVictimObserverEnabled(source) ?
+        Xsstream->currentDepthEpoch() : 0;
+}
+
+void
+XSCompositePrefetcher::notifyPdbVictimReuse(
+    PrefetchSourceType source, bool used, uint32_t refill_depth_epoch)
+{
+    if (pdbVictimObserverEnabled(source)) {
+        Xsstream->recordPdbVictimReuse(used, refill_depth_epoch);
+    }
+}
+
+bool
+XSCompositePrefetcher::shouldMovePdbVictim(
+    PrefetchSourceType source, bool used)
+{
+    return pdbVictimObserverEnabled(source) &&
+        Xsstream->shouldMovePdbVictim(used);
+}
+
+void
+XSCompositePrefetcher::notifyPdbVictimMoveResult(
+    PrefetchSourceType source, bool used, bool success)
+{
+    if (pdbVictimObserverEnabled(source)) {
+        Xsstream->recordPdbVictimMoveResult(used, success);
     }
 }
 
@@ -255,7 +300,10 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     if (pfi.isCacheMiss() || pfi.isPfFirstHit()) {
         assert(!(enableActivepage && enableXsstream));
         if (enableXsstream) {
-            Xsstream->calculatePrefetch(pfi, addresses);
+            const bool covered_late = late ||
+                pfi.getXsMetadata().prefetchSource !=
+                    PrefetchSourceType::PF_NONE;
+            Xsstream->calculatePrefetch(pfi, addresses, covered_late);
             stats.streamTrainCount++;
         }
         act_match_entry = actLookup(pfi, is_active_page, enter_new_region, is_first_shot);

@@ -1,6 +1,7 @@
 #ifndef __MEM_CACHE_PREFETCH_XSSTREAM_HH__
 #define __MEM_CACHE_PREFETCH_XSSTREAM_HH__
 #include <array>
+#include <cstdint>
 #include <unordered_map>
 #include <vector>
 
@@ -60,11 +61,31 @@ class XsStreamPrefetcher : public Queued
     bool bdpEwmaValid = false;
     bool refillToUseTargetValid = false;
     bool enableAutoDepth;
+    const bool enableReuseObserver;
+    const bool enableCompetitiveDepth;
+    const bool enableUsedMove;
+    const bool enableUnusedMove;
+    const bool persistentUnusedMove;
     bool enableL3StreamPre;
     const unsigned l2Depth;
     const int l2Ratio = 2;
     const int l3Ratio = 3;
     const std::vector<int> depthLevels;
+    const std::vector<int> competitiveDepthLevels;
+    const unsigned competitiveWindowRefills;
+    const unsigned competitiveLateLow;
+    const unsigned competitiveLateHigh;
+    const unsigned competitiveUnusedLow;
+    const unsigned competitiveUnusedHigh;
+    const double competitiveCreditThreshold;
+    const unsigned competitiveSettleWindowCount;
+    const unsigned competitiveMaxLevelStep;
+    const unsigned usedMoveOnHits;
+    const unsigned usedMoveOffHits;
+    const unsigned usedMoveOnWindows;
+    const unsigned usedMoveOffWindows;
+    const unsigned unusedMoveOnWindows;
+    const unsigned unusedMoveOffWindows;
     // Retained only for the legacy feedback dump path below.
     static constexpr std::array<int, 7> DEPTH_LEVELS{
         4, 8, 16, 32, 64, 96, 128
@@ -105,6 +126,29 @@ class XsStreamPrefetcher : public Queued
     const unsigned disabledProbeIntervalCalls;
     const double reenableUsefulThreshold;
     const unsigned reenableConfirmWindows;
+
+    size_t competitiveDepthIndex = 0;
+    uint32_t depthEpoch = 0;
+    double upCredit = 0.0;
+    double downCredit = 0.0;
+    unsigned settleRemaining = 0;
+    bool usedMoveState = false;
+    bool unusedMoveState = false;
+    unsigned usedMoveOnStreak = 0;
+    unsigned usedMoveOffStreak = 0;
+    unsigned unusedMoveOnStreak = 0;
+    unsigned unusedMoveOffStreak = 0;
+
+    struct CompetitiveWindow
+    {
+        uint64_t refills = 0;
+        uint64_t lateEvents = 0;
+        uint64_t prefetchHitDemandMshrEvents = 0;
+        uint64_t demandHitPrefetchMshrEvents = 0;
+        uint64_t uncoveredDemandMisses = 0;
+        uint64_t unusedVictimHits = 0;
+        uint64_t usedVictimHits = 0;
+    } competitiveWindow;
     const int L1BLKDEGREE = 2;
     const int L2BLKDEGREE = 4;
     const int L3BLKDEGREE = 8;
@@ -213,6 +257,58 @@ class XsStreamPrefetcher : public Queued
         statistics::Scalar accuracy;
         statistics::Scalar unusedReplacementRate;
         statistics::Scalar accuracyDisabled;
+        statistics::Scalar competitiveWindows;
+        statistics::Scalar activeStreamDemandMisses;
+        statistics::Scalar activeStreamLateDemandMisses;
+        statistics::Scalar activeStreamUncoveredDemandMisses;
+        statistics::Vector activeStreamDemandMissesAtDepth;
+        statistics::Vector activeStreamUncoveredDemandMissesAtDepth;
+        statistics::Scalar competitiveWindowRefills;
+        statistics::Scalar competitiveWindowLateEvents;
+        statistics::Scalar competitiveWindowPrefetchHitDemandMshrEvents;
+        statistics::Scalar competitiveWindowDemandHitPrefetchMshrEvents;
+        statistics::Scalar competitiveWindowUncoveredDemandMisses;
+        statistics::Scalar competitiveWindowUnusedVictimHits;
+        statistics::Scalar competitiveWindowUsedVictimHits;
+        statistics::Scalar currentEpochLateEvents;
+        statistics::Scalar staleEpochLateEvents;
+        statistics::Scalar currentEpochPrefetchHitDemandMshrEvents;
+        statistics::Scalar staleEpochPrefetchHitDemandMshrEvents;
+        statistics::Scalar currentEpochDemandHitPrefetchMshrEvents;
+        statistics::Scalar staleEpochDemandHitPrefetchMshrEvents;
+        statistics::Scalar currentEpochUnusedVictimHits;
+        statistics::Scalar currentEpochUsedVictimHits;
+        statistics::Scalar staleEpochUnusedVictimHits;
+        statistics::Scalar staleEpochUsedVictimHits;
+        statistics::Scalar latePressure;
+        statistics::Scalar unusedPressure;
+        statistics::Scalar netPressure;
+        statistics::Scalar upCredit;
+        statistics::Scalar downCredit;
+        statistics::Scalar competitiveDepthIncreases;
+        statistics::Scalar competitiveDepthDecreases;
+        statistics::Scalar competitiveSettleWindows;
+        statistics::Scalar equalNonzeroPressureWindows;
+        statistics::Scalar unusedMoveEligibleWindows;
+        statistics::Scalar currentDepth;
+        statistics::Scalar currentDepthEpoch;
+        statistics::Vector competitiveWindowsAtDepth;
+        statistics::Scalar usedMoveEnables;
+        statistics::Scalar usedMoveDisables;
+        statistics::Scalar usedMoveActive;
+        statistics::Scalar usedMoveWouldEnable;
+        statistics::Scalar usedMoveWouldMove;
+        statistics::Scalar unusedMoveEnables;
+        statistics::Scalar unusedMoveDisables;
+        statistics::Scalar unusedMoveActive;
+        statistics::Scalar unusedMoveWouldEnable;
+        statistics::Scalar unusedMoveWouldMove;
+        statistics::Scalar usedMoveAttempts;
+        statistics::Scalar usedMoveSuccesses;
+        statistics::Scalar usedMoveFailures;
+        statistics::Scalar unusedMoveAttempts;
+        statistics::Scalar unusedMoveSuccesses;
+        statistics::Scalar unusedMoveFailures;
     } feedbackStats;
 
     void completeFeedbackWindow();
@@ -221,6 +317,17 @@ class XsStreamPrefetcher : public Queued
     void updateAccuracyController();
     void recomputeDepth(const char *reason);
     void maybeUpdateControllers();
+    void recordLegacyDepthChange(int old_depth);
+    void recordCompetitiveLate(uint32_t event_epoch,
+                               bool demand_hit_prefetch_mshr);
+    void completeCompetitiveWindow();
+    void updateMoveControllers(double late_pressure, double unused_pressure,
+                               bool unused_window_at_min_depth);
+    double quantizeCompetitivePressure(
+        uint64_t count, unsigned low, unsigned high) const;
+    void calculatePrefetchImpl(const PrefetchInfo &pfi,
+                               std::vector<AddrPriority> &addresses,
+                               bool coverage_valid, bool late);
 
     struct ControlSnapshot
     {
@@ -279,9 +386,13 @@ class XsStreamPrefetcher : public Queued
     const unsigned pfFilterSize{256};
     boost::compute::detail::lru_cache<Addr, Addr> streamBlkFilter;
     XsStreamPrefetcher(const XsStreamPrefetcherParams &p);
+    void resetStats() override;
     using Queued::calculatePrefetch;
+    using Queued::shouldMovePdbVictim;
     void calculatePrefetch(const PrefetchInfo &pfi,
                            std::vector<AddrPriority> &addresses) override;
+    void calculatePrefetch(const PrefetchInfo &pfi,
+                           std::vector<AddrPriority> &addresses, bool late);
     void recordStreamDequeued(PrefetchSourceType source)
     {
         Base::recordPrefetchDequeued(source);
@@ -290,18 +401,28 @@ class XsStreamPrefetcher : public Queued
         maybeUpdateControllers();
     }
     void recordStreamTlbMiss() { ++feedback.tlbMisses; }
-    void recordStreamPdbRefill();
+    void recordStreamPdbRefill(PrefetchSourceType source,
+                               uint32_t refill_epoch);
     void recordStreamMshrResponse(uint64_t latency_cycles);
-    void recordStreamDemandMshrHit()
+    void recordStreamDemandMshrHit(PrefetchSourceType source,
+                                   uint32_t depth_epoch)
     {
         ++feedback.demandMshrHits;
         ++feedbackStats.cumulativeLateEvents;
+        if (source == PrefetchSourceType::SStream)
+            recordCompetitiveLate(depth_epoch, true);
     }
     void recordStreamProbe(PrefetchSourceType source,
-                           Base::PrefetchProbeResult result);
+                           Base::PrefetchProbeResult result,
+                           uint32_t depth_epoch);
     void recordStreamPdbFirstUse(bool load, uint64_t refill_to_use);
     void recordStreamPdbReplacement(bool used, uint64_t refill_to_replace,
                                     uint64_t use_to_replace);
+    bool reuseObserverEnabled() const { return enableReuseObserver; }
+    uint32_t currentDepthEpoch() const { return depthEpoch; }
+    void recordPdbVictimReuse(bool used, uint32_t refill_depth_epoch);
+    bool shouldMovePdbVictim(bool used);
+    void recordPdbVictimMoveResult(bool used, bool success);
     PrefetchFilter* stridestream_pfFilter_l1;
     PrefetchFilter* stridestream_pfFilter_l2l3;
 };

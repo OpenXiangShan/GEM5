@@ -76,7 +76,7 @@ MSHR::TargetList::TargetList(const std::string &name)
         needsWritable(false), hasUpgrade(false),
         allocOnFill(false), hasFromCache(false),
         hasFromPref(false), hasFromCPU(false),
-        pfSource(PF_NONE), pfDepth(0),
+        pfSource(PF_NONE), pfDepth(0), pfDepthEpoch(0),
         blkAddr(0), blkSize(0),
         canMergeWrites(true), writesBitmap(0)
 {}
@@ -109,6 +109,7 @@ MSHR::TargetList::updateFlags(PacketPtr pkt, Target::Source source,
         } else if (!hasFromPref) {  // first pkt && is pref
             pfSource = pkt->req->getXsMetadata().prefetchSource;
             pfDepth = pkt->req->getXsMetadata().prefetchDepth;
+            pfDepthEpoch = pkt->req->getXsMetadata().prefetchDepthEpoch;
             DPRINTF(Cache, "MSHR: set source as prefetcher %i\n", pfSource);
         }
 

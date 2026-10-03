@@ -114,21 +114,31 @@ class Base : public ClockedObject
         PacketPtr pkt;
         std::unique_ptr<PrefetchInfo_old> pfi_old; 
         PrefetchSourceType pfSourceType;
-        PFtriggerInfo() : pkt(nullptr), pfi_old(nullptr), pfSourceType(PrefetchSourceType::PF_NONE) {}
+        uint32_t depthEpoch;
+        PFtriggerInfo()
+            : pkt(nullptr), pfi_old(nullptr),
+              pfSourceType(PrefetchSourceType::PF_NONE), depthEpoch(0)
+        {}
         PFtriggerInfo(PacketPtr p, const PrefetchInfo &a)
             : pkt(p ? new Packet(p, false, false) : nullptr),
-            pfi_old(std::make_unique<PrefetchInfo_old>(a)), pfSourceType(PrefetchSourceType::PF_NONE) {}
+              pfi_old(std::make_unique<PrefetchInfo_old>(a)),
+              pfSourceType(PrefetchSourceType::PF_NONE), depthEpoch(0)
+        {}
         PFtriggerInfo(const PFtriggerInfo &other)
             : pkt(other.pkt ? new Packet(other.pkt, false, false) : nullptr),
               pfi_old(other.pfi_old ? std::make_unique<PrefetchInfo_old>(*(other.pfi_old)) : nullptr),
-              pfSourceType(other.pfSourceType) {}
+              pfSourceType(other.pfSourceType), depthEpoch(other.depthEpoch)
+        {}
         PFtriggerInfo& operator=(const PFtriggerInfo &other)
         {
             if (this != &other) {
                 delete pkt;
                 pkt = other.pkt ? new Packet(other.pkt, false, false) : nullptr;
-                pfi_old = std::make_unique<PrefetchInfo_old>(*(other.pfi_old));
+                pfi_old = other.pfi_old ?
+                    std::make_unique<PrefetchInfo_old>(*(other.pfi_old)) :
+                    nullptr;
                 pfSourceType = other.pfSourceType;
+                depthEpoch = other.depthEpoch;
             }
             return *this;
         }
@@ -419,6 +429,9 @@ class Base : public ClockedObject
         }
         void setTriggerInfo_PFsrc(const PrefetchSourceType pfSource) const {
             trigger_info.pfSourceType = pfSource;
+        }
+        void setTriggerInfoDepthEpoch(uint32_t depth_epoch) const {
+            trigger_info.depthEpoch = depth_epoch;
         }
     };
     /**
@@ -1159,12 +1172,14 @@ class Base : public ClockedObject
 
     virtual void notifyCachelineRefill(Addr paddr, bool is_secure) {}
 
-    virtual void notifyPdbPrefetchFill(PrefetchSourceType source) {}
+    virtual void notifyPdbPrefetchFill(
+        PrefetchSourceType source, uint32_t depth_epoch) {}
 
     virtual void notifyPrefetchDownstreamResponse(
         PrefetchSourceType source, uint64_t latency_cycles) {}
 
-    virtual void notifyDemandHitPrefetchMshr(PrefetchSourceType source) {}
+    virtual void notifyDemandHitPrefetchMshr(
+        PrefetchSourceType source, uint32_t depth_epoch) {}
 
     enum class PrefetchProbeResult
     {
@@ -1178,12 +1193,23 @@ class Base : public ClockedObject
 
     virtual void notifyPrefetchTlbMiss(PrefetchSourceType source) {}
     virtual void notifyPrefetchProbe(PrefetchSourceType source,
-                                     PrefetchProbeResult result) {}
+                                     PrefetchProbeResult result,
+                                     uint32_t depth_epoch) {}
     virtual void notifyPdbFirstUse(PrefetchSourceType source, bool load,
                                    uint64_t refill_to_use) {}
     virtual void notifyPdbReplacement(PrefetchSourceType source, bool used,
                                       uint64_t refill_to_replace,
                                       uint64_t use_to_replace) {}
+    virtual bool pdbVictimObserverEnabled(PrefetchSourceType source) const
+    { return false; }
+    virtual uint32_t currentPdbDepthEpoch(PrefetchSourceType source) const
+    { return 0; }
+    virtual void notifyPdbVictimReuse(PrefetchSourceType source, bool used,
+                                      uint32_t refill_depth_epoch) {}
+    virtual bool shouldMovePdbVictim(PrefetchSourceType source, bool used)
+    { return false; }
+    virtual void notifyPdbVictimMoveResult(PrefetchSourceType source,
+                                           bool used, bool success) {}
 
     virtual void
     pfHitInCache(PrefetchSourceType pf_type)

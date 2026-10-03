@@ -73,6 +73,9 @@ namespace gem5
 Cache::Cache(const CacheParams &p)
     : BaseCache(p, p.system->cacheLineSize()),
       pdbCapacity(p.cache_level == 1 && !p.is_read_only ? p.pdb_entries : 0),
+      pdbVictimCapacity(p.cache_level == 1 && !p.is_read_only ?
+                        p.pdb_victim_entries : 0),
+      pdbVictimMaxAge(p.pdb_victim_max_age),
       pdbStats(*this)
 {
     assert(p.tags);
@@ -84,11 +87,12 @@ Cache::resetStats()
 {
     BaseCache::resetStats();
     pdbStats.occupancy = pdbLines.size();
+    pdbStats.victimTableOccupancy = pdbVictims.size();
 }
 
 Cache::PdbLine::PdbLine(Addr addr, bool secure, unsigned size)
     : addr(addr), secure(secure), data(size), refillTick(curTick()),
-      firstUseTick(0), usefulRecorded(false)
+      firstUseTick(0), lastUseTick(0), usefulRecorded(false)
 {
     blk.data = data.data();
     blk.insert(addr, secure);
@@ -112,11 +116,84 @@ Cache::PdbStats::PdbStats(Cache &cache)
       ADD_STAT(refillToReplaceLatency, statistics::units::Cycle::get(),
                "Refill-to-replace latency of replaced PDB lines"),
       ADD_STAT(usedToReplaceLatency, statistics::units::Cycle::get(),
-               "First-use-to-replace latency of used PDB lines")
+               "First-use-to-replace latency of used PDB lines"),
+      ADD_STAT(lastUseToReplaceLatency, statistics::units::Cycle::get(),
+               "Last-use-to-replace latency of used PDB lines"),
+      ADD_STAT(victimTableInsertionsUsed, statistics::units::Count::get(),
+               "Used stream PDB capacity victims inserted into the victim table"),
+      ADD_STAT(victimTableInsertionsUnused, statistics::units::Count::get(),
+               "Unused stream PDB capacity victims inserted into the victim table"),
+      ADD_STAT(victimTableDuplicateInsertions,
+               statistics::units::Count::get(),
+               "Victim entries overwritten by a newer victim of the same line"),
+      ADD_STAT(victimTableEvictions, statistics::units::Count::get(),
+               "Victim entries removed by victim-table LRU replacement"),
+      ADD_STAT(victimTableExpiredUsed, statistics::units::Count::get(),
+               "Used victim entries removed after exceeding the age limit"),
+      ADD_STAT(victimTableExpiredUnused, statistics::units::Count::get(),
+               "Unused victim entries removed after exceeding the age limit"),
+      ADD_STAT(victimTableOccupancy, statistics::units::Count::get(),
+               "Current PDB victim-table occupancy"),
+      ADD_STAT(usedVictimHits, statistics::units::Count::get(),
+               "First demand accesses to tracked used PDB victims"),
+      ADD_STAT(unusedVictimHits, statistics::units::Count::get(),
+               "First demand accesses to tracked unused PDB victims"),
+      ADD_STAT(usedVictimAgeRejects, statistics::units::Count::get(),
+               "Demand reuses of used victims rejected by the age limit"),
+      ADD_STAT(unusedVictimAgeRejects, statistics::units::Count::get(),
+               "Demand reuses of unused victims rejected by the age limit"),
+      ADD_STAT(currentEpochUsedVictimHits, statistics::units::Count::get(),
+               "Used-victim demand hits from the current depth epoch"),
+      ADD_STAT(currentEpochUnusedVictimHits, statistics::units::Count::get(),
+               "Unused-victim demand hits from the current depth epoch"),
+      ADD_STAT(staleEpochUsedVictimHits, statistics::units::Count::get(),
+               "Used-victim demand hits from older depth epochs"),
+      ADD_STAT(staleEpochUnusedVictimHits, statistics::units::Count::get(),
+               "Unused-victim demand hits from older depth epochs"),
+      ADD_STAT(usedVictimReuseLatency, statistics::units::Cycle::get(),
+               "Capacity-victim-to-demand cycles for used PDB lines"),
+      ADD_STAT(unusedVictimReuseLatency, statistics::units::Cycle::get(),
+               "Capacity-victim-to-demand cycles for unused PDB lines"),
+      ADD_STAT(usedMoveDcacheAlreadyResident,
+               statistics::units::Count::get(),
+               "Used-victim moves finding the line already in DCache"),
+      ADD_STAT(unusedMoveDcacheAlreadyResident,
+               statistics::units::Count::get(),
+               "Unused-victim moves finding the line already in DCache"),
+      ADD_STAT(usedMoveDcacheAllocations, statistics::units::Count::get(),
+               "Used-victim lines allocated into DCache"),
+      ADD_STAT(unusedMoveDcacheAllocations, statistics::units::Count::get(),
+               "Unused-victim lines allocated into DCache"),
+      ADD_STAT(usedMoveDcacheDemandVictims, statistics::units::Count::get(),
+               "Non-prefetched DCache lines evicted by used-victim moves"),
+      ADD_STAT(unusedMoveDcacheDemandVictims,
+               statistics::units::Count::get(),
+               "Non-prefetched DCache lines evicted by unused-victim moves"),
+      ADD_STAT(usedMoveDcachePrefetchVictims,
+               statistics::units::Count::get(),
+               "Unused-prefetch DCache lines evicted by used-victim moves"),
+      ADD_STAT(unusedMoveDcachePrefetchVictims,
+               statistics::units::Count::get(),
+               "Unused-prefetch DCache lines evicted by unused-victim moves"),
+      ADD_STAT(usedMoveDcacheDirtyVictims, statistics::units::Count::get(),
+               "Dirty DCache lines evicted by used-victim moves"),
+      ADD_STAT(unusedMoveDcacheDirtyVictims, statistics::units::Count::get(),
+               "Dirty DCache lines evicted by unused-victim moves"),
+      ADD_STAT(usedMoveDcacheDeadVictims, statistics::units::Count::get(),
+               "Dead DCache lines evicted by used-victim moves"),
+      ADD_STAT(unusedMoveDcacheDeadVictims, statistics::units::Count::get(),
+               "Dead DCache lines evicted by unused-victim moves"),
+      ADD_STAT(usedMoveDcacheLiveVictims, statistics::units::Count::get(),
+               "Live DCache lines evicted by used-victim moves"),
+      ADD_STAT(unusedMoveDcacheLiveVictims, statistics::units::Count::get(),
+               "Live DCache lines evicted by unused-victim moves")
 {
     usefulLatency.init(0, 65536, 64).flags(statistics::pdf);
     refillToReplaceLatency.init(0, 65536, 64).flags(statistics::pdf);
     usedToReplaceLatency.init(0, 65536, 64).flags(statistics::pdf);
+    lastUseToReplaceLatency.init(0, 65536, 64).flags(statistics::pdf);
+    usedVictimReuseLatency.init(0, 1048576, 1024).flags(statistics::pdf);
+    unusedVictimReuseLatency.init(0, 1048576, 1024).flags(statistics::pdf);
 }
 
 Cache::PdbIterator
@@ -159,12 +236,179 @@ Cache::recordPdbReplacement(PdbIterator line)
     if (line->usefulRecorded) {
         use_to_replace = ticksToCycles(replacement_tick - line->firstUseTick);
         pdbStats.usedToReplaceLatency.sample(use_to_replace);
+        pdbStats.lastUseToReplaceLatency.sample(
+            ticksToCycles(replacement_tick - line->lastUseTick));
     }
     if (prefetcher) {
         prefetcher->notifyPdbReplacement(
             line->blk.getXsMetadata().prefetchSource, line->usefulRecorded,
             refill_to_replace, use_to_replace);
     }
+}
+
+bool
+Cache::pdbVictimExpired(const PdbVictimEntry &entry) const
+{
+    return pdbVictimMaxAge != Cycles(0) &&
+        ticksToCycles(curTick() - entry.victimTick) > pdbVictimMaxAge;
+}
+
+void
+Cache::expirePdbVictims()
+{
+    if (pdbVictimMaxAge == Cycles(0))
+        return;
+
+    while (!pdbVictims.empty() && pdbVictimExpired(pdbVictims.front())) {
+        const auto &entry = pdbVictims.front();
+        pdbVictimIndex.erase({entry.addr, entry.secure});
+        if (entry.used)
+            ++pdbStats.victimTableExpiredUsed;
+        else
+            ++pdbStats.victimTableExpiredUnused;
+        pdbVictims.pop_front();
+    }
+    pdbStats.victimTableOccupancy = pdbVictims.size();
+}
+
+void
+Cache::recordPdbVictim(PdbIterator line)
+{
+    assert(line != pdbLines.end());
+    if (!pdbVictimCapacity || !prefetcher) {
+        return;
+    }
+
+    const auto metadata = line->blk.getXsMetadata();
+    if (!prefetcher->pdbVictimObserverEnabled(metadata.prefetchSource))
+        return;
+
+    expirePdbVictims();
+    const PdbKey key{line->addr, line->secure};
+    auto existing = pdbVictimIndex.find(key);
+    if (existing != pdbVictimIndex.end()) {
+        pdbVictims.erase(existing->second);
+        pdbVictimIndex.erase(existing);
+        ++pdbStats.victimTableDuplicateInsertions;
+    } else if (pdbVictims.size() == pdbVictimCapacity) {
+        const auto &oldest = pdbVictims.front();
+        pdbVictimIndex.erase({oldest.addr, oldest.secure});
+        pdbVictims.pop_front();
+        ++pdbStats.victimTableEvictions;
+    }
+
+    pdbVictims.push_back({line->addr, line->secure, line->usefulRecorded,
+                          metadata.prefetchSource,
+                          metadata.prefetchDepthEpoch, curTick()});
+    pdbVictimIndex.emplace(key, std::prev(pdbVictims.end()));
+    if (line->usefulRecorded)
+        ++pdbStats.victimTableInsertionsUsed;
+    else
+        ++pdbStats.victimTableInsertionsUnused;
+    pdbStats.victimTableOccupancy = pdbVictims.size();
+}
+
+void
+Cache::recordPdbVictimDemandAccess(Addr addr, bool secure)
+{
+    auto found = pdbVictimIndex.find({addr, secure});
+    if (found == pdbVictimIndex.end())
+        return;
+
+    const auto entry = *found->second;
+    const bool current_epoch = prefetcher &&
+        entry.depthEpoch ==
+            prefetcher->currentPdbDepthEpoch(entry.source);
+    const uint64_t victim_to_demand =
+        ticksToCycles(curTick() - entry.victimTick);
+    if (pdbVictimExpired(entry)) {
+        if (entry.used)
+            ++pdbStats.usedVictimAgeRejects;
+        else
+            ++pdbStats.unusedVictimAgeRejects;
+        pdbVictims.erase(found->second);
+        pdbVictimIndex.erase(found);
+        pdbStats.victimTableOccupancy = pdbVictims.size();
+        return;
+    }
+    if (entry.used) {
+        ++pdbStats.usedVictimHits;
+        if (current_epoch)
+            ++pdbStats.currentEpochUsedVictimHits;
+        else
+            ++pdbStats.staleEpochUsedVictimHits;
+        pdbStats.usedVictimReuseLatency.sample(victim_to_demand);
+    } else {
+        ++pdbStats.unusedVictimHits;
+        if (current_epoch)
+            ++pdbStats.currentEpochUnusedVictimHits;
+        else
+            ++pdbStats.staleEpochUnusedVictimHits;
+        pdbStats.unusedVictimReuseLatency.sample(victim_to_demand);
+    }
+    if (prefetcher) {
+        prefetcher->notifyPdbVictimReuse(
+            entry.source, entry.used, entry.depthEpoch);
+    }
+
+    pdbVictims.erase(found->second);
+    pdbVictimIndex.erase(found);
+    pdbStats.victimTableOccupancy = pdbVictims.size();
+}
+
+bool
+Cache::movePdbLineToDcache(
+    PdbIterator line, PacketList &writebacks)
+{
+    assert(line != pdbLines.end());
+    const bool used = line->usefulRecorded;
+    if (CacheBlk *resident = tags->findBlock(line->addr, line->secure);
+        resident && resident->isValid()) {
+        if (used)
+            ++pdbStats.usedMoveDcacheAlreadyResident;
+        else
+            ++pdbStats.unusedMoveDcacheAlreadyResident;
+        return true;
+    }
+
+    RequestPtr req = std::make_shared<Request>(
+        line->addr, blkSize, 0, Request::wbRequestorId);
+    if (line->secure)
+        req->setFlags(Request::SECURE);
+    Packet transfer(req, MemCmd::WritebackClean, blkSize);
+    transfer.allocate();
+    transfer.setData(line->data.data());
+    const auto source = line->blk.getXsMetadata().prefetchSource;
+    AllocationVictimInfo victim_info;
+    CacheBlk *moved = allocateBlock(
+        &transfer, writebacks, source, nullptr, &victim_info);
+    if (!moved)
+        return false;
+
+    if (used) {
+        ++pdbStats.usedMoveDcacheAllocations;
+        pdbStats.usedMoveDcacheDemandVictims += victim_info.demand;
+        pdbStats.usedMoveDcachePrefetchVictims += victim_info.prefetched;
+        pdbStats.usedMoveDcacheDirtyVictims += victim_info.dirty;
+        pdbStats.usedMoveDcacheDeadVictims += victim_info.dead;
+        pdbStats.usedMoveDcacheLiveVictims += victim_info.live;
+    } else {
+        ++pdbStats.unusedMoveDcacheAllocations;
+        pdbStats.unusedMoveDcacheDemandVictims += victim_info.demand;
+        pdbStats.unusedMoveDcachePrefetchVictims += victim_info.prefetched;
+        pdbStats.unusedMoveDcacheDirtyVictims += victim_info.dirty;
+        pdbStats.unusedMoveDcacheDeadVictims += victim_info.dead;
+        pdbStats.unusedMoveDcacheLiveVictims += victim_info.live;
+    }
+    std::memcpy(moved->data, line->data.data(), blkSize);
+    moved->setCoherenceBits(CacheBlk::ReadableBit);
+    moved->setWhenReady(std::max(curTick(), line->blk.getWhenReady()));
+    moved->setXsMetadata(line->blk.getXsMetadata());
+    if (!used) {
+        moved->setPrefetched();
+        line->blk.clearPrefetched();
+    }
+    return true;
 }
 
 bool
@@ -219,6 +463,9 @@ Cache::memInvalidate()
     while (!pdbLines.empty())
         erasePdbLine(pdbLines.begin());
     pendingPdbReleases.clear();
+    pdbVictims.clear();
+    pdbVictimIndex.clear();
+    pdbStats.victimTableOccupancy = 0;
 }
 
 void
@@ -306,7 +553,21 @@ Cache::storePrefetchFill(PacketPtr pkt, MSHR *mshr,
         if (victim == pdbLines.end())
             return false;
         recordPdbReplacement(victim);
-        erasePdbLine(victim, &writebacks);
+        recordPdbVictim(victim);
+        const auto source =
+            victim->blk.getXsMetadata().prefetchSource;
+        const bool used = victim->usefulRecorded;
+        const bool should_move = prefetcher &&
+            prefetcher->shouldMovePdbVictim(source, used);
+        const bool moved = should_move &&
+            movePdbLineToDcache(victim, writebacks);
+        if (should_move) {
+            prefetcher->notifyPdbVictimMoveResult(source, used, moved);
+        }
+        if (moved)
+            erasePdbLine(victim);
+        else
+            erasePdbLine(victim, &writebacks);
         ++pdbStats.evictions;
     }
 
@@ -323,7 +584,8 @@ Cache::storePrefetchFill(PacketPtr pkt, MSHR *mshr,
     ++stats.pfOnlyFill;
     if (prefetcher) {
         prefetcher->notifyPdbPrefetchFill(
-            line->blk.getXsMetadata().prefetchSource);
+            line->blk.getXsMetadata().prefetchSource,
+            line->blk.getXsMetadata().prefetchDepthEpoch);
         prefetcher->notifyCachelineRefill(addr, secure);
     }
     ppFill->notify(pkt);
@@ -423,6 +685,11 @@ Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
               PacketList &writebacks)
 {
 
+    if (pdbVictimCapacity && pkt->isDemand()) {
+        recordPdbVictimDemandAccess(
+            pkt->getBlockAddr(blkSize), pkt->isSecure());
+    }
+
     if (pdbCapacity) {
         const Addr addr = pkt->getBlockAddr(blkSize);
         auto line = findPdbLine(addr, pkt->isSecure());
@@ -447,6 +714,7 @@ Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
                     satisfyRequest(pkt, &line->blk);
                     if (pkt->cmd == MemCmd::ReadReq) {
                         recordPdbUse(line, true);
+                        line->lastUseTick = curTick();
                         pdbLines.splice(pdbLines.end(), pdbLines, line);
                         ++pdbStats.loadHits;
                     } else {

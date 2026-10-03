@@ -926,6 +926,16 @@ class BaseCache : public ClockedObject, public CacheAccessor
         PrefetchSourceType prefetch_fill_source = PrefetchSourceType::PF_NONE,
         bool *refill_need_data_read = nullptr);
 
+    struct AllocationVictimInfo
+    {
+        unsigned valid = 0;
+        unsigned demand = 0;
+        unsigned prefetched = 0;
+        unsigned dirty = 0;
+        unsigned dead = 0;
+        unsigned live = 0;
+    };
+
     /**
      * Allocate a new block and perform any necessary writebacks
      *
@@ -941,7 +951,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
     CacheBlk *allocateBlock(
         const PacketPtr pkt, PacketList &writebacks,
         PrefetchSourceType prefetch_fill_source = PrefetchSourceType::PF_NONE,
-        bool *evicted_dirty = nullptr);
+        bool *evicted_dirty = nullptr,
+        AllocationVictimInfo *victim_info = nullptr);
     /**
      * Evict a cache block.
      *

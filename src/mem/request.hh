@@ -391,36 +391,43 @@ class Request
         o3::XsDynInstMetaPtr instXsMetadata;
         PrefetchSourceType prefetchSource;
         int prefetchDepth;
+        uint32_t prefetchDepthEpoch;
 
         XsMetadata() :
             validXsMetadata(false),
             instXsMetadata(nullptr),
             prefetchSource(PF_NONE),
-            prefetchDepth(0) {}
+            prefetchDepth(0),
+            prefetchDepthEpoch(0) {}
 
         XsMetadata(o3::XsDynInstMetaPtr instMeta) :
             validXsMetadata(true),
             instXsMetadata(instMeta),
             prefetchSource(PF_NONE) ,
-            prefetchDepth(0) {}
+            prefetchDepth(0),
+            prefetchDepthEpoch(0) {}
 
         XsMetadata(PrefetchSourceType pfSource) :
             validXsMetadata(true),
             instXsMetadata(nullptr),
             prefetchSource(pfSource) ,
-            prefetchDepth(0) {}
+            prefetchDepth(0),
+            prefetchDepthEpoch(0) {}
 
-        XsMetadata(PrefetchSourceType pfSource,int pfDepth) :
+        XsMetadata(PrefetchSourceType pfSource, int pfDepth,
+                   uint32_t depthEpoch = 0) :
             validXsMetadata(true),
             instXsMetadata(nullptr),
             prefetchSource(pfSource) ,
-            prefetchDepth(pfDepth) {}
+            prefetchDepth(pfDepth),
+            prefetchDepthEpoch(depthEpoch) {}
 
         void invalidate() {
             validXsMetadata = false;
             instXsMetadata = nullptr;
             prefetchSource = PF_NONE;
             prefetchDepth = 0;
+            prefetchDepthEpoch = 0;
         }
     } XsMetadata;
 

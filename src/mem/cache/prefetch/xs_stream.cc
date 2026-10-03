@@ -17,12 +17,33 @@ XsStreamPrefetcher::XsStreamPrefetcher(const XsStreamPrefetcherParams &p)
     : Queued(p),
       regionSize(p.region_size),
       regionBlks(p.region_size / p.block_size),    
-      depth(p.enable_auto_depth ? p.initial_bdp_depth : p.xs_stream_depth),
+      depth(p.enable_competitive_depth ? p.competitive_initial_depth :
+            (p.enable_auto_depth ? p.initial_bdp_depth : p.xs_stream_depth)),
       bdpDepth(depth),
       enableAutoDepth(p.enable_auto_depth),
+      enableReuseObserver(p.enable_reuse_observer),
+      enableCompetitiveDepth(p.enable_competitive_depth),
+      enableUsedMove(p.enable_used_move),
+      enableUnusedMove(p.enable_unused_move),
+      persistentUnusedMove(p.persistent_unused_move),
       enableL3StreamPre(p.enable_l3_stream_pre),
       l2Depth(p.xs_stream_l2_depth),
       depthLevels(p.depth_levels),
+      competitiveDepthLevels(p.competitive_depth_levels),
+      competitiveWindowRefills(p.competitive_window_refills),
+      competitiveLateLow(p.competitive_late_low),
+      competitiveLateHigh(p.competitive_late_high),
+      competitiveUnusedLow(p.competitive_unused_low),
+      competitiveUnusedHigh(p.competitive_unused_high),
+      competitiveCreditThreshold(p.competitive_credit_threshold),
+      competitiveSettleWindowCount(p.competitive_settle_windows),
+      competitiveMaxLevelStep(p.competitive_max_level_step),
+      usedMoveOnHits(p.used_move_on_hits),
+      usedMoveOffHits(p.used_move_off_hits),
+      usedMoveOnWindows(p.used_move_on_windows),
+      usedMoveOffWindows(p.used_move_off_windows),
+      unusedMoveOnWindows(p.unused_move_on_windows),
+      unusedMoveOffWindows(p.unused_move_off_windows),
       bdpWindowSent(p.bdp_window_sent),
       bdpMinMshrSamples(p.bdp_min_mshr_samples),
       bdpMinRefillSamples(p.bdp_min_refill_samples),
@@ -67,13 +88,69 @@ XsStreamPrefetcher::XsStreamPrefetcher(const XsStreamPrefetcherParams &p)
     fatal_if(depthLevels.empty(), "depth_levels must not be empty");
     fatal_if(!std::is_sorted(depthLevels.begin(), depthLevels.end()),
              "depth_levels must be sorted");
-    fatal_if(std::find(depthLevels.begin(), depthLevels.end(), depth) ==
+    fatal_if(std::adjacent_find(depthLevels.begin(), depthLevels.end()) !=
                  depthLevels.end(),
-             "initial stream depth %d must be present in depth_levels", depth);
+             "depth_levels must not contain duplicates");
+    fatal_if(competitiveDepthLevels.empty(),
+             "competitive_depth_levels must not be empty");
+    fatal_if(!std::is_sorted(competitiveDepthLevels.begin(),
+                             competitiveDepthLevels.end()),
+             "competitive_depth_levels must be sorted");
+    fatal_if(std::adjacent_find(competitiveDepthLevels.begin(),
+                                competitiveDepthLevels.end()) !=
+                 competitiveDepthLevels.end(),
+             "competitive_depth_levels must not contain duplicates");
+    if (enableCompetitiveDepth) {
+        fatal_if(std::find(competitiveDepthLevels.begin(),
+                           competitiveDepthLevels.end(), depth) ==
+                     competitiveDepthLevels.end(),
+                 "initial competitive stream depth %d must be present in "
+                 "competitive_depth_levels", depth);
+    } else {
+        fatal_if(std::find(depthLevels.begin(), depthLevels.end(), depth) ==
+                     depthLevels.end(),
+                 "initial stream depth %d must be present in depth_levels",
+                 depth);
+    }
+    const auto initial_depth = std::find(
+        competitiveDepthLevels.begin(), competitiveDepthLevels.end(), depth);
+    if (initial_depth != competitiveDepthLevels.end()) {
+        competitiveDepthIndex = std::distance(
+            competitiveDepthLevels.begin(), initial_depth);
+    }
     fatal_if(bdpWindowSent == 0 || deltaWindowSent == 0,
              "controller windows must be non-zero");
+    fatal_if(competitiveWindowRefills == 0,
+             "competitive_window_refills must be non-zero");
+    fatal_if(competitiveLateLow >= competitiveLateHigh ||
+                 competitiveUnusedLow >= competitiveUnusedHigh,
+             "competitive pressure low thresholds must be below high thresholds");
+    fatal_if(competitiveCreditThreshold <= 0.0,
+             "competitive_credit_threshold must be positive");
+    fatal_if(competitiveMaxLevelStep == 0,
+             "competitive_max_level_step must be non-zero");
+    fatal_if((enableCompetitiveDepth || enableUsedMove || enableUnusedMove) &&
+                 !enableReuseObserver,
+             "competitive depth and victim movement require the reuse observer");
+    fatal_if(usedMoveOffHits >= usedMoveOnHits,
+             "used_move_off_hits must be below used_move_on_hits");
+    fatal_if(usedMoveOnWindows == 0 || usedMoveOffWindows == 0 ||
+                 unusedMoveOnWindows == 0 || unusedMoveOffWindows == 0,
+             "move-controller confirmation windows must be non-zero");
     fatal_if(disabledProbeIntervalCalls == 0,
              "disabled_probe_interval_calls must be non-zero");
+    feedbackStats.currentDepth = depth;
+    feedbackStats.currentDepthEpoch = depthEpoch;
+}
+
+void
+XsStreamPrefetcher::resetStats()
+{
+    Queued::resetStats();
+    feedbackStats.currentDepth = depth;
+    feedbackStats.currentDepthEpoch = depthEpoch;
+    feedbackStats.usedMoveActive = enableUsedMove && usedMoveState;
+    feedbackStats.unusedMoveActive = enableUnusedMove && unusedMoveState;
 }
 
 XsStreamPrefetcher::FeedbackStats::FeedbackStats(XsStreamPrefetcher *parent)
@@ -213,17 +290,153 @@ XsStreamPrefetcher::FeedbackStats::FeedbackStats(XsStreamPrefetcher *parent)
       ADD_STAT(unusedReplacementRate, statistics::units::Ratio::get(),
                "Unused PDB replacement rate in the latest window"),
       ADD_STAT(accuracyDisabled, statistics::units::Count::get(),
-               "Whether accuracy protection disabled stream prefetching")
+               "Whether accuracy protection disabled stream prefetching"),
+      ADD_STAT(competitiveWindows, statistics::units::Count::get(),
+               "Completed reuse-competitive refill windows"),
+      ADD_STAT(activeStreamDemandMisses, statistics::units::Count::get(),
+               "Demand misses observed after stream lookup reports active"),
+      ADD_STAT(activeStreamLateDemandMisses, statistics::units::Count::get(),
+               "Active-stream demand misses covered late by PFQ or MSHR"),
+      ADD_STAT(activeStreamUncoveredDemandMisses,
+               statistics::units::Count::get(),
+               "Active-stream demand misses not covered by PFQ or MSHR"),
+      ADD_STAT(activeStreamDemandMissesAtDepth,
+               statistics::units::Count::get(),
+               "Active-stream demand misses by current stream depth"),
+      ADD_STAT(activeStreamUncoveredDemandMissesAtDepth,
+               statistics::units::Count::get(),
+               "Uncovered active-stream demand misses by current stream depth"),
+      ADD_STAT(competitiveWindowRefills, statistics::units::Count::get(),
+               "Successful stream PDB refills in the latest competitive window"),
+      ADD_STAT(competitiveWindowLateEvents, statistics::units::Count::get(),
+               "Current-epoch late events in the latest competitive window"),
+      ADD_STAT(competitiveWindowPrefetchHitDemandMshrEvents,
+               statistics::units::Count::get(),
+               "Stream prefetches hitting demand MSHRs in the latest window"),
+      ADD_STAT(competitiveWindowDemandHitPrefetchMshrEvents,
+               statistics::units::Count::get(),
+               "Demands hitting stream-prefetch MSHRs in the latest window"),
+      ADD_STAT(competitiveWindowUncoveredDemandMisses,
+               statistics::units::Count::get(),
+               "Uncovered active-stream misses in the latest competitive window"),
+      ADD_STAT(competitiveWindowUnusedVictimHits,
+               statistics::units::Count::get(),
+               "Current-epoch unused-victim hits in the latest window"),
+      ADD_STAT(competitiveWindowUsedVictimHits,
+               statistics::units::Count::get(),
+               "Current-epoch used-victim hits in the latest window"),
+      ADD_STAT(currentEpochLateEvents, statistics::units::Count::get(),
+               "Late events attributed to the current depth epoch"),
+      ADD_STAT(staleEpochLateEvents, statistics::units::Count::get(),
+               "Late events attributed to an older depth epoch"),
+      ADD_STAT(currentEpochPrefetchHitDemandMshrEvents,
+               statistics::units::Count::get(),
+               "Stream prefetches hitting demand MSHRs in the current epoch"),
+      ADD_STAT(staleEpochPrefetchHitDemandMshrEvents,
+               statistics::units::Count::get(),
+               "Stream prefetches hitting demand MSHRs in older epochs"),
+      ADD_STAT(currentEpochDemandHitPrefetchMshrEvents,
+               statistics::units::Count::get(),
+               "Demands hitting stream-prefetch MSHRs in the current epoch"),
+      ADD_STAT(staleEpochDemandHitPrefetchMshrEvents,
+               statistics::units::Count::get(),
+               "Demands hitting stream-prefetch MSHRs in older epochs"),
+      ADD_STAT(currentEpochUnusedVictimHits,
+               statistics::units::Count::get(),
+               "Unused-victim hits attributed to the current depth epoch"),
+      ADD_STAT(currentEpochUsedVictimHits,
+               statistics::units::Count::get(),
+               "Used-victim hits attributed to the current depth epoch"),
+      ADD_STAT(staleEpochUnusedVictimHits,
+               statistics::units::Count::get(),
+               "Unused-victim hits attributed to an older depth epoch"),
+      ADD_STAT(staleEpochUsedVictimHits,
+               statistics::units::Count::get(),
+               "Used-victim hits attributed to an older depth epoch"),
+      ADD_STAT(latePressure, statistics::units::Ratio::get(),
+               "Quantized deepening pressure in the latest window"),
+      ADD_STAT(unusedPressure, statistics::units::Ratio::get(),
+               "Quantized shallowing pressure in the latest window"),
+      ADD_STAT(netPressure, statistics::units::Ratio::get(),
+               "Late pressure minus unused pressure in the latest window"),
+      ADD_STAT(upCredit, statistics::units::Ratio::get(),
+               "Accumulated competitive deepening credit"),
+      ADD_STAT(downCredit, statistics::units::Ratio::get(),
+               "Accumulated competitive shallowing credit"),
+      ADD_STAT(competitiveDepthIncreases, statistics::units::Count::get(),
+               "Depth increases committed by competitive control"),
+      ADD_STAT(competitiveDepthDecreases, statistics::units::Count::get(),
+               "Depth decreases committed by competitive control"),
+      ADD_STAT(competitiveSettleWindows, statistics::units::Count::get(),
+               "Competitive windows suppressed for post-change settling"),
+      ADD_STAT(equalNonzeroPressureWindows,
+               statistics::units::Count::get(),
+               "Windows with equal non-zero late and unused pressure"),
+      ADD_STAT(unusedMoveEligibleWindows,
+               statistics::units::Count::get(),
+               "Full minimum-depth windows eligible to enable unused move"),
+      ADD_STAT(currentDepth, statistics::units::Count::get(),
+               "Current reuse-competitive stream depth"),
+      ADD_STAT(currentDepthEpoch, statistics::units::Count::get(),
+               "Current reuse-competitive depth epoch"),
+      ADD_STAT(competitiveWindowsAtDepth, statistics::units::Count::get(),
+               "Completed competitive windows by starting depth"),
+      ADD_STAT(usedMoveEnables, statistics::units::Count::get(),
+               "Actual used-victim move enable transitions"),
+      ADD_STAT(usedMoveDisables, statistics::units::Count::get(),
+               "Actual used-victim move disable transitions"),
+      ADD_STAT(usedMoveActive, statistics::units::Count::get(),
+               "Whether actual used-victim movement is active"),
+      ADD_STAT(usedMoveWouldEnable, statistics::units::Count::get(),
+               "Shadow used-victim move enable transitions"),
+      ADD_STAT(usedMoveWouldMove, statistics::units::Count::get(),
+               "Used victims selected by the shadow move policy"),
+      ADD_STAT(unusedMoveEnables, statistics::units::Count::get(),
+               "Actual unused-victim move enable transitions"),
+      ADD_STAT(unusedMoveDisables, statistics::units::Count::get(),
+               "Actual unused-victim move disable transitions"),
+      ADD_STAT(unusedMoveActive, statistics::units::Count::get(),
+               "Whether actual unused-victim movement is active"),
+      ADD_STAT(unusedMoveWouldEnable, statistics::units::Count::get(),
+               "Shadow unused-victim move enable transitions"),
+      ADD_STAT(unusedMoveWouldMove, statistics::units::Count::get(),
+               "Unused victims selected by the shadow move policy"),
+      ADD_STAT(usedMoveAttempts, statistics::units::Count::get(),
+               "Actual used-victim DCache move attempts"),
+      ADD_STAT(usedMoveSuccesses, statistics::units::Count::get(),
+               "Successful used-victim DCache moves"),
+      ADD_STAT(usedMoveFailures, statistics::units::Count::get(),
+               "Failed used-victim DCache moves"),
+      ADD_STAT(unusedMoveAttempts, statistics::units::Count::get(),
+               "Actual unused-victim DCache move attempts"),
+      ADD_STAT(unusedMoveSuccesses, statistics::units::Count::get(),
+               "Successful unused-victim DCache moves"),
+      ADD_STAT(unusedMoveFailures, statistics::units::Count::get(),
+               "Failed unused-victim DCache moves")
     {
     windowsAtDepth.init(parent->depthLevels.size());
     for (size_t i = 0; i < parent->depthLevels.size(); ++i) {
         windowsAtDepth.subname(i, std::to_string(parent->depthLevels[i]));
     }
+    competitiveWindowsAtDepth.init(parent->competitiveDepthLevels.size());
+    activeStreamDemandMissesAtDepth.init(
+        parent->competitiveDepthLevels.size());
+    activeStreamUncoveredDemandMissesAtDepth.init(
+        parent->competitiveDepthLevels.size());
+    for (size_t i = 0; i < parent->competitiveDepthLevels.size(); ++i) {
+        competitiveWindowsAtDepth.subname(
+            i, std::to_string(parent->competitiveDepthLevels[i]));
+        activeStreamDemandMissesAtDepth.subname(
+            i, std::to_string(parent->competitiveDepthLevels[i]));
+        activeStreamUncoveredDemandMissesAtDepth.subname(
+            i, std::to_string(parent->competitiveDepthLevels[i]));
+    }
 }
 
 void
 XsStreamPrefetcher::recordStreamProbe(
-    PrefetchSourceType source, Base::PrefetchProbeResult result)
+    PrefetchSourceType source, Base::PrefetchProbeResult result,
+    uint32_t depth_epoch)
 {
     switch (result) {
       case Base::PrefetchProbeResult::DcacheHit:
@@ -235,6 +448,8 @@ XsStreamPrefetcher::recordStreamProbe(
       case Base::PrefetchProbeResult::DemandMshrHit:
         ++feedback.mshrHits;
         ++feedbackStats.cumulativeLateEvents;
+        if (source == PrefetchSourceType::SStream)
+            recordCompetitiveLate(depth_epoch, false);
         break;
       case Base::PrefetchProbeResult::PrefetchMshrHit:
         break;
@@ -249,7 +464,8 @@ XsStreamPrefetcher::recordStreamProbe(
 }
 
 void
-XsStreamPrefetcher::recordStreamPdbRefill()
+XsStreamPrefetcher::recordStreamPdbRefill(
+    PrefetchSourceType source, uint32_t refill_epoch)
 {
     const Tick now = curTick();
     if (feedback.pdbRefills) {
@@ -259,6 +475,17 @@ XsStreamPrefetcher::recordStreamPdbRefill()
     }
     feedback.lastPdbRefillTick = now;
     ++feedback.pdbRefills;
+    if (enableReuseObserver && source == PrefetchSourceType::SStream) {
+        ++competitiveWindow.refills;
+        if (refill_epoch != depthEpoch) {
+            DPRINTF(XsStreamPrefetcher,
+                    "stale-epoch PDB refill: refill=%u current=%u\n",
+                    refill_epoch, depthEpoch);
+        }
+        if (competitiveWindow.refills == competitiveWindowRefills) {
+            completeCompetitiveWindow();
+        }
+    }
 }
 
 void
@@ -295,6 +522,301 @@ XsStreamPrefetcher::recordStreamPdbReplacement(
     if (used) {
         ++feedback.useToReplaceSamples;
         feedback.useToReplaceCycles += use_to_replace;
+    }
+}
+
+void
+XsStreamPrefetcher::recordCompetitiveLate(
+    uint32_t event_epoch, bool demand_hit_prefetch_mshr)
+{
+    if (!enableReuseObserver)
+        return;
+
+    if (event_epoch == depthEpoch) {
+        ++competitiveWindow.lateEvents;
+        ++feedbackStats.currentEpochLateEvents;
+        if (demand_hit_prefetch_mshr) {
+            ++competitiveWindow.demandHitPrefetchMshrEvents;
+            ++feedbackStats.currentEpochDemandHitPrefetchMshrEvents;
+        } else {
+            ++competitiveWindow.prefetchHitDemandMshrEvents;
+            ++feedbackStats.currentEpochPrefetchHitDemandMshrEvents;
+        }
+    } else {
+        ++feedbackStats.staleEpochLateEvents;
+        if (demand_hit_prefetch_mshr)
+            ++feedbackStats.staleEpochDemandHitPrefetchMshrEvents;
+        else
+            ++feedbackStats.staleEpochPrefetchHitDemandMshrEvents;
+    }
+}
+
+void
+XsStreamPrefetcher::recordPdbVictimReuse(
+    bool used, uint32_t refill_depth_epoch)
+{
+    if (!enableReuseObserver)
+        return;
+
+    const bool current_epoch = refill_depth_epoch == depthEpoch;
+    if (used) {
+        if (current_epoch) {
+            ++competitiveWindow.usedVictimHits;
+            ++feedbackStats.currentEpochUsedVictimHits;
+        } else {
+            ++feedbackStats.staleEpochUsedVictimHits;
+        }
+    } else {
+        if (current_epoch) {
+            ++competitiveWindow.unusedVictimHits;
+            ++feedbackStats.currentEpochUnusedVictimHits;
+        } else {
+            ++feedbackStats.staleEpochUnusedVictimHits;
+        }
+    }
+}
+
+double
+XsStreamPrefetcher::quantizeCompetitivePressure(
+    uint64_t count, unsigned low, unsigned high) const
+{
+    if (count <= low)
+        return 0.0;
+    if (count < high)
+        return 0.5;
+    return 1.0;
+}
+
+void
+XsStreamPrefetcher::updateMoveControllers(
+    double late_pressure, double unused_pressure,
+    bool unused_window_at_min_depth)
+{
+    if (!usedMoveState) {
+        usedMoveOnStreak =
+            competitiveWindow.usedVictimHits >= usedMoveOnHits ?
+            usedMoveOnStreak + 1 : 0;
+        if (usedMoveOnStreak >= usedMoveOnWindows) {
+            usedMoveState = true;
+            usedMoveOnStreak = 0;
+            usedMoveOffStreak = 0;
+            ++feedbackStats.usedMoveWouldEnable;
+            if (enableUsedMove)
+                ++feedbackStats.usedMoveEnables;
+        }
+    } else {
+        usedMoveOffStreak =
+            competitiveWindow.usedVictimHits <= usedMoveOffHits ?
+            usedMoveOffStreak + 1 : 0;
+        if (usedMoveOffStreak >= usedMoveOffWindows) {
+            usedMoveState = false;
+            usedMoveOnStreak = 0;
+            usedMoveOffStreak = 0;
+            if (enableUsedMove)
+                ++feedbackStats.usedMoveDisables;
+        }
+    }
+
+    const bool at_min_depth = depth == competitiveDepthLevels.front();
+    const bool unused_move_activation_eligible =
+        unused_window_at_min_depth && at_min_depth;
+    const bool activation_pressure = unused_pressure > 0.0 &&
+        unused_pressure >= late_pressure;
+    if (unused_move_activation_eligible && activation_pressure)
+        ++feedbackStats.unusedMoveEligibleWindows;
+    const bool unused_move_maintenance_eligible =
+        persistentUnusedMove && unusedMoveState;
+    if (!unused_move_activation_eligible &&
+        !unused_move_maintenance_eligible) {
+        unusedMoveOnStreak = 0;
+        unusedMoveOffStreak = 0;
+        if (unusedMoveState) {
+            unusedMoveState = false;
+            if (enableUnusedMove)
+                ++feedbackStats.unusedMoveDisables;
+        }
+    } else if (!unusedMoveState) {
+        unusedMoveOnStreak = activation_pressure ?
+            unusedMoveOnStreak + 1 : 0;
+        if (unusedMoveOnStreak >= unusedMoveOnWindows) {
+            unusedMoveState = true;
+            unusedMoveOnStreak = 0;
+            unusedMoveOffStreak = 0;
+            ++feedbackStats.unusedMoveWouldEnable;
+            if (enableUnusedMove)
+                ++feedbackStats.unusedMoveEnables;
+        }
+    } else {
+        unusedMoveOffStreak =
+            unused_pressure == 0.0 ?
+            unusedMoveOffStreak + 1 : 0;
+        if (unusedMoveOffStreak >= unusedMoveOffWindows) {
+            unusedMoveState = false;
+            unusedMoveOnStreak = 0;
+            unusedMoveOffStreak = 0;
+            if (enableUnusedMove)
+                ++feedbackStats.unusedMoveDisables;
+        }
+    }
+
+    feedbackStats.usedMoveActive = enableUsedMove && usedMoveState;
+    feedbackStats.unusedMoveActive = enableUnusedMove && unusedMoveState;
+}
+
+void
+XsStreamPrefetcher::completeCompetitiveWindow()
+{
+    assert(competitiveWindow.refills == competitiveWindowRefills);
+    const int old_depth = depth;
+    const auto starting_depth = std::find(
+        competitiveDepthLevels.begin(), competitiveDepthLevels.end(),
+        old_depth);
+    const bool starting_at_min_depth =
+        old_depth == competitiveDepthLevels.front();
+    const uint32_t old_epoch = depthEpoch;
+    const double late_pressure = quantizeCompetitivePressure(
+        competitiveWindow.lateEvents,
+        competitiveLateLow, competitiveLateHigh);
+    const double unused_pressure = quantizeCompetitivePressure(
+        competitiveWindow.unusedVictimHits,
+        competitiveUnusedLow, competitiveUnusedHigh);
+    const double net_pressure = late_pressure - unused_pressure;
+
+    ++feedbackStats.competitiveWindows;
+    if (starting_depth != competitiveDepthLevels.end()) {
+        ++feedbackStats.competitiveWindowsAtDepth[std::distance(
+            competitiveDepthLevels.begin(), starting_depth)];
+    }
+    feedbackStats.competitiveWindowRefills = competitiveWindow.refills;
+    feedbackStats.competitiveWindowLateEvents =
+        competitiveWindow.lateEvents;
+    feedbackStats.competitiveWindowPrefetchHitDemandMshrEvents =
+        competitiveWindow.prefetchHitDemandMshrEvents;
+    feedbackStats.competitiveWindowDemandHitPrefetchMshrEvents =
+        competitiveWindow.demandHitPrefetchMshrEvents;
+    feedbackStats.competitiveWindowUncoveredDemandMisses =
+        competitiveWindow.uncoveredDemandMisses;
+    feedbackStats.competitiveWindowUnusedVictimHits =
+        competitiveWindow.unusedVictimHits;
+    feedbackStats.competitiveWindowUsedVictimHits =
+        competitiveWindow.usedVictimHits;
+    feedbackStats.latePressure = late_pressure;
+    feedbackStats.unusedPressure = unused_pressure;
+    feedbackStats.netPressure = net_pressure;
+    if (late_pressure > 0.0 && late_pressure == unused_pressure)
+        ++feedbackStats.equalNonzeroPressureWindows;
+    if (enableCompetitiveDepth) {
+        if (settleRemaining > 0) {
+            --settleRemaining;
+            upCredit = downCredit = 0.0;
+            ++feedbackStats.competitiveSettleWindows;
+        } else if (net_pressure > 0.0) {
+            upCredit += net_pressure;
+            downCredit = 0.0;
+        } else if (net_pressure < 0.0) {
+            downCredit += -net_pressure;
+            upCredit = 0.0;
+        } else {
+            upCredit = downCredit = 0.0;
+        }
+
+        if (upCredit >= competitiveCreditThreshold &&
+            competitiveDepthIndex + 1 < competitiveDepthLevels.size()) {
+            competitiveDepthIndex = std::min(
+                competitiveDepthLevels.size() - 1,
+                competitiveDepthIndex + competitiveMaxLevelStep);
+            depth = competitiveDepthLevels[competitiveDepthIndex];
+            ++depthEpoch;
+            ++feedbackStats.competitiveDepthIncreases;
+            settleRemaining = competitiveSettleWindowCount;
+            upCredit = downCredit = 0.0;
+        } else if (downCredit >= competitiveCreditThreshold &&
+                   competitiveDepthIndex > 0) {
+            competitiveDepthIndex = competitiveDepthIndex >
+                    competitiveMaxLevelStep ?
+                competitiveDepthIndex - competitiveMaxLevelStep : 0;
+            depth = competitiveDepthLevels[competitiveDepthIndex];
+            ++depthEpoch;
+            ++feedbackStats.competitiveDepthDecreases;
+            settleRemaining = competitiveSettleWindowCount;
+            upCredit = downCredit = 0.0;
+        } else if ((upCredit >= competitiveCreditThreshold &&
+                    competitiveDepthIndex + 1 ==
+                        competitiveDepthLevels.size()) ||
+                   (downCredit >= competitiveCreditThreshold &&
+                    competitiveDepthIndex == 0)) {
+            upCredit = downCredit = 0.0;
+        }
+    } else {
+        upCredit = downCredit = 0.0;
+    }
+
+    updateMoveControllers(late_pressure, unused_pressure,
+                          starting_at_min_depth);
+    feedbackStats.upCredit = upCredit;
+    feedbackStats.downCredit = downCredit;
+    feedbackStats.currentDepth = depth;
+    feedbackStats.currentDepthEpoch = depthEpoch;
+    if (enableCompetitiveDepth) {
+        feedbackStats.depth = depth;
+        feedbackStats.finalDepth = depth;
+    }
+
+    DPRINTF(XsStreamPrefetcher,
+            "competitive depth: depth=%d->%d epoch=%u->%u refill=%llu "
+            "late=%llu prefetchDemandMshr=%llu demandPrefetchMshr=%llu "
+            "uncovered=%llu unused=%llu used=%llu "
+            "pressure=%.1f/%.1f net=%.1f "
+            "credit=%.1f/%.1f settle=%u usedMove=%d unusedMove=%d\n",
+            old_depth, depth, old_epoch, depthEpoch,
+            competitiveWindow.refills, competitiveWindow.lateEvents,
+            competitiveWindow.prefetchHitDemandMshrEvents,
+            competitiveWindow.demandHitPrefetchMshrEvents,
+            competitiveWindow.uncoveredDemandMisses,
+            competitiveWindow.unusedVictimHits,
+            competitiveWindow.usedVictimHits,
+            late_pressure, unused_pressure, net_pressure,
+            upCredit, downCredit,
+            settleRemaining, usedMoveState, unusedMoveState);
+
+    competitiveWindow = {};
+}
+
+bool
+XsStreamPrefetcher::shouldMovePdbVictim(bool used)
+{
+    const bool shadow_move = used ? usedMoveState : unusedMoveState;
+    if (shadow_move) {
+        if (used)
+            ++feedbackStats.usedMoveWouldMove;
+        else
+            ++feedbackStats.unusedMoveWouldMove;
+    }
+
+    const bool actual_move = shadow_move &&
+        (used ? enableUsedMove : enableUnusedMove);
+    if (actual_move) {
+        if (used)
+            ++feedbackStats.usedMoveAttempts;
+        else
+            ++feedbackStats.unusedMoveAttempts;
+    }
+    return actual_move;
+}
+
+void
+XsStreamPrefetcher::recordPdbVictimMoveResult(bool used, bool success)
+{
+    if (used) {
+        if (success)
+            ++feedbackStats.usedMoveSuccesses;
+        else
+            ++feedbackStats.usedMoveFailures;
+    } else {
+        if (success)
+            ++feedbackStats.unusedMoveSuccesses;
+        else
+            ++feedbackStats.unusedMoveFailures;
     }
 }
 
@@ -477,6 +999,7 @@ XsStreamPrefetcher::completeFeedbackWindow()
         ++feedbackStats.forecastClampedWindows;
     if (depth != old_depth)
         depthSettlingWindows = 4;
+    recordLegacyDepthChange(old_depth);
     feedbackStats.sent = window.sent;
     feedbackStats.tlbMisses = window.tlbMisses;
     feedbackStats.dcacheHits = window.dcacheHits;
@@ -542,6 +1065,41 @@ XsStreamPrefetcher::completeFeedbackWindow()
 }
 
 void
+XsStreamPrefetcher::recordLegacyDepthChange(int old_depth)
+{
+    if (enableCompetitiveDepth || depth == old_depth)
+        return;
+
+    ++depthEpoch;
+    competitiveWindow = {};
+    upCredit = downCredit = 0.0;
+    settleRemaining = 0;
+    unusedMoveOnStreak = 0;
+
+    const auto level = std::find(
+        competitiveDepthLevels.begin(), competitiveDepthLevels.end(), depth);
+    if (level != competitiveDepthLevels.end()) {
+        competitiveDepthIndex = std::distance(
+            competitiveDepthLevels.begin(), level);
+    }
+
+    if (!persistentUnusedMove &&
+        depth != competitiveDepthLevels.front() && unusedMoveState) {
+        unusedMoveState = false;
+        unusedMoveOffStreak = 0;
+        if (enableUnusedMove)
+            ++feedbackStats.unusedMoveDisables;
+    }
+
+    feedbackStats.currentDepth = depth;
+    feedbackStats.currentDepthEpoch = depthEpoch;
+    feedbackStats.unusedMoveActive = enableUnusedMove && unusedMoveState;
+    DPRINTF(XsStreamPrefetcher,
+            "legacy depth epoch: depth=%d->%d epoch=%u\n",
+            old_depth, depth, depthEpoch);
+}
+
+void
 XsStreamPrefetcher::recomputeDepth(const char *reason)
 {
     const int old_depth = depth;
@@ -554,6 +1112,7 @@ XsStreamPrefetcher::recomputeDepth(const char *reason)
     feedbackStats.depth = depth;
     if (depth != old_depth) {
         ++feedbackStats.finalDepthUpdates;
+        recordLegacyDepthChange(old_depth);
         DPRINTF(XsStreamPrefetcher,
                 "depth control: reason=%s bdpDepth=%d delta=%d depth=%d->%d\n",
                 reason, bdpDepth, delta, old_depth, depth);
@@ -791,6 +1350,8 @@ XsStreamPrefetcher::updateAccuracyController()
 void
 XsStreamPrefetcher::maybeUpdateControllers()
 {
+    if (enableCompetitiveDepth)
+        return;
     if (!enableAutoDepth)
         return;
     if (feedback.sent % deltaWindowSent == 0)
@@ -802,6 +1363,22 @@ XsStreamPrefetcher::maybeUpdateControllers()
 void
 XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi,
                                       std::vector<AddrPriority> &addresses)
+{
+    calculatePrefetchImpl(pfi, addresses, false, false);
+}
+
+void
+XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi,
+                                      std::vector<AddrPriority> &addresses,
+                                      bool late)
+{
+    calculatePrefetchImpl(pfi, addresses, true, late);
+}
+
+void
+XsStreamPrefetcher::calculatePrefetchImpl(
+    const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses,
+    bool coverage_valid, bool late)
 {
     if (accuracyDisabled) {
         ++disabledProbeCalls;
@@ -826,6 +1403,31 @@ XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi,
     }
     STREAMEntry *entry = streamLookup(pfi, in_active_page, decr);
     if (in_active_page) {
+        if (coverage_valid && pfi.isCacheMiss() &&
+            stream_type == PrefetchSourceType::SStream) {
+            ++feedbackStats.activeStreamDemandMisses;
+            const auto current_depth = std::find(
+                competitiveDepthLevels.begin(),
+                competitiveDepthLevels.end(), depth);
+            if (current_depth != competitiveDepthLevels.end()) {
+                ++feedbackStats.activeStreamDemandMissesAtDepth[
+                    std::distance(
+                        competitiveDepthLevels.begin(), current_depth)];
+            }
+            if (late) {
+                ++feedbackStats.activeStreamLateDemandMisses;
+            } else {
+                ++feedbackStats.activeStreamUncoveredDemandMisses;
+                if (current_depth != competitiveDepthLevels.end()) {
+                    ++feedbackStats
+                        .activeStreamUncoveredDemandMissesAtDepth[
+                            std::distance(competitiveDepthLevels.begin(),
+                                          current_depth)];
+                }
+                if (enableReuseObserver)
+                    ++competitiveWindow.uncoveredDemandMisses;
+            }
+        }
         Addr pf_stream_l1 = decr ? block_addr - depth * blkSize : block_addr + depth * blkSize;
         sendPFWithFilter(pfi, pf_stream_l1, addresses, 1, stream_type, L1BLKDEGREE, 1, entry);
         const auto l2_depth = l2Depth ? l2Depth : (depth << l2Ratio);
@@ -913,6 +1515,7 @@ XsStreamPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::ve
             DPRINTF(XsStreamPrefetcher, "Send pf: %lx\n", pf_addr);
             filter->insert(filter_key, 0);
             addresses.push_back(AddrPriority(pf_addr, prio, src));
+            addresses.back().depthEpoch = depthEpoch;
             streamBlkFilter.insert(filter_key, 0);
             if (ahead_level > 1) {
                 assert(ahead_level == 2 || ahead_level == 3);
@@ -924,6 +1527,7 @@ XsStreamPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::ve
         }
     }
     pfi.setTriggerInfo_PFsrc(src);
+    pfi.setTriggerInfoDepthEpoch(depthEpoch);
     if (ahead_level > 1) {
         stridestream_pfFilter_l2l3->Insert(regionAddress(addr), region_bit,0,true,entry->decrMode,pfi.isSecure(),ahead_level, &pfi.trigger_info);
     } else {

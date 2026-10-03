@@ -73,6 +73,7 @@ class Queued : public Base
         int pfahead_host = 0; // which level should process pfahead (e.g 2 is l2...)
         bool pfahead = false;
         int depth=0;
+        uint32_t depthEpoch = 0;
         PrefetchSourceType pfSource;
         PFTriggerInfo pf_trigger_info{};
         PrefetchCmd(Addr a, int32_t p) : addr(a), priority(p), isVA(true), isBOP(false)
@@ -84,7 +85,9 @@ class Queued : public Base
         {
         }
         PrefetchCmd(Addr a, int32_t p, PrefetchSourceType src, PFTriggerInfo pf_info)
-            : addr(a), priority(p), isVA(true), isBOP(false), pfSource(src), pf_trigger_info(pf_info)
+            : addr(a), priority(p), isVA(true), isBOP(false),
+              depthEpoch(pf_info.depthEpoch), pfSource(src),
+              pf_trigger_info(pf_info)
         {
         }
         PrefetchCmd(Addr a, int32_t p, PrefetchSourceType src, bool va, bool bop)
@@ -155,7 +158,8 @@ class Queued : public Base
          * @param pf_desc prefetch info associated to this packet
          */
         void createPkt(Addr paddr, unsigned blk_size, RequestorID requestor_id,
-                       bool tag_prefetch, Tick t, PrefetchSourceType pf_src, int prf_depth);
+                       bool tag_prefetch, Tick t, PrefetchSourceType pf_src,
+                       int prf_depth, uint32_t depth_epoch);
 
         /**
          * Sets the translation request needed to obtain the physical address
@@ -448,7 +452,9 @@ class Queued : public Base
      */
     size_t getMaxPermittedPrefetches(size_t total) const;
 
-    RequestPtr createPrefetchRequest(Addr addr, PrefetchInfo const &pfi, PacketPtr pkt, PrefetchSourceType pf_src, int prf_depth);
+    RequestPtr createPrefetchRequest(
+        Addr addr, PrefetchInfo const &pfi, PacketPtr pkt,
+        PrefetchSourceType pf_src, int prf_depth, uint32_t depth_epoch);
 
     unsigned offloadBandwidth{1};
 

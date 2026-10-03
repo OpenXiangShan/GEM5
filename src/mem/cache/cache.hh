@@ -82,6 +82,7 @@ class Cache : public BaseCache
         CacheBlk blk;
         Tick refillTick;
         Tick firstUseTick;
+        Tick lastUseTick;
         bool usefulRecorded;
 
         PdbLine(Addr addr, bool secure, unsigned size);
@@ -90,10 +91,26 @@ class Cache : public BaseCache
     using PdbKey = std::pair<Addr, bool>;
     using PdbIterator = std::list<PdbLine>::iterator;
 
+    struct PdbVictimEntry
+    {
+        Addr addr;
+        bool secure;
+        bool used;
+        PrefetchSourceType source;
+        uint32_t depthEpoch;
+        Tick victimTick;
+    };
+
+    using PdbVictimIterator = std::list<PdbVictimEntry>::iterator;
+
     const unsigned pdbCapacity;
+    const unsigned pdbVictimCapacity;
+    const Cycles pdbVictimMaxAge;
     std::list<PdbLine> pdbLines;
     std::map<PdbKey, PdbIterator> pdbIndex;
     std::set<PdbKey> pendingPdbReleases;
+    std::list<PdbVictimEntry> pdbVictims;
+    std::map<PdbKey, PdbVictimIterator> pdbVictimIndex;
 
     struct PdbStats : statistics::Group
     {
@@ -107,6 +124,38 @@ class Cache : public BaseCache
         statistics::Distribution usefulLatency;
         statistics::Distribution refillToReplaceLatency;
         statistics::Distribution usedToReplaceLatency;
+        statistics::Distribution lastUseToReplaceLatency;
+        statistics::Scalar victimTableInsertionsUsed;
+        statistics::Scalar victimTableInsertionsUnused;
+        statistics::Scalar victimTableDuplicateInsertions;
+        statistics::Scalar victimTableEvictions;
+        statistics::Scalar victimTableExpiredUsed;
+        statistics::Scalar victimTableExpiredUnused;
+        statistics::Scalar victimTableOccupancy;
+        statistics::Scalar usedVictimHits;
+        statistics::Scalar unusedVictimHits;
+        statistics::Scalar usedVictimAgeRejects;
+        statistics::Scalar unusedVictimAgeRejects;
+        statistics::Scalar currentEpochUsedVictimHits;
+        statistics::Scalar currentEpochUnusedVictimHits;
+        statistics::Scalar staleEpochUsedVictimHits;
+        statistics::Scalar staleEpochUnusedVictimHits;
+        statistics::Distribution usedVictimReuseLatency;
+        statistics::Distribution unusedVictimReuseLatency;
+        statistics::Scalar usedMoveDcacheAlreadyResident;
+        statistics::Scalar unusedMoveDcacheAlreadyResident;
+        statistics::Scalar usedMoveDcacheAllocations;
+        statistics::Scalar unusedMoveDcacheAllocations;
+        statistics::Scalar usedMoveDcacheDemandVictims;
+        statistics::Scalar unusedMoveDcacheDemandVictims;
+        statistics::Scalar usedMoveDcachePrefetchVictims;
+        statistics::Scalar unusedMoveDcachePrefetchVictims;
+        statistics::Scalar usedMoveDcacheDirtyVictims;
+        statistics::Scalar unusedMoveDcacheDirtyVictims;
+        statistics::Scalar usedMoveDcacheDeadVictims;
+        statistics::Scalar unusedMoveDcacheDeadVictims;
+        statistics::Scalar usedMoveDcacheLiveVictims;
+        statistics::Scalar unusedMoveDcacheLiveVictims;
 
         explicit PdbStats(Cache &cache);
     } pdbStats;
@@ -114,6 +163,11 @@ class Cache : public BaseCache
     PdbIterator findPdbLine(Addr addr, bool secure);
     void recordPdbUse(PdbIterator line, bool load);
     void recordPdbReplacement(PdbIterator line);
+    bool pdbVictimExpired(const PdbVictimEntry &entry) const;
+    void expirePdbVictims();
+    void recordPdbVictim(PdbIterator line);
+    void recordPdbVictimDemandAccess(Addr addr, bool secure);
+    bool movePdbLineToDcache(PdbIterator line, PacketList &writebacks);
     void queuePdbCleanEvict(Addr addr, bool secure, PacketList &writebacks);
     void erasePdbLine(PdbIterator line, PacketList *writebacks = nullptr);
     bool hasBeenPrefetched(Addr addr, bool secure) const override;

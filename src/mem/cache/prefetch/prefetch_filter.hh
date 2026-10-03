@@ -89,9 +89,8 @@ class PrefetchFilter
             bitTriggers.reserve(other.bitTriggers.size());
             for (const auto &src : other.bitTriggers) {
                 if (src) {
-                    PacketPtr pkt = src->pkt;
                     bitTriggers.emplace_back(
-                        std::make_unique<TriggerInfo>(pkt, *(src->pfi_old)));
+                        std::make_unique<TriggerInfo>(*src));
                 } else {
                     bitTriggers.emplace_back(nullptr);
                 }

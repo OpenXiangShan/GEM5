@@ -179,17 +179,29 @@ class XSCompositePrefetcher : public Queued
     void notifyFill(const PacketPtr& pkt) override;
     void recordPrefetchDequeued(PrefetchSourceType source) override;
     void notifyPrefetchTlbMiss(PrefetchSourceType source) override;
-    void notifyPdbPrefetchFill(PrefetchSourceType source) override;
+    void notifyPdbPrefetchFill(PrefetchSourceType source,
+                               uint32_t depth_epoch) override;
     void notifyPrefetchDownstreamResponse(
         PrefetchSourceType source, uint64_t latency_cycles) override;
-    void notifyDemandHitPrefetchMshr(PrefetchSourceType source) override;
+    void notifyDemandHitPrefetchMshr(PrefetchSourceType source,
+                                     uint32_t depth_epoch) override;
     void notifyPrefetchProbe(PrefetchSourceType source,
-                             PrefetchProbeResult result) override;
+                             PrefetchProbeResult result,
+                             uint32_t depth_epoch) override;
     void notifyPdbFirstUse(PrefetchSourceType source, bool load,
                            uint64_t refill_to_use) override;
     void notifyPdbReplacement(PrefetchSourceType source, bool used,
                               uint64_t refill_to_replace,
                               uint64_t use_to_replace) override;
+    bool pdbVictimObserverEnabled(
+        PrefetchSourceType source) const override;
+    uint32_t currentPdbDepthEpoch(
+        PrefetchSourceType source) const override;
+    void notifyPdbVictimReuse(PrefetchSourceType source, bool used,
+                              uint32_t refill_depth_epoch) override;
+    bool shouldMovePdbVictim(PrefetchSourceType source, bool used) override;
+    void notifyPdbVictimMoveResult(PrefetchSourceType source, bool used,
+                                   bool success) override;
 
   private:
     const unsigned pfFilterSize{256};

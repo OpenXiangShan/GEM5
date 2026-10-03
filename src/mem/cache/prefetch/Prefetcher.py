@@ -354,12 +354,77 @@ class XsStreamPrefetcher(QueuedPrefetcher):
         [4, 8, 16, 24, 32, 48, 64, 80, 96],
         "Legal BDP base-depth levels"
     )
+    competitive_depth_levels = VectorParam.Int(
+        [4, 8, 16, 24, 32, 48, 64],
+        "Legal reuse-competitive stream depth levels"
+    )
     initial_bdp_depth = Param.Int(16, "Initial automatic BDP depth")
+    competitive_initial_depth = Param.Int(
+        16, "Initial reuse-competitive stream depth"
+    )
     xs_stream_l2_depth = Param.Unsigned(
         640,
         "L2 stream lookahead in cache blocks; zero derives from depth << 2"
     )
     enable_auto_depth = Param.Bool(True, "Enable automatic stream prefetch depth")
+    enable_reuse_observer = Param.Bool(
+        True, "Track demand reuse of stream PDB capacity victims"
+    )
+    enable_competitive_depth = Param.Bool(
+        False, "Select stream depth from late and unused-victim reuse pressure"
+    )
+    enable_used_move = Param.Bool(
+        False, "Move used PDB capacity victims when the shadow policy is active"
+    )
+    enable_unused_move = Param.Bool(
+        False, "Move unused PDB capacity victims at minimum depth"
+    )
+    persistent_unused_move = Param.Bool(
+        True,
+        "Keep an enabled unused-victim move policy active above minimum depth"
+    )
+    competitive_window_refills = Param.Unsigned(
+        500, "Successful stream PDB refills per competitive control window"
+    )
+    competitive_late_low = Param.Unsigned(
+        20, "Late events at or below this count produce no deepening pressure"
+    )
+    competitive_late_high = Param.Unsigned(
+        40, "Late events at or above this count produce full deepening pressure"
+    )
+    competitive_unused_low = Param.Unsigned(
+        40, "Unused-victim reuse events at or below this count produce no shallowing pressure"
+    )
+    competitive_unused_high = Param.Unsigned(
+        80, "Unused-victim reuse events at or above this count produce full shallowing pressure"
+    )
+    competitive_credit_threshold = Param.Float(
+        1.0, "Accumulated directional pressure required for a depth change"
+    )
+    competitive_settle_windows = Param.Unsigned(
+        1, "Decision-free refill windows after a depth change"
+    )
+    competitive_max_level_step = Param.Unsigned(
+        1, "Maximum legal depth levels traversed per decision"
+    )
+    used_move_on_hits = Param.Unsigned(
+        20, "Current-epoch used-victim hits required to enable the shadow move policy"
+    )
+    used_move_off_hits = Param.Unsigned(
+        5, "Used-victim hit ceiling for disabling the shadow move policy"
+    )
+    used_move_on_windows = Param.Unsigned(
+        3, "Consecutive high-reuse windows required to enable used move"
+    )
+    used_move_off_windows = Param.Unsigned(
+        2, "Consecutive low-reuse windows required to disable used move"
+    )
+    unused_move_on_windows = Param.Unsigned(
+        3, "Consecutive eligible minimum-depth windows required to enable unused move"
+    )
+    unused_move_off_windows = Param.Unsigned(
+        4, "Consecutive zero-unused-pressure windows required to disable unused move"
+    )
     enable_l3_stream_pre = Param.Bool(False, "enable l3 stream pre.")
     bdp_window_sent = Param.Unsigned(500, "Requests per BDP control window")
     bdp_min_mshr_samples = Param.Unsigned(32, "Minimum MSHR samples for BDP")

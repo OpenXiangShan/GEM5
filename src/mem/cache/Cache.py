@@ -196,6 +196,12 @@ class Cache(BaseCache):
     cxx_header = 'mem/cache/cache.hh'
     cxx_class = 'gem5::Cache'
     pdb_entries = Param.Unsigned(0, "Number of clean prefetch lines held outside the tags")
+    pdb_victim_entries = Param.Unsigned(
+        0, "Recently capacity-evicted stream PDB lines tracked for demand reuse"
+    )
+    pdb_victim_max_age = Param.Cycles(
+        0, "Maximum victim-table observation age in cycles; zero disables expiry"
+    )
 
 class NoncoherentCache(BaseCache):
     type = 'NoncoherentCache'

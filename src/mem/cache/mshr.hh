@@ -192,6 +192,8 @@ class MSHR : public QueueEntry, public Printable
 
         int pfDepth = 0;
 
+        uint32_t pfDepthEpoch = 0;
+
         TargetList(const std::string &name = ".unnamedTargetList");
 
         /**
@@ -232,6 +234,7 @@ class MSHR : public QueueEntry, public Printable
 
             pfSource = PF_NONE;
             pfDepth = 0;
+            pfDepthEpoch = 0;
         }
 
         /**
@@ -382,6 +385,10 @@ class MSHR : public QueueEntry, public Printable
 
     int getPFDepth() const {
         return targets.pfDepth;
+    }
+
+    uint32_t getPFDepthEpoch() const {
+        return targets.pfDepthEpoch;
     }
 
     /**

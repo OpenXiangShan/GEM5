@@ -566,7 +566,8 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                     const auto source = mshr->getPFSource();
                     ++stats.demandMergedIntoPfMSHR;
                     if (prefetcher)
-                        prefetcher->notifyDemandHitPrefetchMshr(source);
+                        prefetcher->notifyDemandHitPrefetchMshr(
+                            source, mshr->getPFDepthEpoch());
                     DPRINTF(Cache,
                             "Demand request %#lx first merged into prefetch "
                             "MSHR from source %i\n",
@@ -1053,6 +1054,7 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     if (pure_prefetch_fill) {
         const PrefetchSourceType pf_source = mshr->getPFSource();
         const int pf_depth = mshr->getPFDepth();
+        const uint32_t pf_depth_epoch = mshr->getPFDepthEpoch();
         pkt->req->setPFSource(pf_source);
         pkt->req->setPFDepth(pf_depth);
         Request::XsMetadata xs_meta =
@@ -1061,6 +1063,7 @@ BaseCache::recvTimingResp(PacketPtr pkt)
             Request::XsMetadata(pf_source, pf_depth);
         xs_meta.prefetchSource = pf_source;
         xs_meta.prefetchDepth = pf_depth;
+        xs_meta.prefetchDepthEpoch = pf_depth_epoch;
         pkt->req->setXsMetadata(xs_meta);
     }
 
@@ -1556,7 +1559,9 @@ BaseCache::getNextQueueEntry()
         }
         if (pkt) {
             Addr pf_addr = pkt->getBlockAddr(blkSize);
-            PrefetchSourceType pf_type = pkt->req->getXsMetadata().prefetchSource;
+            const auto pf_metadata = pkt->req->getXsMetadata();
+            PrefetchSourceType pf_type = pf_metadata.prefetchSource;
+            const uint32_t pf_depth_epoch = pf_metadata.prefetchDepthEpoch;
             if (tags->findBlock(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in cache, "
                         "dropped.\n", pf_addr);
@@ -1566,7 +1571,8 @@ BaseCache::getNextQueueEntry()
                 // free the request and packet
                 delete pkt;
                 prefetcher->notifyPrefetchProbe(
-                    pf_type, prefetch::Base::PrefetchProbeResult::DcacheHit);
+                    pf_type, prefetch::Base::PrefetchProbeResult::DcacheHit,
+                    pf_depth_epoch);
             } else if (hasPrefetchData(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in PDB, "
                         "dropped.\n", pf_addr);
@@ -1575,7 +1581,8 @@ BaseCache::getNextQueueEntry()
                     prefetcher->streamPflate();
                 delete pkt;
                 prefetcher->notifyPrefetchProbe(
-                    pf_type, prefetch::Base::PrefetchProbeResult::PdbHit);
+                    pf_type, prefetch::Base::PrefetchProbeResult::PdbHit,
+                    pf_depth_epoch);
             } else if (MSHR *matching_mshr =
                            mshrQueue.findMatch(pf_addr, pkt->isSecure())) {
                 const bool has_demand = matching_mshr->hasFromCPU();
@@ -1591,7 +1598,8 @@ BaseCache::getNextQueueEntry()
                     pf_type,
                     has_demand ?
                         prefetch::Base::PrefetchProbeResult::DemandMshrHit :
-                        prefetch::Base::PrefetchProbeResult::PrefetchMshrHit);
+                        prefetch::Base::PrefetchProbeResult::PrefetchMshrHit,
+                    pf_depth_epoch);
             } else if (writeBuffer.findMatch(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in the "
                         "Write Buffer, dropped.\n", pf_addr);
@@ -1602,7 +1610,8 @@ BaseCache::getNextQueueEntry()
                 delete pkt;
                 prefetcher->notifyPrefetchProbe(
                     pf_type,
-                    prefetch::Base::PrefetchProbeResult::WriteBufferHit);
+                    prefetch::Base::PrefetchProbeResult::WriteBufferHit,
+                    pf_depth_epoch);
             } else {
                 // Update statistic on number of prefetches issued
                 // (hwpf_mshr_misses)
@@ -1615,7 +1624,8 @@ BaseCache::getNextQueueEntry()
                 DPRINTF(HWPrefetch, "Allocating MSHR for prefetching addr %#x\n", pf_addr);
                 auto buf = allocateMissBuffer(pkt, curTick(), false);
                 prefetcher->notifyPrefetchProbe(
-                    pf_type, prefetch::Base::PrefetchProbeResult::Sent);
+                    pf_type, prefetch::Base::PrefetchProbeResult::Sent,
+                    pf_depth_epoch);
                 return buf;
             }
             // if (prefetcher->hasHintsWaiting() && !memSidePort.hasSchedSendEvent()) {
@@ -2422,10 +2432,13 @@ BaseCache::handleFill(
         if (pkt->req && pkt->req->hasXsMetadata()) {
             blk_meta.prefetchDepth =
                 pkt->req->getXsMetadata().prefetchDepth;
+            blk_meta.prefetchDepthEpoch =
+                pkt->req->getXsMetadata().prefetchDepthEpoch;
         }
     } else {
         blk_meta.prefetchSource = PrefetchSourceType::PF_NONE;
         blk_meta.prefetchDepth = 0;
+        blk_meta.prefetchDepthEpoch = 0;
     }
     blk->setXsMetadata(blk_meta);
     DPRINTF(Cache, "%s: Mark blk prefetch source %i depth %i from req %p\n",
@@ -2438,7 +2451,8 @@ BaseCache::handleFill(
 CacheBlk*
 BaseCache::allocateBlock(
     const PacketPtr pkt, PacketList &writebacks,
-    PrefetchSourceType prefetch_fill_source, bool *evicted_dirty)
+    PrefetchSourceType prefetch_fill_source, bool *evicted_dirty,
+    AllocationVictimInfo *victim_info)
 {
     // Get address
     const Addr addr = pkt->getAddr();
@@ -2482,6 +2496,29 @@ BaseCache::allocateBlock(
         bool secure;
     };
     std::vector<PfBadVictim> pfbad_victims;
+    if (victim_info) {
+        AllocationVictimInfo observed_victims;
+        for (const auto &evict_blk : evict_blks) {
+            if (!evict_blk->isValid()) {
+                continue;
+            }
+            ++observed_victims.valid;
+            if (evict_blk->wasPrefetched()) {
+                ++observed_victims.prefetched;
+            } else {
+                ++observed_victims.demand;
+            }
+            if (evict_blk->isSet(CacheBlk::DirtyBit)) {
+                ++observed_victims.dirty;
+            }
+            if (evict_blk->getDemandHits() == 0) {
+                ++observed_victims.dead;
+            } else {
+                ++observed_victims.live;
+            }
+        }
+        *victim_info = observed_victims;
+    }
     if (prefetcher && prefetch_fill_source != PrefetchSourceType::PF_NONE) {
         for (const auto &evict_blk : evict_blks) {
             if (!evict_blk->isValid()) {
