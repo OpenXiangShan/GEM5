@@ -420,10 +420,22 @@ class XsStreamPrefetcher(QueuedPrefetcher):
         2, "Consecutive low-reuse windows required to disable used move"
     )
     unused_move_on_windows = Param.Unsigned(
-        3, "Consecutive eligible minimum-depth windows required to enable unused move"
+        1, "Consecutive eligible minimum-depth windows required to enable unused move"
     )
     unused_move_off_windows = Param.Unsigned(
-        4, "Consecutive zero-unused-pressure windows required to disable unused move"
+        8, "Consecutive zero-unused-pressure windows required to disable unused move"
+    )
+    unused_move_min_pressure = Param.Float(
+        1.0, "Minimum unused pressure required to advance unused-move activation"
+    )
+    unused_move_depth_pressure_mode = Param.Unsigned(
+        2,
+        "Unused-move depth pressure mode: 0=raw, 1=break ties, "
+        "2=consume all, 3=consume when late"
+    )
+    unused_move_min_depth_up_credit_threshold = Param.Float(
+        1.5,
+        "Deepening credit required to leave minimum depth while unused move is active"
     )
     enable_l3_stream_pre = Param.Bool(False, "enable l3 stream pre.")
     bdp_window_sent = Param.Unsigned(500, "Requests per BDP control window")

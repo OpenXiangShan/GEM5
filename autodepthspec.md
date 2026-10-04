@@ -21,10 +21,12 @@ BDP、delta 和 RTU 可以继续输出诊断统计，但在本控制模式下不
 - `used-victim reuse` 不得进入 depth 的减浅压力，只能控制 used move；
 - used move 只使用 `usedVictimHits` 启停，不定义或使用 `handledUsedVictimHits`；
 - unused move 的开启资格为完整最小深度窗口中的
-  `unusedPressure > 0 && unusedPressure >= latePressure`；
+  `unusedPressure >= unusedMoveMinPressure &&
+  unusedPressure >= latePressure`；
 - late/unused 压力相等不再使用独立的 conflict 开启规则，上述不等式已经覆盖非零相等情况。
 
-除明确标记为“已冻结”的设计不变量外，本文出现的具体数值均只是当前候选值，不能表述为已经验证的最优参数。
+算法语义和第 9 节列出的仿真参数已经冻结。该组合是既定 DSE
+空间中的最终选择；RTL 表容量、端口和时序代价仍需单独评估。
 
 ## 2. 强制不变量
 
@@ -201,7 +203,7 @@ on_demand_request(address, secure/context):
 
 ### 4.4 LRU 的语义
 
-Victim table 的 LRU 提供按“后续 victim 数量”度量的有限观察范围，而不是固定 cycle 时间。当前候选同时设置最大表项年龄以过滤很久以前的 victim，但该年龄尚未冻结。表项因 LRU、年龄限制被删除时只记录 `tableEvictions` 或 `ageExpirations`，不把它计为 reuse 或 no-reuse。
+Victim table 的 LRU 提供按“后续 victim 数量”度量的有限观察范围，而不是固定 cycle 时间。最终仿真配置同时设置最大表项年龄，以过滤很久以前的 victim。表项因 LRU、年龄限制被删除时只记录 `tableEvictions` 或 `ageExpirations`，不把它计为 reuse 或 no-reuse。
 
 Victim table 容量必须做独立敏感性测试，以确认观测结果没有被过小表格严重截断。
 
@@ -220,7 +222,7 @@ refillSnapshot    # 上一个窗口边界的累计 refill
 eventSnapshots    # late/reuse 累计计数快照
 ```
 
-当前候选值如下，具体档位和初始值尚未冻结：
+最终档位集合和初始值为：
 
 ```text
 depthLevels = [4, 8, 16, 24, 32, 48, 64]
@@ -231,7 +233,7 @@ depth 始终直接取合法档位，不再计算 `bdpDepth + delta`。
 
 ### 5.2 窗口
 
-当前候选控制窗口由目标 Stream 的 500 次成功 PDB refill 推进；refill 作为推进事件已经冻结，窗口长度 500 尚未冻结：
+控制窗口由目标 Stream 的 500 次成功 PDB refill 推进：
 
 ```text
 windowRefills = 500
@@ -266,12 +268,22 @@ quantize(count, low, high):
     if count < high: return 0.5
     return 1
 
-latePressure = quantize(windowLate, lateLow, lateHigh)
-unusedPressure = quantize(windowUnusedReuse, unusedLow, unusedHigh)
-netPressure = latePressure - unusedPressure
+latePressure = quantize(windowLate, 20, 40)
+rawUnusedPressure = quantize(windowUnusedReuse, 40, 80)
+
+if enableUnusedMove && unusedMoveState == ON:
+    depthUnusedPressure = 0
+else:
+    depthUnusedPressure = rawUnusedPressure
+
+netPressure = latePressure - depthUnusedPressure
 ```
 
-当前候选在 500-refill 窗口中使用 late `20/40` 和 unused `40/80`。两组阈值均未冻结，必须独立探索；`usedVictimHits` 不得以任何形式并入 `unusedPressure` 或其他 depth 压力。
+`rawUnusedPressure` 始终保留并驱动 unused move 状态机。Unused move
+实际开启后，它已经承担容量右尾的处理，因此 depth 控制不再重复消费同一
+unused 压力；late 压力仍可要求加深。`unusedPressureConsumedWindows`
+记录发生这种压力转移的窗口。`usedVictimHits` 不得以任何形式并入
+unused 压力或其他 depth 压力。
 
 ### 5.4 积分与改档
 
@@ -292,28 +304,32 @@ else:
     downCredit = 0
     reason = hold_or_equal
 
-if upCredit >= creditThreshold and depth 不是最高档:
+upThreshold = 1
+if enableUnusedMove && unusedMoveState == ON && windowStartDepth == minDepth:
+    upThreshold = 1.5
+
+if upCredit >= upThreshold and depth 不是最高档:
     depth = higher(depth)
     depthEpoch++
     settleRemaining = settleWindows
     upCredit = downCredit = 0
 
-if downCredit >= creditThreshold and depth 不是最低档:
+if downCredit >= 1 and depth 不是最低档:
     depth = lower(depth)
     depthEpoch++
     settleRemaining = settleWindows
     upCredit = downCredit = 0
 ```
 
-当前候选使用 `creditThreshold=1`：压力 1 可以单窗口改档，压力 0.5 需要两个连续同向窗口；每次最多移动一档。这两个参数均未冻结。
+基础积分门槛为 1：压力 1 可以单窗口改档，压力 0.5 需要两个连续同向窗口；每次最多移动一档。Unused move 已开启且窗口从 depth=4 开始时，加深门槛提高到 1.5，防止 move 刚接管 unused 压力后因短暂 late 立即离开最浅档。该门槛只约束 `4 -> 8`，其他档位仍使用基础门槛 1。
 
-如果 late 与 unused 压力相等，depth 保持不变。非零相等窗口可以保留为诊断统计；它不是独立控制机制。在完整最小深度窗口中，非零相等自然满足 unused move 的开启资格。
+Unused move 关闭时，late 与 unused 压力相等会使 depth 保持不变。Unused move 开启后，raw unused 压力只用于维持 move，depth 由 late 压力继续驱动。非零相等窗口保留为诊断统计，不再使用独立 conflict 规则。
 
 ### 5.5 Epoch 与稳定期
 
 改档后必须递增 epoch。旧 epoch 的 victim-table hit 继续进入累计统计，但不能驱动新 depth 再次改档。
 
-第一个稳定窗口不做新决策，用于排出旧 depth 的在途请求和 PDB resident。稳定期不清空 victim table，只限制控制器消费哪些事件。
+改档后的第一个完整窗口不做新决策，用于排出旧 depth 的在途请求和 PDB resident。稳定期不清空 victim table，只限制控制器消费哪些事件。
 
 严格实现应把 epoch 随 Stream 请求传到 late 事件，并把 refill epoch保存在 PDB 行中。仅依赖一个等待窗口而不做事件归属，可能把旧 depth 的延迟反馈错误归因到新 depth。
 
@@ -344,7 +360,7 @@ usedMoveOffHits < usedMoveOnHits
 
 形成迟滞。开启后 reuse 信号不会因为搬运成功而消失，因为所有 demand 都查询 victim table。
 
-`windowUsedVictimHits` 包含所有符合 epoch 规则的 used-victim reuse，不区分该 demand 最终是否命中 DCache。Used move 的开启、保持和关闭均不得依赖 `handledUsedVictimHits`、DCache residency 或 demand cache hit/miss。当前候选使用 `20` hits、连续 `3` 窗开启，使用不超过 `5` hits、连续 `2` 窗关闭；这四个数值均未冻结。
+`windowUsedVictimHits` 包含所有符合 epoch 规则的 used-victim reuse，不区分该 demand 最终是否命中 DCache。Used move 的开启、保持和关闭均不得依赖 `handledUsedVictimHits`、DCache residency 或 demand cache hit/miss。最终参数使用至少 `20` hits、连续 `3` 窗开启，使用不超过 `5` hits、连续 `2` 窗关闭。
 
 PDB 选择 used capacity victim 时：
 
@@ -370,30 +386,30 @@ fullMinDepthWindow =
 
 OFF:
     fullMinDepthWindow
-    unusedPressure > 0
-    unusedPressure >= latePressure
-    连续 unusedMoveOnWindows
+    rawUnusedPressure >= 1.0
+    rawUnusedPressure >= latePressure
+    连续 1 窗
     -> 下一窗口 ON
 
 ON:
-    unusedPressure == 0
-    连续 unusedMoveOffWindows
+    rawUnusedPressure == 0
+    连续 8 窗
     -> OFF
 
     其他情况保持 ON
 ```
 
-`unusedPressure > 0` 是必要条件，防止 `0 >= 0` 在没有任何 unused reuse 证据时开启搬运。`unusedPressure >= latePressure` 表示减浅方向占优或与加深方向相等，而 depth 已没有更浅档位可用。该规则统一覆盖原来的强 unused 压力和非零 late/unused 相等情形，不再设置独立的 `unused_move_on_conflict`。
+开启门槛 1.0 要求强 unused 证据，并防止 `0 >= 0` 在没有 reuse 时开启搬运。`rawUnusedPressure >= latePressure` 表示减浅方向占优或与加深方向相等，而 depth 已没有更浅档位可用。不再设置独立的 `unused_move_on_conflict`。
 
 在量化压力集合 `{0, 0.5, 1}` 下，开启资格如下；表中还必须同时满足完整最小深度窗口和连续窗口要求。
 
-| `unusedPressure` | `latePressure=0` | `latePressure=0.5` | `latePressure=1` |
+| `rawUnusedPressure` | `latePressure=0` | `latePressure=0.5` | `latePressure=1` |
 |---:|:---:|:---:|:---:|
 | 0 | 否 | 否 | 否 |
-| 0.5 | 是 | 是 | 否 |
+| 0.5 | 否 | 否 | 否 |
 | 1 | 是 | 是 | 是 |
 
-当前候选允许 unused move 开启后跨越 depth 变化继续保持，并在连续低 unused 压力窗口后关闭。是否应在离开最小 depth 时立即关闭尚未冻结，必须与 persistent 方案做 A/B。Unused move 状态机和 depth 控制都只消费 victim-table reuse，不使用 moved block 后续是否仍在 DCache 的信息。
+Unused move 开启后允许跨越 depth 变化继续保持，并在连续 8 个零 unused 压力窗口后关闭。状态机始终消费 raw 压力；实际 move 开启期间，depth 控制不再消费这部分 unused 压力。两者都不使用 moved block 后续是否仍在 DCache 的信息。
 
 PDB 选择 unused capacity victim 时：
 
@@ -432,61 +448,46 @@ Move 开关关闭时，状态机仍应计算 shadow decision，并输出 `wouldE
 
 ## 9. 参数与冻结状态
 
-参数状态的含义如下：
-
-- **已冻结**：当前算法定义的一部分，后续 DSE 不应改变，除非显式重开设计讨论；
-- **未冻结**：只是当前候选值，已有局部数据也不能视为全局最优；
-- **待决定**：连机制语义仍需 A/B，不能作为正式候选的默认结论。
+下表是本轮 DSE 后冻结的仿真配置。这里的“冻结”表示它是当前算法
+版本的一部分，不表示它在所有硬件实现和 workload 上全局最优。
 
 ### 9.1 当前参数表
 
-| 参数或规则 | 当前值 | 状态 | 说明 |
-|---|---:|:---:|---|
-| `pdb_entries` | 64 | **已冻结** | 目标物理容量，不允许扩大容量换取性能 |
-| victim table 生命周期 | 跨窗口、LRU | **已冻结** | 窗口结束不清表，demand 首次命中后删除 |
-| victim-table hit 定义 | 仅地址命中 | **已冻结** | 不依赖 demand 的 cache hit/miss |
-| `victim_table_entries` | 256 | **未冻结** | 64 太小已有负面证据；最终 RTL 容量仍需敏感性测试 |
-| `victim_max_age_cycles` | 16384 | **未冻结** | 当前候选的旧证据过滤年龄 |
-| `min_depth` | 4 | **已冻结** | unused move 只能由完整 depth=4 窗口开启 |
-| `competitive_depth_levels` | `4,8,16,24,32,48,64` | **未冻结** | 与旧 G2 的 `depth_levels` 分离；80/96 尚未在最终控制器上验证 |
-| `initial_depth` | 16 | **未冻结** | 尚无最终机制下的启动敏感性结论 |
-| 窗口推进事件 | 成功 PDB refill | **已冻结** | 不使用 prefetch sent 计数 |
-| `window_refills` | 500 | **未冻结** | 所有现有 competitive DSE 都固定为 500 |
-| `late_low/high` | `20/40` | **未冻结** | 在 500-refill 窗口中对应约 4%/8% |
-| `unused_low/high` | `40/80` | **未冻结** | 当前候选值；不得混入 used reuse |
-| `credit_threshold` | 1 | **未冻结** | 尚未做最终机制下的阈值扫描 |
-| `settle_windows` | 1 | **未冻结** | 旧版本只比较过 1/2，未在最终机制重测 |
-| `max_level_step` | 1 | **未冻结** | 尚未比较强证据下一次两档 |
-| used reuse 参与 depth | 禁止 | **已冻结** | 删除 `usedEarlyPressure` 路径 |
-| used move 启停证据 | 仅 `usedVictimHits` | **已冻结** | 开启、保持和关闭均只看 victim-table reuse |
-| used move cache-outcome 信息 | 不使用 | **已冻结** | 删除 `handledUsedVictimHit` 及其维护参数 |
-| `used_move_on_hits` | 20 | **未冻结** | 需要与开启连续窗数联合验证 |
-| `used_move_off_hits` | 5 | **未冻结** | 目前从未独立扫描 |
-| `used_move_on_windows` | 3 | **未冻结** | 比 1/2 窗更安全，但未完成阈值二维 DSE |
-| `used_move_off_windows` | 2 | **未冻结** | 目前从未独立扫描 |
-| unused move 开启资格 | `U>0 && U>=L` | **已冻结** | `U=unusedPressure`，`L=latePressure`，且要求完整 depth=4 窗口 |
-| 独立 conflict 开启规则 | 删除 | **已冻结** | 非零相等已由 `U>0 && U>=L` 覆盖 |
-| `unused_move_on_windows` | 3 | **未冻结** | 1/2/3 窗的旧规则数据支持 3，但新资格规则增加了 `U=0.5,L=0` 情形 |
-| unused move 关闭证据 | `unusedPressure==0` | **待决定** | 尚未在新开启规则下验证关闭语义 |
-| `unused_move_off_windows` | 4 | **未冻结** | 2/4/8 只在较早机制上比较过 |
-| `persistent_unused_move` | true | **待决定** | 需要与离开 depth=4 即关闭做严格 A/B |
-| move DCache 插入优先级 | normal | **未冻结** | unused low-priority 已被否决；used 侧仍有混合结果 |
+| 参数或规则 | 冻结值 | 说明 |
+|---|---:|---|
+| `pdb_entries` | 64 | 目标物理容量 |
+| victim table | 256 项、LRU、16384 cycles | 跨窗口保留，首次 demand 命中后删除 |
+| victim-table hit | 地址命中 | 不依赖 demand cache hit/miss |
+| `competitive_depth_levels` | `4,8,16,24,32,48,64` | 最小 depth 为 4 |
+| `competitive_initial_depth` | 16 | warmup 从该档开始 |
+| `competitive_window_refills` | 500 | 只由成功目标 Stream PDB refill 推进 |
+| `competitive_late_low/high` | `20/40` | 压力量化为 `0/0.5/1` |
+| `competitive_unused_low/high` | `40/80` | 只统计 unused reuse |
+| `competitive_credit_threshold` | 1.0 | 普通加深和所有减浅动作 |
+| `competitive_settle_windows` | 1 | 改档后一窗不再决策 |
+| `competitive_max_level_step` | 1 | 每次只移动一档 |
+| used reuse 参与 depth | 禁止 | 只控制 used move |
+| used move | on=`20/3`，off=`5/2` | 仅使用 `usedVictimHits` |
+| unused move 开启 | depth=4 完整窗，`U>=1 && U>=L`，1 窗 | `U` 为 raw unused pressure |
+| unused move 关闭 | `U==0`，连续 8 窗 | 开启后跨 depth 保持 |
+| unused 压力所有权 | move ON 时 depth 消费 0 | raw 压力仍维持 move |
+| depth=4 加深门槛 | move ON 时 1.5 | 其他状态使用 1.0 |
+| move DCache 插入优先级 | normal | used/unused 共用现有搬运路径 |
+| BDP/delta/RTU | 仅诊断 | 不得改变 competitive depth |
 
-### 9.2 必须完成的 DSE
+### 9.2 DSE 与全量验证
 
-优先围绕本规范中的最终信号分工探索，不能沿用旧代码阶段的最优点直接冻结：
-
-1. `late_low/high` 与 `unused_low/high`：先独立扫描，再验证少量交互组合。
-2. `competitive_depth_levels`：至少补测最大 depth 80/96，并检查 24/48 档位的必要性。
-3. `settle_windows`、`credit_threshold`、`max_level_step`：在相同阈值和 move 配置下比较。
-4. `window_refills`：比较不同窗口长度时必须按事件率同比缩放 late/unused 阈值。
-5. `initial_depth`：至少比较 8/16/24，并同时检查 warmup 继承到 ROI 的状态。
-6. Used move：联合扫描 on hits、on windows、off hits、off windows，不能只做单变量历史拼接。
-7. Unused move：在新 `U>0 && U>=L` 资格规则下重新比较 on/off windows，并验证新增的 `U=0.5,L=0` 区域。
-8. `persistent_unused_move`：比较跨 depth 保持与离开 min depth 立即关闭。
-9. Victim table：在最终 depth/move 状态机上联合比较容量和最大年龄，至少覆盖 128/256/512 与 8K/16K/32K。
-
-完整笛卡尔积没有必要，但任何标记为“未冻结”的参数在定稿前必须有最终机制下的直接对照证据。阶段性 A/B、旧版本 DSE 和单个 workload 收益只能用于缩小搜索范围。
+- 37 点最终候选 X01 得分 `315.3984761`。去掉零反馈
+  `omnetpp_18492` 的运行方差后为 `315.3645257`，仍比 rc315
+  高 `0.1398625`。
+- 1094 点 Cov10 得分 `631.4341566`，比 rc315/PDB64 的
+  `631.3430899` 高 `0.0910666`。
+- Cov10 中 omnetpp 的 `+0.0468994` 全部来自
+  `competitiveWindows=0` 的 checkpoint。保守扣除整个 omnetpp 差值后，
+  X01 仍高 `0.0441673`。
+- X01 比原始 G2/PDB64 的 `617.4861779` 高 `13.9479787`，但仍比
+  原始 G2/PDB1024 的 `632.7216976` 低 `1.2875410`。因此本方案达到
+  PDB64 DSE 的 rc315 门槛，但没有完全消除 64 项容量相对 1024 项的损失。
 
 ## 10. 统计要求
 
@@ -514,7 +515,8 @@ windowRefills
 windowLateEvents
 windowUnusedVictimHits
 latePressure
-unusedPressure
+unusedPressure                 # raw unused pressure
+unusedPressureConsumedWindows
 netPressure
 upCredit
 downCredit
@@ -526,6 +528,10 @@ currentDepth
 currentDepthEpoch
 windowsAtDepth::<level>
 ```
+
+`unusedPressure` 必须报告 raw 值；`netPressure` 必须使用转移所有权后的
+`depthUnusedPressure` 计算。这样离线分析可以区分“没有 unused 证据”和
+“证据已由 move 接管”。
 
 ### 10.3 Move 统计
 
@@ -603,11 +609,11 @@ reuse observer = ON
 
 ### 阶段 3：Unused Move
 
-继续冻结 depth 和 used move 参数。只有连续完整 depth=4 窗口满足 `unusedPressure > 0 && unusedPressure >= latePressure` 时才允许打开 unused move。单独验证性能收益、DCache 污染和搬运量；不得用同时调整 unused 阈值来掩盖 unused move 的回退。
+继续冻结 depth 和 used move 参数。只有完整 depth=4 窗口满足 `rawUnusedPressure >= 1 && rawUnusedPressure >= latePressure` 时才允许打开 unused move。单独验证性能收益、DCache 污染和搬运量；不得用同时调整 unused 阈值来掩盖 unused move 的回退。
 
-### 阶段 4：表容量与完整覆盖
+### 阶段 4：完整覆盖与硬件评估
 
-机制稳定后再缩小 victim table，选择可实现容量。最终候选必须在相同 1094-checkpoint Cov10、PDB64 配置下验证，并与原始 G2/PDB64、固定 depth 和原始 G2/PDB1024 使用相同评分口径比较。
+最终候选必须在相同 1094-checkpoint Cov10、PDB64 配置下验证，并与原始 G2/PDB64、rc315/PDB64 和原始 G2/PDB1024 使用相同评分口径比较。256 项 victim table 和 16384-cycle 年龄是本版本的冻结配置；若 RTL 预算要求缩小，应作为下一版本重新做容量敏感性和性能验证。
 
 ## 13. 验收条件
 
@@ -621,8 +627,10 @@ reuse observer = ON
 - Move 后仍插入 victim table。
 - Depth 改变后旧 epoch reuse 不驱动新 depth。
 - depth 可以在持续 unused 压力下完成 `16 -> 8 -> 4`，也可以在 late 压力下逐档恢复。
-- 只有完整 depth=4 窗口才能使 unused move 从 OFF 转为 ON；若最终选择 persistent 方案，ON 状态可在其他 depth 继续执行。
-- `unusedPressure=0` 时不得因为 `0 >= latePressure` 开启 unused move。
+- 只有 raw unused 压力为 1 的完整 depth=4 窗口才能使 unused move 从 OFF 转为 ON；ON 状态可在其他 depth 继续执行。
+- `rawUnusedPressure<1` 时不得开启 unused move。
+- Unused move 开启后，raw unused 压力继续控制 move 状态，但不再进入 depth 的减浅压力。
+- Unused move 开启且窗口从 depth=4 开始时，`4 -> 8` 的加深积分门槛为 1.5。
 - Used reuse 不得进入 depth 压力。
 - Used move 不依赖 demand cache miss。
 - Used move 的启停只依赖 `usedVictimHits`，不依赖 handled hit 或 DCache 后续驻留。
@@ -630,18 +638,12 @@ reuse observer = ON
 
 性能验收必须报告逐 benchmark、重点 checkpoint、全局得分、每档驻留、reuse、late、搬运量和 DCache 污染。局部 focus 提升不能替代完整 Cov10 结果。
 
-## 14. 尚未冻结的问题
+## 14. 后续问题
 
-- late 与 unused 的最终分段阈值及相对代价；
-- 窗口长度、积分阈值、稳定窗口和最大单次步数；
-- depth 6、80、96 以及 24/48 中间档位的必要性；
-- 初始 depth 对 warmup 和短 phase 的影响；
-- used move 的四个启停阈值/连续窗口参数；
-- unused move 的开启/关闭连续窗口数；
-- unused move 应依据何种低 reuse 证据关闭；
-- unused move 开启后是否跨 depth 保持；
-- victim table 的容量、最大年龄、相联度、端口和时序；
-- used move 的 DCache 插入优先级；
-- DCache 搬运失败及同拍 demand/victim 事件的 RTL 仲裁顺序。
+- 256 项 victim table、16384-cycle 年龄以及查询/插入端口的 RTL 面积和时序；
+- DCache 搬运与同拍 demand、victim、writeback 的 RTL 仲裁顺序；
+- normal-priority move 对 DCache demand line 的污染成本，以及是否需要可实现的轻量保护；
+- GemsFDTD 和 sphinx3 的全量回退归因，以及能否在不损失其他 workload 的情况下修复；
+- 完整 Cov10 相对 rc315 的净收益较小，应通过独立重复确认运行方差边界。
 
-独立 conflict 开启规则、used reuse 参与 depth、handled used reuse 控制 move 已经从设计中删除，不再列为待调参数。其余未冻结项必须通过最终机制下的独立实验解决，不能在 spec 中写成已验证结论。
+独立 conflict 开启规则、used reuse 参与 depth、handled used reuse 控制 move 已经从设计中删除。重新打开这些机制或修改冻结参数都应视为新版本，并重新执行 focus DSE 与完整 Cov10 验证。

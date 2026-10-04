@@ -86,6 +86,9 @@ class XsStreamPrefetcher : public Queued
     const unsigned usedMoveOffWindows;
     const unsigned unusedMoveOnWindows;
     const unsigned unusedMoveOffWindows;
+    const double unusedMoveMinPressure;
+    const unsigned unusedMoveDepthPressureMode;
+    const double unusedMoveMinDepthUpCreditThreshold;
     // Retained only for the legacy feedback dump path below.
     static constexpr std::array<int, 7> DEPTH_LEVELS{
         4, 8, 16, 32, 64, 96, 128
@@ -282,6 +285,7 @@ class XsStreamPrefetcher : public Queued
         statistics::Scalar staleEpochUsedVictimHits;
         statistics::Scalar latePressure;
         statistics::Scalar unusedPressure;
+        statistics::Scalar unusedPressureConsumedWindows;
         statistics::Scalar netPressure;
         statistics::Scalar upCredit;
         statistics::Scalar downCredit;

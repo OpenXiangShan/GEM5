@@ -44,6 +44,10 @@ XsStreamPrefetcher::XsStreamPrefetcher(const XsStreamPrefetcherParams &p)
       usedMoveOffWindows(p.used_move_off_windows),
       unusedMoveOnWindows(p.unused_move_on_windows),
       unusedMoveOffWindows(p.unused_move_off_windows),
+      unusedMoveMinPressure(p.unused_move_min_pressure),
+      unusedMoveDepthPressureMode(p.unused_move_depth_pressure_mode),
+      unusedMoveMinDepthUpCreditThreshold(
+          p.unused_move_min_depth_up_credit_threshold),
       bdpWindowSent(p.bdp_window_sent),
       bdpMinMshrSamples(p.bdp_min_mshr_samples),
       bdpMinRefillSamples(p.bdp_min_refill_samples),
@@ -137,6 +141,13 @@ XsStreamPrefetcher::XsStreamPrefetcher(const XsStreamPrefetcherParams &p)
     fatal_if(usedMoveOnWindows == 0 || usedMoveOffWindows == 0 ||
                  unusedMoveOnWindows == 0 || unusedMoveOffWindows == 0,
              "move-controller confirmation windows must be non-zero");
+    fatal_if(unusedMoveMinPressure <= 0.0 || unusedMoveMinPressure > 1.0,
+             "unused_move_min_pressure must be in (0, 1]");
+    fatal_if(unusedMoveDepthPressureMode > 3,
+             "unused_move_depth_pressure_mode must be 0, 1, 2, or 3");
+    fatal_if(unusedMoveMinDepthUpCreditThreshold < competitiveCreditThreshold,
+             "unused_move_min_depth_up_credit_threshold must be at least "
+             "competitive_credit_threshold");
     fatal_if(disabledProbeIntervalCalls == 0,
              "disabled_probe_interval_calls must be non-zero");
     feedbackStats.currentDepth = depth;
@@ -356,9 +367,12 @@ XsStreamPrefetcher::FeedbackStats::FeedbackStats(XsStreamPrefetcher *parent)
       ADD_STAT(latePressure, statistics::units::Ratio::get(),
                "Quantized deepening pressure in the latest window"),
       ADD_STAT(unusedPressure, statistics::units::Ratio::get(),
-               "Quantized shallowing pressure in the latest window"),
+               "Raw quantized unused-victim pressure in the latest window"),
+      ADD_STAT(unusedPressureConsumedWindows,
+               statistics::units::Count::get(),
+               "Windows where active unused move consumed nonzero depth pressure"),
       ADD_STAT(netPressure, statistics::units::Ratio::get(),
-               "Late pressure minus unused pressure in the latest window"),
+               "Late pressure minus applied unused pressure in the latest window"),
       ADD_STAT(upCredit, statistics::units::Ratio::get(),
                "Accumulated competitive deepening credit"),
       ADD_STAT(downCredit, statistics::units::Ratio::get(),
@@ -620,7 +634,8 @@ XsStreamPrefetcher::updateMoveControllers(
     const bool at_min_depth = depth == competitiveDepthLevels.front();
     const bool unused_move_activation_eligible =
         unused_window_at_min_depth && at_min_depth;
-    const bool activation_pressure = unused_pressure > 0.0 &&
+    const bool activation_pressure =
+        unused_pressure >= unusedMoveMinPressure &&
         unused_pressure >= late_pressure;
     if (unused_move_activation_eligible && activation_pressure)
         ++feedbackStats.unusedMoveEligibleWindows;
@@ -677,10 +692,24 @@ XsStreamPrefetcher::completeCompetitiveWindow()
     const double late_pressure = quantizeCompetitivePressure(
         competitiveWindow.lateEvents,
         competitiveLateLow, competitiveLateHigh);
-    const double unused_pressure = quantizeCompetitivePressure(
+    const double raw_unused_pressure = quantizeCompetitivePressure(
         competitiveWindow.unusedVictimHits,
         competitiveUnusedLow, competitiveUnusedHigh);
-    const double net_pressure = late_pressure - unused_pressure;
+    const bool unused_move_handles_pressure =
+        unusedMoveDepthPressureMode != 0 &&
+        enableUnusedMove && unusedMoveState;
+    double depth_unused_pressure = raw_unused_pressure;
+    if (unused_move_handles_pressure &&
+        (unusedMoveDepthPressureMode == 2 ||
+         (unusedMoveDepthPressureMode == 3 && late_pressure > 0.0) ||
+         (raw_unused_pressure > 0.0 &&
+          raw_unused_pressure == late_pressure))) {
+        depth_unused_pressure = 0.0;
+    }
+    const double net_pressure = late_pressure - depth_unused_pressure;
+    const double up_credit_threshold =
+        enableUnusedMove && unusedMoveState && starting_at_min_depth ?
+        unusedMoveMinDepthUpCreditThreshold : competitiveCreditThreshold;
 
     ++feedbackStats.competitiveWindows;
     if (starting_depth != competitiveDepthLevels.end()) {
@@ -701,9 +730,11 @@ XsStreamPrefetcher::completeCompetitiveWindow()
     feedbackStats.competitiveWindowUsedVictimHits =
         competitiveWindow.usedVictimHits;
     feedbackStats.latePressure = late_pressure;
-    feedbackStats.unusedPressure = unused_pressure;
+    feedbackStats.unusedPressure = raw_unused_pressure;
+    if (depth_unused_pressure < raw_unused_pressure)
+        ++feedbackStats.unusedPressureConsumedWindows;
     feedbackStats.netPressure = net_pressure;
-    if (late_pressure > 0.0 && late_pressure == unused_pressure)
+    if (late_pressure > 0.0 && late_pressure == raw_unused_pressure)
         ++feedbackStats.equalNonzeroPressureWindows;
     if (enableCompetitiveDepth) {
         if (settleRemaining > 0) {
@@ -720,7 +751,7 @@ XsStreamPrefetcher::completeCompetitiveWindow()
             upCredit = downCredit = 0.0;
         }
 
-        if (upCredit >= competitiveCreditThreshold &&
+        if (upCredit >= up_credit_threshold &&
             competitiveDepthIndex + 1 < competitiveDepthLevels.size()) {
             competitiveDepthIndex = std::min(
                 competitiveDepthLevels.size() - 1,
@@ -740,7 +771,7 @@ XsStreamPrefetcher::completeCompetitiveWindow()
             ++feedbackStats.competitiveDepthDecreases;
             settleRemaining = competitiveSettleWindowCount;
             upCredit = downCredit = 0.0;
-        } else if ((upCredit >= competitiveCreditThreshold &&
+        } else if ((upCredit >= up_credit_threshold &&
                     competitiveDepthIndex + 1 ==
                         competitiveDepthLevels.size()) ||
                    (downCredit >= competitiveCreditThreshold &&
@@ -751,7 +782,7 @@ XsStreamPrefetcher::completeCompetitiveWindow()
         upCredit = downCredit = 0.0;
     }
 
-    updateMoveControllers(late_pressure, unused_pressure,
+    updateMoveControllers(late_pressure, raw_unused_pressure,
                           starting_at_min_depth);
     feedbackStats.upCredit = upCredit;
     feedbackStats.downCredit = downCredit;
@@ -766,7 +797,7 @@ XsStreamPrefetcher::completeCompetitiveWindow()
             "competitive depth: depth=%d->%d epoch=%u->%u refill=%llu "
             "late=%llu prefetchDemandMshr=%llu demandPrefetchMshr=%llu "
             "uncovered=%llu unused=%llu used=%llu "
-            "pressure=%.1f/%.1f net=%.1f "
+            "pressure=%.1f/%.1f depthUnused=%.1f net=%.1f "
             "credit=%.1f/%.1f settle=%u usedMove=%d unusedMove=%d\n",
             old_depth, depth, old_epoch, depthEpoch,
             competitiveWindow.refills, competitiveWindow.lateEvents,
@@ -775,7 +806,8 @@ XsStreamPrefetcher::completeCompetitiveWindow()
             competitiveWindow.uncoveredDemandMisses,
             competitiveWindow.unusedVictimHits,
             competitiveWindow.usedVictimHits,
-            late_pressure, unused_pressure, net_pressure,
+            late_pressure, raw_unused_pressure, depth_unused_pressure,
+            net_pressure,
             upCredit, downCredit,
             settleRemaining, usedMoveState, unusedMoveState);
 
