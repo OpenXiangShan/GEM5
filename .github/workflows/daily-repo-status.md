@@ -14,10 +14,11 @@ max-turns: 80
 timeout-minutes: 10
 jobs:
   agent:
-    timeout-minutes: 10
+    timeout-minutes: 15
 
 permissions:
   contents: read
+  checks: read
   issues: read
   pull-requests: read
 
@@ -37,6 +38,7 @@ tools:
 
 safe-outputs:
   report-failure-as-issue: false
+  report-failed-jobs: false
   mentions: false
   allowed-github-references: []
   create-issue:
