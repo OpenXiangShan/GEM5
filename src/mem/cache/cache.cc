@@ -103,8 +103,24 @@ Cache::PdbLine::PdbLine(Addr addr, bool secure, unsigned size)
 Cache::PdbStats::PdbStats(Cache &cache)
     : statistics::Group(&cache, "pdb"),
       ADD_STAT(fills, statistics::units::Count::get(), "Pure prefetch fills"),
+      ADD_STAT(branchFills, statistics::units::Count::get(),
+               "Pure prefetch fills granted Branch permission"),
+      ADD_STAT(trunkFills, statistics::units::Count::get(),
+               "Pure prefetch fills granted Trunk permission"),
+      ADD_STAT(retainedDirtyGrants, statistics::units::Count::get(),
+               "Clean PDB grants retaining dirty responsibility below"),
+      ADD_STAT(rejectedDirtyFills, statistics::units::Count::get(),
+               "PDB fills rejected because response transfers dirty ownership"),
       ADD_STAT(loadHits, statistics::units::Count::get(), "Load hits"),
       ADD_STAT(storeHits, statistics::units::Count::get(), "Store promotions"),
+      ADD_STAT(storeBranchMoves, statistics::units::Count::get(),
+               "Store promotions preserving Branch permission"),
+      ADD_STAT(storeTrunkMoves, statistics::units::Count::get(),
+               "Store promotions preserving Trunk permission"),
+      ADD_STAT(storeWholeLineMoves, statistics::units::Count::get(),
+               "Whole-line Store promotions"),
+      ADD_STAT(storeMoveReplays, statistics::units::Count::get(),
+               "Store replays caused by an unavailable PDB move"),
       ADD_STAT(duplicatePrefetches, statistics::units::Count::get(),
                "Prefetches already resident"),
       ADD_STAT(evictions, statistics::units::Count::get(), "PDB evictions"),
@@ -402,8 +418,12 @@ Cache::movePdbLineToDcache(
     }
     std::memcpy(moved->data, line->data.data(), blkSize);
     moved->setCoherenceBits(CacheBlk::ReadableBit);
+    if (line->blk.isSet(CacheBlk::WritableBit))
+        moved->setCoherenceBits(CacheBlk::WritableBit);
     moved->setWhenReady(std::max(curTick(), line->blk.getWhenReady()));
     moved->setXsMetadata(line->blk.getXsMetadata());
+    moved->hierarchicalDirty = line->blk.hierarchicalDirty;
+    moved->fromPdb = true;
     if (!used) {
         moved->setPrefetched();
         line->blk.clearPrefetched();
@@ -529,8 +549,12 @@ bool
 Cache::storePrefetchFill(PacketPtr pkt, MSHR *mshr,
                          PacketList &writebacks)
 {
+    const bool dirty_response = pkt->cacheResponding() && !pkt->hasSharers()
+        && !pkt->pdbCleanGrant;
+    if (pdbCapacity && dirty_response)
+        ++pdbStats.rejectedDirtyFills;
     if (!pdbCapacity || !pkt->isRead() || !pkt->hasData() ||
-        pkt->isInvalidate() || pkt->cacheResponding() ||
+        pkt->isInvalidate() || dirty_response ||
         mshr->getNumTargets() != 1 || mshr->hasPostInvalidate() ||
         tags->findBlock(pkt->getAddr(), pkt->isSecure())) {
         return false;
@@ -574,6 +598,14 @@ Cache::storePrefetchFill(PacketPtr pkt, MSHR *mshr,
     pdbLines.emplace_back(addr, secure, blkSize);
     auto line = std::prev(pdbLines.end());
     std::memcpy(line->data.data(), pkt->getConstPtr<uint8_t>(), blkSize);
+    line->blk.hierarchicalDirty = pkt->hierarchicalDirty;
+    line->blk.fromPdb = true;
+    if (!pkt->hasSharers()) {
+        line->blk.setCoherenceBits(CacheBlk::WritableBit);
+        ++pdbStats.trunkFills;
+    } else {
+        ++pdbStats.branchFills;
+    }
     line->blk.setWhenReady(clockEdge(dataLatency + pipeLatency) +
                            pkt->headerDelay + pkt->payloadDelay);
     line->blk.setXsMetadata(pkt->req->getXsMetadata());
@@ -596,7 +628,31 @@ void
 Cache::satisfyRequest(PacketPtr pkt, CacheBlk *blk,
                       bool deferred_response, bool pending_downgrade)
 {
+    const bool was_dirty = blk->isSet(CacheBlk::DirtyBit);
+    const auto dirty_state = blk->hierarchicalDirty;
     BaseCache::satisfyRequest(pkt, blk);
+
+    if (pkt->pdbCleanRead && pkt->isRead() && !pkt->needsWritable()) {
+        // A TileLink-like read grant transfers B/T permission, not the
+        // existing lower dirty obligation. The intermediate cache obtained
+        // normal ownership on its own miss before granting this clean copy.
+        if (was_dirty && !blk->hierarchicalDirty) {
+            blk->hierarchicalDirty =
+                std::make_shared<HierarchicalDirtyState>();
+            blk->claimDirtyOwnership();
+        }
+        pkt->hierarchicalDirty = blk->hierarchicalDirty;
+        if (pkt->hierarchicalDirty)
+            pkt->dirtyWriteVersion = pkt->hierarchicalDirty->writeVersion;
+        pkt->pdbCleanGrant = true;
+        if (!blk->isSet(CacheBlk::WritableBit) || pending_downgrade ||
+            pkt->hasSharers()) {
+            pkt->setHasSharers();
+        }
+        if (was_dirty)
+            ++pdbStats.retainedDirtyGrants;
+        return;
+    }
 
     if (pkt->isRead()) {
         // determine if this read is from a (coherent) cache or not
@@ -672,6 +728,14 @@ Cache::satisfyRequest(PacketPtr pkt, CacheBlk *blk,
             }
         }
     }
+    // Carry the obligation through ordinary transfers after a clean grant.
+    // Shared responses leave the current owner in place.
+    pkt->hierarchicalDirty = dirty_state;
+    if (dirty_state) {
+        pkt->dirtyWriteVersion = dirty_state->writeVersion;
+        if (was_dirty && pkt->cacheResponding() && !pkt->hasSharers())
+            dirty_state->owner = pkt;
+    }
 }
 
 /////////////////////////////////////////////////////
@@ -699,10 +763,7 @@ Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
             } else if (pkt->req->isUncacheable() ||
                        pkt->req->isCacheInvalidate()) {
                 erasePdbLine(line, &writebacks);
-            } else if (pkt->isWriteback() ||
-                       pkt->cmd == MemCmd::WriteLineReq) {
-                // A full-line overwrite supersedes the PDB copy; retaining
-                // it could later issue a second CleanEvict.
+            } else if (pkt->isWriteback()) {
                 erasePdbLine(line);
             } else if (!mshrQueue.findMatch(addr, pkt->isSecure()) &&
                        !writeBuffer.findMatch(addr, pkt->isSecure())) {
@@ -724,17 +785,33 @@ Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
                     return true;
                 }
 
-                if (pkt->cmd == MemCmd::WriteReq) {
-                    Packet transfer(pkt->req, MemCmd::WritebackClean, blkSize);
+                if (pkt->cmd == MemCmd::WriteReq ||
+                    pkt->cmd == MemCmd::WriteLineReq) {
+                    // The copy is a full line, independent of the Store mask.
+                    auto move_req = std::make_shared<Request>(
+                        addr, blkSize, 0, pkt->requestorId());
+                    if (pkt->isSecure())
+                        move_req->setFlags(Request::SECURE);
+                    move_req->taskId(pkt->req->taskId());
+                    Packet transfer(move_req, MemCmd::WritebackClean, blkSize);
                     transfer.allocate();
                     transfer.setData(line->data.data());
                     CacheBlk *promoted = allocateBlock(&transfer, writebacks);
                     if (promoted) {
                         std::memcpy(promoted->data, line->data.data(), blkSize);
                         promoted->setCoherenceBits(CacheBlk::ReadableBit);
+                        if (line->blk.isSet(CacheBlk::WritableBit)) {
+                            promoted->setCoherenceBits(CacheBlk::WritableBit);
+                            ++pdbStats.storeTrunkMoves;
+                        } else {
+                            ++pdbStats.storeBranchMoves;
+                        }
                         promoted->setWhenReady(
                             std::max(curTick(), line->blk.getWhenReady()));
                         promoted->setXsMetadata(line->blk.getXsMetadata());
+                        promoted->hierarchicalDirty =
+                            line->blk.hierarchicalDirty;
+                        promoted->fromPdb = true;
                         if (line->blk.wasPrefetched()) {
                             recordPdbUse(line, false);
                             if (prefetcher) {
@@ -746,10 +823,27 @@ Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
                         line->blk.clearPrefetched();
                         erasePdbLine(line);
                         ++pdbStats.storeHits;
+                        pkt->pdbStoreMove = true;
+                        if (pkt->cmd == MemCmd::WriteLineReq)
+                            ++pdbStats.storeWholeLineMoves;
                     } else {
-                        erasePdbLine(line, &writebacks);
+                        ++pdbStats.storeMoveReplays;
+                    }
+                    if (pkt->isDcacheMainPipeSbufferReq()) {
+                        // Moving is not the Store. Return an accepted replay
+                        // without modifying data or consuming an MSHR.
+                        pkt->setSbufferReplay();
+                        lat = lookupLatency + dataLatency + pipeLatency;
+                        blk = nullptr;
+                        return true;
                     }
                 }
+            } else if (pkt->isDcacheMainPipeSbufferReq()) {
+                ++pdbStats.storeMoveReplays;
+                pkt->setSbufferReplay();
+                lat = lookupLatency;
+                blk = nullptr;
+                return true;
             }
         }
     }
@@ -1158,6 +1252,11 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
         // the line in Exclusive state, and invalidates all other
         // copies
         cmd = MemCmd::InvalidateReq;
+    } else if (blkValid && blk->fromPdb && needsWritable &&
+               !cpu_pkt->isLLSC()) {
+        // RTL uses AcquireBlock(BtoT) for a partial Store: get permission
+        // and GrantData. Whole-line Stores above use no-data InvalidateReq.
+        cmd = MemCmd::ReadExReq;
     } else if (blkValid && useUpgrades) {
         // only reason to be here is that blk is read only and we need
         // it to be writable
@@ -1187,6 +1286,8 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
             (force_clean_rsp ? MemCmd::ReadCleanReq : MemCmd::ReadSharedReq);
     }
     PacketPtr pkt = new Packet(cpu_pkt->req, cmd, blkSize);
+    pkt->pdbCleanRead = pdbCapacity && !needsWritable &&
+        cpu_pkt->cmd == MemCmd::HardPFReq && cmd == MemCmd::ReadSharedReq;
     pkt->setLSQPtr(cpu_pkt->getLSQPtr());
 
     // if there are upstream caches that have already marked the
@@ -1719,6 +1820,9 @@ Cache::doTimingSupplyResponse(PacketPtr req_pkt, const uint8_t *blk_data,
         pkt = new Packet(req_pkt, false, req_pkt->isRead());
     }
 
+    if (req_pkt->isInvalidate() && pkt->hierarchicalDirty)
+        pkt->hierarchicalDirty->owner = pkt;
+
     assert(req_pkt->req->isUncacheable() || req_pkt->isInvalidate() ||
            pkt->hasSharers());
     pkt->makeTimingResponse();
@@ -1934,6 +2038,9 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
         // request
         DPRINTF(CacheVerbose, "%s set packet %s (%#lx) as cache responding, because pkt needs and blk is dirty\n",
                 __func__, pkt->print(), (uint64_t)pkt);
+        pkt->hierarchicalDirty = blk->hierarchicalDirty;
+        if (pkt->hierarchicalDirty)
+            pkt->dirtyWriteVersion = pkt->hierarchicalDirty->writeVersion;
         pkt->setCacheResponding();
         if (!pkt->isClean() && blk->isSet(CacheBlk::WritableBit)) {
             // inform the cache hierarchy that this cache had the line
@@ -1961,6 +2068,8 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
             DPRINTF(Cache, "Doing time supply, is_deferred: %i, pending inval: %i\n", is_deferred, pending_inval);
             doTimingSupplyResponse(pkt, blk->data, is_deferred, pending_inval);
         } else {
+            if (invalidate && pkt->hierarchicalDirty)
+                pkt->hierarchicalDirty->owner = pkt;
             pkt->makeAtomicResponse();
             // packets such as upgrades do not actually have any data
             // payload
@@ -2029,10 +2138,16 @@ Cache::recvTimingSnoopReq(PacketPtr pkt)
             pkt->setBlockCached();
             return;
         }
-        if (pkt->isRead() && !pkt->isInvalidate())
-            pkt->setHasSharers();
-        if (pkt->isInvalidate()) {
-            erasePdbLine(line);
+        if (pkt->isRead() || pkt->isInvalidate()) {
+            PacketList releases;
+            // H1 replies BtoN/TtoN even to a read Probe. An explicit
+            // CleanEvict retires the Classic holder on a non-invalidating
+            // snoop; invalidating snoops already retire it in the xbar.
+            if (pkt->isInvalidate())
+                erasePdbLine(line);
+            else
+                erasePdbLine(line, &releases);
+            doWritebacks(releases, clockEdge(forwardLatency));
             ++pdbStats.snoopInvalidations;
         }
     }
@@ -2068,6 +2183,12 @@ Cache::recvTimingSnoopReq(PacketPtr pkt)
 
     //We also need to check the writeback buffers and handle those
     WriteQueueEntry *wb_entry = writeBuffer.findMatch(blk_addr, is_secure);
+    if (wb_entry && wb_entry->getTarget()->pkt->staleDirtyWriteback()) {
+        PacketPtr stale = wb_entry->getTarget()->pkt;
+        markInService(wb_entry);
+        delete stale;
+        wb_entry = nullptr;
+    }
     if (wb_entry) {
         DPRINTF(Cache, "Snoop hit in writeback to addr %#llx (%s)\n",
                 pkt->getAddr(), is_secure ? "s" : "ns");
@@ -2110,6 +2231,8 @@ Cache::recvTimingSnoopReq(PacketPtr pkt)
         if (respond) {
             DPRINTF(CacheVerbose, "%s set packet %s (%#lx) as cache responding, when dirty blk found in wb entry\n",
                     __func__, pkt->print(), (uint64_t) pkt);
+            pkt->hierarchicalDirty = wb_pkt->hierarchicalDirty;
+            pkt->dirtyWriteVersion = wb_pkt->dirtyWriteVersion;
             pkt->setCacheResponding();
 
             if (have_writable) {
@@ -2155,10 +2278,13 @@ Cache::recvAtomicSnoop(PacketPtr pkt)
             pkt->setBlockCached();
             return lookupLatency * clockPeriod();
         }
-        if (pkt->isRead() && !pkt->isInvalidate())
-            pkt->setHasSharers();
-        if (pkt->isInvalidate()) {
-            erasePdbLine(line);
+        if (pkt->isRead() || pkt->isInvalidate()) {
+            PacketList releases;
+            if (pkt->isInvalidate())
+                erasePdbLine(line);
+            else
+                erasePdbLine(line, &releases);
+            doWritebacksAtomic(releases);
             ++pdbStats.snoopInvalidations;
         }
     }

@@ -667,6 +667,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
     virtual bool hasPrefetchData(Addr addr, bool secure) const
     { return false; }
 
+    virtual void preparePrefetchPacket(PacketPtr pkt) {}
+
     virtual bool storePrefetchFill(PacketPtr pkt, MSHR *mshr,
                                    PacketList &writebacks)
     { return false; }
@@ -1364,6 +1366,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
         statistics::Scalar pfMergedWithDemand;
         /** Number of MSHR completions with only prefetch (no demand merge) */
         statistics::Scalar pfOnlyFill;
+        statistics::Scalar hierarchicalWriteClaims;
+        statistics::Scalar staleDirtyWritebacks;
         /** Number of demand requests that merged into prefetch MSHR */
         statistics::Scalar demandMergedIntoPfMSHR;
 

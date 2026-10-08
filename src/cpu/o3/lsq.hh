@@ -174,6 +174,8 @@ class LSQ
         bool inDcacheMainPipe;
         // Blocked at fake MainPipe S2 and waits to re-enter from S0.
         bool replayQueued;
+        Tick replayReadyTick = 0;
+        Tick replayResponseTick = MaxTick;
         // the another same addr entry when sending
         // another cannot sending until self sending finished
         StoreBufferEntry *vice = nullptr;
@@ -1478,6 +1480,7 @@ class LSQ
     bool dcacheWriteStall = false;
     const uint32_t sbufferEvictThreshold;
     const uint32_t sbufferEntries;
+    const Cycles sbufferReplayDelay;
     const uint64_t storeBufferInactiveThreshold;
     const uint32_t maxStoreBufferEntriesAcceptedFromSQPerCycle = 2;
     StoreBuffer storeBuffer;
@@ -1576,6 +1579,8 @@ class LSQ
         statistics::Scalar sbufferEvictDuetoTimeout;
         /** Handshake-level sbuffer to dcache request outcomes. */
         statistics::Scalar sbufferDcacheReqFire;
+        statistics::Scalar sbufferAcceptedReplays;
+        statistics::Scalar sbufferReplayWaitCycles;
         statistics::Scalar sbufferDcacheReqBlocked;
         statistics::Scalar sbufferDcacheReqBlockedByMainPipe;
         statistics::Scalar dcacheMainPipeRefillEnter;

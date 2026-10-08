@@ -114,6 +114,8 @@ LSQ::StoreBufferEntry::reset(ThreadID tid, InstSeqNum seq_num,
     this->sending = false;
     this->inDcacheMainPipe = false;
     this->replayQueued = false;
+    this->replayReadyTick = 0;
+    this->replayResponseTick = MaxTick;
     this->request = nullptr;
     this->vice = nullptr;
 }
@@ -408,6 +410,10 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent, unsigned num_threads)
       ADD_STAT(sbufferEvictDuetoTimeout, statistics::units::Count::get(), ""),
       ADD_STAT(sbufferDcacheReqFire, statistics::units::Count::get(),
                "Number of sbuffer write requests accepted by dcache"),
+      ADD_STAT(sbufferAcceptedReplays, statistics::units::Count::get(),
+               "Accepted StoreBuffer requests returned for replay"),
+      ADD_STAT(sbufferReplayWaitCycles, statistics::units::Cycle::get(),
+               "Cycles from accepted replay response to mainpipe admission"),
       ADD_STAT(sbufferDcacheReqBlocked, statistics::units::Count::get(),
                "Number of sbuffer write request attempts rejected by dcache"),
       ADD_STAT(sbufferDcacheReqBlockedByMainPipe,
@@ -478,6 +484,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
               cpu_ptr->cacheLineSize() / params.DcacheBankBytes : 0),
       sbufferEvictThreshold(params.SbufferEvictThreshold),
       sbufferEntries(params.SbufferEntries),
+      sbufferReplayDelay(params.SbufferReplayDelay),
       storeBufferInactiveThreshold(params.storeBufferInactiveThreshold),
       enableBankConflictCheck(params.BankConflictCheck),
       sbufferBankWriteAccurately(params.sbufferBankWriteAccurately),
@@ -1638,7 +1645,17 @@ LSQ::retryReplayStoreBuffer()
         return true;
     }
 
-    auto *entry = sbufferMainPipeReplayQ.front();
+    // Waiting for a replay must not block a different ready eviction. The
+    // scan is bounded by the number of StoreBuffer entries.
+    auto ready = std::find_if(
+        sbufferMainPipeReplayQ.begin(), sbufferMainPipeReplayQ.end(),
+        [](const StoreBufferEntry *entry) {
+            return entry->replayReadyTick <= curTick();
+        });
+    if (ready == sbufferMainPipeReplayQ.end()) {
+        return false;
+    }
+    auto *entry = *ready;
     assert(entry);
     assert(entry->replayQueued);
     assert(!entry->inDcacheMainPipe);
@@ -1652,7 +1669,12 @@ LSQ::retryReplayStoreBuffer()
     }
 
     entry->replayQueued = false;
-    sbufferMainPipeReplayQ.pop_front();
+    sbufferMainPipeReplayQ.erase(ready);
+    if (entry->replayResponseTick != MaxTick) {
+        stats.sbufferReplayWaitCycles += cpu->ticksToCycles(
+            curTick() - entry->replayResponseTick);
+        entry->replayResponseTick = MaxTick;
+    }
     resetStoreBufferInactiveCycles();
     return true;
 }
@@ -1716,6 +1738,7 @@ LSQ::issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt, Tick issue_tick)
 
     data_pkt->sendTick = issue_tick;
     data_pkt->clearDcacheMainPipeSbufferHit();
+    data_pkt->pdbStoreMove = false;
     data_pkt->setDcacheMainPipeSbufferReq();
     data_pkt->setLSQPtr(this);
 
@@ -1740,6 +1763,15 @@ LSQ::issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt, Tick issue_tick)
         result = data_pkt->isDcacheMainPipeSbufferHit() ?
             DcacheMainPipeS2Result::GoToS3 :
             DcacheMainPipeS2Result::ExitPipe;
+        if (data_pkt->pdbStoreMove) {
+            // The first request copies a full PDB line, including tag and
+            // permission, rather than writing the original Store byte mask.
+            auto &move = dcacheMainPipeStage(
+                DcacheMainPipeStage::S2DataResp).req;
+            move.needTagWrite = true;
+            move.needDataWrite = true;
+            move.writeBanks = fullDcacheBankMask();
+        }
         if (result == DcacheMainPipeS2Result::ExitPipe) {
             ++stats.dcacheMainPipeStoreS2MissExit;
         }
@@ -1752,6 +1784,7 @@ LSQ::issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt, Tick issue_tick)
         // this eviction from S0 through the replay queue.
         if (!entry->replayQueued) {
             entry->replayQueued = true;
+            entry->replayReadyTick = curTick();
             sbufferMainPipeReplayQ.push_back(entry);
         }
         if (cache_got_blocked) {
@@ -3529,8 +3562,23 @@ LSQ::SbufferRequest::recvTimingResp(PacketPtr pkt)
             "Sbuffer Req::recvTimingResp: entry[%#x]\n",
             _packets[0]->getAddr());
     assert(_numOutstandingPackets == 1);
-    flags.set(Flag::Complete);
     assert(pkt == _packets.front());
+    if (pkt->isSbufferReplay()) {
+        // packetReplied() in LSQ::recvTimingResp still accounts for this
+        // response. Retain the request, mask and entry until the final write.
+        assert(sbuffer_entry->sending);
+        sbuffer_entry->sending = false;
+        sbuffer_entry->replayQueued = true;
+        sbuffer_entry->replayReadyTick = cpu->clockEdge(lsq->sbufferReplayDelay);
+        sbuffer_entry->replayResponseTick = curTick();
+        lsq->sbufferMainPipeReplayQ.push_back(sbuffer_entry);
+        ++lsq->stats.sbufferAcceptedReplays;
+        pkt->cmd = MemCmd::WriteReq;
+        pkt->clearSbufferReplay();
+        pkt->clearDcacheMainPipeSbufferHit();
+        return true;
+    }
+    flags.set(Flag::Complete);
     lsq->completeSbufferEvict(pkt);
     discard();
     return true;

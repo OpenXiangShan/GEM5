@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: BSD-3-Clause
+Import('*')
+SimObject('PdbTest.py', sim_objects=['PdbTest', 'PdbTestPrefetcher'])
+Source('pdb_test.cc')

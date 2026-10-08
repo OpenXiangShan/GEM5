@@ -102,6 +102,18 @@ class CacheBlk : public TaggedEntry
      */
     uint8_t *data = nullptr;
 
+    std::shared_ptr<HierarchicalDirtyState> hierarchicalDirty;
+    bool fromPdb = false;
+
+    void claimDirtyOwnership(bool modified = false)
+    {
+        if (hierarchicalDirty) {
+            if (modified)
+                ++hierarchicalDirty->writeVersion;
+            hierarchicalDirty->owner = this;
+        }
+    }
+
     /**
      * Which curTick() will this block be accessible. Its value is only
      * meaningful if the block is valid.
@@ -185,6 +197,10 @@ class CacheBlk : public TaggedEntry
             setPendingInvalidate();
         }
         setCoherenceBits(other.coherence);
+        hierarchicalDirty = std::move(other.hierarchicalDirty);
+        fromPdb = other.fromPdb;
+        if (hierarchicalDirty && hierarchicalDirty->owner == &other)
+            hierarchicalDirty->owner = this;
         setTaskId(other.getTaskId());
         setXsMetadata(other.getXsMetadata());
         setWhenReady(curTick());
@@ -204,6 +220,10 @@ class CacheBlk : public TaggedEntry
      */
     virtual void invalidate() override
     {
+        if (hierarchicalDirty && hierarchicalDirty->owner == this)
+            hierarchicalDirty->owner = nullptr;
+        hierarchicalDirty.reset();
+        fromPdb = false;
         TaggedEntry::invalidate();
 
         clearAllPrefetched();
@@ -246,7 +266,10 @@ class CacheBlk : public TaggedEntry
     bool
     isSet(unsigned bits) const
     {
-        return isValid() && (coherence & bits);
+        unsigned effective = coherence;
+        if (hierarchicalDirty && hierarchicalDirty->owner != this)
+            effective &= ~DirtyBit;
+        return isValid() && (effective & bits);
     }
 
     /**

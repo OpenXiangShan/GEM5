@@ -115,8 +115,16 @@ class Cache : public BaseCache
     struct PdbStats : statistics::Group
     {
         statistics::Scalar fills;
+        statistics::Scalar branchFills;
+        statistics::Scalar trunkFills;
+        statistics::Scalar retainedDirtyGrants;
+        statistics::Scalar rejectedDirtyFills;
         statistics::Scalar loadHits;
         statistics::Scalar storeHits;
+        statistics::Scalar storeBranchMoves;
+        statistics::Scalar storeTrunkMoves;
+        statistics::Scalar storeWholeLineMoves;
+        statistics::Scalar storeMoveReplays;
         statistics::Scalar duplicatePrefetches;
         statistics::Scalar evictions;
         statistics::Scalar snoopInvalidations;
@@ -176,6 +184,8 @@ class Cache : public BaseCache
     bool hasPrefetchData(Addr addr, bool secure) const override;
     bool storePrefetchFill(PacketPtr pkt, MSHR *mshr,
                            PacketList &writebacks) override;
+    void preparePrefetchPacket(PacketPtr pkt) override
+    { pkt->pdbCleanRead = pdbCapacity != 0; }
     void onMSHRDeallocate(PacketPtr pkt, PacketList &writebacks) override;
     bool functionalAccessExtra(PacketPtr pkt) override;
     void memInvalidate() override;

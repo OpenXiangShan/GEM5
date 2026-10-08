@@ -329,6 +329,10 @@ Packet::copyResponderFlags(const PacketPtr pkt)
     // commit to responding
     assert(!pkt->cacheResponding() || !cacheResponding());
     flags.set(pkt->flags & RESPONDER_FLAGS);
+    if (pkt->cacheResponding()) {
+        hierarchicalDirty = pkt->hierarchicalDirty;
+        dirtyWriteVersion = pkt->dirtyWriteVersion;
+    }
 }
 
 void

@@ -71,6 +71,12 @@ namespace o3 {
 }
 
 class Packet;
+/** Directory ownership abstraction for a clean PDB grant of dirty data. */
+struct HierarchicalDirtyState
+{
+    const void *owner = nullptr;
+    uint64_t writeVersion = 0;
+};
 typedef Packet *PacketPtr;
 typedef uint8_t* PacketDataPtr;
 typedef std::list<PacketPtr> PacketList;
@@ -380,7 +386,10 @@ class Packet : public Printable
         DCACHE_MAINPIPE_SBUFFER_REQ = 0x00100000,
 
         // Record whether the fake-mainpipe StoreBuffer access hit in L1D.
-        DCACHE_MAINPIPE_SBUFFER_HIT = 0x00200000
+        DCACHE_MAINPIPE_SBUFFER_HIT = 0x00200000,
+
+        // Accepted StoreBuffer request that must be replayed, not completed.
+        DCACHE_SBUFFER_REPLAY = 0x00400000
     };
 
     Flags flags;
@@ -574,6 +583,21 @@ class Packet : public Printable
 
     o3::LSQ *lsqPtr = nullptr;
 
+    // Hop-local: an intermediate cache does not propagate the clean-grant
+    // request through its own miss; it acquires normal dirty responsibility.
+    bool pdbCleanRead = false;
+    bool pdbCleanGrant = false;
+    bool pdbStoreMove = false;
+    std::shared_ptr<HierarchicalDirtyState> hierarchicalDirty;
+    uint64_t dirtyWriteVersion = 0;
+
+    bool staleDirtyWriteback() const
+    {
+        return (cmd == MemCmd::WritebackDirty || cmd == MemCmd::WriteClean) &&
+            hierarchicalDirty &&
+            dirtyWriteVersion != hierarchicalDirty->writeVersion;
+    }
+
     /**
      * Push a new sender state to the packet and make the current
      * sender state the predecessor of the new one. This should be
@@ -637,10 +661,17 @@ class Packet : public Printable
         // look at the hasSharers flag (if not set, the response is to
         // be considered writable)
         assert(isRequest());
-        return cmd.needsWritable();
+        // PDB read prefetches keep the HW-prefetch command for accounting,
+        // but do not acquire write intent like the legacy DCache prefetch.
+        return cmd.needsWritable() &&
+            !(pdbCleanRead && cmd == MemCmd::HardPFReq);
     }
     bool needsResponse() const       { return cmd.needsResponse(); }
-    bool isInvalidate() const        { return cmd.isInvalidate(); }
+    bool isInvalidate() const
+    {
+        return cmd.isInvalidate() &&
+            !(pdbCleanRead && cmd == MemCmd::HardPFReq);
+    }
     bool isEviction() const          { return cmd.isEviction(); }
     bool isClean() const             { return cmd.isClean(); }
     bool fromCache() const           { return cmd.fromCache(); }
@@ -827,6 +858,10 @@ class Packet : public Printable
     { return flags.isSet(DCACHE_MAINPIPE_SBUFFER_HIT); }
     void clearDcacheMainPipeSbufferHit()
     { flags.clear(DCACHE_MAINPIPE_SBUFFER_HIT); }
+
+    void setSbufferReplay() { flags.set(DCACHE_SBUFFER_REPLAY); }
+    bool isSbufferReplay() const { return flags.isSet(DCACHE_SBUFFER_REPLAY); }
+    void clearSbufferReplay() { flags.clear(DCACHE_SBUFFER_REPLAY); }
 
     void setLSQPtr(o3::LSQ *lsq) { lsqPtr = lsq; }
     o3::LSQ *getLSQPtr() const { return lsqPtr; }
@@ -1052,6 +1087,10 @@ class Packet : public Printable
            payloadDelay(pkt->payloadDelay),
            senderState(pkt->senderState)
     {
+        pdbCleanRead = pkt->pdbCleanRead;
+        pdbCleanGrant = pkt->pdbCleanGrant;
+        hierarchicalDirty = pkt->hierarchicalDirty;
+        dirtyWriteVersion = pkt->dirtyWriteVersion;
         if (!clear_flags)
             flags.set(pkt->flags & COPY_FLAGS);
 
@@ -1159,6 +1198,8 @@ class Packet : public Printable
      */
     ~Packet()
     {
+        if (hierarchicalDirty && hierarchicalDirty->owner == this)
+            hierarchicalDirty->owner = nullptr;
         deleteData();
     }
 

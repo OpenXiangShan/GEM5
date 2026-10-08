@@ -749,7 +749,7 @@ BaseCache::recvTimingReq(PacketPtr pkt)
     }
 
     if (level() == 1 && !isReadOnly && pkt->isDcacheMainPipeSbufferReq() &&
-        satisfied) {
+        satisfied && (!pkt->isSbufferReplay() || pkt->pdbStoreMove)) {
         pkt->setDcacheMainPipeSbufferHit();
     }
 
@@ -1468,6 +1468,9 @@ BaseCache::cmpAndSwap(CacheBlk *blk, PacketPtr pkt)
     }
 
     if (overwrite_mem) {
+        if (blk->hierarchicalDirty)
+            ++stats.hierarchicalWriteClaims;
+        blk->claimDirtyOwnership(true);
         std::memcpy(blk_data, &overwrite_val, pkt->getSize());
         DPRINTF(CacheVerbose, "CAS instruction Write to addr %#x size %lu\n",
                 pkt->getAddr(), pkt->getSize());
@@ -1558,6 +1561,8 @@ BaseCache::getNextQueueEntry()
             pkt = prefetcher->getPacket();
         }
         if (pkt) {
+            // Set read intent before MSHR caches the target's permissions.
+            preparePrefetchPacket(pkt);
             Addr pf_addr = pkt->getBlockAddr(blkSize);
             const auto pf_metadata = pkt->req->getXsMetadata();
             PrefetchSourceType pf_type = pf_metadata.prefetchSource;
@@ -1836,6 +1841,9 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
     // isWrite() will be true for them
     if (pkt->cmd == MemCmd::SwapReq) {
         if (pkt->isAtomicOp()) {
+            if (blk->hierarchicalDirty)
+                ++stats.hierarchicalWriteClaims;
+            blk->claimDirtyOwnership(true);
             // Get a copy of the old block's contents for the probe before
             // the update
             DataUpdate data_update(regenerateBlkAddr(blk), blk->isSecure());
@@ -1877,6 +1885,12 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
         // downstream caches along the path to memory, but always
         // Exclusive, and never Modified
         assert(blk->isSet(CacheBlk::WritableBit));
+        // A clean T grant kept the old responsibility downstairs. A real
+        // modification, including the normal SC completion path, now makes
+        // this cache the unique dirty custodian.
+        if (blk->hierarchicalDirty)
+            ++stats.hierarchicalWriteClaims;
+        blk->claimDirtyOwnership(true);
         // Write or WriteLine at the first cache with block in writable state
         if (blk->checkWrite(pkt)) {
             updateBlockData(blk, pkt, true);
@@ -1997,6 +2011,14 @@ bool
 BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
                   PacketList &writebacks)
 {
+    // A retained lower writeback can be overtaken by a silent T Store above.
+    // Its old version must not reintroduce stale data or dirty ownership.
+    if (pkt->staleDirtyWriteback()) {
+        ++stats.staleDirtyWritebacks;
+        blk = nullptr;
+        lat = lookupLatency;
+        return true;
+    }
     // sanity check
     assert(pkt->isRequest());
 
@@ -2123,6 +2145,8 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         // and leave it as is for a clean writeback
         if (pkt->cmd == MemCmd::WritebackDirty) {
             // TODO: the coherent cache can assert that the dirty bit is set
+            blk->hierarchicalDirty = pkt->hierarchicalDirty;
+            blk->claimDirtyOwnership();
             blk->setCoherenceBits(CacheBlk::DirtyBit);
         }
         // if the packet does not have sharers, it is passing
@@ -2207,6 +2231,8 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         assert(blk);
         // TODO: the coherent cache can assert that the dirty bit is set
         if (!pkt->writeThrough()) {
+            blk->hierarchicalDirty = pkt->hierarchicalDirty;
+            blk->claimDirtyOwnership();
             blk->setCoherenceBits(CacheBlk::DirtyBit);
         }
         // nothing else to do; writeback doesn't expect response
@@ -2379,6 +2405,8 @@ BaseCache::handleFill(
     // (dirty but not writable), and always ends up being either
     // Shared, Exclusive or Modified, see Packet::setCacheResponding
     // for more details
+    if (pkt->hierarchicalDirty)
+        blk->hierarchicalDirty = pkt->hierarchicalDirty;
     if (!pkt->hasSharers()) {
         // we could get a writable line from memory (rather than a
         // cache) even in a read-only cache, note that we set this bit
@@ -2387,10 +2415,11 @@ BaseCache::handleFill(
 
         // check if we got this via cache-to-cache transfer (i.e., from a
         // cache that had the block in Modified or Owned state)
-        if (pkt->cacheResponding()) {
+        if (pkt->cacheResponding() && !pkt->pdbCleanGrant) {
             // we got the block in Modified state, and invalidated the
             // owners copy
             blk->setCoherenceBits(CacheBlk::DirtyBit);
+            blk->claimDirtyOwnership();
 
             gem5_assert(!isReadOnly, "Should never see dirty snoop response "
                         "in read-only cache %s\n", name());
@@ -2624,6 +2653,12 @@ BaseCache::writebackBlk(CacheBlk *blk)
     PacketPtr pkt =
         new Packet(req, blk->isSet(CacheBlk::DirtyBit) ?
                    MemCmd::WritebackDirty : MemCmd::WritebackClean);
+    pkt->hierarchicalDirty = blk->hierarchicalDirty;
+    if (pkt->hierarchicalDirty) {
+        pkt->dirtyWriteVersion = pkt->hierarchicalDirty->writeVersion;
+        if (blk->isSet(CacheBlk::DirtyBit))
+            pkt->hierarchicalDirty->owner = pkt;
+    }
 
     DPRINTF(Cache, "Create Writeback %s writable: %d, dirty: %d\n",
         pkt->print(), blk->isSet(CacheBlk::WritableBit),
@@ -2666,6 +2701,11 @@ BaseCache::writecleanBlk(CacheBlk *blk, Request::Flags dest, PacketId id)
     req->setXsMetadata(blk->getXsMetadata());
 
     PacketPtr pkt = new Packet(req, MemCmd::WriteClean, blkSize, id);
+    pkt->hierarchicalDirty = blk->hierarchicalDirty;
+    if (pkt->hierarchicalDirty) {
+        pkt->dirtyWriteVersion = pkt->hierarchicalDirty->writeVersion;
+        pkt->hierarchicalDirty->owner = pkt;
+    }
 
     if (dest) {
         req->setFlags(dest);
@@ -3249,6 +3289,10 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of MSHR completions where prefetch was merged with demand"),
     ADD_STAT(pfOnlyFill, statistics::units::Count::get(),
              "pure prefetch fills into L1 or PDB (no demand merge)"),
+    ADD_STAT(hierarchicalWriteClaims, statistics::units::Count::get(),
+             "Upper writes taking retained hierarchical dirty responsibility"),
+    ADD_STAT(staleDirtyWritebacks, statistics::units::Count::get(),
+             "Obsolete retained writeback versions discarded"),
     ADD_STAT(demandMergedIntoPfMSHR, statistics::units::Count::get(),
              "number of demand requests that merged into prefetch MSHR"),
     ADD_STAT(squashedDemandHits, statistics::units::Count::get(),
