@@ -87,7 +87,7 @@ class UartLite(BasicPioDevice):
     cxx_header = "dev/serial/uartlite.hh"
     cxx_class = 'gem5::UartLite'
     pio_addr = 0x40600000
-    pio_size = Param.Addr(0xd, "Size of address range")
+    pio_size = Param.Addr(0x10, "Size of address range")
 
 class Uart16550(BasicPioDevice):
     type = 'Uart16550'
