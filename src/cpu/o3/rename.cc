@@ -46,6 +46,7 @@
 
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
+#include "cpu/o3/fetch_supply_reason.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/reg_class.hh"
 #include "debug/Activity.hh"
@@ -508,6 +509,11 @@ Rename::tick()
         if (blocked_tid != InvalidThreadID) {
             setAllStalls(stallSig->decodeBlockReason[blocked_tid]);
             blockReason = stallSig->decodeBlockReason[blocked_tid];
+        } else {
+            // Same hole as decode: the NoStall written at the start of tick()
+            // would be forwarded to dispatch while the frontend is drained.
+            copyUpstreamStall(renameStalls, fromDecode->decodeStallReason,
+                              StallReason::NoStall);
         }
         toIEW->renameStallReason = renameStalls;
         stats.threadsRenamedPerCycle.sample(0);

@@ -59,6 +59,7 @@
 #include "cpu/nop_static_inst.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
+#include "cpu/o3/fetch_supply_reason.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/trace/TraceFetch.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
@@ -1854,18 +1855,55 @@ Fetch::sendInstructionsToDecode()
 void
 Fetch::updateStallReasons(unsigned insts_to_decode, ThreadID tid)
 {
+    // TlbWait stays ITlbStall even though checkMemoryNeeds already latched
+    // FetchCut::Icache for the invalid buffer. That latch is also refreshed
+    // on later walk cycles, after handleMultiCacheLineFetch has stopped running.
+    const bool tlbWait =
+        threads[tid].cacheReq.getOverallStatus() == TlbWait;
+    FetchSupplyCut cut = FetchSupplyCut::None;
+    switch (fetchCut[tid]) {
+      case FetchCut::Stream:
+        cut = FetchSupplyCut::Stream;
+        break;
+      case FetchCut::Buf:
+        cut = FetchSupplyCut::Buf;
+        break;
+      case FetchCut::Icache:
+        cut = FetchSupplyCut::Icache;
+        break;
+      case FetchCut::None:
+        break;
+    }
+    auto slotStall = [](SupplySlot slot, StallReason already) {
+        switch (slot) {
+          case SupplySlot::ITlb:
+            return StallReason::ITlbStall;
+          case SupplySlot::Icache:
+            return StallReason::IcacheStall;
+          case SupplySlot::Stream:
+            return StallReason::FetchStreamFrag;
+          case SupplySlot::Buf:
+            return StallReason::FetchBufFrag;
+          case SupplySlot::FetchFrag:
+            return StallReason::FetchFragStall;
+          case SupplySlot::OtherFetch:
+            return StallReason::OtherFetchStall;
+          case SupplySlot::KeepAlready:
+            return already;
+        }
+        return already;
+    };
+
     if (stallSig->blockFetch[tid]) {
         setAllFetchStalls(stallSig->fetchBlockReason[tid]);
     } else if (insts_to_decode == 0) {
-        if (fetchCut[tid] != FetchCut::None) {
-            setAllFetchStalls(fragReasonFromCut(fetchCut[tid]));
-        } else if (stallReason[0] != StallReason::NoStall) {
-            setAllFetchStalls(stallReason[0]);
-        } else {
-            setAllFetchStalls(StallReason::OtherFetchStall);
-        }
+        setAllFetchStalls(slotStall(
+            zeroFetchSupplySlot(tlbWait, cut,
+                                stallReason[0] == StallReason::NoStall),
+            stallReason[0]));
     } else {
-        const StallReason fragReason = fragReasonFromCut(fetchCut[tid]);
+        const StallReason fragReason = slotStall(
+            partialFetchSupplySlot(tlbWait, cut), StallReason::FetchFragStall);
         for (int i = 0; i < stallReason.size(); i++) {
             if (i < insts_to_decode)
                 stallReason[i] = StallReason::NoStall;

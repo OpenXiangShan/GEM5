@@ -48,6 +48,7 @@
 #include "config/the_isa.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst.hh"
+#include "cpu/o3/fetch_supply_reason.hh"
 #include "cpu/o3/limits.hh"
 #include "debug/Activity.hh"
 #include "debug/Counters.hh"
@@ -703,6 +704,12 @@ Decode::tick()
         if (blocked_tid != InvalidThreadID) {
             setAllStalls(stallSig->fetchBlockReason[blocked_tid]);
             blockReason = stallSig->fetchBlockReason[blocked_tid];
+        } else {
+            // tick() cleared decodeStalls to NoStall. Nothing is selected and
+            // rename is not blocking, so the empty buffer is a frontend miss.
+            // Publish that reason; otherwise dispatch later counts NoStall.
+            copyUpstreamStall(decodeStalls, fromFetch->fetchStallReason,
+                              StallReason::NoStall);
         }
         toRename->decodeStallReason = decodeStalls;
         stats.threadsDecodedPerCycle.sample(0);
