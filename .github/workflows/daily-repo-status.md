@@ -10,6 +10,12 @@ on:
     - cron: "0 1 * * *"
   workflow_dispatch:
 
+max-turns: 80
+timeout-minutes: 10
+jobs:
+  agent:
+    timeout-minutes: 10
+
 permissions:
   contents: read
   issues: read
@@ -91,6 +97,11 @@ PR titles, and links when useful. Use a title such as "仓库日报：YYYY-MM-DD
    summarizing. Do not use a capped list of open PRs as the activity source.
    Select only needed fields; avoid full repository scans and unauthenticated
    shell GitHub commands. If retrieval is incomplete, state the coverage gap.
+   Reuse successful query results. Do not repeat an identical successful query
+   or shell command; pagination must advance the page/cursor. Stop gathering
+   after 40 GitHub tool calls and compose from verified evidence, explicitly
+   noting anything not covered. Inspect only candidates in the time window,
+   and skip automation reports before fetching their bodies/comments.
 2. Compose the report and call the `create_issue` safe-output MCP tool directly
    with the final title and body. Prefer this over constructing a shell payload.
 3. If the CLI transport is necessary, use a temporary Markdown file and the
