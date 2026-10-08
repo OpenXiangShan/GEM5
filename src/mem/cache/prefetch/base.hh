@@ -961,6 +961,8 @@ class Base : public ClockedObject
         statistics::Vector pfHitInMSHR_srcs;
         statistics::Vector pfHitInWB_srcs;
         statistics::Vector late_srcs;
+        /** Demand accesses whose hit block was previously prefetched. */
+        statistics::Vector demandHitPrefetch_srcs;
         /** The number of times there is a hit on prefetch but cache block
          * is not in an usable state */
         statistics::Scalar pfUsefulButMiss;
@@ -1174,6 +1176,9 @@ class Base : public ClockedObject
     virtual void notifyPrefetchMerged(uint64_t candidate_id) {}
     virtual void notifyCandidateDemand(uint64_t candidate_id,
                                        const PacketPtr &demand) {}
+    // Diagnostic lifecycle events: 0=refill, 1=eviction/invalidation.
+    virtual void notifyCandidateEvent(const Request::XsMetadata &metadata,
+                                      Addr address, unsigned event) {}
 
     virtual void notifyPrefetchEvictsDemand(
         Addr victim_paddr, bool is_secure, PrefetchSourceType evictor_source)
@@ -1198,7 +1203,8 @@ class Base : public ClockedObject
         prefetchStats.pfHitInMSHR_srcs[pf_type]++;
         prefetchStats.late_srcs[pf_type]++;
     }
-    virtual void pfHitInMSHR(PrefetchSourceType pf_type, uint64_t candidate_id)
+    virtual void pfHitInMSHR(PrefetchSourceType pf_type, uint64_t candidate_id,
+                             bool has_demand = false)
     { pfHitInMSHR(pf_type); }
 
     virtual void

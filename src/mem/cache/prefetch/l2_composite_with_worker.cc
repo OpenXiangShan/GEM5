@@ -227,6 +227,14 @@ L2CompositeWithWorkerPrefetcher::notifyPrefetchMerged(uint64_t candidate_id)
 }
 
 void
+L2CompositeWithWorkerPrefetcher::notifyCandidateEvent(const Request::XsMetadata &metadata,
+                           Addr address, unsigned event)
+{
+    if (enableLLDP)
+        lldp->notifyCandidateEvent(metadata, address, event);
+}
+
+void
 L2CompositeWithWorkerPrefetcher::notifyCandidateDemand(
     uint64_t candidate_id, const PacketPtr &demand)
 {
@@ -245,11 +253,11 @@ L2CompositeWithWorkerPrefetcher::pfHitInCache(
 
 void
 L2CompositeWithWorkerPrefetcher::pfHitInMSHR(
-    PrefetchSourceType source, uint64_t candidate_id)
+    PrefetchSourceType source, uint64_t candidate_id, bool has_demand)
 {
     CompositeWithWorkerPrefetcher::pfHitInMSHR(source);
     if (enableLLDP)
-        lldp->pfHitInMSHR(source, candidate_id);
+        lldp->pfHitInMSHR(source, candidate_id, has_demand);
 }
 
 void

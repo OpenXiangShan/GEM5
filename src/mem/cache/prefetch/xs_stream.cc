@@ -42,7 +42,7 @@ XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrP
         badPreNum++;
     }
     STREAMEntry *entry = streamLookup(pfi, in_active_page, decr);
-    const bool lldp_feedback = entry->lldpFeedback;
+    const bool lldp_feedback = feedbackTable.contains(pc, context_id, stream_type);
     if ((issuedPrefetches >= VALIDITYCHECKINTERVAL) && (enableAutoDepth)) {
         if ((double)late_num / issuedPrefetches >= LATECOVERAGE) {
             if (depth != DEPTHRIGHT)
@@ -74,19 +74,9 @@ XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrP
 }
 
 void
-XsStreamPrefetcher::spatialFeedback(Addr pc, bool valid)
+XsStreamPrefetcher::spatialFeedback(const SpatialFeedback &feedback)
 {
-    if (valid) {
-        lldpFeedbackPCs.insert(pc);
-        for (STREAMEntry &entry : stream_array)
-            if (entry.isValid() && entry.pc == pc)
-                entry.lldpFeedback = true;
-    } else {
-        lldpFeedbackPCs.erase(pc);
-        for (STREAMEntry &entry : stream_array)
-            if (entry.isValid() && entry.pc == pc)
-                entry.lldpFeedback = false;
-    }
+    feedbackTable.update(feedback);
 }
 
 XsStreamPrefetcher::STREAMEntry *
@@ -113,7 +103,6 @@ XsStreamPrefetcher::streamLookup(const PrefetchInfo &pfi, bool &in_active_page, 
     if (entry) {
         stream_array.accessEntry(entry);
         entry->pc = pc;
-        entry->lldpFeedback = lldpFeedbackPCs.count(pc) != 0;
         uint64_t region_bit_accessed = 1UL << vaddr_offset;
         if (entry_plus)
             entry->decrMode = true;
@@ -140,7 +129,6 @@ XsStreamPrefetcher::streamLookup(const PrefetchInfo &pfi, bool &in_active_page, 
     entry->active = in_active_page;
     entry->contextId = context_id;
     entry->pc = pc;
-    entry->lldpFeedback = lldpFeedbackPCs.count(pc) != 0;
     stream_array.insertEntry(stream_key, secure, entry);
     return entry;
 }

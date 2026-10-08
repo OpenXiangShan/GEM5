@@ -86,7 +86,6 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
             stats.strideRedundanthitCount++;
         }
         stride.accessEntry(entry);
-        entry->lldpFeedback = lldpFeedbackPCs.count(pfi.getPC()) != 0;
         int64_t new_stride = lookupAddr - entry->lastAddr;
         if (new_stride == 0 || (labs(new_stride) < 64 && (miss_repeat || entry->longStride.calcSaturation() >= 0.5))) {
             DPRINTF(XSStridePrefetcher, "Stride touch in the same blk, ignore redundant req\n");
@@ -177,7 +176,8 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
             }
         }
         if (entry->conf >= 2) {
-            const bool lldp_feedback = entry->lldpFeedback;
+            const bool lldp_feedback = feedbackTable.contains(
+                pfi.getPC(), context_id, PrefetchSourceType::SStride);
             // if miss send 1*stride ~ depth*stride, else send depth*stride
             unsigned start_depth = pfi.isCacheMiss() ? std::max(1, (entry->depth - 4)) : entry->depth;
             Addr pf_addr = 0;
@@ -278,7 +278,6 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
         entry->lateConf.reset();
         entry->pc = pfi.getPC();
         entry->contextId = context_id;
-        entry->lldpFeedback = lldpFeedbackPCs.count(pfi.getPC()) != 0;
         entry->histStrides.clear();
         entry->matchedSinceAlloc = false;
         DPRINTF(XSStridePrefetcher, "Stride miss, insert with stride 0\n");
@@ -306,25 +305,9 @@ XSStridePrefetcher::periodStrideDepthDown()
 }
 
 void
-XSStridePrefetcher::spatialFeedback(Addr pc, bool valid)
+XSStridePrefetcher::spatialFeedback(const SpatialFeedback &feedback)
 {
-    if (valid) {
-        lldpFeedbackPCs.insert(pc);
-        for (StrideEntry &entry : strideUnique)
-            if (entry.isValid() && entry.pc == pc)
-                entry.lldpFeedback = true;
-        for (StrideEntry &entry : strideRedundant)
-            if (entry.isValid() && entry.pc == pc)
-                entry.lldpFeedback = true;
-    } else {
-        lldpFeedbackPCs.erase(pc);
-        for (StrideEntry &entry : strideUnique)
-            if (entry.isValid() && entry.pc == pc)
-                entry.lldpFeedback = false;
-        for (StrideEntry &entry : strideRedundant)
-            if (entry.isValid() && entry.pc == pc)
-                entry.lldpFeedback = false;
-    }
+    feedbackTable.update(feedback);
 }
 
 void

@@ -64,6 +64,11 @@ DebugFlag('LLDPrefetcher')
 
 GTest('context_key.test', 'context_key.test.cc')
 GTest('lldp_logic.test', 'lldp_logic.test.cc')
+GTest('candidate_table.test', 'candidate_table.test.cc')
+GTest('spatial_feedback.test', 'spatial_feedback.test.cc')
+GTest('load_observation.test', 'load_observation.test.cc')
+GTest('demand_pair_history.test', 'demand_pair_history.test.cc')
+GTest('temporal_control.test', 'temporal_control.test.cc')
 
 Source('access_map_pattern_matching.cc')
 Source('base.cc')

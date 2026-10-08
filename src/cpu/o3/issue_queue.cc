@@ -912,15 +912,20 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
                     (!consumer->isMemRef() && !consumer->isControl() &&
                      consumer->numDestRegs() != 0);
                 if (eligible && !consumer->isSquashed()) {
-                    if (consumer->lldpInputs.empty())
+                    if (consumer->lldpInputs.empty()) {
                         consumer->lldpInputs.resize(consumer->numSrcRegs());
+                        consumer->lldpProducerSequences.resize(consumer->numSrcRegs());
+                    }
                     auto &chain = consumer->lldpInputs[srcIdx];
                     chain = {};
+                    consumer->lldpProducerSequences[srcIdx] = 0;
                     if (inst->isLoad() && !inst->isAtomic()) {
                         chain = lldp::Chain::start(inst->pcState().instAddr());
+                        consumer->lldpProducerSequences[srcIdx] = inst->seqNum;
                         chain.replayable = !inst->isVector() &&
                             !inst->isFloating() && !inst->isLoadReserved();
                     } else if (arithmetic && inst->lldpChain.valid) {
+                        consumer->lldpProducerSequences[srcIdx] = inst->xsMeta->lldpProducerSeq;
                         const auto form = lldp::sourceForm(
                             inst->staticInst->numSrcRegs(),
                             inst->staticInst->isLldpImmediate());

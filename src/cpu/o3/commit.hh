@@ -635,6 +635,9 @@ class Commit
         statistics::Vector memRefs;
         /** Stat for the total number of committed loads. */
         statistics::Vector loads;
+        statistics::Scalar observedRetiredLoads, unobservedRetiredLoads,
+            retiredLoadsAllL1Hit, eligibleRetiredLoads, eligibleLoadsAllL1Hit;
+        statistics::Vector retiredLoadsHitL1BySource, eligibleLoadsHitL1BySource;
         /** Stat for the total number of committed stores. */
         statistics::Vector stores;
         /** Stat for the total number of committed atomics. */

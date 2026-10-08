@@ -5,7 +5,6 @@
 #define __MEM_CACHE_PREFETCH_SMSSTRIDE_HH__
 
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include <boost/compute/detail/lru_cache.hpp>
@@ -15,10 +14,13 @@
 #include "base/types.hh"
 #include "debug/XSStridePrefetcher.hh"
 #include "mem/cache/prefetch/associative_set.hh"
+#include "mem/cache/prefetch/spatial_feedback.hh"
+
 // #include "mem/cache/prefetch/queued.hh"
+#include "mem/cache/prefetch/prefetch_filter.hh"
 #include "mem/packet.hh"
 #include "params/XSStridePrefetcher.hh"
-#include "mem/cache/prefetch/prefetch_filter.hh"
+
 namespace gem5
 {
 
@@ -60,7 +62,6 @@ class XSStridePrefetcher : public Queued
         ContextID contextId;
         std::list<Addr> histStrides;
         bool matchedSinceAlloc;
-        bool lldpFeedback;
         StrideEntry()
             : TaggedEntry(),
               stride(0),
@@ -71,8 +72,7 @@ class XSStridePrefetcher : public Queued
               longStride(4, 7),
               pc(0),
               contextId(InvalidContextID),
-              matchedSinceAlloc(false),
-              lldpFeedback(false)
+              matchedSinceAlloc(false)
         {}
     };
 
@@ -105,10 +105,7 @@ class XSStridePrefetcher : public Queued
     };
 
     AssociativeSet<NonStrideEntry> nonStridePCs;
-    // A successful LLDP spatial hit grants one additional L1 stride probe for
-    // this PC.  The set is the one-bit training state and naturally prevents
-    // repeated feedback from increasing the degree without bound.
-    std::unordered_set<Addr> lldpFeedbackPCs;
+    SpatialFeedbackTable feedbackTable;
 
     void markNonStridePC(Addr pc, ContextID context_id);
 
@@ -136,7 +133,7 @@ class XSStridePrefetcher : public Queued
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
                            PrefetchSourceType pf_source, bool miss_repeat, bool enter_new_region, bool is_first_shot,
                            Addr &pf_addr, int64_t &learned_bop_offset);
-    void spatialFeedback(Addr pc, bool valid);
+    void spatialFeedback(const SpatialFeedback &feedback);
   PrefetchFilter* stridestream_pfFilter_l1;
   PrefetchFilter* stridestream_pfFilter_l2l3;
 

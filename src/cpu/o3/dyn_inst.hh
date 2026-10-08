@@ -161,6 +161,7 @@ class DynInst : public ExecContext, public RefCounted
     // One chain per source prevents an unrelated operand wake/cancel from
     // overwriting the address dependency. Populated only for IQ wakeups.
     std::vector<lldp::Chain> lldpInputs;
+    std::vector<uint64_t> lldpProducerSequences;
     lldp::Chain lldpChain;
     int lldpSource{-1};
     bool lldpIssued{false};

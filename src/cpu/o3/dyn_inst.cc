@@ -242,6 +242,7 @@ DynInst::selectLldpChain()
 {
     lldpChain = {};
     lldpSource = -1;
+    xsMeta->lldpProducerSeq = 0;
     for (unsigned i = 0; i < lldpInputs.size(); ++i) {
         // Scalar RISC-V loads use source zero for the address base.
         if (isLoad() && i != 0)
@@ -249,9 +250,14 @@ DynInst::selectLldpChain()
         if (lldpInputs[i].valid && readySrcIdx(i)) {
             lldpChain = lldpInputs[i];
             lldpSource = i;
+            if (i < lldpProducerSequences.size())
+                xsMeta->lldpProducerSeq = lldpProducerSequences[i];
             break;
         }
     }
+    // Recomputed on both accepted wakeups and wakeup cancellation. Commit
+    // counts each dynamic load once using its final selected address chain.
+    xsMeta->l1LoadObservation.woken = isLoad() && lldpChain.trainable();
 }
 
 DynInst::~DynInst()

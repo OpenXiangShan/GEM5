@@ -289,6 +289,8 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
         "number of prefetches hit in the Write Buffer"),
     ADD_STAT(late_srcs, statistics::units::Count::get(),
         "number of prefetches late"),
+    ADD_STAT(demandHitPrefetch_srcs, statistics::units::Count::get(),
+        "demand data-load tag hits on ever-prefetched resident lines, including repeated probes"),
     ADD_STAT(pfUsefulButMiss, statistics::units::Count::get(),
         "number of hit on prefetch but cache block is not in an usable "
         "state"),
@@ -344,6 +346,9 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
     late_srcs
         .init(NUM_PF_SOURCES)
         .flags(total | nozero);
+    demandHitPrefetch_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total | nozero);
 
     for (unsigned source = 0; source < NUM_PF_SOURCES; ++source) {
         const auto source_name = prefetchSourceTypeName(source);
@@ -356,6 +361,7 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
         pfHitInMSHR_srcs.subname(source, source_name);
         pfHitInWB_srcs.subname(source, source_name);
         late_srcs.subname(source, source_name);
+        demandHitPrefetch_srcs.subname(source, source_name);
     }
 
 
@@ -499,6 +505,21 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
 
     if (pkt->isDemand()) {
         notifyDemandAccess(pkt->getAddr(), pkt->isSecure(), miss);
+    }
+
+    if (pkt->isDemand() && pkt->isRead() && !pkt->isWrite() &&
+        !pkt->req->isInstFetch() && !pkt->req->isCacheMaintenance()) {
+        auto source = PrefetchSourceType::PF_NONE;
+        if (!miss && hasEverBeenPrefetched(pkt->getAddr(), pkt->isSecure())) {
+            source = cache->getHitBlkXsMetadata(pkt).prefetchSource;
+            prefetchStats.demandHitPrefetch_srcs[source]++;
+        }
+        if (cache->level() == 1 && pkt->req->hasXsMetadata()) {
+            const auto &meta = pkt->req->getXsMetadata().instXsMetadata;
+            if (meta && !meta->squashed)
+                meta->l1LoadObservation.observe(blockAddress(pkt->getAddr()),
+                                                !miss, unsigned(source));
+        }
     }
 
     if (hasBeenPrefetched(pkt->getAddr(), pkt->isSecure())) {

@@ -128,6 +128,14 @@ Multi::notifyPrefetchMerged(uint64_t candidate_id)
 }
 
 void
+Multi::notifyCandidateEvent(const Request::XsMetadata &metadata,
+                           Addr address, unsigned event)
+{
+    for (auto pf : prefetchers)
+        pf->notifyCandidateEvent(metadata, address, event);
+}
+
+void
 Multi::notifyCandidateDemand(uint64_t candidate_id, const PacketPtr &demand)
 {
     for (auto pf : prefetchers)
@@ -143,11 +151,11 @@ Multi::pfHitInCache(PrefetchSourceType source, uint64_t candidate_id)
 }
 
 void
-Multi::pfHitInMSHR(PrefetchSourceType source, uint64_t candidate_id)
+Multi::pfHitInMSHR(PrefetchSourceType source, uint64_t candidate_id, bool has_demand)
 {
     Base::pfHitInMSHR(source);
     for (auto pf : prefetchers)
-        pf->pfHitInMSHR(source, candidate_id);
+        pf->pfHitInMSHR(source, candidate_id, has_demand);
 }
 
 void

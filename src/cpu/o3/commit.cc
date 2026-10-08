@@ -277,6 +277,20 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
       ADD_STAT(memRefs, statistics::units::Count::get(),
                "Number of memory references committed"),
       ADD_STAT(loads, statistics::units::Count::get(), "Number of loads committed"),
+      ADD_STAT(observedRetiredLoads, statistics::units::Count::get(),
+               "Retired loads with complete first-tag observations for every fragment"),
+      ADD_STAT(unobservedRetiredLoads, statistics::units::Count::get(),
+               "Retired loads with absent or incomplete cache observations, including forwarding"),
+      ADD_STAT(retiredLoadsAllL1Hit, statistics::units::Count::get(),
+               "Retired loads whose every fragment first hit L1"),
+      ADD_STAT(eligibleRetiredLoads, statistics::units::Count::get(),
+               "Retired loads woken by a selected replayable LLDP address chain"),
+      ADD_STAT(eligibleLoadsAllL1Hit, statistics::units::Count::get(),
+               "LLDP-woken retired loads with all-fragment L1 hits"),
+      ADD_STAT(retiredLoadsHitL1BySource, statistics::units::Count::get(),
+               "Retired loads with any first-hit fragment from each resident prefetch source"),
+      ADD_STAT(eligibleLoadsHitL1BySource, statistics::units::Count::get(),
+               "LLDP-woken retired loads with any first-hit fragment from each prefetch source"),
       ADD_STAT(stores, statistics::units::Count::get(),
                "Number of stores committed"),
       ADD_STAT(amos, statistics::units::Count::get(),
@@ -346,6 +360,11 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
       ADD_STAT(smtROBEntriesWhileStateChange, statistics::units::Count::get(),
                "SMT ROB thread used/rest entries distribution while state change")
 {
+    for (auto *counter : {&retiredLoadsHitL1BySource, &eligibleLoadsHitL1BySource}) {
+        counter->init(NUM_PF_SOURCES);
+        for (unsigned source = 0; source < NUM_PF_SOURCES; ++source)
+            counter->subname(source, prefetchSourceTypeName(source));
+    }
     using namespace statistics;
 
     commitSquashedInsts.prereq(commitSquashedInsts);
@@ -2502,6 +2521,25 @@ Commit::updateComInstStats(const DynInstPtr &inst)
 
         if (inst->isLoad()) {
             stats.loads[tid]++;
+            const auto &observation = inst->xsMeta->l1LoadObservation;
+            const unsigned line_size = cpu->cacheLineSize();
+            const unsigned expected = inst->effSize ?
+                ((inst->effAddr % line_size) + inst->effSize + line_size - 1) /
+                    line_size : 0;
+            const bool complete = observation.complete(expected);
+            stats.observedRetiredLoads += complete;
+            stats.unobservedRetiredLoads += !complete;
+            stats.eligibleRetiredLoads += observation.woken;
+            stats.retiredLoadsAllL1Hit += observation.allHit(expected);
+            stats.eligibleLoadsAllL1Hit += observation.woken && observation.allHit(expected);
+            if (complete) {
+                for (unsigned source = 1; source < NUM_PF_SOURCES; ++source) {
+                    if (observation.hitSources & (uint64_t(1) << source)) {
+                        stats.retiredLoadsHitL1BySource[source]++;
+                        stats.eligibleLoadsHitL1BySource[source] += observation.woken;
+                    }
+                }
+            }
         }
 
         if (inst->isStore()) {

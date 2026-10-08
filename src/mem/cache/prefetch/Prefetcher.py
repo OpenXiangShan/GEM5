@@ -285,6 +285,31 @@ class LLDPrefetcher(QueuedPrefetcher):
         "Maximum outstanding candidates tracked per quality key")
     quality_max_pressure_pct = Param.Unsigned(75,
         "PFQ pressure percentage at which quality admission stops")
+    quality_max_collision_pct = Param.Unsigned(100,
+        "Maximum duplicate collision fraction for quality admission")
+    lldp_admission_min_accuracy_pct = Param.Unsigned(5,
+        "LLDP base admission useful fraction; real demand merges remain address evidence")
+    lldp_admission_max_late_pct = Param.Unsigned(90,
+        "LLDP base admission maximum late demand-merge fraction")
+    candidate_owner_entries = Param.Unsigned(4096,
+        "Fixed LLDP candidate slots spanning PFQ, MSHR and resident cache lines")
+    enable_lldp_shadow = Param.Bool(True,
+        "Collect LLDP admission shadow decisions in a separate quality table")
+    enable_lldp_admission = Param.Bool(False,
+        "Apply LLDP quality admission after translation and pair training")
+    enable_demand_pair_training = Param.Bool(False,
+        "Train temporal mappings only from exact committed dynamic demand pairs")
+    enable_lldt_benefit = Param.Bool(False,
+        "Use completed candidate benefit to choose LLDT replacement victims")
+    enable_temporal_recovery = Param.Bool(False,
+        "Probe exhausted Meta tokens periodically without erasing address training")
+    temporal_probe_interval = Param.Unsigned(16, "Exhausted Meta token probe interval")
+    pair_trust_threshold = Param.Unsigned(4, "PC-pair evidence threshold, range 0..7")
+    sampler_retention_epochs = Param.Unsigned(0,
+        "Allow stale sampler reservoir replacement after hint epochs; 0 preserves min-hash")
+    enable_candidate_trace = Param.Bool(False, "Write LLDP candidate lifecycle CSV")
+    trace_sample_interval = Param.Unsigned(1, "Keep one in N candidate identities in trace")
+    trace_producer_pc = Param.Addr(0, "Trace only this producer PC; zero keeps all")
 
 
 class XSStridePrefetcher(QueuedPrefetcher):

@@ -31,12 +31,14 @@ class PrefetchQualityControl
 {
   public:
     enum class Outcome { Useful, Unused, DemandMerged, Collision, Dropped };
+    enum class Decision { Healthy, Probe, Pressure, Outstanding, Cold, Unhealthy, Stale };
     struct Key
     {
         PrefetchSourceType source{PrefetchSourceType::PF_NONE};
         Addr producerPC{0};
         Addr consumerPC{0};
         ContextID context{InvalidContextID};
+        PrefetchSourceType provider{PrefetchSourceType::PF_NONE};
     };
     struct Handle
     {
@@ -51,6 +53,7 @@ class PrefetchQualityControl
         unsigned probeInterval{16};
         unsigned maxOutstanding{4};
         unsigned maxPressurePct{75};
+        unsigned maxCollisionPct{100};
     };
 
   private:
@@ -63,12 +66,15 @@ class PrefetchQualityControl
         uint32_t generation{0};
         uint8_t rrpv{3};
         uint8_t issued{0};
-        uint8_t outstanding{0};
+        // Counts every issued owner, including shadow and spatial sources
+        // which do not enforce maxOutstanding. Never saturate at 15.
+        uint32_t outstanding{0};
         uint8_t useful{0};
         uint8_t unused{0};
         uint8_t merged{0};
         uint8_t collisions{0};
-        uint8_t opportunities{0};
+        uint32_t probePhase{0};
+        bool firstOpportunity{true};
         bool boosted{false};
     };
     std::array<Entry, Entries> entries{};
@@ -77,7 +83,8 @@ class PrefetchQualityControl
     static bool same(const Key &a, const Key &b)
     {
         return a.source == b.source && a.producerPC == b.producerPC &&
-            a.consumerPC == b.consumerPC && a.context == b.context;
+            a.consumerPC == b.consumerPC && a.context == b.context &&
+            a.provider == b.provider;
     }
     static unsigned set(const Key &key)
     {
@@ -88,11 +95,15 @@ class PrefetchQualityControl
     }
     Entry *entry(Handle handle)
     {
+        if (handle.index >= Entries)
+            return nullptr;
         auto &item = entries[handle.index];
         return item.valid && item.generation == handle.generation ? &item : nullptr;
     }
     const Entry *entry(Handle handle) const
     {
+        if (handle.index >= Entries)
+            return nullptr;
         const auto &item = entries[handle.index];
         return item.valid && item.generation == handle.generation ? &item : nullptr;
     }
@@ -104,12 +115,15 @@ class PrefetchQualityControl
         if (samples < policy.minSamples)
             return false;
         const unsigned timely = item.useful + item.merged;
+        const unsigned all_outcomes = samples + item.collisions;
         return 100 * item.useful >= policy.minAccuracyPct * samples &&
+            100 * item.collisions <= policy.maxCollisionPct * all_outcomes &&
             (!timely || 100 * item.merged <= policy.maxLatePct * timely);
     }
 
   public:
-    Handle touch(const Key &key)
+    template <typename OnEvict>
+    Handle touch(const Key &key, OnEvict on_evict)
     {
         const unsigned first = set(key) * Ways;
         for (unsigned way = 0; way < Ways; ++way) {
@@ -129,34 +143,68 @@ class PrefetchQualityControl
                 victim = first + way;
         }
         auto &item = entries[victim];
+        if (item.valid) {
+            on_evict(item.key, Handle{victim, item.generation}, item.boosted);
+            // SRRIP: age every way equally until the oldest reaches 3.
+            // The selected maximum needs at most three age steps, folded
+            // into a single bounded four-way update.
+            const unsigned age = 3 - item.rrpv;
+            for (unsigned way = 0; way < Ways; ++way)
+                entries[first + way].rrpv += age;
+        }
         item = {};
         item.valid = true;
         item.key = key;
         item.generation = ++nextGeneration;
-        item.rrpv = 0;
+        item.rrpv = 2;
         return {victim, item.generation};
     }
 
-    bool admit(Handle handle, const Policy &policy, unsigned pressurePct)
+    Handle touch(const Key &key)
     {
+        return touch(key, [](const Key &, Handle, bool) {});
+    }
+
+    bool admit(Handle handle, const Policy &policy, unsigned pressurePct,
+               Decision *decision = nullptr)
+    {
+        const auto result = [decision](Decision reason, bool accepted) {
+            if (decision)
+                *decision = reason;
+            return accepted;
+        };
         auto *item = entry(handle);
-        if (!item || pressurePct >= policy.maxPressurePct ||
-            item->outstanding >= policy.maxOutstanding)
-            return false;
-        item->opportunities = std::min<unsigned>(255, item->opportunities + 1);
+        if (!item)
+            return result(Decision::Stale, false);
+        if (pressurePct >= policy.maxPressurePct)
+            return result(Decision::Pressure, false);
+        if (item->outstanding >= policy.maxOutstanding)
+            return result(Decision::Outstanding, false);
+        const bool first = item->firstOpportunity;
+        item->firstOpportunity = false;
+        bool probe = false;
+        if (policy.probeInterval) {
+            // Unlike a saturating opportunity counter, this phase continues
+            // indefinitely. Compare before increment to avoid overflow even
+            // for UINT_MAX, and tolerate a changed policy interval.
+            probe = item->probePhase >= policy.probeInterval - 1;
+            item->probePhase = probe ? 0 : item->probePhase + 1;
+        } else {
+            item->probePhase = 0;
+        }
         if (healthy(*item, policy))
-            return true;
-        if (item->opportunities == 1)
-            return true;
-        return policy.probeInterval &&
-            item->opportunities % policy.probeInterval == 0;
+            return result(Decision::Healthy, true);
+        if (first || probe)
+            return result(Decision::Probe, true);
+        return result(completed(*item) < policy.minSamples ? Decision::Cold :
+                      Decision::Unhealthy, false);
     }
 
     void issued(Handle handle)
     {
         if (auto *item = entry(handle)) {
             item->issued = std::min<unsigned>(63, item->issued + 1);
-            item->outstanding = std::min<unsigned>(15, item->outstanding + 1);
+            ++item->outstanding;
         }
     }
 
@@ -177,22 +225,41 @@ class PrefetchQualityControl
           case Outcome::Useful: ++item->useful; break;
           case Outcome::Unused: ++item->unused; break;
           case Outcome::DemandMerged: ++item->merged; break;
-          case Outcome::Collision: ++item->collisions; break;
+          case Outcome::Collision:
+            item->collisions = std::min<unsigned>(63, item->collisions + 1);
+            break;
           case Outcome::Dropped: break;
         }
     }
 
     // Returns +1 to boost, -1 to revoke, 0 if unchanged.
-    int updateBoost(Handle handle, const Policy &policy)
+    int updateBoost(Handle handle, const Policy &policy,
+                    unsigned pressurePct = 0)
     {
         auto *item = entry(handle);
         if (!item)
             return 0;
-        const bool good = item->useful >= 2 && healthy(*item, policy);
+        const bool good = pressurePct < policy.maxPressurePct &&
+            item->useful >= 2 && healthy(*item, policy);
         if (good == item->boosted)
             return 0;
         item->boosted = good;
         return good ? 1 : -1;
+    }
+
+    int setBoost(Handle handle, bool boosted)
+    {
+        auto *item = entry(handle);
+        if (!item || item->boosted == boosted)
+            return 0;
+        item->boosted = boosted;
+        return boosted ? 1 : -1;
+    }
+
+    const Key *key(Handle handle) const
+    {
+        const auto *item = entry(handle);
+        return item ? &item->key : nullptr;
     }
 
     bool valid(Handle handle) const { return entry(handle) != nullptr; }

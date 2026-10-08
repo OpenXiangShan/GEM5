@@ -377,6 +377,21 @@ class MSHR : public QueueEntry, public Printable
         return targets.hasFromCPU;
     }
 
+    // A CPU/cache origin is not by itself proof of a demand request. Include
+    // deferred permission targets, which can already be waiting for this line.
+    bool hasDemandTargets() const
+    {
+        for (const auto &target : targets)
+            if (target.source != Target::FromSnoop && target.pkt &&
+                target.pkt->isDemand())
+                return true;
+        for (const auto &target : deferredTargets)
+            if (target.source != Target::FromSnoop && target.pkt &&
+                target.pkt->isDemand())
+                return true;
+        return false;
+    }
+
     PrefetchSourceType getPFSource() const {
         return targets.pfSource;
     }

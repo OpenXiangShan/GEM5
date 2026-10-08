@@ -226,6 +226,14 @@ PrefetcherForwarder::notifyPrefetchMerged(uint64_t candidate_id)
 }
 
 void
+PrefetcherForwarder::notifyCandidateEvent(const Request::XsMetadata &metadata,
+                           Addr address, unsigned event)
+{
+    if (real_pf)
+        real_pf->notifyCandidateEvent(metadata, address, event);
+}
+
+void
 PrefetcherForwarder::notifyCandidateDemand(
     uint64_t candidate_id, const PacketPtr &demand)
 {
@@ -285,10 +293,10 @@ PrefetcherForwarder::pfHitInMSHR(PrefetchSourceType pf_type)
 
 void
 PrefetcherForwarder::pfHitInMSHR(PrefetchSourceType pf_type,
-                                 uint64_t candidate_id)
+                                 uint64_t candidate_id, bool has_demand)
 {
     if (real_pf)
-        real_pf->pfHitInMSHR(pf_type, candidate_id);
+        real_pf->pfHitInMSHR(pf_type, candidate_id, has_demand);
 }
 
 void

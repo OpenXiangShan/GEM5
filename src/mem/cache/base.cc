@@ -1119,6 +1119,9 @@ BaseCache::recvTimingResp(PacketPtr pkt)
             prefetcher->notifyCachelineRefill(pkt->getAddr(), pkt->isSecure());
         }
         ppFill->notify(pkt);
+        if (prefetcher && pkt->req->hasXsMetadata())
+            prefetcher->notifyCandidateEvent(pkt->req->getXsMetadata(),
+                                             pkt->getAddr(), 0);
     }
 
     // Don't want to promote the Locked RMW Read until
@@ -1569,13 +1572,14 @@ BaseCache::getNextQueueEntry()
                     prefetcher->streamPflate();
                 // free the request and packet
                 delete pkt;
-            } else if (mshrQueue.findMatch(pf_addr, pkt->isSecure())) {
+            } else if (auto *pf_mshr = mshrQueue.findMatch(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in a MSHR, "
                         "dropped.\n", pf_addr);
                 const uint64_t candidate_id =
                     pkt->req->hasXsMetadata() ?
                     pkt->req->getXsMetadata().prefetchCandidateId : 0;
-                prefetcher->pfHitInMSHR(pf_type, candidate_id);
+                prefetcher->pfHitInMSHR(pf_type, candidate_id,
+                                      pf_mshr->hasDemandTargets());
                 if (pf_type == PrefetchSourceType::SStream)
                     prefetcher->streamPflate();
                 // free the request and packet
@@ -2512,6 +2516,8 @@ BaseCache::invalidateBlock(CacheBlk *blk)
             prefetcher->sendCustomInfoToDownStream();
         }
     }
+    if (prefetcher && blk->getXsMetadata().prefetchCandidateId)
+        prefetcher->notifyCandidateEvent(blk->getXsMetadata(), regenerateBlkAddr(blk), 1);
     // If block is still marked as prefetched, then it hasn't been used
     if (blk->wasPrefetched()) {
         const auto metadata = blk->getXsMetadata();

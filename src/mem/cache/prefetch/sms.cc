@@ -124,8 +124,8 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
     }
     lldp->setSharedFilterContextQualified(true);
     lldp->setSpatialFeedbackHandler(
-        [this](PrefetchSourceType source, Addr pc, bool valid) {
-            spatialFeedback(source, pc, valid);
+        [this](const SpatialFeedback &feedback) {
+            spatialFeedback(feedback);
         });
 
     DPRINTF(XSCompositePrefetcher, "SMS: region_size: %d regionBlks: %d\n",
@@ -909,18 +909,17 @@ XSCompositePrefetcher::loadTrain(const PacketPtr &pkt, bool miss)
 }
 
 void
-XSCompositePrefetcher::spatialFeedback(PrefetchSourceType source, Addr pc,
-                                       bool valid)
+XSCompositePrefetcher::spatialFeedback(const SpatialFeedback &feedback)
 {
-    switch (source) {
+    switch (feedback.source) {
       case PrefetchSourceType::SStream:
       case PrefetchSourceType::StoreStream:
         if (Xsstream)
-            Xsstream->spatialFeedback(pc, valid);
+            Xsstream->spatialFeedback(feedback);
         break;
       case PrefetchSourceType::SStride:
         if (Sstride)
-            Sstride->spatialFeedback(pc, valid);
+            Sstride->spatialFeedback(feedback);
         break;
       default:
         break;
@@ -954,6 +953,14 @@ XSCompositePrefetcher::notifyPrefetchMerged(uint64_t candidate_id)
 }
 
 void
+XSCompositePrefetcher::notifyCandidateEvent(const Request::XsMetadata &metadata,
+                           Addr address, unsigned event)
+{
+    if (enableLLDP)
+        lldp->notifyCandidateEvent(metadata, address, event);
+}
+
+void
 XSCompositePrefetcher::notifyCandidateDemand(
     uint64_t candidate_id, const PacketPtr &demand)
 {
@@ -972,11 +979,11 @@ XSCompositePrefetcher::pfHitInCache(PrefetchSourceType source,
 
 void
 XSCompositePrefetcher::pfHitInMSHR(PrefetchSourceType source,
-                                    uint64_t candidate_id)
+                                    uint64_t candidate_id, bool has_demand)
 {
     Queued::pfHitInMSHR(source);
     if (enableLLDP)
-        lldp->pfHitInMSHR(source, candidate_id);
+        lldp->pfHitInMSHR(source, candidate_id, has_demand);
 }
 
 void
