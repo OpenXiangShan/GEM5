@@ -1,12 +1,13 @@
 ---
 description: |
-  This workflow creates daily repo status reports. It gathers recent repository
-  activity (issues, PRs, discussions, releases, code changes) and generates
-  engaging GitHub issues with productivity insights, community highlights,
-  and project recommendations.
+  This workflow creates concise weekly repository status reports in Chinese.
+  It summarizes the last seven days of repository activity and highlights
+  blockers and actionable next steps for maintainers.
 
 on:
-  schedule: daily
+  schedule:
+    # Monday 09:00 Asia/Shanghai (01:00 UTC).
+    - cron: "0 1 * * 1"
   workflow_dispatch:
 
 permissions:
@@ -20,7 +21,7 @@ network:
     - api.deepseek.com
 
 tools:
-  bash: ["cat", "ls", "find", "grep", "head", "tail", "wc"]
+  bash: ["cat", "ls", "find", "grep", "head", "tail", "wc", "jq", "mkdir"]
   github:
     # If in a public repo, setting `lockdown: false` allows
     # reading issues, pull requests and comments from 3rd-parties
@@ -29,11 +30,12 @@ tools:
     min-integrity: none # This workflow is allowed to examine and comment on any issues
 
 safe-outputs:
+  report-failure-as-issue: false
   mentions: false
   allowed-github-references: []
   create-issue:
     title-prefix: "[repo-status] "
-    labels: [report, daily-status]
+    labels: [report, weekly-status]
     close-older-issues: true
 engine:
   id: copilot
@@ -50,23 +52,35 @@ source: githubnext/agentics/workflows/repo-status.md@578e0e0ea6291fed42a36d3fd46
 
 # Repo Status
 
-Create an upbeat daily status report for the repo as a GitHub issue.
+Create a concise weekly status report for the repo as a GitHub issue.
+Write the title and body in Simplified Chinese. Preserve technical identifiers,
+PR titles, and links when useful. Use a title such as "仓库周报：YYYY-MM-DD".
 
 ## What to include
 
-- Recent repository activity (issues, PRs, discussions, releases, code changes)
-- Progress tracking, goal reminders and highlights
-- Project status and recommendations
-- Actionable next steps for maintainers
+- Changes from the seven days preceding this run: merges, new or materially
+  updated PRs/issues, releases, and relevant CI results.
+- At most six important changes, with links and a brief explanation of impact.
+- Current blockers and at most three concrete next steps for maintainers.
+- Distinguish author-reported validation from independently verified CI results.
+- Do not repeat the entire open PR backlog or old merges. Exclude this workflow's
+  own status reports and failure issues from the activity summary.
 
 ## Style
 
-- Be positive, encouraging, and helpful 🌟
-- Use emojis moderately for engagement
-- Keep it concise - adjust length based on actual activity
+- Keep the report factual and easy to scan; aim for 600-1000 Chinese characters.
+- Avoid generic encouragement, repeated goal reminders, and decorative emojis.
+- If there are no meaningful changes, emit `noop` with a brief reason.
 
 ## Process
 
-1. Gather recent activity from the repository
-2. Study the repository, its issues and its pull requests
-3. Create a new GitHub issue with your findings and insights
+1. Gather bounded recent activity using the GitHub MCP tools. Select only needed
+   fields; avoid full repository scans and unauthenticated shell GitHub commands.
+2. Compose the report and call the `create_issue` safe-output MCP tool directly
+   with the final title and body. Prefer this over constructing a shell payload.
+3. If the CLI transport is necessary, use a temporary Markdown file and the
+   authorized `jq -Rs` command to construct valid JSON for `safeoutputs`.
+4. Never retry the same permission-denied operation more than twice. Switch to
+   the direct safe-output MCP tool, or report `missing_tool` and stop if blocked.
+5. Trust the successful safe-output response; do not poll for the issue before
+   the downstream publishing step has run.
