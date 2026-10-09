@@ -75,7 +75,7 @@ def main():
     parser.add_argument("--jobs", type=int, default=6)
     parser.add_argument("--warmup", type=int, default=20_000_000)
     parser.add_argument("--measure", type=int, default=20_000_000)
-    parser.add_argument("--sampler-assoc", type=int, default=6)
+    parser.add_argument("--sampler-assoc", type=int, default=8)
     parser.add_argument("--sampler-num", type=int, default=32)
     parser.add_argument("--level", choices=("l2", "l3"), default="l2")
     parser.add_argument(
