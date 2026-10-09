@@ -62,6 +62,25 @@ bool
 Commit::traceMaybeExitOnEofDrainFromTick()
 {
     if (cpu->isTraceMode() && cpu->isTraceEOF() && cpu->isTracePipelineDrained()) {
+        // EOF reconciliation invariant (runtime self-check; the per-trace
+        // "committed count == reader instrRead" accounting from the
+        // e87d6b5db4 validation batch, made resident): with the pipeline
+        // drained and the reader at EOF, every consumed record must have
+        // been committed exactly once — the committed trace index equals
+        // the reader position. The reader is a single stream bound to
+        // thread 0 (initTraceMode), so only thread 0's committed index is
+        // comparable; other threads' indices would misfire under any
+        // SMT+trace mix.
+        const uint64_t reader_idx = cpu->getTraceReaderIndex();
+        {
+            const uint64_t committed_idx = traceCommitIndex[0];
+            panic_if(committed_idx != reader_idx,
+                     "[Commit][tid:0] EOF reconciliation failed: committed "
+                     "trace index %llu != reader index %llu: replay and "
+                     "commit have diverged",
+                     (unsigned long long)committed_idx,
+                     (unsigned long long)reader_idx);
+        }
         warn("[Commit] Trace mode reached EOF and pipeline drained; exiting cleanly.\n");
         exitSimLoop("Trace-driven CPU reached EOF and drained");
         return true;

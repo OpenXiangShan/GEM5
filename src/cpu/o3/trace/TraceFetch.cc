@@ -320,6 +320,17 @@ TraceFetch::initTraceMode()
         return false;
     }
 
+    // Runtime invariant (startup self-check): the metadata retention guard
+    // must cover at least the range the reader can soft-replay. A guard
+    // narrower than HISTORY_CAPACITY wipes metadata that squashes anchored
+    // within the replayable window still need (the e87d6b5db4 regression
+    // class; the static cross-check lives in the anchored unit tests).
+    panic_if(TraceMetaGuard::TRACE_META_GUARD < o3::TraceReader::HISTORY_CAPACITY,
+             "Trace metadata guard window (%llu) is narrower than the reader "
+             "history capacity (%llu); late-arriving squashes lose metadata",
+             (unsigned long long)TraceMetaGuard::TRACE_META_GUARD,
+             (unsigned long long)o3::TraceReader::HISTORY_CAPACITY);
+
     if (traceReader->isEOF()) {
         return true;
     }
@@ -666,6 +677,17 @@ TraceFetch::applyTraceRecoveryAction(ThreadID tid,
                 tid, action.debugReason ? action.debugReason : "no-op");
         return;
     }
+
+    // Structural invariant (guards commit 1d9e0ef5b0): a rollback plan must
+    // carry its complete context (seqNum or trace index) captured at
+    // classification time. The wrong-path exit above has already cleared
+    // traceWrongPathBranchSeqNum, so a plan relying on that member instead
+    // of its own fields would lose the boundary exactly as 1d9e0ef5b0
+    // fixed. Fail closed instead of rolling back to a bogus target.
+    panic_if(!TraceRecoveryRules::rollbackContextComplete(action),
+             "[tid:%i] Trace recovery rollback plan lost its context "
+             "(no seqNum, no trace index): the 1d9e0ef5b0 regression shape\n",
+             tid);
 
     bool readerRepositioned = false;
     if (action.useTraceIndex) {
