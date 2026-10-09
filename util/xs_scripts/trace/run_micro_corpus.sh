@@ -31,6 +31,19 @@ script_dir=$(dirname -- "$(readlink -f -- "$0")")
 # is a real error (the driver cannot run without it).
 source "${script_dir}/../common.sh"
 
+# The positional GEM5_OPT argument must actually take effect: every
+# sub-script re-sources common.sh, which re-resolves the binary from its
+# own script location and silently ignores an out-of-tree binary. Export
+# the override hooks that common.sh honors (XS_GEM5_HOME / XS_GEM5_BINARY)
+# so the whole sub-script chain uses the caller's tree.
+if [ "$#" -ge 1 ]; then
+    GEM5=$(readlink -f "${GEM5}")
+    export XS_GEM5_HOME="${GEM5%/build/RISCV/gem5.*}"
+    export XS_GEM5_BINARY="${GEM5}"
+    export gem5_home="${XS_GEM5_HOME}"
+    export gem5="${GEM5}"
+fi
+
 if [ ! -x "${GEM5}" ]; then
     echo "gem5 binary not found or not executable: ${GEM5}" >&2
     exit 2
