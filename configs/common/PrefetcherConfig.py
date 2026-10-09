@@ -469,7 +469,8 @@ def _configure_xs_composite_kmh_align(prefetcher):
     prefetcher.enable_opt = False
     prefetcher.pht_pf_level = 2
     prefetcher.enable_sms_first_touch_order = True
-    prefetcher.enable_pht_conf_dest = False
+    prefetcher.enable_pht_conf_dest = True
+    prefetcher.enable_stride_pht_ahead = True
 
 def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
     _configure_xs_composite_common(prefetcher, options)
@@ -483,6 +484,10 @@ def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
     conf_dest = getattr(options, "enable_pht_conf_dest", None)
     if conf_dest is not None:
         prefetcher.enable_pht_conf_dest = (conf_dest == "True")
+
+    stride_pht_ahead = getattr(options, "enable_stride_pht_ahead", None)
+    if stride_pht_ahead is not None:
+        prefetcher.enable_stride_pht_ahead = (stride_pht_ahead == "True")
 
     if options.l1d_enable_spp:
         prefetcher.enable_spp = True

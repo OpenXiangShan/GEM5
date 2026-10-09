@@ -322,6 +322,14 @@ def addCommonOptions(parser, configure_xiangshan=False):
         metavar="{True,False}",
         help="Enable SMS PHT confidence-based L2/L3 destinations or filtering "
              "and per-offset first-touch PHT updates.")
+    parser.add_argument(
+        "--enable-stride-pht-ahead",
+        type=str,
+        choices=("True", "False"),
+        default=None,
+        metavar="{True,False}",
+        help="Extra non-trigger SMS PHT lookup at a saturated cross-region "
+             "stride target. Omit to keep the configuration profile default.")
 
     parser.add_argument("--disable-pf-buffer", action="store_false",
                         dest="enable_pf_buffer", default=True,

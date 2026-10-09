@@ -36,6 +36,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       phtPFLevel(std::min(p.pht_pf_level, (int) 3)),
       enablePhtConfDest(p.enable_pht_conf_dest),
       enablePhtL3Dest(p.enable_pht_l3_dest),
+      enableStridePhtAhead(p.enable_stride_pht_ahead),
       phtHighConfThreshold(p.pht_high_conf_threshold),
       phtMedConfThreshold(p.pht_med_conf_threshold),
       phtLowConfThreshold(p.pht_low_conf_threshold),
@@ -298,7 +299,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             DPRINTF(XSCompositePrefetcher, "Do PHT lookup...\n");
             trigger_pht = phtLookup(pfi, addresses,
                                     late && pf_source == PrefetchSourceType::SPht,
-                                    stride_pf_addr, enter_new_region);
+                                    stride_pf_addr, enter_new_region, true);
         }
         bool use_opt = enableOpt && !pfi.isStore() && is_first_64;
         if (use_opt){
@@ -337,11 +338,19 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     if (use_stride){
         DPRINTF(XSCompositePrefetcher, "Do Sstride traing/prefetching...\n");
         int64_t learned_bop_offset = 0;
+        Addr stride_pht_ahead = 0;
         stats.strideTrainCount++;
         Sstride->calculatePrefetch(pfi, addresses, late, pf_source, miss_repeat, enter_new_region, is_first_shot,
-                                   stride_pf_addr, learned_bop_offset);
+                                   stride_pht_ahead, learned_bop_offset);
         if (learned_bop_offset != 0)
             learnedBOP->tryAddOffset(learned_bop_offset);
+        // Demand PHT lookup above is unchanged. A saturated stride may add one
+        // more lookup at its near target, always as a non-trigger access.
+        if (enableStridePhtAhead && enablePht && stride_pht_ahead != 0 &&
+            regionAddress(stride_pht_ahead) != regionAddress(pfi.getAddr())) {
+            stats.smsStridePhtAhead++;
+            phtLookup(pfi, addresses, false, stride_pht_ahead, false, false);
+        }
     }
 
 }
@@ -879,7 +888,7 @@ XSCompositePrefetcher::trainPhtOrder(ACTEntry *act_entry)
 
 bool
 XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
-                         Addr look_ahead_addr, bool is_trigger)
+                         Addr look_ahead_addr, bool is_trigger, bool stage_regions)
 {
     Addr pc = pfi.getPC();
     Addr vaddr = look_ahead_addr ? look_ahead_addr : pfi.getAddr();
@@ -973,17 +982,37 @@ XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<Addr
                                   order_cur);
             }
         }
-        const uint64_t region_bit_cur = cur_l1 | cur_l2 | cur_l3;
-        if (region_bit_cur) {
-            if (phtSentPrefetch[0].valid) {
-                stats.smsCurRegionoverride++;
+        auto publishRegion = [&](int slot, Addr region, uint64_t bits,
+                                 uint64_t l1, uint64_t l2, uint64_t l3,
+                                 std::vector<sms::OrderScore> &orders) {
+            if (!bits) {
+                return;
             }
-            phtSentPrefetch[0] = phtsentInfo(
-                region_addr, region_bit_cur, 0, true, pht_entry->decr_mode,
-                secure, 0, &pfi.trigger_info, cur_l1, cur_l2, cur_l3);
-            phtSentPrefetch[0].orderScores = order_cur;
-            phtSentPrefetch[0].trigger.pfSourceType = PrefetchSourceType::SPht;
-        }
+            phtsentInfo info(region, bits, 0, true, pht_entry->decr_mode, secure,
+                             0, &pfi.trigger_info, l1, l2, l3);
+            info.orderScores = orders;
+            info.trigger.pfSourceType = PrefetchSourceType::SPht;
+            if (!stage_regions) {
+                sms_pfFilter.Insert(info.region_addr, info.region_bits,
+                                    info.alias_bits, info.paddr_valid,
+                                    info.decr_mode, info.is_secure, info.PFlevel,
+                                    &info.trigger, &info.orderScores,
+                                    info.l1_bits, info.l2_bits, info.l3_bits);
+                return;
+            }
+            if (phtSentPrefetch[slot].valid) {
+                if (slot == 0) {
+                    stats.smsCurRegionoverride++;
+                } else if (slot == 1) {
+                    stats.smsIncrRegionoverride++;
+                } else {
+                    stats.smsDecrRegionoverride++;
+                }
+            }
+            phtSentPrefetch[slot] = info;
+        };
+        publishRegion(0, region_addr, cur_l1 | cur_l2 | cur_l3, cur_l1, cur_l2,
+                      cur_l3, order_cur);
         for (uint8_t i = 0; i < regionBlks - 1; i++) {
             Addr pf_tgt_addr = blk_addr + (i + 1) * blkSize;
             if (regionAddress(pf_tgt_addr) != region_addr) {
@@ -992,17 +1021,8 @@ XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<Addr
                                   inc_l1, inc_l2, inc_l3, order_inc);
             }
         }
-        const uint64_t region_bit_inc = inc_l1 | inc_l2 | inc_l3;
-        if (region_bit_inc) {
-            if (phtSentPrefetch[1].valid) {
-                stats.smsIncrRegionoverride++;
-            }
-            phtSentPrefetch[1] = phtsentInfo(
-                region_inc_addr, region_bit_inc, 0, true, pht_entry->decr_mode,
-                secure, 0, &pfi.trigger_info, inc_l1, inc_l2, inc_l3);
-            phtSentPrefetch[1].orderScores = order_inc;
-            phtSentPrefetch[1].trigger.pfSourceType = PrefetchSourceType::SPht;
-        }
+        publishRegion(1, region_inc_addr, inc_l1 | inc_l2 | inc_l3, inc_l1,
+                      inc_l2, inc_l3, order_inc);
         for (int i = regionBlks - 2, j = 1; i >= 0; i--, j++) {
             Addr pf_tgt_addr = blk_addr - j * blkSize;
             if (regionAddress(pf_tgt_addr) != region_addr) {
@@ -1011,18 +1031,9 @@ XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<Addr
                                   order_dec);
             }
         }
-        const uint64_t region_bit_dec = dec_l1 | dec_l2 | dec_l3;
-        if (region_bit_dec) {
-            if (phtSentPrefetch[2].valid) {
-                stats.smsDecrRegionoverride++;
-            }
-            phtSentPrefetch[2] = phtsentInfo(
-                region_dec_addr, region_bit_dec, 0, true, pht_entry->decr_mode,
-                secure, 0, &pfi.trigger_info, dec_l1, dec_l2, dec_l3);
-            phtSentPrefetch[2].orderScores = order_dec;
-            phtSentPrefetch[2].trigger.pfSourceType = PrefetchSourceType::SPht;
-        }
-        if (!phtReqSendEvent.scheduled()) {
+        publishRegion(2, region_dec_addr, dec_l1 | dec_l2 | dec_l3, dec_l1,
+                      dec_l2, dec_l3, order_dec);
+        if (stage_regions && !phtReqSendEvent.scheduled()) {
             phtSendEventWrapper();
         }
 
@@ -1183,7 +1194,9 @@ XSCompositePrefetcher::XSCompositeStats::XSCompositeStats(statistics::Group *par
       ADD_STAT(smsPhtIssuedL3, statistics::units::Count::get(),
                "SMS PHT candidates classified to L3"),
       ADD_STAT(smsPhtFilteredL3, statistics::units::Count::get(),
-               "SMS PHT L3 candidates dropped by destination policy")
+               "SMS PHT L3 candidates dropped by destination policy"),
+      ADD_STAT(smsStridePhtAhead, statistics::units::Count::get(),
+               "extra non-trigger SMS PHT lookups from a saturated stride target")
 {
 }
 

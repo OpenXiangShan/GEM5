@@ -122,16 +122,16 @@ TEST(SmsPhtDest, TriggerSendsHighAndMediumToL2AndLowToL3)
                            DefaultMedConfThreshold, DefaultLowConfThreshold), 0);
 }
 
-TEST(SmsPhtDest, NonTriggerSendsOnlyHighToL3)
+TEST(SmsPhtDest, NonTriggerSendsHighAndMediumToL3)
 {
     EXPECT_EQ(phtDestLevel(7, false, DefaultHighConfThreshold,
                            DefaultMedConfThreshold, DefaultLowConfThreshold), 3);
     EXPECT_EQ(phtDestLevel(6, false, DefaultHighConfThreshold,
                            DefaultMedConfThreshold, DefaultLowConfThreshold), 3);
     EXPECT_EQ(phtDestLevel(5, false, DefaultHighConfThreshold,
-                           DefaultMedConfThreshold, DefaultLowConfThreshold), 0);
+                           DefaultMedConfThreshold, DefaultLowConfThreshold), 3);
     EXPECT_EQ(phtDestLevel(4, false, DefaultHighConfThreshold,
-                           DefaultMedConfThreshold, DefaultLowConfThreshold), 0);
+                           DefaultMedConfThreshold, DefaultLowConfThreshold), 3);
     EXPECT_EQ(phtDestLevel(3, false, DefaultHighConfThreshold,
                            DefaultMedConfThreshold, DefaultLowConfThreshold), 0);
     EXPECT_EQ(phtDestLevel(2, false, DefaultHighConfThreshold,

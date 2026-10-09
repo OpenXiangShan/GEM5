@@ -163,6 +163,7 @@ class XSCompositePrefetcher : public Queued
     const int phtPFLevel;
     const bool enablePhtConfDest;
     const bool enablePhtL3Dest;
+    const bool enableStridePhtAhead;
 
     const unsigned phtHighConfThreshold;
     const unsigned phtMedConfThreshold;
@@ -174,7 +175,7 @@ class XSCompositePrefetcher : public Queued
 
     bool phtLookup(const PrefetchInfo &pfi,
                    std::vector<AddrPriority> &addresses, bool late,
-                   Addr look_ahead_addr, bool is_trigger);
+                   Addr look_ahead_addr, bool is_trigger, bool stage_regions);
 
     struct XSCompositeStats : public statistics::Group
     {
@@ -194,6 +195,7 @@ class XSCompositePrefetcher : public Queued
         statistics::Scalar smsPhtIssuedL2;
         statistics::Scalar smsPhtIssuedL3;
         statistics::Scalar smsPhtFilteredL3;
+        statistics::Scalar smsStridePhtAhead;
     } stats;
 
   public:

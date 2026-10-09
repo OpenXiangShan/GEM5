@@ -1292,9 +1292,16 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     pht_pf_level = Param.Int(2, "Fixed PHT destination when enable_pht_conf_dest is false")
     enable_pht_conf_dest = Param.Bool(
         False,
-        "Use PHT confidence and trigger access to select L2/L3 destinations "
-        "or suppress candidates, "
-        "and per-offset first-touch PHT updates"
+        "Classify SMS PHT offsets by confidence. High and medium confidence "
+        "trigger lookups go to L2, high and medium non-trigger lookups go to "
+        "L3, low confidence trigger lookups go to L3, and low confidence "
+        "non-trigger lookups are dropped. Also enables per-offset first-touch "
+        "PHT updates"
+    )
+    enable_stride_pht_ahead = Param.Bool(
+        False,
+        "Extra non-trigger PHT lookup at a saturated stride +4-stride target "
+        "when that target leaves the current region"
     )
     enable_pht_l3_dest = Param.Bool(
         True, "Allow SMS PHT candidates classified for L3 to be issued")
@@ -1303,7 +1310,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     pht_med_conf_threshold = Param.Unsigned(
         4, "PHT raw counter treated as medium confidence")
     pht_low_conf_threshold = Param.Unsigned(
-        3, "PHT raw counter treated as low confidence (trigger L3 only)")
+        3, "PHT raw counter treated as low confidence (trigger L3, non-trigger dropped)")
     # pf gen table (full-assoc)
     # not implemented now, because queued prefetcher already had a filter
     pf_gen_entries = Param.MemorySize("16", "num of pf_gen entries")

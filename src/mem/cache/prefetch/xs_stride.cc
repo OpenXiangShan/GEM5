@@ -64,6 +64,7 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
         contextKey(strideHashPc(pfi.getPC()), context_id);
     StrideEntry *entry = stride.findEntry(stride_hash_pc, pfi.isSecure());
     learned_bop_offset = 0;
+    stride_pf = 0;
     // TODO: add DPRINFT for stride
     DPRINTF(XSStridePrefetcher, "Stride lookup: pc:%x addr: %x, miss repeat: %i\n", pfi.getPC(), lookupAddr,
             miss_repeat);
@@ -112,7 +113,9 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
                     entry->longStride.calcSaturation(), shortStrideThres);
         }
 
+        bool stride_matched = false;
         if (stride_match) {
+            stride_matched = true;
             entry->conf++;
             if (strideDynDepth) {
                 if (!pfi.isCacheMiss() && last_pf_source == PrefetchSourceType::SStride) {  // stride pref hit
@@ -185,6 +188,11 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
                 const Addr stride_offset = static_cast<Addr>(entry->stride);
                 const Addr depth4_addr = lookupAddr + stride_offset * 4;
                 const Addr depth32_addr = lookupAddr + stride_offset * 32;
+                // Only a stride that matched on this access and is saturated
+                // may move the near target out for an extra PHT lookup.
+                if (stride_matched && entry->conf.isSaturated()) {
+                    stride_pf = blockAddress(depth4_addr);
+                }
                 sendPFWithFilter(pfi, blockAddress(depth4_addr), addresses, 0,
                                  PrefetchSourceType::SStride, 1);
                 sendPFWithFilter(pfi, blockAddress(depth32_addr), addresses, 0,
@@ -215,7 +223,6 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
                         stats.strideRedundantpfCount++;
                     }
                 }
-                stride_pf = pf_addr;  // the longest lookahead
             }
 
             should_cover = true;
