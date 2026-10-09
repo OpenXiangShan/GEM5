@@ -856,6 +856,9 @@ class BOPPrefetcher(QueuedPrefetcher):
         "CQF feedback-table entries")
     direct_quality_feedback_ways = Param.Unsigned(4,
         "CQF feedback-table ways")
+    direct_quality_replacement_policy = Param.BaseReplacementPolicy(
+        TreePLRURP(num_leaves=Parent.direct_quality_ways),
+        "Replacement policy for the CQF quality table")
     direct_quality_feedback_tag_bits = Param.Unsigned(14,
         "CQF feedback-table tag bits")
     direct_quality_horizon = Param.Unsigned(2048,

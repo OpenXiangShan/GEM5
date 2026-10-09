@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <cassert>
+#include <vector>
 
 #include "base/logging.hh"
+#include "mem/cache/replacement_policies/base.hh"
 
 namespace gem5
 {
@@ -26,19 +28,20 @@ DirectQualityGate::log2Of(unsigned value)
 }
 
 uint64_t
-DirectQualityGate::mix(uint64_t value)
+DirectQualityGate::qualityHash(Addr pc, uint8_t kind) const
 {
-    value ^= value >> 30;
-    value *= UINT64_C(0xbf58476d1ce4e5b9);
-    value ^= value >> 27;
-    value *= UINT64_C(0x94d049bb133111eb);
-    return value ^ (value >> 31);
+    // Fold adjacent PC fields with the same shift/XOR structure used by BOP.
+    // A single-set table has no index bits, so fold by the tag width instead.
+    const uint64_t pcBits = pc >> 1;
+    const unsigned foldBits = qualitySetBits == 0 ? cfg.qualityTagBits : qualitySetBits;
+    const uint64_t foldedPc = pcBits ^ (pcBits >> foldBits);
+    const uint64_t kindBits = uint64_t(kind) | (uint64_t(kind) << qualitySetBits);
+    return foldedPc ^ kindBits;
 }
 
-DirectQualityGate::DirectQualityGate() : DirectQualityGate(Config()) {}
-
-DirectQualityGate::DirectQualityGate(const Config &config)
+DirectQualityGate::DirectQualityGate(const Config &config, replacement_policy::Base *replacementPolicy_)
     : cfg(config),
+      replacementPolicy(replacementPolicy_),
       qualitySets(config.qualityEntries / config.qualityWays),
       feedbackSets(config.feedbackEntries / config.feedbackWays),
       qualitySetBits(0),
@@ -46,7 +49,8 @@ DirectQualityGate::DirectQualityGate(const Config &config)
       qualityTagMask(config.qualityTagBits >= 63 ? ~uint64_t(0) : ((uint64_t(1) << config.qualityTagBits) - 1)),
       feedbackTagMask(config.feedbackTagBits >= 63 ? ~uint64_t(0) : ((uint64_t(1) << config.feedbackTagBits) - 1))
 {
-    fatal_if(cfg.qualityWays == 0 || cfg.qualityWays > 4 || cfg.feedbackWays == 0 || cfg.feedbackWays > 16,
+    fatal_if(cfg.qualityWays == 0 || cfg.qualityWays > 4 || !isPowerOf2(cfg.qualityWays) || cfg.feedbackWays == 0 ||
+                 cfg.feedbackWays > 16,
              "Invalid direct-quality associativity\n");
     fatal_if(cfg.qualityEntries == 0 || cfg.qualityEntries > MaxQualityEntries || cfg.feedbackEntries == 0 ||
                  cfg.feedbackEntries > MaxFeedbackEntries,
@@ -59,6 +63,7 @@ DirectQualityGate::DirectQualityGate(const Config &config)
     fatal_if(
         cfg.qualityTagBits == 0 || cfg.qualityTagBits > 16 || cfg.feedbackTagBits == 0 || cfg.feedbackTagBits > 36,
         "Invalid direct-quality tag width\n");
+    fatal_if(replacementPolicy == nullptr, "Direct-quality replacement policy must be provided\n");
     fatal_if(cfg.epochBits == 0 || cfg.epochBits > 7 || cfg.epochShift > 7 || cfg.epochTimeout == 0 ||
                  cfg.epochTimeout >= (1U << (cfg.epochBits - 1)),
              "Invalid direct-quality epoch encoding\n");
@@ -71,44 +76,35 @@ DirectQualityGate::DirectQualityGate(const Config &config)
              "Direct-quality epoch timeout exceeds the demand horizon\n");
     qualitySetBits = log2Of(qualitySets);
     feedbackSetBits = log2Of(feedbackSets);
+
+    for (unsigned index = 0; index < cfg.qualityEntries; ++index) {
+        quality[index].setPosition(index / cfg.qualityWays, index % cfg.qualityWays);
+        quality[index].replacementData = replacementPolicy->instantiateEntry();
+    }
 }
 
 unsigned
 DirectQualityGate::qualitySetFor(Addr pc, uint8_t kind) const
 {
-    uint64_t signature = pc >> 1;
-    signature ^= signature >> 7;
-    signature ^= signature >> 13;
-    signature ^= signature >> 27;
-    signature ^= uint64_t(kind) * UINT64_C(0x9e3779b97f4a7c15);
-    signature ^= signature >> 11;
-    signature ^= signature >> 23;
-    return signature & (qualitySets - 1);
+    return qualityHash(pc, kind) & (qualitySets - 1);
 }
 
 uint64_t
 DirectQualityGate::qualityTagFor(Addr pc, uint8_t kind) const
 {
-    uint64_t signature = pc >> 1;
-    signature ^= signature >> 7;
-    signature ^= signature >> 13;
-    signature ^= signature >> 27;
-    signature ^= uint64_t(kind) * UINT64_C(0x9e3779b97f4a7c15);
-    signature ^= signature >> 11;
-    signature ^= signature >> 23;
-    return (signature >> qualitySetBits) & qualityTagMask;
+    return (qualityHash(pc, kind) >> qualitySetBits) & qualityTagMask;
 }
 
 uint64_t
-DirectQualityGate::feedbackKeyFor(uint64_t line, bool *nonCanonical)
+DirectQualityGate::feedbackKeyFor(uint64_t line, bool *needsFeedbackFolding)
 {
     uint64_t compactLine = line & FeedbackLineMask;
     const uint64_t canonicalLine =
         compactLine & FeedbackLineSignBit ? compactLine | (HostLineMask & ~FeedbackLineMask) : compactLine;
-    const bool nonCanonicalLine = line != canonicalLine;
-    if (nonCanonical)
-        *nonCanonical = nonCanonicalLine;
-    if (nonCanonicalLine) {
+    const bool needsFolding = line != canonicalLine;
+    if (needsFeedbackFolding)
+        *needsFeedbackFolding = needsFolding;
+    if (needsFolding) {
         const uint64_t highLine = line >> FeedbackLineBits;
         compactLine ^= highLine;
         compactLine ^= highLine << 13;
@@ -149,45 +145,26 @@ DirectQualityGate::findQuality(unsigned set, uint64_t tag, uint8_t kind) const
 }
 
 unsigned
-DirectQualityGate::qualityVictim(unsigned set) const
+DirectQualityGate::qualityVictim(unsigned set)
 {
     const unsigned base = set * cfg.qualityWays;
     for (unsigned way = 0; way < cfg.qualityWays; ++way)
         if (!quality[base + way].valid)
             return way;
-    if (cfg.qualityWays == 1)
-        return 0;
-    if (cfg.qualityWays == 2)
-        return qualityPLRU[set] & 1;
-    const uint8_t state = qualityPLRU[set] & 7;
-    if ((state & 1) == 0)
-        return (state & 2) == 0 ? 0 : 1;
-    return (state & 4) == 0 ? 2 : 3;
+
+    std::vector<ReplaceableEntry *> candidates;
+    candidates.reserve(cfg.qualityWays);
+    for (unsigned way = 0; way < cfg.qualityWays; ++way)
+        candidates.push_back(&quality[base + way]);
+
+    const auto *victim = replacementPolicy->getVictim(candidates);
+    return victim->getWay();
 }
 
 void
-DirectQualityGate::touchQuality(unsigned set, unsigned way)
+DirectQualityGate::touchQuality(QualityEntry &entry)
 {
-    if (cfg.qualityWays == 1)
-        return;
-    if (cfg.qualityWays == 2) {
-        qualityPLRU[set] = way == 0 ? 1 : 0;
-        return;
-    }
-    uint8_t &state = qualityPLRU[set];
-    if (way == 0) {
-        state |= 1;
-        state |= 2;
-    } else if (way == 1) {
-        state |= 1;
-        state &= ~2;
-    } else if (way == 2) {
-        state &= ~1;
-        state |= 4;
-    } else {
-        state &= ~1;
-        state &= ~4;
-    }
+    replacementPolicy->touch(entry.replacementData);
 }
 
 unsigned
@@ -195,11 +172,17 @@ DirectQualityGate::allocateQuality(unsigned set, uint64_t tag, uint8_t kind)
 {
     const unsigned way = qualityVictim(set);
     auto &entry = quality[set * cfg.qualityWays + way];
-    entry = QualityEntry();
+    entry.valid = false;
+    entry.tag = 0;
+    entry.kind = 0;
+    entry.state = State::Observe;
+    entry.useful = 0;
+    entry.unused = 0;
+    entry.resolvedSinceDecay = 0;
     entry.valid = true;
     entry.tag = tag;
     entry.kind = kind;
-    touchQuality(set, way);
+    replacementPolicy->reset(entry.replacementData);
     return way;
 }
 
@@ -249,8 +232,7 @@ DirectQualityGate::sample(Addr pc, uint8_t kind, Addr triggerLine, unsigned peri
 {
     if (period == 0)
         return false;
-    const uint64_t pcSignature = mix((pc >> 1) ^ (uint64_t(kind) * UINT64_C(0x9e3779b97f4a7c15)));
-    const uint64_t signature = mix(pcSignature ^ triggerLine ^ salt);
+    const uint64_t signature = (pc >> 1) ^ (pc >> 7) ^ (triggerLine >> 6) ^ uint64_t(kind) ^ salt;
     return isPowerOf2(period) ? (signature & (period - 1)) == 0 : (signature % period) == 0;
 }
 
@@ -352,10 +334,12 @@ DirectQualityGate::admit(Addr pc, uint8_t kind, Addr triggerLine, Addr candidate
     const unsigned set = qualitySetFor(pc, kind);
     const uint64_t tag = qualityTagFor(pc, kind);
     unsigned way = findQuality(set, tag, kind);
-    if (way == cfg.qualityWays)
+    if (way == cfg.qualityWays) {
         way = allocateQuality(set, tag, kind);
+    } else {
+        touchQuality(quality[set * cfg.qualityWays + way]);
+    }
     auto &entry = quality[set * cfg.qualityWays + way];
-    touchQuality(set, way);
     decision.state = entry.state;
 
     unsigned period = 0;
@@ -387,10 +371,10 @@ DirectQualityGate::admit(Addr pc, uint8_t kind, Addr triggerLine, Addr candidate
         return decision;
 
     const uint64_t line = candidateLine >> CacheLineBits;
-    bool nonCanonical = false;
-    const uint64_t key = feedbackKeyFor(line, &nonCanonical);
-    if (nonCanonical)
-        ++nonCanonicalFeedbackCandidateCount;
+    bool needsFolding = false;
+    const uint64_t key = feedbackKeyFor(line, &needsFolding);
+    if (needsFolding)
+        ++feedbackFoldedCandidateCount;
     const unsigned feedbackSet = feedbackSetFor(key);
     const uint64_t feedbackTag = feedbackTagFor(key);
     const unsigned existing = findFeedback(feedbackSet, feedbackTag);
@@ -417,10 +401,10 @@ DirectQualityGate::observeDemand(Addr demandLine)
 {
     ++demandAge;
     const uint64_t line = demandLine >> CacheLineBits;
-    bool nonCanonical = false;
-    const uint64_t key = feedbackKeyFor(line, &nonCanonical);
-    if (nonCanonical)
-        ++nonCanonicalFeedbackDemandCount;
+    bool needsFolding = false;
+    const uint64_t key = feedbackKeyFor(line, &needsFolding);
+    if (needsFolding)
+        ++feedbackFoldedDemandCount;
     const unsigned set = feedbackSetFor(key);
     const unsigned way = findFeedback(set, feedbackTagFor(key));
     if (way != cfg.feedbackWays)

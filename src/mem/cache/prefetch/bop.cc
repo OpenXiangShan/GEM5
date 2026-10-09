@@ -55,6 +55,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
       restoreCycle(p.restoreCycle),
       enableDirectQualityGate(p.enable_direct_quality_gate),
       directQualityKind(p.direct_quality_kind),
+      directQualityReplacementPolicy(p.direct_quality_replacement_policy),
       directQualityGate(),
       delayQueueEvent([this]{ delayQueueEventWrapper(); }, name()),
       issuePrefetchRequests(false), bestOffset(1), phaseBestOffset(0),
@@ -87,7 +88,8 @@ BOP::BOP(const BOPPrefetcherParams &p)
         config.epochBits = p.direct_quality_epoch_bits;
         config.epochShift = p.direct_quality_epoch_shift;
         config.epochTimeout = p.direct_quality_epoch_timeout;
-        directQualityGate = std::make_shared<DirectQualityGate>(config);
+        directQualityGate = std::make_shared<DirectQualityGate>(
+            config, directQualityReplacementPolicy);
     }
     if (!isPowerOf2(rrEntries)) {
         fatal("%s: number of RR entries is not power of 2\n", name());
@@ -586,12 +588,12 @@ BOP::BopStats::BopStats(statistics::Group *parent)
                "CQF feedback replacements"),
       ADD_STAT(directQualityFeedbackCoalesced, statistics::units::Count::get(),
                "CQF coalesced feedback candidates"),
-      ADD_STAT(directQualityNonCanonicalFeedbackCandidates,
+      ADD_STAT(directQualityFeedbackFoldedCandidates,
                statistics::units::Count::get(),
-               "CQF candidates using folded non-canonical addresses"),
-      ADD_STAT(directQualityNonCanonicalFeedbackDemands,
+               "CQF candidates whose feedback addresses were folded"),
+      ADD_STAT(directQualityFeedbackFoldedDemands,
                statistics::units::Count::get(),
-               "CQF demands using folded non-canonical addresses"),
+               "CQF demands whose feedback addresses were folded"),
       ADD_STAT(directQualityFeedbackExpiries, statistics::units::Count::get(),
                "CQF feedback expiries"),
       ADD_STAT(directQualityUnknownDrops, statistics::units::Count::get(),
@@ -620,10 +622,10 @@ BOP::updateDirectQualityStats()
     stats.directQualityFeedbackConflicts = directQualityGate->feedbackConflicts();
     stats.directQualityFeedbackReplacements = directQualityGate->feedbackReplacements();
     stats.directQualityFeedbackCoalesced = directQualityGate->feedbackCoalesced();
-    stats.directQualityNonCanonicalFeedbackCandidates =
-        directQualityGate->nonCanonicalFeedbackCandidates();
-    stats.directQualityNonCanonicalFeedbackDemands =
-        directQualityGate->nonCanonicalFeedbackDemands();
+    stats.directQualityFeedbackFoldedCandidates =
+        directQualityGate->feedbackFoldedCandidates();
+    stats.directQualityFeedbackFoldedDemands =
+        directQualityGate->feedbackFoldedDemands();
     stats.directQualityFeedbackExpiries = directQualityGate->feedbackExpiries();
     stats.directQualityUnknownDrops = directQualityGate->unknownDrops();
     stats.directQualityOrphanOutcomes = directQualityGate->orphanOutcomes();

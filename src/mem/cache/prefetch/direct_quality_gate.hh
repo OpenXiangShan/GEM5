@@ -5,9 +5,14 @@
 #include <cstdint>
 
 #include "base/types.hh"
+#include "mem/cache/replacement_policies/replaceable_entry.hh"
 
 namespace gem5
 {
+namespace replacement_policy
+{
+class Base;
+}
 namespace prefetch
 {
 
@@ -59,8 +64,7 @@ class DirectQualityGate
         State state = State::Observe;
     };
 
-    DirectQualityGate();
-    explicit DirectQualityGate(const Config &config);
+    DirectQualityGate(const Config &config, replacement_policy::Base *replacementPolicy);
 
     Decision admit(Addr pc, uint8_t kind, Addr triggerLine, Addr candidateLine);
     void observeDemand(Addr demandLine);
@@ -76,8 +80,8 @@ class DirectQualityGate
     uint64_t feedbackConflicts() const { return feedbackConflictCount; }
     uint64_t feedbackReplacements() const { return feedbackReplacementCount; }
     uint64_t feedbackCoalesced() const { return feedbackCoalescedCount; }
-    uint64_t nonCanonicalFeedbackCandidates() const { return nonCanonicalFeedbackCandidateCount; }
-    uint64_t nonCanonicalFeedbackDemands() const { return nonCanonicalFeedbackDemandCount; }
+    uint64_t feedbackFoldedCandidates() const { return feedbackFoldedCandidateCount; }
+    uint64_t feedbackFoldedDemands() const { return feedbackFoldedDemandCount; }
     uint64_t feedbackExpiries() const { return feedbackExpiryCount; }
     uint64_t unknownDrops() const { return unknownDropCount; }
     uint64_t orphanOutcomes() const { return orphanOutcomeCount; }
@@ -94,7 +98,7 @@ class DirectQualityGate
     static constexpr unsigned HostLineBits = 64 - CacheLineBits;
     static constexpr uint64_t HostLineMask = (uint64_t(1) << HostLineBits) - 1;
 
-    struct QualityEntry
+    struct QualityEntry : public ReplaceableEntry
     {
         bool valid = false;
         uint64_t tag = 0;
@@ -116,6 +120,7 @@ class DirectQualityGate
     };
 
     Config cfg;
+    replacement_policy::Base *const replacementPolicy;
     unsigned qualitySets = 0;
     unsigned feedbackSets = 0;
     unsigned qualitySetBits = 0;
@@ -124,7 +129,6 @@ class DirectQualityGate
     uint64_t feedbackTagMask = 0;
 
     std::array<QualityEntry, MaxQualityEntries> quality = {};
-    std::array<uint8_t, MaxQualityEntries> qualityPLRU = {};
     std::array<FeedbackEntry, MaxFeedbackEntries> feedback = {};
     std::array<uint8_t, MaxFeedbackEntries> feedbackNextVictim = {};
 
@@ -139,8 +143,8 @@ class DirectQualityGate
     uint64_t feedbackConflictCount = 0;
     uint64_t feedbackReplacementCount = 0;
     uint64_t feedbackCoalescedCount = 0;
-    uint64_t nonCanonicalFeedbackCandidateCount = 0;
-    uint64_t nonCanonicalFeedbackDemandCount = 0;
+    uint64_t feedbackFoldedCandidateCount = 0;
+    uint64_t feedbackFoldedDemandCount = 0;
     uint64_t feedbackExpiryCount = 0;
     uint64_t unknownDropCount = 0;
     uint64_t orphanOutcomeCount = 0;
@@ -150,11 +154,11 @@ class DirectQualityGate
 
     static bool isPowerOf2(unsigned value);
     static unsigned log2Of(unsigned value);
-    static uint64_t mix(uint64_t value);
+    uint64_t qualityHash(Addr pc, uint8_t kind) const;
 
     unsigned qualitySetFor(Addr pc, uint8_t kind) const;
     uint64_t qualityTagFor(Addr pc, uint8_t kind) const;
-    static uint64_t feedbackKeyFor(uint64_t line, bool *nonCanonical = nullptr);
+    static uint64_t feedbackKeyFor(uint64_t line, bool *needsFeedbackFolding = nullptr);
     unsigned feedbackSetFor(uint64_t key) const;
     uint64_t feedbackTagFor(uint64_t key) const;
 
@@ -162,9 +166,9 @@ class DirectQualityGate
     unsigned allocateQuality(unsigned set, uint64_t tag, uint8_t kind);
     unsigned findFeedback(unsigned set, uint64_t tag) const;
     unsigned allocateFeedback(unsigned set);
-    unsigned qualityVictim(unsigned set) const;
+    unsigned qualityVictim(unsigned set);
     unsigned feedbackVictim(unsigned set);
-    void touchQuality(unsigned set, unsigned way);
+    void touchQuality(QualityEntry &entry);
 
     bool sample(Addr pc, uint8_t kind, Addr triggerLine, unsigned period, uint64_t salt) const;
     unsigned blockPeriod(const QualityEntry &entry) const;

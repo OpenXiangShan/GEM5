@@ -86,6 +86,7 @@ class BOP : public Queued
         const int restoreCycle;
         const bool enableDirectQualityGate;
         const unsigned directQualityKind;
+        replacement_policy::Base *const directQualityReplacementPolicy;
         std::shared_ptr<DirectQualityGate> directQualityGate;
 
         bool victimRestoreScheduled = false;
@@ -237,8 +238,8 @@ class BOP : public Queued
             statistics::Scalar directQualityFeedbackConflicts;
             statistics::Scalar directQualityFeedbackReplacements;
             statistics::Scalar directQualityFeedbackCoalesced;
-            statistics::Scalar directQualityNonCanonicalFeedbackCandidates;
-            statistics::Scalar directQualityNonCanonicalFeedbackDemands;
+            statistics::Scalar directQualityFeedbackFoldedCandidates;
+            statistics::Scalar directQualityFeedbackFoldedDemands;
             statistics::Scalar directQualityFeedbackExpiries;
             statistics::Scalar directQualityUnknownDrops;
             statistics::Scalar directQualityOrphanOutcomes;
