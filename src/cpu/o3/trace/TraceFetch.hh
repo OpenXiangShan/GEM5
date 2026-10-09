@@ -46,6 +46,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/trace/TraceInstruction.hh"
 #include "cpu/o3/trace/TraceReader.hh"
+#include "cpu/o3/trace/TraceRecoveryRules.hh"
 
 namespace gem5
 {
@@ -115,6 +116,16 @@ class TraceFetch
     const o3::TraceInstruction* getTraceInstMetadata(InstSeqNum seqNum) const;
     bool isTraceInstruction(InstSeqNum seqNum) const;
 
+    /** Current 1-based position of the trace reader (records parsed from
+     *  the stream so far — the reader may have parsed ahead of commit by
+     *  up to its buffer size; at EOF the two coincide). Replay from
+     *  history does not advance it. Used by the EOF reconciliation
+     *  invariant in Commit. */
+    uint64_t getTraceReaderIndex() const
+    {
+        return traceReader ? traceReader->getCurrentInstructionIndex() : 0;
+    }
+
     void cleanupTraceMetadataOnCommit(InstSeqNum seqNum);
     void maybeCreateTraceCheckpoint(InstSeqNum seqNum);
     uint64_t findTraceIndexForSeqNum(InstSeqNum seqNum) const;
@@ -127,23 +138,11 @@ class TraceFetch
     bool wrongPathActive() const { return traceWrongPathActive; }
 
   private:
-    enum class TraceRecoveryMode
-    {
-        Hold,
-        Rollback
-    };
-
-    struct TraceRecoveryAction
-    {
-        TraceRecoveryMode mode = TraceRecoveryMode::Hold;
-        InstSeqNum rollbackSeqNum = 0;
-        uint64_t rollbackTraceIndex = 0;
-        bool useTraceIndex = false;
-        bool squashItself = false;
-        Addr targetPc = 0;
-        const char *exitWrongPathReason = nullptr;
-        const char *debugReason = nullptr;
-    };
+    // Recovery plan types live in the shared TraceRecoveryRules header so
+    // the anchored unit tests construct plans directly; aliases keep the
+    // in-class spellings working.
+    using TraceRecoveryMode = TraceRecoveryRules::TraceRecoveryMode;
+    using TraceRecoveryAction = TraceRecoveryRules::TraceRecoveryAction;
 
     Fetch &fetch;
 

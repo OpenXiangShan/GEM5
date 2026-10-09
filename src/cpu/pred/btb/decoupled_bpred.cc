@@ -10,6 +10,7 @@
 #include "base/output.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
+#include "cpu/o3/trace/TraceBranchTruth.hh"
 #include "cpu/pred/btb/folded_hist.hh"
 #include "cpu/thread_context.hh"
 #include "debug/BTB.hh"
@@ -916,11 +917,10 @@ DecoupledBPUWithBTB::makeBranchInfo(Addr control_pc, Addr target_pc,
     const auto &base_inst = static_inst ? static_inst : inst->staticInst;
     BranchInfo info(control_pc, target_pc, base_inst, inst_size);
     if (inst && inst->hasTraceBranchInfo()) {
-        info.isCond = inst->traceIsCond();
-        info.isIndirect = inst->traceIsIndirect();
-        info.isDirect = !info.isIndirect;
-        info.isCall = inst->traceIsCall();
-        info.isReturn = inst->traceIsReturn();
+        // Anchored rule (TraceBranchTruth.hh; guards the b5fefebcef
+        // port-gap): trace metadata wins over static-decode classification.
+        o3::TraceBranchTruth::applyTraceClassification(
+            info, o3::TraceBranchTruth::factsFrom(*inst));
     }
     return info;
 }

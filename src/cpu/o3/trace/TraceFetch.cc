@@ -41,6 +41,8 @@
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/fetch.hh"
+#include "cpu/o3/trace/TraceMetaGuard.hh"
+#include "cpu/o3/trace/TraceRecoveryRules.hh"
 #include "debug/Fetch.hh"
 #include "debug/Override.hh"
 #include "sim/system.hh"
@@ -694,18 +696,25 @@ TraceFetch::applyTraceRecoveryAction(ThreadID tid,
         }
     }
 
-    if (readerRepositioned) {
+    // Anchored disposition (TraceRecoveryRules.hh; guards commit
+    // 090d525ed3): only a repositioned reader may be paired with a cleared
+    // expected stream; an unrepositioned reader keeps the buffer (the only
+    // remaining truth) and reconciles it against the squash target.
+    switch (TraceRecoveryRules::expectedStreamDisposition(readerRepositioned)) {
+    case TraceRecoveryRules::ExpectedStreamDisposition::Clear:
         // The reader now yields the rollback target as its next instruction;
         // drop the stale buffer so it is refilled from that position.
         traceExpectedStream[tid].clear();
         DPRINTF(Fetch, "[tid:%i] Cleared expected trace stream after rollback\n", tid);
-    } else {
+        break;
+    case TraceRecoveryRules::ExpectedStreamDisposition::Reconcile:
         // The reader could not be repositioned. Clearing the buffered
         // expected stream here would silently drop instructions the reader
         // has already advanced past, desynchronizing trace replay from the
         // fetch/FTQ stream. Reconcile the buffer against the squash target
         // instead of discarding it.
         reconcileTraceStreamToSquashTarget(tid, action.targetPc);
+        break;
     }
 }
 
@@ -927,9 +936,12 @@ TraceFetch::classifyWrongPathInstSquash(ThreadID tid, const PCStateBase &new_pc,
             DPRINTF(Fetch,
                     "[tid:%i] Squash target PC (0x%#lx) matches correct PC (0x%#lx)\n",
                     tid, new_pc.instAddr(), traceWrongPathCorrectPC);
-            if (!squashInst->isControl() && squashInst->readPredTaken()) {
-                squashInst->setPredTaken(false);
-                squashInst->setPredTarg(new_pc);
+            // Anchored guard (TraceRecoveryRules.hh; guards commit add587d180):
+            // clear stale predicted-taken state on a non-control boundary inst.
+            const bool stale_noncontrol_pred =
+                !squashInst->isControl() && squashInst->readPredTaken();
+            TraceRecoveryRules::applyNonControlPredCorrection(*squashInst, new_pc);
+            if (stale_noncontrol_pred) {
                 DPRINTF(Fetch,
                         "[tid:%i] Trace wrong-path boundary non-control "
                         "inst [sn:%llu] prediction corrected to %s\n",
@@ -1161,40 +1173,16 @@ TraceFetch::cleanupTraceMetadataOnCommit(InstSeqNum seqNum)
     // Sliding-window cleanup: keep a guard window behind the oldest in-flight
     // instruction and (if active) behind the wrong-path boundary. This avoids
     // removing metadata that may still be needed by a late-arriving squash.
-
-    // Backend squashes can anchor on instructions far behind the current
-    // frontier: a branch resolution, deferred MDP violation, or order
-    // violation squash can reference an instruction that committed hundreds
-    // of sequence numbers ago (wrong-path supplies inflate the seqNum
-    // distance without occupying ROB entries; observed gaps exceed 600).
-    // Align the guard with TraceReader's HISTORY_CAPACITY so metadata
-    // retention covers exactly the range the reader can soft-replay: a
-    // squash anchored deeper than this cannot be served by history replay
-    // anyway, and pipeline depth bounds in-flight seqNum spans well below it.
-    static constexpr uint64_t TRACE_META_GUARD = 4096;
+    // The anchor/threshold decision lives in TraceMetaGuard.hh (shared with
+    // the anchored unit tests; guards commit e87d6b5db4).
 
     const InstSeqNum oldest_inflight = fetch.cpu->getOldestInFlightSeqNum();
     const InstSeqNum wp_boundary = traceWrongPathActive ? traceWrongPathBranchSeqNum
                                                         : std::numeric_limits<InstSeqNum>::max();
-    InstSeqNum keep_min = std::min(oldest_inflight, wp_boundary);
-    if (keep_min == std::numeric_limits<InstSeqNum>::max()) {
-        // The in-flight list can be empty while a backend squash (branch
-        // resolution, deferred MDP violation, squash-after serializing
-        // commit) has already removed every younger instruction, but its
-        // frontend squash has not reached Fetch yet (fetch consumes commit
-        // squashes at least one stage later). That squash rolls the trace
-        // reader back to its anchor instruction, which needs the metadata of
-        // the last committed instruction (and possibly the following one for
-        // target resolution). Anchor the guard window to the just-committed
-        // instruction instead of treating the drained pipeline as a license
-        // to wipe every entry: wiping desynchronized trace replay and tripped
-        // the "trace squash target PC ... not in the buffered expected
-        // stream" panic.
-        keep_min = seqNum;
-    }
-    const InstSeqNum safe_threshold = (keep_min > TRACE_META_GUARD)
-                                          ? (keep_min - TRACE_META_GUARD)
-                                          : 0;
+    const InstSeqNum keep_min = TraceMetaGuard::computeMetaKeepMin(
+        oldest_inflight, wp_boundary, seqNum);
+    const InstSeqNum safe_threshold =
+        TraceMetaGuard::computeSafeThreshold(keep_min);
 
     Counter removed = 0;
 
@@ -1216,7 +1204,7 @@ TraceFetch::cleanupTraceMetadataOnCommit(InstSeqNum seqNum)
             (unsigned long long)oldest_inflight,
             (int)traceWrongPathActive,
             (unsigned long long)wp_boundary,
-            (unsigned long long)TRACE_META_GUARD,
+            (unsigned long long)TraceMetaGuard::TRACE_META_GUARD,
             (unsigned long long)safe_threshold,
             (unsigned long long)removed);
 
@@ -1294,58 +1282,22 @@ TraceFetch::rollbackTraceReader(InstSeqNum seqNum, bool squash_itself)
         return false;
     }
 
-    bool need_to_decrement_index = squash_itself;
-    // Find trace index to rollback to (1-based). We want the next getNextInstruction()
-    // to return the instruction at 'index'.
-    uint64_t index = findTraceIndexForSeqNum(seqNum);
-    bool found = index != 0;
-    if (!found) {
-        InstSeqNum prev_seq = 0;
-        uint64_t prev_index = 0;
-        for (const auto &entry : seqNumToTraceIndex) {
-            if (entry.first < seqNum &&
-                (prev_index == 0 || entry.first > prev_seq)) {
-                prev_seq = entry.first;
-                prev_index = entry.second;
-            }
-        }
-
-        if (prev_index != 0) {
-            if (squash_itself) {
-                index = prev_index;
-                need_to_decrement_index = false;
-            } else {
-                index = prev_index + 1;
-            }
-            found = true;
-            DPRINTF(Fetch,
-                    "rollbackTraceReader[sn:%lli]: No direct trace index, "
-                    "using previous sn:%lli traceIndex=%lu -> target=%lu\n",
-                    seqNum, prev_seq, prev_index, index);
-        } else {
-            DPRINTF(Fetch,
-                    "rollbackTraceReader[sn:%lli]: No mapped trace index (skip)\n",
-                    seqNum);
-            return false;
-        }
+    // Anchored decision (TraceRecoveryRules.hh; guards commit 064029e6ef):
+    // direct mapping, nearest-older predecessor fallback, never cursor 0.
+    const auto cursor = TraceRecoveryRules::resolveRollbackSeekCursor(
+        seqNumToTraceIndex, seqNum, squash_itself);
+    if (!cursor.has_value()) {
+        DPRINTF(Fetch,
+                "rollbackTraceReader[sn:%lli]: No mapped trace index (skip)\n",
+                seqNum);
+        return false;
     }
 
-    if (need_to_decrement_index) {
-        // If squashing the instruction itself, we need to go back one more instruction
-        if (index > 0) {
-            DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: Squashing itself, moving back one instruction\n", seqNum);
-            --index;
-        } else {
-            DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: Cannot move back before start of trace\n", seqNum);
-            return false;
-        }
-    }
-
-    // 交由 TraceReader 软回滚（命中本地历史窗口则不触碰文件指针），超界时内部自行降级
-    const uint64_t seek_cursor = (index > 0) ? (index - 1) : 0;
-    const bool success = traceReader->softSeekToInstruction(seek_cursor);
-    DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: softSeekToInstruction(index=%lu,cursor=%lu) => %d\n",
-            seqNum, index, seek_cursor, (int)success);
+    // Hand off to the reader soft rollback (a local history-window hit does
+    // not touch the file pointer); it degrades itself when out of range.
+    const bool success = traceReader->softSeekToInstruction(*cursor);
+    DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: softSeekToInstruction(cursor=%lu) => %d\n",
+            seqNum, *cursor, (int)success);
     return success;
 }
 

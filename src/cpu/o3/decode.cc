@@ -49,6 +49,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/trace/TraceRecoveryRules.hh"
 #include "debug/Activity.hh"
 #include "debug/Counters.hh"
 #include "debug/Decode.hh"
@@ -1018,7 +1019,10 @@ Decode::decodeInsts(ThreadID tid, unsigned max_insts)
             if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {
                 target = std::make_unique<RiscvISA::PCState>(
                     inst->traceBranchNextPC());
-                if (*target == inst->readPredTarg()) {
+                // Anchored decision (TraceRecoveryRules.hh; guards commit
+                // 803b6ec090): full PC-state equality, no resteer needed.
+                if (TraceRecoveryRules::returnTargetMatchesPrediction(
+                        *target, inst->readPredTarg())) {
                     DPRINTF(Decode,
                             "[tid:%i] [sn:%llu] Trace return target already "
                             "matches prediction: PredPC: %s TracePC: %s\n",

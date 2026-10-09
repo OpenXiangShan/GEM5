@@ -35,6 +35,7 @@
 #include "arch/riscv/page_size.hh"
 #include "base/trace.hh"
 #include "config/the_isa.hh"
+#include "cpu/o3/trace/CBPRegMap.hh"
 #include "debug/TraceReader.hh"
 
 namespace gem5
@@ -253,7 +254,7 @@ bool CBP2025TraceReader::isCondBranch(CBPInstClass t) { return t == CBPInstClass
 bool CBP2025TraceReader::regIsInt(uint8_t reg)
 {
     // mirror cbp2025: 0-31 int, 31=SP, 64 flags, 65 zero; >=32 & <64 are SIMD
-    return reg < 32 || reg == 64 || reg == 65;
+    return CBPRegMap::isIntReg(reg);
 }
 
 bool
@@ -309,38 +310,30 @@ void
 CBP2025TraceReader::extractRegisterDeps(const CBPInstr &raw, CBPInstClass cls,
                                         TraceInstruction &instr)
 {
-    auto mapIntReg = [&](uint8_t r) -> uint8_t {
-        // CBP2025: 31=SP, 30=LR, 64=flags, 65=zero, 32-63=SIMD/FP
-        if (r == 0 || r == 65) return 0;
-        if (r == 64) return 0;   // flags best-effort to x0
-        if (r == 31) return 2;   // SP
-        if (r == 30) return 1;   // LR (AArch64 x30) -> RISC-V RA(x1)
-        // Some ARM-origin CALL_IND traces carry x5 (not link reg). Map to a
-        // benign GPR (x28=t3) to avoid alt-RA semantics while retaining deps.
-        if (cls == CBPInstClass::CALL_IND && r == 5) {
-            constexpr uint8_t harmless = 28;
-            DPRINTF(TraceReader,
-                    "[TRACE-ENC] CBP CALL_IND reg %u mapped to x%u to avoid alt-RA\n",
-                    r, harmless);
-            return harmless;
-        }
-        // IP not defined as GPR; keep 0
-        if (r == 26) return 0;
-        if (r < 32)  return r;   // general purpose
-        DPRINTF(TraceReader, "[TRACE-ENC] CBP reg %u unmapped -> x0\n", r);
-        return 0;
-    };
-    auto mapFpReg = [](uint8_t r) -> uint8_t {
-        if (r >= 32 && r < 64) return static_cast<uint8_t>(r - 32); // f0..f31
-        return 0;
-    };
+    // Anchored mapping table (CBPRegMap.hh; guards the x5 fix-of-fix chain
+    // 89b00fb712 -> a28e34a2cc -> 9d97cbb232).
+    const bool call_indirect = (cls == CBPInstClass::CALL_IND);
 
     for (auto reg : raw.inRegs) {
-        auto mapped = regIsInt(reg) ? mapIntReg(reg) : mapFpReg(reg);
+        auto mapped = regIsInt(reg)
+                          ? CBPRegMap::mapIntReg(reg, call_indirect)
+                          : CBPRegMap::mapFpReg(reg);
+        if (call_indirect && reg == 5) {
+            DPRINTF(TraceReader,
+                    "[TRACE-ENC] CBP CALL_IND reg %u mapped to x%u to avoid alt-RA\n",
+                    reg, mapped);
+        }
         instr.addSrcReg(mapped);
     }
     for (auto reg : raw.outRegs) {
-        auto mapped = regIsInt(reg) ? mapIntReg(reg) : mapFpReg(reg);
+        auto mapped = regIsInt(reg)
+                          ? CBPRegMap::mapIntReg(reg, call_indirect)
+                          : CBPRegMap::mapFpReg(reg);
+        if (call_indirect && reg == 5) {
+            DPRINTF(TraceReader,
+                    "[TRACE-ENC] CBP CALL_IND reg %u mapped to x%u to avoid alt-RA\n",
+                    reg, mapped);
+        }
         instr.addDstReg(mapped);
     }
 }

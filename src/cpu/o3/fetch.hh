@@ -317,6 +317,9 @@ class Fetch
     /** Trace-mode status (delegated to TraceFetch). */
     bool isTraceMode() const;
     bool isTraceEOF() const;
+    /** Current trace reader position (records consumed; see
+     *  TraceFetch::getTraceReaderIndex). */
+    uint64_t getTraceReaderIndex() const;
 
     /** Clear all thread-specific states*/
     void clearStates(ThreadID tid);

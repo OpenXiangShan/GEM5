@@ -269,6 +269,12 @@ Fetch::isTraceEOF() const
     return traceFetch && traceFetch->isEOF();
 }
 
+uint64_t
+Fetch::getTraceReaderIndex() const
+{
+    return traceFetch ? traceFetch->getTraceReaderIndex() : 0;
+}
+
 std::string Fetch::name() const { return cpu->name() + ".fetch"; }
 
 void
