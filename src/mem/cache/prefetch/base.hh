@@ -1049,6 +1049,7 @@ class Base : public ClockedObject
     virtual Tick nextPrefetchReadyTime() const = 0;
 
     virtual void recvPrefetchFromCache(const PacketPtr &pkt) {}
+    virtual bool canReceivePrefetch() const { return true; }
 
     virtual bool admitIncomingPrefetchPacket(const PacketPtr &pkt)
     {

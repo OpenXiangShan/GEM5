@@ -1,8 +1,12 @@
 #ifndef __MEM_CACHE_PREFETCH_COMPOITE_WITH_WORKER_L2_HH__
 #define __MEM_CACHE_PREFETCH_COMPOITE_WITH_WORKER_L2_HH__
 
+#include <array>
+#include <functional>
+#include <memory>
 #include <vector>
 
+#include "mem/cache/prefetch/banked_queue.hh"
 #include "mem/cache/prefetch/bop.hh"
 #include "mem/cache/prefetch/cdp.hh"
 #include "mem/cache/prefetch/cmc.hh"
@@ -50,7 +54,43 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     void notifyFill(const PacketPtr &pkt) override;
     void notifyIns(int ins_num) override { cdp->notifyIns(ins_num); }
 
+    bool usesBankedQueue() const { return bankedQueueEnabled; }
+    void configureBanks(unsigned banks, std::function<unsigned(Addr)> select,
+                        std::function<void()> wakeup);
+    void transfer() override;
+    bool hasPendingPacket() override;
+    PacketPtr getPacket() override;
+    PacketPtr getBankPacket(unsigned bank);
+    bool hasBankPacket(unsigned bank) const;
+    bool hasBankInputs() const;
+    void enqueueBankInputs();
+    void recordBankBlocked(unsigned bank);
+    ~L2CompositeWithWorkerPrefetcher() override;
+
   private:
+    // Priority is used only to retain the local BOP identity across translation.
+    static constexpr int LargeBopInput = -1;
+    static constexpr int SmallBopInput = -2;
+    static constexpr unsigned InputSources = 4;
+    const bool bankedQueueEnabled;
+    std::unique_ptr<BankedQueue<DeferredPacket>> bankQueues;
+    std::array<std::list<DeferredPacket>, InputSources - 1> readyInputs;
+    std::function<unsigned(Addr)> selectBank;
+    std::function<void()> wakeBankQueues;
+    std::list<DeferredPacket> &inputQueue(unsigned source);
+
+    struct BankStats : public statistics::Group
+    {
+        BankStats(statistics::Group *parent);
+        statistics::Vector enqueued;
+        statistics::Vector overwritten;
+        statistics::Vector dequeued;
+        statistics::Vector blocked;
+        statistics::Scalar arbitrationBlocked;
+        statistics::Scalar inputRemovedFull;
+        statistics::Distribution occupancy;
+    } bankStats;
+
     CDP* cdp;
     BOP* largeBOP;
     BOP* smallBOP;

@@ -9,7 +9,7 @@ namespace prefetch
 {
 
 PrefetcherForwarder::PrefetcherForwarder(const PrefetcherForwarderParams &p)
-    : Base(p), real_pf(nullptr)
+    : Base(p), real_pf(nullptr), receiveQueueSize(p.receive_queue_size)
 {
 }
 
@@ -131,12 +131,19 @@ PrefetcherForwarder::nofityHitToDownStream(const PacketPtr &pkt)
 void
 PrefetcherForwarder::recvPrefetchFromCache(const PacketPtr &pkt)
 {
+    assert(canReceivePrefetch());
     if (real_pf && !real_pf->ownsPrefetchRequest(pkt) &&
         !real_pf->admitIncomingPrefetchPacket(pkt)) {
         delete pkt;
         return;
     }
     prefetch_queue.push(pkt);
+}
+
+bool
+PrefetcherForwarder::canReceivePrefetch() const
+{
+    return receiveQueueSize == 0 || prefetch_queue.size() < receiveQueueSize;
 }
 
 PacketPtr

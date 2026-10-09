@@ -151,6 +151,8 @@ def config_aligned_l2(options, system, l2_cache_class):
             l2_wrapper.prefetcher = NULL
         else:
             l2_wrapper.prefetcher = create_prefetcher(system.cpu[i], 'l2_wrapper', options)
+            if hasattr(l2_wrapper.prefetcher, 'banked_queue'):
+                l2_wrapper.prefetcher.banked_queue = True
         for j in range(num_l2_slices):
             # Apply original per-L2-cache configurations to each slice's inner cache
             cache_slice = l2_wrapper.slices[j]
@@ -168,6 +170,8 @@ def config_aligned_l2(options, system, l2_cache_class):
 
             cache_slice.setCacheAccessor(inner_cache)
             if not options.no_pf and options.l2_hwp_type == 'PrefetcherForwarder':
+                if getattr(l2_wrapper.prefetcher, 'banked_queue', False):
+                    inner_cache.prefetcher.receive_queue_size = 1
                 inner_cache.prefetcher.setRealPrefetcher(l2_wrapper.prefetcher)
 
             # Cut off the resources in inner_cache according to slice num

@@ -25,6 +25,7 @@ class PrefetcherForwarder : public Base
   private:
     Base *real_pf;
     std::queue<PacketPtr> prefetch_queue;
+    const unsigned receiveQueueSize;
 
   public:
     PrefetcherForwarder(const PrefetcherForwarderParams &p);
@@ -78,6 +79,7 @@ class PrefetcherForwarder : public Base
     void pfHitInWB(PrefetchSourceType pf_type) override;
 
     void recvPrefetchFromCache(const PacketPtr &pkt) override;
+    bool canReceivePrefetch() const override;
 };
 
 } // namespace prefetch

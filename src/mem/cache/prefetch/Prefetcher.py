@@ -142,6 +142,8 @@ class PrefetcherForwarder(BasePrefetcher):
     type = 'PrefetcherForwarder'
     cxx_header = "mem/cache/prefetch/forwarder.hh"
     cxx_class = 'gem5::prefetch::PrefetcherForwarder'
+    receive_queue_size = Param.Unsigned(0,
+        "Receive slots; zero retains the legacy unlimited forwarder")
     cxx_exports = [
         PyBindMethod("setRealPrefetcher")
     ]
@@ -1482,6 +1484,8 @@ class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     type = 'L2CompositeWithWorkerPrefetcher'
     cxx_class = 'gem5::prefetch::L2CompositeWithWorkerPrefetcher'
     cxx_header = "mem/cache/prefetch/l2_composite_with_worker.hh"
+    banked_queue = Param.Bool(False,
+        "Use per-slice overwrite FIFOs with source arbitration")
 
     cdp = Param.CDP(CDP(is_sub_prefetcher=True), "")
     cmc = Param.CMCPrefetcher(CMCPrefetcher(is_sub_prefetcher=True), "")

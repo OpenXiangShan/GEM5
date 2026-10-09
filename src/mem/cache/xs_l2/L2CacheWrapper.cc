@@ -4,6 +4,7 @@
 
 #include "base/trace.hh"
 #include "debug/L2CacheWrapper.hh"
+#include "mem/cache/prefetch/l2_composite_with_worker.hh"
 #include "sim/system.hh"
 
 namespace gem5
@@ -12,6 +13,8 @@ namespace gem5
 L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
     : ClockedObject(p),
       sendPrefetchEvent([this]{ processSendPrefetchEvent(); }, "SendPrefetchEvent"),
+      bankPrefetchBlocked(p.num_slices, false),
+      bankOutstandingPrefetch(p.num_slices, nullptr),
       cpu_side_port(p.name + ".cpu_side", *this),
       sliceMask(p.num_slices - 1),
       setMask((p.cache_size / (1 << p.block_bits) / p.cache_assoc / p.num_slices) - 1),
@@ -41,12 +44,34 @@ L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
     }
     if (prefetcher) {
         prefetcher->setParentInfo(system, getProbeManager(), &sliced_cache_accessor, 1 << block_bits);
+        auto *composite = dynamic_cast<
+            prefetch::L2CompositeWithWorkerPrefetcher *>(prefetcher);
+        if (composite && composite->usesBankedQueue()) {
+            bankedPrefetcher = composite;
+            composite->configureBanks(
+                p.num_slices,
+                [this](Addr addr) { return getSliceId(addr); },
+                [this]() { scheduleSendPrefetch(); });
+        }
     }
 }
 
 bool
 L2CacheWrapper::needPrefetch()
 {
+    if (bankedPrefetcher) {
+        if (bankedPrefetcher->hasBankInputs())
+            return true;
+        for (unsigned bank = 0; bank < bankOutstandingPrefetch.size(); ++bank) {
+            if (!bankPrefetchBlocked[bank] &&
+                !(upper_req_blocked && upperReqBlockedSlice == bank) &&
+                (bankOutstandingPrefetch[bank] ||
+                 bankedPrefetcher->hasBankPacket(bank))) {
+                return true;
+            }
+        }
+        return false;
+    }
     return prefetcher && (prefetcher->hasPendingPacket() || outstanding_prefetch) && !prefetch_blocked;
 }
 
@@ -54,6 +79,14 @@ void
 L2CacheWrapper::scheduleSendPrefetch()
 {
     if (needPrefetch() && !sendPrefetchEvent.scheduled()) {
+        if (bankedPrefetcher) {
+            // Collect inputs during the cycle; arbitrate once at its end.
+            Tick when = clockEdge(Cycles(1)) - 1;
+            if (when <= curTick())
+                when += clockPeriod();
+            schedule(sendPrefetchEvent, when);
+            return;
+        }
         // schedule at the last tick of next cycle
         // because prefetch has lower priority than other requests
         schedule(sendPrefetchEvent, nextCycleLastTick());
@@ -63,6 +96,10 @@ L2CacheWrapper::scheduleSendPrefetch()
 void
 L2CacheWrapper::processSendPrefetchEvent()
 {
+    if (bankedPrefetcher) {
+        processBankedPrefetch();
+        return;
+    }
     if (prefetch_blocked) {
         return;
     }
@@ -89,6 +126,39 @@ L2CacheWrapper::processSendPrefetchEvent()
         return;
     }
     outstanding_prefetch = nullptr;
+    scheduleSendPrefetch();
+}
+
+void
+L2CacheWrapper::processBankedPrefetch()
+{
+    // Dequeue into free output slots before enqueue. A full FIFO with a
+    // concurrent dequeue must not overwrite another entry.
+    for (unsigned bank = 0; bank < bankOutstandingPrefetch.size(); ++bank) {
+        if (!bankOutstandingPrefetch[bank])
+            bankOutstandingPrefetch[bank] =
+                bankedPrefetcher->getBankPacket(bank);
+    }
+    bankedPrefetcher->enqueueBankInputs();
+    for (unsigned bank = 0; bank < bankOutstandingPrefetch.size(); ++bank) {
+        auto &pkt = bankOutstandingPrefetch[bank];
+        // Empty FIFOs flow through to the output slot.
+        if (!pkt)
+            pkt = bankedPrefetcher->getBankPacket(bank);
+        if (!pkt)
+            continue;
+        if (bankPrefetchBlocked[bank] ||
+            (upper_req_blocked && upperReqBlockedSlice == bank)) {
+            bankedPrefetcher->recordBankBlocked(bank);
+            continue;
+        }
+        if (!slice_cpuside_ports[bank].sendTimingReq(pkt)) {
+            bankPrefetchBlocked[bank] = true;
+            bankedPrefetcher->recordBankBlocked(bank);
+        } else {
+            pkt = nullptr;
+        }
+    }
     scheduleSendPrefetch();
 }
 
@@ -140,6 +210,17 @@ L2CacheWrapper::CPUSidePort::recvTimingReq(PacketPtr pkt)
 {
     auto slice_id = owner.getSliceId(pkt->getAddr());
     DPRINTF(L2CacheWrapper, "Got timing req for addr %#x, routing to slice %d\n", pkt->getAddr(), slice_id);
+
+    if (owner.bankedPrefetcher) {
+        if (owner.bankPrefetchBlocked[slice_id] ||
+            !owner.slice_cpuside_ports[slice_id].sendTimingReq(pkt)) {
+            owner.upper_req_blocked = true;
+            owner.upperReqBlockedSlice = slice_id;
+            return false;
+        }
+        owner.scheduleSendPrefetch();
+        return true;
+    }
 
     if (owner.prefetch_blocked || !owner.slice_cpuside_ports[slice_id].sendTimingReq(pkt)) {
         DPRINTF(L2CacheWrapper, "Slice %d is busy, blocking CPU side\n", slice_id);
@@ -223,6 +304,19 @@ L2CacheWrapper::SliceCPUSidePort::recvTimingResp(PacketPtr pkt)
 void
 L2CacheWrapper::SliceCPUSidePort::recvReqRetry()
 {
+    if (owner.bankedPrefetcher) {
+        const bool retry_upper = owner.upper_req_blocked &&
+            owner.upperReqBlockedSlice == id;
+        assert(owner.bankPrefetchBlocked[id] || retry_upper);
+        owner.bankPrefetchBlocked[id] = false;
+        if (retry_upper) {
+            owner.upper_req_blocked = false;
+            owner.upperReqBlockedSlice = InvalidPortID;
+            owner.cpu_side_port.sendRetryReq();
+        }
+        owner.scheduleSendPrefetch();
+        return;
+    }
     assert(owner.prefetch_blocked || owner.upper_req_blocked);
     DPRINTF(L2CacheWrapper, "Got retry from slice %d\n", id);
     if (owner.prefetch_blocked) {

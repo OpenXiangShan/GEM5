@@ -18,6 +18,10 @@
 
 namespace gem5
 {
+namespace prefetch
+{
+class L2CompositeWithWorkerPrefetcher;
+}
 
 /**
  * @brief This L2CacheWrapper acts as a router/dispatcher to a set of L2 cache
@@ -63,6 +67,11 @@ class L2CacheWrapper : public ClockedObject
 
     void scheduleSendPrefetch();
     bool needPrefetch();
+    void processBankedPrefetch();
+    prefetch::L2CompositeWithWorkerPrefetcher *bankedPrefetcher = nullptr;
+    std::vector<bool> bankPrefetchBlocked;
+    std::vector<PacketPtr> bankOutstandingPrefetch;
+    PortID upperReqBlockedSlice = InvalidPortID;
 
   public:
     L2CacheWrapper(const L2CacheWrapperParams &p);

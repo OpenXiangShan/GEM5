@@ -3621,6 +3621,13 @@ BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
         DPRINTF(TagReadFail, "tryAccessTag fails addr: %lx\n", pkt->getAddr());
         return false;
     }
+    if (pkt->cmd == MemCmd::HardPFReq && cache.prefetcher &&
+        !cache.prefetcher->canReceivePrefetch()) {
+        // The slice's prefetch receive slot is distinct from its MSHRs.
+        if (!sendRetryEvent.scheduled())
+            cache.schedule(sendRetryEvent, cache.nextCycle());
+        return false;
+    }
     int sliceidx = cache.getSliceIdx(pkt->getAddr());
     if (sliceidx >= 0 && cache.cacheLevel != 1) {
         if (cache.checkSLiceBusy(pkt, sliceidx)) {
