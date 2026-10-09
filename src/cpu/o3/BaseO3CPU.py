@@ -91,7 +91,7 @@ class ROBWalkPolicy(ScopedEnum):
     vals = [ 'Rollback', 'Replay', 'ConstCycle', 'NaiveCpt', 'ConfidentCpt' ]
 
 class ROBCompressPolicy(ScopedEnum):
-    vals = [ 'none', 'kmhv2', 'MohBoE' ,'kmhv3' ]
+    vals = [ 'none', 'kmhv2', 'MohBoE' ,'kmhv3', 'hybrid' ]
 
 class PerfRecord(ScopedEnum):
     vals = [
@@ -191,7 +191,7 @@ class BaseO3CPU(BaseCPU):
     iewToCommitDelay = Param.Cycles(1, "Issue/Execute/Writeback to commit "
                "delay")
     renameToROBDelay = Param.Cycles(1, "Rename to reorder buffer delay")
-    commitWidth = Param.Unsigned(8, "Commit width")
+    commitWidth = Param.Unsigned(8, "Physical entry commit width for Hybrid; group window otherwise")
 
     squashWidth = Param.Unsigned(8, "Squash width with rollback/redo rob walk")
     ConstSquashCycle = Param.Unsigned(1, "Squash width with redo rob walk")
