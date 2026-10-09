@@ -524,7 +524,8 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
     // classic-cache model the notification is only available when an access
     // reaches the cache, so retain the first such opportunity and suppress
     // later replay accesses from the same instruction.
-    if (isLoadRequest(pkt) && pkt->req->hasXsMetadata()) {
+    if (cache != nullptr && cache->level() == 1 &&
+        isLoadRequest(pkt) && pkt->req->hasXsMetadata()) {
         auto xs_metadata = pkt->req->getXsMetadata();
         if (xs_metadata.instXsMetadata) {
             if (xs_metadata.instXsMetadata->prefetchTrainIssued) {
