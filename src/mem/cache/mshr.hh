@@ -118,6 +118,9 @@ class MSHR : public QueueEntry, public Printable
     /** Did we snoop a read while waiting for data? */
     bool postDowngrade;
 
+    // RTL permits later stores to merge only into a store-allocated miss.
+    bool sbufferStoreOrigin = false;
+
   public:
 
     /** Track if we sent this as a whole line write or not */
@@ -352,6 +355,8 @@ class MSHR : public QueueEntry, public Printable
     }
 
     bool sendPacket(BaseCache &cache) override;
+
+    bool canMergeSbufferStore(const Packet *predecessor) const;
 
     bool allocOnFill() const {
         return targets.allocOnFill;
