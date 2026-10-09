@@ -67,6 +67,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('trace/TraceReader.cc')
     Source('trace/ChampSimTraceReader.cc')
     Source('trace/CBP2025TraceReader.cc')
+    Source('trace/TraceRTLTraceReader.cc')
     Source('trace/TraceFetch.cc')
     Source('trace/CommitTrace.cc')
 
@@ -110,6 +111,9 @@ if env['CONF']['TARGET_ISA'] == 'null':
     # Generate required debug flag headers for reader in NULL builds
     DebugFlag('TraceReader')
     env.Append(LIBS=['z'])
+    # TraceReader.cc links libzstd for the in-process zstd decompressor
+    # (SConstruct already hard-requires the library).
+    env.Append(LIBS=['zstd'])
     # Targeted regression tests for 3 trace-mode failure modes
     # (commits 064029e6ef, add587d180, 803b6ec090). No gem5 link deps.
     GTest('trace_mode_regression.test',
@@ -140,6 +144,7 @@ if env['CONF']['TARGET_ISA'] == 'null':
           'trace/TraceReader.cc',
           'trace/ChampSimTraceReader.cc',
           'trace/CBP2025TraceReader.cc',
+          'trace/TraceRTLTraceReader.cc',
           '../../base/stats/group.cc',
           '../../base/stats/info.cc',
           '../../base/stats/storage.cc',
@@ -158,6 +163,7 @@ if env['CONF']['TARGET_ISA'] == 'null':
           'trace/TraceReader.cc',
           'trace/ChampSimTraceReader.cc',
           'trace/CBP2025TraceReader.cc',
+          'trace/TraceRTLTraceReader.cc',
           # pull in stats primitives used by TraceReader::TraceReaderStats
           '../../base/stats/group.cc',
           '../../base/stats/info.cc',
@@ -182,10 +188,36 @@ if env['CONF']['TARGET_ISA'] == 'null':
           '../../sim/sim_object.cc',
           '../../sim/globals.cc',
           '../../sim/tags.cc')
+    # TRACERTL/NEMU-format reader tests: 48-byte layout, field mapping
+    # (all 8 branch types, all 4 memory size codes, exception markers),
+    # zstd/raw stream parity, checkpoint/restore and seek.
+    GTest('tracertl_trace_reader.test',
+          'trace/TraceRTLTraceReader.test.cc',
+          'trace/TraceReader.cc',
+          'trace/ChampSimTraceReader.cc',
+          'trace/CBP2025TraceReader.cc',
+          'trace/TraceRTLTraceReader.cc',
+          # same stats/root glue as the ChampSim reader test above
+          '../../base/stats/group.cc',
+          '../../base/stats/info.cc',
+          '../../base/stats/storage.cc',
+          '../../base/statistics.cc',
+          with_tag('gem5 trace'),
+          '../../sim/root.cc',
+          '../../base/time.cc',
+          '../../base/hostinfo.cc',
+          '../../base/output.cc',
+          '../../sim/core.cc',
+          '../../sim/sim_object.cc',
+          '../../sim/globals.cc',
+          '../../sim/tags.cc')
 else:
     # Under real ISAs, link against common trace infra and avoid duplicate
     # compilation of cur_tick and stats glue (already provided by libs).
     env.Append(LIBS=['z'])
+    # TraceReader.cc links libzstd for the in-process zstd decompressor
+    # (SConstruct already hard-requires the library).
+    env.Append(LIBS=['zstd'])
     # Targeted regression tests for 3 trace-mode failure modes
     # (commits 064029e6ef, add587d180, 803b6ec090). No gem5 link deps.
     GTest('trace_mode_regression.test',
@@ -214,6 +246,7 @@ else:
           'trace/TraceReader.cc',
           'trace/ChampSimTraceReader.cc',
           'trace/CBP2025TraceReader.cc',
+          'trace/TraceRTLTraceReader.cc',
           '../../base/stats/group.cc',
           '../../base/stats/info.cc',
           '../../base/stats/storage.cc',
@@ -232,6 +265,7 @@ else:
           'trace/TraceReader.cc',
           'trace/ChampSimTraceReader.cc',
           'trace/CBP2025TraceReader.cc',
+          'trace/TraceRTLTraceReader.cc',
           # pull in stats primitives (some environments require explicit objs)
           '../../base/stats/group.cc',
           '../../base/stats/info.cc',
@@ -240,6 +274,29 @@ else:
           # Root depends on the core SimObject/time infrastructure when we
           # link an ISA-enabled variant, so add the minimal objects that
           # provide those symbols explicitly.
+          '../../base/time.cc',
+          '../../base/hostinfo.cc',
+          '../../base/output.cc',
+          '../../sim/core.cc',
+          '../../sim/sim_object.cc',
+          '../../sim/globals.cc',
+          '../../sim/tags.cc',
+          # Stats Root is required when constructing statistics::Group in tests
+          '../../sim/root.cc',
+          with_tag('gem5 trace'))
+    # TRACERTL/NEMU-format reader tests (same coverage as the NULL variant
+    # above; see the comment there).
+    GTest('tracertl_trace_reader.test',
+          'trace/TraceRTLTraceReader.test.cc',
+          'trace/TraceReader.cc',
+          'trace/ChampSimTraceReader.cc',
+          'trace/CBP2025TraceReader.cc',
+          'trace/TraceRTLTraceReader.cc',
+          # same stats/root glue as the ChampSim reader test above
+          '../../base/stats/group.cc',
+          '../../base/stats/info.cc',
+          '../../base/stats/storage.cc',
+          '../../base/statistics.cc',
           '../../base/time.cc',
           '../../base/hostinfo.cc',
           '../../base/output.cc',

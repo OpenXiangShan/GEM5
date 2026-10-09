@@ -31,12 +31,15 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <zstd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <csignal>
 #include <cstring>
 #include <fstream>
 #include <functional>
+#include <vector>
 
 #include "arch/null/page_size.hh"
 #include "arch/riscv/page_size.hh"
@@ -45,12 +48,47 @@
 #include "config/the_isa.hh"
 #include "cpu/o3/trace/CBP2025TraceReader.hh"
 #include "cpu/o3/trace/ChampSimTraceReader.hh"
+#include "cpu/o3/trace/TraceRTLTraceReader.hh"
 #include "debug/TraceReader.hh"
 
 namespace gem5
 {
 namespace o3
 {
+
+/** In-process zstd streaming decompression state for TraceStream.
+ *  Kept out of the header so <zstd.h> is only needed here. */
+struct TraceReader::TraceStream::ZstdState
+{
+    /** Compressed input file. */
+    FILE *input = nullptr;
+    /** libzstd decompression stream context. */
+    ZSTD_DStream *dstream = nullptr;
+    /** Compressed input staging buffer (ZSTD_DStreamInSize bytes). */
+    std::vector<uint8_t> inBuf;
+    /** Valid bytes in inBuf / consumed position. */
+    size_t inSize = 0;
+    size_t inPos = 0;
+    /** Decompressed output buffer (ZSTD_DStreamOutSize bytes). */
+    std::vector<uint8_t> outBuf;
+    /** Produced / consumed window inside outBuf. */
+    size_t outEnd = 0;
+    size_t outPos = 0;
+    /** Set once the compressed input file hits EOF. */
+    bool inputFinished = false;
+
+    ~ZstdState()
+    {
+        if (input) {
+            std::fclose(input);
+            input = nullptr;
+        }
+        if (dstream) {
+            ZSTD_freeDStream(dstream);
+            dstream = nullptr;
+        }
+    }
+};
 
 TraceReader::TraceStream::TraceStream()
     : modeFlag(Mode::Raw), pipeHandle(nullptr), eofFlag(false)
@@ -85,6 +123,29 @@ TraceReader::TraceStream::open(const std::string &p, Mode mode)
     if (modeFlag == Mode::Raw) {
         rawStream.open(path, std::ios::binary);
         return rawStream.is_open();
+    }
+
+    if (modeFlag == Mode::Zstd) {
+        // In-process streaming decompression via libzstd (already a
+        // mandatory dependency in SConstruct). No fork/exec, no dependency
+        // on a zstd binary being present in PATH.
+        zstdState = new ZstdState();
+        zstdState->input = std::fopen(path.c_str(), "rb");
+        if (!zstdState->input) {
+            delete zstdState;
+            zstdState = nullptr;
+            return false;
+        }
+        zstdState->dstream = ZSTD_createDStream();
+        if (!zstdState->dstream ||
+            ZSTD_isError(ZSTD_initDStream(zstdState->dstream))) {
+            delete zstdState;
+            zstdState = nullptr;
+            return false;
+        }
+        zstdState->inBuf.resize(ZSTD_DStreamInSize());
+        zstdState->outBuf.resize(ZSTD_DStreamOutSize());
+        return true;
     }
 
     int fds[2];
@@ -163,7 +224,62 @@ TraceReader::TraceStream::close()
         waitpid(pipePid, nullptr, 0);
         pipePid = -1;
     }
+    if (zstdState) {
+        delete zstdState;
+        zstdState = nullptr;
+    }
     eofFlag = false;
+}
+
+/** Produce more decompressed bytes in the zstd output window. Returns
+ *  false (and sets eofFlag) once the compressed stream is exhausted or a
+ *  decompression error occurs. */
+bool
+TraceReader::TraceStream::zstdRefill()
+{
+    auto *zs = zstdState;
+    if (!zs) {
+        return false;
+    }
+
+    while (zs->outPos >= zs->outEnd) {
+        // Refill the compressed input staging buffer when drained.
+        if (!zs->inputFinished && zs->inPos >= zs->inSize) {
+            zs->inPos = 0;
+            zs->inSize = std::fread(zs->inBuf.data(), 1, zs->inBuf.size(),
+                                    zs->input);
+            if (zs->inSize < zs->inBuf.size()) {
+                if (std::feof(zs->input)) {
+                    zs->inputFinished = true;
+                } else if (std::ferror(zs->input)) {
+                    eofFlag = true;
+                    return false;
+                }
+            }
+        }
+
+        if (zs->inputFinished && zs->inPos >= zs->inSize) {
+            // Compressed input fully consumed and no decompressed output
+            // left: end of stream.
+            eofFlag = true;
+            return false;
+        }
+
+        ZSTD_inBuffer in{zs->inBuf.data(), zs->inSize, zs->inPos};
+        ZSTD_outBuffer out{zs->outBuf.data(), zs->outBuf.size(), 0};
+        const size_t ret = ZSTD_decompressStream(zs->dstream, &out, &in);
+        if (ZSTD_isError(ret)) {
+            eofFlag = true;
+            return false;
+        }
+        zs->inPos = in.pos;
+        zs->outEnd = out.pos;
+        zs->outPos = 0;
+        // ret == 0 means one frame was fully flushed; concatenated frames
+        // keep working because the next iteration feeds more input. With no
+        // input left, the loop exits through the EOF path above.
+    }
+    return true;
 }
 
 bool
@@ -177,6 +293,23 @@ TraceReader::TraceStream::readExact(void *dst, size_t size)
         auto got = rawStream.gcount();
         eofFlag = rawStream.eof();
         return got == static_cast<std::streamsize>(size);
+    }
+
+    if (modeFlag == Mode::Zstd) {
+        size_t done = 0;
+        while (done < size) {
+            if (zstdState->outPos < zstdState->outEnd) {
+                const size_t avail = zstdState->outEnd - zstdState->outPos;
+                const size_t n = std::min(size - done, avail);
+                std::memcpy(reinterpret_cast<char*>(dst) + done,
+                            &zstdState->outBuf[zstdState->outPos], n);
+                zstdState->outPos += n;
+                done += n;
+            } else if (!zstdRefill()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     size_t n = std::fread(dst, 1, size, pipeHandle);
@@ -209,7 +342,11 @@ TraceReader::TraceStream::seek(std::streampos pos)
 bool
 TraceReader::TraceStream::isOpen() const
 {
-    return (modeFlag == Mode::Raw) ? rawStream.is_open() : pipeHandle != nullptr;
+    if (modeFlag == Mode::Raw)
+        return rawStream.is_open();
+    if (modeFlag == Mode::Zstd)
+        return zstdState && zstdState->input;
+    return pipeHandle != nullptr;
 }
 
 std::streampos
@@ -573,7 +710,10 @@ TraceReader::TraceReaderStats::TraceReaderStats(statistics::Group *parent,
       ADD_STAT(storeInstr, statistics::units::Count::get(),
                "Number of store instructions encountered"),
       ADD_STAT(bufferUnderruns, statistics::units::Count::get(),
-               "Number of times buffer was empty when instruction requested")
+               "Number of times buffer was empty when instruction requested"),
+      ADD_STAT(mixedEncodingPc, statistics::units::Count::get(),
+               "Records whose PC was previously seen with a different "
+               "encoding (TRACERTL dual-encoding artifact)")
 {
 }
 
@@ -721,6 +861,17 @@ createTraceReader(const std::string &format, const std::string &trace_file,
                                                            addrSize,
                                                            pageAlign,
                                                            parent);
+        return reader;
+    } else if (format == "tracertl" || format == "nemu") {
+        // "nemu" is accepted as an alias: the TRACERTL TraceInstruction
+        // dump format is produced by the NEMU-based transform pipeline.
+        auto reader = std::make_unique<TraceRTLTraceReader>(trace_file, name,
+                                                            addrMapMode,
+                                                            addrBase,
+                                                            addrSize,
+                                                            pageAlign,
+                                                            parent);
+        reader->setAddressMapping(addrBase, addrSize, addrMapMode, pageAlign);
         return reader;
     } else {
         // Debug output removed temporarily

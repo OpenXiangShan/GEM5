@@ -113,6 +113,13 @@ class TraceInstruction
     /** Instruction size in bytes (e.g., 2 for compressed, 4 for standard) */
     uint8_t instSizeBytes;
 
+    /** Raw instruction encoding carried by the trace itself (when
+     *  available). Some formats (e.g., TRACERTL/NEMU) record the real
+     *  instruction bits; when present these are authoritative and bypass
+     *  the synthetic encoding path in TraceFetch. */
+    uint32_t instBits;
+    bool hasInstBits;
+
     /** Additional metadata */
     bool valid;
 
@@ -127,7 +134,7 @@ class TraceInstruction
         ctrlFlowChange(false), hasCtrlFlowTarget(false), ctrlFlowTarget(0),
         isLoad(false), isStore(false),
         seqNum(0), piece(0), hasImmediateOperand(false), immediateValue(0),
-        instSizeBytes(4),
+        instSizeBytes(4), instBits(0), hasInstBits(false),
         valid(false), lastInTrace(false) {}
 
     /** Constructor with basic fields */
@@ -138,7 +145,7 @@ class TraceInstruction
         isLoad(_type == InstType::LOAD),
         isStore(_type == InstType::STORE),
         seqNum(_seqNum), piece(0), hasImmediateOperand(false), immediateValue(0),
-        instSizeBytes(4),
+        instSizeBytes(4), instBits(0), hasInstBits(false),
         valid(true), lastInTrace(false)
     {
         isBranch = (_type == InstType::COND_BRANCH ||
@@ -173,6 +180,10 @@ class TraceInstruction
     // Additional getters for O3CPU
     bool getHasImmediateOperand() const { return hasImmediateOperand; }
     uint64_t getImmediateValue() const { return immediateValue; }
+
+    // Raw instruction encoding carried by the trace (if any)
+    bool hasRawInstBits() const { return hasInstBits; }
+    uint32_t getInstBits() const { return instBits; }
 
     bool isLastInTrace() const { return lastInTrace; }
 
@@ -242,6 +253,12 @@ class TraceInstruction
         hasImmediateOperand = true;
     }
 
+    /** Attach the real instruction encoding recorded in the trace. */
+    void setInstBits(uint32_t bits) {
+        instBits = bits;
+        hasInstBits = true;
+    }
+
     /** Reset instruction to invalid state */
     void reset() {
         pc = 0;
@@ -267,6 +284,8 @@ class TraceInstruction
         hasImmediateOperand = false;
         immediateValue = 0;
         instSizeBytes = 4;
+        instBits = 0;
+        hasInstBits = false;
         valid = false;
         lastInTrace = false;
     }

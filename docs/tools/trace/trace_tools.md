@@ -252,6 +252,50 @@ python3 util/xs_scripts/trace/distributed_trace_scheduler.py \
 - 若工作目录下某任务已存在 `completed` 标记，调度器会跳过该任务并在控制台输出 `[SKIP]`；取消后重启时不会重复跑已完成的任务。
 - Ctrl-C 中断时会尝试向已派发任务的远端 PID 发送 `kill -TERM`，并在任务目录标记 `abort`。
 
+### 1.6 TRACERTL/NEMU 格式（`tracertl`）：`run_trace_tracertl.sh` + `gen_tracertl_workloads.sh`
+
+**格式**：48 B/条小端记录，无文件头；zstd 压缩（magic `28 B5 2F FD` 探测，不看后缀）或裸文件。每条记录自带**真实 RV64 指令编码**（`instr` 字段），reader 通过 `--trace-format=tracertl`（别名 `nemu`）接入，编码直喂 decoder 以保留指令 mix、功能单元与延迟。
+
+**单条运行（自动探测 warm-up/sample 边界）**
+
+```bash
+TRACE_FORMAT=tracertl \
+XS_WARMUP_INSTS_NO_SWITCH=22511010 \
+XS_MAX_INSTS=44001143 \
+bash util/xs_scripts/trace/run_trace_tracertl.sh \
+  /nfs/home/zhangzifei/external-trace/gwt-v2-nemu-format-simpoint-interval/arizona/128/_128_0.6_.trace.zstd
+```
+
+不设置 `XS_WARMUP_INSTS_NO_SWITCH`/`XS_MAX_INSTS` 时，脚本自动从同名 `<trace>.trace.log` 解析：
+
+- `Warmup Interval from 20000000 to 22511010` → `--warmup-insts-no-switch=22511010`
+- `Sampling Interval from 20000000 to 21490133` → `--maxinsts=22511010+21490133`
+
+log 行的口径：`from X` 是该段的 **x86 源条目数**，`to Y` 才是**转换后（RISC-V）记录数**——只有 `to` 与 gem5 reader 的指令计数同口径（`W_to + S_to == "Total Transformed" == 48B 记录总数`），切勿用 `to − from` 做差。**不要**使用 log 里的 `Decompressed size` 字段（生成器按 56B/条记账，与实际 48B 布局不符）。
+
+**批量：生成 workload 列表 + parallel_trace_sim.sh**
+
+```bash
+bash util/xs_scripts/trace/gen_tracertl_workloads.sh \
+  /nfs/home/zhangzifei/external-trace/gwt-v2-nemu-format-simpoint-interval workloads.lst
+
+TRACE_FORMAT=tracertl \
+bash util/xs_scripts/trace/parallel_trace_sim.sh \
+  util/xs_scripts/trace/run_trace_tracertl.sh workloads.lst \
+  /nfs/home/zhangzifei/external-trace/gwt-v2-nemu-format-simpoint-interval tracertl_gwt_v2
+```
+
+**已知偏差清单（对照 RTL TraceRTL，结果解读时必须考虑）**
+
+1. **访存地址不驱动执行**：与 ChampSim/CBP 相同，load/store 地址由 gem5 实际执行产生，trace 地址只用于 commit 阶段比对。cache 行为与 RTL（直接用 trace 地址）存在系统性差异——memory 相关结论需另行立项（LSQ 注入 trace 地址）。
+2. **分支 imm=0**：TRACERTL transform 把所有分支/跳转立即数写 0，真实目标在 `target` 字段，由 IEW/decode 的 trace nextPC 覆盖驱动。若某些路径未覆盖会 PC 错乱（表现为 commit difftest panic，fail-fast）。
+3. **同 PC 双编码**（约 15/49 区间）：`pc_discontinuity` 占位记录（NOP `0x33` + exception）与后续真实编码并存，可能给 commit difftest / BPU 训练带来噪声；reader 统计 `traceReader.stats.mixedEncodingPc`。
+4. **`pc_pa`/`mem_pa` 不可用**：前者恒 0，后者为脏数据；reader 只消费 `va`。
+5. **warm-up 语义差异**：RTL 侧 warm-up 跑 TraceDedup 快速热身，gem5 只能"跑满指令后 reset stats"，两者非严格等价。
+6. **压缩流回滚成本**：zstd 无法随机 seek，超窗回滚 = 重解压；性能实验建议先 `zstd -d -k` 解压成裸文件（Raw 模式 fseek 回滚）。
+7. **RVC 不支持**（v1）：本语料 100% 32 位编码；遇到 16 位编码会告警并回退 4 字节合成编码。
+8. **地址映射窗口**：trace 真实 VA 跨度极大（code `0x5606…`、heap `0x733d…`、stack `0x7ffd…`），默认 1 GB linear 窗口存在别名压缩；如需精细对齐，扫描 `traceAddrSize`（1G/2G/4G）× `hash/linear`。
+
 ---
 
 ## 2. 监控与统计

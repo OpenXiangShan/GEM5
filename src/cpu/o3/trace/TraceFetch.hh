@@ -215,6 +215,10 @@ class TraceFetch
     Addr traceAddrSize = 0;
     /** Whether to train BP and use real branch instructions in trace mode */
     bool traceTrainBranches = false;
+    /** Force synthetic encoding even when the trace carries the real
+     *  instruction bits (A/B diagnostic for formats that record encodings,
+     *  e.g. tracertl). Default false: real bits are authoritative. */
+    bool traceUseSyntheticEnc = false;
     /** Whether to validate BP against trace to trigger wrong-path mode */
     bool traceBPValidation = true;
     /** Cycles to stall fetch on mispredict in trace mode */

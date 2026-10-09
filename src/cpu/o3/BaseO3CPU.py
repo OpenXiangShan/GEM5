@@ -409,7 +409,7 @@ class BaseO3CPU(BaseCPU):
     # Trace mode parameters for trace-driven simulation
     enableTraceMode = Param.Bool(False, "Enable trace-driven simulation mode")
     traceFile = Param.String("", "Path to trace file for trace-driven simulation")
-    traceFormat = Param.String("champsim", "Trace format (champsim, cbp2025)")
+    traceFormat = Param.String("champsim", "Trace format (champsim, cbp2025, tracertl)")
     enableDecoupledBPInTrace = Param.Bool(False, "Enable decoupled branch predictor in trace mode")
     traceCheckpointInterval = Param.Unsigned(64, "Checkpoint interval for trace rollback (0 disables)")
     traceBPValidation = Param.Bool(True, "Enable branch predictor validation against trace")
@@ -431,6 +431,13 @@ class BaseO3CPU(BaseCPU):
     # Trace-driven branch predictor training and control-flow modeling
     traceTrainBranches = Param.Bool(True,
         "Enable BP training and use real branch opcodes under trace mode")
+
+    # Some formats (tracertl) record the real instruction encoding per
+    # record. Default: feed the real bits to the decoder. Set to True to
+    # force the synthetic encoding path instead (A/B diagnostic).
+    traceUseSyntheticEnc = Param.Bool(False,
+        "Force synthetic instruction encoding even when the trace carries "
+        "the real encoding (tracertl); A/B diagnostic")
 
     # On a branch misprediction (predicted vs. trace ground truth), stall
     # the fetch stage for this many cycles to emulate redirect/recovery cost.

@@ -20,7 +20,7 @@ scons -j$(nproc) --gold-linker build/RISCV/gem5.opt
   --stats-file=m5out/stats.txt
 ```
 
-批量/并行脚本见 `docs/trace_tools.md`（`run_trace_champsim.sh`, `parallel_trace_sim.sh`, 分布式调度等）。
+批量/并行脚本见 `docs/trace_tools.md`（`run_trace_champsim.sh`, `parallel_trace_sim.sh`, 分布式调度等）。TRACERTL/NEMU 格式（48 B zstd 记录，自带真实 RV64 编码）用 `--trace-format=tracertl`，脚本 `util/xs_scripts/trace/run_trace_tracertl.sh` 自动从同名 `.trace.log` 解析 warm-up/sample 边界。
 
 ## 2. Trace 专用命令行参数（configs/example/kmhv3.py）
 
@@ -28,7 +28,8 @@ scons -j$(nproc) --gold-linker build/RISCV/gem5.opt
 - `--trace-timing-ptw`：**可选**，在 trace 模式下启用 timing TLB/PTW（默认关闭；使用静态页表模拟硬件 PTW 成本，不模拟 Linux 行为）。
 - `--trace-ptw-reserved-bytes=<N>`：为页表预留的物理内存大小（默认 64MiB），并从 trace 地址映射窗口尾部扣除以避免别名。
 - `--trace-ptw-page-size={4k,2m}`：静态映射页大小（默认 `4k`；`2m` 为 superpage 粗粒度映射）。
-- `--trace-file=<path>`（必需） / `--trace-format={champsim,cbp2025}`（默认 `champsim`）。
+- `--trace-file=<path>`（必需） / `--trace-format={champsim,cbp2025,tracertl}`（默认 `champsim`；`nemu` 为 `tracertl` 别名）。
+- `--trace-use-synthetic-enc`：强制合成编码，忽略 trace 自带的真实指令编码（仅 `tracertl` 有意义；A/B 诊断用，默认使用真实编码）。
 - `--warmup-insts-no-switch=<N>`：仅重置统计的 warmup（不换 CPU）。
 - `--maxinsts=<N>`：统计阶段指令数，复用通用参数。
 - `--trace-enable-decoupled-bp`：在 trace 模式下使用解耦 BP 前端。
@@ -97,6 +98,7 @@ trace mode 的地址映射可能是 modulo/线性映射，为避免 trace 地址
 
 - **ChampSim**：PC、branch flag/结果、2 dst + 4 src regs、2 dst + 4 src 地址；`.bin/.gz/.xz`。
 - **CBP2025**：分支类型+nextPC+taken、有效地址+size、寄存器依赖与值；`.gz`/raw。
+- **TRACERTL/NEMU（`tracertl`）**：48 B/条小端记录（`pc_va/pc_pa/mem_va/mem_pa/target/instr/mem_type_size/branch_type/branch_taken/exception`），zstd（magic 探测）或 raw。唯一自带**真实 RV64 编码**的格式：编码直喂 decoder，保留指令 mix 与延迟。字段注意事项与已知偏差见 `docs/tools/trace/trace_tools.md` §1.6。
 离线解析：`util/trace/dump_champsim_trace.py`（支持 `--format cbp2025`）、`util/trace/count_champsim_trace_insts.py`。
 
 ## 5. 监控与调试
