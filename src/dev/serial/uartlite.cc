@@ -11,7 +11,7 @@ namespace
  * remaining-bytes form avoids the overflow an addr + size comparison
  * could run into.
  */
-bool
+[[maybe_unused]] bool
 accessInRange(Addr pio_addr, Addr pio_size, PacketPtr pkt)
 {
     const Addr addr = pkt->getAddr();
