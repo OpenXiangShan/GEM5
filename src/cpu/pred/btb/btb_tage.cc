@@ -78,12 +78,16 @@ namespace test {
 #ifdef UNIT_TEST
 // Test constructor for unit testing mode
 BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWaysPerTable,
-                 unsigned tableSize, unsigned numBanks, bool usePathHistory)
+                 unsigned tableSize, unsigned numBanks, bool usePathHistory,
+                 bool enableShadow, unsigned shadowMaxTable)
     : TimedBaseBTBPredictor(),
       numPredictors(numPredictors),
       usePathHistory(usePathHistory),
       maxHistLen(0),
       numWays(numPredictors, numWaysPerTable),
+      enableSecondBlockShadow(enableShadow),
+      secondBlockShadowMaxTable(numPredictors == 0 ? 0 :
+          std::min(shadowMaxTable, numPredictors - 1)),
       maxBranchPositions(32),
       useAltOnNaSize(1024),
       useAltOnNaWidth(7),
@@ -123,6 +127,10 @@ histLengths(p.histLengths),
 usePathHistory(p.usePathHistory),
 maxHistLen(p.maxHistLen),
 numWays(p.numWays),
+enableSecondBlockShadow(p.enableSecondBlockShadow),
+secondBlockShadowMaxTable(
+    numPredictors == 0 ? 0 :
+    std::min(p.secondBlockShadowMaxTable, numPredictors - 1)),
 maxBranchPositions(p.maxBranchPositions),
 useAltOnNaSize(p.useAltOnNaSize),
 useAltOnNaWidth(p.useAltOnNaWidth),
@@ -150,6 +158,9 @@ tageStats(this, p.numPredictors, p.numBanks)
 
     assert(numWays.size() >= numPredictors);
     tageTable.resize(numPredictors);
+    if (enableSecondBlockShadow) {
+        secondBlockShadowTable.resize(secondBlockShadowMaxTable + 1);
+    }
     tableIndexBits.resize(numPredictors);
     tableIndexMasks.resize(numPredictors);
     tableTagBits.resize(numPredictors);
@@ -162,9 +173,15 @@ tageStats(this, p.numPredictors, p.numBanks)
         //initialize ittage predictor
         assert(tableSizes.size() >= numPredictors);
         tageTable[i].resize(tableSizes[i]);
+        if (enableSecondBlockShadow && i <= secondBlockShadowMaxTable) {
+            secondBlockShadowTable[i].resize(tableSizes[i]);
+        }
         const unsigned ways = getNumWays(i);
         for (unsigned int j = 0; j < tableSizes[i]; ++j) {
             tageTable[i][j].resize(ways);
+            if (enableSecondBlockShadow && i <= secondBlockShadowMaxTable) {
+                secondBlockShadowTable[i][j].resize(ways);
+            }
         }
 
         tableIndexBits[i] = ceilLog2(tableSizes[i]);
@@ -189,9 +206,13 @@ tageStats(this, p.numPredictors, p.numBanks)
         }
     }
     usefulResetCnt = 0;
+    secondBlockShadowUsefulResetCnt = 0;
 
-    // initialize use_alt_on_na table
+    // initialize use_alt_on_na tables
     useAlt.resize(useAltOnNaSize, 0);
+    if (enableSecondBlockShadow) {
+        secondBlockShadowUseAlt.resize(useAltOnNaSize, 0);
+    }
 #ifndef UNIT_TEST
     hasDB = true;
     switch (getDelay()) {
@@ -312,6 +333,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     bool alt_provided = false;
     TageTableInfo main_info, alt_info;
     uint64_t hit_table_mask = 0;
+    const bool shadowLookup = lookupContext && enableSecondBlockShadow;
 
     // Search from highest to lowest table for matches
     // Calculate branch position within the block (like RTL's cfiPosition)
@@ -319,9 +341,11 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     const Addr tagPC = lookupContext ? lookupContext->tagPC : startPC;
     unsigned position = getBranchIndexInBlock(btb_entry.pc, tagPC);
 
+    // One logical history hierarchy; only the low H2 tables change storage.
     for (int i = numPredictors - 1; i >= 0; --i) {
-        // Calculate index and tag: use snapshot if provided, otherwise use current folded history
-        // Tag includes position XOR (like RTL: tag = tempTag ^ cfiPosition)
+        const auto storage = shadowLookup && i <= secondBlockShadowMaxTable ?
+            TageTableInfo::Storage::SecondBlockShadow : TageTableInfo::Storage::Main;
+        const auto &tables = storageTable(storage);
         const uint64_t indexFolded = lookupContext ?
             lookupContext->indexFoldedHist[i] :
             (predMeta ? predMeta->indexFoldedHist[i].get() :
@@ -334,49 +358,31 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
             lookupContext->altTagFoldedHist[i] :
             (predMeta ? predMeta->altTagFoldedHist[i].get() :
                         state.altTagFoldedHist[i].get());
-        Addr index = getTageIndex(indexPC, i, indexFolded, asidHash, tid);
-        Addr tag = getTageTag(tagPC, i, tagFolded, altTagFolded,
-                              position, asidHash);
-
-        bool match = false; // for each table, only one way can be matched
-        TageEntry matching_entry;
-        unsigned matching_way = 0;
-
-        // Search all ways for a matching entry
-        const unsigned ways = getNumWays(i);
-        for (unsigned way = 0; way < ways; way++) {
-            auto &entry = tageTable[i][index][way];
-            // entry valid, tag match (position already encoded in tag, no need to check pc)
-            if (entry.valid && tag == entry.tag) {
-                matching_entry = entry;
-                matching_way = way;
-                match = true;
-
-                // Do not use LRU; keep logic simple and align with CBP-style replacement
-
-                DPRINTF(TAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
-                    i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, btb_entry.pc, position);
-                break;  // only one way can be matched, aviod multi hit, TODO: RTL how to do this?
+        const Addr index = getTageIndex(indexPC, i, indexFolded, asidHash, tid);
+        const Addr tag = getTageTag(tagPC, i, tagFolded, altTagFolded,
+                                    position, asidHash);
+        for (unsigned way = 0; way < getNumWays(i); ++way) {
+            const auto &entry = tables[i][index][way];
+            if (!entry.valid || entry.tag != tag) {
+                continue;
             }
-        }
-
-        if (match) {
             if (i < 64) {
-                hit_table_mask |= (1ULL << i);
+                hit_table_mask |= 1ULL << i;
             }
+            DPRINTF(TAGE, "hit storage %u table %d[%lu][%u] tag %lu ctr %d pc %#lx\n",
+                    static_cast<unsigned>(storage), i, index, way,
+                    tag, entry.counter, btb_entry.pc);
             if (!provided) {
-                // First match becomes main prediction
-                main_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way);
+                main_info = TageTableInfo(true, entry, i, index, tag, way, storage);
                 provided = true;
-            } else if (!alt_provided) {
-                // Second match becomes alternative prediction
-                alt_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way);
+            } else {
+                alt_info = TageTableInfo(true, entry, i, index, tag, way, storage);
                 alt_provided = true;
-                break;
             }
-        } else {
-            DPRINTF(TAGE, "miss table %d[%lu] for tag %lu (with pos %u), btb_pc %#lx\n",
-                i, index, tag, position, btb_entry.pc);
+            break;
+        }
+        if (alt_provided) {
+            break;
         }
     }
 
@@ -388,7 +394,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     //bool base_taken = btb_entry.ctr >= 0;
     bool alt_pred = alt_provided ? alt_taken : base_taken; // if alt provided, use alt prediction, otherwise use base
     Addr use_alt_idx = getUseAltIdx(btb_entry.pc);
-    short use_alt_ctr = useAlt[use_alt_idx];
+    const auto &useAltTable = shadowLookup ? secondBlockShadowUseAlt : useAlt;
+    short use_alt_ctr = useAltTable[use_alt_idx];
 
     // use_alt_on_na gating: when provider weak, consult per-PC counter
     bool use_alt = false;
@@ -418,9 +425,11 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     DPRINTF(TAGE, "tage final source %#lx table %d alt %d\n",
         btb_entry.pc, final_provider_table, final_provider_is_alt);
 
-    return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken,
+    auto prediction = TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken,
         alt_pred, base_taken, final_provider_table, final_provider_is_alt,
         use_alt_idx, use_alt_ctr, hit_table_mask);
+    prediction.secondBlockContext = lookupContext != nullptr;
+    return prediction;
 }
 
 /**
@@ -694,6 +703,19 @@ BTBTAGE::refreshPredictionMetaInternal(
             btb_entry, startPC, nullptr, pred.tid, pred.asidHash,
             lookupContext);
         meta->preds[btb_entry.pc] = tage_pred;
+        // Count accepted second-block metadata, not repeated checker probes.
+        if (enableSecondBlockShadow && lookupContext) {
+            tageStats.secondBlockShadowPredAccess++;
+            if (tage_pred.mainInfo.found && tage_pred.mainInfo.storage ==
+                TageTableInfo::Storage::SecondBlockShadow) {
+                tageStats.secondBlockShadowPredHit++;
+                tageStats.secondBlockShadowPredHitsByTable[
+                    tage_pred.mainInfo.table]++;
+            } else {
+                tageStats.secondBlockShadowPredMiss++;
+                tageStats.secondBlockMainPredHit += tage_pred.mainInfo.found;
+            }
+        }
 
         auto &tage_info = pred.tageInfoForMgscs[btb_entry.pc];
         tage_info.tage_pred_taken = tage_pred.taken;
@@ -736,6 +758,46 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     bool use_provider = main_info.found && !used_alt;
     bool use_alt_table = used_alt && alt_info.found;
     bool use_base_table = !use_provider && !use_alt_table;
+    const bool shadowUpdate = enableSecondBlockShadow && pred.secondBlockContext;
+    const unsigned context = pred.secondBlockContext ? 1 : 0;
+    tageStats.contextUpdateAccess[context]++;
+    tageStats.contextUpdateMispred[context] += control_mispred;
+    tageStats.contextBaseUse[context] += use_base_table;
+    tageStats.contextBaseWrong[context] +=
+        use_base_table && pred.taken != actual_taken;
+    if (main_info.found) {
+        const unsigned index = context * numPredictors + main_info.table;
+        tageStats.contextProviderHits[index]++;
+        tageStats.contextProviderMispreds[index] += control_mispred && use_provider;
+    }
+    if (shadowUpdate) {
+        tageStats.secondBlockShadowUpdateAccess++;
+        tageStats.secondBlockShadowUpdateMispred += control_mispred;
+        if (main_info.found &&
+            main_info.storage == TageTableInfo::Storage::SecondBlockShadow) {
+            tageStats.secondBlockShadowUpdateHit++;
+            tageStats.secondBlockShadowUpdateHitsByTable[main_info.table]++;
+            tageStats.secondBlockShadowUpdateMispredsByTable[main_info.table] +=
+                control_mispred && use_provider;
+        }
+    }
+    // A prediction-time shadow way can have been replaced before resolution.
+    // Never train the replacement; Main's legacy update behavior is unchanged.
+    const auto writable = [&](const TageTableInfo &info) {
+        if (!info.found) {
+            return false;
+        }
+        if (info.storage == TageTableInfo::Storage::Main) {
+            assert(!shadowUpdate || info.table > secondBlockShadowMaxTable);
+            return true;
+        }
+        const auto &current = secondBlockShadowTable[info.table][info.index][info.way];
+        if (!current.valid || current.tag != info.tag) {
+            tageStats.secondBlockShadowStaleUpdates++;
+            return false;
+        }
+        return true;
+    };
 
     tageStats.resolveBranchHasProvider += main_info.found;
     tageStats.resolveBranchUseProvider += use_provider;
@@ -762,7 +824,8 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
             tageStats.updateProviderNa++;
             Addr uidx = getUseAltIdx(entry.pc);
             bool alt_correct = (alt_taken == actual_taken);
-            updateCounter(alt_correct, useAltOnNaWidth, useAlt[uidx]);
+            auto &useAltTable = shadowUpdate ? secondBlockShadowUseAlt : useAlt;
+            updateCounter(alt_correct, useAltOnNaWidth, useAltTable[uidx]);
             tageStats.updateUseAltOnNaUpdated++;
             if (alt_correct) {
                 tageStats.updateUseAltOnNaCorrect++;
@@ -773,11 +836,12 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     }
 
     // Update main prediction provider
-    if (main_info.found) {
+    if (writable(main_info)) {
         DPRINTF(TAGE, "prediction provided by table %d, idx %lu, way %u, updating corresponding entry\n",
             main_info.table, main_info.index, main_info.way);
 
-        auto &way = tageTable[main_info.table][main_info.index][main_info.way];
+        auto &way = storageTable(main_info.storage)
+            [main_info.table][main_info.index][main_info.way];
 
         // Update prediction counter
         updateCounter(actual_taken, 3, way.counter);
@@ -795,8 +859,9 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     }
 
     // Update alternative prediction provider
-    if (used_alt && alt_info.found) {
-        auto &way = tageTable[alt_info.table][alt_info.index][alt_info.way];
+    if (used_alt && writable(alt_info)) {
+        auto &way = storageTable(alt_info.storage)
+            [alt_info.table][alt_info.index][alt_info.way];
         updateCounter(actual_taken, 3, way.counter);
         // No LRU maintenance
     }
@@ -872,6 +937,50 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     return true;
 }
 
+void
+BTBTAGE::recordAllocationResult(unsigned table, TageTableInfo::Storage storage,
+                                ThreadID tid, bool success)
+{
+    const bool shadow = storage == TageTableInfo::Storage::SecondBlockShadow;
+    const bool high = enableSecondBlockShadow && table > secondBlockShadowMaxTable;
+    const unsigned beginTable = high ? secondBlockShadowMaxTable + 1 : 0;
+    const unsigned endTable = enableSecondBlockShadow && !high ?
+        secondBlockShadowMaxTable + 1 : numPredictors;
+    auto &perThread = shadow ? secondBlockShadowUsefulResetCntByThread :
+                     high ? sharedHighUsefulResetCntByThread : usefulResetCntByThread;
+    int &global = shadow ? secondBlockShadowUsefulResetCnt :
+                  high ? sharedHighUsefulResetCnt : usefulResetCnt;
+    int &count = usesTidPartitionedStorage() ? perThread[tid] : global;
+    if (success) {
+        count = std::max(0, count - 1);
+        return;
+    }
+    ++count;
+    // Service a fully blocked domain before allocation enters the next one.
+    if (table + 1 != endTable || count < 256) {
+        return;
+    }
+    count = 0;
+    auto &tables = storageTable(storage);
+    for (unsigned ti = beginTable; ti < endTable; ++ti) {
+        const unsigned begin = partitionBegin(tables[ti].size(), tid);
+        const unsigned end = partitionEnd(tables[ti].size(), tid);
+        for (unsigned set = begin; set < end; ++set) {
+            for (auto &entry : tables[ti][set]) {
+                entry.useful = false;
+            }
+        }
+    }
+    tageStats.updateResetU++;
+    if (shadow) {
+        tageStats.secondBlockShadowResetU++;
+    } else if (high) {
+        tageStats.sharedHighResetU++;
+    } else if (enableSecondBlockShadow) {
+        tageStats.mainLowResetU++;
+    }
+}
+
 /**
  * @brief Handle allocation of new entries
  * 
@@ -892,8 +1001,8 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                                  uint8_t asidHash,
                                  ThreadID tid,
                                  AllocationTraceInfo &allocInfo) {
-    int &resetCnt = usesTidPartitionedStorage() ?
-        usefulResetCntByThread[tid] : usefulResetCnt;
+    const bool secondBlock = meta->hasSecondBlockContext;
+    const unsigned context = secondBlock ? 1 : 0;
     // Match RTL victim priority:
     // 1) invalid way
     // 2) weak and not-useful way
@@ -908,6 +1017,12 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
     unsigned position = getBranchIndexInBlock(entry.pc, tagPC);
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
+        const bool shadow = enableSecondBlockShadow && secondBlock &&
+                            ti <= secondBlockShadowMaxTable;
+        const auto storage = shadow ? TageTableInfo::Storage::SecondBlockShadow :
+                                      TageTableInfo::Storage::Main;
+        auto &tables = storageTable(storage);
+        const unsigned statIndex = context * numPredictors + ti;
         const uint64_t indexFolded = meta->hasSecondBlockContext ?
             meta->secondBlockContext.indexFoldedHist[ti] :
             meta->indexFoldedHist[ti].get();
@@ -922,7 +1037,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         Addr newTag = getTageTag(tagPC, ti, tagFolded, altTagFolded,
                                  position, asidHash);
 
-        auto &set = tageTable[ti][newIndex];
+        auto &set = tables[ti][newIndex];
 
         const unsigned ways = getNumWays(ti);
 
@@ -969,28 +1084,23 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
             allocInfo.victimCounter = victim.counter;
             allocInfo.victimUseful = victim.useful;
             allocInfo.victimPC = victim.pc;
+            tageStats.contextAllocSuccess[statIndex]++;
+            tageStats.contextEvictions[statIndex] += victim.valid;
+            if (shadow) {
+                tageStats.secondBlockShadowAllocSuccess++;
+                tageStats.secondBlockShadowEvictions += victim.valid;
+            }
             set[selected_way] = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
             tageStats.updateAllocSuccess++;
-            resetCnt = resetCnt <= 0 ? 0 : resetCnt - 1;
+            recordAllocationResult(ti, storage, tid, true);
             return true;
         }
         tageStats.updateAllocFailure++;
-        resetCnt++;
-    }
-
-    if (resetCnt >= 256) {
-        resetCnt = 0;
-        tageStats.updateResetU++;
-        DPRINTF(TAGE, "reset useful bit of all entries\n");
-        for (auto &table : tageTable) {
-            const unsigned begin = partitionBegin(table.size(), tid);
-            const unsigned end = partitionEnd(table.size(), tid);
-            for (unsigned index = begin; index < end; ++index) {
-                for (auto &way : table[index]) {
-                    way.useful = false;
-                }
-            }
+        tageStats.contextAllocFailure[statIndex]++;
+        if (shadow) {
+            tageStats.secondBlockShadowAllocFailure++;
         }
+        recordAllocationResult(ti, storage, tid, false);
     }
 
     DPRINTF(TAGE, "no eligible way found for allocation starting from table %d\n", start_table);
@@ -1574,7 +1684,59 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(condCorrect, statistics::units::Count::get(), "number of conditional branch correct predictions committed"),
     ADD_STAT(condMissNoTakens, statistics::units::Count::get(), "number of conditional branch correct predictions committed with no prediction"),
     ADD_STAT(predHit, statistics::units::Count::get(), "number of conditional branch predictions that hit"),
-    ADD_STAT(predMiss, statistics::units::Count::get(), "number of conditional branch predictions that miss")
+    ADD_STAT(predMiss, statistics::units::Count::get(), "number of conditional branch predictions that miss"),
+    ADD_STAT(secondBlockShadowPredAccess, statistics::units::Count::get(),
+        "accepted H2 conditional metadata lookups with shadow enabled"),
+    ADD_STAT(secondBlockShadowPredHit, statistics::units::Count::get(),
+        "accepted H2 lookups with a shadow provider"),
+    ADD_STAT(secondBlockShadowPredMiss, statistics::units::Count::get(),
+        "accepted H2 lookups without a shadow provider"),
+    ADD_STAT(secondBlockShadowUpdateAccess, statistics::units::Count::get(),
+        "H2 conditional updates with shadow enabled"),
+    ADD_STAT(secondBlockShadowUpdateHit, statistics::units::Count::get(),
+        "H2 updates with a shadow provider"),
+    ADD_STAT(secondBlockShadowUpdateMispred, statistics::units::Count::get(),
+        "H2 control mispredictions with shadow enabled"),
+    ADD_STAT(secondBlockShadowAllocSuccess, statistics::units::Count::get(),
+        "successful shadow allocations"),
+    ADD_STAT(secondBlockShadowAllocFailure, statistics::units::Count::get(),
+        "shadow tables without an eligible victim"),
+    ADD_STAT(secondBlockMainPredHit, statistics::units::Count::get(),
+        "accepted H2 hybrid lookups with a shared high-table provider"),
+    ADD_STAT(secondBlockShadowEvictions, statistics::units::Count::get(),
+        "valid shadow entries replaced by allocation"),
+    ADD_STAT(secondBlockShadowResetU, statistics::units::Count::get(),
+        "shadow useful reset sweeps"),
+    ADD_STAT(secondBlockShadowStaleUpdates, statistics::units::Count::get(),
+        "shadow provider or alternate updates skipped after tag replacement"),
+    ADD_STAT(contextUpdateAccess, statistics::units::Count::get(),
+        "resolved conditional accesses: H1, H2"),
+    ADD_STAT(contextUpdateMispred, statistics::units::Count::get(),
+        "resolved control mispredictions: H1, H2"),
+    ADD_STAT(contextBaseUse, statistics::units::Count::get(),
+        "resolved base-source uses: H1, H2"),
+    ADD_STAT(contextBaseWrong, statistics::units::Count::get(),
+        "resolved base-source direction errors: H1, H2"),
+    ADD_STAT(contextProviderHits, statistics::units::Count::get(),
+        "provider hits: H1 T0..Tn then H2 T0..Tn"),
+    ADD_STAT(contextProviderMispreds, statistics::units::Count::get(),
+        "provider-used control mispredictions: H1 T0..Tn then H2 T0..Tn"),
+    ADD_STAT(secondBlockShadowPredHitsByTable, statistics::units::Count::get(),
+        "accepted H2 shadow providers by table"),
+    ADD_STAT(secondBlockShadowUpdateHitsByTable, statistics::units::Count::get(),
+        "H2 shadow providers at update by table"),
+    ADD_STAT(secondBlockShadowUpdateMispredsByTable, statistics::units::Count::get(),
+        "H2 shadow provider-used control mispredictions by table"),
+    ADD_STAT(contextAllocSuccess, statistics::units::Count::get(),
+        "allocations: H1 T0..Tn then H2 T0..Tn"),
+    ADD_STAT(contextAllocFailure, statistics::units::Count::get(),
+        "tables without an eligible victim: H1 T0..Tn then H2 T0..Tn"),
+    ADD_STAT(contextEvictions, statistics::units::Count::get(),
+        "valid allocation victims: H1 T0..Tn then H2 T0..Tn"),
+    ADD_STAT(mainLowResetU, statistics::units::Count::get(),
+        "main low-table useful sweeps with H2 shadow enabled"),
+    ADD_STAT(sharedHighResetU, statistics::units::Count::get(),
+        "shared high-table useful sweeps with H2 shadow enabled")
 {
     init(numPredictors, numBanks);
 }
@@ -1599,6 +1761,18 @@ BTBTAGE::TageStats::init(int predictors, int banks)
     resolveUseAltTable.init(numPredictors);
     mispredictUseProviderTable.init(numPredictors);
     mispredictUseAltTable.init(numPredictors);
+    contextUpdateAccess.init(2);
+    contextUpdateMispred.init(2);
+    contextBaseUse.init(2);
+    contextBaseWrong.init(2);
+    contextProviderHits.init(2 * numPredictors);
+    contextProviderMispreds.init(2 * numPredictors);
+    secondBlockShadowPredHitsByTable.init(numPredictors);
+    secondBlockShadowUpdateHitsByTable.init(numPredictors);
+    secondBlockShadowUpdateMispredsByTable.init(numPredictors);
+    contextAllocSuccess.init(2 * numPredictors);
+    contextAllocFailure.init(2 * numPredictors);
+    contextEvictions.init(2 * numPredictors);
 
     updateBankConflictPerBank.init(numBanks);
     updateAccessPerBank.init(numBanks);

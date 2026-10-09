@@ -53,7 +53,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Test constructor
     BTBTAGE(unsigned numPredictors = 4, unsigned numWays = 2,
             unsigned tableSize = 1024, unsigned numBanks = 4,
-            bool usePathHistory = true);
+            bool usePathHistory = true, bool enableShadow = false,
+            unsigned shadowMaxTable = 1);
 #else
     // Production constructor
     typedef BTBTAGEParams Params;
@@ -82,19 +83,29 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Contains information about a TAGE table lookup
     struct TageTableInfo
     {
-        public:
-            bool found;     // Whether a matching entry was found
-            TageEntry entry; // The matching entry
-            unsigned table; // Which table this entry was found in
-            Addr index;     // Index in the table
-            Addr tag;       // Tag that was matched
-            unsigned way;    // Which way this entry was found in
-            TageTableInfo() : found(false), table(0), index(0), tag(0), way(0) {}
-            TageTableInfo(bool found, TageEntry entry, unsigned table, Addr index, Addr tag, unsigned way) :
-                        found(found), entry(entry), table(table), index(index), tag(tag), way(way) {}
-            bool taken() const {
-                return entry.taken();
-            }
+        enum class Storage : uint8_t
+        {
+            Main,
+            SecondBlockShadow,
+        };
+
+        bool found;     // Whether a matching entry was found
+        TageEntry entry; // The matching entry
+        unsigned table; // Which table this entry was found in
+        Addr index;     // Index in the table
+        Addr tag;       // Tag that was matched
+        unsigned way;   // Which way this entry was found in
+        Storage storage; // Physical storage containing the entry
+        TageTableInfo() : found(false), table(0), index(0), tag(0), way(0),
+                          storage(Storage::Main) {}
+        TageTableInfo(bool found, TageEntry entry, unsigned table, Addr index,
+                      Addr tag, unsigned way,
+                      Storage storage = Storage::Main) :
+            found(found), entry(entry), table(table), index(index), tag(tag),
+            way(way), storage(storage) {}
+        bool taken() const {
+            return entry.taken();
+        }
     };
 
     // Contains the complete prediction result
@@ -112,13 +123,14 @@ class BTBTAGE : public TimedBaseBTBPredictor
             bool finalProviderIsAlt; // Whether final prediction came from alternate provider
             Addr useAltIdx;        // useAltOnNa index consulted at prediction time
             short useAltCtr;       // useAltOnNa counter value before update
-            uint64_t hitTableMask; // Bitmask of all TAGE tables that matched during lookup
+            uint64_t hitTableMask; // Provider/alternate hits in the logical hierarchy
+            bool secondBlockContext; // Lookup used block1 index/block2 tag context
 
 
             TagePrediction() : btb_pc(0), useAlt(false), taken(false), altPred(false),
-                               basePred(false),
-                               finalProviderTable(-1), finalProviderIsAlt(false),
-                               useAltIdx(0), useAltCtr(0), hitTableMask(0) {}
+                               basePred(false), finalProviderTable(-1),
+                               finalProviderIsAlt(false), useAltIdx(0), useAltCtr(0),
+                               hitTableMask(0), secondBlockContext(false) {}
 
             TagePrediction(Addr btb_pc, TageTableInfo mainInfo, TageTableInfo altInfo,
                             bool useAlt, bool taken, bool altPred,
@@ -131,8 +143,9 @@ class BTBTAGE : public TimedBaseBTBPredictor
                             finalProviderTable(finalProviderTable),
                             finalProviderIsAlt(finalProviderIsAlt),
                             useAltIdx(useAltIdx), useAltCtr(useAltCtr),
-                            hitTableMask(hitTableMask) {}
+                            hitTableMask(hitTableMask), secondBlockContext(false) {}
     };
+
 
 
 #ifndef UNIT_TEST
@@ -315,6 +328,31 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // The actual TAGE prediction tables (table x index x way)
     std::vector<std::vector<std::vector<TageEntry>>> tageTable;
+    // Optional storage used only by second-block lookups and updates.
+    bool enableSecondBlockShadow{false};
+    unsigned secondBlockShadowMaxTable{0};
+    std::vector<std::vector<std::vector<TageEntry>>> secondBlockShadowTable;
+    std::vector<short> secondBlockShadowUseAlt;
+    int secondBlockShadowUsefulResetCnt{0};
+    std::array<int, MaxThreads> secondBlockShadowUsefulResetCntByThread{};
+    // High main tables share H1/H2 allocation pressure.
+    int sharedHighUsefulResetCnt{0};
+    std::array<int, MaxThreads> sharedHighUsefulResetCntByThread{};
+
+
+    std::vector<std::vector<std::vector<TageEntry>>> &
+    storageTable(TageTableInfo::Storage storage)
+    {
+        return storage == TageTableInfo::Storage::SecondBlockShadow ?
+            secondBlockShadowTable : tageTable;
+    }
+
+    const std::vector<std::vector<std::vector<TageEntry>>> &
+    storageTable(TageTableInfo::Storage storage) const
+    {
+        return storage == TageTableInfo::Storage::SecondBlockShadow ?
+            secondBlockShadowTable : tageTable;
+    }
 
     const unsigned maxBranchPositions;  // Maximum branch positions per 64-byte block
 
@@ -324,7 +362,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     const unsigned useAltOnNaWidth;
     std::vector<short> useAlt;
 
-    // useful bit reset counter, when cnt >= 256, reset useful bit of all entries
+    // Main reset pressure: all tables if disabled, low tables in hybrid mode.
     int usefulResetCnt{0};
     std::array<int, MaxThreads> usefulResetCntByThread{};
 
@@ -473,6 +511,32 @@ class BTBTAGE : public TimedBaseBTBPredictor
 #endif
         void init(int numPredictors, int numBanks);
         void updateStatsWithTagePrediction(const TagePrediction &pred, bool when_pred);
+        Scalar secondBlockShadowPredAccess;
+        Scalar secondBlockShadowPredHit;
+        Scalar secondBlockShadowPredMiss;
+        Scalar secondBlockShadowUpdateAccess;
+        Scalar secondBlockShadowUpdateHit;
+        Scalar secondBlockShadowUpdateMispred;
+        Scalar secondBlockShadowAllocSuccess;
+        Scalar secondBlockShadowAllocFailure;
+        Scalar secondBlockMainPredHit;
+        Scalar secondBlockShadowEvictions;
+        Scalar secondBlockShadowResetU;
+        Scalar secondBlockShadowStaleUpdates;
+        Vector contextUpdateAccess;
+        Vector contextUpdateMispred;
+        Vector contextBaseUse;
+        Vector contextBaseWrong;
+        Vector contextProviderHits;
+        Vector contextProviderMispreds;
+        Vector secondBlockShadowPredHitsByTable;
+        Vector secondBlockShadowUpdateHitsByTable;
+        Vector secondBlockShadowUpdateMispredsByTable;
+        Vector contextAllocSuccess;
+        Vector contextAllocFailure;
+        Vector contextEvictions;
+        Scalar mainLowResetU;
+        Scalar sharedHighResetU;
     } ;
 
     TageStats tageStats;
@@ -546,6 +610,10 @@ private:
                                  uint8_t asidHash,
                                  ThreadID tid,
                                  AllocationTraceInfo &allocInfo);
+
+    // Account for one candidate table; reset only its physical domain.
+    void recordAllocationResult(unsigned table, TageTableInfo::Storage storage,
+                                ThreadID tid, bool success);
 
     void refreshPredictionMetaInternal(
         Addr startAddr, const boost::dynamic_bitset<> &history,

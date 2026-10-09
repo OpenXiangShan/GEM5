@@ -1069,6 +1069,12 @@ class BTBTAGE(TimedBaseBTBPredictor):
     useAltOnNaWidth = Param.Unsigned(7, "Width of the useAltOnNa table")
     numBanks = Param.Unsigned(4, "Number of banks for bank conflict simulation")
     enableBankConflict = Param.Bool(False, "Enable bank conflict simulation")
+    enableSecondBlockShadow = Param.Bool(
+        True,
+        "Isolate low second-block TAGE tables; higher tables still share MainTAGE")
+    secondBlockShadowMaxTable = Param.Unsigned(
+        1,
+        "Highest TAGE table index stored in the second-block shadow")
     numDelay = 2
 
 class BTBTAGEUpperBound(BTBTAGE):

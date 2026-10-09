@@ -312,3 +312,157 @@ Kunminghu v2 的 FTB 架构下，一个 fetch block 内最多 `2` 条 branch。�
 - `docs/design-docs/frontend/bpu_top_level.md`
 - `docs/design-docs/frontend/mbtb_design.md`
 - `docs/design-docs/images/BPU-TAGE.jpeg`
+
+## 15. H2 low-shadow / high-main experiment
+
+The `BTBTAGE.enableSecondBlockShadow` parameter (default `True`)
+isolates low-table second-block direction training. With the switch off,
+H2 continues to share every MainTAGE table. `secondBlockShadowMaxTable`
+(default `1`, inclusive) selects shadow T0 through that table; higher H2 tables
+remain shared with H1 in MainTAGE. Each shadow table inherits its main
+counterpart's sets, ways, tag width, history length and SMT index partition.
+The constructor clamps the maximum to the last main table.
+These parameters are selected before SimObject instantiation, not changed
+during simulation. Changing the table boundary between runs requires no
+recompilation; runtime resizing/state migration is not implemented.
+
+Lookup and update contract:
+
+- H1 reads, trains and allocates MainTAGE only.
+- H2 retains block1's index context and block2's tag/position context. It searches
+  one logical hierarchy longest-history-first: Main high tables, then Shadow
+  low tables. It never reads Main low tables, even on a shadow miss. Provider
+  and alternate may cross the storage boundary. Weak providers still use the
+  normal alternate/base selection rule.
+- H2 trains provider/alternate counters and useful bits in their recorded
+  storage. Allocation starts at `provider.table + 1` (T0 on a miss), including
+  across the shadow/main boundary. A highest-table provider cannot allocate.
+- H2 has independent use-alt-on-na state. Useful-reset pressure and sweeps have
+  three domains: Main low, Shadow low, and shared Main high. Each blocked table
+  increments its domain's pressure; success decrements only its own domain.
+  At the end of a failed domain scan, pressure >=256 triggers a sweep, even if
+  the next domain subsequently allocates. With shadow disabled, Main retains
+  its original unified reset domain. Partitioned SMT sweeps touch only the
+  updating thread's partition.
+- Prediction-time shadow metadata checks the live tag before training so an
+  overwritten way is not trained as the old entry. Main updates retain their
+  legacy behavior.
+
+This is a storage-interference experiment, not a cycle-accurate extra SRAM port
+model: predictor latency, bank-conflict policy, PairTAGE generation, checker,
+FTQ admission and recovery timing remain unchanged. It preserves the causal
+chain from isolated training to prediction quality and pipeline recovery, but
+does not charge extra read ports, tag compare delay or energy. The existing
+table/index/way arrays and storage-tagged provider metadata are reused. Lookup
+and allocation each scan at most `sum(numWays)` entries across the logical
+tables, without allocating lookup-time storage. Useful reset retains the
+occasional table sweep, scoped to one domain; ordinary pressure accounting is
+constant-time per candidate table.
+
+Run matched profiles with `configs/example/idealkmhv3.py`:
+
+```sh
+# Shared: explicitly disable shadow (omitting the option now enables T0/T1).
+--param='system.cpu[0].branchPred.tage.enableSecondBlockShadow=False'
+# T0 only:
+--param='system.cpu[0].branchPred.tage.secondBlockShadowMaxTable=0'
+# T0 and T1: default, or set explicitly:
+--param='system.cpu[0].branchPred.tage.secondBlockShadowMaxTable=1'
+```
+
+Configure the SimObject parameters directly or through `--param`; there is no
+dedicated shadow CLI option. For example, isolate T0 through T2 with
+`--param='system.cpu[0].branchPred.tage.secondBlockShadowMaxTable=2'`.
+In the ideal configuration, T0/T1 add 8,192 entries, each with 13 tag bits,
+3 counter bits, valid and useful (18 KiB logical entry payload total), plus
+128 seven-bit use-alt counters. Simulator bookkeeping is not hardware area.
+
+Statistics under `system.cpu.branchPred.tage`:
+
+- `secondBlockShadowPredAccess`, `secondBlockShadowPredHit`,
+  `secondBlockShadowPredMiss`, and `secondBlockMainPredHit` count refreshed
+  accepted H2 conditional metadata, **not** every checker probe or committed
+  branch. `PredAccess = PredHit + PredMiss`; `secondBlockMainPredHit` is the
+  subset with a shared high-table provider, not necessarily the final source
+  when it is weak. `PredMiss` includes high-main and base providers; it does not
+  mean all shadow tables physically missed. The obsolete shadow-only fallback
+  counter is removed, not aliased to this new meaning.
+- `secondBlockShadowUpdateAccess`, `secondBlockShadowUpdateHit`, and
+  `secondBlockShadowUpdateMispred` count resolved H2 events.
+  The `*HitsByTable` vectors classify provider hits, not all matching tables;
+  `*UpdateMispredsByTable` counts control mispredictions when that provider is used.
+- `secondBlockShadowAllocSuccess/AllocFailure/Evictions/ResetU/StaleUpdates`
+  distinguish successful insertions, table-level blocked allocations, valid
+  victims, useful sweeps and skipped stale provider/alternate writes.
+- `contextUpdateAccess`, `contextUpdateMispred`, `contextBaseUse`, and
+  `contextBaseWrong` split H1/H2 at vector indices 0/1 even with shadow disabled.
+  `contextProviderHits` and `contextProviderMispreds` use indices
+  `context * numPredictors + table`. Existing aggregate TAGE counters include
+  both storage domains. These are update/control counters, not commit MPKI.
+- `contextAllocSuccess`, `contextAllocFailure`, and `contextEvictions` use the
+  same context/table indexing for insertions, blocked candidate tables and valid
+  victims. `mainLowResetU`, `secondBlockShadowResetU`, and `sharedHighResetU`
+  distinguish the three enabled-mode reset domains; `updateResetU` includes all.
+
+Compare identical checkpoint, binary, configuration, warmup and measured ROI;
+use cycles, total branch errors, recovery bubbles and Two-Taken enqueue alongside
+shadow hit/eviction/reset counters. A lower TAGE blame count alone is not proof
+of better direction prediction. The hybrid retains trainable long-history H2
+providers but changes low-table capacity, reset pressure and H2 use-alt state;
+it is not an equal-area design comparison.
+PairTAGE's `secondBlockAccuracy` measures agreement with the checker teacher,
+not execution-ground-truth accuracy; both predictors can agree on a wrong path.
+
+The earlier shadow-only implementation gave all shadow hits priority, used Main
+only as a read-only fallback, and prohibited high-table H2 allocation. Its
+five-slice SPEC06 experiment (gobmk_nngs_23480, astar_rivers_8610, omnetpp_18492,
+mcf_6753, perlbench_splitmail_4191; 20M warmup + 20M ROI) lowered H1 resolved
+control-misprediction counts but increased H2 counts and cycles. That experiment
+also removed trainable long-history providers, so it did not isolate low-table
+pollution. The hybrid replaces that behavior rather than adding a legacy mode.
+The feature is now enabled by default with T0/T1 shadow; explicitly disable it
+for Shared baselines. Do not extrapolate selected slices to a weighted suite
+score. Historical experiment manifests below predate this default change.
+
+The replacement hybrid was evaluated with the same five checkpoints and
+20M warmup + 20M ROI, with difftest and memory dedup enabled. All 15 matched
+runs passed. Relative cycles versus the same binary's Shared profile:
+
+| Slice | T0 hybrid | T0/T1 hybrid |
+|---|---:|---:|
+| gobmk_nngs_23480 | -0.811% | -1.013% |
+| astar_rivers_8610 | -0.013% | -0.264% |
+| omnetpp_18492 | -0.436% | +0.065% |
+| mcf_6753 | -0.271% | -0.624% |
+| perlbench_splitmail_4191 | -0.003% | +0.055% |
+
+T0/T1 hybrid restores H2 high-table learning: T2+ supply 50.91%, 60.99%,
+77.25%, 83.19%, and 99.99% of H2 provider hits in the rows above. For astar,
+H2 control-error rate is 1.918% versus Shared's 1.974%, rather than the earlier
+shadow-only 8.83%. H1 does not improve uniformly: astar H1 errors increase
+0.553%, while gobmk and mcf H1/H2 errors both decrease. Accepted Two-Taken
+counts change +0.928%, -0.235%, -0.468%, -0.848%, and -0.009%; the observed
+gains are not a broad increase in enqueue bandwidth.
+
+High-table contention remains: gobmk T2+ blocked candidate-table allocations
+increase from 41,922 to 74,045, despite fewer valid evictions (137,301 to
+122,562). These are table-level failures, not lost branches or a direct cycle
+cost. The run exhausting all candidate tables occurs once in each profile.
+Use domain counters to distinguish this pressure from prediction errors.
+
+Artifacts and the reproducible runner are under
+`../out/gem5/h2-hybrid-2026-10-08/`: `manifest.json`, `comparison.csv`,
+`deltas.csv`, `config-comparisons.json`, and per-profile logs/raw stats.
+The Shared omnetpp result differs by -0.284% from the previous binary despite
+equal configuration; historical comparisons are not matched-binary evidence.
+Same-binary full-ROI omnetpp repeats confirm run-to-run variability: Shared
+cycles change 13,325,796 -> 13,361,224; T0 hybrid 13,267,652 -> 13,371,541;
+T0/T1 hybrid 13,334,454 -> 13,266,780. Relative to repeated Shared, the hybrid
+deltas become +0.077% and -0.707%, respectively, reversing both initial signs.
+Do not interpret either initial omnetpp delta as a reliable win or regression;
+the cause of this variability was not established. Repeat evidence is in
+`repeat-omnetpp/comparison.json`; all three repeats pass the same exit/difftest
+and ROI checks.
+The 69-test TAGE target, including 38 hybrid/update-mode cases, and a checkpoint
+smoke exercise cross-domain learning and reset isolation. No extra port/latency
+cost is modeled and no weighted SPEC06Int score has been measured.

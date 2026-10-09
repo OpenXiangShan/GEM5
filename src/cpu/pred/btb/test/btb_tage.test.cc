@@ -647,6 +647,575 @@ TEST_F(BTBTAGETest, SecondBlockLookupUsesH1IndexAndH2Tag)
     EXPECT_TRUE(secondMeta->preds.at(secondEntry.pc).taken);
 }
 
+class SecondBlockShadowTest : public ::testing::TestWithParam<bool>
+{
+  protected:
+    BTBTAGE tage{4, 1, 64, 4, true, true, 1};
+    boost::dynamic_bitset<> history{64, 0};
+    const Addr block1Start = 0x1000;
+    // The two blocks alias in the set index, so the seeded Main entry is
+    // also a normal H1 provider for block2 with this zero-history context.
+    const Addr block2Start = 0x1080;
+    BTBEntry branch = createBTBEntry(0x1080, true, true, 1);
+    BTBTAGE::SecondBlockLookupContext context;
+    ThreadID tid = 0;
+    using Storage = BTBTAGE::TageTableInfo::Storage;
+
+    void SetUp() override
+    {
+        tage.updateOnRead = GetParam();
+        context = tage.makeSecondBlockLookupContext(
+            FullBTBPrediction{}, block1Start, block2Start, 0, 0, &history);
+    }
+
+    Addr index(unsigned table) const
+    {
+        return tage.getTageIndex(
+            context.indexPC, table, context.indexFoldedHist[table], 0, tid);
+    }
+
+    Addr tag(unsigned table) const
+    {
+        return tage.getTageTag(
+            context.tagPC, table, context.tagFoldedHist[table],
+            context.altTagFoldedHist[table],
+            tage.getBranchIndexInBlock(branch.pc, context.tagPC));
+    }
+
+    void install(bool shadow, unsigned table, short counter, bool useful)
+    {
+        auto &tables = shadow ? tage.secondBlockShadowTable : tage.tageTable;
+        auto &entry = tables[table][index(table)][0];
+        entry = BTBTAGE::TageEntry(tag(table), counter, branch.pc);
+        entry.useful = useful;
+    }
+
+    std::shared_ptr<BTBTAGE::TageMeta> predictSecond()
+    {
+        FullBTBPrediction pred;
+        pred.tid = tid;
+        pred.bbStart = block2Start;
+        pred.btbEntries = {branch};
+        tage.refreshSecondBlockPredictionMeta(
+            block2Start, history, pred, context);
+        return std::static_pointer_cast<BTBTAGE::TageMeta>(
+            tage.getPredictionMeta(tid));
+    }
+
+    std::shared_ptr<BTBTAGE::TageMeta> predictFirst()
+    {
+        FullBTBPrediction pred;
+        pred.tid = tid;
+        pred.bbStart = block2Start;
+        pred.btbEntries = {branch};
+        tage.refreshPredictionMeta(block2Start, history, pred);
+        return std::static_pointer_cast<BTBTAGE::TageMeta>(
+            tage.getPredictionMeta(tid));
+    }
+
+    void train(const std::shared_ptr<BTBTAGE::TageMeta> &meta, bool taken)
+    {
+        auto stream = createStream(block2Start, branch, meta);
+        stream.tid = tid;
+        tage.update(PredictionUpdateContext(stream),
+                    createPreparedUpdate(stream, branch, taken,
+                        meta->preds.at(branch.pc).taken != taken));
+    }
+
+    void expectMainUnchanged(
+        const std::vector<std::vector<std::vector<BTBTAGE::TageEntry>>> &before)
+    {
+        for (unsigned table = 0; table < tage.numPredictors; ++table) {
+            for (unsigned set = 0; set < tage.tableSizes[table]; ++set) {
+                const auto &old = before[table][set][0];
+                const auto &now = tage.tageTable[table][set][0];
+                EXPECT_EQ(now.valid, old.valid);
+                EXPECT_EQ(now.tag, old.tag);
+                EXPECT_EQ(now.pc, old.pc);
+                EXPECT_EQ(now.counter, old.counter);
+                EXPECT_EQ(now.useful, old.useful);
+            }
+        }
+    }
+
+    // Each domain has its own pressure counter, shared between H1 and H2
+    // only for Main's high tables. Seed all sets to expose over-wide sweeps.
+    enum ResetDomain { MainLow, ShadowLow, SharedHigh };
+
+    int &resetCounter(ResetDomain domain, bool partitioned, ThreadID thread)
+    {
+        switch (domain) {
+          case MainLow:
+            return partitioned ? tage.usefulResetCntByThread[thread] :
+                                 tage.usefulResetCnt;
+          case ShadowLow:
+            return partitioned ?
+                tage.secondBlockShadowUsefulResetCntByThread[thread] :
+                tage.secondBlockShadowUsefulResetCnt;
+          case SharedHigh:
+            return partitioned ? tage.sharedHighUsefulResetCntByThread[thread] :
+                                 tage.sharedHighUsefulResetCnt;
+        }
+        ADD_FAILURE() << "Unknown reset domain";
+        return tage.usefulResetCnt;
+    }
+
+    void fillProtected(bool partitioned, ThreadID thread)
+    {
+        tid = thread;
+        tage.setSmtTidPartitioned(partitioned);
+        context = tage.makeSecondBlockLookupContext(
+            FullBTBPrediction{}, block1Start, block2Start, tid, 0, &history);
+        for (auto *tables : {&tage.tageTable, &tage.secondBlockShadowTable}) {
+            for (unsigned table = 0; table < tables->size(); ++table) {
+                for (auto &set : (*tables)[table]) {
+                    set[0] = BTBTAGE::TageEntry(tag(table) ^ 1, 2, branch.pc + 2);
+                    set[0].useful = true;
+                }
+            }
+        }
+        for (auto domain : {MainLow, ShadowLow, SharedHigh}) {
+            resetCounter(domain, false, 0) = 17;
+            resetCounter(domain, true, 0) = 17;
+            resetCounter(domain, true, 1) = 17;
+        }
+    }
+
+    void expectResetSweep(ResetDomain domain, bool highAllocation = false)
+    {
+        for (bool shadow : {false, true}) {
+            const auto &tables = shadow ? tage.secondBlockShadowTable :
+                                          tage.tageTable;
+            for (unsigned table = 0; table < tables.size(); ++table) {
+                const auto entryDomain = shadow ? ShadowLow :
+                    (table <= tage.secondBlockShadowMaxTable ? MainLow : SharedHigh);
+                const unsigned begin = tage.partitionBegin(tables[table].size(), tid);
+                const unsigned end = tage.partitionEnd(tables[table].size(), tid);
+                for (unsigned set = 0; set < tables[table].size(); ++set) {
+                    const bool reset = entryDomain == domain &&
+                                       set >= begin && set < end;
+                    const bool allocated = highAllocation && !shadow &&
+                                           table == 2 && set == index(2);
+                    EXPECT_EQ(tables[table][set][0].useful, !reset && !allocated)
+                        << "shadow=" << shadow << " table=" << table
+                        << " set=" << set << " tid=" << tid;
+                }
+            }
+        }
+    }
+
+    void checkResetIsolation(ResetDomain domain, bool partitioned,
+                             ThreadID thread, bool highAllocation = false)
+    {
+        fillProtected(partitioned, thread);
+        resetCounter(domain, partitioned, tid) = 254;
+        if (domain == SharedHigh) {
+            // Start strictly above the shadow boundary: only high pressure.
+            install(true, 1, 2, true);
+        }
+        if (highAllocation) {
+            tage.tageTable[2][index(2)][0].useful = false;
+        }
+        const auto meta = domain == MainLow ? predictFirst() : predictSecond();
+        ASSERT_TRUE(meta->preds.at(branch.pc).taken);
+        train(meta, false);
+
+        expectResetSweep(domain, highAllocation);
+        for (auto other : {MainLow, ShadowLow, SharedHigh}) {
+            const int expected = other == domain ? 0 :
+                (other == SharedHigh ? (highAllocation ? 16 : 19) : 17);
+            EXPECT_EQ(resetCounter(other, partitioned, tid), expected);
+            if (partitioned) {
+                EXPECT_EQ(resetCounter(other, true, 1 - tid), 17);
+                EXPECT_EQ(resetCounter(other, false, 0), 17);
+            } else {
+                EXPECT_EQ(resetCounter(other, true, 0), 17);
+                EXPECT_EQ(resetCounter(other, true, 1), 17);
+            }
+        }
+        if (highAllocation) {
+            const auto &learned = tage.tageTable[2][index(2)][0];
+            EXPECT_TRUE(learned.valid);
+            EXPECT_EQ(learned.tag, tag(2));
+            EXPECT_EQ(learned.counter, -1);
+            EXPECT_EQ(learned.pc, branch.pc);
+        }
+    }
+};
+
+TEST_P(SecondBlockShadowTest, ConflictingLowTrainingPreservesH1MainLow)
+{
+    install(false, 1, 2, true);
+    install(false, 0, 1, false);
+    install(true, 1, -2, false);
+    const auto mainBefore = tage.tageTable;
+    const auto useAltBefore = tage.useAlt;
+    ASSERT_TRUE(predictFirst()->preds.at(branch.pc).taken);
+
+    for (unsigned iteration = 0; iteration < 8; ++iteration) {
+        const auto meta = predictSecond();
+        ASSERT_FALSE(meta->preds.at(branch.pc).taken);
+        train(meta, false);
+    }
+
+    CondTakens h2;
+    tage.lookupSecondBlockNoSideEffect(context, {branch}, h2);
+    ASSERT_EQ(h2.size(), 1U);
+    EXPECT_FALSE(h2.front().second);
+    EXPECT_TRUE(predictFirst()->preds.at(branch.pc).taken);
+    expectMainUnchanged(mainBefore);
+    EXPECT_EQ(tage.useAlt, useAltBefore);
+    EXPECT_EQ(tage.secondBlockShadowTable[1][index(1)][0].counter, -4);
+}
+
+TEST_P(SecondBlockShadowTest, MainHighWinsOverShadowLowAndTrainsSharedProvider)
+{
+    install(false, 2, 2, false);
+    install(true, 1, -2, false);
+    auto meta = predictSecond();
+    const auto &pred = meta->preds.at(branch.pc);
+    ASSERT_TRUE(pred.mainInfo.found);
+    EXPECT_EQ(pred.mainInfo.table, 2U);
+    EXPECT_EQ(pred.mainInfo.storage, Storage::Main);
+    ASSERT_TRUE(pred.altInfo.found);
+    EXPECT_EQ(pred.altInfo.table, 1U);
+    EXPECT_EQ(pred.altInfo.storage, Storage::SecondBlockShadow);
+    ASSERT_TRUE(pred.taken);
+    CondTakens results;
+    tage.lookupSecondBlockNoSideEffect(context, {branch}, results);
+    ASSERT_EQ(results.size(), 1U);
+    EXPECT_TRUE(results.front().second);
+
+    train(meta, true);
+    EXPECT_EQ(tage.tageTable[2][index(2)][0].counter, 3);
+    EXPECT_TRUE(tage.tageTable[2][index(2)][0].useful);
+    EXPECT_EQ(tage.secondBlockShadowTable[1][index(1)][0].counter, -2);
+}
+
+TEST_P(SecondBlockShadowTest, SelectedShadowAlternateTrainsItsOwnStorage)
+{
+    install(false, 2, 0, false);
+    install(false, 1, 2, true);
+    install(true, 1, -2, false);
+    const auto useAltBefore = tage.useAlt;
+    auto meta = predictSecond();
+    const auto &pred = meta->preds.at(branch.pc);
+    ASSERT_EQ(pred.mainInfo.storage, Storage::Main);
+    ASSERT_EQ(pred.mainInfo.table, 2U);
+    ASSERT_EQ(pred.altInfo.storage, Storage::SecondBlockShadow);
+    ASSERT_EQ(pred.altInfo.table, 1U);
+    ASSERT_TRUE(pred.useAlt);
+    ASSERT_FALSE(pred.taken);
+
+    train(meta, false);
+    EXPECT_EQ(tage.tageTable[2][index(2)][0].counter, -1);
+    EXPECT_EQ(tage.secondBlockShadowTable[1][index(1)][0].counter, -3);
+    EXPECT_EQ(tage.tageTable[1][index(1)][0].counter, 2);
+    EXPECT_TRUE(tage.tageTable[1][index(1)][0].useful);
+    EXPECT_EQ(tage.useAlt, useAltBefore);
+    EXPECT_EQ(tage.secondBlockShadowUseAlt[pred.useAltIdx], 1);
+}
+
+TEST_P(SecondBlockShadowTest, SelectedMainHighAlternateAlsoTrains)
+{
+    install(false, 3, 0, false);
+    install(false, 2, -2, false);
+    install(true, 1, 2, true);
+    const auto meta = predictSecond();
+    const auto &pred = meta->preds.at(branch.pc);
+    ASSERT_EQ(pred.mainInfo.table, 3U);
+    ASSERT_EQ(pred.altInfo.table, 2U);
+    ASSERT_EQ(pred.altInfo.storage, Storage::Main);
+    ASSERT_TRUE(pred.useAlt);
+    ASSERT_FALSE(pred.taken);
+
+    train(meta, false);
+    EXPECT_EQ(tage.tageTable[3][index(3)][0].counter, -1);
+    EXPECT_EQ(tage.tageTable[2][index(2)][0].counter, -3);
+    EXPECT_EQ(tage.secondBlockShadowTable[1][index(1)][0].counter, 2);
+}
+
+TEST_P(SecondBlockShadowTest, MissingShadowAlternateUsesBaseNotMainLow)
+{
+    branch.ctr = -1;
+    install(false, 2, 0, false);
+    install(false, 1, 2, true);
+    const auto meta = predictSecond();
+    const auto &pred = meta->preds.at(branch.pc);
+    ASSERT_TRUE(pred.mainInfo.found);
+    ASSERT_EQ(pred.mainInfo.table, 2U);
+    EXPECT_FALSE(pred.altInfo.found);
+    EXPECT_TRUE(pred.useAlt);
+    EXPECT_FALSE(pred.taken);
+    EXPECT_EQ(pred.finalProviderTable, -1);
+    train(meta, false);
+    EXPECT_EQ(tage.tageTable[2][index(2)][0].counter, -1);
+    EXPECT_EQ(tage.tageTable[1][index(1)][0].counter, 2);
+}
+
+TEST_P(SecondBlockShadowTest, ShadowMissDoesNotReadMainLow)
+{
+    branch.ctr = -1;
+    install(false, 1, 2, true);
+    install(false, 0, 2, true);
+    ASSERT_TRUE(predictFirst()->preds.at(branch.pc).taken);
+    const auto meta = predictSecond();
+    const auto &pred = meta->preds.at(branch.pc);
+    EXPECT_FALSE(pred.mainInfo.found);
+    EXPECT_FALSE(pred.altInfo.found);
+    EXPECT_FALSE(pred.taken);
+    EXPECT_EQ(pred.finalProviderTable, -1);
+    CondTakens results;
+    tage.lookupSecondBlockNoSideEffect(context, {branch}, results);
+    ASSERT_EQ(results.size(), 1U);
+    EXPECT_FALSE(results.front().second);
+    const auto mainBefore = tage.tageTable;
+    train(meta, false);
+    expectMainUnchanged(mainBefore);
+}
+
+TEST_P(SecondBlockShadowTest, ShadowT1MispredictAllocatesMainT2)
+{
+    install(true, 1, 2, true);
+    install(false, 1, -2, true);
+    const auto meta = predictSecond();
+    ASSERT_EQ(meta->preds.at(branch.pc).mainInfo.table, 1U);
+    ASSERT_TRUE(meta->preds.at(branch.pc).taken);
+    train(meta, false);
+
+    const auto &learned = tage.tageTable[2][index(2)][0];
+    EXPECT_TRUE(learned.valid);
+    EXPECT_EQ(learned.tag, tag(2));
+    EXPECT_EQ(learned.pc, branch.pc);
+    EXPECT_EQ(learned.counter, -1);
+    EXPECT_FALSE(learned.useful);
+    EXPECT_EQ(tage.secondBlockShadowTable[1][index(1)][0].counter, 1);
+    EXPECT_FALSE(tage.secondBlockShadowTable[0][index(0)][0].valid);
+    EXPECT_EQ(tage.tageTable[1][index(1)][0].counter, -2);
+    EXPECT_FALSE(tage.tageTable[3][index(3)][0].valid);
+}
+
+TEST_P(SecondBlockShadowTest, CrossBoundaryAllocationKeepsH1IndexAndH2Tag)
+{
+    // Distinct folded contexts expose accidentally using live H1 history.
+    for (unsigned table = 0; table < tage.numPredictors; ++table) {
+        context.indexFoldedHist[table] = 3;
+        context.tagFoldedHist[table] = 5;
+        context.altTagFoldedHist[table] = 2;
+    }
+    install(true, 1, 2, true);
+    const Addr liveIndex = tage.getTageIndex(block2Start, 2);
+    ASSERT_NE(index(2), liveIndex);
+    const auto meta = predictSecond();
+    ASSERT_EQ(meta->preds.at(branch.pc).mainInfo.table, 1U);
+    ASSERT_TRUE(meta->preds.at(branch.pc).taken);
+    train(meta, false);
+
+    const auto &learned = tage.tageTable[2][index(2)][0];
+    EXPECT_TRUE(learned.valid);
+    EXPECT_EQ(learned.tag, tag(2));
+    EXPECT_EQ(learned.counter, -1);
+    EXPECT_FALSE(tage.tageTable[2][liveIndex][0].valid);
+}
+
+TEST_P(SecondBlockShadowTest, MainT2MispredictAllocatesMainT3)
+{
+    install(false, 2, 2, true);
+    const auto meta = predictSecond();
+    ASSERT_EQ(meta->preds.at(branch.pc).mainInfo.table, 2U);
+    ASSERT_TRUE(meta->preds.at(branch.pc).taken);
+    train(meta, false);
+
+    const auto &learned = tage.tageTable[3][index(3)][0];
+    EXPECT_TRUE(learned.valid);
+    EXPECT_EQ(learned.tag, tag(3));
+    EXPECT_EQ(learned.pc, branch.pc);
+    EXPECT_EQ(learned.counter, -1);
+    EXPECT_EQ(tage.tageTable[2][index(2)][0].counter, 1);
+    for (unsigned table = 0; table <= 1; ++table) {
+        EXPECT_FALSE(tage.secondBlockShadowTable[table][index(table)][0].valid);
+        EXPECT_FALSE(tage.tageTable[table][index(table)][0].valid);
+    }
+}
+
+TEST_P(SecondBlockShadowTest, HighestMainT3MispredictNeverAllocates)
+{
+    install(false, 3, 2, true);
+    const auto meta = predictSecond();
+    ASSERT_EQ(meta->preds.at(branch.pc).mainInfo.table, 3U);
+    ASSERT_TRUE(meta->preds.at(branch.pc).taken);
+    train(meta, false);
+
+    EXPECT_EQ(tage.tageTable[3][index(3)][0].counter, 1);
+    for (unsigned table = 0; table < 3; ++table) {
+        EXPECT_FALSE(tage.tageTable[table][index(table)][0].valid);
+        if (table <= 1) {
+            EXPECT_FALSE(tage.secondBlockShadowTable[table][index(table)][0].valid);
+        }
+    }
+    EXPECT_EQ(tage.usefulResetCnt, 0);
+    EXPECT_EQ(tage.secondBlockShadowUsefulResetCnt, 0);
+    EXPECT_EQ(tage.sharedHighUsefulResetCnt, 0);
+}
+
+TEST_P(SecondBlockShadowTest, StaleProviderCannotTrainReplacementShadowTag)
+{
+    branch.ctr = -1;
+    install(true, 1, 2, false);
+    auto meta = predictSecond();
+    ASSERT_TRUE(meta->preds.at(branch.pc).taken);
+    auto &replacement = tage.secondBlockShadowTable[1][index(1)][0];
+    replacement = BTBTAGE::TageEntry(tag(1) ^ 1, 1, branch.pc + 2);
+
+    train(meta, true);
+
+    EXPECT_EQ(replacement.tag, tag(1) ^ 1);
+    EXPECT_EQ(replacement.counter, 1);
+    EXPECT_FALSE(replacement.useful);
+}
+
+TEST_P(SecondBlockShadowTest, StaleAltCannotTrainReplacementShadowTag)
+{
+    branch.ctr = -1;
+    install(true, 1, 0, false);
+    install(true, 0, -2, false);
+    auto meta = predictSecond();
+    ASSERT_FALSE(meta->preds.at(branch.pc).taken);
+    auto &replacement = tage.secondBlockShadowTable[0][index(0)][0];
+    replacement = BTBTAGE::TageEntry(tag(0) ^ 1, 1, branch.pc + 2);
+
+    train(meta, false);
+
+    EXPECT_EQ(replacement.tag, tag(0) ^ 1);
+    EXPECT_EQ(replacement.counter, 1);
+    EXPECT_FALSE(replacement.useful);
+}
+
+TEST_P(SecondBlockShadowTest, StaleCrossDomainAltCannotTrainReplacementShadowTag)
+{
+    branch.ctr = -1;
+    install(false, 2, 0, false);
+    install(true, 1, -2, false);
+    const auto meta = predictSecond();
+    ASSERT_EQ(meta->preds.at(branch.pc).mainInfo.storage, Storage::Main);
+    ASSERT_EQ(meta->preds.at(branch.pc).altInfo.storage,
+              Storage::SecondBlockShadow);
+    ASSERT_TRUE(meta->preds.at(branch.pc).useAlt);
+    ASSERT_FALSE(meta->preds.at(branch.pc).taken);
+    auto &replacement = tage.secondBlockShadowTable[1][index(1)][0];
+    replacement = BTBTAGE::TageEntry(tag(1) ^ 1, 1, branch.pc + 2);
+
+    train(meta, false);
+    EXPECT_EQ(replacement.tag, tag(1) ^ 1);
+    EXPECT_EQ(replacement.counter, 1);
+    EXPECT_FALSE(replacement.useful);
+    EXPECT_EQ(tage.tageTable[2][index(2)][0].counter, -1);
+}
+
+TEST_P(SecondBlockShadowTest, ShadowLowResetPreservesMainLowHighAndOtherThread)
+{
+    for (bool partitioned : {false, true}) {
+        for (ThreadID thread : {0, 1}) {
+            checkResetIsolation(ShadowLow, partitioned, thread);
+        }
+    }
+}
+
+TEST_P(SecondBlockShadowTest, MainLowResetPreservesShadowHighAndOtherThread)
+{
+    for (bool partitioned : {false, true}) {
+        for (ThreadID thread : {0, 1}) {
+            checkResetIsolation(MainLow, partitioned, thread);
+        }
+    }
+}
+
+TEST_P(SecondBlockShadowTest, H2HighResetPreservesBothLowDomainsAndOtherThread)
+{
+    for (bool partitioned : {false, true}) {
+        for (ThreadID thread : {0, 1}) {
+            checkResetIsolation(SharedHigh, partitioned, thread);
+        }
+    }
+}
+
+TEST_P(SecondBlockShadowTest, LowExhaustionResetsBeforeSuccessfulHighAllocation)
+{
+    for (auto domain : {MainLow, ShadowLow}) {
+        for (bool partitioned : {false, true}) {
+            for (ThreadID thread : {0, 1}) {
+                checkResetIsolation(domain, partitioned, thread, true);
+            }
+        }
+    }
+}
+
+TEST_P(SecondBlockShadowTest, SuccessfulLowAllocationDecrementsOnlyItsDomain)
+{
+    for (auto domain : {MainLow, ShadowLow}) {
+        for (bool partitioned : {false, true}) {
+            for (ThreadID thread : {0, 1}) {
+                fillProtected(partitioned, thread);
+                auto &tables = domain == MainLow ? tage.tageTable :
+                                                   tage.secondBlockShadowTable;
+                tables[0][index(0)][0].useful = false;
+                const auto meta = domain == MainLow ? predictFirst() : predictSecond();
+                ASSERT_TRUE(meta->preds.at(branch.pc).taken);
+                train(meta, false);
+
+                EXPECT_EQ(tables[0][index(0)][0].tag, tag(0));
+                EXPECT_EQ(tables[0][index(0)][0].counter, -1);
+                for (auto other : {MainLow, ShadowLow, SharedHigh}) {
+                    EXPECT_EQ(resetCounter(other, partitioned, tid),
+                              other == domain ? 16 : 17);
+                    if (partitioned) {
+                        EXPECT_EQ(resetCounter(other, true, 1 - tid), 17);
+                        EXPECT_EQ(resetCounter(other, false, 0), 17);
+                    }
+                }
+            }
+        }
+    }
+}
+
+TEST_P(SecondBlockShadowTest, H1AndH2AccumulateSharedHighResetPressure)
+{
+    for (bool partitioned : {false, true}) {
+        for (ThreadID thread : {0, 1}) {
+            fillProtected(partitioned, thread);
+            install(false, 1, 2, true);
+            install(true, 1, 2, true);
+            resetCounter(SharedHigh, partitioned, tid) = 253;
+
+            auto first = predictFirst();
+            ASSERT_EQ(first->preds.at(branch.pc).mainInfo.table, 1U);
+            ASSERT_TRUE(first->preds.at(branch.pc).taken);
+            train(first, false);
+            EXPECT_EQ(resetCounter(SharedHigh, partitioned, tid), 255);
+            EXPECT_TRUE(tage.tageTable[2][index(2)][0].useful);
+            EXPECT_TRUE(tage.tageTable[3][index(3)][0].useful);
+
+            auto second = predictSecond();
+            ASSERT_EQ(second->preds.at(branch.pc).mainInfo.table, 1U);
+            ASSERT_EQ(second->preds.at(branch.pc).mainInfo.storage,
+                      Storage::SecondBlockShadow);
+            ASSERT_TRUE(second->preds.at(branch.pc).taken);
+            train(second, false);
+            EXPECT_EQ(resetCounter(SharedHigh, partitioned, tid), 0);
+            EXPECT_EQ(resetCounter(MainLow, partitioned, tid), 17);
+            EXPECT_EQ(resetCounter(ShadowLow, partitioned, tid), 17);
+            if (partitioned) {
+                EXPECT_EQ(resetCounter(SharedHigh, true, 1 - tid), 17);
+                EXPECT_EQ(resetCounter(SharedHigh, false, 0), 17);
+            }
+            expectResetSweep(SharedHigh);
+        }
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(UpdateModes, SecondBlockShadowTest,
+                         ::testing::Bool());
+
 // Test main and alternative prediction mechanism by direct setup
 TEST_F(BTBTAGETest, MainAltPredictionBehavior) {
     // Create a branch entry for testing
