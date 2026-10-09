@@ -79,7 +79,7 @@ PdbTest::send()
         } else if (a.operation == "shared_read") {
             cmd = MemCmd::ReadSharedReq;
         } else if (a.operation == "store") {
-            cmd = MemCmd::WriteReq;
+            cmd = a.bytes == 64 ? MemCmd::WriteLineReq : MemCmd::WriteReq;
             std::vector<bool> mask(64, false);
             std::fill_n(mask.begin(), a.bytes, true);
             req->setByteEnable(mask);
@@ -116,14 +116,6 @@ PdbTest::response(PacketPtr pkt)
 {
     panic_if(pkt != pending || pkt->isError(), "Unexpected PDB test response");
     const auto &a = actions[next];
-    if (pkt->isSbufferReplay()) {
-        panic_if(++replayCount > 100, "PDB Store replay failed to make progress");
-        pkt->cmd = MemCmd::WriteReq;
-        pkt->clearSbufferReplay();
-        pkt->clearDcacheMainPipeSbufferHit();
-        schedule(sendEvent, clockEdge(Cycles(16)));
-        return true;
-    }
     if (a.operation == "read" || a.operation == "shared_read") {
         const auto &expected = oracle[a.address];
         for (unsigned i = 0; i < 64; ++i) {
@@ -137,7 +129,6 @@ PdbTest::response(PacketPtr pkt)
     }
     delete pkt;
     pending = nullptr;
-    replayCount = 0;
     finishAction();
     return true;
 }

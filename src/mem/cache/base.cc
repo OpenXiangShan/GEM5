@@ -749,7 +749,7 @@ BaseCache::recvTimingReq(PacketPtr pkt)
     }
 
     if (level() == 1 && !isReadOnly && pkt->isDcacheMainPipeSbufferReq() &&
-        satisfied && (!pkt->isSbufferReplay() || pkt->pdbStoreMove)) {
+        satisfied) {
         pkt->setDcacheMainPipeSbufferHit();
     }
 

@@ -386,10 +386,7 @@ class Packet : public Printable
         DCACHE_MAINPIPE_SBUFFER_REQ = 0x00100000,
 
         // Record whether the fake-mainpipe StoreBuffer access hit in L1D.
-        DCACHE_MAINPIPE_SBUFFER_HIT = 0x00200000,
-
-        // Accepted StoreBuffer request that must be replayed, not completed.
-        DCACHE_SBUFFER_REPLAY = 0x00400000
+        DCACHE_MAINPIPE_SBUFFER_HIT = 0x00200000
     };
 
     Flags flags;
@@ -587,7 +584,6 @@ class Packet : public Printable
     // request through its own miss; it acquires normal dirty responsibility.
     bool pdbCleanRead = false;
     bool pdbCleanGrant = false;
-    bool pdbStoreMove = false;
     std::shared_ptr<HierarchicalDirtyState> hierarchicalDirty;
     uint64_t dirtyWriteVersion = 0;
 
@@ -858,10 +854,6 @@ class Packet : public Printable
     { return flags.isSet(DCACHE_MAINPIPE_SBUFFER_HIT); }
     void clearDcacheMainPipeSbufferHit()
     { flags.clear(DCACHE_MAINPIPE_SBUFFER_HIT); }
-
-    void setSbufferReplay() { flags.set(DCACHE_SBUFFER_REPLAY); }
-    bool isSbufferReplay() const { return flags.isSet(DCACHE_SBUFFER_REPLAY); }
-    void clearSbufferReplay() { flags.clear(DCACHE_SBUFFER_REPLAY); }
 
     void setLSQPtr(o3::LSQ *lsq) { lsqPtr = lsq; }
     o3::LSQ *getLSQPtr() const { return lsqPtr; }

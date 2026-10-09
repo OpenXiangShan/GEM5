@@ -117,10 +117,6 @@ Cache::PdbStats::PdbStats(Cache &cache)
                "Store promotions preserving Branch permission"),
       ADD_STAT(storeTrunkMoves, statistics::units::Count::get(),
                "Store promotions preserving Trunk permission"),
-      ADD_STAT(storeWholeLineMoves, statistics::units::Count::get(),
-               "Whole-line Store promotions"),
-      ADD_STAT(storeMoveReplays, statistics::units::Count::get(),
-               "Store replays caused by an unavailable PDB move"),
       ADD_STAT(duplicatePrefetches, statistics::units::Count::get(),
                "Prefetches already resident"),
       ADD_STAT(evictions, statistics::units::Count::get(), "PDB evictions"),
@@ -423,7 +419,6 @@ Cache::movePdbLineToDcache(
     moved->setWhenReady(std::max(curTick(), line->blk.getWhenReady()));
     moved->setXsMetadata(line->blk.getXsMetadata());
     moved->hierarchicalDirty = line->blk.hierarchicalDirty;
-    moved->fromPdb = true;
     if (!used) {
         moved->setPrefetched();
         line->blk.clearPrefetched();
@@ -599,7 +594,6 @@ Cache::storePrefetchFill(PacketPtr pkt, MSHR *mshr,
     auto line = std::prev(pdbLines.end());
     std::memcpy(line->data.data(), pkt->getConstPtr<uint8_t>(), blkSize);
     line->blk.hierarchicalDirty = pkt->hierarchicalDirty;
-    line->blk.fromPdb = true;
     if (!pkt->hasSharers()) {
         line->blk.setCoherenceBits(CacheBlk::WritableBit);
         ++pdbStats.trunkFills;
@@ -763,7 +757,10 @@ Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
             } else if (pkt->req->isUncacheable() ||
                        pkt->req->isCacheInvalidate()) {
                 erasePdbLine(line, &writebacks);
-            } else if (pkt->isWriteback()) {
+            } else if (pkt->isWriteback() ||
+                       pkt->cmd == MemCmd::WriteLineReq) {
+                // A full-line overwrite supersedes the PDB copy; retaining
+                // it could later issue a second CleanEvict.
                 erasePdbLine(line);
             } else if (!mshrQueue.findMatch(addr, pkt->isSecure()) &&
                        !writeBuffer.findMatch(addr, pkt->isSecure())) {
@@ -785,15 +782,8 @@ Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
                     return true;
                 }
 
-                if (pkt->cmd == MemCmd::WriteReq ||
-                    pkt->cmd == MemCmd::WriteLineReq) {
-                    // The copy is a full line, independent of the Store mask.
-                    auto move_req = std::make_shared<Request>(
-                        addr, blkSize, 0, pkt->requestorId());
-                    if (pkt->isSecure())
-                        move_req->setFlags(Request::SECURE);
-                    move_req->taskId(pkt->req->taskId());
-                    Packet transfer(move_req, MemCmd::WritebackClean, blkSize);
+                if (pkt->cmd == MemCmd::WriteReq) {
+                    Packet transfer(pkt->req, MemCmd::WritebackClean, blkSize);
                     transfer.allocate();
                     transfer.setData(line->data.data());
                     CacheBlk *promoted = allocateBlock(&transfer, writebacks);
@@ -806,12 +796,11 @@ Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
                         } else {
                             ++pdbStats.storeBranchMoves;
                         }
+                        promoted->hierarchicalDirty =
+                            line->blk.hierarchicalDirty;
                         promoted->setWhenReady(
                             std::max(curTick(), line->blk.getWhenReady()));
                         promoted->setXsMetadata(line->blk.getXsMetadata());
-                        promoted->hierarchicalDirty =
-                            line->blk.hierarchicalDirty;
-                        promoted->fromPdb = true;
                         if (line->blk.wasPrefetched()) {
                             recordPdbUse(line, false);
                             if (prefetcher) {
@@ -823,27 +812,10 @@ Cache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
                         line->blk.clearPrefetched();
                         erasePdbLine(line);
                         ++pdbStats.storeHits;
-                        pkt->pdbStoreMove = true;
-                        if (pkt->cmd == MemCmd::WriteLineReq)
-                            ++pdbStats.storeWholeLineMoves;
                     } else {
-                        ++pdbStats.storeMoveReplays;
-                    }
-                    if (pkt->isDcacheMainPipeSbufferReq()) {
-                        // Moving is not the Store. Return an accepted replay
-                        // without modifying data or consuming an MSHR.
-                        pkt->setSbufferReplay();
-                        lat = lookupLatency + dataLatency + pipeLatency;
-                        blk = nullptr;
-                        return true;
+                        erasePdbLine(line, &writebacks);
                     }
                 }
-            } else if (pkt->isDcacheMainPipeSbufferReq()) {
-                ++pdbStats.storeMoveReplays;
-                pkt->setSbufferReplay();
-                lat = lookupLatency;
-                blk = nullptr;
-                return true;
             }
         }
     }
@@ -1252,11 +1224,6 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
         // the line in Exclusive state, and invalidates all other
         // copies
         cmd = MemCmd::InvalidateReq;
-    } else if (blkValid && blk->fromPdb && needsWritable &&
-               !cpu_pkt->isLLSC()) {
-        // RTL uses AcquireBlock(BtoT) for a partial Store: get permission
-        // and GrantData. Whole-line Stores above use no-data InvalidateReq.
-        cmd = MemCmd::ReadExReq;
     } else if (blkValid && useUpgrades) {
         // only reason to be here is that blk is read only and we need
         // it to be writable
@@ -2138,16 +2105,12 @@ Cache::recvTimingSnoopReq(PacketPtr pkt)
             pkt->setBlockCached();
             return;
         }
-        if (pkt->isRead() || pkt->isInvalidate()) {
-            PacketList releases;
-            // H1 replies BtoN/TtoN even to a read Probe. An explicit
-            // CleanEvict retires the Classic holder on a non-invalidating
-            // snoop; invalidating snoops already retire it in the xbar.
-            if (pkt->isInvalidate())
-                erasePdbLine(line);
-            else
-                erasePdbLine(line, &releases);
-            doWritebacks(releases, clockEdge(forwardLatency));
+        if (pkt->isRead() && !pkt->isInvalidate()) {
+            pkt->setHasSharers();
+            line->blk.clearCoherenceBits(CacheBlk::WritableBit);
+        }
+        if (pkt->isInvalidate()) {
+            erasePdbLine(line);
             ++pdbStats.snoopInvalidations;
         }
     }
@@ -2278,13 +2241,12 @@ Cache::recvAtomicSnoop(PacketPtr pkt)
             pkt->setBlockCached();
             return lookupLatency * clockPeriod();
         }
-        if (pkt->isRead() || pkt->isInvalidate()) {
-            PacketList releases;
-            if (pkt->isInvalidate())
-                erasePdbLine(line);
-            else
-                erasePdbLine(line, &releases);
-            doWritebacksAtomic(releases);
+        if (pkt->isRead() && !pkt->isInvalidate()) {
+            pkt->setHasSharers();
+            line->blk.clearCoherenceBits(CacheBlk::WritableBit);
+        }
+        if (pkt->isInvalidate()) {
+            erasePdbLine(line);
             ++pdbStats.snoopInvalidations;
         }
     }

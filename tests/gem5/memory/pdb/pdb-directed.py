@@ -24,6 +24,7 @@ parser.add_argument("--whole", action="store_true")
 parser.add_argument("--evict-lower", action="store_true")
 parser.add_argument("--probe", action="store_true")
 parser.add_argument("--pdb-off", action="store_true")
+parser.add_argument("--owned-store", action="store_true")
 args = parser.parse_args()
 
 system = System(mem_mode="timing", mem_ranges=[AddrRange("1MiB")])
@@ -84,6 +85,14 @@ size = 64 if args.whole else 1
 actions += [
     f"cpu,store,0x1040,{size},34,100",
     "peer,read,0x1040,64,0,30",
+]
+if args.owned_store:
+    # A local write to Owned must upgrade without fetching stale lower data.
+    actions += [
+        "cpu,store,0x1040,1,51,100",
+        "cpu,read,0x1040,64,0,30",
+    ]
+actions += [
     "peer,store,0x1040,1,68,100",
     "cpu,read,0x1040,64,0,100",
 ]

@@ -123,8 +123,6 @@ class Cache : public BaseCache
         statistics::Scalar storeHits;
         statistics::Scalar storeBranchMoves;
         statistics::Scalar storeTrunkMoves;
-        statistics::Scalar storeWholeLineMoves;
-        statistics::Scalar storeMoveReplays;
         statistics::Scalar duplicatePrefetches;
         statistics::Scalar evictions;
         statistics::Scalar snoopInvalidations;

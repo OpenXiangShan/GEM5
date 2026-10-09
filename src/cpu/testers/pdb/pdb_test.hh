@@ -65,7 +65,6 @@ class PdbTest : public ClockedObject
     std::map<Addr, std::array<uint8_t, 64>> oracle;
     PacketPtr pending = nullptr;
     bool waitingRetry = false;
-    unsigned replayCount = 0;
     EventFunctionWrapper sendEvent;
 
     TestPort &currentPort();

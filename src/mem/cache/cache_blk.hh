@@ -103,7 +103,6 @@ class CacheBlk : public TaggedEntry
     uint8_t *data = nullptr;
 
     std::shared_ptr<HierarchicalDirtyState> hierarchicalDirty;
-    bool fromPdb = false;
 
     void claimDirtyOwnership(bool modified = false)
     {
@@ -198,7 +197,6 @@ class CacheBlk : public TaggedEntry
         }
         setCoherenceBits(other.coherence);
         hierarchicalDirty = std::move(other.hierarchicalDirty);
-        fromPdb = other.fromPdb;
         if (hierarchicalDirty && hierarchicalDirty->owner == &other)
             hierarchicalDirty->owner = this;
         setTaskId(other.getTaskId());
@@ -223,7 +221,6 @@ class CacheBlk : public TaggedEntry
         if (hierarchicalDirty && hierarchicalDirty->owner == this)
             hierarchicalDirty->owner = nullptr;
         hierarchicalDirty.reset();
-        fromPdb = false;
         TaggedEntry::invalidate();
 
         clearAllPrefetched();

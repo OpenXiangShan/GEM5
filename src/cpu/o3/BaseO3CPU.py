@@ -274,9 +274,6 @@ class BaseO3CPU(BaseCPU):
 
     BankConflictCheck = Param.Bool(True, "open Bank conflict check")
     sbufferBankWriteAccurately = Param.Bool(False, "Sbuffer write to memory with bank conflict check")
-    SbufferReplayDelay = Param.Cycles(
-        16, "Cycles before an accepted StoreBuffer replay can arbitrate again"
-    )
     DcacheBankBytes = Param.Unsigned(
         2,
         "Dcache bank interleave granularity in bytes for LSQ bank conflict model")
