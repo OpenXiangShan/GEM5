@@ -998,6 +998,10 @@ class Base : public ClockedObject
         /** Same-VA requests retained because they belong to other contexts. */
         statistics::Scalar trainFilterContextAliases;
 
+        /** Later cache accesses by a Load that already supplied its training
+         * opportunity. */
+        statistics::Scalar nonFirstIssueTrainFiltered;
+
         /** The number of times a HW-prefetch is late
          * (hit in cache, MSHR, WB). */
         statistics::Formula pfLate;

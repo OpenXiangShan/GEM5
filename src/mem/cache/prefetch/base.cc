@@ -308,6 +308,9 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
         "number of prefetch requests filtered before issuing"),
     ADD_STAT(trainFilterContextAliases, statistics::units::Count::get(),
         "same virtual blocks retained for different ContextIDs"),
+    ADD_STAT(nonFirstIssueTrainFiltered, statistics::units::Count::get(),
+        "load cache accesses filtered after the first prefetch training "
+        "opportunity"),
     ADD_STAT(pfLate, statistics::units::Count::get(),
         "number of late prefetches (hitting in cache, MSHR or WB)")
 {
@@ -515,6 +518,21 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
     if (hasBeenPrefetched(pkt->getAddr(), pkt->isSecure())) {
         PrefetchSourceType pf_source = cache->getHitBlkXsMetadata(pkt).prefetchSource;
         recordPrefetchUseful(pf_source, miss);
+    }
+
+    // RTL trains the L1 prefetcher once for each dynamic Load.  In this
+    // classic-cache model the notification is only available when an access
+    // reaches the cache, so retain the first such opportunity and suppress
+    // later replay accesses from the same instruction.
+    if (isLoadRequest(pkt) && pkt->req->hasXsMetadata()) {
+        auto xs_metadata = pkt->req->getXsMetadata();
+        if (xs_metadata.instXsMetadata) {
+            if (xs_metadata.instXsMetadata->prefetchTrainIssued) {
+                prefetchStats.nonFirstIssueTrainFiltered++;
+                return;
+            }
+            xs_metadata.instXsMetadata->prefetchTrainIssued = true;
+        }
     }
 
     // Verify this access type is observed by prefetcher

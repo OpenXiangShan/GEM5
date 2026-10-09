@@ -61,12 +61,15 @@ class XsDynInstMeta : public RefCounted
 {
   public:
     bool squashed;
+    bool prefetchTrainIssued;
     Addr instAddr;
     InstSeqNum seqNum;
 
   public:
-    XsDynInstMeta(): squashed(false), instAddr(0), seqNum(0) {}
-    XsDynInstMeta(InstSeqNum seq): squashed(false), instAddr(0), seqNum(seq) {}
+    XsDynInstMeta():
+        squashed(false), prefetchTrainIssued(false), instAddr(0), seqNum(0) {}
+    XsDynInstMeta(InstSeqNum seq):
+        squashed(false), prefetchTrainIssued(false), instAddr(0), seqNum(seq) {}
 };
 
 using XsDynInstMetaPtr = RefCountingPtr<XsDynInstMeta>;
