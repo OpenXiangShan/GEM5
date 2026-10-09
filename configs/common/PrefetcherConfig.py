@@ -525,6 +525,15 @@ def _configure_cdp(prefetcher, options):
         cdp.cdp_use_sv48 = options.cdp_use_sv48
 
 
+def _configure_l2_bop_cqf(prefetcher, options):
+    if not getattr(options, 'enable_bop_cqf', False):
+        return
+    prefetcher.bop_large.enable_direct_quality_gate = True
+    prefetcher.bop_large.direct_quality_kind = 1
+    prefetcher.bop_small.enable_direct_quality_gate = True
+    prefetcher.bop_small.direct_quality_kind = 2
+
+
 def _configure_l2_composite(prefetcher, prefetcher_name, options):
     if options.kmh_align:
         assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
@@ -533,6 +542,8 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
         _configure_l2_composite_default(prefetcher)
 
     _configure_cdp(prefetcher, options)
+    if prefetcher_name == 'L2CompositeWithWorkerPrefetcher':
+        _configure_l2_bop_cqf(prefetcher, options)
 
     if hasattr(options, 'l2_enable_lldp') and hasattr(prefetcher, 'enable_lldp'):
         prefetcher.enable_lldp = options.l2_enable_lldp

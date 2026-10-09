@@ -201,13 +201,13 @@ TreePLRU::instantiateEntry()
 {
     // Generate a tree instance every numLeaves created
     if (count % numLeaves == 0) {
-        treeInstance = new PLRUTree(numLeaves - 1, false);
+        treeInstance = std::make_shared<PLRUTree>(numLeaves - 1, false);
     }
 
     // Create replacement data using current tree instance
     TreePLRUReplData* treePLRUReplData = new TreePLRUReplData(
         (count % numLeaves) + numLeaves - 1,
-        std::shared_ptr<PLRUTree>(treeInstance));
+        treeInstance);
 
     // Update instance counter
     count++;

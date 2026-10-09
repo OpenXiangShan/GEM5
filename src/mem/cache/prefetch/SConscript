@@ -69,6 +69,27 @@ Source('access_map_pattern_matching.cc')
 Source('base.cc')
 Source('multi.cc')
 Source('bop.cc')
+Source('direct_quality_gate.cc')
+GTest('direct_quality_gate.test', 'direct_quality_gate.test.cc',
+      'direct_quality_gate.cc',
+      '../replacement_policies/tree_plru_rp.cc',
+      '../replacement_policies/lru_rp.cc',
+      '../../../sim/sim_object.cc',
+      '../../../sim/eventq.cc',
+      '../../../sim/cur_tick.cc',
+      '../../../sim/probe/probe.cc',
+      '../../../sim/drain.cc',
+      '../../../sim/sim_events.cc',
+      '../../../sim/global_event.cc',
+      '../../../sim/serialize.cc',
+      '../../../sim/backtrace_none.cc',
+      '../../../base/debug.cc',
+      '../../../base/trace.cc',
+      '../../../base/match.cc',
+      '../../../base/atomicio.cc',
+      '../../../base/inifile.cc',
+      '../../../base/str.cc',
+      '../../../base/stats/group.cc')
 Source('delta_correlating_prediction_tables.cc')
 Source('irregular_stream_buffer.cc')
 Source('indirect_memory.cc')

@@ -37,6 +37,7 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
     cdp->pfLRUFilter = &pfLRUFilter;
     largeBOP->filter = &pfLRUFilter;
     smallBOP->filter = &pfLRUFilter;
+    largeBOP->shareDirectQualityGateWith(*smallBOP);
     cmc->filter = &pfLRUFilter;
     despacitoStream->filter = &pfLRUFilter;
     assert(lldp);
@@ -109,6 +110,8 @@ L2CompositeWithWorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
 void
 L2CompositeWithWorkerPrefetcher::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
 {
+    if (pkt->isDemand() && pkt->isRead() && !pkt->isWrite())
+        largeBOP->notifyDirectQualityDemand(pfi.getAddr());
     WorkerPrefetcher::notify(pkt, pfi);
     Queued::notify(pkt, pfi);
 }
