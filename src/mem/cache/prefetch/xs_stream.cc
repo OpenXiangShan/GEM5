@@ -1492,8 +1492,10 @@ XsStreamPrefetcher::streamLookup(const PrefetchInfo &pfi, bool &in_active_page, 
     STREAMEntry *entry_min = stream_array.findEntry(
         contextKey(regionHashTag(vaddr_tag_num - 1), context_id), secure);
 
-    bool entry_plus_active = entry_plus && entry_plus->active;
-    bool entry_min_active = entry_min && entry_min->active;
+    bool entry_plus_active = entry_plus && entry_plus->active &&
+        entry_plus->cnt >= ACTIVETHRESHOLD;
+    bool entry_min_active = entry_min && entry_min->active &&
+        entry_min->cnt >= ACTIVETHRESHOLD;
 
     if (entry) {
         stream_array.accessEntry(entry);
