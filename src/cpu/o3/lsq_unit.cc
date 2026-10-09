@@ -272,6 +272,14 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
 {
     LSQRequest *request = dynamic_cast<LSQRequest *>(pkt->senderState);
     DynInstPtr inst = request->instruction();
+    // Record cache access depth for MLP predictor
+    // Use max to avoid overwrite by replay packet (depth=0)
+    inst->cacheAccessDepth = std::max(inst->cacheAccessDepth,
+                                       pkt->cacheAccessDepth);
+    DPRINTF(LSQUnit, "[sn:%llu] completeDataAccess: depth=%d (pkt=%d), addr=%#lx\n",
+            inst->seqNum, inst->cacheAccessDepth, pkt->cacheAccessDepth,
+            pkt->getAddr());
+
 
     // hardware transactional memory
     // sanity check
