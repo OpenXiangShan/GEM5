@@ -283,7 +283,7 @@ class Decode
 
     struct DecodeStats : public statistics::Group
     {
-        DecodeStats(CPU *cpu);
+        DecodeStats(CPU *cpu, unsigned decode_width);
 
         /** Stat for total number of idle cycles. */
         statistics::Scalar idleCycles;
