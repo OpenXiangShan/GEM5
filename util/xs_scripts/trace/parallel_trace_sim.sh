@@ -100,15 +100,35 @@ function prepare_env() {
     local task="$1"
     local task_path="$2"
 
-    # 同时匹配 gz zstd xz 以及未压缩的 champsimtrace 后缀
+    # Prefer exact relative-path matches; fuzzy substring matching can map
+    # compute_fp_1 to compute_fp_10 and silently run the wrong trace.
     local suffixes=("gz" "zstd" "xz" "champsimtrace")
     checkpoint=""
-    for suffix in "${suffixes[@]}"; do
-        checkpoint=$(find -L "${cpt_dir}" -wholename "*${task_path}*.${suffix}" | head -n 1)
-        if [[ -n "${checkpoint}" ]]; then
-            break
-        fi
-    done
+    local candidate="${cpt_dir}/${task_path}"
+    if [[ -f "${candidate}" ]]; then
+        checkpoint="${candidate}"
+    else
+        for suffix in "${suffixes[@]}"; do
+            if [[ -f "${candidate}.${suffix}" ]]; then
+                checkpoint="${candidate}.${suffix}"
+                break
+            fi
+        done
+    fi
+    if [[ -z "${checkpoint}" ]]; then
+        for suffix in "${suffixes[@]}"; do
+            checkpoint=$(find -L "${cpt_dir}" -path "*/${task_path}.${suffix}" -print -quit)
+            if [[ -n "${checkpoint}" ]]; then
+                break
+            fi
+        done
+    fi
+    if [[ -z "${checkpoint}" ]]; then
+        checkpoint=$(find -L "${cpt_dir}" -path "*/${task_path}" -print -quit)
+    fi
+    if [[ -n "${checkpoint}" && ! -f "${checkpoint}" ]]; then
+        checkpoint=""
+    fi
     echo "${checkpoint}"
 
     export work_dir="${full_work_dir}/${task}"

@@ -5,6 +5,7 @@
 #include "base/output.hh"
 #include "cpu/o3/bpu_update.hh"
 #include "cpu/o3/dyn_inst.hh"
+#include "cpu/o3/trace/TraceBranchTruth.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
 #include "debug/BTB.hh"
 #include "debug/Profiling.hh"
@@ -383,7 +384,17 @@ DecoupledBPUWithBTB::BpTrace::BpTrace(uint64_t fsqId, FetchTarget &target, const
     Addr targetpc = rv_pc.npc();
     Addr fallThru = rv_pc.getFallThruPC();
     BranchInfo info(pc, targetpc, inst->staticInst, fallThru-pc);
-    set(fsqId, target.startPC, pc, info.getType(), inst->branching(), mispred, fallThru, target.predSource, targetpc);
+    bool taken = inst->branching();
+    if (inst->hasTraceBranchInfo()) {
+        // Anchored rule (TraceBranchTruth.hh; guards the b5fefebcef
+        // port-gap): trace metadata wins over static-decode truth.
+        const auto facts = o3::TraceBranchTruth::factsFrom(*inst);
+        targetpc = o3::TraceBranchTruth::effectiveTarget(targetpc, facts);
+        o3::TraceBranchTruth::applyTraceClassification(info, facts);
+        taken = o3::TraceBranchTruth::effectiveTaken(taken, facts);
+    }
+    set(fsqId, target.startPC, pc, info.getType(), taken, mispred,
+        fallThru, target.predSource, targetpc);
     // for (auto it = _uint64_data.begin(); it != _uint64_data.end(); it++) {
     //     printf("%s: %ld\n", it->first.c_str(), it->second);
     // }
@@ -869,8 +880,17 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     const auto &rv_pc = inst->pcState().as<RiscvISA::PCState>();
     Addr targetAddr = rv_pc.npc();
     Addr fallThruPC = rv_pc.getFallThruPC();
-    BranchInfo info(branchAddr, targetAddr, inst->staticInst, fallThruPC-branchAddr);
-    bool taken = rv_pc.branching() || inst->isUncondCtrl();
+    // Anchored rule (TraceBranchTruth.hh; guards the b5fefebcef port-gap):
+    // trace metadata wins for target and taken; absent facts keep the
+    // static-decode values.
+    const auto trace_facts = inst->hasTraceBranchInfo()
+                                 ? o3::TraceBranchTruth::factsFrom(*inst)
+                                 : o3::TraceBranchTruth::TraceBranchFacts{};
+    targetAddr = o3::TraceBranchTruth::effectiveTarget(targetAddr, trace_facts);
+    BranchInfo info = makeBranchInfo(
+        branchAddr, targetAddr, inst, inst->staticInst, fallThruPC - branchAddr);
+    bool taken = o3::TraceBranchTruth::effectiveTaken(
+        rv_pc.branching() || inst->isUncondCtrl(), trace_facts);
 
     // ---------- Process misprediction and update statistics ----------
     processMisprediction(entry, branchAddr, info, taken, mispred);

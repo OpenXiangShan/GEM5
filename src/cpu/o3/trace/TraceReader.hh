@@ -108,12 +108,19 @@ class TraceReader : public statistics::Group
     virtual bool restoreCheckpoint(const TraceCheckpoint& checkpoint) = 0;
     virtual bool seekToInstruction(uint64_t instrIndex) = 0;
     virtual uint64_t getCurrentInstructionIndex() const = 0;
+    virtual bool supportsFastRandomSeek() const = 0;
+
+    /** Soft-replay history capacity. Public because it is an alignment
+     *  contract: TraceFetch's TRACE_META_GUARD must cover at least this
+     *  range (runtime-checked at initTraceMode, cross-checked by the
+     *  anchored unit tests). */
+    static constexpr size_t HISTORY_CAPACITY = 4096;
 
   protected:
     class TraceStream
     {
       public:
-        enum class Mode { Raw, Gzip, Xz };
+        enum class Mode { Raw, Gzip, Xz, Zstd };
 
         TraceStream();
         ~TraceStream();
@@ -133,6 +140,15 @@ class TraceReader : public statistics::Group
 
       private:
         static std::string escapePath(const std::string &path);
+
+        /** Refill the zstd decompression window (Mode::Zstd only). */
+        bool zstdRefill();
+
+        /** Opaque in-process zstd streaming-decompression state.
+         *  Defined in TraceReader.cc so this header stays free of <zstd.h>.
+         *  Nullptr unless the stream was opened in Mode::Zstd. */
+        struct ZstdState;
+        ZstdState *zstdState = nullptr;
 
         std::string path;
         Mode modeFlag;
@@ -156,7 +172,6 @@ class TraceReader : public statistics::Group
     uint64_t nextLogicalIndex = 1;
     bool replayActive = false;
     uint64_t replayIndex = 0;
-    static constexpr size_t HISTORY_CAPACITY = 4096;
 
     void dumpInstrBuffer(const char* tag) const;
     static constexpr size_t MAX_BUFFER_SIZE = 1024;
@@ -168,10 +183,17 @@ class TraceReader : public statistics::Group
         statistics::Scalar loadInstr;
         statistics::Scalar storeInstr;
         statistics::Scalar bufferUnderruns;
+        /** Records whose PC was previously seen with a different encoding
+         *  (TRACERTL dual-encoding artifact from pc_discontinuity NOP
+         *  placeholders; R2 known deviation). */
+        statistics::Scalar mixedEncodingPc;
 
         TraceReaderStats(statistics::Group *parent, const std::string &name);
     } stats;
 
+public:
+    // Pure address-mapping decision functions, public so the anchored unit
+    // tests (trace_addr_map.test.cc) call the production statics directly.
     static uint64_t mapAddressHash(uint64_t trace_addr,
                                    const AddrMapConfig &cfg);
     static uint64_t mapAddressLinear(uint64_t trace_addr,
@@ -183,6 +205,7 @@ class TraceReader : public statistics::Group
     static uint64_t mapTraceMemToVirtual(uint64_t trace_addr,
                                          const AddrMapConfig &cfg);
 
+protected:
     static bool isApproxFallthrough(Addr pc, Addr next_pc);
     static void reconcilePendingWithNext(TraceInstruction &pending,
                                          TraceInstruction &next,
