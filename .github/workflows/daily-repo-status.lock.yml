@@ -41,6 +41,7 @@ jobs:
           name: repo-status
           path: |
             repo-status-data.json
+            repo-status-model-response.json
             repo-status-report.md
           if-no-files-found: ignore
           retention-days: 7

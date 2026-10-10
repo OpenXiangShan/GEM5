@@ -1,5 +1,6 @@
 """Offline regression checks; no GitHub writes or paid model requests."""
 
+import json
 import unittest
 from datetime import datetime, timezone
 from unittest.mock import Mock, patch
@@ -8,6 +9,40 @@ import repo_status
 
 
 class ReportTests(unittest.TestCase):
+    def setUp(self):
+        writer = patch("repo_status.Path.write_text")
+        self.response_file = writer.start()
+        self.addCleanup(writer.stop)
+
+    @patch("repo_status.request_json")
+    def test_rejected_response_is_saved_with_specific_diagnostics(
+        self, request
+    ):
+        for content, reason, expected in (
+            ("中文" * 100, "length", "output incomplete.*length"),
+            ("An English report", "stop", "language check failed.*Chinese=0"),
+        ):
+            with self.subTest(reason=reason):
+                request.reset_mock()
+                request.return_value = {
+                    "choices": [
+                        {
+                            "finish_reason": reason,
+                            "message": {"content": content},
+                        }
+                    ],
+                    "usage": {"total_tokens": 100},
+                }
+                with self.assertRaisesRegex(RuntimeError, expected):
+                    repo_status.summarize({}, "secret-test-key")
+                request.assert_called_once()
+                saved = self.response_file.call_args.args[0]
+                self.assertNotIn("secret-test-key", saved)
+                diagnostic = json.loads(saved)
+                self.assertEqual(diagnostic["content"], content)
+                self.assertEqual(diagnostic["finish_reason"], reason)
+                self.assertEqual(diagnostic["usage"], {"total_tokens": 100})
+
     def test_pagination_advances_and_stops_at_cutoff(self):
         github = repo_status.GitHub("owner/repo", "test")
         github.call = Mock(
