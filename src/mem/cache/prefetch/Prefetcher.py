@@ -842,10 +842,59 @@ class BOPPrefetcher(QueuedPrefetcher):
 
     crossPage = Param.Bool(True, "Cross page prefetching")
     enable_adaptoffset = Param.Bool(True, "enable adapt offset")
+    enable_direct_quality_gate = Param.Bool(False,
+        "Enable the CQF admission controller for raw BOP candidates")
+    direct_quality_kind = Param.Unsigned(0,
+        "CQF kind used to isolate Large and Small BOP quality state")
+    direct_quality_entries = Param.Unsigned(256,
+        "CQF quality-table entries")
+    direct_quality_ways = Param.Unsigned(4,
+        "CQF quality-table ways")
+    direct_quality_tag_bits = Param.Unsigned(8,
+        "CQF quality-table tag bits")
+    direct_quality_feedback_entries = Param.Unsigned(256,
+        "CQF feedback-table entries")
+    direct_quality_feedback_ways = Param.Unsigned(4,
+        "CQF feedback-table ways")
+    direct_quality_feedback_tag_bits = Param.Unsigned(14,
+        "CQF feedback-table tag bits")
+    direct_quality_horizon = Param.Unsigned(2048,
+        "CQF demand-event horizon")
+    direct_quality_min_samples = Param.Unsigned(32,
+        "CQF outcomes required before changing state")
+    direct_quality_observe_sample_period = Param.Unsigned(16,
+        "CQF sampling period in OBSERVE")
+    direct_quality_open_sample_period = Param.Unsigned(16,
+        "CQF sampling period in OPEN")
+    direct_quality_block_probe_period = Param.Unsigned(64,
+        "CQF probe period for strongly blocked entries")
+    direct_quality_borderline_block_probe_period = Param.Unsigned(8,
+        "CQF probe period for borderline blocked entries")
+    direct_quality_unused_per_useful = Param.Unsigned(10,
+        "CQF unused/useful ratio for blocking")
+    direct_quality_block_guard = Param.Unsigned(4,
+        "CQF guard added to the blocking ratio")
+    direct_quality_strict_unused_per_useful = Param.Unsigned(20,
+        "CQF ratio selecting the slower blocked probe period")
+    direct_quality_strict_block_guard = Param.Unsigned(4,
+        "CQF guard selecting the slower blocked probe period")
+    direct_quality_reopen_unused_per_useful = Param.Unsigned(10,
+        "CQF unused/useful ratio for reopening")
+    direct_quality_reopen_guard = Param.Unsigned(4,
+        "CQF guard used when reopening")
+    direct_quality_decay_period = Param.Unsigned(64,
+        "CQF resolved outcomes between counter halvings")
+    direct_quality_epoch_bits = Param.Unsigned(6,
+        "CQF compact feedback epoch bits")
+    direct_quality_epoch_shift = Param.Unsigned(6,
+        "CQF demand-age bits skipped before the epoch")
+    direct_quality_epoch_timeout = Param.Unsigned(30,
+        "CQF compact feedback expiry threshold")
     victimOffsetsListSize = Param.Int(10, "The size of victimOffsetsList")
     restoreCycle = Param.Int(250000, "Cycles which Restore one offset from victimOffsetsList")
 
 class XSPhysicalSmallBOP(BOPPrefetcher):
+    direct_quality_kind = 2
     score_max = 31
     round_max = 50
     bad_score = 1
@@ -862,6 +911,7 @@ class XSPhysicalSmallBOP(BOPPrefetcher):
     ] for x in (i, -i)] + [-32]
 
 class XSVirtualLargeBOP(BOPPrefetcher):
+    direct_quality_kind = 1
     score_max = 31
     round_max = 50
     bad_score = 2
@@ -891,6 +941,7 @@ class XSVirtualLargeBOP(BOPPrefetcher):
     ]
 
 class SmallBOPPrefetcher(BOPPrefetcher):
+    direct_quality_kind = 2
     score_max = 31
     round_max = 30
     bad_score = 8

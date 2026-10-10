@@ -36,12 +36,14 @@
 #ifndef __MEM_CACHE_PREFETCH_BOP_HH__
 #define __MEM_CACHE_PREFETCH_BOP_HH__
 
+#include <memory>
 #include <queue>
 #include <set>
 #include <boost/compute/detail/lru_cache.hpp>
 
 #include "base/sat_counter.hh"
 #include "base/statistics.hh"
+#include "mem/cache/prefetch/direct_quality_gate.hh"
 #include "mem/cache/prefetch/queued.hh"
 #include "mem/packet.hh"
 
@@ -82,6 +84,9 @@ class BOP : public Queued
 
         const int victimListSize;
         const int restoreCycle;
+        const bool enableDirectQualityGate;
+        const unsigned directQualityKind;
+        std::shared_ptr<DirectQualityGate> directQualityGate;
 
         bool victimRestoreScheduled = false;
         Event *restore_event;
@@ -215,12 +220,30 @@ class BOP : public Queued
         bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                               PrefetchSourceType src);
 
+        void updateDirectQualityStats();
+
         struct BopStats : public statistics::Group
         {
             BopStats(statistics::Group *parent);
             statistics::Distribution issuedOffsetDist;
             statistics::Scalar learnOffsetCount;
             statistics::Scalar throttledCount;
+            statistics::Scalar directQualityCandidates;
+            statistics::Scalar directQualityAllowed;
+            statistics::Scalar directQualitySuppressed;
+            statistics::Scalar directQualitySampled;
+            statistics::Scalar directQualityUseful;
+            statistics::Scalar directQualityUnused;
+            statistics::Scalar directQualityFeedbackConflicts;
+            statistics::Scalar directQualityFeedbackReplacements;
+            statistics::Scalar directQualityFeedbackCoalesced;
+            statistics::Scalar directQualityNonCanonicalFeedbackCandidates;
+            statistics::Scalar directQualityNonCanonicalFeedbackDemands;
+            statistics::Scalar directQualityFeedbackExpiries;
+            statistics::Scalar directQualityUnknownDrops;
+            statistics::Scalar directQualityOrphanOutcomes;
+            statistics::Scalar directQualityStateTransitions;
+            statistics::Scalar directQualityPeakOutstanding;
         } stats;
 
     public:
@@ -241,7 +264,12 @@ class BOP : public Queued
         using Queued::calculatePrefetch;
 
         void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late);
-        
+
+        /** Share the CQF ledger between Large and Small BOP instances. */
+        void shareDirectQualityGateWith(BOP &other);
+        /** Feed one L2 demand into the CQF ledger. */
+        void notifyDirectQualityDemand(Addr paddr);
+
         bool tryAddOffset(int64_t offset, bool late = false);
 };
 
