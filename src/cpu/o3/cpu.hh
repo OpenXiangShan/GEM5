@@ -384,6 +384,11 @@ class CPU : public BaseCPU
         return fetch.isTraceEOF();
     }
 
+    /** Current trace reader position (records consumed from the stream;
+     *  replay from history does not advance it). Used by the EOF
+     *  reconciliation invariant in Commit. */
+    uint64_t getTraceReaderIndex() const { return fetch.getTraceReaderIndex(); }
+
     /**
      * Wrapper for internal drain check used by trace-mode helpers.
      * Keeps isCpuDrained() private while still allowing components

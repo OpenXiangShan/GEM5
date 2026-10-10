@@ -148,6 +148,8 @@ class ChampSimTraceReader : public TraceReader
      * @return Current instruction index
      */
     uint64_t getCurrentInstructionIndex() const override;
+    bool supportsFastRandomSeek() const override
+    { return streamMode == TraceStream::Mode::Raw; }
 
     /**
      * Configure address mapping parameters after construction
@@ -242,14 +244,6 @@ class ChampSimTraceReader : public TraceReader
     bool isGzip(const std::string &filename);
     bool isXz(const std::string &filename);
 
-    /**
-     * Estimate branch target address for a taken branch instruction
-     * Since ChampSim format doesn't provide targets directly, this method
-     * estimates reasonable targets for branch prediction validation
-     * @param cs_instr ChampSim instruction with branch information
-     * @return Estimated branch target address (0 if cannot estimate)
-     */
-    uint64_t estimateBranchTarget(const ChampSimInstr &cs_instr);
 };
 
 } // namespace o3

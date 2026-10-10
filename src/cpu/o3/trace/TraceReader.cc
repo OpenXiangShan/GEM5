@@ -631,7 +631,7 @@ TraceReader::getNextInstruction()
 
     // 3) Pop next and append to history window
     dumpInstrBuffer("before_pop");
-    TraceInstruction instr = instrBuffer.front();
+    TraceInstruction instr = std::move(instrBuffer.front());
     instrBuffer.pop();
 
     // Update statistics

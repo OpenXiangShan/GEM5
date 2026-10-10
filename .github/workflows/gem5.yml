@@ -19,6 +19,7 @@ on:
           - new_sim_script_test_gcb_multi_core
           - new_sim_script_test_gcbh
           - raw_linux_boot_test
+          - trace_micro_corpus_test
 
 permissions:
   contents: read
@@ -252,6 +253,64 @@ jobs:
           mkdir -p $GEM5_HOME/util/xs_scripts/test_h
           cd $GEM5_HOME/util/xs_scripts/test_h
           bash ../kmh_6wide_h.sh /nfs/home/share/gem5_ci/checkpoints/gcbh_test.zstd
+
+  trace_micro_corpus_test:
+    if: |
+      (github.event_name != 'workflow_dispatch' ||
+       inputs.test_job == 'all' || inputs.test_job == 'trace_micro_corpus_test') &&
+      (github.event_name != 'pull_request_target' ||
+      (github.event.label.name == 'regression' &&
+       github.event.pull_request.base.ref == 'xs-dev' &&
+       github.event.pull_request.head.repo.full_name == github.repository))
+    runs-on: [self-hosted, open]
+    continue-on-error: false
+    timeout-minutes: 30
+    name: XS-GEM5 - Trace micro-corpus regression
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
+      - uses: ./.github/actions/build-dramsim
+      - name: Build GEM5 opt
+        run: |
+          CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+      - name: Run trace micro-corpus regression
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Generate the synthetic corpora and sweep them through trace
+          # mode. Each corpus is <100 records except the long-stride pair,
+          # so the sweep finishes in seconds-to-minutes on the already
+          # built binary. fetch-stall-2000 is pinned as known-failing
+          # (pre-existing commit-watchdog liveness defect; see the corpus
+          # generator comments) and reports XFAIL; an XPASS line prompts
+          # flipping its expectation in run_micro_corpus.sh.
+          mkdir -p /tmp/trace_micro_corpus_ci
+          python3 util/xs_scripts/trace/gen_micro_corpus.py \
+            --out-dir /tmp/trace_micro_corpus_ci
+
+          bash util/xs_scripts/trace/run_micro_corpus.sh \
+            ./build/RISCV/gem5.opt \
+            /tmp/trace_micro_corpus_ci \
+            /tmp/trace_micro_corpus_ci/out
+      - name: Dump trace corpus failure details
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          echo "===== per-corpus logs ====="
+          for log in /tmp/trace_micro_corpus_ci/out/*.log; do
+            echo
+            echo "---------- $log ----------"
+            tail -n 200 "$log" || true
+          done
+
+          echo "===== panics across corpora ====="
+          grep -RniE 'panic|fatal|abort|mismatch' \
+            /tmp/trace_micro_corpus_ci/out \
+            2>/dev/null | head -100 || true
 
   raw_linux_boot_test:
     if: |

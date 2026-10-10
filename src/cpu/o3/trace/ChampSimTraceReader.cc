@@ -158,6 +158,7 @@ ChampSimTraceReader::fillBuffer(size_t max_instructions)
             max_instructions, (int)compressedLike);
 
     PendingResolveConfig resolveCfg;
+    resolveCfg.fixTakenTargetMismatch = true;
     const size_t pushed = drainPendingToBuffer(max_instructions, resolveCfg,
                                                /*markLastInTrace=*/true);
 
@@ -599,41 +600,6 @@ ChampSimTraceReader::getCurrentInstructionIndex() const
     return instructionIndex;
 }
 
-uint64_t
-ChampSimTraceReader::estimateBranchTarget(const ChampSimInstr &cs_instr)
-{
-    // Since ChampSim format doesn't provide branch targets, we estimate them
-    // This is a simplified approach for interface completeness and BP training
-
-    // For taken branches, estimate a reasonable target
-    if (cs_instr.branch_taken != 0) {
-        // Strategy 1: Simple forward offset for most branches
-        // This assumes most branches are short forward jumps (loops, conditionals)
-        uint64_t estimated_offset = 16; // Typical forward branch offset
-
-        // Strategy 2: Use PC pattern analysis for better estimation
-        // Look at PC alignment and estimate direction
-        uint64_t pc_low_bits = cs_instr.ip & 0xFF;
-        if (pc_low_bits > 0x80) {
-            // High PC bits suggest forward branch
-            estimated_offset = 32 + (pc_low_bits & 0x3F);
-        } else {
-            // Low PC bits suggest backward branch (loop)
-            estimated_offset = -(64 + (pc_low_bits & 0x1F));
-        }
-
-        uint64_t target = cs_instr.ip + estimated_offset;
-
-        DPRINTF(TraceReader, "estimateBranchTarget: PC=0x%lx taken=%d -> estimated target=0x%lx\n",
-                cs_instr.ip, cs_instr.branch_taken, target);
-
-        return target;
-    }
-
-    // For not-taken branches, target is typically fall-through (next instruction)
-    // Assume 4-byte instruction size for RISC-V
-    return cs_instr.ip + 4;
-}
 
 void
 ChampSimTraceReader::setAddressMapping(uint64_t base, uint64_t size, const std::string &mode, bool pageAlign)
