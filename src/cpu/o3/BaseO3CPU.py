@@ -168,6 +168,12 @@ class BaseO3CPU(BaseCPU):
     commitToDecodeDelay = Param.Cycles(1, "Commit to decode delay")
     fetchToDecodeDelay = Param.Cycles(3, "Fetch to decode delay")
     decodeWidth = Param.Unsigned(6, "Decode width")
+    enableDecodeFusionCompaction = Param.Bool(
+        False, "Compact fused Decode output across fetch bundles (single-thread, non-trace)")
+    decodeFusionBufferSize = Param.Unsigned(
+        40, "Raw instruction capacity of the compacting Decode input FIFO")
+    decodeFusionScanWidth = Param.Unsigned(
+        16, "Maximum raw entries examined per compacting Decode cycle")
 
     iewToRenameDelay = Param.Cycles(1, "Issue/Execute/Writeback to rename "
                                     "delay")

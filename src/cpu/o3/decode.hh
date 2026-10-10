@@ -48,6 +48,7 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/fetch.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/static_inst.hh"
 #include "cpu/timebuf.hh"
 
 namespace gem5
@@ -149,6 +150,40 @@ class Decode
   private:
 
     void checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur);
+
+    /** Common control checks, performed only after consuming the instruction. */
+    StallReason processInstControl(const DynInstPtr &inst, ThreadID tid);
+    StaticInstPtr prepareFusion(const DynInstPtr &first,
+                                const DynInstPtr &second);
+    DynInstPtr applyFusion(const DynInstPtr &first, const DynInstPtr &second,
+                          const StaticInstPtr &fused_inst);
+
+    /** The experimental path is selected once, never from active-thread count. */
+    const bool compactionEnabled;
+    const unsigned compactionScanWidth;
+    const uint64_t compactionFetchReserve;
+
+    struct CompactionEntry
+    {
+        DynInstPtr inst;
+        uint64_t bundle;
+    };
+    boost::circular_buffer<CompactionEntry> compactionBuffer;
+    uint64_t nextCompactionBundle = 0;
+
+    enum class CompactionStop
+    {
+        InputEmpty, OutputFull, ScanLimit, VectorBoundary, Serialize,
+        Redirect, BackendBlocked, Squash, NumReasons
+    };
+
+    void tickCompaction();
+    void receiveCompactionInsts();
+    void decodeCompactedInsts(unsigned &raw, unsigned &discarded,
+                              unsigned &fused, CompactionStop &stop);
+    bool canFusePair(const DynInstPtr &first, const DynInstPtr &second) const;
+    bool compactionInstInvalid(const DynInstPtr &inst) const;
+    void recordCompactionDecode(const DynInstPtr &inst);
 
     /** Updates overall decode status based on all of the threads' statuses. */
     void updateActivate();
@@ -283,7 +318,7 @@ class Decode
 
     struct DecodeStats : public statistics::Group
     {
-        DecodeStats(CPU *cpu);
+        DecodeStats(CPU *cpu, const BaseO3CPUParams &params);
 
         /** Stat for total number of idle cycles. */
         statistics::Scalar idleCycles;
@@ -336,6 +371,21 @@ class Decode
         //statistics::Distribution decodedInstsDist;
         /** Decode efficiency: actual decoded insts vs ideal width */
         statistics::Formula decodeEfficiency;
+
+        /** Experimental-path counts: raw ISA inputs and output objects differ. */
+        statistics::Scalar compactionInputInsts;
+        statistics::Scalar compactionRawInsts;
+        statistics::Scalar compactionDiscardedInsts;
+        statistics::Scalar compactionFlushedInsts;
+        statistics::Scalar compactionFusedPairs;
+        statistics::Scalar compactionOutputInsts;
+        statistics::Scalar compactionCrossBundleFusions;
+        statistics::Scalar compactionFetchBlockedCycles;
+        statistics::Distribution compactionRawPerCycle;
+        statistics::Distribution compactionOutputPerCycle;
+        statistics::Distribution compactionOccupancy;
+        statistics::Vector compactionStopReasons;
+
     } stats;
 
     std::vector<StallReason> decodeStalls;
