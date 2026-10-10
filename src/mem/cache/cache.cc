@@ -763,13 +763,15 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
         // don't need to respond now, so pop it off to prevent the loop
         // below from generating another response.
         assert(initial_tgt->pkt->cmd == MemCmd::LockedRMWReadReq);
+        PacketPtr placeholder = initial_tgt->pkt;
         mshr->popTarget();
-        delete initial_tgt->pkt;
+        delete placeholder;
         initial_tgt = nullptr;
     }
 
     MSHR::TargetList targets = mshr->extractServiceableTargets(pkt);
     for (auto &target: targets) {
+        traceTargetEvent("target_service", mshr, target, "service_dispatch");
         Packet *tgt_pkt = target.pkt;
         switch (target.source) {
           case MSHR::Target::FromCPU:

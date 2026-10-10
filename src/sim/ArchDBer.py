@@ -64,3 +64,4 @@ class ArchDBer(SimObject):
     dump_l1d_way_pre_trace = Param.Bool(False, "Dump l1d way predction trace")
     dump_vaddr_trace = Param.Bool(False, "Dump vaddr trace")
     dump_lifetime = Param.Bool(False, "Dump inst lifetime")
+    dump_causal = Param.Bool(False, "Dump PerfCCT causal events and commit spans")

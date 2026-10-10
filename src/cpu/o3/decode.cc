@@ -1148,6 +1148,8 @@ Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
     instruction->thread = inst_pair[1]->thread;
     instruction->setFtqId(inst_pair[1]->ftqId);
 
+    cpu->perfCCT->fuseInst(inst_pair[1], instruction);
+
     instruction->instListIt = cpu->instList.insert(inst_pair[0]->instListIt, instruction);
     cpu->instList.erase(inst_pair[0]->instListIt);
     cpu->instList.erase(inst_pair[1]->instListIt);

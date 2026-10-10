@@ -47,6 +47,7 @@
 #define __MEM_CACHE_MSHR_HH__
 
 #include <cassert>
+#include <functional>
 #include <iosfwd>
 #include <list>
 #include <string>
@@ -531,8 +532,16 @@ class MSHR : public QueueEntry, public Printable
     {
         DPRINTF(MSHR, "Force deallocating MSHR targets: %s\n",
                 targets.front().pkt->print());
+        if (traceTarget) {
+            traceTarget("target_remove", targets.front(), "forced_pop", nullptr);
+        }
         targets.pop_front();
     }
+
+    // Observers only see actual ownership changes, never temporary copies.
+    std::function<void(const char *, const Target &, const char *, PacketPtr)> traceTarget;
+    const TargetList &traceActiveTargets() const { return targets; }
+    const TargetList &traceDeferredTargets() const { return deferredTargets; }
 
     bool promoteDeferredTargets();
 

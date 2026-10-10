@@ -450,6 +450,9 @@ MSHR::allocateTarget(PacketPtr pkt, Tick whenReady, Counter _order,
             replaceUpgrade(pkt);
         deferredTargets.add(pkt, whenReady, _order, Target::FromCPU, true,
                             alloc_on_fill);
+        if (traceTarget) {
+            traceTarget("target_add", deferredTargets.back(), "deferred", nullptr);
+        }
     } else {
         // No request outstanding, or still OK to append to
         // outstanding request: append to regular target list.  Only
@@ -457,6 +460,9 @@ MSHR::allocateTarget(PacketPtr pkt, Tick whenReady, Counter _order,
         // (isn't in service).
         targets.add(pkt, whenReady, _order, Target::FromCPU, !inService,
                     alloc_on_fill);
+        if (traceTarget) {
+            traceTarget("target_add", targets.back(), "active", nullptr);
+        }
     }
 
     DPRINTF(MSHR, "After target allocation: %s", print());
@@ -576,6 +582,9 @@ MSHR::handleSnoop(PacketPtr pkt, Counter _order)
 
         targets.add(cp_pkt, curTick(), _order, Target::FromSnoop,
                     downstreamPending && targets.needsWritable, false);
+        if (traceTarget) {
+            traceTarget("target_add", targets.back(), "snoop", nullptr);
+        }
 
         if (pkt->needsWritable() || pkt->isInvalidate()) {
             // This transaction will take away our pending copy
@@ -634,6 +643,9 @@ MSHR::extractServiceableTargets(PacketPtr pkt)
         // Leave the Locked RMW Read until the corresponding Locked Write
         // request comes in
         if (it->pkt->cmd != MemCmd::LockedRMWReadReq) {
+            if (traceTarget) {
+                traceTarget("target_remove", *it, "service_extract", nullptr);
+            }
             it = targets.erase(it);
             while (it != targets.end()) {
                 if (it->source == Target::FromCPU) {
@@ -641,6 +653,9 @@ MSHR::extractServiceableTargets(PacketPtr pkt)
                 } else {
                     assert(it->source == Target::FromSnoop);
                     pushReadyTargets(ready_targets, *it);
+                    if (traceTarget) {
+                        traceTarget("target_remove", *it, "service_extract", nullptr);
+                    }
                     it = targets.erase(it);
                 }
             }
@@ -659,6 +674,9 @@ MSHR::extractServiceableTargets(PacketPtr pkt)
                 break;
             }
             DPRINTF(Cache, "Erase target: %s from targets\n", it->pkt->print());
+            if (traceTarget) {
+                traceTarget("target_remove", *it, "service_extract", nullptr);
+            }
             it = targets.erase(it);
         }
         ready_targets.populateFlags();
@@ -910,6 +928,9 @@ MSHR::updateLockedRMWReadTarget(PacketPtr pkt)
     assert(!targets.empty() && targets.front().pkt == pkt);
     RequestPtr r = std::make_shared<Request>(*(pkt->req));
     targets.front().pkt = new Packet(r, MemCmd::LockedRMWReadReq);
+    if (traceTarget) {
+        traceTarget("target_replace", targets.front(), "locked_placeholder", pkt);
+    }
 }
 
 bool

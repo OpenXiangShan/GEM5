@@ -97,6 +97,9 @@ class DynInst : public ExecContext, public RefCounted
             InstSeqNum seq_num, CPU *cpu);
 
   public:
+    // Diagnostic attempt identity; never used by scheduling decisions.
+    uint64_t perfCctAttempt = 0;
+
     // The list of instructions iterator type.
     typedef typename std::list<DynInstPtr>::iterator ListIt;
 
@@ -1167,6 +1170,7 @@ class DynInst : public ExecContext, public RefCounted
         return replayType;
     }
     void clearReplayType() { replayType.reset(); }
+    uint64_t perfCctReplayMask() const { return replayFlags.to_ullong(); }
     void clearReplayFlags() { replayFlags.reset(); }
     void markReplayFlag(LdStReplayType type) {
         replayFlags.set(static_cast<size_t>(type));
