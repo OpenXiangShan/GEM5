@@ -654,6 +654,10 @@ class BaseCPU : public ClockedObject
         statistics::Scalar numCycles;
         statistics::Scalar numWorkItemsStarted;
         statistics::Scalar numWorkItemsCompleted;
+        statistics::Scalar difftestMemObservations;
+        statistics::Scalar difftestMemLrObservations;
+        statistics::Scalar difftestMemObservationGoldenMismatches;
+        statistics::Scalar difftestMemLrGoldenMismatches;
     } baseStats;
 
   private:
@@ -704,6 +708,7 @@ class BaseCPU : public ClockedObject
     // difftest
   protected:
     bool enableDifftest;
+    const bool enableDifftestMemObservation;
     bool dumpCommitFlag;
     int dumpStartNum;
     bool enableRVV{false};
@@ -762,6 +767,8 @@ class BaseCPU : public ClockedObject
         gem5::Addr effSize;
         uint8_t *goldenValue;
         uint8_t amoOldGoldenValue[16];
+        bool memObservationValid{false};
+        uint8_t memObservationData[DifftestMemObservationV1::MaxSize]{};
         // Register address causing difftest error
         bool errorRegsValue[diffAllNum];
         bool errorCsrsValue[diffCsrNum];  // CsrRegIndex
@@ -795,6 +802,7 @@ class BaseCPU : public ClockedObject
     void difftestStep(ThreadID tid, InstSeqNum seq);
 
     void recordCommittedStore(ThreadID tid, const o3::DynInstPtr &inst);
+    void recordMemObservation(const o3::DynInstPtr &inst);
     void armSyncVisibleStoreReplay(ThreadID tid)
     {
         syncVisibleStoreReplayArmed.at(tid) = true;

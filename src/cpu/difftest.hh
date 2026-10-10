@@ -142,6 +142,36 @@ struct ExecutionGuide {
     uint64_t jump_target;
 };
 
+enum DifftestMemObservationKindV1 : uint8_t
+{
+    DifftestMemObservationLoadV1 = 0,
+    DifftestMemObservationLrV1 = 1,
+};
+
+enum DifftestMemObservationStateV1
+{
+    DifftestMemObservationNoneV1 = 0,
+    DifftestMemObservationPendingV1 = 1,
+    DifftestMemObservationConsumedV1 = 2,
+};
+
+struct DifftestMemObservationV1
+{
+    static constexpr uint16_t Version = 1;
+    static constexpr size_t MaxSize = 16;
+
+    uint16_t version;
+    uint16_t structSize;
+    uint8_t kind;
+    uint8_t size;
+    uint16_t reserved;
+    uint64_t paddr;
+    uint8_t data[MaxSize];
+};
+
+static_assert(sizeof(DifftestMemObservationV1) == 32,
+              "DifftestMemObservationV1 ABI changed");
+
 struct DiffState
 {
     // Regs and mode for single step difftest
@@ -194,11 +224,19 @@ class RefProxy
     void (*raise_intr)(uint64_t no) = nullptr;
     void (*isa_reg_display)() = nullptr;
     void (*query)(void *result_buffer, uint64_t type) = nullptr;
+    int (*setMemObservationV1)(
+        const DifftestMemObservationV1 *observation) = nullptr;
+    int (*queryMemObservationV1)() = nullptr;
     void (*debug_mem_sync)(paddr_t addr, void *bytes, size_t size) = nullptr;
     void (*sdcard_init)(const char *img_path,
                         const char *sd_cpt_bin_path) = nullptr;
     virtual void initState(int coreid, uint8_t *golden_mem) = 0;
     virtual void setHartId(int coreid) = 0;
+
+    bool supportsMemObservationV1() const
+    {
+        return setMemObservationV1 && queryMemObservationV1;
+    }
 
   protected:
     uint8_t *(*refGetPmem)() = nullptr;

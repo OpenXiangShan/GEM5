@@ -167,6 +167,7 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
       enterPwrGatingEvent([this] { enterPwrGating(); }, name()),
       warmupInstCount(p.warmupInstCount),
       enableDifftest(p.enable_difftest),
+      enableDifftestMemObservation(p.enable_difftest_mem_observation),
       dumpCommitFlag(p.dump_commit),
       dumpStartNum(p.dump_start),
       enableRVV(p.enable_riscv_vector),
@@ -242,6 +243,13 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
 
             warn("Difftest is enabled with ref so: %s.\n",
                  params().difftest_ref_so.c_str());
+
+            fatal_if(enableDifftestMemObservation &&
+                     !system->multiContextDifftest(),
+                     "Difftest memory observation requires multicore or SMT");
+            fatal_if(enableDifftestMemObservation &&
+                     !diff_state->proxy->supportsMemObservationV1(),
+                     "Difftest REF does not provide memory observation V1");
 
             diff_state->proxy->regcpy(&(diff_state->gem5RegFile), REF_TO_DUT);
             diff_state->diff.dynamic_config.ignore_illegal_mem_access = false;
@@ -464,6 +472,29 @@ BaseCPU::recordCommittedStore(ThreadID tid, const o3::DynInstPtr &inst)
     }
 }
 
+void
+BaseCPU::recordMemObservation(const o3::DynInstPtr &inst)
+{
+    diffInfo.memObservationValid = false;
+
+    const bool scalar_load = inst->isLoad() && !inst->isAtomic();
+    const bool load_reserved = inst->isLoadReserved();
+    if (!enableDifftestMemObservation ||
+        !system->multiContextDifftest() ||
+        inst->getFault() != NoFault || inst->strictlyOrdered() ||
+        (!scalar_load && !load_reserved) || inst->isVector() ||
+        (inst->isMicroop() && !load_reserved) ||
+        inst->staticInst->isFusion() ||
+        !inst->memData || inst->effSize == 0 ||
+        inst->effSize > sizeof(uint64_t) ||
+        ((inst->effAddr & 0xfff) + inst->effSize > 0x1000)) {
+        return;
+    }
+
+    std::memcpy(diffInfo.memObservationData, inst->memData, inst->effSize);
+    diffInfo.memObservationValid = true;
+}
+
 probing::PMUUPtr
 BaseCPU::pmuProbePoint(const char *name)
 {
@@ -515,7 +546,17 @@ BaseCPUStats::BaseCPUStats(statistics::Group *parent)
       ADD_STAT(numWorkItemsStarted, statistics::units::Count::get(),
                "Number of work items this cpu started"),
       ADD_STAT(numWorkItemsCompleted, statistics::units::Count::get(),
-               "Number of work items this cpu completed")
+               "Number of work items this cpu completed"),
+      ADD_STAT(difftestMemObservations, statistics::units::Count::get(),
+               "Number of scalar load values guided into the difftest REF"),
+      ADD_STAT(difftestMemLrObservations, statistics::units::Count::get(),
+               "Number of LR values guided into the difftest REF"),
+      ADD_STAT(difftestMemObservationGoldenMismatches,
+               statistics::units::Count::get(),
+               "Guided load values different from commit-time golden memory"),
+      ADD_STAT(difftestMemLrGoldenMismatches,
+               statistics::units::Count::get(),
+               "Guided LR values different from commit-time golden memory")
 {
 }
 
@@ -1267,7 +1308,68 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
     } else {
         // difftest step start
         DPRINTF(Diff, "Step NEMU\n");
+
+        bool mem_observation_set = false;
+        if (diffInfo.memObservationValid) {
+            DifftestMemObservationV1 observation{};
+            observation.version = DifftestMemObservationV1::Version;
+            observation.structSize = sizeof(observation);
+            observation.kind = diffInfo.inst->isLoadReserved() ?
+                DifftestMemObservationLrV1 :
+                DifftestMemObservationLoadV1;
+            observation.size = diffInfo.effSize;
+            observation.paddr = diffInfo.physEffAddr;
+            std::memcpy(observation.data, diffInfo.memObservationData,
+                        diffInfo.effSize);
+
+            int status = diffAllStates->proxy->setMemObservationV1(
+                &observation);
+            panic_if(status != 0,
+                     "Difftest REF rejected memory observation V1: %d",
+                     status);
+            mem_observation_set = true;
+            baseStats.difftestMemObservations++;
+            if (diffInfo.inst->isLoadReserved()) {
+                baseStats.difftestMemLrObservations++;
+            }
+
+            if (_goldenMemManager && _goldenMemManager->inPmem(
+                    diffInfo.physEffAddr, diffInfo.effSize)) {
+                uint8_t golden_data[DifftestMemObservationV1::MaxSize] = {};
+                _goldenMemManager->readGoldenMem(
+                    diffInfo.physEffAddr, golden_data, diffInfo.effSize);
+                if (std::memcmp(golden_data, observation.data,
+                                diffInfo.effSize) != 0) {
+                    baseStats.difftestMemObservationGoldenMismatches++;
+                    if (diffInfo.inst->isLoadReserved()) {
+                        baseStats.difftestMemLrGoldenMismatches++;
+                    }
+                    uint64_t observed_value = 0;
+                    uint64_t golden_value = 0;
+                    std::memcpy(&observed_value, observation.data,
+                                diffInfo.effSize);
+                    std::memcpy(&golden_value, golden_data,
+                                diffInfo.effSize);
+                    DPRINTF(Diff,
+                            "Guided memory observation differs from golden "
+                            "memory: tid=%u sn=%llu pc=%#lx paddr=%#lx "
+                            "size=%u observed=%#lx golden=%#lx\n",
+                            tid, seq, diffInfo.pc->instAddr(),
+                            observation.paddr, observation.size,
+                            observed_value, golden_value);
+                }
+            }
+        }
+
         diffAllStates->proxy->exec(1);
+        if (mem_observation_set) {
+            int state = diffAllStates->proxy->queryMemObservationV1();
+            panic_if(state != DifftestMemObservationConsumedV1,
+                     "Difftest REF did not consume memory observation V1: "
+                     "state=%d tid=%u sn=%llu pc=%#lx paddr=%#lx size=%u",
+                     state, tid, seq, diffInfo.pc->instAddr(),
+                     diffInfo.physEffAddr, diffInfo.effSize);
+        }
         if (diffInfo.inst->isFusion()) {
             diffAllStates->proxy->exec(1); // execute the second part of the fusion
         }
@@ -1878,6 +1980,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                 }
 
                 if (system->multiContextDifftest() &&
+                    !diffInfo.memObservationValid &&
                     (diffInfo.inst->isLoad() || diffInfo.inst->isAtomic()) &&
                     _goldenMemManager->inPmem(diffInfo.physEffAddr)) {
                     DPRINTF(Diff,

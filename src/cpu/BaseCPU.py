@@ -151,6 +151,8 @@ class BaseCPU(ClockedObject):
         "reset stats when any thread has reached this inst count")
 
     enable_difftest = Param.Bool(False,"use NEMU as ref to difftest")
+    enable_difftest_mem_observation = Param.Bool(
+        False, "Guide multicore difftest scalar loads with DUT observations")
     dump_commit = Param.Bool(False,"dump commit log")
     dump_start = Param.Int(0,"dump start num")
     difftest_ref_so = Param.String("", "The reference so for online difftest")
