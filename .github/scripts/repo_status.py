@@ -5,7 +5,7 @@ import json
 import os
 import re
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import urlencode
@@ -234,6 +234,19 @@ def collect(github, now):
     return data
 
 
+def neutralize_mentions(text):
+    """Break GitHub user/team mentions while preserving email addresses."""
+    return re.sub(r"(?<![A-Za-z0-9_@])@(?=[A-Za-z0-9])", "@\u200b", text)
+
+
+def is_chinese_report(body):
+    """Require Chinese to predominate outside URLs and inline code."""
+    prose = re.sub(r"https?://\S+|`[^`]*`", "", body)
+    chinese = len(re.findall(r"[\u4e00-\u9fff]", prose))
+    latin = len(re.findall(r"[A-Za-z]", prose))
+    return chinese >= 20 and chinese > latin
+
+
 def summarize(data, key):
     payload = {
         "model": "deepseek-flash",
@@ -252,10 +265,7 @@ def summarize(data, key):
     )
     choice = response["choices"][0]
     body = (choice["message"].get("content") or "").strip()
-    if (
-        choice.get("finish_reason") != "stop"
-        or len(re.findall(r"[\u4e00-\u9fff]", body)) < 20
-    ):
+    if choice.get("finish_reason") != "stop" or not is_chinese_report(body):
         raise RuntimeError(
             "DeepSeek returned an incomplete or non-Chinese report; no issue published"
         )
@@ -293,6 +303,13 @@ def render(data, summary, now):
             lines.append(
                 f"- {kind} [#{item['number']} {title}]({item['html_url']})（{state}）"
             )
+    for release in data.get("releases", []):
+        label = (
+            " ".join((release.get("name") or release["tag_name"]).split())
+            .replace("[", "\\[")
+            .replace("]", "\\]")
+        )
+        lines.append(f"- release [{label}]({release['html_url']})")
     if not data["pull_requests"] and not data["issues"]:
         lines.append("- 无 PR/issue 更新。")
     lines += ["", "### 数据覆盖说明", ""]
@@ -303,7 +320,7 @@ def render(data, summary, now):
             "",
             f"自动生成 · [运行日志](https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{run})",
         ]
-    body = "\n".join(lines)
+    body = neutralize_mentions("\n".join(lines))
     if len(body) > 60000:
         raise RuntimeError(
             "Report exceeds issue body limit; no issue published"
@@ -311,7 +328,22 @@ def render(data, summary, now):
     return PREFIX + f"仓库日报：{now.astimezone(SHANGHAI):%Y-%m-%d}", body
 
 
+def report_date(title):
+    """Return a valid ISO date only for the canonical daily report title."""
+    match = re.fullmatch(
+        re.escape(PREFIX) + r"仓库日报：(\d{4}-\d{2}-\d{2})", title
+    )
+    if match:
+        try:
+            return date.fromisoformat(match[1])
+        except ValueError:
+            pass
+    return None
+
+
 def publish(github, title, body):
+    body = neutralize_mentions(body)
+    current_date = report_date(title)
     older = [
         i
         for i in github.pages("issues", {"state": "open", "labels": "report"})
@@ -332,7 +364,13 @@ def publish(github, title, body):
         )
     print("Published Chinese report: " + issue["html_url"], flush=True)
     for old in older:
-        if old["number"] != issue["number"]:
+        old_date = report_date(old["title"])
+        if (
+            old["number"] != issue["number"]
+            and current_date is not None
+            and old_date is not None
+            and old_date < current_date
+        ):
             github.call(
                 f"issues/{old['number']}", {"state": "closed"}, "PATCH"
             )
