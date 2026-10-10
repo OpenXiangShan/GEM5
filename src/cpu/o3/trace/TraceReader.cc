@@ -786,7 +786,7 @@ TraceReader::softSeekToInstruction(uint64_t instrIndex)
         // After hard seek, clear runtime buffers/history to keep state consistent
         std::queue<TraceInstruction> empty;
         std::swap(instrBuffer, empty);
-        resetHistoryWindow(instrIndex);
+        resetHistoryWindow(instrIndex + 1);
     }
     return ok;
 }
