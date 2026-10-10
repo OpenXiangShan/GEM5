@@ -1284,6 +1284,14 @@ Commit::commit()
     if (num_squashing_threads != numThreads) {
         // Try to commit any instructions.
         commitInsts();
+    } else {
+        // commitInsts is skipped while all threads squash. Emit a sample
+        // here as well so a preceding wait cannot span this interval.
+        for (ThreadID tid : *activeThreads) {
+            cpu->perfCCT->commitState(tid, rob->readHeadInst(tid),
+                                     nullptr, "squash", 0,
+                                     cpu->clockPeriod());
+        }
     }
 
     //Check for any activity
@@ -1495,6 +1503,43 @@ Commit::commitInsts()
     unsigned num_committed = 0;
     std::array<unsigned, MaxThreads> num_committed_per_thread = {};
     std::array<unsigned, MaxThreads> commit_width_per_thread = {};
+    std::array<unsigned, MaxThreads> observed_committed = {};
+    std::array<DynInstPtr, MaxThreads> observed_heads = {};
+    std::array<DynInstPtr, MaxThreads> observed_blockers = {};
+    std::array<const char *, MaxThreads> stop_reasons = {};
+
+    // Emit exactly one final observation per active thread. The count
+    // distinguishes a zero-retirement cycle from a partially used window.
+    // Do not infer lost cycles or a unique critical instruction from it.
+    const auto sample_commit_states = [&](bool trace_exit = false) {
+        if (!cpu->perfCCT->enabled()) {
+            return;
+        }
+        for (ThreadID tid : *activeThreads) {
+            const char *reason = stop_reasons[tid];
+            if (!reason) {
+                if (trace_exit) {
+                    reason = "trace_exit";
+                } else if (commitStatus[tid] == ROBSquashing ||
+                           commitStatus[tid] == SquashAfterPending) {
+                    reason = "squash";
+                } else if (commitStatus[tid] != Running &&
+                           commitStatus[tid] != Idle &&
+                           commitStatus[tid] != FetchTrapPending) {
+                    reason = "status_blocked";
+                } else if (rob->isEmpty(tid)) {
+                    reason = "empty";
+                } else {
+                    reason = "commit_window_exhausted";
+                }
+            }
+            const DynInstPtr head = observed_heads[tid] ?
+                observed_heads[tid] : rob->readHeadInst(tid);
+            cpu->perfCCT->commitState(tid, head, observed_blockers[tid],
+                                     reason, observed_committed[tid],
+                                     cpu->clockPeriod());
+        }
+    };
 
     DynInstPtr head_inst;
 
@@ -1525,7 +1570,11 @@ Commit::commitInsts()
                 commitStatus[commit_thread] == FetchTrapPending)) {
             head_inst = rob->readHeadInst(commit_thread);
 
-            if (!rob->isHeadGroupReady(commit_thread)) {
+            DynInstPtr group_blocker;
+            if (!rob->isHeadGroupReady(commit_thread, &group_blocker)) {
+                observed_heads[commit_thread] = head_inst;
+                observed_blockers[commit_thread] = group_blocker;
+                stop_reasons[commit_thread] = "group_not_ready";
                 if (debug::Commit && head_inst->readyToCommit()) {
                     InstSeqNum seqnum =
                         rob->getHeadGroupLastDoneSeq(commit_thread);
@@ -1548,6 +1597,9 @@ Commit::commitInsts()
 
             if (!head_inst->isSquashed() &&
                 handleMdpViolation(head_inst, tid)) {
+                observed_heads[tid] = head_inst;
+                observed_blockers[tid] = head_inst;
+                stop_reasons[tid] = "mdp_violation_squash";
                 break;
             }
 
@@ -1588,6 +1640,7 @@ Commit::commitInsts()
                                                 num_committed_per_thread[tid]);
 
                 if (commit_success) {
+                    ++observed_committed[tid];
                     recordCommittedInst(head_inst);
                     cpu->perfCCT->updateInstPos(head_inst->seqNum,
                                                 PerfRecord::AtCommit);
@@ -1638,6 +1691,7 @@ Commit::commitInsts()
                         dbbtb->notifyInstCommit(head_inst);
                     }
                         if (traceMaybeExitOnLastTraceInst(head_inst)) {
+                            sample_commit_states(true);
                             return;
                         }
 
@@ -1883,6 +1937,7 @@ Commit::commitInsts()
                         if (count > 1) {
                             DPRINTF(Commit,
                                     "PC skip function event, stopping commit\n");
+                            stop_reasons[tid] = "pc_event";
                             break;
                         }
                             traceOnMacroCommit(tid);
@@ -1900,6 +1955,9 @@ Commit::commitInsts()
                         onInstBoundary && cpu->checkInterrupts(0))
                         squashAfter(tid, head_inst);
                 } else {
+                    observed_heads[tid] = head_inst;
+                    observed_blockers[tid] = head_inst;
+                    stop_reasons[tid] = "commit_head_blocked";
                     DPRINTF(Commit, "Unable to commit head instruction PC:%s "
                             "[tid:%i] [sn:%llu].\n",
                             head_inst->pcState(), tid ,head_inst->seqNum);
@@ -1908,6 +1966,8 @@ Commit::commitInsts()
             }
         }
     }
+
+    sample_commit_states();
 
     // if store was at head group and fronts were all readytocommit
     // then the store can be written to storebuffer

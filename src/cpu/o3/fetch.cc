@@ -1929,6 +1929,14 @@ Fetch::sendInstructionsToDecode()
         measureFrontendBubbles(thread_insts, tid);
     }
 
+    if (numThreads == 1 && cpu->perfCCT->enabled() &&
+        total_insts_to_decode > 0 && total_insts_to_decode < decodeWidth) {
+        cpu->perfCCT->fetchPartialTransfer(
+            toDecode->insts[toDecode->size - 1],
+            decodeWidth - total_insts_to_decode,
+            !fromCommit->commitInfo[primary_tid].robSquashing);
+    }
+
     // Legacy stall-reason vectors describe one logical decode lane. Keep
     // that attribution while the explicit distributions below expose the
     // widened aggregate SMT transfer.

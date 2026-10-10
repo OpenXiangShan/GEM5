@@ -48,6 +48,7 @@
 #include <algorithm>
 #include <cassert>
 #include <queue>
+#include <sstream>
 
 #include "arch/riscv/pcstate.hh"
 #include "base/output.hh"
@@ -2172,6 +2173,7 @@ IEW::executeInsts()
                 readyToFinish(inst);
             } else {
                 DPRINTF(IEW, "Execute: Split store data, [sn:%lli]\n", inst->seqNum);
+                cpu->perfCCT->instEvent(inst, "store_data_ready", "executed");
                 // STD is ready, wake up corresponding load if any
                 instQueue.resolveSTLFFailInst(inst->seqNum);
                 if (inst->sqIt->splitStoreFinish()) {
@@ -2251,6 +2253,26 @@ IEW::writebackInsts()
         if (!inst->isSquashed() && inst->isExecuted() &&
                 inst->getFault() == NoFault) {
 
+            if (cpu->perfCCT->enabled() && !inst->isVector()) {
+                for (int i = 0; i < inst->numDestRegs(); i++) {
+                    const auto &arch = inst->destRegIdx(i);
+                    const auto phys = inst->renamedDestIdx(i);
+                    if (arch.isZeroReg() ||
+                        !(arch.is(IntRegClass) || arch.is(FloatRegClass)) ||
+                        phys->isFixedMapping() || phys->isPinned() ||
+                        phys->getNumPinnedWritesToComplete() != 1) {
+                        continue;
+                    }
+                    // This gate follows bypass availability and is not the
+                    // first instant at which a consumer could use the value.
+                    std::ostringstream detail;
+                    detail << "source=iew_successful_writeback;dst=" << i
+                           << ";phys=" << phys->flatIndex()
+                           << ";class=" << arch.className();
+                    cpu->perfCCT->instEvent(inst, "value_writeback",
+                                            detail.str().c_str());
+                }
+            }
             scheduler->writebackWakeup(inst);
             int dependents = instQueue.wakeDependents(inst);
 

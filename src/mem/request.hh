@@ -49,6 +49,7 @@
 #define __MEM_REQUEST_HH__
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <cstdint>
 #include <functional>
@@ -546,6 +547,10 @@ class Request
     /** Sequence number of the instruction that creates the request */
     InstSeqNum _reqInstSeqNum = 0;
 
+    // Tracing identity belongs to this Request object, not its copies.
+    // The explicit copy constructor intentionally leaves this at zero.
+    uint64_t _causalTraceID = 0;
+
     /** metadata for xs */
     XsMetadata _xsMetadata;
 
@@ -587,6 +592,16 @@ class Request
      *  constructor.)
      */
     Request() {}
+
+    uint64_t
+    causalTraceID()
+    {
+        if (!_causalTraceID) {
+            static std::atomic<uint64_t> next{0};
+            _causalTraceID = next.fetch_add(1, std::memory_order_relaxed) + 1;
+        }
+        return _causalTraceID;
+    }
 
     /**
      * Constructor for physical (e.g. device) requests.  Initializes

@@ -1153,7 +1153,9 @@ Rename::renameSrcRegs(const DynInstPtr &inst, ThreadID tid)
         inst->renameSrcReg(src_idx, renamed_reg);
 
         // See if the register is ready or not.
-        if (scoreboard->getReg(renamed_reg.PhyReg())) {
+        const bool source_ready = scoreboard->getReg(renamed_reg.PhyReg());
+        cpu->perfCCT->renameSource(inst, src_idx, source_ready);
+        if (source_ready) {
             DPRINTF(Rename,
                     "[tid:%i] "
                     "Register %d (flat: %d) (%s) is ready.\n",
@@ -1259,6 +1261,7 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
         inst->renameDestReg(dest_idx,
                             rename_result.first,
                             rename_result.second);
+        cpu->perfCCT->renameDestination(inst, dest_idx, inc_ref_of_last_dest_phy_reg);
 
         ++stats.renamedOperands;
 

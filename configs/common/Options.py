@@ -228,6 +228,9 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         action="store_true",
                         default=False,
                         help="dump per-instruction lifetime trace for perfCCT")
+    parser.add_argument("--arch-db-dump-causal", action="store_true",
+                        help="add PerfCCT causal events and commit spans; "
+                        "implies --arch-db-dump-lifetime")
     parser.add_argument("--enable-rolling",
                         default=False,
                         help="enable rolling perfcnt "

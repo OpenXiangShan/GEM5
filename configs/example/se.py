@@ -60,6 +60,7 @@ from common import CacheConfig
 from common import CpuConfig
 from common import ObjectList
 from common import MemConfig
+from common.xiangshan import config_arch_db
 from common.FileSystemConfig import config_filesystem
 from common.Caches import *
 from common.cpu2000 import *
@@ -541,6 +542,8 @@ for cpu in system.cpu:
     if isinstance(cpu, BaseO3CPU):
         cpu.enableMoveElimination = False
         cpu.enableConstantFolding = False
+
+config_arch_db(args, system)
 
 root = Root(full_system = False, system = system)
 Simulation.run(args, root, system, FutureClass)
