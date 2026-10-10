@@ -552,6 +552,10 @@ class Request
     /** A pointer to an atomic operation */
     AtomicOpFunctorPtr atomicOpFunctor = nullptr;
 
+    /** Optional observer of a write at its cache/memory execution point. */
+    std::function<void(const Request &, const uint8_t *)> _memWriteObserver;
+    bool _memWriteObserved = false;
+
     LocalAccessor _localAccessor;
 
     /** The instruction count at the time this request is created */
@@ -622,6 +626,8 @@ class Request
           _extraData(other._extraData), _contextId(other._contextId),
           _pc(other._pc), _reqInstSeqNum(other._reqInstSeqNum),
           _xsMetadata(other._xsMetadata),
+          _memWriteObserver(other._memWriteObserver),
+          _memWriteObserved(other._memWriteObserved),
           _localAccessor(other._localAccessor),
           translateDelta(other.translateDelta),
           accessDelta(other.accessDelta), depth(other.depth)
@@ -715,6 +721,8 @@ class Request
         accessDelta = 0;
         translateDelta = 0;
         atomicOpFunctor = std::move(amo_op);
+        _memWriteObserver = nullptr;
+        _memWriteObserved = false;
         _localAccessor = nullptr;
     }
 
@@ -889,6 +897,28 @@ class Request
     {
         assert(atomicOpFunctor);
         return atomicOpFunctor.get();
+    }
+
+    void
+    setMemWriteObserver(
+        std::function<void(const Request &, const uint8_t *)> observer)
+    {
+        _memWriteObserver = std::move(observer);
+        _memWriteObserved = false;
+    }
+
+    bool hasMemWriteObserver() const { return bool(_memWriteObserver); }
+    bool memWriteObserved() const { return _memWriteObserved; }
+
+    /** Data starts at this request's physical address, after a successful
+     * write. Failed SCs and reads must not invoke this observer. */
+    void
+    notifyMemWrite(const uint8_t *data)
+    {
+        if (_memWriteObserver) {
+            _memWriteObserver(*this, data);
+            _memWriteObserved = true;
+        }
     }
 
     /**

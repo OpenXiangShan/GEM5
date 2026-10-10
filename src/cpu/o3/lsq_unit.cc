@@ -3108,6 +3108,7 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
         (!store_inst->isStoreConditional() || store_inst->lockedWriteSuccess()) &&
         cpu->goldenMemManager() &&
         has_paddr &&
+        !request->goldenMemWriteObserved() &&
         cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
         Addr paddr = request->mainReq()->getPaddr();
 
@@ -3207,6 +3208,8 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
     PacketPtr pkt = data_pkt;
 
     auto inst = dynamic_cast<LSQRequest *>(data_pkt->senderState)->instruction();
+
+    lsq->attachGoldenMemWriteObserver(data_pkt);
 
     DPRINTF(LSQUnit, "Attempting to send packet for inst [sn:%llu], addr: %#x\n",
             inst->seqNum, data_pkt->getAddr());

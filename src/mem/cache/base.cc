@@ -1824,6 +1824,7 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
 
             // execute AMO operation
             (*(pkt->getAtomicOp()))(blk_data);
+            pkt->req->notifyMemWrite(blk_data);
 
             DPRINTF(CacheVerbose, "Atomic instruction Write to addr %#x size %lu\n", pkt->getAddr(), pkt->getSize());
             for (int i = 0; i < pkt->getSize(); i++) {
@@ -1852,6 +1853,8 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
         // Write or WriteLine at the first cache with block in writable state
         if (blk->checkWrite(pkt)) {
             updateBlockData(blk, pkt, true);
+            pkt->req->notifyMemWrite(
+                blk->data + tags->extractBlkOffset(pkt->getAddr()));
         }
         // Always mark the line as dirty (and thus transition to the
         // Modified state) even if we are a failed StoreCond so we
