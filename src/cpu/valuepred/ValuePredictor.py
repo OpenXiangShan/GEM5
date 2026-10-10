@@ -6,7 +6,7 @@ from m5.SimObject import *
 class ValuePredType(ScopedEnum):
     # vals will contains value predictor type
     vals = ["EStride", "MemoryRenaming", "IdealConstantLVP",
-            "ExampleValuePredictor", "CompositeValuePredictor"]
+            "ExampleValuePredictor", "CompositeValuePredictor", "EgDiff"]
 
 class ValuePredictor(SimObject):
     type = "ValuePredictor"
@@ -150,3 +150,26 @@ class IdealConstantLVP(ValuePredictor):
 
     satCounterBits = Param.Unsigned(9, "bits of saturating counter, initial value is 0")
     resetConfidence = Param.Bool(True, "reset confidence to 0 when mispredict")
+
+class EgDiff(ValuePredictor):
+    type = "EgDiff"
+    cxx_class = "gem5::valuepred::EgDiff"
+    cxx_header = "cpu/valuepred/egdiff.hh"
+    abstract = False
+
+    order = Param.Unsigned(32, "Maximum dynamic load distance to poll")
+    fpcSeed = Param.Unsigned(1, "Seed for reproducible per-entry FPC streams")
+    tableEntries = Param.Unsigned(4096, "Direct-indexed prediction-table entries")
+    tagBits = Param.Unsigned(14, "Prediction-table PC tag width")
+    usefulBits = Param.Unsigned(2, "Prediction-table usefulness width")
+    allocationProbabilityDenominator = Param.Unsigned(
+        16, "Allocate a missing entry with probability 1/N")
+    tickBits = Param.Unsigned(10, "Global usefulness-aging TICK width")
+    # Fixed delays only; table/GVQ/writeback ports, banks, bandwidth, and
+    # contention are not modeled.
+    normalPredictionLatency = Param.Unsigned(
+        3, "Cycles from dispatch to an ordinary prediction")
+    deferredPredictionLatency = Param.Unsigned(
+        2, "Cycles from base availability to a deferred prediction")
+    lastMispWindow = Param.Unsigned(
+        1024, "Committed instructions suppressed after a value misprediction")
