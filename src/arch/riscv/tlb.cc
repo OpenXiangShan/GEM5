@@ -629,6 +629,12 @@ TLB::lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f
                     }
                 }
             }
+        } else if (!hidden) {
+            if (mode == BaseMMU::Write) {
+                stats.writeL2l0TlbMisses++;
+            } else {
+                stats.ReadL2l0TlbMisses++;
+            }
         }
     }
     if (f_level == L_L2sp3) {
@@ -3191,9 +3197,9 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
       ADD_STAT(removeNoUseForwardPre, statistics::units::Count::get(),
                "number of unused forward pre"),
       ADD_STAT(writeL2l0TlbMisses, statistics::units::Count::get(),
-               "write misses in l2tlb"),
+               "non-hidden write lookup misses in the L2 TLB L0 table"),
       ADD_STAT(ReadL2l0TlbMisses, statistics::units::Count::get(),
-               "read misses in l2tlb"),
+               "non-hidden non-write lookup misses in the L2 TLB L0 table"),
       ADD_STAT(writeL2Tlbl0Hits, statistics::units::Count::get(),
                "write hits in l2tlb"),
       ADD_STAT(ReadL2Tlbl0Hits, statistics::units::Count::get(),
