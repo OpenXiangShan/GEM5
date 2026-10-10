@@ -444,6 +444,50 @@ def format VectorIntWideningFormat(code, category, *flags) {{
     decode_block = VectorIntWideningDecodeBlock.subst(iop)
 }};
 
+def format VectorIntWideningShiftFormat(code, category, *flags) {{
+    # vwsll.vi: OPIVI widening shift-left. No vs1 and no third vector operand;
+    # the shift amount is the instruction immediate.
+    iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
+                        flags)
+
+    old_vd_idx = 1
+    dest_reg_id = "RegId(VecRegClass, _machInst.vd + _microIdx)"
+    src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx / 2)"
+
+    set_dest_reg_idx = setDestWrapper(dest_reg_id)
+
+    set_src_reg_idx = ""
+    set_src_reg_idx += setSrcWrapper(src2_reg_id)
+    set_src_reg_idx += setOldDestWrapper(dest_reg_id)
+    set_src_reg_idx += setSrcVL()
+    set_src_reg_idx += setSrcVm()
+
+    code = wideningAgnosticWrapper(code)
+    code = eiDeclarePrefix(code, widening=True)
+    code = loopWrapper(code)
+
+    vm_decl_rd = vmDeclAndReadData()
+
+    microiop = InstObjParams(name + "_micro",
+        Name + "Micro",
+        'VectorArithMicroInst',
+        {'code': code,
+         'set_dest_reg_idx': set_dest_reg_idx,
+         'set_src_reg_idx': set_src_reg_idx,
+         'vm_decl_rd': vm_decl_rd,
+         'copy_old_vd': copyOldVd(old_vd_idx)},
+        flags)
+
+    header_output = \
+        VectorIntWideningShiftMicroDeclare.subst(microiop) + \
+        VectorFloatMicroConstructor.subst(microiop) + \
+        VectorIntWideningShiftMicroExecute.subst(microiop) + \
+        VectorIntWideningShiftMacroDeclare.subst(iop) + \
+        VectorIntWideningMacroConstructor.subst(iop)
+
+    decode_block = VectorIntWideningDecodeBlock.subst(iop)
+}};
+
 def format VectorIntNarrowingFormat(code, category, *flags) {{
     iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
                         flags)
