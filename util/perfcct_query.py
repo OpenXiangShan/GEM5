@@ -647,6 +647,12 @@ def query(db, args):
         "query_window": {"start_tick": args.start, "end_tick": args.end},
         "time_unit": "tick",
     }
+    if args.command == "diagnose":
+        from perfcct_diagnose import diagnose
+
+        return diagnose(
+            db, args, result, instruction_cache_events, request_identity
+        )
     if args.command == "resources":
         return resource_query(db, args, result)
     if args.command == "chain":
@@ -746,6 +752,18 @@ def parser():
     cli.add_argument("db", help="SQLite trace database (opened read-only)")
     commands = cli.add_subparsers(dest="command", required=True)
     commands.add_parser("schema", help="Show table columns and trace metadata")
+    diagnose = commands.add_parser(
+        "diagnose", help="Rank PC symptoms and select evidence entry points"
+    )
+    diagnose.add_argument("--cpu", required=True)
+    diagnose.add_argument("--tid", type=int, required=True)
+    diagnose.add_argument("--start", type=int)
+    diagnose.add_argument("--end", type=int)
+    diagnose.add_argument(
+        "--stats", help="Infer ROI from final complete stats section"
+    )
+    diagnose.add_argument("--top", type=int, default=5)
+    diagnose.add_argument("--limit", type=int, default=128)
     stalls = commands.add_parser(
         "stalls", help="Rank observed commit-blocked spans"
     )
