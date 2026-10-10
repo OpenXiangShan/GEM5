@@ -237,6 +237,41 @@ def config_cache(options, system):
     # Set the cache line size of the system
     system.cache_line_size = options.cacheline_size
 
+    cchi = getattr(options, 'cchi', False)
+    if cchi:
+        # CCHI mode (per the approved plan): no tol2bus/L2/L3. Each core's
+        # L1I/L1D + MMU walker caches attach to one CCHIL1Agent (Taurus
+        # node); one CCHIFabric per system hosts the downstream home and
+        # talks to membus/DRAM. Requires a WITH_CCHI=True build.
+        system.cchi_fabric = CCHIFabric(
+            clk_domain=system.cpu_clk_domain,
+            upstream_node_count=options.num_cpus,
+            downstream=getattr(options, 'cchi_downstream', 'earth'),
+            flit_trace=getattr(options, 'cchi_flit_trace', False))
+        system.cchi_fabric.mem_side = system.membus.cpu_side_ports
+        system.cchi_agents = [
+            CCHIL1Agent(
+                clk_domain=system.cpu_clk_domain,
+                fabric=system.cchi_fabric,
+                node_id=i,
+                # snoop_merge must be ON here: with it off, a home victim
+                # snoop (e.g. Venus's SnpToInvalid back-invalidation) to an
+                # L1-dirty line is answered from the Taurus line alone, the
+                # L1's dirty snoop-response data is sunk, and the home
+                # drops the victim without a writeback - silent data loss
+                # (Venus linux boot wedged on exactly this). The memtest
+                # flow already enables it via --snoop-merge.
+                snoop_merge=True,
+                l2_prefetcher=(create_prefetcher(system.cpu[i], 'l2_wrapper',
+                                                 options)
+                               if not options.no_pf
+                               and not getattr(options, 'no_cchi_l2_pf',
+                                               False)
+                               else NULL))
+            for i in range(options.num_cpus)]
+        for agent in system.cchi_agents:
+            agent.mem_side = system.membus.cpu_side_ports
+
     # If elastic trace generation is enabled, make sure the memory system is
     # minimal so that compute delays do not include memory access latencies.
     # Configure the compulsory L1 caches for the O3CPU, do not configure
@@ -245,7 +280,7 @@ def config_cache(options, system):
         assert (not hasattr(options, 'elastic_trace_en') or
                 not options.elastic_trace_en)
 
-    if options.l2cache:
+    if options.l2cache and not cchi:
         if options.classic_l2:
             config_classic_l2(options, system, l2_cache_class)
         else:
@@ -312,13 +347,19 @@ def config_cache(options, system):
 
             dcache.do_fast_writeline = not options.kmh_align
             dcache.pipe_latency = 3 if options.kmh_align else 0
-            l2_prefetcher = system.l2_caches[i].prefetcher if options.classic_l2 else system.l2_wrappers[i].prefetcher
-            if (not options.no_pf) and options.l1_to_l2_pf_hint:
+            if cchi:
+                # The L2 prefetch engine lives on the CCHI agent (hosted on
+                # the bridge); the L1->L2 hint wire targets it.
+                l2_prefetcher = system.cchi_agents[i].l2_prefetcher
+            else:
+                l2_prefetcher = system.l2_caches[i].prefetcher if options.classic_l2 else system.l2_wrappers[i].prefetcher
+            if (not options.no_pf) and options.l1_to_l2_pf_hint and \
+                    not (cchi and getattr(options, 'no_cchi_l2_pf', False)):
                 assert dcache.prefetcher != NULL and \
                     l2_prefetcher != NULL
                 dcache.prefetcher.add_pf_downstream(l2_prefetcher)
 
-            if (not options.no_pf) and options.l3cache and options.l2_to_l3_pf_hint:
+            if (not options.no_pf) and options.l3cache and not cchi and options.l2_to_l3_pf_hint:
                 assert l2_prefetcher != NULL and \
                     system.l3.prefetcher != NULL
                 l2_prefetcher.add_pf_downstream(system.l3.prefetcher)
@@ -377,7 +418,18 @@ def config_cache(options, system):
 
         system.cpu[i].createInterruptController()
         set_lsq_bank_conflict_cache_params(system.cpu[i], system)
-        if options.l2cache:
+        if cchi:
+            # L1 mem-side + walker caches fan into the core's CCHI agent;
+            # uncached/interrupt traffic goes to membus directly.
+            agent = system.cchi_agents[i]
+            system.cpu[i].icache.mem_side = agent.cpu_side
+            system.cpu[i].dcache.mem_side = agent.cpu_side
+            if walk_cache_class:
+                system.cpu[i].itb_walker_cache.mem_side = agent.cpu_side
+                system.cpu[i].dtb_walker_cache.mem_side = agent.cpu_side
+            system.cpu[i].connectUncachedPorts(
+                system.membus.cpu_side_ports, system.membus.mem_side_ports)
+        elif options.l2cache:
             system.cpu[i].connectAllPorts(
                 system.tol2bus_list[i].cpu_side_ports,
                 system.membus.cpu_side_ports, system.membus.mem_side_ports)
