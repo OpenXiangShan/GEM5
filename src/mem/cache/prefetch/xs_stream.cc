@@ -1502,14 +1502,17 @@ XsStreamPrefetcher::streamLookup(const PrefetchInfo &pfi, bool &in_active_page, 
         uint64_t region_bit_accessed = 1UL << vaddr_offset;
         if (entry_plus)
             entry->decrMode = true;
-        if ((entry_plus_active || entry_min_active) || (entry->cnt > ACTIVETHRESHOLD))
-            entry->active = true;
-        in_active_page = entry->active;
-        decr = entry->decrMode;
         if (!(entry->bitVec & region_bit_accessed)) {
             entry->bitVec |= region_bit_accessed;
             entry->cnt += 1;
         }
+        // Include this training offset when checking the activation threshold.
+        if (entry_plus_active || entry_min_active ||
+            entry->cnt >= ACTIVETHRESHOLD) {
+            entry->active = true;
+        }
+        in_active_page = entry->active;
+        decr = entry->decrMode;
         return entry;
     }
     Addr stream_key =
