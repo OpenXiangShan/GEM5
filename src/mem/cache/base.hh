@@ -669,9 +669,9 @@ class BaseCache : public ClockedObject, public CacheAccessor
     bool dcacheMainPipeEffectiveMSHRFull() const;
     bool dcacheMainPipeCanPrefetch() const;
     void registerDcacheMainPipeLSQ(o3::LSQ *lsq);
-    void holdDcacheMainPipeMSHRCredit();
-    void scheduleDcacheMainPipeMSHRCreditRelease(Tick tick);
-    void releaseDcacheMainPipeMSHRCredit();
+    void holdDcacheMainPipeMSHRCredit(uint64_t trace_id = 0);
+    void scheduleDcacheMainPipeMSHRCreditRelease(Tick tick, uint64_t trace_id = 0);
+    void releaseDcacheMainPipeMSHRCredit(uint64_t trace_id = 0);
 
     /**
      * Handles a response (cache line fill/write ack) from the bus.
@@ -1128,6 +1128,20 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
     /** ArchDB */
     ArchDBer *archDBer;
+    bool traceCacheEnabled() const
+    { return archDBer && archDBer->dumpCausal && cacheLevel == 1 && !isReadOnly; }
+    uint64_t nextTraceMSHR = 0;
+    std::map<const MSHR *, uint64_t> traceMSHRs;
+    std::map<uint64_t, std::pair<Addr, bool>> traceHeldCredits;
+    uint64_t traceCacheEvent(const char *event, MSHR *mshr = nullptr,
+                            PacketPtr pkt = nullptr, const char *detail = "",
+                            uint64_t parent = 0, uint64_t resource = 0,
+                            uint64_t target = 0, uint64_t related_request = 0);
+    void traceTargetEvent(const char *event, MSHR *mshr,
+                          const MSHR::Target &target, const char *detail,
+                          PacketPtr old_packet = nullptr, uint64_t parent = 0);
+    void traceTargetOwners(MSHR *mshr, const char *event, uint64_t parent = 0);
+    void traceCacheReject(PacketPtr pkt, const char *detail);
 
     int squashedWays;
 
@@ -1484,6 +1498,10 @@ class BaseCache : public ClockedObject, public CacheAccessor
     void setBlocked(BlockedCause cause)
     {
         uint8_t flag = 1 << cause;
+        if (!(blocked & flag)) {
+            traceCacheEvent("blocked", cause == Blocked_NoTargets ? noTargetMSHR : nullptr,
+                            nullptr, std::to_string(cause).c_str());
+        }
         if (cause == Blocked_NoMSHRs && !(blocked & flag)) {
             noMshrBlockedStartCycle = curCycle();
         }
@@ -1506,6 +1524,10 @@ class BaseCache : public ClockedObject, public CacheAccessor
     void clearBlocked(BlockedCause cause)
     {
         uint8_t flag = 1 << cause;
+        if (blocked & flag) {
+            traceCacheEvent("unblocked", cause == Blocked_NoTargets ? noTargetMSHR : nullptr,
+                            nullptr, std::to_string(cause).c_str());
+        }
         if (cause == Blocked_NoMSHRs && (blocked & flag)) {
             stats.noMshrBlockedCycles += curCycle() - noMshrBlockedStartCycle;
             noMshrBlockedStartCycle = Cycles(0);

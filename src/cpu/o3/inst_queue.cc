@@ -907,6 +907,8 @@ InstructionQueue::replayMemInst(const DynInstPtr &replay_inst)
 void
 InstructionQueue::deferMemInst(const DynInstPtr &deferred_inst)
 {
+    // Store address translations use the same deferred queue as loads.
+    cpu->perfCCT->instEvent(deferred_inst, "wait_begin", "translation");
     deferredMemInsts.push_back(deferred_inst);
     iqStats.deferMemInstNum++;
 }
@@ -916,6 +918,7 @@ InstructionQueue::cacheMissLdReplay(const DynInstPtr &deferred_inst)
 {
     DPRINTF(IQ, "Get Cache Missed Load, insert to Replay Queue "
             "[sn:%llu]\n", deferred_inst->seqNum);
+    cpu->perfCCT->loadEvent(deferred_inst, "wait_begin", "cache_refill");
     cacheMissLdInsts.insert(deferred_inst);
 }
 
@@ -924,6 +927,8 @@ InstructionQueue::stlfFailLdReplay(const DynInstPtr &deferred_inst, const InstSe
 {
     DPRINTF(IQ, "Load[sn:%llu] unable to forward from data unready store[sn:%llu],"
             " insert to Replay Queue\n", deferred_inst->seqNum, store_seq_num);
+    cpu->perfCCT->loadEvent(deferred_inst, "wait_begin", "stlf",
+                            store_seq_num);
     stlfFailLdInsts.emplace_back(deferred_inst, store_seq_num, false);
 }
 
@@ -931,6 +936,7 @@ void
 InstructionQueue::blockMemInst(const DynInstPtr &blocked_inst)
 {
     blocked_inst->clearCanIssue();
+    cpu->perfCCT->loadEvent(blocked_inst, "wait_begin", "cache_admission");
     blockedMemInsts.push_back(blocked_inst);
     DPRINTF(IQ, "Memory inst [sn:%llu] PC %s is blocked, will be "
             "reissued later\n", blocked_inst->seqNum,
@@ -942,6 +948,13 @@ InstructionQueue::cacheUnblocked()
 {
     DPRINTF(IQ, "Cache is unblocked, rescheduling blocked memory "
             "instructions\n");
+    if (cpu->perfCCT->enabled()) {
+        for (const auto &inst : blockedMemInsts) {
+            if (!inst->isSquashed()) {
+                cpu->perfCCT->loadEvent(inst, "wake", "cache_retry");
+            }
+        }
+    }
     retryMemInsts.splice(retryMemInsts.end(), blockedMemInsts);
     // Get the CPU ticking again
     cpu->wakeCPU();
@@ -956,6 +969,10 @@ InstructionQueue::getDeferredMemInstToExecute()
             DPRINTF(IQ, "Deferred mem inst [sn:%llu] PC %s is ready to "
                     "execute\n", (*it)->seqNum, (*it)->pcState());
             DynInstPtr mem_inst = std::move(*it);
+            if (!mem_inst->isSquashed()) {
+                cpu->perfCCT->instEvent(mem_inst, "wake",
+                                        "translation_observed_complete");
+            }
             deferredMemInsts.erase(it);
             return mem_inst;
         }
@@ -1020,6 +1037,10 @@ InstructionQueue::resolveSTLFFailInst(const InstSeqNum &store_seq_num)
     for (auto it = stlfFailLdInsts.begin(); it != stlfFailLdInsts.end();
          ++it) {
         if ((*it).storeSeqNum == store_seq_num) {
+            if (!it->resolved && !it->inst->isSquashed()) {
+                cpu->perfCCT->loadEvent(it->inst, "wake", "stlf",
+                                        store_seq_num);
+            }
             (*it).resolved = true;
         }
     }

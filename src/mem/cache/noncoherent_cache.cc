@@ -250,6 +250,7 @@ NoncoherentCache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt,
 
     MSHR::TargetList targets = mshr->extractServiceableTargets(pkt);
     for (auto &target: targets) {
+        traceTargetEvent("target_service", mshr, target, "service_dispatch");
         Packet *tgt_pkt = target.pkt;
 
         switch (target.source) {

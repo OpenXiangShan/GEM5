@@ -409,6 +409,7 @@ void DynInst::resetNumSrcRegReady(uint8_t n) {
 void
 DynInst::setSquashed()
 {
+    cpu->perfCCT->squashInst(*this);
     status.set(Squashed);
     xsMeta->squashed = true;
 

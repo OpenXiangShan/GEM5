@@ -45,6 +45,7 @@
 #ifndef __MEM_CACHE_MSHR_QUEUE_HH__
 #define __MEM_CACHE_MSHR_QUEUE_HH__
 
+#include <functional>
 #include <string>
 
 #include "base/types.hh"
@@ -78,6 +79,8 @@ class MSHRQueue : public Queue<MSHR>
     void updateOccupancyStats(Tick now);
 
   public:
+    // Optional observer; callbacks never participate in queue decisions.
+    std::function<void(const char *, MSHR *, PacketPtr)> traceEvent;
 
     /**
      * Create a queue with a given number of entries.

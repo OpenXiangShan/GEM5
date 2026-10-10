@@ -92,6 +92,9 @@ MSHRQueue::allocate(Addr blk_addr, unsigned blk_size, PacketPtr pkt,
     mshr->readyIter = addToReadyList(mshr);
 
     allocated += 1;
+    if (traceEvent) {
+        traceEvent("allocate", mshr, pkt);
+    }
     return mshr;
 }
 
@@ -101,6 +104,9 @@ MSHRQueue::deallocate(MSHR* mshr)
 
     DPRINTF(MSHR, "Deallocating all targets: %s", mshr->print());
     updateOccupancyStats(curTick());
+    if (traceEvent) {
+        traceEvent("release", mshr, nullptr);
+    }
     Queue<MSHR>::deallocate(mshr);
     DPRINTF(MSHR, "MSHR deallocated. Number in use: %lu/%lu\n",
             allocatedList.size(), numEntries);
@@ -159,6 +165,9 @@ MSHRQueue::markInService(MSHR *mshr, bool pending_modified_resp)
     mshr->markInService(pending_modified_resp);
     readyList.erase(mshr->readyIter);
     _numInService += 1;
+    if (traceEvent) {
+        traceEvent("send", mshr, nullptr);
+    }
 }
 
 void
@@ -172,6 +181,9 @@ MSHRQueue::markPending(MSHR *mshr)
      * performance.
      */
     mshr->readyIter = addToReadyList(mshr);
+    if (traceEvent) {
+        traceEvent("retry", mshr, nullptr);
+    }
 }
 
 bool

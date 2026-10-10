@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <deque>
 #include <queue>
+#include <sstream>
 #include <stack>
 #include <string>
 #include <vector>
@@ -47,6 +48,7 @@
         auto& readyQ = readyQclassify[(x)->opClass()];                                    \
         auto it = std::lower_bound(readyQ->begin(), readyQ->end(), (x), select_policy()); \
         readyQ->insert(it, (x));                                                          \
+        traceIQEvent((x), "iq_ready_enqueue", "candidate_queue_insert");                  \
     } while (0)
 
 // must be consistent with FUScheduler.py
@@ -510,6 +512,24 @@ IssueQue::resetDepGraph(int numPhysRegs)
     subDepGraph.resize(numPhysRegs);
 }
 
+void
+IssueQue::traceIQEvent(const DynInstPtr& inst, const char *event,
+                       const char *reason, int port,
+                       InstSeqNum related, int source)
+{
+    if (!cpu->perfCCT->enabled()) [[likely]] {
+        return;
+    }
+    std::ostringstream detail;
+    detail << "iq=" << getName() << ";reason=" << reason
+           << ";port=" << port << ";src=" << source
+           << ";role=" << (inst->opClass() == StoreDataOp ?
+                             "store_data" : "instruction")
+           << ";ready_to_issue=" << inst->readyToIssue()
+           << ";mem_dep_solved=" << inst->memDepSolved();
+    cpu->perfCCT->instEvent(inst, event, detail.str().c_str(), related);
+}
+
 bool
 IssueQue::checkScoreboard(const DynInstPtr& inst)
 {
@@ -531,6 +551,8 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
                 "lsq\n");
             DPRINTF(Schedule, "[sn:%llu] %s can't get data from bypassNetwork, dst inst: %s\n", inst->seqNum,
                     inst->srcRegIdx(i), dst_inst->genDisassembly());
+            traceIQEvent(inst, "iq_issue_blocked", "bypass_not_ready",
+                         inst->issueportid, dst_inst->seqNum, i);
             scheduler->loadCancel(dst_inst);
             return false;
         }
@@ -892,6 +914,7 @@ IssueQue::issueToFu()
 
         // Do not let replay requests starve the older issuing requests
         if (issueHasOlderInsts(inst)) {
+            traceIQEvent(inst, "iq_issue_blocked", "replay_older_issue");
             DPRINTF(Schedule,
                     "replay [sn:%llu] detected an older issuing request, delay this replay.\n",
                     inst->seqNum);
@@ -902,22 +925,26 @@ IssueQue::issueToFu()
             // Loads selected here enter loadpipe S0 next cycle, so block on
             // the mainpipe tag-write state predicted for that admission point.
             if (scheduler->lsq->willDcacheRefillTagWriteNextCycle()) {
+                traceIQEvent(inst, "iq_issue_blocked", "replay_refill_tag_write");
                 incTagRefillBlockStats = true;
                 break;
             }
             if (issuedLoad >= numLoadPipe) {
+                traceIQEvent(inst, "iq_issue_blocked", "replay_load_pipe_limit");
                 break;
             }
             issuedLoad++;
         }
         if (inst->isStore()) {
             if (issuedStore >= numStorePipe) {
+                traceIQEvent(inst, "iq_issue_blocked", "replay_store_pipe_limit");
                 break;
             }
             issuedStore++;
         }
 
         scheduler->addToFU(inst);
+        traceIQEvent(inst, "iq_issue_to_fu", "replay");
         DPRINTF(Schedule, "[sn:%llu] replayed to FU\n", inst->seqNum);
         replayQ.pop();
         issued++;
@@ -941,6 +968,8 @@ IssueQue::issueToFu()
             (inst->isLoad() && (issuedLoad >= numLoadPipe)) ||
             (inst->isStore() && (issuedStore >= numStorePipe)) || blockLoad;
         if (issueOccupied) {
+            traceIQEvent(inst, "iq_issue_blocked", blockLoad ?
+                         "refill_tag_write" : "issue_capacity", inst->issueportid);
             inst->clearScheduled();
             // only for load/store
             READYQ_PUSH(inst);
@@ -959,6 +988,7 @@ IssueQue::issueToFu()
             issuedStore++;
         }
         addToFu(inst);
+        traceIQEvent(inst, "iq_issue_to_fu", "normal", inst->issueportid);
         cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueReadReg);
         issued++;
     }
@@ -978,6 +1008,7 @@ void
 IssueQue::retryMem(const DynInstPtr& inst)
 {
     assert(!inst->isNonSpeculative());
+    cpu->perfCCT->loadEvent(inst, "replay_enqueue", "issue_replay_queue");
     iqstats->retryMem++;
     if (inst->isLoad()) {
         const auto replay_type = inst->getReplayType();
@@ -1068,8 +1099,37 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
             int srcIdx = it.first;
             auto& consumer = it.second;
             if(consumer->threadNumber == inst->threadNumber){
+                if (cpu->perfCCT->enabled() && !speculative &&
+                    !inst->isSquashed() && !consumer->isSquashed() &&
+                    !inst->isVector() && !consumer->isVector() &&
+                    inst->isExecuted() && inst->getFault() == NoFault &&
+                    !dst->isPinned()) {
+                    const auto &dest = inst->destRegIdx(i);
+                    const auto &src = consumer->srcRegIdx(srcIdx);
+                    const auto phys = consumer->renamedSrcIdx(srcIdx);
+                    if (!dest.isZeroReg() && !src.isZeroReg() &&
+                        (dest.is(IntRegClass) || dest.is(FloatRegClass)) &&
+                        (src.is(IntRegClass) || src.is(FloatRegClass)) &&
+                        !phys->isFixedMapping() && !phys->isPinned()) {
+                        // Speculation may already have set ready. Record the
+                        // confirmation before the ready-source fast path.
+                        std::ostringstream detail;
+                        detail << "source=scheduler_non_spec;src=" << srcIdx
+                               << ";phys=" << phys->flatIndex()
+                               << ";class=" << src.className()
+                               << ";was_ready=" << consumer->readySrcIdx(srcIdx);
+                        cpu->perfCCT->instEvent(consumer,
+                            "operand_writeback_observed",
+                            detail.str().c_str(), inst->seqNum);
+                    }
+                }
                 if (consumer->readySrcIdx(srcIdx)) {
                     continue;
+                }
+                if (speculative) {
+                    traceIQEvent(consumer, "iq_operand_spec_wake",
+                                 "source_ready_transition", -1,
+                                 inst->seqNum, srcIdx);
                 }
                 consumer->markSrcRegReady(srcIdx);
 
@@ -1152,6 +1212,7 @@ IssueQue::addIfReady(const DynInstPtr& inst)
             if (inst->memDepSolved()) {
                 DPRINTF(Schedule, "memRef Dependency was solved can issue\n");
             } else {
+                traceIQEvent(inst, "iq_ready_blocked", "memory_dependency");
                 DPRINTF(Schedule, "memRef Dependency was not solved can't issue\n");
                 return;
             }
@@ -1172,11 +1233,13 @@ IssueQue::addIfReady(const DynInstPtr& inst)
 }
 
 void
-IssueQue::cancel(const DynInstPtr& inst)
+IssueQue::cancel(const DynInstPtr& inst, InstSeqNum producer, int source)
 {
     // before issued
     assert(!inst->isIssued());
 
+    traceIQEvent(inst, "iq_cancel", "load_cancel", inst->issueportid,
+                 producer, source);
     inst->setCancel();
     if (inst->isScheduled() && !opPipelined[inst->opClass()]) {
         inst->clearScheduled();
@@ -1201,6 +1264,7 @@ IssueQue::selectInst()
         for (auto it = selector->select(readyQ->begin(), pi); it != readyQ->end(); it = selector->select(it, pi)) {
             auto& inst = *it;
             if (inst->canceled()) {
+                traceIQEvent(inst, "iq_ready_remove", "canceled", pi);
                 inst->clearInReadyQ();
                 it = readyQ->erase(it);
                 continue;
@@ -1213,6 +1277,7 @@ IssueQue::selectInst()
                           inst->seqNum) != enqueuedThisCycle.end()) {
                 DPRINTF(Schedule, "[sn:%llu] defer selection after enqueue\n",
                         inst->seqNum);
+                traceIQEvent(inst, "iq_select_blocked", "enqueue_boundary", pi);
                 ++it;
                 continue;
             }
@@ -1258,10 +1323,12 @@ IssueQue::selectInst()
                 }
 
                 selectQ.push_back(std::make_pair(pi, inst));
+                traceIQEvent(inst, "iq_select", "candidate_selected", pi);
                 inst->clearInReadyQ();
                 readyQ->erase(it);
                 break;
             } else {
+                traceIQEvent(inst, "iq_select_blocked", "port_busy", pi);
                 iqstats->portBusy[pi]++;
             }
 
@@ -1278,14 +1345,17 @@ IssueQue::scheduleInst()
         auto& pi = info.first;  // issue port id
         auto& inst = info.second;
         if (inst->canceled()) {
+            traceIQEvent(inst, "iq_arbitration", "canceled", pi);
             DPRINTF(Schedule, "[sn:%llu] was canceled\n", inst->seqNum);
         } else if (inst->arbFailed()) {
+            traceIQEvent(inst, "iq_arbitration", "failed", pi);
             DPRINTF(Schedule, "[sn:%llu] arbitration failed, retry\n", inst->seqNum);
             iqstats->arbFailed++;
             assert(inst->readyToIssue());
 
             READYQ_PUSH(inst);
         } else [[likely]] {
+            traceIQEvent(inst, "iq_arbitration", "success", pi);
             DPRINTF(Schedule, "[sn:%llu] no conflict, scheduled\n", inst->seqNum);
             iqstats->portissued[pi]++;
             inst->setScheduled();
@@ -2285,6 +2355,9 @@ Scheduler::loadCancel(const DynInstPtr& inst)
                                 if (inst->vpMisprediction) {
                                     // VP misprediction: consumer may already be in-flight.
                                     // Mark canceled and propagate to its dependents.
+                                    iq->traceIQEvent(depInst, "iq_cancel",
+                                        "vp_issued_cancel", depInst->issueportid,
+                                        top->seqNum, srcIdx);
                                     depInst->setCancel();
                                     depInst->clearSrcRegReady(srcIdx);
                                     if (!depInst->lldpInputs.empty()) {
@@ -2297,7 +2370,7 @@ Scheduler::loadCancel(const DynInstPtr& inst)
                                 continue;
                             }
 
-                            depInst->issueQue->cancel(depInst);
+                            depInst->issueQue->cancel(depInst, top->seqNum, srcIdx);
                             depInst->clearSrcRegReady(srcIdx);
                             if (!depInst->lldpInputs.empty()) {
                                 depInst->lldpInputs[srcIdx] = {};

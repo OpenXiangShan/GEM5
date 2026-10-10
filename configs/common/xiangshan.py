@@ -25,6 +25,146 @@ from common.FUScheduler import *
 from m5.objects import PerfRecord
 
 
+def config_arch_db(args, test_sys):
+    """Configure the same ArchDB/PerfCCT tables for FS and SE."""
+    if args.arch_db_dump_causal and not args.enable_arch_db:
+        fatal("--arch-db-dump-causal requires --enable-arch-db")
+    if args.enable_arch_db:
+        perfCCT_cmd = "CREATE TABLE LifeTimeCommitTrace(ID INTEGER PRIMARY KEY AUTOINCREMENT,"
+        perfCCT_cmd += PerfRecord.vals[0] + " bigint unsigned NOT NULL"
+        for i in range(1, len(PerfRecord.vals)):
+            name = PerfRecord.vals[i]
+            type_str = "bigint unsigned" if name.lower().startswith(('at', 'pc', 'result')) else "char(20)"
+            perfCCT_cmd += "," + name + " " + type_str + " NOT NULL"
+        perfCCT_cmd += ",TID int unsigned NOT NULL"
+        perfCCT_cmd += ");"
+
+        perfCCT_cmd += """
+CREATE TABLE LoadLifeTimeCommitTrace(
+    ID int unsigned PRIMARY KEY,
+    VAddress bigint unsigned not null,
+    PAddress bigint unsigned not null,
+    LastReplay bigint unsigned not null,
+    ReplayStr char(10) not null,
+    constraint fk_id
+        foreign key (ID) references LifeTimeCommitTrace(ID)
+);
+
+"""
+
+        test_sys.arch_db = ArchDBer(arch_db_file=args.arch_db_file)
+        test_sys.arch_db.dump_from_start = args.arch_db_fromstart
+        test_sys.arch_db.enable_rolling = args.enable_rolling
+        test_sys.arch_db.dump_l1_pf_trace = False
+        test_sys.arch_db.dump_mem_trace = False
+        test_sys.arch_db.dump_l1_evict_trace = False
+        test_sys.arch_db.dump_l2_evict_trace = False
+        test_sys.arch_db.dump_l3_evict_trace = False
+        test_sys.arch_db.dump_l1_miss_trace = False
+        test_sys.arch_db.dump_bop_train_trace = False
+        test_sys.arch_db.dump_stride_train_trace = False
+        test_sys.arch_db.dump_sms_train_trace = False
+        test_sys.arch_db.dump_vaddr_trace = False
+        test_sys.arch_db.dump_lifetime = (args.arch_db_dump_lifetime or
+                                           args.arch_db_dump_causal)
+        test_sys.arch_db.dump_causal = args.arch_db_dump_causal
+        test_sys.arch_db.table_cmds = [
+            "CREATE TABLE L1MissTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "PC INT NOT NULL," \
+            "SOURCE INT NOT NULL," \
+            "PADDR INT NOT NULL," \
+            "VADDR INT NOT NULL," \
+            "STAMP INT NOT NULL," \
+            "SITE TEXT);"
+            ,
+            "CREATE TABLE CacheEvictTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
+            "PADDR INT NOT NULL," \
+            "STAMP INT NOT NULL," \
+            "Level INT NOT NULL," \
+            "SITE TEXT);"
+            ,
+            "CREATE TABLE vaddrTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "PC INT NOT NULL," \
+            "VADDR INT NOT NULL," \
+            "Hit INT NOT NULL," \
+            "Tick INT NOT NULL," \
+            "SITE TEXT);"
+            ,
+            "CREATE TABLE MemTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
+            "IsLoad BOOL NOT NULL," \
+            "PC INT NOT NULL," \
+            "VADDR INT NOT NULL," \
+            "PADDR INT NOT NULL," \
+            "Issued INT NOT NULL," \
+            "Translated INT NOT NULL," \
+            "Completed INT NOT NULL," \
+            "Committed INT NOT NULL," \
+            "Writenback INT NOT NULL," \
+            "PFSrc INT NOT NULL," \
+            "SITE TEXT);"
+            ,
+            "CREATE TABLE L1PFTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
+            "TriggerPC INT NOT NULL," \
+            "TriggerVAddr INT NOT NULL," \
+            "PFVAddr INT NOT NULL," \
+            "PFSrc INT NOT NULL," \
+            "SITE TEXT);"
+            ,
+            "CREATE TABLE BOPTrainTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
+            "OldAddr INT NOT NULL," \
+            "CurAddr INT NOT NULL," \
+            "Offset INT NOT NULL," \
+            "Score INT NOT NULL," \
+            "Miss BOOL NOT NULL," \
+            "SITE TEXT);"
+            ,
+            "CREATE TABLE SMSTrainTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
+            "OldAddr INT NOT NULL," \
+            "CurAddr INT NOT NULL," \
+            "TriggerOffset INT NOT NULL," \
+            "Conf INT NOT NULL," \
+            "Miss BOOL NOT NULL," \
+            "SITE TEXT);"
+            ,
+            "CREATE TABLE StrideTrainTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
+            "Addr INT NOT NULL," \
+            "PC INT NOT NULL," \
+            "HashPC INT NOT NULL," \
+            "QueryHit BOOL NOT NULL," \
+            "IsFirstShot BOOL NOT NULL," \
+            "Miss BOOL NOT NULL," \
+            "IsTrain BOOL NOT NULL," \
+            "SITE TEXT);"
+            ,
+            "CREATE TABLE DespacitoTrainTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
+            "vAddr INT NOT NULL," \
+            "pAddr INT NOT NULL," \
+            "PC INT NOT NULL," \
+            "hasPC BOOL NOT NULL," \
+            "Miss BOOL NOT NULL," \
+            "IsTrain BOOL NOT NULL," \
+            "SITE TEXT);"
+            ,# perfCounter CommitTrace
+            perfCCT_cmd
+        ]
+
+
 class XiangshanCore(RiscvO3CPU):
     scheduler = KunminghuScheduler()
 
@@ -694,139 +834,7 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
         for cpu in test_sys.cpu:
             cpu.enable_riscv_vector = True
 
-    # config arch db
-    if args.enable_arch_db:
-        perfCCT_cmd = "CREATE TABLE LifeTimeCommitTrace(ID INTEGER PRIMARY KEY AUTOINCREMENT,"
-        perfCCT_cmd += PerfRecord.vals[0] + " bigint unsigned NOT NULL"
-        for i in range(1, len(PerfRecord.vals)):
-            name = PerfRecord.vals[i]
-            type_str = "bigint unsigned" if name.lower().startswith(('at', 'pc', 'result')) else "char(20)"
-            perfCCT_cmd += "," + name + " " + type_str + " NOT NULL"
-        perfCCT_cmd += ",TID int unsigned NOT NULL"
-        perfCCT_cmd += ");"
-
-        perfCCT_cmd += """
-CREATE TABLE LoadLifeTimeCommitTrace(
-    ID int unsigned PRIMARY KEY,
-    VAddress bigint unsigned not null,
-    PAddress bigint unsigned not null,
-    LastReplay bigint unsigned not null,
-    ReplayStr char(10) not null,
-    constraint fk_id
-        foreign key (ID) references LifeTimeCommitTrace(ID)
-);
-
-"""
-
-        test_sys.arch_db = ArchDBer(arch_db_file=args.arch_db_file)
-        test_sys.arch_db.dump_from_start = args.arch_db_fromstart
-        test_sys.arch_db.enable_rolling = args.enable_rolling
-        test_sys.arch_db.dump_l1_pf_trace = False
-        test_sys.arch_db.dump_mem_trace = False
-        test_sys.arch_db.dump_l1_evict_trace = False
-        test_sys.arch_db.dump_l2_evict_trace = False
-        test_sys.arch_db.dump_l3_evict_trace = False
-        test_sys.arch_db.dump_l1_miss_trace = False
-        test_sys.arch_db.dump_bop_train_trace = False
-        test_sys.arch_db.dump_stride_train_trace = False
-        test_sys.arch_db.dump_sms_train_trace = False
-        test_sys.arch_db.dump_vaddr_trace = False
-        test_sys.arch_db.dump_lifetime = args.arch_db_dump_lifetime
-        test_sys.arch_db.table_cmds = [
-            "CREATE TABLE L1MissTrace(" \
-            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
-            "PC INT NOT NULL," \
-            "SOURCE INT NOT NULL," \
-            "PADDR INT NOT NULL," \
-            "VADDR INT NOT NULL," \
-            "STAMP INT NOT NULL," \
-            "SITE TEXT);"
-            ,
-            "CREATE TABLE CacheEvictTrace(" \
-            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
-            "Tick INT NOT NULL," \
-            "PADDR INT NOT NULL," \
-            "STAMP INT NOT NULL," \
-            "Level INT NOT NULL," \
-            "SITE TEXT);"
-            ,
-            "CREATE TABLE vaddrTrace(" \
-            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
-            "PC INT NOT NULL," \
-            "VADDR INT NOT NULL," \
-            "Hit INT NOT NULL," \
-            "Tick INT NOT NULL," \
-            "SITE TEXT);"
-            ,
-            "CREATE TABLE MemTrace(" \
-            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
-            "Tick INT NOT NULL," \
-            "IsLoad BOOL NOT NULL," \
-            "PC INT NOT NULL," \
-            "VADDR INT NOT NULL," \
-            "PADDR INT NOT NULL," \
-            "Issued INT NOT NULL," \
-            "Translated INT NOT NULL," \
-            "Completed INT NOT NULL," \
-            "Committed INT NOT NULL," \
-            "Writenback INT NOT NULL," \
-            "PFSrc INT NOT NULL," \
-            "SITE TEXT);"
-            ,
-            "CREATE TABLE L1PFTrace(" \
-            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
-            "Tick INT NOT NULL," \
-            "TriggerPC INT NOT NULL," \
-            "TriggerVAddr INT NOT NULL," \
-            "PFVAddr INT NOT NULL," \
-            "PFSrc INT NOT NULL," \
-            "SITE TEXT);"
-            ,
-            "CREATE TABLE BOPTrainTrace(" \
-            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
-            "Tick INT NOT NULL," \
-            "OldAddr INT NOT NULL," \
-            "CurAddr INT NOT NULL," \
-            "Offset INT NOT NULL," \
-            "Score INT NOT NULL," \
-            "Miss BOOL NOT NULL," \
-            "SITE TEXT);"
-            ,
-            "CREATE TABLE SMSTrainTrace(" \
-            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
-            "Tick INT NOT NULL," \
-            "OldAddr INT NOT NULL," \
-            "CurAddr INT NOT NULL," \
-            "TriggerOffset INT NOT NULL," \
-            "Conf INT NOT NULL," \
-            "Miss BOOL NOT NULL," \
-            "SITE TEXT);"
-            ,
-            "CREATE TABLE StrideTrainTrace(" \
-            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
-            "Tick INT NOT NULL," \
-            "Addr INT NOT NULL," \
-            "PC INT NOT NULL," \
-            "HashPC INT NOT NULL," \
-            "QueryHit BOOL NOT NULL," \
-            "IsFirstShot BOOL NOT NULL," \
-            "Miss BOOL NOT NULL," \
-            "IsTrain BOOL NOT NULL," \
-            "SITE TEXT);"
-            ,
-            "CREATE TABLE DespacitoTrainTrace(" \
-            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
-            "Tick INT NOT NULL," \
-            "vAddr INT NOT NULL," \
-            "pAddr INT NOT NULL," \
-            "PC INT NOT NULL," \
-            "hasPC BOOL NOT NULL," \
-            "Miss BOOL NOT NULL," \
-            "IsTrain BOOL NOT NULL," \
-            "SITE TEXT);"
-            ,# perfCounter CommitTrace
-            perfCCT_cmd
-        ]
+    config_arch_db(args, test_sys)
 
     # config debug trace
     for i in range(np):

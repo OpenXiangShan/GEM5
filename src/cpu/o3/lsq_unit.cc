@@ -1363,6 +1363,14 @@ LSQUnit::issueToLoadPipe(const DynInstPtr &inst)
              "load pipe S0 exceeds configured pipe count (%u)\n",
              loadPipeCount);
     panic_if(inst->inPipe(), "load [sn:%llu] is already in pipeline", inst->seqNum);
+    if (cpu->perfCCT->enabled()) {
+        ++inst->perfCctAttempt;
+        const auto source = inst->getLoadPipeSource();
+        const char *detail = source == DynInst::LoadPipeSource::IssueQueue ?
+            "issue_queue" : source == DynInst::LoadPipeSource::FastReplay ?
+            "fast_replay" : "replay_queue";
+        cpu->perfCCT->loadEvent(inst, "attempt_begin", detail);
+    }
     inst->beginPipelining();
     inst->setSkipRawCheck();
 
@@ -1404,6 +1412,10 @@ LSQUnit::issueToStorePipe(const DynInstPtr &inst)
              "store pipe S0 exceeds scheduler-derived pipe count (%u)\n",
              storePipeCount);
     panic_if(inst->inPipe(), "load [sn:%llu] is already in pipeline", inst->seqNum);
+    if (cpu->perfCCT->enabled()) {
+        ++inst->perfCctAttempt;
+        cpu->perfCCT->instEvent(inst, "attempt_begin", "store_address");
+    }
     inst->beginPipelining();
 
     const int idx = storePipeSx[0]->size;
@@ -1867,6 +1879,11 @@ LSQUnit::executeLoadPipeSx()
                 DPRINTF(LoadPipeline, "Load [sn:%llu] replayed\n", inst->seqNum);
                 // record replay stats
                 assert(inst->getReplayType());
+                if (cpu->perfCCT->enabled()) {
+                    cpu->perfCCT->loadEvent(inst, "replay",
+                        load_store_replay_event_str[*inst->getReplayType()],
+                        0, inst->perfCctReplayMask());
+                }
                 stats.loadReplayEvents[*inst->getReplayType()]++;
                 // RTL only increments the main replay_* counters when a load
                 // first enters slow replay from the IssueQueue.
@@ -1901,6 +1918,11 @@ LSQUnit::executeLoadPipeSx()
                 DPRINTF(LoadPipeline, "Load [sn:%llu] replayed\n", inst->seqNum);
                 // record replay stats
                 assert(inst->getReplayType());
+                if (cpu->perfCCT->enabled()) {
+                    cpu->perfCCT->loadEvent(inst, "replay",
+                        load_store_replay_event_str[*inst->getReplayType()],
+                        0, inst->perfCctReplayMask());
+                }
                 stats.loadReplayEvents[*inst->getReplayType()]++;
                 // Use the load-pipe entry source to detect that first entry
                 // and match RTL, which only counts replay_* on first issue.
@@ -1954,6 +1976,7 @@ LSQUnit::executeLoadPipeSx()
                 // stage can finish the IEW side and become ready to commit.
                 if (inst->isExecuted() &&
                     (inst->isNormalLd() || !inst->readMemAccPredicate())) {
+                    cpu->perfCCT->loadEvent(inst, "complete", "load_pipe");
                     iewStage->readyToFinish(inst);
                 }
                 iewStage->activityThisCycle();
@@ -2132,6 +2155,11 @@ LSQUnit::executeStorePipeSx()
 
 
             if (i == storeWhenToReplay && inst->needReplay()) [[unlikely]] {
+                if (cpu->perfCCT->enabled() && inst->getReplayType()) {
+                    cpu->perfCCT->instEvent(inst, "replay",
+                        load_store_replay_event_str[*inst->getReplayType()],
+                        0, inst->perfCctReplayMask());
+                }
                 stats.storeReplayTotal++;
                 if (inst->needTLBMissReplay()) {
                     iewStage->deferMemInst(inst);
