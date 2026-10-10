@@ -95,7 +95,6 @@ TraceFetch::TraceFetch(Fetch &fetch_, const BaseO3CPUParams &params)
     if (traceMode) {
         DPRINTF(Fetch, "Trace mode enabled, file: %s, format: %s\n",
                 params.traceFile, params.traceFormat);
-        traceTrainBranches = params.traceTrainBranches;
         traceDecoupledFrontend = params.enableDecoupledBPInTrace;
         traceCheckpointInterval = params.traceCheckpointInterval;
         // Wire CPU params to fetch trace modeling knobs
@@ -1633,11 +1632,6 @@ TraceFetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
               (unsigned long long)traceInstr.getSeqNum());
     }
     const bool compressed = instSize == 2;
-
-    if (!traceTrainBranches && traceInstr.isAnyBranch()) {
-        return compressed ? static_cast<TheISA::MachInst>(0x0001u)
-                          : static_cast<TheISA::MachInst>(0x00000013u);
-    }
 
     // Default integer mappings
     uint8_t rs1 = srcRegs.empty() ? 0 : srcRegs[0];
