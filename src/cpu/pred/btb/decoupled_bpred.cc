@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <utility>
 
 #include "arch/riscv/regs/misc.hh"
@@ -905,6 +906,25 @@ DecoupledBPUWithBTB::pairtageFirstBlockNotOverriden(ThreadID tid) const
  * @param static_inst Static instruction pointer (for control squash)
  * @param control_inst_size Size of the control instruction (for control squash)
  */
+BranchInfo
+DecoupledBPUWithBTB::makeBranchInfo(Addr control_pc, Addr target_pc,
+                                    const DynInstPtr &inst,
+                                    const StaticInstPtr &static_inst,
+                                    unsigned inst_size) const
+{
+    assert(static_inst || inst);
+    const auto &base_inst = static_inst ? static_inst : inst->staticInst;
+    BranchInfo info(control_pc, target_pc, base_inst, inst_size);
+    if (inst && inst->hasTraceBranchInfo()) {
+        info.isCond = inst->traceIsCond();
+        info.isIndirect = inst->traceIsIndirect();
+        info.isDirect = !info.isIndirect;
+        info.isCall = inst->traceIsCall();
+        info.isReturn = inst->traceIsReturn();
+    }
+    return info;
+}
+
 void
 DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
                                  SquashType squash_type,
@@ -913,7 +933,8 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
                                  bool is_conditional,
                                  bool actually_taken,
                                  const StaticInstPtr &static_inst,
-                                 unsigned control_inst_size)
+                                 unsigned control_inst_size,
+                                 const DynInstPtr &inst)
 {
     // Set squashing state
     threads[tid].squashing = true;
@@ -937,14 +958,13 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
 
     BranchInfo recovery_branch = target.predBranchInfo;
     if (squash_type == SQUASH_CTRL && static_inst) {
-        recovery_branch = BranchInfo(
-            squash_pc.instAddr(), redirect_pc, static_inst,
+        recovery_branch = makeBranchInfo(
+            squash_pc.instAddr(), redirect_pc, inst, static_inst,
             control_inst_size);
     }
 
-    if (squash_type == SQUASH_CTRL && static_inst) {
+    if (squash_type == SQUASH_CTRL && static_inst)
         dumpFsq("Before control squash");
-    }
 
     // Remove targets after the squashed one
     ftq.squashAfter(target_id, tid);
@@ -983,16 +1003,13 @@ void
 DecoupledBPUWithBTB::controlSquash(unsigned target_id,
                             const PCStateBase &control_pc,
                             const PCStateBase &corr_target,
+                            const DynInstPtr &inst,
                             const StaticInstPtr &static_inst,
                             unsigned control_inst_size, bool actually_taken,
                             const InstSeqNum &seq, ThreadID tid,
                             const unsigned &currentLoopIter, const bool fromCommit,
-                            bool fromPredecode)
+                            bool fromPredecode, const bool trustTargetPc)
 {
-    // Get branch type information
-    bool is_conditional = static_inst->isCondCtrl();
-    bool is_indirect = static_inst->isIndirectCtrl();
-
     // Classify the recovery request before checking the FTQ target.  A
     // request without a target is still a request from the corresponding
     // recovery owner and must remain visible in the source statistics.
@@ -1000,12 +1017,18 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
         dbpBtbStats.controlSquashFromPredecode++;
     } else if (fromCommit) {
         dbpBtbStats.controlSquashFromCommit++;
-        auto branchClass = classifyBranch(static_inst);
+        auto branchClass = inst ? classifyBranch(inst) : classifyBranch(static_inst);
         addControlSquashCommitStat(branchClass);
     } else {
         dbpBtbStats.controlSquashFromDecode++;
     }
 
+    // Get branch type information
+    auto squashBranchInfo = makeBranchInfo(
+        control_pc.instAddr(), corr_target.instAddr(), inst, static_inst,
+        control_inst_size);
+    bool is_conditional = squashBranchInfo.isCond;
+    bool is_indirect = squashBranchInfo.isIndirect;
     if (!ftq.hasTarget(target_id, tid)) {
         threads[tid].redirectPending = false;
         DPRINTF(DecoupleBP, "The squashing target is insane, ignore squash on it");
@@ -1014,7 +1037,8 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
     auto &target = ftq.get(target_id, tid);
     // Get target address
     Addr real_target = corr_target.instAddr();
-    if (!fromCommit && static_inst->isReturn() && !static_inst->isNonSpeculative()) {
+    if (!fromCommit && squashBranchInfo.isReturn &&
+        !static_inst->isNonSpeculative() && !trustTargetPc) {
         // get ret addr from ras meta
         real_target = ras->getTopAddrFromMetas(target);
         // TODO: set real target to dynamic inst
@@ -1031,7 +1055,8 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
 
     // Call shared squash handling logic
     handleSquash(tid, target_id, SQUASH_CTRL, control_pc,
-                real_target, is_conditional, actually_taken, static_inst, control_inst_size);
+                real_target, is_conditional, actually_taken, static_inst,
+                control_inst_size, inst);
 }
 
 void

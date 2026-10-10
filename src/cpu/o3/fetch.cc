@@ -657,6 +657,7 @@ Fetch::clearStates(ThreadID tid)
     clearRedirectPending(tid);
     threads[tid].cacheReq.reset();
     threads[tid].reset();
+    pendingTraceSupplyValid[tid] = false;
     fetchQueue[tid].clear();
     deferVsetvlDecode[tid] = false;
     postSquashFetchBatchSize[tid] = 0;
@@ -692,6 +693,7 @@ Fetch::resetStage()
         threads[tid].cacheReq.reset();
 
         threads[tid].reset();
+        pendingTraceSupplyValid[tid] = false;
         ftqEntryFetchedInsts[tid] = 0;
 
         fetchQueue[tid].clear();
@@ -1431,6 +1433,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
 
     // Reset the cache request after cancelling
     threads[tid].cacheReq.reset();
+    pendingTraceSupplyValid[tid] = false;
 
     // Drop any retry packets that belong to this squashed thread.
     for (auto it = retryPkt.begin(); it != retryPkt.end();) {
@@ -2431,7 +2434,7 @@ Fetch::handleCommitSignals(ThreadID tid)
         const auto corr_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
         assert(dbpbtb);
         dbpbtb->controlSquash(mispred_inst->getFtqId(), mispred_inst->pcState(),
-                              corr_pc, mispred_inst->staticInst,
+                              corr_pc, mispred_inst, mispred_inst->staticInst,
                               mispred_inst->getInstBytes(), fromCommit->commitInfo[tid].branchTaken,
                               mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(), true);
     } else if (fromCommit->commitInfo[tid].isTrapSquash) {
@@ -2477,10 +2480,12 @@ Fetch::handleDecodeSquash(ThreadID tid)
                 mispred_inst->getFtqId(),
                 mispred_inst->pcState(),
                 next_pc,
+                mispred_inst,
                 mispred_inst->staticInst, mispred_inst->getInstBytes(),
                 fromDecode->decodeInfo[tid].branchTaken,
                 mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(),
-                false);
+                false, false,
+                isTraceMode() && mispred_inst->hasTraceBranchInfo());
         } else {
             warn("Unexpected non-control squash from decode.\n");
         }
@@ -2698,6 +2703,7 @@ Fetch::handlePredecodeFault(ThreadID tid, const DynInstPtr &instruction,
     } else {
         dbpbtb->controlSquash(
             instruction->getFtqId(), instruction->pcState(), target,
+            instruction,
             instruction->staticInst, instruction->getInstBytes(),
             actuallyTaken, instruction->seqNum, tid,
             instruction->getLoopIteration(), false, true);
@@ -2869,7 +2875,7 @@ Fetch::fetch(bool &status_change)
 }
 
 StallReason
-Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
+Fetch::checkMemoryNeeds(ThreadID tid, PCStateBase &this_pc,
                         const StaticInstPtr &curMacroop)
 {
     // If we are in the middle of a macro-op, the decoder does not need
@@ -3117,12 +3123,56 @@ Fetch::performInstructionFetch(ThreadID tid)
         wroteToTimeBuffer = true;
     }
 
-   // assert(fetchStatus[tid] == Running && "Fetch should be running");
+    // assert(fetchStatus[tid] == Running && "Fetch should be running");
+}
+
+bool
+Fetch::traceInstructionBytesReady(
+    ThreadID tid, Addr instruction_pc, unsigned instruction_size) const
+{
+    const auto &buffer = threads[tid];
+    const auto &cache_req = buffer.cacheReq;
+    if (!buffer.valid || instruction_size == 0 ||
+        instruction_size > fetchBufferSize ||
+        cache_req.getOverallStatus() != AccessComplete ||
+        instruction_pc < buffer.startPC ||
+        instruction_pc - buffer.startPC > fetchBufferSize - instruction_size) {
+        return false;
+    }
+
+    // Require completed demand responses for every instruction byte, including
+    // an instruction spanning two cache lines. Synthetic decoder bytes carry
+    // instruction semantics, but must not manufacture cache supply readiness.
+    for (unsigned offset = 0; offset < instruction_size; ++offset) {
+        const Addr byte = instruction_pc + offset;
+        bool covered = false;
+        for (size_t index = 0; index < cache_req.requests.size(); ++index) {
+            const auto &req = cache_req.requests[index];
+            if (!req || !req->hasVaddr() ||
+                index >= cache_req.requestStatus.size() ||
+                cache_req.requestStatus[index] != AccessComplete) {
+                continue;
+            }
+            const Addr begin = req->getVaddr();
+            if (byte >= begin && byte - begin < req->getSize()) {
+                covered = true;
+                break;
+            }
+        }
+        if (!covered) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool
 Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
     if (threads[tid].valid) {
+        return false;
+    }
+
+    if (isTraceMode() && !pendingTraceSupplyValid[tid]) {
         return false;
     }
 
@@ -3136,6 +3186,14 @@ Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
     const auto prediction = dbpbtb->ftqFetchBlock(tid);
     const Addr start_pc = prediction.startPC;
     const Addr current_pc = pc_state.instAddr();
+    if (isTraceMode()) {
+        panic_if(pendingTraceInstructionPc[tid] < prediction.startPC ||
+                     pendingTraceInstructionPc[tid] >= prediction.endPC,
+                 "Trace supply PC %#llx is outside FTQ range [%#llx, %#llx)",
+                 static_cast<unsigned long long>(pendingTraceInstructionPc[tid]),
+                 static_cast<unsigned long long>(prediction.startPC),
+                 static_cast<unsigned long long>(prediction.endPC));
+    }
     threads[tid].startPC = start_pc;
 
     if (current_pc < prediction.startPC ||

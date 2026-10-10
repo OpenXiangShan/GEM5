@@ -108,6 +108,7 @@ class TraceReader : public statistics::Group
     virtual bool restoreCheckpoint(const TraceCheckpoint& checkpoint) = 0;
     virtual bool seekToInstruction(uint64_t instrIndex) = 0;
     virtual uint64_t getCurrentInstructionIndex() const = 0;
+    virtual bool supportsFastRandomSeek() const = 0;
 
   protected:
     class TraceStream

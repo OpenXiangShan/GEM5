@@ -396,8 +396,40 @@ CBP2025TraceReader::restoreCheckpoint(const TraceCheckpoint& checkpoint)
 bool
 CBP2025TraceReader::seekToInstruction(uint64_t instrIndex)
 {
-    // For now, only support soft-seek via history window (base class).
-    return softSeekToInstruction(instrIndex);
+    DPRINTF(TraceReader,
+            "CBP2025TraceReader::seekToInstruction: Seeking to instruction %lu "
+            "(current=%lu)\n",
+            instrIndex, instructionIndex);
+
+    // Match ChampSimTraceReader::seekToInstruction semantics:
+    // after seek(N), the next getNextInstruction() returns instruction N.
+    if (instrIndex == 0) {
+        if (!reset()) {
+            return false;
+        }
+        DPRINTF(TraceReader,
+                "CBP2025TraceReader::seekToInstruction: Reset to beginning\n");
+        return true;
+    }
+
+    if (!reset()) {
+        return false;
+    }
+
+    while (instructionIndex < instrIndex && !eofReached) {
+        TraceInstruction dummy;
+        if (!parseInstruction(dummy)) {
+            DPRINTF(TraceReader,
+                    "CBP2025TraceReader::seekToInstruction: Failed to "
+                    "fast-forward to target instruction\n");
+            return false;
+        }
+    }
+
+    DPRINTF(TraceReader,
+            "CBP2025TraceReader::seekToInstruction: Arrived at instruction %lu\n",
+            instructionIndex);
+    return instructionIndex == instrIndex;
 }
 
 } // namespace o3

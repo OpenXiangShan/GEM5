@@ -31,6 +31,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -92,7 +93,7 @@ class TraceFetch
     bool maybeStallFetch(ThreadID tid);
 
     /** Trace-mode checkMemoryNeeds fast path (called from Fetch::checkMemoryNeeds). */
-    StallReason checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc);
+    StallReason checkMemoryNeeds(ThreadID tid, PCStateBase &this_pc);
 
     /** Bind pending trace metadata to a built DynInst (called from Fetch). */
     void bindPendingTraceMetadata(ThreadID tid, const DynInstPtr &instruction,
@@ -126,13 +127,31 @@ class TraceFetch
     bool wrongPathActive() const { return traceWrongPathActive; }
 
   private:
+    enum class TraceRecoveryMode
+    {
+        Hold,
+        Rollback
+    };
+
+    struct TraceRecoveryAction
+    {
+        TraceRecoveryMode mode = TraceRecoveryMode::Hold;
+        InstSeqNum rollbackSeqNum = 0;
+        uint64_t rollbackTraceIndex = 0;
+        bool useTraceIndex = false;
+        bool squashItself = false;
+        Addr targetPc = 0;
+        const char *exitWrongPathReason = nullptr;
+        const char *debugReason = nullptr;
+    };
+
     Fetch &fetch;
 
     bool initializeTraceReader();
     TheISA::MachInst createMachInstFromTrace(const o3::TraceInstruction &traceInstr);
 
     unsigned chooseWrongPathNopSize(ThreadID tid, Addr pc);
-    StallReason fetchTraceInstruction(ThreadID tid, const PCStateBase &this_pc);
+    StallReason fetchTraceInstruction(ThreadID tid, PCStateBase &this_pc);
     void supplyTraceToDecoder(ThreadID tid, const PCStateBase &this_pc,
                               TheISA::MachInst machInst, Addr instrPC,
                               const char *tag);
@@ -141,6 +160,25 @@ class TraceFetch
                              Addr corrPC, bool forceMinStep,
                              const char *reason, uint64_t traceSeqNum);
     void exitTraceWrongPath(ThreadID tid, const char *reason);
+    bool resolveTraceRecoveryIndex(ThreadID tid,
+                                   const DynInstPtr &squashInst,
+                                   const PCStateBase &new_pc,
+                                   uint64_t &targetIndex);
+    TraceRecoveryAction classifyWrongPathInstSquash(ThreadID tid,
+                                                    const PCStateBase &new_pc,
+                                                    const DynInstPtr &squashInst,
+                                                    InstSeqNum seqNum);
+    TraceRecoveryAction classifyWrongPathNonInstSquash(ThreadID tid,
+                                                       const PCStateBase &new_pc,
+                                                       InstSeqNum seqNum);
+    TraceRecoveryAction classifyNormalSquash(ThreadID tid,
+                                             const PCStateBase &new_pc,
+                                             const DynInstPtr &squashInst,
+                                             InstSeqNum seqNum);
+    void applyTraceRecoveryAction(ThreadID tid,
+                                  const TraceRecoveryAction &action);
+    void reconcileTraceStreamToSquashTarget(ThreadID tid, Addr targetPc);
+    bool rollbackTraceReaderToIndex(uint64_t index);
 
     void ensureTraceStreamFilled(ThreadID tid, size_t min_count);
     void cleanupTraceMetadata(InstSeqNum seqNum);
@@ -176,8 +214,6 @@ class TraceFetch
     uint64_t tracePTLeafPageSize = 4 * 1024;
     Addr traceAddrBase = 0;
     Addr traceAddrSize = 0;
-    /** Whether to train BP and use real branch instructions in trace mode */
-    bool traceTrainBranches = false;
     /** Whether to validate BP against trace to trigger wrong-path mode */
     bool traceBPValidation = true;
     /** Cycles to stall fetch on mispredict in trace mode */
@@ -202,10 +238,13 @@ class TraceFetch
     /** Whether trace mode should honor decoupled frontend semantics */
     bool traceDecoupledFrontend = false;
 
-    /** Map to store trace instruction metadata for cache hierarchy integration */
-    std::unordered_map<InstSeqNum, std::shared_ptr<const o3::TraceInstruction>> traceInstMap;
+    /** Map to store trace instruction metadata for cache hierarchy integration.
+     * Ordered by seqNum: cleanup erases a contiguous key prefix (commit side,
+     * key < threshold) or suffix (squash side, key > seqNum), so an ordered
+     * map turns the former per-commit full scans into range-erases. */
+    std::map<InstSeqNum, std::shared_ptr<const o3::TraceInstruction>> traceInstMap;
     /** Map sequence numbers to trace instruction indices for rollback capability */
-    std::unordered_map<InstSeqNum, uint64_t> seqNumToTraceIndex;
+    std::map<InstSeqNum, uint64_t> seqNumToTraceIndex;
 
     uint64_t traceInstrConsumed = 1;
 

@@ -428,10 +428,6 @@ class BaseO3CPU(BaseCPU):
     tracePTLeafPageSize = Param.UInt64(4 * 1024,
         "Synthetic mapping page size for trace timing PTW (4KiB or 2MiB)")
 
-    # Trace-driven branch predictor training and control-flow modeling
-    traceTrainBranches = Param.Bool(True,
-        "Enable BP training and use real branch opcodes under trace mode")
-
     # On a branch misprediction (predicted vs. trace ground truth), stall
     # the fetch stage for this many cycles to emulate redirect/recovery cost.
     traceMispredictPenalty = Param.Cycles(8,

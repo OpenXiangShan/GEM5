@@ -454,6 +454,12 @@ class Fetch
      */
     bool sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state);
 
+    bool traceInstructionBytesReady(
+        ThreadID tid, Addr instruction_pc, unsigned instruction_size) const;
+
+    Addr pendingTraceInstructionPc[MaxThreads]{};
+    bool pendingTraceSupplyValid[MaxThreads]{};
+
     void finishTranslation(const Fault &fault, const RequestPtr &mem_req);
 
     /** Validate if a translation request is expected and should be processed.
@@ -686,7 +692,7 @@ class Fetch
      * @param curMacroop Current macroop (if any)
      * @return StallReason if stalled, NoStall otherwise
      */
-    StallReason checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
+    StallReason checkMemoryNeeds(ThreadID tid, PCStateBase &this_pc,
                                  const StaticInstPtr &curMacroop);
 
 
