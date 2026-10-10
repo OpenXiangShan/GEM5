@@ -60,6 +60,9 @@ class RiscvPagetableWalker(ClockedObject):
     ptw_level3_limit = Param.Unsigned(1, "PTW level-3 parallelism limit")
     ptw_miss_queue_size = Param.Unsigned(40,
             "Number of pending one-stage direct PTW misses")
+    ptw_max_spec_walks = Param.Unsigned(16,
+            "Max concurrent speculative PTW walks (prefetch / pre-req), "
+            "0 = unlimited")
 
 class RiscvTLB(BaseTLB):
     type = 'RiscvTLB'
