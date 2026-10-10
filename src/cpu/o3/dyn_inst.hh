@@ -475,7 +475,7 @@ class DynInst : public ExecContext, public RefCounted
     unsigned memReqFlags = 0;
 
     /** The size of the request */
-    unsigned effSize;
+    unsigned effSize = 0;
 
     /** Pointer to the data for the memory access. */
     uint8_t *memData = nullptr;
