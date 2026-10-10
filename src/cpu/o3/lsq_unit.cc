@@ -260,8 +260,10 @@ LSQUnit::recvTimingResp(PacketPtr pkt)
     } else if (request->instruction()) {
         DPRINTF(LoadPipeline, "LSQUnit::recvTimingResp [sn:%lu] pkt: %s - ignored\n",
                 request->instruction()->seqNum, pkt->print());
-        request->instruction()->hasPendingCacheReq(false);
-        request->instruction()->pendingCacheReq = nullptr;
+        if (request->instruction()->pendingCacheReq == request) {
+            request->instruction()->hasPendingCacheReq(false);
+            request->instruction()->pendingCacheReq = nullptr;
+        }
     }
 
     return ret;
@@ -1130,6 +1132,13 @@ LSQUnit::checkLocalStoreVisible(Addr store_paddr,
                 ld_inst->seqNum, store_paddr);
         ld_inst->setNukeReplay();
         loadSetReplay(ld_inst, request, true);
+        if (!ld_inst->inPipe()) {
+            // Asynchronous loads such as LR can leave the load pipe before
+            // their response arrives. Once that request is discarded, no
+            // pipe stage remains to hand the instruction to the replay queue.
+            iewStage->loadCancel(ld_inst);
+            ld_inst->issueQue->retryMem(ld_inst);
+        }
     }
 
     if (oldest_violator &&
@@ -1326,6 +1335,10 @@ LSQUnit::loadSetReplay(DynInstPtr inst, LSQRequest* request, bool dropReqNow)
     // clear request in loadQueue
     loadQueue[inst->lqIdx].setRequest(nullptr);
     if (dropReqNow) {
+        if (inst->pendingCacheReq == request) {
+            inst->hasPendingCacheReq(false);
+            inst->pendingCacheReq = nullptr;
+        }
         request->discard();
     }
 
