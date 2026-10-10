@@ -15,14 +15,15 @@ class ReportTests(unittest.TestCase):
         self.addCleanup(writer.stop)
 
     @patch("repo_status.request_json")
-    def test_rejected_response_is_saved_with_specific_diagnostics(
+    def test_model_output_is_saved_and_returned_without_quality_gates(
         self, request
     ):
-        for content, reason, expected in (
-            ("中文" * 100, "length", "output incomplete.*length"),
-            ("An English report", "stop", "language check failed.*Chinese=0"),
+        for content, reason in (
+            ("中文日报，包含 English PR titles 和技术术语。", "stop"),
+            ("An English report", "stop"),
+            ("中文报告", "length"),
         ):
-            with self.subTest(reason=reason):
+            with self.subTest(reason=reason, content=content):
                 request.reset_mock()
                 request.return_value = {
                     "choices": [
@@ -33,8 +34,9 @@ class ReportTests(unittest.TestCase):
                     ],
                     "usage": {"total_tokens": 100},
                 }
-                with self.assertRaisesRegex(RuntimeError, expected):
-                    repo_status.summarize({}, "secret-test-key")
+                self.assertEqual(
+                    repo_status.summarize({}, "secret-test-key"), content
+                )
                 request.assert_called_once()
                 saved = self.response_file.call_args.args[0]
                 self.assertNotIn("secret-test-key", saved)
@@ -83,40 +85,6 @@ class ReportTests(unittest.TestCase):
 
     @patch("repo_status.request_json", side_effect=RuntimeError("HTTP 429"))
     def test_model_failure_is_not_retried(self, request):
-        with self.assertRaises(RuntimeError):
-            repo_status.summarize({}, "test")
-        request.assert_called_once()
-
-    @patch("repo_status.request_json")
-    def test_incomplete_or_english_response_is_rejected(self, request):
-        for content, reason in (
-            ("", "stop"),
-            ("An English report", "stop"),
-            ("中文" * 100, "length"),
-        ):
-            request.return_value = {
-                "choices": [
-                    {"finish_reason": reason, "message": {"content": content}}
-                ]
-            }
-            with self.assertRaises(RuntimeError):
-                repo_status.summarize({}, "test")
-
-    @patch("repo_status.request_json")
-    def test_mixed_language_report_must_be_predominantly_chinese(
-        self, request
-    ):
-        request.return_value = {
-            "choices": [
-                {
-                    "finish_reason": "stop",
-                    "message": {
-                        "content": "中文" * 10
-                        + " This is an English report." * 20
-                    },
-                }
-            ]
-        }
         with self.assertRaises(RuntimeError):
             repo_status.summarize({}, "test")
         request.assert_called_once()

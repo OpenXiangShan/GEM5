@@ -239,20 +239,6 @@ def neutralize_mentions(text):
     return re.sub(r"(?<![A-Za-z0-9_@])@(?=[A-Za-z0-9])", "@\u200b", text)
 
 
-def report_language_counts(body):
-    """Count prose characters outside URLs and inline code."""
-    prose = re.sub(r"https?://\S+|`[^`]*`", "", body)
-    chinese = len(re.findall(r"[\u4e00-\u9fff]", prose))
-    latin = len(re.findall(r"[A-Za-z]", prose))
-    return chinese, latin
-
-
-def is_chinese_report(body):
-    """Require Chinese to predominate outside URLs and inline code."""
-    chinese, latin = report_language_counts(body)
-    return chinese >= 20 and chinese > latin
-
-
 def summarize(data, key):
     payload = {
         "model": "deepseek-flash",
@@ -272,13 +258,10 @@ def summarize(data, key):
     choice = response["choices"][0]
     body = (choice["message"].get("content") or "").strip()
     reason = choice.get("finish_reason")
-    chinese, latin = report_language_counts(body)
     Path("repo-status-model-response.json").write_text(
         json.dumps(
             {
                 "finish_reason": reason,
-                "chinese_characters": chinese,
-                "latin_characters": latin,
                 "content": body,
                 "usage": response.get("usage", {}),
             },
@@ -288,20 +271,12 @@ def summarize(data, key):
         encoding="utf-8",
     )
     print(
-        f"DeepSeek output: finish_reason={reason}, Chinese={chinese}, Latin={latin}",
+        f"DeepSeek output: finish_reason={reason}",
         flush=True,
     )
     print(
         "DeepSeek usage: " + json.dumps(response.get("usage", {})), flush=True
     )
-    if reason != "stop":
-        raise RuntimeError(
-            f"DeepSeek output incomplete (finish_reason={reason}); no issue published"
-        )
-    if not is_chinese_report(body):
-        raise RuntimeError(
-            f"DeepSeek language check failed (Chinese={chinese}, Latin={latin}); no issue published"
-        )
     return body
 
 
