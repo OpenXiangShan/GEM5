@@ -42,6 +42,7 @@
 #ifndef __CPU_O3_LSQ_HH__
 #define __CPU_O3_LSQ_HH__
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstdint>
@@ -539,6 +540,14 @@ class LSQ
         RequestPtr req(int idx = 0) { return _reqs.at(idx); }
         const RequestPtr req(int idx = 0) const { return _reqs.at(idx); }
         size_t numReqs() const { return _reqs.size(); }
+
+        bool
+        goldenMemWriteObserved() const
+        {
+            return !_reqs.empty() && std::all_of(
+                _reqs.begin(), _reqs.end(),
+                [](const RequestPtr &req) { return req->memWriteObserved(); });
+        }
 
         Addr getVaddr(int idx = 0) const { return req(idx)->getVaddr(); }
         virtual void initiateTranslation() = 0;
@@ -1099,7 +1108,9 @@ class LSQ
     StoreBufferEntry *find_inflight_store_buffer_entry(
         Addr block_paddr, ThreadID load_tid, int byte_idx = -1) const;
     void notifyOtherThreadsStoreVisible(ThreadID tid, Addr store_paddr,
-                                        const std::vector<bool> &byte_enable);
+                                       const std::vector<bool> &byte_enable);
+
+    void attachGoldenMemWriteObserver(PacketPtr pkt);
 
     /** Returns the number of stores a specific thread has to write back. */
     int numStoresToSbuffer(ThreadID tid);

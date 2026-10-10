@@ -1749,6 +1749,7 @@ LSQ::issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt, Tick issue_tick)
     data_pkt->clearDcacheMainPipeSbufferHit();
     data_pkt->setDcacheMainPipeSbufferReq();
     data_pkt->setLSQPtr(this);
+    attachGoldenMemWriteObserver(data_pkt);
 
     // Issue to the real classic cache only at fake S2 so StoreBuffer misses
     // cannot allocate or merge MSHRs at fake-pipe admission time.
@@ -1861,7 +1862,7 @@ LSQ::completeSbufferEvict(PacketPtr pkt)
     notifyOtherThreadsStoreVisible(request->sbuffer_entry->tid,
                                    request->mainReq()->getPaddr(),
                                    request->mainReq()->getByteEnable());
-    if (cpu->goldenMemManager() &&
+    if (!request->goldenMemWriteObserved() && cpu->goldenMemManager() &&
         cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
         Addr paddr = request->mainReq()->getPaddr();
         DPRINTF(LSQ, "StoreBuffer writing to golden memory at addr %#x\n",
@@ -2898,6 +2899,32 @@ LSQ::find_inflight_store_buffer_entry(Addr block_paddr, ThreadID load_tid,
         }
     }
     return nullptr;
+}
+
+void
+LSQ::attachGoldenMemWriteObserver(PacketPtr pkt)
+{
+    auto *golden = cpu->goldenMemManager();
+    if (!pkt->isWrite() || !golden || pkt->req->hasMemWriteObserver() ||
+        !golden->inPmem(pkt->getAddr(), pkt->getSize())) {
+        return;
+    }
+
+    // Responses may arrive in a different order from writes. Observe the
+    // actual cache/memory update, including ordinary stores mixed with AMOs.
+    // Read the mask at execution time because SBuffer merging can extend it.
+    pkt->req->setMemWriteObserver(
+        [golden](const Request &req, const uint8_t *data) {
+            golden->updateGoldenMem(
+                req.getPaddr(), const_cast<uint8_t *>(data),
+                req.getByteEnable(), req.getSize());
+            uint64_t value = 0;
+            std::memcpy(&value, data,
+                        std::min(size_t(req.getSize()), sizeof(value)));
+            DPRINTFR(LSQ, "%llu: Golden write at memory execution: addr=%#lx "
+                    "size=%u data=%#lx\n",
+                    curTick(), req.getPaddr(), req.getSize(), value);
+        });
 }
 
 void
