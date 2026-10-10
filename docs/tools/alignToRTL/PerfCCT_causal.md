@@ -22,7 +22,8 @@ OFF 性能对照不添加上述 tracing 开关。采集从运行开始，不随 
 --warmup-insts-no-switch=5000000 --maxinsts=10000000
 ```
 
-固定 binary、配置、checkpoint、REF 和 ROI，并记录命令及 SHA256。
+先等待构建成功结束并保存固定 binary 快照，运行前后核对相同 SHA256。
+固定配置、checkpoint、REF 和 ROI，并记录命令及指纹。
 GCPT 的 difftest REF 按仓库运行流程解析，不以旧路径仍可读作为兼容证明。
 较长运行的 SQLite 体积和查询耗时可能很大，先估算预算。
 
