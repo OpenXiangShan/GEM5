@@ -1425,8 +1425,15 @@ void
 DecoupledBPUWithBTB::trainH2P(
     const BranchOutcome &branch, const FetchTarget &target)
 {
-    if (!enableH2PTable || !branch.isCond || !branch.mispredicted)
+    if (!enableH2PTable || !branch.isCond)
         return;
+
+    if (!branch.mispredicted) {
+        const auto result = h2pTable.trainCorrect(branch.pc);
+        if (result.decremented)
+            dbpBtbStats.h2pCorrectDecays++;
+        return;
+    }
 
     const bool allowAllocate = std::find(
         target.h2pAllocateBranchPCs.begin(),

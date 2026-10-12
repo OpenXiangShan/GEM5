@@ -306,6 +306,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Formula h2pAccuracy;
         statistics::Formula h2pFalsePositiveRate;
         statistics::Scalar h2pTrainMispredicts;
+        statistics::Scalar h2pCorrectDecays;
         statistics::Scalar h2pTrainProviderRejected;
         statistics::Scalar h2pAllocations;
         statistics::Scalar h2pCounterAges;

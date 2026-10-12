@@ -142,6 +142,32 @@ H2PTable::trainMispred(Addr pc, bool allowAllocate)
     return result;
 }
 
+H2PTable::TrainResult
+H2PTable::trainCorrect(Addr pc)
+{
+    TrainResult result;
+    auto *line = findLine(pc);
+    if (!line)
+        return result;
+
+    ++useClock;
+    line->lastUse = useClock;
+    for (auto &branch : line->branches) {
+        if (!branch.valid || branch.pc != pc)
+            continue;
+
+        if (branch.counter > 0) {
+            --branch.counter;
+            result.decremented = true;
+        }
+        branch.lastUse = useClock;
+        if (branch.counter == 0)
+            branch.valid = false;
+        return result;
+    }
+    return result;
+}
+
 unsigned
 H2PTable::age()
 {
