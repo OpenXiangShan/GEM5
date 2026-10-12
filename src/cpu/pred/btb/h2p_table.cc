@@ -53,7 +53,7 @@ H2PTable::lookup(Addr pc)
     for (auto &branch : line->branches) {
         if (branch.valid && branch.pc == pc) {
             branch.lastUse = useClock;
-            return {branch.counter > 2, true};
+            return {branch.counter > 3, true};
         }
     }
     return {};
