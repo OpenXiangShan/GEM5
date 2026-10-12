@@ -18,6 +18,7 @@ class H2PTable
     static constexpr unsigned Ways = 2;
     static constexpr unsigned BranchesPerLine = 2;
     static constexpr unsigned CounterMax = 7;
+    static constexpr unsigned CorrectDecayInterval = 2;
 
     struct LookupResult
     {
@@ -50,6 +51,7 @@ class H2PTable
     {
         Addr pc = 0;
         uint8_t counter = 0;
+        uint8_t correctStreak = 0;
         bool valid = false;
         uint64_t lastUse = 0;
     };

@@ -127,13 +127,31 @@ TEST(H2PTableTest, CorrectPredictionDecaysAndReleasesEntry)
         table.trainMispred(pc);
     ASSERT_TRUE(table.lookup(pc).h2p);
 
-    EXPECT_TRUE(table.trainCorrect(pc).decremented);
+    EXPECT_FALSE(table.trainCorrect(pc).decremented);
     EXPECT_TRUE(table.lookup(pc).hit);
-    EXPECT_FALSE(table.lookup(pc).h2p);
+    EXPECT_TRUE(table.lookup(pc).h2p);
 
     EXPECT_TRUE(table.trainCorrect(pc).decremented);
+    EXPECT_FALSE(table.lookup(pc).h2p);
+    EXPECT_FALSE(table.trainCorrect(pc).decremented);
+    EXPECT_TRUE(table.trainCorrect(pc).decremented);
+    EXPECT_FALSE(table.lookup(pc).h2p);
+    EXPECT_FALSE(table.trainCorrect(pc).decremented);
     EXPECT_TRUE(table.trainCorrect(pc).decremented);
     EXPECT_FALSE(table.lookup(pc).hit);
+}
+
+TEST(H2PTableTest, MispredictionResetsCorrectDecayStreak)
+{
+    H2PTable table(128);
+    const Addr pc = 0x1040;
+    for (int i = 0; i < 3; ++i)
+        table.trainMispred(pc);
+
+    EXPECT_FALSE(table.trainCorrect(pc).decremented);
+    EXPECT_TRUE(table.trainMispred(pc).incremented);
+    EXPECT_FALSE(table.trainCorrect(pc).decremented);
+    EXPECT_TRUE(table.trainCorrect(pc).decremented);
 }
 
 TEST(H2PTableTest, CorrectPredictionDoesNotAllocate)
