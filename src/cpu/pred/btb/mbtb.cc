@@ -105,7 +105,7 @@ MBTB::MBTB(const Params &p)
     sram1.resize(numSets);
     mru0.resize(numSets);
     mru1.resize(numSets);
-    
+
     // Initialize SRAM0
     for (unsigned i = 0; i < numSets; ++i) {
         auto &set = sram0[i];
@@ -117,7 +117,7 @@ MBTB::MBTB(const Params &p)
         }
         std::make_heap(mru0[i].begin(), mru0[i].end(), older());
     }
-    
+
     // Initialize SRAM1
     for (unsigned i = 0; i < numSets; ++i) {
         auto &set = sram1[i];
@@ -193,13 +193,13 @@ std::vector<MBTB::TickedBTBEntry>
 MBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startAddr)
 {
     auto processed_entries = entries;
-    
+
     // Sort by instruction order
-    std::sort(processed_entries.begin(), processed_entries.end(), 
+    std::sort(processed_entries.begin(), processed_entries.end(),
              [](const BTBEntry &a, const BTBEntry &b) {
                  return a.pc < b.pc;
              });
-    
+
     // Remove entries before the start PC
     auto it = std::remove_if(processed_entries.begin(), processed_entries.end(),
                            [startAddr](const BTBEntry &e) {
@@ -340,10 +340,10 @@ MBTB::putPCHistory(Addr startAddr,
 
     // Process BTB entries
     auto processed_entries = processEntries(find_entries, startAddr);
-    
+
     // Fill predictions for each pipeline stage
     fillStagePredictions(processed_entries, stagePreds);
-    
+
     // Update metadata for later stages
     updatePredictionMeta(processed_entries, stagePreds);
 }
@@ -405,7 +405,7 @@ MBTB::lookupSingleBlock(Addr block_pc, ThreadID tid, uint8_t asidHash)
     int sram_id = getSRAMId(block_pc);
     auto& target_sram = (sram_id == 0) ? sram0 : sram1;
     auto& target_mru = (sram_id == 0) ? mru0 : mru1;
-    
+
     Addr btb_idx = getIndex(block_pc, asidHash, tid);
     auto& btb_set = target_sram[btb_idx];
     assert(btb_idx < numSets);
@@ -413,7 +413,7 @@ MBTB::lookupSingleBlock(Addr block_pc, ThreadID tid, uint8_t asidHash)
     Addr current_tag = getTag(block_pc, asidHash);
     DPRINTF(BTB, "BTB: Doing tag comparison for SRAM%d index 0x%lx tag %#lx\n",
         sram_id, btb_idx, current_tag);
-        
+
     for (auto &way : btb_set) {
         if (way.valid && way.tag == current_tag) {
             res.push_back(way);
@@ -567,7 +567,7 @@ MBTB::updateBTBEntry(
     int sram_id = getSRAMId(alignedPC);
     auto& target_sram = (sram_id == 0) ? sram0 : sram1;
     auto& target_mru = (sram_id == 0) ? mru0 : mru1;
-    
+
     // Calculate index and tag for this entry
     Addr btb_idx = getIndex(entry.pc, stream.asidHash, stream.tid);
 

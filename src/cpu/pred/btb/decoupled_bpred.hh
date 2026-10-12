@@ -457,7 +457,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     {
         return ftq.getTargetTid(eligible, ineligibleSkips);
     }
-    
+
     int getTargetTidByFetchQueueSize(const std::array<bool, MaxThreads> &eligible,
                                      unsigned *ineligibleSkips,
                                      const std::array<unsigned, MaxThreads> &fetchQueueSizes)

@@ -88,7 +88,7 @@ namespace btb_pred {
 
         void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
                           std::vector<FullBTBPrediction> &stagePreds) override;
-        
+
         std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
         void refreshPredictionMeta(Addr startAddr,
                                    const boost::dynamic_bitset<> &history,
