@@ -185,7 +185,10 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         blockStateHoldCycles[i] = 0;
         longLatencyStallCycles[i] = 0;
         lastLoadHeadSeqNum[i] = UINT64_MAX;
+        deferVsetvlDecode[i] = false;
+        postSquashFetchBatchSize[i] = 0;
         flushFromInitiated[i] = false;
+
     }
     smtLdstqHighWater = params.smtBorrowLdstqHighWater;
     if (smtLdstqHighWater == 0) {
@@ -655,7 +658,10 @@ Fetch::clearStates(ThreadID tid)
     threads[tid].cacheReq.reset();
     threads[tid].reset();
     fetchQueue[tid].clear();
+    deferVsetvlDecode[tid] = false;
+    postSquashFetchBatchSize[tid] = 0;
     clearPredecodePipeline(tid);
+
 
     // TODO not sure what to do with priorityList for now
     // priorityList.push_back(tid);
@@ -692,6 +698,8 @@ Fetch::resetStage()
         clearPredecodePipeline(tid);
 
         priorityList.push_back(tid);
+        deferVsetvlDecode[tid] = false;
+        postSquashFetchBatchSize[tid] = 0;
         waitForVsetvl[tid] = false;
         smtBorrowThrottleCycles[tid] = 0;
     }
@@ -1447,7 +1455,10 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
 
     // Empty fetch queue
     fetchQueue[tid].clear();
+    deferVsetvlDecode[tid] = true;
+    postSquashFetchBatchSize[tid] = 0;
     clearPredecodePipeline(tid);
+
 
     // microops are being squashed, it is not known wheather the
     // youngest non-squashed microop was  marked delayed commit
@@ -1875,6 +1886,31 @@ Fetch::sendInstructionsToDecode()
 
         unsigned thread_insts = 0;
         auto &insts = fetchQueue[tid];
+
+        if (deferVsetvlDecode[tid] && postSquashFetchBatchSize[tid] > 0) {
+            const auto batch_end = insts.begin() +
+                std::min<size_t>(postSquashFetchBatchSize[tid], insts.size());
+            const bool has_vsetvli = std::any_of(
+                    insts.begin(), batch_end,
+                    [](const DynInstPtr& inst) {
+                        if (!inst->staticInst->isVectorConfig())
+                            return false;
+                        const auto *vset = static_cast<const RiscvISA::VConfOp *>(
+                            inst->staticInst.get());
+                        return vset->vtypeIsImm;
+                    });
+            deferVsetvlDecode[tid] = false;
+            postSquashFetchBatchSize[tid] = 0;
+            if (has_vsetvli) {
+                DPRINTF(Fetch,
+                        "[tid:%i] Deferring post-squash vsetvli/vsetivli batch "
+                        "in fetch queue for one cycle.\n",
+                        tid);
+                measureFrontendBubbles(0, tid);
+                continue;
+            }
+        }
+
         while (!insts.empty() && thread_insts < decodeWidth) {
             assert(toDecode->size < MaxWidth);
             const auto &inst = insts.front();
@@ -3071,6 +3107,11 @@ Fetch::performInstructionFetch(ThreadID tid)
 
     // Update persistent state
     macroop[tid] = curMacroop;
+
+    if (deferVsetvlDecode[tid] && postSquashFetchBatchSize[tid] == 0 &&
+        !fetchQueue[tid].empty()) {
+        postSquashFetchBatchSize[tid] = fetchQueue[tid].size();
+    }
 
     if (numInst > 0) {
         wroteToTimeBuffer = true;

@@ -17,6 +17,7 @@
 #include "base/types.hh"
 #include "cpu/func_unit.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/inst_queue.hh"
@@ -35,6 +36,8 @@
         assert((*instNumClassify[x->opClass()]) != 0); \
         (*instNumClassify[x->opClass()])--;            \
         instNum--;                        \
+        assert(threadEntries[x->threadNumber] != 0);   \
+        threadEntries[x->threadNumber]--;              \
         selector->deallocate(x);          \
     } while (0)
 
@@ -65,6 +68,144 @@ namespace gem5
 
 namespace o3
 {
+
+namespace
+{
+
+struct FdivFormat
+{
+    unsigned width;
+    unsigned exponentBits;
+    unsigned fractionBits;
+    int exponentBias;
+    int minNormalExponent;
+    uint32_t normalLatency;
+};
+
+struct FdivLatency
+{
+    uint32_t cycles;
+    const char* latencyClass;
+};
+
+constexpr FdivFormat FdivF64 = {64, 11, 52, 1023, -1022, 12};
+constexpr FdivFormat FdivF32 = {32, 8, 23, 127, -126, 7};
+constexpr FdivFormat FdivF16 = {16, 5, 10, 15, -14, 5};
+constexpr uint32_t FdivFastLatency = 4;
+
+const FdivFormat*
+fdivFormat(unsigned width)
+{
+    switch (width) {
+      case 64:
+        return &FdivF64;
+      case 32:
+        return &FdivF32;
+      case 16:
+        return &FdivF16;
+      default:
+        return nullptr;
+    }
+}
+
+uint64_t
+lowBitsMask(unsigned width)
+{
+    return width == 64 ? ~uint64_t{0} : (uint64_t{1} << width) - 1;
+}
+
+bool
+isNanBoxed(uint64_t value, const FdivFormat& format)
+{
+    if (format.width == 64) {
+        return true;
+    }
+    const uint64_t upperMask = ~lowBitsMask(format.width);
+    return (value & upperMask) == upperMask;
+}
+
+struct NormalizedFdivOperand
+{
+    int exponent;
+    uint64_t significand;
+};
+
+NormalizedFdivOperand
+normalizeFdivOperand(uint64_t exponent, uint64_t fraction,
+                     const FdivFormat& format)
+{
+    if (exponent != 0) {
+        return {
+            static_cast<int>(exponent) - format.exponentBias,
+            (uint64_t{1} << format.fractionBits) | fraction
+        };
+    }
+
+    assert(fraction != 0);
+    const unsigned leadingBit = 63 - __builtin_clzll(fraction);
+    const unsigned shift = format.fractionBits - leadingBit;
+    return {
+        format.minNormalExponent - static_cast<int>(shift),
+        fraction << shift
+    };
+}
+
+FdivLatency
+classifyFdivLatency(uint64_t rawOpa, uint64_t rawOpb,
+                    const FdivFormat& format)
+{
+    const uint64_t valueMask = lowBitsMask(format.width);
+    const uint64_t exponentMask = lowBitsMask(format.exponentBits);
+    const uint64_t fractionMask = lowBitsMask(format.fractionBits);
+    const uint64_t opa = rawOpa & valueMask;
+    const uint64_t opb = rawOpb & valueMask;
+    const uint64_t opaExp = (opa >> format.fractionBits) & exponentMask;
+    const uint64_t opbExp = (opb >> format.fractionBits) & exponentMask;
+    const uint64_t opaFrac = opa & fractionMask;
+    const uint64_t opbFrac = opb & fractionMask;
+    const bool opaBoxed = isNanBoxed(rawOpa, format);
+    const bool opbBoxed = isNanBoxed(rawOpb, format);
+
+    const bool opaZero = opaBoxed && opaExp == 0 && opaFrac == 0;
+    const bool opbZero = opbBoxed && opbExp == 0 && opbFrac == 0;
+    const bool opaInf = opaBoxed && opaExp == exponentMask && opaFrac == 0;
+    const bool opbInf = opbBoxed && opbExp == exponentMask && opbFrac == 0;
+    const bool opaNan = !opaBoxed ||
+                        (opaExp == exponentMask && opaFrac != 0);
+    const bool opbNan = !opbBoxed ||
+                        (opbExp == exponentMask && opbFrac != 0);
+    const bool invalid = (opaInf && opbInf) || (opaZero && opbZero);
+    const bool earlyFinish = opaNan || opbNan || invalid ||
+                             opaInf || opbZero || opaZero || opbInf;
+
+    // The RTL bypasses the iterative path for special results and for a
+    // finite normal divisor whose fraction is zero.
+    if (earlyFinish || opbFrac == 0) {
+        return {FdivFastLatency, "fast"};
+    }
+
+    const bool inputSubnormal = opaExp == 0 || opbExp == 0;
+    const auto normalizedOpa =
+        normalizeFdivOperand(opaExp, opaFrac, format);
+    const auto normalizedOpb =
+        normalizeFdivOperand(opbExp, opbFrac, format);
+    int quotientExponent = normalizedOpa.exponent - normalizedOpb.exponent;
+    if (normalizedOpa.significand < normalizedOpb.significand) {
+        --quotientExponent;
+    }
+    const bool resultSubnormal =
+        quotientExponent < format.minNormalExponent;
+
+    const uint32_t latency = format.normalLatency + inputSubnormal +
+                             resultSubnormal;
+    const char* latencyClass =
+        inputSubnormal && resultSubnormal ? "input+result-subnormal" :
+        inputSubnormal ? "input-subnormal" :
+        resultSubnormal ? "result-subnormal" : "normal";
+    return {latency, latencyClass};
+}
+
+} // anonymous namespace
 
 IssuePort::IssuePort(const IssuePortParams& params) : SimObject(params), rp(params.rp), fu(params.fu)
 {
@@ -213,6 +354,7 @@ IssueQue::IssueQue(const IssueQueParams& params)
 {
     panic_if(vectorSplitUnits == 0,
              "%s: vectorSplitUnits must be greater than 0\n", iqname);
+    smtIQWatermark = params.smtIQWatermark;
 
     if (deferNewEnqueueSelection) {
         enqueuedThisCycle.reserve(inports);
@@ -336,6 +478,30 @@ IssueQue::setCPU(CPU* cpu)
     _name = cpu->name() + ".scheduler." + getName();
     iqstats = new IssueQueStats(cpu, this, "scheduler." + this->getName());
     iqstats->instsNum.init(cpu->numThreads);
+
+    smtIQPolicy = scheduler->smtIQPolicy;
+    numThreads = cpu->numThreads;
+    for (int t = 0; t < MaxThreads; ++t) {
+        threadEntries[t] = 0;
+    }
+
+    if (smtIQWatermark < 0) {
+        warn("%s: negative SMT IQ watermark %d; using Dynamic sharing",
+             iqname, smtIQWatermark);
+        smtIQPolicy = SMTQueuePolicy::Dynamic;
+    } else if (static_cast<uint64_t>(numThreads) *
+                   static_cast<uint64_t>(smtIQWatermark) >
+               static_cast<uint64_t>(iqsize)) {
+        warn("%s: %d threads * watermark %d exceeds IQ size %d; "
+             "using Dynamic sharing",
+             iqname, numThreads, smtIQWatermark, iqsize);
+        smtIQPolicy = SMTQueuePolicy::Dynamic;
+    } else if (smtIQPolicy != SMTQueuePolicy::Dynamic &&
+               smtIQPolicy != SMTQueuePolicy::Watermark) {
+        warn("%s: SMT IQ policy %d is unsupported; using Dynamic sharing",
+             iqname, static_cast<int>(smtIQPolicy));
+        smtIQPolicy = SMTQueuePolicy::Dynamic;
+    }
 }
 
 void
@@ -1160,17 +1326,34 @@ IssueQue::tick()
 }
 
 bool
-IssueQue::ready()
+IssueQue::ready(ThreadID tid)
 {
     bool bwFull = instNumInsert >= inports;
-    bool full = (instNum >= iqsize) || (replayQ.size() > replayQsize);
+    bool globalFull = (instNum >= iqsize) || (replayQ.size() > replayQsize);
     if (bwFull) {
         DPRINTF(Schedule, "can't insert more due to inports exhausted\n");
     }
-    if (full) {
+    if (globalFull) {
         DPRINTF(Schedule, "has full!\n");
     }
-    return !full && !bwFull;
+    if (bwFull || globalFull) {
+        return false;
+    }
+
+    if (smtIQPolicy == SMTQueuePolicy::Watermark) {
+        uint64_t reserved = 0;
+        for (int t = 0; t < numThreads; ++t) {
+            if (t != tid) {
+                reserved += std::max(
+                    static_cast<uint64_t>(smtIQWatermark),
+                    static_cast<uint64_t>(threadEntries[t]));
+            }
+        }
+        const uint64_t size = static_cast<uint64_t>(iqsize);
+        const uint64_t limit = reserved < size ? size - reserved : 0;
+        return threadEntries[tid] < limit;
+    }
+    return true;
 }
 
 void
@@ -1180,6 +1363,7 @@ IssueQue::insert(const DynInstPtr& inst)
     (*instNumClassify[inst->opClass()])++;
     instNum++;
     instNumInsert++;
+    threadEntries[inst->threadNumber]++;
     if (deferNewEnqueueSelection) {
         enqueuedThisCycle.push_back(inst->seqNum);
     }
@@ -1478,11 +1662,15 @@ Scheduler::Scheduler(const SchedulerParams& params)
         loadPipeCount += iq_load_ports;
         storePipeCount += iq_store_ports;
         panic_if(issueQues[i]->fuDescs.size() == 0, "Empty config IssueQue: " + issueQues[i]->getName());
+        std::bitset<Num_OpClasses> registeredOpClasses;
         for (auto fu : issueQues[i]->fuDescs) {
             for (auto op : fu->opDescList) {
                 opExecTimeTable[op->opClass] = op->opLat;
                 opPipelined[op->opClass] = op->pipelined;
-                dispTable[op->opClass].push_back(issueQues[i]);
+                if (!registeredOpClasses.test(op->opClass)) {
+                    dispTable[op->opClass].push_back(issueQues[i]);
+                    registeredOpClasses.set(op->opClass);
+                }
                 opChecker.set(op->opClass);
             }
         }
@@ -1615,6 +1803,9 @@ Scheduler::setCPU(CPU* cpu, LSQ* lsq)
 {
     this->cpu = cpu;
     this->lsq = lsq;
+    const auto& cpuParams =
+        dynamic_cast<const BaseO3CPUParams&>(cpu->params());
+    smtIQPolicy = cpuParams.smtIQPolicy;
     for (auto it : issueQues) {
         it->setCPU(cpu);
         it->selector->setparent(this, it);
@@ -1742,7 +1933,9 @@ Scheduler::lookahead(std::deque<DynInstPtr>& insts)
 bool
 Scheduler::ready(const DynInstPtr& inst, int disp_seq)
 {
-    if (inst->staticInst->isSplitStoreAddr() && !ready(StoreDataOp, disp_seq)) {
+    ThreadID tid = inst->threadNumber;
+    if (inst->staticInst->isSplitStoreAddr() &&
+        !ready(StoreDataOp, tid, disp_seq)) {
         return false;
     }
 
@@ -1751,12 +1944,12 @@ Scheduler::ready(const DynInstPtr& inst, int disp_seq)
 
     if (old_disp) [[unlikely]] {
         for (auto iq : iqs) {
-            if (iq->ready()) {
+            if (iq->ready(tid)) {
                 return true;
             }
         }
     } else {
-        if (iqs[dispSeqVec.at(disp_seq)]->ready()) {
+        if (iqs[dispSeqVec.at(disp_seq)]->ready(tid)) {
             return true;
         }
     }
@@ -1766,19 +1959,19 @@ Scheduler::ready(const DynInstPtr& inst, int disp_seq)
 }
 
 bool
-Scheduler::ready(OpClass op, int disp_seq)
+Scheduler::ready(OpClass op, ThreadID tid, int disp_seq)
 {
     auto& iqs = dispTable[op];
     assert(!iqs.empty());
 
     if (old_disp) {
         for (auto iq : iqs) {
-            if (iq->ready()) {
+            if (iq->ready(tid)) {
                 return true;
             }
         }
     } else {
-        if (iqs[dispSeqVec.at(disp_seq)]->ready()) {
+        if (iqs[dispSeqVec.at(disp_seq)]->ready(tid)) {
             return true;
         }
     }
@@ -1842,12 +2035,13 @@ Scheduler::insert(const DynInstPtr& inst, int disp_seq)
     }
 
     auto& iqs = dispTable[inst->opClass()];
+    ThreadID tid = inst->threadNumber;
 
     if (old_disp) {
         bool insert = false;
         std::sort(iqs.begin(), iqs.end(), disp_policy(inst->opClass()));
         for (auto iq : iqs) {
-            if (iq->ready()) {
+            if (iq->ready(tid)) {
                 insert = true;
                 iq->insert(inst);
                 break;
@@ -1855,7 +2049,7 @@ Scheduler::insert(const DynInstPtr& inst, int disp_seq)
         }
         panic_if(!insert, "can't find ready IQ to insert");
     } else {
-        assert(iqs[dispSeqVec.at(disp_seq)]->ready());
+        assert(iqs[dispSeqVec.at(disp_seq)]->ready(tid));
         iqs[dispSeqVec.at(disp_seq)]->insert(inst);
     }
 
@@ -1866,9 +2060,10 @@ void
 Scheduler::insertNonSpec(const DynInstPtr& inst)
 {
     auto& iqs = dispTable[inst->opClass()];
+    ThreadID tid = inst->threadNumber;
 
     for (auto iq : iqs) {
-        if (iq->ready()) {
+        if (iq->ready(tid)) {
             iq->insertNonSpec(inst);
             break;
         }
@@ -2183,7 +2378,8 @@ uint32_t
 Scheduler::getOpLatency(const DynInstPtr& inst)
 {
     if (inst->opClass() == FloatDivOp) [[unlikely]] {
-        if (inst->staticInst->operWid() == 64) {
+        const auto* format = fdivFormat(inst->staticInst->operWid());
+        if (format) {
             const int cached = inst->getFdivLatency();
             if (cached >= 0) {
                 return cached;
@@ -2198,63 +2394,23 @@ Scheduler::getOpLatency(const DynInstPtr& inst)
                 const auto src = inst->renamedSrcIdx(i);
                 if (!src->isFixedMapping() &&
                     !bypassScoreboard[src->flatIndex()]) {
-                    return 12;
+                    return format->normalLatency;
                 }
             }
 
             // Read the renamed physical registers so an out-of-order
             // producer is observed at the same point as normal execution.
-            const uint64_t opa = cpu->peekReg(inst->renamedSrcIdx(0));
-            const uint64_t opb = cpu->peekReg(inst->renamedSrcIdx(1));
-            const uint64_t opaExp = (opa >> 52) & 0x7ff;
-            const uint64_t opbExp = (opb >> 52) & 0x7ff;
-            const uint64_t opaFrac = opa & ((uint64_t(1) << 52) - 1);
-            const uint64_t opbFrac = opb & ((uint64_t(1) << 52) - 1);
-
-            const bool opaZero = opaExp == 0 && opaFrac == 0;
-            const bool opbZero = opbExp == 0 && opbFrac == 0;
-            const bool opaInf = opaExp == 0x7ff && opaFrac == 0;
-            const bool opbInf = opbExp == 0x7ff && opbFrac == 0;
-            const bool opaNan = opaExp == 0x7ff && opaFrac != 0;
-            const bool opbNan = opbExp == 0x7ff && opbFrac != 0;
-
-            // This is the same early-finish partition used by the RTL:
-            // NaN, invalid (Inf/Inf or 0/0), Inf result, or exact zero.
-            const bool invalid = (opaInf && opbInf) ||
-                                 (opaZero && opbZero);
-            const bool earlyFinish = opaNan || opbNan || invalid ||
-                                     opaInf || opbZero || opaZero || opbInf;
-
-            uint32_t latency = 12;
-            if (earlyFinish || (!opbInf && !opbZero && opbFrac == 0)) {
-                latency = 4;
-            } else if (opaExp == 0 || opbExp == 0) {
-                latency = 13;
-            } else {
-                // For normal finite operands, the quotient exponent is
-                // determined by the unbiased exponent difference and the
-                // significand comparison.  An exponent below -1022 means
-                // the RTL takes its extra denormal post-processing cycle.
-                const uint64_t opaSig = (uint64_t(1) << 52) | opaFrac;
-                const uint64_t opbSig = (uint64_t(1) << 52) | opbFrac;
-                int quotientExp = static_cast<int>(opaExp) - 1023 -
-                                   (static_cast<int>(opbExp) - 1023);
-                if (opaSig < opbSig) {
-                    --quotientExp;
-                }
-                if (quotientExp < -1022) {
-                    latency = 13;
-                }
-            }
-            inst->setFdivLatency(latency);
+            const uint64_t rawOpa = cpu->peekReg(inst->renamedSrcIdx(0));
+            const uint64_t rawOpb = cpu->peekReg(inst->renamedSrcIdx(1));
+            const auto latency =
+                classifyFdivLatency(rawOpa, rawOpb, *format);
+            inst->setFdivLatency(latency.cycles);
             DPRINTF(Schedule,
-                    "[sn:%llu] semantic fdiv latency opLat=%u "
-                    "(AtFU->bypass=%u), opa=%#lx opb=%#lx\n",
-                    inst->seqNum, latency, latency - 1, opa, opb);
-            return latency;
-        }
-        if (inst->staticInst->operWid() == 32) {
-            return 11;
+                    "[sn:%llu] semantic fdiv width=%u class=%s opLat=%u "
+                    "(AtFU->bypass=%u), raw_opa=%#lx raw_opb=%#lx\n",
+                    inst->seqNum, format->width, latency.latencyClass,
+                    latency.cycles, latency.cycles - 1, rawOpa, rawOpb);
+            return latency.cycles;
         }
     } else if (inst->opClass() == FloatSqrtOp) [[unlikely]] {
         if (inst->staticInst->operWid() == 32) {

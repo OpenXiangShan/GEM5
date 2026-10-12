@@ -257,25 +257,34 @@ class KMHV3Scheduler(Scheduler):
             IssuePort(fu=[FP_ALU(), FP_MAC()],
                       rp=[FpRD(9,0), FpRD(10,0), FpRD(11,0)])
         ]),
-        IssueQue(name='vecIQ0', inports=5, size=16+16+10, oports=[
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()])
+    ]
+    __vecIQs = [
+        IssueQue(name='vecIQ0', inports=2, size=16, oports=[
+            IssuePort(fu=[VecIALU(), VecIMAC(), VecMOVE(), VecFCVT(), VecFMAC()])
+        ], scheduleToExecDelay=3),
+        IssueQue(name='vecIQ1', inports=2, size=16, oports=[
+            IssuePort(fu=[VecIALU(), VecIDIV(), VecFMAC(), VecFDIV()])
+        ], scheduleToExecDelay=3),
+        IssueQue(name='vecIQ2', inports=2, size=16, oports=[
+            IssuePort(fu=[VecIALU()])
+        ], scheduleToExecDelay=3),
+        IssueQue(name='vecIQ3', inports=2, size=16, oports=[
+            IssuePort(fu=[VecIALU()])
         ], scheduleToExecDelay=3),
     ]
 
     intRegfileBanks = 2
 
-    IQs = __intIQs + __memIQs + __fpIQs
+    IQs = __intIQs + __memIQs + __fpIQs + __vecIQs
     __int_bank = [i.name for i in __intIQs]
     __mem_bank = [i.name for i in __memIQs]
     __fp_bank = [i.name for i in __fpIQs]
+    __vec_bank = [i.name for i in __vecIQs]
     specWakeupNetwork = [
         SpecWakeupChannel(srcs=__int_bank + __mem_bank + ['fpIQ0'], dsts=__int_bank + __mem_bank),
-        SpecWakeupChannel(srcs=__mem_bank, dsts=__fp_bank),
-        SpecWakeupChannel(srcs=__fp_bank, dsts=__fp_bank + ['std0', 'std1'])
+        SpecWakeupChannel(srcs=__mem_bank, dsts=__fp_bank + __vec_bank),
+        SpecWakeupChannel(srcs=__fp_bank + __vec_bank,
+                          dsts=__fp_bank + __vec_bank + ['std0', 'std1'])
     ]
 
     enableMainRdpOpt = True  # TX dynamic read port optimization

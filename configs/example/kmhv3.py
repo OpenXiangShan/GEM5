@@ -55,19 +55,6 @@ def setKmhV3Params(args, system):
 
     for cpu in system.cpu:
 
-        # Keep ROB compression comparisons on the same single-threaded
-        # execution model; disable only optimizations that Hybrid cannot use.
-        # Register move elimination remains enabled.
-        # Preserve the existing SMT configuration when this entry point is
-        # explicitly invoked with --smt.
-        if not args.smt:
-            cpu.numThreads = 1
-        cpu.valuePred = NULL
-        cpu.enable_loadFusion = False
-        cpu.enableConstantFolding = False
-        cpu.enableMoveElimination = True
-        cpu.enableMovImmElimination = False
-
         # fetch (idealfetch not care)
         cpu.mmu.itb.enable_l1_direct_compression = args.enable_l1_direct_compression
         cpu.mmu.dtb.enable_l1_direct_compression = args.enable_l1_direct_compression
@@ -83,6 +70,8 @@ def setKmhV3Params(args, system):
         # decode
         cpu.fetchToDecodeDelay = 3
         cpu.decodeWidth = 8
+        cpu.enable_loadFusion = False
+        cpu.enableConstantFolding = False
 
         # rename
         cpu.renameWidth = 8
@@ -128,8 +117,16 @@ def setKmhV3Params(args, system):
             # --param can select Hybrid while retaining the normal KMHV3
             # entry point.  Apply all required defaults before root.apply_config
             # runs, so explicit --param overrides still take precedence.
+            cpu.numThreads = 1
+            cpu.valuePred = NULL
+            cpu.enable_loadFusion = False
+            cpu.enableConstantFolding = False
+            cpu.enableMoveElimination = True
+            cpu.enableMovImmElimination = False
             cpu.RobCompressPolicy = 'hybrid'
             cpu.CROB_instPerGroup = 8
+            cpu.renameWidth = 8
+            cpu.commitWidth = 8
 
         # lsu
         cpu.StoreWbStage = 4

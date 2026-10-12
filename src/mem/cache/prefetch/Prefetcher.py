@@ -1380,6 +1380,10 @@ class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     lldp = Param.LLDPrefetcher(LLDPrefetcher(is_sub_prefetcher=True),
                                "LLDP component")
     enable_lldp = Param.Bool(False, "Enable LLDP component")
+    offload_low_accuracy = Param.Bool(
+        False,
+        "Offload low-accuracy upstream pfahead sources to L3 when CDP dominates L2"
+    )
 
 class L3CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     type = 'L3CompositeWithWorkerPrefetcher'

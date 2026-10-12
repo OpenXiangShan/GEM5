@@ -1,4 +1,4 @@
-name: gem5 Ideal BTB Weekly Performance Test
+name: gem5 Weekly Performance Test
 
 on:
   schedule:
@@ -13,6 +13,13 @@ jobs:
     with:
       config_path: configs/example/kmhv3.py
       benchmark_type: "spec06-rva23-novec-gcc16-1.0c"
+
+  align_test_spec06_xscc:
+    uses: ./.github/workflows/gem5-perf-template.yml
+    with:
+      config_path: configs/example/kmhv3.py
+      benchmark_type: "custom-spec06"
+      checkpoint_path: "/nfs/home/share/checkpoints_profiles/spec06_xscc_rva23_novec_260911"
 
   align_test_spec17:
     uses: ./.github/workflows/gem5-perf-template.yml
@@ -35,20 +42,21 @@ jobs:
       config_path: configs/example/idealkmhv3.py
       benchmark_type: "spec06-rva23-novec-gcc16-1.0c"
 
-  perf_test_spec17:
-    uses: ./.github/workflows/gem5-perf-template.yml
-    with:
-      config_path: configs/example/idealkmhv3.py
-      benchmark_type: "spec17-1.0c"
+  # Temporarily disabled to reduce weekly runtime.
+  # perf_test_spec17:
+  #   uses: ./.github/workflows/gem5-perf-template.yml
+  #   with:
+  #     config_path: configs/example/idealkmhv3.py
+  #     benchmark_type: "spec17-1.0c"
 
-  perf_test_spec26:
-    uses: ./.github/workflows/gem5-perf-template.yml
-    with:
-      config_path: configs/example/idealkmhv3.py
-      benchmark_type: "gcc15-spec26-1.0c"
-      distributed_servers: "default"
-      distributed_jobs_per_server: 32
-      timeout_minutes: 720
+  # perf_test_spec26:
+  #   uses: ./.github/workflows/gem5-perf-template.yml
+  #   with:
+  #     config_path: configs/example/idealkmhv3.py
+  #     benchmark_type: "gcc15-spec26-1.0c"
+  #     distributed_servers: "default"
+  #     distributed_jobs_per_server: 32
+  #     timeout_minutes: 720
 
   smt_test_spec06:
     uses: ./.github/workflows/gem5-perf-template.yml
@@ -65,7 +73,7 @@ jobs:
     with:
       config_path: configs/example/smt_idealkmhv3.py
       benchmark_type: "custom-spec17"
-      checkpoint_path: "/nfs/home/share/cirunner/spec17_gcc16_rva23_novec_2harts_260911"
+      checkpoint_path: "/nfs/home/share/checkpoints_profiles/spec17_gcc16_rva23_novec_2harts_260911"
       extra_args: "--mem-size=16GB"
       distributed_servers: "default"
       distributed_jobs_per_server: 32
