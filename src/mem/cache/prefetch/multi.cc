@@ -69,39 +69,28 @@ void
 Multi::regProbeListeners()
 {
     Base::regProbeListeners();
-    for (auto pf : prefetchers) {
-        if (auto *lldp = dynamic_cast<LLDPrefetcher *>(pf)) {
-            lldp->regProbeListeners();
-        } else if (auto *composite =
-                   dynamic_cast<XSCompositePrefetcher *>(pf)) {
-            composite->regProbeListeners();
-        }
-    }
+    for (auto pf : prefetchers)
+        pf->regProbeListeners();
 }
 
 void
 Multi::setPacketReadyCallback(std::function<void(Tick)> callback)
 {
-    for (auto pf : prefetchers) {
-        if (auto *lldp = dynamic_cast<LLDPrefetcher *>(pf)) {
-            lldp->setPacketReadyCallback(callback);
-        } else if (auto *composite =
-                   dynamic_cast<XSCompositePrefetcher *>(pf)) {
-            composite->setPacketReadyCallback(callback);
-        }
-    }
+    for (auto pf : prefetchers)
+        pf->setPacketReadyCallback(callback);
     Base::setPacketReadyCallback(std::move(callback));
 }
 
 lldp::Hint
 Multi::loadTrain(const PacketPtr &pkt, bool miss)
 {
+    lldp::Hint result;
     for (auto pf : prefetchers) {
         const auto hint = pf->loadTrain(pkt, miss);
-        if (hint.valid)
-            return hint;
+        if (hint.valid && !result.valid)
+            result = hint;
     }
-    return {};
+    return result;
 }
 
 void
@@ -128,14 +117,6 @@ Multi::notifyPrefetchMerged(uint64_t candidate_id)
 }
 
 void
-Multi::notifyCandidateEvent(const Request::XsMetadata &metadata,
-                           Addr address, unsigned event)
-{
-    for (auto pf : prefetchers)
-        pf->notifyCandidateEvent(metadata, address, event);
-}
-
-void
 Multi::notifyCandidateDemand(uint64_t candidate_id, const PacketPtr &demand)
 {
     for (auto pf : prefetchers)
@@ -151,11 +132,11 @@ Multi::pfHitInCache(PrefetchSourceType source, uint64_t candidate_id)
 }
 
 void
-Multi::pfHitInMSHR(PrefetchSourceType source, uint64_t candidate_id, bool has_demand)
+Multi::pfHitInMSHR(PrefetchSourceType source, uint64_t candidate_id)
 {
     Base::pfHitInMSHR(source);
     for (auto pf : prefetchers)
-        pf->pfHitInMSHR(source, candidate_id, has_demand);
+        pf->pfHitInMSHR(source, candidate_id);
 }
 
 void

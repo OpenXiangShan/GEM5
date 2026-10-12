@@ -912,20 +912,20 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
                     (!consumer->isMemRef() && !consumer->isControl() &&
                      consumer->numDestRegs() != 0);
                 if (eligible && !consumer->isSquashed()) {
-                    if (consumer->lldpInputs.empty()) {
+                    if (consumer->lldpInputs.empty())
                         consumer->lldpInputs.resize(consumer->numSrcRegs());
-                        consumer->lldpProducerSequences.resize(consumer->numSrcRegs());
-                    }
                     auto &chain = consumer->lldpInputs[srcIdx];
                     chain = {};
-                    consumer->lldpProducerSequences[srcIdx] = 0;
                     if (inst->isLoad() && !inst->isAtomic()) {
                         chain = lldp::Chain::start(inst->pcState().instAddr());
-                        consumer->lldpProducerSequences[srcIdx] = inst->seqNum;
+                        if (inst->effAddrValid() && inst->translationCompleted() &&
+                            !inst->faulted()) {
+                            chain = lldp::Chain::start(
+                                inst->pcState().instAddr(), inst->physEffAddr);
+                        }
                         chain.replayable = !inst->isVector() &&
                             !inst->isFloating() && !inst->isLoadReserved();
                     } else if (arithmetic && inst->lldpChain.valid) {
-                        consumer->lldpProducerSequences[srcIdx] = inst->xsMeta->lldpProducerSeq;
                         const auto form = lldp::sourceForm(
                             inst->staticInst->numSrcRegs(),
                             inst->staticInst->isLldpImmediate());
@@ -1635,7 +1635,8 @@ Scheduler::addToFU(const DynInstPtr& inst)
 #endif
     inst->clearCancel();
     DPRINTF(Schedule, "%s [sn:%llu] add to FUs\n", enums::OpClassStrings[inst->opClass()], inst->seqNum);
-    if (inst->isLoad() && !inst->isSquashed() && !inst->lldpIssued) {
+    if (inst->isLoad() && !inst->isSquashed()) {
+        const bool first_issue = !inst->lldpIssued;
         inst->lldpIssued = true;
         auto &meta = *inst->xsMeta;
         meta.instAddr = inst->pcState().instAddr();
@@ -1653,7 +1654,10 @@ Scheduler::addToFU(const DynInstPtr& inst)
         meta.lldpSigned = name == "lb" || name == "lh" || name == "lw" ||
             name == "c_lw" || name == "c_lwsp";
         meta.lldpLoad &= meta.lldpSize != 0;
-        if (meta.lldpChain.valid)
+        if (first_issue)
+            meta.lldpAddressNotified = false;
+        meta.lldpConsumerAddressValid = false;
+        if (meta.lldpChain.valid && first_issue)
             cpu->ppLldpDependenceTrain->notify(inst->xsMeta);
     }
     instsToFu.push_back(inst);

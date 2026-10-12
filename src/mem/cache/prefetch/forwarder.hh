@@ -75,8 +75,6 @@ class PrefetcherForwarder : public Base
     void notifyPrefetchUseful(PrefetchSourceType source,
                               uint64_t candidate_id) override;
     void notifyPrefetchMerged(uint64_t candidate_id) override;
-    void notifyCandidateEvent(const Request::XsMetadata &metadata,
-                              Addr address, unsigned event) override;
     void notifyCandidateDemand(uint64_t candidate_id,
                                const PacketPtr &demand) override;
     void notifyPrefetchEvictsDemand(
@@ -95,7 +93,7 @@ class PrefetcherForwarder : public Base
     void pfHitInWB(PrefetchSourceType pf_type,
                    uint64_t candidate_id) override;
     void pfHitInMSHR(PrefetchSourceType pf_type,
-                     uint64_t candidate_id, bool has_demand = false) override;
+                     uint64_t candidate_id) override;
 
     void recvPrefetchFromCache(const PacketPtr &pkt) override;
 };

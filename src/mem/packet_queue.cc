@@ -70,6 +70,10 @@ PacketQueue::retry()
     assert(waitingOnRetry);
     waitingOnRetry = false;
     sendDeferredPacket();
+    // A synchronous cache callback can schedule a send before the port
+    // reports backpressure. Only the retry callback may restart that port.
+    if (waitingOnRetry && sendEvent.scheduled())
+        em.deschedule(&sendEvent);
 }
 
 bool
@@ -242,16 +246,10 @@ void
 PacketQueue::processSendEvent()
 {
     DPRINTF(PacketQueue, "Queue %s processing send event\n", name());
-    // A timing send can synchronously create a new prefetch and schedule this
-    // event before the original send returns a retry indication.  Once the
-    // port is waiting, that event is stale; recvReqRetry() will restart the
-    // queue through retry().
-    if (waitingOnRetry) {
-        DPRINTF(PacketQueue, "Queue %s defers send event until retry\n",
-                name());
-        return;
-    }
+    assert(!waitingOnRetry);
     sendDeferredPacket();
+    if (waitingOnRetry && sendEvent.scheduled())
+        em.deschedule(&sendEvent);
 }
 
 DrainState

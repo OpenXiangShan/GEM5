@@ -121,6 +121,8 @@ struct Chain
     bool valid{false};
     bool replayable{true};
     uint64_t producerPC{0};
+    uint64_t producerAddress{0};
+    bool producerAddressValid{false};
     uint32_t length{0};
     std::array<Operation, 2> ops{};
     // Count all operations, including those beyond the two replay slots.
@@ -134,6 +136,13 @@ struct Chain
         c.valid = true;
         c.producerPC = pc;
         c.length = 1;
+        return c;
+    }
+    static Chain start(uint64_t pc, uint64_t address)
+    {
+        Chain c = start(pc);
+        c.producerAddress = address;
+        c.producerAddressValid = true;
         return c;
     }
     Chain extend(const Operation &op) const
@@ -184,18 +193,9 @@ struct Hint
     uint8_t size{0};
     bool signExtend{false};
     bool spatial{false};
-    bool chain{false};
+    bool chained{false};
+    unsigned chainDepth{0};
     uint8_t metaCoveredMask{0};
-    // A hint can outlive the LLDT lookup that created it.  Keep the child
-    // generations so hintData never replays a consumer that was replaced in
-    // the meantime.
-    std::array<uint64_t, 4> consumerGenerations{};
-
-    bool consumerMatches(unsigned col, uint64_t current) const
-    {
-        return col < consumerGenerations.size() &&
-            consumerGenerations[col] == current;
-    }
 };
 
 // A small binary tree PLRU, also used by the 4-way consumer subtable.

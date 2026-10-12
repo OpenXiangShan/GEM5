@@ -306,6 +306,8 @@ def addCommonOptions(parser, configure_xiangshan=False):
                         Enable complex stride component for L1 data prefetcher""")
     parser.add_argument("--l1d-enable-lldp", action="store_true", default=False,
                         help="Enable LLDP inside the L1 composite prefetcher")
+    parser.add_argument("--l1d-enable-tp", action="store_true",
+                        help="Add Temporal prefetching to the L1 data cache")
     parser.add_argument("--l2-enable-lldp", action="store_true", default=False,
                         help="Enable LLDP inside the L2 composite prefetcher")
     parser.add_argument("--short-stride-thres", action="store", default=0, type=int,

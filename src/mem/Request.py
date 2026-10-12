@@ -48,4 +48,7 @@ class PrefetchSourceType(Enum):
         "LLDPS",
         "LLDPT",
         "LLDPC",
+        "LLDPS_T",
+        "LLDPC_T",
+        "TP",
     ]

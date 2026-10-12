@@ -40,7 +40,7 @@ SimObject('Prefetcher.py', sim_objects=[
     'WorkerPrefetcher', 'DespacitoStreamPrefetcher',
     'BOPPrefetcher', 'SBOOEPrefetcher', 'STeMSPrefetcher', 'PIFPrefetcher', 'IPCPrefetcher',
     'CompositeWithWorkerPrefetcher', 'L2CompositeWithWorkerPrefetcher', 'PrefetcherForwarder',
-    'LLDPrefetcher'])
+    'LLDPrefetcher', 'TemporalPrefetcher'])
 
 
 DebugFlag('BOPPrefetcher')
@@ -61,14 +61,10 @@ DebugFlag('CDPdepth')
 DebugFlag('CMCPrefetcher')
 DebugFlag('DespacitoStreamPrefetcher')
 DebugFlag('LLDPrefetcher')
+DebugFlag('TemporalPrefetcher')
 
 GTest('context_key.test', 'context_key.test.cc')
 GTest('lldp_logic.test', 'lldp_logic.test.cc')
-GTest('candidate_table.test', 'candidate_table.test.cc')
-GTest('spatial_feedback.test', 'spatial_feedback.test.cc')
-GTest('load_observation.test', 'load_observation.test.cc')
-GTest('demand_pair_history.test', 'demand_pair_history.test.cc')
-GTest('temporal_control.test', 'temporal_control.test.cc')
 
 Source('access_map_pattern_matching.cc')
 Source('base.cc')
@@ -101,3 +97,6 @@ Source('despacito_stream.cc')
 Source('forwarder.cc')
 Source('prefetch_filter.cc')
 Source('lldp.cc')
+
+Source('temporal.cc')
+GTest('temporal_logic.test', 'temporal_logic.test.cc')

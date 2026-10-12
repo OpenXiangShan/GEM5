@@ -26,6 +26,12 @@ PF_SOURCE_NAMES = [
     "SOpt",
     "DespacitoStream",
     "LLDP",
+    "LLDPS",
+    "LLDPT",
+    "LLDPC",
+    "LLDPS_T",
+    "LLDPC_T",
+    "TP",
 ]
 
 
@@ -565,6 +571,23 @@ def _configure_l3_prefetcher(prefetcher, options):
         prefetcher.queue_size = 64
         prefetcher.max_prefetch_requests_with_pending_translation = 128
 
+def _add_l1_temporal(prefetcher, cpu, cache_level, options):
+    if not getattr(options, 'l1d_enable_tp', False) or cache_level != 'l1d':
+        return prefetcher
+    if isinstance(prefetcher, TemporalPrefetcher):
+        return prefetcher
+    temporal = TemporalPrefetcher(training_cpu=cpu, use_pf_buffer=False)
+    _apply_pf_control(temporal, _load_pf_control_config())
+    _apply_pf_adaptive(temporal, cache_level, _load_pf_control_config())
+    if prefetcher == NULL:
+        return temporal
+    if isinstance(prefetcher, MultiPrefetcher):
+        prefetcher.prefetchers = list(prefetcher.prefetchers) + [temporal]
+        return prefetcher
+    # Keep the existing child's TLB registration and feedback forwarding.
+    return MultiPrefetcher(prefetchers=[prefetcher, temporal])
+
+
 def create_prefetcher(cpu, cache_level, options):
     prefetcher_attr = '{}_hwp_type'.format(cache_level)
     prefetcher_name = ''
@@ -578,7 +601,7 @@ def create_prefetcher(cpu, cache_level, options):
     _configure_pf_buffer(prefetcher, pf_buffer_enabled)
 
     if prefetcher == NULL:
-        return NULL
+        return _add_l1_temporal(prefetcher, cpu, cache_level, options)
 
     # Nested LLDP components need the O3 CPU probe source. Keep this as a
     # private configuration attribute so existing public command-line options
@@ -594,11 +617,18 @@ def create_prefetcher(cpu, cache_level, options):
 
     _register_prefetcher_tlb(prefetcher, cpu)
 
+    if prefetcher_name == 'TemporalPrefetcher':
+        if cache_level != 'l1d':
+            fatal('TemporalPrefetcher is supported only on L1 DCache')
+        prefetcher.training_cpu = cpu
+        prefetcher.use_pf_buffer = False
+        return prefetcher
+
     if prefetcher_name == 'LLDPrefetcher':
         prefetcher.use_pf_buffer = False
         if cache_level == 'l1d':
             prefetcher.training_cpu = cpu
-        return prefetcher
+        return _add_l1_temporal(prefetcher, cpu, cache_level, options)
 
     if prefetcher_name == 'MultiPrefetcher':
         for child in prefetcher.prefetchers:
@@ -609,6 +639,8 @@ def create_prefetcher(cpu, cache_level, options):
                     getattr(options, 'l1d_enable_lldp', False)
                     if cache_level == 'l1d' else
                     getattr(options, 'l2_enable_lldp', False))
+            if cache_level == 'l1d' and isinstance(child, XSCompositePrefetcher):
+                _configure_xs_composite(child, options, pf_buffer_enabled)
 
 
     if prefetcher_name == 'XSCompositePrefetcher':
@@ -625,4 +657,4 @@ def create_prefetcher(cpu, cache_level, options):
     if cache_level == 'l3':
         _configure_l3_prefetcher(prefetcher, options)
 
-    return prefetcher
+    return _add_l1_temporal(prefetcher, cpu, cache_level, options)

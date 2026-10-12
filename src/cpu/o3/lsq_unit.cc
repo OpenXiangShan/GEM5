@@ -1837,6 +1837,20 @@ LSQUnit::executeLoadPipeSx()
                             request &&
                             request->isTranslationComplete() &&
                             request->isMemAccessRequired()) {
+                            auto &meta = *inst->xsMeta;
+                            // Observe the successful issued consumer, including
+                            // store-forwarded loads which never reach L1 tags.
+                            if (meta.lldpLoad && inst->effAddrValid() &&
+                                !inst->faulted() &&
+                                !inst->strictlyOrdered() &&
+                                !(inst->memReqFlags & Request::UNCACHEABLE)) {
+                                meta.lldpConsumerAddress = inst->physEffAddr;
+                                meta.lldpConsumerAddressValid = true;
+                                if (!meta.lldpAddressNotified) {
+                                    meta.lldpAddressNotified = true;
+                                    cpu->ppLldpAddressTrain->notify(inst->xsMeta);
+                                }
+                            }
                             iewStage->getScheduler()->specWakeUpFromLoadPipe(
                                 inst);
                         }

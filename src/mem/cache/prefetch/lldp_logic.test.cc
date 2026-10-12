@@ -1,7 +1,5 @@
 #include <gtest/gtest.h>
 
-#include "mem/cache/prefetch/candidate_table.hh"
-#include "mem/cache/prefetch/quality_control.hh"
 #include "mem/lldp.hh"
 
 using namespace gem5::lldp;
@@ -25,6 +23,24 @@ TEST(LldpChain, ZeroPCAndBoundedHistory)
     EXPECT_EQ(fresh.categories[0], 0);
     chain.length = 255;
     EXPECT_EQ(chain.extend(decodeOperation("addi", 0)).length, 256);
+}
+
+TEST(LldpChain, PhysicalAddressZeroSurvivesArithmeticAndDependencyOnlyChains)
+{
+    auto chain = Chain::start(0x1000, 0);
+    ASSERT_TRUE(chain.producerAddressValid);
+    chain = chain.extend(decodeOperation("addi", 64));
+    chain = chain.extendDependencyOnly(SourceForm::DualRegister);
+    for (unsigned i = 0; i < 12; ++i)
+        chain = chain.extend(decodeOperation("slli", 2));
+    EXPECT_EQ(chain.producerAddress, 0);
+    EXPECT_TRUE(chain.producerAddressValid);
+    EXPECT_FALSE(chain.trainable());
+    auto fresh = Chain::start(0x2000, 0x1234);
+    EXPECT_EQ(fresh.producerAddress, 0x1234);
+    EXPECT_EQ(fresh.length, 1);
+    EXPECT_TRUE(fresh.trainable());
+    EXPECT_FALSE(Chain::start(0x3000).producerAddressValid);
 }
 
 TEST(LldpChain, DualSourceOnlyPropagatesLength)
@@ -128,274 +144,4 @@ TEST(LldpChain, MixedChainsStayExcludedAndLoadRestarts)
     EXPECT_FALSE(invalid.valid);
     EXPECT_EQ(invalid.length, 0);
     EXPECT_EQ(invalid.dualSrcRegisterOps, 0);
-}
-
-TEST(LldpHint, ConsumerGenerationRejectsReplacedChild)
-{
-    Hint hint;
-    hint.consumerGenerations = {11, 22, 0, 44};
-    EXPECT_TRUE(hint.consumerMatches(0, 11));
-    EXPECT_TRUE(hint.consumerMatches(1, 22));
-    EXPECT_FALSE(hint.consumerMatches(1, 23));
-    EXPECT_TRUE(hint.consumerMatches(2, 0));
-    EXPECT_FALSE(hint.consumerMatches(4, 0));
-}
-
-TEST(LldpQuality, SaturationAndGenerationSafety)
-{
-    gem5::prefetch::PrefetchQualityControl control;
-    gem5::prefetch::PrefetchQualityControl::Policy policy;
-    policy.minSamples = 2;
-    policy.minAccuracyPct = 50;
-    policy.maxLatePct = 50;
-    const gem5::prefetch::PrefetchQualityControl::Key key{
-        gem5::enums::PrefetchSourceType::LLDPC, 0x100, 0x200, 0};
-    auto handle = control.touch(key);
-    EXPECT_TRUE(control.admit(handle, policy, 0));
-    control.issued(handle);
-    control.observe(handle,
-                    gem5::prefetch::PrefetchQualityControl::Outcome::Useful);
-    control.issued(handle);
-    control.observe(handle,
-                    gem5::prefetch::PrefetchQualityControl::Outcome::Useful);
-    EXPECT_EQ(control.updateBoost(handle, policy), 1);
-    EXPECT_TRUE(control.valid(handle));
-    auto replacement = control.touch({
-        gem5::enums::PrefetchSourceType::LLDPC, 0x100, 0x200, 0});
-    EXPECT_EQ(replacement.generation, handle.generation);
-}
-
-TEST(LldpQuality, SpatialBoostRequiresIndependentEvidence)
-{
-    using Control = gem5::prefetch::PrefetchQualityControl;
-    Control control;
-    Control::Policy strict;
-    strict.minSamples = 32;
-    strict.minAccuracyPct = 75;
-    strict.maxLatePct = 10;
-    auto handle = control.touch({
-        gem5::enums::PrefetchSourceType::LLDPS, 0x300, 0, 0});
-    for (unsigned i = 0; i < 31; ++i) {
-        control.issued(handle);
-        control.observe(handle, Control::Outcome::Useful);
-    }
-    EXPECT_EQ(control.updateBoost(handle, strict), 0);
-    control.issued(handle);
-    control.observe(handle, Control::Outcome::Useful);
-    EXPECT_EQ(control.updateBoost(handle, strict), 1);
-    for (unsigned i = 0; i < 12; ++i) {
-        control.issued(handle);
-        control.observe(handle, Control::Outcome::Unused);
-    }
-    EXPECT_EQ(control.updateBoost(handle, strict), -1);
-}
-
-TEST(LldpChainDepth, OnlyFirstFamilyHopAllowed)
-{
-    using gem5::enums::PrefetchSourceType;
-    using gem5::prefetch::allowLldpChainTrigger;
-    EXPECT_TRUE(allowLldpChainTrigger(PrefetchSourceType::LLDP, 0, 1));
-    EXPECT_TRUE(allowLldpChainTrigger(PrefetchSourceType::LLDPS, 0, 1));
-    EXPECT_TRUE(allowLldpChainTrigger(PrefetchSourceType::LLDPT, 0, 1));
-    EXPECT_FALSE(allowLldpChainTrigger(PrefetchSourceType::LLDPC, 1, 1));
-    EXPECT_FALSE(allowLldpChainTrigger(PrefetchSourceType::LLDPC, 0, 1));
-    EXPECT_FALSE(allowLldpChainTrigger(PrefetchSourceType::SStream, 0, 1));
-    EXPECT_TRUE(allowLldpChainTrigger(PrefetchSourceType::LLDPC, 1, 2));
-}
-
-TEST(LldpQuality, UnhealthyKeysKeepProbingAcrossLongWindows)
-{
-    using Control = gem5::prefetch::PrefetchQualityControl;
-    using gem5::enums::PrefetchSourceType;
-    for (unsigned interval : {0, 1, 7, 16, 32, 255, 256}) {
-        Control control;
-        Control::Policy policy;
-        policy.probeInterval = interval;
-        auto handle = control.touch({PrefetchSourceType::LLDPC, 0x100, 0x200, 0});
-        unsigned admitted = 0;
-        for (unsigned opportunity = 1; opportunity <= 65536; ++opportunity) {
-            const bool accepted = control.admit(handle, policy, 0);
-            const bool expected = opportunity == 1 ||
-                (interval && opportunity % interval == 0);
-            ASSERT_EQ(accepted, expected)
-                << "interval=" << interval << " opportunity=" << opportunity;
-            if (accepted) {
-                ++admitted;
-                control.issued(handle);
-                control.observe(handle, Control::Outcome::Unused);
-            }
-        }
-        EXPECT_EQ(admitted, interval == 1 ? 65536 :
-            1 + (interval ? 65536 / interval : 0));
-    }
-}
-
-TEST(LldpQuality, ResourceRejectionDoesNotSpendProbeOpportunity)
-{
-    using Control = gem5::prefetch::PrefetchQualityControl;
-    Control control;
-    Control::Policy policy;
-    auto handle = control.touch({gem5::enums::PrefetchSourceType::LLDPC, 1, 2, 0});
-    for (unsigned i = 0; i < 4096; ++i)
-        ASSERT_FALSE(control.admit(handle, policy, policy.maxPressurePct));
-    ASSERT_TRUE(control.admit(handle, policy, 0));
-    for (unsigned i = 0; i < policy.maxOutstanding; ++i)
-        control.issued(handle);
-    for (unsigned i = 0; i < 4096; ++i)
-        ASSERT_FALSE(control.admit(handle, policy, 0));
-    for (unsigned i = 0; i < policy.maxOutstanding; ++i)
-        control.observe(handle, Control::Outcome::Unused);
-    for (unsigned opportunity = 2; opportunity <= 16; ++opportunity)
-        EXPECT_EQ(control.admit(handle, policy, 0), opportunity == 16);
-    // Changing the configured period must recover without replacing the key.
-    policy.probeInterval = 7;
-    for (unsigned opportunity = 1; opportunity <= 4096; ++opportunity) {
-        const bool accepted = control.admit(handle, policy, 0);
-        ASSERT_EQ(accepted, opportunity % 7 == 0);
-        if (accepted) {
-            control.issued(handle);
-            control.observe(handle, Control::Outcome::Unused);
-        }
-    }
-}
-
-TEST(LldpQuality, RripProtectsHotWayAndRejectsStaleFeedback)
-{
-    using Control = gem5::prefetch::PrefetchQualityControl;
-    using gem5::enums::PrefetchSourceType;
-    Control control;
-    const Control::Key hot{PrefetchSourceType::LLDPC, 0x1000, 0, 0};
-    std::array<Control::Handle, 4> handles;
-    for (unsigned i = 0; i < handles.size(); ++i)
-        handles[i] = control.touch({PrefetchSourceType::LLDPC, 0x1000 + i * 8, 0, 0});
-    control.touch(hot);
-    const auto replacement = control.touch({PrefetchSourceType::LLDPC, 0x1020, 0, 0});
-    EXPECT_TRUE(control.valid(handles[0]));
-    EXPECT_FALSE(control.valid(handles[1]));
-    control.issued(replacement);
-    control.observe(handles[1], Control::Outcome::Useful);
-    EXPECT_EQ(control.outstanding(replacement), 1);
-    // Continuous cold-key churn must not evict a key refreshed every round.
-    for (unsigned i = 5; i < 4096; ++i) {
-        control.touch(hot);
-        control.touch({PrefetchSourceType::LLDPC, 0x1000 + i * 8, 0, 0});
-        ASSERT_TRUE(control.valid(handles[0]));
-    }
-}
-
-TEST(LldpQuality, BoostPressureRevocationAndVictimNotification)
-{
-    using Control = gem5::prefetch::PrefetchQualityControl;
-    using gem5::enums::PrefetchSourceType;
-    Control control;
-    Control::Policy policy;
-    policy.minSamples = 2;
-    const Control::Key key{PrefetchSourceType::LLDPS, 0x1000, 0, 0,
-                          PrefetchSourceType::SStream};
-    auto handle = control.touch(key);
-    for (unsigned i = 0; i < 2; ++i) {
-        control.issued(handle);
-        control.observe(handle, Control::Outcome::Useful);
-    }
-    EXPECT_EQ(control.updateBoost(handle, policy, 75), 0);
-    EXPECT_EQ(control.updateBoost(handle, policy, 74), 1);
-    EXPECT_EQ(control.updateBoost(handle, policy, 75), -1);
-    EXPECT_EQ(control.updateBoost(handle, policy, 74), 1);
-    bool revoked = false;
-    for (unsigned i = 1; i < 64 && !revoked; ++i) {
-        control.touch({PrefetchSourceType::LLDPS, 0x1000 + i * 8, 0, 0},
-            [&](const Control::Key &victim, Control::Handle old, bool boosted) {
-                if (old.generation == handle.generation) {
-                    EXPECT_TRUE(control.valid(old)); // callback before overwrite
-                    EXPECT_EQ(victim.provider, PrefetchSourceType::SStream);
-                    EXPECT_EQ(victim.producerPC, 0x1000);
-                    EXPECT_TRUE(boosted);
-                    revoked = true;
-                }
-            });
-    }
-    EXPECT_TRUE(revoked);
-    EXPECT_FALSE(control.valid(handle));
-    EXPECT_EQ(control.updateBoost(handle, policy, 0), 0);
-}
-
-TEST(LldpQuality, ProviderAndContextKeepFeedbackIndependent)
-{
-    using Control = gem5::prefetch::PrefetchQualityControl;
-    using gem5::enums::PrefetchSourceType;
-    Control control;
-    const auto stream = control.touch({PrefetchSourceType::LLDPS, 1, 0, 0,
-                                      PrefetchSourceType::SStream});
-    const auto stride = control.touch({PrefetchSourceType::LLDPS, 1, 0, 0,
-                                      PrefetchSourceType::SStride});
-    const auto other_context = control.touch({PrefetchSourceType::LLDPS, 1, 0, 1,
-                                             PrefetchSourceType::SStream});
-    EXPECT_NE(stream.generation, stride.generation);
-    EXPECT_NE(stream.generation, other_context.generation);
-    EXPECT_EQ(control.setBoost(stream, true), 1);
-    EXPECT_EQ(control.setBoost(stride, false), 0);
-    EXPECT_EQ(control.setBoost(other_context, false), 0);
-    EXPECT_EQ(control.setBoost(stream, false), -1);
-}
-
-TEST(LldpQuality, DecisionReasonsAndPreIssueDropIsolation)
-{
-    using Control = gem5::prefetch::PrefetchQualityControl;
-    using Life = gem5::prefetch::CandidateLifecycle;
-    Control control;
-    Control::Policy policy;
-    policy.minSamples = 2;
-    const auto handle = control.touch({gem5::enums::PrefetchSourceType::LLDPC, 1, 2, 0});
-    Control::Decision reason;
-    EXPECT_FALSE(control.admit(handle, policy, 75, &reason));
-    EXPECT_EQ(reason, Control::Decision::Pressure);
-    ASSERT_TRUE(control.admit(handle, policy, 0, &reason));
-    EXPECT_EQ(reason, Control::Decision::Probe);
-    Life issued, queued;
-    ASSERT_TRUE(issued.issue());
-    control.issued(handle);
-    ASSERT_TRUE(queued.finish());
-    if (queued.hasIssued)
-        control.observe(handle, Control::Outcome::Dropped);
-    EXPECT_EQ(control.outstanding(handle), 1);
-    ASSERT_TRUE(issued.finish());
-    control.observe(handle, Control::Outcome::Useful);
-    EXPECT_EQ(control.outstanding(handle), 0);
-    EXPECT_FALSE(issued.finish());
-    EXPECT_FALSE(control.admit(handle, policy, 0, &reason));
-    EXPECT_EQ(reason, Control::Decision::Cold);
-    control.issued(handle);
-    control.observe(handle, Control::Outcome::Useful);
-    EXPECT_TRUE(control.admit(handle, policy, 0, &reason));
-    EXPECT_EQ(reason, Control::Decision::Healthy);
-    for (unsigned i = 0; i < policy.maxOutstanding; ++i)
-        control.issued(handle);
-    EXPECT_FALSE(control.admit(handle, policy, 0, &reason));
-    EXPECT_EQ(reason, Control::Decision::Outstanding);
-    EXPECT_FALSE(control.admit({999, 0}, policy, 0, &reason));
-    EXPECT_EQ(reason, Control::Decision::Stale);
-}
-
-TEST(LldpQuality, DuplicateCollisionsDoNotDestroyAddressEvidence)
-{
-    using Control = gem5::prefetch::PrefetchQualityControl;
-    Control control;
-    Control::Policy policy;
-    policy.minSamples = 2;
-    policy.minAccuracyPct = 75;
-    const auto handle = control.touch({gem5::enums::PrefetchSourceType::LLDPS, 1, 0, 0});
-    for (unsigned i = 0; i < 2; ++i) {
-        control.issued(handle);
-        control.observe(handle, Control::Outcome::Useful);
-    }
-    ASSERT_EQ(control.updateBoost(handle, policy), 1);
-    for (unsigned i = 0; i < 4096; ++i) {
-        control.issued(handle);
-        control.observe(handle, Control::Outcome::Collision);
-        ASSERT_EQ(control.updateBoost(handle, policy), 0);
-    }
-    EXPECT_TRUE(control.admit(handle, policy, 0));
-    control.issued(handle);
-    control.observe(handle, Control::Outcome::DemandMerged);
-    EXPECT_EQ(control.updateBoost(handle, policy), -1);
 }

@@ -10,7 +10,6 @@
 #include "base/types.hh"
 #include "debug/XsStreamPrefetcher.hh"
 #include "mem/cache/prefetch/associative_set.hh"
-#include "mem/cache/prefetch/spatial_feedback.hh"
 
 // #include "mem/cache/prefetch/queued.hh"
 #include "mem/cache/prefetch/prefetch_filter.hh"
@@ -88,14 +87,12 @@ class XsStreamPrefetcher : public Queued
         int cnt;
         bool decrMode;
         ContextID contextId;
-        Addr pc;
         STREAMEntry()
             : TaggedEntry(), tag(0), bitVec(0), active(false), cnt(0),
-              decrMode(false), contextId(InvalidContextID), pc(0)
+              decrMode(false), contextId(InvalidContextID)
         {}
     };
     AssociativeSet<STREAMEntry> stream_array;
-    SpatialFeedbackTable feedbackTable;
     STREAMEntry *streamLookup(const PrefetchInfo &pfi, bool &in_active_page, bool &decr);
     void sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                           PrefetchSourceType src, int pf_degree, int ahead_level = -1, STREAMEntry *entry = nullptr);
@@ -111,7 +108,6 @@ class XsStreamPrefetcher : public Queued
         panic("not implemented");
     };
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, int late_num);
-    void spatialFeedback(const SpatialFeedback &feedback);
     PrefetchFilter* stridestream_pfFilter_l1;
     PrefetchFilter* stridestream_pfFilter_l2l3;
 };

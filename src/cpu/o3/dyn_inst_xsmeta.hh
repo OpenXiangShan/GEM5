@@ -51,7 +51,6 @@
 #include "base/refcnt.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
-#include "mem/cache/prefetch/load_observation.hh"
 #include "mem/lldp.hh"
 
 namespace gem5
@@ -76,8 +75,9 @@ class XsDynInstMeta : public RefCounted
     Addr lldpLoadLine{0};
     uint8_t lldpLoadOffset{0};
     bool lldpLoadAddressValid{false};
-    prefetch::LoadObservation l1LoadObservation;
-    uint64_t lldpProducerSeq{0};
+    Addr lldpConsumerAddress{0};
+    bool lldpConsumerAddressValid{false};
+    bool lldpAddressNotified{false};
 
   public:
     XsDynInstMeta(): squashed(false), instAddr(0), seqNum(0) {}

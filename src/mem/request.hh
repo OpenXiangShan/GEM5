@@ -88,7 +88,6 @@ using enums::DespacitoStream;
 using enums::LLDP;
 using enums::LLDPS;
 using enums::LLDPT;
-using enums::LLDPC;
 
 static constexpr unsigned NUM_PF_SOURCES = enums::Num_PrefetchSourceType;
 
@@ -98,6 +97,14 @@ prefetchSourceTypeName(unsigned source)
     return source < NUM_PF_SOURCES ?
         enums::PrefetchSourceTypeStrings[source] :
         enums::PrefetchSourceTypeStrings[PF_NONE];
+}
+
+inline bool
+isLldpPrefetchSource(PrefetchSourceType source)
+{
+    return source == enums::LLDP || source == enums::LLDPS ||
+        source == enums::LLDPT || source == enums::LLDPC ||
+        source == enums::LLDPS_T || source == enums::LLDPC_T;
 }
 
 enum DcacheRespType
@@ -395,7 +402,6 @@ class Request
         o3::XsDynInstMetaPtr instXsMetadata;
         PrefetchSourceType prefetchSource;
         int prefetchDepth;
-        uint8_t prefetchLldpChainDepth;
         // Provenance for hardware-prefetch requests.  The producer PC is
         // the PC of the demand which triggered a spatial prefetch; the
         // remaining fields identify one LLDP candidate across its lifetime.
@@ -404,12 +410,6 @@ class Request
         uint64_t prefetchGeneration;
         uint64_t prefetchCandidateId;
         Addr prefetchLldpAddrP;
-        // True when the candidate address still requires TLB translation.
-        // LLDPC may originate from either replay (VA) or MetaTable (PA), so
-        // its source enum alone cannot determine the address space.
-        bool prefetchLldpVirtual;
-        // Describe the PCc load value within the returned cache line so that
-        // it can become the producer value for the next LLDP depth.
         uint16_t prefetchDataOffset;
         uint8_t prefetchDataSize;
         bool prefetchDataSignExtend;
@@ -418,11 +418,9 @@ class Request
             validXsMetadata(false),
             instXsMetadata(nullptr),
             prefetchSource(PF_NONE),
-            prefetchDepth(0), prefetchLldpChainDepth(0),
-            prefetchProducerPC(0), prefetchConsumerPC(0),
+            prefetchDepth(0), prefetchProducerPC(0), prefetchConsumerPC(0),
             prefetchGeneration(0),
             prefetchCandidateId(0), prefetchLldpAddrP(0),
-            prefetchLldpVirtual(false),
             prefetchDataOffset(0),
             prefetchDataSize(0), prefetchDataSignExtend(false) {}
 
@@ -430,10 +428,8 @@ class Request
             validXsMetadata(true),
             instXsMetadata(instMeta),
             prefetchSource(PF_NONE), prefetchDepth(0),
-            prefetchLldpChainDepth(0),
             prefetchProducerPC(0), prefetchConsumerPC(0), prefetchGeneration(0),
             prefetchCandidateId(0), prefetchLldpAddrP(0),
-            prefetchLldpVirtual(false),
             prefetchDataOffset(0),
             prefetchDataSize(0), prefetchDataSignExtend(false) {}
 
@@ -441,10 +437,8 @@ class Request
             validXsMetadata(true),
             instXsMetadata(nullptr),
             prefetchSource(pfSource), prefetchDepth(0),
-            prefetchLldpChainDepth(0),
             prefetchProducerPC(0), prefetchConsumerPC(0), prefetchGeneration(0),
             prefetchCandidateId(0), prefetchLldpAddrP(0),
-            prefetchLldpVirtual(false),
             prefetchDataOffset(0),
             prefetchDataSize(0), prefetchDataSignExtend(false) {}
 
@@ -452,10 +446,8 @@ class Request
             validXsMetadata(true),
             instXsMetadata(nullptr),
             prefetchSource(pfSource), prefetchDepth(pfDepth),
-            prefetchLldpChainDepth(0),
             prefetchProducerPC(0), prefetchConsumerPC(0), prefetchGeneration(0),
             prefetchCandidateId(0), prefetchLldpAddrP(0),
-            prefetchLldpVirtual(false),
             prefetchDataOffset(0),
             prefetchDataSize(0), prefetchDataSignExtend(false) {}
 
@@ -464,12 +456,10 @@ class Request
                    uint64_t candidate_id)
             : validXsMetadata(true), instXsMetadata(nullptr),
               prefetchSource(pfSource), prefetchDepth(pfDepth),
-              prefetchLldpChainDepth(0),
               prefetchProducerPC(producer_pc),
               prefetchConsumerPC(0),
               prefetchGeneration(generation),
               prefetchCandidateId(candidate_id), prefetchLldpAddrP(0),
-              prefetchLldpVirtual(false),
               prefetchDataOffset(0),
               prefetchDataSize(0), prefetchDataSignExtend(false) {}
 
@@ -478,13 +468,11 @@ class Request
             instXsMetadata = nullptr;
             prefetchSource = PF_NONE;
             prefetchDepth = 0;
-            prefetchLldpChainDepth = 0;
             prefetchProducerPC = 0;
             prefetchConsumerPC = 0;
             prefetchGeneration = 0;
             prefetchCandidateId = 0;
             prefetchLldpAddrP = 0;
-            prefetchLldpVirtual = false;
             prefetchDataOffset = 0;
             prefetchDataSize = 0;
             prefetchDataSignExtend = false;

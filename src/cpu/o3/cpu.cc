@@ -333,6 +333,8 @@ CPU::regProbePoints()
 
     ppLldpDependenceTrain = new ProbePointArg<XsDynInstMetaPtr>(
         getProbeManager(), "dependenceTrain");
+    ppLldpAddressTrain = new ProbePointArg<XsDynInstMetaPtr>(
+        getProbeManager(), "lldpAddressTrain");
     ppInstAccessComplete = new ProbePointArg<PacketPtr>(
             getProbeManager(), "InstAccessComplete");
     ppDataAccessComplete = new ProbePointArg<

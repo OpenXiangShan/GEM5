@@ -239,6 +239,19 @@ class QueuedPrefetcher(BasePrefetcher):
     max_pf_buffer_size = Param.Int(16, "size of prefetch buffer")
 
 
+class TemporalPrefetcher(QueuedPrefetcher):
+    type = "TemporalPrefetcher"
+    cxx_class = "gem5::prefetch::TemporalPrefetcher"
+    cxx_header = "mem/cache/prefetch/temporal.hh"
+    training_cpu = Param.BaseCPU(NULL, "CPU providing LLDP PC role probes")
+    record_length = Param.Unsigned(12, "512-bit record with 42-bit PA lines")
+    throttle_cycles = Param.Unsigned(4, "Minimum cycles between TP packet issues")
+    on_write = False
+    on_inst = False
+    use_virtual_addresses = False
+    use_pf_buffer = False
+
+
 class LLDPrefetcher(QueuedPrefetcher):
     type = 'LLDPrefetcher'
     cxx_class = 'gem5::prefetch::LLDPrefetcher'
@@ -257,59 +270,7 @@ class LLDPrefetcher(QueuedPrefetcher):
     producer_threshold = Param.Unsigned(2, "Producer hint confidence threshold")
     consumer_threshold = Param.Unsigned(3, "Consumer replay confidence threshold")
     immediate_threshold = Param.Unsigned(3, "Load immediate stability threshold")
-    enable_spatial_feedback = Param.Bool(True,
-        "Allow useful LLDPS candidates to adjust Stream/Stride degree")
-    max_lldpc_chain_depth = Param.Unsigned(1,
-        "Maximum extra LLDP-prefetch-triggered chain hops")
-    enable_quality_control = Param.Bool(True,
-        "Enable bounded LLDP quality admission and feedback state")
-    enable_lldpc_quality = Param.Bool(True,
-        "Use quality feedback to admit LLDPC candidates")
-    enable_lldps_feedback_quality = Param.Bool(True,
-        "Require useful LLDPS evidence before degree feedback")
-    quality_min_samples = Param.Unsigned(8,
-        "Completed LLDP samples before quality decisions")
-    quality_min_accuracy_pct = Param.Unsigned(50,
-        "Minimum useful fraction for LLDP quality admission")
-    quality_max_late_pct = Param.Unsigned(25,
-        "Maximum demand-merged fraction for LLDP quality admission")
-    lldps_feedback_min_samples = Param.Unsigned(32,
-        "Completed LLDPS samples required before spatial degree feedback")
-    lldps_feedback_min_accuracy_pct = Param.Unsigned(75,
-        "Minimum useful fraction for LLDPS degree feedback")
-    lldps_feedback_max_late_pct = Param.Unsigned(10,
-        "Maximum demand-merged fraction for LLDPS degree feedback")
-    quality_probe_interval = Param.Unsigned(16,
-        "Cold quality entry probe interval")
-    quality_max_outstanding = Param.Unsigned(4,
-        "Maximum outstanding candidates tracked per quality key")
-    quality_max_pressure_pct = Param.Unsigned(75,
-        "PFQ pressure percentage at which quality admission stops")
-    quality_max_collision_pct = Param.Unsigned(100,
-        "Maximum duplicate collision fraction for quality admission")
-    lldp_admission_min_accuracy_pct = Param.Unsigned(5,
-        "LLDP base admission useful fraction; real demand merges remain address evidence")
-    lldp_admission_max_late_pct = Param.Unsigned(90,
-        "LLDP base admission maximum late demand-merge fraction")
-    candidate_owner_entries = Param.Unsigned(4096,
-        "Fixed LLDP candidate slots spanning PFQ, MSHR and resident cache lines")
-    enable_lldp_shadow = Param.Bool(True,
-        "Collect LLDP admission shadow decisions in a separate quality table")
-    enable_lldp_admission = Param.Bool(False,
-        "Apply LLDP quality admission after translation and pair training")
-    enable_demand_pair_training = Param.Bool(False,
-        "Train temporal mappings only from exact committed dynamic demand pairs")
-    enable_lldt_benefit = Param.Bool(False,
-        "Use completed candidate benefit to choose LLDT replacement victims")
-    enable_temporal_recovery = Param.Bool(False,
-        "Probe exhausted Meta tokens periodically without erasing address training")
-    temporal_probe_interval = Param.Unsigned(16, "Exhausted Meta token probe interval")
-    pair_trust_threshold = Param.Unsigned(4, "PC-pair evidence threshold, range 0..7")
-    sampler_retention_epochs = Param.Unsigned(0,
-        "Allow stale sampler reservoir replacement after hint epochs; 0 preserves min-hash")
-    enable_candidate_trace = Param.Bool(False, "Write LLDP candidate lifecycle CSV")
-    trace_sample_interval = Param.Unsigned(1, "Keep one in N candidate identities in trace")
-    trace_producer_pc = Param.Addr(0, "Trace only this producer PC; zero keeps all")
+    max_lldpc_chain_depth = Param.Unsigned(1, "Maximum extra LLDP-family trigger hops")
 
 
 class XSStridePrefetcher(QueuedPrefetcher):

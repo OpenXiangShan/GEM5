@@ -79,7 +79,7 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
       aggregateDecodeWidth(decodeWidth * numPreDispatchThreads),
       numThreads(params.numThreads),
       enableLoadFusion(params.enable_loadFusion),
-      stats(_cpu, params.decodeWidth)
+      stats(_cpu)
 {
     panic_if(numPreDispatchThreads == 0 ||
              numPreDispatchThreads > numThreads ||
@@ -145,7 +145,7 @@ Decode::name() const
     return cpu->name() + ".decode";
 }
 
-Decode::DecodeStats::DecodeStats(CPU *cpu, unsigned decode_width)
+Decode::DecodeStats::DecodeStats(CPU *cpu)
     : statistics::Group(cpu, "decode"),
       ADD_STAT(idleCycles, statistics::units::Cycle::get(),
                "Number of cycles decode is idle"),
@@ -244,7 +244,7 @@ Decode::DecodeStats::DecodeStats(CPU *cpu, unsigned decode_width)
     //         .flags(statistics::nozero);
     
     // Initialize decodeEfficiency formula
-    decodeEfficiency = decodedInsts / (cpu->baseStats.numCycles * decode_width);
+    decodeEfficiency = decodedInsts / (cpu->baseStats.numCycles * cpu->issueWidth);
 }
 
 void

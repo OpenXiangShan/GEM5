@@ -176,8 +176,6 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
             }
         }
         if (entry->conf >= 2) {
-            const bool lldp_feedback = feedbackTable.contains(
-                pfi.getPC(), context_id, PrefetchSourceType::SStride);
             // if miss send 1*stride ~ depth*stride, else send depth*stride
             unsigned start_depth = pfi.isCacheMiss() ? std::max(1, (entry->depth - 4)) : entry->depth;
             Addr pf_addr = 0;
@@ -206,17 +204,6 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
                         stride_hash_pc, true, is_first_shot,
                         pfi.isCacheMiss(), false);
                 }
-                if (lldp_feedback) {
-                    const Addr feedback_addr =
-                        lookupAddr + stride_offset * 8;
-                    sendPFWithFilter(pfi, blockAddress(feedback_addr),
-                                     addresses, 0,
-                                     PrefetchSourceType::SStride, 1);
-                    if (is_first_shot)
-                        stats.strideUniquepfCount++;
-                    else
-                        stats.strideRedundantpfCount++;
-                }
             } else {
                 for (unsigned i = start_depth; i <= entry->depth; i++) {
                     pf_addr = lookupAddr + entry->stride * i;
@@ -227,17 +214,6 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
                     } else {
                         stats.strideRedundantpfCount++;
                     }
-                }
-                if (lldp_feedback) {
-                    const Addr feedback_addr =
-                        lookupAddr + static_cast<Addr>(entry->stride) * 8;
-                    sendPFWithFilter(pfi, blockAddress(feedback_addr),
-                                     addresses, 0,
-                                     PrefetchSourceType::SStride, 1);
-                    if (is_first_shot)
-                        stats.strideUniquepfCount++;
-                    else
-                        stats.strideRedundantpfCount++;
                 }
                 stride_pf = pf_addr;  // the longest lookahead
             }
@@ -302,12 +278,6 @@ XSStridePrefetcher::periodStrideDepthDown()
         }
         depthDownCounter = 0;
     }
-}
-
-void
-XSStridePrefetcher::spatialFeedback(const SpatialFeedback &feedback)
-{
-    feedbackTable.update(feedback);
 }
 
 void

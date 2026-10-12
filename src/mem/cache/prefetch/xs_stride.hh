@@ -14,7 +14,6 @@
 #include "base/types.hh"
 #include "debug/XSStridePrefetcher.hh"
 #include "mem/cache/prefetch/associative_set.hh"
-#include "mem/cache/prefetch/spatial_feedback.hh"
 
 // #include "mem/cache/prefetch/queued.hh"
 #include "mem/cache/prefetch/prefetch_filter.hh"
@@ -105,7 +104,6 @@ class XSStridePrefetcher : public Queued
     };
 
     AssociativeSet<NonStrideEntry> nonStridePCs;
-    SpatialFeedbackTable feedbackTable;
 
     void markNonStridePC(Addr pc, ContextID context_id);
 
@@ -133,7 +131,6 @@ class XSStridePrefetcher : public Queued
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
                            PrefetchSourceType pf_source, bool miss_repeat, bool enter_new_region, bool is_first_shot,
                            Addr &pf_addr, int64_t &learned_bop_offset);
-    void spatialFeedback(const SpatialFeedback &feedback);
   PrefetchFilter* stridestream_pfFilter_l1;
   PrefetchFilter* stridestream_pfFilter_l2l3;
 
