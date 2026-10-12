@@ -13,7 +13,7 @@ TEST(H2PTableTest, ShadowLookupDoesNotChangeReplacementOrder)
     const Addr second = first + setStride;
     const Addr replacement = second + setStride;
     for (Addr pc : {first, second}) {
-        for (int i = 0; i < 4; ++i)
+        for (int i = 0; i < 3; ++i)
             table.trainMispred(pc);
     }
     EXPECT_TRUE(table.peek(first).h2p);
@@ -22,14 +22,12 @@ TEST(H2PTableTest, ShadowLookupDoesNotChangeReplacementOrder)
     EXPECT_TRUE(table.peek(second).h2p);
 }
 
-TEST(H2PTableTest, RequiresFourMispredictions)
+TEST(H2PTableTest, RequiresThreeMispredictions)
 {
     H2PTable table(128);
     const Addr pc = 0x1040;
     EXPECT_FALSE(table.lookup(pc).h2p);
     table.trainMispred(pc);
-    table.trainMispred(pc);
-    EXPECT_FALSE(table.lookup(pc).h2p);
     table.trainMispred(pc);
     EXPECT_FALSE(table.lookup(pc).h2p);
     table.trainMispred(pc);
@@ -53,7 +51,7 @@ TEST(H2PTableTest, TwoBranchesShareLine)
     H2PTable table(128);
     const Addr first = 0x1040;
     const Addr second = 0x105c;
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 3; ++i) {
         table.trainMispred(first);
         table.trainMispred(second);
     }
@@ -118,56 +116,7 @@ TEST(H2PTableTest, AllocationFilterStillUpdatesExistingBranch)
     EXPECT_TRUE(table.trainMispred(pc, true).allocated);
     EXPECT_TRUE(table.trainMispred(pc, false).incremented);
     EXPECT_TRUE(table.trainMispred(pc, false).incremented);
-    EXPECT_FALSE(table.lookup(pc).h2p);
-    EXPECT_TRUE(table.trainMispred(pc, false).incremented);
     EXPECT_TRUE(table.lookup(pc).h2p);
-}
-
-TEST(H2PTableTest, CorrectPredictionDecaysAndReleasesEntry)
-{
-    H2PTable table(128);
-    const Addr pc = 0x1040;
-    for (int i = 0; i < 4; ++i)
-        table.trainMispred(pc);
-    ASSERT_TRUE(table.lookup(pc).h2p);
-
-    EXPECT_FALSE(table.trainCorrect(pc).decremented);
-    EXPECT_TRUE(table.lookup(pc).hit);
-    EXPECT_TRUE(table.lookup(pc).h2p);
-
-    EXPECT_TRUE(table.trainCorrect(pc).decremented);
-    EXPECT_FALSE(table.lookup(pc).h2p);
-    EXPECT_FALSE(table.trainCorrect(pc).decremented);
-    EXPECT_TRUE(table.trainCorrect(pc).decremented);
-    EXPECT_FALSE(table.lookup(pc).h2p);
-    EXPECT_FALSE(table.trainCorrect(pc).decremented);
-    EXPECT_TRUE(table.trainCorrect(pc).decremented);
-    EXPECT_FALSE(table.lookup(pc).h2p);
-    EXPECT_FALSE(table.trainCorrect(pc).decremented);
-    EXPECT_TRUE(table.trainCorrect(pc).decremented);
-    EXPECT_FALSE(table.lookup(pc).hit);
-}
-
-TEST(H2PTableTest, MispredictionResetsCorrectDecayStreak)
-{
-    H2PTable table(128);
-    const Addr pc = 0x1040;
-    for (int i = 0; i < 4; ++i)
-        table.trainMispred(pc);
-
-    EXPECT_FALSE(table.trainCorrect(pc).decremented);
-    EXPECT_TRUE(table.trainMispred(pc).incremented);
-    EXPECT_FALSE(table.trainCorrect(pc).decremented);
-    EXPECT_TRUE(table.trainCorrect(pc).decremented);
-}
-
-TEST(H2PTableTest, CorrectPredictionDoesNotAllocate)
-{
-    H2PTable table(128);
-    const Addr pc = 0x1040;
-
-    EXPECT_FALSE(table.trainCorrect(pc).decremented);
-    EXPECT_FALSE(table.lookup(pc).hit);
 }
 
 TEST(H2PTableTest, TwoWaySetAssociativityHandlesDistinctLines)

@@ -53,7 +53,7 @@ H2PTable::lookup(Addr pc)
     for (auto &branch : line->branches) {
         if (branch.valid && branch.pc == pc) {
             branch.lastUse = useClock;
-            return {branch.counter > 3, true};
+            return {branch.counter > 2, true};
         }
     }
     return {};
@@ -83,7 +83,6 @@ H2PTable::trainMispred(Addr pc, bool allowAllocate)
             if (branch.valid && branch.pc == pc) {
                 branch.counter = std::min<uint8_t>(
                     CounterMax, branch.counter + 1);
-                branch.correctStreak = 0;
                 branch.lastUse = useClock;
                 result.incremented = true;
                 return result;
@@ -138,39 +137,8 @@ H2PTable::trainMispred(Addr pc, bool allowAllocate)
         result.dropped = true;
         return result;
     }
-    *slot = BranchEntry{pc, 1, 0, true, useClock};
+    *slot = BranchEntry{pc, 1, true, useClock};
     result.allocated = true;
-    return result;
-}
-
-H2PTable::TrainResult
-H2PTable::trainCorrect(Addr pc)
-{
-    TrainResult result;
-    auto *line = findLine(pc);
-    if (!line)
-        return result;
-
-    ++useClock;
-    line->lastUse = useClock;
-    for (auto &branch : line->branches) {
-        if (!branch.valid || branch.pc != pc)
-            continue;
-
-        if (branch.counter > 0) {
-            branch.correctStreak = std::min<uint8_t>(
-                CorrectDecayInterval, branch.correctStreak + 1);
-            if (branch.correctStreak == CorrectDecayInterval) {
-                --branch.counter;
-                branch.correctStreak = 0;
-                result.decremented = true;
-            }
-        }
-        branch.lastUse = useClock;
-        if (branch.counter == 0)
-            branch.valid = false;
-        return result;
-    }
     return result;
 }
 
@@ -186,7 +154,6 @@ H2PTable::age()
                 if (!branch.valid || branch.counter == 0)
                     continue;
                 --branch.counter;
-                branch.correctStreak = 0;
                 ++aged;
                 if (branch.counter == 0)
                     branch.valid = false;

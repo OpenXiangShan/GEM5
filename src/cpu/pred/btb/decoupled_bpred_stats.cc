@@ -505,8 +505,6 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
              h2pFalsePositive / (h2pTruePositive + h2pFalsePositive)),
     ADD_STAT(h2pTrainMispredicts, statistics::units::Count::get(),
              "committed conditional mispredictions used to allocate or increment H2P entries"),
-    ADD_STAT(h2pCorrectDecays, statistics::units::Count::get(),
-             "H2P branch slots decremented by a correct conditional prediction"),
     ADD_STAT(h2pTrainProviderRejected, statistics::units::Count::get(),
              "new H2P allocations filtered because the final TAGE provider was below T2"),
     ADD_STAT(h2pAllocations, statistics::units::Count::get(),
