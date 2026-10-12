@@ -33,7 +33,30 @@ def make_value_predictor(vp_type):
     if vp_type == "vtage":
         return VTAGE()
     if vp_type == "estride":
-        return EStride(logMaxConfidence=13, thresholdPercent=0.35)
+        # Original SPEC-sized override, kept for reference:
+        # return EStride(logMaxConfidence=13, thresholdPercent=0.35)
+        # Small-program configuration for functional tests. A short run can
+        # never reach the SPEC-sized confidence bar (0.35 * 2^13 consistent
+        # strides), and one SafeStride misprediction then suppresses
+        # predictions for 1024 further instructions, so nothing is ever
+        # predicted. These values mirror the small EStride defaults in
+        # src/cpu/valuepred/ValuePredictor.py; they are passed explicitly
+        # because SimObject params are embedded into gem5.opt at build time
+        # and the source defaults are only picked up after a rebuild.
+        # EStride is listed in the fixed-priority arbiter's table (after
+        # IdealConstantLVP and EgDiff), so the default --vp-arb=fixed-priority
+        # already applies its predictions.
+        return EStride(
+            ways=1,
+            strideWidth=8,
+            tagWidth=8,
+            logESTBEntrys=5,
+            logMaxConfidence=3,
+            safeStridePenalty=32,
+            safeStrideBonusLoad=2,
+            safeStrideBonusOther=1,
+            safeStrideSaturation=255,
+        )
     if vp_type == "ideal-constant":
         return IdealConstantLVP()
     fatal("unsupported value predictor type: %s" % vp_type)

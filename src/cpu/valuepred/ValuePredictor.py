@@ -21,13 +21,24 @@ class EStride(ValuePredictor):
     cxx_header = "cpu/valuepred/enhanced_stride.hh"
     abstract = False
 
+    # Small-program configuration for functional tests: the table is shrunk and
+    # the confidence bar is lowered so that a short run can reach it. The
+    # original paper-sized values are kept commented out below, restore them by
+    # swapping the two lines back.
     # default params reference 1st cvp paper
-    ways = Param.Int(3, "ways of the EStride")
-    strideWidth = Param.Int(20, "Indicates the number of bits used for stride"
+    # ways = Param.Int(3, "ways of the EStride")
+    ways = Param.Int(1, "ways of the EStride")
+    # strideWidth = Param.Int(20, "Indicates the number of bits used for stride"
+    #                         "must <= 32")
+    strideWidth = Param.Int(8, "Indicates the number of bits used for stride"
                             "must <= 32")
-    tagWidth = Param.Int(16, "tag-width")
-    logESTBEntrys = Param.Int(7, "log 2 of ES table entry counts")
-    logMaxConfidence = Param.Int(5, "log 2 of max confidence number")
+    # tagWidth = Param.Int(16, "tag-width")
+    tagWidth = Param.Int(8, "tag-width")
+    # logESTBEntrys = Param.Int(7, "log 2 of ES table entry counts")
+    logESTBEntrys = Param.Int(5, "log 2 of ES table entry counts")
+    # logMaxConfidence = Param.Int(5, "log 2 of max confidence number")
+    logMaxConfidence = Param.Int(3, "log 2 of max confidence number")
+    # 0.25 * 2^3 = 2 consistent strides are enough to issue a prediction
     thresholdPercent = Param.Float(0.25, "threshold percent of confidence")
 
     # inflight window configuration
@@ -45,11 +56,18 @@ class EStride(ValuePredictor):
     # instruction, rewarded on correct EStride predictions, and heavily
     # penalized on mispredictions; while it is negative EStride predictions
     # are suppressed (the table keeps training).
+    # Scaled down for short runs as well: a misprediction now costs 32 eligible
+    # instructions instead of 1024, so predictions resume within a functional
+    # test instead of staying suppressed for its whole duration.
     enableSafeStride = Param.Bool(True, "enable the paper SafeStride global gating")
-    safeStridePenalty = Param.Int(1024, "decrement on an EStride misprediction")
-    safeStrideBonusLoad = Param.Int(8, "increment on a correct EStride load prediction")
-    safeStrideBonusOther = Param.Int(4, "increment on a correct EStride non-load prediction")
-    safeStrideSaturation = Param.Int(32767, "upper saturation bound of SafeStride")
+    # safeStridePenalty = Param.Int(1024, "decrement on an EStride misprediction")
+    safeStridePenalty = Param.Int(32, "decrement on an EStride misprediction")
+    # safeStrideBonusLoad = Param.Int(8, "increment on a correct EStride load prediction")
+    safeStrideBonusLoad = Param.Int(2, "increment on a correct EStride load prediction")
+    # safeStrideBonusOther = Param.Int(4, "increment on a correct EStride non-load prediction")
+    safeStrideBonusOther = Param.Int(1, "increment on a correct EStride non-load prediction")
+    # safeStrideSaturation = Param.Int(32767, "upper saturation bound of SafeStride")
+    safeStrideSaturation = Param.Int(255, "upper saturation bound of SafeStride")
 
 class ExampleValuePredictor(ValuePredictor):
     type = "ExampleValuePredictor"

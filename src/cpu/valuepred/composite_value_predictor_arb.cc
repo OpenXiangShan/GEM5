@@ -19,6 +19,7 @@ CompositeValuePredictorFixedPriorityArb::choose(
     constexpr ValuePredType priority[] = {
         ValuePredType::IdealConstantLVP,
         ValuePredType::EgDiff,
+        ValuePredType::EStride,
     };
 
     for (const auto predictorType : priority) {
