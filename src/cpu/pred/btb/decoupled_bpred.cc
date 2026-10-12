@@ -87,6 +87,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       smtFTQThreshold(p.smtFTQThreshold),
       ftq(p.numThreads, p.ftq_size),
       resolveBlockThreshold(p.resolveBlockThreshold),
+      enableContextFlush(p.enableContextFlush),
+      flushLatency(p.flushLatency),
       dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum, p.numThreads)
 {
     panic_if(numPredictingThreads == 0 ||
@@ -272,6 +274,12 @@ DecoupledBPUWithBTB::isThreadActive(ThreadID tid) const
 }
 
 bool
+DecoupledBPUWithBTB::inFlushWindow(ThreadID tid) const
+{
+    return enableContextFlush && curTick() < flushStallUntilTick[tid];
+}
+
+bool
 DecoupledBPUWithBTB::canStartPrediction(ThreadID tid) const
 {
     const auto &thread = threads[tid];
@@ -323,6 +331,14 @@ void
 DecoupledBPUWithBTB::tick()
 {
     DPRINTF(Override, "DecoupledBPUWithBTB::tick()\n");
+
+    if (enableContextFlush) {
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            if (inFlushWindow(tid)) {
+                dbpBtbStats.bpuFlushBubbles++;
+            }
+        }
+    }
 
     for (int tid = 0; tid < numThreads; ++tid) {
         auto &thread = threads[tid];
@@ -388,18 +404,107 @@ DecoupledBPUWithBTB::tick()
     for (int tid = 0; tid < numThreads; tid++) {
         auto &thread = threads[tid];
 
-        prepareTwoTakenTraining(tid);
-        processTwoTakenBlock(tid);
+        if (!inFlushWindow(tid)) {
+            prepareTwoTakenTraining(tid);
+            processTwoTakenBlock(tid);
 
-        if (thread.firstBlockProcessedThisTick && pairtage &&
-            pairtage->isEnabled()) {
-            const auto *secondPacket = thread.twoTakenTrainReady ?
-                &thread.twoTakenTrainPacket : nullptr;
-            pairtage->trainFromS3Pred(thread.finalTrainPacket, secondPacket);
+            if (thread.firstBlockProcessedThisTick && pairtage &&
+                pairtage->isEnabled()) {
+                const auto *secondPacket = thread.twoTakenTrainReady ?
+                    &thread.twoTakenTrainPacket : nullptr;
+                pairtage->trainFromS3Pred(
+                    thread.finalTrainPacket, secondPacket);
+            }
         }
     }
 
     DPRINTF(Override, "Prediction cycle complete\n");
+}
+
+void
+DecoupledBPUWithBTB::resetSpeculativeContext(
+    ThreadID tid, bool reset_components)
+{
+    if (reset_components) {
+        for (auto *component : components) {
+            component->resetSpeculativeState();
+        }
+    }
+
+    const auto reset_thread = [this](ThreadID reset_tid) {
+        historyManagers[reset_tid] = HistoryManager(16);
+        threads[reset_tid].s0History.reset();
+        threads[reset_tid].s0PHistory.reset();
+        threads[reset_tid].s0BwHistory.reset();
+        for (auto &history : threads[reset_tid].s0LHistory) {
+            history.reset();
+        }
+        threads[reset_tid].commitHistory.reset();
+        threads[reset_tid].s0PairPhase = PairPhase::Even;
+        threads[reset_tid].finalPred = FullBTBPrediction();
+        threads[reset_tid].finalTrainPacket = PairTAGE::TrainPacket{};
+        threads[reset_tid].twoTakenTrainPacket = PairTAGE::TrainPacket{};
+        threads[reset_tid].twoTakenBTBEntries.clear();
+        threads[reset_tid].twoTakenTrainReady = false;
+        threads[reset_tid].firstBlockProcessedThisTick = false;
+        clearPreds(reset_tid);
+        threads[reset_tid].validprediction = false;
+        threads[reset_tid].numOverrideBubbles = 0;
+        resolveDequeueFailCounters[reset_tid] = 0;
+    };
+
+    if (reset_components) {
+        for (ThreadID reset_tid = 0; reset_tid < numThreads; ++reset_tid) {
+            reset_thread(reset_tid);
+        }
+    } else {
+        reset_thread(tid);
+    }
+}
+
+void
+DecoupledBPUWithBTB::flushBPU(ThreadID tid)
+{
+    if (!enableContextFlush) {
+        return;
+    }
+
+    for (auto *component : components) {
+        component->flushState();
+
+        unsigned stat_index = NumFlushComponents;
+        if (component == ubtb) stat_index = FlushUBTB;
+        else if (component == abtb) stat_index = FlushABTB;
+        else if (component == microtage) stat_index = FlushMicroTAGE;
+        else if (component == pairtage) stat_index = FlushPairTAGE;
+        else if (component == mbtb) stat_index = FlushMBTB;
+        else if (component == tage) stat_index = FlushTAGE;
+        else if (component == ras) stat_index = FlushRAS;
+        else if (component == ittage) stat_index = FlushITTAGE;
+        else if (component == mgsc) stat_index = FlushMGSC;
+        panic_if(stat_index == NumFlushComponents,
+                 "Missing flush-stat mapping for BPU component %d",
+                 component->getComponentIdx());
+        dbpBtbStats.bpuComponentFlushes[stat_index]++;
+    }
+
+    for (ThreadID reset_tid = 0; reset_tid < numThreads; ++reset_tid) {
+        ++contextEpoch[reset_tid];
+        resetSpeculativeContext(reset_tid, false);
+        flushStallUntilTick[reset_tid] =
+            curTick() + cpu->cyclesToTicks(flushLatency);
+    }
+
+    dbpBtbStats.bpuFlushes++;
+    dbpBtbStats.bpuFlushStallCycles += static_cast<uint64_t>(flushLatency);
+
+    DPRINTF(DecoupleBP,
+            "[tid:%u] BPU context flush from retired fence.i at tick %llu; "
+            "stall until %llu (%llu cycles)\n",
+            tid,
+            static_cast<unsigned long long>(curTick()),
+            static_cast<unsigned long long>(flushStallUntilTick[tid]),
+            static_cast<unsigned long long>(flushLatency));
 }
 
 /**
@@ -424,6 +529,21 @@ DecoupledBPUWithBTB::requestNewPrediction(ThreadID tid)
         predsOfEachStage[i].asidHash = asid_hash;
         predsOfEachStage[i].bbStart = thread.s0PC;
         predsOfEachStage[i].predSource = i;
+    }
+
+    if (inFlushWindow(tid)) {
+        thread.finalPred = FullBTBPrediction();
+        thread.finalPred.tid = tid;
+        thread.finalPred.asidHash = asid_hash;
+        thread.finalPred.bbStart = thread.s0PC;
+        thread.finalPred.predSource = 0;
+        thread.finalPred.predTick = curTick();
+        thread.finalPred.s1Source = -1;
+        thread.finalPred.s3Source = -1;
+        thread.finalPred.overrideReason = OverrideReason::NO_OVERRIDE;
+        thread.validprediction = true;
+        dbpBtbStats.bpuFlushUntakenPredictions++;
+        return;
     }
 
     if (pairtage && pairtage->isEnabled()) {
@@ -621,8 +741,11 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
     // 2. Update global PC state to target or fall-through
     s0PC = threads[tid].finalPred.getTarget(predictWidth);;
 
-    // 3. Update history information
-    updateHistoryForPrediction(entry, threads[tid].finalPred);
+    // 3. Forced fall-through targets represent unavailable prediction state.
+    // They must not alter speculative history or enter the recovery ledger.
+    if (!entry.predictionDuringFlush) {
+        updateHistoryForPrediction(entry, threads[tid].finalPred);
+    }
 
     // 4. Fill ahead pipeline
     fillAheadPipeline(entry);
@@ -935,6 +1058,15 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
     // Get reference to the target
     auto &target = ftq.get(target_id, tid);
 
+    if (enableContextFlush &&
+        (target.predictionDuringFlush ||
+         target.contextEpoch != contextEpoch[tid])) {
+        ftq.squashAfter(target_id, tid);
+        resetSpeculativeContext(tid, true);
+        threads[tid].s0PC = redirect_pc;
+        return;
+    }
+
     BranchInfo recovery_branch = target.predBranchInfo;
     if (squash_type == SQUASH_CTRL && static_inst) {
         recovery_branch = BranchInfo(
@@ -1008,7 +1140,12 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
     auto &target = ftq.get(target_id, tid);
     // Get target address
     Addr real_target = corr_target.instAddr();
-    if (!fromCommit && static_inst->isReturn() && !static_inst->isNonSpeculative()) {
+    const bool current_context =
+        !enableContextFlush ||
+        (!target.predictionDuringFlush &&
+         target.contextEpoch == contextEpoch[tid]);
+    if (!fromCommit && static_inst->isReturn() &&
+        !static_inst->isNonSpeculative() && current_context) {
         // get ret addr from ras meta
         real_target = ras->getTopAddrFromMetas(target);
         // TODO: set real target to dynamic inst
@@ -1148,6 +1285,12 @@ DecoupledBPUWithBTB::resolveUpdate(const std::vector<BranchOutcome> &events)
     }
 
     const auto &target = ftq.get(target_id, tid);
+    if (enableContextFlush &&
+        (inFlushWindow(tid) ||
+         target.predictionDuringFlush ||
+         target.contextEpoch != contextEpoch[tid])) {
+        return true;
+    }
     const PredictionUpdateContext context(target);
     const PreparedUpdate update(events);
 
@@ -1203,6 +1346,12 @@ void
 DecoupledBPUWithBTB::updatePredictorComponents(
     const PredictionUpdateContext &context, const PreparedUpdate &update)
 {
+    if (enableContextFlush &&
+        (inFlushWindow(context.tid) ||
+         context.predictionDuringFlush ||
+         context.contextEpoch != contextEpoch[context.tid])) {
+        return;
+    }
     for (int i = 0; i < numComponents; ++i) {
         if (components[i]->trainsAtCommit()) {
             components[i]->update(context, update);
@@ -1295,6 +1444,8 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     entry.lhistory = s0LHistory;
     entry.pairPhase = threads[tid].s0PairPhase;
     entry.predTick = pred.predTick;
+    entry.contextEpoch = contextEpoch[tid];
+    entry.predictionDuringFlush = inFlushWindow(tid);
     entry.predSource = pred.predSource;
     entry.overrideReason = pred.overrideReason;
 
@@ -1302,8 +1453,10 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     entry.s3Source = pred.s3Source;
 
     // Save predictors' metadata
+    if (!enableContextFlush || !entry.predictionDuringFlush) {
     for (int i = 0; i < numComponents; i++) {
         entry.predMetas[i] = components[i]->getPredictionMeta(tid);
+    }
     }
 
     return entry;
@@ -1365,7 +1518,18 @@ DecoupledBPUWithBTB::getPreservedReturnAddr(const DynInstPtr &dynInst)
 {
     DPRINTF(DecoupleBP, "acquiring reutrn address for inst pc %#lx from decode\n", dynInst->pcState().instAddr());
     auto ftqid = dynInst->getFtqId();
-    auto retAddr = ras->getTopAddrFromMetas(ftq.get(ftqid, dynInst->threadNumber));
+    const ThreadID tid = dynInst->threadNumber;
+    if (enableContextFlush && !ftq.hasTarget(ftqid, tid)) {
+        return dynInst->pcState().as<RiscvISA::PCState>().npc();
+    }
+    auto &target = ftq.get(ftqid, tid);
+    if (enableContextFlush &&
+        (target.predictionDuringFlush ||
+         target.contextEpoch != contextEpoch[tid] ||
+         !target.predMetas[ras->getComponentIdx()])) {
+        return dynInst->pcState().as<RiscvISA::PCState>().npc();
+    }
+    auto retAddr = ras->getTopAddrFromMetas(target);
     DPRINTF(DecoupleBP, "get ret addr %#lx\n", retAddr);
     return retAddr;
 }

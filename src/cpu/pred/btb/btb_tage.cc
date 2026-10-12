@@ -205,6 +205,46 @@ BTBTAGE::~BTBTAGE()
 {
 }
 
+void
+BTBTAGE::flushState()
+{
+    for (auto &table : tageTable) {
+        for (auto &set : table) {
+            std::fill(set.begin(), set.end(), TageEntry());
+        }
+    }
+
+    std::fill(useAlt.begin(), useAlt.end(), 0);
+    usefulResetCnt = 0;
+    allocLFSR = LFSR64();
+    resetSpeculativeState();
+}
+
+void
+BTBTAGE::resetSpeculativeState()
+{
+    tageIndex.clear();
+    tageTag.clear();
+    lastPredBankId = 0;
+    predBankValid = false;
+    threadHistory.assign(MaxThreads, ThreadHistoryState());
+    for (unsigned i = 0; i < numPredictors; ++i) {
+        const auto historyType =
+            usePathHistory ? HistoryType::PATH : HistoryType::GLOBAL;
+        for (auto &state : threadHistory) {
+            state.tagFoldedHist.emplace_back(
+                histLengths[i], tableTagBits[i], 16, historyType);
+            state.altTagFoldedHist.emplace_back(
+                histLengths[i], tableTagBits[i] - 1, 16, historyType);
+            state.indexFoldedHist.emplace_back(
+                histLengths[i], tableIndexBits[i], 16, historyType);
+        }
+    }
+    for (auto &meta : threadMeta) {
+        meta = std::make_shared<TageMeta>();
+    }
+}
+
 ThreadID
 BTBTAGE::predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const
 {

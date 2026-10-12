@@ -136,6 +136,30 @@ AheadBTB::AheadBTB(const Params &p)
 #endif
 }
 
+void
+AheadBTB::flushState()
+{
+    for (unsigned i = 0; i < numSets; ++i) {
+        std::fill(btb[i].begin(), btb[i].end(), TickedBTBEntry());
+        mruList[i].clear();
+        for (auto it = btb[i].begin(); it != btb[i].end(); ++it) {
+            mruList[i].push_back(it);
+        }
+        std::make_heap(mruList[i].begin(), mruList[i].end(), older());
+    }
+    resetSpeculativeState();
+}
+
+void
+AheadBTB::resetSpeculativeState()
+{
+    for (auto &state : threadStates) {
+        state.meta.reset();
+        state.lastPredEntries.clear();
+        state.aheadReadBtbEntries = {};
+    }
+}
+
 ThreadID
 AheadBTB::predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const
 {

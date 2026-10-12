@@ -120,6 +120,8 @@ class MicroTAGE : public TimedBaseBTBPredictor
     void tickStart() override;
 
     void tick() override;
+    void flushState() override;
+    void resetSpeculativeState() override;
     void dryRunCycle(Addr startAddr) override;
     // Make predictions for a stream of instructions and record in stage preds
     void putPCHistory(Addr startAddr,

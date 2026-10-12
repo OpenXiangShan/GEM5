@@ -155,6 +155,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
     void tickStart() override;
 
     void tick() override;
+    void flushState() override;
+    void resetSpeculativeState() override;
     // Make predictions for a stream of instructions and record in stage preds
     void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;
@@ -566,6 +568,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
         static auto &updateThreshold(BTBMGSC &mgsc) { return mgsc.updateThreshold; }
         static auto &pUpdateThreshold(BTBMGSC &mgsc) { return mgsc.pUpdateThreshold; }
+        static auto &bwIndex(BTBMGSC &mgsc) { return mgsc.bwIndex; }
 
         static Addr getHistIndex(BTBMGSC &mgsc, Addr pc, unsigned tableIndexBits, uint64_t foldedHist)
         {

@@ -1136,6 +1136,18 @@ def addXiangshanCommonOptions(parser):
         "NEMU REF built with ENABLE_MEM_DEDUP",
     )
 
+    parser.add_argument(
+        "--enable-context-flush",
+        action="store_true",
+        help="enable BPU context flush modeling",
+    )
+    parser.add_argument(
+        "--flush-latency",
+        type=int,
+        default=516,
+        help="BPU context flush stall latency in cycles",
+    )
+
 
 def addXiangshanFSOptions(parser):
     addXiangshanCommonOptions(parser)

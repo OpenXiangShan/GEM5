@@ -307,6 +307,18 @@ TEST_F(BTBTest, PredictionAfterUpdate) {
     verifyPrediction(stagePreds, mbtb->getDelay(), {branch});
 }
 
+TEST_F(BTBTest, FlushStateRestoresColdStorage) {
+    BranchInfo branch = createBranchInfo(0x1000, 0x2000, true);
+    auto trained = predictUpdateCycle(mbtb, 0x1000, branch, true);
+    ASSERT_FALSE(trained[mbtb->getDelay()].btbEntries.empty());
+
+    mbtb->flushState();
+
+    std::vector<FullBTBPrediction> cold(4);
+    mbtb->putPCHistory(0x1000, boost::dynamic_bitset<>(8, 0), cold);
+    EXPECT_TRUE(cold[mbtb->getDelay()].btbEntries.empty());
+}
+
 // Test large virtual addr
 TEST_F(BTBTest, PredictionAfterUpdateLargeAddr) {
     // Create branch info

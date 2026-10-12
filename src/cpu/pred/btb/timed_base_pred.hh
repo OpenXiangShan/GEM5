@@ -91,6 +91,10 @@ class TimedBaseBTBPredictor: public SimObject
     virtual void recoverPHist(const boost::dynamic_bitset<> &history,
                               const HistoryRecoveryContext &context,
                               const PathHistoryUpdate &update) {}
+    // Context-flush hooks.  Predictors that own tables or speculative state
+    // override these; the default keeps older predictors source-compatible.
+    virtual void flushState() {}
+    virtual void resetSpeculativeState() {}
     virtual void update(const PredictionUpdateContext &context,
                         const PreparedUpdate &update) {}
     virtual unsigned getDelay() {return numDelay;}

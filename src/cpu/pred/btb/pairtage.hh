@@ -233,6 +233,9 @@ class PairTAGE : public TimedBaseBTBPredictor
 
     PairTAGE(const Params &p);
 
+    void flushState() override;
+    void resetSpeculativeState() override;
+
     void putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBTBPrediction> &stagePreds) override;
 
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;

@@ -1625,3 +1625,7 @@ class DecoupledBPUWithBTB(BranchPredictor):
         8,
         "Consecutive resolve dequeue failures before blocking prediction once",
     )
+    enableContextFlush = Param.Bool(False, "Enable BPU context flush modeling")
+    flushLatency = Param.Cycles(
+        516, "Aggregate BPU context flush stall latency"
+    )
