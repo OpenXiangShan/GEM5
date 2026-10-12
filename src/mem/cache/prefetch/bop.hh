@@ -224,7 +224,9 @@ class BOP : public Queued
         } stats;
 
     public:
-        boost::compute::detail::lru_cache<Addr, Addr> *filter;
+        // Composite hosts may provide a shared filter. Standalone BOP
+        // relies on Queued's duplicate filtering.
+        boost::compute::detail::lru_cache<Addr, Addr> *filter = nullptr;
 
         /** Update the RR right table after a prefetch fill */
         void notifyFill(const PacketPtr& pkt) override;
@@ -235,13 +237,23 @@ class BOP : public Queued
         void calculatePrefetch(const PrefetchInfo &pfi,
                                std::vector<AddrPriority> &addresses) override
         {
-            panic("not implemented");
+            calculatePrefetch(pfi, addresses, false);
         };
 
         using Queued::calculatePrefetch;
 
-        void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late);
-        
+        void calculatePrefetch(const PrefetchInfo &pfi,
+                               std::vector<AddrPriority> &addresses, bool late);
+
+        void calculatePrefetch(const PrefetchInfo &pfi,
+                               std::vector<AddrPriority> &addresses, bool late,
+                               PrefetchSourceType source,
+                               bool miss_repeat) override
+        {
+            calculatePrefetch(pfi, addresses,
+                             late && source == PrefetchSourceType::HWP_BOP);
+        }
+
         bool tryAddOffset(int64_t offset, bool late = false);
 };
 

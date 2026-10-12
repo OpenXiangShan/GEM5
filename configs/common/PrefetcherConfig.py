@@ -582,10 +582,16 @@ def _add_l1_temporal(prefetcher, cpu, cache_level, options):
     if prefetcher == NULL:
         return temporal
     if isinstance(prefetcher, MultiPrefetcher):
-        prefetcher.prefetchers = list(prefetcher.prefetchers) + [temporal]
+        children = list(prefetcher.prefetchers) + [temporal]
+        # Reparent the full vector so the new TP joins the SimObject tree.
+        prefetcher.clear_child('prefetchers')
+        prefetcher.prefetchers = children
         return prefetcher
-    # Keep the existing child's TLB registration and feedback forwarding.
-    return MultiPrefetcher(prefetchers=[prefetcher, temporal])
+    # The wrapper registers its children's C++ listeners before their Python
+    # TLB callbacks run, so register the TLB on the wrapper as well.
+    combined = MultiPrefetcher(prefetchers=[prefetcher, temporal])
+    _register_prefetcher_tlb(combined, cpu)
+    return combined
 
 
 def create_prefetcher(cpu, cache_level, options):
