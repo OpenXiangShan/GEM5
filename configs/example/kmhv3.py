@@ -118,7 +118,10 @@ def setKmhV3Params(args, system):
             # entry point.  Apply all required defaults before root.apply_config
             # runs, so explicit --param overrides still take precedence.
             cpu.numThreads = 1
-            cpu.valuePred = NULL
+            cpu.valuePred = CompositeValuePredictor(
+                predictors=[IdealConstantLVP()],
+                arb=CVPConfidenceArb(counterBits=6),
+            )
             cpu.enable_loadFusion = False
             cpu.enableConstantFolding = False
             cpu.enableMoveElimination = True

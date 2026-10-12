@@ -299,8 +299,6 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
     if (isHybrid()) {
         fatal_if(params.numThreads != 1,
                  "Hybrid CROB requires numThreads = 1");
-        fatal_if(params.valuePred != nullptr,
-                 "Hybrid CROB requires valuePred = NULL");
         fatal_if(params.enable_loadFusion,
                  "Hybrid CROB requires enable_loadFusion = False");
         fatal_if(params.enableConstantFolding ||
