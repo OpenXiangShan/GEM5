@@ -48,6 +48,10 @@ class TemporalPrefetcher : public Queued
 
   public:
     explicit TemporalPrefetcher(const TemporalPrefetcherParams &p);
+
+    using Queued::notifyPrefetchUseful;
+    using Queued::prefetchUnused;
+
     void regProbeListeners() override;
     void preDumpStats() override;
     lldp::Hint loadTrain(const PacketPtr &pkt, bool miss) override;
