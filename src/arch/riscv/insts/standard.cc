@@ -58,6 +58,24 @@ RegOp::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
 }
 
 std::string
+MopOp::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
+{
+    const bool two_sources = bits(machInst, 25);
+    unsigned number = bits(machInst, 30) << 2 | bits(machInst, 27, 26);
+    if (!two_sources)
+        number = number << 2 | bits(machInst, 21, 20);
+
+    // Print encoded registers without adding them to the operand list.
+    std::stringstream ss;
+    ss << (two_sources ? "mop.rr." : "mop.r.") << number << ' '
+       << registerName(RegId(IntRegClass, machInst.rd)) << ", "
+       << registerName(RegId(IntRegClass, machInst.rs1));
+    if (two_sources)
+        ss << ", " << registerName(RegId(IntRegClass, machInst.rs2));
+    return ss.str();
+}
+
+std::string
 CSROp::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;

@@ -496,6 +496,14 @@ def format ROp(code, *opt_flags) {{
     exec_output = BasicExecute.subst(iop)
 }};
 
+def format MopOp(code) {{
+    iop = InstObjParams(name, Name, 'MopOp', code, ['IntAluOp'])
+    header_output = BasicDeclare.subst(iop)
+    decoder_output = BasicConstructor.subst(iop)
+    decode_block = BasicDecode.subst(iop)
+    exec_output = BasicExecute.subst(iop)
+}};
+
 def format IOp(code, imm_type='int64_t', imm_code='imm = sext<12>(IMM12);',
               *opt_flags) {{
     regs = ['destRegIdx(0)','srcRegIdx(0)']

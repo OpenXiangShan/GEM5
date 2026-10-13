@@ -2454,9 +2454,22 @@ decode QUADRANT {
         }}, IsDirectControl, IsUncondControl);
 
         0x1c: decode FUNCT3 {
-            format LoadH {
-                0x04:  decode HFUNCT2{
-                    0x643: hlvx_hu({{
+            0x4: decode FUNCT7 {
+                format MopOp {
+                    // MOP.R fixes bits 24:22 to 111; bits 21:20 are its number.
+                    0x40, 0x42, 0x44, 0x46,
+                    0x60, 0x62, 0x64, 0x66: decode RS2 {
+                        0x1c, 0x1d, 0x1e, 0x1f: mop_r({{
+                            Rd = 0;
+                        }});
+                    }
+                    0x41, 0x43, 0x45, 0x47,
+                    0x61, 0x63, 0x65, 0x67: mop_rr({{
+                        Rd = 0;
+                    }});
+                }
+                default: decode HFUNCT2 {
+                    0x643: LoadH::hlvx_hu({{
                         Rd = Mem_uh;
                     }},inst_flags = IsHInst);
                 }
