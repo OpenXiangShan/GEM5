@@ -3180,7 +3180,10 @@ LSQ::SingleDataRequest::SingleDataRequest(
                 std::move(amo_op)) {
     port->numSingleRequest++;
     singleList.push_back(this);
-    assert(port->numSingleRequest <= 500);
+    if (port->numSingleRequest > 500) {
+        warn_once("LSQ single data requests exceed debug threshold: %llu\n",
+                  port->numSingleRequest);
+    }
 }
 
 LSQ::SingleDataRequest::~SingleDataRequest(){
@@ -3234,7 +3237,10 @@ LSQ::SplitDataRequest::SplitDataRequest(LSQUnit* port, const DynInstPtr& inst, b
       _mainPacket(nullptr)
 {
     port->numSplitRequest++;
-    assert(port->numSplitRequest <= 400);
+    if (port->numSplitRequest > 400) {
+        warn_once("LSQ split data requests exceed debug threshold: %llu\n",
+                  port->numSplitRequest);
+    }
     flags.set(Flag::IsSplit);
 }
 
