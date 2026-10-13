@@ -8,7 +8,9 @@
 #include <string>
 #include <vector>
 
+#include "cpu/o3/trace/CBP2025TraceReader.hh"
 #include "cpu/o3/trace/ChampSimTraceReader.hh"
+#include "cpu/o3/trace/TraceMetaGuard.hh"
 #include "ext/iostream3/zfstream.h"
 #include "gtest/gtest.h"
 
@@ -99,6 +101,45 @@ writeTraceFile(const std::string &path, const std::vector<CSInstr> &insts,
     return gz.good();
 }
 
+enum class CBPInstClass : uint8_t
+{
+    ALU = 0,
+};
+
+static bool
+writeCBPTraceFile(const std::string &path, const std::vector<uint64_t> &pcs,
+                  TraceFileMode mode = TraceFileMode::Binary)
+{
+    auto writeOne = [](auto &stream, uint64_t pc) {
+        const auto type = static_cast<uint8_t>(CBPInstClass::ALU);
+        const uint8_t numInRegs = 0;
+        const uint8_t numOutRegs = 0;
+        stream.write(reinterpret_cast<const char*>(&pc), sizeof(pc));
+        stream.write(reinterpret_cast<const char*>(&type), sizeof(type));
+        stream.write(reinterpret_cast<const char*>(&numInRegs), sizeof(numInRegs));
+        stream.write(reinterpret_cast<const char*>(&numOutRegs), sizeof(numOutRegs));
+        return stream.good();
+    };
+
+    if (mode == TraceFileMode::Binary) {
+        std::ofstream ofs(path, std::ios::binary);
+        if (!ofs.is_open()) return false;
+        for (const auto pc : pcs) {
+            if (!writeOne(ofs, pc)) return false;
+        }
+        ofs.close();
+        return ofs.good();
+    }
+
+    gzofstream gz(path.c_str());
+    if (!gz.good()) return false;
+    for (const auto pc : pcs) {
+        if (!writeOne(gz, pc)) return false;
+    }
+    gz.close();
+    return gz.good();
+}
+
 // Replicate the reader's hash mapping to validate expectations.
 static inline uint64_t
 mapHash(uint64_t trace_addr,
@@ -161,6 +202,7 @@ class TraceFileGuard
 } // anonymous namespace
 
 using gem5::o3::ChampSimTraceReader;
+using gem5::o3::CBP2025TraceReader;
 using gem5::o3::TraceInstruction;
 
 TEST(ChampSimTraceReaderTest, ReadsTwoInstructionsAndSetsBranchTargetFromLookahead)
@@ -225,6 +267,25 @@ TEST(ChampSimTraceReaderTest, HashMappingProducesAlignedInRegion)
     EXPECT_GE(pc, 0x10000000ULL);
     EXPECT_LT(pc, 0x10000000ULL + 0x40000000ULL);
     EXPECT_EQ(pc, mapHash(x.ip));
+}
+
+TEST(ChampSimTraceReaderTest, MarksNonBranchDiscontinuityForTraceRecovery)
+{
+    const std::string path = "champsim_reader_test_ctrl_flow_change.bin";
+    TraceFileGuard guard(path);
+    const CSInstr first = makeInstr(0x1000);
+    const CSInstr successor = makeInstr(0x2000);
+    ASSERT_TRUE(writeTraceFile(path, {first, successor}));
+
+    ChampSimTraceReader reader(path, "unit.reader.ctrl_flow_change");
+    ASSERT_TRUE(reader.init());
+
+    const auto record = reader.getNextInstruction();
+    ASSERT_TRUE(record.isValid());
+    EXPECT_FALSE(record.getBranch());
+    EXPECT_TRUE(record.isCtrlFlowChange());
+    EXPECT_TRUE(record.getHasCtrlFlowTarget());
+    EXPECT_EQ(record.getCtrlFlowTarget(), mapHash(successor.ip));
 }
 
 TEST(ChampSimTraceReaderTest, TakenBranchWithoutLookaheadHasNoTarget)
@@ -467,6 +528,25 @@ TEST(ChampSimTraceReaderTest, SeekToInstructionWithoutCheckpointsResetsStream)
     EXPECT_EQ(instr.getPC(), mapHash(insts[2].ip));
 }
 
+TEST(CBP2025TraceReaderTest, SoftSeekFallbackUsesHardSeekWithoutRecursion)
+{
+    const std::string path = "cbp2025_reader_test_seek.bin";
+    TraceFileGuard guard(path);
+    std::vector<uint64_t> pcs;
+    for (int index = 0; index < 16; ++index) {
+        pcs.push_back(0x80001000ULL + index * 0x10ULL);
+    }
+    ASSERT_TRUE(writeCBPTraceFile(path, pcs));
+
+    CBP2025TraceReader reader(path, "unit.cbp.reader.seek");
+    ASSERT_TRUE(reader.init());
+
+    ASSERT_TRUE(reader.softSeekToInstruction(2));
+    auto instr = reader.getNextInstruction();
+    ASSERT_TRUE(instr.isValid());
+    EXPECT_EQ(instr.getPC(), mapHash(pcs[2], 0x80000000ULL));
+}
+
 TEST(ChampSimTraceReaderTest, HandlesCompressedTraceInput)
 {
     const std::string path = "champsim_reader_test_compressed.bin.gz";
@@ -522,4 +602,301 @@ TEST(ChampSimTraceReaderTest, LinearMappingPageAlignedPreservesOffset)
     // Page-offset preserved
     constexpr uint64_t PAGE_SIZE = 4096ULL;
     EXPECT_EQ(pc % PAGE_SIZE, x.ip % PAGE_SIZE);
+}
+
+// ---------------------------------------------------------------------------
+// L1 reader contract tests (anchored, both implementations).
+//
+// Shared seek contract, pinned by the two existing data points above
+// (ChampSim seek(2) -> pcs[2]; CBP softSeek(2) -> pcs[2]):
+//   after seek(N) / softSeekToInstruction(N), the next getNextInstruction()
+//   returns the (N+1)-th instruction (0-based pcs[N]) — for BOTH readers.
+//   The reader source comments disagree with each other on this wording,
+//   which is exactly the off-by-one minefield of commit 87cdef3360; these
+//   tests pin the actual shared behavior. Any future divergence between the
+//   two readers fails here.
+//
+// Tombstones: 87cdef3360 (seek off-by-one), ee8f039617 (CBP hard-seek
+// fallback recursion / stub), 364d3b261e (checkpoint pending persistence).
+// ---------------------------------------------------------------------------
+
+TEST(ChampSimTraceReaderTest, SeekThenNextReturnsSeekTargetForBothReaders)
+{
+    // 8-instruction traces for both formats.
+    std::vector<CSInstr> cs_insts;
+    std::vector<uint64_t> cbp_pcs;
+    for (int i = 0; i < 8; ++i) {
+        cs_insts.push_back(makeInstr(0xA000 + i * 0x10));
+        cbp_pcs.push_back(0xB000 + i * 0x10);
+    }
+
+    const std::string cs_path = "champsim_seek_contract.bin";
+    const std::string cbp_path = "cbp_seek_contract.bin";
+    TraceFileGuard cs_guard(cs_path), cbp_guard(cbp_path);
+    ASSERT_TRUE(writeTraceFile(cs_path, cs_insts));
+    ASSERT_TRUE(writeCBPTraceFile(cbp_path, cbp_pcs));
+
+    // ChampSim: seek(3) -> pcs[3]; seek(0) -> pcs[0].
+    {
+        ChampSimTraceReader reader(cs_path, "unit.cs.seekcontract");
+        ASSERT_TRUE(reader.init());
+        ASSERT_TRUE(reader.seekToInstruction(3));
+        auto instr = reader.getNextInstruction();
+        ASSERT_TRUE(instr.isValid());
+        EXPECT_EQ(instr.getPC(), mapHash(cs_insts[3].ip))
+            << "ChampSim seek(3) must return the 4th instruction";
+        ASSERT_TRUE(reader.seekToInstruction(0));
+        instr = reader.getNextInstruction();
+        ASSERT_TRUE(instr.isValid());
+        EXPECT_EQ(instr.getPC(), mapHash(cs_insts[0].ip))
+            << "ChampSim seek(0) must reset to the first instruction";
+    }
+
+    // CBP: seek(3) -> pcs[3]; seek(0) -> pcs[0].
+    {
+        CBP2025TraceReader reader(cbp_path, "unit.cbp.seekcontract");
+        ASSERT_TRUE(reader.init());
+        ASSERT_TRUE(reader.seekToInstruction(3));
+        auto instr = reader.getNextInstruction();
+        ASSERT_TRUE(instr.isValid());
+        EXPECT_EQ(instr.getPC(), mapHash(cbp_pcs[3], 0x80000000ULL))
+            << "CBP seek(3) must return the 4th instruction";
+        ASSERT_TRUE(reader.seekToInstruction(0));
+        instr = reader.getNextInstruction();
+        ASSERT_TRUE(instr.isValid());
+        EXPECT_EQ(instr.getPC(), mapHash(cbp_pcs[0], 0x80000000ULL))
+            << "CBP seek(0) must reset to the first instruction";
+    }
+}
+
+TEST(ChampSimTraceReaderTest, SeekIsIdempotentForBothReaders)
+{
+    const std::string cs_path = "champsim_seek_idem.bin";
+    const std::string cbp_path = "cbp_seek_idem.bin";
+    TraceFileGuard cs_guard(cs_path), cbp_guard(cbp_path);
+    std::vector<CSInstr> cs_insts;
+    std::vector<uint64_t> cbp_pcs;
+    for (int i = 0; i < 8; ++i) {
+        cs_insts.push_back(makeInstr(0xC000 + i * 0x10));
+        cbp_pcs.push_back(0xD000 + i * 0x10);
+    }
+    ASSERT_TRUE(writeTraceFile(cs_path, cs_insts));
+    ASSERT_TRUE(writeCBPTraceFile(cbp_path, cbp_pcs));
+
+    {
+        ChampSimTraceReader reader(cs_path, "unit.cs.seekidem");
+        ASSERT_TRUE(reader.init());
+        ASSERT_TRUE(reader.seekToInstruction(4));
+        ASSERT_TRUE(reader.seekToInstruction(4));
+        auto instr = reader.getNextInstruction();
+        ASSERT_TRUE(instr.isValid());
+        EXPECT_EQ(instr.getPC(), mapHash(cs_insts[4].ip));
+    }
+    {
+        CBP2025TraceReader reader(cbp_path, "unit.cbp.seekidem");
+        ASSERT_TRUE(reader.init());
+        ASSERT_TRUE(reader.seekToInstruction(4));
+        ASSERT_TRUE(reader.seekToInstruction(4));
+        auto instr = reader.getNextInstruction();
+        ASSERT_TRUE(instr.isValid());
+        EXPECT_EQ(instr.getPC(), mapHash(cbp_pcs[4], 0x80000000ULL));
+    }
+}
+
+TEST(ChampSimTraceReaderTest, SeekBeyondEofFailsForBothReaders)
+{
+    const std::string cs_path = "champsim_seek_eof.bin";
+    const std::string cbp_path = "cbp_seek_eof.bin";
+    TraceFileGuard cs_guard(cs_path), cbp_guard(cbp_path);
+    std::vector<CSInstr> cs_insts;
+    std::vector<uint64_t> cbp_pcs;
+    for (int i = 0; i < 8; ++i) {
+        cs_insts.push_back(makeInstr(0xE000 + i * 0x10));
+        cbp_pcs.push_back(0xF000 + i * 0x10);
+    }
+    ASSERT_TRUE(writeTraceFile(cs_path, cs_insts));
+    ASSERT_TRUE(writeCBPTraceFile(cbp_path, cbp_pcs));
+
+    // seek() past the last instruction must fail, not wrap or panic
+    // (664723efc3 fail-fast hardening).
+    {
+        ChampSimTraceReader reader(cs_path, "unit.cs.seekofail");
+        ASSERT_TRUE(reader.init());
+        EXPECT_FALSE(reader.seekToInstruction(100));
+    }
+    {
+        CBP2025TraceReader reader(cbp_path, "unit.cbp.seekofail");
+        ASSERT_TRUE(reader.init());
+        EXPECT_FALSE(reader.seekToInstruction(100));
+    }
+}
+
+TEST(ChampSimTraceReaderTest, SoftSeekReplaysInOrderAfterRollback)
+{
+    // Recovery replay contract (guards the rollback semantics used by
+    // TraceFetch::rollbackTraceReader): after reading k instructions and
+    // rolling back with softSeek(N), the reader must replay pcs[N],
+    // pcs[N+1], ... in order and then hit EOF.
+    const std::string cs_path = "champsim_softseek_replay.bin";
+    TraceFileGuard guard(cs_path);
+    std::vector<CSInstr> insts;
+    for (int i = 0; i < 4; ++i)
+        insts.push_back(makeInstr(0x11000 + i * 0x10));
+    ASSERT_TRUE(writeTraceFile(cs_path, insts));
+
+    ChampSimTraceReader reader(cs_path, "unit.cs.softseek");
+    ASSERT_TRUE(reader.init());
+    for (int i = 0; i < 4; ++i)
+        reader.getNextInstruction();
+
+    ASSERT_TRUE(reader.softSeekToInstruction(1));
+    for (int i = 1; i < 4; ++i) {
+        auto instr = reader.getNextInstruction();
+        ASSERT_TRUE(instr.isValid());
+        EXPECT_EQ(instr.getPC(), mapHash(insts[i].ip))
+            << "replay must proceed in order after soft rollback";
+    }
+    // Draining to EOF: everything after the replay point is consumed once.
+    int extra = 0;
+    while (reader.getNextInstruction().isValid())
+        ++extra;
+    EXPECT_EQ(extra, 0) << "replay must not duplicate instructions";
+    EXPECT_TRUE(reader.isEOF());
+}
+
+TEST(CBP2025TraceReaderTest, SoftSeekReplaysInOrderAfterRollback)
+{
+    const std::string cbp_path = "cbp_softseek_replay.bin";
+    TraceFileGuard guard(cbp_path);
+    std::vector<uint64_t> pcs;
+    // 16 records: CBP init requires the file to be at least sizeof(CBPInstr)
+    // bytes, and the replay contract needs enough history to roll back into.
+    for (int i = 0; i < 16; ++i)
+        pcs.push_back(0x12000ULL + i * 0x10ULL);
+    ASSERT_TRUE(writeCBPTraceFile(cbp_path, pcs));
+
+    CBP2025TraceReader reader(cbp_path, "unit.cbp.softseek");
+    ASSERT_TRUE(reader.init());
+    for (int i = 0; i < 16; ++i)
+        reader.getNextInstruction();
+
+    ASSERT_TRUE(reader.softSeekToInstruction(1));
+    for (int i = 1; i < 16; ++i) {
+        auto instr = reader.getNextInstruction();
+        ASSERT_TRUE(instr.isValid());
+        EXPECT_EQ(instr.getPC(), mapHash(pcs[i], 0x80000000ULL))
+            << "CBP replay must proceed in order after soft rollback";
+    }
+    int extra = 0;
+    while (reader.getNextInstruction().isValid())
+        ++extra;
+    EXPECT_EQ(extra, 0) << "CBP replay must not duplicate instructions";
+    EXPECT_TRUE(reader.isEOF());
+}
+
+TEST(CBP2025TraceReaderTest, CheckpointRoundTripResumesExactly)
+{
+    // 364d3b261e: checkpoint state (index + pending + buffer) must resume
+    // exactly where it was captured; no seqNum gaps, no dropped entries.
+    const std::string cbp_path = "cbp_checkpoint_roundtrip.bin";
+    TraceFileGuard guard(cbp_path);
+    // 1024 records (mirrors the ChampSim checkpoint test): fillBuffer
+    // drains the whole file for small traces, leaving the raw stream at
+    // EOF where tell() yields -1 and the saved filePosition cannot be
+    // seeked back. (Observed edge defect, recorded here: a checkpoint
+    // created at stream-EOF is unrestorable through the raw-seek path.)
+    std::vector<uint64_t> pcs;
+    for (int i = 0; i < 1024; ++i)
+        pcs.push_back(0x13000ULL + i * 0x10ULL);
+    ASSERT_TRUE(writeCBPTraceFile(cbp_path, pcs));
+
+    CBP2025TraceReader reader(cbp_path, "unit.cbp.ckpt");
+    ASSERT_TRUE(reader.init());
+    for (int i = 0; i < 3; ++i)
+        reader.getNextInstruction();
+
+    const auto cp = reader.createCheckpoint();
+    ASSERT_TRUE(cp.valid) << "checkpoint must be valid for a raw stream";
+    const uint64_t idx_at_cp = reader.getCurrentInstructionIndex();
+    for (int i = 0; i < 2; ++i)
+        reader.getNextInstruction();  // advance past the checkpoint
+
+    ASSERT_TRUE(reader.restoreCheckpoint(cp));
+    EXPECT_EQ(reader.getCurrentInstructionIndex(), idx_at_cp);
+    // Resume from the checkpoint: pcs[3], pcs[4], ... in order.
+    for (int i = 3; i < 20; ++i) {
+        auto instr = reader.getNextInstruction();
+        ASSERT_TRUE(instr.isValid());
+        EXPECT_EQ(instr.getPC(), mapHash(pcs[i], 0x80000000ULL))
+            << "restore must resume at the checkpointed position";
+    }
+}
+
+TEST(ChampSimTraceReaderTest, ReadToEofYieldsExactlyNInstructionsForBothReaders)
+{
+    // Reader-level EOF accounting: draining a trace yields exactly the
+    // records written — the per-trace "instrRead == expected count"
+    // property from commit e87d6b5db4's validation batch, pinned at the
+    // component level.
+    const std::string cs_path = "champsim_eof_count.bin";
+    const std::string cbp_path = "cbp_eof_count.bin";
+    TraceFileGuard cs_guard(cs_path), cbp_guard(cbp_path);
+    std::vector<CSInstr> cs_insts;
+    std::vector<uint64_t> cbp_pcs;
+    for (int i = 0; i < 16; ++i) {
+        cs_insts.push_back(makeInstr(0x14000 + i * 0x10));
+        cbp_pcs.push_back(0x15000ULL + i * 0x10ULL);
+    }
+    ASSERT_TRUE(writeTraceFile(cs_path, cs_insts));
+    ASSERT_TRUE(writeCBPTraceFile(cbp_path, cbp_pcs));
+
+    {
+        ChampSimTraceReader reader(cs_path, "unit.cs.eofcount");
+        ASSERT_TRUE(reader.init());
+        int count = 0;
+        while (reader.getNextInstruction().isValid())
+            ++count;
+        EXPECT_EQ(count, 16);
+        EXPECT_TRUE(reader.isEOF());
+    }
+    {
+        CBP2025TraceReader reader(cbp_path, "unit.cbp.eofcount");
+        ASSERT_TRUE(reader.init());
+        int count = 0;
+        while (reader.getNextInstruction().isValid())
+            ++count;
+        EXPECT_EQ(count, 16);
+        EXPECT_TRUE(reader.isEOF());
+    }
+}
+
+TEST(ChampSimTraceReaderTest, InitFailsForMissingFileBothReaders)
+{
+    // Fail-closed contract: a missing trace file must fail init, not
+    // produce a half-initialized reader.
+    EXPECT_FALSE(ChampSimTraceReader("definitely_missing_cs.bin",
+                                     "unit.cs.missing").init());
+    EXPECT_FALSE(CBP2025TraceReader("definitely_missing_cbp.bin",
+                                    "unit.cbp.missing").init());
+}
+
+// ---------------------------------------------------------------------------
+// L0/L3 cross-check: the commit-side metadata retention window must cover
+// exactly the range the reader can soft-replay. TraceMetaGuard.hh and
+// trace_meta_guard.test.cc both defer to THIS test for the cross-check
+// because it is the suite that links the real TraceReader sources.
+//
+// Guards commit e87d6b5db4 (256 -> 4096 widening): a guard narrower than
+// HISTORY_CAPACITY wipes metadata that a squash anchored within the
+// replayable window still needs; a wider one silently passes the runtime
+// panic_if in initTraceMode, so equality is pinned here explicitly — the
+// unit-test-side EXPECT_EQ(TRACE_META_GUARD, 4096) cannot detect
+// HISTORY_CAPACITY drift, this one can.
+// ---------------------------------------------------------------------------
+TEST(TraceReaderCapacity, MetaGuardMatchesReaderHistoryCapacity)
+{
+    EXPECT_EQ(gem5::o3::TraceMetaGuard::TRACE_META_GUARD,
+              gem5::o3::TraceReader::HISTORY_CAPACITY)
+        << "TRACE_META_GUARD must equal HISTORY_CAPACITY: retention must "
+           "cover exactly the soft-replayable range (see e87d6b5db4)";
 }

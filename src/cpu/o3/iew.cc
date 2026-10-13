@@ -683,7 +683,11 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
         toCommit->squashedSeqNum[tid] = inst->seqNum;
         toCommit->squashedTargetId[tid] = inst->getFtqId();
         toCommit->squashedLoopIter[tid] = inst->getLoopIteration();
-        toCommit->branchTaken[tid] = inst->pcState().branching();
+        if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {
+            toCommit->branchTaken[tid] = inst->traceBranchTaken();
+        } else {
+            toCommit->branchTaken[tid] = inst->pcState().branching();
+        }
 
         set(toCommit->pc[tid], inst->pcState());
         inst->staticInst->advancePC(*toCommit->pc[tid]);

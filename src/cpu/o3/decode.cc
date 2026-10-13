@@ -49,6 +49,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/trace/TraceRecoveryRules.hh"
 #include "debug/Activity.hh"
 #include "debug/Counters.hh"
 #include "debug/Decode.hh"
@@ -343,7 +344,11 @@ Decode::selfSquash(const DynInstPtr &inst, ThreadID tid)
     toFetch->decodeInfo[tid].mispredictInst = inst;
     toFetch->decodeInfo[tid].squash = true;
     toFetch->decodeInfo[tid].doneSeqNum = inst->seqNum;
-    if (inst->isControl()) {
+    if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {
+        auto trace_next = std::make_unique<RiscvISA::PCState>(
+            inst->traceBranchNextPC());
+        set(toFetch->decodeInfo[tid].nextPC, *trace_next);
+    } else if (inst->isControl()) {
         if (!inst->isReturn()) {
             set(toFetch->decodeInfo[tid].nextPC, *inst->branchTarget());
         } else {
@@ -364,8 +369,12 @@ Decode::selfSquash(const DynInstPtr &inst, ThreadID tid)
     // Using PCState::branching()  will send execution on the
     // fallthrough and this will not be caught at execution (since
     // branch was correctly predicted taken)
-    toFetch->decodeInfo[tid].branchTaken = inst->readPredTaken() ||
-                                           inst->isUncondCtrl();
+    if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {
+        toFetch->decodeInfo[tid].branchTaken = inst->traceBranchTaken();
+    } else {
+        toFetch->decodeInfo[tid].branchTaken = inst->readPredTaken() ||
+                                               inst->isUncondCtrl();
+    }
 
     toFetch->decodeInfo[tid].squashInst = inst;
 
@@ -1006,13 +1015,29 @@ Decode::decodeInsts(ThreadID tid, unsigned max_insts)
         if (!inst->isPredecodeChecked() &&
             inst->isReturn() && !inst->isNonSpeculative() &&
             !inst->readPredTaken()) {
+            std::unique_ptr<PCStateBase> target;
+            if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {
+                target = std::make_unique<RiscvISA::PCState>(
+                    inst->traceBranchNextPC());
+                // Anchored decision (TraceRecoveryRules.hh; guards commit
+                // 803b6ec090): full PC-state equality, no resteer needed.
+                if (TraceRecoveryRules::returnTargetMatchesPrediction(
+                        *target, inst->readPredTarg())) {
+                    DPRINTF(Decode,
+                            "[tid:%i] [sn:%llu] Trace return target already "
+                            "matches prediction: PredPC: %s TracePC: %s\n",
+                            tid, inst->seqNum, inst->readPredTarg(), *target);
+                    continue;
+                }
+            } else {
+                // return target cannot be computed in decode stage since it
+                // is an indirect branch; inquire bpu to get the target.
+                auto return_addr = fetch_ptr->getPreservedReturnAddr(inst);
+                target = std::make_unique<RiscvISA::PCState>(return_addr);
+            }
             ++stats.branchMispred;
             decode_stalls.push(StallReason::InstMisPred);
             breakDecode = StallReason::InstMisPred;
-            // return target cannot be computed in decode stage since it is an indirect branch
-            // need to inquire bpu to get the target
-            auto return_addr = fetch_ptr->getPreservedReturnAddr(inst);
-            auto target = std::make_unique<RiscvISA::PCState>(return_addr);
             DPRINTF(Decode, "[tid:%i] [sn:%llu] Updating predictions:"
                     " Return not identified by bp: predTaken %d, PredPC: %s Now PC %s\n",
                     tid, inst->seqNum, inst->readPredTaken(), inst->readPredTarg(), *target);

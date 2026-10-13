@@ -209,6 +209,7 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         traceCommitIndex[tid] = 0;
         committedTargetId[tid] = 1;
         committedLoopIter[tid] = 0;
+        traceLastHeartbeatIndex[tid] = 0;
         const unsigned capacity = renameWidth *
             (numPreDispatchThreads > 1 ? 2 : 1);
         fixedbuffer[tid] = boost::circular_buffer<DynInstPtr>(capacity);
@@ -1257,7 +1258,11 @@ Commit::commit()
             toIEW->commitInfo[tid].squashedLoopIter = fromIEW->squashedLoopIter[tid];
 
             if (toIEW->commitInfo[tid].mispredictInst) {
-                if (toIEW->commitInfo[tid].mispredictInst->isUncondCtrl()) {
+                auto mispredictInst = toIEW->commitInfo[tid].mispredictInst;
+                if (cpu->isTraceMode() && mispredictInst->hasTraceBranchInfo()) {
+                    toIEW->commitInfo[tid].branchTaken =
+                        mispredictInst->traceBranchTaken();
+                } else if (mispredictInst->isUncondCtrl()) {
                      toIEW->commitInfo[tid].branchTaken = true;
                 }
                 ++stats.branchMispredicts[tid];
@@ -1584,8 +1589,10 @@ Commit::commitInsts()
                 traceMaybeInjectCtrlFlowChangeFault(tid, head_inst);
 
                 // Try to commit the head instruction.
-                bool commit_success = commitHead(head_inst,
-                                                num_committed_per_thread[tid]);
+                bool logical_trace_record_retired = false;
+                bool commit_success = commitHead(
+                    head_inst, num_committed_per_thread[tid],
+                    logical_trace_record_retired);
 
                 if (commit_success) {
                     recordCommittedInst(head_inst);
@@ -1900,6 +1907,10 @@ Commit::commitInsts()
                         onInstBoundary && cpu->checkInterrupts(0))
                         squashAfter(tid, head_inst);
                 } else {
+                    if (logical_trace_record_retired) {
+                        ++num_committed;
+                        ++num_committed_per_thread[tid];
+                    }
                     DPRINTF(Commit, "Unable to commit head instruction PC:%s "
                             "[tid:%i] [sn:%llu].\n",
                             head_inst->pcState(), tid ,head_inst->seqNum);
@@ -1961,9 +1972,11 @@ Commit::diffInst(ThreadID tid, const DynInstPtr &inst) {
 
 
 bool
-Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
+Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num,
+                   bool &logical_trace_record_retired)
 {
     assert(head_inst);
+    logical_trace_record_retired = false;
 
     ThreadID tid = head_inst->threadNumber;
 
@@ -2097,6 +2110,14 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         cpu->trap(inst_fault, tid,
                   head_inst->notAnInst() ? nullStaticInstPtr :
                       head_inst->staticInst);
+
+        // TraceCtrlFlowFault redirects to the source-record successor and
+        // intentionally keeps the faulting DynInst in the ROB for squash.
+        // Its source record still defines one trace ROI instruction, so count
+        // it once after the redirect without entering the normal ROB-retire
+        // path below.
+        logical_trace_record_retired =
+            traceAccountInjectedCtrlFlowRecord(tid, head_inst);
 
         // Exit state update mode to avoid accidental updating.
         thread[tid]->noSquashFromTC = false;
