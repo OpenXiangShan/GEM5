@@ -23,7 +23,8 @@
 **触发**: 每次 push 到 PR 分支
 
 **内容**:
-- ✅ 编译 GEM5 opt 版本
+- ✅ 使用 GCC 编译 GEM5 opt 版本
+- ✅ 独立 job 使用 Clang 编译 GEM5 fast 版本，检查关闭断言和 tracing 后的编译错误
 - ✅ 单元测试 (Unit Tests)
 - ✅ 冒烟测试 (Difftest Check)
 

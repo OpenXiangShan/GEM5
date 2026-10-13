@@ -13,6 +13,17 @@ permissions:
   contents: read
 
 jobs:
+  fast_build:
+    runs-on: [self-hosted, node]
+    name: Clang Fast Build
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/build-dramsim
+      # Fast disables assertions and tracing, exposing different build errors.
+      - name: Build GEM5 fast with Clang
+        run: |
+          CC=clang CXX=clang++ scons build/RISCV/gem5.fast --linker=gold -j64
+
   quick_check:
     runs-on: [self-hosted, node]
     continue-on-error: false

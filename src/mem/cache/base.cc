@@ -3561,7 +3561,27 @@ BaseCache::CpuSidePort::recvTimingReq(PacketPtr pkt)
         pkt->clearMshrArbFailed();
         pkt->clearMshrAliasFailed();
         pkt->clearHitInWriteBuffer();
-        cache.recvTimingReq(pkt);
+        pkt->sbufferMergeFailed = false;
+        if (pkt->sbufferMergeTarget) {
+            assert(cache.level() == 1 && !cache.isReadOnly);
+            assert(pkt->isDcacheMainPipeSbufferReq());
+            auto *mshr = cache.mshrQueue.findMatch(
+                pkt->getBlockAddr(cache.blkSize), pkt->isSecure());
+            pkt->sbufferMergeFailed =
+                !mshr || !mshr->canMergeSbufferStore(pkt->sbufferMergeTarget);
+        }
+        // Reject before access() can satisfy a late same-line store as a
+        // cache hit while an older target still awaits its CPU response.
+        if (!pkt->sbufferMergeFailed) {
+            cache.recvTimingReq(pkt);
+        }
+        // A same-line SBuffer store may be unable to merge into the
+        // predecessor MSHR even though the cache port itself accepted the
+        // request.  The LSQ owns replay for this case; do not schedule a
+        // cache-port retry that would unnecessarily block unrelated sends.
+        if (pkt->sbufferMergeFailed) {
+            return false;
+        }
         if (pkt->mshrArbFailed() || pkt->mshrAliasFailed() ||
             pkt->isHitInWriteBuffer()) {
             // If the MSHR arbitration failed, we need to retry later.

@@ -2554,7 +2554,6 @@ LSQUnit::countStoreBufferOffloadableEntries(uint32_t max_entries) const
 void
 LSQUnit::offloadToStoreBuffer(uint32_t max_entries, std::vector<bool>& offload_fail)
 {
-    assert(!lsq->storeBufferBlocked());
     if (isStoreBlocked) return;
 
     // Zero-sized stores do not consume store-buffer quota, but they still need
@@ -3228,13 +3227,12 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
 
         const Addr block_addr = pkt->getAddr() & cacheBlockMask;
         auto entry = lsq->findForwardingStoreBufferEntry(
-            block_addr, lsqID, request->instruction()->seqNum);
+            block_addr, lsqID);
         if (entry) {
             DPRINTF(StoreBuffer, "sbuffer entry[%#x] coverage %s\n",
                     entry->blockPaddr, pkt->print());
             if (entry->recordForward(
-                    pkt->req, request, lsqID,
-                    request->instruction()->seqNum)) {
+                    pkt->req, request, lsqID)) {
                 assert(request->isSplit()); // here must be split request
                 stats.sbufferFullForward++;
             } else if (!request->SBforwardPackets.empty()) {
@@ -3993,10 +3991,9 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     if (!load_inst->isDataPrefetch() && !request->isSplit()) {
         Addr blk_addr = request->mainReq()->getPaddr() & cacheBlockMask;
         auto entry = lsq->findForwardingStoreBufferEntry(
-            blk_addr, lsqID, load_inst->seqNum);
+            blk_addr, lsqID);
         if (entry) {
-            if (entry->recordForward(request->mainReq(), request, lsqID,
-                                     load_inst->seqNum)) {
+            if (entry->recordForward(request->mainReq(), request, lsqID)) {
                 // full forward
                 // no need to send to cache
                 stats.sbufferFullForward++;
