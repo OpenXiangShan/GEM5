@@ -61,6 +61,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       Opt(p.opt),
       Xsstream(p.xsstream),
       lldp(dynamic_cast<LLDPrefetcher *>(p.lldp)),
+      tp(p.tp),
       enableActivepage(p.enable_activepage),
       enablePht(p.enable_pht),
       enableCPLX(p.enable_cplx),
@@ -72,6 +73,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       enableOpt(p.enable_opt),
       enableXsstream(p.enable_xsstream),
       enableLLDP(p.enable_lldp),
+      enableTP(p.enable_tp),
       phtEarlyUpdate(p.pht_early_update),
       neighborPhtUpdate(p.neighbor_pht_update),
       phtSentPrefetch(),
@@ -83,6 +85,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
     assert(smallBOP);
     assert(learnedBOP);
     assert(lldp);
+    fatal_if(enableTP && !tp, "XSComposite requires a TP object when enabled");
     assert(isPowerOf2(regionSize));
 
     setSharedFilterContextQualified(true);
@@ -852,6 +855,8 @@ XSCompositePrefetcher::setParentInfo(System *sys, ProbeManager *pm, CacheAccesso
         ipcp->setParentInfo(sys, pm, _cache, blk_size);
 
     lldp->setParentInfo(sys, pm, _cache, blk_size);
+    if (tp)
+        tp->setParentInfo(sys, pm, _cache, blk_size);
 }
 
 void
@@ -859,6 +864,8 @@ XSCompositePrefetcher::addTLB(BaseTLB *tlb, bool functional)
 {
     Base::addTLB(tlb, functional);
     lldp->addTLB(tlb, functional);
+    if (tp)
+        tp->addTLB(tlb, functional);
 }
 
 void
@@ -866,6 +873,8 @@ XSCompositePrefetcher::regProbeListeners()
 {
     Queued::regProbeListeners();
     lldp->regProbeListeners();
+    if (enableTP)
+        tp->regProbeListeners();
 }
 
 void
@@ -873,6 +882,8 @@ XSCompositePrefetcher::setPacketReadyCallback(
     std::function<void(Tick)> callback)
 {
     lldp->setPacketReadyCallback(callback);
+    if (enableTP)
+        tp->setPacketReadyCallback(callback);
     Base::setPacketReadyCallback(std::move(callback));
 }
 
@@ -880,12 +891,29 @@ bool
 XSCompositePrefetcher::hasPendingPacket()
 {
     return Queued::hasPendingPacket() ||
-        (enableLLDP && lldp->hasPendingPacket());
+        (enableLLDP && lldp->hasPendingPacket()) ||
+        (enableTP && tp->hasPendingPacket());
 }
 
 PacketPtr
 XSCompositePrefetcher::getPacket()
 {
+    const bool existing_ready = Queued::nextPrefetchReadyTime() <= curTick() ||
+        (enableLLDP && lldp->nextPrefetchReadyTime() <= curTick());
+    if (enableTP && tp->nextPrefetchReadyTime() <= curTick() &&
+        (preferTP || !existing_ready)) {
+        preferTP = false;
+        PacketPtr pkt = tp->getPacket();
+        panic_if(!pkt, "TP is ready but did not return a packet");
+        // The child's queue counts its own issues; expose TP at the cache's
+        // composite boundary as well, without counting spatial issues twice.
+        if (issueStatsAreAtForwarder())
+            recordPrefetchDequeued(pkt);
+        else
+            recordIssuedPrefetch(pkt);
+        return pkt;
+    }
+    preferTP = true;
     if (enableLLDP && lldp->nextPrefetchReadyTime() <= curTick())
         return lldp->getPacket();
     return Queued::getPacket();
@@ -895,12 +923,16 @@ Tick
 XSCompositePrefetcher::nextPrefetchReadyTime() const
 {
     const Tick parent = Queued::nextPrefetchReadyTime();
-    return enableLLDP ? std::min(parent, lldp->nextPrefetchReadyTime()) : parent;
+    const Tick existing = enableLLDP ?
+        std::min(parent, lldp->nextPrefetchReadyTime()) : parent;
+    return enableTP ? std::min(existing, tp->nextPrefetchReadyTime()) : existing;
 }
 
 lldp::Hint
 XSCompositePrefetcher::loadTrain(const PacketPtr &pkt, bool miss)
 {
+    if (enableTP)
+        tp->loadTrain(pkt, miss);
     return enableLLDP ? lldp->loadTrain(pkt, miss) : lldp::Hint();
 }
 
@@ -919,7 +951,9 @@ XSCompositePrefetcher::notifyPrefetchUseful(PrefetchSourceType source,
                                              uint64_t candidate_id)
 {
     Queued::notifyPrefetchUseful(source);
-    if (enableLLDP)
+    // TP receives useful feedback through its own cache probe, along with
+    // demand notifications needed to squash entries in its independent queue.
+    if (enableLLDP && source != PrefetchSourceType::TP)
         lldp->notifyPrefetchUseful(source, candidate_id);
 }
 
@@ -928,6 +962,8 @@ XSCompositePrefetcher::notifyPrefetchMerged(uint64_t candidate_id)
 {
     if (enableLLDP)
         lldp->notifyPrefetchMerged(candidate_id);
+    if (enableTP)
+        tp->notifyPrefetchMerged(candidate_id);
 }
 
 void
@@ -943,7 +979,9 @@ XSCompositePrefetcher::pfHitInCache(PrefetchSourceType source,
                                      uint64_t candidate_id)
 {
     Queued::pfHitInCache(source);
-    if (enableLLDP)
+    if (enableTP && source == PrefetchSourceType::TP)
+        tp->pfHitInCache(source, candidate_id);
+    else if (enableLLDP)
         lldp->pfHitInCache(source, candidate_id);
 }
 
@@ -952,7 +990,9 @@ XSCompositePrefetcher::pfHitInMSHR(PrefetchSourceType source,
                                     uint64_t candidate_id)
 {
     Queued::pfHitInMSHR(source);
-    if (enableLLDP)
+    if (enableTP && source == PrefetchSourceType::TP)
+        tp->pfHitInMSHR(source, candidate_id);
+    else if (enableLLDP)
         lldp->pfHitInMSHR(source, candidate_id);
 }
 
@@ -961,7 +1001,9 @@ XSCompositePrefetcher::pfHitInWB(PrefetchSourceType source,
                                   uint64_t candidate_id)
 {
     Queued::pfHitInWB(source);
-    if (enableLLDP)
+    if (enableTP && source == PrefetchSourceType::TP)
+        tp->pfHitInWB(source, candidate_id);
+    else if (enableLLDP)
         lldp->pfHitInWB(source, candidate_id);
 }
 
@@ -970,7 +1012,9 @@ XSCompositePrefetcher::prefetchUnused(Addr paddr, PrefetchSourceType source,
                                        uint64_t candidate_id)
 {
     Base::prefetchUnused(paddr, source);
-    if (enableLLDP)
+    if (enableTP && source == PrefetchSourceType::TP)
+        tp->prefetchUnused(paddr, source, candidate_id);
+    else if (enableLLDP)
         lldp->prefetchUnused(paddr, source, candidate_id);
 }
 

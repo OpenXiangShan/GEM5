@@ -1357,6 +1357,8 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     lldp = Param.LLDPrefetcher(LLDPrefetcher(is_sub_prefetcher=True),
                                "LLDP component")
     enable_lldp = Param.Bool(False, "Enable LLDP component")
+    tp = Param.TemporalPrefetcher(NULL, "Independent temporal prefetcher")
+    enable_tp = Param.Bool(False, "Enable the independent TP queue")
 
 class MultiPrefetcher(BasePrefetcher):
     type = 'MultiPrefetcher'

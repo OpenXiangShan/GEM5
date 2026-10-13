@@ -5,9 +5,9 @@
 #ifndef GEM5_SMS_HH
 #define GEM5_SMS_HH
 
-#include <vector>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include <boost/compute/detail/lru_cache.hpp>
 
@@ -24,6 +24,7 @@
 #include "mem/cache/prefetch/queued.hh"
 #include "mem/cache/prefetch/signature_path.hh"
 #include "mem/cache/prefetch/stride.hh"
+#include "mem/cache/prefetch/temporal.hh"
 #include "mem/cache/prefetch/xs_stream.hh"
 #include "mem/cache/prefetch/xs_stride.hh"
 #include "mem/cache/tags/tagged_entry.hh"
@@ -42,7 +43,6 @@ namespace prefetch
 
 // PrefetchFilter is implemented in its own header/source to keep sms.
 #include "mem/cache/prefetch/prefetch_filter.hh"
-
 
 class XSCompositePrefetcher : public Queued
 {
@@ -244,6 +244,8 @@ class XSCompositePrefetcher : public Queued
     OptPrefetcher *Opt;
     XsStreamPrefetcher *Xsstream;
     LLDPrefetcher *lldp;
+    TemporalPrefetcher *tp;
+    bool preferTP{true};
 
 
     const bool enableActivepage;
@@ -257,6 +259,7 @@ class XSCompositePrefetcher : public Queued
     const bool enableOpt;
     const bool enableXsstream;
     const bool enableLLDP;
+    const bool enableTP;
     const bool phtEarlyUpdate;
     const bool neighborPhtUpdate;
 

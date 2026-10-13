@@ -581,6 +581,17 @@ def _add_l1_temporal(prefetcher, cpu, cache_level, options):
     _apply_pf_adaptive(temporal, cache_level, _load_pf_control_config())
     if prefetcher == NULL:
         return temporal
+    composite = prefetcher if isinstance(prefetcher, XSCompositePrefetcher) else None
+    if isinstance(prefetcher, MultiPrefetcher):
+        composite = next((child for child in prefetcher.prefetchers
+                          if isinstance(child, XSCompositePrefetcher)), None)
+    if composite is not None:
+        # Keep the existing cache and downstream connections on XSComposite.
+        # TP keeps cache probes for demand queue cleanup and useful feedback.
+        # The composite forwards load training and cache callback feedback.
+        composite.tp = temporal
+        composite.enable_tp = True
+        return prefetcher
     if isinstance(prefetcher, MultiPrefetcher):
         children = list(prefetcher.prefetchers) + [temporal]
         # Reparent the full vector so the new TP joins the SimObject tree.
