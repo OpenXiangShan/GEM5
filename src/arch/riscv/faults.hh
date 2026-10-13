@@ -239,6 +239,7 @@ class AddressFault : public RiscvFault
         : RiscvFault("Address", FaultType::OTHERS, code), _addr(addr),_gPaddr(gPaddr)
     {}
 
+    gem5::RiscvISA::ExceptionCode getCode() const { return _code; }
     RegVal trap_value() const override { return _addr; }
     RegVal g_trap_value() const override { return _gPaddr; }
 };
