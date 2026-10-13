@@ -428,10 +428,6 @@ class BaseO3CPU(BaseCPU):
     tracePTLeafPageSize = Param.UInt64(4 * 1024,
         "Synthetic mapping page size for trace timing PTW (4KiB or 2MiB)")
 
-    # Trace-driven branch predictor training and control-flow modeling
-    traceTrainBranches = Param.Bool(True,
-        "Enable BP training and use real branch opcodes under trace mode")
-
     # Some formats (tracertl) record the real instruction encoding per
     # record. Default: feed the real bits to the decoder. Set to True to
     # force the synthetic encoding path instead (A/B diagnostic).

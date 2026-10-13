@@ -213,8 +213,6 @@ class TraceFetch
     uint64_t tracePTLeafPageSize = 4 * 1024;
     Addr traceAddrBase = 0;
     Addr traceAddrSize = 0;
-    /** Whether to train BP and use real branch instructions in trace mode */
-    bool traceTrainBranches = false;
     /** Force synthetic encoding even when the trace carries the real
      *  instruction bits (A/B diagnostic for formats that record encodings,
      *  e.g. tracertl). Default false: real bits are authoritative. */
