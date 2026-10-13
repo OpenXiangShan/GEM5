@@ -727,8 +727,13 @@ def addXiangshanTraceOptions(parser):
     parser.add_argument('--trace-file', type=str,
                        help='Path to the trace file (required for trace mode)')
     parser.add_argument('--trace-format', type=str, default='champsim',
-                       choices=['champsim', 'cbp2025'],
-                       help='Trace format (default: champsim)')
+                       choices=['champsim', 'cbp2025', 'tracertl', 'nemu'],
+                       help='Trace format (default: champsim; "nemu" is an '
+                            'alias of "tracertl")')
+    parser.add_argument('--trace-use-synthetic-enc', action='store_true',
+                       help='Force synthetic instruction encoding even when '
+                            'the trace carries the real encoding (tracertl '
+                            'A/B diagnostic; default: use real encoding)')
     # Use the common --maxinsts option provided by common Options; no trace-specific max
 
     # Decoupled branch predictor options for trace mode

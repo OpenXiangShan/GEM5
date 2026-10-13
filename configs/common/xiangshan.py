@@ -530,6 +530,10 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
             cpu.traceEnableWrongPath = (not args.trace_disable_wrongpath)
             if hasattr(args, 'trace_wrongpath_use_traceinst') and args.trace_wrongpath_use_traceinst:
                 cpu.traceWrongPathUseTraceInst = True
+            # A/B diagnostic: force synthetic encoding even when the trace
+            # records the real instruction bits (tracertl).
+            if getattr(args, 'trace_use_synthetic_enc', False):
+                cpu.traceUseSyntheticEnc = True
 
             # Note: Difftest configured at system level, not CPU level
 

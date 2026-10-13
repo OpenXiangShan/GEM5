@@ -98,6 +98,7 @@ TraceFetch::TraceFetch(Fetch &fetch_, const BaseO3CPUParams &params)
         DPRINTF(Fetch, "Trace mode enabled, file: %s, format: %s\n",
                 params.traceFile, params.traceFormat);
         traceTrainBranches = params.traceTrainBranches;
+        traceUseSyntheticEnc = params.traceUseSyntheticEnc;
         traceDecoupledFrontend = params.enableDecoupledBPInTrace;
         traceCheckpointInterval = params.traceCheckpointInterval;
         // Wire CPU params to fetch trace modeling knobs
@@ -1595,6 +1596,20 @@ TraceFetch::handleTraceBPValidation(ThreadID tid, const DynInstPtr &instruction,
 TheISA::MachInst
 TraceFetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
 {
+    // Real instruction encoding recorded by the trace itself (TRACERTL/NEMU
+    // style formats): authoritative when present. Feeding the real opcode to
+    // the decoder preserves the instruction mix, functional units and
+    // latencies, and matches the RTL-side TraceRTL approach of decoding the
+    // recorded encoding directly. The synthetic path below is only a
+    // fallback for metadata-only formats, or for the A/B diagnostic switch.
+    // Branch records still honor traceTrainBranches (false = do not feed
+    // real branch opcodes, matching that flag's documented semantics);
+    // non-branch records always use the real bits when available.
+    if (traceInstr.hasRawInstBits() && !traceUseSyntheticEnc &&
+        (traceTrainBranches || !traceInstr.isAnyBranch())) {
+        return static_cast<TheISA::MachInst>(traceInstr.getInstBits());
+    }
+
     // Extract register information from trace
     const auto& srcRegs = traceInstr.getSrcRegs();
     const auto& dstRegs = traceInstr.getDstRegs();

@@ -120,7 +120,7 @@ class TraceReader : public statistics::Group
     class TraceStream
     {
       public:
-        enum class Mode { Raw, Gzip, Xz };
+        enum class Mode { Raw, Gzip, Xz, Zstd };
 
         TraceStream();
         ~TraceStream();
@@ -140,6 +140,15 @@ class TraceReader : public statistics::Group
 
       private:
         static std::string escapePath(const std::string &path);
+
+        /** Refill the zstd decompression window (Mode::Zstd only). */
+        bool zstdRefill();
+
+        /** Opaque in-process zstd streaming-decompression state.
+         *  Defined in TraceReader.cc so this header stays free of <zstd.h>.
+         *  Nullptr unless the stream was opened in Mode::Zstd. */
+        struct ZstdState;
+        ZstdState *zstdState = nullptr;
 
         std::string path;
         Mode modeFlag;
@@ -174,6 +183,10 @@ class TraceReader : public statistics::Group
         statistics::Scalar loadInstr;
         statistics::Scalar storeInstr;
         statistics::Scalar bufferUnderruns;
+        /** Records whose PC was previously seen with a different encoding
+         *  (TRACERTL dual-encoding artifact from pc_discontinuity NOP
+         *  placeholders; R2 known deviation). */
+        statistics::Scalar mixedEncodingPc;
 
         TraceReaderStats(statistics::Group *parent, const std::string &name);
     } stats;
