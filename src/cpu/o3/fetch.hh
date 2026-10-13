@@ -317,6 +317,9 @@ class Fetch
     /** Trace-mode status (delegated to TraceFetch). */
     bool isTraceMode() const;
     bool isTraceEOF() const;
+    /** Current trace reader position (records consumed; see
+     *  TraceFetch::getTraceReaderIndex). */
+    uint64_t getTraceReaderIndex() const;
 
     /** Clear all thread-specific states*/
     void clearStates(ThreadID tid);
@@ -453,6 +456,12 @@ class Fetch
      * @return true if the request group was started, false if it was blocked.
      */
     bool sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state);
+
+    bool traceInstructionBytesReady(
+        ThreadID tid, Addr instruction_pc, unsigned instruction_size) const;
+
+    Addr pendingTraceInstructionPc[MaxThreads]{};
+    bool pendingTraceSupplyValid[MaxThreads]{};
 
     void finishTranslation(const Fault &fault, const RequestPtr &mem_req);
 
@@ -686,7 +695,7 @@ class Fetch
      * @param curMacroop Current macroop (if any)
      * @return StallReason if stalled, NoStall otherwise
      */
-    StallReason checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
+    StallReason checkMemoryNeeds(ThreadID tid, PCStateBase &this_pc,
                                  const StaticInstPtr &curMacroop);
 
 

@@ -105,6 +105,9 @@ fi
 # Output directory: default to current working directory. When called from
 # parallel_sim.sh, this will be each workload's work_dir.
 OUTDIR=${OUTDIR:-"$(pwd)"}
+mkdir -p "${OUTDIR}"
+# gem5 interprets --stats-file relative to --outdir, so keep it absolute.
+OUTDIR=$(realpath "${OUTDIR}")
 
 echo "============================================="
 echo "XiangShan Trace-Driven Simulation (ChampSim/CBP2025)"
@@ -125,8 +128,6 @@ if [[ -n "${DEBUG_FLAGS}" ]]; then
     fi
 fi
 echo "============================================="
-
-mkdir -p "${OUTDIR}"
 
 cmd=("${gem5}" "--outdir=${OUTDIR}" "--stats-file=${OUTDIR}/stats.txt")
 
