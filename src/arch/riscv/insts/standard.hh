@@ -57,6 +57,18 @@ class RegOp : public RiscvStaticInst
 };
 
 /**
+ * Base class for Zimop operations, whose encoded sources are not dependencies.
+ */
+class MopOp : public RiscvStaticInst
+{
+  protected:
+    using RiscvStaticInst::RiscvStaticInst;
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+/**
  * Base class for operations with immediates (I is the type of immediate)
  */
 template<typename I>
