@@ -68,7 +68,13 @@ PerfCCT::updateInstPos(InstSeqNum sn, const PerfRecord pos)
         return;
     }
     auto meta = getMeta(sn);
-    meta->posTick.at((int)pos) = curTick();
+    // A replay may visit the same pipeline stage more than once.  PerfCCT
+    // describes the instruction lifetime, so keep the first visit instead of
+    // replacing the original execution start with a later retry.
+    auto &stage_tick = meta->posTick.at((int)pos);
+    if (stage_tick == 0) {
+        stage_tick = curTick();
+    }
 }
 
 void
