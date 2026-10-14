@@ -1122,6 +1122,16 @@ def xiangshan_system_init():
             parser.error("MlpAwarePolicy requires a non-BaseLine "
                           "--smt-fetch-block-policy (BaseLine skips the "
                           "block/flush path that MlpAwarePolicy builds on)")
+    
+    # Validate MLP predictor is not used with Ruby memory system:
+    # Ruby does not populate the cacheAccessDepth field on packets, so every
+    # response retains depth 0. This causes the MLP predictor to classify
+    # even memory misses as short latency, preventing it from learning or
+    # activating. Populate this field from the Ruby hierarchy or reject.
+    if args.mlp_predictor_enable and args.ruby:
+        parser.error("--mlp-predictor-enable is not supported with --ruby. "
+                     "Ruby memory system does not populate cacheAccessDepth, "
+                     "preventing the MLP predictor from functioning correctly.")
 
     # Validate MLP predictor table sizes: must be a power of two >= 2.
     # hashIndex() uses __builtin_ctz(tableSize); a size of 1 gives

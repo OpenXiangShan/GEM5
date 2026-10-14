@@ -117,7 +117,7 @@ CPU::CPU(const BaseO3CPUParams &params)
       mlpPredictor(params.numThreads,
                   params.mlpMissPatternTableSize,
                   params.mlpDistanceTableSize,
-                  params.numROBEntries),
+                  params.numROBEntries * rob.getInstsPerGroup()),
 
       timeBuffer(params.backComSize, params.forwardComSize),
       fetchTimebuffer(params.backComSize, params.forwardComSize),

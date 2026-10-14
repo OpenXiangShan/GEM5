@@ -256,7 +256,7 @@ class Fetch
     SMTFetchBlockPolicy smtFetchBlockPolicy;
     bool isLongLatency(StallReason lqReason);
     void checkLongLatencyLoads();
-    bool isThrottlePolicyActive(bool isMlp);
+    bool isThrottlePolicyActive();
     unsigned longLatencyThreshold;
     InstSeqNum lastLoadHeadSeqNum[MaxThreads];
     uint64_t longLatencyStallCycles[MaxThreads];

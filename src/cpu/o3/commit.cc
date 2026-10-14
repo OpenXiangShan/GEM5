@@ -2288,6 +2288,13 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         head_inst->clearProducerStorePC();
     }
 
+    // A fused load trains the original representative load PC, not the
+    // architectural PC of the first instruction in the fusion pair.
+    const Addr mlpLoadPC = head_inst->isLoad()
+        ? (head_inst->mlpLoadPCValid ? head_inst->mlpLoadPC
+                                    : head_inst->pcState().instAddr())
+        : 0;
+
     // MLP predictor: set longLatencyLoad and generate load feedback
     if (head_inst->isLoad() && !head_inst->isSquashed()) {
         int depth = head_inst->cacheAccessDepth;
@@ -2300,23 +2307,49 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         bool actualLongLatency = (depth >= (int)mlpLongLatencyCacheDepth);
         head_inst->longLatencyLoad = actualLongLatency;
 
-        auto &fb = toIEW->iewInfo[tid];
-        fb.loadFeedback.push_back({
-            head_inst->pcState().instAddr(),
-            actualLongLatency,
-            head_inst->mlpPredictedLongLatency,
-            head_inst->mlpPredictedDistance});
+        if (mlpPredictor) {
+            // loadFeedback rides the commit wire (commitToFetchDelay),
+            // consistent with llsrPush below, instead of the IEW wire.
+            auto &fb = toIEW->commitInfo[tid];
+            fb.loadFeedback.push_back({
+                mlpLoadPC,
+                actualLongLatency,
+                head_inst->mlpPredictedLongLatency,
+                head_inst->mlpPredictedDistance});
+        }
     }
 
     // MLP predictor: record LLSR push for fetch to consume
     if (mlpPredictor) {
         bool isLL = head_inst->isLoad() && head_inst->longLatencyLoad;
-        Addr pc = head_inst->isLoad()
-            ? head_inst->pcState().instAddr() : 0;
         auto &commitInfo = toIEW->commitInfo[tid];
-        assert(commitInfo.llsrPush.size() <
-               commitWidth * rob->getInstsPerGroup());
-        commitInfo.llsrPush.push_back({isLL, pc});
+        const unsigned numSlots = head_inst->isFusion() ? 2 : 1;
+        assert(commitInfo.llsrPush.size() + numSlots <=
+               2 * commitWidth * rob->getInstsPerGroup());
+        const auto entry = TimeStruct::CommitComm::LLSRPushEntry{
+            isLL, mlpLoadPC,
+            head_inst->isLoad() ? head_inst->mlpPredictedDistance : 0,
+            head_inst->isLoad() && head_inst->mlpPredictionMade &&
+                head_inst->mlpDistanceValid, false};
+        commitInfo.llsrPush.push_back(entry);
+        if (head_inst->isFusion()) {
+            // Approximation: represent a fusion with two pre-fusion instruction
+            // slots, rather than reconstructing each component's load feedback.
+            // Both slots copy the fused LL state, representative load PC and
+            // prediction snapshot; only the first trains on eviction. The second
+            // is a non-training placeholder that still contributes to distance.
+            // This avoids fusion-compression underestimation within the observed
+            // window, conservatively counting a later LL fusion through its end.
+            // The copied LL state may belong to a different component than the
+            // representative PC, so training can be attributed to the wrong PC.
+            // The window intentionally starts at the first slot, even if the
+            // actual LL load is second; do not extend it to recover that load's
+            // final lookahead slot. This boundary limitation is part of the
+            // compromise, not a guarantee against all distance underprediction.
+            auto placeholder = entry;
+            placeholder.isFusionPlaceholder = true;
+            commitInfo.llsrPush.push_back(placeholder);
+        }
     }
 
     // Finally clear the head ROB entry.

@@ -537,6 +537,10 @@ class DynInst : public ExecContext, public RefCounted
     bool mlpPredictionMade = false;
     bool mlpPredictedLongLatency = false;
     uint32_t mlpPredictedDistance = 0;
+    bool mlpDistanceValid = false;
+    bool mlpDistanceSnapshotLocked = false;
+    Addr mlpLoadPC = 0;
+    bool mlpLoadPCValid = false;
 
     // MLP predictor: actual outcome (set by IEW writebackInsts)
     bool longLatencyLoad = false;

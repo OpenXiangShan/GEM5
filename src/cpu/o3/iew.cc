@@ -2630,7 +2630,7 @@ IEW::checkLoadStoreInst(DynInstPtr inst)
         assert(inst->pendingCacheReq);
         depth = inst->pendingCacheReq->mainReq()->depth;
     }
-    panic_if(depth >= 4, "Unexpected depth:%d in [sn:%d]\n", depth, inst->seqNum);
+    panic_if(depth >= 5, "Unexpected depth:%d in [sn:%d]\n", depth, inst->seqNum);
     bool in_l1 = depth == 0;
     bool in_l2 = depth == 1;
     bool in_l3 = depth == 2;

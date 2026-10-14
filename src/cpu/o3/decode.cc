@@ -1150,6 +1150,38 @@ Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
     DynInstPtr instruction = new (arrays) DynInst(
             arrays, fused_inst, fused_inst, thispc, predPC, inst_pair[0]->seqNum, cpu);
 
+    DynInstPtr representative = nullptr;
+    bool representativeLL = false;
+    // OR load predictions; take max distance only among predicted LL loads.
+    for (const auto &candidate : inst_pair) {
+        if (!candidate->isLoad()) {
+            continue;
+        }
+        const bool candidateLL = candidate->mlpPredictionMade &&
+                                 candidate->mlpPredictedLongLatency;
+        instruction->mlpPredictionMade |= candidate->mlpPredictionMade;
+        instruction->mlpPredictedLongLatency |= candidateLL;
+        // Keep the first load on ties or when the LL candidate set is empty.
+        if (!representative ||
+            (candidateLL && (!representativeLL ||
+             candidate->mlpPredictedDistance >
+                 representative->mlpPredictedDistance))) {
+            representative = candidate;
+            representativeLL = candidateLL;
+        }
+    }
+    if (representative) {
+        instruction->mlpPredictedDistance =
+            instruction->mlpPredictedLongLatency ?
+                representative->mlpPredictedDistance : 0;
+        instruction->mlpDistanceValid = representative->mlpDistanceValid;
+        instruction->mlpDistanceSnapshotLocked =
+            representative->mlpDistanceSnapshotLocked;
+        // Preserve the representative load PC for predictor feedback.
+        instruction->mlpLoadPC = representative->mlpLoadPCValid ?
+            representative->mlpLoadPC : representative->getPC();
+        instruction->mlpLoadPCValid = true;
+    }
 
     instruction->setVersion(inst_pair[1]->getVersion());
     instruction->setTid(inst_pair[1]->threadNumber);

@@ -27,6 +27,7 @@
 //   - Hash uses (pc >> 1) for RISC-V C-extension compatibility.
 //   - Table sizes are configurable, default 2048 entries per thread.
 
+#include <cstdint>
 #include <vector>
 
 #include "base/types.hh"
@@ -40,6 +41,7 @@ struct MissPatternEntry
     uint32_t lastIntervalHits = 0;
     uint32_t currentHits = 0;
     bool valid = false;
+    bool hasObservedInterval = false;  // True after second miss establishes an interval
 };
 
 struct MLPDistanceEntry
@@ -55,6 +57,11 @@ class LongLatencyShiftRegister
     {
         bool isLongLatencyLoad = false;
         Addr pc = 0;
+        // Prediction and table validity captured when this load was fetched.
+        uint32_t predictedDistance = 0;
+        bool predictionValid = false;
+        // Second architectural slot of a fusion; never trains on eviction.
+        bool isFusionPlaceholder = false;
     };
 
     LongLatencyShiftRegister() : entries(), head(0) {}
@@ -66,10 +73,15 @@ class LongLatencyShiftRegister
 
     unsigned size() const { return entries.size(); }
 
-    Entry push(bool isLongLatency, Addr pc) {
+    // Overwrite all fields, including the fetch-time prediction snapshot.
+    Entry push(bool isLL, Addr pc, uint32_t predictedDistance,
+               bool predictionValid, bool isFusionPlaceholder) {
         Entry evicted = entries[head];
-        entries[head].isLongLatencyLoad = isLongLatency;
+        entries[head].isLongLatencyLoad = isLL;
         entries[head].pc = pc;
+        entries[head].predictedDistance = predictedDistance;
+        entries[head].predictionValid = predictionValid;
+        entries[head].isFusionPlaceholder = isFusionPlaceholder;
         head = (head + 1) % entries.size();
         return evicted;
     }
@@ -77,11 +89,22 @@ class LongLatencyShiftRegister
     unsigned findLastLongLatencyDistance() const {
         unsigned sz = entries.size();
         unsigned dist = 0;
+        // Include other fusions' LL placeholders: their second slot is the
+        // conservative endpoint, avoiding compression of pre-fusion distance.
         for (unsigned i = 0; i < sz; i++) {
             unsigned pos = (head + i) % sz;
             if (entries[pos].isLongLatencyLoad) {
-                dist = i;
+                dist = i + 1;
             }
+        }
+        // Fusion slots are pushed consecutively. An LL placeholder at distance
+        // one is the evicted first slot's own second slot, not additional MLP.
+        // If it is the last LL slot, train a valid zero distance, even when both
+        // original components were LL loads: intra-fusion MLP is not modeled.
+        // The observed window is anchored at the first slot, not at the actual
+        // LL component; a second-slot load's extra lookahead slot is omitted.
+        if (dist == 1 && entries[head].isFusionPlaceholder) {
+            return 0;
         }
         return dist;
     }
@@ -100,14 +123,20 @@ class MLPredictorPerThread
 
     // Frontend read-only queries
     bool predictLongLatency(Addr loadPC) const;
-    uint32_t predictMLPDistance(Addr loadPC) const;
+    // Return distance (0 if invalid) and optionally validity from the same lookup.
+    uint32_t predictMLPDistance(Addr loadPC, bool *outValid = nullptr) const;
 
     // Backend updates
     int updateOnLoadComplete(
         Addr loadPC, bool actualLongLatency,
         bool predictedLongLatency, uint32_t predictedDistance);
-    // Returns (predictedDistance - actualDistance) if table was valid, INT32_MAX otherwise
-    int pushLLSR(bool isLongLatencyLoad, Addr loadPC);
+    // Push one architectural slot and its fetch-time prediction snapshot.
+    // Non-placeholder LL evictions train regardless of snapshot validity; a
+    // valid snapshot yields distance error, otherwise return INT64_MAX.
+    // Placeholder evictions never train or produce an error statistic.
+    int64_t pushLLSR(bool isLongLatencyLoad, Addr loadPC,
+                     uint32_t predictedDistance, bool predictionValid,
+                     bool isFusionPlaceholder);
 
   private:
     unsigned missPatternTableSize;
@@ -118,7 +147,10 @@ class MLPredictorPerThread
     LongLatencyShiftRegister shiftRegister;
 
     unsigned hashIndex(Addr pc, unsigned tableSize) const;
-    int updateMLPDistanceTable(Addr headLoadPC);
+    // Train from the evicted LL load; only a valid fetch-time snapshot yields
+    // an error statistic. An invalid snapshot returns INT64_MAX but still trains.
+    int64_t updateMLPDistanceTable(
+        const LongLatencyShiftRegister::Entry &evicted);
 };
 
 class MLPredictor

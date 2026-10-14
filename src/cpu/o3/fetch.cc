@@ -122,6 +122,17 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       finishTranslationEvents(), fetchStats(_cpu, this),
       valuePred(params.valuePred)
 {
+    // Validate public CPU parameters here as well as in the XiangShan CLI.
+    // The predictor pointer is wired later by CPU, so check its enable parameter
+    // rather than the still-null pointer. These checks must survive NDEBUG.
+    if (smtMlpFetchBlockPolicy == SMTMLPFetchBlockPolicy::MlpAwarePolicy) {
+        fatal_if(!params.mlpPredictorEnable,
+                 "MlpAwarePolicy requires mlpPredictorEnable=true");
+        fatal_if(!isBlockPolicy() && !isFlushPolicy(),
+                 "MlpAwarePolicy requires a Block or Flush smtFetchBlockPolicy; "
+                 "BaseLine is not supported");
+    }
+
     if (numThreads > MaxThreads)
         fatal("numThreads (%d) is larger than compiled limit (%d),\n"
               "\tincrease MaxThreads in src/cpu/o3/limits.hh\n",
@@ -610,10 +621,10 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
         fetchBlockHoldCycle.subname(0, "UnBlocked");
         fetchBlockHoldCycle.subname(1, "Blocked");
         loadStallReasonHoldCycle
-            .init((int)(StallReason::NumStallReasons) + 1, 0, 8, 63)
+            .init((int)(StallReason::NumStallReasons) + 1, 0, 63, 8)
             .flags(statistics::pdf);
         loadStallReasonRaiseCycle
-            .init((int)(StallReason::NumStallReasons) + 1, 0, 8, 63)
+            .init((int)(StallReason::NumStallReasons) + 1, 0, 63, 8)
             .flags(statistics::pdf);
         flushForFlushPolicy
             .init(cpu->numThreads)
@@ -748,6 +759,23 @@ Fetch::clearStates(ThreadID tid)
     postSquashFetchBatchSize[tid] = 0;
     clearPredecodePipeline(tid);
 
+    // Thread removal discards in-flight commit notifications. Clear the
+    // policy latches here instead of waiting for a boundary that is gone.
+    mlpAwareMode[tid] = false;
+    mlpThreadFetchThrottled[tid] = false;
+    mlpRemainingInsts[tid] = 0;
+    mlpLongLatencyLoadSeqNum[tid] = 0;
+    mlpFlushFromInitiated[tid] = false;
+    mlpBlockStateHoldCycles[tid] = 0;
+
+    // Leaving MLP mode selects the base policy; it must not retain the old
+    // thread's block/flush state or its derived scheduler throttle either.
+    threadFetchThrottled[tid] = false;
+    lastLoadHeadSeqNum[tid] = UINT64_MAX;
+    longLatencyStallCycles[tid] = 0;
+    flushFromInitiated[tid] = false;
+    blockStateHoldCycles[tid] = 0;
+    smtBorrowThrottleCycles[tid] = 0;
 
     // TODO not sure what to do with priorityList for now
     // priorityList.push_back(tid);
@@ -787,6 +815,22 @@ Fetch::resetStage()
         deferVsetvlDecode[tid] = false;
         postSquashFetchBatchSize[tid] = 0;
         waitForVsetvl[tid] = false;
+
+        // Startup and CPU takeover begin without any old in-flight MLP
+        // boundary. Match clearStates() so stale policy latches cannot block
+        // the new instruction stream. Keep learned predictor state intact.
+        mlpAwareMode[tid] = false;
+        mlpThreadFetchThrottled[tid] = false;
+        mlpRemainingInsts[tid] = 0;
+        mlpLongLatencyLoadSeqNum[tid] = 0;
+        mlpFlushFromInitiated[tid] = false;
+        mlpBlockStateHoldCycles[tid] = 0;
+
+        threadFetchThrottled[tid] = false;
+        lastLoadHeadSeqNum[tid] = UINT64_MAX;
+        longLatencyStallCycles[tid] = 0;
+        flushFromInitiated[tid] = false;
+        blockStateHoldCycles[tid] = 0;
         smtBorrowThrottleCycles[tid] = 0;
     }
 
@@ -1778,7 +1822,7 @@ Fetch::selectUnstalledThread()
         //   FlushFromLoadPolicy / FlushFromUsePolicy:
         //     - same throttle behavior as BlockThrottlePolicy (block drives throttle)
         //     - additionally initiates a squash to free pipeline resources
-        bool throttle_active = isThrottlePolicyActive(mlpAwareMode[tid]);
+        bool throttle_active = isThrottlePolicyActive();
         bool thread_fetch_throttled = mlpAwareMode[tid] ?
             mlpThreadFetchThrottled[tid] : threadFetchThrottled[tid];
         {
@@ -1872,7 +1916,7 @@ Fetch::selectUnstalledThread()
 }
 
 bool
-Fetch::isThrottlePolicyActive(bool isMlp)
+Fetch::isThrottlePolicyActive()
 {
     if (smtFetchBlockPolicy == SMTFetchBlockPolicy::BaseLine) {
         return false;
@@ -1881,7 +1925,7 @@ Fetch::isThrottlePolicyActive(bool isMlp)
     int unblocked_count = 0;
 
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        bool thread_fetch_throttled = isMlp ?
+        bool thread_fetch_throttled = mlpAwareMode[tid] ?
             mlpThreadFetchThrottled[tid] : threadFetchThrottled[tid];
         if (thread_fetch_throttled)
             blocked_count++;
@@ -1910,7 +1954,7 @@ Fetch::sendInstructionsToDecode()
         }
 
         // === Flush Policy: initiate flush after asymmetric check passes ===
-        if (isFlushPolicy() && isThrottlePolicyActive(mlpAwareMode[i])) {
+        if (isFlushPolicy() && isThrottlePolicyActive()) {
             bool fromUse = smtFetchBlockPolicy == SMTFetchBlockPolicy::FlushFromUsePolicy;
             bool isMlpDetect = smtMlpFetchBlockPolicy == SMTMLPFetchBlockPolicy::MlpDetectPolicy;
             if (mlpAwareMode[i]) {
@@ -1998,7 +2042,7 @@ Fetch::sendInstructionsToDecode()
     for (ThreadID tid = 0;
          tid < numThreads && selected_tids.size() < numPreDispatchThreads;
          ++tid) {
-        bool block_policy_active = isThrottlePolicyActive(mlpAwareMode[tid]);
+        bool block_policy_active = isThrottlePolicyActive();
         if (tid != primary_tid && !stallSig->blockFetch[tid] &&
             !fetchQueue[tid].empty() &&
             !(block_policy_active && (mlpAwareMode[tid] ? 
@@ -2342,26 +2386,27 @@ Fetch::consumeLoadFeedback()
 {
     assert(mlpPredictor);
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        // IEW load completion feedback (miss-pattern table update)
-        auto &iewInfo = fromIEW->iewInfo[tid];
-        fetchStats.loadFeedbackDist.sample(iewInfo.loadFeedback.size());
-        for (const auto &fb : iewInfo.loadFeedback) {
+        // Commit feedback: load completion (miss-pattern table) and LLSR push
+        // (MLP distance table). Both ride the commit wire (commitToFetchDelay).
+        auto &commitInfo = fromCommit->commitInfo[tid];
+        fetchStats.loadFeedbackDist.sample(commitInfo.loadFeedback.size());
+        for (const auto &fb : commitInfo.loadFeedback) {
             auto &pred = mlpPredictor->getPredictor(tid);
             auto result = pred.updateOnLoadComplete(
                 fb.loadPC, fb.actualLongLatency,
                 fb.predictedLongLatency, fb.predictedDistance);
             fetchStats.mlpLongLatencyPred[result]++;
         }
-        iewInfo.loadFeedback.clear();
-
-        // Commit LLSR push feedback (MLP distance table update)
-        auto &commitInfo = fromCommit->commitInfo[tid];
+        commitInfo.loadFeedback.clear();
         fetchStats.llsrPushDist.sample(commitInfo.llsrPush.size());
         for (const auto &entry : commitInfo.llsrPush) {
             auto &pred = mlpPredictor->getPredictor(tid);
-            int result = pred.pushLLSR(entry.isLongLatencyLoad, entry.pc);
-            // result = predicted - actual if table was valid, INT32_MAX otherwise
-            if (result != INT32_MAX) {
+            int64_t result = pred.pushLLSR(
+                entry.isLongLatencyLoad, entry.pc,
+                entry.predictedDistance, entry.predictionValid,
+                entry.isFusionPlaceholder);
+            // Compare the dynamic snapshot; INT64_MAX means no scored sample.
+            if (result != INT64_MAX) {
                 if (result < 0) {
                     fetchStats.mlpDistancePred[2]++;
                 } else {
@@ -2431,12 +2476,18 @@ Fetch::checkLongLatencyLoads()
         // MLP prediction: query and record on DynInst
         for (ThreadID tid = 0; tid < numThreads; ++tid) {
             for (const auto &instruction : fetchQueue[tid]) {
-                if (instruction->isLoad()) {
+                if (instruction->isLoad() && !instruction->mlpPredictionMade) {
                     auto &pred = mlpPredictor->getPredictor(tid);
                     Addr mlpPC = instruction->pcState().instAddr();
+                    instruction->mlpLoadPC = mlpPC;
+                    instruction->mlpLoadPCValid = true;
                     instruction->mlpPredictionMade = true;
                     instruction->mlpPredictedLongLatency = pred.predictLongLatency(mlpPC);
-                    instruction->mlpPredictedDistance = pred.predictMLPDistance(mlpPC);
+                    // Do not overwrite a distance already used to arm Block.
+                    if (!instruction->mlpDistanceSnapshotLocked) {
+                        instruction->mlpPredictedDistance = pred.predictMLPDistance(
+                            mlpPC, &instruction->mlpDistanceValid);
+                    }
                 }
             }
         }
@@ -2465,6 +2516,7 @@ Fetch::checkLongLatencyLoads()
                     // MlpBlockPolicy: Track instructions sent after LL load
                     if (predictedLongLatencyLoad) {
                         // First time seeing this LL load
+                        predictedLongLatencyLoad->mlpDistanceSnapshotLocked = true;
                         mlpAwareMode[tid] = true;
                         mlpRemainingInsts[tid] =
                             predictedLongLatencyLoad->mlpPredictedDistance + 1;
@@ -2538,16 +2590,24 @@ Fetch::checkLongLatencyLoads()
                             return inst == loadInst;
                         });
                     if (it != robList.end()) {
-                        // Skip the load itself
                         ++it;
-                        // Traverse mlpDist instructions
-                        for (int instCount = 0; instCount < mlpDist;
-                            ++it, ++instCount) {
-                            if (it == robList.end()) break;
-                            // Track last non-control instruction
+                        // LLSR distances start at the fusion's first slot and
+                        // count pre-fusion instructions. Skipping a fused source
+                        // also crosses its own placeholder at distance one.
+                        // Keep each later fusion whole if the boundary falls
+                        // inside it; its second slot is the conservative endpoint
+                        // used by LLSR. This does not change the first-slot window
+                        // approximation or reconstruct component-specific PCs.
+                        // Use a wider counter so crossing a pair cannot wrap a
+                        // maximum uint32_t prediction back to zero.
+                        for (uint64_t instCount = 0;
+                             instCount < mlpDist && it != robList.end(); ++it) {
+                            // Track last non-control instruction, but count all
+                            // entries, including controls, in the distance.
                             if (!(*it)->isControl()) {
                                 flushFromInst = *it;
                             }
+                            instCount += (*it)->isFusion() ? 2 : 1;
                         }
                     }
                     if (it == robList.end()) {
