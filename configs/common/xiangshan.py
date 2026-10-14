@@ -636,14 +636,18 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
             test_sys.cpu[i].createThreads()
             print("Create threads for test sys cpu ({})".format(type(test_sys.cpu[i])))
 
-        for opt in ['caches', 'l2cache', 'l1_to_l2_pf_hint']:
+        for opt in ['caches', 'l2cache']:
             if hasattr(args, opt) and not getattr(args, opt):
                 setattr(args, opt, True)
+        if not getattr(args, 'l2_next_line_only', False):
+            args.l1_to_l2_pf_hint = True
 
         if not args.no_l3cache:
-            for opt in ['l3cache', 'l2_to_l3_pf_hint']:
+            for opt in ['l3cache']:
                 if hasattr(args, opt) and not getattr(args, opt):
                     setattr(args, opt, True)
+            if not getattr(args, 'l2_next_line_only', False):
+                args.l2_to_l3_pf_hint = True
 
         if args.xiangshan_ecore and args.no_l3cache:
             args.l2_size = '4MB'

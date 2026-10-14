@@ -202,6 +202,17 @@ if __name__ == '__m5_main__':
 
     args = xiangshan_system_init()
 
+    if args.l2_next_line_only:
+        args.no_pf = False
+        args.classic_l2 = False
+        args.l1i_hwp_type = None
+        args.l1d_hwp_type = None
+        args.l2_hwp_type = 'PrefetcherForwarder'
+        args.l2_wrapper_hwp_type = 'NextLinePrefetcher'
+        args.l3_hwp_type = None
+        args.l1_to_l2_pf_hint = False
+        args.l2_to_l3_pf_hint = False
+
     assert not args.external_memory_system
 
     # Set default bp_type based on ideal_kmhv3 flag

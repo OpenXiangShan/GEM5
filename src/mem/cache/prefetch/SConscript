@@ -33,7 +33,7 @@ SimObject('Prefetcher.py', sim_objects=[
     'XSCompositePrefetcher', 'XSStridePrefetcher','OptPrefetcher','XsStreamPrefetcher',
     'BertiPrefetcher', 'CDP',
     'StridePrefetcherHashedSetAssociative', 'StridePrefetcher',
-    'TaggedPrefetcher', 'IndirectMemoryPrefetcher', 'SignaturePathPrefetcher',
+    'TaggedPrefetcher', 'NextLinePrefetcher', 'IndirectMemoryPrefetcher', 'SignaturePathPrefetcher',
     'SignaturePathPrefetcherV2', 'AccessMapPatternMatching', 'AMPMPrefetcher',
     'DeltaCorrelatingPredictionTables', 'DCPTPrefetcher',
     'IrregularStreamBufferPrefetcher', 'SlimAMPMPrefetcher',
@@ -88,6 +88,7 @@ Source('slim_ampm.cc')
 Source('spatio_temporal_memory_streaming.cc')
 Source('stride.cc')
 Source('tagged.cc')
+Source('next_line.cc')
 Source('worker.cc')
 Source('cmc.cc')
 Source('composite_with_worker.cc')

@@ -26,6 +26,7 @@ PF_SOURCE_NAMES = [
     "SOpt",
     "DespacitoStream",
     "LLDP",
+    "NextLine",
 ]
 
 
@@ -555,7 +556,8 @@ def _configure_l2_wrapper_prefetcher(prefetcher, prefetcher_name, options,
     # Aligned L2 attaches the real L2 prefetcher to l2_wrapper.
     # Classic L2 has no wrapper-level real prefetcher.
     if not options.classic_l2:
-        _configure_l2_composite(prefetcher, prefetcher_name, options)
+        if prefetcher_name == 'L2CompositeWithWorkerPrefetcher':
+            _configure_l2_composite(prefetcher, prefetcher_name, options)
         _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled)
         if options.l1_to_l2_pf_hint:
             prefetcher.queue_size = 128
@@ -575,6 +577,11 @@ def create_prefetcher(cpu, cache_level, options):
         prefetcher_name = getattr(options, prefetcher_attr)
         prefetcher = _get_hwp(prefetcher_name)
         print(f"create_prefetcher at {cache_level}: {prefetcher_name}")
+
+    # The tutorial next-line prefetcher uses QueuedPrefetcher's normal queue.
+    # KMHv3's PF buffer is intended for the composite XiangShan prefetchers.
+    if prefetcher_name == 'NextLinePrefetcher':
+        pf_buffer_enabled = False
 
     _configure_pf_buffer(prefetcher, pf_buffer_enabled)
 

@@ -45,4 +45,5 @@ class PrefetchSourceType(Enum):
         "SOpt",
         "DespacitoStream",
         "LLDP",
+        "NextLine",
     ]

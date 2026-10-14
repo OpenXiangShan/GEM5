@@ -172,6 +172,10 @@ def addNoISAOptions(parser, configure_xiangshan=False):
 
     parser.add_argument("--no-pf", default=False,
                         action="store_true", help="L1 icache hardware prefetcher")
+    parser.add_argument("--l2-next-line-only", default=False,
+                        action="store_true",
+                        help="disable other prefetchers and enable only the "
+                             "L2 wrapper next-line prefetcher")
     parser.add_argument("--l1i-hwp-type", default=None,
                         choices=ObjectList.hwp_list.get_names(), help="L1 icache hardware prefetcher")
     parser.add_argument("--l1d-hwp-type", default='XSCompositePrefetcher',

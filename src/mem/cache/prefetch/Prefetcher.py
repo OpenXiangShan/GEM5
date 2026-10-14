@@ -486,6 +486,13 @@ class TaggedPrefetcher(QueuedPrefetcher):
 
     degree = Param.Int(2, "Number of prefetches to generate")
 
+class NextLinePrefetcher(QueuedPrefetcher):
+    type = 'NextLinePrefetcher'
+    cxx_class = 'gem5::prefetch::NextLine'
+    cxx_header = "mem/cache/prefetch/next_line.hh"
+    on_inst = False
+    on_data = True
+
 class IndirectMemoryPrefetcher(QueuedPrefetcher):
     type = 'IndirectMemoryPrefetcher'
     cxx_class = 'gem5::prefetch::IndirectMemory'
