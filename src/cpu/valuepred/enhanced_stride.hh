@@ -17,6 +17,7 @@
 
 #include <climits>
 #include <cstdint>
+#include <deque>
 #include <set>
 #include <unordered_map>
 #include <vector>
@@ -62,21 +63,28 @@ class EStride : public VPUnit
         unsigned NotFirstAppear = 0;
     };
 
-    // The core of the separately wrapped inflight instruction window is just
-    // a map. **Note that the number of instructions in inflight is not the same
+    // The core of the separately wrapped inflight instruction window is a
+    // map from hashed pc to a queue of seqNos of inflight instructions.
+    // **Note that the number of instructions in inflight is not the same
     // as the number of instructions with the same pc in the ROB, and many
     // instructions inflighted at the front of the pipeline have not yet
     // entered the ROB.**
+    // Tracking seqNos (instead of bare counts) allows squash() to roll
+    // back only the squashed younger instructions while keeping the
+    // contribution of older survivors, so that the inflight count used by
+    // lastValue + (inflights + 1) * stride stays accurate across redirects.
     class InflightWindow : public Named
     {
       public:
         int windowTagLength;
         bool idealWindow;
-        std::unordered_map<uint64_t, int> windows;
+        // hashed pc -> seqNos of inflight instructions, in fetch (seqNo) order
+        std::unordered_map<uint64_t, std::deque<uint64_t>> windows;
 
         // just a count for debug
         int windowActiveCount;
 
+        // seqNo watermark of the most recent squash, kept for debugging
         uint64_t lastSeqNo;
 
       public:
@@ -86,13 +94,14 @@ class EStride : public VPUnit
 
         // Returns the number of inflights and updates
         // the inflight window.
-        int addToInflightWindow(Addr pc);
+        int addToInflightWindow(Addr pc, uint64_t seq_no);
 
         // remove from window in commit stage
         void removeFromWindow(Addr pc, uint64_t seq_no);
 
-        // clear in squash
-        void squash(uint64_t seq_no);
+        // drop only the squashed younger instructions (seqNo > seq_no),
+        // returns how many entries were discarded
+        int squash(uint64_t seq_no);
 
       private:
         // now not support hashMethod for inflight window
@@ -198,6 +207,9 @@ class EStride : public VPUnit
         statistics::Scalar safeStrideSuppressed;
         // Applied EStride mispredictions (trigger the SafeStride penalty).
         statistics::Scalar safeStrideMispredict;
+        // Inflight-window entries discarded by squashes (younger than the
+        // squash point); older survivors stay tracked.
+        statistics::Scalar inflightSquashDiscarded;
 
         EStrideStats(statistics::Group *parent)
             : statistics::Group(parent),
@@ -208,7 +220,9 @@ class EStride : public VPUnit
               ADD_STAT(safeStrideSuppressed, statistics::units::Count::get(),
                        "Predictions suppressed because SafeStride < 0"),
               ADD_STAT(safeStrideMispredict, statistics::units::Count::get(),
-                       "Applied EStride mispredictions penalized in SafeStride")
+                       "Applied EStride mispredictions penalized in SafeStride"),
+              ADD_STAT(inflightSquashDiscarded, statistics::units::Count::get(),
+                       "Inflight-window entries discarded by squashes")
         {
         }
     } esstats;

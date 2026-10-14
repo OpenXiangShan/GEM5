@@ -53,46 +53,66 @@ EStride::InflightWindow::InflightWindow(int windowTagLength, bool idealWindow)
 }
 
 int
-EStride::InflightWindow::addToInflightWindow(Addr pc)
+EStride::InflightWindow::addToInflightWindow(Addr pc, uint64_t seq_no)
 {
 
     uint64_t key = hashMethod(pc, windowTagLength);
 
     ++windowActiveCount;
-    DPRINTF(EStride, "inflight window add[count: %d]  => pc: %lX \n", windowActiveCount, pc);
+    DPRINTF(EStride, "inflight window add[count: %d]  => pc: %lX sn: %lu\n",
+            windowActiveCount, pc, seq_no);
 
-    return windows[key]++;
+    auto &queue = windows[key];
+    int inflights = queue.size();
+    queue.push_back(seq_no);
+    return inflights;
 }
 
 void
 EStride::InflightWindow::removeFromWindow(Addr pc, uint64_t seq_no)
 {
-    if (seq_no <= lastSeqNo) {
-        return;
-    }
-
     --windowActiveCount;
     assert(windowActiveCount >= 0);
-    DPRINTF(EStride, "inflight window remove[count: %d]  => pc: %lX \n", windowActiveCount, pc);
+    DPRINTF(EStride, "inflight window remove[count: %d]  => pc: %lX sn: %lu\n",
+            windowActiveCount, pc, seq_no);
 
     uint64_t key = hashMethod(pc, windowTagLength);
-    assert(windows.count(key));
-    assert(windows[key] > 0);
+    auto it = windows.find(key);
+    // Instructions squashed away above never reach commit, so the
+    // committing instruction must still be tracked. Commits retire in
+    // seqNo order, hence it sits at the front of its queue.
+    assert(it != windows.end());
+    assert(!it->second.empty());
+    assert(it->second.front() == seq_no);
 
-    int inflightCount = windows[key];
-    --windows[key];
-    if (windows[key] == 0) {
-        windows.erase(key);
+    it->second.pop_front();
+    if (it->second.empty()) {
+        windows.erase(it);
     }
 }
 
-void
+int
 EStride::InflightWindow::squash(uint64_t seq_no)
 {
-    DPRINTF(EStride, "squash make inflight count window be zero\n");
-    windows.clear();
-    windowActiveCount = 0;
+    int discarded = 0;
+    for (auto it = windows.begin(); it != windows.end();) {
+        auto &queue = it->second;
+        while (!queue.empty() && queue.back() > seq_no) {
+            queue.pop_back();
+            ++discarded;
+        }
+        if (queue.empty()) {
+            it = windows.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    windowActiveCount -= discarded;
+    assert(windowActiveCount >= 0);
     lastSeqNo = seq_no;
+    DPRINTF(EStride, "inflight window squash[sn: %lu]: discard %d younger entries, "
+            "%d still inflight\n", seq_no, discarded, windowActiveCount);
+    return discarded;
 }
 
 //****************************************************************
@@ -357,7 +377,7 @@ EStride::predict(const VPPredictRequest &request)
     if (enableSafeStride && safeStrides[request.tid] < safeStrideSaturation) {
         ++safeStrides[request.tid];
     }
-    int inflights = inflightWindows[request.tid].addToInflightWindow(request.pc);
+    int inflights = inflightWindows[request.tid].addToInflightWindow(request.pc, request.seqNo);
     esstats.inflightSH.sample(inflights, 1);
     VPPredictionCandidate candidate;
     candidate.result = doPredict(request.pc, request.seqNo, request.tid,
@@ -588,7 +608,7 @@ void
 EStride::squash(ThreadID tid, const uint64_t seq_no)
 {
     assertValidTid(tid);
-    inflightWindows[tid].squash(seq_no);
+    esstats.inflightSquashDiscarded += inflightWindows[tid].squash(seq_no);
 }
 
 }

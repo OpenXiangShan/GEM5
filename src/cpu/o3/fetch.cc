@@ -1357,6 +1357,13 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     DPRINTF(Fetch, "[tid:%i] Squashing, setting PC to: %s. seqNum: %lu\n",
             tid, new_pc, seqNum);
     squashResolveQueue(tid, seqNum);
+    // Notify the value predictor at the point the frontend actually stops
+    // fetching down the wrong path: instructions fetched after the commit
+    // stage initiated this squash have already entered the predictor's
+    // inflight window and are only cleaned up here.
+    if (valuePred) {
+        valuePred->squash(tid, seqNum);
+    }
     if (squashInst) {
         DPRINTF(Fetch, "[tid:%i] Squash caused by inst at PC: %s, seqNum: %lu\n",
                 tid, squashInst->pcState(), squashInst->seqNum);
