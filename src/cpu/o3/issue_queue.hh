@@ -377,13 +377,13 @@ class Scheduler : public SimObject
 
     std::vector<uint32_t> opExecTimeTable;
     std::vector<bool> opPipelined;
-    std::vector<IQGroup> dispTable;
+    std::vector<std::vector<IQGroup>> dispTable;
     std::vector<IssueQue*> issueQues;
     std::vector<std::vector<IssueQue*>> wakeMatrix;
     uint32_t combinedFus;
 
     std::vector<uint8_t> totalDispCounter;
-    std::vector<uint8_t*> dispOpdist;
+    std::vector<std::vector<uint8_t*>> dispOpdist;
 
     std::vector<DynInstPtr> instsToFu;
 
@@ -399,9 +399,21 @@ class Scheduler : public SimObject
 
     struct NullStruct {};
 
-    // regcache only for integer
-    boost::compute::detail::lru_cache<int, NullStruct> regCache =
-        boost::compute::detail::lru_cache<int, NullStruct>(28);
+    using RegCache = boost::compute::detail::lru_cache<int, NullStruct>;
+    static constexpr unsigned RegCacheEntries = 28;
+
+    // Legacy SMT shares one cache. Strict SpMT statically splits its total
+    // capacity between the two threads.
+    RegCache regCache{RegCacheEntries};
+    RegCache spmtRegCache0{RegCacheEntries / 2};
+    RegCache spmtRegCache1{RegCacheEntries / 2};
+    bool enableSpMT = false;
+    unsigned spmtIntRegsPerThread = 0;
+
+    RegCache &regCacheFor(ThreadID tid);
+    void insertRegCache(const DynInstPtr& inst, PhysRegIdPtr reg);
+    bool containsRegCache(const DynInstPtr& inst, PhysRegIdPtr reg);
+    bool accessRegCache(const DynInstPtr& inst, PhysRegIdPtr reg);
 
     // used for searching dependency chain
     std::stack<DynInstPtr> dfs;

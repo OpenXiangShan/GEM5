@@ -229,6 +229,8 @@ CPU::CPU(const BaseO3CPUParams &params)
             numThreads * regClasses.at(VecPredRegClass).numRegs());
     assert(params.numPhysCCRegs >=
             numThreads * regClasses.at(CCRegClass).numRegs());
+    assert(params.numPhysRMiscRegs >=
+            numThreads * regClasses.at(RMiscRegClass).numRegs());
 
     // Just make this a warning and go ahead anyway, to keep from having to
     // add checks everywhere.

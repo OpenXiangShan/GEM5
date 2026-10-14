@@ -643,7 +643,7 @@ class Fetch
     void profileStall(ThreadID tid);
 
     /** Set the reasons of all fetch stalls. */
-    void setAllFetchStalls(StallReason stall);
+    void setAllFetchStalls(ThreadID tid, StallReason stall);
 
     /** Check decoupled frontend (FTQ) availability.
      * @param tid Thread ID
@@ -1112,7 +1112,7 @@ class Fetch
     unsigned ftqEntryFetchedInsts[MaxThreads]{};
 
     /** fetch stall reasons */
-    std::vector<StallReason> stallReason;
+    std::array<std::vector<StallReason>, MaxThreads> stallReason;
 
     /**
      * Check if the thread can fetch instructions

@@ -361,7 +361,6 @@ def addCommonOptions(parser, configure_xiangshan=False):
 
     parser.add_argument("--smt", action="store_true", default=False,
                         help=""" RISCV SMT support, which requires multitThread-supported gcpt restore and diff-ref-so""")
-
     if configure_xiangshan:
         return
     # Following options are not available in XiangShan
@@ -663,6 +662,8 @@ def addFSOptions(parser):
 
 def addXiangshanCommonOptions(parser):
     # Xiangshan related options
+    parser.add_argument("--enable-spmt", action="store_true", default=False,
+                        help="Enable strict two-thread SpMT resource partitioning")
     parser.add_argument("--xiangshan-system", action="store_true",
                         help="Use memory layout of Xiangshan system")
     parser.add_argument("--mmc-img", action="store", type=str,

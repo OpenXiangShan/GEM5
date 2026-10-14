@@ -110,7 +110,6 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
     }
 
 
-    decodeStalls.resize(decodeWidth, StallReason::NoStall);
     statistics::registerDumpCallback([this]() {
         int idx = 0;
         for (auto it : this->fusionType) {
@@ -641,7 +640,9 @@ Decode::tick()
     wroteToTimeBuffer = false;
     toRenameIndex = 0;
     blockReason = StallReason::NoStall;
-    setAllStalls(StallReason::NoStall);
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        decodeStalls[tid].assign(decodeWidth, StallReason::NoStall);
+    }
 
     moveInstsToBuffer();
 
@@ -654,6 +655,7 @@ Decode::tick()
     auto freezeActiveThread = [this](ThreadID tid) {
         stallSig->blockFetch[tid] = true;
         stallSig->fetchBlockReason[tid] = StallReason::OtherFragStall;
+        setAllStalls(tid, StallReason::OtherFragStall);
         toFetch->decodeInfo[tid].blockReason =
             stallSig->fetchBlockReason[tid];
     };
@@ -707,8 +709,11 @@ Decode::tick()
         if (active) {
             active_tids.push_back(i);
             active_arbiter.observe(i, smtBorrowPriority(fromIEW->iewInfo[i]));
-        } else if (block && blocked_tid == InvalidThreadID) {
-            blocked_tid = i;
+        } else if (block) {
+            setAllStalls(i, stallSig->decodeBlockReason[i]);
+            if (blocked_tid == InvalidThreadID) {
+                blocked_tid = i;
+            }
         }
     }
     const ThreadID primary_tid = active_arbiter.selected();
@@ -720,7 +725,6 @@ Decode::tick()
         }
         
         if (blocked_tid != InvalidThreadID) {
-            setAllStalls(stallSig->fetchBlockReason[blocked_tid]);
             blockReason = stallSig->fetchBlockReason[blocked_tid];
         }
         toRename->decodeStallReason = decodeStalls;
@@ -748,12 +752,31 @@ Decode::tick()
     unsigned decoded_threads_this_cycle = 0;
     for (const ThreadID tid : selected_tids) {
         DPRINTF(Decode, "Processing [tid:%i]\n", tid);
+        setAllStalls(tid, StallReason::NoStall);
         const unsigned before = toRenameIndex;
         decodeInsts(tid, decodeWidth);
         const unsigned decoded = toRenameIndex - before;
         decoded_this_cycle += decoded;
         decoded_threads_this_cycle += decoded != 0;
         measureDecodeBubbles(decoded, tid);
+
+        // Populate unused decode lanes with the per-lane fetch stall
+        // reasons so frontend/fragment stalls propagate to rename and
+        // IEW.  Per-thread port of the lane-fill logic dropped by the
+        // strict SpMT refactor; without it, partially-decoded threads
+        // (1..decodeWidth-1 insts, no decode-level stall) leave the tail
+        // lanes as NoStall and downstream Topdown attribution
+        // undercounts fetch-bound stalls, even in single-thread runs.
+        if (!decodeStalls[tid].empty() &&
+            decodeStalls[tid][0] == StallReason::NoStall) {
+            const auto &fetch_stalls = fromFetch->fetchStallReason[tid];
+            for (unsigned lane = 0; lane < decodeStalls[tid].size(); ++lane) {
+                decodeStalls[tid][lane] = lane < decoded ?
+                    StallReason::NoStall :
+                    lane < fetch_stalls.size() ? fetch_stalls[lane] :
+                    StallReason::NoStall;
+            }
+        }
 
         if (!fixedbuffer[tid].empty()) {
             stallSig->blockFetch[tid] = true;
@@ -772,38 +795,7 @@ Decode::tick()
     stats.threadsDecodedPerCycle.sample(decoded_threads_this_cycle);
     stats.instsDecodedPerCycle.sample(decoded_this_cycle);
 
-    if (stallSig->blockDecode[primary_tid]) {
-        setAllStalls(stallSig->decodeBlockReason[primary_tid]);
-    } else if (toRenameIndex > 0 && decodeStalls[0] == StallReason::NoStall) {
-        for (int i = 0; i < decodeStalls.size(); i++) {
-            if (i < toRenameIndex) {
-                decodeStalls.at(i) = StallReason::NoStall;
-            } else {
-                decodeStalls.at(i) = fromFetch->fetchStallReason.at(i);
-            }
-        }
-    }
     updateActivate();
-
-    // if (stalls[tid].rename) {
-    //     // stall from rename, pass rename stall
-    //     setAllStalls(fromRename->renameInfo[tid].blockReason);
-    // } else if (toRenameIndex == 0) {
-    //     if (decodeStalls[0] != StallReason::NoStall) {
-    //         setAllStalls(decodeStalls[0]);
-    //     } else {
-    //         // warn("decode have other Stall Reason!");
-    //     }
-    // } else {
-    //     // no stall from decode, pass fetch stall(no stall/FetchFragStall/fetch all stall)
-    //     for (int i = 0; i < decodeStalls.size(); i++) {
-    //         if (i < toRenameIndex) {    // decode success, no stall
-    //             decodeStalls.at(i) = StallReason::NoStall;
-    //         } else {    // no insts to decode, pass fetch frag stall
-    //             decodeStalls.at(i) = fromFetch->fetchStallReason.at(i);
-    //         }
-    //     }
-    // }
 
     toRename->decodeStallReason = decodeStalls;
 
@@ -833,13 +825,13 @@ Decode::decodeInsts(ThreadID tid, unsigned max_insts)
         ++stats.smtidleCycles[tid];
 
         StallReason stall = StallReason::NoStall;
-        for (auto iter : fromFetch->fetchStallReason) {
+        for (auto iter : fromFetch->fetchStallReason[tid]) {
             if (iter != StallReason::NoStall) {
                 stall = iter;
                 break;
             }
         }
-        setAllStalls(stall);
+        setAllStalls(tid, stall);
         return;
     }
 
@@ -1077,10 +1069,10 @@ Decode::decodeInsts(ThreadID tid, unsigned max_insts)
 
     // this stage is totally stalled, set all decode stalls
     if (!decode_stalls.empty()) {
-        setAllStalls(decode_stalls.front());
+        setAllStalls(tid, decode_stalls.front());
         decode_stalls.pop();
     } else if (breakDecode != StallReason::NoStall) {
-        setAllStalls(breakDecode);
+        setAllStalls(tid, breakDecode);
     }
 
     // If we didn't process all instructions, then we will need to block
@@ -1189,11 +1181,9 @@ Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
 }
 
 void
-Decode::setAllStalls(StallReason decodeStall)
+Decode::setAllStalls(ThreadID tid, StallReason decodeStall)
 {
-    for (int i = 0;i < decodeStalls.size();i++) {
-        decodeStalls.at(i) = decodeStall;
-    }
+    decodeStalls[tid].assign(decodeWidth, decodeStall);
 }
 
 } // namespace o3
