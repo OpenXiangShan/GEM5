@@ -97,7 +97,6 @@ TraceFetch::TraceFetch(Fetch &fetch_, const BaseO3CPUParams &params)
     if (traceMode) {
         DPRINTF(Fetch, "Trace mode enabled, file: %s, format: %s\n",
                 params.traceFile, params.traceFormat);
-        traceTrainBranches = params.traceTrainBranches;
         traceUseSyntheticEnc = params.traceUseSyntheticEnc;
         traceDecoupledFrontend = params.enableDecoupledBPInTrace;
         traceCheckpointInterval = params.traceCheckpointInterval;
@@ -1602,11 +1601,11 @@ TraceFetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
     // latencies, and matches the RTL-side TraceRTL approach of decoding the
     // recorded encoding directly. The synthetic path below is only a
     // fallback for metadata-only formats, or for the A/B diagnostic switch.
-    // Branch records still honor traceTrainBranches (false = do not feed
-    // real branch opcodes, matching that flag's documented semantics);
-    // non-branch records always use the real bits when available.
-    if (traceInstr.hasRawInstBits() && !traceUseSyntheticEnc &&
-        (traceTrainBranches || !traceInstr.isAnyBranch())) {
+    // The recorded encoding is authoritative for every record that carries
+    // one, including branches: that is the behavior the removed
+    // traceTrainBranches knob selected by default. Only the synthetic A/B
+    // switch can override it.
+    if (traceInstr.hasRawInstBits() && !traceUseSyntheticEnc) {
         return static_cast<TheISA::MachInst>(traceInstr.getInstBits());
     }
 
@@ -1622,11 +1621,6 @@ TraceFetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
               (unsigned long long)traceInstr.getSeqNum());
     }
     const bool compressed = instSize == 2;
-
-    if (!traceTrainBranches && traceInstr.isAnyBranch()) {
-        return compressed ? static_cast<TheISA::MachInst>(0x0001u)
-                          : static_cast<TheISA::MachInst>(0x00000013u);
-    }
 
     // Default integer mappings
     uint8_t rs1 = srcRegs.empty() ? 0 : srcRegs[0];

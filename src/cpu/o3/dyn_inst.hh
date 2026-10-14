@@ -1019,12 +1019,21 @@ class DynInst : public ExecContext, public RefCounted
     branchTarget() const
     {
         if (traceBranchHasTarget()) {
-            // Construct a concrete PCState for the current ISA to hold the
-            // absolute target address, then return it as PCStateBase.
+            // The trace-recorded destination is authoritative, including for a
+            // not-taken branch: BranchOutcome::target must stay the control-flow
+            // destination, not the selected next PC.
             return std::make_unique<TheISA::PCState>(traceBranchTarget());
-        } else {
-            return staticInst->branchTarget(*pc);
         }
+        if (traceBranchInfoValid) {
+            // No recorded target, so the encoding is the only other source --
+            // and a synthetic trace encoding need not be a PC-relative branch
+            // (a compressed CALL_DIRECT becomes c.nop on RV64, and several
+            // uncompressible forms fall back to nops), where
+            // StaticInst::branchTarget() panics. The trace next PC is the
+            // ground truth for the fetch/decode consumers here.
+            return std::make_unique<TheISA::PCState>(traceBranchNextPC());
+        }
+        return staticInst->branchTarget(*pc);
     }
 
     /** Returns the number of source registers. */

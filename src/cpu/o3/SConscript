@@ -203,8 +203,6 @@ if env['CONF']['TARGET_ISA'] == 'null':
           '../../base/stats/storage.cc',
           '../../base/statistics.cc',
           with_tag('gem5 trace'),
-          '../../sim/root.cc',
-          with_tag('gem5 trace'),
           # Stats Root for tests
           '../../sim/root.cc',
           # Root pulls in the SimObject/Globals/time infrastructure; without

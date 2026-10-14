@@ -547,6 +547,69 @@ TEST(CBP2025TraceReaderTest, SoftSeekFallbackUsesHardSeekWithoutRecursion)
     EXPECT_EQ(instr.getPC(), mapHash(pcs[2], 0x80000000ULL));
 }
 
+TEST(CBP2025TraceReaderTest, RepeatSoftSeekAfterHardSeekReturnsSameRecord)
+{
+    // Regression for the hard-seek history-window label: softSeek(N) must
+    // leave the window labelled with the 1-based index of the record the
+    // next fetch returns (N+1), so that a repeated softSeek(N) replays that
+    // same record instead of taking the "already aligned" path and returning
+    // its successor.
+    const std::string path = "cbp2025_reader_test_repeat_softseek.bin";
+    TraceFileGuard guard(path);
+    std::vector<uint64_t> pcs;
+    for (int index = 0; index < 16; ++index) {
+        pcs.push_back(0x80001000ULL + index * 0x10ULL);
+    }
+    ASSERT_TRUE(writeCBPTraceFile(path, pcs));
+
+    CBP2025TraceReader reader(path, "unit.cbp.reader.repeatseek");
+    ASSERT_TRUE(reader.init());
+
+    // Empty history forces the first rollback through the hard-seek fallback.
+    ASSERT_TRUE(reader.softSeekToInstruction(2));
+    auto first = reader.getNextInstruction();
+    ASSERT_TRUE(first.isValid());
+    EXPECT_EQ(first.getPC(), mapHash(pcs[2], 0x80000000ULL));
+    const uint64_t first_seq = first.getSeqNum();
+
+    // The same rollback must replay the same record, not skip ahead.
+    ASSERT_TRUE(reader.softSeekToInstruction(2));
+    auto replay = reader.getNextInstruction();
+    ASSERT_TRUE(replay.isValid());
+    EXPECT_EQ(replay.getSeqNum(), first_seq)
+        << "repeated soft seek after a hard seek must return the same record";
+    EXPECT_EQ(replay.getPC(), first.getPC())
+        << "repeated soft seek must not return the successor record";
+}
+
+TEST(ChampSimTraceReaderTest, RepeatSoftSeekAfterHardSeekReturnsSameRecord)
+{
+    const std::string path = "champsim_reader_test_repeat_softseek.bin";
+    TraceFileGuard guard(path);
+    std::vector<CSInstr> insts;
+    for (int i = 0; i < 16; ++i) {
+        insts.push_back(makeInstr(0x13000 + i * 0x10));
+    }
+    ASSERT_TRUE(writeTraceFile(path, insts));
+
+    ChampSimTraceReader reader(path, "unit.cs.reader.repeatseek");
+    ASSERT_TRUE(reader.init());
+
+    ASSERT_TRUE(reader.softSeekToInstruction(2));
+    auto first = reader.getNextInstruction();
+    ASSERT_TRUE(first.isValid());
+    EXPECT_EQ(first.getPC(), mapHash(insts[2].ip));
+    const uint64_t first_seq = first.getSeqNum();
+
+    ASSERT_TRUE(reader.softSeekToInstruction(2));
+    auto replay = reader.getNextInstruction();
+    ASSERT_TRUE(replay.isValid());
+    EXPECT_EQ(replay.getSeqNum(), first_seq)
+        << "repeated soft seek after a hard seek must return the same record";
+    EXPECT_EQ(replay.getPC(), first.getPC())
+        << "repeated soft seek must not return the successor record";
+}
+
 TEST(ChampSimTraceReaderTest, HandlesCompressedTraceInput)
 {
     const std::string path = "champsim_reader_test_compressed.bin.gz";
