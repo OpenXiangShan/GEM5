@@ -133,6 +133,9 @@ class MBTB : public TimedBaseBTBPredictor
     TraceManager *btbTrace;
 #endif
 
+    void flushState() override;
+    void resetSpeculativeState() override;
+
     /*
      * Main prediction function
      * @param startAddr: start address of the fetch block

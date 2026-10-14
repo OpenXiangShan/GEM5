@@ -96,6 +96,20 @@ class DecoupledBPUWithBTB : public BPredUnit
     btb_pred::BTBRAS *ras{};
     // btb_pred::BTBuRAS *uras{};
 
+    enum FlushComponentIndex : unsigned
+    {
+        FlushUBTB,
+        FlushABTB,
+        FlushMicroTAGE,
+        FlushPairTAGE,
+        FlushMBTB,
+        FlushTAGE,
+        FlushRAS,
+        FlushITTAGE,
+        FlushMGSC,
+        NumFlushComponents
+    };
+
     // bool enableDB;
     std::vector<std::string> bpDBSwitches;
     bool someDBenabled{false};
@@ -159,6 +173,12 @@ class DecoupledBPUWithBTB : public BPredUnit
     std::vector<unsigned> resolveDequeueFailCounters;
     const unsigned resolveBlockThreshold;
 
+    const bool enableContextFlush;
+    const Cycles flushLatency;
+    std::array<Tick, MaxThreads> flushStallUntilTick{};
+    std::array<uint64_t, MaxThreads> contextEpoch{};
+    void resetSpeculativeContext(ThreadID tid, bool reset_components);
+
     bool sharedFTQMode() const;
     unsigned activeFTQThreads() const;
     unsigned totalFTQEntries() const;
@@ -168,6 +188,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool ftqFull(ThreadID tid) const;
 
     bool isThreadActive(ThreadID tid) const;
+    bool inFlushWindow(ThreadID tid) const;
     bool canStartPrediction(ThreadID tid) const;
     std::vector<ThreadID> scheduleThreads();
 
@@ -331,6 +352,12 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Distribution predictionsStartedPerCycle;
         statistics::Vector predictionsStartedByThread;
 
+        statistics::Scalar bpuFlushes;
+        statistics::Vector bpuComponentFlushes;
+        statistics::Scalar bpuFlushUntakenPredictions;
+        statistics::Scalar bpuFlushStallCycles;
+        statistics::Scalar bpuFlushBubbles;
+
         statistics::Scalar s1PredWrongFallthrough;
         statistics::Scalar s1PredWrongUbtb;
         statistics::Scalar s1PredWrongAbtb;
@@ -438,6 +465,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     void commit(
         FetchTargetId fsqID, ThreadID tid,
         const std::vector<CommittedFetchBlock> &committedBlocks);
+
+    void flushBPU(ThreadID tid);
 
     // Fetch-facing interface: consume FSQ head directly (RTL-like single queue).
     bool ftqHasFetching(ThreadID tid) const { return ftq.hasTarget(ftq.fetchId(tid), tid); }

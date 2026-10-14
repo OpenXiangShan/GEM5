@@ -178,6 +178,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Update predictor state based on actual branch outcomes
     void update(const PredictionUpdateContext &context,
                 const PreparedUpdate &update) override;
+    void flushState() override;
+    void resetSpeculativeState() override;
     bool canResolveUpdate(const PredictionUpdateContext &context,
                           const PreparedUpdate &update) override;
     void doResolveUpdate(const PredictionUpdateContext &context,

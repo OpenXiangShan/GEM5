@@ -78,6 +78,20 @@ BTBRAS::initThreadState(ThreadRASState &state)
 }
 
 void
+BTBRAS::flushState()
+{
+    resetSpeculativeState();
+}
+
+void
+BTBRAS::resetSpeculativeState()
+{
+    for (auto &state : threadStates) {
+        initThreadState(state);
+    }
+}
+
+void
 BTBRAS::checkCorrectness(ThreadID tid) {
     auto &state = threadStates[tid];
     /*

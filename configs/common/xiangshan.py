@@ -559,6 +559,8 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
 
         test_sys.cpu[i].branchPred = DecoupledBPUWithBTB(
             bpDBSwitches=bp_db_switches,
+            enableContextFlush=args.enable_context_flush,
+            flushLatency=args.flush_latency,
         )
         test_sys.cpu[i].branchPred.isDumpMisspredPC = True
 

@@ -84,6 +84,39 @@ PairTAGE::PairTAGE(const Params &p)
     }
 }
 
+void
+PairTAGE::flushState()
+{
+    for (auto &table : tageTable) {
+        for (auto &set : table) {
+            std::fill(set.begin(), set.end(), PairTAGEEntry());
+        }
+    }
+    usefulResetCnt = 0;
+    resetSpeculativeState();
+}
+
+void
+PairTAGE::resetSpeculativeState()
+{
+    tagFoldedHist.clear();
+    altTagFoldedHist.clear();
+    indexFoldedHist.clear();
+    for (unsigned i = 0; i < numPredictors; ++i) {
+        tagFoldedHist.emplace_back(histLengths[i], tableTagBits[i], 16);
+        altTagFoldedHist.emplace_back(
+            histLengths[i], tableTagBits[i] - 1, 16);
+        indexFoldedHist.emplace_back(
+            histLengths[i], tableIndexBits[i], 16);
+    }
+    while (!aheadIndexFoldedHist.empty()) {
+        aheadIndexFoldedHist.pop();
+    }
+    meta.reset();
+    secondPredBlock.clear();
+    predictionPhase = PairPhase::Even;
+}
+
 PairTAGE::PairTAGEStats::PairTAGEStats(statistics::Group *parent)
     : statistics::Group(parent),
       ADD_STAT(firstBlockLookups, statistics::units::Count::get(),

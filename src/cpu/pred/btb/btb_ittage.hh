@@ -97,6 +97,8 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     void tickStart() override;
 
     void tick() override;
+    void flushState() override;
+    void resetSpeculativeState() override;
     void dryRunCycle(Addr startAddr) override;
     // make predictions, record in stage preds
     void putPCHistory(Addr startAddr,

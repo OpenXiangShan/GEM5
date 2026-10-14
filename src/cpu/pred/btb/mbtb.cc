@@ -156,6 +156,37 @@ MBTB::MBTB(const Params &p)
 #endif
 }
 
+void
+MBTB::flushState()
+{
+    auto resetSram = [this](std::vector<BTBSet> &sram,
+                            std::vector<BTBHeap> &mru) {
+        for (unsigned i = 0; i < numSets; ++i) {
+            std::fill(sram[i].begin(), sram[i].end(), TickedBTBEntry());
+            mru[i].clear();
+            for (auto it = sram[i].begin(); it != sram[i].end(); ++it) {
+                mru[i].push_back(it);
+            }
+            std::make_heap(mru[i].begin(), mru[i].end(), older());
+        }
+    };
+    resetSram(sram0, mru0);
+    resetSram(sram1, mru1);
+    std::fill(victimCache.begin(), victimCache.end(), TickedBTBEntry());
+    resetSpeculativeState();
+#ifdef UNIT_TEST
+    tick = 0;
+#endif
+}
+
+void
+MBTB::resetSpeculativeState()
+{
+    for (auto &entry : threadMeta) {
+        entry.reset();
+    }
+}
+
 #ifndef UNIT_TEST
 void
 MBTB::tickStart()

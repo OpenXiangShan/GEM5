@@ -66,9 +66,16 @@ GTest('ras_pop_push.test',
     '../timed_base_pred.cc',
 )
 
+GTest('ras_flush.test',
+    'ras_flush.test.cc',
+    '../ras.cc',
+    '../timed_base_pred.cc',
+)
+
 # Add the test to UNITTESTS target
 env.Append(UNITTESTS=['uras.test',
         'ras_pop_push.test',
+        'ras_flush.test',
         'btb.test',
         'tage.test',
         'mgsc.test',
