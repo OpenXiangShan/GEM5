@@ -1,0 +1,54 @@
+name: macOS Build & Linux Smoke Test
+
+on:
+  push:
+    branches: [xs-dev]
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    runs-on: macos-26
+    timeout-minutes: 120
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install dependencies
+        run: brew install scons python pkg-config zstd boost cmake
+      - name: Prepare DRAMSim3 and Linux image
+        run: |
+          git clone https://github.com/umd-memsys/DRAMsim3.git ext/dramsim3/DRAMsim3
+          git -C ext/dramsim3/DRAMsim3 checkout 29817593b3389f1337235d63cac515024ab8fd6e
+          cmake -S ext/dramsim3/DRAMsim3 -B ext/dramsim3/DRAMsim3/build \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build ext/dramsim3/DRAMsim3/build --target dramsim3 -j3
+          mkdir -p ready-to-run
+          curl -fL --retry 3 -o ready-to-run/linux.bin \
+            https://raw.githubusercontent.com/OpenXiangShan/ready-to-run/af4f593700ed3b871e722d501d360ec55f412b3d/linux.bin
+      - name: Build gem5.opt
+        run: scons build/RISCV/gem5.opt -j3 --ignore-style
+      - name: Boot Linux without Difftest
+        timeout-minutes: 15
+        run: |
+          ./build/RISCV/gem5.opt -r -d m5out/macos-linux \
+            configs/example/kmhv3.py \
+            --raw-cpt --generic-rv-cpt=ready-to-run/linux.bin \
+            --disable-difftest
+          grep -q 'Hello, XiangShan!' m5out/macos-linux/simout
+          grep -q 'm5_exit instruction encountered' m5out/macos-linux/simout
+          test -s m5out/macos-linux/stats.txt
+      - name: Show boot log
+        if: always()
+        run: |
+          if [ -f m5out/macos-linux/simout ]; then
+            tail -n 100 m5out/macos-linux/simout
+          fi
