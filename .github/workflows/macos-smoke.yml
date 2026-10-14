@@ -1,9 +1,6 @@
 name: macOS Build & Linux Smoke Test
 
 on:
-  push:
-    branches: [xs-dev]
-    paths-ignore: ['**.md', 'docs/**']
   workflow_dispatch:
 
 permissions:
