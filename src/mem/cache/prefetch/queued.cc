@@ -39,9 +39,8 @@
 
 #include <algorithm>
 #include <cassert>
-#include <linux/limits.h>
-#include <string>
 #include <climits>
+#include <string>
 
 #include "arch/generic/tlb.hh"
 #include "base/logging.hh"
