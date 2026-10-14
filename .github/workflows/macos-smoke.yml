@@ -5,6 +5,11 @@ on:
     branches: [xs-dev]
     paths-ignore: ['**.md', 'docs/**']
   workflow_dispatch:
+    inputs:
+      build_jobs:
+        description: 'Compilation parallelism (-j, positive integer)'
+        type: number
+        default: 3
 
 permissions:
   contents: read
@@ -20,6 +25,7 @@ jobs:
     env:
       CC: clang
       CXX: clang++
+      BUILD_JOBS: ${{ inputs.build_jobs || 3 }}
     steps:
       - uses: actions/checkout@v7
       - name: Install dependencies
@@ -30,12 +36,12 @@ jobs:
           git -C ext/dramsim3/DRAMsim3 checkout 29817593b3389f1337235d63cac515024ab8fd6e
           cmake -S ext/dramsim3/DRAMsim3 -B ext/dramsim3/DRAMsim3/build \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-          cmake --build ext/dramsim3/DRAMsim3/build --target dramsim3 -j3
+          cmake --build ext/dramsim3/DRAMsim3/build --target dramsim3 -j"$BUILD_JOBS"
           mkdir -p ready-to-run
           curl -fL --retry 3 -o ready-to-run/linux.bin \
             https://raw.githubusercontent.com/OpenXiangShan/ready-to-run/af4f593700ed3b871e722d501d360ec55f412b3d/linux.bin
       - name: Build gem5.opt
-        run: scons build/RISCV/gem5.opt -j3 --ignore-style
+        run: scons build/RISCV/gem5.opt -j"$BUILD_JOBS" --ignore-style
       - name: Boot Linux without Difftest
         timeout-minutes: 15
         run: |
