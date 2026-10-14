@@ -44,9 +44,6 @@
 和非空统计文件，最后在 Actions 日志里展示启动输出。镜像只下载固定版本的
 `linux.bin`，无需克隆整个 ready-to-run 仓库。
 
-默认使用 `-j3`，对应标准 ARM64 Mac runner 的 3 核、7GB 内存；手动触发时
-可通过 `build_jobs` 指定编译并行度，同时用于 DRAMSim3 和 GEM5。
-
 它不依赖 NFS、NEMU reference 或外部 restorer，不替代现有 Linux 回归。
 只构建 RISCV/opt，不增加编译矩阵或每日缓存任务；同一分支的新提交取消旧检查。
 该 workflow 不在 PR 阶段运行，也不作为合入门槛。现有 Linux job 使用

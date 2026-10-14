@@ -236,7 +236,6 @@ CC=clang CXX=clang++ scons build/RISCV/gem5.opt -j3
 
 Skip cloning DRAMSim3 if it is already present. Use the native Apple linker;
 `--gold-linker` is for Linux. The raw Linux demo below runs without NEMU.
-Adjust `-j3` to suit the CPU count and available memory on your own host.
 The [macOS CI](.github/workflows/macos-smoke.yml) checks this build/boot path
 on GitHub-hosted runners after code is merged into `xs-dev`, or on manual runs.
 
