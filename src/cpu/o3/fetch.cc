@@ -1684,9 +1684,6 @@ Fetch::initializeTickState()
         }
     }
 
-    // === Block Policy: consume IEW long-latency signals ===
-    checkLongLatencyLoads();
-
     // Check signal updates for all active threads
     while (threads != end) {
         ThreadID tid = *threads++;
@@ -1717,6 +1714,9 @@ Fetch::fetchAndProcessInstructions(bool status_change)
         // Fetch each of the actively fetching threads.
         fetch(status_change);
     }
+
+    // === Block Policy: consume IEW long-latency signals ===
+    checkLongLatencyLoads();
 
     // Pass stall reasons to decode stage
     toDecode->fetchStallReason = stallReason;
