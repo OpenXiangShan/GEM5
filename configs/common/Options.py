@@ -106,39 +106,74 @@ class ListPlatform(argparse.Action):
 
 def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("-n", "--num-cpus", type=int, default=1)
-    parser.add_argument("--sys-voltage", action="store", type=str,
-                        default='1.0V',
-                        help="""Top-level voltage for blocks running at system
-                      power supply""")
-    parser.add_argument("--sys-clock", action="store", type=str,
-                        default='3GHz',
-                        help="""Top-level clock for blocks running at system
-                      speed""")
+    parser.add_argument(
+        "--sys-voltage",
+        action="store",
+        type=str,
+        default="1.0V",
+        help="""Top-level voltage for blocks running at system
+                      power supply""",
+    )
+    parser.add_argument(
+        "--sys-clock",
+        action="store",
+        type=str,
+        default="3GHz",
+        help="""Top-level clock for blocks running at system
+                      speed""",
+    )
 
     # Memory Options
-    parser.add_argument("--list-mem-types",
-                        action=ListMem, nargs=0,
-                        help="List available memory types")
-    parser.add_argument("--mem-type", default="DRAMsim3",
-                        choices=ObjectList.mem_list.get_names(),
-                        help="type of memory to use")
-    parser.add_argument("--mem-channels", type=int, default=1,
-                        help="number of memory channels")
-    parser.add_argument("--mem-ranks", type=int, default=None,
-                        help="number of memory ranks per channel")
     parser.add_argument(
-        "--mem-size", action="store", type=str, default="8GB",
-        help="Specify the physical memory size (single memory)")
-    parser.add_argument("--enable-dram-powerdown", action="store_true",
-                        help="Enable low-power states in DRAMInterface")
-    parser.add_argument("--mem-channels-intlv", type=int, default=0,
-                        help="Memory channels interleave")
+        "--list-mem-types",
+        action=ListMem,
+        nargs=0,
+        help="List available memory types",
+    )
+    parser.add_argument(
+        "--mem-type",
+        default="DRAMsim3",
+        choices=ObjectList.mem_list.get_names(),
+        help="type of memory to use",
+    )
+    parser.add_argument(
+        "--mem-channels", type=int, default=1, help="number of memory channels"
+    )
+    parser.add_argument(
+        "--mem-ranks",
+        type=int,
+        default=None,
+        help="number of memory ranks per channel",
+    )
+    parser.add_argument(
+        "--mem-size",
+        action="store",
+        type=str,
+        default="8GB",
+        help="Specify the physical memory size (single memory)",
+    )
+    parser.add_argument(
+        "--enable-dram-powerdown",
+        action="store_true",
+        help="Enable low-power states in DRAMInterface",
+    )
+    parser.add_argument(
+        "--mem-channels-intlv",
+        type=int,
+        default=0,
+        help="Memory channels interleave",
+    )
 
     # DRAMsim3 option
-    parser.add_argument("--dramsim3-ini", type=str, default=None,
-                        help = "dramsim3 config file")
-    parser.add_argument("--ramulator2-ini", type=str, default=None,
-                        help = "ramulator2 config file")
+    parser.add_argument(
+        "--dramsim3-ini", type=str, default=None, help="dramsim3 config file"
+    )
+    parser.add_argument(
+        "--ramulator2-ini",
+        type=str,
+        default=None,
+        help="ramulator2 config file",
+    )
 
     # Cache Options
     parser.add_argument("--caches", action="store_true")
@@ -161,8 +196,12 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--l2_size", type=str, default="1MB")
     parser.add_argument("--l2_assoc", type=int, default=8)
     parser.add_argument("--l2_slices", type=int, default=4)
-    parser.add_argument("--classic-l2", action="store_true", default=False,
-                        help="use classic L2 cache, instead of RTL aligned L2 cache")
+    parser.add_argument(
+        "--classic-l2",
+        action="store_true",
+        default=False,
+        help="use classic L2 cache, instead of RTL aligned L2 cache",
+    )
 
     parser.add_argument("--l3_size", type=str, default="16MB")
     parser.add_argument("--l3_assoc", type=int, default=16)
@@ -170,73 +209,124 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--cacheline_size", type=int, default=64)
     parser.add_argument("--ideal-cache", action="store_true")
 
-    parser.add_argument("--no-pf", default=False,
-                        action="store_true", help="L1 icache hardware prefetcher")
-    parser.add_argument("--l1i-hwp-type", default=None,
-                        choices=ObjectList.hwp_list.get_names(), help="L1 icache hardware prefetcher")
-    parser.add_argument("--l1d-hwp-type", default='XSCompositePrefetcher',
-                        choices=ObjectList.hwp_list.get_names(), help="L1 dcache hardware prefetcher")
-    parser.add_argument("--l2-hwp-type", default='PrefetcherForwarder',
-                        choices=ObjectList.hwp_list.get_names(), help="L2 cache hardware prefetcher")
-    parser.add_argument("--l2-wrapper-hwp-type", default='L2CompositeWithWorkerPrefetcher',
-                        choices=ObjectList.hwp_list.get_names(), help="L2 wrapper cache hardware prefetcher")
-    parser.add_argument("--l3-hwp-type", default='WorkerPrefetcher',
-                        choices=ObjectList.hwp_list.get_names(), help="L3 cache hardware prefetcher")
+    parser.add_argument(
+        "--no-pf",
+        default=False,
+        action="store_true",
+        help="L1 icache hardware prefetcher",
+    )
+    parser.add_argument(
+        "--l1i-hwp-type",
+        default=None,
+        choices=ObjectList.hwp_list.get_names(),
+        help="L1 icache hardware prefetcher",
+    )
+    parser.add_argument(
+        "--l1d-hwp-type",
+        default="XSCompositePrefetcher",
+        choices=ObjectList.hwp_list.get_names(),
+        help="L1 dcache hardware prefetcher",
+    )
+    parser.add_argument(
+        "--l2-hwp-type",
+        default="PrefetcherForwarder",
+        choices=ObjectList.hwp_list.get_names(),
+        help="L2 cache hardware prefetcher",
+    )
+    parser.add_argument(
+        "--l2-wrapper-hwp-type",
+        default="L2CompositeWithWorkerPrefetcher",
+        choices=ObjectList.hwp_list.get_names(),
+        help="L2 wrapper cache hardware prefetcher",
+    )
+    parser.add_argument(
+        "--l3-hwp-type",
+        default="WorkerPrefetcher",
+        choices=ObjectList.hwp_list.get_names(),
+        help="L3 cache hardware prefetcher",
+    )
 
     # Run duration options
-    parser.add_argument("-m", "--abs-max-tick", type=int, default=m5.MaxTick,
-                        metavar="TICKS", help="Run to absolute simulated tick "
-                        "specified including ticks from a restored checkpoint")
-    parser.add_argument("--maxtime", type=float, default=None,
-                        help="Run to the specified absolute simulated time in "
-                        "seconds")
     parser.add_argument(
-        "-P", "--param", action="append", default=[],
+        "-m",
+        "--abs-max-tick",
+        type=int,
+        default=m5.MaxTick,
+        metavar="TICKS",
+        help="Run to absolute simulated tick "
+        "specified including ticks from a restored checkpoint",
+    )
+    parser.add_argument(
+        "--maxtime",
+        type=float,
+        default=None,
+        help="Run to the specified absolute simulated time in " "seconds",
+    )
+    parser.add_argument(
+        "-P",
+        "--param",
+        action="append",
+        default=[],
         help="Set a SimObject parameter relative to the root node. "
         "An extended Python multi range slicing syntax can be used "
         "for arrays. For example: "
         "'system.cpu[0,1,3:8:2].max_insts_all_threads = 42' "
         "sets max_insts_all_threads for cpus 0, 1, 3, 5 and 7 "
         "Direct parameters of the root object are not accessible, "
-        "only parameters of its children.")
+        "only parameters of its children.",
+    )
 
     # Dump options
-    parser.add_argument("--dump-commit",
-                        action="store_true",
-                        help="dump commit instructions")
+    parser.add_argument(
+        "--dump-commit", action="store_true", help="dump commit instructions"
+    )
 
-    parser.add_argument("--dump-start",
-                        action="store",
-                        type=int,
-                        default=0,
-                        help="dump commit instructions from this committed number")
-    parser.add_argument("--dump-loop-pred", action='store_true', default=False,
-            help="Dump loop predictor logs at exit")
+    parser.add_argument(
+        "--dump-start",
+        action="store",
+        type=int,
+        default=0,
+        help="dump commit instructions from this committed number",
+    )
+    parser.add_argument(
+        "--dump-loop-pred",
+        action="store_true",
+        default=False,
+        help="Dump loop predictor logs at exit",
+    )
 
     # ArchDB option
-    parser.add_argument("--enable-arch-db",
-                        action="store_true",
-                        help="enable arch database")
-    parser.add_argument("--arch-db-file",
-                        action="store",
-                        help="Where to save database")
-    parser.add_argument("--arch-db-fromstart",
-                        default=True,
-                        help="start arch database from "
-                        "the beginning of the simulation")
-    parser.add_argument("--arch-db-dump-lifetime",
-                        action="store_true",
-                        default=False,
-                        help="dump per-instruction lifetime trace for perfCCT")
-    parser.add_argument("--enable-rolling",
-                        default=False,
-                        help="enable rolling perfcnt "
-                        "(note that rolling is dependent on archdb)")
+    parser.add_argument(
+        "--enable-arch-db", action="store_true", help="enable arch database"
+    )
+    parser.add_argument(
+        "--arch-db-file", action="store", help="Where to save database"
+    )
+    parser.add_argument(
+        "--arch-db-fromstart",
+        default=True,
+        help="start arch database from " "the beginning of the simulation",
+    )
+    parser.add_argument(
+        "--arch-db-dump-lifetime",
+        action="store_true",
+        default=False,
+        help="dump per-instruction lifetime trace for perfCCT",
+    )
+    parser.add_argument(
+        "--enable-rolling",
+        default=False,
+        help="enable rolling perfcnt "
+        "(note that rolling is dependent on archdb)",
+    )
 
     parser.add_argument("--memchecker", action="store_true")
 
-    parser.add_argument("--external-memory-system", type=str,
-                        help="use external ports of this port_type for caches")
+    parser.add_argument(
+        "--external-memory-system",
+        type=str,
+        help="use external ports of this port_type for caches",
+    )
 
     # Enable Ruby
     parser.add_argument("--ruby", action="store_true")
@@ -246,121 +336,233 @@ def addNoISAOptions(parser, configure_xiangshan=False):
 
     # Following options are not available in XiangShan
     parser.add_argument(
-        "--rel-max-tick", type=int, default=None, metavar="TICKS",
+        "--rel-max-tick",
+        type=int,
+        default=None,
+        metavar="TICKS",
         help="Simulate for specified number of"
         " ticks relative to the simulation start tick (e.g. if "
-        "restoring a checkpoint)")
+        "restoring a checkpoint)",
+    )
 
-    parser.add_argument("--tlm-memory", type=str,
-                        help="use external port for SystemC TLM cosimulation")
+    parser.add_argument(
+        "--tlm-memory",
+        type=str,
+        help="use external port for SystemC TLM cosimulation",
+    )
+
 
 def addCommonOptions(parser, configure_xiangshan=False):
     # start by adding the base options that do not assume an ISA
-    addNoISAOptions(parser,configure_xiangshan=configure_xiangshan)
+    addNoISAOptions(parser, configure_xiangshan=configure_xiangshan)
 
     # system options
-    parser.add_argument("--list-cpu-types",
-                        action=ListCpu, nargs=0,
-                        help="List available CPU types")
-    parser.add_argument("--cpu-type", default="AtomicSimpleCPU",
-                        choices=ObjectList.cpu_list.get_names(),
-                        help="type of cpu to run with")
-    parser.add_argument("--list-bp-types",
-                        action=ListBp, nargs=0,
-                        help="List available branch predictor types")
-    parser.add_argument("--list-indirect-bp-types",
-                        action=ListIndirectBP, nargs=0,
-                        help="List available indirect branch predictor types")
-    parser.add_argument("--bp-type", default=None,
-                        choices=ObjectList.bp_list.get_names(),
-                        help="""
+    parser.add_argument(
+        "--list-cpu-types",
+        action=ListCpu,
+        nargs=0,
+        help="List available CPU types",
+    )
+    parser.add_argument(
+        "--cpu-type",
+        default="AtomicSimpleCPU",
+        choices=ObjectList.cpu_list.get_names(),
+        help="type of cpu to run with",
+    )
+    parser.add_argument(
+        "--list-bp-types",
+        action=ListBp,
+        nargs=0,
+        help="List available branch predictor types",
+    )
+    parser.add_argument(
+        "--list-indirect-bp-types",
+        action=ListIndirectBP,
+        nargs=0,
+        help="List available indirect branch predictor types",
+    )
+    parser.add_argument(
+        "--bp-type",
+        default=None,
+        choices=ObjectList.bp_list.get_names(),
+        help="""
                         type of branch predictor to run with
                         (if not set, use the default branch predictor of
-                        the selected CPU)""")
-    parser.add_argument("--indirect-bp-type", default=None,
-                        choices=ObjectList.indirect_bp_list.get_names(),
-                        help="type of indirect branch predictor to run with")
-    parser.add_argument("--enable-bp-db", nargs='*', default=["basic"], action='append',
-                        help="enable bp database for specified subdatabase, "
-                        "basic branch trace is enabled by default even without specifying, "
-                        "available subdatabase: basic, tage, ras, loop")
-
-    parser.add_argument("--list-rp-types",
-                        action=ListRP, nargs=0,
-                        help="List available replacement policy types")
-
-    parser.add_argument("--kmh-align", action="store_true", default=False,
-                        help="""
-                        Use kmu config""")
-    parser.add_argument("--functional-tlb", action="store_true", default=False,
-                        help="""
-                        Use functional TLB""")
-    parser.add_argument("--list-hwp-types",
-                        action=ListHWP, nargs=0,
-                        help="List available hardware prefetcher types")
-    parser.add_argument("--l1d-enable-spp", action="store_true", default=False,
-                        help="""
-                        Enable SPP component for L1 data prefetcher""")
-    parser.add_argument("--l1d-enable-cplx", action="store_true", default=False,
-                        help="""
-                        Enable complex stride component for L1 data prefetcher""")
-    parser.add_argument("--l1d-enable-lldp", action="store_true", default=False,
-                        help="Enable LLDP inside the L1 composite prefetcher")
-    parser.add_argument("--l2-enable-lldp", action="store_true", default=False,
-                        help="Enable LLDP inside the L2 composite prefetcher")
-    parser.add_argument("--short-stride-thres", action="store", default=0, type=int,
-                        help="""
-                        Ignore short strides when seen long strides for stride, 0 for turning off""")
-    parser.add_argument("--pht-pf-level", action="store", default=2,
-                        help="""
-                        Prefetching cache level for SMS'pht""")
-
-    parser.add_argument("--disable-pf-buffer", action="store_false",
-                        dest="enable_pf_buffer", default=True,
-                        help="""
-                        Force all hardware prefetchers to disable their
-                        optional prefetch buffer (QueuedPrefetcher.use_pf_buffer).""")
-
-    parser.add_argument("--cpu-clock", action="store", type=str,
-                        default='3GHz',
-                        help="Clock for blocks running at CPU speed")
-
-    parser.add_argument("-I", "--maxinsts", action="store", type=int,
-                        default=40*10**6, help="""Total number of instructions to
-                                            simulate (default: run forever)""")
-
-    parser.add_argument("--enable-riscv-vector", action="store_true", default=False,
-            help="enable riscv vector extension (need vector-supported gcpt restore and diff-ref-so)")
-
-    parser.add_argument("--restore-rvv-cpt", action="store_true", default=False,
-            help="The input checkpoint is RVV, which requires RVV restorer")
-
-    parser.add_argument("--restore-rvh-cpt", action="store_true", default=False,
-            help="The input checkpoint is RVH, which requires RVH restorer")
-
-    parser.add_argument("--xiangshan-ecore", action= "store_true",
-                        help="Use efficient core of xiangshan")
-
-    parser.add_argument("--ideal-kmhv3", action= "store_true",
-                        help="Use KunminghuV3 ideal params, which take priority over command-line arguments.")
-
-
-    # for warmup without switching cpu
-    parser.add_argument("--warmup-insts-no-switch", action="store", type=int,
-        default=20*10**6,
-        help="Warmup period in total instructions, reset stats without switch")
+                        the selected CPU)""",
+    )
+    parser.add_argument(
+        "--indirect-bp-type",
+        default=None,
+        choices=ObjectList.indirect_bp_list.get_names(),
+        help="type of indirect branch predictor to run with",
+    )
+    parser.add_argument(
+        "--enable-bp-db",
+        nargs="*",
+        default=["basic"],
+        action="append",
+        help="enable bp database for specified subdatabase, "
+        "basic branch trace is enabled by default even without specifying, "
+        "available subdatabase: basic, tage, ras, loop",
+    )
 
     parser.add_argument(
-        "--stats-root", action="append", default=[],
+        "--list-rp-types",
+        action=ListRP,
+        nargs=0,
+        help="List available replacement policy types",
+    )
+
+    parser.add_argument(
+        "--kmh-align",
+        action="store_true",
+        default=False,
+        help="""
+                        Use kmu config""",
+    )
+    parser.add_argument(
+        "--functional-tlb",
+        action="store_true",
+        default=False,
+        help="""
+                        Use functional TLB""",
+    )
+    parser.add_argument(
+        "--list-hwp-types",
+        action=ListHWP,
+        nargs=0,
+        help="List available hardware prefetcher types",
+    )
+    parser.add_argument(
+        "--l1d-enable-spp",
+        action="store_true",
+        default=False,
+        help="""
+                        Enable SPP component for L1 data prefetcher""",
+    )
+    parser.add_argument(
+        "--l1d-enable-cplx",
+        action="store_true",
+        default=False,
+        help="""
+                        Enable complex stride component for L1 data prefetcher""",
+    )
+    parser.add_argument(
+        "--l1d-enable-lldp",
+        action="store_true",
+        default=False,
+        help="Enable LLDP inside the L1 composite prefetcher",
+    )
+    parser.add_argument(
+        "--l2-enable-lldp",
+        action="store_true",
+        default=False,
+        help="Enable LLDP inside the L2 composite prefetcher",
+    )
+    parser.add_argument(
+        "--short-stride-thres",
+        action="store",
+        default=0,
+        type=int,
+        help="""
+                        Ignore short strides when seen long strides for stride, 0 for turning off""",
+    )
+    parser.add_argument(
+        "--pht-pf-level",
+        action="store",
+        default=2,
+        help="""
+                        Prefetching cache level for SMS'pht""",
+    )
+
+    parser.add_argument(
+        "--disable-pf-buffer",
+        action="store_false",
+        dest="enable_pf_buffer",
+        default=True,
+        help="""
+                        Force all hardware prefetchers to disable their
+                        optional prefetch buffer (QueuedPrefetcher.use_pf_buffer).""",
+    )
+
+    parser.add_argument(
+        "--cpu-clock",
+        action="store",
+        type=str,
+        default="3GHz",
+        help="Clock for blocks running at CPU speed",
+    )
+
+    parser.add_argument(
+        "-I",
+        "--maxinsts",
+        action="store",
+        type=int,
+        default=40 * 10**6,
+        help="""Total number of instructions to
+                                            simulate (default: run forever)""",
+    )
+
+    parser.add_argument(
+        "--enable-riscv-vector",
+        action="store_true",
+        default=False,
+        help="enable riscv vector extension (need vector-supported gcpt restore and diff-ref-so)",
+    )
+
+    parser.add_argument(
+        "--restore-rvv-cpt",
+        action="store_true",
+        default=False,
+        help="The input checkpoint is RVV, which requires RVV restorer",
+    )
+
+    parser.add_argument(
+        "--restore-rvh-cpt",
+        action="store_true",
+        default=False,
+        help="The input checkpoint is RVH, which requires RVH restorer",
+    )
+
+    parser.add_argument(
+        "--xiangshan-ecore",
+        action="store_true",
+        help="Use efficient core of xiangshan",
+    )
+
+    parser.add_argument(
+        "--ideal-kmhv3",
+        action="store_true",
+        help="Use KunminghuV3 ideal params, which take priority over command-line arguments.",
+    )
+
+    # for warmup without switching cpu
+    parser.add_argument(
+        "--warmup-insts-no-switch",
+        action="store",
+        type=int,
+        default=20 * 10**6,
+        help="Warmup period in total instructions, reset stats without switch",
+    )
+
+    parser.add_argument(
+        "--stats-root",
+        action="append",
+        default=[],
         help="If given, dump only stats of objects under the given SimObject. "
         "SimObjects are identified with Python notation as in: "
         "system.cpu[0].mmu. All elements of an array can be selected at "
         "once with: system.cpu[:].mmu. If given multiple times, dump stats "
         "that are present under any of the roots. If not given, dump all "
-        "stats. ")
+        "stats. ",
+    )
 
-    parser.add_argument("--smt", action="store_true", default=False,
-                        help=""" RISCV SMT support, which requires multitThread-supported gcpt restore and diff-ref-so""")
+    parser.add_argument(
+        "--smt",
+        action="store_true",
+        default=False,
+        help=""" RISCV SMT support, which requires multitThread-supported gcpt restore and diff-ref-so""",
+    )
 
     if configure_xiangshan:
         return
@@ -368,221 +570,423 @@ def addCommonOptions(parser, configure_xiangshan=False):
 
     parser.add_argument("--checker", action="store_true")
     parser.add_argument(
-        "--elastic-trace-en", action="store_true",
+        "--elastic-trace-en",
+        action="store_true",
         help="""Enable capture of data dependency and instruction
-                      fetch traces using elastic trace probe.""")
+                      fetch traces using elastic trace probe.""",
+    )
     # Trace file paths input to trace probe in a capture simulation and input
     # to Trace CPU in a replay simulation
-    parser.add_argument("--inst-trace-file", action="store", type=str,
-                        help="""Instruction fetch trace file input to
+    parser.add_argument(
+        "--inst-trace-file",
+        action="store",
+        type=str,
+        help="""Instruction fetch trace file input to
                       Elastic Trace probe in a capture simulation and
-                      Trace CPU in a replay simulation""", default="")
-    parser.add_argument("--data-trace-file", action="store", type=str,
-                        help="""Data dependency trace file input to
+                      Trace CPU in a replay simulation""",
+        default="",
+    )
+    parser.add_argument(
+        "--data-trace-file",
+        action="store",
+        type=str,
+        help="""Data dependency trace file input to
                       Elastic Trace probe in a capture simulation and
-                      Trace CPU in a replay simulation""", default="")
+                      Trace CPU in a replay simulation""",
+        default="",
+    )
 
     # dist-gem5 options
-    parser.add_argument("--dist", action="store_true",
-                        help="Parallel distributed gem5 simulation.")
     parser.add_argument(
-        "--dist-sync-on-pseudo-op", action="store_true",
-        help="Use a pseudo-op to start dist-gem5 synchronization.")
+        "--dist",
+        action="store_true",
+        help="Parallel distributed gem5 simulation.",
+    )
     parser.add_argument(
-        "--is-switch", action="store_true",
+        "--dist-sync-on-pseudo-op",
+        action="store_true",
+        help="Use a pseudo-op to start dist-gem5 synchronization.",
+    )
+    parser.add_argument(
+        "--is-switch",
+        action="store_true",
         help="Select the network switch simulator process for a"
-        "distributed gem5 run")
-    parser.add_argument("--dist-rank", default=0, action="store", type=int,
-                        help="Rank of this system within the dist gem5 run.")
+        "distributed gem5 run",
+    )
     parser.add_argument(
-        "--dist-size", default=0, action="store", type=int,
-        help="Number of gem5 processes within the dist gem5 run.")
+        "--dist-rank",
+        default=0,
+        action="store",
+        type=int,
+        help="Rank of this system within the dist gem5 run.",
+    )
     parser.add_argument(
-        "--dist-server-name", default="127.0.0.1", action="store", type=str,
-        help="Name of the message server host\nDEFAULT: localhost")
-    parser.add_argument("--dist-server-port",
-                        default=2200,
-                        action="store", type=int,
-                        help="Message server listen port\nDEFAULT: 2200")
+        "--dist-size",
+        default=0,
+        action="store",
+        type=int,
+        help="Number of gem5 processes within the dist gem5 run.",
+    )
     parser.add_argument(
-        "--dist-sync-repeat", default="0us", action="store", type=str,
+        "--dist-server-name",
+        default="127.0.0.1",
+        action="store",
+        type=str,
+        help="Name of the message server host\nDEFAULT: localhost",
+    )
+    parser.add_argument(
+        "--dist-server-port",
+        default=2200,
+        action="store",
+        type=int,
+        help="Message server listen port\nDEFAULT: 2200",
+    )
+    parser.add_argument(
+        "--dist-sync-repeat",
+        default="0us",
+        action="store",
+        type=str,
         help="Repeat interval for synchronisation barriers among "
-        "dist-gem5 processes\nDEFAULT: --ethernet-linkdelay")
+        "dist-gem5 processes\nDEFAULT: --ethernet-linkdelay",
+    )
     parser.add_argument(
-        "--dist-sync-start", default="5200000000000t", action="store",
+        "--dist-sync-start",
+        default="5200000000000t",
+        action="store",
         type=str,
         help="Time to schedule the first dist synchronisation barrier\n"
-        "DEFAULT:5200000000000t")
-    parser.add_argument("--ethernet-linkspeed", default="10Gbps",
-                        action="store", type=str,
-                        help="Link speed in bps\nDEFAULT: 10Gbps")
-    parser.add_argument("--ethernet-linkdelay", default="10us",
-                        action="store", type=str,
-                        help="Link delay in seconds\nDEFAULT: 10us")
+        "DEFAULT:5200000000000t",
+    )
+    parser.add_argument(
+        "--ethernet-linkspeed",
+        default="10Gbps",
+        action="store",
+        type=str,
+        help="Link speed in bps\nDEFAULT: 10Gbps",
+    )
+    parser.add_argument(
+        "--ethernet-linkdelay",
+        default="10us",
+        action="store",
+        type=str,
+        help="Link delay in seconds\nDEFAULT: 10us",
+    )
 
     # Run duration options
-    parser.add_argument("--work-item-id", action="store", type=int,
-                        help="the specific work id for exit & checkpointing")
-    parser.add_argument("--num-work-ids", action="store", type=int,
-                        help="Number of distinct work item types")
-    parser.add_argument("--work-begin-cpu-id-exit", action="store", type=int,
-                        help="exit when work starts on the specified cpu")
-    parser.add_argument("--work-end-exit-count", action="store", type=int,
-                        help="exit at specified work end count")
-    parser.add_argument("--work-begin-exit-count", action="store", type=int,
-                        help="exit at specified work begin count")
-    parser.add_argument("--init-param", action="store", type=int, default=0,
-                        help="""Parameter available in simulation with m5
-                              initparam""")
     parser.add_argument(
-        "--initialize-only", action="store_true", default=False,
+        "--work-item-id",
+        action="store",
+        type=int,
+        help="the specific work id for exit & checkpointing",
+    )
+    parser.add_argument(
+        "--num-work-ids",
+        action="store",
+        type=int,
+        help="Number of distinct work item types",
+    )
+    parser.add_argument(
+        "--work-begin-cpu-id-exit",
+        action="store",
+        type=int,
+        help="exit when work starts on the specified cpu",
+    )
+    parser.add_argument(
+        "--work-end-exit-count",
+        action="store",
+        type=int,
+        help="exit at specified work end count",
+    )
+    parser.add_argument(
+        "--work-begin-exit-count",
+        action="store",
+        type=int,
+        help="exit at specified work begin count",
+    )
+    parser.add_argument(
+        "--init-param",
+        action="store",
+        type=int,
+        default=0,
+        help="""Parameter available in simulation with m5
+                              initparam""",
+    )
+    parser.add_argument(
+        "--initialize-only",
+        action="store_true",
+        default=False,
         help="""Exit after initialization. Do not simulate time.
-                              Useful when gem5 is run as a library.""")
+                              Useful when gem5 is run as a library.""",
+    )
 
     # Simpoint options
-    parser.add_argument("--simpoint-profile", action="store_true",
-                        help="Enable basic block profiling for SimPoints")
-    parser.add_argument("--simpoint-interval", type=int, default=10000000,
-                        help="SimPoint interval in num of instructions")
     parser.add_argument(
-        "--take-simpoint-checkpoints", action="store", type=str,
-        help="<simpoint file,weight file,interval-length,warmup-length>")
-    parser.add_argument("--restore-simpoint-checkpoint", action="store_true",
-                        default=False,
-                        help="restore from a simpoint checkpoint taken with " +
-                        "--take-simpoint-checkpoints")
+        "--simpoint-profile",
+        action="store_true",
+        help="Enable basic block profiling for SimPoints",
+    )
+    parser.add_argument(
+        "--simpoint-interval",
+        type=int,
+        default=10000000,
+        help="SimPoint interval in num of instructions",
+    )
+    parser.add_argument(
+        "--take-simpoint-checkpoints",
+        action="store",
+        type=str,
+        help="<simpoint file,weight file,interval-length,warmup-length>",
+    )
+    parser.add_argument(
+        "--restore-simpoint-checkpoint",
+        action="store_true",
+        default=False,
+        help="restore from a simpoint checkpoint taken with "
+        + "--take-simpoint-checkpoints",
+    )
 
     # Checkpointing options
     # Note that performing checkpointing via python script files will override
     # checkpoint instructions built into binaries.
     parser.add_argument(
-        "--take-checkpoints", action="store", type=str,
-        help="<M,N> take checkpoints at tick M and every N ticks thereafter")
+        "--take-checkpoints",
+        action="store",
+        type=str,
+        help="<M,N> take checkpoints at tick M and every N ticks thereafter",
+    )
     parser.add_argument(
-        "--max-checkpoints", action="store", type=int,
-        help="the maximum number of checkpoints to drop", default=5)
+        "--max-checkpoints",
+        action="store",
+        type=int,
+        help="the maximum number of checkpoints to drop",
+        default=5,
+    )
     parser.add_argument(
-        "--checkpoint-dir", action="store", type=str,
-        help="Place all checkpoints in this absolute directory")
-    parser.add_argument("-r", "--checkpoint-restore", action="store", type=int,
-                        help="restore from checkpoint <N>")
-    parser.add_argument("--checkpoint-at-end", action="store_true",
-                        help="take a checkpoint at end of run")
+        "--checkpoint-dir",
+        action="store",
+        type=str,
+        help="Place all checkpoints in this absolute directory",
+    )
     parser.add_argument(
-        "--work-begin-checkpoint-count", action="store", type=int,
-        help="checkpoint at specified work begin count")
+        "-r",
+        "--checkpoint-restore",
+        action="store",
+        type=int,
+        help="restore from checkpoint <N>",
+    )
     parser.add_argument(
-        "--work-end-checkpoint-count", action="store", type=int,
-        help="checkpoint at specified work end count")
+        "--checkpoint-at-end",
+        action="store_true",
+        help="take a checkpoint at end of run",
+    )
     parser.add_argument(
-        "--work-cpus-checkpoint-count", action="store", type=int,
-        help="checkpoint and exit when active cpu count is reached")
-    parser.add_argument("--restore-with-cpu", action="store",
-                        default="AtomicSimpleCPU",
-                        choices=ObjectList.cpu_list.get_names(),
-                        help="cpu type for restoring from a checkpoint")
+        "--work-begin-checkpoint-count",
+        action="store",
+        type=int,
+        help="checkpoint at specified work begin count",
+    )
+    parser.add_argument(
+        "--work-end-checkpoint-count",
+        action="store",
+        type=int,
+        help="checkpoint at specified work end count",
+    )
+    parser.add_argument(
+        "--work-cpus-checkpoint-count",
+        action="store",
+        type=int,
+        help="checkpoint and exit when active cpu count is reached",
+    )
+    parser.add_argument(
+        "--restore-with-cpu",
+        action="store",
+        default="AtomicSimpleCPU",
+        choices=ObjectList.cpu_list.get_names(),
+        help="cpu type for restoring from a checkpoint",
+    )
 
     # CPU Switching - default switch model goes from a checkpoint
     # to a timing simple CPU with caches to warm up, then to detailed CPU for
     # data measurement
     parser.add_argument(
-        "--repeat-switch", action="store", type=int, default=None,
-        help="switch back and forth between CPUs with period <N>")
+        "--repeat-switch",
+        action="store",
+        type=int,
+        default=None,
+        help="switch back and forth between CPUs with period <N>",
+    )
     parser.add_argument(
-        "-s", "--standard-switch", action="store", type=int, default=None,
-        help="switch from timing to Detailed CPU after warmup period of <N>")
-    parser.add_argument("-p", "--prog-interval", type=str,
-                        help="CPU Progress Interval")
+        "-s",
+        "--standard-switch",
+        action="store",
+        type=int,
+        default=None,
+        help="switch from timing to Detailed CPU after warmup period of <N>",
+    )
+    parser.add_argument(
+        "-p", "--prog-interval", type=str, help="CPU Progress Interval"
+    )
 
     # Fastforwarding and simpoint related materials
     parser.add_argument(
-        "-W", "--warmup-insts", action="store", type=int, default=None,
-        help="Warmup period in total instructions (requires --standard-switch)")
+        "-W",
+        "--warmup-insts",
+        action="store",
+        type=int,
+        default=None,
+        help="Warmup period in total instructions (requires --standard-switch)",
+    )
     parser.add_argument(
-        "--bench", action="store", type=str, default=None,
-        help="base names for --take-checkpoint and --checkpoint-restore")
+        "--bench",
+        action="store",
+        type=str,
+        default=None,
+        help="base names for --take-checkpoint and --checkpoint-restore",
+    )
     parser.add_argument(
-        "-F", "--fast-forward", action="store", type=str, default=None,
-        help="Number of instructions to fast forward before switching")
+        "-F",
+        "--fast-forward",
+        action="store",
+        type=str,
+        default=None,
+        help="Number of instructions to fast forward before switching",
+    )
     parser.add_argument(
-        "-S", "--simpoint", action="store_true", default=False,
+        "-S",
+        "--simpoint",
+        action="store_true",
+        default=False,
         help="""Use workload simpoints as an instruction offset for
-                --checkpoint-restore or --take-checkpoint.""")
+                --checkpoint-restore or --take-checkpoint.""",
+    )
     parser.add_argument(
-        "--at-instruction", action="store_true", default=False,
+        "--at-instruction",
+        action="store_true",
+        default=False,
         help="""Treat value of --checkpoint-restore or --take-checkpoint as a
-                number of instructions.""")
-    parser.add_argument("--spec-input", default="ref",
-                        choices=["ref", "test", "train", "smred", "mdred",
-                                 "lgred"],
-                        help="Input set size for SPEC CPU2000 benchmarks.")
-    parser.add_argument("--arm-iset", default="arm",
-                        choices=["arm", "thumb", "aarch64"],
-                        help="ARM instruction set.")
+                number of instructions.""",
+    )
+    parser.add_argument(
+        "--spec-input",
+        default="ref",
+        choices=["ref", "test", "train", "smred", "mdred", "lgred"],
+        help="Input set size for SPEC CPU2000 benchmarks.",
+    )
+    parser.add_argument(
+        "--arm-iset",
+        default="arm",
+        choices=["arm", "thumb", "aarch64"],
+        help="ARM instruction set.",
+    )
+
 
 def addSEOptions(parser):
     # Benchmark options
-    parser.add_argument("-c", "--cmd", default="",
-                        help="The binary to run in syscall emulation mode.")
     parser.add_argument(
-        "--workload", default="",
+        "-c",
+        "--cmd",
+        default="",
+        help="The binary to run in syscall emulation mode.",
+    )
+    parser.add_argument(
+        "--workload",
+        default="",
         help="An upstream gem5 binary or workload resource ID to run in SE "
-             "mode.")
+        "mode.",
+    )
     parser.add_argument(
-        "--suite", default="",
-        help="An upstream gem5 suite resource ID containing the workload.")
+        "--suite",
+        default="",
+        help="An upstream gem5 suite resource ID containing the workload.",
+    )
     parser.add_argument(
-        "--suite-workload", default="",
-        help="The workload ID to select from --suite.")
+        "--suite-workload",
+        default="",
+        help="The workload ID to select from --suite.",
+    )
     parser.add_argument(
-        "--resource-version", default=None,
-        help="Exact version of --workload or --suite (latest if omitted).")
+        "--resource-version",
+        default=None,
+        help="Exact version of --workload or --suite (latest if omitted).",
+    )
     parser.add_argument(
-        "--resource-directory", default=None,
-        help="Directory used to cache downloaded modern resources.")
+        "--resource-directory",
+        default=None,
+        help="Directory used to cache downloaded modern resources.",
+    )
     parser.add_argument(
-        "--resource-json", default=None,
-        help="Local flat modern resource JSON catalog (primarily for CI).")
-    parser.add_argument("-o", "--options", default="",
-                        help="""The options to pass to the binary, use " "
-                              around the entire string""")
-    parser.add_argument("-e", "--env", default="",
-                        help="Initialize workload environment from text file.")
-    parser.add_argument("-i", "--input", default="",
-                        help="Read stdin from a file.")
-    parser.add_argument("--output", default="",
-                        help="Redirect stdout to a file.")
-    parser.add_argument("--errout", default="",
-                        help="Redirect stderr to a file.")
-    parser.add_argument("--chroot", action="store", type=str, default=None,
-                        help="The chroot option allows a user to alter the "
-                        "search path for processes running in SE mode. "
-                        "Normally, the search path would begin at the "
-                        "root of the filesystem (i.e. /). With chroot, "
-                        "a user can force the process to begin looking at"
-                        "some other location (i.e. /home/user/rand_dir)."
-                        "The intended use is to trick sophisticated "
-                        "software which queries the __HOST__ filesystem "
-                        "for information or functionality. Instead of "
-                        "finding files on the __HOST__ filesystem, the "
-                        "process will find the user's replacment files.")
-    parser.add_argument("--interp-dir", action="store", type=str,
-                        default=None,
-                        help="The interp-dir option is used for "
-                        "setting the interpreter's path. This will "
-                        "allow to load the guest dynamic linker/loader "
-                        "itself from the elf binary. The option points to "
-                        "the parent folder of the guest /lib in the "
-                        "host fs")
+        "--resource-json",
+        default=None,
+        help="Local flat modern resource JSON catalog (primarily for CI).",
+    )
+    parser.add_argument(
+        "-o",
+        "--options",
+        default="",
+        help="""The options to pass to the binary, use " "
+                              around the entire string""",
+    )
+    parser.add_argument(
+        "-e",
+        "--env",
+        default="",
+        help="Initialize workload environment from text file.",
+    )
+    parser.add_argument(
+        "-i", "--input", default="", help="Read stdin from a file."
+    )
+    parser.add_argument(
+        "--output", default="", help="Redirect stdout to a file."
+    )
+    parser.add_argument(
+        "--errout", default="", help="Redirect stderr to a file."
+    )
+    parser.add_argument(
+        "--chroot",
+        action="store",
+        type=str,
+        default=None,
+        help="The chroot option allows a user to alter the "
+        "search path for processes running in SE mode. "
+        "Normally, the search path would begin at the "
+        "root of the filesystem (i.e. /). With chroot, "
+        "a user can force the process to begin looking at"
+        "some other location (i.e. /home/user/rand_dir)."
+        "The intended use is to trick sophisticated "
+        "software which queries the __HOST__ filesystem "
+        "for information or functionality. Instead of "
+        "finding files on the __HOST__ filesystem, the "
+        "process will find the user's replacment files.",
+    )
+    parser.add_argument(
+        "--interp-dir",
+        action="store",
+        type=str,
+        default=None,
+        help="The interp-dir option is used for "
+        "setting the interpreter's path. This will "
+        "allow to load the guest dynamic linker/loader "
+        "itself from the elf binary. The option points to "
+        "the parent folder of the guest /lib in the "
+        "host fs",
+    )
 
-    parser.add_argument("--redirects", action="append", type=str,
-                        default=[],
-                        help="A collection of one or more redirect paths "
-                        "to be used in syscall emulation."
-                        "Usage: gem5.opt [...] --redirects /dir1=/path/"
-                        "to/host/dir1 --redirects /dir2=/path/to/host/dir2")
-    parser.add_argument("--wait-gdb", default=False, action='store_true',
-                        help="Wait for remote GDB to connect.")
+    parser.add_argument(
+        "--redirects",
+        action="append",
+        type=str,
+        default=[],
+        help="A collection of one or more redirect paths "
+        "to be used in syscall emulation."
+        "Usage: gem5.opt [...] --redirects /dir1=/path/"
+        "to/host/dir1 --redirects /dir2=/path/to/host/dir2",
+    )
+    parser.add_argument(
+        "--wait-gdb",
+        default=False,
+        action="store_true",
+        help="Wait for remote GDB to connect.",
+    )
 
 
 def addFSOptions(parser):
@@ -590,170 +994,303 @@ def addFSOptions(parser):
 
     # Simulation options
     parser.add_argument(
-        "--timesync", action="store_true",
-        help="Prevent simulated time from getting ahead of real time")
+        "--timesync",
+        action="store_true",
+        help="Prevent simulated time from getting ahead of real time",
+    )
 
     # System options
     parser.add_argument("--kernel", action="store", type=str)
-    parser.add_argument("--os-type", action="store",
-                        choices=os_types[str(buildEnv['TARGET_ISA'])],
-                        default="linux",
-                        help="Specifies type of OS to boot")
+    parser.add_argument(
+        "--os-type",
+        action="store",
+        choices=os_types[str(buildEnv["TARGET_ISA"])],
+        default="linux",
+        help="Specifies type of OS to boot",
+    )
     parser.add_argument("--script", action="store", type=str)
     parser.add_argument(
-        "--frame-capture", action="store_true",
+        "--frame-capture",
+        action="store_true",
         help="Stores changed frame buffers from the VNC server to compressed "
-        "files in the gem5 output directory")
+        "files in the gem5 output directory",
+    )
 
-    if buildEnv['TARGET_ISA'] == "arm":
+    if buildEnv["TARGET_ISA"] == "arm":
         parser.add_argument(
-            "--bare-metal", action="store_true",
-            help="Provide the raw system without the linux specific bits")
-        parser.add_argument("--list-machine-types",
-                            action=ListPlatform, nargs=0,
-                            help="List available platform types")
-        parser.add_argument("--machine-type", action="store",
-                            choices=ObjectList.platform_list.get_names(),
-                            default="VExpress_GEM5_V1")
+            "--bare-metal",
+            action="store_true",
+            help="Provide the raw system without the linux specific bits",
+        )
         parser.add_argument(
-            "--dtb-filename", action="store", type=str,
+            "--list-machine-types",
+            action=ListPlatform,
+            nargs=0,
+            help="List available platform types",
+        )
+        parser.add_argument(
+            "--machine-type",
+            action="store",
+            choices=ObjectList.platform_list.get_names(),
+            default="VExpress_GEM5_V1",
+        )
+        parser.add_argument(
+            "--dtb-filename",
+            action="store",
+            type=str,
             help="Specifies device tree blob file to use with device-tree-"
-            "enabled kernels")
+            "enabled kernels",
+        )
         parser.add_argument(
-            "--enable-context-switch-stats-dump", action="store_true",
+            "--enable-context-switch-stats-dump",
+            action="store_true",
             help="Enable stats dump at context "
-            "switches and dump tasks file (required for Streamline)")
+            "switches and dump tasks file (required for Streamline)",
+        )
         parser.add_argument("--vio-9p", action="store_true", help=vio_9p_help)
         parser.add_argument(
-            "--bootloader", action='append',
-            help="executable file that runs before the --kernel")
+            "--bootloader",
+            action="append",
+            help="executable file that runs before the --kernel",
+        )
 
     # Benchmark options
     parser.add_argument(
-        "--dual", action="store_true",
-        help="Simulate two systems attached with an ethernet link")
+        "--dual",
+        action="store_true",
+        help="Simulate two systems attached with an ethernet link",
+    )
     parser.add_argument(
-        "-b", "--benchmark", action="store", type=str, dest="benchmark",
-        help="Specify the benchmark to run. Available benchmarks: %s" %
-        DefinedBenchmarks)
+        "-b",
+        "--benchmark",
+        action="store",
+        type=str,
+        dest="benchmark",
+        help="Specify the benchmark to run. Available benchmarks: %s"
+        % DefinedBenchmarks,
+    )
 
     # Metafile options
     parser.add_argument(
-        "--etherdump", action="store", type=str, dest="etherdump",
+        "--etherdump",
+        action="store",
+        type=str,
+        dest="etherdump",
         help="Specify the filename to dump a pcap capture of the"
-        "ethernet traffic")
+        "ethernet traffic",
+    )
 
     # Disk Image Options
-    parser.add_argument("--disk-image", action="append", type=str,
-                        default=[], help="Path to the disk images to use.")
-    parser.add_argument("--root-device", action="store", type=str,
-                        default=None, help="OS device name for root partition")
+    parser.add_argument(
+        "--disk-image",
+        action="append",
+        type=str,
+        default=[],
+        help="Path to the disk images to use.",
+    )
+    parser.add_argument(
+        "--root-device",
+        action="store",
+        type=str,
+        default=None,
+        help="OS device name for root partition",
+    )
 
     # Command line options
-    parser.add_argument("--command-line", action="store", type=str,
-                        default=None,
-                        help="Template for the kernel command line.")
     parser.add_argument(
-        "--command-line-file", action="store", default=None, type=str,
-        help="File with a template for the kernel command line")
+        "--command-line",
+        action="store",
+        type=str,
+        default=None,
+        help="Template for the kernel command line.",
+    )
+    parser.add_argument(
+        "--command-line-file",
+        action="store",
+        default=None,
+        type=str,
+        help="File with a template for the kernel command line",
+    )
 
     # Debug option
-    parser.add_argument("--wait-gdb", default=False, action='store_true',
-                        help="Wait for remote GDB to connect.")
+    parser.add_argument(
+        "--wait-gdb",
+        default=False,
+        action="store_true",
+        help="Wait for remote GDB to connect.",
+    )
+
 
 def addXiangshanCommonOptions(parser):
     # Xiangshan related options
-    parser.add_argument("--xiangshan-system", action="store_true",
-                        help="Use memory layout of Xiangshan system")
-    parser.add_argument("--mmc-img", action="store", type=str,
-                        default=None, help="The path of mmc img")
-    parser.add_argument("--mmc-cptbin", action="store",
-                        type=str, default=None, help="The path of mmc cptbin")
+    parser.add_argument(
+        "--xiangshan-system",
+        action="store_true",
+        help="Use memory layout of Xiangshan system",
+    )
+    parser.add_argument(
+        "--mmc-img",
+        action="store",
+        type=str,
+        default=None,
+        help="The path of mmc img",
+    )
+    parser.add_argument(
+        "--mmc-cptbin",
+        action="store",
+        type=str,
+        default=None,
+        help="The path of mmc cptbin",
+    )
     parser.add_argument(
         "--enable-dynamic-pf",
         type=str,
         choices=("True", "False"),
         default=None,
         metavar="{True,False}",
-        help="Enable dynamic prefetch control (True/False).")
+        help="Enable dynamic prefetch control (True/False).",
+    )
 
     # Difftest option
     parser.set_defaults(enable_difftest=None)
-    parser.add_argument("--enable-difftest",
-                        action="store_true",
-                        dest="enable_difftest",
-                        help="use NEMU as ref to do difftest")
-    parser.add_argument("--disable-difftest",
-                        action="store_false",
-                        dest="enable_difftest",
-                        help="disable NEMU difftest")
+    parser.add_argument(
+        "--enable-difftest",
+        action="store_true",
+        dest="enable_difftest",
+        help="use NEMU as ref to do difftest",
+    )
+    parser.add_argument(
+        "--disable-difftest",
+        action="store_false",
+        dest="enable_difftest",
+        help="disable NEMU difftest",
+    )
 
-    parser.add_argument("--difftest-ref-so",
-                        action="store",
-                        default=None,
-                        help="The shared lib file used to do difftest")
-    parser.add_argument("--enable-mem-dedup", action="store_true",
-                        help="Share initial memory through COW; requires a "
-                             "NEMU REF built with ENABLE_MEM_DEDUP")
+    parser.add_argument(
+        "--difftest-ref-so",
+        action="store",
+        default=None,
+        help="The shared lib file used to do difftest",
+    )
+    parser.add_argument(
+        "--enable-mem-dedup",
+        action="store_true",
+        help="Share initial memory through COW; requires a "
+        "NEMU REF built with ENABLE_MEM_DEDUP",
+    )
 
 
 def addXiangshanFSOptions(parser):
     addXiangshanCommonOptions(parser)
 
-    parser.add_argument("--enable-h-gcpt", action= "store_true",
-                        help="enable h checkpoint")
-    parser.add_argument("--generic-rv-cpt", action= "store", type = str,
-                        default=None, required=True,
-                        help="The path of Xiangshan risc-v checkpoint")
-    parser.add_argument("--gcpt-restorer", action="store", type = str,
-                      default=None,
-                      help="The path of generic risc-v checkpoint restorer")
+    parser.add_argument(
+        "--enable-h-gcpt", action="store_true", help="enable h checkpoint"
+    )
+    parser.add_argument(
+        "--generic-rv-cpt",
+        action="store",
+        type=str,
+        default=None,
+        required=True,
+        help="The path of Xiangshan risc-v checkpoint",
+    )
+    parser.add_argument(
+        "--gcpt-restorer",
+        action="store",
+        type=str,
+        default=None,
+        help="The path of generic risc-v checkpoint restorer",
+    )
 
-    parser.add_argument("--raw-cpt", action= "store_true",
-                        help = "The checkpoint file is not gz but binary")
+    parser.add_argument(
+        "--raw-cpt",
+        action="store_true",
+        help="The checkpoint file is not gz but binary",
+    )
+
 
 def addXiangshanTraceOptions(parser):
     # Add trace-specific arguments for trace-driven simulation
-    parser.add_argument('--enable-trace-mode', action='store_true',
-                       help='Enable trace-driven simulation mode (alternative to checkpoints)')
-    parser.add_argument('--trace-timing-ptw', action='store_true',
-                       help='In trace mode, use timing TLB/PTW (static page table; default: off)')
-    parser.add_argument('--trace-ptw-reserved-bytes', type=int,
-                       default=64 * 1024 * 1024,
-                       help='Bytes reserved at top of trace-mapped memory for page tables (default: 64MiB)')
-    parser.add_argument('--trace-ptw-page-size', type=str, default='4k',
-                       choices=['4k', '2m'],
-                       help='Synthetic mapping page size for trace timing PTW (default: 4k)')
-    parser.add_argument('--trace-file', type=str,
-                       help='Path to the trace file (required for trace mode)')
-    parser.add_argument('--trace-format', type=str, default='champsim',
-                       choices=['champsim', 'cbp2025'],
-                       help='Trace format (default: champsim)')
+    parser.add_argument(
+        "--enable-trace-mode",
+        action="store_true",
+        help="Enable trace-driven simulation mode (alternative to checkpoints)",
+    )
+    parser.add_argument(
+        "--trace-timing-ptw",
+        action="store_true",
+        help="In trace mode, use timing TLB/PTW (static page table; default: off)",
+    )
+    parser.add_argument(
+        "--trace-ptw-reserved-bytes",
+        type=int,
+        default=64 * 1024 * 1024,
+        help="Bytes reserved at top of trace-mapped memory for page tables (default: 64MiB)",
+    )
+    parser.add_argument(
+        "--trace-ptw-page-size",
+        type=str,
+        default="4k",
+        choices=["4k", "2m"],
+        help="Synthetic mapping page size for trace timing PTW (default: 4k)",
+    )
+    parser.add_argument(
+        "--trace-file",
+        type=str,
+        help="Path to the trace file (required for trace mode)",
+    )
+    parser.add_argument(
+        "--trace-format",
+        type=str,
+        default="champsim",
+        choices=["champsim", "cbp2025"],
+        help="Trace format (default: champsim)",
+    )
     # Use the common --maxinsts option provided by common Options; no trace-specific max
 
     # Decoupled branch predictor options for trace mode
-    parser.add_argument('--trace-enable-decoupled-bp', action='store_true',
-                       help='Enable decoupled branch predictor in trace mode')
-    parser.add_argument('--trace-checkpoint-interval', type=int, default=64,
-                       help='Checkpoint interval for trace rollback (default: 64)')
-    parser.add_argument('--trace-disable-bp-validation', action='store_true',
-                       help='Disable branch predictor validation against trace')
-    parser.add_argument('--trace-mispredict-penalty', type=int, default=8,
-                       help='Cycles to penalize on mispredict (default: 8)')
-    parser.add_argument('--trace-disable-wrongpath', action='store_true',
-                       help='Disable explicit wrong-path injection (use stall model)')
-    parser.add_argument('--trace-wrongpath-use-traceinst', action='store_true',
-                       help='Wrong-path injection uses trace instructions with checkpoint/restore (default: NOPs)')
+    parser.add_argument(
+        "--trace-enable-decoupled-bp",
+        action="store_true",
+        help="Enable decoupled branch predictor in trace mode",
+    )
+    parser.add_argument(
+        "--trace-checkpoint-interval",
+        type=int,
+        default=64,
+        help="Checkpoint interval for trace rollback (default: 64)",
+    )
+    parser.add_argument(
+        "--trace-disable-bp-validation",
+        action="store_true",
+        help="Disable branch predictor validation against trace",
+    )
+    parser.add_argument(
+        "--trace-mispredict-penalty",
+        type=int,
+        default=8,
+        help="Cycles to penalize on mispredict (default: 8)",
+    )
+    parser.add_argument(
+        "--trace-disable-wrongpath",
+        action="store_true",
+        help="Disable explicit wrong-path injection (use stall model)",
+    )
+    parser.add_argument(
+        "--trace-wrongpath-use-traceinst",
+        action="store_true",
+        help="Wrong-path injection uses trace instructions with checkpoint/restore (default: NOPs)",
+    )
 
     # NOTE: This heuristic relies on using real sys.argv with argparse. If a
     # custom args list is passed to parse_args, the caller should adjust
     # generic-rv-cpt's required flag explicitly instead of relying on this.
     # Check for trace mode before parsing to make generic-rv-cpt conditional.
-    if '--enable-trace-mode' in sys.argv:
+    if "--enable-trace-mode" in sys.argv:
         # In trace mode, make generic-rv-cpt optional by providing a dummy value.
         # Find the generic-rv-cpt action and remove its required flag.
         for action in parser._actions:
-            if action.dest == 'generic_rv_cpt':
+            if action.dest == "generic_rv_cpt":
                 action.required = False
                 action.default = "trace_mode_dummy"
                 break

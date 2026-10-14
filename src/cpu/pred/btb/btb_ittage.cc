@@ -332,7 +332,7 @@ BTBITTAGE::update(
     auto updateTagFoldedHist = meta->tagFoldedHist;
     auto updateAltTagFoldedHist = meta->altTagFoldedHist;
     auto updateIndexFoldedHist = meta->indexFoldedHist;
-    
+
     // update each branch
     for (const auto &branch : update.branches) {
         if (!(branch.isIndirect && !branch.isReturn)) {

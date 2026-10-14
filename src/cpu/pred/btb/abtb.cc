@@ -194,9 +194,9 @@ std::vector<AheadBTB::TickedBTBEntry>
 AheadBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startAddr)
 {
     auto processed_entries = entries;
-    
+
     // Sort by instruction order
-    std::sort(processed_entries.begin(), processed_entries.end(), 
+    std::sort(processed_entries.begin(), processed_entries.end(),
              [](const BTBEntry &a, const BTBEntry &b) {
                  return a.pc < b.pc;
              });
@@ -365,7 +365,7 @@ AheadBTB::putPCHistory(Addr startAddr,
 
     // Fill predictions for each pipeline stage
     fillStagePredictions(processed_entries, stagePreds);
-    
+
     // Update metadata for later stages
     updatePredictionMeta(processed_entries, stagePreds, tid, indexPhrHash);
 }
@@ -575,7 +575,7 @@ AheadBTB::processOldEntries(const std::vector<BTBEntry>& hit_entries,
     //dumpBTBEntries(old_entries);
 
     btbStats.updateHit += old_entries.size();
-    
+
     return old_entries;
 }
 

@@ -174,7 +174,7 @@ BTBRAS::specUpdateState(FullBTBPrediction &pred)
     if (takenEntry.isReturn) {
         DPRINTFR(RAS, "IsRet spec PC %lx\n", takenEntry.pc);
     }
-    
+
     if (takenEntry.isCall || takenEntry.isReturn)
         printStack("after specUpdateState", tid);
     DPRINTFR(RAS, "meta TOSR %lld TOSW %lld\n",
@@ -346,7 +346,7 @@ BTBRAS::pop_stack(ThreadID tid)
     //} else {
         // unmatched pop, do not move
     //}
-    
+
 }
 
 void
