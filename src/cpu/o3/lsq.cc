@@ -3710,13 +3710,11 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
             DPRINTF(LSQ, "[sn:%ld] %s hit\n", _inst->seqNum, "cache");
             // Cache hit, the subsequent processing will be carried out in s2.
             instruction()->setCacheHit();
-        } else if (LSQRequest::_inst->waitingCacheRefill()) {
-            // Missed Data is ready at lsq side data bus, wake up missed load in replay queue
-            // Handle the missed early wake-up here.
-            DPRINTF(LSQ, "[sn:%ld] waitingCacheRefill\n", pkt->req->getReqInstSeqNum());
-            LSQRequest::_inst->waitingCacheRefill(false);
-            discard();
         } else {
+            if (LSQRequest::_inst->waitingCacheRefill()) {
+                DPRINTF(LSQ, "[sn:%ld] waitingCacheRefill\n", pkt->req->getReqInstSeqNum());
+                LSQRequest::_inst->waitingCacheRefill(false);
+            }
             DPRINTF(LSQ, "[sn:%ld] addToBus\n", _inst->seqNum);
             // Cache miss refill, make data stable on data bus
             lsq->bus[_inst->seqNum] = pkt->getAddr();
