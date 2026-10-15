@@ -838,12 +838,19 @@ MBTB::lookupVictimCacheNoSideEffect(Addr block_pc, ThreadID tid,
 bool
 MBTB::eraseFromVictimCacheByPC(Addr pc, ThreadID tid)
 {
+    // Shared SRAM writes are visible to every thread, so invalidate matching
+    // entries in all private VCs. Partitioned SRAM writes affect only this tid.
+    const unsigned firstTid = usesTidPartitionedStorage() ? tid : 0;
+    const unsigned endTid = usesTidPartitionedStorage() ?
+        tid + 1 : victimCaches.size();
     bool erased = false;
-    for (auto &entry : victimCaches[tid]) {
-        if (entry.valid && entry.pc == pc) {
-            entry.valid = false;
-            erased = true;
-            break;
+    for (unsigned cacheTid = firstTid; cacheTid < endTid; ++cacheTid) {
+        for (auto &entry : victimCaches[cacheTid]) {
+            if (entry.valid && entry.pc == pc) {
+                entry.valid = false;
+                erased = true;
+                break;
+            }
         }
     }
     return erased;
