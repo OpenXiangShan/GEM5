@@ -470,6 +470,10 @@ class Rename
         statistics::Distribution threadsRenamedPerCycle;
         /** Instructions renamed across all SMT threads in one cycle. */
         statistics::Distribution instsRenamedPerCycle;
+        /** Eligible cycles with decode input and no rename backpressure. */
+        statistics::Scalar eligibleCycles;
+        /** Eligible cycles that consumed the complete rename bandwidth. */
+        statistics::Scalar eligibleFullWidthCycles;
         /** Stat for total number of squashed instructions that rename
          * discards. */
         statistics::Scalar squashedInsts;
