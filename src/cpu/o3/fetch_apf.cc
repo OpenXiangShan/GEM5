@@ -42,6 +42,16 @@ APFStats::APFStats(statistics::Group *parent)
       ADD_STAT(bufferOccupancy, statistics::units::Count::get(), "Sum of saved buffer occupancy"),
       ADD_STAT(bufferIdleCycles, statistics::units::Cycle::get(), "Cycles with no saved paths"),
       ADD_STAT(predictorQueries, statistics::units::Count::get(), "Isolated final-stage predictor queries"),
+      ADD_STAT(predictorResourceBlocked, statistics::units::Count::get(),
+               "APF predictor queries blocked by modeled resources"),
+      ADD_STAT(decodeDemand, statistics::units::Count::get(),
+               "APF predecode uop demand"),
+      ADD_STAT(decodeGranted, statistics::units::Count::get(),
+               "APF predecode uops granted shared Decode slots"),
+      ADD_STAT(decodeBlockedCycles, statistics::units::Cycle::get(),
+               "Cycles where APF predecode had no Decode slot"),
+      ADD_STAT(decodePartialCycles, statistics::units::Cycle::get(),
+               "Cycles where APF predecode received partial Decode bandwidth"),
       ADD_STAT(retiredPaths, statistics::units::Count::get(), "Paths discarded when their source target retires"),
       ADD_STAT(generatedMicroops, statistics::units::Count::get(), "Cached macro-op expansion uops"),
       ADD_STAT(crossPageReads, statistics::units::Count::get(), "Instruction reads crossing 4 KiB boundaries"),
@@ -141,12 +151,23 @@ Fetch::generateAPF(AlternatePathContext &path)
 {
     if (!path.blockPrediction) {
         path.blockStart = path.predictor;
-        path.blockPrediction = dbpbtb->predictAlternate(
+        auto prediction = dbpbtb->predictAlternate(
             path.blockStart, path.pc.instAddr());
         path.blockFirstUop = path.uops.size();
         path.blockIndex = path.predictions.size();
         path.blockBranches.clear();
         ++apfStats->predictorQueries;
+        if (prediction.resourceBlocked) {
+            ++apfStats->predictorResourceBlocked;
+            ++path.cycles;
+            path.ready = cpu->clockEdge(apfFetchLatency);
+            if (path.cycles >= apfGenerationCycles) {
+                path.complete = true;
+                ++apfStats->stops[0];
+            }
+            return;
+        }
+        path.blockPrediction = std::move(prediction);
         DPRINTF(APF, "APF query source %lu:%#lx block %u start %#lx\n",
                 path.source.ftqId, path.source.branch.pc,
                 path.blockIndex, path.pc.instAddr());
@@ -157,9 +178,24 @@ Fetch::generateAPF(AlternatePathContext &path)
     auto &pred = prediction.prediction;
     const Addr blockEnd = pred.getFallThrough(dbpbtb->alternatePredictWidth());
     const auto initialSize = path.uops.size();
+    const unsigned decodeGrant = cpu->getDecode()->reserveAPFDecodeSlots(apfWidth);
+    apfStats->decodeDemand += apfWidth;
+    apfStats->decodeGranted += decodeGrant;
+    if (!decodeGrant) {
+        ++apfStats->decodeBlockedCycles;
+        ++path.cycles;
+        path.ready = cpu->clockEdge(apfFetchLatency);
+        if (path.cycles >= apfGenerationCycles) {
+            path.complete = true;
+            ++apfStats->stops[0];
+        }
+        return;
+    }
+    if (decodeGrant < apfWidth)
+        ++apfStats->decodePartialCycles;
     unsigned stop = 0;
     StaticInstPtr macro;
-    while (path.uops.size() - initialSize < apfWidth &&
+    while (path.uops.size() - initialSize < decodeGrant &&
            path.uops.size() < apfBufferUops &&
            path.pc.instAddr() < blockEnd) {
         auto pc = path.pc;

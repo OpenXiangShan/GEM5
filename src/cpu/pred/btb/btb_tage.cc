@@ -144,6 +144,7 @@ tageStats(this, p.numPredictors, p.numBanks)
         warn("BTBTAGE: Bank simulation works better with updateOnRead=true");
     }
 #endif
+    resourceBankBusy.assign(numBanks, false);
     if (numWays.size() == 1 && numPredictors > 1) {
         numWays.resize(numPredictors, numWays.front());
     }
@@ -285,7 +286,37 @@ void
 BTBTAGE::tick() {}
 
 void
-BTBTAGE::tickStart() {}
+BTBTAGE::tickStart()
+{
+    beginResourceCycle();
+}
+
+void
+BTBTAGE::beginResourceCycle()
+{
+    resourceBankBusy.assign(numBanks, false);
+}
+
+bool
+BTBTAGE::tryReserveShadowBank(Addr startAddr)
+{
+    const unsigned bank = getBankId(startAddr);
+    ++tageStats.shadowQueries;
+    if (resourceBankBusy[bank]) {
+        ++tageStats.shadowBankConflicts;
+        ++tageStats.shadowDeferredCycles;
+        tageStats.shadowBankConflictPerBank[bank]++;
+        return false;
+    }
+    resourceBankBusy[bank] = true;
+    return true;
+}
+
+void
+BTBTAGE::releaseShadowBank(Addr startAddr)
+{
+    resourceBankBusy[getBankId(startAddr)] = false;
+}
 
 /**
  * @brief Generate prediction for a single BTB entry by searching TAGE tables
@@ -499,6 +530,7 @@ BTBTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPr
     // Record prediction bank for next tick's conflict detection
     lastPredBankId = getBankId(startPC);
     predBankValid = true;
+    resourceBankBusy[lastPredBankId] = true;
 
     // Record prediction access per bank
     tageStats.predAccessPerBank[lastPredBankId]++;
@@ -1397,6 +1429,14 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateBankConflictPerBank, statistics::units::Count::get(), "bank conflicts per bank"),
     ADD_STAT(updateAccessPerBank, statistics::units::Count::get(), "update accesses per bank"),
     ADD_STAT(predAccessPerBank, statistics::units::Count::get(), "prediction accesses per bank"),
+    ADD_STAT(shadowQueries, statistics::units::Count::get(),
+        "APF shadow TAGE query attempts"),
+    ADD_STAT(shadowBankConflicts, statistics::units::Count::get(),
+        "APF shadow TAGE queries blocked by a bank conflict"),
+    ADD_STAT(shadowDeferredCycles, statistics::units::Cycle::get(),
+        "Cycles where APF shadow TAGE query was deferred"),
+    ADD_STAT(shadowBankConflictPerBank, statistics::units::Count::get(),
+        "APF shadow TAGE bank conflicts per bank"),
     ADD_STAT(resolveProviderTable, statistics::units::Count::get(),
         "resolved conditional branches grouped by provider table"),
     ADD_STAT(resolveAltTable, statistics::units::Count::get(),
@@ -1450,6 +1490,7 @@ BTBTAGE::TageStats::init(int predictors, int banks)
     updateBankConflictPerBank.init(numBanks);
     updateAccessPerBank.init(numBanks);
     predAccessPerBank.init(numBanks);
+    shadowBankConflictPerBank.init(numBanks);
 }
 
 // Update statistics based on TAGE prediction

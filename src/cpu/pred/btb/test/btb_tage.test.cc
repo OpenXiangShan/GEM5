@@ -1465,6 +1465,20 @@ TEST_F(BTBTAGETest, BankConflict) {
     }
 }
 
+TEST_F(BTBTAGETest, ShadowQueryBankReservation)
+{
+    BTBTAGE *bankTage = new BTBTAGE(4, 2, 1024, 4);
+    bankTage->beginResourceCycle();
+
+    // 0x100 and 0x108 map to the same bank; 0x102 maps to the next bank.
+    EXPECT_TRUE(bankTage->tryReserveShadowBank(0x100));
+    EXPECT_FALSE(bankTage->tryReserveShadowBank(0x108));
+    EXPECT_TRUE(bankTage->tryReserveShadowBank(0x102));
+
+    bankTage->releaseShadowBank(0x100);
+    EXPECT_TRUE(bankTage->tryReserveShadowBank(0x108));
+}
+
 class BTBTAGEUpperBoundTest : public ::testing::Test
 {
   protected:

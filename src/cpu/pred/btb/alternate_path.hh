@@ -19,6 +19,8 @@ struct AlternatePrediction
 {
     FetchTarget target;
     FullBTBPrediction prediction;
+    // The query could not acquire modeled frontend resources this cycle.
+    bool resourceBlocked = false;
 };
 
 // Installs query-local state only. Trained tables remain shared with the CPU.

@@ -137,6 +137,9 @@ class Decode
      */
     void tick();
 
+    /** Reserve remaining shared decode bandwidth for APF predecode. */
+    unsigned reserveAPFDecodeSlots(unsigned requested);
+
     /** Processes instructions from fetch and passes them on to rename.
      * Decoding of instructions actually happens when they are created in
      * fetch, so this function mostly checks if PC-relative branches are
@@ -270,6 +273,10 @@ class Decode
     unsigned numPreDispatchThreads;
     /** Aggregate Decode->Rename link capacity. */
     unsigned aggregateDecodeWidth;
+
+    // APF generation runs after Decode in the CPU tick and may claim only
+    // slots left by the normal decode stage for this cycle.
+    unsigned apfDecodeSlotsClaimed = 0;
 
     /** Index of instructions being sent to rename. */
     unsigned toRenameIndex;

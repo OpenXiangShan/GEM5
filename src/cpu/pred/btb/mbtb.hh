@@ -93,6 +93,13 @@ class MBTB : public TimedBaseBTBPredictor
     MBTB(const Params& p);
 #endif
 
+    // Per-cycle dual-SRAM read-port model used by primary and APF shadow
+    // lookups. Each half-aligned lookup reserves the SRAMs it touches.
+    void beginResourceCycle();
+    void reservePrimaryAccess(Addr startAddr);
+    bool tryReserveShadow(Addr startAddr);
+    void releaseShadow(Addr startAddr);
+
     /*
      * BTB Entry with timestamp for MRU replacement
      * Inherits from BTBEntry which contains:
@@ -424,6 +431,14 @@ class MBTB : public TimedBaseBTBPredictor
         return ((pc >> floorLog2(blockSize)) & 1);
     }
 
+    inline uint8_t lookupBankMask(Addr startAddr) const {
+        if (startAddr & 0x1)
+            return 0;
+        const Addr aligned = startAddr & ~(blockSize - 1);
+        return (1u << getSRAMId(aligned)) |
+               (1u << getSRAMId(aligned + blockSize));
+    }
+
 #ifdef UNIT_TEST
     uint64_t blockSize{32};  // max size in byte of a Fetch Block
 #endif
@@ -444,6 +459,7 @@ class MBTB : public TimedBaseBTBPredictor
 
     using Scalar = test_stats::Scalar;
     using Distribution = test_stats::Distribution;
+    using Vector = test_stats::Vector;
 
 #ifdef UNIT_TEST
 public:
@@ -501,12 +517,21 @@ public:
         // Victim cache statistics
         Scalar victimCacheHit;
 
+        Scalar primaryAccesses;
+        Scalar shadowQueries;
+        Scalar shadowBankConflicts;
+        Scalar shadowDeferredCycles;
+        Vector shadowBankConflictPerBank;
+
         Distribution predHitCount;
 #ifndef UNIT_TEST
         BTBStats(statistics::Group* parent, int numWays);
 #endif
         void init(int numWays);
     } btbStats;
+
+    // Bit i is set when SRAM i has a read-port reservation this cycle.
+    uint8_t resourceBanksBusy = 0;
 
 };
 

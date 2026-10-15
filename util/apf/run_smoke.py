@@ -170,6 +170,13 @@ def main():
                 f"{name} did not reach the end of the test: {log}"
             )
         stats = read_stats(out / name / "stats.txt")
+        config = json.loads((out / name / "config.json").read_text())
+        cpu = config["system"]["cpu"][0]
+        assert "h2p_buffer_entries" not in cpu["branchPred"], cpu["branchPred"]
+        assert (
+            "system.cpu.branchPred.h2pBuffer"
+            not in (out / name / "stats.txt").read_text()
+        )
         if name == "fence-empty":
             assert stats["started"] == stats["replayedUops"] == 0, stats
         elif enabled:
@@ -193,7 +200,9 @@ def main():
             if name == "default":
                 assert stats["crossPageReads"] > 0, stats
                 assert stats["compressedUops"] > 0, stats
-                assert stats["savedOccupancy::4"] > 0, stats
+                capacity = cpu["apfBufferEntries"]
+                assert stats[f"savedOccupancy::{capacity}"] > 0, stats
+                assert f"savedOccupancy::{capacity + 1}" not in stats, stats
                 assert stats["fullCycles"] > 0, stats
         else:
             assert not stats, stats

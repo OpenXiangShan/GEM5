@@ -142,6 +142,13 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     void tickStart() override;
 
+    // Per-cycle query resource model used by APF shadow queries.  This is
+    // separate from enableBankConflict, which models prediction/update
+    // conflicts and also changes the index/tag mapping.
+    void beginResourceCycle();
+    bool tryReserveShadowBank(Addr startAddr);
+    void releaseShadowBank(Addr startAddr);
+
     void tick() override;
     void dryRunCycle(Addr startAddr) override;
     // Make predictions for a stream of instructions and record in stage preds
@@ -433,6 +440,10 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Vector updateBankConflictPerBank;  // Conflicts per bank
         Vector updateAccessPerBank;        // Update accesses per bank
         Vector predAccessPerBank;          // Prediction accesses per bank
+        Scalar shadowQueries;
+        Scalar shadowBankConflicts;
+        Scalar shadowDeferredCycles;
+        Vector shadowBankConflictPerBank;
 
         Vector resolveProviderTable;
         Vector resolveAltTable;
@@ -470,6 +481,9 @@ class BTBTAGE : public TimedBaseBTBPredictor
     } ;
 
     TageStats tageStats;
+
+    // Banks occupied by primary and shadow queries in the current BPU cycle.
+    std::vector<bool> resourceBankBusy;
 
 #ifndef UNIT_TEST
     TraceManager *tageMissTrace;

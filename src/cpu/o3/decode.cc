@@ -628,6 +628,7 @@ Decode::checkSquash()
 void
 Decode::tick()
 {
+    apfDecodeSlotsClaimed = 0;
     toRename->fetchStallReason = fromFetch->fetchStallReason;
     wroteToTimeBuffer = false;
     toRenameIndex = 0;
@@ -803,6 +804,17 @@ Decode::tick()
 
         cpu->activityThisCycle();
     }
+}
+
+unsigned
+Decode::reserveAPFDecodeSlots(unsigned requested)
+{
+    const unsigned normalUsed = toRenameIndex;
+    const unsigned used = normalUsed + apfDecodeSlotsClaimed;
+    const unsigned available = used < decodeWidth ? decodeWidth - used : 0;
+    const unsigned granted = std::min(requested, available);
+    apfDecodeSlotsClaimed += granted;
+    return granted;
 }
 
 void

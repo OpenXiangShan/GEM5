@@ -60,6 +60,9 @@ struct APFStats : statistics::Group
     statistics::Scalar replayBlockedCycles, replayBlockedWithRecoveryCycles;
     statistics::Scalar activeCycles, sampledCycles;
     statistics::Scalar bufferOccupancy, bufferIdleCycles, predictorQueries;
+    statistics::Scalar predictorResourceBlocked;
+    statistics::Scalar decodeDemand, decodeGranted, decodeBlockedCycles;
+    statistics::Scalar decodePartialCycles;
     statistics::Scalar retiredPaths;
     statistics::Scalar generatedMicroops, crossPageReads, compressedUops;
     statistics::Vector stops, fallbacks, savedOccupancy;

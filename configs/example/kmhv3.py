@@ -120,7 +120,6 @@ def setKmhV3Params(args, system):
             cpu.branchPred.enable_h2p_table = args.enable_h2p_table
             cpu.branchPred.enable_h2p_weak_confidence = \
                 args.enable_h2p_weak_confidence
-            cpu.branchPred.h2p_buffer_entries = args.h2p_buffer_entries
 
             if args.btb_tage_upper_bound:
                 cpu.branchPred.tage = BTBTAGEUpperBound(
