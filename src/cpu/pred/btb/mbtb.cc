@@ -64,9 +64,10 @@ namespace test {
  */
 #ifdef UNIT_TEST
 // Test constructor for unit testing mode
-MBTB::MBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned numDelay)
+MBTB::MBTB(unsigned numEntries, unsigned tagBits, unsigned numWays,
+           unsigned numDelay, unsigned victimCacheSize)
     : TimedBaseBTBPredictor(),
-      victimCacheSize(8),
+      victimCacheSize(victimCacheSize),
       numEntries(numEntries),
       numWays(numWays),
       tagBits(tagBits)
@@ -95,9 +96,6 @@ MBTB::MBTB(const Params &p)
 
     if (!isPowerOf2(numEntries)) {
         fatal("BTB entries is not a power of 2!");
-    }
-    if (usesTidPartitionedStorage() && victimCacheSize != 0) {
-        fatal("tid-partitioned mBTB requires its shared victim cache to be disabled");
     }
 
     // Initialize dual SRAM BTB structure and MRU tracking
@@ -138,10 +136,13 @@ MBTB::MBTB(const Params &p)
     tagShiftAmt = idxShiftAmt + floorLog2(numSets);
 
     // Initialize victim cache
-    victimCache.resize(victimCacheSize);
-    for (auto& entry : victimCache) {
-        entry.valid = false;
-        entry.tick = 0;
+    victimCaches.resize(o3::MaxThreads);
+    for (auto &cache : victimCaches) {
+        cache.resize(victimCacheSize);
+        for (auto &entry : cache) {
+            entry.valid = false;
+            entry.tick = 0;
+        }
     }
 
     threadMeta.resize(o3::MaxThreads);
@@ -473,7 +474,7 @@ MBTB::lookup(Addr block_pc, ThreadID tid, uint8_t asidHash,
 
     // lookup victim cache if victim cache is enabled
     if (victimCacheSize > 0) {
-        auto victimResults = lookupVictimCache(block_pc, asidHash);
+        auto victimResults = lookupVictimCache(block_pc, tid, asidHash);
         if (!victimResults.empty()) {
             DPRINTF(BTB, "Victim cache hit for lookup at %#lx\n", block_pc);
             btbStats.victimCacheHit++;
@@ -509,7 +510,8 @@ MBTB::lookupNoSideEffect(Addr block_pc, ThreadID tid,
     res.insert(res.end(), nextBlockRes.begin(), nextBlockRes.end());
 
     if (victimCacheSize > 0) {
-        auto victimResults = lookupVictimCacheNoSideEffect(block_pc, asidHash);
+        auto victimResults =
+            lookupVictimCacheNoSideEffect(block_pc, tid, asidHash);
         res.insert(res.end(), victimResults.begin(), victimResults.end());
     }
 
@@ -583,9 +585,10 @@ MBTB::updateBTBEntry(
     // Look for matching entry in victim cache
     bool found_in_vc = false;
     int vc_idx = -1;
-    for (int i = 0; i < (int)victimCache.size(); i++) {
+    auto &victimCache = victimCaches[stream.tid];
+    for (unsigned i = 0; i < victimCache.size(); ++i) {
         auto &vc_entry = victimCache[i];
-        if (vc_entry.valid && vc_entry.pc == entry.pc) {    // pc is tag compared
+        if (vc_entry.valid && vc_entry.pc == entry.pc) {
             found_in_vc = true;
             vc_idx = i;
             break;
@@ -605,14 +608,16 @@ MBTB::updateBTBEntry(
 
     if (found) {
         // Update in-place in SRAM set
-        updateExistingInSRAMSet(btb_idx, target_mru[btb_idx], it, ticked_entry);
+        updateExistingInSRAMSet(
+            btb_idx, target_mru[btb_idx], it, ticked_entry, stream.tid);
     } else if (found_in_vc) {
         // In-place update in victim cache to avoid ping-ponging between MBTB and VC
-        commitToVictimCache(vc_idx, ticked_entry);
+        commitToVictimCache(vc_idx, ticked_entry, stream.tid);
         return;
     } else {
         // Not found anywhere, replace oldest in SRAM set
-        replaceOldestInSRAMSet(sram_id, btb_idx, target_mru[btb_idx], ticked_entry);
+        replaceOldestInSRAMSet(
+            sram_id, btb_idx, target_mru[btb_idx], ticked_entry, stream.tid);
     }
 }
 
@@ -648,7 +653,8 @@ void
 MBTB::updateExistingInSRAMSet(Addr btb_idx,
                               BTBHeap &heap,
                               BTBSetIter it_found,
-                              const TickedBTBEntry &ticked_entry)
+                              const TickedBTBEntry &ticked_entry,
+                              ThreadID tid)
 {
     if (it_found->target != ticked_entry.target) {
         btbStats.updateFixTarget++;
@@ -667,7 +673,7 @@ MBTB::updateExistingInSRAMSet(Addr btb_idx,
     std::make_heap(heap.begin(), heap.end(), older());
 
     // Ensure single source of truth: remove duplicate from victim cache if any
-    if (eraseFromVictimCacheByPC(ticked_entry.pc)) {
+    if (eraseFromVictimCacheByPC(ticked_entry.pc, tid)) {
         DPRINTF(BTB, "BTB: removed duplicate from VC after SRAM update, pc %#lx\n", ticked_entry.pc);
     }
 }
@@ -676,7 +682,8 @@ void
 MBTB::replaceOldestInSRAMSet(int sram_id,
                              Addr btb_idx,
                              BTBHeap &heap,
-                             const TickedBTBEntry &ticked_entry)
+                             const TickedBTBEntry &ticked_entry,
+                             ThreadID tid)
 {
     // Replace oldest entry in the set
     DPRINTF(BTB, "trying to replace entry in SRAM%d set %#lx\n", sram_id, btb_idx);
@@ -697,7 +704,7 @@ MBTB::replaceOldestInSRAMSet(int sram_id,
         btbStats.updateReplaceValidOne++;
 
         // Insert evicted entry into victim cache
-        insertVictimCache(*entry_in_btb_now);
+        insertVictimCache(*entry_in_btb_now, tid);
     }
     btbStats.updateReplace++;
     DPRINTF(BTB, "BTB: Replacing entry with tag %#lx, pc %#lx in set %#lx\n",
@@ -714,14 +721,16 @@ MBTB::replaceOldestInSRAMSet(int sram_id,
     std::make_heap(heap.begin(), heap.end(), older());
 
     // Ensure single source of truth: remove duplicate from victim cache if any
-    if (eraseFromVictimCacheByPC(ticked_entry.pc)) {
+    if (eraseFromVictimCacheByPC(ticked_entry.pc, tid)) {
         DPRINTF(BTB, "BTB: removed duplicate from VC after SRAM replace, pc %#lx\n", ticked_entry.pc);
     }
 }
 
 void
-MBTB::commitToVictimCache(int vc_idx, const TickedBTBEntry &ticked_entry)
+MBTB::commitToVictimCache(int vc_idx, const TickedBTBEntry &ticked_entry,
+                         ThreadID tid)
 {
+    auto &victimCache = victimCaches[tid];
     if (vc_idx >= 0 && (size_t)vc_idx < victimCache.size()) {
         victimCache[vc_idx] = ticked_entry;
         victimCache[vc_idx].valid = true;
@@ -776,13 +785,13 @@ MBTB::update(
  * Victim cache operations implementation
  */
 std::vector<MBTB::TickedBTBEntry>
-MBTB::lookupVictimCache(Addr block_pc, uint8_t asidHash)
+MBTB::lookupVictimCache(Addr block_pc, ThreadID tid, uint8_t asidHash)
 {
     std::vector<TickedBTBEntry> results;
     Addr alignedPC = block_pc & ~(blockSize - 1);
 
     // Check both 32B blocks for half-aligned lookup
-    for (auto &entry : victimCache) {
+    for (auto &entry : victimCaches[tid]) {
         if (!entry.valid) continue;
 
         Addr entryAlignedPC = entry.pc & ~(blockSize - 1);
@@ -802,12 +811,13 @@ MBTB::lookupVictimCache(Addr block_pc, uint8_t asidHash)
 }
 
 std::vector<MBTB::TickedBTBEntry>
-MBTB::lookupVictimCacheNoSideEffect(Addr block_pc, uint8_t asidHash) const
+MBTB::lookupVictimCacheNoSideEffect(Addr block_pc, ThreadID tid,
+                                   uint8_t asidHash) const
 {
     std::vector<TickedBTBEntry> results;
     Addr alignedPC = block_pc & ~(blockSize - 1);
 
-    for (const auto &entry : victimCache) {
+    for (const auto &entry : victimCaches[tid]) {
         if (!entry.valid) {
             continue;
         }
@@ -826,10 +836,10 @@ MBTB::lookupVictimCacheNoSideEffect(Addr block_pc, uint8_t asidHash) const
 
 
 bool
-MBTB::eraseFromVictimCacheByPC(Addr pc)
+MBTB::eraseFromVictimCacheByPC(Addr pc, ThreadID tid)
 {
     bool erased = false;
-    for (auto &entry : victimCache) {
+    for (auto &entry : victimCaches[tid]) {
         if (entry.valid && entry.pc == pc) {
             entry.valid = false;
             erased = true;
@@ -840,9 +850,11 @@ MBTB::eraseFromVictimCacheByPC(Addr pc)
 }
 
 void
-MBTB::insertVictimCache(const TickedBTBEntry& evicted_entry)
+MBTB::insertVictimCache(const TickedBTBEntry& evicted_entry, ThreadID tid)
 {
     if (victimCacheSize == 0) return;
+
+    auto &victimCache = victimCaches[tid];
 
     // 1) If same PC exists, update and refresh tick
     for (auto &entry : victimCache) {
