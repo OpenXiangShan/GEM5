@@ -90,6 +90,14 @@ tlbKeyComparableVaddr(Addr vaddr)
 }
 
 static Addr
+pageFaultVaddr(const RequestPtr &req, Addr vaddr)
+{
+    // A fetch request may translate bytes from the following page.  Keep the
+    // page fault associated with the instruction that initiated the fetch.
+    return req->isInstFetch() ? req->getPC() : vaddr;
+}
+
+static Addr
 tlbKeyComparablePageBase(Addr vaddr, unsigned log_bytes)
 {
     const Addr normalized_vaddr = tlbKeyComparableVaddr(vaddr);
@@ -1746,14 +1754,6 @@ Fault
 TLB::L2TLBPagefault(Addr vaddr, BaseMMU::Mode mode, const RequestPtr &req, bool isPre, bool is_back_pre)
 {
     if (req->isInstFetch()) {
-        Addr page_l2_start = (vaddr >> 12) << 12;
-        DPRINTF(TLBVerbosel2, "vaddr %#x,req_pc %#x,page_l2_start %#x\n",
-                vaddr, req->getPC(), page_l2_start);
-        if (req->getPC() < page_l2_start) {
-            DPRINTF(TLBVerbosel2, "vaddr %#x,req_pc %#x,page_l2_start %#x\n",
-                    vaddr, req->getPC(), page_l2_start);
-            return createPagefault(page_l2_start, 0, mode, false);
-        }
         return createPagefault(req->getPC(), 0, mode, false);
     } else {
         DPRINTF(TLBVerbosel2, "vaddr 2 %#x,req_pc %#x,get vaddr %#x\n", vaddr, req->getPC(), req->getVaddr());
@@ -1786,7 +1786,9 @@ TLB::L2TLBCheck(PTE pte, int level, STATUS status, PrivilegeMode pmode, Addr vad
     } else {
         if (pte.r || pte.x) {
             hitInSp = true;
-            fault = checkPermissions(status, pmode, vaddr, mode, pte, 0, false);
+            fault = checkPermissions(status, pmode,
+                                     pageFaultVaddr(req, vaddr), mode, pte,
+                                     0, false);
             if (fault == NoFault) {
                 if (level >= L2L1CheckLevel && pte.ppn0 != 0) {
                     fault = L2TLBPagefault(vaddr, mode, req, isPre, is_back_pre);
@@ -1948,6 +1950,7 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
     SATP vsatp = tc->readMiscReg(MISCREG_VSATP);
     HGATP hgatp = tc->readMiscReg(MISCREG_HGATP);
     Addr vaddr = VADDR_SEXT(hgatp.mode, req->getVaddr());
+    const Addr fault_vaddr = pageFaultVaddr(req, vaddr);
     STATUS status = tc->readMiscReg(MISCREG_STATUS);
     STATUS vstatus = tc->readMiscReg(MISCREG_VSSTATUS);
     Fault fault = NoFault;
@@ -1978,18 +1981,21 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
         assert(hgatp.vmid == e[0]->vmid);
         if (vsatp.mode != 0) {
             if ((mode == BaseMMU::Write && !e[0]->pteVS.d) || (!e[0]->pteVS.a))
-                fault = createPagefault(vaddr, 0, mode, false);
+                fault = createPagefault(fault_vaddr, 0, mode, false);
             if (fault != NoFault) {
                 return std::make_pair(hit_type, fault);
             }
-            fault = checkPermissions(vstatus, pmode, vaddr, mode, e[0]->pteVS, 0, false);
+            fault = checkPermissions(vstatus, pmode, fault_vaddr, mode,
+                                     e[0]->pteVS, 0, false);
             if (fault != NoFault) {
                 return std::make_pair(hit_type, fault);
             }
         }
         Addr fault_gpaddr = ((e[0]->gpaddr >> 12) << 12) | (vaddr & 0xfff);
 
-        std::pair(continuePtw,fault) = checkGPermissions(status,vaddr,fault_gpaddr,mode,e[0]->pte,req->get_h_inst());
+        std::pair(continuePtw,fault) = checkGPermissions(
+            status, fault_vaddr, fault_gpaddr, mode, e[0]->pte,
+            req->get_h_inst());
         if (fault != NoFault) {
             return std::make_pair(hit_type, fault);
         }
@@ -2022,11 +2028,12 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
             }
             gPaddr = gPaddr | (vaddr & PGMASK);
             if (mode == BaseMMU::Write && !e[0]->pte.d) {
-                fault = createPagefault(vaddr, 0, mode, false);
+                fault = createPagefault(fault_vaddr, 0, mode, false);
                 //return fault;
                 return std::make_pair(hit_type,fault);
             } else {
-                fault = checkPermissions(vstatus, pmode, vaddr, mode, e[0]->pte, 0, false);
+                fault = checkPermissions(vstatus, pmode, fault_vaddr, mode,
+                                         e[0]->pte, 0, false);
                 if (fault != NoFault) {
                     return std::make_pair(hit_type, fault);
                 }
@@ -2043,7 +2050,8 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                 hit_type = h_l1GstageHit;
                 DPRINTF(TLB, "l1tlb hit in Gstage: level %d, ppn %#x\n", e[0]->level, e[0]->pte.ppn);
                 std::pair(continuePtw, fault) =
-                    checkGPermissions(status, vaddr, gPaddr, mode, e[0]->pte, req->get_h_inst());
+                    checkGPermissions(status, fault_vaddr, gPaddr, mode,
+                                      e[0]->pte, req->get_h_inst());
                 if (e[0]->level >0){
                     pg_mask = (1ULL << (12 + 9 * e[0]->level)) - 1;
                     pgBase = ((e[0]->pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
@@ -2083,6 +2091,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
     SATP vsatp = tc->readMiscReg(MISCREG_VSATP);
     HGATP hgatp = tc->readMiscReg(MISCREG_HGATP);
     Addr vaddr = VADDR_SEXT(hgatp.mode, req->getVaddr());
+    const Addr fault_vaddr = pageFaultVaddr(req, vaddr);
     STATUS status = tc->readMiscReg(MISCREG_STATUS);
     STATUS vstatus = tc->readMiscReg(MISCREG_VSSTATUS);
     Fault fault = NoFault;
@@ -2134,7 +2143,8 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
             e_l2tlbGstage = e[0];
             gPaddr = req->getgPaddr();
             std::pair<bool, Fault> result =
-                checkGPermissions(status, vaddr, gPaddr, mode, e[0]->pte, req->get_h_inst());
+                checkGPermissions(status, fault_vaddr, gPaddr, mode,
+                                  e[0]->pte, req->get_h_inst());
             continuePtw = result.first;
             fault = result.second;
             DPRINTF(TLB, "l2tlb hit in Gstage: "
@@ -2250,7 +2260,9 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                     e_l2tlbGstage = e[0];
                     twoStageLevel = e[0]->level;
                     req->setgPaddr(gPaddr);
-                    auto check_res = checkGPermissions(status, vaddr, gPaddr, mode, e[0]->pte, req->get_h_inst());
+                    auto check_res = checkGPermissions(
+                        status, fault_vaddr, gPaddr, mode, e[0]->pte,
+                        req->get_h_inst());
                     continuePtw = check_res.first;
                     fault = check_res.second;
                     DPRINTF(TLB, "found pte for gPaddr: %#x in Gstage -> "
@@ -2301,7 +2313,8 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                     req->setgPaddr(gPaddr);
                     if ((gPaddr & ~H_VADDR_MASK(vsatp.mode)) != 0) {
                         // this is a excep
-                        fault = createPagefault(vaddr, gPaddr, mode, false);
+                        fault = createPagefault(fault_vaddr, gPaddr, mode,
+                                                false);
                         return std::make_pair(hit_type, fault);
                     }
                     return std::make_pair(hit_type, NoFault);
@@ -2365,7 +2378,8 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
             req->setVsatp0Mode(true);
             req->setTwoStageState(true, virt, two_stage_pmode);
             if ((vaddr & ~H_VADDR_MASK(hgatp.mode)) != 0 ){
-                return createPagefault(vaddr,vaddr,mode,true);
+                return createPagefault(pageFaultVaddr(req, vaddr), vaddr,
+                                       mode, true);
             }
         } else {
             req->setVsatp0Mode(false);
@@ -2716,7 +2730,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
         DPRINTF(TLB, "final checkpermission\n");
         DPRINTF(TLB, "translate(vpn=%#x, asid=%#x): %#x pc %#x mode %i pte.d %d\n", vaddr, satp.asid, paddr,
                 req->getPC(), mode, e[0]->pte.d);
-        fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pte, 0, false);
+        fault = checkPermissions(status, pmode, pageFaultVaddr(req, vaddr),
+                                 mode, e[0]->pte, 0, false);
     }
 
 

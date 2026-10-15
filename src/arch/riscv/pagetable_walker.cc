@@ -2544,15 +2544,7 @@ Walker::WalkerState::pageFaultOnRequestor(RequestorState &r, bool G)
         gpaddr = ((mainReq->getgPaddr() >> 12) << 12) | (vaddr & 0xfff);
     }
     if (r.req->isInstFetch()) {
-        if (r.req->getPC() < page_start) {
-            // expected: instruction crosses the page boundary
-            if (!r.req->getPC() + 4 >= entry.vaddr) {
-                warn("Unexepected fetch page fault: PC: %#x, Page: %#x\n", r.req->getPC(), entry.vaddr);
-            }
-            return walker->tlb->createPagefault(page_start, gpaddr, mode, G);
-        } else {
-            return walker->tlb->createPagefault(r.req->getPC(), gpaddr, mode, G);
-        }
+        return walker->tlb->createPagefault(r.req->getPC(), gpaddr, mode, G);
     } else {
         return walker->tlb->createPagefault(r.req->getVaddr(), gpaddr, mode, G);
     }
