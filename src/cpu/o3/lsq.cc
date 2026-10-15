@@ -1636,10 +1636,10 @@ LSQ::storeBufferWriteback()
             entry->request = new SbufferRequest(cpu, &owner_unit,
                                                 entry->blockPaddr,
                                                 entry->blockDatas.data());
+            entry->request->sbuffer_entry = entry;
             entry->request->addReq(entry->blockVaddr, entry->blockPaddr,
                                    entry->validMask);
             entry->request->buildPackets();
-            entry->request->sbuffer_entry = entry;
             bool success = entry->request->sendPacketToCache();
             if (!success) {
                 setBlockedStoreBufferEntry(
@@ -3432,10 +3432,12 @@ LSQ::SbufferRequest::~SbufferRequest() {
 void
 LSQ::SbufferRequest::addReq(Addr blockVaddr, Addr blockPaddr, const std::vector<bool> byteEnable)
 {
+    assert(sbuffer_entry);
     auto req = std::make_shared<Request>(
         blockPaddr, _port.cacheLineSize(), Request::Flags(),
         cpu->dataRequestorId());
     req->setContext(cpu->getContext(_port.lsqID)->contextId());
+    req->setReqInstSeqNum(sbuffer_entry->seqNum);
     req->setByteEnable(byteEnable);
 
     _reqs.push_back(req);
