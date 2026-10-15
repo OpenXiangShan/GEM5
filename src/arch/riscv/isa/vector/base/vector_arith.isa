@@ -1513,6 +1513,12 @@ def VectorSlideBase(name, Name, category, code, flags, macro_construtor,
     dest_reg_id = "RegId(VecRegClass, vmi.microVd)"
     src2_reg_id = "RegId(VecRegClass, vmi.microVs2)"
     src3_reg_id = "RegId(VecRegClass, vmi.microVs2 + 1)"
+    if inst_name in ["vslide1up", "vfslide1up"]:
+        # microVs2 names the previous source register for the front segment.
+        # The first micro-op has no previous register, so its back segment
+        # starts at the architectural vs2 instead of microVs2 + 1.
+        src3_reg_id = "RegId(VecRegClass, " \
+            "vmi.rs == 0 ? _machInst.vs2 : vmi.microVs2 + 1)"
 
     src1_ireg_id = "RegId(IntRegClass, _machInst.rs1)"
     src1_freg_id = "RegId(FloatRegClass, _machInst.rs1)"
