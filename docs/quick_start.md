@@ -2,16 +2,33 @@
 
 ## 安装环境
 
-### Ubuntu 24.04 依赖安装
+### Ubuntu 22.04 / 24.04 依赖安装
 
 ```bash
 sudo apt update
-sudo apt install build-essential git m4 scons zlib1g zlib1g-dev \
+sudo apt install build-essential git m4 scons cmake zlib1g zlib1g-dev \
     libprotobuf-dev protobuf-compiler libprotoc-dev libgoogle-perftools-dev \
     python3-dev libboost-all-dev pkg-config libsqlite3-dev zstd libzstd-dev
 ```
 
-**Note:** 目前建议在 Ubuntu 24.04 上编译和运行。默认的系统 Python 3.12 可以正常使用，不需要额外安装 miniconda 或降级到旧版本 Python。
+建议使用 Ubuntu 24.04（系统 Python 3.12）或 22.04（系统 Python 3.10）。
+Ubuntu 20.04 属于旧环境，应选择 GCC/G++ 10 或更新工具链；当前主线没有对
+20.04 做逐版本 CI 验证。完整说明见 [README 的构建环境](../README.md#basic-build-environment)。
+
+### macOS
+
+安装 Xcode Command Line Tools 和 Homebrew 后：
+
+```bash
+brew install scons python pkg-config zstd boost cmake
+```
+
+DRAMSim3 构建见 [README 的通用步骤](../README.md#clone-and-build-dramsim3)。
+macOS 使用 Apple Clang，编译时不要加 `--gold-linker`；例如：
+
+```bash
+CC=clang CXX=clang++ scons build/RISCV/gem5.opt -j3
+```
 
 ## 克隆与构建
 
@@ -23,14 +40,41 @@ cd GEM5
 
 2. 安装DRAMSim3：
 ```bash
-bash ./init.sh  # 克隆并构建DRAMSim3，只需要执行一次，后续构建GEM5时不需要重复执行
+git clone https://github.com/umd-memsys/DRAMsim3.git ext/dramsim3/DRAMsim3
+cmake -S ext/dramsim3/DRAMsim3 -B ext/dramsim3/DRAMsim3/build \
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+cmake --build ext/dramsim3/DRAMsim3/build --target dramsim3 -j3
 ```
 
 3. 构建GEM5：
 ```bash
-scons build/RISCV/gem5.opt --gold-linker -j$(nproc) # 用gold-linker链接，可以加快编译速度
+scons build/RISCV/gem5.opt -j3
 export GEM5_HOME=$(pwd)
 ```
+
+Linux 可额外加 `--gold-linker` 加快链接；macOS 使用原生 Apple linker。
+按主机内存和 CPU 数量调整 `-j3`。
+
+### 启动 Linux 演示（无需 Difftest）
+
+完成构建后，可在 macOS 或 Linux 上运行同一个 raw image：
+
+```bash
+mkdir -p ready-to-run
+curl -fL --retry 3 -o ready-to-run/linux.bin \
+    https://raw.githubusercontent.com/OpenXiangShan/ready-to-run/af4f593700ed3b871e722d501d360ec55f412b3d/linux.bin
+./build/RISCV/gem5.opt -r -d m5out/linux-demo \
+    configs/example/kmhv3.py \
+    --raw-cpt --generic-rv-cpt=ready-to-run/linux.bin \
+    --disable-difftest
+tail -n 100 m5out/linux-demo/simout
+```
+
+正常结果包括 `Hello, XiangShan!` 和 `m5_exit instruction encountered`。
+此流程会启动 guest Linux 内核，无需 `GCBV_REF_SO`、`NEMU_HOME`、`AM_HOME`
+或 restorer；`--disable-difftest` 直接关闭对照检查，无需修改配置文件。
+保持输入文件名为 `linux.bin`，`kmhv3.py` 会根据这个名称自动配置 Linux DTB。
+普通 GCPT 切片不应加 `--raw-cpt`。
 
 ## 运行 Linux 用户态 ELF（SE模式）
 
@@ -290,5 +334,5 @@ git apply ext/xs_env/clang-warning-suppress.patch
 ## 参考文档
 
 - 官方GEM5文档：[GEM5官方文档](https://www.gem5.org/documentation/)
-- OpenXiangShan GEM5项目：[https://github.com/OpenXiangShan/GEM5](https://github.com/OpenXiangShan/GEM5) 
+- OpenXiangShan GEM5项目：[https://github.com/OpenXiangShan/GEM5](https://github.com/OpenXiangShan/GEM5)
 - 参考[https://github.com/shinezyy/micro-arch-training](https://github.com/shinezyy/micro-arch-training)有一些练手项目

@@ -515,6 +515,17 @@ void
 BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                                Tick forward_time, Tick request_time)
 {
+    // Set cache access depth using max-based approach (more robust than increment)
+    // depth = max(current_depth, cache_level)
+    // L1 miss -> depth = max(depth, 1)
+    // L2 miss -> depth = max(depth, 2)
+    // L3 miss -> depth = max(depth, 3)
+    int currentDepth = pkt->cacheAccessDepth;
+    int newDepth = std::max(currentDepth, (int)cacheLevel);
+    pkt->cacheAccessDepth = newDepth;
+    DPRINTF(Cache, "Cache %s: setting depth %d -> %d for addr %#lx\n",
+            name(), currentDepth, newDepth, pkt->getAddr());
+
     if (writeAllocator &&
         pkt && pkt->isWrite() && !pkt->req->isUncacheable()) {
         writeAllocator->updateMode(pkt->getAddr(), pkt->getSize(),
@@ -696,6 +707,10 @@ BaseCache::calReqInterval(PacketPtr pkt)
 void
 BaseCache::recvTimingReq(PacketPtr pkt)
 {
+    DPRINTF(Cache, "%s (level %d): recvTimingReq, depth=%d, req=%p, addr=%#lx\n",
+            name(), cacheLevel, pkt->req ? pkt->req->getAccessDepth() : -1,
+            pkt->req, pkt->getAddr());
+
     registerDcacheMainPipeLSQ(pkt->getLSQPtr());
 
     calReqInterval(pkt);

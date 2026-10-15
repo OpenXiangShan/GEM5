@@ -381,6 +381,9 @@ class ROB
     InstIt squashIt[MaxThreads];
 
   public:
+    /** Returns the max instructions per ROB group. */
+    unsigned getInstsPerGroup() const { return instsPerGroup; }
+
     /** Number of instructions in the ROB. */
     int numInstsInROB;
 

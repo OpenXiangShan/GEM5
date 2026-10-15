@@ -657,6 +657,7 @@ class IEW
         /** Distribution of number of dispatch stall reasons each tick. */
 
         statistics::Vector dispatchStallReason;
+        statistics::Distribution cacheAccessDepthDist;
     } iewStats;
 
     /** The width that can be dispatched to the scheduler per cycle. */
@@ -687,6 +688,8 @@ class IEW
     StallReason checkLsqStall(ThreadID tid, bool isLoad) {
       return checkLSQStall(tid, isLoad);
     }
+
+    StallReason checkingLoadStoreInst(DynInstPtr inst);
 
     /** Sends commit proper information for a squash due to a long-latency
      * load detected by the fetch stage's flush policy.
