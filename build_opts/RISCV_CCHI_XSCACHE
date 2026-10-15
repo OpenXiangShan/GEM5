@@ -1,0 +1,14 @@
+TARGET_ISA = 'riscv'
+PROTOCOL = 'MI_example'
+
+# CCHI (CHIron Cohestra) integration enabled in this variant.
+WITH_CCHI = True
+
+# Verilator-based downstream RTL endpoints (Phase 3).
+WITH_CCHI_RTL = True
+
+# Downstream endpoint: XSCache TestTop_L2OpenLLC (Oceanus L2 + OpenLLC +
+# OpenNCB -> AXI4). The XSCache checkout path is deliberately NOT recorded
+# here: pass CCHI_XSCACHE_DIR=<path-to-XSCache> on the scons command line
+# (sticky per build dir) or export XSCACHE_DIR.
+CCHI_RTL_TOP = 'TestTop_L2OpenLLC'
