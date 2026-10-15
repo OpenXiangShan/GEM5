@@ -488,6 +488,21 @@ def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
             prefetcher.lldp.training_cpu = (
                 options._lldp_training_cpu if options.l1d_enable_lldp else NULL)
 
+    # Disable every XS composite component for the no-prefetch experiment.
+    # Keep this after profile and command-line handling so no option can
+    # re-enable an individual component.
+    prefetcher.enable_activepage = False
+    prefetcher.enable_pht = False
+    prefetcher.enable_berti = False
+    prefetcher.enable_bop = False
+    prefetcher.enable_temporal = False
+    prefetcher.enable_sstride = False
+    prefetcher.enable_xsstream = False
+    prefetcher.enable_opt = False
+    prefetcher.enable_spp = False
+    prefetcher.enable_cplx = False
+    prefetcher.enable_lldp = False
+
     _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled)
 
 def _configure_l2_composite_default(prefetcher):
@@ -547,6 +562,14 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
 
     if hasattr(options, 'l2_enable_lldp') and hasattr(prefetcher, 'enable_lldp'):
         prefetcher.enable_lldp = options.l2_enable_lldp
+
+    # Disable every L2 composite component for the no-prefetch experiment.
+    # This applies to both the aligned L2 wrapper and classic L2 paths.
+    prefetcher.enable_bop = False
+    prefetcher.enable_cdp = False
+    prefetcher.enable_cmc = False
+    prefetcher.enable_despacito_stream = False
+    prefetcher.enable_lldp = False
 
 def _configure_l2_prefetcher(prefetcher, prefetcher_name, options,
                              pf_buffer_enabled):

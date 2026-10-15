@@ -209,8 +209,14 @@ if __name__ == '__m5_main__':
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3
     args.bp_type = 'DecoupledBPUWithBTB'
-    args.l2_size = '2MB'
-    args.l3_size = '32MB'
+    # Keep the historical defaults while allowing CI parameter sweeps to
+    # override cache capacities explicitly.
+    if not any(arg == '--l2_size' or arg.startswith('--l2_size=')
+               for arg in sys.argv[1:]):
+        args.l2_size = '2MB'
+    if not any(arg == '--l3_size' or arg.startswith('--l3_size=')
+               for arg in sys.argv[1:]):
+        args.l3_size = '32MB'
     args.kmh_align = True   # align prefetcher in RTL, spec06 decrease 1 score
     args.cdp_use_dynamic_degree = False
     args.cdp_accuracy_threshold = 0.05

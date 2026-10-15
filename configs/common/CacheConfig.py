@@ -289,6 +289,13 @@ def config_classic_l2(options, system, l2_cache_class):
     # same clock as the CPUs.
     system.l2_caches = [l2_cache_class(clk_domain=system.cpu_clk_domain,
                                     **_get_cache_opts(system.cpu[i], 'l2', options)) for i in range(options.num_cpus)]
+    total_l2_mshrs = getattr(options, 'l2_mshrs', None)
+    if total_l2_mshrs is not None:
+        total_l2_mshrs = int(total_l2_mshrs)
+        if total_l2_mshrs <= 0:
+            raise ValueError("--l2_mshrs must be > 0")
+        for l2_cache in system.l2_caches:
+            l2_cache.mshrs = total_l2_mshrs
     system.tol2bus_list = [L1ToL2Bus(
             clk_domain=system.cpu_clk_domain) for i in range(options.num_cpus)]
     for i in range(options.num_cpus):
@@ -320,6 +327,18 @@ def config_aligned_l2(options, system, l2_cache_class):
     # are not connected using addTwoLevelCacheHierarchy. Use the
     # same clock as the CPUs.
     num_l2_slices = options.l2_slices
+    total_l2_mshrs = getattr(options, 'l2_mshrs', None)
+    if total_l2_mshrs is None:
+        total_l2_mshrs = int(L2Cache.mshrs)
+    else:
+        total_l2_mshrs = int(total_l2_mshrs)
+        if total_l2_mshrs <= 0:
+            raise ValueError("--l2_mshrs must be > 0")
+    if total_l2_mshrs % num_l2_slices != 0:
+        raise ValueError(
+            "L2 MSHRs cannot be evenly split across slices: "
+            f"total={total_l2_mshrs}, slices={num_l2_slices}."
+        )
     # Create the L2 cache system for each CPU core, which includes a
     # wrapper, an internal crossbar, and multiple slices.
     system.l2_wrappers = [L2CacheWrapper(clk_domain=system.cpu_clk_domain,
@@ -361,6 +380,7 @@ def config_aligned_l2(options, system, l2_cache_class):
             # Apply original per-L2-cache configurations to each slice's inner cache
             cache_slice = l2_wrapper.slices[j]
             inner_cache = cache_slice.inner_cache
+            inner_cache.mshrs = total_l2_mshrs
             # real cache size is divided by number of slices
             inner_cache.size = inner_cache.size / num_l2_slices
             inner_cache.tags.indexing_policy.num_slices = num_l2_slices
