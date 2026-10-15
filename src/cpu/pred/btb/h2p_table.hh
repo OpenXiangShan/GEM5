@@ -13,8 +13,8 @@ namespace gem5::branch_prediction::btb_pred
 class H2PTable
 {
   public:
-    // Group branches into 64-byte H2P lines for the alignment experiment.
-    static constexpr unsigned LineBytes = 64;
+    // Match the 32-byte alignment used by the fetch block experiment.
+    static constexpr unsigned LineBytes = 32;
     static constexpr unsigned Ways = 2;
     static constexpr unsigned BranchesPerLine = 2;
     static constexpr unsigned CounterMax = 7;

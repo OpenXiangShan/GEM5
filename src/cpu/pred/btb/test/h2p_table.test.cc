@@ -59,12 +59,11 @@ TEST(H2PTableTest, TwoBranchesShareLine)
     EXPECT_TRUE(table.lookup(second).h2p);
 }
 
-TEST(H2PTableTest, BranchesAcross32ByteBoundaryShare64ByteLine)
+TEST(H2PTableTest, BranchesAcrossLineBoundaryRemainDistinct)
 {
-    static_assert(H2PTable::LineBytes == 64);
     H2PTable table(128);
-    const Addr first = 0x101c;
-    const Addr second = 0x1020;
+    const Addr first = 0x1000 + H2PTable::LineBytes - 4;
+    const Addr second = first + 4;
     EXPECT_TRUE(table.trainMispred(first).allocated);
     EXPECT_TRUE(table.trainMispred(second).allocated);
     EXPECT_TRUE(table.lookup(first).hit);
