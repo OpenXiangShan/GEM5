@@ -85,7 +85,8 @@ class MBTB : public TimedBaseBTBPredictor
 
 #ifdef UNIT_TEST
     // Test constructor  
-    MBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned numDelay);
+    MBTB(unsigned numEntries, unsigned tagBits, unsigned numWays,
+         unsigned numDelay, unsigned victimCacheSize = 8);
 #else
     // Production constructor
     typedef MBTBParams Params;
@@ -305,16 +306,19 @@ class MBTB : public TimedBaseBTBPredictor
     void updateExistingInSRAMSet(Addr btb_idx,
                                  BTBHeap &heap,
                                  BTBSetIter it_found,
-                                 const TickedBTBEntry &ticked_entry);
+                                 const TickedBTBEntry &ticked_entry,
+                                 ThreadID tid);
 
     // Helper: replace the oldest entry in SRAM set
     void replaceOldestInSRAMSet(int sram_id,
                                 Addr btb_idx,
                                 BTBHeap &heap,
-                                const TickedBTBEntry &ticked_entry);
+                                const TickedBTBEntry &ticked_entry,
+                                ThreadID tid);
 
     // Helper: commit/update an entry in victim cache at given index
-    void commitToVictimCache(int vc_idx, const TickedBTBEntry &ticked_entry);
+    void commitToVictimCache(int vc_idx, const TickedBTBEntry &ticked_entry,
+                            ThreadID tid);
 
     /*
      * Comparator for MRU heap
@@ -367,13 +371,14 @@ class MBTB : public TimedBaseBTBPredictor
                                                   uint8_t asidHash);
 
     /** Victim cache operations */
-    std::vector<TickedBTBEntry> lookupVictimCache(Addr block_pc, uint8_t asidHash);
+    std::vector<TickedBTBEntry> lookupVictimCache(
+        Addr block_pc, ThreadID tid, uint8_t asidHash);
     std::vector<TickedBTBEntry> lookupSingleBlockNoSideEffect(
         Addr block_pc, ThreadID tid, uint8_t asidHash) const;
     std::vector<TickedBTBEntry> lookupVictimCacheNoSideEffect(
-        Addr block_pc, uint8_t asidHash) const;
-    void insertVictimCache(const TickedBTBEntry& evicted_entry);
-    bool eraseFromVictimCacheByPC(Addr pc);
+        Addr block_pc, ThreadID tid, uint8_t asidHash) const;
+    void insertVictimCache(const TickedBTBEntry& evicted_entry, ThreadID tid);
+    bool eraseFromVictimCacheByPC(Addr pc, ThreadID tid);
 
     /** Dual SRAM BTB structure:
      *  - Two independent 4-way SRAMs (sram0 and sram1)
@@ -394,8 +399,9 @@ class MBTB : public TimedBaseBTBPredictor
      *  - Small fully-associative cache for recently evicted entries
      *  - Reduces conflict misses from SRAM capacity limitations
      *  - Uses LRU replacement policy (based on tick)
+     *  - Each thread has its own cache and independent replacement state
      */
-    std::vector<TickedBTBEntry> victimCache;
+    std::vector<BTBSet> victimCaches;
     unsigned victimCacheSize;
 
     /** BTB configuration parameters */
