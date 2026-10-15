@@ -63,6 +63,13 @@ WorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
 void
 WorkerPrefetcher::transfer()
 {
+    if (!canTransferHint()) {
+        if (!localBuffer.empty() && !transferEvent->scheduled()) {
+            schedule(transferEvent, nextCycle());
+        }
+        return;
+    }
+
     // ignore information of pfi, grab the information from the local buffer
     unsigned count = 0;
     auto dpp_it = localBuffer.begin();

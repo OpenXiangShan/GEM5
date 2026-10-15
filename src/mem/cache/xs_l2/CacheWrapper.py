@@ -73,7 +73,9 @@ class L2CacheWrapper(ClockedObject):
     # Must be power of 2 (1, 2, 4, 8, etc.), default is 1 (single bank)
     dir_sram_banks = Param.Unsigned(1, "Number of DirSram banks for dividing Dir Sets")
 
-    prefetcher = Param.BasePrefetcher(L2CompositeWithWorkerPrefetcher(), "Prefetcher attached to L2CacheWrapper")
+    prefetcher = Param.BasePrefetcher(
+        L2CompositeWithWorkerPrefetcher(queue_size=64),
+        "Prefetcher attached to L2CacheWrapper")
     system = Param.System(Parent.any, "System we belong to")
 
     def __init__(self, **kwargs):
@@ -96,4 +98,3 @@ class L2CacheWrapper(ClockedObject):
 
     def addSliceAccessor(self, slice):
         self._slice_accessors.append(slice)
-
