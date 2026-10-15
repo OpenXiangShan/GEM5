@@ -48,6 +48,22 @@ namespace gem5
 namespace RiscvISA
 {
 
+// Translate standard VS interrupt IDs to the causes visible in VS-mode.
+static ExceptionCode
+vsInterruptCause(ExceptionCode code)
+{
+    switch (code) {
+      case INT_SOFTWARE_VIRTUALSUPER:
+        return INT_SOFTWARE_SUPER;
+      case INT_TIMER_VIRTUALSUPER:
+        return INT_TIMER_SUPER;
+      case INT_EXT_VIRTUALSUPER:
+        return INT_EXT_SUPER;
+      default:
+        return code;
+    }
+}
+
 void
 RiscvFault::invokeSE(ThreadContext *tc, const StaticInstPtr &inst)
 {
@@ -109,6 +125,10 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
             }
         }
 
+        const bool trap_to_vs = prv == PRV_S && prvh == PRV_HS;
+        const ExceptionCode _delivered_code = isInterrupt() && trap_to_vs
+            ? vsInterruptCause(_code) : _code;
+
         // Set fault registers and status
         MiscRegIndex cause, epc, tvec, tval;
         int v = status.mprv ? status.mpv : tc->readMiscReg(MISCREG_VIRMODE);
@@ -135,9 +155,9 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
 
                   tc->setMiscReg(MISCREG_VIRMODE, 1);
                   if (isInterrupt())
-                      tc->setMiscReg(MISCREG_VSCAUSE, _code | (1L << 63));
+                      tc->setMiscReg(MISCREG_VSCAUSE, _delivered_code | (uint64_t{1} << 63));
                   else
-                      tc->setMiscReg(MISCREG_VSCAUSE, _code);
+                      tc->setMiscReg(MISCREG_VSCAUSE, _delivered_code);
                   tc->setMiscReg(MISCREG_VSEPC, tc->pcState().instAddr());
                   hs_mode_pc = true;
               } else {
@@ -190,9 +210,9 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
 
         // Set fault cause, privilege, and return PC
         // Interrupt is indicated on the MSB of cause (bit 63 in RV64)
-        uint64_t _cause = _code;
+        uint64_t _cause = _delivered_code;
         if (isInterrupt()) {
-           _cause |= (1L << 63);
+           _cause |= (uint64_t{1} << 63);
         }
 
         if (!hs_mode_pc) {
@@ -232,7 +252,7 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         }
 
         if (isInterrupt() && bits(addr_tvec, 1, 0) == 1)
-            addr += 4 * _code;
+            addr += 4 * _delivered_code;
         pc_state.set(addr);
         tc->pcState(pc_state);
     } else {

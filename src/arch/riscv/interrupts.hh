@@ -67,33 +67,50 @@ class Interrupts : public BaseInterrupts
     std::bitset<NumInterruptTypes>
     globalMask() const
     {
-        INTERRUPT mask = 0;
-        STATUS status = tc->readMiscReg(MISCREG_STATUS);
-        INTERRUPT mideleg = tc->readMiscReg(MISCREG_MIDELEG);
-        PrivilegeMode prv = (PrivilegeMode)tc->readMiscReg(MISCREG_PRV);
-        switch (prv) {
-            case PRV_U:
-                mask.mei = mask.mti = mask.msi = 1;
-                mask.sei = mask.sti = mask.ssi = 1;
-                break;
-            case PRV_S:
-                mask.mei = (!mideleg.mei) | (mideleg.mei & status.sie);
-                mask.mti = (!mideleg.mti) | (mideleg.mti & status.sie);
-                mask.msi = (!mideleg.msi) | (mideleg.msi & status.sie);
-                if (status.sie)
-                    mask.sei = mask.sti = mask.ssi = 1;
-                break;
-            case PRV_M:
-                if (status.mie)
-                     mask.mei = mask.mti = mask.msi = 1;
-                mask.sei = mask.sti = mask.ssi = 0;
-                break;
-            default:
-                panic("Unknown privilege mode %d.", prv);
-                break;
-        }
+        const auto prv = static_cast<PrivilegeMode>(
+            tc->readMiscRegNoEffect(MISCREG_PRV));
+        const bool virt =
+            tc->readMiscRegNoEffect(MISCREG_VIRMODE) != 0;
 
-        return std::bitset<NumInterruptTypes>(mask);
+        if (prv != PRV_U && prv != PRV_S && prv != PRV_M)
+            panic("Unknown privilege mode %d.", prv);
+
+        const STATUS mstatus =
+            tc->readMiscRegNoEffect(MISCREG_STATUS);
+        const VSSTATUS vsstatus =
+            tc->readMiscRegNoEffect(MISCREG_VSSTATUS);
+        const RegVal mideleg = tc->readMiscReg(MISCREG_MIDELEG);
+        const RegVal hideleg = tc->readMiscReg(MISCREG_HIDELEG);
+
+        // Interrupts targeting a higher mode ignore its global enable.
+        // HS interrupts can preempt VS/VU; VS interrupts can preempt VU.
+        const bool m_enabled = prv != PRV_M || mstatus.mie;
+        const bool hs_enabled = prv != PRV_M &&
+            (virt || prv == PRV_U || mstatus.sie);
+        const bool vs_enabled = virt &&
+            (prv == PRV_U || (prv == PRV_S && vsstatus.sie));
+
+        // Partition source bits by delegation destination.
+        const RegVal machine_sources = ~mideleg;
+        const RegVal hs_sources = mideleg & ~hideleg;
+        const RegVal vs_sources = mideleg & hideleg;
+
+        RegVal mask = 0;
+        if (m_enabled)
+            mask |= machine_sources;
+        if (hs_enabled)
+            mask |= hs_sources;
+        if (vs_enabled)
+            mask |= vs_sources;
+
+        // Keep the candidate set aligned with the modeled interrupt sources.
+        INTERRUPT supported = 0;
+        supported.mei = supported.mti = supported.msi = 1;
+        supported.sei = supported.sti = supported.ssi = 1;
+        supported.vsei = supported.vsti = supported.vssi = 1;
+
+        return std::bitset<NumInterruptTypes>(
+            mask & static_cast<RegVal>(supported));
     }
 
     bool
@@ -117,7 +134,8 @@ class Interrupts : public BaseInterrupts
         std::bitset<NumInterruptTypes> mask = globalMask();
         const std::vector<int> interrupt_order {
             INT_EXT_MACHINE, INT_TIMER_MACHINE, INT_SOFTWARE_MACHINE,
-            INT_EXT_SUPER, INT_TIMER_SUPER, INT_SOFTWARE_SUPER
+            INT_EXT_SUPER, INT_TIMER_SUPER, INT_SOFTWARE_SUPER,
+            INT_EXT_VIRTUALSUPER, INT_TIMER_VIRTUALSUPER, INT_SOFTWARE_VIRTUALSUPER
         };
         for (const int &id : interrupt_order)
             if (checkInterrupt(id) && mask[id])

@@ -91,10 +91,13 @@ enum ExceptionCode : uint64_t
     AMO_G_PAGE = 23,
 
     INT_SOFTWARE_SUPER = 1,
+    INT_SOFTWARE_VIRTUALSUPER = 2,
     INT_SOFTWARE_MACHINE = 3,
     INT_TIMER_SUPER = 5,
+    INT_TIMER_VIRTUALSUPER = 6,
     INT_TIMER_MACHINE = 7,
     INT_EXT_SUPER = 9,
+    INT_EXT_VIRTUALSUPER = 10,
     INT_EXT_MACHINE = 11,
     NumInterruptTypes
 };

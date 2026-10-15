@@ -326,6 +326,9 @@ matrixWriteBlob(ThreadContext *tc, Addr addr, const void *src, size_t size)
     [MISCREG_HSTATEEN1]     = "HSTATEEN1",
     [MISCREG_HSTATEEN2]     = "HSTATEEN2",
     [MISCREG_HSTATEEN3]     = "HSTATEEN3",
+
+    [MISCREG_STIMECMP]      = "STIMECMP",
+    [MISCREG_VSTIMECMP]     = "VSTIMECMP",
     [MISCREG_FFLAGS_EXE]    = "FFLAGS_EXE",
 }};
 
@@ -412,6 +415,8 @@ void ISA::clear()
     miscRegFile[MISCREG_VSSTATUS] = miscRegFile[MISCREG_STATUS] & NEMU_SSTATUS_RMASK;
     miscRegFile[MISCREG_ARCHID] = 0x19;
     miscRegFile[MISCREG_VENDORID] = (16ULL << 7) | 0x6FULL;
+    miscRegFile[MISCREG_STIMECMP] = UINT64_MAX;
+    miscRegFile[MISCREG_VSTIMECMP] = UINT64_MAX;
 }
 
 void
@@ -563,6 +568,9 @@ ISA::hpmCounterEnabled(int misc_reg) const
         break;
       case PRV_U:
         counteren = miscRegFile[MISCREG_SCOUNTEREN] & miscRegFile[MISCREG_MCOUNTEREN];
+        if (v) {
+            counteren &= miscRegFile[MISCREG_HCOUNTEREN];
+        }
         break;
       default:
         panic("Unknown privilege level %d\n", miscRegFile[MISCREG_PRV]);
@@ -618,6 +626,9 @@ ISA::readMiscReg(int misc_reg)
     if ((v == 1) && (misc_reg == MISCREG_STVEC)) {
         return readMiscRegNoEffect(MISCREG_VSTVEC);
     }
+    if ((v == 1) && (misc_reg == MISCREG_STIMECMP)) {
+        return readMiscRegNoEffect(MISCREG_VSTIMECMP);
+    }
     if (misc_reg == MISCREG_HIE) {
         auto ic = dynamic_cast<RiscvISA::Interrupts *>(tc->getCpuPtr()->getInterruptController(tc->threadId()));
         DPRINTF(RiscvMisc, "Read IE value: %#lx.\n", ic->readIE());
@@ -671,9 +682,12 @@ ISA::readMiscReg(int misc_reg)
                 DPRINTF(RiscvMisc, "SE time counter at: %llu.\n", time);
                 return time;
             } else {
+                RegVal time = readMiscRegNoEffect(MISCREG_TIME);
+                if (v == 1)
+                    time += readMiscRegNoEffect(MISCREG_HTIMEDELTA);
                 DPRINTF(RiscvMisc, "Wall-clock counter at: %llu.\n",
                         std::time(nullptr));
-                return readMiscRegNoEffect(MISCREG_TIME);
+                return time;
             }
         } else {
             return 0;
@@ -711,6 +725,16 @@ ISA::readMiscReg(int misc_reg)
             else
                 return mbits(val, 63, 1);
         }
+      case MISCREG_HENVCFG:
+        {
+            RegVal val = readMiscRegNoEffect(MISCREG_HENVCFG);
+            // menvcfg.STCE=0 => henvcfg.STCE reads as zero
+            if (!(readMiscRegNoEffect(MISCREG_MENVCFG) & MENVCFG_STCE))
+                val &= ~HENVCFG_STCE;
+
+            return val;
+        }
+        break;
       case MISCREG_VLENB:
         {
             return VLENB;
@@ -820,6 +844,8 @@ ISA::setMiscReg(int misc_reg, RegVal val)
         setMiscRegNoEffect(MISCREG_VSEPC, val);
     } else if ((v == 1) && ((misc_reg == MISCREG_STVEC))) {
         setMiscRegNoEffect(MISCREG_VSTVEC, val & ~(0x2UL));
+    } else if ((v == 1) && ((misc_reg == MISCREG_STIMECMP))) {
+        setMiscReg(MISCREG_VSTIMECMP, val);
     } else if (misc_reg == MISCREG_VSSTATUS) {
         auto vsstatus = readMiscRegNoEffect(MISCREG_VSSTATUS);
         STATUS write_val = ((vsstatus & ~(NEMU_SSTATUS_WMASK)) | (val & NEMU_SSTATUS_WMASK));
@@ -912,7 +938,25 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 RegVal writeVal = (old & ~mask) | ((val << 1) & mask);
                 ic->setIP(writeVal);
             } break;
-
+          case MISCREG_HENVCFG:
+            {
+                if (!(readMiscRegNoEffect(MISCREG_MENVCFG) & MENVCFG_STCE)) {
+                    RegVal oldHStce = readMiscRegNoEffect(MISCREG_HENVCFG) & HENVCFG_STCE;
+                    val = (val & ~HENVCFG_STCE) | oldHStce;
+                }
+                setMiscRegNoEffect(misc_reg, val);
+                evaluateSstcTimers();
+            }
+            break;
+          case MISCREG_MENVCFG:
+          case MISCREG_HTIMEDELTA:
+          case MISCREG_STIMECMP:
+          case MISCREG_VSTIMECMP:
+            {
+                setMiscRegNoEffect(misc_reg, val);
+                evaluateSstcTimers();
+            }
+            break;
           case MISCREG_IP:
             {
                 auto ic = dynamic_cast<RiscvISA::Interrupts *>(
@@ -1112,8 +1156,16 @@ ISA::unserialize(CheckpointIn &cp)
 {
     DPRINTF(Checkpoint, "Unserializing Riscv Misc Registers\n");
     UNSERIALIZE_CONTAINER(miscRegFile);
-    if (miscRegFile.size() < NUM_MISCREGS)
+
+    const size_t savedMiscRegCount = miscRegFile.size();
+    if (savedMiscRegCount < NUM_MISCREGS)
         miscRegFile.resize(NUM_MISCREGS, 0);
+
+    if (savedMiscRegCount <= MISCREG_STIMECMP)
+        miscRegFile[MISCREG_STIMECMP] = UINT64_MAX;
+    if (savedMiscRegCount <= MISCREG_VSTIMECMP)
+        miscRegFile[MISCREG_VSTIMECMP] = UINT64_MAX;
+
     UNSERIALIZE_SCALAR(matrixTileM);
     UNSERIALIZE_SCALAR(matrixTileK);
     UNSERIALIZE_SCALAR(matrixTileN);
@@ -1210,6 +1262,41 @@ void
 ISA::globalClearExclusive()
 {
     tc->getCpuPtr()->wakeup(tc->threadId());
+}
+
+void
+ISA::evaluateSstcTimers()
+{
+    const RegVal time       = miscRegFile[MISCREG_TIME];
+    const RegVal stimecmp   = miscRegFile[MISCREG_STIMECMP];
+    const RegVal vstimecmp  = miscRegFile[MISCREG_VSTIMECMP];
+    const RegVal htimedelta = miscRegFile[MISCREG_HTIMEDELTA];
+
+    auto cpu = tc->getCpuPtr();
+
+    bool mStce = (miscRegFile[MISCREG_MENVCFG] & MENVCFG_STCE) != 0;
+    bool hStce = (miscRegFile[MISCREG_HENVCFG] & HENVCFG_STCE) != 0;
+
+    // S timer: gated by menvcfg.STCE
+    if (mStce && (time >= stimecmp)) {
+        cpu->postInterrupt(tc->threadId(), INT_TIMER_SUPER, 0);
+    } else {
+        cpu->clearInterrupt(tc->threadId(), INT_TIMER_SUPER, 0);
+    }
+
+    // VS timer: gated by henvcfg.STCE && menvcfg.STCE, spec: time + htimedelta >= vstimecmp
+    if (mStce && hStce && (uint64_t(time + htimedelta) >= vstimecmp)) {
+        cpu->postInterrupt(tc->threadId(), INT_TIMER_VIRTUALSUPER, 0);
+    } else {
+        cpu->clearInterrupt(tc->threadId(), INT_TIMER_VIRTUALSUPER, 0);
+    }
+}
+
+void
+ISA::updateTime(RegVal time)
+{
+    setMiscRegNoEffect(MISCREG_TIME, time);
+    evaluateSstcTimers();
 }
 
 } // namespace RiscvISA
