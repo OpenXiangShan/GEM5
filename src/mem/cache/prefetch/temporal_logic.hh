@@ -16,7 +16,8 @@ inline uint64_t
 hashPC(uint64_t pc)
 {
     constexpr uint64_t mask = (1ULL << 22) - 1;
-    pc >>= 2;
+    // RISC-V compressed instruction PCs carry useful information in bit 1.
+    pc >>= 1;
     const uint64_t folded = (pc ^ (pc >> 22) ^ (pc >> 44)) & mask;
     return (folded ^ (folded >> 11) ^ ((folded & 511) << 13) ^
             (folded >> 5)) & mask;
@@ -28,9 +29,12 @@ template <class T, unsigned Sets, unsigned Ways> struct Table
 {
     std::array<std::array<T, Ways>, Sets> data{};
     std::array<lldp::PLRU<Ways>, Sets> replacement{};
+    std::array<uint64_t, Sets> setAccesses{}, setEvictions{};
+    std::array<uint64_t, Sets> reportedAccesses{}, reportedEvictions{};
     template <class Match> T &access(unsigned set, Match match, bool &hit,
                                      bool touchOnMiss = true)
     {
+        ++setAccesses[set];
         unsigned way = 0;
         hit = false;
         for (; way < Ways; ++way) {
@@ -43,6 +47,8 @@ template <class T, unsigned Sets, unsigned Ways> struct Table
             way = replacement[set].victim();
             for (unsigned i = 0; i < Ways; ++i)
                 if (!data[set][i].valid) { way = i; break; }
+            if (touchOnMiss && data[set][way].valid)
+                ++setEvictions[set];
         }
         if (hit || touchOnMiss)
             replacement[set].touch(way);
@@ -172,6 +178,17 @@ class Engine
   public:
     Counters counters;
     explicit Engine(unsigned length = 12) : maxLength(length) {}
+
+    // Expose observations, without changing table lookup or replacement.
+    template <class Visitor> void visitTables(Visitor visitor)
+    {
+        visitor(0, roleTable);
+        visitor(1, filter);
+        visitor(2, sampler);
+        visitor(3, recorder);
+        visitor(4, meta);
+        visitor(5, confidence);
+    }
 
     void mark(uint64_t actualPC, int context, uint8_t roles)
     {

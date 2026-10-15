@@ -1840,7 +1840,7 @@ LSQUnit::executeLoadPipeSx()
                             auto &meta = *inst->xsMeta;
                             // Observe the successful issued consumer, including
                             // store-forwarded loads which never reach L1 tags.
-                            if (meta.lldpLoad && inst->effAddrValid() &&
+                            if (meta.lldpDirectLoad && inst->effAddrValid() &&
                                 !inst->faulted() &&
                                 !inst->strictlyOrdered() &&
                                 !(inst->memReqFlags & Request::UNCACHEABLE)) {

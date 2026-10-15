@@ -17,6 +17,7 @@ namespace prefetch
 class TemporalPrefetcher : public Queued
 {
     temporal::Engine engine;
+    temporal::Counters lastDumpCounters;
     BaseCPU *trainingCPU;
     const unsigned throttleCycles;
     Tick nextSend{0};
@@ -43,6 +44,8 @@ class TemporalPrefetcher : public Queued
             issueProbes, metaProbes, candidates, queued, useful, late, dropped,
             ownerExpired;
         statistics::Vector trainRoles, recordRoles;
+        statistics::Vector roleSets, filterSets, samplerSets, recorderSets,
+            metaSets, confidenceSets;
     } stats;
     void feedback(uint64_t id, bool late);
 
@@ -53,6 +56,7 @@ class TemporalPrefetcher : public Queued
     using Queued::prefetchUnused;
 
     void regProbeListeners() override;
+    void resetStats() override;
     void preDumpStats() override;
     lldp::Hint loadTrain(const PacketPtr &pkt, bool miss) override;
     void calculatePrefetch(const PrefetchInfo &,

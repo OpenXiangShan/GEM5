@@ -70,6 +70,8 @@ class XsDynInstMeta : public RefCounted
     int64_t lldpLoadImm{0};
     ContextID lldpContext{InvalidContextID};
     bool lldpLoad{false};
+    // Exact-address learning accepts scalar FP loads; value replay does not.
+    bool lldpDirectLoad{false};
     bool lldpSigned{false};
     uint8_t lldpSize{0};
     Addr lldpLoadLine{0};

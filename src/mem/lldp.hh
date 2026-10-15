@@ -14,6 +14,34 @@ namespace lldp
 {
 enum class SourceForm : uint8_t { SingleImmediate, DualRegister, Other };
 
+struct LoadInfo
+{
+    uint8_t size{0};
+    bool signExtend{false};
+    bool floating{false};
+};
+
+// RISC-V internal mnemonics include compressed forms, including Zcb loads.
+inline LoadInfo
+decodeLoad(const std::string &name)
+{
+    const bool floating = name == "fld" || name == "c_fld" ||
+        name == "c_fldsp" || name == "flw" || name == "c_flw" ||
+        name == "c_flwsp";
+    const uint8_t size =
+        (name == "ld" || name == "c_ld" || name == "c_ldsp") ? 8 :
+        (name == "lw" || name == "lwu" || name == "c_lw" ||
+         name == "c_lwsp") ? 4 :
+        (name == "lh" || name == "lhu" || name == "c_lh" ||
+         name == "c_lhu") ? 2 :
+        (name == "lb" || name == "lbu" || name == "c_lbu") ? 1 :
+        (name == "fld" || name == "c_fld" || name == "c_fldsp") ? 8 :
+        (name == "flw" || name == "c_flw" || name == "c_flwsp") ? 4 : 0;
+    const bool sign = name == "lb" || name == "lh" || name == "lw" ||
+        name == "c_lh" || name == "c_lw" || name == "c_lwsp";
+    return {size, sign, floating};
+}
+
 inline SourceForm sourceForm(unsigned registers, bool immediate)
 {
     if (registers == 2 && !immediate)
@@ -120,6 +148,7 @@ struct Chain
 {
     bool valid{false};
     bool replayable{true};
+    bool producerFloating{false};
     uint64_t producerPC{0};
     uint64_t producerAddress{0};
     bool producerAddressValid{false};
@@ -179,7 +208,8 @@ struct Chain
 
     bool trainable() const
     {
-        return valid && replayable && dualSrcRegisterOps == 0 &&
+        return valid && replayable && !producerFloating &&
+            dualSrcRegisterOps == 0 &&
             length >= 1 && length <= 3;
     }
 };
@@ -187,6 +217,8 @@ struct Chain
 struct Hint
 {
     bool valid{false};
+    bool valueReplayable{false};
+    bool floating{false};
     uint64_t producerPC{0};
     uint64_t generation{0};
     uint32_t offset{0};

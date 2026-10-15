@@ -413,6 +413,8 @@ class Request
         uint16_t prefetchDataOffset;
         uint8_t prefetchDataSize;
         bool prefetchDataSignExtend;
+        bool prefetchDataReplayable{false};
+        bool prefetchDataFloating{false};
 
         XsMetadata() :
             validXsMetadata(false),
@@ -476,6 +478,8 @@ class Request
             prefetchDataOffset = 0;
             prefetchDataSize = 0;
             prefetchDataSignExtend = false;
+            prefetchDataReplayable = false;
+            prefetchDataFloating = false;
         }
     } XsMetadata;
 

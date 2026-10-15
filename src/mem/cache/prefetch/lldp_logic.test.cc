@@ -4,6 +4,33 @@
 
 using namespace gem5::lldp;
 
+TEST(LldpLoad, CompressedIntegerWidthsAndSignedness)
+{
+    for (const auto *name : {"lhu", "c_lhu"}) {
+        EXPECT_EQ(decodeLoad(name).size, 2) << name;
+        EXPECT_FALSE(decodeLoad(name).signExtend) << name;
+    }
+    for (const auto *name : {"lh", "c_lh"}) {
+        EXPECT_EQ(decodeLoad(name).size, 2) << name;
+        EXPECT_TRUE(decodeLoad(name).signExtend) << name;
+    }
+    EXPECT_EQ(decodeLoad("c_lbu").size, 1);
+    EXPECT_FALSE(decodeLoad("c_lbu").signExtend);
+    for (const auto *name : {"ld", "c_ld", "c_ldsp"})
+        EXPECT_EQ(decodeLoad(name).size, 8) << name;
+    for (const auto *name : {"lw", "c_lw", "c_lwsp"}) {
+        EXPECT_EQ(decodeLoad(name).size, 4) << name;
+        EXPECT_TRUE(decodeLoad(name).signExtend) << name;
+    }
+    EXPECT_EQ(decodeLoad("lwu").size, 4);
+    EXPECT_FALSE(decodeLoad("lwu").signExtend);
+    EXPECT_EQ(decodeLoad("lb").size, 1);
+    EXPECT_TRUE(decodeLoad("lb").signExtend);
+    EXPECT_EQ(decodeLoad("lbu").size, 1);
+    for (const auto *name : {"sd", "lr_d", "vle8_v", "unknown"})
+        EXPECT_EQ(decodeLoad(name).size, 0) << name;
+}
+
 TEST(LldpChain, ZeroPCAndBoundedHistory)
 {
     auto chain = Chain::start(0);
@@ -23,6 +50,39 @@ TEST(LldpChain, ZeroPCAndBoundedHistory)
     EXPECT_EQ(fresh.categories[0], 0);
     chain.length = 255;
     EXPECT_EQ(chain.extend(decodeOperation("addi", 0)).length, 256);
+}
+
+TEST(LldpLoad, FloatingLoadsHaveWidthWithoutIntegerSignedness)
+{
+    for (const auto *name : {"fld", "c_fld", "c_fldsp", "flw", "c_flw",
+                             "c_flwsp"}) {
+        const auto info = decodeLoad(name);
+        const std::string mnemonic(name);
+        EXPECT_EQ(info.size, mnemonic.find("ld") != std::string::npos ? 8 : 4);
+        EXPECT_TRUE(info.floating) << name;
+        EXPECT_FALSE(info.signExtend) << name;
+    }
+    EXPECT_FALSE(decodeLoad("c_lh").floating);
+    EXPECT_FALSE(decodeLoad("ld").floating);
+}
+
+TEST(LldpChain, FloatingRootStaysAddressOnlyThroughAllPropagation)
+{
+    auto chain = Chain::start(0x1002, 0x2048);
+    chain.producerFloating = true;
+    // Even an accidentally replayable FP root must never pass the guard.
+    EXPECT_FALSE(chain.trainable());
+    chain.replayable = false;
+    chain = chain.extend(decodeOperation("addi", 8));
+    chain = chain.extendDependencyOnly(SourceForm::Other);
+    EXPECT_TRUE(chain.producerFloating);
+    EXPECT_TRUE(chain.producerAddressValid);
+    EXPECT_EQ(chain.producerAddress, 0x2048);
+    EXPECT_FALSE(chain.trainable());
+    const auto integer = Chain::start(0x1004, 0x3000);
+    EXPECT_FALSE(integer.producerFloating);
+    EXPECT_TRUE(integer.trainable());
+    EXPECT_FALSE(Hint{}.valueReplayable);
 }
 
 TEST(LldpChain, PhysicalAddressZeroSurvivesArithmeticAndDependencyOnlyChains)

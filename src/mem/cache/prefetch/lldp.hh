@@ -34,6 +34,7 @@ class LLDPrefetcher : public Queued
         uint8_t immOffset{0};
         uint8_t loadSize{0};
         bool loadSigned{false};
+        bool loadReplayable{true};
         uint64_t aliasGeneration{0};
         bool loadAddressValid{false};
         uint8_t immConf{0};
@@ -83,6 +84,7 @@ class LLDPrefetcher : public Queued
         uint8_t loadOffset{0};
         bool loadAddressValid{false};
         bool loadSigned{false};
+        bool loadReplayable{true};
         int producer{-1};
         int consumer{-1};
         uint64_t version{0};
@@ -119,6 +121,7 @@ class LLDPrefetcher : public Queued
         uint8_t matchesSincePromotion{0};
         uint32_t lastSeenEpoch{0};
         uint32_t promotionVersion{0};
+        bool fpDirect{false};
     };
     struct MetaEntry
     {
@@ -137,6 +140,7 @@ class LLDPrefetcher : public Queued
         uint8_t rrpv{3};
         uint32_t lastTrainEpoch{0};
         uint32_t lastUsefulEpoch{0};
+        bool fpDirect{false};
     };
     std::array<std::array<SamplerEntry, AddressTableWays>, SamplerSets>
         samplerTable{};
@@ -157,6 +161,7 @@ class LLDPrefetcher : public Queued
         Addr consumerPC;
         ContextID context;
         unsigned retries{0};
+        bool fpDirect{false};
     };
     std::deque<AddressTraining> addressInput;
     static constexpr unsigned TlbFilterEntries = 64;
@@ -175,6 +180,7 @@ class LLDPrefetcher : public Queued
         unsigned metaSet{0};
         unsigned metaWay{0};
         uint32_t metaGeneration{0};
+        bool fpDirect{false};
     };
     std::unordered_map<uint64_t, CandidateOwner> candidateOwners;
     std::optional<Training> s0;
@@ -188,6 +194,7 @@ class LLDPrefetcher : public Queued
     const uint8_t consumerThreshold;
     const uint8_t immediateThreshold;
     const unsigned maxChainDepth;
+    const bool enableFpDirect;
     BaseCPU *trainingCPU;
 
     class DependenceListener : public ProbeListenerArgBase<o3::XsDynInstMetaPtr>
@@ -258,10 +265,22 @@ class LLDPrefetcher : public Queued
             consumerCandidates, consumerUseful, consumerLate,
             consumerDemandHits;
         statistics::Scalar validProducers;
+        statistics::Scalar fpDirectEligible, fpTrainAccepted, fpTrainDropped,
+            fpAddressTrainAccepted, fpAddressTrainDropped, fpAddressPairs,
+            fpDemandLookups, fpMetaHits, fpMetaQueued, fpMetaIssued,
+            fpMetaUseful, fpMetaLate, fpMetaMerged, fpMetaUnused, fpMetaDropped,
+            fpReplayRejected;
+        statistics::Scalar fpSamplerValidEntries, fpMetaValidEntries,
+            fpProducerEntries, fpConsumerEntries;
+        statistics::Vector trainLoadKinds, addressLoadKinds,
+            producerEvictions, consumerEvictions, samplerEvictions,
+            metaEvictions;
     } stats;
 
     int findProducer(Addr pc, ContextID context) const;
     int findConsumer(const Entry &entry, Addr pc) const;
+    static bool hasFpDependency(const Entry &entry);
+    bool isFpMetaCandidate(uint64_t id) const;
     void learningTick();
     Update makeUpdate(Training training);
     void commitUpdate(const Update &update);
@@ -275,7 +294,8 @@ class LLDPrefetcher : public Queued
     unsigned metaVictim(unsigned set);
     void trainAddressPair(Addr addr_p, Addr addr_c, Addr producer_pc,
                           Addr consumer_pc, ContextID context,
-                          unsigned alias, uint64_t dependency_generation);
+                          unsigned alias, uint64_t dependency_generation,
+                          bool fp_direct);
     void updateMetaTable(const SamplerEntry &sample);
     struct MetaHit
     {

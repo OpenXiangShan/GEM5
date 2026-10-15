@@ -923,6 +923,7 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
                             chain = lldp::Chain::start(
                                 inst->pcState().instAddr(), inst->physEffAddr);
                         }
+                        chain.producerFloating = inst->isFloating();
                         chain.replayable = !inst->isVector() &&
                             !inst->isFloating() && !inst->isLoadReserved();
                     } else if (arithmetic && inst->lldpChain.valid) {
@@ -1645,15 +1646,14 @@ Scheduler::addToFU(const DynInstPtr& inst)
         meta.lldpLoadImm = inst->staticInst->supportsLldp() ?
             inst->staticInst->getImm() : 0;
         const std::string name = inst->staticInst->getName();
-        meta.lldpLoad = inst->staticInst->supportsLldp() &&
-            !inst->isVector() && !inst->isFloating() &&
-            !inst->isAtomic() && !inst->isLoadReserved();
-        meta.lldpSize = (name == "ld" || name == "c_ld" || name == "c_ldsp") ? 8 :
-            (name == "lw" || name == "lwu" || name == "c_lw" || name == "c_lwsp") ? 4 :
-            (name == "lh" || name == "lhu") ? 2 : (name == "lb" || name == "lbu") ? 1 : 0;
-        meta.lldpSigned = name == "lb" || name == "lh" || name == "lw" ||
-            name == "c_lw" || name == "c_lwsp";
-        meta.lldpLoad &= meta.lldpSize != 0;
+        const auto load = lldp::decodeLoad(name);
+        meta.lldpDirectLoad = inst->staticInst->supportsLldp() &&
+            !inst->isVector() && !inst->isAtomic() &&
+            !inst->isLoadReserved() && load.size != 0;
+        meta.lldpLoad = meta.lldpDirectLoad && !inst->isFloating() &&
+            !load.floating;
+        meta.lldpSize = load.size;
+        meta.lldpSigned = load.signExtend;
         if (first_issue)
             meta.lldpAddressNotified = false;
         meta.lldpConsumerAddressValid = false;

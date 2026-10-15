@@ -26,8 +26,27 @@ TemporalPrefetcher::TPStats::TPStats(statistics::Group *parent)
       ADD_STAT(dropped, statistics::units::Count::get(), "TP queue drops"),
       ADD_STAT(ownerExpired, statistics::units::Count::get(), "Bounded feedback owners evicted"),
       ADD_STAT(trainRoles, statistics::units::Count::get(), "LLDP roles on training PCs"),
-      ADD_STAT(recordRoles, statistics::units::Count::get(), "LLDP roles on replay records")
+      ADD_STAT(recordRoles, statistics::units::Count::get(), "LLDP roles on replay records"),
+      ADD_STAT(roleSets, statistics::units::Count::get(), "Role table set access/eviction/occupancy"),
+      ADD_STAT(filterSets, statistics::units::Count::get(), "Filter set access/eviction/occupancy"),
+      ADD_STAT(samplerSets, statistics::units::Count::get(), "Sampler set access/eviction/occupancy"),
+      ADD_STAT(recorderSets, statistics::units::Count::get(), "Recorder set access/eviction/occupancy"),
+      ADD_STAT(metaSets, statistics::units::Count::get(), "Meta set access/eviction/occupancy"),
+      ADD_STAT(confidenceSets, statistics::units::Count::get(), "Confidence set access/eviction/occupancy")
 {
+    const std::array<statistics::Vector *, 6> tables = {
+        &roleSets, &filterSets, &samplerSets, &recorderSets,
+        &metaSets, &confidenceSets};
+    const std::array<unsigned, 6> sets = {256, 32, 1024, 128, 1024, 64};
+    const std::array<const char *, 3> metrics = {
+        "access", "eviction", "occupancy"};
+    for (unsigned table = 0; table < tables.size(); ++table) {
+        tables[table]->init(sets[table] * metrics.size());
+        for (unsigned metric = 0; metric < metrics.size(); ++metric)
+            for (unsigned set = 0; set < sets[table]; ++set)
+                tables[table]->subname(metric * sets[table] + set,
+                    std::string(metrics[metric]) + "_" + std::to_string(set));
+    }
     for (auto *vector : {&trainRoles, &recordRoles}) {
         vector->init(4);
         vector->subname(0, "ordinary");
@@ -235,20 +254,53 @@ TemporalPrefetcher::notifyPrefetchMerged(uint64_t id)
 }
 
 void
+TemporalPrefetcher::resetStats()
+{
+    Queued::resetStats();
+    // Reset the reporting baseline, preserving the learned state and the
+    // engine's lifetime counters (which also drive its aging epochs).
+    lastDumpCounters = engine.counters;
+    engine.visitTables([](unsigned, auto &table) {
+        table.reportedAccesses = table.setAccesses;
+        table.reportedEvictions = table.setEvictions;
+    });
+}
+
+void
 TemporalPrefetcher::preDumpStats()
 {
     Queued::preDumpStats();
     const auto &c = engine.counters;
-    stats.trains = c.trains;
-    stats.filterHits = c.filterHits;
-    stats.samplerHits = c.samplerHits;
-    stats.pairs = c.pairs;
-    stats.records = c.records;
-    stats.recorderReplacements = c.replacements;
-    stats.metaHits = c.metaHits;
-    stats.metaBlocked = c.metaBlocked;
-    stats.issueBlocked = c.issueBlocked;
-    stats.issueProbes = c.issueProbes;
-    stats.metaProbes = c.metaProbes;
+    // Engine counters survive a gem5 statistics reset. Publish increments
+    // since the preceding dump or reset, including resets without a dump.
+    stats.trains += c.trains - lastDumpCounters.trains;
+    stats.filterHits += c.filterHits - lastDumpCounters.filterHits;
+    stats.samplerHits += c.samplerHits - lastDumpCounters.samplerHits;
+    stats.pairs += c.pairs - lastDumpCounters.pairs;
+    stats.records += c.records - lastDumpCounters.records;
+    stats.recorderReplacements += c.replacements - lastDumpCounters.replacements;
+    stats.metaHits += c.metaHits - lastDumpCounters.metaHits;
+    stats.metaBlocked += c.metaBlocked - lastDumpCounters.metaBlocked;
+    stats.issueBlocked += c.issueBlocked - lastDumpCounters.issueBlocked;
+    stats.issueProbes += c.issueProbes - lastDumpCounters.issueProbes;
+    stats.metaProbes += c.metaProbes - lastDumpCounters.metaProbes;
+    lastDumpCounters = c;
+    const std::array<statistics::Vector *, 6> vectors = {
+        &stats.roleSets, &stats.filterSets, &stats.samplerSets,
+        &stats.recorderSets, &stats.metaSets, &stats.confidenceSets};
+    engine.visitTables([&](unsigned index, auto &table) {
+        const auto sets = table.data.size();
+        for (unsigned set = 0; set < sets; ++set) {
+            auto &vector = *vectors[index];
+            vector[set] += table.setAccesses[set] - table.reportedAccesses[set];
+            vector[sets + set] +=
+                table.setEvictions[set] - table.reportedEvictions[set];
+            vector[2 * sets + set] = std::count_if(
+                table.data[set].begin(), table.data[set].end(),
+                [](const auto &entry) { return entry.valid; });
+            table.reportedAccesses[set] = table.setAccesses[set];
+            table.reportedEvictions[set] = table.setEvictions[set];
+        }
+    });
 }
 } // namespace gem5::prefetch

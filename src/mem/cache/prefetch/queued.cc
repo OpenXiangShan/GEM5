@@ -151,8 +151,12 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID req
         metadata.prefetchDataOffset = pfInfo.getPaddr() & (blk_size - 1);
         metadata.prefetchDataSize = pfInfo.getSize() <= 255 ? pfInfo.getSize() : 0;
         if (pfInfo.getXsMetadata().instXsMetadata) {
+            const auto inst = pfInfo.getXsMetadata().instXsMetadata;
+            metadata.prefetchDataReplayable = inst->lldpLoad;
+            metadata.prefetchDataFloating =
+                inst->lldpDirectLoad && !inst->lldpLoad;
             metadata.prefetchDataSignExtend =
-                pfInfo.getXsMetadata().instXsMetadata->lldpSigned;
+                inst->lldpSigned;
         }
     }
     req->setXsMetadata(metadata);
@@ -1584,6 +1588,24 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
     if (has_target_pa && !system->isMemAddr(target_paddr)) {
         DPRINTF(HWPrefetch, "wrong paddr of prefetch:%#x\n", target_paddr);
         return false;
+    }
+
+    // Spatial candidate builders replace XsMetadata with the source/depth.
+    // Snapshot the trigger's scalar replay eligibility before queuing, since
+    // DeferredPacket may outlive the demand and its instruction metadata.
+    if (!isLldpPrefetchSource(addr_prio.pfSource) &&
+        pkt->req->hasXsMetadata()) {
+        auto metadata = new_pfi.getXsMetadata();
+        const auto &trigger = pkt->req->getXsMetadata();
+        const auto inst = trigger.instXsMetadata;
+        metadata.prefetchDataReplayable = inst ?
+            inst->lldpLoad : trigger.prefetchDataReplayable;
+        metadata.prefetchDataFloating = inst ?
+            inst->lldpDirectLoad && !inst->lldpLoad :
+            trigger.prefetchDataFloating;
+        metadata.prefetchDataSignExtend = inst ?
+            inst->lldpSigned : trigger.prefetchDataSignExtend;
+        new_pfi.setXsMetadata(metadata);
     }
 
     /* Create the packet and find the spot to insert it */

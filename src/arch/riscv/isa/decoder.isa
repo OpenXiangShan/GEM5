@@ -2138,10 +2138,7 @@ decode QUADRANT {
                 }
                 0x70: decode ROUND_MODE {
                     0x0: fmv_x_w({{
-                        Rd = (uint32_t)Fs1_bits;
-                        if ((Rd&0x80000000) != 0) {
-                            Rd |= (0xFFFFFFFFULL << 32);
-                        }
+                        Rd = sext<32>((uint32_t)Fs1_bits);
                     }}, FloatMvOp);
                     0x1: fclass_s({{
                         Rd = f32_classify(f32(freg(Fs1_bits)));
@@ -2157,10 +2154,7 @@ decode QUADRANT {
                 }
                 0x72: decode ROUND_MODE {
                     0x0: fmv_x_h({{
-                        Rd = (uint16_t)Fs1_bits;
-                        if ((Rd&0x8000) != 0) {
-                            Rd |= (0xFFFFFFFFFFFFULL << 16);
-                        }
+                        Rd = sext<16>((uint16_t)Fs1_bits);
                     }}, FloatMvOp);
                     0x1: fclass_h({{
                         Rd = f16_classify(f16(freg(Fs1_bits)));
