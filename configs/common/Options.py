@@ -238,6 +238,9 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--l2_size", type=str, default="1MB")
     parser.add_argument("--l2_assoc", type=int, default=8)
     parser.add_argument("--l2_slices", type=int, default=4)
+    parser.add_argument("--l2_mshrs", type=int, default=None,
+                        help="Total L2 MSHR count before splitting across slices; "
+                             "defaults to L2Cache.mshrs")
     parser.add_argument("--classic-l2", action="store_true", default=False,
                         help="use classic L2 cache, instead of RTL aligned L2 cache")
 

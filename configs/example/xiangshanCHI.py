@@ -128,9 +128,11 @@ def setKmhV3Params(args, system):
                 system.l2_caches[i].wpu = NULL
                 system.l2_caches[i].do_fast_writeline = False
                 system.l2_caches[i].prefetch_can_offload = False
-                # Configure XSDRRIP replacement policy (DRRIP mode)
-                # L2: 2MB, 8-way, 64B line → 4096 sets
-                system.l2_caches[i].replacement_policy = XSDRRIPRP(mode=2, num_sets=4096)
+                # Configure XSDRRIP replacement policy (DRRIP mode).
+                l2_num_sets = int(system.l2_caches[i].size //
+                                   (64 * system.l2_caches[i].assoc))
+                system.l2_caches[i].replacement_policy = XSDRRIPRP(
+                    mode=2, num_sets=l2_num_sets)
             else:
                 l2_wrapper = system.l2_wrappers[i]
                 l2_wrapper.data_sram_banks = 1
@@ -141,9 +143,12 @@ def setKmhV3Params(args, system):
                     l2_wrapper.slices[j].inner_cache.wpu = NULL
                     l2_wrapper.slices[j].inner_cache.do_fast_writeline = False
                     l2_wrapper.slices[j].inner_cache.prefetch_can_offload = False
-                    # Configure XSDRRIP replacement policy (DRRIP mode)
-                    # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
-                    l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
+                    # Configure XSDRRIP replacement policy (DRRIP mode).
+                    l2_num_sets = int(
+                        l2_wrapper.slices[j].inner_cache.size //
+                        (64 * l2_wrapper.slices[j].inner_cache.assoc))
+                    l2_wrapper.slices[j].inner_cache.replacement_policy = \
+                        XSDRRIPRP(mode=2, num_sets=l2_num_sets)
             system.tol2bus_list[i].forward_latency = 3  # 3->0
             system.tol2bus_list[i].response_latency = 3  # 3->0
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1  # 1->0
@@ -175,7 +180,14 @@ if __name__ == '__m5_main__':
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3
     args.bp_type = 'DecoupledBPUWithBTB'
-    args.l2_size = '1MB'
+    # The CHI experiment uses 512KB total L2, split across four slices.
+    # Preserve explicit command-line overrides for parameter sweeps.
+    if not any(arg == '--l2_size' or arg.startswith('--l2_size=')
+               for arg in sys.argv[1:]):
+        args.l2_size = '512kB'
+    if not any(arg == '--l2_mshrs' or arg.startswith('--l2_mshrs=')
+               for arg in sys.argv[1:]):
+        args.l2_mshrs = 32
     args.kmh_align = True   # align prefetcher in RTL, spec06 decrease 1 score
     args.CHI = True
     if args.mem_type == 'DRAMsim3' and args.dramsim3_ini is None:
