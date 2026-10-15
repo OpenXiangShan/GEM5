@@ -3672,6 +3672,9 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
     LSQ* lsq = this->_port.getLsq();
     bool isNormalLd = this->isNormalLd();
     bool enableLdMissReplay = lsq->enableLdMissReplay();
+    if (isLoad()) {
+        _inst->cpu->perfCCT->loadEvent(_inst, "response", "single_request");
+    }
     // All responses received in 1 cycle are cache hit.
     bool cacheHit = LSQRequest::_inst->getCpuPtr()->ticksToCycles(curTick() - pkt->sendTick) <= 1;
     // Dump inst num, request addr, and packet addr
@@ -3717,6 +3720,7 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
             // Missed Data is ready at lsq side data bus, wake up missed load in replay queue
             // Handle the missed early wake-up here.
             DPRINTF(LSQ, "[sn:%ld] waitingCacheRefill\n", pkt->req->getReqInstSeqNum());
+            _inst->cpu->perfCCT->loadEvent(_inst, "wake", "cache_response");
             LSQRequest::_inst->waitingCacheRefill(false);
             discard();
         } else {
@@ -3775,6 +3779,7 @@ LSQ::SingleDataRequest::recvFunctionalCustomSignal(PacketPtr pkt)
         DPRINTF(LSQ, "SingleDataRequest::CustomResp: inst: %llu, pkt: %#lx\n", pkt->req->getReqInstSeqNum(),
             pkt->getAddr());
         DPRINTF(Hint, "[sn:%ld] Recv Hint\n", pkt->req->getReqInstSeqNum());
+        _inst->cpu->perfCCT->loadEvent(_inst, "wake", "cache_hint");
         LSQRequest::_inst->waitingCacheRefill(false);
     }
 }

@@ -264,7 +264,11 @@ class IssueQue : public SimObject
     void selectInst();
     void scheduleInst();
     void addIfReady(const DynInstPtr& inst);
-    void cancel(const DynInstPtr& inst);
+    void cancel(const DynInstPtr& inst, InstSeqNum producer = 0,
+                int source = -1);
+    void traceIQEvent(const DynInstPtr& inst, const char *event,
+                      const char *reason, int port = -1,
+                      InstSeqNum related = 0, int source = -1);
     void processVectorReadyQ();
     bool issueHasOlderInsts(const DynInstPtr& replay_inst) const;
 

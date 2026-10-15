@@ -32,6 +32,7 @@ ArchDBer::ArchDBer(const Params &p)
     dumpL1WayPreTrace(p.dump_l1d_way_pre_trace),
     dumpVaddrTrace(p.dump_vaddr_trace),
     dumpLifetime(p.dump_lifetime),
+    dumpCausal(p.dump_causal),
     mem_db(nullptr), zErrMsg(nullptr),rc(0),
     db_path(p.arch_db_file)
 {
@@ -47,7 +48,51 @@ ArchDBer::ArchDBer(const Params &p)
   for (const auto &s : p.table_cmds) {
     create_table(s);
   }
+  if (dumpCausal) {
+    execmd(R"sql(
+CREATE TABLE IF NOT EXISTS PerfCCTCacheEvent(
+    ID INTEGER PRIMARY KEY AUTOINCREMENT, Cache TEXT, Tick INTEGER,
+    Event TEXT, MSHR INTEGER, BlockAddr INTEGER, Secure INTEGER,
+    Requestor INTEGER, Context INTEGER, SeqNum INTEGER, Targets INTEGER,
+    Allocated INTEGER, HeldCredits INTEGER, BlockedMask INTEGER,
+    Detail TEXT, ParentID INTEGER, RequestID INTEGER, TargetID INTEGER,
+    RelatedRequestID INTEGER);
+CREATE INDEX IF NOT EXISTS PerfCCTCacheResource
+    ON PerfCCTCacheEvent(Cache,MSHR,Tick,ID);
+CREATE INDEX IF NOT EXISTS PerfCCTCacheRequest
+    ON PerfCCTCacheEvent(Requestor,Context,SeqNum,Tick,ID);
+CREATE INDEX IF NOT EXISTS PerfCCTCacheTarget
+    ON PerfCCTCacheEvent(Cache,TargetID,Tick,ID);
+CREATE INDEX IF NOT EXISTS PerfCCTCacheRequestID
+    ON PerfCCTCacheEvent(RequestID,Tick,ID);
+CREATE INDEX IF NOT EXISTS PerfCCTCacheParent
+    ON PerfCCTCacheEvent(ParentID,ID);
+)sql");
+  }
   registerExitCallback([this](){ save_db(); });
+}
+
+uint64_t
+ArchDBer::cacheTraceWrite(const CacheTraceRecord &r)
+{
+    if (!dumpCausal) {
+        return 0;
+    }
+    char *sql = sqlite3_mprintf(
+        "INSERT INTO PerfCCTCacheEvent(Cache,Tick,Event,MSHR,BlockAddr,"
+        "Secure,Requestor,Context,SeqNum,Targets,Allocated,HeldCredits,"
+        "BlockedMask,Detail,ParentID,RequestID,TargetID,RelatedRequestID) "
+        "VALUES('%q',%lld,'%q',%lld,%lld,"
+        "%d,%d,%d,%lld,%d,%d,%d,%d,'%q',%lld,%lld,%lld,%lld);",
+        r.cache.c_str(), sqliteSignedInt(r.tick), r.event.c_str(),
+        sqliteSignedInt(r.mshr), sqliteSignedInt(r.blockAddr), r.secure,
+        r.requestor, r.context, sqliteSignedInt(r.seq), r.targets,
+        r.allocated, r.heldCredits, r.blockedMask, r.detail.c_str(),
+        sqliteSignedInt(r.parent), sqliteSignedInt(r.request),
+        sqliteSignedInt(r.target), sqliteSignedInt(r.relatedRequest));
+    execmd(sql);
+    sqlite3_free(sql);
+    return sqlite3_last_insert_rowid(mem_db);
 }
 
 static int callback(void *NotUsed, int argc, char **argv, char **azColName){
@@ -66,6 +111,9 @@ void ArchDBer::start_recording() {
 }
 
 void ArchDBer::save_db() {
+  for (const auto &finalize : traceFinalizers) {
+    finalize();
+  }
   warn("saving memdb to %s ...\n", db_path.c_str());
   sqlite3 *disk_db;
   sqlite3_backup *pBackup;

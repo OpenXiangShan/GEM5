@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 
 #include "base/logging.hh"
 #include "base/types.hh"
@@ -21,6 +22,19 @@
 namespace gem5{
 
 class BaseCache;
+
+struct CacheTraceRecord
+{
+    std::string cache, event, detail;
+    Tick tick = 0;
+    uint64_t mshr = 0, parent = 0;
+    uint64_t request = 0, target = 0, relatedRequest = 0;
+    Addr blockAddr = 0;
+    bool secure = false;
+    int requestor = -1, context = -1;
+    InstSeqNum seq = 0;
+    int targets = 0, allocated = 0, heldCredits = 0, blockedMask = 0;
+};
 
 class DBTraceManager
 {
@@ -65,6 +79,7 @@ class ArchDBer : public SimObject
     bool dumpL1WayPreTrace;
     bool dumpVaddrTrace;
     bool dumpLifetime;
+    bool dumpCausal;
     bool dumpLifetimeMore;
 
     sqlite3 *mem_db;
@@ -78,8 +93,11 @@ class ArchDBer : public SimObject
     void create_table(const std::string &sql);
 
     void save_db();
+    // Flush compressed trace records before the in-memory DB is saved.
+    std::vector<std::function<void()>> traceFinalizers;
   public:
     void execmd(std::string cmd);
+    uint64_t cacheTraceWrite(const CacheTraceRecord &record);
 
     DBTraceManager *addAndGetTrace(const char *name, std::vector<std::pair<std::string, DataType>> fields);
 

@@ -202,6 +202,35 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
     // forward snoops is overridden in init() once we can query
     // whether the connected requestor is actually snooping or not
 
+    if (traceCacheEnabled()) {
+        mshrQueue.traceEvent = [this](const char *event, MSHR *mshr, PacketPtr pkt) {
+            if (std::string(event) == "allocate") {
+                traceMSHRs[mshr] = ++nextTraceMSHR;
+                mshr->traceTarget = [this, mshr](const char *kind,
+                    const MSHR::Target &target, const char *detail, PacketPtr old) {
+                    traceTargetEvent(kind, mshr, target, detail, old);
+                };
+            }
+            traceCacheEvent(event, mshr, pkt);
+            if (std::string(event) == "allocate") {
+                traceTargetOwners(mshr, "target_add");
+            }
+            if (std::string(event) == "release") {
+                mshr->traceTarget = nullptr;
+                traceMSHRs.erase(mshr);
+            }
+        };
+        archDBer->traceFinalizers.push_back([this] {
+            traceCacheEvent("trace_end");
+            for (const auto &[mshr, id] : traceMSHRs) {
+                traceCacheEvent("open_mshr", const_cast<MSHR *>(mshr));
+                traceTargetOwners(const_cast<MSHR *>(mshr), "open_target");
+            }
+            for (const auto &[id, addr] : traceHeldCredits) {
+                traceCacheEvent("open_credit", nullptr, nullptr, "", 0, id);
+            }
+        });
+    }
     tempBlock = new TempCacheBlk(blkSize);
     tags->tagsInit();
     for (int i = 0; i < size / assoc / blkSize; i++) {
@@ -264,6 +293,109 @@ BaseCache::~BaseCache()
     delete tempBlock;
 }
 
+uint64_t
+BaseCache::traceCacheEvent(const char *event, MSHR *mshr, PacketPtr pkt,
+                          const char *detail, uint64_t parent, uint64_t resource,
+                          uint64_t target, uint64_t related_request)
+{
+    if (!traceCacheEnabled()) {
+        return 0;
+    }
+    CacheTraceRecord record;
+    record.cache = name();
+    record.tick = curTick();
+    record.event = event;
+    record.detail = detail;
+    record.parent = parent;
+    record.mshr = resource;
+    record.target = target;
+    record.relatedRequest = related_request;
+    record.allocated = traceMSHRs.size();
+    record.heldCredits = dcacheMainPipeHeldMSHRCredits;
+    record.blockedMask = blocked;
+    if (mshr) {
+        auto found = traceMSHRs.find(mshr);
+        if (found != traceMSHRs.end()) {
+            record.mshr = found->second;
+        }
+        record.blockAddr = mshr->blkAddr;
+        record.secure = mshr->isSecure;
+        record.targets = mshr->getNumTargets();
+    } else if (auto found = traceHeldCredits.find(resource);
+               found != traceHeldCredits.end()) {
+        record.blockAddr = found->second.first;
+        record.secure = found->second.second;
+    }
+    if (pkt) {
+        record.request = pkt->req->causalTraceID();
+        record.blockAddr = pkt->getBlockAddr(blkSize);
+        record.secure = pkt->isSecure();
+        record.requestor = pkt->req->requestorId();
+        if (pkt->req->hasContextId()) {
+            record.context = pkt->req->contextId();
+        }
+        if (pkt->req->hasInstSeqNum()) {
+            record.seq = pkt->req->getReqInstSeqNum();
+        }
+        if (record.detail.empty()) {
+            record.detail = pkt->cmd.toString();
+        }
+    }
+    return archDBer->cacheTraceWrite(record);
+}
+
+void
+BaseCache::traceTargetEvent(const char *event, MSHR *mshr,
+                            const MSHR::Target &target, const char *detail,
+                            PacketPtr old_packet, uint64_t parent)
+{
+    if (!traceCacheEnabled()) {
+        return;
+    }
+    std::string info = std::string(detail) + ";source=" +
+        std::to_string(target.source) + ";cmd=" + target.pkt->cmd.toString();
+    traceCacheEvent(event, mshr, target.pkt, info.c_str(), parent, 0,
+                    target.order + 1, old_packet ? old_packet->req->causalTraceID() : 0);
+}
+
+void
+BaseCache::traceTargetOwners(MSHR *mshr, const char *event, uint64_t parent)
+{
+    for (const auto &target : mshr->traceActiveTargets()) {
+        traceTargetEvent(event, mshr, target, "active", nullptr, parent);
+    }
+    for (const auto &target : mshr->traceDeferredTargets()) {
+        traceTargetEvent(event, mshr, target, "deferred", nullptr, parent);
+    }
+}
+
+void
+BaseCache::traceCacheReject(PacketPtr pkt, const char *detail)
+{
+    if (!traceCacheEnabled()) {
+        return;
+    }
+    const auto parent = traceCacheEvent("reject", nullptr, pkt, detail);
+    // Snapshot the resource set only on observed admission failures.
+    if (blocked & (1 << Blocked_NoMSHRs)) {
+        for (const auto &[mshr, id] : traceMSHRs) {
+            traceCacheEvent("owner", const_cast<MSHR *>(mshr), nullptr,
+                            "no_mshrs", parent);
+            traceTargetOwners(const_cast<MSHR *>(mshr), "target_owner", parent);
+        }
+        for (const auto &[id, addr] : traceHeldCredits) {
+            traceCacheEvent("owner_credit", nullptr, nullptr,
+                            "no_mshrs", parent, id);
+        }
+    }
+    if ((blocked & (1 << Blocked_NoTargets)) && noTargetMSHR) {
+        traceCacheEvent("owner", noTargetMSHR, nullptr, "no_targets", parent);
+        if (!(blocked & (1 << Blocked_NoMSHRs))) {
+            traceTargetOwners(noTargetMSHR, "target_owner", parent);
+        }
+    }
+}
+
 void
 BaseCache::CacheResponsePort::setBlocked()
 {
@@ -298,6 +430,7 @@ BaseCache::CacheResponsePort::processSendRetry()
 
     // reset the flag and call retry
     mustSendRetry = false;
+    cache.traceCacheEvent("port_retry");
     sendRetryReq();
 }
 
@@ -582,6 +715,7 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 // delay of the xbar.
                 mshr->allocateTarget(pkt, forward_time, order++,
                                      allocOnFill(pkt->cmd));
+                traceCacheEvent("merge", mshr, pkt);
                 if (mshr->getNumTargets() >= numTarget) {
                     noTargetMSHR = mshr;
                     setBlocked(Blocked_NoTargets);
@@ -965,26 +1099,29 @@ BaseCache::registerDcacheMainPipeLSQ(o3::LSQ *lsq)
 }
 
 void
-BaseCache::holdDcacheMainPipeMSHRCredit()
+BaseCache::holdDcacheMainPipeMSHRCredit(uint64_t trace_id)
 {
     ++dcacheMainPipeHeldMSHRCredits;
+    traceCacheEvent("credit_hold", nullptr, nullptr, "", 0, trace_id);
 }
 
 void
-BaseCache::scheduleDcacheMainPipeMSHRCreditRelease(Tick tick)
+BaseCache::scheduleDcacheMainPipeMSHRCreditRelease(Tick tick, uint64_t trace_id)
 {
     Event *event = new EventFunctionWrapper(
-        [this] { releaseDcacheMainPipeMSHRCredit(); },
+        [this, trace_id] { releaseDcacheMainPipeMSHRCredit(trace_id); },
         name() + ".dcache_mainpipe_mshr_credit_release", true);
     schedule(event, std::max(tick, curTick()));
 }
 
 void
-BaseCache::releaseDcacheMainPipeMSHRCredit()
+BaseCache::releaseDcacheMainPipeMSHRCredit(uint64_t trace_id)
 {
     const bool was_full = dcacheMainPipeEffectiveMSHRFull();
     assert(dcacheMainPipeHeldMSHRCredits > 0);
     --dcacheMainPipeHeldMSHRCredits;
+    traceCacheEvent("credit_release", nullptr, nullptr, "", 0, trace_id);
+    traceHeldCredits.erase(trace_id);
 
     if (was_full && !dcacheMainPipeEffectiveMSHRFull()) {
         clearBlocked(Blocked_NoMSHRs);
@@ -1042,6 +1179,8 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     MSHR *mshr = dynamic_cast<MSHR*>(pkt->popSenderState());
     DPRINTF(Cache, "MSHR addr: %#lx\n", mshr);
     assert(mshr);
+
+    traceCacheEvent("response", mshr, pkt);
 
     if (mshr == noTargetMSHR) {
         // we always clear at least one target
@@ -1169,11 +1308,16 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 
         dcache_refill_notified = true;
         if (hold_mshr_credit) {
-            holdDcacheMainPipeMSHRCredit();
+            uint64_t trace_id = 0;
+            if (traceCacheEnabled()) {
+                trace_id = traceMSHRs.at(mshr);
+                traceHeldCredits[trace_id] = {mshr->blkAddr, mshr->isSecure};
+            }
+            holdDcacheMainPipeMSHRCredit(trace_id);
             dcache_refill_lsq->notifyDcacheRefill(
                 dcache_refill_addr, dcache_refill_need_data_read,
-                [this](Tick tick) {
-                    scheduleDcacheMainPipeMSHRCreditRelease(tick);
+                [this, trace_id](Tick tick) {
+                    scheduleDcacheMainPipeMSHRCreditRelease(tick, trace_id);
                 });
         } else {
             dcache_refill_lsq->notifyDcacheRefill(
@@ -3522,16 +3666,19 @@ BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
             cache.incHitUnderBlockServed();
             return true;
         }
+        cache.traceCacheReject(pkt, blocked ? "blocked" : "retry_pending");
         mustSendRetry = true;
         return false;
     }
     if (!cache.tryAccessTag(pkt)) {
+        cache.traceCacheReject(pkt, "tag_port");
         DPRINTF(TagReadFail, "tryAccessTag fails addr: %lx\n", pkt->getAddr());
         return false;
     }
     int sliceidx = cache.getSliceIdx(pkt->getAddr());
     if (sliceidx >= 0 && cache.cacheLevel != 1) {
         if (cache.checkSLiceBusy(pkt, sliceidx)) {
+            cache.traceCacheReject(pkt, "slice_busy");
             //no more buffer
             if (sendRetryEvent.scheduled()) {
                 cache.reschedule(sendRetryEvent, cache.nextCycle());
@@ -3580,10 +3727,13 @@ BaseCache::CpuSidePort::recvTimingReq(PacketPtr pkt)
         // request.  The LSQ owns replay for this case; do not schedule a
         // cache-port retry that would unnecessarily block unrelated sends.
         if (pkt->sbufferMergeFailed) {
+            cache.traceCacheReject(pkt, "sbuffer_merge");
             return false;
         }
         if (pkt->mshrArbFailed() || pkt->mshrAliasFailed() ||
             pkt->isHitInWriteBuffer()) {
+            cache.traceCacheReject(pkt, pkt->mshrArbFailed() ? "mshr_arb" :
+                (pkt->mshrAliasFailed() ? "mshr_alias" : "write_buffer"));
             // If the MSHR arbitration failed, we need to retry later.
             // We will schedule a retry event to try again.
             if (sendRetryEvent.scheduled()) {

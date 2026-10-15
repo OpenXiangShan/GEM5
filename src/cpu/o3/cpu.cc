@@ -126,7 +126,8 @@ CPU::CPU(const BaseO3CPUParams &params)
       system(params.system),
       lastRunningCycle(curCycle()),
       archDBer(params.arch_db),
-      perfCCT(new PerfCCT(params.arch_db && params.arch_db->dumpLifetime, params.arch_db)),
+      perfCCT(new PerfCCT(params.arch_db && params.arch_db->dumpLifetime,
+                         params.arch_db, name(), clockPeriod())),
       ipc_r("ipc", "", 1000, archDBer),
       cpi_r("cpi", "", 1000, archDBer),
       issueWidth(params.decodeWidth),
@@ -669,6 +670,10 @@ void
 CPU::init()
 {
     BaseCPU::init();
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        perfCCT->contextIdentity(dataRequestorId(), tid,
+                                 threadContexts[tid]->contextId());
+    }
 
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         // Set noSquashFromTC so that the CPU doesn't squash when initially
@@ -843,6 +848,7 @@ CPU::haltContext(ThreadID tid)
 void
 CPU::insertThread(ThreadID tid)
 {
+    perfCCT->resetProducers(tid);
     DPRINTF(O3CPU,"[tid:%i] Initializing thread into CPU");
     // Will change now that the PC and thread state is internal to the CPU
     // and not in the ThreadContext.
@@ -1155,6 +1161,11 @@ void
 CPU::takeOverFrom(BaseCPU *oldCPU)
 {
     BaseCPU::takeOverFrom(oldCPU);
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        perfCCT->resetProducers(tid);
+        perfCCT->contextIdentity(dataRequestorId(), tid,
+                                 threadContexts[tid]->contextId());
+    }
 
     fetch.takeOverFrom();
     decode.takeOverFrom();
