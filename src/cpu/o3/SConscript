@@ -36,7 +36,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
     SimObject('FuncUnitConfig.py', sim_objects=[])
     SimObject('BaseO3CPU.py', sim_objects=['BaseO3CPU'], enums=[
         'SMTFetchPolicy', 'SMTDecodePolicy', 'SMTFetchBlockPolicy',
-        'SMTQueuePolicy', 'SMTLSQMode', 'CommitPolicy',
+        'SMTMLPFetchBlockPolicy','SMTQueuePolicy', 'SMTLSQMode', 'CommitPolicy',
         'ROBWalkPolicy', 'ROBCompressPolicy', 'PerfRecord'])
 
     Source('commit.cc')
@@ -49,6 +49,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('iew.cc')
     Source('inst_queue.cc')
     Source('lsq.cc')
+    Source('mlp_predictor.cc')
     Source('lsq_unit.cc')
     Source('mem_dep_unit.cc')
     Source('phast.cc')

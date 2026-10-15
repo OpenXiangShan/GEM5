@@ -42,6 +42,7 @@
 #ifndef __CPU_O3_COMM_HH__
 #define __CPU_O3_COMM_HH__
 
+#include <cstdint>
 #include <vector>
 
 #include "arch/generic/pcstate.hh"
@@ -304,6 +305,9 @@ struct TimeStruct
         unsigned iqCount;
         unsigned ldstqCount;
         unsigned robCount;
+
+        // MLP predictor load-completion feedback moved to CommitComm
+        // (loadFeedback is commit-produced and rides the commit wire).
     };
 
     IewComm iewInfo[MaxThreads]; // iew to rename, fetch
@@ -389,6 +393,33 @@ struct TimeStruct
         // Trace ctrl-flow faults: notify fetch how far to rollback trace reader.
         InstSeqNum traceTrapSeqNum; // *F
         bool traceTrapSkipInst;     // *F
+
+        // MLP predictor: load-completion feedback from commit (miss-pattern
+        // table training). Rides the commit wire, consistent with llsrPush.
+        struct LoadCompleteFeedback
+        {
+            Addr loadPC = 0;
+            bool actualLongLatency = false;
+            bool predictedLongLatency = false;
+            uint32_t predictedDistance = 0;
+        };
+        // Dynamically sized, no compile-time limit needed.
+        // Runtime check: loadFeedback.size() < number of load pipes.
+        std::vector<LoadCompleteFeedback> loadFeedback;
+
+        // MLP predictor: LLSR push feedback from commit
+        struct LLSRPushEntry
+        {
+            bool isLongLatencyLoad = false;
+            Addr pc = 0;
+            // Prediction and table validity captured when this load was fetched.
+            uint32_t predictedDistance = 0;
+            bool predictionValid = false;
+            bool isFusionPlaceholder = false;
+        };
+        // Dynamically sized; a fusion emits two architectural slots.
+        // Runtime check: llsrPush.size() <= 2 * commitWidth * instsPerGroup.
+        std::vector<LLSRPushEntry> llsrPush;
 
     };
 
