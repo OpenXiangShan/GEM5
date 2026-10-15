@@ -607,6 +607,11 @@ class SimObject(object, metaclass=MetaSimObject):
         """Load SimObject state from a checkpoint"""
         pass
 
+    @cxxMethod
+    def warmupState(self, cache_restore_dir,cpt_dir):
+        """restore L3 microarchitecture state from a memtrace"""
+        pass
+
     # Returns a dict of all the option strings that can be
     # generated as command line options for this simobject instance
     # by tracing all reachable params in the top level instance and

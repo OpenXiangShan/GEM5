@@ -95,6 +95,8 @@ class Base : public SimObject
     virtual void reset(const std::shared_ptr<ReplacementData>&
         replacement_data) const = 0;
 
+    virtual void reset4memtrace(const std::shared_ptr<ReplacementData>&
+    replacement_data,int priority) const = 0;
     /**
      * Find replacement victim among candidates.
      *
