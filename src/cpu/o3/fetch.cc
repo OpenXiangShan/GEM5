@@ -2038,6 +2038,11 @@ Fetch::sendInstructionsToDecode()
 
     if (primary_tid == InvalidThreadID) {
         DPRINTF(Fetch, "All threads are stalled, no thread selected.\n");
+        // Active threads still need to replace initializeTickState's default
+        // NoStall even when none has queued instructions to select.
+        for (const ThreadID tid : *activeThreads) {
+            updateStallReasons(0, tid);
+        }
         for (int i = 0; i < numThreads; i++) {
             measureFrontendBubbles(0, i);
         }
