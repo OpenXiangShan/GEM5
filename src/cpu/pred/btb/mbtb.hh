@@ -378,7 +378,7 @@ class MBTB : public TimedBaseBTBPredictor
     std::vector<TickedBTBEntry> lookupVictimCacheNoSideEffect(
         Addr block_pc, ThreadID tid, uint8_t asidHash) const;
     void insertVictimCache(const TickedBTBEntry& evicted_entry, ThreadID tid);
-    bool eraseFromVictimCacheByPC(Addr pc, ThreadID tid);
+    bool eraseFromVictimCacheByPC(Addr pc, Addr tag, ThreadID tid);
 
     /** Dual SRAM BTB structure:
      *  - Two independent 4-way SRAMs (sram0 and sram1)

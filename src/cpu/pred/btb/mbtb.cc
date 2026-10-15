@@ -673,7 +673,7 @@ MBTB::updateExistingInSRAMSet(Addr btb_idx,
     std::make_heap(heap.begin(), heap.end(), older());
 
     // Ensure single source of truth: remove duplicate from victim cache if any
-    if (eraseFromVictimCacheByPC(ticked_entry.pc, tid)) {
+    if (eraseFromVictimCacheByPC(ticked_entry.pc, ticked_entry.tag, tid)) {
         DPRINTF(BTB, "BTB: removed duplicate from VC after SRAM update, pc %#lx\n", ticked_entry.pc);
     }
 }
@@ -721,7 +721,7 @@ MBTB::replaceOldestInSRAMSet(int sram_id,
     std::make_heap(heap.begin(), heap.end(), older());
 
     // Ensure single source of truth: remove duplicate from victim cache if any
-    if (eraseFromVictimCacheByPC(ticked_entry.pc, tid)) {
+    if (eraseFromVictimCacheByPC(ticked_entry.pc, ticked_entry.tag, tid)) {
         DPRINTF(BTB, "BTB: removed duplicate from VC after SRAM replace, pc %#lx\n", ticked_entry.pc);
     }
 }
@@ -836,14 +836,22 @@ MBTB::lookupVictimCacheNoSideEffect(Addr block_pc, ThreadID tid,
 
 
 bool
-MBTB::eraseFromVictimCacheByPC(Addr pc, ThreadID tid)
+MBTB::eraseFromVictimCacheByPC(Addr pc, Addr tag, ThreadID tid)
 {
+    // Shared SRAM writes are visible to every thread, so invalidate matching
+    // entries in all private VCs. Partitioned SRAM writes affect only this tid.
+    // Match the ASID-derived tag too, preserving other address spaces' entries.
+    const unsigned firstTid = usesTidPartitionedStorage() ? tid : 0;
+    const unsigned endTid = usesTidPartitionedStorage() ?
+        tid + 1 : victimCaches.size();
     bool erased = false;
-    for (auto &entry : victimCaches[tid]) {
-        if (entry.valid && entry.pc == pc) {
-            entry.valid = false;
-            erased = true;
-            break;
+    for (unsigned cacheTid = firstTid; cacheTid < endTid; ++cacheTid) {
+        for (auto &entry : victimCaches[cacheTid]) {
+            if (entry.valid && entry.pc == pc && entry.tag == tag) {
+                entry.valid = false;
+                erased = true;
+                break;
+            }
         }
     }
     return erased;
