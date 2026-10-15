@@ -55,6 +55,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/rob_hybrid.hh"
 #include "cpu/reg_class.hh"
 #include "enums/ROBCompressPolicy.hh"
 #include "enums/ROBWalkPolicy.hh"
@@ -91,123 +92,20 @@ class ROB
         ROBSquashing
     };
 
-    /** Types exist only in a batch plan and allocation statistics. */
-    enum class HybridGroupType
-    {
-        NormalS,
-        NormalC,
-        NormalN,
-        CC,
-        CS,
-        SC,
-        NumTypes
-    };
+    using HybridGroupType = hybrid_rob::GroupType;
+    using HybridGroup = hybrid_rob::Group;
+    using HybridPlan = hybrid_rob::Plan;
+    using HybridEntryType = hybrid_rob::EntryType;
+    using HybridEntryState = hybrid_rob::EntryState;
+    using HybridSquashTarget = hybrid_rob::SquashTarget;
+    using HybridInstClass = hybrid_rob::InstClass;
 
-    struct HybridGroup
-    {
-        unsigned formerLength;
-        unsigned latterLength;
-        HybridGroupType type;
-
-        unsigned memberCount() const { return formerLength + latterLength; }
-        bool hasLatter() const { return latterLength != 0; }
-    };
-    using HybridPlan = std::vector<HybridGroup>;
-
-    enum class HybridEntryType { NORMAL, CC, CS, SC };
-
-    struct HybridEntryState
-    {
-        uint64_t id;
-        HybridEntryType type;
-        unsigned formerRemaining;
-        unsigned latterRemaining;
-
-        unsigned memberCount() const
-        { return formerRemaining + latterRemaining; }
-
-        // Returns true only for a surviving-former downgrade.
-        bool removeMember(bool former, bool retain_former)
-        {
-            auto &remaining = former ? formerRemaining : latterRemaining;
-            assert(remaining > 0);
-            --remaining;
-            if (!former && retain_former && latterRemaining == 0 &&
-                formerRemaining != 0 && type != HybridEntryType::NORMAL) {
-                type = HybridEntryType::NORMAL;
-                return true;
-            }
-            return false;
-        }
-    };
-
-    struct HybridSquashTarget
-    {
-        uint64_t entryId;
-        bool slotIsFormer;
-        bool flushItself;
-
-        bool removes(uint64_t id, bool former) const
-        {
-            if (id != entryId) {
-                return id > entryId;
-            }
-            return former ? (slotIsFormer && flushItself) :
-                            (slotIsFormer || flushItself);
-        }
-    };
-
-    enum class HybridInstClass { Simple, Complex, NoCompress };
-
-    /** One constant-time transition of the temporary batch planner. */
+    /** Forward to the shared Hybrid planner transition. */
     static void
     appendHybridClass(HybridPlan &plan, HybridInstClass inst_class,
                       unsigned group_limit)
     {
-        assert(group_limit > 0);
-        bool append = false;
-        if (!plan.empty() && plan.back().memberCount() < group_limit) {
-            auto &group = plan.back();
-            switch (group.type) {
-              case HybridGroupType::NormalS:
-                if (inst_class == HybridInstClass::Simple) {
-                    append = true;
-                } else if (inst_class == HybridInstClass::Complex) {
-                    group.type = HybridGroupType::SC;
-                    append = true;
-                }
-                break;
-              case HybridGroupType::NormalC:
-                if (inst_class == HybridInstClass::Simple) {
-                    group.type = HybridGroupType::CS;
-                    append = true;
-                } else if (inst_class == HybridInstClass::Complex) {
-                    group.type = HybridGroupType::CC;
-                    append = true;
-                }
-                break;
-              case HybridGroupType::CS:
-                append = inst_class == HybridInstClass::Simple;
-                break;
-              default:
-                break;
-            }
-        }
-
-        if (append) {
-            auto &group = plan.back();
-            if (group.type == HybridGroupType::NormalS) {
-                ++group.formerLength;
-            } else {
-                ++group.latterLength;
-            }
-        } else {
-            const auto type = inst_class == HybridInstClass::Simple ?
-                HybridGroupType::NormalS :
-                inst_class == HybridInstClass::Complex ?
-                HybridGroupType::NormalC : HybridGroupType::NormalN;
-            plan.push_back({1, 0, type});
-        }
+        hybrid_rob::appendInstClass(plan, inst_class, group_limit);
     }
 
   private:
@@ -233,6 +131,10 @@ class ROB
     const bool hybrid;
 
     HybridInstClass classifyHybridInst(const DynInstPtr &inst) const;
+    void validateHybridConfig(const BaseO3CPUParams &params) const;
+    void insertHybridMember(const DynInstPtr &inst, ThreadID tid);
+    void commitHybridMember(const DynInstPtr &inst, ThreadID tid);
+    void squashHybridMember(const DynInstPtr &inst, ThreadID tid);
     void insertInstWithGroup(const DynInstPtr &inst, bool new_group);
     void assertHybridInvariants(ThreadID tid) const;
     bool shouldSquash(const DynInstPtr &inst, ThreadID tid) const;

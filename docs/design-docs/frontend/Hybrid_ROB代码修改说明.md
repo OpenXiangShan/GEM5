@@ -12,13 +12,26 @@ DynInst 表示一条动态指令；融合 DynInst 可能对应两条架构指令
 --param="system.cpu[0].RobCompressPolicy='hybrid'"
 ```
 
-内层引号必须保留，因为 gem5 将 `--param` 作为 Python 表达式求值。Hybrid 自动设置单线程、关闭 value predictor、Load fusion、Constant Folding 和 MOVI elimination，但保留 register move elimination；`renameWidth=8`、`CROB_instPerGroup=8`、`commitWidth=8`。物理 ROB 容量沿用 352 entries。
+内层引号必须保留，因为 gem5 将 `--param` 作为 Python 表达式求值。Hybrid 自动设置单线程、默认关闭值预测，并关闭 Load fusion、Constant Folding 和 MOVI elimination，但保留 register move elimination；`renameWidth=8`、`CROB_instPerGroup=8`、`commitWidth=8`。物理 ROB 容量沿用 352 entries。值预测不是 Hybrid 的禁止项，可以显式启用现有 load 值预测器。
+
+当前值预测只应用于满足条件且只有一个目标寄存器的 load。这些 load 独占 C slot，带有禁止压缩属性时独占 N entry。值误预测通过 squash 恢复时，保留已经得到真实结果的 load，并清除所有年轻指令，与现有 slot 恢复边界一致。Selective cancellation 可以保留不受影响的年轻指令；存在已经发射的依赖指令时，回退到上述 squash 路径。预测检查和训练仍逐 DynInst 进行。以后若将值预测扩展到 Simple 指令，需要重新检查共享 S slot 内部的恢复边界。
+
+通过 `--enable-value-prediction` 创建组合预测器：`predictors[0]` 是 IdealConstantLVP，`predictors[1]` 是 EStride。两者分别提供候选，有候选时由 `CVPConfidenceArb(counterBits=6)` 根据学习的置信度选择一个值；置信度相同时优先选择 `predictors[0]`。双方都不提供预测时，load 按原执行路径运行。使用 `--param` 调整子预测器的标量参数；`--param` 不能直接给 `valuePred` 赋一个新的 SimObject。
+
+```sh
+--enable-value-prediction \
+--param='system.cpu[0].valuePred.predictors[0].satCounterBits=1' \
+--param='system.cpu[0].valuePred.predictors[1].logMaxConfidence=1' \
+--param='system.cpu[0].valuePred.predictors[1].thresholdPercent=0.0'
+```
 
 `commitWidth` 在 Hybrid 下限制每拍处理的物理 entry 数。独立 DynInst 提交配额的参数、判断和满额统计已整体删除；非 Hybrid 保留原有 group-window 默认行为。默认非 Hybrid 策略没有因此切换。
 
 ## 2. 入队计划与持久状态
 
-`rob.hh` 中 `HybridGroup` 保存 `formerLength`、`latterLength` 和规划类型，`memberCount()` 返回两者之和。规划类型仍区分 `NormalS/NormalC/NormalN` 以支持分类和分配统计；运行期 `HybridEntryType` 只有 `NORMAL/CC/CS/SC`。
+`rob_hybrid.hh` 集中定义 planner 和 entry/slot 状态，`rob.hh` 通过类型别名保留原有 `ROB::Hybrid*` 接口。`HybridGroup` 保存 `formerLength`、`latterLength` 和规划类型，`memberCount()` 返回两者之和。规划类型仍区分 `NormalS/NormalC/NormalN` 以支持分类和分配统计；运行期 `HybridEntryType` 只有 `NORMAL/CC/CS/SC`。
+
+`rob_hybrid.cc` 实现分类、批量入队、成员增删、配置检查、不变量检查和 slot redirect；`rob.cc` 保留共享指令链表、恢复 walker 和策略分派。
 
 `classifyHybridInst()` 保留原来的 N > C > S 分类。N 单独占 entry；S 序列压缩成一个 slot；C 单独占一个 slot。现有流式配对规则及 Rename 窗口边界不变：
 
@@ -73,11 +86,13 @@ ROB trace 记录分配 id、成员 slot、移除原因、保留边界及降级�
 
 规划 O(renameWidth)，成员增删 O(1)。正常提交受 `commitWidth * CROB_instPerGroup` 限制；redirect 初始化最多扫描有界 ROB，逐拍 squash 沿用原有恢复宽度。完整不变量扫描只在 ROB debug 打开时执行。
 
-构建和验证命令见 `src/cpu/o3/README.hybrid.md`。GTest 覆盖 planner 穷举、四种 slot squash、跨拍 latter 清除和部分提交；文档另提供 CoreMark/NEMU 全系统验证命令。
+构建和验证命令见 `src/cpu/o3/README.hybrid.md`。Planner 和 slot 边界测试作为本地开发辅助保留，不注册到项目构建，也不纳入 PR；文档提供正常的模拟器构建和 CoreMark/NEMU 全系统验证命令。
+
+开启值预测的验证必须覆盖实际误预测：difftest 通过，并确认 `valuePred.VPpredicted` 和 `commit.squashDueToValuePrediction` 非零；两种方法的 `childOffered` 和 `childSelected` 都应非零。验证时可将 IdealConstantLVP 的 `satCounterBits` 设为 1，并将 EStride 的 `logMaxConfidence`、`thresholdPercent` 分别设为 1、0.0，以缩短预热并增加恢复覆盖；这些参数不作为性能比较配置。还应验证 selective flush，并区分取消依赖指令和回退到 squash 的路径。没有发生误预测的运行不能证明恢复路径正确。
 
 ## 6. 建模边界
 
-本改动明确建模 entry 占用、提交带宽和 slot 恢复选择，没有引入 RAB、值预测、向量状态、flag tracker 或新流水级。内部数据通路和每拍信号仍采用 gem5 原有抽象，不声称与 RTL 周期级等价。SPEC 大规模性能测试和专项中断压力验证不属于此次结果。
+本改动明确建模 entry 占用、提交带宽和 slot 恢复选择，没有引入 RAB、向量状态、flag tracker 或新流水级。值预测复用已有 load 预测、结果检查、训练和恢复路径。内部数据通路和每拍信号仍采用 gem5 原有抽象，不声称与 RTL 周期级等价。SPEC 大规模性能测试和专项中断压力验证不属于此次结果。
 
 ## 7. 性能 CI 入口补充
 
@@ -85,6 +100,6 @@ ROB trace 记录分配 id、成员 slot、移除原因、保留边界及降级�
 
     --param="system.cpu[0].RobCompressPolicy='hybrid'"
 
-kmhv3.py 检测到这个参数后，会自动设置 Hybrid 所需的单线程、关闭 value predictor/Load fusion/Constant Folding/MOVI elimination、保留 register move elimination，并设置 group 大小和提交参数；后续显式的 --param 设置仍可覆盖这些默认值。
+kmhv3.py 检测到这个参数后，会自动设置 Hybrid 所需的单线程，默认关闭值预测，并关闭 Load fusion/Constant Folding/MOVI elimination、保留 register move elimination，同时设置 group 大小和提交参数。增加 `--enable-value-prediction` 可显式启用 IdealConstantLVP 与 EStride 的组合预测器；后续显式的 --param 设置仍可覆盖支持命令行赋值的参数。
 
 [gem5-perf-template.yml](/nfs/home/kongqiuyuan/workspace/GEM5_20260909/GEM5/.github/workflows/gem5-perf-template.yml) 增加了 --param 参数的启动前检查。若输入被截断为 --param=system.cpu[0].numThrea 这类没有“参数值”的字符串，CI 会在启动 workload 前立即报出格式错误；否则每个 checkpoint 都会启动一次 gem5，再分别产生 KeyError，导致大量无关的 abort 文件。

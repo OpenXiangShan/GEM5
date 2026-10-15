@@ -900,6 +900,12 @@ def xiangshan_system_init():
     Options.addXiangshanFSOptions(parser)
     Options.addXiangshanTraceOptions(parser)
     parser.add_argument(
+        "--enable-value-prediction",
+        action="store_true",
+        default=False,
+        help="Enable combined constant and stride load value prediction in kmhv3",
+    )
+    parser.add_argument(
         "--btb-tage-upper-bound",
         action="store_true",
         default=False,

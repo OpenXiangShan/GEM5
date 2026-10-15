@@ -128,6 +128,12 @@ def setKmhV3Params(args, system):
             cpu.renameWidth = 8
             cpu.commitWidth = 8
 
+        if args.enable_value_prediction:
+            cpu.valuePred = CompositeValuePredictor(
+                predictors=[IdealConstantLVP(), EStride()],
+                arb=CVPConfidenceArb(counterBits=6),
+            )
+
         # lsu
         cpu.StoreWbStage = 4
         cpu.EnableLdMissReplay = True

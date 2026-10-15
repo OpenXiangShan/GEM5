@@ -7,6 +7,11 @@ Each entry records former/latter remaining-member counts and runtime type
 The temporary planner retains `NORMAL-S/C/N` distinctions for classification
 and allocation statistics.
 
+`rob_hybrid.hh` defines the planner and entry/slot state types.
+`rob_hybrid.cc` implements Hybrid classification, allocation, member
+accounting, configuration checks, and redirects. `rob.cc` owns the shared
+instruction list, recovery walker, and policy dispatch.
+
 `commitWidth` limits physical entries, including squashed-head draining.
 Members retire in order through the existing architectural commit path. A
 fault, strictly ordered operation, or squash-after may stop within an entry;
@@ -21,12 +26,40 @@ inner quotes because `--param` evaluates a Python expression):
 --param="system.cpu[0].RobCompressPolicy='hybrid'"
 ```
 
-The configuration supplies one thread and no value predictor or Load fusion.
+The configuration supplies one thread and disables value prediction by
+default. Hybrid supports the existing load value predictors; Load fusion
+remains disabled.
 Constant folding and MOVI elimination are disabled; register move elimination
 remains enabled. The group length is 8, rename width is 8, and physical commit
 width is 8. Existing non-Load fusion remains active. Other `--param` assignments can
 override group size and entry width afterward. `numROBEntries` is physical
 capacity (352 in this configuration).
+
+Add `--enable-value-prediction` to create a `CompositeValuePredictor` with
+`IdealConstantLVP` at `predictors[0]` and `EStride` at `predictors[1]`.
+Both predictors offer candidates; `CVPConfidenceArb(counterBits=6)` selects
+one offered value when a candidate is available. Confidence ties favor
+`predictors[0]`; when neither child offers a prediction, the load uses its
+normal execution path. The `--param` interface can tune each
+child's scalar parameters once it exists; it cannot assign a new SimObject
+to `valuePred`.
+
+```sh
+--enable-value-prediction \
+--param='system.cpu[0].valuePred.predictors[0].satCounterBits=1' \
+--param='system.cpu[0].valuePred.predictors[1].logMaxConfidence=1' \
+--param='system.cpu[0].valuePred.predictors[1].thresholdPercent=0.0'
+```
+
+Value prediction applies to eligible loads with one destination register.
+These loads occupy a single C slot, or a standalone N entry when excluded
+from compression. When recovering by squash, a value misprediction preserves
+the load's actual result and removes every younger instruction, matching the
+existing slot recovery boundary. Selective cancellation can retain unaffected
+younger instructions; issued dependents require a fallback to squash.
+Prediction checks and training remain per DynInst. Extending value
+prediction to Simple instructions would require reviewing recovery boundaries
+inside shared S slots.
 
 Planning is O(renameWidth); insertion and removal accounting is O(1) per
 member. Commit scans one bounded entry when selecting it, and handles at most
@@ -51,17 +84,15 @@ already-retired squash-after anchors retain the architectural sequence
 boundary, including faults inside a partly retired simple slot. The slot
 selector produces the same retained sequence prefix for Rename, IQ, and LSQ.
 
-## Automated boundary tests
+## Build
 
 ```sh
-scons build/RISCV/gem5.opt build/RISCV/cpu/o3/rob_hybrid.test.opt --gold-linker -j64
-build/RISCV/cpu/o3/rob_hybrid.test.opt
+scons build/RISCV/gem5.opt --gold-linker -j64
 ```
 
-The ten gtests cover planner examples, type/length legality, independent
-batches, exhaustive S/C/N inputs up to length eight, all four squash cases,
-multimember slots, incremental latter clearing, whole-entry deletion, and
-partially retired former slots.
+Planner and slot boundary tests are retained locally as development aids
+and are not registered in the project build or included in the PR.
+The full-system validation commands below use the normal simulator build.
 
 ## Full-system validation
 
@@ -88,6 +119,18 @@ downgrades. These records and the allocation/retirement statistics can be
 used to inspect physical-entry width, recovery boundaries, and member
 conservation. CommitRate reports DynInst retirements and alone cannot prove
 physical-entry width.
+
+Value-prediction validation must exercise actual mispredictions. Check that
+`system.cpu.valuePred.VPpredicted` and
+`system.cpu.commit.squashDueToValuePrediction` are nonzero and that difftest
+passes. Check `childOffered` and `childSelected` for both children to confirm
+that both methods participate. Use `satCounterBits=1` for IdealConstantLVP
+and `logMaxConfidence=1`, `thresholdPercent=0.0` for EStride to shorten
+warmup and exercise recovery; these settings are for validation, not performance
+comparison. Repeat with
+`--param='system.cpu[0].enableSelectiveVPFlush=True'` to cover selective
+cancellation and inspect whether the squash fallback was exercised. A run
+without mispredictions does not validate the recovery path.
 
 ## Correspondence limits
 
