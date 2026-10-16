@@ -1,0 +1,13 @@
+# -*- mode:python -*-
+
+Import('*')
+
+if not env['CONF']['GEM5_ENABLE_MATRIX']:
+    Return()
+
+Source('LocalMMUModel.cc')
+Source('TaskController.cc')
+Source('CUTETOP.cc')
+Source('Scoreboard.cc')
+Source('MRegFile.cc')
+Source('MatrixTE.cc')
