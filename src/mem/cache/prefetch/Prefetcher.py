@@ -447,6 +447,32 @@ class WorkerPrefetcher(QueuedPrefetcher):
     prefetch_on_pf_hit = True
     use_virtual_addresses = True
 
+class MLOPPrefetcher(WorkerPrefetcher):
+    type = 'MLOPPrefetcher'
+    cxx_class = 'gem5::prefetch::MLOPPrefetcher'
+    cxx_header = 'mem/cache/prefetch/mlop.hh'
+
+    on_read = True
+    on_write = False
+    on_inst = False
+    on_data = True
+    on_miss = False
+    prefetch_on_access = True
+    prefetch_on_pf_hit = False
+    prefetch_train = False
+    use_virtual_addresses = False
+    use_pf_buffer = False
+    queue_filter = True
+
+    max_zones = Param.Unsigned(256, "Maximum tracked 64-block zones")
+    attached_level = Param.Unsigned(2,
+                                    "Cache level where MLOP is attached")
+    num_updates = Param.Unsigned(500, "Training updates per score round")
+    l1_threshold = Param.Unsigned(200,
+                                  "Minimum score for L1 prefetches")
+    l2_threshold = Param.Unsigned(200, "Minimum score for attached-cache prefetch")
+    llc_threshold = Param.Unsigned(150, "Minimum score for LLC prefetch")
+
 class StridePrefetcher(QueuedPrefetcher):
     type = 'StridePrefetcher'
     cxx_class = 'gem5::prefetch::Stride'

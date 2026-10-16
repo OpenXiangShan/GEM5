@@ -405,6 +405,15 @@ class Queued : public Base
      */
     virtual void addToQueue(std::list<DeferredPacket> &queue, DeferredPacket &dpp);
 
+    virtual void onPrefetchAccepted(const DeferredPacket &dpp) {}
+
+    /**
+     * Notifies a prefetcher that an already accepted packet was removed
+     * before it could be issued. Stateful prefetchers can use this to undo
+     * bookkeeping associated with the packet.
+     */
+    virtual void onPrefetchRemoved(const DeferredPacket &dpp) {}
+
     /**
      * Starts the translations of the queued prefetches with a
      * missing translation. It performs a maximum specified number of

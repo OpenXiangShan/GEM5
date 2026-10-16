@@ -974,6 +974,7 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
                         blockAddress(itr->pfInfo.getAddr()));
                 late_in_pfq = true;  // hit in pf queue
                 late_pfq_src = itr->pfInfo.getXsMetadata().prefetchSource;
+                onPrefetchRemoved(*itr);
                 delete itr->pkt;
                 itr = pfq.erase(itr);
                 statsQueued.pfRemovedDemand++;
@@ -1595,6 +1596,7 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
         if (hasHintDownStream() && dpp.pfahead && (dpp.pfahead_host > cache->level())) {
             hintDownStream->rxHint(&dpp);
             prefetchStats.pfaheadOffloaded++;
+            onPrefetchAccepted(dpp);
             DPRINTF(HWPrefetchOther,
                     "Prefetch ahead host: %d, will send to cache l%s\n",dpp.pfahead_host, cache->level() + 1);
             return;
@@ -1638,6 +1640,7 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
         DPRINTF(HWPrefetch, "%s full (sz=%lu), removing lowest priority oldest packet, addr: %#x\n", queue_name,
                 queue.size(), it->pfInfo.getAddr());
         statsQueued.pfRemovedFull_srcs[it->pfInfo.getXsMetadata().prefetchSource]++;
+        onPrefetchRemoved(*it);
 
         if (&queue == &pfq || !it->ongoingTranslation){
             delete it->pkt;
@@ -1681,6 +1684,8 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
 
     if (debug::HWPrefetchQueue)
         printQueue(queue);
+    if (&queue == &pfq)
+        onPrefetchAccepted(dpp);
 }
 
 void
