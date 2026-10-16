@@ -52,6 +52,7 @@
 #include "arch/riscv/pcstate.hh"
 #include "base/output.hh"
 #include "base/stats/info.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "config/the_isa.hh"
 #include "cpu/checker/cpu.hh"
 #include "cpu/o3/bpu_update.hh"
@@ -79,6 +80,33 @@ namespace gem5
 namespace o3
 {
 
+#if GEM5_ENABLE_MATRIX
+namespace
+{
+
+bool
+isMatrixIntOpClass(OpClass op_class)
+{
+    return op_class == MatrixIntOp || op_class == MatrixReleaseOp ||
+           op_class == MatrixSyncOp;
+}
+
+bool
+isMatrixFvOpClass(OpClass op_class)
+{
+    return op_class == MatrixCsrOp || op_class == MatrixMmaOp ||
+           op_class == MatrixArithOp;
+}
+
+bool
+isMatrixMemOpClass(OpClass op_class)
+{
+    return op_class == MatrixMemOp;
+}
+
+} // namespace
+
+#endif
 IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
     : dqSize(params.numDQEntries),
       issueToExecQueue(params.backComSize, params.forwardComSize),
@@ -2643,7 +2671,19 @@ IEW::dqTypeToReason(DQType dq_type)
 IEW::DQType
 IEW::getInstDQType(const DynInstPtr &inst)
 {
-    if (inst->isMemRef() || inst->isReadBarrier() || inst->isWriteBarrier() || inst->isNonSpeculative()) {
+#if GEM5_ENABLE_MATRIX
+    if (isMatrixMemOpClass(inst->opClass())) {
+        return MemDQ;
+    }
+    if (isMatrixIntOpClass(inst->opClass())) {
+        return IntDQ;
+    }
+    if (isMatrixFvOpClass(inst->opClass())) {
+        return FVDQ;
+    }
+#endif
+    if (inst->isMemRef() || inst->isReadBarrier() || inst->isWriteBarrier() ||
+        inst->isNonSpeculative()) {
         return MemDQ;
     }
     // FIX: fcvt_s_w (Int2Fp) reads INT register, needs INT read port -> should go to IntDQ

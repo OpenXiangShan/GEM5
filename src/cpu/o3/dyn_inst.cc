@@ -48,6 +48,7 @@
 #include "arch/riscv/insts/mem.hh"
 #include "arch/riscv/pcstate.hh"
 #include "base/intmath.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "cpu/o3/trace/TraceInstruction.hh"
 #include "debug/DynInst.hh"
 #include "debug/IQ.hh"
@@ -111,6 +112,11 @@ DynInst::DynInst(const Arrays &arrays, const StaticInstPtr &static_inst,
     instFlags[Predicate] = true;
     instFlags[MemAccPredicate] = true;
 
+#if GEM5_ENABLE_MATRIX
+    initMatrixInstInfo();
+    clearMatrixPayload();
+
+#endif
 #ifndef NDEBUG
     ++cpu->instcount;
 

@@ -56,6 +56,7 @@
 #include "base/refcnt.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "config/the_isa.hh"
 #include "cpu/checker/cpu.hh"
 #include "cpu/exec_context.hh"
@@ -66,6 +67,11 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/dyn_inst_xsmeta.hh"
 #include "cpu/o3/lsq_unit.hh"
+
+#if GEM5_ENABLE_MATRIX
+#include "cpu/o3/matrix_dyn_inst.hh"
+
+#endif
 #include "cpu/o3/replay_events.hh"
 #include "cpu/op_class.hh"
 #include "cpu/reg_class.hh"
@@ -112,6 +118,13 @@ class DynInst : public ExecContext, public RefCounted
         uint8_t *readySrcIdx;
     };
 
+#if GEM5_ENABLE_MATRIX
+    using MatrixStateOperand = RiscvISA::MatrixStateOperand;
+    using MatrixElemKind = RiscvISA::MatrixElemKind;
+
+    using MatrixInstInfo = MatrixDynInstState::InstInfo;
+
+#endif
     static void *operator new(size_t count, Arrays &arrays);
     static void  operator delete(void* ptr);
 
@@ -279,6 +292,10 @@ class DynInst : public ExecContext, public RefCounted
     /** The status of this BaseDynInst.  Several bits can be set. */
     std::bitset<NumStatus> status;
 
+#if GEM5_ENABLE_MATRIX
+    MatrixDynInstState matrixState;
+
+#endif
     /* replay type of this instruction */
     std::optional<LdStReplayType> replayType;
     std::bitset<LdStReplayTypeCount> replayFlags;
@@ -288,6 +305,10 @@ class DynInst : public ExecContext, public RefCounted
     bool _hasProducerStorePC = false;
     Addr _producerStorePC = 0;
 
+#if GEM5_ENABLE_MATRIX
+    void initMatrixInstInfo();
+
+#endif
   protected:
     /** The result of the instruction; assumes an instruction can have many
      *  destination registers.
@@ -851,6 +872,9 @@ class DynInst : public ExecContext, public RefCounted
     bool isInteger()      const { return staticInst->isInteger(); }
     bool isFloating()     const { return staticInst->isFloating(); }
     bool isVector()       const { return staticInst->isVector(); }
+#if GEM5_ENABLE_MATRIX
+    bool isMatrixInst()   const { return matrixState.matrixInst.valid; }
+#endif
     bool isControl()      const { return staticInst->isControl(); }
     bool isCall()         const { return staticInst->isCall(); }
     bool isReturn()       const { return staticInst->isReturn(); }
@@ -895,7 +919,73 @@ class DynInst : public ExecContext, public RefCounted
     bool isHtmStop() const { return staticInst->isHtmStop(); }
     bool isHtmCancel() const { return staticInst->isHtmCancel(); }
     bool isHtmCmd() const { return staticInst->isHtmCmd(); }
+#if GEM5_ENABLE_MATRIX
+    const MatrixInstInfo &
+    matrixInstInfo() const
+    {
+        return matrixState.matrixInst;
+    }
+    bool matrixNeedAmuCtrl() const
+    {
+        return matrixState.matrixInst.valid &&
+               matrixState.matrixInst.needAmuCtrlCandidate;
+    }
+    const ExecContext::MatrixExecPayload &
+    matrixPayload() const
+    {
+        return matrixState.matrixExecPayload;
+    }
+    bool matrixPayloadValid() const
+    {
+        return matrixState.matrixExecPayload.valid;
+    }
+    bool hasStagedMatrixTokenReset() const
+    {
+        return matrixState.stagedMatrixTokenResetValid;
+    }
+    RegVal stagedMatrixTokenResetIndex() const
+    {
+        return matrixState.stagedMatrixTokenReset;
+    }
+    bool hasMatrixMlsqSlot() const
+    {
+        return matrixState.matrixMlsqSlotValid;
+    }
+    unsigned getMatrixMlsqSlot() const
+    {
+        return matrixState.matrixMlsqSlot;
+    }
+    void setMatrixMlsqSlot(unsigned slot)
+    {
+        matrixState.matrixMlsqSlot = slot;
+        matrixState.matrixMlsqSlotValid = true;
+    }
+    bool hasMatrixMlsReplaySlot() const
+    {
+        return matrixState.matrixMlsReplaySlotValid;
+    }
+    unsigned getMatrixMlsReplaySlot() const
+    {
+        return matrixState.matrixMlsReplaySlot;
+    }
+    void setMatrixMlsReplaySlot(unsigned slot)
+    {
+        matrixState.matrixMlsReplaySlot = slot;
+        matrixState.matrixMlsReplaySlotValid = true;
+    }
+    void clearMatrixMlsReplaySlot()
+    {
+        matrixState.matrixMlsReplaySlotValid = false;
+    }
+    void clearMatrixPayload()
+    {
+        matrixState.matrixExecPayload = {};
+        matrixState.stagedMatrixTokenResetValid = false;
+        matrixState.stagedMatrixTokenReset = 0;
+    }
+#else
 
+#endif
     uint64_t
     getHtmTransactionUid() const override
     {
@@ -1597,6 +1687,15 @@ class DynInst : public ExecContext, public RefCounted
         _destMiscRegVal.push_back(val);
     }
 
+#if GEM5_ENABLE_MATRIX
+    bool stageMatrixExecPayload(
+        const ExecContext::MatrixExecPayload &payload) override;
+    bool stageMatrixTokenReset(RegVal token_idx) override;
+    bool stageMatrixTokenRelease(RegVal token_idx) override;
+    bool readStagedMatrixTokenReady(RegVal token_idx, RegVal threshold,
+                                   bool &ready) override;
+
+#endif
     /** Reads a misc. register, including any side-effects the read
      * might have as defined by the architecture.
      */

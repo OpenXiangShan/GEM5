@@ -15,6 +15,7 @@
 
 #include "base/statistics.hh"
 #include "base/stats/group.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
@@ -166,8 +167,14 @@ class IssueQue : public SimObject
     // issueport : regfileport : priority
     std::vector<std::vector<std::pair<int, int>>> intRdRfTPI;
     std::vector<std::vector<std::pair<int, int>>> fpRdRfTPI;
+#if GEM5_ENABLE_MATRIX
+    std::vector<std::vector<std::pair<int, int>>> rMiscRdRfTPI;
+#endif
 
     std::vector<std::vector<std::pair<int, int>>> intWrRfTPI;
+#if GEM5_ENABLE_MATRIX
+    std::vector<std::vector<std::pair<int, int>>> rMiscWrRfTPI;
+#endif
 
     std::vector<int64_t> portBusy;
 

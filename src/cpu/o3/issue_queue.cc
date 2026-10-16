@@ -15,11 +15,12 @@
 #include "base/stats/info.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "cpu/func_unit.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
-#include "cpu/o3/cpu.hh"
 #include "cpu/o3/inst_queue.hh"
 #include "cpu/reg_class.hh"
 #include "debug/Counters.hh"
@@ -62,6 +63,9 @@
 
 #define RF_INTID 0
 #define RF_FPID 1
+#if GEM5_ENABLE_MATRIX
+#define RF_RMISCID 2
+#endif
 
 namespace gem5
 {
@@ -370,7 +374,13 @@ IssueQue::IssueQue(const IssueQueParams& params)
 
     intRdRfTPI.resize(outports);
     fpRdRfTPI.resize(outports);
+#if GEM5_ENABLE_MATRIX
+    rMiscRdRfTPI.resize(outports);
+#endif
     intWrRfTPI.resize(outports);
+#if GEM5_ENABLE_MATRIX
+    rMiscWrRfTPI.resize(outports);
+#endif
 
     readyQs.resize(outports, nullptr);
 
@@ -397,6 +407,10 @@ IssueQue::IssueQue(const IssueQueParams& params)
             if (is_wr) {
                 if (rf_type == RF_INTID) {
                     intWrRfTPI[i].push_back(rf_typeportid_pair);
+#if GEM5_ENABLE_MATRIX
+                } else if (rf_type == RF_RMISCID) {
+                    rMiscWrRfTPI[i].push_back(rf_typeportid_pair);
+#endif
                 } else {
                     panic("%s: Unknown write RF type %d\n", iqname, rf_type);
                 }
@@ -410,6 +424,10 @@ IssueQue::IssueQue(const IssueQueParams& params)
                     intRdRfTPI[i].push_back(rf_typeportid_pair);
                 } else if (rf_type == RF_FPID) {
                     fpRdRfTPI[i].push_back(rf_typeportid_pair);
+#if GEM5_ENABLE_MATRIX
+                } else if (rf_type == RF_RMISCID) {
+                    rMiscRdRfTPI[i].push_back(rf_typeportid_pair);
+#endif
                 } else {
                     panic("%s: Unknown RF type %d\n", iqname, rf_type);
                 }
@@ -1067,7 +1085,7 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
         for (auto& it : depgraph) {
             int srcIdx = it.first;
             auto& consumer = it.second;
-            if(consumer->threadNumber == inst->threadNumber){
+            if (consumer->threadNumber == inst->threadNumber) {
                 if (consumer->readySrcIdx(srcIdx)) {
                     continue;
                 }
@@ -1124,6 +1142,16 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
                 }
 
                 DPRINTF(Schedule, "[sn:%llu] src%d was woken\n", consumer->seqNum, srcIdx);
+#if GEM5_ENABLE_MATRIX
+                if (inst->isMatrixInst() || consumer->isMatrixInst()) {
+                    DPRINTF(Schedule,
+                            "Matrix wakeup %s via p%lu: producer [sn:%llu] -> "
+                            "consumer [sn:%llu] in %s src%d\n",
+                            speculative ? "spec" : "wb",
+                            dst->flatIndex(), inst->seqNum, consumer->seqNum,
+                            getName(), srcIdx);
+                }
+#endif
                 addIfReady(consumer);
             }
         }
@@ -1222,6 +1250,9 @@ IssueQue::selectInst()
             if (!(portBusy[pi] & busy_bit)) {
                 DPRINTF(Schedule, "[sn %ld] was selected\n", inst->seqNum);
                 // get regfile write port
+#if GEM5_ENABLE_MATRIX
+                unsigned rMiscWrIdx = 0;
+#endif
                 for (int i = 0; i < inst->numDestRegs(); i++) {
                     auto pdst = inst->renamedDestIdx(i);
                     if (pdst->isFixedMapping()) [[unlikely]]
@@ -1231,11 +1262,21 @@ IssueQue::selectInst()
                     if (pdst->isIntReg() && intWrRfTPI[pi].size() > i) {
                         rfTypePortId = intWrRfTPI[pi][i];
                         scheduler->useRfWrPort(inst, pdst, rfTypePortId.first, rfTypePortId.second);
+#if GEM5_ENABLE_MATRIX
+                    } else if (pdst->is(RMiscRegClass) &&
+                               rMiscWrRfTPI[pi].size() > rMiscWrIdx) {
+                        rfTypePortId = rMiscWrRfTPI[pi][rMiscWrIdx++];
+                        scheduler->useRfWrPort(
+                            inst, pdst, rfTypePortId.first, rfTypePortId.second);
+#endif
                     }
                 }
 
 
                 // get regfile read port
+#if GEM5_ENABLE_MATRIX
+                unsigned rMiscRdIdx = 0;
+#endif
                 for (int i = 0; i < inst->numSrcRegs(); i++) {
                     PhysRegIdPtr psrc = inst->renamedSrcIdx(i);
                     if (psrc->isFixedMapping())
@@ -1254,6 +1295,13 @@ IssueQue::selectInst()
                     } else if (psrc->isFloatReg() && fpRdRfTPI[pi].size() > i) {
                         rfTypePortId = fpRdRfTPI[pi][i];
                         scheduler->useRfRdPort(inst, psrc, rfTypePortId.first, rfTypePortId.second);
+#if GEM5_ENABLE_MATRIX
+                    } else if (psrc->is(RMiscRegClass) &&
+                               rMiscRdRfTPI[pi].size() > rMiscRdIdx) {
+                        rfTypePortId = rMiscRdRfTPI[pi][rMiscRdIdx++];
+                        scheduler->useRfRdPort(
+                            inst, psrc, rfTypePortId.first, rfTypePortId.second);
+#endif
                     }
                 }
 
@@ -1388,6 +1436,14 @@ IssueQue::insert(const DynInstPtr& inst)
                     inst->markSrcRegReady(i);
                 }
                 DPRINTF(Schedule, "[sn:%llu] src p%d add to depGraph\n", inst->seqNum, src->flatIndex());
+#if GEM5_ENABLE_MATRIX
+                if (inst->isMatrixInst()) {
+                    DPRINTF(Schedule,
+                            "Matrix depGraph insert [sn:%llu] iq=%s src%d "
+                            "waiting on p%lu\n",
+                            inst->seqNum, iqname, i, src->flatIndex());
+                }
+#endif
                 subDepGraph[src->flatIndex()].push_back({i, inst});
                 addToDepGraph = true;
             }
@@ -1688,6 +1744,14 @@ Scheduler::Scheduler(const SchedulerParams& params)
                 rdRfportChecker[typePortId.first] += 1;
             }
         }
+#if GEM5_ENABLE_MATRIX
+        for (auto& rfTypePortId : issueQues[i]->rMiscRdRfTPI) {
+            for (auto& typePortId : rfTypePortId) {
+                maxRdTypePortId = std::max(maxRdTypePortId, typePortId.first);
+                rdRfportChecker[typePortId.first] += 1;
+            }
+        }
+#endif
 
         // write port check
         for (auto& rfTypePortId : issueQues[i]->intWrRfTPI) {
@@ -1696,6 +1760,14 @@ Scheduler::Scheduler(const SchedulerParams& params)
                 wrRfportChecker[typePortId.first] += 1;
             }
         }
+#if GEM5_ENABLE_MATRIX
+        for (auto& rfTypePortId : issueQues[i]->rMiscWrRfTPI) {
+            for (auto& typePortId : rfTypePortId) {
+                maxWrTypePortId = std::max(maxWrTypePortId, typePortId.first);
+                wrRfportChecker[typePortId.first] += 1;
+            }
+        }
+#endif
     }
     DPRINTF(Schedule, "Derived LSQ pipes from scheduler: load=%u store=%u\n",
             loadPipeCount, storePipeCount);
@@ -2092,6 +2164,16 @@ Scheduler::specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_que
 
         DPRINTF(Schedule, "[sn:%llu] %s create wakeupEvent to %s, delay %d cycles\n", inst->seqNum,
                 from_issue_queue->getName(), to->getName(), wakeDelay);
+#if GEM5_ENABLE_MATRIX
+        if (inst->isMatrixInst()) {
+            DPRINTF(Schedule,
+                    "Matrix spec wakeup route [sn:%llu] %s -> %s "
+                    "delay=%d opClass=%s\n",
+                    inst->seqNum, from_issue_queue->getName(),
+                    to->getName(), wakeDelay,
+                    enums::OpClassStrings[inst->opClass()]);
+        }
+#endif
         if (wakeDelay == 0) {
             to->wakeUpDependents(inst, true);
             if (!(inst->isFloating() || inst->isVector())) {

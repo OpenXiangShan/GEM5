@@ -105,6 +105,8 @@ class BaseO3CPU(BaseCPU):
     type = 'BaseO3CPU'
     cxx_class = 'gem5::o3::CPU'
     cxx_header = 'cpu/o3/dyn_inst.hh'
+    if buildEnv['GEM5_ENABLE_MATRIX']:
+        matrix_mem_port = RequestPort("Matrix memory timing port")
     cxx_exports = [
         PyBindMethod("addHintDownStream"),
     ]
@@ -112,6 +114,32 @@ class BaseO3CPU(BaseCPU):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._downstream_pf = []
+        self._sync_matrix_cached_port()
+
+    def _sync_matrix_cached_port(self):
+        if not buildEnv['GEM5_ENABLE_MATRIX']:
+            return
+        if not self.enableMatrixMemPort:
+            self._cached_ports = [
+                port for port in self._cached_ports
+                if port != 'matrix_mem_port'
+            ]
+            return
+        if 'matrix_mem_port' not in self._cached_ports:
+            self._cached_ports = list(self._cached_ports) + ['matrix_mem_port']
+
+    def addPrivateSplitL1Caches(self, ic, dc, iwc=None, dwc=None):
+        super().addPrivateSplitL1Caches(ic, dc, iwc, dwc)
+        self._sync_matrix_cached_port()
+
+    def addTwoLevelCacheHierarchy(self, ic, dc, l2c, iwc=None, dwc=None,
+                                  xbar=None):
+        super().addTwoLevelCacheHierarchy(ic, dc, l2c, iwc, dwc, xbar)
+        self._sync_matrix_cached_port()
+
+    def connectCachedPorts(self, in_ports):
+        self._sync_matrix_cached_port()
+        super().connectCachedPorts(in_ports)
 
     # Override the normal SimObject::regProbeListeners method and
     # register deferred event handlers.
@@ -184,6 +212,17 @@ class BaseO3CPU(BaseCPU):
     numDQEntries = VectorParam.Unsigned([32, 16, 16], "Number of entries in the dispQue, (Int, Float/Vector, Mem)")
     dispWidth = VectorParam.Unsigned([8, 6, 6], "Each DispQue dispatch width")
 
+    if buildEnv['GEM5_ENABLE_MATRIX']:
+        enableMatrixBackend = Param.Bool(
+            False,
+            "Enable matrix backend timing, AMU shadow admission, and toAMU proxy")
+        enableMatrixMemPort = Param.Bool(
+            False, "Expose and connect the matrix memory timing port")
+        matrixRmwAcquire = Param.Bool(
+            False, "Prepare C reads for write permission at the shared L2")
+        matrixCZeroLoadLatency = Param.Unsigned(
+            256, "CUTE C zero-load CML occupancy cycles")
+
     wbWidth = Param.Unsigned(20, "Writeback width")
     vectorMemCompletionDelay = Param.Cycles(0,
         "Extra delay from vector memory completion to IEW writeback")
@@ -237,6 +276,14 @@ class BaseO3CPU(BaseCPU):
 
     StoreWbStage = Param.Unsigned(4, "Which PipeLine Stage store instruction writeback, 4 means S4")
 
+    if buildEnv['GEM5_ENABLE_MATRIX']:
+        matrixMlsVirtualQueueEntries = Param.Unsigned(
+            8, "Number of matrix MLS virtual queue entries")
+        matrixMlsReplayQueueEntries = Param.Unsigned(
+            8, "Number of matrix MLS replay queue entries")
+        matrixMlsReplaySelectLatency = Param.Unsigned(
+            10000,
+            "Ticks to wait before a ready matrix MLS replay entry becomes schedulable")
     LSQDepCheckShift = Param.Unsigned(0,
             "Number of places to shift addr before check")
     LSQCheckLoads = Param.Bool(True,

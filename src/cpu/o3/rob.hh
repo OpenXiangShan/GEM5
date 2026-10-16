@@ -41,6 +41,13 @@
 #ifndef __CPU_O3_ROB_HH__
 #define __CPU_O3_ROB_HH__
 
+#include "config/gem5_enable_matrix.hh"
+
+#if GEM5_ENABLE_MATRIX
+#include <list>
+
+#endif
+#include <memory>
 #include <queue>
 #include <string>
 #include <utility>
@@ -49,9 +56,19 @@
 #include "base/statistics.hh"
 #include "base/types.hh"
 #include "config/the_isa.hh"
+
+#if GEM5_ENABLE_MATRIX
+#include "cpu/exec_context.hh"
+
+#endif
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
+
+#if GEM5_ENABLE_MATRIX
+#include "cpu/o3/matrix_amu_buffer.hh"
+
+#endif
 #include "cpu/reg_class.hh"
 #include "enums/ROBCompressPolicy.hh"
 #include "enums/ROBWalkPolicy.hh"
@@ -80,6 +97,10 @@ class ROB
     typedef std::pair<RegIndex, RegIndex> UnmapInfo;
     typedef typename std::list<DynInstPtr>::iterator InstIt;
 
+#if GEM5_ENABLE_MATRIX
+    using MatrixAmuEntry = MatrixAmuBuffer::Entry;
+
+#endif
     /** Possible ROB statuses. */
     enum Status
     {
