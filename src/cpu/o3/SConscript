@@ -57,12 +57,14 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('rename.cc')
     Source('rename_map.cc')
     Source('rob.cc')
+    Source('rob_hybrid.cc')
     Source('scoreboard.cc')
     Source('store_set.cc')
     Source('thread_context.cc')
     Source('thread_state.cc')
     Source('issue_queue.cc')
     Source('perfCCT.cc')
+
 
     # Trace reader sources for trace-driven simulation
     Source('trace/TraceReader.cc')

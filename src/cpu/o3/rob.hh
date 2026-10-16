@@ -41,6 +41,9 @@
 #ifndef __CPU_O3_ROB_HH__
 #define __CPU_O3_ROB_HH__
 
+#include <cassert>
+#include <list>
+#include <optional>
 #include <queue>
 #include <string>
 #include <utility>
@@ -52,6 +55,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/rob_hybrid.hh"
 #include "cpu/reg_class.hh"
 #include "enums/ROBCompressPolicy.hh"
 #include "enums/ROBWalkPolicy.hh"
@@ -88,6 +92,22 @@ class ROB
         ROBSquashing
     };
 
+    using HybridGroupType = hybrid_rob::GroupType;
+    using HybridGroup = hybrid_rob::Group;
+    using HybridPlan = hybrid_rob::Plan;
+    using HybridEntryType = hybrid_rob::EntryType;
+    using HybridEntryState = hybrid_rob::EntryState;
+    using HybridSquashTarget = hybrid_rob::SquashTarget;
+    using HybridInstClass = hybrid_rob::InstClass;
+
+    /** Forward to the shared Hybrid planner transition. */
+    static void
+    appendHybridClass(HybridPlan &plan, HybridInstClass inst_class,
+                      unsigned group_limit)
+    {
+        hybrid_rob::appendInstClass(plan, inst_class, group_limit);
+    }
+
   private:
     /** Per-thread ROB status. */
     Status robStatus[MaxThreads];
@@ -107,6 +127,18 @@ class ROB
     unsigned borrowingStateHoldCycle[MaxThreads];
 
     ROBWalkPolicy robWalkPolicy;
+
+    const bool hybrid;
+
+    HybridInstClass classifyHybridInst(const DynInstPtr &inst) const;
+    void validateHybridConfig(const BaseO3CPUParams &params) const;
+    void insertHybridMember(const DynInstPtr &inst, ThreadID tid);
+    void commitHybridMember(const DynInstPtr &inst, ThreadID tid);
+    void squashHybridMember(const DynInstPtr &inst, ThreadID tid);
+    void insertInstWithGroup(const DynInstPtr &inst, bool new_group);
+    void assertHybridInvariants(ThreadID tid) const;
+    bool shouldSquash(const DynInstPtr &inst, ThreadID tid) const;
+    void startSquash(InstSeqNum squash_num, ThreadID tid);
 
     bool allocateGroup_none(const DynInstPtr inst, ThreadID tid);
     bool allocateGroup_kmhv2(const DynInstPtr inst, ThreadID tid);
@@ -144,6 +176,17 @@ class ROB
      *  @param inst The instruction being inserted into the ROB.
      */
     void insertInst(const DynInstPtr &inst);
+
+    bool isHybrid() const { return hybrid; }
+
+    /** Plan only the effective instructions in one fixedbuffer window.
+     *  The number of new physical entries required is the plan's size.
+     */
+    HybridPlan planHybridBatch(const std::vector<DynInstPtr> &insts) const;
+
+    /** Consume the admitted plan without recomputing group boundaries. */
+    void insertHybridBatch(const std::vector<DynInstPtr> &insts,
+                           const HybridPlan &plan);
 
     /** Returns pointer to the head instruction within the ROB.  There is
      *  no guarantee as to the return value if the ROB is empty.
@@ -224,8 +267,20 @@ class ROB
     bool canAllocate(ThreadID tid, unsigned entries) const;
 
     /** Returns the number of entries being used by a specific thread. */
-    unsigned getThreadEntries(ThreadID tid)
-    { return threadGroups[tid].size(); }
+    unsigned getThreadEntries(ThreadID tid) const
+    {
+        return isHybrid() ? hybridEntries[tid].size() :
+                            threadGroups[tid].size();
+    }
+
+    unsigned headGroupSize(ThreadID tid) const
+    {
+        if (isEmpty(tid)) {
+            return 0;
+        }
+        return isHybrid() ? hybridEntries[tid].front().memberCount() :
+                            threadGroups[tid].front();
+    }
 
     unsigned getTotalEntries() 
     { return numEntries; }
@@ -248,7 +303,7 @@ class ROB
       if (robPolicy == SMTQueuePolicy::DynamicBorrowing) {
           return numFreeEntries(tid) == 0;
       }
-      return threadGroups[tid].size() == numEntries;
+      return getThreadEntries(tid) == numEntries;
     }
 
     /** Returns if the ROB is empty. */
@@ -257,7 +312,7 @@ class ROB
 
     /** Returns if a specific thread's partition is empty. */
     bool isEmpty(ThreadID tid) const
-    { return threadGroups[tid].size() == 0; }
+    { return getThreadEntries(tid) == 0; }
 
     /** Executes the squash, marking squashed instructions. */
     void doSquash(ThreadID tid);
@@ -266,6 +321,10 @@ class ROB
      *  the specific thread.
      */
     void squash(InstSeqNum squash_num, ThreadID tid);
+
+    /** Squash by physical slot and return the retained sequence boundary. */
+    InstSeqNum squashHybrid(const DynInstPtr &redirect, bool flush_itself,
+                            ThreadID tid);
 
     /** Updates the head instruction with the new oldest instruction. */
     void updateHead();
@@ -297,6 +356,9 @@ class ROB
     size_t countInsts(ThreadID tid);
 
     uint32_t countGroupAllInst(ThreadID tid) {
+        if (isHybrid()) {
+            return instList[tid].size();
+        }
         int sum = 0;
         for (auto it : threadGroups[tid]) {
           assert(it);
@@ -332,6 +394,9 @@ class ROB
     unsigned instsPerGroup;
 
     std::deque<unsigned> threadGroups[MaxThreads];
+    std::deque<HybridEntryState> hybridEntries[MaxThreads];
+    uint64_t nextHybridEntryId = 1;
+    std::optional<HybridSquashTarget> hybridSquashTarget;
 
     uint64_t lastInsertCycle = 0;
 
@@ -403,7 +468,7 @@ class ROB
 
     struct ROBStats : public statistics::Group
     {
-        ROBStats(statistics::Group *parent);
+        ROBStats(statistics::Group *parent, unsigned group_limit);
 
         // The number of rob_reads
         statistics::Scalar reads;
@@ -411,6 +476,13 @@ class ROB
         statistics::Scalar writes;
 
         statistics::Distribution instPergroup;
+
+        statistics::Scalar hybridAllocatedGroups;
+        statistics::Scalar hybridDowngrades;
+        statistics::Scalar hybridAllocatedInsts;
+        statistics::Vector hybridGroupType;
+        statistics::Distribution hybridGroupLength;
+        statistics::Formula hybridAllocationCompressionRatio;
 
         statistics::Scalar robRatSnapshotHits;
         statistics::Distribution snapshotSquashWidth;
