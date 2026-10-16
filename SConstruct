@@ -113,6 +113,10 @@ if getattr(SCons, '__version__', None) in ('3.0.0', '3.0.1'):
 
 linker_options = ('bfd', 'gold', 'lld', 'mold')
 
+AddOption('--enable-matrix', dest='enable_matrix',
+          action='store_true', default=False,
+          help='Compile RISC-V Matrix support')
+
 AddOption('--no-colors', dest='use_colors', action='store_false',
           help="Don't add color to abbreviated scons output")
 AddOption('--with-cxx-config', action='store_true',
@@ -779,6 +783,11 @@ Build variables for {dir}:
 
     # Pull all the sticky variables into the CONF dict.
     env['CONF'].update({key: env[key] for key in sticky_vars.keys()})
+
+    env['CONF']['GEM5_ENABLE_MATRIX'] = bool(GetOption('enable_matrix'))
+    if (env['CONF']['GEM5_ENABLE_MATRIX'] and
+            env['CONF']['TARGET_ISA'] != 'riscv'):
+        error('--enable-matrix requires TARGET_ISA=riscv')
 
     # Do this after we save setting back, or else we'll tack on an
     # extra 'qdo' every time we run scons.

@@ -2,7 +2,8 @@ def template MatrixBasicDeclare {{
     class %(class_name)s : public %(base_class)s
     {
       private:
-        %(reg_idx_arr_decl)s;
+        RegId srcRegIdxArr[8];
+        RegId destRegIdxArr[4];
 
       public:
         %(class_name)s(ExtMachInst machInst);
@@ -12,12 +13,42 @@ def template MatrixBasicDeclare {{
     };
 }};
 
+def template MatrixCSRCarrierDeclare {{
+    class %(class_name)s : public %(base_class)s
+    {
+      private:
+        RegId srcRegIdxArr[4];
+        RegId destRegIdxArr[4];
+        int carrierSrcIdx = -1;
+        int carrierDstIdx = -1;
+
+      public:
+        %(class_name)s(ExtMachInst machInst);
+        Fault execute(ExecContext *, Trace::InstRecord *) const override;
+        using %(base_class)s::generateDisassembly;
+    };
+}};
+
 def template MatrixBasicConstructor {{
     %(class_name)s::%(class_name)s(ExtMachInst machInst)
         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s)
     {
         %(set_reg_idx_arr)s;
         %(constructor)s;
+        %(extra_ctor)s;
+    }
+}};
+
+def template MatrixBasicExecute {{
+    Fault
+    %(class_name)s::execute(ExecContext *xc,
+        Trace::InstRecord *traceData) const
+    {
+        %(op_decl)s;
+        %(op_rd)s;
+        %(code)s;
+        %(post_exec)s;
+        return NoFault;
     }
 }};
 
@@ -31,14 +62,138 @@ def template MatrixBasicDisasm {{
 }};
 
 def format MatrixConfOp(code, *flags) {{
-    matrix_flags = flags + (
-        'IsNonSpeculative',
-        'IsSerializeBefore',
-        'IsSerializeAfter',
-    )
-    iop = InstObjParams(name, Name, 'RiscvStaticInst', code, matrix_flags)
+    iop = InstObjParams(
+        name,
+        Name,
+        'RiscvStaticInst',
+        {
+            'code': code,
+            'extra_ctor': "",
+            'post_exec': ""
+        },
+        flags)
     header_output = MatrixBasicDeclare.subst(iop)
     decoder_output = MatrixBasicConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)
-    exec_output = NoWBExecute.subst(iop) + MatrixBasicDisasm.subst(iop)
+    exec_output = MatrixBasicExecute.subst(iop) + MatrixBasicDisasm.subst(iop)
+}};
+
+def format MatrixCarrierOp(code, extra_ctor, post_exec, *flags) {{
+    iop = InstObjParams(
+        name,
+        Name,
+        'RiscvStaticInst',
+        {
+            'code': code,
+            'extra_ctor': extra_ctor,
+            'post_exec': post_exec
+        },
+        flags)
+    header_output = MatrixBasicDeclare.subst(iop)
+    decoder_output = MatrixBasicConstructor.subst(iop)
+    decode_block = BasicDecode.subst(iop)
+    exec_output = MatrixBasicExecute.subst(iop) + MatrixBasicDisasm.subst(iop)
+}};
+
+let {{
+def matrixCsrCarrierCtor(carrier_reg, write_guard):
+    return '''
+        setSrcRegIdx(_numSrcRegs++, %(carrier_reg)s);
+        carrierSrcIdx = _numSrcRegs - 1;
+        if (%(write_guard)s) {
+            setDestRegIdx(_numDestRegs++, %(carrier_reg)s);
+            _numTypedDestRegs[RMiscRegClass]++;
+            carrierDstIdx = _numDestRegs - 1;
+        }
+    ''' % {
+        'carrier_reg': carrier_reg,
+        'write_guard': write_guard,
+    }
+
+def matrixCsrRs1Code(data_stmt):
+    return '''
+        Rd = data;
+        %(data_stmt)s
+        write = RS1 != 0;
+    ''' % {
+        'data_stmt': data_stmt,
+    }
+
+def matrixCsrUimmCode(data_stmt):
+    return '''
+        Rd = data;
+        %(data_stmt)s
+        write = uimm != 0;
+    ''' % {
+        'data_stmt': data_stmt,
+    }
+
+def matrixCarrierCsrOutputs(name, Name, code, carrier_reg,
+        write_guard, post_exec, flags):
+    iop = InstObjParams(
+        name,
+        Name,
+        'CSROp',
+        {
+            'code': code,
+            'extra_ctor': matrixCsrCarrierCtor(carrier_reg, write_guard),
+            'csr_read': '''
+                olddata = xc->getRegOperand(this, carrierSrcIdx);
+            ''',
+            'post_csr_write': '''
+                if (carrierDstIdx >= 0) {
+                    xc->setRegOperand(this, carrierDstIdx, data);
+                }
+            ''' + post_exec
+        },
+        flags)
+    return (
+        MatrixCSRCarrierDeclare.subst(iop),
+        MatrixBasicConstructor.subst(iop),
+        BasicDecode.subst(iop),
+        CSRExecute.subst(iop)
+    )
+
+}};
+
+def format MatrixCarrierRs1WriteCSROp(carrier_reg, post_exec, *flags) {{
+    (header_output, decoder_output, decode_block, exec_output) = \
+        matrixCarrierCsrOutputs(
+            name, Name, matrixCsrRs1Code('data = Rs1;'),
+            carrier_reg, 'machInst.rs1 != 0', post_exec, flags)
+}};
+
+def format MatrixCarrierRs1SetCSROp(carrier_reg, post_exec, *flags) {{
+    (header_output, decoder_output, decode_block, exec_output) = \
+        matrixCarrierCsrOutputs(
+            name, Name, matrixCsrRs1Code('data |= Rs1;'),
+            carrier_reg, 'machInst.rs1 != 0', post_exec, flags)
+}};
+
+def format MatrixCarrierRs1ClearCSROp(carrier_reg, post_exec, *flags) {{
+    (header_output, decoder_output, decode_block, exec_output) = \
+        matrixCarrierCsrOutputs(
+            name, Name, matrixCsrRs1Code('data &= ~Rs1;'),
+            carrier_reg, 'machInst.rs1 != 0', post_exec, flags)
+}};
+
+def format MatrixCarrierUimmWriteCSROp(carrier_reg, post_exec, *flags) {{
+    (header_output, decoder_output, decode_block, exec_output) = \
+        matrixCarrierCsrOutputs(
+            name, Name, matrixCsrUimmCode('data = uimm;'),
+            carrier_reg, 'machInst.csrimm != 0', post_exec, flags)
+}};
+
+def format MatrixCarrierUimmSetCSROp(carrier_reg, post_exec, *flags) {{
+    (header_output, decoder_output, decode_block, exec_output) = \
+        matrixCarrierCsrOutputs(
+            name, Name, matrixCsrUimmCode('data |= uimm;'),
+            carrier_reg, 'machInst.csrimm != 0', post_exec, flags)
+}};
+
+def format MatrixCarrierUimmClearCSROp(carrier_reg, post_exec, *flags) {{
+    (header_output, decoder_output, decode_block, exec_output) = \
+        matrixCarrierCsrOutputs(
+            name, Name, matrixCsrUimmCode('data &= ~uimm;'),
+            carrier_reg, 'machInst.csrimm != 0', post_exec, flags)
 }};

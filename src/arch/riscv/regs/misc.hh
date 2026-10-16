@@ -54,6 +54,7 @@
 #include "arch/generic/vec_reg.hh"
 #include "base/bitunion.hh"
 #include "base/types.hh"
+#include "config/gem5_enable_matrix.hh"
 
 namespace gem5
 {
@@ -229,6 +230,22 @@ enum MiscRegIndex
     MISCREG_VL,
     MISCREG_VTYPE,
     MISCREG_VLENB,
+#if GEM5_ENABLE_MATRIX
+    MISCREG_XMCSR,
+    MISCREG_XMXRM,
+    MISCREG_XMSAT,
+    MISCREG_XMFFLAGS,
+    MISCREG_XMFRM,
+    MISCREG_XMSATEN,
+    MISCREG_XMISA,
+    MISCREG_XTLENB,
+    MISCREG_XTRLENB,
+    MISCREG_XALENB,
+    MISCREG_MTOK,
+    MISCREG_MTILEM,
+    MISCREG_MTILEN,
+    MISCREG_MTILEK,
+#endif
 
     MISCREG_HSTATUS,
     MISCREG_HEDELEG,
@@ -489,6 +506,22 @@ enum CSRIndex
     CSR_VL           = 0xC20,
     CSR_VTYPE        = 0xC21,
     CSR_VLENB        = 0xC22,
+#if GEM5_ENABLE_MATRIX
+    CSR_XMCSR        = 0x802,
+    CSR_XMXRM        = 0x806,
+    CSR_XMSAT        = 0x807,
+    CSR_XMFFLAGS     = 0x808,
+    CSR_XMFRM        = 0x809,
+    CSR_XMSATEN      = 0x80A,
+    CSR_XMISA        = 0xCC0,
+    CSR_XTLENB       = 0xCC1,
+    CSR_XTRLENB      = 0xCC2,
+    CSR_XALENB       = 0xCC3,
+    CSR_MTOK         = 0xCC4,
+    CSR_MTILEM       = 0xCC5,
+    CSR_MTILEN       = 0xCC6,
+    CSR_MTILEK       = 0xCC7,
+#endif
 
     CSR_HSTATUS     = 0x600,
     CSR_HEDELEG     = 0x602,
@@ -728,6 +761,22 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_VL,           {"vl"    , MISCREG_VL}},
     {CSR_VTYPE,        {"vtype" , MISCREG_VTYPE}},
     {CSR_VLENB,        {"VLENB" , MISCREG_VLENB}},
+#if GEM5_ENABLE_MATRIX
+    {CSR_XMCSR,        {"xmcsr", MISCREG_XMCSR}},
+    {CSR_XMXRM,        {"xmxrm", MISCREG_XMXRM}},
+    {CSR_XMSAT,        {"xmsat", MISCREG_XMSAT}},
+    {CSR_XMFFLAGS,     {"xmfflags", MISCREG_XMFFLAGS}},
+    {CSR_XMFRM,        {"xmfrm", MISCREG_XMFRM}},
+    {CSR_XMSATEN,      {"xmsaten", MISCREG_XMSATEN}},
+    {CSR_XMISA,        {"xmisa", MISCREG_XMISA}},
+    {CSR_XTLENB,       {"xtlenb", MISCREG_XTLENB}},
+    {CSR_XTRLENB,      {"xtrlenb", MISCREG_XTRLENB}},
+    {CSR_XALENB,       {"xalenb", MISCREG_XALENB}},
+    {CSR_MTOK,         {"mtok", MISCREG_MTOK}},
+    {CSR_MTILEM,       {"mtilem", MISCREG_MTILEM}},
+    {CSR_MTILEN,       {"mtilen", MISCREG_MTILEN}},
+    {CSR_MTILEK,       {"mtilek", MISCREG_MTILEK}},
+#endif
 
     {CSR_HSTATUS, {"hstatus", MISCREG_HSTATUS}},
     {CSR_HEDELEG, {"hedeleg", MISCREG_HEDELEG}},

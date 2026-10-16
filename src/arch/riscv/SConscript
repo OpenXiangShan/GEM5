@@ -46,6 +46,8 @@ Import('*')
 Source('decoder.cc', tags='riscv isa')
 Source('faults.cc', tags='riscv isa')
 Source('isa.cc', tags='riscv isa')
+if env['CONF']['GEM5_ENABLE_MATRIX']:
+    Source('matrix_isa.cc', tags='riscv isa')
 Source('process.cc', tags='riscv isa')
 Source('pagetable.cc', tags='riscv isa')
 Source('pagetable_walker.cc', tags='riscv isa')

@@ -48,6 +48,7 @@
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "cpu/base.hh"
 #include "debug/Checkpoint.hh"
 #include "debug/FloatRegs.hh"
@@ -58,8 +59,6 @@
 #include "debug/VecRegs.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
-#include "mem/se_translating_port_proxy.hh"
-#include "mem/translating_port_proxy.hh"
 #include "params/RiscvISA.hh"
 #include "sim/core.hh"
 #include "sim/faults.hh"
@@ -71,47 +70,6 @@ namespace gem5
 
 namespace RiscvISA
 {
-
-namespace
-{
-
-Fault
-matrixReadBlob(ThreadContext *tc, Addr addr, void *dst, size_t size)
-{
-    bool ok = false;
-    if (FullSystem) {
-        TranslatingPortProxy proxy(tc);
-        ok = proxy.tryReadBlob(addr, dst, size);
-    } else {
-        SETranslatingPortProxy proxy(tc);
-        ok = proxy.tryReadBlob(addr, dst, size);
-    }
-
-    if (!ok) {
-        return std::make_shared<GenericPageTableFault>(addr);
-    }
-    return NoFault;
-}
-
-Fault
-matrixWriteBlob(ThreadContext *tc, Addr addr, const void *src, size_t size)
-{
-    bool ok = false;
-    if (FullSystem) {
-        TranslatingPortProxy proxy(tc);
-        ok = proxy.tryWriteBlob(addr, src, size);
-    } else {
-        SETranslatingPortProxy proxy(tc);
-        ok = proxy.tryWriteBlob(addr, src, size);
-    }
-
-    if (!ok) {
-        return std::make_shared<GenericPageTableFault>(addr);
-    }
-    return NoFault;
-}
-
-} // namespace
 
 [[maybe_unused]] const std::array<const char *, NUM_MISC_AND_HELPER_REGS> MiscRegNames = {{
     [MISCREG_PRV]           = "PRV",
@@ -280,6 +238,22 @@ matrixWriteBlob(ThreadContext *tc, Addr addr, const void *src, size_t size)
     [MISCREG_VL]            = "VL",
     [MISCREG_VTYPE]         = "VTYPE",
     [MISCREG_VLENB]         = "VLENB",
+#if GEM5_ENABLE_MATRIX
+    [MISCREG_XMCSR]         = "XMCSR",
+    [MISCREG_XMXRM]         = "XMXRM",
+    [MISCREG_XMSAT]         = "XMSAT",
+    [MISCREG_XMFFLAGS]      = "XMFFLAGS",
+    [MISCREG_XMFRM]         = "XMFRM",
+    [MISCREG_XMSATEN]       = "XMSATEN",
+    [MISCREG_XMISA]         = "XMISA",
+    [MISCREG_XTLENB]        = "XTLENB",
+    [MISCREG_XTRLENB]       = "XTRLENB",
+    [MISCREG_XALENB]        = "XALENB",
+    [MISCREG_MTOK]          = "MTOK",
+    [MISCREG_MTILEM]        = "MTILEM",
+    [MISCREG_MTILEN]        = "MTILEN",
+    [MISCREG_MTILEK]        = "MTILEK",
+#endif
 
     [MISCREG_HSTATUS]       = "HSTATUS",
     [MISCREG_HEDELEG]       = "HEDELEG",
@@ -346,7 +320,6 @@ ISA::ISA(const Params &p) : BaseISA(p)
     _regClasses.emplace_back(MiscRegClass, NUM_MISCREGS, debug::MiscRegs, sizeof(RegVal));
 
     miscRegFile.resize(NUM_MISCREGS);
-    resetMatrixState();
     clear();
 }
 
@@ -379,7 +352,9 @@ ISA::copyRegsFrom(ThreadContext *src)
 void ISA::clear()
 {
     std::fill(miscRegFile.begin(), miscRegFile.end(), 0);
+#if GEM5_ENABLE_MATRIX
     resetMatrixState();
+#endif
 
     miscRegFile[MISCREG_PRV] = PRV_M;
     miscRegFile[MISCREG_ISA] = 0x80000000003411af;
@@ -412,136 +387,6 @@ void ISA::clear()
     miscRegFile[MISCREG_VSSTATUS] = miscRegFile[MISCREG_STATUS] & NEMU_SSTATUS_RMASK;
     miscRegFile[MISCREG_ARCHID] = 0x19;
     miscRegFile[MISCREG_VENDORID] = (16ULL << 7) | 0x6FULL;
-}
-
-void
-ISA::resetMatrixState()
-{
-    matrixTileM = 0;
-    matrixTileK = 0;
-    matrixTileN = 0;
-    matrixTileA.assign(MatrixTileABytes, 0);
-    matrixTileB.assign(MatrixTileBBytes, 0);
-    matrixAcc.assign(MatrixAccElems, 0);
-    matrixTokens.assign(32, 0);
-}
-
-void
-ISA::matrixSyncReset(uint64_t token_idx)
-{
-    matrixToken(token_idx) = 0;
-}
-
-void
-ISA::matrixRelease(uint64_t token_idx)
-{
-    ++matrixToken(token_idx);
-}
-
-void
-ISA::matrixAcquire(uint64_t token_idx, uint64_t target)
-{
-    panic_if(matrixToken(token_idx) < target,
-        "macquire tok%u target=%llu observed=%llu",
-        token_idx, target, matrixToken(token_idx));
-}
-
-void
-ISA::setMatrixTileM(uint64_t value)
-{
-    matrixTileM = clampMatrixTileM(value);
-}
-
-void
-ISA::setMatrixTileK(uint64_t value)
-{
-    matrixTileK = clampMatrixTileK(value);
-}
-
-void
-ISA::setMatrixTileN(uint64_t value)
-{
-    matrixTileN = clampMatrixTileN(value);
-}
-
-Fault
-ISA::matrixLoadA8(ExecContext *xc, Addr base, Addr stride)
-{
-    ThreadContext *tc = xc->tcBase();
-    for (uint32_t row = 0; row < matrixTileM; ++row) {
-        auto *dst = reinterpret_cast<uint8_t *>(&matrixTileA[row * MatrixMaxK]);
-        Fault fault = matrixReadBlob(tc, base + row * stride, dst, matrixTileK);
-        if (fault != NoFault) {
-            return fault;
-        }
-    }
-    return NoFault;
-}
-
-Fault
-ISA::matrixLoadB8(ExecContext *xc, Addr base, Addr stride)
-{
-    ThreadContext *tc = xc->tcBase();
-    for (uint32_t row = 0; row < matrixTileN; ++row) {
-        auto *dst = reinterpret_cast<uint8_t *>(&matrixTileB[row * MatrixMaxK]);
-        Fault fault = matrixReadBlob(tc, base + row * stride, dst, matrixTileK);
-        if (fault != NoFault) {
-            return fault;
-        }
-    }
-    return NoFault;
-}
-
-Fault
-ISA::matrixLoadC32(ExecContext *xc, Addr base, Addr stride)
-{
-    ThreadContext *tc = xc->tcBase();
-    for (uint32_t row = 0; row < matrixTileM; ++row) {
-        auto *dst = reinterpret_cast<uint8_t *>(&matrixAcc[row * MatrixMaxN]);
-        Fault fault = matrixReadBlob(
-            tc, base + row * stride, dst, matrixTileN * sizeof(int32_t));
-        if (fault != NoFault) {
-            return fault;
-        }
-    }
-    return NoFault;
-}
-
-Fault
-ISA::matrixStoreC32(ExecContext *xc, Addr base, Addr stride)
-{
-    ThreadContext *tc = xc->tcBase();
-    for (uint32_t row = 0; row < matrixTileM; ++row) {
-        auto *src = reinterpret_cast<uint8_t *>(&matrixAcc[row * MatrixMaxN]);
-        Fault fault = matrixWriteBlob(
-            tc, base + row * stride, src, matrixTileN * sizeof(int32_t));
-        if (fault != NoFault) {
-            return fault;
-        }
-    }
-    return NoFault;
-}
-
-void
-ISA::matrixZeroAcc()
-{
-    std::fill(matrixAcc.begin(), matrixAcc.end(), 0);
-}
-
-void
-ISA::matrixMMAccWB()
-{
-    for (uint32_t m = 0; m < matrixTileM; ++m) {
-        for (uint32_t n = 0; n < matrixTileN; ++n) {
-            int32_t acc = matrixAcc[m * MatrixMaxN + n];
-            for (uint32_t k = 0; k < matrixTileK; ++k) {
-                int8_t a = matrixTileA[m * MatrixMaxK + k];
-                int8_t b = matrixTileB[n * MatrixMaxK + k];
-                acc += static_cast<int32_t>(a) * static_cast<int32_t>(b);
-            }
-            matrixAcc[m * MatrixMaxN + n] = acc;
-        }
-    }
 }
 
 bool
@@ -590,6 +435,15 @@ ISA::readMiscRegNoEffect(int misc_reg) const
         panic("Illegal CSR index %#x\n", misc_reg);
         return -1;
     }
+#if GEM5_ENABLE_MATRIX
+    RegVal val;
+    if (readMatrixMiscReg(misc_reg, val)) {
+        DPRINTF(RiscvMisc, "Reading MiscReg %s (%d): %#x.\n",
+                MiscRegNames[misc_reg], misc_reg, val);
+        return val;
+    }
+#endif
+
     DPRINTF(RiscvMisc, "Reading MiscReg %s (%d): %#x.\n",
             MiscRegNames[misc_reg], misc_reg, miscRegFile[misc_reg]);
     return miscRegFile[misc_reg];
@@ -716,6 +570,23 @@ ISA::readMiscReg(int misc_reg)
             return VLENB;
         }
         break;
+#if GEM5_ENABLE_MATRIX
+      case MISCREG_XMCSR:
+      case MISCREG_XMXRM:
+      case MISCREG_XMSAT:
+      case MISCREG_XMFFLAGS:
+      case MISCREG_XMFRM:
+      case MISCREG_XMSATEN:
+      case MISCREG_XMISA:
+      case MISCREG_XTLENB:
+      case MISCREG_XTRLENB:
+      case MISCREG_XALENB:
+      case MISCREG_MTOK:
+      case MISCREG_MTILEM:
+      case MISCREG_MTILEN:
+      case MISCREG_MTILEK:
+        return readMiscRegNoEffect(misc_reg);
+#endif
       case MISCREG_VCSR:
         {
             return readMiscRegNoEffect(MISCREG_VXSAT) |
@@ -758,6 +629,49 @@ ISA::setMiscRegNoEffect(int misc_reg, RegVal val)
     }
     DPRINTF(RiscvMisc, "Setting MiscReg %s (%d) to %#x.\n",
             MiscRegNames[misc_reg], misc_reg, val);
+#if GEM5_ENABLE_MATRIX
+    switch (misc_reg) {
+      case MISCREG_XMCSR:
+        matrixXmxrm = val & 0x3;
+        matrixXmsat = (val >> 2) & 0x1;
+        matrixXmfflags = (val >> 3) & 0x1f;
+        matrixXmfrm = (val >> 8) & 0x7;
+        matrixXmsaten = (val >> 11) & 0x1;
+        return;
+      case MISCREG_XMXRM:
+        matrixXmxrm = val & 0x3;
+        return;
+      case MISCREG_XMSAT:
+        matrixXmsat = val & 0x1;
+        return;
+      case MISCREG_XMFFLAGS:
+        matrixXmfflags = val & 0x1f;
+        return;
+      case MISCREG_XMFRM:
+        matrixXmfrm = val & 0x7;
+        return;
+      case MISCREG_XMSATEN:
+        matrixXmsaten = val & 0x1;
+        return;
+      case MISCREG_MTILEM:
+        matrixTileM = val;
+        return;
+      case MISCREG_MTILEN:
+        matrixTileN = val;
+        return;
+      case MISCREG_MTILEK:
+        matrixTileK = val;
+        return;
+      case MISCREG_XMISA:
+      case MISCREG_XTLENB:
+      case MISCREG_XTRLENB:
+      case MISCREG_XALENB:
+      case MISCREG_MTOK:
+        return;
+      default:
+        break;
+    }
+#endif
     miscRegFile[misc_reg] = val;
 }
 
@@ -1065,6 +979,27 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 setMiscRegNoEffect(misc_reg, val);
             }
             break;
+#if GEM5_ENABLE_MATRIX
+          case MISCREG_XMCSR:
+          case MISCREG_XMXRM:
+          case MISCREG_XMSAT:
+          case MISCREG_XMFFLAGS:
+          case MISCREG_XMFRM:
+          case MISCREG_XMSATEN:
+            setMiscRegNoEffect(misc_reg, val);
+            break;
+          case MISCREG_XMISA:
+          case MISCREG_XTLENB:
+          case MISCREG_XTRLENB:
+          case MISCREG_XALENB:
+          case MISCREG_MTOK:
+            break;
+          case MISCREG_MTILEM:
+          case MISCREG_MTILEN:
+          case MISCREG_MTILEK:
+            setMiscRegNoEffect(misc_reg, val);
+            break;
+#endif
           case MISCREG_MIDELEG:
             {
                RegVal writeVal = val|((1 << 12) | (1 << 10) | (1 << 6) | (1 << 2));
@@ -1098,13 +1033,17 @@ ISA::serialize(CheckpointOut &cp) const
 {
     DPRINTF(Checkpoint, "Serializing Riscv Misc Registers\n");
     SERIALIZE_CONTAINER(miscRegFile);
+#if GEM5_ENABLE_MATRIX
+    SERIALIZE_SCALAR(matrixXmxrm);
+    SERIALIZE_SCALAR(matrixXmsat);
+    SERIALIZE_SCALAR(matrixXmfflags);
+    SERIALIZE_SCALAR(matrixXmfrm);
+    SERIALIZE_SCALAR(matrixXmsaten);
     SERIALIZE_SCALAR(matrixTileM);
     SERIALIZE_SCALAR(matrixTileK);
     SERIALIZE_SCALAR(matrixTileN);
-    SERIALIZE_CONTAINER(matrixTileA);
-    SERIALIZE_CONTAINER(matrixTileB);
-    SERIALIZE_CONTAINER(matrixAcc);
     SERIALIZE_CONTAINER(matrixTokens);
+#endif
 }
 
 void
@@ -1114,29 +1053,17 @@ ISA::unserialize(CheckpointIn &cp)
     UNSERIALIZE_CONTAINER(miscRegFile);
     if (miscRegFile.size() < NUM_MISCREGS)
         miscRegFile.resize(NUM_MISCREGS, 0);
+#if GEM5_ENABLE_MATRIX
+    UNSERIALIZE_SCALAR(matrixXmxrm);
+    UNSERIALIZE_SCALAR(matrixXmsat);
+    UNSERIALIZE_SCALAR(matrixXmfflags);
+    UNSERIALIZE_SCALAR(matrixXmfrm);
+    UNSERIALIZE_SCALAR(matrixXmsaten);
     UNSERIALIZE_SCALAR(matrixTileM);
     UNSERIALIZE_SCALAR(matrixTileK);
     UNSERIALIZE_SCALAR(matrixTileN);
-    UNSERIALIZE_CONTAINER(matrixTileA);
-    UNSERIALIZE_CONTAINER(matrixTileB);
-    UNSERIALIZE_CONTAINER(matrixAcc);
     UNSERIALIZE_CONTAINER(matrixTokens);
-}
-
-RegVal &
-ISA::matrixToken(size_t idx)
-{
-    panic_if(idx >= matrixTokens.size(), "matrix token index %u out of range",
-        idx);
-    return matrixTokens[idx];
-}
-
-const RegVal &
-ISA::matrixToken(size_t idx) const
-{
-    panic_if(idx >= matrixTokens.size(), "matrix token index %u out of range",
-        idx);
-    return matrixTokens[idx];
+#endif
 }
 
 const int WARN_FAILURE = 10000;

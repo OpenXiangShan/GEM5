@@ -2703,6 +2703,17 @@ decode QUADRANT {
                         data = Rs1;
                         write = RS1 != 0;
                     }}, IsSerializeAfter,IsNonSpeculative, No_OpClass);
+#if GEM5_ENABLE_MATRIX
+                    0xCC5:MatrixCarrierRs1WriteCSROp::csrrw_mtilem(
+                    MatrixRenamedTileMReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC6:MatrixCarrierRs1WriteCSROp::csrrw_mtilen(
+                    MatrixRenamedTileNReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC7:MatrixCarrierRs1WriteCSROp::csrrw_mtilek(
+                    MatrixRenamedTileKReg, {{
+                    }}, MatrixCsrOp);
+#endif
                     0x100:csrrw_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -2727,6 +2738,17 @@ decode QUADRANT {
                         data |= Rs1_use;
                         write = RS1 != 0;
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+#if GEM5_ENABLE_MATRIX
+                    0xCC5:MatrixCarrierRs1SetCSROp::csrrs_mtilem(
+                    MatrixRenamedTileMReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC6:MatrixCarrierRs1SetCSROp::csrrs_mtilen(
+                    MatrixRenamedTileNReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC7:MatrixCarrierRs1SetCSROp::csrrs_mtilek(
+                    MatrixRenamedTileKReg, {{
+                    }}, MatrixCsrOp);
+#endif
                     0x100:csrrs_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -2755,6 +2777,17 @@ decode QUADRANT {
                         data &= ~Rs1_use;
                         write = RS1 != 0;
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+#if GEM5_ENABLE_MATRIX
+                    0xCC5:MatrixCarrierRs1ClearCSROp::csrrc_mtilem(
+                    MatrixRenamedTileMReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC6:MatrixCarrierRs1ClearCSROp::csrrc_mtilen(
+                    MatrixRenamedTileNReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC7:MatrixCarrierRs1ClearCSROp::csrrc_mtilek(
+                    MatrixRenamedTileKReg, {{
+                    }}, MatrixCsrOp);
+#endif
                     0x100:csrrc_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -2779,6 +2812,17 @@ decode QUADRANT {
                         data = uimm;
                         write = uimm != 0;
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+#if GEM5_ENABLE_MATRIX
+                    0xCC5:MatrixCarrierUimmWriteCSROp::csrrwi_mtilem(
+                    MatrixRenamedTileMReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC6:MatrixCarrierUimmWriteCSROp::csrrwi_mtilen(
+                    MatrixRenamedTileNReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC7:MatrixCarrierUimmWriteCSROp::csrrwi_mtilek(
+                    MatrixRenamedTileKReg, {{
+                    }}, MatrixCsrOp);
+#endif
                     0x100:csrrwi_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -2803,6 +2847,17 @@ decode QUADRANT {
                         data |= uimm_use;
                         write = uimm != 0;
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+#if GEM5_ENABLE_MATRIX
+                    0xCC5:MatrixCarrierUimmSetCSROp::csrrsi_mtilem(
+                    MatrixRenamedTileMReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC6:MatrixCarrierUimmSetCSROp::csrrsi_mtilen(
+                    MatrixRenamedTileNReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC7:MatrixCarrierUimmSetCSROp::csrrsi_mtilek(
+                    MatrixRenamedTileKReg, {{
+                    }}, MatrixCsrOp);
+#endif
                     0x100:csrrsi_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -2827,6 +2882,17 @@ decode QUADRANT {
                         data &= ~uimm;
                         write = uimm != 0;
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+#if GEM5_ENABLE_MATRIX
+                    0xCC5:MatrixCarrierUimmClearCSROp::csrrci_mtilem(
+                    MatrixRenamedTileMReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC6:MatrixCarrierUimmClearCSROp::csrrci_mtilen(
+                    MatrixRenamedTileNReg, {{
+                    }}, MatrixCsrOp);
+                    0xCC7:MatrixCarrierUimmClearCSROp::csrrci_mtilek(
+                    MatrixRenamedTileKReg, {{
+                    }}, MatrixCsrOp);
+#endif
                     0x100:csrrci_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -2845,124 +2911,9 @@ decode QUADRANT {
             }
         }
 
-        0x0a: decode FUNCT7 {
-            0x40: decode RD {
-                0x0: MatrixConfOp::msyncreset({{
-                    auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                    assert(isa != nullptr);
-                    isa->matrixSyncReset(RS2);
-                }}, IsNonSpeculative, IsSerializeAfter, No_OpClass);
-            }
-            0x48: decode RD {
-                0x0: MatrixConfOp::mrelease({{
-                    auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                    assert(isa != nullptr);
-                    isa->matrixRelease(RS2);
-                }}, IsNonSpeculative, IsSerializeAfter, No_OpClass);
-            }
-            0x50: decode RD {
-                0x0: MatrixConfOp::macquire({{
-                    auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                    assert(isa != nullptr);
-                    isa->matrixAcquire(RS2, Rs1_ud);
-                }}, IsNonSpeculative, IsSerializeAfter, No_OpClass);
-            }
-            0x11: decode RS2 {
-                0x0: decode FUNCT3 {
-                    0x0: decode RD {
-                        0x0: MatrixConfOp::msettilem({{
-                            auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                            assert(isa != nullptr);
-                            isa->setMatrixTileM(Rs1_ud);
-                        }}, No_OpClass);
-                    }
-                }
-            }
-            0x09: decode RS2 {
-                0x0: decode FUNCT3 {
-                    0x0: decode RD {
-                        0x0: MatrixConfOp::msettilek({{
-                            auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                            assert(isa != nullptr);
-                            isa->setMatrixTileK(Rs1_ud);
-                        }}, No_OpClass);
-                    }
-                }
-            }
-            0x19: decode RS2 {
-                0x0: decode FUNCT3 {
-                    0x0: decode RD {
-                        0x0: MatrixConfOp::msettilen({{
-                            auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                            assert(isa != nullptr);
-                            isa->setMatrixTileN(Rs1_ud);
-                        }}, No_OpClass);
-                    }
-                }
-            }
-            0x06: decode RS2 {
-                0x0: decode RS1 {
-                    0x0: decode FUNCT3 {
-                        0x0: decode RD {
-                            0x4: MatrixConfOp::mzero1r({{
-                                auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                                assert(isa != nullptr);
-                                isa->matrixZeroAcc();
-                            }}, No_OpClass);
-                        }
-                    }
-                }
-            }
-            0x02: decode FUNCT3 {
-                0x0: decode RD {
-                    0x0: MatrixMemOp::mlae8({{
-                        auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                        assert(isa != nullptr);
-                        return isa->matrixLoadA8(xc, Rs1_ud, Rs2_ud);
-                    }}, No_OpClass);
-                }
-            }
-            0x0a: decode FUNCT3 {
-                0x0: decode RD {
-                    0x1: MatrixMemOp::mlbe8({{
-                        auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                        assert(isa != nullptr);
-                        return isa->matrixLoadB8(xc, Rs1_ud, Rs2_ud);
-                    }}, No_OpClass);
-                }
-            }
-            0x12: decode FUNCT3 {
-                0x0: decode RD {
-                    0x14: MatrixMemOp::mlce32({{
-                        auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                        assert(isa != nullptr);
-                        return isa->matrixLoadC32(xc, Rs1_ud, Rs2_ud);
-                    }}, No_OpClass);
-                }
-            }
-            0x13: decode FUNCT3 {
-                0x0: decode RD {
-                    0x14: MatrixMemOp::msce32({{
-                        auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                        assert(isa != nullptr);
-                        return isa->matrixStoreC32(xc, Rs1_ud, Rs2_ud);
-                    }}, No_OpClass);
-                }
-            }
-            0x0c: decode FUNCT3 {
-                0x0: decode RS1 {
-                    0x0: decode RS2 {
-                        0x19: decode RD {
-                            0x14: MatrixArithOp::mmacc_w_b({{
-                                auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
-                                assert(isa != nullptr);
-                                isa->matrixMMAccWB();
-                            }}, No_OpClass);
-                        }
-                    }
-                }
-            }
-        }
+#if GEM5_ENABLE_MATRIX
+##include "matrix/decode.isa"
+#endif
 
         0x1e: M5Op::M5Op();
 

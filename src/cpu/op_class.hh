@@ -41,6 +41,7 @@
 #ifndef __CPU__OP_CLASS_HH__
 #define __CPU__OP_CLASS_HH__
 
+#include "config/gem5_enable_matrix.hh"
 #include "enums/OpClass.hh"
 
 namespace gem5
@@ -106,6 +107,15 @@ static const OpClass VectorFloatReduceOp = enums::VectorFloatReduce;
 static const OpClass VectorMiscOp = enums::VectorMisc;
 static const OpClass VectorIntegerExtensionOp = enums::VectorIntegerExtension;
 static const OpClass VectorConfigOp = enums::VectorConfig;
+#if GEM5_ENABLE_MATRIX
+static const OpClass MatrixIntOp = enums::MatrixInt;
+static const OpClass MatrixReleaseOp = enums::MatrixRelease;
+static const OpClass MatrixCsrOp = enums::MatrixCsr;
+static const OpClass MatrixMmaOp = enums::MatrixMma;
+static const OpClass MatrixArithOp = enums::MatrixArith;
+static const OpClass MatrixSyncOp = enums::MatrixSync;
+static const OpClass MatrixMemOp = enums::MatrixMem;
+#endif
 static const OpClass Num_OpClasses = enums::Num_OpClass;
 
 } // namespace gem5

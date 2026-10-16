@@ -44,11 +44,17 @@
 
 #include "arch/vecregs.hh"
 #include "base/types.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "config/the_isa.hh"
 #include "cpu/base.hh"
 #include "cpu/reg_class.hh"
 #include "cpu/static_inst_fwd.hh"
 #include "cpu/translation.hh"
+
+#if GEM5_ENABLE_MATRIX
+#include "cpu/matrix_exec_context.hh"
+
+#endif
 #include "mem/request.hh"
 
 namespace gem5
@@ -73,6 +79,9 @@ namespace gem5
 class ExecContext
 {
   public:
+#if GEM5_ENABLE_MATRIX
+    using MatrixExecPayload = gem5::MatrixExecPayload;
+#endif
 
     virtual RegVal getRegOperand(const StaticInst *si, int idx) = 0;
     virtual void getRegOperand(const StaticInst *si, int idx, void *val) = 0;
@@ -230,6 +239,34 @@ class ExecContext
     virtual AddressMonitor *getAddrMonitor() = 0;
 
     /** @} */
+#if GEM5_ENABLE_MATRIX
+
+    virtual bool
+    stageMatrixExecPayload(const MatrixExecPayload &payload)
+    {
+        return false;
+    }
+
+    virtual bool
+    stageMatrixTokenReset(RegVal token_idx)
+    {
+        return false;
+    }
+
+    virtual bool
+    stageMatrixTokenRelease(RegVal token_idx)
+    {
+        return false;
+    }
+
+    virtual bool
+    readStagedMatrixTokenReady(RegVal token_idx, RegVal threshold,
+                               bool &ready)
+    {
+        ready = false;
+        return false;
+    }
+#endif
 };
 
 } // namespace gem5

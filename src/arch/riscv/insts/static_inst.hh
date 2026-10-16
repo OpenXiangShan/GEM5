@@ -32,6 +32,13 @@
 
 #include <string>
 
+#include "config/gem5_enable_matrix.hh"
+
+#if GEM5_ENABLE_MATRIX
+#include "arch/riscv/insts/matrix_static_info.hh"
+#include "arch/riscv/regs/matrix.hh"
+
+#endif
 #include "arch/riscv/pcstate.hh"
 #include "arch/riscv/regs/misc.hh"
 #include "arch/riscv/types.hh"
@@ -39,6 +46,7 @@
 #include "cpu/static_inst.hh"
 #include "cpu/thread_context.hh"
 #include "mem/packet.hh"
+
 namespace gem5
 {
 
@@ -53,12 +61,25 @@ class RiscvStaticInst : public StaticInst
   protected:
     RiscvStaticInst(const char *_mnemonic, ExtMachInst _machInst,
             OpClass __opClass) :
+#if GEM5_ENABLE_MATRIX
+        StaticInst(_mnemonic, __opClass), machInst(_machInst),
+        matrixStaticInfo_(matrixStaticInfoFromMachInst(_machInst))
+#else
         StaticInst(_mnemonic, __opClass), machInst(_machInst)
+#endif
     {}
 
   public:
     ExtMachInst machInst;
 
+#if GEM5_ENABLE_MATRIX
+    const MatrixStaticInfo &
+    matrixStaticInfo() const
+    {
+        return matrixStaticInfo_;
+    }
+
+#endif
     void
     advancePC(PCStateBase &pc) const override
     {
@@ -94,6 +115,11 @@ class RiscvStaticInst : public StaticInst
     virtual int64_t getImm() const override {
         return 0;
     }
+#if GEM5_ENABLE_MATRIX
+
+  private:
+    MatrixStaticInfo matrixStaticInfo_;
+#endif
 };
 
 /**

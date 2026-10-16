@@ -417,12 +417,7 @@ def template CSRExecute {{
             break;
         }
 
-        if (csr == CSR_FCSR) {
-            olddata = xc->readMiscReg(MISCREG_FFLAGS) |
-                      (xc->readMiscReg(MISCREG_FRM) << FRM_OFFSET);
-        } else {
-            olddata = xc->readMiscReg(midx);
-        }
+        %(csr_read)s;
         auto olddata_all = olddata;
         uint64_t maskVal_num = maskVal;
         if(csr == CSR_SIE){
@@ -483,6 +478,7 @@ def template CSRExecute {{
                 break;
             }
         }
+        %(post_csr_write)s;
         %(op_wb)s;
         return NoFault;
     }
@@ -587,7 +583,21 @@ def format SystemOp(code, *opt_flags) {{
 }};
 
 def format CSROp(code, *opt_flags) {{
-    iop = InstObjParams(name, Name, 'CSROp', code, opt_flags)
+    iop = InstObjParams(
+        name, Name, 'CSROp',
+        {
+            'code': code,
+            'csr_read': '''
+                if (csr == CSR_FCSR) {
+                    olddata = xc->readMiscReg(MISCREG_FFLAGS) |
+                              (xc->readMiscReg(MISCREG_FRM) << FRM_OFFSET);
+                } else {
+                    olddata = xc->readMiscReg(midx);
+                }
+            ''',
+            'post_csr_write': ''
+        },
+        opt_flags)
     header_output = BasicDeclare.subst(iop)
     decoder_output = BasicConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)
