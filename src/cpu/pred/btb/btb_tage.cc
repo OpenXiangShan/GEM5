@@ -131,6 +131,7 @@ enableSecondBlockShadow(p.enableSecondBlockShadow),
 secondBlockShadowMaxTable(
     numPredictors == 0 ? 0 :
     std::min(p.secondBlockShadowMaxTable, numPredictors - 1)),
+secondBlockTrainCanonical(p.secondBlockTrainCanonical),
 maxBranchPositions(p.maxBranchPositions),
 useAltOnNaSize(p.useAltOnNaSize),
 useAltOnNaWidth(p.useAltOnNaWidth),
@@ -1000,8 +1001,10 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                                  std::shared_ptr<TageMeta> meta,
                                  uint8_t asidHash,
                                  ThreadID tid,
-                                 AllocationTraceInfo &allocInfo) {
-    const bool secondBlock = meta->hasSecondBlockContext;
+                                 AllocationTraceInfo &allocInfo,
+                                 bool canonical) {
+    // A canonical update addresses block2 by its own start PC and H2.
+    const bool secondBlock = meta->hasSecondBlockContext && !canonical;
     const unsigned context = secondBlock ? 1 : 0;
     // Match RTL victim priority:
     // 1) invalid way
@@ -1010,9 +1013,9 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 
     // Second-block entries share block1's set index and use block2's tag
     // context. The same context was used to produce the FTQ prediction meta.
-    const Addr indexPC = meta->hasSecondBlockContext ?
+    const Addr indexPC = secondBlock ?
         meta->secondBlockContext.indexPC : startPC;
-    const Addr tagPC = meta->hasSecondBlockContext ?
+    const Addr tagPC = secondBlock ?
         meta->secondBlockContext.tagPC : startPC;
     unsigned position = getBranchIndexInBlock(entry.pc, tagPC);
 
@@ -1023,13 +1026,13 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                                       TageTableInfo::Storage::Main;
         auto &tables = storageTable(storage);
         const unsigned statIndex = context * numPredictors + ti;
-        const uint64_t indexFolded = meta->hasSecondBlockContext ?
+        const uint64_t indexFolded = secondBlock ?
             meta->secondBlockContext.indexFoldedHist[ti] :
             meta->indexFoldedHist[ti].get();
-        const uint64_t tagFolded = meta->hasSecondBlockContext ?
+        const uint64_t tagFolded = secondBlock ?
             meta->secondBlockContext.tagFoldedHist[ti] :
             meta->tagFoldedHist[ti].get();
-        const uint64_t altTagFolded = meta->hasSecondBlockContext ?
+        const uint64_t altTagFolded = secondBlock ?
             meta->secondBlockContext.altTagFoldedHist[ti] :
             meta->altTagFoldedHist[ti].get();
         Addr newIndex = getTageIndex(
@@ -1240,6 +1243,27 @@ BTBTAGE::update(
                                      start_table, predMeta, stream.asidHash,
                                      stream.tid,
                                      allocInfo);
+        }
+
+        // Share H2 learning with the entry block2 reads when it is block1.
+        // The meta folded histories hold H2; re-read the canonical entry.
+        if (secondBlockTrainCanonical && predMeta->hasSecondBlockContext) {
+            auto canonical = generateSinglePrediction(
+                btb_entry, startAddr, predMeta, stream.tid, stream.asidHash,
+                nullptr);
+            tageStats.secondBlockCanonicalUpdates++;
+            if (updatePredictorStateAndCheckAllocation(
+                    btb_entry, actual_taken, canonical, branch.mispredicted)) {
+                const unsigned canonicalStart = canonical.mainInfo.found ?
+                    canonical.mainInfo.table + 1 : 0;
+                AllocationTraceInfo canonicalAlloc;
+                tageStats.secondBlockCanonicalAllocs +=
+                    handleNewEntryAllocation(startAddr, btb_entry,
+                                             actual_taken, canonicalStart,
+                                             predMeta, stream.asidHash,
+                                             stream.tid, canonicalAlloc,
+                                             true);
+            }
         }
 
 #ifndef UNIT_TEST
@@ -1736,7 +1760,11 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(mainLowResetU, statistics::units::Count::get(),
         "main low-table useful sweeps with H2 shadow enabled"),
     ADD_STAT(sharedHighResetU, statistics::units::Count::get(),
-        "shared high-table useful sweeps with H2 shadow enabled")
+        "shared high-table useful sweeps with H2 shadow enabled"),
+    ADD_STAT(secondBlockCanonicalUpdates, statistics::units::Count::get(),
+        "extra canonical-entry updates from resolved second blocks"),
+    ADD_STAT(secondBlockCanonicalAllocs, statistics::units::Count::get(),
+        "successful canonical-entry allocations from resolved second blocks")
 {
     init(numPredictors, numBanks);
 }

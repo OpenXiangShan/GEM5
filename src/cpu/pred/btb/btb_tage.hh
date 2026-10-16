@@ -331,6 +331,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Optional storage used only by second-block lookups and updates.
     bool enableSecondBlockShadow{false};
     unsigned secondBlockShadowMaxTable{0};
+    // Also train block2's canonical (block2 start + H2) entry on resolve.
+    bool secondBlockTrainCanonical{false};
     std::vector<std::vector<std::vector<TageEntry>>> secondBlockShadowTable;
     std::vector<short> secondBlockShadowUseAlt;
     int secondBlockShadowUsefulResetCnt{0};
@@ -537,6 +539,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Vector contextEvictions;
         Scalar mainLowResetU;
         Scalar sharedHighResetU;
+        Scalar secondBlockCanonicalUpdates;
+        Scalar secondBlockCanonicalAllocs;
     } ;
 
     TageStats tageStats;
@@ -609,7 +613,8 @@ private:
                                  std::shared_ptr<TageMeta> meta,
                                  uint8_t asidHash,
                                  ThreadID tid,
-                                 AllocationTraceInfo &allocInfo);
+                                 AllocationTraceInfo &allocInfo,
+                                 bool canonical = false);
 
     // Account for one candidate table; reset only its physical domain.
     void recordAllocationResult(unsigned table, TageTableInfo::Storage storage,

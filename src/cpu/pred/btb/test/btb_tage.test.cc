@@ -868,6 +868,31 @@ TEST_P(SecondBlockShadowTest, ConflictingLowTrainingPreservesH1MainLow)
     EXPECT_EQ(tage.secondBlockShadowTable[1][index(1)][0].counter, -4);
 }
 
+TEST_P(SecondBlockShadowTest, CanonicalTrainingSharesH2LearningWithH1)
+{
+    tage.secondBlockTrainCanonical = true;
+    install(false, 1, 2, true);
+    install(false, 0, 1, false);
+    install(true, 1, -2, false);
+    ASSERT_TRUE(predictFirst()->preds.at(branch.pc).taken);
+
+    for (unsigned iteration = 0; iteration < 8; ++iteration) {
+        const auto meta = predictSecond();
+        ASSERT_FALSE(meta->preds.at(branch.pc).taken);
+        train(meta, false);
+    }
+
+    // The H2 provider still trains its own storage, and the same resolve
+    // also trains block2's canonical Main provider read by H1 lookups.
+    EXPECT_EQ(tage.secondBlockShadowTable[1][index(1)][0].counter, -4);
+    const auto h1 = predictFirst()->preds.at(branch.pc);
+    EXPECT_FALSE(h1.taken);
+    ASSERT_TRUE(h1.mainInfo.found);
+    EXPECT_EQ(h1.mainInfo.storage, Storage::Main);
+    EXPECT_EQ(h1.mainInfo.table, 1U);
+    EXPECT_EQ(tage.tageStats.secondBlockCanonicalUpdates, 8);
+}
+
 TEST_P(SecondBlockShadowTest, MainHighWinsOverShadowLowAndTrainsSharedProvider)
 {
     install(false, 2, 2, false);

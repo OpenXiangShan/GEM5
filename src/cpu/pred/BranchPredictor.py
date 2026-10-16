@@ -1075,6 +1075,10 @@ class BTBTAGE(TimedBaseBTBPredictor):
     secondBlockShadowMaxTable = Param.Unsigned(
         1,
         "Highest TAGE table index stored in the second-block shadow")
+    secondBlockTrainCanonical = Param.Bool(
+        False,
+        "On second-block resolve, also train block2's canonical "
+        "(own start PC + H2) MainTAGE entry")
     numDelay = 2
 
 class BTBTAGEUpperBound(BTBTAGE):

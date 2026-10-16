@@ -466,3 +466,42 @@ and ROI checks.
 The 69-test TAGE target, including 38 hybrid/update-mode cases, and a checkpoint
 smoke exercise cross-domain learning and reset isolation. No extra port/latency
 cost is modeled and no weighted SPEC06Int score has been measured.
+
+## 16. H2 canonical-entry training experiment
+
+With H1-index/H2-tag, the same branch in the same path context lives in two
+entries: the H2 entry (block1 index, block2 tag) read when the block is a
+second block, and the canonical entry (block2 start PC + H2 for both index and
+tag) read when the same block is predicted as a first block. Without sharing,
+each copy learns from only part of the visits.
+
+`BTBTAGE.secondBlockTrainCanonical` (default `False`) makes each resolved
+second-block conditional branch also train its canonical Main entry, after the
+normal H2 update. The canonical provider is re-read from the H2 folded
+histories saved in the FTQ meta (the speculative state after block1). Provider
+and alternate counters, useful and use-alt-on-na follow the normal H1 rules.
+Allocation uses the same gate as H1: only a resolved control misprediction on
+which the canonical prediction is also wrong allocates, starting above the
+canonical provider. `secondBlockCanonicalUpdates` and
+`secondBlockCanonicalAllocs` count these extra updates; aggregate TAGE update
+counters include them.
+
+The model charges no extra train read/write port or bank conflict. In RTL each
+second-block train event needs one more canonical-set read-modify-write.
+
+Four SPEC06 slices (20M warmup + 20M ROI, idealkmhv3, matched binary):
+
+| Slice | Shadow T0-T7 | Shared |
+|---|---:|---:|
+| astar_rivers_8610 | -0.82% | -0.80% |
+| sjeng_94536 | -0.36% | -0.08% |
+| gobmk_nngs_3689 | -0.42% | -0.06% |
+| gcc_expr_4993 | -0.40% | +0.10% |
+
+Relative to `e62690b231`, whose second-block lookup used block2's canonical
+context, this recovers roughly 14-38% of the shadow T0-T7 cycle gap. The gain
+is mostly H1: astar H1 conditional mispredictions drop 90,174 -> 87,633
+(e626: 85,977), while H2 is nearly unchanged because H1 visits still do not
+train H2 entries. Shared mode gains less because the extra canonical
+allocations (+15-20% total allocations) compete with H2 entries in the same
+sets. Artifacts: `../out/gem5/h2-canonical-2026-10-16/`.
