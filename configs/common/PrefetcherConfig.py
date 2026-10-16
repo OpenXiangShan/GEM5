@@ -625,7 +625,6 @@ def _configure_mlop(prefetcher, cache_level, options):
     is_l1 = cache_level == 'l1d'
     prefetcher.attached_level = 1 if is_l1 else 2
     prefetcher.max_zones = _mlop_max_zones(options, cache_level)
-    prefetcher.use_pf_buffer = False
     prefetcher.prefetch_train = False
     prefetcher.queue_filter = True
 

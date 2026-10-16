@@ -379,13 +379,6 @@ MLOPPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrior
             continue;
         }
 
-        addresses.emplace_back(candidateBlock * blkSize, 0, PrefetchSourceType::MLOP);
-        auto &address = addresses.back();
-        if (!local) {
-            address.pfahead = true;
-            address.pfahead_host = level;
-        }
-
         switch (level) {
             case 1:
                 ++statsMLOP.l1Candidates;
@@ -398,6 +391,30 @@ MLOPPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrior
                 break;
             default:
                 panic("MLOP generated an invalid fill level");
+        }
+
+        const Addr candidateAddr = candidateBlock * blkSize;
+        if (usePFBuffer) {
+            const bool alreadyBuffered =
+                std::any_of(PFRequestBuffer.begin(), PFRequestBuffer.end(), [&](const AddrPriority &pending) {
+                    return pending.addr == candidateAddr && pending.pfahead_host == (local ? 0 : level) &&
+                           pending.pf_trigger_info.pfi_old && pending.pf_trigger_info.pfi_old->isSecure() == secure;
+                });
+            if (alreadyBuffered) {
+                continue;
+            }
+        }
+
+        AddrPriority address(candidateAddr, 0, PrefetchSourceType::MLOP);
+        if (!local) {
+            address.pfahead = true;
+            address.pfahead_host = level;
+        }
+        if (usePFBuffer) {
+            address.pf_trigger_info = pfi.trigger_info;
+            InsertPFRequestToBuffer(address);
+        } else {
+            addresses.push_back(address);
         }
     }
 
