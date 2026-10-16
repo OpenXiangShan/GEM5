@@ -89,6 +89,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       resolveBlockThreshold(p.resolveBlockThreshold),
       enableH2PTable(p.enable_h2p_table),
       enableH2PWeakConfidence(p.enable_h2p_weak_confidence),
+      enableAPFMTBResourceConflict(p.enable_apf_mbtb_resource_conflict),
       h2pTableEntries(p.h2p_table_entries),
       h2pAgeInsts(p.h2p_age_insts),
       h2pTable(p.h2p_table_entries),
@@ -426,7 +427,8 @@ bool
 DecoupledBPUWithBTB::tryReserveAlternateResources(Addr pc)
 {
     const bool tageEnabled = tage && tage->isEnabled();
-    const bool mbtbEnabled = mbtb && mbtb->isEnabled();
+    const bool mbtbEnabled = enableAPFMTBResourceConflict &&
+                             mbtb && mbtb->isEnabled();
     const bool tageReserved = !tageEnabled || tage->tryReserveShadowBank(pc);
     const bool mbtbReserved = !mbtbEnabled || mbtb->tryReserveShadow(pc);
     if (tageReserved && mbtbReserved)
