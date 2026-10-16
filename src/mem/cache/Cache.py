@@ -39,6 +39,7 @@
 from m5.params import *
 from m5.proxy import *
 from m5.SimObject import SimObject
+from m5.defines import buildEnv
 
 from m5.objects.ClockedObject import ClockedObject
 from m5.objects.Compressors import BaseCacheCompressor
@@ -79,6 +80,13 @@ class BaseCache(ClockedObject):
 
     size = Param.MemorySize("Capacity")
     assoc = Param.Unsigned("Associativity")
+    if buildEnv['GEM5_ENABLE_MATRIX']:
+        matrix_rmw_acquire = Param.Bool(
+            False, "Serve original Matrix C reads with L2 write permission")
+        matrix_rmw_retention = Param.Bool(
+            False, "Exclude bounded retained C blocks from real replacement")
+        matrix_rmw_max_ways_per_set = Param.Int(
+            -1, "Retained way quota; -1 selects min(ways-1, ways/2+1)")
 
     tag_latency = Param.Cycles("Tag lookup latency")
     data_latency = Param.Cycles("Data access latency")

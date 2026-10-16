@@ -86,7 +86,11 @@ MSHR::TargetList::updateFlags(PacketPtr pkt, Target::Source source,
                               bool alloc_on_fill)
 {
     if (source != Target::FromSnoop) {
-        if (pkt->needsWritable()) {
+#if GEM5_ENABLE_MATRIX
+        hasMatrixTask = hasMatrixTask || (pkt->req->hasXsMetadata() &&
+            pkt->req->getXsMetadata().matrixTask());
+#endif
+        if (requiresWritable(pkt)) {
             needsWritable = true;
         }
 
@@ -425,7 +429,7 @@ MSHR::allocateTarget(PacketPtr pkt, Tick whenReady, Counter _order,
         !deferredTargets.empty() ||
         (inService &&
          (hasPostInvalidate() ||
-          (pkt->needsWritable() &&
+          (targets.requiresWritable(pkt) &&
            (!isPendingModified() || hasPostDowngrade() || isForward))))) {
         // need to put on deferred list
         if (inService && hasPostInvalidate())
@@ -448,11 +452,16 @@ bool
 MSHR::handleSnoop(PacketPtr pkt, Counter _order)
 {
     DPRINTF(MSHR, "%s for %s\n", __func__, pkt->print());
+    const bool invalidate = pkt->isInvalidate()
+#if GEM5_ENABLE_MATRIX
+        || matrix::isProtectedStoreSnoop(pkt)
+#endif
+        ;
 
     // when we snoop packets the needsWritable and isInvalidate flags
     // should always be the same, however, this assumes that we never
     // snoop writes as they are currently not marked as invalidations
-    panic_if((pkt->needsWritable() != pkt->isInvalidate()) &&
+    panic_if((pkt->needsWritable() != invalidate) &&
              !pkt->req->isCacheMaintenance(),
              "%s got snoop %s where needsWritable, "
              "does not match isInvalidate", name(), pkt->print());
@@ -559,7 +568,7 @@ MSHR::handleSnoop(PacketPtr pkt, Counter _order)
         targets.add(cp_pkt, curTick(), _order, Target::FromSnoop,
                     downstreamPending && targets.needsWritable, false);
 
-        if (pkt->needsWritable() || pkt->isInvalidate()) {
+        if (pkt->needsWritable() || invalidate) {
             // This transaction will take away our pending copy
             postInvalidate = true;
         }
@@ -764,10 +773,10 @@ MSHR::promoteReadable()
         // have the block, there's no need to defer the targets, so
         // move them up to the regular target list.
 
-        auto pred = [](Target &t) {
+        auto pred = [this](Target &t) {
             assert(t.source == Target::FromCPU);
             return !t.pkt->req->isCacheInvalidate() &&
-                   !t.pkt->needsWritable();
+                   !deferredTargets.requiresWritable(t.pkt);
         };
         promoteIf(pred);
     }

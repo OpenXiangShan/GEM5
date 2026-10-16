@@ -52,6 +52,33 @@ namespace gem5
 
 const int SnoopFilter::SNOOP_MASK_SIZE;
 
+bool
+SnoopFilter::hasCopies(Addr addr, bool is_secure) const
+{
+    Addr line_addr = addr & ~Addr(linesize - 1);
+    if (is_secure) {
+        line_addr |= LineSecure;
+    }
+    const auto it = cachedLocations.find(line_addr);
+    return it != cachedLocations.end() &&
+        (it->second.holder | it->second.requested).any();
+}
+
+void
+SnoopFilter::clearHolders(Addr addr, bool is_secure)
+{
+    Addr line_addr = addr & ~Addr(linesize - 1);
+    if (is_secure) {
+        line_addr |= LineSecure;
+    }
+    auto it = cachedLocations.find(line_addr);
+    if (it != cachedLocations.end()) {
+        it->second.holder.reset();
+        // Outstanding fills remain visible to permission-reuse checks.
+        eraseIfNullEntry(it);
+    }
+}
+
 void
 SnoopFilter::eraseIfNullEntry(SnoopFilterCache::iterator& sf_it)
 {

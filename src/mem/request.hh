@@ -60,6 +60,7 @@
 #include "base/compiler.hh"
 #include "base/flags.hh"
 #include "base/types.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_xsmeta.hh"
 #include "enums/PrefetchSourceType.hh"
@@ -391,36 +392,91 @@ class Request
         o3::XsDynInstMetaPtr instXsMetadata;
         PrefetchSourceType prefetchSource;
         int prefetchDepth;
+#if GEM5_ENABLE_MATRIX
+        uint8_t matrixKey;
+        enum class MatrixTxnKind : uint8_t { None, Store, CRead };
+        enum class MatrixTxnPhase : uint8_t { None, Prepare, Access };
+        MatrixTxnKind matrixTxnKind = MatrixTxnKind::None;
+        MatrixTxnPhase matrixTxnPhase = MatrixTxnPhase::None;
+        uint64_t matrixTxnId = 0;
+        bool matrixRmwAcquire = false;
+        bool matrixRmwRetentionUpdate = false;
+        bool matrixStoreProtected = false;
+        // The POU validates direct access or converts the packet to Prepare.
+        bool matrixTryDirect = false;
+#endif
 
         XsMetadata() :
             validXsMetadata(false),
             instXsMetadata(nullptr),
             prefetchSource(PF_NONE),
+#if GEM5_ENABLE_MATRIX
+            prefetchDepth(0),
+            matrixKey(0) {}
+#else
             prefetchDepth(0) {}
+#endif
 
         XsMetadata(o3::XsDynInstMetaPtr instMeta) :
             validXsMetadata(true),
             instXsMetadata(instMeta),
             prefetchSource(PF_NONE) ,
+#if GEM5_ENABLE_MATRIX
+            prefetchDepth(0),
+            matrixKey(0) {}
+#else
             prefetchDepth(0) {}
+#endif
 
         XsMetadata(PrefetchSourceType pfSource) :
             validXsMetadata(true),
             instXsMetadata(nullptr),
             prefetchSource(pfSource) ,
+#if GEM5_ENABLE_MATRIX
+            prefetchDepth(0),
+            matrixKey(0) {}
+#else
             prefetchDepth(0) {}
+#endif
 
         XsMetadata(PrefetchSourceType pfSource,int pfDepth) :
             validXsMetadata(true),
             instXsMetadata(nullptr),
             prefetchSource(pfSource) ,
+#if GEM5_ENABLE_MATRIX
+            prefetchDepth(pfDepth),
+            matrixKey(0) {}
+#else
             prefetchDepth(pfDepth) {}
+#endif
 
         void invalidate() {
             validXsMetadata = false;
             instXsMetadata = nullptr;
             prefetchSource = PF_NONE;
             prefetchDepth = 0;
+#if GEM5_ENABLE_MATRIX
+            matrixKey = 0;
+            matrixTxnKind = MatrixTxnKind::None;
+            matrixTxnPhase = MatrixTxnPhase::None;
+            matrixTxnId = 0;
+            matrixRmwAcquire = false;
+            matrixRmwRetentionUpdate = false;
+            matrixStoreProtected = false;
+            matrixTryDirect = false;
+        }
+
+        bool hasMatrixKey() const {
+            return (matrixKey & 0x3) != 0;
+        }
+
+        bool matrixTask() const {
+            return (matrixKey & 0x1) != 0;
+        }
+
+        bool matrixModify() const {
+            return (matrixKey & 0x2) != 0;
+#endif
         }
     } XsMetadata;
 

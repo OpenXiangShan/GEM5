@@ -45,6 +45,12 @@
 
 #include "mem/cache/base.hh"
 
+#if GEM5_ENABLE_MATRIX
+#include "mem/cache/replacement_policies/tree_plru_rp.hh"
+#include "mem/cache/tags/base_set_assoc.hh"
+
+#endif
+
 #include <algorithm>
 #include <cstdio>
 
@@ -204,6 +210,37 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
 
     tempBlock = new TempCacheBlk(blkSize);
     tags->tagsInit();
+#if GEM5_ENABLE_MATRIX
+    fatal_if(p.matrix_rmw_retention && !p.matrix_rmw_acquire,
+             "Matrix retention requires early permission acquisition");
+    if (p.matrix_rmw_acquire) {
+        auto *set_tags = dynamic_cast<BaseSetAssoc *>(tags);
+        fatal_if(cacheLevel != 2 || blkSize != 64 || isReadOnly ||
+                     compressor || !set_tags ||
+                     clusivity != enums::mostly_incl,
+                 "Matrix RMW requires the designated inclusive 64B shared "
+                 "L2 with uncompressed set-associative tags");
+        const unsigned limit = p.matrix_rmw_max_ways_per_set < 0 ?
+            std::min(assoc - 1, assoc / 2 + 1) :
+            p.matrix_rmw_max_ways_per_set;
+        fatal_if(limit >= assoc || p.matrix_rmw_max_ways_per_set < -1,
+                 "Matrix retention must leave at least one ordinary way");
+        fatal_if(p.matrix_rmw_retention &&
+                     dynamic_cast<replacement_policy::TreePLRU *>(
+                         p.replacement_policy),
+                 "Matrix retention requires a replacement policy that "
+                 "accepts a filtered candidate list; TreePLRU does not");
+        matrixRmw = std::make_unique<matrix::RmwController>(
+            this, p.matrix_rmw_retention, size / assoc / blkSize, limit);
+        mshrQueue.enableMatrixRmwAcquire();
+        if (p.matrix_rmw_retention) {
+            set_tags->setMatrixVictimFilter(
+                [this](CacheBlk *blk) {
+                    return matrixRmw->victimEligible(blk);
+                });
+        }
+    }
+#endif
     for (int i = 0; i < size / assoc / blkSize; i++) {
         for (int j = 0; j < assoc; j++)
             wayPreTable[i].push_back(DEFAULTWAYPRE);
@@ -622,8 +659,12 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 // internally, and have a sufficiently weak memory
                 // model, this is probably unnecessary, but at some
                 // point it must have seemed like we needed it...
-                assert((pkt->needsWritable() &&
+                assert((needsWritableForService(pkt) &&
                     !blk->isSet(CacheBlk::WritableBit)) ||
+#if GEM5_ENABLE_MATRIX
+                    (matrixRmw && matrix::isRmwCRead(pkt) &&
+                     !blk->isSet(CacheBlk::ReadableBit)) ||
+#endif
                     pkt->req->isCacheMaintenance());
                 blk->clearCoherenceBits(CacheBlk::ReadableBit);
             }
@@ -662,7 +703,7 @@ BaseCache::probeHit(const PacketPtr pkt) const
     // writeback/victim selection). Used by tryTiming when the cache is
     // blocked to decide whether a clean read hit can be served without
     // an MSHR, rather than NAK-ing it.
-    if (!pkt->isRead() || pkt->needsWritable())
+    if (!pkt->isRead() || needsWritableForService(pkt))
         return false;
     // Must agree with Cache::access(): requests that access() treats as
     // miss despite a tag match must be rejected here, otherwise HUB admits
@@ -1979,6 +2020,11 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
     // Access block in the tags
     Cycles tag_latency(0);
     blk = tags->accessBlock(pkt, tag_latency);
+#if GEM5_ENABLE_MATRIX
+    if (matrixRmw) {
+        matrixRmw->access(pkt, blk);
+    }
+#endif
 
     DPRINTF(Cache, "%s for %s %s, block access lat %lu\n", __func__, pkt->print(),
             blk ? "hit " + blk->print() : "miss", tag_latency);
@@ -2198,9 +2244,14 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
 
         // If this a write-through packet it will be sent to cache below
         return !pkt->writeThrough();
-    } else if (blk && (pkt->needsWritable() ?
+    } else if (blk && (needsWritableForService(pkt) ?
             blk->isSet(CacheBlk::WritableBit) :
-            blk->isSet(CacheBlk::ReadableBit))) {
+            blk->isSet(CacheBlk::ReadableBit))
+#if GEM5_ENABLE_MATRIX
+            && (!matrixRmw || !matrix::isRmwCRead(pkt) ||
+                blk->isSet(CacheBlk::ReadableBit))
+#endif
+            ) {
         DPRINTF(Cache, "need writable: %d, is writable: %d, need resp: %d\n",
                 pkt->needsWritable(), blk->isSet(CacheBlk::WritableBit), pkt->needsResponse());
         // OK to satisfy access
@@ -2242,7 +2293,8 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         }
     }
 
-    if (blk && (pkt->needsWritable() && !blk->isSet(CacheBlk::WritableBit))) {
+    if (blk && (needsWritableForService(pkt) &&
+                !blk->isSet(CacheBlk::WritableBit))) {
         // Can't satisfy access normally... need writable
         DPRINTF(Cache, "%s: %#lx wants writable but is not\n", __func__,
                 regenerateBlkAddr(blk));
@@ -2500,6 +2552,11 @@ BaseCache::allocateBlock(
 void
 BaseCache::invalidateBlock(CacheBlk *blk)
 {
+#if GEM5_ENABLE_MATRIX
+    if (matrixRmw) {
+        matrixRmw->revoke(blk, matrix::RmwController::Revoke::Invalidate);
+    }
+#endif
     static uint64_t _inval_cnt{0};
     // notify prefetcher to send some info to lower level per 128 cache invalidations
     if ((_inval_cnt++ % 128) == 127) {
@@ -2523,6 +2580,49 @@ BaseCache::invalidateBlock(CacheBlk *blk)
         tempBlock->invalidate();
     }
 }
+
+#if GEM5_ENABLE_MATRIX
+CacheBlk *
+BaseCache::findMatrixRmwBlock(Addr addr, bool secure) const
+{
+    auto *blk = tags->findBlock(addr, secure);
+    // Sliced indexing omits slice bits from both set and tag. A sideband
+    // lookup across caches must not match another slice's physical line.
+    return blk && blk->isValid() &&
+        tags->regenerateBlkAddr(blk) == (addr & ~Addr(blkSize - 1)) ?
+        blk : nullptr;
+}
+
+bool
+BaseCache::matrixCanAccess(Addr addr, bool secure, bool require_retention) const
+{
+    const Addr block_addr = addr & ~Addr(blkSize - 1);
+    const auto *blk = findMatrixRmwBlock(block_addr, secure);
+    // C-load may rebuild retention after StoreC left a writable L2 line.
+    return matrixRmw && blk &&
+        (!require_retention || matrixRmw->retained(blk)) &&
+        blk->isSet(CacheBlk::ReadableBit) &&
+        blk->isSet(CacheBlk::WritableBit) &&
+        !mshrQueue.findMatch(block_addr, secure) &&
+        !writeBuffer.findMatch(block_addr, secure);
+}
+
+void
+BaseCache::matrixStoreStart(Addr addr, bool secure, int port, uint64_t id)
+{
+    if (matrixRmw) {
+        matrixRmw->startStore(findMatrixRmwBlock(addr, secure), port, id);
+    }
+}
+
+void
+BaseCache::matrixStoreComplete(int port, uint64_t id)
+{
+    if (matrixRmw) {
+        matrixRmw->finishStore(port, id);
+    }
+}
+#endif
 
 void
 BaseCache::evictBlock(CacheBlk *blk, PacketList &writebacks,

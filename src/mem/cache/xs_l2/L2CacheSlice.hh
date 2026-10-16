@@ -99,6 +99,25 @@ class L2CacheSlice : public CacheWrapper
     };
     L2CacheSliceStats stats;
 
+#if GEM5_ENABLE_MATRIX
+    struct MatrixMemoryStats : public statistics::Group
+    {
+        explicit MatrixMemoryStats(statistics::Group *parent);
+        statistics::Scalar reads;
+        statistics::Scalar writes;
+        statistics::Scalar maintenance;
+        statistics::Scalar dataReads;
+        statistics::Scalar dataWrites;
+        statistics::Scalar refillWrites;
+        statistics::Scalar dirWrites;
+        statistics::Scalar serviceRetries;
+    };
+    const bool enableMatrixResources;
+    std::unique_ptr<MatrixMemoryStats> matrixMemoryStats;
+    std::unique_ptr<EventFunctionWrapper> matrixServiceRetryEvent;
+    bool innerCpuPortRecvTimingResp(PacketPtr pkt) override;
+#endif
+
     // This will hold the function to calculate the set index for an address.
     std::function<Addr(Addr)> getSetIdx;
     std::function<Addr(Addr)> getDataBankIdx;
@@ -109,6 +128,7 @@ class L2CacheSlice : public CacheWrapper
     bool dirReadBypass = false;
 
     bool cpuSidePortRecvTimingReq(PacketPtr pkt) override;
+    bool cpuSidePortRecvTryTiming(PacketPtr pkt) override;
     void innerCpuPortRecvReqRetry() override;
     bool innerCpuPortSendTimingReq(PacketPtr pkt, TaskSource source);
     bool innerMemPortRecvTimingReq(PacketPtr pkt) override;

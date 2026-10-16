@@ -65,6 +65,11 @@
 #include "debug/CacheTrace.hh"
 #include "enums/Clusivity.hh"
 #include "mem/cache/cache_blk.hh"
+
+#if GEM5_ENABLE_MATRIX
+#include "mem/cache/matrix_rmw.hh"
+
+#endif
 #include "mem/cache/cache_probe_arg.hh"
 #include "mem/cache/compressors/base.hh"
 #include "mem/cache/mshr_queue.hh"
@@ -110,7 +115,29 @@ namespace way_prediction_policy
  */
 class BaseCache : public ClockedObject, public CacheAccessor
 {
+#if GEM5_ENABLE_MATRIX
   protected:
+    std::unique_ptr<matrix::RmwController> matrixRmw;
+    CacheBlk *findMatrixRmwBlock(Addr addr, bool secure) const;
+  public:
+    void matrixStoreStart(Addr addr, bool secure, int port, uint64_t id);
+    void matrixStoreComplete(int port, uint64_t id);
+    bool matrixCanAccess(Addr addr, bool secure, bool require_retention) const;
+    bool matrixRetained(Addr addr, bool secure) const
+    {
+        return matrixRmw &&
+            matrixRmw->retained(findMatrixRmwBlock(addr, secure));
+    }
+#endif
+  protected:
+    bool needsWritableForService(PacketPtr pkt) const
+    {
+        return pkt->needsWritable()
+#if GEM5_ENABLE_MATRIX
+            || (matrixRmw && matrix::isRmwCRead(pkt))
+#endif
+            ;
+    }
     /**
      * Indexes to enumerate the MSHR queues.
      */

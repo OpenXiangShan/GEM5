@@ -23,6 +23,9 @@ class CacheWrapper : public ClockedObject
         bool recvTimingReq(PacketPtr pkt) override {
           return owner->cpuSidePortRecvTimingReq(pkt);
         }
+        bool tryTiming(PacketPtr pkt) override {
+          return owner->cpuSidePortRecvTryTiming(pkt);
+        }
         bool recvTimingSnoopResp(PacketPtr pkt) override {
           return owner->cpuSidePortRecvTimingSnoopResp(pkt);
         }
@@ -140,6 +143,7 @@ class CacheWrapper : public ClockedObject
 
     // CPU side port methods
     virtual bool cpuSidePortRecvTimingReq(PacketPtr pkt);
+    virtual bool cpuSidePortRecvTryTiming(PacketPtr pkt);
     virtual bool cpuSidePortRecvTimingSnoopResp(PacketPtr pkt);
     virtual void cpuSidePortRecvFunctional(PacketPtr pkt);
     virtual Tick cpuSidePortRecvAtomic(PacketPtr pkt);

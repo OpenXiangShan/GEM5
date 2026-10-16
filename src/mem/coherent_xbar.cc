@@ -48,6 +48,7 @@
 #include "base/compiler.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "debug/AddrRanges.hh"
 #include "debug/CoherentXBar.hh"
 #include "mem/layer_bandwidth_config.hh"
@@ -65,6 +66,10 @@ CoherentXBar::CoherentXBar(const CoherentXBarParams &p)
       pointOfCoherency(p.point_of_coherency),
       pointOfUnification(p.point_of_unification),
       hintWakeUpAheadCycles(p.hint_wakeup_ahead_cycles),
+#if GEM5_ENABLE_MATRIX
+      enableMatrixResponseLane(p.enable_matrix_response_lane),
+      matrixResponseMaxPerCycle(p.matrix_response_max_per_cycle),
+#endif
 
       ADD_STAT(snoops, statistics::units::Count::get(), "Total snoops"),
       ADD_STAT(snoopTraffic, statistics::units::Byte::get(), "Total snoop traffic"),
@@ -74,8 +79,35 @@ CoherentXBar::CoherentXBar(const CoherentXBarParams &p)
                "Response blocked count by command type"),
       ADD_STAT(snoopFanout, statistics::units::Count::get(),
                "Request fanout histogram")
+#if GEM5_ENABLE_MATRIX
+      , ADD_STAT(matrixLoadRespLanePackets, statistics::units::Count::get(),
+                 "Matrix load responses routed through the dedicated response "
+                 "lane"),
+      ADD_STAT(matrixLoadRespLaneBlocked, statistics::units::Count::get(),
+               "Matrix load responses blocked by the dedicated response "
+               "lane")
+#endif
 {
     assert(hintWakeUpAheadCycles <= responseLatency);
+#if GEM5_ENABLE_MATRIX
+    fatal_if(enableMatrixResponseLane && matrixResponseMaxPerCycle == 0,
+             "CoherentXBar: matrix_response_max_per_cycle must be non-zero");
+    if (p.enable_matrix_transactions) {
+        matrixRmwCaches = p.matrix_rmw_caches;
+        fatal_if(!pointOfUnification || system->cacheLineSize() != 64 ||
+                     !p.matrix_transaction_entries ||
+                     !p.matrix_tracked_requests,
+                 "Matrix line ordering requires a 64B shared POU and "
+                 "nonzero bounded capacities");
+        matrixTransactions = std::make_unique<matrix::LineTransactionTable>(
+            p.matrix_transaction_entries, p.matrix_tracked_requests);
+        matrixTransactionStats =
+            std::make_unique<MatrixTransactionStats>(this);
+        matrixBlockedPorts.resize(p.port_cpu_side_ports_connection_count);
+        matrixRetryEvent = std::make_unique<EventFunctionWrapper>(
+            [this] { retryMatrixPorts(); }, name() + ".matrixRetry");
+    }
+#endif
     // create the ports based on the size of the memory-side port and
     // CPU-side port vector ports, and the presence of the default port,
     // the ports are enumerated starting from zero
@@ -112,6 +144,15 @@ CoherentXBar::CoherentXBar(const CoherentXBarParams &p)
         cpuSidePorts.push_back(bp);
         respLayers.push_back(new RespLayer(*bp, *this,
                                            csprintf("respLayer%d", i)));
+#if GEM5_ENABLE_MATRIX
+        if (enableMatrixResponseLane) {
+            auto *matrix_resp_layer = new RespLayer(
+                *bp, *this, csprintf("matrixRespLayer%d", i));
+            matrix_resp_layer->setMaxRequestsPerCycle(
+                matrixResponseMaxPerCycle);
+            matrixRespLayers.push_back(matrix_resp_layer);
+        }
+#endif
         snoopRespPorts.push_back(new SnoopRespPort(*bp, *this));
     }
 
@@ -146,6 +187,10 @@ CoherentXBar::~CoherentXBar()
         delete l;
     for (auto l: respLayers)
         delete l;
+#if GEM5_ENABLE_MATRIX
+    for (auto l: matrixRespLayers)
+        delete l;
+#endif
     for (auto l: snoopLayers)
         delete l;
     for (auto p: snoopRespPorts)
@@ -177,11 +222,257 @@ CoherentXBar::init()
         snoopFilter->setCPUSidePorts(cpuSidePorts);
 }
 
+#if GEM5_ENABLE_MATRIX
+CoherentXBar::MatrixTransactionStats::MatrixTransactionStats(
+    statistics::Group *parent)
+    : statistics::Group(parent, "matrixTransactions"),
+      ADD_STAT(started, statistics::units::Count::get(),
+               "Reserved Matrix line transactions"),
+      ADD_STAT(completed, statistics::units::Count::get(),
+               "Transactions released after final response delivery"),
+      ADD_STAT(conflicts, statistics::units::Count::get(),
+               "Requests blocked by another line transaction"),
+      ADD_STAT(priorRequests, statistics::units::Count::get(),
+               "Prepare attempts waiting for earlier response delivery"),
+      ADD_STAT(capacityBlocked, statistics::units::Count::get(),
+               "Requests blocked by bounded tracking capacity"),
+      ADD_STAT(retries, statistics::units::Count::get(),
+               "Retry notifications sent to ordering-blocked ports"),
+      ADD_STAT(occupancyMax, statistics::units::Count::get(),
+               "Maximum simultaneously reserved line transactions"),
+      ADD_STAT(storeClean, statistics::units::Count::get(),
+               "Accepted StoreC preparation maintenance"),
+      ADD_STAT(storeRmwHits, statistics::units::Count::get(),
+               "StoreC writes reusing retained L2 permission without maintenance"),
+      ADD_STAT(storeRmwFallbacks, statistics::units::Count::get(),
+               "RMW StoreC attempts converted to preparation at the shared POU"),
+      ADD_STAT(cReadClean, statistics::units::Count::get(),
+               "Accepted C-read preparation maintenance"),
+      ADD_STAT(cReadDirectHits, statistics::units::Count::get(),
+               "C-reads using ready L2 permission without maintenance"),
+      ADD_STAT(dirtyWriteClean, statistics::units::Count::get(),
+               "Associated dirty data writes reaching the shared POU"),
+      ADD_STAT(maintenanceTicks, statistics::units::Tick::get(),
+               "Maintenance acceptance to successful response delivery"),
+      ADD_STAT(accessTicks, statistics::units::Tick::get(),
+               "Paired access acceptance to successful response delivery")
+{
+}
+
+bool
+CoherentXBar::matrixAdmit(PacketPtr pkt, PortID port)
+{
+    using Table = matrix::LineTransactionTable;
+    using Meta = Request::XsMetadata;
+    const Table::Key key{pkt->getBlockAddr(system->cacheLineSize()),
+                         pkt->isSecure()};
+    // Dirty clean data must be accepted while its original clean waits.
+    // This tag is only for accounting, never another transaction owner.
+    if (pkt->cmd == MemCmd::WriteClean) {
+        const auto *txn = matrixTransactions->transaction(key);
+        if (txn && txn->cleanPacketId == pkt->id) {
+            auto metadata = pkt->req->hasXsMetadata() ?
+                pkt->req->getXsMetadata() : Meta{};
+            metadata.validXsMetadata = true;
+            metadata.matrixKey = 1;
+            metadata.matrixTxnKind = static_cast<Meta::MatrixTxnKind>(
+                txn->kind);
+            metadata.matrixTxnPhase = Meta::MatrixTxnPhase::Prepare;
+            metadata.matrixTxnId = txn->id;
+            pkt->req->setXsMetadata(metadata);
+        }
+    }
+    if (pkt->isExpressSnoop() || !pkt->needsResponse()) {
+        return true;
+    }
+    auto metadata = pkt->req->hasXsMetadata() ?
+        pkt->req->getXsMetadata() : Meta{};
+    auto phase = static_cast<Table::Phase>(metadata.matrixTxnPhase);
+    const auto kind = static_cast<Table::Kind>(metadata.matrixTxnKind);
+    const bool store = kind == Table::Kind::Store;
+    bool direct_access = phase == Table::Phase::Access &&
+        kind != Table::Kind::None && metadata.matrixTryDirect;
+    if (direct_access) {
+        panic_if(pkt->cmd != (store ? MemCmd::WriteReq : MemCmd::ReadReq) ||
+                     pkt->fromCache(),
+                 "Direct Matrix access requires the original data packet");
+        bool reusable = false;
+        for (const auto *cache : matrixRmwCaches) {
+            reusable |= cache->matrixCanAccess(key.first, key.second, store);
+        }
+        // Classic inclusive caches may both consider a line writable.
+        // The shared directory must also exclude upper copies and fills.
+        const bool upper_clear = snoopFilter &&
+            !snoopFilter->hasCopies(key.first, key.second);
+        if (!reusable || !upper_clear) {
+            // No side effects have occurred yet. Reuse this request as the
+            // ordinary preparation, rather than adding a probe round trip.
+            pkt->cmd = MemCmd::CleanInvalidReq;
+            pkt->req->setFlags(Request::CLEAN | Request::INVALIDATE |
+                               Request::DST_POU);
+            pkt->req->setByteEnable(std::vector<bool>(pkt->getSize(), true));
+            metadata.matrixTxnPhase = Meta::MatrixTxnPhase::Prepare;
+            metadata.matrixStoreProtected = false;
+            pkt->req->setXsMetadata(metadata);
+            phase = Table::Phase::Prepare;
+            direct_access = false;
+        }
+    }
+    if (phase == Table::Phase::Prepare) {
+        panic_if(pkt->cmd != MemCmd::CleanInvalidReq ||
+                     !isDestination(pkt),
+                 "Matrix preparation must terminate at the shared POU");
+    }
+    const auto before = matrixTransactions->transactionCount();
+    const auto admission = matrixTransactions->admit(
+        key, port, metadata.matrixTxnId, kind, phase, pkt->id, curTick(),
+        direct_access);
+    if (matrixTransactions->transactionCount() > before) {
+        matrixTransactionStats->started++;
+        matrixTransactionStats->occupancyMax = std::max<double>(
+            matrixTransactionStats->occupancyMax.value(),
+            matrixTransactions->transactionCount());
+    }
+    if (admission == Table::Admission::Allowed) {
+        if (kind == Table::Kind::Store && phase == Table::Phase::Access) {
+            // The owner completed preparation or still has RMW permission.
+            // In both cases the table excludes older response deliveries.
+            // A newly allocated but unsent L1 MSHR can exist while its
+            // bus request waits for this write. Its snoop must invalidate.
+            metadata.matrixStoreProtected = true;
+            pkt->req->setXsMetadata(metadata);
+        }
+        return true;
+    }
+    matrixBlockedPorts.at(port) = true;
+    if (admission == Table::Admission::Prior) {
+        matrixTransactionStats->priorRequests++;
+    } else if (admission == Table::Admission::Conflict) {
+        matrixTransactionStats->conflicts++;
+    } else {
+        matrixTransactionStats->capacityBlocked++;
+    }
+    return false;
+}
+
+void
+CoherentXBar::matrixAccepted(PacketPtr pkt, bool track_response)
+{
+    using Table = matrix::LineTransactionTable;
+    using Meta = Request::XsMetadata;
+    const auto metadata = pkt->req->hasXsMetadata() ?
+        pkt->req->getXsMetadata() : Meta{};
+    if (pkt->cmd == MemCmd::WriteClean && metadata.matrixTxnId) {
+        matrixTransactionStats->dirtyWriteClean++;
+    }
+    if (!track_response) {
+        return;
+    }
+    const auto phase = static_cast<Table::Phase>(metadata.matrixTxnPhase);
+    matrixTransactions->accepted(
+        pkt->req.get(), {pkt->getBlockAddr(system->cacheLineSize()),
+                         pkt->isSecure()},
+        phase, metadata.matrixTxnId, curTick());
+    if (metadata.matrixTxnKind == Meta::MatrixTxnKind::Store) {
+        if (phase == Table::Phase::Prepare || metadata.matrixTryDirect) {
+            if (phase == Table::Phase::Prepare) {
+                matrixTransactionStats->storeClean++;
+                if (metadata.matrixTryDirect) {
+                    matrixTransactionStats->storeRmwFallbacks++;
+                }
+            } else {
+                matrixTransactionStats->storeRmwHits++;
+            }
+            const auto *txn = matrixTransactions->transaction(
+                {pkt->getBlockAddr(system->cacheLineSize()), pkt->isSecure()});
+            for (auto *cache : matrixRmwCaches) {
+                cache->matrixStoreStart(pkt->getAddr(), pkt->isSecure(),
+                                        txn->port, txn->id);
+            }
+        }
+    } else if (phase == Table::Phase::Prepare) {
+        matrixTransactionStats->cReadClean++;
+    } else if (metadata.matrixTxnKind == Meta::MatrixTxnKind::CRead &&
+               metadata.matrixTryDirect) {
+        matrixTransactionStats->cReadDirectHits++;
+    }
+}
+
+void
+CoherentXBar::matrixResponseDelivered(const RequestPtr &request)
+{
+    const auto *flight = matrixTransactions->flight(request.get());
+    if (!flight) {
+        return;
+    }
+    if (flight->phase == matrix::LineTransactionTable::Phase::Prepare) {
+        matrixTransactionStats->maintenanceTicks += curTick() - flight->started;
+        if (snoopFilter) {
+            // The Matrix port is not a snooper, so updateResponse does not
+            // retire its invalidated upper holders. The POU owns this proof.
+            snoopFilter->clearHolders(flight->key.first, flight->key.second);
+        }
+    } else if (flight->phase == matrix::LineTransactionTable::Phase::Access) {
+        const auto *txn = matrixTransactions->transaction(flight->key);
+        if (txn->kind == matrix::LineTransactionTable::Kind::Store) {
+            for (auto *cache : matrixRmwCaches) {
+                cache->matrixStoreComplete(txn->port, txn->id);
+            }
+        }
+        matrixTransactionStats->completed++;
+        matrixTransactionStats->accessTicks += curTick() - flight->started;
+    }
+    matrixTransactions->delivered(request.get());
+    // A clean response may create a continuation while its owner is
+    // waiting on another packet. Wake it too; the adapter prioritizes the
+    // continuation over requests that wait for this transaction to finish.
+    if (!matrixRetryEvent->scheduled()) {
+        schedule(*matrixRetryEvent, clockEdge(Cycles(1)));
+    }
+}
+
+void
+CoherentXBar::retryMatrixPorts()
+{
+    const auto waiting = matrixBlockedPorts;
+    std::fill(matrixBlockedPorts.begin(), matrixBlockedPorts.end(), false);
+    for (PortID port = 0; port < waiting.size(); ++port) {
+        if (waiting[port]) {
+            matrixTransactionStats->retries++;
+            cpuSidePorts[port]->sendRetryReq();
+        }
+    }
+}
+
+bool
+CoherentXBar::isMatrixLoadResponse(PacketPtr pkt) const
+{
+    if (!enableMatrixResponseLane || pkt == nullptr || !pkt->isResponse() ||
+        pkt->req == nullptr || !pkt->req->hasXsMetadata() ||
+        !pkt->hasData() || pkt->getSize() == 0) {
+        return false;
+    }
+
+    const auto xs_metadata = pkt->req->getXsMetadata();
+    return xs_metadata.matrixTask();
+}
+
+#endif
 bool
 CoherentXBar::recvTimingReq(PacketPtr pkt, PortID cpu_side_port_id)
 {
     // determine the source port based on the id
     ResponsePort *src_port = cpuSidePorts[cpu_side_port_id];
+
+#if GEM5_ENABLE_MATRIX
+    // Admission precedes every snoop/filter side effect. Express snoops,
+    // writebacks and WriteClean remain on the ordinary coherence path.
+    if (matrixTransactions && !matrixAdmit(pkt, cpu_side_port_id)) {
+        return false;
+    }
+    const bool matrix_track_response = matrixTransactions &&
+        !pkt->isExpressSnoop() && pkt->needsResponse();
+#endif
 
     // remember if the packet is an express snoop
     bool is_express_snoop = pkt->isExpressSnoop();
@@ -357,6 +648,11 @@ CoherentXBar::recvTimingReq(PacketPtr pkt, PortID cpu_side_port_id)
         reqLayers[mem_side_port_id]->failedTiming(src_port,
                                                 clockEdge(Cycles(1)));
     } else {
+#if GEM5_ENABLE_MATRIX
+        if (matrixTransactions) {
+            matrixAccepted(pkt, matrix_track_response);
+        }
+#endif
         // express snoops currently bypass the crossbar state entirely
         if (!is_express_snoop) {
             // if this particular request will generate a snoop
@@ -507,15 +803,35 @@ CoherentXBar::recvTimingResp(PacketPtr pkt, PortID mem_side_port_id)
     const PortID cpu_side_port_id = route_lookup->second;
     assert(cpu_side_port_id != InvalidPortID);
     assert(cpu_side_port_id < respLayers.size());
+#if GEM5_ENABLE_MATRIX
+    const bool matrix_load_resp = isMatrixLoadResponse(pkt);
+    assert(!matrix_load_resp || cpu_side_port_id < matrixRespLayers.size());
+    RespLayer *resp_layer = matrix_load_resp ?
+        matrixRespLayers[cpu_side_port_id] : respLayers[cpu_side_port_id];
+#endif
 
     // test if the crossbar should be considered occupied for the
     // current port
+#if GEM5_ENABLE_MATRIX
+    if (!resp_layer->tryTiming(src_port)) {
+#else
     if (!respLayers[cpu_side_port_id]->tryTiming(src_port)) {
+#endif
         DPRINTF(CoherentXBar, "%s: src %s packet %s BUSY\n", __func__,
                 src_port->name(), pkt->print());
         blockedRespCountByCmd[pkt->cmdToIndex()]++;
+#if GEM5_ENABLE_MATRIX
+        if (matrix_load_resp) {
+            matrixLoadRespLaneBlocked++;
+        }
+#endif
         return false;
     }
+#if GEM5_ENABLE_MATRIX
+    if (matrix_load_resp) {
+        matrixLoadRespLanePackets++;
+    }
+#endif
 
     DPRINTF(CoherentXBar, "%s: src %s packet %s\n", __func__,
             src_port->name(), pkt->print());
@@ -556,7 +872,11 @@ CoherentXBar::recvTimingResp(PacketPtr pkt, PortID mem_side_port_id)
     routeTo.erase(route_lookup);
 
     DPRINTF(CoherentXBar, "%s: will holdin the resp layer until %d\n", __func__, packetFinishTime);
+#if GEM5_ENABLE_MATRIX
+    resp_layer->succeededTiming(packetFinishTime);
+#else
     respLayers[cpu_side_port_id]->succeededTiming(packetFinishTime);
+#endif
 
     // stats updates
     pktCount[cpu_side_port_id][mem_side_port_id]++;
@@ -644,6 +964,10 @@ CoherentXBar::recvTimingSnoopResp(PacketPtr pkt, PortID cpu_side_port_id)
     // someone else's snoop request
     const bool forwardAsSnoop = outstandingSnoop.find(pkt->req) ==
         outstandingSnoop.end();
+#if GEM5_ENABLE_MATRIX
+    const bool matrix_load_resp = !forwardAsSnoop && isMatrixLoadResponse(pkt);
+    RespLayer *response_layer = nullptr;
+#endif
 
     // test if the crossbar should be considered occupied for the
     // current port, note that the check is bypassed if the response
@@ -660,11 +984,28 @@ CoherentXBar::recvTimingSnoopResp(PacketPtr pkt, PortID cpu_side_port_id)
         // get the memory-side port that mirrors this CPU-side port internally
         RequestPort* snoop_port = snoopRespPorts[cpu_side_port_id];
         assert(dest_port_id < respLayers.size());
+#if GEM5_ENABLE_MATRIX
+        assert(!matrix_load_resp || dest_port_id < matrixRespLayers.size());
+        response_layer = matrix_load_resp ? matrixRespLayers[dest_port_id] :
+                                           respLayers[dest_port_id];
+        if (!response_layer->tryTiming(snoop_port)) {
+#else
         if (!respLayers[dest_port_id]->tryTiming(snoop_port)) {
+#endif
             DPRINTF(CoherentXBar, "%s: src %s packet %s BUSY\n", __func__,
                     snoop_port->name(), pkt->print());
+#if GEM5_ENABLE_MATRIX
+            if (matrix_load_resp) {
+                matrixLoadRespLaneBlocked++;
+            }
+#endif
             return false;
         }
+#if GEM5_ENABLE_MATRIX
+        if (matrix_load_resp) {
+            matrixLoadRespLanePackets++;
+        }
+#endif
     }
 
     DPRINTF(CoherentXBar, "%s: src %s packet %s\n", __func__,
@@ -741,7 +1082,11 @@ CoherentXBar::recvTimingSnoopResp(PacketPtr pkt, PortID cpu_side_port_id)
         cpuSidePorts[dest_port_id]->schedTimingResp(pkt,
                                     curTick() + latency);
 
+#if GEM5_ENABLE_MATRIX
+        response_layer->succeededTiming(packetFinishTime);
+#else
         respLayers[dest_port_id]->succeededTiming(packetFinishTime);
+#endif
     }
 
     // remove the request from the routing table

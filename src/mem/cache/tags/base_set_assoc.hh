@@ -46,6 +46,7 @@
 #ifndef __MEM_CACHE_TAGS_BASE_SET_ASSOC_HH__
 #define __MEM_CACHE_TAGS_BASE_SET_ASSOC_HH__
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -86,8 +87,17 @@ class BaseSetAssoc : public BaseTags
 
     /** Replacement policy */
     replacement_policy::Base *replacementPolicy;
+#if GEM5_ENABLE_MATRIX
+    std::function<bool(CacheBlk *)> matrixVictimEligible;
+#endif
 
   public:
+#if GEM5_ENABLE_MATRIX
+    void setMatrixVictimFilter(std::function<bool(CacheBlk *)> filter)
+    {
+        matrixVictimEligible = std::move(filter);
+    }
+#endif
     /** Convenience typedef. */
      typedef BaseSetAssocParams Params;
 
@@ -174,8 +184,19 @@ class BaseSetAssoc : public BaseTags
                          std::vector<CacheBlk*>& evict_blks) override
     {
         // Get possible entries to be victimized
-        const std::vector<ReplaceableEntry*> entries =
+        std::vector<ReplaceableEntry*> entries =
             indexingPolicy->getPossibleEntries(addr);
+#if GEM5_ENABLE_MATRIX
+        if (matrixVictimEligible) {
+            entries.erase(std::remove_if(entries.begin(), entries.end(),
+                [this](ReplaceableEntry *entry) {
+                    return !matrixVictimEligible(static_cast<CacheBlk *>(entry));
+                }), entries.end());
+            if (entries.empty()) {
+                return nullptr;
+            }
+        }
+#endif
 
         // Choose replacement victim from replacement candidates
         CacheBlk* victim = static_cast<CacheBlk*>(replacementPolicy->getVictim(

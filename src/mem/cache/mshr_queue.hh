@@ -78,6 +78,14 @@ class MSHRQueue : public Queue<MSHR>
     void updateOccupancyStats(Tick now);
 
   public:
+#if GEM5_ENABLE_MATRIX
+    void enableMatrixRmwAcquire()
+    {
+        for (auto &entry : entries) {
+            entry.enableMatrixRmwAcquire();
+        }
+    }
+#endif
 
     /**
      * Create a queue with a given number of entries.

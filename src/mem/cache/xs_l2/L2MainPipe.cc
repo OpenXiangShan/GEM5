@@ -6,6 +6,7 @@
 #include "PipelineResources.hh"
 #include "base/trace.hh"
 #include "debug/L2MainPipe.hh"
+#include "mem/cache/mshr.hh"
 #include "mem/cache/xs_l2/L2CacheSlice.hh"
 #include "mem/cache/xs_l2/PipelineResources.hh"
 #include "mem/packet.hh"
@@ -32,6 +33,9 @@ L2MainPipe::L2MainPipe(L2CacheSlice* _owner, unsigned depth)
                                                  PipelineResources::GrantBuf;
     taskResourceMap[TaskSource::L2MSHRRelease] = PipelineResources::DataWrite;
     taskResourceMap[TaskSource::L2PF]          = PipelineResources::DirRead;
+#if GEM5_ENABLE_MATRIX
+    taskResourceMap[TaskSource::MatrixService] = PipelineResources::Free;
+#endif
 }
 
 inline uint64_t
@@ -44,8 +48,42 @@ L2MainPipe::getDirWriteStage() const
 inline PipelineResources
 L2MainPipe::getPipelineResources(PacketPtr pkt, TaskSource source) const
 {
-    return taskResourceMap.at(source) | getExtraResources(pkt, source);
+    auto resources = taskResourceMap.at(source) | getExtraResources(pkt, source);
+#if GEM5_ENABLE_MATRIX
+    if (usesMatrixResources(pkt, source) &&
+        source == TaskSource::L2MSHRGrant) {
+        // Refill writes the real block; reading/writing the Matrix target
+        // is charged once at its response service, including merged MSHRs.
+        resources &= ~PipelineResources::DataRead;
+        resources |= PipelineResources::DirWrite;
+        if (pkt->hasData()) {
+            resources |= PipelineResources::DataWrite;
+        }
+    }
+#endif
+    return resources;
 }
+
+#if GEM5_ENABLE_MATRIX
+bool
+L2MainPipe::usesMatrixResources(PacketPtr pkt, TaskSource source) const
+{
+    if (!owner->enableMatrixResources) {
+        return false;
+    }
+    if (pkt->req->hasXsMetadata() &&
+        pkt->req->getXsMetadata().matrixTask()) {
+        return true;
+    }
+    // A Matrix target may merge behind a scalar/prefetch primary target.
+    // These flags describe the actual MSHR, without relabeling its request.
+    if (source == TaskSource::L2MSHRGrant) {
+        auto *mshr = pkt->findNextSenderState<MSHR>();
+        return mshr && mshr->hasMatrixTargets();
+    }
+    return false;
+}
+#endif
 
 void
 L2MainPipe::advance(Cycles now)
@@ -75,6 +113,22 @@ L2MainPipe::getExtraResources(PacketPtr pkt, TaskSource source) const
 {
     PipelineResources extra = PipelineResources::Free;
     bool hit = owner->cache_accessor->findBlock(pkt->getAddr(), pkt->isSecure()) != nullptr;
+#if GEM5_ENABLE_MATRIX
+    if (usesMatrixResources(pkt, source)) {
+        if (source == TaskSource::MatrixService) {
+            auto resources = pkt->isRead() ? PipelineResources::DataRead :
+                                            PipelineResources::DataWrite;
+            const auto metadata = pkt->req->getXsMetadata();
+            if (metadata.matrixRmwRetentionUpdate || pkt->isWrite()) {
+                resources |= PipelineResources::DirWrite;
+            }
+            return resources;
+        }
+        if (source == TaskSource::L1MSHR) {
+            return extra;
+        }
+    }
+#endif
     if (source == TaskSource::L1MSHR) {
         // acquire from L1 should write directory when hit in L2
         if (hit) {
@@ -196,6 +250,23 @@ L2MainPipe::buildTask(PacketPtr pkt, TaskSource source)
     scoreboardTasks[0].pkt = pkt;
     scoreboardTasks[0].addr = pkt->getAddr();
     scoreboardResources[0] |= getPipelineResources(pkt, source);
+#if GEM5_ENABLE_MATRIX
+    if (usesMatrixResources(pkt, source)) {
+        const auto resources = scoreboardResources[0];
+        if (resources & PipelineResources::DataRead) {
+            owner->matrixMemoryStats->dataReads++;
+        }
+        if (resources & PipelineResources::DataWrite) {
+            owner->matrixMemoryStats->dataWrites++;
+            if (source == TaskSource::L2MSHRGrant) {
+                owner->matrixMemoryStats->refillWrites++;
+            }
+        }
+        if (resources & PipelineResources::DirWrite) {
+            owner->matrixMemoryStats->dirWrites++;
+        }
+    }
+#endif
 }
 
 void

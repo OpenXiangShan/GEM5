@@ -81,6 +81,19 @@ Cache::satisfyRequest(PacketPtr pkt, CacheBlk *blk,
                       bool deferred_response, bool pending_downgrade)
 {
     BaseCache::satisfyRequest(pkt, blk);
+#if GEM5_ENABLE_MATRIX
+    if (matrixRmw) {
+        if (matrix::isRmwCRead(pkt)) {
+            const bool updated = matrixRmw->service(pkt, blk, blk == tempBlock);
+            auto metadata = pkt->req->getXsMetadata();
+            // A miss/upgrade folds the hint into its charged directory fill.
+            metadata.matrixRmwRetentionUpdate = updated && !deferred_response;
+            pkt->req->setXsMetadata(metadata);
+        } else if (pkt->fromCache() && pkt->needsResponse()) {
+            matrixRmw->revoke(blk, matrix::RmwController::Revoke::Upstream);
+        }
+    }
+#endif
 
     if (pkt->isRead()) {
         // determine if this read is from a (coherent) cache or not
@@ -771,6 +784,11 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
     MSHR::TargetList targets = mshr->extractServiceableTargets(pkt);
     for (auto &target: targets) {
         Packet *tgt_pkt = target.pkt;
+#if GEM5_ENABLE_MATRIX
+        const bool matrix_data_read = tgt_pkt->cmd == MemCmd::ReadReq &&
+            !tgt_pkt->fromCache() && tgt_pkt->req->hasXsMetadata() &&
+            tgt_pkt->req->getXsMetadata().matrixTask();
+#endif
         switch (target.source) {
           case MSHR::Target::FromCPU:
             from_core = true;
@@ -950,7 +968,11 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
             if (is_error)
                 tgt_pkt->copyError(pkt);
             if (tgt_pkt->cmd == MemCmd::ReadResp &&
-                (is_invalidate || mshr->hasPostInvalidate())) {
+                (is_invalidate || mshr->hasPostInvalidate())
+#if GEM5_ENABLE_MATRIX
+                && !matrix_data_read
+#endif
+                ) {
                 // If intermediate cache got ReadRespWithInvalidate,
                 // propagate that.  Response should not have
                 // isInvalidate() set otherwise.
@@ -1169,6 +1191,13 @@ uint32_t
 Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
                    bool is_deferred, bool pending_inval, MSHR *deferring_mshr)
 {
+#if GEM5_ENABLE_MATRIX
+    if (matrixRmw && !pkt->mustCheckAbove()) {
+        matrixRmw->revoke(blk, pkt->req->isCacheInvalidate() ?
+            matrix::RmwController::Revoke::Invalidate :
+            matrix::RmwController::Revoke::Probe);
+    }
+#endif
     DPRINTF(CacheVerbose, "%s: for %s, deferred: %i\n", __func__, pkt->print(), is_deferred);
     // deferred snoops can only happen in timing mode
     assert(!(is_deferred && !is_timing));
@@ -1179,7 +1208,11 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
     // the packet may get modified if we or a forwarded snooper
     // responds in atomic mode, so remember a few things about the
     // original packet up front
-    bool invalidate = pkt->isInvalidate();
+    bool invalidate = pkt->isInvalidate()
+#if GEM5_ENABLE_MATRIX
+        || matrix::isProtectedStoreSnoop(pkt)
+#endif
+        ;
     [[maybe_unused]] bool needs_writable = pkt->needsWritable();
 
     // at the moment we could get an uncacheable write which does not
@@ -1478,6 +1511,39 @@ Cache::recvTimingSnoopReq(PacketPtr pkt)
         // the difference being that instead of querying the block
         // state to determine if it is dirty and writable, we use the
         // command and fields of the writeback packet
+#if GEM5_ENABLE_MATRIX
+        const auto metadata = pkt->req->hasXsMetadata() ?
+            pkt->req->getXsMetadata() : Request::XsMetadata{};
+        const bool matrix_prepare =
+            metadata.matrixTask() && metadata.matrixTxnId != 0 &&
+            metadata.matrixTxnKind !=
+                Request::XsMetadata::MatrixTxnKind::None &&
+            metadata.matrixTxnPhase ==
+                Request::XsMetadata::MatrixTxnPhase::Prepare;
+#else
+        constexpr bool matrix_prepare = false;
+#endif
+        if (matrix_prepare && pkt->isClean() &&
+            wb_pkt->cmd == MemCmd::WritebackDirty) {
+            // The evicted block is still the dirty owner in this queue.
+            // Correlate its data write with maintenance, preserving the
+            // original queue entry, ready time and any pending retry.
+            auto *clean_pkt = new Packet(wb_pkt->req, MemCmd::WriteClean,
+                                         blkSize, pkt->id);
+            clean_pkt->req->setFlags(pkt->req->getDest());
+            clean_pkt->setWriteThrough();
+            if (wb_pkt->hasSharers()) {
+                clean_pkt->setHasSharers();
+            }
+            clean_pkt->allocate();
+            clean_pkt->setData(wb_pkt->getConstPtr<uint8_t>());
+            clean_pkt->senderState = wb_pkt->senderState;
+            wb_pkt->senderState = nullptr;
+            wb_entry->getTarget()->pkt = clean_pkt;
+            delete wb_pkt;
+            wb_pkt = clean_pkt;
+            pkt->setSatisfied();
+        }
         bool respond = wb_pkt->cmd == MemCmd::WritebackDirty &&
             pkt->needsResponse();
         bool have_writable = !wb_pkt->hasSharers();

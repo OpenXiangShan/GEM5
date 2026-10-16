@@ -23,8 +23,66 @@ L2CacheSlice::L2CacheSlice(const L2CacheSliceParams &p)
                         arbFailRetryPri),
       mainPipe(this, p.pipeline_depth),
       stats(this)
+#if GEM5_ENABLE_MATRIX
+      , enableMatrixResources(p.enable_matrix_resources)
+#endif
+{
+#if GEM5_ENABLE_MATRIX
+    if (enableMatrixResources) {
+        matrixMemoryStats = std::make_unique<MatrixMemoryStats>(this);
+        matrixServiceRetryEvent = std::make_unique<EventFunctionWrapper>(
+            [this] { inner_cpu_port.sendRetryResp(); },
+            name() + ".matrixServiceRetry");
+    }
+#endif
+}
+
+#if GEM5_ENABLE_MATRIX
+L2CacheSlice::MatrixMemoryStats::MatrixMemoryStats(statistics::Group *parent)
+    : statistics::Group(parent, "matrixMemory"),
+      ADD_STAT(reads, statistics::units::Count::get(),
+               "Accepted Matrix data read requests"),
+      ADD_STAT(writes, statistics::units::Count::get(),
+               "Accepted Matrix writes requiring final acknowledgement"),
+      ADD_STAT(maintenance, statistics::units::Count::get(),
+               "Accepted Matrix dirty maintenance writes"),
+      ADD_STAT(dataReads, statistics::units::Count::get(),
+               "Matrix data SRAM read uses"),
+      ADD_STAT(dataWrites, statistics::units::Count::get(),
+               "Matrix data SRAM writes including refill and maintenance"),
+      ADD_STAT(refillWrites, statistics::units::Count::get(),
+               "Data SRAM refill writes for MSHRs with Matrix targets"),
+      ADD_STAT(dirWrites, statistics::units::Count::get(),
+               "Matrix directory SRAM write uses"),
+      ADD_STAT(serviceRetries, statistics::units::Count::get(),
+               "Matrix responses waiting for actual service resources")
 {
 }
+
+bool
+L2CacheSlice::innerCpuPortRecvTimingResp(PacketPtr pkt)
+{
+    if (!enableMatrixResources || !pkt->req->hasXsMetadata() ||
+        !pkt->req->getXsMetadata().matrixTask()) {
+        return CacheWrapper::innerCpuPortRecvTimingResp(pkt);
+    }
+    mainPipe.advance(curCycle());
+    if (!reqArb.arbitrate(TaskSource::MatrixService, curCycle()) ||
+        !mainPipe.isTaskAvailable(pkt, TaskSource::MatrixService)) {
+        matrixMemoryStats->serviceRetries++;
+        if (!matrixServiceRetryEvent->scheduled()) {
+            schedule(*matrixServiceRetryEvent, nextCycle());
+        }
+        return false;
+    }
+    if (!CacheWrapper::innerCpuPortRecvTimingResp(pkt)) {
+        return false;
+    }
+    mainPipe.buildTask(pkt, TaskSource::MatrixService);
+    scheduleTickMainPipe();
+    return true;
+}
+#endif
 
 L2CacheSlice::L2CacheSliceStats::L2CacheSliceStats(statistics::Group *parent)
     : statistics::Group(parent),
@@ -145,6 +203,18 @@ L2CacheSlice::innerMemPortRecvRespRetry()
 }
 
 /* CPU-Side internal logic */
+bool
+L2CacheSlice::cpuSidePortRecvTryTiming(PacketPtr pkt)
+{
+    // Response-bearing maintenance can use the existing bounded buffer.
+    // A failed query registers the same retry as a failed request.
+    if (pending_l1_retry || requestBuffer.isFull()) {
+        pending_l1_retry = true;
+        return false;
+    }
+    return true;
+}
+
 bool
 L2CacheSlice::cpuSidePortRecvTimingReq(PacketPtr pkt)
 {
@@ -270,12 +340,30 @@ L2CacheSlice::trySendFromBuffer()
 bool
 L2CacheSlice::innerCpuPortSendTimingReq(PacketPtr pkt, TaskSource source)
 {
+#if GEM5_ENABLE_MATRIX
+    const bool matrix_request = enableMatrixResources &&
+        pkt->req->hasXsMetadata() &&
+        pkt->req->getXsMetadata().matrixTask();
+    const bool maintenance = pkt->cmd == MemCmd::WriteClean;
+    const bool write = pkt->isWrite();
+#endif
     if (reqArb.arbitrate(source, curCycle()) &&
         mainPipe.isTaskAvailable(pkt, source))
     {
         DPRINTF(L2CacheSlice, "Request arbitration succeeded, sending request to inner cache\n");
         bool success = CacheWrapper::cpuSidePortRecvTimingReq(pkt);
         if (success) {
+#if GEM5_ENABLE_MATRIX
+            if (matrix_request) {
+                if (maintenance) {
+                    matrixMemoryStats->maintenance++;
+                } else if (write) {
+                    matrixMemoryStats->writes++;
+                } else {
+                    matrixMemoryStats->reads++;
+                }
+            }
+#endif
             mainPipe.buildTask(pkt, source);
             scheduleTickMainPipe();
         }

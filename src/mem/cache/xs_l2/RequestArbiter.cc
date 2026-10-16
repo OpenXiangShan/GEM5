@@ -24,6 +24,9 @@ RequestArbiter::arbitrate(TaskSource task_source, Cycles now)
     bool success = false;
     switch (task_source) {
         case TaskSource::L2MSHRGrant:
+#if GEM5_ENABLE_MATRIX
+        case TaskSource::MatrixService:
+#endif
             _has_L2MSHR_grant = true;
             success = true;
             break;

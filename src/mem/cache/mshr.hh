@@ -58,6 +58,11 @@
 #include "debug/MSHR.hh"
 #include "mem/cache/queue_entry.hh"
 #include "mem/packet.hh"
+
+#if GEM5_ENABLE_MATRIX
+#include "mem/cache/matrix_rmw_intent.hh"
+
+#endif
 #include "mem/request.hh"
 #include "sim/cur_tick.hh"
 
@@ -173,6 +178,18 @@ class MSHR : public QueueEntry, public Printable
     {
 
       public:
+#if GEM5_ENABLE_MATRIX
+        bool matrixRmwAcquire = false;
+        bool hasMatrixTask = false;
+#endif
+        bool requiresWritable(PacketPtr pkt) const
+        {
+            return pkt->needsWritable()
+#if GEM5_ENABLE_MATRIX
+                || (matrixRmwAcquire && matrix::isRmwCRead(pkt))
+#endif
+                ;
+        }
         bool needsWritable;
         bool hasUpgrade;
         /** Set when the response should allocate on fill */
@@ -223,6 +240,9 @@ class MSHR : public QueueEntry, public Printable
             std::fill(writesBitmap.begin(), writesBitmap.end(), false);
 
             needsWritable = false;
+#if GEM5_ENABLE_MATRIX
+            hasMatrixTask = false;
+#endif
             hasUpgrade = false;
             allocOnFill = false;
             hasFromCache = false;
@@ -333,6 +353,17 @@ class MSHR : public QueueEntry, public Printable
 
     /** True if we need to get a writable copy of the block. */
     bool needsWritable() const { return targets.needsWritable; }
+#if GEM5_ENABLE_MATRIX
+    void enableMatrixRmwAcquire()
+    {
+        targets.matrixRmwAcquire = true;
+        deferredTargets.matrixRmwAcquire = true;
+    }
+    bool hasMatrixTargets() const
+    {
+        return targets.hasMatrixTask || deferredTargets.hasMatrixTask;
+    }
+#endif
 
     bool isCleaning() const {
         PacketPtr pkt = targets.front().pkt;

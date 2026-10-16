@@ -38,6 +38,7 @@
 
 from m5.objects.System import System
 from m5.params import *
+from m5.defines import buildEnv
 from m5.proxy import *
 from m5.SimObject import SimObject
 
@@ -134,6 +135,20 @@ class CoherentXBar(BaseXBar):
 
     # Maximum routing table size for sanity checks
     max_routing_table_size = Param.Int(512, "Max. routing table size")
+
+    if buildEnv['GEM5_ENABLE_MATRIX']:
+        enable_matrix_response_lane = Param.Bool(
+            False, "Route Matrix load responses through a dedicated response lane")
+        matrix_response_max_per_cycle = Param.Unsigned(
+            1, "Max Matrix load responses accepted per cycle on the dedicated lane")
+        enable_matrix_transactions = Param.Bool(
+            False, "Order Matrix maintenance/access and scalar refills by line")
+        matrix_transaction_entries = Param.Unsigned(
+            64, "Maximum active Matrix line transactions")
+        matrix_tracked_requests = Param.Unsigned(
+            512, "Maximum requests tracked through actual response delivery")
+        matrix_rmw_caches = VectorParam.BaseCache(
+            [], "Designated shared L2 caches receiving StoreC handoff events")
 
     # Determine how this crossbar handles packets where caches have
     # already committed to responding, by establishing if the crossbar

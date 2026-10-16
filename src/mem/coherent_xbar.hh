@@ -50,9 +50,16 @@
 #include <unordered_set>
 
 #include "base/types.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "mem/snoop_filter.hh"
 #include "mem/xbar.hh"
 #include "params/CoherentXBar.hh"
+
+#if GEM5_ENABLE_MATRIX
+#include "mem/cache/base.hh"
+#include "mem/matrix_line_transactions.hh"
+
+#endif
 
 namespace gem5
 {
@@ -79,7 +86,33 @@ class CoherentXBar : public BaseXBar
      */
     std::vector<ReqLayer*> reqLayers;
     std::vector<RespLayer*> respLayers;
+#if GEM5_ENABLE_MATRIX
+    std::vector<RespLayer*> matrixRespLayers;
+#endif
     std::vector<SnoopRespLayer*> snoopLayers;
+
+#if GEM5_ENABLE_MATRIX
+    class MatrixResponseQueue : public RespPacketQueue
+    {
+      private:
+        CoherentXBar &xbar;
+      public:
+        MatrixResponseQueue(CoherentXBar &owner, ResponsePort &port)
+            : RespPacketQueue(owner, port), xbar(owner) {}
+        bool sendTiming(PacketPtr pkt) override
+        {
+            if (!xbar.matrixTransactions) {
+                return RespPacketQueue::sendTiming(pkt);
+            }
+            const RequestPtr request = pkt->req;
+            const bool sent = RespPacketQueue::sendTiming(pkt);
+            if (sent) {
+                xbar.matrixResponseDelivered(request);
+            }
+            return sent;
+        }
+    };
+#endif
 
     /**
      * Declaration of the coherent crossbar CPU-side port type, one will
@@ -95,7 +128,11 @@ class CoherentXBar : public BaseXBar
         CoherentXBar &xbar;
 
         /** A normal packet queue used to store responses. */
+#if GEM5_ENABLE_MATRIX
+        MatrixResponseQueue queue;
+#else
         RespPacketQueue queue;
+#endif
 
       public:
 
@@ -317,6 +354,43 @@ class CoherentXBar : public BaseXBar
     /** How many Cycles to send Hint in advance with TimingResp.*/
     const Cycles hintWakeUpAheadCycles;
 
+#if GEM5_ENABLE_MATRIX
+    /** Use a dedicated Matrix load response lane instead of respLayers. */
+    const bool enableMatrixResponseLane;
+
+    /** Matrix load responses accepted per cycle by the dedicated lane. */
+    const unsigned matrixResponseMaxPerCycle;
+
+    struct MatrixTransactionStats : public statistics::Group
+    {
+        explicit MatrixTransactionStats(statistics::Group *parent);
+        statistics::Scalar started;
+        statistics::Scalar completed;
+        statistics::Scalar conflicts;
+        statistics::Scalar priorRequests;
+        statistics::Scalar capacityBlocked;
+        statistics::Scalar retries;
+        statistics::Scalar occupancyMax;
+        statistics::Scalar storeClean;
+        statistics::Scalar storeRmwHits;
+        statistics::Scalar storeRmwFallbacks;
+        statistics::Scalar cReadClean;
+        statistics::Scalar cReadDirectHits;
+        statistics::Scalar dirtyWriteClean;
+        statistics::Scalar maintenanceTicks;
+        statistics::Scalar accessTicks;
+    };
+    std::unique_ptr<matrix::LineTransactionTable> matrixTransactions;
+    std::vector<BaseCache *> matrixRmwCaches;
+    std::unique_ptr<MatrixTransactionStats> matrixTransactionStats;
+    std::vector<bool> matrixBlockedPorts;
+    std::unique_ptr<EventFunctionWrapper> matrixRetryEvent;
+    bool matrixAdmit(PacketPtr pkt, PortID port);
+    void matrixAccepted(PacketPtr pkt, bool track_response);
+    void matrixResponseDelivered(const RequestPtr &request);
+    void retryMatrixPorts();
+
+#endif
     /**
      * Upstream caches need this packet until true is returned, so
      * hold it for deletion until a subsequent call
@@ -325,6 +399,9 @@ class CoherentXBar : public BaseXBar
 
     bool recvTimingReq(PacketPtr pkt, PortID cpu_side_port_id);
     bool recvTimingResp(PacketPtr pkt, PortID mem_side_port_id);
+#if GEM5_ENABLE_MATRIX
+    bool isMatrixLoadResponse(PacketPtr pkt) const;
+#endif
     void recvTimingSnoopReq(PacketPtr pkt, PortID mem_side_port_id);
     bool recvTimingSnoopResp(PacketPtr pkt, PortID cpu_side_port_id);
     void recvReqRetry(PortID mem_side_port_id);
@@ -452,6 +529,11 @@ class CoherentXBar : public BaseXBar
 
     statistics::Distribution snoopFanout;
 
+#if GEM5_ENABLE_MATRIX
+    statistics::Scalar matrixLoadRespLanePackets;
+    statistics::Scalar matrixLoadRespLaneBlocked;
+
+#endif
   public:
 
     virtual void init();

@@ -39,6 +39,12 @@ CacheWrapper::CPUSidePort::CPUSidePort(const std::string& name,
 }
 
 bool
+CacheWrapper::cpuSidePortRecvTryTiming(PacketPtr pkt)
+{
+    return inner_cpu_port.tryTiming(pkt);
+}
+
+bool
 CacheWrapper::cpuSidePortRecvTimingReq(PacketPtr pkt)
 {
     DPRINTF(CacheWrapper, "Got request from CPU side for addr: %#x\n", pkt->getAddr());

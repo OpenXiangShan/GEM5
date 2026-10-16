@@ -20,6 +20,9 @@ class L2MainPipe
 {
   public:
     L2MainPipe(L2CacheSlice* owner, unsigned depth);
+#if GEM5_ENABLE_MATRIX
+    bool usesMatrixResources(PacketPtr pkt, TaskSource source) const;
+#endif
 
     /**
      * Advance the pipeline to the next cycle.

@@ -1,6 +1,7 @@
 from m5.params import *
 from m5.proxy import *
 from m5.SimObject import *
+from m5.defines import buildEnv
 
 from m5.objects.ClockedObject import ClockedObject
 from m5.objects.Prefetcher import *
@@ -26,6 +27,9 @@ class L2CacheSlice(CacheWrapper):
 
     buffer_size = Param.Unsigned(4, "Size of the request buffer")
     pipeline_depth = Param.Unsigned(5, "Depth of the response pipeline")
+    if buildEnv['GEM5_ENABLE_MATRIX']:
+        enable_matrix_resources = Param.Bool(
+            False, "Charge Matrix read/write service and maintenance resources")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

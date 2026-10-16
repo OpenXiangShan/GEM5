@@ -150,6 +150,18 @@ L2CacheWrapper::CPUSidePort::recvFunctional(PacketPtr pkt)
 }
 
 bool
+L2CacheWrapper::CPUSidePort::tryTiming(PacketPtr pkt)
+{
+    const auto slice = owner.getSliceId(pkt->getAddr());
+    if (owner.prefetch_blocked ||
+        !owner.slice_cpuside_ports[slice].tryTiming(pkt)) {
+        owner.upper_req_blocked = true;
+        return false;
+    }
+    return true;
+}
+
+bool
 L2CacheWrapper::CPUSidePort::recvTimingReq(PacketPtr pkt)
 {
     auto slice_id = owner.getSliceId(pkt->getAddr());

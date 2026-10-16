@@ -115,6 +115,7 @@ class L2CacheWrapper : public ClockedObject
 
       protected:
         bool recvTimingReq(PacketPtr pkt) override;
+        bool tryTiming(PacketPtr pkt) override;
         bool recvTimingSnoopResp(PacketPtr pkt) override;
         void recvFunctional(PacketPtr pkt) override;
         Tick recvAtomic(PacketPtr pkt) override;

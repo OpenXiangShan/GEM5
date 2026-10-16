@@ -142,6 +142,12 @@ class SnoopFilter : public SimObject
     std::pair<SnoopList, Cycles> lookupRequest(const Packet* cpkt,
                                         const ResponsePort& cpu_side_port);
 
+    /** Observe upper holders and outstanding fills without changing state. */
+    bool hasCopies(Addr addr, bool is_secure) const;
+
+    /** Retire holder bits after completed invalidation at the shared POU. */
+    void clearHolders(Addr addr, bool is_secure);
+
     /**
      * For an un-successful request, revert the change to the snoop
      * filter. Also take care of erasing any null entries. This method
