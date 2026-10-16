@@ -56,6 +56,7 @@
 #include "base/loader/symtab.hh"
 #include "base/logging.hh"
 #include "base/output.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "config/the_isa.hh"
 #include "cpu/base.hh"
 #include "cpu/checker/cpu.hh"
@@ -81,6 +82,11 @@
 #include "debug/HtmCpu.hh"
 #include "debug/InstCommited.hh"
 #include "debug/O3PipeView.hh"
+
+#if GEM5_ENABLE_MATRIX
+#include "matrix/CUTEParameters.hh"
+
+#endif
 #include "params/BaseO3CPU.hh"
 #include "sim/core.hh"
 #include "sim/cur_tick.hh"
@@ -94,6 +100,30 @@ namespace gem5
 namespace o3
 {
 
+#if GEM5_ENABLE_MATRIX
+namespace
+{
+
+const char *
+requestKindName(matrix::CuteRequestKind kind)
+{
+    switch (kind) {
+      case matrix::CuteRequestKind::Lsu:
+        return "lsu";
+      case matrix::CuteRequestKind::Mma:
+        return "mma";
+      case matrix::CuteRequestKind::Arith:
+        return "arith";
+      case matrix::CuteRequestKind::Release:
+        return "release";
+    }
+
+    return "unknown";
+}
+
+} // anonymous namespace
+
+#endif
 void
 Commit::processTrapEvent(ThreadID tid)
 {
@@ -1922,6 +1952,37 @@ Commit::commitInsts()
         toIEW->commitInfo[tid].robheadSeqNum = robheadSeqNum;
     }
 
+#if GEM5_ENABLE_MATRIX
+    bool firedMatrixAmuProxy = false;
+    for (auto it = activeThreads->begin();
+         cpu->isMatrixBackendEnabled() &&
+         it != activeThreads->end() && !firedMatrixAmuProxy; ++it) {
+        ThreadID tid = *it;
+        ROB::MatrixAmuEntry entry;
+        if (!rob->peekReadyMatrixAmuEntry(tid, entry)) {
+            continue;
+        }
+
+        if (!cpu->canAcceptMatrixBackendReq(
+                entry.backendReq, entry.seqNum)) {
+            DPRINTF(Commit,
+                    "Matrix toAMU proxy blocked [tid:%i] [sn:%llu] "
+                    "kind=%s backend cannot accept yet.\n",
+                    tid, entry.seqNum,
+                    requestKindName(entry.backendReq.kind));
+            continue;
+        }
+
+        const bool popped = rob->popReadyMatrixAmuEntry(tid, entry);
+        panic_if(!popped,
+                 "Matrix AMU entry disappeared after backend accept "
+                 "[tid:%i] [sn:%llu]",
+                 tid, entry.seqNum);
+        cpu->consumeMatrixAmuProxy(tid, entry);
+        firedMatrixAmuProxy = true;
+    }
+
+#endif
     DPRINTF(CommitRate, "%i\n", num_committed);
     stats.numCommittedDist.sample(num_committed);
 
@@ -2231,6 +2292,14 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     if (head_inst->isHtmStart())
         iewStage->setLastRetiredHtmUid(tid, head_inst->getHtmTransactionUid());
 
+#if GEM5_ENABLE_MATRIX
+    if (head_inst->hasStagedMatrixTokenReset()) {
+        cpu->commitMatrixResetToken(
+            tid, head_inst->stagedMatrixTokenResetIndex(),
+            head_inst->seqNum);
+    }
+
+#endif
     if (valuePred && head_inst->canLVP() && (inst_fault == NoFault)) {
         // essential trainning info for all value predictors
         valuepred::VPUpdateInfo updateInfo;
@@ -2280,6 +2349,9 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         head_inst->clearProducerStorePC();
     }
 
+#if GEM5_ENABLE_MATRIX
+    rob->noteMatrixAmuCommit(head_inst);
+#endif
     // Finally clear the head ROB entry.
     rob->retireHead(tid);
 
@@ -2355,7 +2427,27 @@ Commit::moveInstsToBuffer()
                         commitStatus[i] == TrapPending;
         const unsigned allocation =
             std::min<unsigned>(fixedbuffer[i].size(), renameWidth);
+#if GEM5_ENABLE_MATRIX
+        const bool robEntryBlock =
+            !rob->canAllocate(i, allocation);
+        unsigned amuEntryDemand = 0;
+        if (cpu->isMatrixBackendEnabled()) {
+            auto inst_it = fixedbuffer[i].begin();
+            for (unsigned inst_num = 0; inst_num < allocation;
+                 ++inst_num, ++inst_it) {
+                const auto &inst = *inst_it;
+                if (inst && !inst->isSquashed() &&
+                    inst->isMatrixInst() && inst->matrixNeedAmuCtrl()) {
+                    ++amuEntryDemand;
+                }
+            }
+        }
+        const bool matrixAmuEntryBlock =
+            rob->numFreeMatrixAmuEntries(i) < amuEntryDemand;
+        bool block = robEntryBlock || matrixAmuEntryBlock || robblock;
+#else
         bool block = !rob->canAllocate(i, allocation) || robblock;
+#endif
         bool active = !block && !fixedbuffer[i].empty();
         StallReason block_reason = StallReason::NoStall;
         if (robblock) {
@@ -2372,7 +2464,18 @@ Commit::moveInstsToBuffer()
                 block_reason = StallReason::ROBFull;
             }
         }
+#if GEM5_ENABLE_MATRIX
+        DPRINTF(Commit,
+                "Thread %i: block %i robblock %i robEntryBlock %i "
+                "matrixAmuEntryBlock %i active %i shadowFree %u shadowDemand %u "
+                "renameBuffered %llu\n",
+                i, block, robblock, robEntryBlock, matrixAmuEntryBlock, active,
+                rob->numFreeMatrixAmuEntries(i),
+                amuEntryDemand,
+                static_cast<unsigned long long>(fixedbuffer[i].size()));
+#else
         DPRINTF(Commit, "Thread %i: block %i robblock %i active %i\n", i, block, robblock, active);
+#endif
 
         stallSig->blockIEW[i] = block;
         stallSig->iewBlockReason[i] = block ? block_reason : StallReason::NoStall;
@@ -2508,6 +2611,9 @@ Commit::markCompletedInsts()
             // Mark the instruction as ready to commit.
             fromIEW->insts[inst_num]->setCanCommit();
             auto &inst = fromIEW->insts[inst_num];
+#if GEM5_ENABLE_MATRIX
+            rob->noteMatrixAmuWriteback(inst);
+#endif
 
             panic_if(!inst->isInROB(),
                      "[tid:%i] [sn:%llu] Committed instruction not found in ROB",

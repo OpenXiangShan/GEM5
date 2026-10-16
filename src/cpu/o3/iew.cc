@@ -2190,6 +2190,11 @@ IEW::executeInsts()
             // If we execute the instruction (even if it's a nop) the fault
             // will be replaced and we will lose it.
             if (inst->getFault() == NoFault) {
+#if GEM5_ENABLE_MATRIX
+                if (inst->isMatrixInst() && inst->matrixNeedAmuCtrl()) {
+                    inst->clearMatrixPayload();
+                }
+#endif
                 inst->execute();
                 if (!inst->readPredicate())
                     inst->forwardOldRegs();

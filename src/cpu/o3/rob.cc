@@ -44,9 +44,10 @@
 #include <list>
 
 #include "base/logging.hh"
+#include "config/gem5_enable_matrix.hh"
+#include "cpu/o3/commit.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
-#include "cpu/o3/commit.hh"
 #include "debug/Fetch.hh"
 #include "debug/ROB.hh"
 #include "params/BaseO3CPU.hh"
@@ -138,6 +139,11 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
       robWalkPolicy(params.robWalkPolicy),
       cpu(_cpu),
       numEntries(params.numROBEntries),
+#if GEM5_ENABLE_MATRIX
+      matrixAmuBufferEntries(params.enableMatrixBackend ?
+          params.numROBEntries : 0),
+      matrixAmuWindowEntries(params.commitWidth),
+#endif
       instsPerGroup(params.CROB_instPerGroup),
       rollbackWidth(params.squashWidth),
       replayWidth(params.squashWidth),
@@ -147,6 +153,11 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
       numThreads(params.numThreads),
       stats(_cpu)
 {
+#if GEM5_ENABLE_MATRIX
+    if (params.enableMatrixBackend) {
+        matrixAmuBuffers = std::make_unique<MatrixAmuBuffer[]>(MaxThreads);
+    }
+#endif
     for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
         borrowingDonor[tid] = false;
         borrowingStateHoldCycle[tid] = 0;
@@ -227,6 +238,12 @@ ROB::resetState()
 {
     for (ThreadID tid = 0; tid  < MaxThreads; tid++) {
         threadGroups[tid].clear();
+#if GEM5_ENABLE_MATRIX
+        if (matrixAmuBuffers) {
+            matrixAmuBuffers[tid].reset(
+                matrixAmuBufferEntries, matrixAmuWindowEntries);
+        }
+#endif
         squashIt[tid] = instList[tid].end();
         squashedSeqNum[tid] = 0;
         doneSquashing[tid] = true;
@@ -511,6 +528,9 @@ ROB::insertInst(const DynInstPtr &inst)
     tail--;
 
     inst->setInROB();
+#if GEM5_ENABLE_MATRIX
+    insertMatrixAmuEntry(inst);
+#endif
 
     ++numInstsInROB;
 
@@ -702,6 +722,9 @@ ROB::doSquash(ThreadID tid)
         // Mark the instruction as squashed, and ready to commit so that
         // it can drain out of the pipeline.
         (*squashIt[tid])->setSquashed();
+#if GEM5_ENABLE_MATRIX
+        squashMatrixAmuEntry(tid, (*squashIt[tid])->seqNum);
+#endif
 
         (*squashIt[tid])->setCanCommit();
 
