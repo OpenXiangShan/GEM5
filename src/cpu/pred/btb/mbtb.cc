@@ -189,7 +189,7 @@ MBTB::tryReserveShadow(Addr startAddr)
     if (banks & resourceBanksBusy) {
         ++btbStats.shadowBankConflicts;
         ++btbStats.shadowDeferredCycles;
-        for (unsigned bank = 0; bank < 2; ++bank) {
+        for (unsigned bank = 0; bank < NumResourceBanks; ++bank) {
             if (banks & resourceBanksBusy & (1u << bank))
                 btbStats.shadowBankConflictPerBank[bank]++;
         }
@@ -1078,7 +1078,7 @@ void
 MBTB::BTBStats::init(int numWays)
 {
     predHitCount.init(0, numWays * 2, 1);
-    shadowBankConflictPerBank.init(2);
+    shadowBankConflictPerBank.init(NumResourceBanks);
 }
 
 // Close conditional namespace wrapper for testing
