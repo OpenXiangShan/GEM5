@@ -567,9 +567,9 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
     if hasattr(options, 'l2_enable_lldp') and hasattr(prefetcher, 'enable_lldp'):
         prefetcher.enable_lldp = options.l2_enable_lldp
 
-    # Disable every L2 composite component for the no-prefetch experiment.
-    # This applies to both the aligned L2 wrapper and classic L2 paths.
-    prefetcher.enable_bop = False
+    # Keep both L2 BOP engines enabled for the BOP-only experiment.
+    # Disable the other L2 composite components on both aligned and classic paths.
+    prefetcher.enable_bop = True
     prefetcher.enable_cdp = False
     prefetcher.enable_cmc = False
     prefetcher.enable_despacito_stream = False

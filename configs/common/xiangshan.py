@@ -952,6 +952,19 @@ def xiangshan_system_init():
         help="Use BTBTAGEUpperBound in kmhv3 instead of the default BTBTAGE",
     )
     parser.add_argument(
+        "--enable-kmh-chi-6x6",
+        action="store_true",
+        default=False,
+        help="Use the fixed Kunminghu V3 6x6 CMN700 CHI profile",
+    )
+    parser.add_argument(
+        "--kmh-chi-sim-cores",
+        type=int,
+        choices=[1, 2, 4, 8, 16],
+        default=None,
+        help="Use one real CPU plus shadow L2 traffic for this simulated core count",
+    )
+    parser.add_argument(
         "--disable-l1-direct-compression",
         action="store_false",
         dest="enable_l1_direct_compression",

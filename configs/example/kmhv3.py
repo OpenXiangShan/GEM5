@@ -22,6 +22,96 @@ from common.Caches import *
 from common.xiangshan import *
 from util.solver.runtime.integration import maybe_handle_solver_runtime
 
+
+_KMH_CHI_SHADOW_ATTACH_POINTS = {
+    1: [],
+    2: ['mesh28.local0'],
+    4: ['mesh10.local0', 'mesh25.local0', 'mesh28.local0'],
+    8: [
+        'mesh8.local0', 'mesh9.local0', 'mesh10.local0',
+        'mesh25.local0', 'mesh26.local0', 'mesh27.local0', 'mesh28.local0',
+    ],
+    16: [
+        'mesh8.local0', 'mesh9.local0', 'mesh10.local0',
+        'mesh13.local0', 'mesh14.local0', 'mesh15.local0', 'mesh16.local0',
+        'mesh19.local0', 'mesh20.local0', 'mesh21.local0', 'mesh22.local0',
+        'mesh25.local0', 'mesh26.local0', 'mesh27.local0', 'mesh28.local0',
+    ],
+}
+
+
+def _apply_kmh_chi_6x6_profile(args):
+    """Apply the fixed 6x6 CMN700 CHI network used by KMH V3 experiments."""
+    if args.kmh_chi_sim_cores is not None:
+        args.enable_kmh_chi_6x6 = True
+    if not args.enable_kmh_chi_6x6:
+        return
+
+    args.CHI = True
+    args.chi_topology = 'L2L3DramSys_6x6'
+    args.chi_rn_attach_point = 'mesh7.local0'
+    args.chi_hn_count = 16
+    args.chi_hn_attach_points = ','.join([
+        'mesh7.local1', 'mesh8.local1', 'mesh9.local1', 'mesh10.local1',
+        'mesh13.local1', 'mesh14.local1', 'mesh15.local1', 'mesh16.local1',
+        'mesh19.local1', 'mesh20.local1', 'mesh21.local1', 'mesh22.local1',
+        'mesh25.local1', 'mesh26.local1', 'mesh27.local1', 'mesh28.local1',
+    ])
+    args.chi_dram_count = 4
+    args.chi_dram_attach_points = ','.join([
+        'mesh1.local0', 'mesh4.local0', 'mesh31.local0', 'mesh34.local0',
+    ])
+
+    args.chi_credit_model = 'cmn700_rtl'
+    args.chi_rxbuf_num = 3
+    args.chi_skid_depth = 1
+    args.chi_ib_depth = 2
+    args.chi_initial_credit_count = 3
+    args.chi_up_crd_lat_int = 1
+    args.chi_up_crd_lat_ext = 2
+    args.chi_dn_crd_lat_int = 2
+    args.chi_dn_crd_lat_ext = 1
+    args.chi_internal_crd_lat = 1
+    args.chi_ddr_read_response_padding_cycles = 0
+    args.chi_voq_depth = 2
+    args.chi_voq_depth_mode = 'per_ingress'
+
+
+def _apply_kmh_chi_shadow_profile(args):
+    """Configure shadow L2 traffic for a fixed simulated core count."""
+    sim_cores = args.kmh_chi_sim_cores
+    if sim_cores is None:
+        return
+
+    # Shadow L2 replicates one real CPU/L2 stream; never instantiate real CPUs
+    # for this experiment.
+    args.num_cpus = 1
+    shadow_attach_points = _KMH_CHI_SHADOW_ATTACH_POINTS[sim_cores]
+    shadow_count = len(shadow_attach_points)
+    args.shadow_l2_enable = shadow_count > 0
+    args.shadow_l2_count = shadow_count
+    args.shadow_attach_points = ','.join(shadow_attach_points)
+
+    if shadow_count == 0:
+        args.shadow_src_bases = ''
+        args.shadow_window_sizes = ''
+        args.shadow_dst_bases = ''
+        return
+
+    source_base = 0x80000000
+    window_size = 0x80000000
+    args.shadow_src_bases = ','.join(
+        f'{source_base:#x}' for _ in range(shadow_count)
+    )
+    args.shadow_window_sizes = ','.join(
+        f'{window_size:#x}' for _ in range(shadow_count)
+    )
+    args.shadow_dst_bases = ','.join(
+        f'{source_base * 2 + i * window_size:#x}'
+        for i in range(shadow_count)
+    )
+
+
 def setPtwLevelLimitParams(args, tlb):
     tlb.walker.enable_ptw_level_limit = args.enable_ptw_level_limit
     tlb.walker.ptw_level0_limit = args.ptw_level0_limit
@@ -203,6 +293,8 @@ if __name__ == '__m5_main__':
     FutureClass = None
 
     args = xiangshan_system_init()
+    _apply_kmh_chi_6x6_profile(args)
+    _apply_kmh_chi_shadow_profile(args)
 
     assert not args.external_memory_system
 
