@@ -372,7 +372,9 @@ MLOPPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrior
     mark(block, State::Access, 0, secure);
 
     const auto generated = candidates(block, secure);
-    for (const auto &[candidateBlock, level] : generated) {
+    for (const auto &candidate : generated) {
+        const auto candidateBlock = candidate.first;
+        const auto level = candidate.second;
         const bool local = level == attachedLevel;
         if (!local && !hasHintDownStream()) {
             ++statsMLOP.downstreamUnavailable;
