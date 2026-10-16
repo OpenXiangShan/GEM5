@@ -625,6 +625,15 @@ Walker::WalkerState::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *trans
         return std::make_pair(false, NoFault);
     }
 
+    const bool two_stage_resume_match =
+        !isExistingTwoStage ||
+        ((mainReq->get_h_gstage() == req->get_h_gstage()) &&
+         (mainReq->get_finish_gva() == req->get_finish_gva()));
+
+    if (!two_stage_resume_match) {
+        return std::make_pair(false, NoFault);
+    }
+
     bool priv_match;
     if (isExistingTwoStage) {
         SATP _vsatp = _tc->readMiscReg(MISCREG_VSATP);
