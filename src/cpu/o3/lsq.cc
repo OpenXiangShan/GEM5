@@ -59,6 +59,7 @@
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
@@ -538,6 +539,15 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       RARQEntries(params.RARQEntries),
       RAWQEntries(params.RAWQEntries),
       dcachePort(this, cpu_ptr),
+#if GEM5_ENABLE_MATRIX
+      mlsReplayQueue(params.enableMatrixBackend ?
+          std::make_unique<MlsReplayQueue>(params.numThreads,
+          params.matrixMlsReplayQueueEntries,
+          params.matrixMlsReplaySelectLatency) : nullptr),
+      mlsVirtualQueue(params.enableMatrixBackend ?
+          std::make_unique<MlsVirtualQueue>(params.numThreads,
+          params.matrixMlsVirtualQueueEntries) : nullptr),
+#endif
       numThreads(params.numThreads)
 {
     assert(numThreads > 0 && numThreads <= MaxThreads);

@@ -65,10 +65,16 @@
 #include "base/flags.hh"
 #include "base/statistics.hh"
 #include "base/types.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/dyn_inst_xsmeta.hh"
 #include "cpu/o3/limits.hh"
+
+#if GEM5_ENABLE_MATRIX
+#include "cpu/o3/mls_unit.hh"
+
+#endif
 #include "cpu/utils.hh"
 #include "enums/SMTLSQMode.hh"
 #include "enums/SMTQueuePolicy.hh"
@@ -930,6 +936,19 @@ class LSQ
     /** Process instructions in each load/store pipeline stages. */
     void executePipeSx();
 
+#if GEM5_ENABLE_MATRIX
+    MlsUnit::IssueResult issueMatrixMem(const DynInstPtr &inst);
+
+    bool canAllocateMatrixMem(ThreadID tid, unsigned count = 1) const;
+    bool hasMatrixMemEntry(const DynInstPtr &inst) const;
+    bool allocateMatrixMemEntry(const DynInstPtr &inst);
+    void scheduleMatrixMemReplay();
+    unsigned squashMatrixMem(ThreadID tid, InstSeqNum squash_seq);
+    unsigned retireCommittedMatrixMem(ThreadID tid, InstSeqNum committed_seq);
+    MlsReplayQueue *matrixReplayQueue() { return mlsReplayQueue.get(); }
+    MlsVirtualQueue *matrixVirtualQueue() { return mlsVirtualQueue.get(); }
+
+#endif
     /**
      * Commits loads up until the given sequence number for a specific thread.
      */
@@ -1640,6 +1659,11 @@ class LSQ
     /** The LSQ units for individual threads. */
     std::vector<LSQUnit> thread;
 
+#if GEM5_ENABLE_MATRIX
+    std::unique_ptr<MlsReplayQueue> mlsReplayQueue;
+    std::unique_ptr<MlsVirtualQueue> mlsVirtualQueue;
+
+#endif
     /** Number of Threads. */
     ThreadID numThreads;
 };

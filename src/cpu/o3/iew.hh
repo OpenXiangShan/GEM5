@@ -52,11 +52,17 @@
 #include <boost/circular_buffer.hpp>
 
 #include "base/statistics.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/inst_queue.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
+
+#if GEM5_ENABLE_MATRIX
+#include "cpu/o3/mls_unit.hh"
+
+#endif
 #include "cpu/o3/rob.hh"
 #include "cpu/o3/scoreboard.hh"
 #include "cpu/timebuf.hh"
@@ -373,6 +379,9 @@ class IEW
     void squashDelayedVectorMemCompletions(ThreadID tid);
 
     bool checkSerialize(const DynInstPtr& inst);
+#if GEM5_ENABLE_MATRIX
+    bool threadNeedsScalarLsq(ThreadID tid) const;
+#endif
 
     /** Processes inputs and changes state accordingly. */
     void checkSquash();

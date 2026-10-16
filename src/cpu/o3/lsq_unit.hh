@@ -49,6 +49,13 @@
 #include <cstring>
 #include <map>
 #include <memory>
+
+#include "config/gem5_enable_matrix.hh"
+
+#if GEM5_ENABLE_MATRIX
+#include <optional>
+
+#endif
 #include <queue>
 #include <vector>
 
@@ -66,6 +73,11 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
+
+#if GEM5_ENABLE_MATRIX
+#include "cpu/o3/mls_unit.hh"
+
+#endif
 #include "cpu/o3/replay_events.hh"
 #include "cpu/timebuf.hh"
 #include "debug/HtmCpu.hh"
@@ -365,6 +377,12 @@ class LSQUnit
     /** Iq issues a store to store pipeline. */
     void issueToStorePipe(const DynInstPtr &inst);
 
+#if GEM5_ENABLE_MATRIX
+    MlsUnit::IssueResult issueMatrixMem(const DynInstPtr &inst);
+    bool matrixReplayReady(const DynInstPtr &inst,
+                           MlsReplayQueue::ReplayState &state) const;
+
+#endif
     /** physical SQ window check based on monotonic queue indices. */
     bool storeQueueWriteReady(const DynInstPtr &inst) const;
 
@@ -625,6 +643,10 @@ class LSQUnit
     /** Pointer to the LSQ. */
     LSQ *lsq;
 
+#if GEM5_ENABLE_MATRIX
+    std::optional<MlsUnit> mlsUnit;
+
+#endif
     /** Pointer to the dcache port.  Used only for sending. */
     RequestPort *dcachePort;
 

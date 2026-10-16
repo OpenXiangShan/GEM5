@@ -48,6 +48,7 @@
 #include "base/str.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "config/the_isa.hh"
 #include "cpu/base.hh"
 #include "cpu/checker/cpu.hh"
@@ -497,6 +498,13 @@ LSQUnit::init(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params,
     iewStage = iew_ptr;
 
     lsq = lsq_ptr;
+#if GEM5_ENABLE_MATRIX
+    if (params.enableMatrixBackend) {
+        mlsUnit.emplace(cpu_ptr);
+        mlsUnit->setReplayQueue(lsq->matrixReplayQueue());
+        mlsUnit->setVirtualQueue(lsq->matrixVirtualQueue());
+    }
+#endif
 
     cpu->addStatGroup(csprintf("lsq%i", lsqID).c_str(), &stats);
 

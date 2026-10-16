@@ -104,6 +104,18 @@ isMatrixMemOpClass(OpClass op_class)
     return op_class == MatrixMemOp;
 }
 
+bool
+isMatrixMemInst(const DynInstPtr &inst)
+{
+    return inst && isMatrixMemOpClass(inst->opClass());
+}
+
+bool
+usesScalarLsqPath(const DynInstPtr &inst)
+{
+    return inst && inst->isMemRef() && !isMatrixMemInst(inst);
+}
+
 } // namespace
 
 #endif
@@ -672,6 +684,9 @@ IEW::squash(ThreadID tid)
     // Tell the LDSTQ to start squashing.
     ldstQueue.squash(fromCommit->commitInfo[tid].doneSeqNum, tid);
     squashDelayedVectorMemCompletions(tid);
+#if GEM5_ENABLE_MATRIX
+    ldstQueue.squashMatrixMem(tid, fromCommit->commitInfo[tid].doneSeqNum);
+#endif
     updatedQueues = true;
 
     // Selectively remove only instructions younger than squash boundary
@@ -1277,6 +1292,30 @@ IEW::canInsertLDSTQue(ThreadID tid)
     return false;
 }
 
+#if GEM5_ENABLE_MATRIX
+bool
+IEW::threadNeedsScalarLsq(ThreadID tid) const
+{
+    auto needs_scalar_lsq = [](const DynInstPtr &inst) {
+        return usesScalarLsqPath(inst) &&
+               (inst->isAtomic() || inst->isLoad() || inst->isStore());
+    };
+
+    if (!fixedbuffer[tid].empty() && needs_scalar_lsq(fixedbuffer[tid].front())) {
+        return true;
+    }
+
+    for (const auto &queue : dispQue) {
+        if (!queue.empty() && queue.front()->threadNumber == tid &&
+            needs_scalar_lsq(queue.front())) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+#endif
 void
 IEW::setDispatchAgeCtr(const DynInstPtr& inst, int dispatch_pos)
 {
@@ -1366,10 +1405,17 @@ IEW::dispatchInsts()
         iew_info.robCount = rob->getThreadEntries(i);
         iew_info.iqCount = scheduler->getIQInsts(i);
 
+#if GEM5_ENABLE_MATRIX
+        const bool can_insert_ldst = canInsertLDSTQue(i);
+        const bool needs_scalar_lsq = !cpu->isMatrixBackendEnabled() ||
+            threadNeedsScalarLsq(i);
+        bool ldst_block = needs_scalar_lsq && !can_insert_ldst;
+#else
         bool ldst_block = !canInsertLDSTQue(i);
+#endif
         bool rename_block = stallSig->blockIEW[i] || ldst_block;
-        // LDST queue reservation gates new rename input, but the already
-        // buffered tail must still drain through per-instruction LSQ checks.
+        // Scalar LSQ reservation gates new rename input, but the already
+        // buffered tail must still drain through per-instruction queue checks.
         bool active = !stallSig->blockIEW[i] && !fixedbuffer[i].empty();
         StallReason block_reason = StallReason::NoStall;
         if (stallSig->blockIEW[i]) {
@@ -1505,9 +1551,29 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
             break;
         }
 
+#if GEM5_ENABLE_MATRIX
+        if (isMatrixMemInst(inst) && !ldstQueue.canAllocateMatrixMem(tid)) {
+            DPRINTF(IEW, "[tid:%i] Dispatch: MLSQ has become full.\n", tid);
+
+            iewStats.stallEvents[LSQFull]++;
+            ++iewStats.lsqFullEvents;
+            dispatch_stalls.push(checkDispatchStall(tid, NumDQ, inst, disp_seq));
+            breakDispatch = dispatch_stalls.back();
+            blockReason = breakDispatch;
+            break;
+        }
+
+#endif
         // Check LSQ if inst is LD/ST
+#if GEM5_ENABLE_MATRIX
+        if (usesScalarLsqPath(inst) &&
+            ((inst->isAtomic() && ldstQueue.sqFull(tid)) ||
+             (inst->isLoad() && ldstQueue.lqFull(tid)) ||
+             (inst->isStore() && ldstQueue.sqFull(tid)))) {
+#else
         if ((inst->isAtomic() && ldstQueue.sqFull(tid)) || (inst->isLoad() && ldstQueue.lqFull(tid)) ||
             (inst->isStore() && ldstQueue.sqFull(tid))) {
+#endif
             DPRINTF(IEW, "[tid:%i] Dispatch: %s has become full.\n", tid, inst->isLoad() ? "LQ" : "SQ");
 
             iewStats.stallEvents[LSQFull]++;
@@ -1548,7 +1614,20 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
             scheduler->addProducer(inst);
         }
 
+#if GEM5_ENABLE_MATRIX
+        if (isMatrixMemInst(inst)) {
+            DPRINTF(IEW,
+                    "[tid:%i] Dispatch: Matrix memory instruction "
+                    "bypassing scalar LSQ alloc path.\n",
+                    tid);
+            panic_if(!ldstQueue.allocateMatrixMemEntry(inst),
+                     "[tid:%i] MLSQ alloc failed after canAccept [sn:%llu]",
+                     tid, inst->seqNum);
+            add_to_iq = true;
+        } else if (inst->isAtomic()) {
+#else
         if (inst->isAtomic()) {
+#endif
             DPRINTF(IEW,
                     "[tid:%i] Dispatch: Memory instruction "
                     "encountered, adding to LSQ.\n",
@@ -1701,6 +1780,20 @@ IEW::classifyInstToDispQue(ThreadID tid, unsigned max_insts,
                 break;
             }
 
+#if GEM5_ENABLE_MATRIX
+            if (isMatrixMemInst(inst) &&
+                !ldstQueue.hasMatrixMemEntry(inst) &&
+                !ldstQueue.canAllocateMatrixMem(tid)) {
+                DPRINTF(IEW, "[tid:%i] Dispatch: MLSQ has become full.\n", tid);
+                iewStats.stallEvents[LSQFull]++;
+                ++iewStats.lsqFullEvents;
+                dispatch_stalls.push(checkDispatchStall(tid, id, inst, -1));
+                breakDispatch = dispatch_stalls.back();
+                blockReason = breakDispatch;
+                break;
+            }
+
+#endif
             // hardware transactional memory
             // CPU needs to track transactional state in program order.
             const int numHtmStarts = ldstQueue.numHtmStarts(tid);
@@ -1730,6 +1823,13 @@ IEW::classifyInstToDispQue(ThreadID tid, unsigned max_insts,
             if (!inst->isNop() && !inst->isInstPrefetch()) {
                 ++iewStats.dispatchedOps[tid];
             }
+#if GEM5_ENABLE_MATRIX
+            if (isMatrixMemInst(inst) && !ldstQueue.hasMatrixMemEntry(inst)) {
+                panic_if(!ldstQueue.allocateMatrixMemEntry(inst),
+                         "[tid:%i] MLSQ alloc failed after canAccept [sn:%llu]",
+                         tid, inst->seqNum);
+            }
+#endif
             dispQue[id].push_back(inst);
 
             if (!inst->isNop() && !inst->isEliminated()) {
@@ -1821,10 +1921,29 @@ IEW::dispatchInstFromDispQue()
                 break;
             }
 
+#if GEM5_ENABLE_MATRIX
+            if (isMatrixMemInst(inst) &&
+                !ldstQueue.canAllocateMatrixMem(tid) &&
+                !ldstQueue.hasMatrixMemEntry(inst)) {
+                DPRINTF(IEW, "[tid:%i] Dispatch: MLSQ has become full.\n", tid);
+
+                iewStats.stallEvents[LSQFull]++;
+                ++iewStats.lsqFullEvents;
+                break;
+            }
+
+#endif
             // Check LSQ if inst is LD/ST
+#if GEM5_ENABLE_MATRIX
+            if (usesScalarLsqPath(inst) &&
+                ((inst->isAtomic() && ldstQueue.sqFull(tid)) ||
+                 (inst->isLoad() && ldstQueue.lqFull(tid)) ||
+                 (inst->isStore() && ldstQueue.sqFull(tid)))) {
+#else
             if ((inst->isAtomic() && ldstQueue.sqFull(tid)) ||
                 (inst->isLoad() && ldstQueue.lqFull(tid)) ||
                 (inst->isStore() && ldstQueue.sqFull(tid))) {
+#endif
                 DPRINTF(IEW, "[tid:%i] Dispatch: %s has become full.\n",tid,
                         inst->isLoad() ? "LQ" : "SQ");
 
@@ -1836,7 +1955,20 @@ IEW::dispatchInstFromDispQue()
 
             bool add_to_iq = false;
             // Otherwise issue the instruction just fine.
+#if GEM5_ENABLE_MATRIX
+            if (isMatrixMemInst(inst)) {
+                DPRINTF(IEW,
+                        "[tid:%i] Dispatch: Matrix memory instruction "
+                        "bypassing scalar LSQ alloc path.\n",
+                        tid);
+                panic_if(!ldstQueue.hasMatrixMemEntry(inst),
+                         "[tid:%i] MLSQ entry missing at IQ dispatch [sn:%llu]",
+                         tid, inst->seqNum);
+                add_to_iq = true;
+            } else if (inst->isAtomic()) {
+#else
             if (inst->isAtomic()) {
+#endif
                 DPRINTF(IEW, "[tid:%i] Dispatch: Memory instruction "
                         "encountered, adding to LSQ.\n", tid);
 
@@ -2152,7 +2284,30 @@ IEW::executeInsts()
         // Execute instruction.
         // Note that if the instruction faults, it will be handled
         // at the commit stage.
+#if GEM5_ENABLE_MATRIX
+        if (isMatrixMemInst(inst)) {
+            DPRINTF(IEW,
+                    "Execute: Routing matrix memory reference to "
+                    "MlsUnit stage-D pipeline.\n");
+            if (inst->isMatrixInst() && inst->matrixNeedAmuCtrl()) {
+                inst->clearMatrixPayload();
+            }
+            auto matrix_result = ldstQueue.issueMatrixMem(inst);
+            if (!matrix_result.needReplay && inst->getFault() == NoFault) {
+                notifyExecuted(inst);
+            }
+            if (!matrix_result.needReplay) {
+                inst->setExecuted();
+                readyToFinish(inst);
+            } else {
+                DPRINTF(IEW,
+                        "Matrix replay armed [tid:%i] [sn:%llu].\n",
+                        inst->threadNumber, inst->seqNum);
+            }
+        } else if (inst->isMemRef()) {
+#else
         if (inst->isMemRef()) {
+#endif
             DPRINTF(IEW, "Execute: Calculating address for memory "
                     "reference.\n");
 
@@ -2392,6 +2547,9 @@ IEW::tick()
 
         writebackInsts();
     }
+#if GEM5_ENABLE_MATRIX
+    ldstQueue.scheduleMatrixMemReplay();
+#endif
     scheduler->issueAndSelect();
 
     bool broadcast_free_entries = false;
@@ -2438,6 +2596,10 @@ IEW::tick()
             updateLSQNextCycle = true;
 
             instQueue.commit(fromCommit->commitInfo[tid].doneSeqNum,tid);
+#if GEM5_ENABLE_MATRIX
+            ldstQueue.retireCommittedMatrixMem(
+                tid, fromCommit->commitInfo[tid].doneSeqNum);
+#endif
         }
 
         if (fromCommit->commitInfo[tid].nonSpecSeqNum != 0) {

@@ -58,6 +58,8 @@ if env['CONF']['TARGET_ISA'] != 'null':
         Source('matrix_cpu.cc')
         Source('matrix_mem_port.cc')
         Source('matrix_rob.cc')
+        Source('matrix_lsq.cc')
+        Source('mls_unit.cc')
     Source('mem_dep_unit.cc')
     Source('phast.cc')
     Source('regfile.cc')
