@@ -1229,6 +1229,8 @@ class DecoupledBPUWithBTB(BranchPredictor):
         "Enable the APF hard-to-predict branch table")
     enable_h2p_weak_confidence = Param.Bool(False,
         "Require TAGE low confidence for PC-H2P candidates")
+    enable_apf_mbtb_resource_conflict = Param.Bool(True,
+        "Model MBTB resource conflicts for APF shadow queries")
     h2p_table_entries = Param.Unsigned(128,
         "Number of H2P table cache-line entries")
     h2p_age_insts = Param.Unsigned(20000,
