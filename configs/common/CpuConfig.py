@@ -35,6 +35,24 @@
 
 from m5 import fatal
 import m5.objects
+from m5.defines import buildEnv
+
+def config_matrix(cpu_list, enabled):
+    if not buildEnv['GEM5_ENABLE_MATRIX']:
+        if enabled:
+            fatal("Matrix configuration requires a build with --enable-matrix")
+        return
+    for cpu in cpu_list:
+        if not isinstance(cpu, m5.objects.BaseO3CPU):
+            if enabled:
+                fatal("Matrix configuration requires an O3 CPU")
+            continue
+        cpu.enableMatrixBackend = enabled
+        cpu.enableMatrixMemPort = enabled
+        if enabled:
+            from common.MatrixFUScheduler import MatrixKunminghuScheduler
+            cpu.scheduler = MatrixKunminghuScheduler()
+
 
 def config_etrace(cpu_cls, cpu_list, options):
     if issubclass(cpu_cls, m5.objects.DerivO3CPU):
@@ -73,7 +91,5 @@ def deprecated_config_difftest(cpu_cls, cpu_list, options):
                   "the --difftest-ref-so option, 2) or specify NEMU_HOME that contains "
                   "build/riscv64-nemu-interpreter-so")
         cpu_list[0].difftest_ref_so = options.difftest_ref_so
-
-
 
 

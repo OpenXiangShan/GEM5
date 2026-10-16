@@ -258,6 +258,15 @@ def addCommonOptions(parser, configure_xiangshan=False):
     # start by adding the base options that do not assume an ISA
     addNoISAOptions(parser,configure_xiangshan=configure_xiangshan)
 
+    parser.add_argument("--matrix", action="store_true",
+                        help="Configure the RISC-V Matrix backend and scheduler")
+    parser.add_argument("--matrix-rmw-acquire", type=int, choices=[0, 1],
+                        default=1, help="Acquire C-read write permission at L2")
+    parser.add_argument("--matrix-rmw-retention", type=int, choices=[0, 1],
+                        default=1, help="Retain eligible C-read blocks at L2")
+    parser.add_argument("--matrix-rmw-max-ways-per-set", type=int, default=-1,
+                        help="Retained ways per set; -1 selects bounded default")
+
     # system options
     parser.add_argument("--list-cpu-types",
                         action=ListCpu, nargs=0,

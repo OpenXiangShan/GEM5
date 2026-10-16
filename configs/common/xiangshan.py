@@ -449,6 +449,9 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
     # For now, assign all the CPUs to the same clock domain
     test_sys.cpu = [TestCPUClass(clk_domain=test_sys.cpu_clk_domain, cpu_id=i)
                     for i in range(np)]
+    if args.matrix and args.xiangshan_ecore:
+        fatal("Matrix configuration requires the Kunminghu O3 preset")
+    CpuConfig.config_matrix(test_sys.cpu, args.matrix)
     # Configure MMU for trace-aware FS mode
     if args.smt:
         test_sys.multi_thread = True

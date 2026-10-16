@@ -178,6 +178,8 @@ def get_resource_process(args):
 parser = argparse.ArgumentParser()
 Options.addCommonOptions(parser)
 Options.addSEOptions(parser)
+parser.add_argument("--matrix-kmhv3-scheduler", action="store_true",
+                    help="Use KMHV3Scheduler for SE matrix smoke runs.")
 
 if '--ruby' in sys.argv:
     Ruby.define_options(parser)
@@ -329,6 +331,13 @@ for cpu in system.cpu:
     if buildEnv['TARGET_ISA'] == 'riscv' and isinstance(cpu, BaseO3CPU):
         cpu.scheduler = DefaultScheduler()
 
+args.matrix = args.matrix or args.matrix_kmhv3_scheduler
+CpuConfig.config_matrix(system.cpu, args.matrix)
+if args.matrix_kmhv3_scheduler:
+    from common.MatrixFUScheduler import MatrixKMHV3Scheduler
+    for cpu in system.cpu:
+        cpu.scheduler = MatrixKMHV3Scheduler()
+
 if ObjectList.is_kvm_cpu(CPUClass) or ObjectList.is_kvm_cpu(FutureClass):
     if buildEnv['TARGET_ISA'] == 'x86':
         system.kvm_vm = KvmVM()
@@ -402,7 +411,11 @@ def set_kmhv3_se_params(args, system):
         cpu.enableDispatchStage = False
         cpu.numDQEntries = [8, 8, 8]
         cpu.dispWidth = [8, 8, 8]
-        cpu.scheduler = KMHV3Scheduler()
+        if args.matrix:
+            from common.MatrixFUScheduler import MatrixKMHV3Scheduler
+            cpu.scheduler = MatrixKMHV3Scheduler()
+        else:
+            cpu.scheduler = KMHV3Scheduler()
         cpu.phyregReleaseWidth = 8
         cpu.RobCompressPolicy = 'none'
         cpu.numROBEntries = 352
@@ -466,7 +479,11 @@ def setKmhV3IdealParams(args, system):
         cpu.enableDispatchStage = True
         cpu.numDQEntries = [8, 8, 8]
         cpu.dispWidth = [8, 8, 8]
-        cpu.scheduler = KMHV3Scheduler()
+        if args.matrix:
+            from common.MatrixFUScheduler import MatrixKMHV3Scheduler
+            cpu.scheduler = MatrixKMHV3Scheduler()
+        else:
+            cpu.scheduler = KMHV3Scheduler()
 
         cpu.BankConflictCheck = True   # real bank conflict 0.2 score
         # cpu.EnableLdMissReplay = False

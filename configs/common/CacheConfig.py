@@ -251,6 +251,10 @@ def config_cache(options, system):
         else:
             config_aligned_l2(options, system, l2_cache_class)
 
+        if getattr(options, 'matrix', False):
+            from common.MatrixMemory import configure_matrix_ingress
+            configure_matrix_ingress(options, system)
+
         for i in range(options.num_cpus):
             system.tol2bus_list[i].snoop_filter.max_capacity = "16MB"
             if options.ideal_cache:
