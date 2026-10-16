@@ -338,13 +338,13 @@ class Decode
         statistics::Formula decodeEfficiency;
     } stats;
 
-    std::vector<StallReason> decodeStalls;
+    std::array<std::vector<StallReason>, MaxThreads> decodeStalls;
 
     std::unordered_map<const char*, uint64_t> fusionType;
 
     StallReason blockReason{NoStall};
 
-    void setAllStalls(StallReason decodeStall);
+    void setAllStalls(ThreadID tid, StallReason decodeStall);
 
     SquashVersion localSquashVer[MaxThreads];
 };

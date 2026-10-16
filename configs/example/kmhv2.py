@@ -23,6 +23,11 @@ from util.solver.runtime.integration import maybe_handle_solver_runtime
 if __name__ == '__m5_main__':
 
     args = xiangshan_system_init()
+
+    if args.enable_spmt: 
+        fatal("--enable-spmt is not supported by this entry point; "
+              "use kmhv3.py or idealkmhv3.py instead.")
+    
     # Keep kmhv2 runnable, but align with repo policy (BTB-only).
     args.bp_type = 'DecoupledBPUWithBTB'
 

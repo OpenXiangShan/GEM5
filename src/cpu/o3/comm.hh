@@ -42,6 +42,7 @@
 #ifndef __CPU_O3_COMM_HH__
 #define __CPU_O3_COMM_HH__
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -160,7 +161,8 @@ struct FetchStruct
     Fault fetchFault;
     InstSeqNum fetchFaultSN;
     bool clearFetchFault;
-    std::vector<StallReason> fetchStallReason;
+    /** Per-thread fetch stall reasons for the logical decode lanes. */
+    std::array<std::vector<StallReason>, MaxThreads> fetchStallReason;
 };
 
 /** Struct that defines the information passed from decode to rename. */
@@ -169,8 +171,10 @@ struct DecodeStruct
     int size;
 
     DynInstPtr insts[MaxWidth];
-    std::vector<StallReason> fetchStallReason;
-    std::vector<StallReason> decodeStallReason;
+    /** Per-thread fetch stall reasons for the logical decode lanes. */
+    std::array<std::vector<StallReason>, MaxThreads> fetchStallReason;
+    /** Per-thread decode stall reasons for the logical decode lanes. */
+    std::array<std::vector<StallReason>, MaxThreads> decodeStallReason;
 };
 
 /** Struct that defines the information passed from rename to IEW. */
@@ -179,9 +183,12 @@ struct RenameStruct
     int size;
 
     DynInstPtr insts[MaxWidth];
-    std::vector<StallReason> fetchStallReason;
-    std::vector<StallReason> decodeStallReason;
-    std::vector<StallReason> renameStallReason;
+    /** Per-thread fetch stall reasons for the logical decode lanes. */
+    std::array<std::vector<StallReason>, MaxThreads> fetchStallReason;
+    /** Decode stall reasons preserved by thread across rename. */
+    std::array<std::vector<StallReason>, MaxThreads> decodeStallReason;
+    /** Per-thread rename stall reasons for the logical rename lanes. */
+    std::array<std::vector<StallReason>, MaxThreads> renameStallReason;
 };
 
 /** Struct that defines the information passed from IEW to commit. */

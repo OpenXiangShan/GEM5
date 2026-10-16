@@ -677,8 +677,8 @@ ROB::doSquash(ThreadID tid)
 
     bool robTailUpdate = false;
 
-    assert(dynSquashWidth);
-    unsigned int num_insts_to_squash = dynSquashWidth;
+    assert(dynSquashWidth[tid]);
+    unsigned int num_insts_to_squash = dynSquashWidth[tid];
 
     // If the CPU is exiting, squash all of the instructions
     // it is told to, even if that exceeds the squashWidth.
@@ -856,7 +856,7 @@ ROB::squash(InstSeqNum squash_num, ThreadID tid)
     squashedSeqNum[tid] = squash_num;
 
     if (robWalkPolicy == ROBWalkPolicy::NaiveCpt) {
-        dynSquashWidth = computeSnapshotSquashWidth(squash_num, tid);
+        dynSquashWidth[tid] = computeSnapshotSquashWidth(squash_num, tid);
     } else {
         unsigned total_inst_to_squash = 0;
         for (auto it = instList[tid].begin(); it != instList[tid].end(); ++it) {
@@ -867,7 +867,7 @@ ROB::squash(InstSeqNum squash_num, ThreadID tid)
         unsigned num_uncommitted_inst =
             instList[tid].size() - total_inst_to_squash;
 
-        dynSquashWidth =
+        dynSquashWidth[tid] =
             computeDynSquashWidth(num_uncommitted_inst, total_inst_to_squash);
     }
 

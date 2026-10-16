@@ -1624,10 +1624,13 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
             if (i < dispatched) {   // dispatch success, no stall
                 dispatchStalls.at(i) = StallReason::NoStall;
             } else {    // dispatch no insts, pass rename stall
-                if (fromRename->renameStallReason.size() == 0) {    // initialize, no stall
+                const auto &rename_stalls =
+                    fromRename->renameStallReason[tid];
+                if (rename_stalls.empty()) {    // initialize, no stall
                     dispatchStalls.at(i) = StallReason::NoStall;
                 } else {    // not dispatch initialize, pass rename stall
-                    dispatchStalls.at(i) = fromRename->renameStallReason.at(i);
+                    dispatchStalls.at(i) = i < rename_stalls.size() ?
+                        rename_stalls[i] : StallReason::NoStall;
                 }
             }
         }
@@ -1746,10 +1749,13 @@ IEW::classifyInstToDispQue(ThreadID tid, unsigned max_insts,
             if (i < dispatched) {   // dispatch success, no stall
                 dispatchStalls.at(i) = StallReason::NoStall;
             } else {    // dispatch no insts, pass rename stall
-                if (fromRename->renameStallReason.size() == 0) {    // initialize, no stall
+                const auto &rename_stalls =
+                    fromRename->renameStallReason[tid];
+                if (rename_stalls.empty()) {    // initialize, no stall
                     dispatchStalls.at(i) = StallReason::NoStall;
                 } else {    // not dispatch initialize, pass rename stall
-                    dispatchStalls.at(i) = fromRename->renameStallReason.at(i);
+                    dispatchStalls.at(i) = i < rename_stalls.size() ?
+                        rename_stalls[i] : StallReason::NoStall;
                 }
             }
         }
@@ -2314,14 +2320,20 @@ void
 IEW::tick()
 {
     blockReason = StallReason::NoStall;
-    for (int i = 0;i < fromRename->fetchStallReason.size();i++) {
-        iewStats.fetchStallReason[fromRename->fetchStallReason[i]]++;
+    for (const ThreadID tid : *activeThreads) {
+        for (const auto reason : fromRename->fetchStallReason[tid]) {
+            iewStats.fetchStallReason[reason]++;
+        }
     }
-    for (int i = 0;i < fromRename->decodeStallReason.size();i++) {
-        iewStats.decodeStallReason[fromRename->decodeStallReason[i]]++;
+    for (const ThreadID tid : *activeThreads) {
+        for (const auto reason : fromRename->decodeStallReason[tid]) {
+            iewStats.decodeStallReason[reason]++;
+        }
     }
-    for (int i = 0;i < fromRename->renameStallReason.size();i++) {
-        iewStats.renameStallReason[fromRename->renameStallReason[i]]++;
+    for (const ThreadID tid : *activeThreads) {
+        for (const auto reason : fromRename->renameStallReason[tid]) {
+            iewStats.renameStallReason[reason]++;
+        }
     }
 
     wbNumInst = 0;

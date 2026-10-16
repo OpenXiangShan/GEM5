@@ -346,7 +346,8 @@ class ROB
 
     unsigned replayWidth{6};
 
-    unsigned dynSquashWidth{6};
+    /** Per-thread squash width; simultaneous SMT recovery must not overwrite it. */
+    unsigned dynSquashWidth[MaxThreads] = {};
 
     unsigned constSquashCycle{1};
 

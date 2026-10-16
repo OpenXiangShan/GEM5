@@ -1060,7 +1060,7 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
         if (dst->isFixedMapping() || dst->getNumPinnedWritesToComplete() != 1) [[unlikely]] {
             continue;
         }
-        scheduler->regCache.insert(dst->flatIndex(), {});
+        scheduler->insertRegCache(inst, dst);
         DPRINTF(Schedule, "was %s woken by p%lu [sn:%llu]\n", speculative ? "spec" : "wb", dst->flatIndex(),
                 inst->seqNum);
         auto& depgraph = subDepGraph[dst->flatIndex()];
@@ -1245,7 +1245,8 @@ IssueQue::selectInst()
                     if (psrc->isIntReg() && intRdRfTPI[pi].size() > i) {
                         // TX dynamic port optimization: src1 can borrow src0's port if src0 is in regcache
                         if (enableMainRdpOpt && i == 1 &&
-                            scheduler->regCache.contains(inst->renamedSrcIdx(0)->flatIndex())) {
+                            scheduler->containsRegCache(
+                                inst, inst->renamedSrcIdx(0))) {
                             rfTypePortId = intRdRfTPI[pi][0]; // borrow src0's port
                         } else {
                             rfTypePortId = intRdRfTPI[pi][i];
@@ -1611,7 +1612,7 @@ Scheduler::Scheduler(const SchedulerParams& params)
     : SimObject(params), old_disp(params.useOldDisp),
       intRegfileBanks(params.intRegfileBanks), stats(this), issueQues(params.IQs)
 {
-    dispTable.resize(enums::OpClass::Num_OpClass);
+    dispTable.resize(MaxThreads, std::vector<IQGroup>(enums::OpClass::Num_OpClass));
     opExecTimeTable.resize(enums::OpClass::Num_OpClass, 1);
     opPipelined.resize(enums::OpClass::Num_OpClass, false);
 
@@ -1668,7 +1669,13 @@ Scheduler::Scheduler(const SchedulerParams& params)
                 opExecTimeTable[op->opClass] = op->opLat;
                 opPipelined[op->opClass] = op->pipelined;
                 if (!registeredOpClasses.test(op->opClass)) {
-                    dispTable[op->opClass].push_back(issueQues[i]);
+                    if (params.enableSpMT) {
+                        dispTable[i % 2][op->opClass].push_back(issueQues[i]);
+                    } else {
+                        for (int j = 0; j < MaxThreads; j++) {
+                            dispTable[j][op->opClass].push_back(issueQues[i]);
+                        }
+                    }
                     registeredOpClasses.set(op->opClass);
                 }
                 opChecker.set(op->opClass);
@@ -1697,6 +1704,34 @@ Scheduler::Scheduler(const SchedulerParams& params)
             }
         }
     }
+
+    // check whether equality
+    if (params.enableSpMT) {
+        for (auto opClass = 0; opClass < enums::OpClass::Num_OpClass; opClass++) {
+            bool check_fail = false;
+            if (dispTable[0][opClass].size() != dispTable[1][opClass].size()) {
+                check_fail = true;
+            }
+            for (int j = 0; j < dispTable[0][opClass].size() && !check_fail; j++) {
+                if (dispTable[0][opClass][j]->getId() + 1 != dispTable[1][opClass][j]->getId()) {
+                    check_fail = true;
+                    break;
+                }
+            }
+            if (check_fail) {
+                std::string tid0_str, tid1_str;
+                for (size_t k = 0; k < dispTable[0][opClass].size(); k++) {
+                    tid0_str += std::to_string(dispTable[0][opClass][k]->getId()) + " ";
+                }
+                for (size_t k = 0; k < dispTable[1][opClass].size(); k++) {
+                    tid1_str += std::to_string(dispTable[1][opClass][k]->getId()) + " ";
+                }
+                panic("unexpected dispTable in opClass:%d, tid0 IQs: [%s], tid1 IQs: [%s]\n",
+                        opClass, tid0_str.c_str(), tid1_str.c_str());
+            }
+        }
+    }
+
     DPRINTF(Schedule, "Derived LSQ pipes from scheduler: load=%u store=%u\n",
             loadPipeCount, storePipeCount);
     maxRdTypePortId += 1;
@@ -1712,28 +1747,45 @@ Scheduler::Scheduler(const SchedulerParams& params)
 
 
     // dispatch distance counter allocate
-    dispOpdist.resize(Num_OpClasses, nullptr);
-    totalDispCounter.reserve(Num_OpClasses);
+    dispOpdist.resize(MaxThreads,
+                      std::vector<uint8_t*>(Num_OpClasses, nullptr));
+    // Keep counter addresses stable when SpMT allocates two per group.
+    totalDispCounter.reserve(Num_OpClasses * (params.enableSpMT ? 2 : 1));
     std::vector<std::vector<OpClass>> reuse_table;
+    std::vector<int> reuse_group(Num_OpClasses, -1);
     for (int i = 0; i < Num_OpClasses; i++) {
         bool counter_reuse = false;
         int reuse_op = 0;
-        for (int j = 0; j < Num_OpClasses; j++) {
-            if (dispTable[i] == dispTable[j]) {
+        for (int j = 0; j < i; j++) {
+            if (dispTable[0][i] == dispTable[0][j]) {
                 counter_reuse = true;
                 reuse_op = j;  // op "i" can reuse the "j" counter
                 break;
             }
         }
 
-        if (counter_reuse && dispOpdist[reuse_op]) {
-            dispOpdist[i] = dispOpdist[reuse_op];
+        if (counter_reuse && dispOpdist[0][reuse_op]) {
+            for (int tid = 0; tid < MaxThreads; tid++) {
+                dispOpdist[tid][i] = dispOpdist[tid][reuse_op];
+            }
+            assert(reuse_group[reuse_op] != -1);
+            reuse_group[i] = reuse_group[reuse_op];
         } else {
-            totalDispCounter.push_back(0);
-            dispOpdist[i] = &totalDispCounter.back();
+            if (params.enableSpMT) {
+                totalDispCounter.push_back(0);
+                dispOpdist[0][i] = &totalDispCounter.back();
+                totalDispCounter.push_back(0);
+                dispOpdist[1][i] = &totalDispCounter.back();
+            } else {
+                totalDispCounter.push_back(0);
+                for (int tid = 0; tid < MaxThreads; tid++) {
+                    dispOpdist[tid][i] = &totalDispCounter.back();
+                }
+            }
+            reuse_group[i] = reuse_table.size();
             reuse_table.push_back(std::vector<OpClass>());
         }
-        reuse_table.back().push_back((OpClass)i);
+        reuse_table[reuse_group[i]].push_back((OpClass)i);
     }
 
     for (auto it : reuse_table) {
@@ -1793,7 +1845,9 @@ Scheduler::Scheduler(const SchedulerParams& params)
         }
     }
 
-    assert(dispTable[MemWriteOp].size() == dispTable[StoreDataOp].size());
+    for (int i = 0; i < MaxThreads; i++) {
+        assert(dispTable[i][MemWriteOp].size() == dispTable[i][StoreDataOp].size());
+    }
 
     dispSeqVec.resize(64);
 }
@@ -1806,6 +1860,20 @@ Scheduler::setCPU(CPU* cpu, LSQ* lsq)
     const auto& cpuParams =
         dynamic_cast<const BaseO3CPUParams&>(cpu->params());
     smtIQPolicy = cpuParams.smtIQPolicy;
+    enableSpMT = cpuParams.enableSpMT;
+    if (enableSpMT) {
+        panic_if(cpuParams.numThreads != 2,
+                 "enableSpMT requires exactly two hardware threads, got %u",
+                 cpuParams.numThreads);
+        panic_if(cpuParams.numPhysIntRegs % 2 != 0,
+                 "enableSpMT requires an even number of integer physical "
+                 "registers, got %u", cpuParams.numPhysIntRegs);
+        panic_if((cpuParams.numPhysIntRegs / intRegfileBanks) % 2 != 0,
+                 "enableSpMT requires an even number of integer physical "
+                 "registers per bank, got %u", 
+                 cpuParams.numPhysIntRegs / intRegfileBanks);
+        spmtIntRegsPerThread = cpuParams.numPhysIntRegs / 2;
+    }
     for (auto it : issueQues) {
         it->setCPU(cpu);
         it->selector->setparent(this, it);
@@ -1916,15 +1984,16 @@ Scheduler::lookahead(std::deque<DynInstPtr>& insts)
         std::fill(totalDispCounter.begin(), totalDispCounter.end(), 0);
         int i = 0;
         for (auto& it : insts) {
-            auto& iqs = dispTable[it->opClass()];
+            auto& iqs = dispTable[it->threadNumber][it->opClass()];
             std::sort(iqs.begin(), iqs.end(), disp_policy(it->opClass()));
             if (it->isSplitStoreAddr()) {
-                auto& iqs = dispTable[StoreDataOp];
+                auto& iqs = dispTable[it->threadNumber][StoreDataOp];
                 std::sort(iqs.begin(), iqs.end(), disp_policy(StoreDataOp));
             }
 
-            dispSeqVec[i] = (*dispOpdist[it->opClass()]) % iqs.size();
-            (*dispOpdist[it->opClass()])++;
+            auto& counter = *dispOpdist[it->threadNumber][it->opClass()];
+            dispSeqVec[i] = counter % iqs.size();
+            counter++;
             i++;
         }
     }
@@ -1939,7 +2008,7 @@ Scheduler::ready(const DynInstPtr& inst, int disp_seq)
         return false;
     }
 
-    auto& iqs = dispTable[inst->opClass()];
+    auto& iqs = dispTable[inst->threadNumber][inst->opClass()];
     assert(!iqs.empty());
 
     if (old_disp) [[unlikely]] {
@@ -1961,7 +2030,7 @@ Scheduler::ready(const DynInstPtr& inst, int disp_seq)
 bool
 Scheduler::ready(OpClass op, ThreadID tid, int disp_seq)
 {
-    auto& iqs = dispTable[op];
+    auto& iqs = dispTable[tid][op];
     assert(!iqs.empty());
 
     if (old_disp) {
@@ -2034,7 +2103,7 @@ Scheduler::insert(const DynInstPtr& inst, int disp_seq)
         inst->buildStoreAddrUop();
     }
 
-    auto& iqs = dispTable[inst->opClass()];
+    auto& iqs = dispTable[inst->threadNumber][inst->opClass()];
     ThreadID tid = inst->threadNumber;
 
     if (old_disp) {
@@ -2059,7 +2128,7 @@ Scheduler::insert(const DynInstPtr& inst, int disp_seq)
 void
 Scheduler::insertNonSpec(const DynInstPtr& inst)
 {
-    auto& iqs = dispTable[inst->opClass()];
+    auto& iqs = dispTable[inst->threadNumber][inst->opClass()];
     ThreadID tid = inst->threadNumber;
 
     for (auto iq : iqs) {
@@ -2173,11 +2242,8 @@ Scheduler::getInstToFU()
 void
 Scheduler::useRfRdPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int typePortId, int pri)
 {
-    if (regid->is(IntRegClass)) {
-        if (regCache.contains(regid->flatIndex())) {
-            regCache.get(regid->flatIndex());
-            return;
-        }
+    if (regid->is(IntRegClass) && accessRegCache(inst, regid)) {
+        return;
     }
 
     int bankid = 0;
@@ -2208,6 +2274,40 @@ Scheduler::useRfRdPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int ty
 
     t_inst = inst;
     t_pri = pri;
+}
+
+Scheduler::RegCache &
+Scheduler::regCacheFor(ThreadID tid)
+{
+    if (!enableSpMT)
+        return regCache;
+    assert(tid < 2);
+    return tid == 0 ? spmtRegCache0 : spmtRegCache1;
+}
+
+void
+Scheduler::insertRegCache(const DynInstPtr& inst, PhysRegIdPtr reg)
+{
+    if (!enableSpMT || reg->isIntReg())
+        regCacheFor(inst->threadNumber).insert(reg->flatIndex(), {});
+}
+
+bool
+Scheduler::containsRegCache(const DynInstPtr& inst, PhysRegIdPtr reg)
+{
+    if (enableSpMT && !reg->isIntReg())
+        return false;
+    return regCacheFor(inst->threadNumber).contains(reg->flatIndex());
+}
+
+bool
+Scheduler::accessRegCache(const DynInstPtr& inst, PhysRegIdPtr reg)
+{
+    auto &cache = regCacheFor(inst->threadNumber);
+    if (!cache.contains(reg->flatIndex()))
+        return false;
+    cache.get(reg->flatIndex());
+    return true;
 }
 
 void

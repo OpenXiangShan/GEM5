@@ -456,6 +456,11 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
     for cpu in test_sys.cpu:
         if args.smt:
             cpu.numThreads = 2
+        cpu.enableSpMT = args.enable_spmt
+        if args.enable_spmt:
+            assert args.smt, "--enable-spmt requires --smt to be enabled"
+            cpu.smtPregPolicy = 'Partitioned'
+            cpu.smtIQPolicy = 'Dynamic'  # SpMT: each IQ belongs to one thread
         # === Block Policy: pass SMT fetch block parameters ===
         from m5.objects.BaseO3CPU import SMTDecodePolicy
         cpu.smtDecodePolicy = SMTDecodePolicy(args.smt_decode_policy)

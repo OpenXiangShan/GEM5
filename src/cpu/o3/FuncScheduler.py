@@ -105,3 +105,4 @@ class Scheduler(SimObject):
     enableMainRdpOpt = Param.Bool(False, "Enable TX dynamic read port optimization")
 
     intRegfileBanks = Param.Int(1, "number of integer register file banks")
+    enableSpMT = Param.Bool(False, "Enable SpMT mode")

@@ -200,7 +200,7 @@ class BaseO3CPU(BaseCPU):
     ConstSquashCycle = Param.Unsigned(1, "Squash width with redo rob walk")
     robWalkPolicy = Param.ROBWalkPolicy('Replay', "Squash with a specific policy")
     numMaxRatSnapshot = Param.Unsigned(4,
-        "Number of rename-map (RAT) checkpoints for NaiveCpt recovery")
+        "Number of rename-map (RAT) checkpoints per thread for NaiveCpt recovery")
     ratSnapshotDistance = Param.Unsigned(32,
         "Minimum instructions between successive RAT checkpoints")
     robWalkByDestRegs = Param.Bool(True,
@@ -376,6 +376,9 @@ class BaseO3CPU(BaseCPU):
 
     smtPregPolicy = Param.SMTQueuePolicy('Dynamic',
                                          "SMT Preg (physical register) Sharing Policy")
+    enableSpMT = Param.Bool(False,
+        "Enable strict two-thread SpMT physical-register, bank, and "
+        "register-cache partitioning")
     smtPregFixedBase = Param.Unsigned(0,
         "Fixed per-thread base quota for DynamicBorrowing (0 = numPhysRegs/activeThreads)")
     smtPregDonorReservePercent = Param.Unsigned(

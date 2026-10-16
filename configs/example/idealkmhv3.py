@@ -59,7 +59,10 @@ def setKmhV3IdealParams(args, system):
         cpu.dispWidth = [8, 8, 8]
 
         # scheduler
-        cpu.scheduler = KMHV3Scheduler()
+        if args.enable_spmt:
+            cpu.scheduler = KMHV3SpMTScheduler()
+        else:
+            cpu.scheduler = KMHV3Scheduler()
 
         # rob
         cpu.commitWidth = 8

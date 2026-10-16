@@ -247,7 +247,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
 
     // Get the size of an instruction.
     // stallReason size should be the same as decodeWidth,renameWidth,dispWidth
-    stallReason.resize(decodeWidth, StallReason::NoStall);
+    for (auto &v : stallReason)
+        v.resize(decodeWidth, StallReason::NoStall);
 
     traceFetch = std::make_unique<TraceFetch>(*this, params);
 
@@ -888,7 +889,7 @@ Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
 
     // Initiate translation for first request
     updateCacheRequestStatusByRequest(tid, first_mem_req, TlbWait);
-    setAllFetchStalls(StallReason::ITlbStall);
+    setAllFetchStalls(tid, StallReason::ITlbStall);
     FetchTranslation *trans = new FetchTranslation(this);
     cpu->mmu->translateTiming(first_mem_req, cpu->thread[tid]->getTC(),
                               trans, BaseMMU::Execute);
@@ -917,7 +918,7 @@ Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
 
     // Always initiate translation for second request, regardless of first request status
     updateCacheRequestStatusByRequest(tid, second_mem_req, TlbWait);
-    setAllFetchStalls(StallReason::ITlbStall);
+    setAllFetchStalls(tid, StallReason::ITlbStall);
     FetchTranslation *trans2 = new FetchTranslation(this);
     cpu->mmu->translateTiming(second_mem_req, cpu->thread[tid]->getTC(),
                               trans2, BaseMMU::Execute);
@@ -1313,7 +1314,7 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
     // Check for blocking conditions
     if (cacheBlocked) {
         DPRINTF(Fetch, "[tid:%i] Can't fetch cache line, cache blocked\n", tid);
-        setAllFetchStalls(StallReason::IcacheStall);
+        setAllFetchStalls(tid, StallReason::IcacheStall);
         return false;
     } else if (checkInterrupt(pc) && !delayedCommit[tid]) {
         // Hold off fetch from getting new instructions when:
@@ -1321,7 +1322,7 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
         // while an interrupt is pending and we're not in PAL mode, or
         // fetch is switched out.
         DPRINTF(Fetch, "[tid:%i] Can't fetch cache line, interrupt pending\n", tid);
-        setAllFetchStalls(StallReason::IntStall);
+        setAllFetchStalls(tid, StallReason::IntStall);
         return false;
     }
 
@@ -1365,7 +1366,7 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
 
         // Update cache request status using new interface
         updateCacheRequestStatusByRequest(tid, mem_req, AccessFailed);
-        setAllFetchStalls(StallReason::OtherFetchStall);
+        setAllFetchStalls(tid, StallReason::OtherFetchStall);
         // Note: Don't reset here, let the caller handle cleanup based on overall status
         return;
     }
@@ -1390,7 +1391,7 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
                 tid, mem_req->getVaddr());
 
         updateCacheRequestStatusByRequest(tid, mem_req, CacheWaitRetry);
-        setAllFetchStalls(StallReason::IcacheStall);
+        setAllFetchStalls(tid, StallReason::IcacheStall);
         retryPkt.push_back(data_pkt);
         return;
     }
@@ -1404,7 +1405,7 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
         data_pkt->setRetriedPkt();
         DPRINTF(Fetch, "[tid:%i] mem_req.addr=%#lx needs retry.\n", tid,
                 mem_req->getVaddr());
-        setAllFetchStalls(StallReason::IcacheStall);
+        setAllFetchStalls(tid, StallReason::IcacheStall);
         retryPkt.push_back(data_pkt);
         cacheBlocked = true;
     } else {
@@ -1414,7 +1415,7 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
 
         // Update cache request status using new interface
         updateCacheRequestStatusByRequest(tid, mem_req, CacheWaitResponse);
-        setAllFetchStalls(StallReason::IcacheStall);
+        setAllFetchStalls(tid, StallReason::IcacheStall);
         // Notify Fetch Request probe when a packet containing a fetch request is successfully sent
         ppFetchRequestSent->notify(mem_req);
     }
@@ -1475,7 +1476,7 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
     cpu->activityThisCycle();
 
     setThreadStatus(tid, TrapPending);
-    setAllFetchStalls(StallReason::TrapStall);
+    setAllFetchStalls(tid, StallReason::TrapStall);
 
     DPRINTF(Fetch, "[tid:%i] Blocked, need to handle the trap.\n", tid);
     DPRINTF(Fetch, "[tid:%i] fault (%s) detected @ PC %s.\n",
@@ -1590,7 +1591,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     }
 
     setThreadStatus(tid, Squashing);
-    setAllFetchStalls(StallReason::BpStall); // may caused by other stages like load and store
+    setAllFetchStalls(tid, StallReason::BpStall); // may caused by other stages like load and store
 
     // Empty fetch queue
     fetchQueue[tid].clear();
@@ -1721,7 +1722,8 @@ Fetch::initializeTickState()
     bool status_change = false;
 
     wroteToTimeBuffer = false;
-    setAllFetchStalls(StallReason::NoStall);
+    for (ThreadID tid = 0; tid < numThreads; ++tid)
+        setAllFetchStalls(tid, StallReason::NoStall);
 
     // get the distribution of fetch status
     fetchStats.fetchStatusDist[fetchStatus[0]]++;
@@ -2012,17 +2014,14 @@ Fetch::sendInstructionsToDecode()
     }
 
     if (!any_thread_active) {
-        // All threads are blocked, no instructions to send
-        ThreadID blocked_tid = InvalidThreadID;
+        // All threads are blocked, no instructions to send.
+        // Publish each blocked thread's own stall reason; initializeTickState
+        // reset them all to NoStall, so the first-blocked-tid-only pattern
+        // left the others with bogus NoStall samples in IEW.
         for (int i = 0; i < numThreads; i++) {
             if (stallSig->blockFetch[i]) {
-                blocked_tid = i;
-                break;
+                setAllFetchStalls(i, stallSig->fetchBlockReason[i]);
             }
-        }
-
-        if (blocked_tid != InvalidThreadID) {
-            setAllFetchStalls(stallSig->fetchBlockReason[blocked_tid]);
         }
 
         toDecode->fetchStallReason = stallReason;
@@ -2039,6 +2038,11 @@ Fetch::sendInstructionsToDecode()
 
     if (primary_tid == InvalidThreadID) {
         DPRINTF(Fetch, "All threads are stalled, no thread selected.\n");
+        // Active threads still need to replace initializeTickState's default
+        // NoStall even when none has queued instructions to select.
+        for (const ThreadID tid : *activeThreads) {
+            updateStallReasons(0, tid);
+        }
         for (int i = 0; i < numThreads; i++) {
             measureFrontendBubbles(0, i);
         }
@@ -2087,6 +2091,10 @@ Fetch::sendInstructionsToDecode()
                         "in fetch queue for one cycle.\n",
                         tid);
                 measureFrontendBubbles(0, tid);
+                // Record BpStall for the deferred cycle; without this the
+                // initializeTickState NoStall reset leaks through and IEW
+                // undercounts fetch-bound stalls on the squash cycle.
+                setAllFetchStalls(tid, StallReason::BpStall);
                 continue;
             }
         }
@@ -2107,7 +2115,8 @@ Fetch::sendInstructionsToDecode()
 
         total_insts_to_decode += thread_insts;
         measureFrontendBubbles(thread_insts, tid);
-
+        updateStallReasons(thread_insts, tid);
+        
         // MLP block: count instructions sent after LL load
         if (smtMlpFetchBlockPolicy == SMTMLPFetchBlockPolicy::MlpAwarePolicy &&
             isBlockPolicy() && mlpAwareMode[tid]) {
@@ -2131,10 +2140,28 @@ Fetch::sendInstructionsToDecode()
         }
     }
 
-    // Legacy stall-reason vectors describe one logical decode lane. Keep
-    // that attribution while the explicit distributions below expose the
-    // widened aggregate SMT transfer.
-    updateStallReasons(total_insts_to_decode, primary_tid);
+    // Per-thread fetch stall reasons are published inside the supply loop
+    // above via updateStallReasons(thread_insts, tid). Threads that were not
+    // selected still need their stall reason published; initializeTickState
+    // reset them all to NoStall, so fix up here. Blocked threads get their
+    // own block reason; runnable-but-unselected threads (lost pre-dispatch
+    // arbitration with smtNumPreDispatchThreads < numThreads) get
+    // OtherFragStall so IEW does not count them as non-stalled.
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        bool selected = false;
+        for (const ThreadID st : selected_tids) {
+            if (st == tid) { selected = true; break; }
+        }
+        if (!selected) {
+            if (stallSig->blockFetch[tid]) {
+                setAllFetchStalls(tid, stallSig->fetchBlockReason[tid]);
+            } else if (!fetchQueue[tid].empty()) {
+                setAllFetchStalls(tid, StallReason::OtherFragStall);
+            }
+        }
+    }
+
+    // total_insts_to_decode is kept only for the aggregate stats sample below.
     fetchStats.decodeThreadsPerCycle.sample(selected_tids.size());
     fetchStats.instsSentToDecodePerCycle.sample(total_insts_to_decode);
 
@@ -2148,28 +2175,29 @@ Fetch::sendInstructionsToDecode()
 void
 Fetch::updateStallReasons(unsigned insts_to_decode, ThreadID tid)
 {
+    // Per-thread: publish toDecode->fetchStallReason[tid] for this thread
+    // only, so decode can read each thread's fetch lane reasons
+    // independently instead of from a shared aggregate vector.
     if (stallSig->blockFetch[tid]) {
-        setAllFetchStalls(stallSig->fetchBlockReason[tid]);
+        setAllFetchStalls(tid, stallSig->fetchBlockReason[tid]);
+        return;
     } else if (insts_to_decode == 0) {
-        // fetch stalled
-        if (stallReason[0] != StallReason::NoStall) {
-            // previously set stall reason
-            setAllFetchStalls(stallReason[0]);
+        // fetch stalled: keep the thread-specific reason set during fetch
+        // (e.g. IcacheStall/ITlbStall), or mark OtherFetchStall.
+        if (stallReason[tid].empty() ||
+            stallReason[tid][0] == StallReason::NoStall) {
+            setAllFetchStalls(tid, StallReason::OtherFetchStall);
         } else {
-            setAllFetchStalls(StallReason::OtherFetchStall);
+            setAllFetchStalls(tid, stallReason[tid][0]);
         }
-    } else {
-        // fetch partially stalled or no stall
-        for (int i = 0; i < stallReason.size(); i++) {
-            if (i < insts_to_decode)
-                stallReason[i] = StallReason::NoStall;
-            else {
-                stallReason[i] = StallReason::FetchFragStall;
-            }
-        }
+        return;
     }
-
-    toDecode->fetchStallReason = stallReason;
+    // fetch partially stalled or no stall: per-lane NoStall/FetchFragStall.
+    auto &scratch = stallReason[tid];
+    scratch.assign(decodeWidth, StallReason::NoStall);
+    for (int i = insts_to_decode; i < decodeWidth; i++)
+        scratch[i] = StallReason::FetchFragStall;
+    toDecode->fetchStallReason[tid] = scratch;
 }
 
 void
@@ -3208,7 +3236,7 @@ Fetch::checkDecoupledFrontend(ThreadID tid)
     if (!isTraceMode() && !dbpbtb->ftqHasFetching(tid)) {
         dbpbtb->addFtqNotValid();
         DPRINTF(Fetch, "Skip fetch when FSQ head is not available\n");
-        setAllFetchStalls(StallReason::FTQBubble);
+        setAllFetchStalls(tid, StallReason::FTQBubble);
         return false;
     }
     return true;
@@ -3263,7 +3291,7 @@ Fetch::prepareFetchAddress(ThreadID tid, bool &status_change)
     if (threads[tid].cacheReq.getOverallStatus() == AccessComplete) {
         DPRINTF(Fetch, "[tid:%i] Icache miss is complete.\n", tid);
         setThreadStatus(tid, Running);
-        setAllFetchStalls(StallReason::NoStall);
+        setAllFetchStalls(tid, StallReason::NoStall);
         status_change = true;
         return true;
     } else if (canFetchInstructions(tid)) {
@@ -3568,7 +3596,7 @@ Fetch::performInstructionFetch(ThreadID tid)
 
     // Handle stall conditions and update statistics
     if (stall != StallReason::NoStall) {
-        setAllFetchStalls(stall);
+        setAllFetchStalls(tid, stall);
     }
 
     // Log why fetch stopped
@@ -3764,11 +3792,10 @@ Fetch::profileStall(ThreadID tid)
 }
 
 void
-Fetch::setAllFetchStalls(StallReason stall)
+Fetch::setAllFetchStalls(ThreadID tid, StallReason stall)
 {
-    for (int i = 0; i < stallReason.size(); i++) {
-        stallReason[i] = stall;
-    }
+    stallReason[tid].assign(decodeWidth, stall);
+    toDecode->fetchStallReason[tid] = stallReason[tid];
 }
 
 
