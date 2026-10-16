@@ -40,7 +40,7 @@ SimObject('Prefetcher.py', sim_objects=[
     'WorkerPrefetcher', 'DespacitoStreamPrefetcher',
     'BOPPrefetcher', 'SBOOEPrefetcher', 'STeMSPrefetcher', 'PIFPrefetcher', 'IPCPrefetcher',
     'CompositeWithWorkerPrefetcher', 'L2CompositeWithWorkerPrefetcher', 'PrefetcherForwarder',
-    'LLDPrefetcher'])
+    'LLDPrefetcher', 'MLOPPrefetcher'])
 
 
 DebugFlag('BOPPrefetcher')
@@ -117,3 +117,4 @@ Source('despacito_stream.cc')
 Source('forwarder.cc')
 Source('prefetch_filter.cc')
 Source('lldp.cc')
+Source('mlop.cc')

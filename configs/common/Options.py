@@ -262,6 +262,34 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         choices=ObjectList.hwp_list.get_names(), help="L2 cache hardware prefetcher")
     parser.add_argument("--l2-wrapper-hwp-type", default='L2CompositeWithWorkerPrefetcher',
                         choices=ObjectList.hwp_list.get_names(), help="L2 wrapper cache hardware prefetcher")
+    parser.add_argument("--l1d-mlop-enable", action="store_true", default=False,
+                        help="enable the DPC-3 MLOP prefetcher at L1D")
+    parser.add_argument("--l2-mlop-enable", action="store_true", default=False,
+                        help="enable the DPC-3 MLOP prefetcher at L2")
+    parser.add_argument("--l1-mlop-max-zones", type=int, default=0,
+                        help="L1 MLOP AMT entries (0 uses the DPC-3 capacity formula)")
+    parser.add_argument("--l2-mlop-max-zones", type=int, default=256,
+                        help="L2 MLOP AMT entries")
+    parser.add_argument("--l1-mlop-num-updates", type=int, default=None,
+                        help="L1 MLOP training updates per score round")
+    parser.add_argument("--l1-mlop-l1-threshold", type=int, default=200,
+                        help="L1 MLOP score threshold for L1 prefetches")
+    parser.add_argument("--l1-mlop-l2-threshold", type=int, default=150,
+                        help="L1 MLOP score threshold for L2 prefetches")
+    parser.add_argument("--l1-mlop-llc-threshold", type=int, default=1000,
+                        help="L1 MLOP score threshold for LLC prefetches")
+    parser.add_argument("--l2-mlop-num-updates", type=int, default=None,
+                        help="L2 MLOP training updates per score round")
+    parser.add_argument("--l2-mlop-l2-threshold", type=int, default=None,
+                        help="L2 MLOP score threshold for local L2 prefetches")
+    parser.add_argument("--l2-mlop-llc-threshold", type=int, default=None,
+                        help="L2 MLOP score threshold for LLC prefetches")
+    parser.add_argument("--mlop-num-updates", type=int, default=500,
+                        help="compatibility alias for L2 MLOP training updates")
+    parser.add_argument("--mlop-l2-threshold", type=int, default=200,
+                        help="compatibility alias for L2 MLOP local score threshold")
+    parser.add_argument("--mlop-llc-threshold", type=int, default=150,
+                        help="compatibility alias for L2 MLOP LLC score threshold")
     parser.add_argument("--l3-hwp-type", default='WorkerPrefetcher',
                         choices=ObjectList.hwp_list.get_names(), help="L3 cache hardware prefetcher")
     parser.add_argument("--enable-bop-cqf",

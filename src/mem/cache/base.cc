@@ -2482,6 +2482,10 @@ BaseCache::invalidateBlock(CacheBlk *blk)
             prefetcher->sendCustomInfoToDownStream();
         }
     }
+    if (prefetcher && blk->isValid()) {
+        prefetcher->notifyBlockInvalidated(
+            regenerateBlkAddr(blk), blk->isSecure());
+    }
     // If block is still marked as prefetched, then it hasn't been used
     if (blk->wasPrefetched()) {
         prefetcher->prefetchUnused(regenerateBlkAddr(blk), blk->getXsMetadata().prefetchSource);

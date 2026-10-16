@@ -1030,6 +1030,9 @@ class Base : public ClockedObject
     virtual void notifyFill(const PacketPtr &pkt)
     {}
 
+    virtual void notifyBlockInvalidated(Addr addr, bool is_secure)
+    {}
+
     // LLDP sideband ports are synchronous at the cache tag/data boundary.
     virtual lldp::Hint loadTrain(const PacketPtr &pkt, bool miss) { return {}; }
     virtual void hintData(const lldp::Hint &hint, const PacketPtr &demand,

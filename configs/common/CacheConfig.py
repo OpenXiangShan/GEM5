@@ -46,6 +46,7 @@ import sys
 import m5
 from m5.objects import *
 from m5.util.convert import toMemorySize
+from m5.util import fatal
 from common.Caches import *
 from common.LSQBankConflict import set_lsq_bank_conflict_cache_params
 from common import ObjectList
@@ -278,6 +279,29 @@ def _validate_shadow_dst_windows_non_overlapping(dst_bases, window_sizes):
                 f"shadow[{curr_idx}]=[{curr_start:#x},{curr_end:#x})"
             )
 
+def _configure_mlop_types(options):
+    """Resolve the independent MLOP switches into cache prefetcher types."""
+    if options.l1d_mlop_enable:
+        if not options.caches:
+            fatal("--l1d-mlop-enable requires --caches")
+        options.l1d_hwp_type = 'MLOPPrefetcher'
+
+    if options.l2_mlop_enable:
+        if not options.l2cache:
+            fatal("--l2-mlop-enable requires --l2cache")
+        if options.classic_l2:
+            options.l2_hwp_type = 'MLOPPrefetcher'
+            options.l2_wrapper_hwp_type = None
+        else:
+            options.l2_hwp_type = 'PrefetcherForwarder'
+            options.l2_wrapper_hwp_type = 'MLOPPrefetcher'
+
+    # L1 MLOP has level-2 and level-3 candidates. Make the existing hint path
+    # available automatically when an L2 exists; other L1 prefetchers keep the
+    # command-line controlled behavior.
+    if options.l1d_mlop_enable and options.l2cache:
+        options.l1_to_l2_pf_hint = True
+
 def config_classic_l2(options, system, l2_cache_class):
     # When using classic L2 cache, The prefetcher is inside the l2cache, instead of l2Wrapper
     # So we need to move the prefetcher from l2Wrapper to l2cache
@@ -425,6 +449,8 @@ def config_aligned_l2(options, system, l2_cache_class):
         l2_wrapper.cpu_side = system.tol2bus_list[i].mem_side_ports
 
 def config_cache(options, system):
+    _configure_mlop_types(options)
+
     if options.external_memory_system and (options.caches or options.l2cache):
         print("External caches and internal caches are exclusive options.\n")
         sys.exit(1)
@@ -1588,9 +1614,11 @@ def config_cache(options, system):
             dcache.pipe_latency = 3 if options.kmh_align else 0
             l2_prefetcher = system.l2_caches[i].prefetcher if options.classic_l2 else system.l2_wrappers[i].prefetcher
             if (not options.no_pf) and options.l1_to_l2_pf_hint:
-                assert dcache.prefetcher != NULL and \
-                    l2_prefetcher != NULL
-                dcache.prefetcher.add_pf_downstream(l2_prefetcher)
+                if dcache.prefetcher != NULL and l2_prefetcher != NULL:
+                    dcache.prefetcher.add_pf_downstream(l2_prefetcher)
+                elif not options.l1d_mlop_enable:
+                    assert dcache.prefetcher != NULL and \
+                        l2_prefetcher != NULL
 
             if (not options.no_pf) and options.l3cache and options.l2_to_l3_pf_hint and(not options.CHI):
                 assert l2_prefetcher != NULL and \

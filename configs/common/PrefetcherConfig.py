@@ -5,6 +5,7 @@ import runpy
 import m5
 from m5.objects import *
 from m5.util import fatal
+from m5.util.convert import toMemorySize
 from common.Caches import *
 from common import ObjectList
 from m5.objects.Prefetcher import XSPhysicalSmallBOP, XSVirtualLargeBOP
@@ -26,6 +27,7 @@ PF_SOURCE_NAMES = [
     "SOpt",
     "DespacitoStream",
     "LLDP",
+    "MLOP",
 ]
 
 
@@ -551,8 +553,10 @@ def _configure_l2_bop_cqf(prefetcher, options):
 
 def _configure_l2_composite(prefetcher, prefetcher_name, options):
     if options.kmh_align:
-        assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
-        _configure_l2_composite_kmh_align(prefetcher)
+        if prefetcher_name == 'L2CompositeWithWorkerPrefetcher':
+            _configure_l2_composite_kmh_align(prefetcher)
+        else:
+            assert prefetcher_name == 'MLOPPrefetcher'
     elif prefetcher_name == 'L2CompositeWithWorkerPrefetcher':
         _configure_l2_composite_default(prefetcher)
 
@@ -563,9 +567,9 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
     if hasattr(options, 'l2_enable_lldp') and hasattr(prefetcher, 'enable_lldp'):
         prefetcher.enable_lldp = options.l2_enable_lldp
 
-    # Keep both L2 BOP engines enabled for the BOP-only experiment.
-    # Disable the other L2 composite components on both aligned and classic paths.
-    prefetcher.enable_bop = True
+    # Disable every L2 composite component for the no-prefetch experiment.
+    # This applies to both the aligned L2 wrapper and classic L2 paths.
+    prefetcher.enable_bop = False
     prefetcher.enable_cdp = False
     prefetcher.enable_cmc = False
     prefetcher.enable_despacito_stream = False
@@ -599,6 +603,60 @@ def _configure_l3_prefetcher(prefetcher, options):
     if options.l2_to_l3_pf_hint:
         prefetcher.queue_size = 64
         prefetcher.max_prefetch_requests_with_pending_translation = 128
+
+
+def _mlop_max_zones(options, cache_level):
+    if cache_level != 'l1d':
+        return options.l2_mlop_max_zones
+
+    if options.l1_mlop_max_zones:
+        return options.l1_mlop_max_zones
+
+    cache_bytes = int(toMemorySize(str(options.l1d_size)))
+    blocks_in_cache = cache_bytes // int(options.cacheline_size)
+    blocks_in_zone = 4096 // int(options.cacheline_size)
+    return max(1, 32 * blocks_in_cache // blocks_in_zone)
+
+
+def _configure_mlop(prefetcher, cache_level, options):
+    if cache_level not in ('l1d', 'l2', 'l2_wrapper'):
+        fatal('MLOPPrefetcher must be attached to L1D or L2')
+
+    is_l1 = cache_level == 'l1d'
+    prefetcher.attached_level = 1 if is_l1 else 2
+    prefetcher.max_zones = _mlop_max_zones(options, cache_level)
+    prefetcher.prefetch_train = False
+    prefetcher.queue_filter = False
+
+    if is_l1:
+        prefetcher.num_updates = (
+            options.l1_mlop_num_updates
+            if options.l1_mlop_num_updates is not None
+            else options.mlop_num_updates)
+        prefetcher.l1_threshold = options.l1_mlop_l1_threshold
+        prefetcher.l2_threshold = options.l1_mlop_l2_threshold
+        prefetcher.llc_threshold = options.l1_mlop_llc_threshold
+    else:
+        prefetcher.num_updates = (
+            options.l2_mlop_num_updates
+            if options.l2_mlop_num_updates is not None
+            else options.mlop_num_updates)
+        prefetcher.l1_threshold = options.mlop_l2_threshold
+        prefetcher.l2_threshold = (
+            options.l2_mlop_l2_threshold
+            if options.l2_mlop_l2_threshold is not None
+            else options.mlop_l2_threshold)
+        prefetcher.llc_threshold = (
+            options.l2_mlop_llc_threshold
+            if options.l2_mlop_llc_threshold is not None
+            else options.mlop_llc_threshold)
+
+    # A level-3 target is only meaningful when the L2-to-L3 hint path exists.
+    # Keep unreachable LLC candidates from being processed by L2 as local
+    # requests when a configuration has no L3 cache or disables that path.
+    if not options.l3cache or not options.l2_to_l3_pf_hint:
+        prefetcher.llc_threshold = max(prefetcher.llc_threshold,
+                                       prefetcher.num_updates + 1)
 
 def create_prefetcher(cpu, cache_level, options):
     prefetcher_attr = '{}_hwp_type'.format(cache_level)
@@ -671,5 +729,8 @@ def create_prefetcher(cpu, cache_level, options):
 
     if cache_level == 'l3':
         _configure_l3_prefetcher(prefetcher, options)
+
+    if prefetcher_name == 'MLOPPrefetcher':
+        _configure_mlop(prefetcher, cache_level, options)
 
     return prefetcher
