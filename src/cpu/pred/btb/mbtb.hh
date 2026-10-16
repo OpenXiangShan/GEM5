@@ -421,9 +421,17 @@ class MBTB : public TimedBaseBTBPredictor
 
     /** BTB configuration parameters */
     unsigned numEntries;    // Total number of entries
-    unsigned numWays;       // Number of ways per SRAM (4 for dual-SRAM)
-    unsigned numSets;       // Number of sets per SRAM (numEntries/numWays/2)
-    
+    unsigned numWays;       // Number of ways per internal SRAM
+    unsigned numSets;       // Number of sets per internal SRAM
+
+    // Kunminghu-v3 uses two 32B align banks, each split into four internal
+    // SRAM banks.  Keep the resource model at physical-bank granularity so
+    // APF queries only conflict when they select the same RTL bank.
+    static constexpr unsigned NumAlignBanks = 2;
+    static constexpr unsigned NumInternalBanks = 4;
+    static constexpr unsigned NumResourceBanks =
+        NumAlignBanks * NumInternalBanks;
+
     /** SRAM selection helper function */
     inline int getSRAMId(Addr pc) const {
         // Use the bit after block offset to select SRAM
@@ -431,12 +439,24 @@ class MBTB : public TimedBaseBTBPredictor
         return ((pc >> floorLog2(blockSize)) & 1);
     }
 
+    inline unsigned getResourceBankId(Addr blockAddr) const {
+        const unsigned alignBank =
+            (blockAddr >> floorLog2(blockSize)) & (NumAlignBanks - 1);
+        const unsigned internalBank =
+            (blockAddr >> (floorLog2(blockSize) + 1)) &
+            (NumInternalBanks - 1);
+        return alignBank * NumInternalBanks + internalBank;
+    }
+
     inline uint8_t lookupBankMask(Addr startAddr) const {
         if (startAddr & 0x1)
             return 0;
         const Addr aligned = startAddr & ~(blockSize - 1);
-        return (1u << getSRAMId(aligned)) |
-               (1u << getSRAMId(aligned + blockSize));
+        uint8_t banks = 0;
+        for (unsigned i = 0; i < NumAlignBanks; ++i) {
+            banks |= uint8_t(1u << getResourceBankId(aligned + i * blockSize));
+        }
+        return banks;
     }
 
 #ifdef UNIT_TEST
@@ -530,7 +550,9 @@ public:
         void init(int numWays);
     } btbStats;
 
-    // Bit i is set when SRAM i has a read-port reservation this cycle.
+    // Bit i is set when physical SRAM bank i has a read-port reservation this
+    // cycle.  The eight bits correspond to two align banks x four internal
+    // banks, as in the RTL MBTB.
     uint8_t resourceBanksBusy = 0;
 
 };
