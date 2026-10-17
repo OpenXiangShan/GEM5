@@ -551,6 +551,22 @@ def _configure_l2_bop_cqf(prefetcher, options):
     prefetcher.bop_small.direct_quality_kind = 2
 
 
+def _configure_l2_bop_student_cover(prefetcher, options):
+    if not getattr(options, 'enable_bop_student_cover', False):
+        return
+    for bop in (prefetcher.bop_large, prefetcher.bop_small):
+        bop.enable_student_cover = True
+    if getattr(options, 'disable_bop_pc_control', False):
+        for bop in (prefetcher.bop_large, prefetcher.bop_small):
+            for attr in (
+                    'enable_issue_validation',
+                    'enable_pc_validation_confidence',
+                    'enable_pc_validation_producer_consumer',
+                    'enable_global_bop_coverage_guard'):
+                if hasattr(bop, attr):
+                    setattr(bop, attr, False)
+
+
 def _configure_l2_composite(prefetcher, prefetcher_name, options):
     if options.kmh_align:
         if prefetcher_name == 'L2CompositeWithWorkerPrefetcher':
@@ -563,6 +579,7 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
     _configure_cdp(prefetcher, options)
     if prefetcher_name == 'L2CompositeWithWorkerPrefetcher':
         _configure_l2_bop_cqf(prefetcher, options)
+        _configure_l2_bop_student_cover(prefetcher, options)
 
     if hasattr(options, 'l2_enable_lldp') and hasattr(prefetcher, 'enable_lldp'):
         prefetcher.enable_lldp = options.l2_enable_lldp

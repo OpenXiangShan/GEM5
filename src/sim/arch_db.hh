@@ -9,6 +9,9 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <map>
+#include <string>
+#include <vector>
 
 #include "base/logging.hh"
 #include "base/types.hh"
@@ -59,6 +62,7 @@ class ArchDBer : public SimObject
     bool dumpL3EvictTrace;
     bool dumpL1MissTrace;
     bool dumpBopTrainTrace;
+    bool dumpBopReplayTrace;
     bool dumpSMSTrainTrace;
     bool dumpStrideTrainTrace;
     bool dumpDespacitoTrainTrace;
@@ -74,6 +78,9 @@ class ArchDBer : public SimObject
     std::string db_path;
     // a trace corrsponds to a table
     std::map<std::string, DBTraceManager> _traces;
+    uint64_t bopReplayPhaseId;
+    uint64_t bopReplayAccessSeq;
+    uint64_t bopReplayEventSeq;
 
     void create_table(const std::string &sql);
 
@@ -102,6 +109,38 @@ class ArchDBer : public SimObject
     void l1PFTraceWrite(Tick tick, Addr trigger_pc, Addr trigger_vaddr, Addr pf_vaddr, int pf_src);
 
     void bopTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr offset, int score, bool miss);
+    void bopReplayMetaTraceWrite(
+      const char *bop_name, unsigned int block_size, unsigned int score_max,
+      unsigned int round_max, unsigned int bad_score,
+      unsigned int rr_entries, unsigned int tag_bits,
+      bool delay_queue_enabled, unsigned int delay_queue_size,
+      Tick delay_ticks, bool cross_page, bool adapt_offset,
+      bool negative_offsets_enabled, bool auto_learning,
+      unsigned int victim_offsets_list_size, unsigned int restore_cycle,
+      Tick clock_period_ticks, bool student_cover_enabled,
+      unsigned int student_pool_size, double student_conf_alpha,
+      double student_cov_threshold, unsigned int student_teacher_top_n,
+      unsigned int student_filter_entries, const std::string &student_hash_mode,
+      unsigned int student_hash_count, bool student_large_offset_priority,
+      double student_large_offset_priority_coeff,
+      bool student_delay_queue_enabled, unsigned int student_delay_queue_size,
+      Tick student_delay_ticks, const std::string &offsets);
+    uint64_t bopReplayDemandTraceWrite(
+      Tick tick, Addr addr, Addr pc, bool has_pc, bool cache_miss,
+      int prefetch_source, bool pf_first_hit, bool pf_hit);
+    void bopReplayPhaseTraceWrite(
+      uint64_t phase_id, const char *phase_name, Tick start_tick);
+    void bopReplayEventTraceWrite(
+      uint64_t access_seq, Tick tick, const char *bop_name,
+      const char *bop_kind, Addr trigger_addr, Addr trigger_pc,
+      bool trigger_has_pc, bool late, int64_t teacher_offset,
+      bool teacher_issue_enabled, bool student_issue_enabled,
+      bool student_selected_valid, bool student_selected_enable,
+      int64_t student_selected_offset, int64_t selected_offset,
+      bool issue_enabled, bool cqf_allowed);
+    void bopReplayDelayActionTraceWrite(
+      const char *bop_name, const char *action, Tick tick, Addr addr,
+      Tick process_tick, unsigned int queue_size_after);
     void smsTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr trigger_offset, int conf, bool miss);
     void strideTraceWrite(Tick tick, Addr addr, Addr PC, Addr hashPC, bool hit, bool isFirstShot, bool miss, bool is_train);
     void despacitoTraceWrite(Tick tick, Addr vaddr, Addr paddr, Addr PC, bool hasPC, bool miss, bool is_train);

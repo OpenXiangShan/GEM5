@@ -1,6 +1,7 @@
 #ifndef __MEM_CACHE_PREFETCH_COMPOITE_WITH_WORKER_L2_HH__
 #define __MEM_CACHE_PREFETCH_COMPOITE_WITH_WORKER_L2_HH__
 
+#include <cstdint>
 #include <vector>
 
 #include "mem/cache/prefetch/bop.hh"
@@ -76,6 +77,7 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     bool preferLLDP{false};
 
     bool offloadLowAccuracy = true;
+    uint64_t activeBOPReplayAccessSeq = 0;
     protected:
     void InsertPFRequestToBuffer(const AddrPriority &addr_prio) override{
       panic("SMS:InsertPFRequestToBuffer not implemented");
