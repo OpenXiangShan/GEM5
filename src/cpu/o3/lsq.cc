@@ -3971,17 +3971,18 @@ LSQ::SingleDataRequest::sendPacketToCache()
         DPRINTF(LoadPipeline, "Load [sn:%ld] setBankConflictReplay\n",
                 _inst->seqNum);
     }
-    if (mshr_used) {
+    // Stores/AMOs here are past the store pipe: NeedReplay would never clear.
+    if (isLoad() && mshr_used) {
         instruction()->setMshrArbFailReplay();
         DPRINTF(LoadPipeline, "Load [sn:%ld] setMshrArbFailReplay\n",
                 _inst->seqNum);
     }
-    if (mshr_alias_fail) {
+    if (isLoad() && mshr_alias_fail) {
         instruction()->setMshrAliasFailReplay();
         DPRINTF(LoadPipeline, "Load [sn:%ld] setMshrAliasReplay\n",
                 _inst->seqNum);
     }
-    if (hit_in_write_buffer) {
+    if (isLoad() && hit_in_write_buffer) {
         instruction()->setHitInWriteBufferReplay();
         DPRINTF(LoadPipeline, "Load [sn:%ld] setHitInWriteBufferReplay\n",
                 _inst->seqNum);
@@ -4043,17 +4044,18 @@ LSQ::SplitDataRequest::sendPacketToCache()
     if (tag_read_fail) {
         lsqUnit()->tagReadFailReplaySchedule();
     }
-    if (mshr_used) {
+    // Stores/AMOs here are past the store pipe: NeedReplay would never clear.
+    if (isLoad() && mshr_used) {
         instruction()->setMshrArbFailReplay();
         DPRINTF(LoadPipeline, "Load [sn:%ld] setMshrArbFailReplay\n",
                 _inst->seqNum);
     }
-    if (mshr_alias_fail){
+    if (isLoad() && mshr_alias_fail) {
         instruction()->setMshrAliasFailReplay();
         DPRINTF(LoadPipeline, "Load [sn:%ld] setMshrAliasFailReplay\n",
                 _inst->seqNum);
     }
-    if (hit_in_write_buffer) {
+    if (isLoad() && hit_in_write_buffer) {
         instruction()->setHitInWriteBufferReplay();
         DPRINTF(LoadPipeline, "Load [sn:%ld] setHitInWriteBufferReplay\n",
                 _inst->seqNum);
