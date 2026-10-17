@@ -298,6 +298,18 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         action="store_true",
                         default=False,
                         help="enable CQF admission for L2 BOP candidates")
+    parser.add_argument("--enable-bop-student-cover",
+                        action="store_true",
+                        default=False,
+                        help="enable the teacher/student BOP coverage learner")
+    parser.add_argument("--disable-bop-pc-control",
+                        action="store_true",
+                        default=False,
+                        help="disable native BOP PC control for student evaluation")
+    parser.add_argument("--dump-bop-replay-trace",
+                        action="store_true",
+                        default=False,
+                        help="dump BOP teacher/student replay events")
 
     # Run duration options
     parser.add_argument("-m", "--abs-max-tick", type=int, default=m5.MaxTick,

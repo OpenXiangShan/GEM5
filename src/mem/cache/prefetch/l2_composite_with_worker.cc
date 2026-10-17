@@ -79,8 +79,12 @@ L2CompositeWithWorkerPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std:
         cdp->calculatePrefetch(pfi, addresses);
     }
     if (enableBOP) {
-        largeBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
-        smallBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
+        largeBOP->calculatePrefetch(
+            pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP,
+            activeBOPReplayAccessSeq);
+        smallBOP->calculatePrefetch(
+            pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP,
+            activeBOPReplayAccessSeq);
     }
     if (enableDespacitoStream) {
         despacitoStream->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::DespacitoStream);
@@ -112,8 +116,19 @@ L2CompositeWithWorkerPrefetcher::notify(const PacketPtr &pkt, const PrefetchInfo
 {
     if (pkt->isDemand() && pkt->isRead() && !pkt->isWrite())
         largeBOP->notifyDirectQualityDemand(pfi.getAddr());
+    activeBOPReplayAccessSeq = 0;
+    if (archDBer && archDBer->dumpBopReplayTrace &&
+        pkt->isDemand() && pkt->isRead() && !pkt->isWrite()) {
+        const Addr pc = pfi.hasPC() ? pfi.getPC() : 0;
+        activeBOPReplayAccessSeq = archDBer->bopReplayDemandTraceWrite(
+            curTick(), blockAddress(pfi.getAddr()), pc, pfi.hasPC(),
+            pfi.isCacheMiss(),
+            static_cast<int>(pfi.getXsMetadata().prefetchSource),
+            pfi.isPfFirstHit(), pfi.isPfHit());
+    }
     WorkerPrefetcher::notify(pkt, pfi);
     Queued::notify(pkt, pfi);
+    activeBOPReplayAccessSeq = 0;
 }
 
 void

@@ -36,9 +36,15 @@
 #ifndef __MEM_CACHE_PREFETCH_BOP_HH__
 #define __MEM_CACHE_PREFETCH_BOP_HH__
 
+#include <cstdint>
+#include <deque>
 #include <memory>
 #include <queue>
 #include <set>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include <boost/compute/detail/lru_cache.hpp>
 
 #include "base/sat_counter.hh"
@@ -81,6 +87,8 @@ class BOP : public Queued
         const bool crossPage;
         /** Adapt Bop Offset */
         const bool enableAdaptOffset;
+        const bool negativeOffsetsEnabled;
+        const bool autoLearning;
 
         const int victimListSize;
         const int restoreCycle;
@@ -151,6 +159,58 @@ class BOP : public Queued
 
         std::deque<DelayQueueEntry> delayQueue;
 
+        struct StudentOffsetEntry
+        {
+            int64_t offset;
+            double conf;
+            uint32_t lastPhaseCov;
+            uint32_t curPhaseCov;
+
+            explicit StudentOffsetEntry(int64_t offset_)
+                : offset(offset_), conf(0.0), lastPhaseCov(0), curPhaseCov(0)
+            {}
+        };
+
+        struct StudentDelayQueueEntry
+        {
+            Tick readyTick;
+            Addr predictedAddr;
+            std::vector<unsigned int> filterIndexes;
+            uint64_t mask;
+
+            StudentDelayQueueEntry(Tick ready_tick, Addr predicted_addr,
+                                   std::vector<unsigned int> filter_indexes,
+                                   uint64_t bit_mask)
+                : readyTick(ready_tick),
+                  predictedAddr(predicted_addr),
+                  filterIndexes(std::move(filter_indexes)), mask(bit_mask)
+            {}
+        };
+
+        const bool enableStudentCover;
+        const unsigned int studentPoolSize;
+        const double studentConfAlpha;
+        const double studentCovThreshold;
+        const unsigned int studentTeacherTopN;
+        const unsigned int studentFilterEntries;
+        const unsigned int studentHashCount;
+        const std::string studentHashMode;
+        const bool studentLargeOffsetPriorityEnable;
+        const double studentLargeOffsetPriorityCoeff;
+        const bool studentDelayQueueEnabled;
+        const unsigned int studentDelayQueueSize;
+        const Tick studentDelayTicks;
+
+        std::vector<StudentOffsetEntry> studentPool;
+        std::vector<uint64_t> studentFilterBits;
+        std::deque<StudentDelayQueueEntry> studentDelayQueue;
+        int64_t studentSelectedOffset = 1;
+        bool studentSelectedValid = false;
+        bool studentSelectedEnable = false;
+        uint32_t studentPhaseTrainCount = 0;
+        bool replayMetaWritten = false;
+        uint64_t replayEventOrder = 0;
+
         /** Event to handle the delay queue processing */
         void delayQueueEventWrapper();
         EventFunctionWrapper delayQueueEvent;
@@ -216,6 +276,30 @@ class BOP : public Queued
             round and update the best offset if found */
         bool bestOffsetLearning(Addr hashed_addr, bool late, const PrefetchInfo &pfi);
 
+        std::vector<unsigned int> studentHashIndexes(Addr line_addr) const;
+        bool studentPoolAllSameSign() const;
+        bool studentIntermediateOffsetsMatchSlope(
+            size_t best_idx, size_t worst_idx, uint32_t best_cov,
+            uint32_t worst_cov) const;
+        bool studentShouldPreferLargeOffset(
+            size_t best_idx, size_t worst_idx, uint32_t best_cov,
+            uint32_t worst_cov) const;
+        void studentInsertFilterMask(const std::vector<unsigned int> &indexes,
+                                     uint64_t mask);
+        void studentDrainDelayQueue(Tick now);
+        void studentEnqueuePrediction(Addr train_addr, size_t bit_idx,
+                                      int64_t offset);
+        size_t studentPickBestIndex() const;
+        size_t studentPickWorstIndex() const;
+        size_t studentPickEvictIndex() const;
+        void studentObserveTrainAddr(Addr addr);
+        bool studentInsertTeacherBest(int64_t offset);
+        void studentClearPhaseState();
+        void studentOnTeacherPhaseEnd(int64_t teacher_best_offset);
+        bool studentShouldIssue() const;
+        int64_t studentSelectIssueOffset(int64_t teacher_best_offset) const;
+        void writeBOPReplayMeta();
+
         unsigned missCount{0};
 
         bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
@@ -225,9 +309,24 @@ class BOP : public Queued
 
         struct BopStats : public statistics::Group
         {
-            BopStats(statistics::Group *parent);
+            BopStats(statistics::Group *parent, unsigned int student_pool_size,
+                     unsigned int student_delay_queue_size);
             statistics::Distribution issuedOffsetDist;
+            statistics::Distribution teacherInjectedOffsetDist;
+            statistics::Distribution studentSelectedOffsetDist;
+            statistics::Distribution studentPoolOccupancyDist;
+            statistics::Distribution studentCovRatioPctDist;
+            statistics::Distribution studentWorstCovRatioPctDist;
+            statistics::Distribution studentDelayQueueOccupancyDist;
             statistics::Scalar learnOffsetCount;
+            statistics::Scalar teacherInjectedCount;
+            statistics::Scalar studentPhaseCount;
+            statistics::Scalar studentIssueCount;
+            statistics::Scalar studentFallbackCount;
+            statistics::Scalar studentLargeOffsetPriorityCount;
+            statistics::Scalar studentDelayQueueInsertCount;
+            statistics::Scalar studentDelayQueueDrainCount;
+            statistics::Scalar studentDelayQueueFullDropCount;
             statistics::Scalar throttledCount;
             statistics::Scalar directQualityCandidates;
             statistics::Scalar directQualityAllowed;
@@ -264,7 +363,9 @@ class BOP : public Queued
 
         using Queued::calculatePrefetch;
 
-        void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late);
+        void calculatePrefetch(const PrefetchInfo &pfi,
+                               std::vector<AddrPriority> &addresses,
+                               bool late, uint64_t replay_access_seq = 0);
 
         /** Share the CQF ledger between Large and Small BOP instances. */
         void shareDirectQualityGateWith(BOP &other);

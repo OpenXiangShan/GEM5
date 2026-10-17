@@ -741,6 +741,8 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
             cpu.enable_riscv_vector = True
 
     # config arch db
+    if args.dump_bop_replay_trace and not args.enable_arch_db:
+        fatal("--dump-bop-replay-trace requires --enable-arch-db")
     if args.enable_arch_db:
         perfCCT_cmd = "CREATE TABLE LifeTimeCommitTrace(ID INTEGER PRIMARY KEY AUTOINCREMENT,"
         perfCCT_cmd += PerfRecord.vals[0] + " bigint unsigned NOT NULL"
@@ -774,6 +776,7 @@ CREATE TABLE LoadLifeTimeCommitTrace(
         test_sys.arch_db.dump_l3_evict_trace = False
         test_sys.arch_db.dump_l1_miss_trace = False
         test_sys.arch_db.dump_bop_train_trace = False
+        test_sys.arch_db.dump_bop_replay_trace = args.dump_bop_replay_trace
         test_sys.arch_db.dump_stride_train_trace = False
         test_sys.arch_db.dump_sms_train_trace = False
         test_sys.arch_db.dump_vaddr_trace = False
@@ -837,6 +840,91 @@ CREATE TABLE LoadLifeTimeCommitTrace(
             "Score INT NOT NULL," \
             "Miss BOOL NOT NULL," \
             "SITE TEXT);"
+            ,
+            "CREATE TABLE BOPReplayMeta(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "SchemaVersion INT NOT NULL," \
+            "BOPName TEXT NOT NULL," \
+            "BlockSize INT NOT NULL," \
+            "ScoreMax INT NOT NULL," \
+            "RoundMax INT NOT NULL," \
+            "BadScore INT NOT NULL," \
+            "RREntries INT NOT NULL," \
+            "TagBits INT NOT NULL," \
+            "DelayQueueEnabled BOOL NOT NULL," \
+            "DelayQueueSize INT NOT NULL," \
+            "DelayTicks INT NOT NULL," \
+            "CrossPage BOOL NOT NULL," \
+            "AdaptOffset BOOL NOT NULL," \
+            "NegativeOffsetsEnabled BOOL NOT NULL," \
+            "AutoLearning BOOL NOT NULL," \
+            "VictimOffsetsListSize INT NOT NULL," \
+            "RestoreCycle INT NOT NULL," \
+            "ClockPeriodTicks INT NOT NULL," \
+            "StudentCoverEnabled BOOL NOT NULL," \
+            "StudentPoolSize INT NOT NULL," \
+            "StudentConfAlpha REAL NOT NULL," \
+            "StudentCovThreshold REAL NOT NULL," \
+            "StudentTeacherTopN INT NOT NULL," \
+            "StudentFilterEntries INT NOT NULL," \
+            "StudentHashMode TEXT NOT NULL," \
+            "StudentHashCount INT NOT NULL," \
+            "StudentLargeOffsetPriority BOOL NOT NULL," \
+            "StudentLargeOffsetPriorityCoeff REAL NOT NULL," \
+            "StudentDelayQueueEnabled BOOL NOT NULL," \
+            "StudentDelayQueueSize INT NOT NULL," \
+            "StudentDelayTicks INT NOT NULL," \
+            "Offsets TEXT NOT NULL);"
+            ,
+            "CREATE TABLE BOPReplayPhase(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "PhaseId INT NOT NULL UNIQUE," \
+            "PhaseName TEXT NOT NULL," \
+            "StartTick INT NOT NULL);"
+            ,
+            "CREATE TABLE L2DemandTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "AccessSeq INT NOT NULL," \
+            "PhaseId INT NOT NULL," \
+            "Tick INT NOT NULL," \
+            "Addr INT NOT NULL," \
+            "PC INT NOT NULL," \
+            "HasPC BOOL NOT NULL," \
+            "CacheMiss BOOL NOT NULL," \
+            "PrefetchSource INT NOT NULL," \
+            "PfFirstHit BOOL NOT NULL," \
+            "PfHit BOOL NOT NULL);"
+            ,
+            "CREATE TABLE BOPReplayEvent(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "AccessSeq INT NOT NULL," \
+            "BOPName TEXT NOT NULL," \
+            "BOPKind TEXT NOT NULL," \
+            "ReplayOrder INT NOT NULL," \
+            "PhaseId INT NOT NULL," \
+            "Tick INT NOT NULL," \
+            "TriggerAddr INT NOT NULL," \
+            "TriggerPC INT NOT NULL," \
+            "TriggerHasPC BOOL NOT NULL," \
+            "Late BOOL NOT NULL," \
+            "TeacherOffset INT NOT NULL," \
+            "TeacherIssueEnabled BOOL NOT NULL," \
+            "StudentIssueEnabled BOOL NOT NULL," \
+            "StudentSelectedValid BOOL NOT NULL," \
+            "StudentSelectedEnable BOOL NOT NULL," \
+            "StudentSelectedOffset INT NOT NULL," \
+            "SelectedOffset INT NOT NULL," \
+            "IssueEnabled BOOL NOT NULL," \
+            "CQFAllowed BOOL NOT NULL);"
+            ,
+            "CREATE TABLE BOPReplayDelayAction(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "BOPName TEXT NOT NULL," \
+            "Action TEXT NOT NULL," \
+            "Tick INT NOT NULL," \
+            "Addr INT NOT NULL," \
+            "ProcessTick INT NOT NULL," \
+            "QueueSizeAfter INT NOT NULL);"
             ,
             "CREATE TABLE SMSTrainTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \

@@ -26,6 +26,7 @@ ArchDBer::ArchDBer(const Params &p)
     dumpL3EvictTrace(p.dump_l3_evict_trace),
     dumpL1MissTrace(p.dump_l1_miss_trace),
     dumpBopTrainTrace(p.dump_bop_train_trace),
+    dumpBopReplayTrace(p.dump_bop_replay_trace),
     dumpSMSTrainTrace(p.dump_sms_train_trace),
     dumpStrideTrainTrace(p.dump_stride_train_trace),
     dumpDespacitoTrainTrace(p.dump_despacito_train_trace),
@@ -33,7 +34,8 @@ ArchDBer::ArchDBer(const Params &p)
     dumpVaddrTrace(p.dump_vaddr_trace),
     dumpLifetime(p.dump_lifetime),
     mem_db(nullptr), zErrMsg(nullptr),rc(0),
-    db_path(p.arch_db_file)
+    db_path(p.arch_db_file),
+    bopReplayPhaseId(0), bopReplayAccessSeq(0), bopReplayEventSeq(0)
 {
   int rc = sqlite3_open(":memory:", &mem_db);
   if (rc) {
@@ -152,6 +154,150 @@ ArchDBer::bopTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr offse
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);
   };
+}
+
+void
+ArchDBer::bopReplayMetaTraceWrite(
+    const char *bop_name, unsigned int block_size, unsigned int score_max,
+    unsigned int round_max, unsigned int bad_score, unsigned int rr_entries,
+    unsigned int tag_bits, bool delay_queue_enabled,
+    unsigned int delay_queue_size, Tick delay_ticks, bool cross_page,
+    bool adapt_offset, bool negative_offsets_enabled, bool auto_learning,
+    unsigned int victim_offsets_list_size, unsigned int restore_cycle,
+    Tick clock_period_ticks, bool student_cover_enabled,
+    unsigned int student_pool_size, double student_conf_alpha,
+    double student_cov_threshold, unsigned int student_teacher_top_n,
+    unsigned int student_filter_entries, const std::string &student_hash_mode,
+    unsigned int student_hash_count, bool student_large_offset_priority,
+    double student_large_offset_priority_coeff,
+    bool student_delay_queue_enabled, unsigned int student_delay_queue_size,
+    Tick student_delay_ticks, const std::string &offsets)
+{
+    if (!(dumpGlobal && dumpBopReplayTrace))
+        return;
+
+    const char *sql_format =
+        "INSERT INTO BOPReplayMeta("
+        "SchemaVersion,BOPName,BlockSize,ScoreMax,RoundMax,BadScore,"
+        "RREntries,TagBits,DelayQueueEnabled,DelayQueueSize,DelayTicks,"
+        "CrossPage,AdaptOffset,NegativeOffsetsEnabled,AutoLearning,"
+        "VictimOffsetsListSize,RestoreCycle,ClockPeriodTicks,"
+        "StudentCoverEnabled,StudentPoolSize,StudentConfAlpha,"
+        "StudentCovThreshold,StudentTeacherTopN,StudentFilterEntries,"
+        "StudentHashMode,StudentHashCount,StudentLargeOffsetPriority,"
+        "StudentLargeOffsetPriorityCoeff,StudentDelayQueueEnabled,"
+        "StudentDelayQueueSize,StudentDelayTicks,Offsets) VALUES("
+        "6,%Q,%u,%u,%u,%u,%u,%u,%d,%u,%lld,%d,%d,%d,%d,%u,%u,%lld,"
+        "%d,%u,%f,%f,%u,%u,%Q,%u,%d,%f,%d,%u,%lld,%Q);";
+    char *sql = sqlite3_mprintf(
+        sql_format, bop_name, block_size, score_max, round_max, bad_score,
+        rr_entries, tag_bits, delay_queue_enabled, delay_queue_size,
+        sqliteSignedInt(delay_ticks), cross_page, adapt_offset,
+        negative_offsets_enabled, auto_learning, victim_offsets_list_size,
+        restore_cycle, sqliteSignedInt(clock_period_ticks),
+        student_cover_enabled, student_pool_size, student_conf_alpha,
+        student_cov_threshold, student_teacher_top_n, student_filter_entries,
+        student_hash_mode.c_str(), student_hash_count,
+        student_large_offset_priority, student_large_offset_priority_coeff,
+        student_delay_queue_enabled, student_delay_queue_size,
+        sqliteSignedInt(student_delay_ticks), offsets.c_str());
+    rc = sqlite3_exec(mem_db, sql, callback, nullptr, &zErrMsg);
+    sqlite3_free(sql);
+    fatal_if(rc != SQLITE_OK, "SQL error writing BOPReplayMeta: %s\n", zErrMsg);
+}
+
+uint64_t
+ArchDBer::bopReplayDemandTraceWrite(
+    Tick tick, Addr addr, Addr pc, bool has_pc, bool cache_miss,
+    int prefetch_source, bool pf_first_hit, bool pf_hit)
+{
+    if (!(dumpGlobal && dumpBopReplayTrace))
+        return 0;
+
+    if (bopReplayPhaseId == 0) {
+        bopReplayPhaseId = 1;
+        bopReplayPhaseTraceWrite(bopReplayPhaseId, "run", tick);
+    }
+    const uint64_t access_seq = ++bopReplayAccessSeq;
+    char *sql = sqlite3_mprintf(
+        "INSERT INTO L2DemandTrace(AccessSeq,PhaseId,Tick,Addr,PC,HasPC,"
+        "CacheMiss,PrefetchSource,PfFirstHit,PfHit) VALUES(%lld,%lld,%lld,"
+        "%lld,%lld,%d,%d,%d,%d,%d);",
+        sqliteSignedInt(access_seq), sqliteSignedInt(bopReplayPhaseId),
+        sqliteSignedInt(tick), sqliteSignedInt(addr), sqliteSignedInt(pc),
+        has_pc, cache_miss, prefetch_source, pf_first_hit, pf_hit);
+    rc = sqlite3_exec(mem_db, sql, callback, nullptr, &zErrMsg);
+    sqlite3_free(sql);
+    fatal_if(rc != SQLITE_OK, "SQL error writing L2DemandTrace: %s\n", zErrMsg);
+    return access_seq;
+}
+
+void
+ArchDBer::bopReplayPhaseTraceWrite(
+    uint64_t phase_id, const char *phase_name, Tick start_tick)
+{
+    if (!(dumpGlobal && dumpBopReplayTrace))
+        return;
+    char *sql = sqlite3_mprintf(
+        "INSERT OR IGNORE INTO BOPReplayPhase(PhaseId,PhaseName,StartTick) "
+        "VALUES(%lld,%Q,%lld);", sqliteSignedInt(phase_id), phase_name,
+        sqliteSignedInt(start_tick));
+    rc = sqlite3_exec(mem_db, sql, callback, nullptr, &zErrMsg);
+    sqlite3_free(sql);
+    fatal_if(rc != SQLITE_OK, "SQL error writing BOPReplayPhase: %s\n", zErrMsg);
+}
+
+void
+ArchDBer::bopReplayEventTraceWrite(
+    uint64_t access_seq, Tick tick, const char *bop_name,
+    const char *bop_kind, Addr trigger_addr, Addr trigger_pc,
+    bool trigger_has_pc, bool late, int64_t teacher_offset,
+    bool teacher_issue_enabled, bool student_issue_enabled,
+    bool student_selected_valid, bool student_selected_enable,
+    int64_t student_selected_offset, int64_t selected_offset,
+    bool issue_enabled, bool cqf_allowed)
+{
+    if (!(dumpGlobal && dumpBopReplayTrace) || access_seq == 0)
+        return;
+    const uint64_t replay_order = ++bopReplayEventSeq;
+    char *sql = sqlite3_mprintf(
+        "INSERT INTO BOPReplayEvent(AccessSeq,BOPName,BOPKind,ReplayOrder,"
+        "PhaseId,Tick,TriggerAddr,TriggerPC,TriggerHasPC,Late,"
+        "TeacherOffset,TeacherIssueEnabled,StudentIssueEnabled,"
+        "StudentSelectedValid,StudentSelectedEnable,StudentSelectedOffset,"
+        "SelectedOffset,IssueEnabled,CQFAllowed) VALUES(%lld,%Q,%Q,%lld,"
+        "%lld,%lld,%lld,%lld,%d,%d,%lld,%d,%d,%d,%d,%lld,%lld,%d,%d);",
+        sqliteSignedInt(access_seq), bop_name, bop_kind,
+        sqliteSignedInt(replay_order), sqliteSignedInt(bopReplayPhaseId),
+        sqliteSignedInt(tick), sqliteSignedInt(trigger_addr),
+        sqliteSignedInt(trigger_pc), trigger_has_pc, late,
+        sqliteSignedInt(static_cast<uint64_t>(teacher_offset)),
+        teacher_issue_enabled, student_issue_enabled, student_selected_valid,
+        student_selected_enable,
+        sqliteSignedInt(static_cast<uint64_t>(student_selected_offset)),
+        sqliteSignedInt(static_cast<uint64_t>(selected_offset)), issue_enabled,
+        cqf_allowed);
+    rc = sqlite3_exec(mem_db, sql, callback, nullptr, &zErrMsg);
+    sqlite3_free(sql);
+    fatal_if(rc != SQLITE_OK, "SQL error writing BOPReplayEvent: %s\n", zErrMsg);
+}
+
+void
+ArchDBer::bopReplayDelayActionTraceWrite(
+    const char *bop_name, const char *action, Tick tick, Addr addr,
+    Tick process_tick, unsigned int queue_size_after)
+{
+    if (!(dumpGlobal && dumpBopReplayTrace))
+        return;
+    char *sql = sqlite3_mprintf(
+        "INSERT INTO BOPReplayDelayAction(BOPName,Action,Tick,Addr,"
+        "ProcessTick,QueueSizeAfter) VALUES(%Q,%Q,%lld,%lld,%lld,%u);",
+        bop_name, action, sqliteSignedInt(tick), sqliteSignedInt(addr),
+        sqliteSignedInt(process_tick), queue_size_after);
+    rc = sqlite3_exec(mem_db, sql, callback, nullptr, &zErrMsg);
+    sqlite3_free(sql);
+    fatal_if(rc != SQLITE_OK,
+             "SQL error writing BOPReplayDelayAction: %s\n", zErrMsg);
 }
 
 void
