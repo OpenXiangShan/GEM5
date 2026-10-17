@@ -3083,6 +3083,10 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
         return inst->getFault();
     }
 
+    // A delayed translation can complete after this call returns. Keep the
+    // request size valid while the instruction waits in the memory pipeline.
+    inst->effSize = size;
+
     ThreadID tid = cpu->contextToThread(inst->contextId());
     auto cacheLineSize = cpu->cacheLineSize();
     bool needs_burst = transferNeedsBurst(addr, size, cacheLineSize);
@@ -3141,7 +3145,6 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
     if (request->isTranslationComplete()) {
         if (request->isMemAccessRequired()) {
             inst->effAddr = request->getVaddr();
-            inst->effSize = size;
             inst->effAddrValid(true);
 
             if (cpu->checker) {
