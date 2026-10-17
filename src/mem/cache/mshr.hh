@@ -490,9 +490,21 @@ class MSHR : public QueueEntry, public Printable
     void pushReadyTargets(TargetList &ready_targets, Target &tgt);
 
     /**
+     * Return the older deferred SBuffer store which must precede a load.
+     */
+    const Target *blockingSbufferStore(const Target &load) const;
+
+    /**
+     * Move loads blocked by older deferred SBuffer stores out of the set
+     * serviced by the current response.
+     */
+    void deferLoadsBehindSbufferStores();
+
+    /**
      * Extracts the subset of the targets that can be serviced given a
-     * received response. This function returns the targets list
-     * unless the response is a ReadRespWithInvalidate. The
+     * received response. Loads ordered after deferred SBuffer stores are
+     * retained for the writable response. Otherwise, this function returns
+     * the targets list unless the response is a ReadRespWithInvalidate. The
      * ReadRespWithInvalidate is only invalidating response that its
      * invalidation was not expected when the request (a
      * ReadSharedReq) was sent out. For ReadRespWithInvalidate we can
