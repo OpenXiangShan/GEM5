@@ -33,15 +33,18 @@ def make_value_predictor(vp_type):
     if vp_type == "vtage":
         return VTAGE()
     if vp_type == "estride":
-        # Paper-sized EStride: 3 ways, 20-bit stride, 16-bit tag, 128 table
-        # entries, paper SafeStride constants, and the SPEC-sized confidence
-        # bar (0.35 * 2^13 consistent strides). These mirror the defaults in
-        # src/cpu/valuepred/ValuePredictor.py, but are passed explicitly
-        # because SimObject params are embedded into gem5.opt at build time
-        # and the source defaults are only picked up after a rebuild.
-        # EStride is listed in the fixed-priority arbiter's table (after
-        # IdealConstantLVP and EgDiff), so the default --vp-arb=fixed-priority
-        # already applies its predictions.
+        # Table size, stride/tag width and the SafeStride constants are the
+        # paper-sized values, which are also the source defaults in
+        # src/cpu/valuepred/ValuePredictor.py. The confidence bar is not: this
+        # override keeps the project-specific SPEC setting
+        # (0.35 * 2^13 = 2867 consistent strides) instead of the paper-sized
+        # source default (0.25 * 2^5 = 8). Every parameter that can differ
+        # from the source defaults is passed explicitly because SimObject
+        # params are embedded into gem5.opt at build time, so an edited source
+        # default only takes effect after a rebuild. EStride is listed in the
+        # fixed-priority arbiter's table (after IdealConstantLVP and EgDiff),
+        # so the default --vp-arb=fixed-priority already applies its
+        # predictions.
         return EStride(
             ways=3,
             strideWidth=20,
