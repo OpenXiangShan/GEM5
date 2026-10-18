@@ -289,7 +289,7 @@ ROB::squashHybridMember(const DynInstPtr &inst, ThreadID tid)
     assert(entry.id == inst->hybridEntryId);
     const bool retain_former = hybridSquashTarget &&
         entry.id == hybridSquashTarget->entryId &&
-        !hybridSquashTarget->removes(entry.id, true);
+        hybridSquashTarget->retainFormer;
     const bool downgraded = entry.removeMember(
         inst->hybridSlotIsFormer, retain_former);
     DPRINTF(ROB, "Hybrid remove id=%llu sn=%llu former=%u "
@@ -310,9 +310,22 @@ ROB::squashHybrid(const DynInstPtr &redirect, bool flush_itself, ThreadID tid)
 {
     assert(isHybrid() && tid == 0 && redirect && redirect->isInROB());
     hybridSquashTarget = HybridSquashTarget{
-        redirect->hybridEntryId, redirect->hybridSlotIsFormer, flush_itself};
-    // A slot-aware squash always removes a suffix. Publish its exact boundary
-    // to the existing sequence-based Rename/IQ/LSQ recovery mechanisms.
+        redirect->hybridEntryId, redirect->seqNum, flush_itself, false};
+
+    // Preserve any former member that remains before the exact instruction
+    // boundary. This is computed once so squashMember stays O(1) per member.
+    for (const auto &inst : instList[tid]) {
+        if (inst->hybridEntryId == redirect->hybridEntryId &&
+            inst->hybridSlotIsFormer &&
+            !hybridSquashTarget->removes(inst->hybridEntryId,
+                                         inst->seqNum)) {
+            hybridSquashTarget->retainFormer = true;
+            break;
+        }
+    }
+
+    // An instruction-aware squash publishes the exact retained sequence
+    // prefix to the existing Rename/IQ/LSQ recovery mechanisms.
     InstSeqNum boundary = instList[tid].front()->seqNum - 1;
     for (const auto &inst : instList[tid]) {
         if (shouldSquash(inst, tid)) {
@@ -320,9 +333,11 @@ ROB::squashHybrid(const DynInstPtr &redirect, bool flush_itself, ThreadID tid)
         }
         boundary = inst->seqNum;
     }
-    DPRINTF(ROB, "Hybrid squash id=%llu former=%u itself=%u boundary=%llu\n",
-            redirect->hybridEntryId, redirect->hybridSlotIsFormer,
-            flush_itself, boundary);
+    DPRINTF(ROB, "Hybrid squash id=%llu target_sn=%llu former=%u "
+            "itself=%u retain_former=%u boundary=%llu\n",
+            redirect->hybridEntryId, redirect->seqNum,
+            redirect->hybridSlotIsFormer, flush_itself,
+            hybridSquashTarget->retainFormer, boundary);
     startSquash(boundary, tid);
     return boundary;
 }

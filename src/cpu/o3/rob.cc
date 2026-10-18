@@ -898,7 +898,7 @@ ROB::shouldSquash(const DynInstPtr &inst, ThreadID tid) const
 {
     if (isHybrid() && hybridSquashTarget) {
         return hybridSquashTarget->removes(inst->hybridEntryId,
-                                          inst->hybridSlotIsFormer);
+                                          inst->seqNum);
     }
     return inst->seqNum > squashedSeqNum[tid];
 }

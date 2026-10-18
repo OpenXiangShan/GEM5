@@ -70,19 +70,21 @@ ROB debug tracing enabled.
 
 ## Slot-aware recovery
 
-| Redirect slot | Include redirect slot | Surviving slots in target entry |
+| Redirect instruction | Include redirect instruction | Surviving members in target entry |
 |---|---|---|
-| former | yes | none |
-| former | no | former |
-| latter | yes | former |
-| latter | no | former and latter |
+| any member | yes | older members only |
+| any member | no | target and older members |
 
-All younger entries are removed. Removing the last latter member downgrades
-the target to `NORMAL` only if a nonempty former survives; its id is preserved
+The target instruction's sequence number defines the boundary within the
+target entry.
+Members older than the target instruction in the same entry are retained,
+while the target is retained only when the redirect excludes itself. All
+younger entries are removed. Removing the last latter member downgrades the
+target to `NORMAL` only if a nonempty former survives; its id is preserved
 and it is never paired with a new allocation. Full trap/TC flushes and
 already-retired squash-after anchors retain the architectural sequence
-boundary, including faults inside a partly retired simple slot. The slot
-selector produces the same retained sequence prefix for Rename, IQ, and LSQ.
+boundary, including faults inside a partly retired simple slot. The exact
+sequence prefix is propagated consistently to Rename, IQ, and LSQ.
 
 ## Build
 

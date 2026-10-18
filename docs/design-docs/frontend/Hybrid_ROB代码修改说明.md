@@ -59,16 +59,20 @@ DynInst 表示一条动态指令；融合 DynInst 可能对应两条架构指令
 
 ## 4. Slot-aware squash 与降级
 
-`HybridSquashTarget` 携带 entryId、slotIsFormer、flushItself：
+`HybridSquashTarget` 携带 entryId、目标指令的 `targetSeqNum`、
+`flushItself` 和预先计算的 `retainFormer`。entryId 选择物理 entry，
+targetSeqNum 选择 entry 内的精确指令边界：
 
-| 目标 slot | flushItself | 本 entry 保留内容 |
+| 目标位置 | flushItself | 本 entry 保留内容 |
 |---|---|---|
-| former | true | 无 |
-| former | false | former |
-| latter | true | former |
-| latter | false | former 和 latter |
+| entry 内目标指令 | true | 目标之前的成员 |
+| entry 内目标指令 | false | 目标及之前的成员 |
 
-所有 younger entries 都被清除。`ROB::squashHybrid()` 同时生成最后保留指令的序号，Commit 将同一边界交给 Rename、IQ 和 LSQ。`doSquash()` 和恢复工作量计算采用一致的成员选择；NaiveCpt 使用归一化后的边界计算恢复代价。
+所有 younger entries 都被清除；同一 entry 中目标之后的成员也被清除。
+`ROB::squashHybrid()` 同时生成最后保留指令的序号，Commit 将同一边界交给
+Rename、IQ 和 LSQ。`doSquash()` 和恢复工作量计算采用一致的成员选择；
+NaiveCpt 使用归一化后的边界计算恢复代价。former/latter 表示 entry 的两侧，
+不能替代同一侧内部的指令级顺序；共享 `CS/SC/S` slot 中目标之前的成员必须保留。
 
 当最后一个 latter 成员被 squash，且目标保留非空 former，`removeMember()` 将 entry 降级为 NORMAL。id 不变，不重配对。整 entry 清空不算降级；former 已经全部架构提交时，也不会把 latter 重新标成 former。
 

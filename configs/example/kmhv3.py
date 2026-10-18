@@ -32,7 +32,7 @@ def hybrid_policy_requested(args):
     import re
 
     pattern = re.compile(
-        r"(?:^|\.)RobCompressPolicy\s*=\s*['\"]?hybrid['\"]?\s*$"
+        r"(?:^|\.)RobCompressPolicy\s*=\s*['\"]?hybrid['\"]?\s*;?\s*$"
     )
     return any(
         pattern.search(param.strip())
@@ -130,7 +130,7 @@ def setKmhV3Params(args, system):
 
         if args.enable_value_prediction:
             cpu.valuePred = CompositeValuePredictor(
-                predictors=[IdealConstantLVP(), EStride()],
+                predictors=[IdealConstantLVP()],
                 arb=CVPConfidenceArb(counterBits=6),
             )
 

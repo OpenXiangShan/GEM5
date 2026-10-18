@@ -322,7 +322,8 @@ class ROB
      */
     void squash(InstSeqNum squash_num, ThreadID tid);
 
-    /** Squash by physical slot and return the retained sequence boundary. */
+    /** Squash by physical entry and instruction boundary, returning the
+     *  retained sequence boundary. */
     InstSeqNum squashHybrid(const DynInstPtr &redirect, bool flush_itself,
                             ThreadID tid);
 

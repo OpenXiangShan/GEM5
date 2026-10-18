@@ -45,6 +45,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "cpu/inst_seq.hh"
+
 namespace gem5
 {
 
@@ -107,16 +109,20 @@ struct EntryState
 struct SquashTarget
 {
     uint64_t entryId;
-    bool slotIsFormer;
+    InstSeqNum targetSeqNum;
     bool flushItself;
+    bool retainFormer;
 
-    bool removes(uint64_t id, bool former) const
+    /** Remove younger entries and the suffix of the target entry. */
+    bool removes(uint64_t id, InstSeqNum seq_num) const
     {
         if (id != entryId) {
             return id > entryId;
         }
-        return former ? (slotIsFormer && flushItself) :
-                        (slotIsFormer || flushItself);
+        if (seq_num != targetSeqNum) {
+            return seq_num > targetSeqNum;
+        }
+        return flushItself;
     }
 };
 
