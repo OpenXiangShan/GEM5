@@ -16,6 +16,7 @@ namespace gem5
 namespace valuepred
 {
 
+/** Per-load history identity and applied-prediction bookkeeping for EgDiff. */
 class EgDiffPredictionRecord : public VPPredictionRecord
 {
   public:
@@ -26,6 +27,7 @@ class EgDiffPredictionRecord : public VPPredictionRecord
     uint64_t loadOrdinal = 0;
 };
 
+/** Predict load values from an earlier load plus a trained value difference. */
 class EgDiff : public VPUnit
 {
   private:
@@ -136,6 +138,7 @@ class EgDiff : public VPUnit
     void pruneHistory(ThreadState &state, ThreadID tid);
     void updateHistoryOccupancyStats();
     void updateTableEntryStats();
+    /** Return whether any misprediction suppression window is still active. */
     bool lastMispActive() const { return !lastMispActivations.empty(); }
     static const char *valueSourceName(ValueSource source);
 
@@ -194,6 +197,7 @@ class EgDiff : public VPUnit
   public:
     EgDiff(const Params &params);
 
+    /** Return the EgDiff predictor name. */
     std::string name() const override { return "EgDiff"; }
 
     VPPredictionCandidate predict(const VPPredictRequest &request) override;
@@ -215,6 +219,7 @@ class EgDiff : public VPUnit
     void specUpdate(const VPSpecUpdateInfo &specUpdateInfo) override;
     void squash(ThreadID tid, const uint64_t seq_no) override;
 
+    /** Return the predictor type used by composite arbitration. */
     ValuePredType getValuePredictorType() override
     {
         return ValuePredType::EgDiff;

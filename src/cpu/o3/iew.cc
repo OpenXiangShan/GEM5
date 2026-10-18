@@ -563,6 +563,11 @@ IEW::lvpWakeDependents(const DynInstPtr &inst) {
     }
 }
 
+/**
+ * Apply an available late prediction and wake dependent instructions.
+ * Update the destination and readiness state only for an eligible instruction
+ * that has not already received a prediction.
+ */
 void
 IEW::tryLateValuePrediction(const DynInstPtr &inst)
 {
@@ -601,6 +606,7 @@ IEW::tryLateValuePrediction(const DynInstPtr &inst)
             static_cast<unsigned long long>(inst->vpResult.value));
 }
 
+/** Report the applied value and current cycle with the instruction's VP record. */
 void
 IEW::notifyPredictionApplied(const DynInstPtr &inst)
 {
@@ -618,6 +624,7 @@ IEW::notifyPredictionApplied(const DynInstPtr &inst)
     valuePred->predictionApplied(applied_info, inst->vpRecord.get());
 }
 
+/** Report an executed load's actual value with its VP record and current cycle. */
 void
 IEW::notifyValueAvailable(const DynInstPtr &inst, RegVal actualValue)
 {
@@ -640,6 +647,7 @@ IEW::notifyValueAvailable(const DynInstPtr &inst, RegVal actualValue)
             static_cast<unsigned long long>(inst->vpResult.value));
 }
 
+/** Report an applied value misprediction with its VP record and current cycle. */
 void
 IEW::notifyValueMispredicted(const DynInstPtr &inst)
 {
@@ -1527,6 +1535,10 @@ IEW::dispatchInsts()
     }
 }
 
+/**
+ * Admit up to max_insts directly from rename and return the dispatched count.
+ * Allocate load predictor state and report predictions already applied.
+ */
 unsigned
 IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
                             unsigned dispatch_offset)
@@ -1744,6 +1756,10 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
     return dispatched;
 }
 
+/**
+ * Admit renamed instructions to dispatch queues and return the admitted count.
+ * Allocate eligible load predictor state and report predictions already applied.
+ */
 unsigned
 IEW::classifyInstToDispQue(ThreadID tid, unsigned max_insts,
                            unsigned dispatch_offset)

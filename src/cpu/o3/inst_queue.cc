@@ -137,6 +137,7 @@ InstructionQueue::hasMdpAddrReplayInsts() const
     return false;
 }
 
+/** Initialize queue resources and connect the scheduler to the CPU, LSQ, and IEW. */
 InstructionQueue::InstructionQueue(CPU *cpu_ptr, IEW *iew_ptr,
         const BaseO3CPUParams &params)
     : cpu(cpu_ptr),

@@ -142,6 +142,7 @@ class VPUpdateInfo
     ExtensionContainer<VPUpdateInfoExtension> extensions;
 };
 
+/** Instruction identity and cycle for dispatch-time predictor allocation. */
 class VPDispatchInfo
 {
   public:
@@ -151,6 +152,7 @@ class VPDispatchInfo
     uint64_t cycle = 0;
 };
 
+/** Instruction identity and cycle for a prediction requested after rename. */
 class VPLatePredictRequest
 {
   public:
@@ -160,6 +162,7 @@ class VPLatePredictRequest
     uint64_t cycle = 0;
 };
 
+/** An executed load's actual value, identity, and availability cycle. */
 class VPValueAvailableInfo
 {
   public:
@@ -170,6 +173,7 @@ class VPValueAvailableInfo
     uint64_t cycle = 0;
 };
 
+/** Applied value and whether the receiving predictor produced that value. */
 class VPPredictionAppliedInfo
 {
   public:
@@ -181,6 +185,7 @@ class VPPredictionAppliedInfo
     bool producedByReceiver = true;
 };
 
+/** Instruction identity and detection cycle for a wrong applied prediction. */
 class VPMispredictionInfo
 {
   public:
@@ -190,6 +195,7 @@ class VPMispredictionInfo
     uint64_t cycle = 0;
 };
 
+/** Thread and sequence number of an architecturally committed instruction. */
 class VPCommitInfo
 {
   public:

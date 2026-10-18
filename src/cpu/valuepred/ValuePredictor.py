@@ -4,6 +4,8 @@ from m5.proxy import *
 from m5.SimObject import *
 
 class ValuePredType(ScopedEnum):
+    """Enumerate value predictor implementations available to configurations."""
+
     # vals will contains value predictor type
     vals = ["EStride", "MemoryRenaming", "IdealConstantLVP",
             "ExampleValuePredictor", "CompositeValuePredictor", "EgDiff"]
@@ -152,6 +154,8 @@ class IdealConstantLVP(ValuePredictor):
     resetConfidence = Param.Bool(True, "reset confidence to 0 when mispredict")
 
 class EgDiff(ValuePredictor):
+    """Configure load-value differences, confidence, and prediction delays."""
+
     type = "EgDiff"
     cxx_class = "gem5::valuepred::EgDiff"
     cxx_header = "cpu/valuepred/egdiff.hh"

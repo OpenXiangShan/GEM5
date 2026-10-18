@@ -1960,6 +1960,10 @@ Commit::diffInst(ThreadID tid, const DynInstPtr &inst) {
 }
 
 
+/**
+ * Try to commit the ROB head, handling execution constraints and faults.
+ * Return true on successful retirement and notify the value predictor.
+ */
 bool
 Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 {

@@ -97,6 +97,7 @@ CompositeValuePredictor::predict(const VPPredictRequest &request)
     return compositeCandidate;
 }
 
+/** Forward dispatch to every child using its own prediction record. */
 void
 CompositeValuePredictor::dispatch(const VPDispatchInfo &dispatchInfo,
         VPPredictionRecord *record)
@@ -113,6 +114,10 @@ CompositeValuePredictor::dispatch(const VPDispatchInfo &dispatchInfo,
     }
 }
 
+/**
+ * Arbitrate late child predictions only if rename selected no prediction.
+ * Retain the winning child and its value in the existing composite record.
+ */
 VPPredictionCandidate
 CompositeValuePredictor::latePredict(const VPLatePredictRequest &request,
         VPPredictionRecord *record)
@@ -166,6 +171,7 @@ CompositeValuePredictor::latePredict(const VPLatePredictRequest &request,
     return compositeCandidate;
 }
 
+/** Forward the executed value to every child using its own record. */
 void
 CompositeValuePredictor::valueAvailable(
         const VPValueAvailableInfo &valueInfo,
@@ -183,6 +189,7 @@ CompositeValuePredictor::valueAvailable(
     }
 }
 
+/** Notify every child of the applied value and identify its selected producer. */
 void
 CompositeValuePredictor::predictionApplied(
         const VPPredictionAppliedInfo &appliedInfo,
@@ -203,6 +210,7 @@ CompositeValuePredictor::predictionApplied(
     }
 }
 
+/** Forward misprediction feedback to every child using its own record. */
 void
 CompositeValuePredictor::valueMispredicted(
         const VPMispredictionInfo &mispInfo,
@@ -220,6 +228,7 @@ CompositeValuePredictor::valueMispredicted(
     }
 }
 
+/** Notify every child of each architecturally committed instruction. */
 void
 CompositeValuePredictor::commitInstruction(const VPCommitInfo &commitInfo)
 {

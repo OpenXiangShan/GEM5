@@ -36,6 +36,7 @@ VPUnit::valuePredict(const VPPredictRequest &request,
     return candidate.result;
 }
 
+/** Ignore dispatch by default for predictors without dispatch-time state. */
 void
 VPUnit::dispatch(const VPDispatchInfo &dispatchInfo,
         VPPredictionRecord *record)
@@ -44,6 +45,7 @@ VPUnit::dispatch(const VPDispatchInfo &dispatchInfo,
     (void)record;
 }
 
+/** Return an empty candidate by default for predictors without late prediction. */
 VPPredictionCandidate
 VPUnit::latePredict(const VPLatePredictRequest &request,
         VPPredictionRecord *record)
@@ -53,6 +55,7 @@ VPUnit::latePredict(const VPLatePredictRequest &request,
     return {};
 }
 
+/** Ignore executed-value feedback by default. */
 void
 VPUnit::valueAvailable(const VPValueAvailableInfo &valueInfo,
         VPPredictionRecord *record)
@@ -61,6 +64,7 @@ VPUnit::valueAvailable(const VPValueAvailableInfo &valueInfo,
     (void)record;
 }
 
+/** Ignore applied-prediction feedback by default. */
 void
 VPUnit::predictionApplied(const VPPredictionAppliedInfo &appliedInfo,
         VPPredictionRecord *record)
@@ -69,6 +73,7 @@ VPUnit::predictionApplied(const VPPredictionAppliedInfo &appliedInfo,
     (void)record;
 }
 
+/** Ignore misprediction feedback by default. */
 void
 VPUnit::valueMispredicted(const VPMispredictionInfo &mispInfo,
         VPPredictionRecord *record)
@@ -77,6 +82,7 @@ VPUnit::valueMispredicted(const VPMispredictionInfo &mispInfo,
     (void)record;
 }
 
+/** Ignore per-instruction commit notifications by default. */
 void
 VPUnit::commitInstruction(const VPCommitInfo &commitInfo)
 {

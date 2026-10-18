@@ -13,6 +13,7 @@ namespace gem5
 namespace valuepred
 {
 
+/** Register prediction, training, suppression, and history statistics. */
 EgDiff::EgDiffStats::EgDiffStats(statistics::Group *parent)
     : statistics::Group(parent),
       ADD_STAT(dispatchSlots, statistics::units::Count::get(),
@@ -110,6 +111,7 @@ EgDiff::EgDiffStats::EgDiffStats(statistics::Group *parent)
 {
 }
 
+/** Initialize per-thread history and the prediction table; validate parameters. */
 EgDiff::EgDiff(const Params &params)
     : VPUnit(params), order(params.order), fpcSeed(params.fpcSeed),
       tableEntryCount(params.tableEntries), tagBits(params.tagBits),
@@ -142,6 +144,7 @@ EgDiff::EgDiff(const Params &params)
     allocationRandomState = initialAllocationRandomState();
 }
 
+/** Return the EgDiff record, asserting that the record has the expected type. */
 EgDiffPredictionRecord *
 EgDiff::getRecord(VPPredictionRecord *record) const
 {
@@ -150,6 +153,7 @@ EgDiff::getRecord(VPPredictionRecord *record) const
     return egdiff_record;
 }
 
+/** Return the EgDiff record, asserting that the record has the expected type. */
 const EgDiffPredictionRecord *
 EgDiff::getRecord(const VPPredictionRecord *record) const
 {
@@ -158,6 +162,7 @@ EgDiff::getRecord(const VPPredictionRecord *record) const
     return egdiff_record;
 }
 
+/** Return the history entry for a load ordinal, or nullptr if it is absent. */
 EgDiff::HistoryEntry *
 EgDiff::findHistory(ThreadState &state, uint64_t ordinal)
 {
@@ -165,6 +170,7 @@ EgDiff::findHistory(ThreadState &state, uint64_t ordinal)
     return it == state.history.end() ? nullptr : &it->second;
 }
 
+/** Return the history entry for a load ordinal, or nullptr if it is absent. */
 const EgDiff::HistoryEntry *
 EgDiff::findHistory(const ThreadState &state, uint64_t ordinal) const
 {
@@ -172,6 +178,7 @@ EgDiff::findHistory(const ThreadState &state, uint64_t ordinal) const
     return it == state.history.end() ? nullptr : &it->second;
 }
 
+/** Mix a 64-bit key into a deterministic, nonzero value. */
 uint64_t
 EgDiff::mix64(uint64_t value)
 {
@@ -182,18 +189,21 @@ EgDiff::mix64(uint64_t value)
     return value ? value : 1;
 }
 
+/** Seed an entry's FPC random stream from the configured seed, thread, and PC. */
 uint64_t
 EgDiff::initialRandomState(ThreadID tid, Addr pc) const
 {
     return mix64(fpcSeed ^ (static_cast<uint64_t>(tid) << 56) ^ pc);
 }
 
+/** Seed the allocation random stream independently of per-entry FPC streams. */
 uint64_t
 EgDiff::initialAllocationRandomState() const
 {
     return mix64(fpcSeed ^ 0xd1b54a32d192ed03ULL);
 }
 
+/** Advance the supplied random state and return a xorshift64* sample. */
 uint64_t
 EgDiff::nextRandom(uint64_t &state)
 {
@@ -203,6 +213,7 @@ EgDiff::nextRandom(uint64_t &state)
     return state * 0x2545f4914f6cdd1dULL;
 }
 
+/** Hash the thread and load PC to an index within the prediction table. */
 std::size_t
 EgDiff::tableIndex(ThreadID tid, Addr pc) const
 {
@@ -210,6 +221,7 @@ EgDiff::tableIndex(ThreadID tid, Addr pc) const
     return mix64(key ^ 0x243f6a8885a308d3ULL) % tableEntryCount;
 }
 
+/** Hash the thread and load PC to a tag of the configured width. */
 uint64_t
 EgDiff::tableTag(ThreadID tid, Addr pc) const
 {
@@ -218,12 +230,14 @@ EgDiff::tableTag(ThreadID tid, Addr pc) const
     return tagBits == 64 ? tag : tag & ((1ULL << tagBits) - 1);
 }
 
+/** Return the saturation value for the configured usefulness counter width. */
 uint8_t
 EgDiff::maxUsefulness() const
 {
     return usefulBits == 8 ? 0xff : (1U << usefulBits) - 1;
 }
 
+/** Sample the allocation stream and accept an allocation with probability 1/N. */
 bool
 EgDiff::shouldAllocate()
 {
@@ -231,6 +245,7 @@ EgDiff::shouldAllocate()
         allocationProbabilityDenominator == 0;
 }
 
+/** Advance the commit-driven TICK and age usefulness counters on wraparound. */
 void
 EgDiff::advanceAgingTick()
 {
@@ -265,6 +280,7 @@ EgDiff::advanceAgingTick()
             tickBits, decrements);
 }
 
+/** Attempt a probabilistic FPC increment; return whether the counter advanced. */
 bool
 EgDiff::advanceFpc(Entry &entry)
 {
@@ -286,6 +302,7 @@ EgDiff::advanceFpc(Entry &entry)
     return advance;
 }
 
+/** Return the trace label for an actual, predicted, or unavailable base value. */
 const char *
 EgDiff::valueSourceName(ValueSource source)
 {
@@ -299,6 +316,10 @@ EgDiff::valueSourceName(ValueSource source)
     }
 }
 
+/**
+ * Wake pending requests bound to this base and apply the deferred latency.
+ * Drop requests whose target has already completed; fanout is unbounded.
+ */
 void
 EgDiff::wakeDeferred(ThreadState &state, ThreadID tid,
         HistoryEntry &base, uint64_t cycle)
@@ -337,6 +358,7 @@ EgDiff::wakeDeferred(ThreadState &state, ThreadID tid,
     }
 }
 
+/** Publish a base value and its source, then wake dependent deferred requests. */
 void
 EgDiff::makeSpecValueAvailable(ThreadState &state, ThreadID tid,
         HistoryEntry &base, RegVal value, ValueSource source, uint64_t cycle)
@@ -347,6 +369,7 @@ EgDiff::makeSpecValueAvailable(ThreadState &state, ThreadID tid,
     wakeDeferred(state, tid, base, cycle);
 }
 
+/** Refresh current and peak history occupancy across all threads. */
 void
 EgDiff::updateHistoryOccupancyStats()
 {
@@ -359,6 +382,7 @@ EgDiff::updateHistoryOccupancyStats()
     egdiffStats.maxHistoryEntries = maxHistoryEntriesSeen;
 }
 
+/** Refresh the count of valid prediction-table entries. */
 void
 EgDiff::updateTableEntryStats()
 {
@@ -368,6 +392,10 @@ EgDiff::updateTableEntryStats()
     egdiffStats.tableEntries = entries;
 }
 
+/**
+ * Remove committed history older than any in-flight or future load needs.
+ * Retain up to order predecessors of the oldest in-flight load for training.
+ */
 void
 EgDiff::pruneHistory(ThreadState &state, ThreadID tid)
 {
@@ -401,6 +429,7 @@ EgDiff::pruneHistory(ThreadState &state, ThreadID tid)
     }
 }
 
+/** Create a per-load record at rename without offering a prediction yet. */
 VPPredictionCandidate
 EgDiff::predict(const VPPredictRequest &request)
 {
@@ -410,6 +439,11 @@ EgDiff::predict(const VPPredictRequest &request)
     return candidate;
 }
 
+/**
+ * Allocate a load ordinal once and bind any confident prediction to its base.
+ * Validate the base PC; schedule a normal request if its value is available,
+ * or defer the request until the base publishes a value.
+ */
 void
 EgDiff::dispatch(const VPDispatchInfo &info, VPPredictionRecord *record)
 {
@@ -501,6 +535,11 @@ EgDiff::dispatch(const VPDispatchInfo &info, VPPredictionRecord *record)
     }
 }
 
+/**
+ * Offer a ready, undelivered request as the base value plus the trained diff.
+ * Return an empty candidate while waiting or when suppression, completion,
+ * or a mismatched base PC prevents prediction.
+ */
 VPPredictionCandidate
 EgDiff::latePredict(const VPLatePredictRequest &request,
         VPPredictionRecord *record)
@@ -574,6 +613,10 @@ EgDiff::latePredict(const VPLatePredictRequest &request,
     return candidate;
 }
 
+/**
+ * Record the selected value once and publish it for dependent predictions.
+ * Track whether EgDiff supplied the value, including values from siblings.
+ */
 void
 EgDiff::predictionApplied(const VPPredictionAppliedInfo &info,
         VPPredictionRecord *record)
@@ -606,6 +649,11 @@ EgDiff::predictionApplied(const VPPredictionAppliedInfo &info,
             info.producedByReceiver ? "egdiff" : "other");
 }
 
+/**
+ * Record a load's actual value and verify any selected EgDiff prediction.
+ * Cancel its outstanding request and wake loads waiting for it as a base;
+ * ignore duplicate or stale callbacks.
+ */
 void
 EgDiff::valueAvailable(const VPValueAvailableInfo &info,
         VPPredictionRecord *record)
@@ -649,6 +697,10 @@ EgDiff::valueAvailable(const VPValueAvailableInfo &info,
             static_cast<unsigned long long>(info.actualValue));
 }
 
+/**
+ * Start suppression for an applied EgDiff misprediction.
+ * Mark the record to prevent confidence advancement when it commits.
+ */
 void
 EgDiff::valueMispredicted(const VPMispredictionInfo &info,
         VPPredictionRecord *record)
@@ -667,6 +719,10 @@ EgDiff::valueMispredicted(const VPMispredictionInfo &info,
             info.cycle, info.tid, info.seqNo, info.pc, lastMispWindow);
 }
 
+/**
+ * Count eligible commits toward each active misprediction suppression window.
+ * Expire windows after the configured number of subsequent instructions.
+ */
 void
 EgDiff::commitInstruction(const VPCommitInfo &info)
 {
@@ -689,6 +745,11 @@ EgDiff::commitInstruction(const VPCommitInfo &info)
     }
 }
 
+/**
+ * Train from a committed load and its committed base, then prune history.
+ * Allocate missing entries probabilistically, reward matching differences,
+ * and poll the next distance with reset confidence on a mismatch.
+ */
 void
 EgDiff::update(const VPUpdateInfo &info,
         const VPPredictionRecord *record, const VPFeedback &feedback)
@@ -867,12 +928,17 @@ EgDiff::update(const VPUpdateInfo &info,
     pruneHistory(state, info.tid);
 }
 
+/** Leave speculative updates to the dispatch and value-availability hooks. */
 void
 EgDiff::specUpdate(const VPSpecUpdateInfo &info)
 {
     (void)info;
 }
 
+/**
+ * Discard younger uncommitted loads and rewind their load ordinals.
+ * Cancel their requests and remove suppression windows created by them.
+ */
 void
 EgDiff::squash(ThreadID tid, const uint64_t seq_no)
 {

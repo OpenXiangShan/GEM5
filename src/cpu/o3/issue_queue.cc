@@ -1662,6 +1662,7 @@ Scheduler::Scheduler(const SchedulerParams& params)
     dispSeqVec.resize(64);
 }
 
+/** Connect the CPU, LSQ, and IEW stage and initialize issue-queue CPU bindings. */
 void
 Scheduler::setCPU(CPU* cpu, LSQ* lsq, IEW* iew)
 {
@@ -1737,6 +1738,7 @@ Scheduler::tick()
     }
 }
 
+/** Try late predictions, select and issue instructions, then record stall stats. */
 void
 Scheduler::issueAndSelect()
 {
@@ -1773,6 +1775,10 @@ Scheduler::issueAndSelect()
     }
 }
 
+/**
+ * Collect eligible unissued loads and ask IEW to apply late predictions.
+ * Snapshot the candidates before prediction can wake dependent instructions.
+ */
 void
 Scheduler::latePredictReadyLoads()
 {
@@ -2230,6 +2236,11 @@ Scheduler::writebackWakeup(const DynInstPtr& inst)
     }
 }
 
+/**
+ * Release execution resources and mark bypass destinations ready.
+ * For unsquashed eligible loads, report the actual value and verify any
+ * speculative prediction, notifying IEW on a mismatch.
+ */
 void
 Scheduler::bypassWriteback(const DynInstPtr& inst)
 {

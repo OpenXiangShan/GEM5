@@ -28,6 +28,7 @@ def setPtwLevelLimitParams(args, tlb):
 
 
 def setKmhV3IdealParams(args, system):
+    """Apply the ideal KMH V3 CPU, predictor, and cache configuration."""
     for cpu in system.cpu:
 
         # fetch
