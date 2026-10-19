@@ -29,20 +29,23 @@ from m5.SimObject import SimObject
 from m5.params import *
 from m5.proxy import *
 
+
 class BpType(Enum):
-    vals = ['Coupled', 'DecoupledStream', 'DecoupledFTB', 'DecoupledBTB']
+    vals = ["Coupled", "DecoupledStream", "DecoupledFTB", "DecoupledBTB"]
+
 
 class IndirectPredictor(SimObject):
-    type = 'IndirectPredictor'
-    cxx_class = 'gem5::branch_prediction::IndirectPredictor'
+    type = "IndirectPredictor"
+    cxx_class = "gem5::branch_prediction::IndirectPredictor"
     cxx_header = "cpu/pred/indirect.hh"
     abstract = True
 
     numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
 
+
 class SimpleIndirectPredictor(IndirectPredictor):
-    type = 'SimpleIndirectPredictor'
-    cxx_class = 'gem5::branch_prediction::SimpleIndirectPredictor'
+    type = "SimpleIndirectPredictor"
+    cxx_class = "gem5::branch_prediction::SimpleIndirectPredictor"
     cxx_header = "cpu/pred/simple_indirect.hh"
 
     indirectHashGHR = Param.Bool(True, "Hash branch predictor GHR")
@@ -50,32 +53,41 @@ class SimpleIndirectPredictor(IndirectPredictor):
     indirectSets = Param.Unsigned(256, "Cache sets for indirect predictor")
     indirectWays = Param.Unsigned(2, "Ways for indirect predictor")
     indirectTagSize = Param.Unsigned(16, "Indirect target cache tag bits")
-    indirectPathLength = Param.Unsigned(3,
-        "Previous indirect targets to use for path history")
+    indirectPathLength = Param.Unsigned(
+        3, "Previous indirect targets to use for path history"
+    )
     indirectGHRBits = Param.Unsigned(13, "Indirect GHR number of bits")
     instShiftAmt = Param.Unsigned(2, "Number of bits to shift instructions by")
 
+
 class ITTAGE(IndirectPredictor):
-    type = 'ITTAGE'
-    cxx_class = 'gem5::branch_prediction::ITTAGE'
+    type = "ITTAGE"
+    cxx_class = "gem5::branch_prediction::ITTAGE"
     cxx_header = "cpu/pred/ITTAGE.hh"
 
-    indirectPathLength = Param.Unsigned(3, "Previous indirect targets to use for path history")
+    indirectPathLength = Param.Unsigned(
+        3, "Previous indirect targets to use for path history"
+    )
     numPredictors = Param.Unsigned(11, "Number of TAGE predictors")
-    tableSizes = VectorParam.Int(
-        [256] * 15, "the ITTAGE T1~Tn length")
+    tableSizes = VectorParam.Int([256] * 15, "the ITTAGE T1~Tn length")
     TTagBitSizes = VectorParam.Int(
-        [9, 9, 13, 13, 13, 13, 13, 13, 13, 13, 15, 15, 15, 15, 15], "the T1~Tn entry's tag bit size")
+        [9, 9, 13, 13, 13, 13, 13, 13, 13, 13, 15, 15, 15, 15, 15],
+        "the T1~Tn entry's tag bit size",
+    )
     TTagPcShifts = VectorParam.Int(
-        [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2], "when the T1~Tn entry's tag generating, PC right shift")
+        [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],
+        "when the T1~Tn entry's tag generating, PC right shift",
+    )
     histLengths = VectorParam.Int(
-        [4, 10, 16, 27, 44, 60, 96, 109, 219, 449, 487], "the ITTAGE T1~Tn history length")
+        [4, 10, 16, 27, 44, 60, 96, 109, 219, 449, 487],
+        "the ITTAGE T1~Tn history length",
+    )
     simpleBTBSize = Param.Unsigned(512, "size of base predictor")
 
 
 class BranchPredictor(SimObject):
-    type = 'BranchPredictor'
-    cxx_class = 'gem5::branch_prediction::BPredUnit'
+    type = "BranchPredictor"
+    cxx_class = "gem5::branch_prediction::BPredUnit"
     cxx_header = "cpu/pred/bpred_unit.hh"
     abstract = True
 
@@ -85,12 +97,15 @@ class BranchPredictor(SimObject):
     RASSize = Param.Unsigned(16, "RAS size")
     instShiftAmt = Param.Unsigned(2, "Number of bits to shift instructions by")
     isDumpMisspredPC = Param.Bool(False, "enable dump miss pred pc")
-    indirectBranchPred = Param.IndirectPredictor(ITTAGE(),
-      "Indirect branch predictor, set to NULL to disable indirect predictions")
+    indirectBranchPred = Param.IndirectPredictor(
+        ITTAGE(),
+        "Indirect branch predictor, set to NULL to disable indirect predictions",
+    )
+
 
 class LocalBP(BranchPredictor):
-    type = 'LocalBP'
-    cxx_class = 'gem5::branch_prediction::LocalBP'
+    type = "LocalBP"
+    cxx_class = "gem5::branch_prediction::LocalBP"
     cxx_header = "cpu/pred/2bit_local.hh"
 
     localPredictorSize = Param.Unsigned(2048, "Size of local predictor")
@@ -98,8 +113,8 @@ class LocalBP(BranchPredictor):
 
 
 class TournamentBP(BranchPredictor):
-    type = 'TournamentBP'
-    cxx_class = 'gem5::branch_prediction::TournamentBP'
+    type = "TournamentBP"
+    cxx_class = "gem5::branch_prediction::TournamentBP"
     cxx_header = "cpu/pred/tournament.hh"
 
     localPredictorSize = Param.Unsigned(2048, "Size of local predictor")
@@ -112,8 +127,8 @@ class TournamentBP(BranchPredictor):
 
 
 class BiModeBP(BranchPredictor):
-    type = 'BiModeBP'
-    cxx_class = 'gem5::branch_prediction::BiModeBP'
+    type = "BiModeBP"
+    cxx_class = "gem5::branch_prediction::BiModeBP"
     cxx_header = "cpu/pred/bi_mode.hh"
 
     globalPredictorSize = Param.Unsigned(8192, "Size of global predictor")
@@ -121,57 +136,70 @@ class BiModeBP(BranchPredictor):
     choicePredictorSize = Param.Unsigned(8192, "Size of choice predictor")
     choiceCtrBits = Param.Unsigned(2, "Bits of choice counters")
 
+
 class TAGEBase(SimObject):
-    type = 'TAGEBase'
-    cxx_class = 'gem5::branch_prediction::TAGEBase'
+    type = "TAGEBase"
+    cxx_class = "gem5::branch_prediction::TAGEBase"
     cxx_header = "cpu/pred/tage_base.hh"
 
     numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
-    instShiftAmt = Param.Unsigned(Parent.instShiftAmt,
-        "Number of bits to shift instructions by")
+    instShiftAmt = Param.Unsigned(
+        Parent.instShiftAmt, "Number of bits to shift instructions by"
+    )
 
     nHistoryTables = Param.Unsigned(7, "Number of history tables")
     minHist = Param.Unsigned(5, "Minimum history size of TAGE")
     maxHist = Param.Unsigned(130, "Maximum history size of TAGE")
 
     tagTableTagWidths = VectorParam.Unsigned(
-        [0, 9, 9, 10, 10, 11, 11, 12], "Tag size in TAGE tag tables")
+        [0, 9, 9, 10, 10, 11, 11, 12], "Tag size in TAGE tag tables"
+    )
     logTagTableSizes = VectorParam.Int(
-        [13, 9, 9, 9, 9, 9, 9, 9], "Log2 of TAGE table sizes")
-    logRatioBiModalHystEntries = Param.Unsigned(2,
-        "Log num of prediction entries for a shared hysteresis bit " \
-        "for the Bimodal")
+        [13, 9, 9, 9, 9, 9, 9, 9], "Log2 of TAGE table sizes"
+    )
+    logRatioBiModalHystEntries = Param.Unsigned(
+        2,
+        "Log num of prediction entries for a shared hysteresis bit "
+        "for the Bimodal",
+    )
 
     tagTableCounterBits = Param.Unsigned(3, "Number of tag table counter bits")
     tagTableUBits = Param.Unsigned(2, "Number of tag table u bits")
 
-    histBufferSize = Param.Unsigned(2097152,
-            "A large number to track all branch histories(2MEntries default)")
+    histBufferSize = Param.Unsigned(
+        2097152,
+        "A large number to track all branch histories(2MEntries default)",
+    )
 
     pathHistBits = Param.Unsigned(16, "Path history size")
-    logUResetPeriod = Param.Unsigned(18,
-        "Log period in number of branches to reset TAGE useful counters")
+    logUResetPeriod = Param.Unsigned(
+        18, "Log period in number of branches to reset TAGE useful counters"
+    )
     numUseAltOnNa = Param.Unsigned(1, "Number of USE_ALT_ON_NA counters")
     initialTCounterValue = Param.Int(1 << 17, "Initial value of tCounter")
     useAltOnNaBits = Param.Unsigned(4, "Size of the USE_ALT_ON_NA counter(s)")
 
-    maxNumAlloc = Param.Unsigned(1,
-        "Max number of TAGE entries allocted on mispredict")
+    maxNumAlloc = Param.Unsigned(
+        1, "Max number of TAGE entries allocted on mispredict"
+    )
 
     # List of enabled TAGE tables. If empty, all are enabled
     noSkip = VectorParam.Bool([], "Vector of enabled TAGE tables")
 
-    speculativeHistUpdate = Param.Bool(True,
-        "Use speculative update for histories")
+    speculativeHistUpdate = Param.Bool(
+        True, "Use speculative update for histories"
+    )
+
 
 # TAGE branch predictor as described in https://www.jilp.org/vol8/v8paper1.pdf
 # The default sizes below are for the 8C-TAGE configuration (63.5 Kbits)
 class TAGE(BranchPredictor):
-    type = 'TAGE'
-    cxx_class = 'gem5::branch_prediction::TAGE'
+    type = "TAGE"
+    cxx_class = "gem5::branch_prediction::TAGE"
     cxx_header = "cpu/pred/tage.hh"
 
     tage = Param.TAGEBase(TAGEBase(), "Tage object")
+
 
 class LTAGE_TAGE(TAGEBase):
     nHistoryTables = 12
@@ -181,16 +209,18 @@ class LTAGE_TAGE(TAGEBase):
     logTagTableSizes = [14, 10, 10, 11, 11, 11, 11, 10, 10, 10, 10, 9, 9]
     logUResetPeriod = 19
 
+
 class LoopPredictor(SimObject):
-    type = 'LoopPredictor'
-    cxx_class = 'gem5::branch_prediction::LoopPredictor'
-    cxx_header = 'cpu/pred/loop_predictor.hh'
+    type = "LoopPredictor"
+    cxx_class = "gem5::branch_prediction::LoopPredictor"
+    cxx_header = "cpu/pred/loop_predictor.hh"
 
     logSizeLoopPred = Param.Unsigned(8, "Log size of the loop predictor")
     withLoopBits = Param.Unsigned(7, "Size of the WITHLOOP counter")
     loopTableAgeBits = Param.Unsigned(8, "Number of age bits per loop entry")
-    loopTableConfidenceBits = Param.Unsigned(2,
-            "Number of confidence bits per loop entry")
+    loopTableConfidenceBits = Param.Unsigned(
+        2, "Number of confidence bits per loop entry"
+    )
     loopTableTagBits = Param.Unsigned(14, "Number of tag bits per loop entry")
     loopTableIterBits = Param.Unsigned(14, "Nuber of iteration bits per loop")
     logLoopTableAssoc = Param.Unsigned(2, "Log loop predictor associativity")
@@ -213,17 +243,20 @@ class LoopPredictor(SimObject):
 
     # If true, use random to decide whether to allocate or not, and only try
     # with one entry
-    restrictAllocation = Param.Bool(False,
-        "Restrict the allocation conditions")
+    restrictAllocation = Param.Bool(
+        False, "Restrict the allocation conditions"
+    )
 
     initialLoopIter = Param.Unsigned(1, "Initial iteration number")
     initialLoopAge = Param.Unsigned(255, "Initial age value")
-    optionalAgeReset = Param.Bool(True,
-        "Reset age bits optionally in some cases")
+    optionalAgeReset = Param.Bool(
+        True, "Reset age bits optionally in some cases"
+    )
+
 
 class TAGE_SC_L_TAGE(TAGEBase):
-    type = 'TAGE_SC_L_TAGE'
-    cxx_class = 'gem5::branch_prediction::TAGE_SC_L_TAGE'
+    type = "TAGE_SC_L_TAGE"
+    cxx_class = "gem5::branch_prediction::TAGE_SC_L_TAGE"
     cxx_header = "cpu/pred/tage_sc_l.hh"
     abstract = True
 
@@ -244,10 +277,12 @@ class TAGE_SC_L_TAGE(TAGEBase):
     logTagTableSize = Param.Unsigned("Log size of each tag table")
 
     shortTagsTageFactor = Param.Unsigned(
-        "Factor for calculating the total number of short tags TAGE entries")
+        "Factor for calculating the total number of short tags TAGE entries"
+    )
 
     longTagsTageFactor = Param.Unsigned(
-        "Factor for calculating the total number of long tags TAGE entries")
+        "Factor for calculating the total number of long tags TAGE entries"
+    )
 
     shortTagsSize = Param.Unsigned(8, "Size of the short tags")
 
@@ -255,13 +290,14 @@ class TAGE_SC_L_TAGE(TAGEBase):
 
     firstLongTagTable = Param.Unsigned("First table with long tags")
 
-    truncatePathHist = Param.Bool(True,
-        "Truncate the path history to its configured size")
+    truncatePathHist = Param.Bool(
+        True, "Truncate the path history to its configured size"
+    )
 
 
 class TAGE_SC_L_TAGE_64KB(TAGE_SC_L_TAGE):
-    type = 'TAGE_SC_L_TAGE_64KB'
-    cxx_class = 'gem5::branch_prediction::TAGE_SC_L_TAGE_64KB'
+    type = "TAGE_SC_L_TAGE_64KB"
+    cxx_class = "gem5::branch_prediction::TAGE_SC_L_TAGE_64KB"
     cxx_header = "cpu/pred/tage_sc_l_64KB.hh"
 
     nHistoryTables = 36
@@ -279,8 +315,45 @@ class TAGE_SC_L_TAGE_64KB(TAGE_SC_L_TAGE):
     # Entry 0 is for the bimodal and it is ignored
     # Note: For this implementation, some odd entries are also set to 0 to save
     # some bits
-    noSkip = [0,0,1,0,0,0,1,0,0,1,1,1,1,1,1,1,1,1,1,
-                1,1,1,1,0,1,0,1,0,1,0,0,0,1,0,0,0,1]
+    noSkip = [
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+    ]
 
     logTagTableSize = 10
     shortTagsTageFactor = 10
@@ -290,9 +363,10 @@ class TAGE_SC_L_TAGE_64KB(TAGE_SC_L_TAGE):
 
     firstLongTagTable = 13
 
+
 class TAGE_SC_L_TAGE_8KB(TAGE_SC_L_TAGE):
-    type = 'TAGE_SC_L_TAGE_8KB'
-    cxx_class = 'gem5::branch_prediction::TAGE_SC_L_TAGE_8KB'
+    type = "TAGE_SC_L_TAGE_8KB"
+    cxx_class = "gem5::branch_prediction::TAGE_SC_L_TAGE_8KB"
     cxx_header = "cpu/pred/tage_sc_l_8KB.hh"
 
     nHistoryTables = 30
@@ -311,26 +385,60 @@ class TAGE_SC_L_TAGE_8KB(TAGE_SC_L_TAGE):
 
     truncatePathHist = False
 
-    noSkip = [0,0,1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,0,1,0,1,0,1]
+    noSkip = [
+        0,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+    ]
 
     tagTableUBits = 2
+
 
 # LTAGE branch predictor as described in
 # https://www.irisa.fr/caps/people/seznec/L-TAGE.pdf
 # It is basically a TAGE predictor plus a loop predictor
 # The differnt TAGE sizes are updated according to the paper values (256 Kbits)
 class LTAGE(TAGE):
-    type = 'LTAGE'
-    cxx_class = 'gem5::branch_prediction::LTAGE'
+    type = "LTAGE"
+    cxx_class = "gem5::branch_prediction::LTAGE"
     cxx_header = "cpu/pred/ltage.hh"
 
     tage = LTAGE_TAGE()
 
     loop_predictor = Param.LoopPredictor(LoopPredictor(), "Loop predictor")
 
+
 class TAGE_SC_L_LoopPredictor(LoopPredictor):
-    type = 'TAGE_SC_L_LoopPredictor'
-    cxx_class  = 'gem5::branch_prediction::TAGE_SC_L_LoopPredictor'
+    type = "TAGE_SC_L_LoopPredictor"
+    cxx_class = "gem5::branch_prediction::TAGE_SC_L_LoopPredictor"
     cxx_header = "cpu/pred/tage_sc_l.hh"
 
     loopTableAgeBits = 4
@@ -345,56 +453,68 @@ class TAGE_SC_L_LoopPredictor(LoopPredictor):
     initialLoopAge = 7
     optionalAgeReset = False
 
+
 class StatisticalCorrector(SimObject):
-    type = 'StatisticalCorrector'
-    cxx_class  = 'gem5::branch_prediction::StatisticalCorrector'
+    type = "StatisticalCorrector"
+    cxx_class = "gem5::branch_prediction::StatisticalCorrector"
     cxx_header = "cpu/pred/statistical_corrector.hh"
     abstract = True
 
     # Statistical corrector parameters
 
     numEntriesFirstLocalHistories = Param.Unsigned(
-        "Number of entries for first local histories")
+        "Number of entries for first local histories"
+    )
 
     bwnb = Param.Unsigned("Num global backward branch GEHL lengths")
     bwm = VectorParam.Int("Global backward branch GEHL lengths")
     logBwnb = Param.Unsigned("Log num of global backward branch GEHL entries")
     bwWeightInitValue = Param.Int(
-     "Initial value of the weights of the global backward branch GEHL entries")
+        "Initial value of the weights of the global backward branch GEHL entries"
+    )
 
     lnb = Param.Unsigned("Num first local history GEHL lenghts")
     lm = VectorParam.Int("First local history GEHL lengths")
     logLnb = Param.Unsigned("Log number of first local history GEHL entries")
     lWeightInitValue = Param.Int(
-        "Initial value of the weights of the first local history GEHL entries")
+        "Initial value of the weights of the first local history GEHL entries"
+    )
 
     inb = Param.Unsigned(1, "Num IMLI GEHL lenghts")
     im = VectorParam.Int([8], "IMLI history GEHL lengths")
     logInb = Param.Unsigned("Log number of IMLI GEHL entries")
     iWeightInitValue = Param.Int(
-        "Initial value of the weights of the IMLI history GEHL entries")
+        "Initial value of the weights of the IMLI history GEHL entries"
+    )
 
     logBias = Param.Unsigned("Log size of Bias tables")
 
-    logSizeUp = Param.Unsigned(6,
-        "Log size of update threshold counters tables")
+    logSizeUp = Param.Unsigned(
+        6, "Log size of update threshold counters tables"
+    )
 
-    chooserConfWidth = Param.Unsigned(7,
-        "Number of bits for the chooser counters")
+    chooserConfWidth = Param.Unsigned(
+        7, "Number of bits for the chooser counters"
+    )
 
-    updateThresholdWidth = Param.Unsigned(12,
-        "Number of bits for the update threshold counter")
+    updateThresholdWidth = Param.Unsigned(
+        12, "Number of bits for the update threshold counter"
+    )
 
-    pUpdateThresholdWidth = Param.Unsigned(8,
-        "Number of bits for the pUpdate threshold counters")
+    pUpdateThresholdWidth = Param.Unsigned(
+        8, "Number of bits for the pUpdate threshold counters"
+    )
 
-    extraWeightsWidth = Param.Unsigned(6,
-        "Number of bits for the extra weights")
+    extraWeightsWidth = Param.Unsigned(
+        6, "Number of bits for the extra weights"
+    )
 
     scCountersWidth = Param.Unsigned(6, "Statistical corrector counters width")
 
-    initialUpdateThresholdValue = Param.Int(0,
-        "Initial pUpdate threshold counter value")
+    initialUpdateThresholdValue = Param.Int(
+        0, "Initial pUpdate threshold counter value"
+    )
+
 
 # TAGE-SC-L branch predictor as desribed in
 # https://www.jilp.org/cbp2016/paper/AndreSeznecLimited.pdf
@@ -409,48 +529,55 @@ class StatisticalCorrector(SimObject):
 # Note that as it is now, this branch predictor does not handle any type
 # of speculation: All the structures/histories are updated at commit time
 class TAGE_SC_L(LTAGE):
-    type = 'TAGE_SC_L'
-    cxx_class = 'gem5::branch_prediction::TAGE_SC_L'
+    type = "TAGE_SC_L"
+    cxx_class = "gem5::branch_prediction::TAGE_SC_L"
     cxx_header = "cpu/pred/tage_sc_l.hh"
     abstract = True
 
-    statistical_corrector = Param.StatisticalCorrector(
-        "Statistical Corrector")
+    statistical_corrector = Param.StatisticalCorrector("Statistical Corrector")
+
 
 class TAGE_SC_L_64KB_LoopPredictor(TAGE_SC_L_LoopPredictor):
     logSizeLoopPred = 5
 
+
 class TAGE_SC_L_8KB_LoopPredictor(TAGE_SC_L_LoopPredictor):
     logSizeLoopPred = 3
 
+
 class TAGE_SC_L_64KB_StatisticalCorrector(StatisticalCorrector):
-    type = 'TAGE_SC_L_64KB_StatisticalCorrector'
-    cxx_class  = 'gem5::branch_prediction::TAGE_SC_L_64KB_StatisticalCorrector'
+    type = "TAGE_SC_L_64KB_StatisticalCorrector"
+    cxx_class = "gem5::branch_prediction::TAGE_SC_L_64KB_StatisticalCorrector"
     cxx_header = "cpu/pred/tage_sc_l_64KB.hh"
 
     pnb = Param.Unsigned(3, "Num variation global branch GEHL lengths")
     pm = VectorParam.Int([25, 16, 9], "Variation global branch GEHL lengths")
-    logPnb = Param.Unsigned(9,
-        "Log number of variation global branch GEHL entries")
+    logPnb = Param.Unsigned(
+        9, "Log number of variation global branch GEHL entries"
+    )
 
     snb = Param.Unsigned(3, "Num second local history GEHL lenghts")
     sm = VectorParam.Int([16, 11, 6], "Second local history GEHL lengths")
-    logSnb = Param.Unsigned(9,
-        "Log number of second local history GEHL entries")
+    logSnb = Param.Unsigned(
+        9, "Log number of second local history GEHL entries"
+    )
 
     tnb = Param.Unsigned(2, "Num third local history GEHL lenghts")
     tm = VectorParam.Int([9, 4], "Third local history GEHL lengths")
-    logTnb = Param.Unsigned(10,
-        "Log number of third local history GEHL entries")
+    logTnb = Param.Unsigned(
+        10, "Log number of third local history GEHL entries"
+    )
 
     imnb = Param.Unsigned(2, "Num second IMLI GEHL lenghts")
     imm = VectorParam.Int([10, 4], "Second IMLI history GEHL lengths")
     logImnb = Param.Unsigned(9, "Log number of second IMLI GEHL entries")
 
-    numEntriesSecondLocalHistories = Param.Unsigned(16,
-        "Number of entries for second local histories")
-    numEntriesThirdLocalHistories = Param.Unsigned(16,
-        "Number of entries for second local histories")
+    numEntriesSecondLocalHistories = Param.Unsigned(
+        16, "Number of entries for second local histories"
+    )
+    numEntriesThirdLocalHistories = Param.Unsigned(
+        16, "Number of entries for second local histories"
+    )
 
     numEntriesFirstLocalHistories = 256
 
@@ -469,9 +596,10 @@ class TAGE_SC_L_64KB_StatisticalCorrector(StatisticalCorrector):
     logInb = 8
     iWeightInitValue = 7
 
+
 class TAGE_SC_L_8KB_StatisticalCorrector(StatisticalCorrector):
-    type = 'TAGE_SC_L_8KB_StatisticalCorrector'
-    cxx_class  = 'gem5::branch_prediction::TAGE_SC_L_8KB_StatisticalCorrector'
+    type = "TAGE_SC_L_8KB_StatisticalCorrector"
+    cxx_class = "gem5::branch_prediction::TAGE_SC_L_8KB_StatisticalCorrector"
     cxx_header = "cpu/pred/tage_sc_l_8KB.hh"
 
     gnb = Param.Unsigned(2, "Num global branch GEHL lengths")
@@ -495,95 +623,121 @@ class TAGE_SC_L_8KB_StatisticalCorrector(StatisticalCorrector):
     logInb = 7
     iWeightInitValue = 7
 
+
 # 64KB TAGE-SC-L branch predictor as described in
 # http://www.jilp.org/cbp2016/paper/AndreSeznecLimited.pdf
 class TAGE_SC_L_64KB(TAGE_SC_L):
-    type = 'TAGE_SC_L_64KB'
-    cxx_class = 'gem5::branch_prediction::TAGE_SC_L_64KB'
+    type = "TAGE_SC_L_64KB"
+    cxx_class = "gem5::branch_prediction::TAGE_SC_L_64KB"
     cxx_header = "cpu/pred/tage_sc_l_64KB.hh"
 
     tage = TAGE_SC_L_TAGE_64KB()
     loop_predictor = TAGE_SC_L_64KB_LoopPredictor()
     statistical_corrector = TAGE_SC_L_64KB_StatisticalCorrector()
 
+
 # 8KB TAGE-SC-L branch predictor as described in
 # http://www.jilp.org/cbp2016/paper/AndreSeznecLimited.pdf
 class TAGE_SC_L_8KB(TAGE_SC_L):
-    type = 'TAGE_SC_L_8KB'
-    cxx_class = 'gem5::branch_prediction::TAGE_SC_L_8KB'
+    type = "TAGE_SC_L_8KB"
+    cxx_class = "gem5::branch_prediction::TAGE_SC_L_8KB"
     cxx_header = "cpu/pred/tage_sc_l_8KB.hh"
 
     tage = TAGE_SC_L_TAGE_8KB()
     loop_predictor = TAGE_SC_L_8KB_LoopPredictor()
     statistical_corrector = TAGE_SC_L_8KB_StatisticalCorrector()
 
+
 class MultiperspectivePerceptron(BranchPredictor):
-    type = 'MultiperspectivePerceptron'
-    cxx_class = 'gem5::branch_prediction::MultiperspectivePerceptron'
-    cxx_header = 'cpu/pred/multiperspective_perceptron.hh'
+    type = "MultiperspectivePerceptron"
+    cxx_class = "gem5::branch_prediction::MultiperspectivePerceptron"
+    cxx_header = "cpu/pred/multiperspective_perceptron.hh"
     abstract = True
 
     num_filter_entries = Param.Int("Number of filter entries")
     num_local_histories = Param.Int("Number of local history entries")
-    local_history_length = Param.Int(11,
-        "Length in bits of each history entry")
+    local_history_length = Param.Int(
+        11, "Length in bits of each history entry"
+    )
 
-    block_size = Param.Int(21,
+    block_size = Param.Int(
+        21,
         "number of ghist bits in a 'block'; this is the width of an initial "
-        "hash of ghist")
+        "hash of ghist",
+    )
     pcshift = Param.Int(-10, "Shift for hashing PC")
     threshold = Param.Int(1, "Threshold for deciding low/high confidence")
-    bias0 = Param.Int(-5,
-        "Bias perceptron output this much on all-bits-zero local history")
-    bias1 = Param.Int(5,
-        "Bias perceptron output this much on all-bits-one local history")
-    biasmostly0 = Param.Int(-1,
+    bias0 = Param.Int(
+        -5, "Bias perceptron output this much on all-bits-zero local history"
+    )
+    bias1 = Param.Int(
+        5, "Bias perceptron output this much on all-bits-one local history"
+    )
+    biasmostly0 = Param.Int(
+        -1,
         "Bias perceptron output this much on almost-all-bits-zero local "
-        "history")
-    biasmostly1 = Param.Int(1,
+        "history",
+    )
+    biasmostly1 = Param.Int(
+        1,
         "Bias perceptron output this much on almost-all-bits-one local "
-        "history")
-    nbest = Param.Int(20,
+        "history",
+    )
+    nbest = Param.Int(
+        20,
         "Use this many of the top performing tables on a low-confidence "
-        "branch")
+        "branch",
+    )
     tunebits = Param.Int(24, "Number of bits in misprediction counters")
-    hshift = Param.Int(-6,
-        "How much to shift initial feauture hash before XORing with PC bits")
+    hshift = Param.Int(
+        -6,
+        "How much to shift initial feauture hash before XORing with PC bits",
+    )
     imli_mask1 = Param.UInt64(
         "Which tables should have their indices hashed with the first IMLI "
-        "counter")
+        "counter"
+    )
     imli_mask4 = Param.UInt64(
         "Which tables should have their indices hashed with the fourth IMLI "
-        "counter")
+        "counter"
+    )
     recencypos_mask = Param.UInt64(
         "Which tables should have their indices hashed with the recency "
-        "position")
+        "position"
+    )
     fudge = Param.Float(0.245, "Fudge factor to multiply by perceptron output")
     n_sign_bits = Param.Int(2, "Number of sign bits per magnitude")
     pcbit = Param.Int(2, "Bit from the PC to use for hashing global history")
     decay = Param.Int(0, "Whether and how often to decay a random weight")
-    record_mask = Param.Int(191,
-        "Which histories are updated with filtered branch outcomes")
-    hash_taken = Param.Bool(False,
-        "Hash the taken/not taken value with a PC bit")
-    tuneonly = Param.Bool(True,
-        "If true, only count mispredictions of low-confidence branches")
-    extra_rounds = Param.Int(1,
+    record_mask = Param.Int(
+        191, "Which histories are updated with filtered branch outcomes"
+    )
+    hash_taken = Param.Bool(
+        False, "Hash the taken/not taken value with a PC bit"
+    )
+    tuneonly = Param.Bool(
+        True, "If true, only count mispredictions of low-confidence branches"
+    )
+    extra_rounds = Param.Int(
+        1,
         "Number of extra rounds of training a single weight on a "
-        "low-confidence prediction")
+        "low-confidence prediction",
+    )
     speed = Param.Int(9, "Adaptive theta learning speed")
     initial_theta = Param.Int(10, "Initial theta")
     budgetbits = Param.Int("Hardware budget in bits")
-    speculative_update = Param.Bool(False,
-        "Use speculative update for histories")
+    speculative_update = Param.Bool(
+        False, "Use speculative update for histories"
+    )
 
     initial_ghist_length = Param.Int(1, "Initial GHist length value")
     ignore_path_size = Param.Bool(False, "Ignore the path storage")
 
+
 class MultiperspectivePerceptron8KB(MultiperspectivePerceptron):
-    type = 'MultiperspectivePerceptron8KB'
-    cxx_class = 'gem5::branch_prediction::MultiperspectivePerceptron8KB'
-    cxx_header = 'cpu/pred/multiperspective_perceptron_8KB.hh'
+    type = "MultiperspectivePerceptron8KB"
+    cxx_class = "gem5::branch_prediction::MultiperspectivePerceptron8KB"
+    cxx_header = "cpu/pred/multiperspective_perceptron_8KB.hh"
 
     budgetbits = 8192 * 8 + 2048
     num_local_histories = 48
@@ -592,44 +746,81 @@ class MultiperspectivePerceptron8KB(MultiperspectivePerceptron):
     imli_mask4 = 0x4400
     recencypos_mask = 0x100000090
 
+
 class MultiperspectivePerceptron64KB(MultiperspectivePerceptron):
-    type = 'MultiperspectivePerceptron64KB'
-    cxx_class = 'gem5::branch_prediction::MultiperspectivePerceptron64KB'
-    cxx_header = 'cpu/pred/multiperspective_perceptron_64KB.hh'
+    type = "MultiperspectivePerceptron64KB"
+    cxx_class = "gem5::branch_prediction::MultiperspectivePerceptron64KB"
+    cxx_header = "cpu/pred/multiperspective_perceptron_64KB.hh"
 
     budgetbits = 65536 * 8 + 2048
     num_local_histories = 510
     num_filter_entries = 18025
-    imli_mask1 = 0xc1000
+    imli_mask1 = 0xC1000
     imli_mask4 = 0x80008000
     recencypos_mask = 0x100000090
 
+
 class MPP_TAGE(TAGEBase):
-    type = 'MPP_TAGE'
-    cxx_class = 'gem5::branch_prediction::MPP_TAGE'
-    cxx_header = 'cpu/pred/multiperspective_perceptron_tage.hh'
+    type = "MPP_TAGE"
+    cxx_class = "gem5::branch_prediction::MPP_TAGE"
+    cxx_header = "cpu/pred/multiperspective_perceptron_tage.hh"
 
     nHistoryTables = 15
     pathHistBits = 27
     instShiftAmt = 0
     histBufferSize = 16384
-    maxHist = 4096;
-    tagTableTagWidths = [0, 7, 9, 9, 9, 10, 11, 11, 12, 12,
-                         12, 13, 14, 15, 15, 15]
-    logTagTableSizes = [14, 10, 11, 11, 11, 11, 11, 12, 12,
-                         10, 11, 11, 9, 7, 7, 8]
-    tunedHistoryLengths = VectorParam.Unsigned([0, 5, 12, 15, 21, 31, 43, 64,
-        93, 137, 200, 292, 424, 612, 877, 1241], "Tuned history lengths")
+    maxHist = 4096
+    tagTableTagWidths = [
+        0,
+        7,
+        9,
+        9,
+        9,
+        10,
+        11,
+        11,
+        12,
+        12,
+        12,
+        13,
+        14,
+        15,
+        15,
+        15,
+    ]
+    logTagTableSizes = [
+        14,
+        10,
+        11,
+        11,
+        11,
+        11,
+        11,
+        12,
+        12,
+        10,
+        11,
+        11,
+        9,
+        7,
+        7,
+        8,
+    ]
+    tunedHistoryLengths = VectorParam.Unsigned(
+        [0, 5, 12, 15, 21, 31, 43, 64, 93, 137, 200, 292, 424, 612, 877, 1241],
+        "Tuned history lengths",
+    )
 
     logUResetPeriod = 10
     initialTCounterValue = 0
     numUseAltOnNa = 512
     speculativeHistUpdate = False
 
+
 class MPP_LoopPredictor(LoopPredictor):
-    type = 'MPP_LoopPredictor'
-    cxx_class = 'gem5::branch_prediction::MPP_LoopPredictor'
-    cxx_header = 'cpu/pred/multiperspective_perceptron_tage.hh'
+    type = "MPP_LoopPredictor"
+    cxx_class = "gem5::branch_prediction::MPP_LoopPredictor"
+    cxx_header = "cpu/pred/multiperspective_perceptron_tage.hh"
 
     useDirectionBit = True
     useHashing = True
@@ -644,15 +835,16 @@ class MPP_LoopPredictor(LoopPredictor):
     logSizeLoopPred = 6
     loopTableTagBits = 10
 
+
 class MPP_StatisticalCorrector(StatisticalCorrector):
-    type = 'MPP_StatisticalCorrector'
-    cxx_class = 'gem5::branch_prediction::MPP_StatisticalCorrector'
-    cxx_header = 'cpu/pred/multiperspective_perceptron_tage.hh'
+    type = "MPP_StatisticalCorrector"
+    cxx_class = "gem5::branch_prediction::MPP_StatisticalCorrector"
+    cxx_header = "cpu/pred/multiperspective_perceptron_tage.hh"
     abstract = True
 
     # Unused in this Statistical Corrector
     bwnb = 0
-    bwm = [ ]
+    bwm = []
     logBwnb = 0
     bwWeightInitValue = -1
 
@@ -675,15 +867,18 @@ class MPP_StatisticalCorrector(StatisticalCorrector):
     logGnb = Param.Unsigned(10, "Log number of global branch GEHL entries")
 
     pnb = Param.Unsigned(4, "Num variation global branch GEHL lengths")
-    pm = VectorParam.Int([16, 11, 6, 3],
-        "Variation global branch GEHL lengths")
-    logPnb = Param.Unsigned(9,
-        "Log number of variation global branch GEHL entries")
+    pm = VectorParam.Int(
+        [16, 11, 6, 3], "Variation global branch GEHL lengths"
+    )
+    logPnb = Param.Unsigned(
+        9, "Log number of variation global branch GEHL entries"
+    )
+
 
 class MultiperspectivePerceptronTAGE(MultiperspectivePerceptron):
-    type = 'MultiperspectivePerceptronTAGE'
-    cxx_class = 'gem5::branch_prediction::MultiperspectivePerceptronTAGE'
-    cxx_header = 'cpu/pred/multiperspective_perceptron_tage.hh'
+    type = "MultiperspectivePerceptronTAGE"
+    cxx_class = "gem5::branch_prediction::MultiperspectivePerceptronTAGE"
+    cxx_header = "cpu/pred/multiperspective_perceptron_tage.hh"
     abstract = True
 
     instShiftAmt = 4
@@ -692,7 +887,7 @@ class MultiperspectivePerceptronTAGE(MultiperspectivePerceptron):
     imli_mask4 = 0
     num_filter_entries = 0
     num_local_histories = 0
-    recencypos_mask = 0 # Unused
+    recencypos_mask = 0  # Unused
     threshold = -1
     initial_ghist_length = 0
     ignore_path_size = True
@@ -702,34 +897,40 @@ class MultiperspectivePerceptronTAGE(MultiperspectivePerceptron):
     loop_predictor = Param.LoopPredictor("Loop predictor")
     statistical_corrector = Param.StatisticalCorrector("Statistical Corrector")
 
+
 class MPP_StatisticalCorrector_64KB(MPP_StatisticalCorrector):
-    type = 'MPP_StatisticalCorrector_64KB'
-    cxx_class = 'gem5::branch_prediction::MPP_StatisticalCorrector_64KB'
-    cxx_header = 'cpu/pred/multiperspective_perceptron_tage_64KB.hh'
+    type = "MPP_StatisticalCorrector_64KB"
+    cxx_class = "gem5::branch_prediction::MPP_StatisticalCorrector_64KB"
+    cxx_header = "cpu/pred/multiperspective_perceptron_tage_64KB.hh"
 
     logBias = 8
 
     snb = Param.Unsigned(4, "Num second local history GEHL lenghts")
     sm = VectorParam.Int([16, 11, 6, 3], "Second local history GEHL lengths")
-    logSnb = Param.Unsigned(9,
-        "Log number of second local history GEHL entries")
+    logSnb = Param.Unsigned(
+        9, "Log number of second local history GEHL entries"
+    )
 
     tnb = Param.Unsigned(3, "Num third local history GEHL lenghts")
     tm = VectorParam.Int([22, 17, 14], "Third local history GEHL lengths")
-    logTnb = Param.Unsigned(9,
-        "Log number of third local history GEHL entries")
+    logTnb = Param.Unsigned(
+        9, "Log number of third local history GEHL entries"
+    )
 
-    numEntriesSecondLocalHistories = Param.Unsigned(16,
-        "Number of entries for second local histories")
-    numEntriesThirdLocalHistories = Param.Unsigned(16,
-        "Number of entries for second local histories")
+    numEntriesSecondLocalHistories = Param.Unsigned(
+        16, "Number of entries for second local histories"
+    )
+    numEntriesThirdLocalHistories = Param.Unsigned(
+        16, "Number of entries for second local histories"
+    )
 
     numEntriesFirstLocalHistories = 256
 
+
 class MultiperspectivePerceptronTAGE64KB(MultiperspectivePerceptronTAGE):
-    type = 'MultiperspectivePerceptronTAGE64KB'
-    cxx_class = 'gem5::branch_prediction::MultiperspectivePerceptronTAGE64KB'
-    cxx_header = 'cpu/pred/multiperspective_perceptron_tage_64KB.hh'
+    type = "MultiperspectivePerceptronTAGE64KB"
+    cxx_class = "gem5::branch_prediction::MultiperspectivePerceptronTAGE64KB"
+    cxx_header = "cpu/pred/multiperspective_perceptron_tage_64KB.hh"
 
     budgetbits = 65536 * 8 + 2048
 
@@ -737,28 +938,31 @@ class MultiperspectivePerceptronTAGE64KB(MultiperspectivePerceptronTAGE):
     loop_predictor = MPP_LoopPredictor()
     statistical_corrector = MPP_StatisticalCorrector_64KB()
 
+
 class MPP_TAGE_8KB(MPP_TAGE):
-    type = 'MPP_TAGE_8KB'
-    cxx_class = 'gem5::branch_prediction::MPP_TAGE_8KB'
-    cxx_header = 'cpu/pred/multiperspective_perceptron_tage_8KB.hh'
+    type = "MPP_TAGE_8KB"
+    cxx_class = "gem5::branch_prediction::MPP_TAGE_8KB"
+    cxx_header = "cpu/pred/multiperspective_perceptron_tage_8KB.hh"
 
     nHistoryTables = 10
     tagTableTagWidths = [0, 7, 7, 7, 8, 9, 10, 10, 11, 13, 13]
     logTagTableSizes = [12, 8, 8, 9, 9, 8, 8, 8, 7, 6, 7]
     tunedHistoryLengths = [0, 4, 8, 13, 23, 36, 56, 93, 145, 226, 359]
 
+
 class MPP_LoopPredictor_8KB(MPP_LoopPredictor):
-    type = 'MPP_LoopPredictor_8KB'
-    cxx_class = 'gem5::branch_prediction::MPP_LoopPredictor_8KB'
-    cxx_header = 'cpu/pred/multiperspective_perceptron_tage_8KB.hh'
+    type = "MPP_LoopPredictor_8KB"
+    cxx_class = "gem5::branch_prediction::MPP_LoopPredictor_8KB"
+    cxx_header = "cpu/pred/multiperspective_perceptron_tage_8KB.hh"
 
     loopTableIterBits = 10
     logSizeLoopPred = 4
 
+
 class MPP_StatisticalCorrector_8KB(MPP_StatisticalCorrector):
-    type = 'MPP_StatisticalCorrector_8KB'
-    cxx_class = 'gem5::branch_prediction::MPP_StatisticalCorrector_8KB'
-    cxx_header = 'cpu/pred/multiperspective_perceptron_tage_8KB.hh'
+    type = "MPP_StatisticalCorrector_8KB"
+    cxx_class = "gem5::branch_prediction::MPP_StatisticalCorrector_8KB"
+    cxx_header = "cpu/pred/multiperspective_perceptron_tage_8KB.hh"
 
     logBias = 7
 
@@ -772,10 +976,11 @@ class MPP_StatisticalCorrector_8KB(MPP_StatisticalCorrector):
 
     numEntriesFirstLocalHistories = 64
 
+
 class MultiperspectivePerceptronTAGE8KB(MultiperspectivePerceptronTAGE):
-    type = 'MultiperspectivePerceptronTAGE8KB'
-    cxx_class = 'gem5::branch_prediction::MultiperspectivePerceptronTAGE8KB'
-    cxx_header = 'cpu/pred/multiperspective_perceptron_tage_8KB.hh'
+    type = "MultiperspectivePerceptronTAGE8KB"
+    cxx_class = "gem5::branch_prediction::MultiperspectivePerceptronTAGE8KB"
+    cxx_header = "cpu/pred/multiperspective_perceptron_tage_8KB.hh"
 
     budgetbits = 8192 * 8 + 2048
 
@@ -783,92 +988,118 @@ class MultiperspectivePerceptronTAGE8KB(MultiperspectivePerceptronTAGE):
     loop_predictor = MPP_LoopPredictor_8KB()
     statistical_corrector = MPP_StatisticalCorrector_8KB()
 
+
 class TimedStreamPredictor(SimObject):
-    type = 'TimedStreamPredictor'
-    cxx_class = 'gem5::branch_prediction::stream_pred::TimedStreamPredictor'
+    type = "TimedStreamPredictor"
+    cxx_class = "gem5::branch_prediction::stream_pred::TimedStreamPredictor"
     cxx_header = "cpu/pred/stream/timed_pred.hh"
+
 
 # class StreamPredictor(TimedStreamPredictor):
 #     type = 'StreamPredictor'
 #     cxx_class = 'gem5::branch_prediction::StreamPredictor'
 #     cxx_header = "cpu/pred/stream_pred.hh"
 
+
 class StreamUBTB(TimedStreamPredictor):
-    type = 'StreamUBTB'
-    cxx_class = 'gem5::branch_prediction::stream_pred::StreamUBTB'
+    type = "StreamUBTB"
+    cxx_class = "gem5::branch_prediction::stream_pred::StreamUBTB"
     cxx_header = "cpu/pred/stream/ubtb.hh"
 
+
 class StreamTAGE(TimedStreamPredictor):
-    type = 'StreamTAGE'
-    cxx_class = 'gem5::branch_prediction::stream_pred::StreamTAGE'
+    type = "StreamTAGE"
+    cxx_class = "gem5::branch_prediction::stream_pred::StreamTAGE"
     cxx_header = "cpu/pred/stream/modify_tage.hh"
 
     numPredictors = Param.Unsigned(16, "Number of TAGE predictors")
     tableSizes = VectorParam.Unsigned(
-        [4096, 4096] + [2048, 2048, 1024] + [512]*6 + [256]*5, "the ITTAGE T0~Tn length")
+        [4096, 4096] + [2048, 2048, 1024] + [512] * 6 + [256] * 5,
+        "the ITTAGE T0~Tn length",
+    )
     TTagBitSizes = VectorParam.Unsigned(
-        [0] + [9]*2 + [13]*8 + [15]*5, "the T0~Tn entry's tag bit size")
+        [0] + [9] * 2 + [13] * 8 + [15] * 5, "the T0~Tn entry's tag bit size"
+    )
     TTagPcShifts = VectorParam.Unsigned(
-        [1] * 20, "when the T0~Tn entry's tag generating, PC right shift")
+        [1] * 20, "when the T0~Tn entry's tag generating, PC right shift"
+    )
     # histLengths = VectorParam.Unsigned(
     #     [0, 6, 8, 12, 16, 18, 22, 26,
     #      36, 52, 76, 110, 156,
     #      226, 324, 464],
     #     "the Stream TAGE T0~Tn history length")
     histLengths = VectorParam.Unsigned(
-        [0, 12, 16, 24, 32, 36, 44, 52,
-         72, 104, 152, 220, 312,
-         452, 648, 928],
-        "the Stream TAGE T0~Tn history length")
+        [0, 12, 16, 24, 32, 36, 44, 52, 72, 104, 152, 220, 312, 452, 648, 928],
+        "the Stream TAGE T0~Tn history length",
+    )
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
-    numTablesToAlloc = Param.Unsigned(2, "The number of table to allocated each time")
+    numTablesToAlloc = Param.Unsigned(
+        2, "The number of table to allocated each time"
+    )
+
 
 class StreamLoopDetector(SimObject):
-    type = 'StreamLoopDetector'
-    cxx_class = 'gem5::branch_prediction::stream_pred::StreamLoopDetector'
+    type = "StreamLoopDetector"
+    cxx_class = "gem5::branch_prediction::stream_pred::StreamLoopDetector"
     cxx_header = "cpu/pred/stream/loop_detector.hh"
 
     maxLoopQueueSize = Param.Unsigned(128, "The max size of loop queue")
     tableSize = Param.Unsigned(256, "The size of loop table")
 
+
 class StreamLoopPredictor(SimObject):
-    type = 'StreamLoopPredictor'
-    cxx_class = 'gem5::branch_prediction::stream_pred::StreamLoopPredictor'
+    type = "StreamLoopPredictor"
+    cxx_class = "gem5::branch_prediction::stream_pred::StreamLoopPredictor"
     cxx_header = "cpu/pred/stream/stream_loop_predictor.hh"
 
     tableSize = Param.Unsigned(128, "The size of loop table")
 
+
 class DecoupledStreamBPU(BranchPredictor):
-    type = 'DecoupledStreamBPU'
-    cxx_class = 'gem5::branch_prediction::stream_pred::DecoupledStreamBPU'
+    type = "DecoupledStreamBPU"
+    cxx_class = "gem5::branch_prediction::stream_pred::DecoupledStreamBPU"
     cxx_header = "cpu/pred/stream/decoupled_bpred.hh"
 
     # stream_pred = Param.StreamPredictor(StreamPredictor(),
     # "backing stream predictor")
 
-    stream_tage = Param.StreamTAGE(StreamTAGE(), "slower but accurate stream predictor (L2)")
+    stream_tage = Param.StreamTAGE(
+        StreamTAGE(), "slower but accurate stream predictor (L2)"
+    )
     stream_ubtb = Param.StreamUBTB(StreamUBTB(), "fast stream predictor (L1)")
-    loop_detector = Param.StreamLoopDetector(StreamLoopDetector(), "loop detector")
-    stream_loop_predictor = Param.StreamLoopPredictor(StreamLoopPredictor(), "stream loop predictor")
+    loop_detector = Param.StreamLoopDetector(
+        StreamLoopDetector(), "loop detector"
+    )
+    stream_loop_predictor = Param.StreamLoopPredictor(
+        StreamLoopPredictor(), "stream loop predictor"
+    )
     maxHistLen = Param.Unsigned(970, "The length of history")
 
     ftq_size = Param.Unsigned(128, "Fetch target queue size")
-    dump_loop_pred = Param.Bool(False, "Dump loop detector/predictor related traces")
+    dump_loop_pred = Param.Bool(
+        False, "Dump loop detector/predictor related traces"
+    )
+
 
 class TimedBaseFTBPredictor(SimObject):
-    type = 'TimedBaseFTBPredictor'
-    cxx_class = 'gem5::branch_prediction::ftb_pred::TimedBaseFTBPredictor'
+    type = "TimedBaseFTBPredictor"
+    cxx_class = "gem5::branch_prediction::ftb_pred::TimedBaseFTBPredictor"
     cxx_header = "cpu/pred/ftb/timed_base_pred.hh"
 
-    numBr = Param.Unsigned(Parent.numBr, "Number of maximum branches per entry")
-    predictWidth = Param.Unsigned(Parent.predictWidth, "The width of prediction/fetch block")
+    numBr = Param.Unsigned(
+        Parent.numBr, "Number of maximum branches per entry"
+    )
+    predictWidth = Param.Unsigned(
+        Parent.predictWidth, "The width of prediction/fetch block"
+    )
     # subclass are encouraged to explicitly declare latency as numDelay
     numDelay = Param.Unsigned(1000, "Number of bubbles to put on a prediction")
 
+
 class DefaultFTB(TimedBaseFTBPredictor):
-    type = 'DefaultFTB'
-    cxx_class = 'gem5::branch_prediction::ftb_pred::DefaultFTB'
-    cxx_header = 'cpu/pred/ftb/ftb.hh'
+    type = "DefaultFTB"
+    cxx_class = "gem5::branch_prediction::ftb_pred::DefaultFTB"
+    cxx_header = "cpu/pred/ftb/ftb.hh"
 
     numEntries = Param.Unsigned(2048, "Number of entries in the FTB")
     tagBits = Param.Unsigned(20, "Number of bits in the tag")
@@ -877,66 +1108,90 @@ class DefaultFTB(TimedBaseFTBPredictor):
     numWays = Param.Unsigned(4, "Number of ways per set")
     numDelay = 1
 
+
 class UFTB(DefaultFTB):
     numEntries = 32
     tagBits = 38
     numWays = 32
     numDelay = 0
 
+
 class FTBRAS(TimedBaseFTBPredictor):
-    type = 'FTBRAS'
-    cxx_class = 'gem5::branch_prediction::ftb_pred::FTBRAS'
-    cxx_header = 'cpu/pred/ftb/ras.hh'
+    type = "FTBRAS"
+    cxx_class = "gem5::branch_prediction::ftb_pred::FTBRAS"
+    cxx_header = "cpu/pred/ftb/ras.hh"
 
     numEntries = Param.Unsigned(32, "Number of entries in the RAS")
     ctrWidth = Param.Unsigned(8, "Width of the counter")
     numInflightEntries = Param.Unsigned(384, "Number of inflight entries")
     numDelay = 1
 
+
 class FTBuRAS(TimedBaseFTBPredictor):
-    type = 'FTBuRAS'
-    cxx_class = 'gem5::branch_prediction::ftb_pred::FTBuRAS'
-    cxx_header = 'cpu/pred/ftb/uras.hh'
+    type = "FTBuRAS"
+    cxx_class = "gem5::branch_prediction::ftb_pred::FTBuRAS"
+    cxx_header = "cpu/pred/ftb/uras.hh"
 
     numEntries = Param.Unsigned(4, "Number of entries in the RAS")
     ctrWidth = Param.Unsigned(2, "Width of the counter")
     numDelay = 0
 
+
 class FTBTAGE(TimedBaseFTBPredictor):
-    type = 'FTBTAGE'
-    cxx_class = 'gem5::branch_prediction::ftb_pred::FTBTAGE'
+    type = "FTBTAGE"
+    cxx_class = "gem5::branch_prediction::ftb_pred::FTBTAGE"
     cxx_header = "cpu/pred/ftb/ftb_tage.hh"
 
     enableSC = Param.Bool(True, "Enable SC or not")
     numPredictors = Param.Unsigned(4, "Number of TAGE predictors")
     baseTableSize = Param.Unsigned(2048, "The FTB TAGE base table length")
-    tableSizes = VectorParam.Unsigned([2048]*4, "the FTB TAGE T0~Tn length")
-    TTagBitSizes = VectorParam.Unsigned([8]*4, "the T0~Tn entry's tag bit size")
-    TTagPcShifts = VectorParam.Unsigned([1] * 4, "when the T0~Tn entry's tag generating, PC right shift")
+    tableSizes = VectorParam.Unsigned([2048] * 4, "the FTB TAGE T0~Tn length")
+    TTagBitSizes = VectorParam.Unsigned(
+        [8] * 4, "the T0~Tn entry's tag bit size"
+    )
+    TTagPcShifts = VectorParam.Unsigned(
+        [1] * 4, "when the T0~Tn entry's tag generating, PC right shift"
+    )
 
-    histLengths = VectorParam.Unsigned([8, 13, 32, 119], "the FTB TAGE T0~Tn history length")
+    histLengths = VectorParam.Unsigned(
+        [8, 13, 32, 119], "the FTB TAGE T0~Tn history length"
+    )
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
-    numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
+    numTablesToAlloc = Param.Unsigned(
+        1, "The number of table to allocated each time"
+    )
     numDelay = 1
 
+
 class FTBITTAGE(TimedBaseFTBPredictor):
-    type = 'FTBITTAGE'
-    cxx_class = 'gem5::branch_prediction::ftb_pred::FTBITTAGE'
+    type = "FTBITTAGE"
+    cxx_class = "gem5::branch_prediction::ftb_pred::FTBITTAGE"
     cxx_header = "cpu/pred/ftb/ftb_ittage.hh"
 
     numPredictors = Param.Unsigned(5, "Number of TAGE predictors")
-    tableSizes = VectorParam.Unsigned([256]*2 + [512]*3, "the ITTAGE T0~Tn length")
-    TTagBitSizes = VectorParam.Unsigned([9]*5, "the T0~Tn entry's tag bit size")
-    TTagPcShifts = VectorParam.Unsigned([1] * 5, "when the T0~Tn entry's tag generating, PC right shift")
+    tableSizes = VectorParam.Unsigned(
+        [256] * 2 + [512] * 3, "the ITTAGE T0~Tn length"
+    )
+    TTagBitSizes = VectorParam.Unsigned(
+        [9] * 5, "the T0~Tn entry's tag bit size"
+    )
+    TTagPcShifts = VectorParam.Unsigned(
+        [1] * 5, "when the T0~Tn entry's tag generating, PC right shift"
+    )
 
-    histLengths = VectorParam.Unsigned([4, 8, 13, 16, 32], "the FTB TAGE T0~Tn history length")
+    histLengths = VectorParam.Unsigned(
+        [4, 8, 13, 16, 32], "the FTB TAGE T0~Tn history length"
+    )
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
-    numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
+    numTablesToAlloc = Param.Unsigned(
+        1, "The number of table to allocated each time"
+    )
     numDelay = 2
 
+
 class DecoupledBPUWithFTB(BranchPredictor):
-    type = 'DecoupledBPUWithFTB'
-    cxx_class = 'gem5::branch_prediction::ftb_pred::DecoupledBPUWithFTB'
+    type = "DecoupledBPUWithFTB"
+    cxx_class = "gem5::branch_prediction::ftb_pred::DecoupledBPUWithFTB"
     cxx_header = "cpu/pred/ftb/decoupled_bpred.hh"
 
     # n = 2
@@ -953,68 +1208,97 @@ class DecoupledBPUWithFTB(BranchPredictor):
     ras = Param.FTBRAS(FTBRAS(), "RAS")
     uras = Param.FTBuRAS(FTBuRAS(), "uRAS")
 
-    bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
-    enableLoopBuffer = Param.Bool(False, "Enable loop buffer to supply inst for loops")
-    enableLoopPredictor = Param.Bool(False, "Use loop predictor to predict loop exit")
-    enableJumpAheadPredictor = Param.Bool(False, "Use jump ahead predictor to skip no-need-to-predict blocks")
-    enableTwoTaken = Param.Bool(False, "Enable predicting two taken blocks per cycle")
+    bpDBSwitches = VectorParam.String(
+        [], "Enable which traces in the form of database"
+    )
+    enableLoopBuffer = Param.Bool(
+        False, "Enable loop buffer to supply inst for loops"
+    )
+    enableLoopPredictor = Param.Bool(
+        False, "Use loop predictor to predict loop exit"
+    )
+    enableJumpAheadPredictor = Param.Bool(
+        False, "Use jump ahead predictor to skip no-need-to-predict blocks"
+    )
+    enableTwoTaken = Param.Bool(
+        False, "Enable predicting two taken blocks per cycle"
+    )
+
 
 class SMTFTQMode(ScopedEnum):
-    vals = [ 'Independent', 'Shared' ]
+    vals = ["Independent", "Shared"]
+
 
 class SMTFTQPolicy(ScopedEnum):
-    vals = [ 'Dynamic', 'Partitioned', 'Threshold' ]
+    vals = ["Dynamic", "Partitioned", "Threshold"]
+
 
 class TrainingStage(ScopedEnum):
-    vals = [ 'Commit', 'Resolve' ]
+    vals = ["Commit", "Resolve"]
+
 
 class TimedBaseBTBPredictor(SimObject):
-    type = 'TimedBaseBTBPredictor'
-    cxx_class = 'gem5::branch_prediction::btb_pred::TimedBaseBTBPredictor'
+    type = "TimedBaseBTBPredictor"
+    cxx_class = "gem5::branch_prediction::btb_pred::TimedBaseBTBPredictor"
     cxx_header = "cpu/pred/btb/timed_base_pred.hh"
 
     # TODO: parametrize numBr and numDelay
     blockSize = Param.Unsigned(Parent.predictWidth, "Block size in bytes")
-    predictWidth = Param.Unsigned(Parent.predictWidth, "Maximum range in bytes that a single prediction can cover")
+    predictWidth = Param.Unsigned(
+        Parent.predictWidth,
+        "Maximum range in bytes that a single prediction can cover",
+    )
     numDelay = Param.Unsigned(1000, "Number of bubbles to put on a prediction")
     trainingStage = Param.TrainingStage(
-        'Commit', "Pipeline stage that supplies actual outcomes for training")
+        "Commit", "Pipeline stage that supplies actual outcomes for training"
+    )
     enabled = Param.Bool(True, "Enable this predictor component")
     smtTidPartitioned = Param.Bool(
-        False,
-        "Partition predictor storage equally by tid in SMT mode")
+        False, "Partition predictor storage equally by tid in SMT mode"
+    )
+
 
 class MBTB(TimedBaseBTBPredictor):
-    type = 'MBTB'
-    cxx_class = 'gem5::branch_prediction::btb_pred::MBTB'
-    cxx_header = 'cpu/pred/btb/mbtb.hh'
+    type = "MBTB"
+    cxx_class = "gem5::branch_prediction::btb_pred::MBTB"
+    cxx_header = "cpu/pred/btb/mbtb.hh"
 
     numEntries = Param.Unsigned(8192, "Number of entries in the MBTB")
     tagBits = Param.Unsigned(16, "Number of bits in the tag")
-    numWays = Param.Unsigned(4, "Number of ways per set") # for 2 SRAMs, 4 ways per SRAM
+    numWays = Param.Unsigned(
+        4, "Number of ways per set"
+    )  # for 2 SRAMs, 4 ways per SRAM
     numDelay = 1
     blockSize = 32  # max 64 byte block, 32 byte aligned
     # MBTB is always half-aligned - no parameter needed
-    victimCacheSize = Param.Unsigned(0, "Number of entries in the victim cache")
+    victimCacheSize = Param.Unsigned(
+        0, "Number of entries in the victim cache"
+    )
+
 
 class AheadBTB(TimedBaseBTBPredictor):
-    type = 'AheadBTB'
-    cxx_class = 'gem5::branch_prediction::btb_pred::AheadBTB'
-    cxx_header = 'cpu/pred/btb/abtb.hh'
+    type = "AheadBTB"
+    cxx_class = "gem5::branch_prediction::btb_pred::AheadBTB"
+    cxx_header = "cpu/pred/btb/abtb.hh"
 
     numEntries = Param.Unsigned(1024, "Number of entries in the BTB")
     tagBits = Param.Unsigned(24, "Number of bits in the tag")
     numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
     numWays = Param.Unsigned(4, "Number of ways per set")
-    aheadPipelinedStages = Param.Unsigned(1, "Number of stages ahead pipelined")
+    aheadPipelinedStages = Param.Unsigned(
+        1, "Number of stages ahead pipelined"
+    )
     blockSize = 64
     numDelay = 0
-    usingS3Pred = Param.Bool(True, "Whether using S3 predictor to update AheadBTB")
+    usingS3Pred = Param.Bool(
+        True, "Whether using S3 predictor to update AheadBTB"
+    )
+
 
 class UBTB(TimedBaseBTBPredictor):
-    type = 'UBTB'
-    cxx_class = 'gem5::branch_prediction::btb_pred::UBTB'
-    cxx_header = 'cpu/pred/btb/btb_ubtb.hh'
+    type = "UBTB"
+    cxx_class = "gem5::branch_prediction::btb_pred::UBTB"
+    cxx_header = "cpu/pred/btb/btb_ubtb.hh"
 
     numEntries = Param.Unsigned(32, "Number of entries in the uBTB")
     tagBits = Param.Unsigned(22, "Number of bits in the tag")
@@ -1025,9 +1309,9 @@ class UBTB(TimedBaseBTBPredictor):
 
 
 class BTBRAS(TimedBaseBTBPredictor):
-    type = 'BTBRAS'
-    cxx_class = 'gem5::branch_prediction::btb_pred::BTBRAS'
-    cxx_header = 'cpu/pred/btb/ras.hh'
+    type = "BTBRAS"
+    cxx_class = "gem5::branch_prediction::btb_pred::BTBRAS"
+    cxx_header = "cpu/pred/btb/ras.hh"
 
     numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
     numEntries = Param.Unsigned(16, "Number of entries in the RAS")
@@ -1035,128 +1319,204 @@ class BTBRAS(TimedBaseBTBPredictor):
     numInflightEntries = Param.Unsigned(32, "Number of inflight entries")
     numDelay = 2
 
+
 class BTBuRAS(TimedBaseBTBPredictor):
-    type = 'BTBuRAS'
-    cxx_class = 'gem5::branch_prediction::btb_pred::BTBuRAS'
-    cxx_header = 'cpu/pred/btb/uras.hh'
+    type = "BTBuRAS"
+    cxx_class = "gem5::branch_prediction::btb_pred::BTBuRAS"
+    cxx_header = "cpu/pred/btb/uras.hh"
 
     numEntries = Param.Unsigned(4, "Number of entries in the RAS")
     ctrWidth = Param.Unsigned(2, "Width of the counter")
     numDelay = 0
 
+
 class BTBTAGE(TimedBaseBTBPredictor):
-    type = 'BTBTAGE'
-    cxx_class = 'gem5::branch_prediction::btb_pred::BTBTAGE'
+    type = "BTBTAGE"
+    cxx_class = "gem5::branch_prediction::btb_pred::BTBTAGE"
     cxx_header = "cpu/pred/btb/btb_tage.hh"
 
-    usePathHistory = Param.Bool(True, "Use PHR-based folded history; false selects GHR-based folded history")
-    enableSC = Param.Bool(False, "Enable SC or not")    # TODO: BTBTAGE doesn't support SC
-    updateOnRead = Param.Bool(False, "Enable update on read, no need to save tage meta in FTQ")
+    usePathHistory = Param.Bool(
+        True,
+        "Use PHR-based folded history; false selects GHR-based folded history",
+    )
+    enableSC = Param.Bool(
+        False, "Enable SC or not"
+    )  # TODO: BTBTAGE doesn't support SC
+    updateOnRead = Param.Bool(
+        False, "Enable update on read, no need to save tage meta in FTQ"
+    )
     numPredictors = Param.Unsigned(8, "Number of TAGE predictors")
-    tableSizes = VectorParam.Unsigned([2048, 2048, 2048, 2048, 2048, 2048, 2048,2048],"the TAGE T0~Tn length")
-    TTagBitSizes = VectorParam.Unsigned([13] * 8, "the T0~Tn entry's tag bit size")
-    TTagPcShifts = VectorParam.Unsigned([1] * 8, "when the T0~Tn entry's tag generating, PC right shift")
-    blockSize = 32 # tage index function uses 32B aligned block address
+    tableSizes = VectorParam.Unsigned(
+        [2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048],
+        "the TAGE T0~Tn length",
+    )
+    TTagBitSizes = VectorParam.Unsigned(
+        [13] * 8, "the T0~Tn entry's tag bit size"
+    )
+    TTagPcShifts = VectorParam.Unsigned(
+        [1] * 8, "when the T0~Tn entry's tag generating, PC right shift"
+    )
+    blockSize = 32  # tage index function uses 32B aligned block address
 
-    histLengths = VectorParam.Unsigned([4, 9, 17, 29, 56, 109, 211,397],"the BTB TAGE T0~Tn history length")
+    histLengths = VectorParam.Unsigned(
+        [4, 9, 17, 29, 56, 109, 211, 397], "the BTB TAGE T0~Tn history length"
+    )
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
-    numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
-    numWays = VectorParam.Unsigned([2] * 8,"the T0~Tn number of ways per set")
-    maxBranchPositions = Param.Unsigned(32, "Maximum branch positions per 64-byte block")
+    numTablesToAlloc = Param.Unsigned(
+        1, "The number of table to allocated each time"
+    )
+    numWays = VectorParam.Unsigned([2] * 8, "the T0~Tn number of ways per set")
+    maxBranchPositions = Param.Unsigned(
+        32, "Maximum branch positions per 64-byte block"
+    )
     useAltOnNaSize = Param.Unsigned(128, "Size of the useAltOnNa table")
     useAltOnNaWidth = Param.Unsigned(7, "Width of the useAltOnNa table")
-    numBanks = Param.Unsigned(4, "Number of banks for bank conflict simulation")
+    numBanks = Param.Unsigned(
+        4, "Number of banks for bank conflict simulation"
+    )
     enableBankConflict = Param.Bool(False, "Enable bank conflict simulation")
     numDelay = 1
 
+
 class BTBTAGEUpperBound(BTBTAGE):
-    type = 'BTBTAGEUpperBound'
-    cxx_class = 'gem5::branch_prediction::btb_pred::BTBTAGEUpperBound'
+    type = "BTBTAGEUpperBound"
+    cxx_class = "gem5::branch_prediction::btb_pred::BTBTAGEUpperBound"
     cxx_header = "cpu/pred/btb/btb_tage_ub.hh"
 
     updateOnRead = False
     usePathHashHistory = Param.Bool(
-        False, "Use exact path-hash history instead of exact outcome history")
+        False, "Use exact path-hash history instead of exact outcome history"
+    )
+
 
 class MicroTAGE(TimedBaseBTBPredictor):
     """Micro-sized BTB TAGE predictor used alongside uBTB"""
-    type = 'MicroTAGE'
-    cxx_class = 'gem5::branch_prediction::btb_pred::MicroTAGE'
+
+    type = "MicroTAGE"
+    cxx_class = "gem5::branch_prediction::btb_pred::MicroTAGE"
     cxx_header = "cpu/pred/btb/microtage.hh"
 
-    updateOnRead = Param.Bool(True,"Enable update on read, no need to save tage meta in FTQ")
-    usingS3Pred = Param.Bool(False, "Whether using final-stage prediction to teacher-update MicroTAGE")
+    updateOnRead = Param.Bool(
+        True, "Enable update on read, no need to save tage meta in FTQ"
+    )
+    usingS3Pred = Param.Bool(
+        False,
+        "Whether using final-stage prediction to teacher-update MicroTAGE",
+    )
     # Keep vector parameters consistent with numPredictors to avoid constructor asserts.
     numPredictors = Param.Unsigned(2, "Number of TAGE predictors")
-    tableSizes = VectorParam.Unsigned([512] * 2,"the TAGE T0~Tn length")
-    TTagBitSizes = VectorParam.Unsigned([16] * 2 ,"the T0~Tn entry's tag bit size")
-    TTagPcShifts = VectorParam.Unsigned([1] * 2 ,"when the T0~Tn entry's tag generating, PC right shift")
+    tableSizes = VectorParam.Unsigned([512] * 2, "the TAGE T0~Tn length")
+    TTagBitSizes = VectorParam.Unsigned(
+        [16] * 2, "the T0~Tn entry's tag bit size"
+    )
+    TTagPcShifts = VectorParam.Unsigned(
+        [1] * 2, "when the T0~Tn entry's tag generating, PC right shift"
+    )
     blockSize = 32  # Override the inherited parameter without shadowing it.
 
-    histLengths = VectorParam.Unsigned([5,9] ,"the BTB TAGE T0~Tn history length")
-    maxHistLen = Param.Unsigned(970,"The length of history passed from DBP")
+    histLengths = VectorParam.Unsigned(
+        [5, 9], "the BTB TAGE T0~Tn history length"
+    )
+    maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
     numWays = Param.Unsigned(1, "Number of ways per set")
-    maxBranchPositions = Param.Unsigned(32,"Maximum branch positions per 64-byte block")
-    numBanks = Param.Unsigned(4,"Number of banks for bank conflict simulation")
-    enableBankConflict = Param.Bool(False,"Enable bank conflict simulation")
+    maxBranchPositions = Param.Unsigned(
+        32, "Maximum branch positions per 64-byte block"
+    )
+    numBanks = Param.Unsigned(
+        4, "Number of banks for bank conflict simulation"
+    )
+    enableBankConflict = Param.Bool(False, "Enable bank conflict simulation")
     numDelay = 0
+
 
 class PairTAGE(TimedBaseBTBPredictor):
     """Pair-aware MicroTAGE storage skeleton for two-block emissions."""
-    type = 'PairTAGE'
-    cxx_class = 'gem5::branch_prediction::btb_pred::PairTAGE'
+
+    type = "PairTAGE"
+    cxx_class = "gem5::branch_prediction::btb_pred::PairTAGE"
     cxx_header = "cpu/pred/btb/pairtage.hh"
 
     numPredictors = Param.Unsigned(4, "Number of TAGE predictors")
-    tableSizes = VectorParam.Unsigned([8192] * 4,"the TAGE T0~Tn length")
-    TTagBitSizes = VectorParam.Unsigned([16] * 4 ,"the T0~Tn entry's tag bit size")
-    TTagPcShifts = VectorParam.Unsigned([1] * 4 ,"when the T0~Tn entry's tag generating, PC right shift")
+    tableSizes = VectorParam.Unsigned([8192] * 4, "the TAGE T0~Tn length")
+    TTagBitSizes = VectorParam.Unsigned(
+        [16] * 4, "the T0~Tn entry's tag bit size"
+    )
+    TTagPcShifts = VectorParam.Unsigned(
+        [1] * 4, "when the T0~Tn entry's tag generating, PC right shift"
+    )
 
-    histLengths = VectorParam.Unsigned([5,9,17,27] ,"the BTB TAGE T0~Tn history length")
-    numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
+    histLengths = VectorParam.Unsigned(
+        [5, 9, 17, 27], "the BTB TAGE T0~Tn history length"
+    )
+    numTablesToAlloc = Param.Unsigned(
+        1, "The number of table to allocated each time"
+    )
     numWays = Param.Unsigned(2, "Number of ways per set")
-    enableSecondBlock = Param.Bool(True, "Enable PairTAGE second-block emission and training")
+    enableSecondBlock = Param.Bool(
+        True, "Enable PairTAGE second-block emission and training"
+    )
     allowOddPhase = Param.Bool(
         True,
-        "Allow PairTAGE predict/train/second-block paths to operate on odd pair phase")
+        "Allow PairTAGE predict/train/second-block paths to operate on odd pair phase",
+    )
     trainStandaloneFallThrough = Param.Bool(
         True,
-        "Allow PairTAGE to train fallthrough first blocks even when no valid second block exists")
+        "Allow PairTAGE to train fallthrough first blocks even when no valid second block exists",
+    )
     numDelay = 2
     enabled = False
 
+
 class BTBITTAGE(TimedBaseBTBPredictor):
-    type = 'BTBITTAGE'
-    cxx_class = 'gem5::branch_prediction::btb_pred::BTBITTAGE'
+    type = "BTBITTAGE"
+    cxx_class = "gem5::branch_prediction::btb_pred::BTBITTAGE"
     cxx_header = "cpu/pred/btb/btb_ittage.hh"
 
     numPredictors = Param.Unsigned(5, "Number of TAGE predictors")
-    tableSizes = VectorParam.Unsigned([256]*2 + [512]*3, "the ITTAGE T0~Tn length")
-    TTagBitSizes = VectorParam.Unsigned([9]*5, "the T0~Tn entry's tag bit size")
-    TTagPcShifts = VectorParam.Unsigned([1] * 5, "when the T0~Tn entry's tag generating, PC right shift")
-    blockSize = 32 # ittage index function uses 32B aligned block address
+    tableSizes = VectorParam.Unsigned(
+        [256] * 2 + [512] * 3, "the ITTAGE T0~Tn length"
+    )
+    TTagBitSizes = VectorParam.Unsigned(
+        [9] * 5, "the T0~Tn entry's tag bit size"
+    )
+    TTagPcShifts = VectorParam.Unsigned(
+        [1] * 5, "when the T0~Tn entry's tag generating, PC right shift"
+    )
+    blockSize = 32  # ittage index function uses 32B aligned block address
 
-    histLengths = VectorParam.Unsigned([4, 8, 13, 16, 32], "the BTB TAGE T0~Tn history length")
+    histLengths = VectorParam.Unsigned(
+        [4, 8, 13, 16, 32], "the BTB TAGE T0~Tn history length"
+    )
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
-    numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
+    numTablesToAlloc = Param.Unsigned(
+        1, "The number of table to allocated each time"
+    )
     numDelay = 2
 
+
 class BTBMGSC(TimedBaseBTBPredictor):
-    type = 'BTBMGSC'
-    cxx_class = 'gem5::branch_prediction::btb_pred::BTBMGSC'
+    type = "BTBMGSC"
+    cxx_class = "gem5::branch_prediction::btb_pred::BTBMGSC"
     cxx_header = "cpu/pred/btb/btb_mgsc.hh"
 
     bwTableNum = Param.Unsigned(2, "Num global backward branch GEHL tables")
-    bwHistLen = VectorParam.Int([4, 8], "Global backward branch GEHL history lengths")
-    bwTableIdxWidth = Param.Unsigned(11,
-            "Log num of global backward branch GEHL entries")
+    bwHistLen = VectorParam.Int(
+        [4, 8], "Global backward branch GEHL history lengths"
+    )
+    bwTableIdxWidth = Param.Unsigned(
+        11, "Log num of global backward branch GEHL entries"
+    )
 
-    numEntriesFirstLocalHistories = Param.Unsigned(32,
-        "Number of entries for first local histories")
+    numEntriesFirstLocalHistories = Param.Unsigned(
+        32, "Number of entries for first local histories"
+    )
     lTableNum = Param.Unsigned(2, "Num first local history GEHL tables")
-    lHistLen = VectorParam.Int([4, 8], "First local history GEHL history lengths")
-    lTableIdxWidth = Param.Unsigned(11,
-            "Log number of first local history GEHL entries")
+    lHistLen = VectorParam.Int(
+        [4, 8], "First local history GEHL history lengths"
+    )
+    lTableIdxWidth = Param.Unsigned(
+        11, "Log number of first local history GEHL entries"
+    )
 
     iTableNum = Param.Unsigned(1, "Num IMLI GEHL tables")
     iHistLen = VectorParam.Int([8], "IMLI history GEHL history lengths")
@@ -1164,40 +1524,50 @@ class BTBMGSC(TimedBaseBTBPredictor):
 
     gTableNum = Param.Unsigned(2, "Num global branch GEHL tables")
     gHistLen = VectorParam.Int([8, 16], "Global branch GEHL history lengths")
-    gTableIdxWidth = Param.Unsigned(11, "Log number of global branch GEHL entries")
+    gTableIdxWidth = Param.Unsigned(
+        11, "Log number of global branch GEHL entries"
+    )
 
     pTableNum = Param.Unsigned(2, "Num global branch path history tables")
     pHistLen = VectorParam.Int([8, 16], "Global branch path history lengths")
-    pTableIdxWidth = Param.Unsigned(11,
-                    "Log number of global branch path history entries")
+    pTableIdxWidth = Param.Unsigned(
+        11, "Log number of global branch path history entries"
+    )
 
     biasTableNum = Param.Unsigned(1, "Num bias tables")
     biasTableIdxWidth = Param.Unsigned(11, "Log number of bias entries")
 
-    thresholdTablelogSize = Param.Unsigned(6,
-        "Log size of update threshold counters tables")
+    thresholdTablelogSize = Param.Unsigned(
+        6, "Log size of update threshold counters tables"
+    )
 
-    updateThresholdWidth = Param.Unsigned(12,
-        "Number of bits for the update threshold counter")
+    updateThresholdWidth = Param.Unsigned(
+        12, "Number of bits for the update threshold counter"
+    )
 
-    pUpdateThresholdWidth = Param.Unsigned(8,
-        "Number of bits for the pUpdate threshold counters")
+    pUpdateThresholdWidth = Param.Unsigned(
+        8, "Number of bits for the pUpdate threshold counters"
+    )
 
-    extraWeightsWidth = Param.Unsigned(6,
-        "Number of bits for the extra weights")
+    extraWeightsWidth = Param.Unsigned(
+        6, "Number of bits for the extra weights"
+    )
 
     scCountersWidth = Param.Unsigned(6, "Statistical corrector counters width")
 
-    weightTableIdxWidth = Param.Unsigned(5,
-        "Log size of weight table")
+    weightTableIdxWidth = Param.Unsigned(5, "Log size of weight table")
 
     # How many counters readed per prediction (usually per cycle)
     numCtrsPerLine = Param.Unsigned(8, "Counters per SRAM line")
 
     # Test switches for SC tables
-    forceUseSC = Param.Bool(False, "Force use SC prediction, ignore TAGE confidence")
+    forceUseSC = Param.Bool(
+        False, "Force use SC prediction, ignore TAGE confidence"
+    )
     allowMissingTageInfo = Param.Bool(
-        False, "Allow MGSC to run with default TAGE metadata when TAGE info is unavailable")
+        False,
+        "Allow MGSC to run with default TAGE metadata when TAGE info is unavailable",
+    )
     enableBwTable = Param.Bool(True, "Enable BW (backward) table")
     enableLTable = Param.Bool(False, "Enable L (local) table")
     enableITable = Param.Bool(True, "Enable I (IMLI) table")
@@ -1205,32 +1575,42 @@ class BTBMGSC(TimedBaseBTBPredictor):
     enablePTable = Param.Bool(True, "Enable P (path) table")
     enableBiasTable = Param.Bool(True, "Enable Bias table")
     enablePCThreshold = Param.Bool(False, "Enable PC-indexed threshold table")
-    focusBranchPC = Param.Addr(0, "Only write MGSCTRACE for this branch PC when non-zero")
+    focusBranchPC = Param.Addr(
+        0, "Only write MGSCTRACE for this branch PC when non-zero"
+    )
 
     numDelay = 2
 
+
 class DecoupledBPUWithBTB(BranchPredictor):
-    type = 'DecoupledBPUWithBTB'
-    cxx_class = 'gem5::branch_prediction::btb_pred::DecoupledBPUWithBTB'
+    type = "DecoupledBPUWithBTB"
+    cxx_class = "gem5::branch_prediction::btb_pred::DecoupledBPUWithBTB"
     cxx_header = "cpu/pred/btb/decoupled_bpred.hh"
 
     # n = 2
     ftq_size = Param.Unsigned(128, "Fetch target queue size")
-    smtFTQMode = Param.SMTFTQMode('Independent',
-                                  "SMT FTQ mode: per-thread independent or shared quota")
-    smtFTQPolicy = Param.SMTFTQPolicy('Partitioned',
-                                      "SMT shared FTQ allocation policy")
+    smtFTQMode = Param.SMTFTQMode(
+        "Independent", "SMT FTQ mode: per-thread independent or shared quota"
+    )
+    smtFTQPolicy = Param.SMTFTQPolicy(
+        "Partitioned", "SMT shared FTQ allocation policy"
+    )
     smtFTQThreshold = Param.Int(100, "SMT FTQ Threshold Sharing Parameter")
     smtNumPredictingThreads = Param.Unsigned(
-        1, "Maximum number of distinct SMT threads predicted per cycle")
+        1, "Maximum number of distinct SMT threads predicted per cycle"
+    )
     fsq_size = Param.Unsigned(64, "Fetch stream queue size")
     maxHistLen = Param.Unsigned(970, "The length of history")
 
-    predictWidth = Param.Unsigned(64, "Maximum range in bytes that a single prediction can cover")
+    predictWidth = Param.Unsigned(
+        64, "Maximum range in bytes that a single prediction can cover"
+    )
     numStages = Param.Unsigned(4, "Maximum number of stages in the pipeline")
     ubtb = Param.UBTB(UBTB(), "UBTB predictor")
     abtb = Param.AheadBTB(AheadBTB(), "ABTB predictor")
-    microtage = Param.MicroTAGE(MicroTAGE(), "MicroTAGE predictor to assist uBTB")
+    microtage = Param.MicroTAGE(
+        MicroTAGE(), "MicroTAGE predictor to assist uBTB"
+    )
     mbtb = Param.MBTB(MBTB(), "MBTB predictor")
     tage = Param.BTBTAGE(BTBTAGE(), "TAGE predictor")
     ittage = Param.BTBITTAGE(BTBITTAGE(), "ITTAGE predictor")
@@ -1238,5 +1618,14 @@ class DecoupledBPUWithBTB(BranchPredictor):
     ras = Param.BTBRAS(BTBRAS(), "RAS")
     pairtage = Param.PairTAGE(PairTAGE(), "PairTAGE predictor")
 
-    bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
-    resolveBlockThreshold = Param.Unsigned(8, "Consecutive resolve dequeue failures before blocking prediction once")
+    bpDBSwitches = VectorParam.String(
+        [], "Enable which traces in the form of database"
+    )
+    resolveBlockThreshold = Param.Unsigned(
+        8,
+        "Consecutive resolve dequeue failures before blocking prediction once",
+    )
+    enableContextFlush = Param.Bool(False, "Enable BPU context flush modeling")
+    flushLatency = Param.Cycles(
+        516, "Aggregate BPU context flush stall latency"
+    )

@@ -28,11 +28,11 @@
 
 /*
  * Main BTB (MBTB) Implementation
- * 
+ *
  * The MBTB is a half-aligned BTB that covers 64-byte blocks:
  * - Queries two consecutive 32-byte aligned blocks
  * - Fixed half-aligned behavior (no entryHalfAligned parameter)
- * - 8-way set associative organization  
+ * - 8-way set associative organization
  * - MRU (Most Recently Used) replacement policy
  * - Support for multiple branch types
  */
@@ -84,7 +84,7 @@ class MBTB : public TimedBaseBTBPredictor
   public:
 
 #ifdef UNIT_TEST
-    // Test constructor  
+    // Test constructor
     MBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned numDelay);
 #else
     // Production constructor
@@ -133,12 +133,15 @@ class MBTB : public TimedBaseBTBPredictor
     TraceManager *btbTrace;
 #endif
 
+    void flushState() override;
+    void resetSpeculativeState() override;
+
     /*
      * Main prediction function
      * @param startAddr: start address of the fetch block
      * @param history: branch history register
      * @param stagePreds: predictions for each pipeline stage
-     * 
+     *
      * This function:
      * 1. Looks up BTB entries for the fetch block
      * 2. Updates prediction statistics
@@ -258,7 +261,7 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param startAddr Start address of the fetch block
      *  @return Vector of processed entries in program order
      */
-    std::vector<TickedBTBEntry> processEntries(const std::vector<TickedBTBEntry>& entries, 
+    std::vector<TickedBTBEntry> processEntries(const std::vector<TickedBTBEntry>& entries,
                                               Addr startAddr);
     std::vector<TickedBTBEntry> processEntriesNoSideEffect(
         const std::vector<TickedBTBEntry>& entries, Addr startAddr) const;
@@ -331,8 +334,8 @@ class MBTB : public TimedBaseBTBPredictor
 
     /**
      * @brief check if the entries in the vector are in ascending order, means the pc is in ascending order
-     * 
-     * @param es 
+     *
+     * @param es
      */
     void checkAscending(std::vector<BTBEntry> &es) {
         Addr last = 0;
@@ -402,7 +405,7 @@ class MBTB : public TimedBaseBTBPredictor
     unsigned numEntries;    // Total number of entries
     unsigned numWays;       // Number of ways per SRAM (4 for dual-SRAM)
     unsigned numSets;       // Number of sets per SRAM (numEntries/numWays/2)
-    
+
     /** SRAM selection helper function */
     inline int getSRAMId(Addr pc) const {
         // Use the bit after block offset to select SRAM

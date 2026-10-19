@@ -135,12 +135,15 @@ class AheadBTB : public TimedBaseBTBPredictor
     TraceManager *btbTrace;
 #endif
 
+    void flushState() override;
+    void resetSpeculativeState() override;
+
     /*
      * Main prediction function
      * @param startAddr: start address of the fetch block
      * @param history: branch history register
      * @param stagePreds: predictions for each pipeline stage
-     * 
+     *
      * This function:
      * 1. Looks up BTB entries for the fetch block
      * 2. Updates prediction statistics
@@ -331,7 +334,7 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param startAddr Start address of the fetch block
      *  @return Vector of processed entries in program order
      */
-    std::vector<TickedBTBEntry> processEntries(const std::vector<TickedBTBEntry>& entries, 
+    std::vector<TickedBTBEntry> processEntries(const std::vector<TickedBTBEntry>& entries,
                                               Addr startAddr);
     std::vector<TickedBTBEntry> processEntriesNoSideEffect(
         const std::vector<TickedBTBEntry>& entries, Addr startAddr) const;
@@ -399,8 +402,8 @@ class AheadBTB : public TimedBaseBTBPredictor
 
     /**
      * @brief check if the entries in the vector are in ascending order, means the pc is in ascending order
-     * 
-     * @param es 
+     *
+     * @param es
      */
     void checkAscending(std::vector<BTBEntry> &es) {
         Addr last = 0;

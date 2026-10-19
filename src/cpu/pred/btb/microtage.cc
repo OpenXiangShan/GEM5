@@ -139,6 +139,39 @@ MicroTAGE::~MicroTAGE()
 {
 }
 
+void
+MicroTAGE::flushState()
+{
+    for (auto &table : tageTable) {
+        for (auto &set : table) {
+            std::fill(set.begin(), set.end(), TageEntry());
+        }
+    }
+    usefulResetCnt = 0;
+    resetSpeculativeState();
+}
+
+void
+MicroTAGE::resetSpeculativeState()
+{
+    lastPredBankId = 0;
+    predBankValid = false;
+    threadHistory.assign(MaxThreads, ThreadHistoryState());
+    for (unsigned i = 0; i < numPredictors; ++i) {
+        for (auto &state : threadHistory) {
+            state.tagFoldedHist.emplace_back(
+                histLengths[i], tableTagBits[i], 16);
+            state.altTagFoldedHist.emplace_back(
+                histLengths[i], tableTagBits[i] - 1, 16);
+            state.indexFoldedHist.emplace_back(
+                histLengths[i], tableIndexBits[i], 16);
+        }
+    }
+    for (auto &meta : threadMeta) {
+        meta = std::make_shared<TageMeta>();
+    }
+}
+
 ThreadID
 MicroTAGE::predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const
 {

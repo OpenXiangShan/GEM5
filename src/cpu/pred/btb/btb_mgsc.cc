@@ -42,26 +42,26 @@ namespace test
 void
 BTBMGSC::initStorage()
 {
+    threadHistory.assign(MaxThreads, ThreadHistoryState());
+    threadMeta.assign(MaxThreads, nullptr);
     auto pow2 = [](unsigned width) -> uint64_t {
         assert(width < 63);
         return 1ULL << width;
     };
     auto allocPredTable = [&](std::vector<std::vector<std::vector<int16_t>>> &table, unsigned numTables,
                               unsigned idxWidth) -> uint64_t {
-        table.resize(numTables);
+        table.assign(numTables, {});
         auto tableSize = pow2(idxWidth);
         assert(tableSize > numCtrsPerLine);
         for (unsigned int i = 0; i < numTables; ++i) {
-            table[i].resize(tableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
+            table[i].assign(tableSize / numCtrsPerLine,
+                            std::vector<int16_t>(numCtrsPerLine, 0));
         }
         return tableSize;
     };
 
     assert(isPowerOf2(numCtrsPerLine));
     numCtrsPerLineBits = log2i(numCtrsPerLine);
-
-    threadHistory.resize(MaxThreads);
-    threadMeta.resize(MaxThreads);
 
     auto bwTableSize = allocPredTable(bwTable, bwTableNum, bwTableIdxWidth);
     for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
@@ -72,7 +72,7 @@ BTBMGSC::initStorage()
                     bwTableIdxWidth - numCtrsPerLineBits), 16);
         }
     }
-    bwIndex.resize(bwTableNum);
+    bwIndex.assign(bwTableNum, 0);
 
     auto lTableSize = allocPredTable(lTable, lTableNum, lTableIdxWidth);
     for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
@@ -86,7 +86,7 @@ BTBMGSC::initStorage()
             }
         }
     }
-    lIndex.resize(lTableNum);
+    lIndex.assign(lTableNum, 0);
 
     auto iTableSize = allocPredTable(iTable, iTableNum, iTableIdxWidth);
     for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
@@ -100,7 +100,7 @@ BTBMGSC::initStorage()
                     iTableIdxWidth - numCtrsPerLineBits), 16);
         }
     }
-    iIndex.resize(iTableNum);
+    iIndex.assign(iTableNum, 0);
 
     auto gTableSize = allocPredTable(gTable, gTableNum, gTableIdxWidth);
     for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
@@ -112,7 +112,7 @@ BTBMGSC::initStorage()
                     gTableIdxWidth - numCtrsPerLineBits), 16);
         }
     }
-    gIndex.resize(gTableNum);
+    gIndex.assign(gTableNum, 0);
 
     auto pTableSize = allocPredTable(pTable, pTableNum, pTableIdxWidth);
     for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
@@ -124,20 +124,20 @@ BTBMGSC::initStorage()
                     pTableIdxWidth - numCtrsPerLineBits), 2);
         }
     }
-    pIndex.resize(pTableNum);
+    pIndex.assign(pTableNum, 0);
 
     allocPredTable(biasTable, biasTableNum, biasTableIdxWidth);
-    biasIndex.resize(biasTableNum);
+    biasIndex.assign(biasTableNum, 0);
 
     auto weightTableSize = pow2(weightTableIdxWidth);
-    bwWeightTable.resize(weightTableSize);
-    lWeightTable.resize(weightTableSize);
-    iWeightTable.resize(weightTableSize);
-    gWeightTable.resize(weightTableSize);
-    pWeightTable.resize(weightTableSize);
-    biasWeightTable.resize(weightTableSize);
+    bwWeightTable.assign(weightTableSize, 0);
+    lWeightTable.assign(weightTableSize, 0);
+    iWeightTable.assign(weightTableSize, 0);
+    gWeightTable.assign(weightTableSize, 0);
+    pWeightTable.assign(weightTableSize, 0);
+    biasWeightTable.assign(weightTableSize, 0);
 
-    pUpdateThreshold.resize(pow2(thresholdTablelogSize));
+    pUpdateThreshold.assign(pow2(thresholdTablelogSize), 0);
 }
 
 #ifdef UNIT_TEST
@@ -243,6 +243,56 @@ BTBMGSC::BTBMGSC(const Params &p)
 }
 #endif
 BTBMGSC::~BTBMGSC() {}
+
+void
+BTBMGSC::flushState()
+{
+    initStorage();
+    updateThreshold = 35 * 8;
+}
+
+void
+BTBMGSC::resetSpeculativeState()
+{
+    threadHistory.assign(MaxThreads, ThreadHistoryState());
+    threadMeta.assign(MaxThreads, nullptr);
+
+    for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
+        auto &state = threadHistory[tid];
+        for (unsigned i = 0; i < bwTableNum; ++i) {
+            state.indexBwFoldedHist.emplace_back(
+                bwHistLen[i], bwTableIdxWidth - numCtrsPerLineBits, 16);
+        }
+
+        state.indexLFoldedHist.resize(numEntriesFirstLocalHistories);
+        for (unsigned i = 0; i < lTableNum; ++i) {
+            for (unsigned k = 0; k < numEntriesFirstLocalHistories; ++k) {
+                state.indexLFoldedHist[k].emplace_back(
+                    lHistLen[i], lTableIdxWidth - numCtrsPerLineBits, 16);
+            }
+        }
+
+        for (unsigned i = 0; i < iTableNum; ++i) {
+            state.indexIFoldedHist.emplace_back(
+                iHistLen[i], iTableIdxWidth - numCtrsPerLineBits, 16);
+        }
+        for (unsigned i = 0; i < gTableNum; ++i) {
+            state.indexGFoldedHist.emplace_back(
+                gHistLen[i], gTableIdxWidth - numCtrsPerLineBits, 16);
+        }
+        for (unsigned i = 0; i < pTableNum; ++i) {
+            state.indexPFoldedHist.emplace_back(
+                pHistLen[i], pTableIdxWidth - numCtrsPerLineBits, 2);
+        }
+    }
+
+    bwIndex.assign(bwTableNum, 0);
+    lIndex.assign(lTableNum, 0);
+    iIndex.assign(iTableNum, 0);
+    gIndex.assign(gTableNum, 0);
+    pIndex.assign(pTableNum, 0);
+    biasIndex.assign(biasTableNum, 0);
+}
 
 ThreadID
 BTBMGSC::predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const

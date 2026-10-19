@@ -202,8 +202,8 @@ protected:
         mbtb_small = new MBTB(16, 8, 4, 1); // mbtb (L1 BTB)
         mbtb = new MBTB (2048, 20, 4, 1);  // 2 sram, 4 way each, total 8 ways
     }
-    
-    
+
+
     MBTB* mbtb_small;
     MBTB* mbtb;
 };
@@ -221,9 +221,9 @@ TEST_F(BTBTest, EmptyPrediction) {
     Addr startAddr = 0x1000;
     boost::dynamic_bitset<> history(8, 0);  // 8-bit history, all zeros
     std::vector<FullBTBPrediction> stagePreds(4);  // 4 stages
-    
+
     mbtb->putPCHistory(startAddr, history, stagePreds);
-    
+
     // Check predictions for all stages
     for (int i = 0; i < stagePreds.size(); i++) {
         EXPECT_TRUE(stagePreds[i].btbEntries.empty());
@@ -307,6 +307,18 @@ TEST_F(BTBTest, PredictionAfterUpdate) {
     verifyPrediction(stagePreds, mbtb->getDelay(), {branch});
 }
 
+TEST_F(BTBTest, FlushStateRestoresColdStorage) {
+    BranchInfo branch = createBranchInfo(0x1000, 0x2000, true);
+    auto trained = predictUpdateCycle(mbtb, 0x1000, branch, true);
+    ASSERT_FALSE(trained[mbtb->getDelay()].btbEntries.empty());
+
+    mbtb->flushState();
+
+    std::vector<FullBTBPrediction> cold(4);
+    mbtb->putPCHistory(0x1000, boost::dynamic_bitset<>(8, 0), cold);
+    EXPECT_TRUE(cold[mbtb->getDelay()].btbEntries.empty());
+}
+
 // Test large virtual addr
 TEST_F(BTBTest, PredictionAfterUpdateLargeAddr) {
     // Create branch info
@@ -335,7 +347,7 @@ TEST_F(BTBTest, ConditionalCounter) {
         auto &entries = stagePreds[i].btbEntries;
         EXPECT_EQ(entries[0].ctr, 0);
     }
-    
+
     // A second taken update makes the entry strongly taken.
     stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, true);
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
@@ -425,12 +437,12 @@ TEST_F(BTBTest, CounterSaturation) {
         auto &entries = stagePreds[i].btbEntries;
         EXPECT_EQ(entries[0].ctr, 0);  // Counter should be at 0
     }
-    
+
     // Update multiple times with not taken to test negative saturation
     for (int i = 0; i < 3; i++) {  // 3 times should reach saturation
         stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, false);
     }
-    
+
     // Check counter is saturated at -2
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
@@ -477,7 +489,7 @@ TEST_F(BTBTest, IndirectBranchPrediction) {
         ASSERT_TRUE(found1);
         EXPECT_EQ(target1, 0x2000);
     }
-    
+
     // Update with new target
     BranchInfo updatedBranch = createBranchInfo(0x1000, 0x3000, false, true);
     stagePreds = predictUpdateCycle(mbtb, 0x1000, updatedBranch, true);
@@ -516,7 +528,7 @@ TEST_F(BTBTest, MultipleBranchPrediction) {
     stagePreds.clear();
     stagePreds.resize(4);
     mbtb->putPCHistory(0x1000, history, stagePreds);
-    
+
     // Verify both branches are predicted
     std::vector<BranchInfo> expectedBranches = {branch1, branch2};
     verifyPrediction(stagePreds, mbtb->getDelay(), expectedBranches);
@@ -769,11 +781,11 @@ TEST_F(BTBTest, HalfAlignedBasicTest) {
 
     // Add first branch
     std::vector<FullBTBPrediction> stagePreds =
-        predictUpdateCycle(mbtb, 0x100, branch1, true, 
+        predictUpdateCycle(mbtb, 0x100, branch1, true,
             boost::dynamic_bitset<>(64, 0));
 
     // Add second branch
-    stagePreds = predictUpdateCycle(mbtb, 0x100, branch2, true, 
+    stagePreds = predictUpdateCycle(mbtb, 0x100, branch2, true,
         boost::dynamic_bitset<>(64, 0));
 
     // Verify both branches are predicted

@@ -100,6 +100,32 @@ class MicroTAGES3UpdateTest : public ::testing::Test
     std::unique_ptr<MicroTAGE> tage;
 };
 
+TEST(MicroTAGETest, FlushStateRestoresColdStorageAndHistory)
+{
+    MicroTAGE tage(2, 2, 16, 2);
+    tage.tageTable[0][0][0] = MicroTAGE::TageEntry(3, 2, 0x1000);
+    tage.usefulResetCnt = 17;
+    tage.predBankValid = true;
+
+    FullBTBPrediction pred;
+    BTBEntry branch;
+    branch.valid = true;
+    branch.pc = 0x1000;
+    branch.target = 0x2000;
+    branch.isCond = true;
+    pred.btbEntries.push_back(branch);
+    pred.condTakens.push_back({branch.pc, true});
+    tage.specUpdatePHist(boost::dynamic_bitset<>(32, 0), pred,
+                         pred.getPHistUpdate());
+
+    tage.flushState();
+
+    EXPECT_FALSE(tage.tageTable[0][0][0].valid);
+    EXPECT_EQ(tage.usefulResetCnt, 0);
+    EXPECT_FALSE(tage.predBankValid);
+    tage.checkFoldedHist(boost::dynamic_bitset<>(32, 0), "after flush");
+}
+
 TEST_F(MicroTAGES3UpdateTest, FunctionalUpdateBypassedWhenUsingS3Pred)
 {
     BTBEntry entry = makeCondEntry(0x1000, -1);
