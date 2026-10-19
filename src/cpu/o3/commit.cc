@@ -811,6 +811,10 @@ Commit::generateTCEvent(ThreadID tid)
 void
 Commit::squashAll(ThreadID tid)
 {
+    if (curSquashCause[tid] != SquashCause::Trap) {
+        cpu->getTea()->setFlush(tid, 0, 0, false);
+    }
+
     // If we want to include the squashing instruction in the squash,
     // then use one older sequence number.
     // Hopefully this doesn't mess things up.  Basically I want to squash
@@ -994,6 +998,7 @@ Commit::tick()
             } else {
                 DPRINTF(Commit,"[tid:%i] Still Squashing, cannot commit any"
                         " insts this cycle.\n", tid);
+                cpu->getTea()->markRecovery(tid);
                 rob->doSquash(tid);
                 changedROBNumEntries[tid] = true;
                 toIEW->commitInfo[tid].robSquashing = true;
@@ -1100,6 +1105,7 @@ Commit::handleInterrupt()
         interrupt = NoFault;
 
         // Generate trap squash event.
+        cpu->getTea()->setFlush(0, 0, 0, false);
         generateTrapEvent(0, interrupt);
 
         avoidQuiesceLiveLock = false;
@@ -1215,6 +1221,29 @@ Commit::commit()
                     tid, fromIEW->squashedSeqNum[tid]);
                 stats.squashDueToOrderViolation[tid]++;
                 curSquashCause[tid] = SquashCause::MemOrderViolation;
+            }
+
+            auto cause_inst = fromIEW->mispredictInst[tid];
+            if (!cause_inst) {
+                cause_inst = rob->findInst(tid, fromIEW->squashedSeqNum[tid]);
+            }
+            const Addr cause_pc = cause_inst ?
+                cause_inst->pcState().instAddr() : fromIEW->pc[tid]->instAddr();
+            uint8_t cause_psv = cause_inst ? cause_inst->teaPSV() : 0;
+            if (curSquashCause[tid] == SquashCause::BranchMispredict) {
+                if (cause_inst) {
+                    cause_inst->teaSetEvent(TeaEvent::FL_MB);
+                }
+                cause_psv |= TeaEvent::bit(TeaEvent::FL_MB);
+                cpu->getTea()->setFlush(tid, cause_pc, cause_psv);
+            } else if (curSquashCause[tid] == SquashCause::MemOrderViolation) {
+                if (cause_inst) {
+                    cause_inst->teaSetEvent(TeaEvent::FL_MO);
+                }
+                cause_psv |= TeaEvent::bit(TeaEvent::FL_MO);
+                cpu->getTea()->setFlush(tid, cause_pc, cause_psv);
+            } else {
+                cpu->getTea()->setFlush(tid, 0, 0, false);
             }
 
             DPRINTF(Commit, "[tid:%i] Redirecting to PC %#x\n",
@@ -1442,6 +1471,8 @@ Commit::handleMdpViolation(const DynInstPtr &head_inst, ThreadID tid)
     // Do not retire the violating load. Keep the last older instruction in
     // the ROB and refetch from the violating load's resolved PC.
     const InstSeqNum squashed_inst = head_inst->seqNum - 1;
+    head_inst->teaSetEvent(TeaEvent::FL_MO);
+    cpu->getTea()->setFlush(tid, head_inst->getPC(), head_inst->teaPSV());
     youngestSeqNum[tid] = squashed_inst;
     rob->squash(squashed_inst, tid);
     changedROBNumEntries[tid] = true;
@@ -2194,6 +2225,9 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num,
         }
 
         // Generate trap squash event.
+        head_inst->teaSetEvent(TeaEvent::FL_EX);
+        cpu->getTea()->setFlush(
+            tid, head_inst->getPC(), head_inst->teaPSV());
         generateTrapEvent(tid, inst_fault);
         return false;
     }
@@ -2374,6 +2408,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num,
     }
 
     // Finally clear the head ROB entry.
+    cpu->getTea()->commit(head_inst);
     rob->retireHead(tid);
 
 #if TRACING_ON

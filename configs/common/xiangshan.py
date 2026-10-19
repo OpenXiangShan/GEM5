@@ -474,6 +474,8 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
         cpu.mlpMissPatternTableSize = args.mlp_miss_pattern_table_size
         cpu.mlpDistanceTableSize = args.mlp_distance_table_size
         cpu.mlpLongLatencyCacheDepth = args.mlp_long_latency_cache_depth
+        cpu.enableTea = args.enable_tea
+        cpu.teaSamplePeriod = args.tea_sample_period
         cpu.mmu.pma_checker = PMAChecker(
             uncacheable=[AddrRange(0, size=0x80000000)])
         cpu.mmu.functional = args.functional_tlb
@@ -987,6 +989,18 @@ def xiangshan_system_init():
         action="store_true",
         default=False,
         help="Disable direction TAGE sources in kmhv3 and force MGSC standalone SC prediction",
+    )
+    parser.add_argument(
+        "--enable-tea",
+        action="store_true",
+        default=False,
+        help="Enable O3 Timing Event Attribution sampling",
+    )
+    parser.add_argument(
+        "--tea-sample-period",
+        type=int,
+        default=1,
+        help="TEA sample period in CPU cycles; zero samples every cycle",
     )
 
     parser.add_argument(
