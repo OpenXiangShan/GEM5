@@ -142,7 +142,7 @@ class Fetch
 
         void
         finish(const Fault &fault, const RequestPtr &req,
-            gem5::ThreadContext *tc, BaseMMU::Mode mode)
+            gem5::ThreadContext *tc, BaseMMU::Mode mode) override
         {
             assert(mode == BaseMMU::Execute);
             fetch->finishTranslation(fault, req, delayed);
