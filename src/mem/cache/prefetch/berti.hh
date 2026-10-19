@@ -164,6 +164,8 @@ class BertiPrefetcher : public Queued
 
     const bool dumpTopDeltas;
 
+    boost::compute::detail::lru_cache<Addr, Addr> standaloneFilter;
+
   public:
 
     boost::compute::detail::lru_cache<Addr, Addr> *filter;
@@ -176,10 +178,7 @@ class BertiPrefetcher : public Queued
     };
 
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
-                           PrefetchSourceType pf_source, bool miss_repeat) override
-    {
-        panic("not implemented");
-    };
+                           PrefetchSourceType pf_source, bool miss_repeat) override;
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
                            PrefetchSourceType pf_source, bool miss_repeat, Addr &local_delta_pf_addr);
 

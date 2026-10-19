@@ -39,8 +39,11 @@ BertiPrefetcher::BertiPrefetcher(const BertiPrefetcherParams &p)
       triggerPht(p.trigger_pht),
       statsBerti(this),
       trainBlockFilter(8),
-      dumpTopDeltas(p.dump_top_deltas)
+      dumpTopDeltas(p.dump_top_deltas),
+      standaloneFilter(256),
+      filter(&standaloneFilter)
 {
+    setSharedFilterContextQualified(true);
     registerExitCallback([this]() {
         if (this->dumpTopDeltas) {
             std::vector<std::pair<int64_t, uint64_t>> top_delta_vec;
@@ -79,6 +82,19 @@ BertiPrefetcher::BertiPrefetcher(const BertiPrefetcherParams &p)
             simout.close(out_handle);
         }
     });
+}
+
+void
+BertiPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
+                                   PrefetchSourceType pf_source, bool miss_repeat)
+{
+    if (!pfi.hasPC() || pfi.isWrite() || pfi.isStore() ||
+        !(pfi.isCacheMiss() || pfi.isPfFirstHit())) {
+        return;
+    }
+
+    Addr unused_pht_addr = 0;
+    calculatePrefetch(pfi, addresses, late, pf_source, miss_repeat, unused_pht_addr);
 }
 
 BertiPrefetcher::HistoryTableEntry*
@@ -285,8 +301,9 @@ BertiPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vecto
     if (using_best_delta_and_confident) {
         lastUsedBestDelta = blockIndex(addr) - blockIndex(pfi.getAddr());
     }
-    // buffered prefetch
-    InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
+    if (isSubPrefetcher) {
+        InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
+    }
 
     Addr filter_key = sharedFilterKey(pfi, addr);
     if (filter->contains(filter_key)) {
@@ -297,6 +314,9 @@ BertiPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vecto
         topDeltas[blk_delta] = topDeltas.count(blk_delta) ? topDeltas[blk_delta] + 1 : 1;
         DPRINTF(BertiPrefetcher, "Send pf: %lx\n", addr);
         filter->insert(filter_key, 0);
+        if (!isSubPrefetcher && usePFBuffer) {
+            InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
+        }
         addresses.push_back(AddrPriority(addr, prio, src));
         return true;
     }

@@ -735,6 +735,10 @@ def create_prefetcher(cpu, cache_level, options):
     if prefetcher_name == 'XSCompositePrefetcher':
         _configure_xs_composite(prefetcher, options, pf_buffer_enabled)
 
+    if cache_level == 'l1d' and prefetcher_name == 'BertiPrefetcher':
+        prefetcher.prefetch_train = False
+        prefetcher.queue_filter = False
+
     if cache_level == 'l2':
         _configure_l2_prefetcher(prefetcher, prefetcher_name, options,
                                  pf_buffer_enabled)
