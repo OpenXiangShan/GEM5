@@ -107,26 +107,44 @@ Commit::traceUpdateSquashInfo(ThreadID tid, InstSeqNum squashed_inst)
 void
 Commit::traceMaybeInjectCtrlFlowChangeFault(ThreadID tid, const DynInstPtr &head_inst)
 {
-    if (!cpu->isTraceMode() || head_inst->getFault() != NoFault) {
+    if (!cpu->isTraceMode()) {
         return;
     }
 
-    if (const o3::TraceInstruction *ti_meta =
-            cpu->getTraceInstMetadata(head_inst->seqNum)) {
-        if (ti_meta->isCtrlFlowChange()) {
-            head_inst->setTraceCtrlFlowChange(true);
-            traceCtrlFaultPending[tid] = true;
-            traceCtrlFaultSeqNum[tid] = head_inst->seqNum;
-            head_inst->getFault() =
-                std::make_shared<TraceCtrlFlowFault>(ti_meta->getCtrlFlowTarget());
-            DPRINTF(
-                CommitTrace,
-                "[tid:%d idx:%llu sn:%llu] Trace ctrl-flow change -> inject fault to "
-                "target 0x%lx\n",
-                tid, (unsigned long long)traceCommitIndex[tid], head_inst->seqNum,
-                (unsigned long)ti_meta->getCtrlFlowTarget());
-        }
+    const o3::TraceInstruction *ti_meta =
+        cpu->getTraceInstMetadata(head_inst->seqNum);
+    if (!ti_meta || !ti_meta->isCtrlFlowChange()) {
+        return;
     }
+
+    // commitHead() can retry a fault while older stores drain. Keep the
+    // injected fault stable across retries, but let trace control-flow truth
+    // override faults produced by executing a record in the synthetic trace
+    // environment (for example an Address fault from a traced store).
+    const Fault previous_fault = head_inst->getFault();
+    if (std::dynamic_pointer_cast<TraceCtrlFlowFault>(previous_fault)) {
+        return;
+    }
+
+    if (previous_fault != NoFault) {
+        DPRINTF(CommitTrace,
+                "[tid:%d idx:%llu sn:%llu] Replacing local fault %s with "
+                "trace ctrl-flow target 0x%lx\n",
+                tid, (unsigned long long)traceCommitIndex[tid],
+                head_inst->seqNum, previous_fault->name(),
+                (unsigned long)ti_meta->getCtrlFlowTarget());
+    }
+
+    head_inst->setTraceCtrlFlowChange(true);
+    traceCtrlFaultPending[tid] = true;
+    traceCtrlFaultSeqNum[tid] = head_inst->seqNum;
+    head_inst->getFault() =
+        std::make_shared<TraceCtrlFlowFault>(ti_meta->getCtrlFlowTarget());
+    DPRINTF(CommitTrace,
+            "[tid:%d idx:%llu sn:%llu] Trace ctrl-flow change -> inject fault "
+            "to target 0x%lx\n",
+            tid, (unsigned long long)traceCommitIndex[tid], head_inst->seqNum,
+            (unsigned long)ti_meta->getCtrlFlowTarget());
 }
 
 bool

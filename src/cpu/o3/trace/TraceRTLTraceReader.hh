@@ -102,6 +102,10 @@ class TraceRTLTraceReader : public TraceReader
     static constexpr uint32_t OP_BRANCH         = 0x63;
     static constexpr uint32_t OP_JALR           = 0x67;
     static constexpr uint32_t OP_JAL            = 0x6F;
+    static constexpr uint32_t OP_LOAD           = 0x03;
+    static constexpr uint32_t OP_LOAD_FP        = 0x07;
+    static constexpr uint32_t OP_STORE          = 0x23;
+    static constexpr uint32_t OP_STORE_FP       = 0x27;
     static constexpr uint32_t OP_FP_ARITH       = 0x53;
     static constexpr uint32_t OP_VECTOR         = 0x57; // RVV: commit side
                                                         // classifies isVector

@@ -340,10 +340,19 @@ TraceRTLTraceReader::determineInstType(const TraceRTLInstr &rec)
         return TraceInstruction::InstType::STORE;
     }
 
-    // Then the encoded opcode: FP arithmetic and vector instructions
-    // classify as FP (the commit-side classifier treats isFloating() and
-    // isVector() identically).
+    // Faulting memory instructions can have memory_type == 0 because no
+    // access completed. Their real encoding still determines the static
+    // instruction type used by commit-side difftest.
     const uint32_t opcode = rec.instr & 0x7F;
+    if (opcode == OP_LOAD || opcode == OP_LOAD_FP) {
+        return TraceInstruction::InstType::LOAD;
+    }
+    if (opcode == OP_STORE || opcode == OP_STORE_FP) {
+        return TraceInstruction::InstType::STORE;
+    }
+
+    // FP arithmetic and vector instructions classify as FP (the commit-side
+    // classifier treats isFloating() and isVector() identically).
     if (opcode == OP_FP_ARITH || opcode == OP_VECTOR) {
         return TraceInstruction::InstType::FP;
     }

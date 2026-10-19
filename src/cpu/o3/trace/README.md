@@ -52,6 +52,7 @@ scons -j$(nproc) --gold-linker build/RISCV/gem5.opt
 - **真实编码直喂 decoder**：reader 通过 `TraceInstruction::setInstBits()` 发布 `instr` 字段，`createMachInstFromTrace` 优先使用真实编码，保留指令 mix、功能单元与延迟（与 RTL 侧 TraceRTL 一致）。`--trace-use-synthetic-enc` 强制退回合成编码（A/B 诊断）：所有记录都改走合成路径，分支记录的控制流目标由 trace 的 nextPC 驱动（合成编码的立即数为 0，不携带目标）。
 - **分支 imm 全为 0**（B 型与 J 型均如此）：所有控制流目标只存在于 `target` 字段，由 IEW/decode 的 trace nextPC 覆盖（`setTraceBranchInfo`）驱动。
 - **`exception != 0` 且非分支**：走 commit 侧 `TraceCtrlFlowFault` 强制重定向（与 CBP2025 trap 通道相同）；其编码若为控制流 opcode（beq/jal/jalr）会被消毒为真实 NOP `0x00000013`，以保持 commit difftest 的 InstType 一致且不进合成路径。
+- **faulting load/store**：异常记录可能因访存未完成而携带 `memory_type=0`；reader 此时按真实 load/store opcode 补全 InstType，commit 侧则以 trace 控制流真值覆盖合成执行环境产生的本地 fault。
 - **同 PC 双编码**：`pc_discontinuity` 占位（`0x00000033` + exception=0x01）与后续真实编码并存；reader 记录 `traceReader.stats.mixedEncodingPc` 计数。
 - RVC（16 位编码）v1 不支持：告警并按 4 字节合成编码回退。
 
