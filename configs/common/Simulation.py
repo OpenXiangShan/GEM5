@@ -821,7 +821,8 @@ def run_vanilla(options, root, testsys, cpu_class):
 
     checkpoint_dir = None
     root.apply_config(options.param)
-    m5.instantiate(checkpoint_dir)
+    # add path for generic_rv_cpt and memtrace_path
+    m5.instantiate(pmem_file_path=options.generic_rv_cpt,mem_trace_file=options.memtrace_path,ckpt_dir=checkpoint_dir)
 
     # Handle the max tick settings now that tick frequency was resolved
     # during system instantiation
