@@ -372,6 +372,10 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     )
     enable_auto_depth = Param.Bool(False, "enable autp depth.")
     enable_l3_stream_pre = Param.Bool(False, "enable l3 stream pre.")
+    strict_active = Param.Bool(
+        True,
+        "Require neighboring active regions to exceed the active threshold"
+    )
     xs_stream_entries = Param.MemorySize(
         "16",
         "num of active generation table entries"
@@ -1380,6 +1384,10 @@ class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     lldp = Param.LLDPrefetcher(LLDPrefetcher(is_sub_prefetcher=True),
                                "LLDP component")
     enable_lldp = Param.Bool(False, "Enable LLDP component")
+    offload_low_accuracy = Param.Bool(
+        False,
+        "Offload low-accuracy upstream pfahead sources to L3 when CDP dominates L2"
+    )
 
 class L3CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     type = 'L3CompositeWithWorkerPrefetcher'

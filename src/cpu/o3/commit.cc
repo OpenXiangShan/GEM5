@@ -155,13 +155,15 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
       commitWidth(params.commitWidth),
       numThreads(params.numThreads),
       smtBorrowDonorHoldCycles(params.smtBorrowDonorHoldCycles),
+      mlpLongLatencyCacheDepth(params.mlpLongLatencyCacheDepth),
       drainPending(false),
       drainImminent(false),
       trapLatency(params.trapLatency),
       canHandleInterrupts(true),
       avoidQuiesceLiveLock(false),
       stats(_cpu, this),
-      archDBer(params.arch_db)
+      archDBer(params.arch_db),
+      mlpPredictor(nullptr)
 {
     if (commitWidth > MaxWidth)
         fatal("commitWidth (%d) is larger than compiled limit (%d),\n"
@@ -209,6 +211,7 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         traceCommitIndex[tid] = 0;
         committedTargetId[tid] = 1;
         committedLoopIter[tid] = 0;
+        traceLastHeartbeatIndex[tid] = 0;
         const unsigned capacity = renameWidth *
             (numPreDispatchThreads > 1 ? 2 : 1);
         fixedbuffer[tid] = boost::circular_buffer<DynInstPtr>(capacity);
@@ -342,6 +345,8 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Total number of ROBFull"),
       ADD_STAT(smtRestEntryWhileROBFull, statistics::units::Count::get(),
                "Distribution of total rest entries while ROBFull in SMT mode"),
+      ADD_STAT(commitCacheAccessDepthDist, statistics::units::Count::get(),
+               "Distribution of cache access depth at commit (0=L1, 1=L2, 2+=L3/Mem)"),
       ADD_STAT(ROBBorrowingStateChange, statistics::units::Count::get(),
                "changing times of borrowing state"),
       ADD_STAT(smtStateHoldCycle, statistics::units::Count::get(),
@@ -474,6 +479,10 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
 
     smtRestEntryWhileROBFull
         .init(0, 160, 5)
+        .flags(statistics::pdf);
+
+    commitCacheAccessDepthDist
+        .init(0, 4, 1)
         .flags(statistics::pdf);
 
     ROBBorrowingStateChange
@@ -1257,7 +1266,11 @@ Commit::commit()
             toIEW->commitInfo[tid].squashedLoopIter = fromIEW->squashedLoopIter[tid];
 
             if (toIEW->commitInfo[tid].mispredictInst) {
-                if (toIEW->commitInfo[tid].mispredictInst->isUncondCtrl()) {
+                auto mispredictInst = toIEW->commitInfo[tid].mispredictInst;
+                if (cpu->isTraceMode() && mispredictInst->hasTraceBranchInfo()) {
+                    toIEW->commitInfo[tid].branchTaken =
+                        mispredictInst->traceBranchTaken();
+                } else if (mispredictInst->isUncondCtrl()) {
                      toIEW->commitInfo[tid].branchTaken = true;
                 }
                 ++stats.branchMispredicts[tid];
@@ -1584,8 +1597,10 @@ Commit::commitInsts()
                 traceMaybeInjectCtrlFlowChangeFault(tid, head_inst);
 
                 // Try to commit the head instruction.
-                bool commit_success = commitHead(head_inst,
-                                                num_committed_per_thread[tid]);
+                bool logical_trace_record_retired = false;
+                bool commit_success = commitHead(
+                    head_inst, num_committed_per_thread[tid],
+                    logical_trace_record_retired);
 
                 if (commit_success) {
                     recordCommittedInst(head_inst);
@@ -1900,6 +1915,10 @@ Commit::commitInsts()
                         onInstBoundary && cpu->checkInterrupts(0))
                         squashAfter(tid, head_inst);
                 } else {
+                    if (logical_trace_record_retired) {
+                        ++num_committed;
+                        ++num_committed_per_thread[tid];
+                    }
                     DPRINTF(Commit, "Unable to commit head instruction PC:%s "
                             "[tid:%i] [sn:%llu].\n",
                             head_inst->pcState(), tid ,head_inst->seqNum);
@@ -1961,9 +1980,11 @@ Commit::diffInst(ThreadID tid, const DynInstPtr &inst) {
 
 
 bool
-Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
+Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num,
+                   bool &logical_trace_record_retired)
 {
     assert(head_inst);
+    logical_trace_record_retired = false;
 
     ThreadID tid = head_inst->threadNumber;
 
@@ -2097,6 +2118,14 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         cpu->trap(inst_fault, tid,
                   head_inst->notAnInst() ? nullStaticInstPtr :
                       head_inst->staticInst);
+
+        // TraceCtrlFlowFault redirects to the source-record successor and
+        // intentionally keeps the faulting DynInst in the ROB for squash.
+        // Its source record still defines one trace ROI instruction, so count
+        // it once after the redirect without entering the normal ROB-retire
+        // path below.
+        logical_trace_record_retired =
+            traceAccountInjectedCtrlFlowRecord(tid, head_inst);
 
         // Exit state update mode to avoid accidental updating.
         thread[tid]->noSquashFromTC = false;
@@ -2278,6 +2307,70 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 
     if (head_inst->isLoad()) {
         head_inst->clearProducerStorePC();
+    }
+
+    // A fused load trains the original representative load PC, not the
+    // architectural PC of the first instruction in the fusion pair.
+    const Addr mlpLoadPC = head_inst->isLoad()
+        ? (head_inst->mlpLoadPCValid ? head_inst->mlpLoadPC
+                                    : head_inst->pcState().instAddr())
+        : 0;
+
+    // MLP predictor: set longLatencyLoad and generate load feedback
+    if (head_inst->isLoad() && !head_inst->isSquashed()) {
+        int depth = head_inst->cacheAccessDepth;
+        // VP hit (correct prediction) eliminates dependency chain
+        if (head_inst->vpResult.speculative && !head_inst->vpMisprediction) {
+            depth = 0;
+        }
+        int depthForStats = (depth < 0) ? 0 : depth;
+        stats.commitCacheAccessDepthDist.sample(depthForStats);
+        bool actualLongLatency = (depth >= (int)mlpLongLatencyCacheDepth);
+        head_inst->longLatencyLoad = actualLongLatency;
+
+        if (mlpPredictor) {
+            // loadFeedback rides the commit wire (commitToFetchDelay),
+            // consistent with llsrPush below, instead of the IEW wire.
+            auto &fb = toIEW->commitInfo[tid];
+            fb.loadFeedback.push_back({
+                mlpLoadPC,
+                actualLongLatency,
+                head_inst->mlpPredictedLongLatency,
+                head_inst->mlpPredictedDistance});
+        }
+    }
+
+    // MLP predictor: record LLSR push for fetch to consume
+    if (mlpPredictor) {
+        bool isLL = head_inst->isLoad() && head_inst->longLatencyLoad;
+        auto &commitInfo = toIEW->commitInfo[tid];
+        const unsigned numSlots = head_inst->isFusion() ? 2 : 1;
+        assert(commitInfo.llsrPush.size() + numSlots <=
+               2 * commitWidth * rob->getInstsPerGroup());
+        const auto entry = TimeStruct::CommitComm::LLSRPushEntry{
+            isLL, mlpLoadPC,
+            head_inst->isLoad() ? head_inst->mlpPredictedDistance : 0,
+            head_inst->isLoad() && head_inst->mlpPredictionMade &&
+                head_inst->mlpDistanceValid, false};
+        commitInfo.llsrPush.push_back(entry);
+        if (head_inst->isFusion()) {
+            // Approximation: represent a fusion with two pre-fusion instruction
+            // slots, rather than reconstructing each component's load feedback.
+            // Both slots copy the fused LL state, representative load PC and
+            // prediction snapshot; only the first trains on eviction. The second
+            // is a non-training placeholder that still contributes to distance.
+            // This avoids fusion-compression underestimation within the observed
+            // window, conservatively counting a later LL fusion through its end.
+            // The copied LL state may belong to a different component than the
+            // representative PC, so training can be attributed to the wrong PC.
+            // The window intentionally starts at the first slot, even if the
+            // actual LL load is second; do not extend it to recover that load's
+            // final lookahead slot. This boundary limitation is part of the
+            // compromise, not a guarantee against all distance underprediction.
+            auto placeholder = entry;
+            placeholder.isFusionPlaceholder = true;
+            commitInfo.llsrPush.push_back(placeholder);
+        }
     }
 
     // Finally clear the head ROB entry.

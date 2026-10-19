@@ -27,10 +27,16 @@ def setSharedLSQParams(args, system):
         cpu.smtLSQPolicy = 'DynamicBorrowing'  # for LQ and SQ only
         cpu.smtRARQPolicy = 'Dynamic'  # RARQ uses pure Dynamic policy
         cpu.smtRAWQPolicy = 'Dynamic'  # RAWQ uses pure Dynamic policy
-        cpu.smtROBPolicy = 'DynamicBorrowing'
-        cpu.smtIQPolicy = args.smt_iq_policy
+        if args.enable_spmt:
+            cpu.smtROBPolicy = 'Partitioned'
+            cpu.smtIQPolicy = 'Dynamic'  # SpMT: each IQ belongs to one thread
+        else:
+            cpu.smtROBPolicy = 'DynamicBorrowing'
+            cpu.smtIQPolicy = args.smt_iq_policy
         for iq in cpu.scheduler.IQs:
-            if iq.name.startswith("int"):
+            if args.enable_spmt:
+                iq.smtIQWatermark = 0
+            elif iq.name.startswith("int"):
                 iq.smtIQWatermark = args.smt_iq_watermark_int
             elif iq.name.startswith("fp") or iq.name.startswith("vec"):
                 iq.smtIQWatermark = args.smt_iq_watermark_fp

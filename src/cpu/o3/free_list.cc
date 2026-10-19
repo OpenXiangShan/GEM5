@@ -47,12 +47,17 @@ UnifiedFreeList::UnifiedFreeList(const std::string &_my_name,
                                  PhysRegFile *_regFile,
                                  const BaseO3CPUParams &params)
     : _name(_my_name), regFile(_regFile),
+      enableSpMT(params.enableSpMT),
       pregPolicy(params.smtPregPolicy),
       donorReservePercent(params.smtPregDonorReservePercent),
       fixedBase(params.smtPregFixedBase),
       numThreads(params.numThreads)
 {
     DPRINTF(FreeList, "Creating new free list object.\n");
+
+    panic_if(enableSpMT && numThreads != 2,
+             "enableSpMT requires exactly two hardware threads, got %u",
+             numThreads);
 
     panic_if(pregPolicy == SMTQueuePolicy::Threshold,
              "smtPregPolicy=Threshold is not implemented for the Preg free "
@@ -62,10 +67,14 @@ UnifiedFreeList::UnifiedFreeList(const std::string &_my_name,
     // about its internal organization
     regFile->initFreeList(this);
 
-    // Capture each class' total capacity now, before any allocation
-    // happens; freeLists[i] has just been fully populated by initFreeList.
-    for (int i = 0; i <= RMiscRegClass; i++)
-        numPhysRegs[i] = freeLists[i].numFreeRegs();
+    // Capture each class' total capacity now, before any allocation happens.
+    for (int i = 0; i <= RMiscRegClass; i++) {
+        numPhysRegs[i] = enableSpMT
+            ? spmtFreeLists[0][i].numFreeRegs() +
+                spmtFreeLists[1][i].numFreeRegs()
+            : freeLists[i].numFreeRegs();
+        assert(!enableSpMT || numPhysRegs[i] % 2 == 0);
+    }
 
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         donor[tid] = false;
@@ -139,7 +148,7 @@ UnifiedFreeList::borrowingLimit(RegClassType type, ThreadID tid) const
 bool
 UnifiedFreeList::canAllocate(RegClassType type, ThreadID tid, unsigned n) const
 {
-    if (n > freeLists[type].numFreeRegs()) {
+    if (n > selectedFreeList(type, tid).numFreeRegs()) {
         return false;
     }
 
@@ -158,7 +167,7 @@ UnifiedFreeList::canAllocate(RegClassType type, ThreadID tid, unsigned n) const
 unsigned
 UnifiedFreeList::numAllocatable(RegClassType type, ThreadID tid) const
 {
-    const unsigned free_regs = freeLists[type].numFreeRegs();
+    const unsigned free_regs = selectedFreeList(type, tid).numFreeRegs();
 
     if (pregPolicy == SMTQueuePolicy::Dynamic) {
         return free_regs;
@@ -177,11 +186,16 @@ bool
 UnifiedFreeList::isPerThreadExhausted(RegClassType type, ThreadID tid,
                                        unsigned n) const
 {
+    if (enableSpMT &&
+        selectedFreeList(type, tid).numFreeRegs() < n) {
+        return numFreeRegs(type) >= n;
+    }
+
     if (pregPolicy == SMTQueuePolicy::Dynamic) {
         return false;
     }
 
-    const unsigned free_regs = freeLists[type].numFreeRegs();
+    const unsigned free_regs = selectedFreeList(type, tid).numFreeRegs();
     if (free_regs < n) {
         return false;
     }

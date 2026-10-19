@@ -361,7 +361,6 @@ def addCommonOptions(parser, configure_xiangshan=False):
 
     parser.add_argument("--smt", action="store_true", default=False,
                         help=""" RISCV SMT support, which requires multitThread-supported gcpt restore and diff-ref-so""")
-
     if configure_xiangshan:
         return
     # Following options are not available in XiangShan
@@ -663,6 +662,8 @@ def addFSOptions(parser):
 
 def addXiangshanCommonOptions(parser):
     # Xiangshan related options
+    parser.add_argument("--enable-spmt", action="store_true", default=False,
+                        help="Enable strict two-thread SpMT resource partitioning")
     parser.add_argument("--xiangshan-system", action="store_true",
                         help="Use memory layout of Xiangshan system")
     parser.add_argument("--mmc-img", action="store", type=str,
@@ -727,8 +728,13 @@ def addXiangshanTraceOptions(parser):
     parser.add_argument('--trace-file', type=str,
                        help='Path to the trace file (required for trace mode)')
     parser.add_argument('--trace-format', type=str, default='champsim',
-                       choices=['champsim', 'cbp2025'],
-                       help='Trace format (default: champsim)')
+                       choices=['champsim', 'cbp2025', 'tracertl', 'nemu'],
+                       help='Trace format (default: champsim; "nemu" is an '
+                            'alias of "tracertl")')
+    parser.add_argument('--trace-use-synthetic-enc', action='store_true',
+                       help='Force synthetic instruction encoding even when '
+                            'the trace carries the real encoding (tracertl '
+                            'A/B diagnostic; default: use real encoding)')
     # Use the common --maxinsts option provided by common Options; no trace-specific max
 
     # Decoupled branch predictor options for trace mode

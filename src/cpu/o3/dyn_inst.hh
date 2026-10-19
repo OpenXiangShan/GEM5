@@ -532,6 +532,22 @@ class DynInst : public ExecContext, public RefCounted
     uint8_t goldenData[16] = {0};
 
     int pf_source  = -1; // if load cache line is prefetched
+
+    // MLP predictor: frontend prediction results
+    bool mlpPredictionMade = false;
+    bool mlpPredictedLongLatency = false;
+    uint32_t mlpPredictedDistance = 0;
+    bool mlpDistanceValid = false;
+    bool mlpDistanceSnapshotLocked = false;
+    Addr mlpLoadPC = 0;
+    bool mlpLoadPCValid = false;
+
+    // MLP predictor: actual outcome (set by IEW writebackInsts)
+    bool longLatencyLoad = false;
+
+    /// Cache access depth for MLP predictor
+    /// Records the deepest cache level accessed by this load
+    int cacheAccessDepth = 0;
     /////////////////////// TLB Miss //////////////////////
     /**
      * Saved memory request (needed when the DTB address translation is
@@ -768,6 +784,7 @@ class DynInst : public ExecContext, public RefCounted
     Addr traceBranchNextPCValue = 0;
     // trace 侧标记该指令是否触发非普通顺序的控制流改变（例如 trap/异常）。
     bool traceCtrlFlowChangeValue = false;
+    bool traceIsCondValue = false;
     bool traceIsCallValue = false;
     bool traceIsReturnValue = false;
     bool traceIsIndirectValue = false;
@@ -780,6 +797,7 @@ class DynInst : public ExecContext, public RefCounted
         traceBranchTargetValue = 0;
         traceBranchNextPCValue = 0;
         traceCtrlFlowChangeValue = false;
+        traceIsCondValue = false;
         traceIsCallValue = false;
         traceIsReturnValue = false;
         traceIsIndirectValue = false;
@@ -801,6 +819,7 @@ class DynInst : public ExecContext, public RefCounted
     {
         traceCtrlFlowChangeValue = hasCtrlFlowChange;
     }
+    void setTraceIsCond(bool v) { traceIsCondValue = v; }
     void setTraceIsCall(bool v) { traceIsCallValue = v; }
     void setTraceIsReturn(bool v) { traceIsReturnValue = v; }
     void setTraceIsIndirect(bool v) { traceIsIndirectValue = v; }
@@ -811,6 +830,7 @@ class DynInst : public ExecContext, public RefCounted
     Addr traceBranchTarget() const { return traceBranchHasTargetValue ? traceBranchTargetValue : 0; }
     Addr traceBranchNextPC() const { return traceBranchInfoValid ? traceBranchNextPCValue : 0; }
     bool hasTraceCtrlFlowChange() const { return traceCtrlFlowChangeValue; }
+    bool traceIsCond() const { return traceBranchInfoValid && traceIsCondValue; }
     bool traceIsCall() const { return traceIsCallValue; }
     bool traceIsReturn() const { return traceIsReturnValue; }
     bool traceIsIndirect() const { return traceIsIndirectValue; }
@@ -851,13 +871,39 @@ class DynInst : public ExecContext, public RefCounted
     bool isInteger()      const { return staticInst->isInteger(); }
     bool isFloating()     const { return staticInst->isFloating(); }
     bool isVector()       const { return staticInst->isVector(); }
-    bool isControl()      const { return staticInst->isControl(); }
-    bool isCall()         const { return staticInst->isCall(); }
-    bool isReturn()       const { return staticInst->isReturn(); }
-    bool isDirectCtrl()   const { return staticInst->isDirectCtrl(); }
-    bool isIndirectCtrl() const { return staticInst->isIndirectCtrl(); }
-    bool isCondCtrl()     const { return staticInst->isCondCtrl(); }
-    bool isUncondCtrl()   const { return staticInst->isUncondCtrl(); }
+    bool isControl()      const
+    {
+        return traceBranchInfoValid || staticInst->isControl();
+    }
+    bool isCall()         const
+    {
+        return traceBranchInfoValid ? traceIsCallValue : staticInst->isCall();
+    }
+    bool isReturn()       const
+    {
+        return traceBranchInfoValid ?
+            traceIsReturnValue : staticInst->isReturn();
+    }
+    bool isDirectCtrl()   const
+    {
+        return traceBranchInfoValid ?
+            !traceIsIndirectValue : staticInst->isDirectCtrl();
+    }
+    bool isIndirectCtrl() const
+    {
+        return traceBranchInfoValid ?
+            traceIsIndirectValue : staticInst->isIndirectCtrl();
+    }
+    bool isCondCtrl()     const
+    {
+        return traceBranchInfoValid ?
+            traceIsCondValue : staticInst->isCondCtrl();
+    }
+    bool isUncondCtrl()   const
+    {
+        return traceBranchInfoValid ?
+            !traceIsCondValue : staticInst->isUncondCtrl();
+    }
     bool isSerializing()  const { return staticInst->isSerializing(); }
     bool isMov()          const { return staticInst->isMov(); }
     bool isAddImm()       const { return staticInst->isAddImm(); }
@@ -989,12 +1035,21 @@ class DynInst : public ExecContext, public RefCounted
     branchTarget() const
     {
         if (traceBranchHasTarget()) {
-            // Construct a concrete PCState for the current ISA to hold the
-            // absolute target address, then return it as PCStateBase.
+            // The trace-recorded destination is authoritative, including for a
+            // not-taken branch: BranchOutcome::target must stay the control-flow
+            // destination, not the selected next PC.
             return std::make_unique<TheISA::PCState>(traceBranchTarget());
-        } else {
-            return staticInst->branchTarget(*pc);
         }
+        if (traceBranchInfoValid) {
+            // No recorded target, so the encoding is the only other source --
+            // and a synthetic trace encoding need not be a PC-relative branch
+            // (a compressed CALL_DIRECT becomes c.nop on RV64, and several
+            // uncompressible forms fall back to nops), where
+            // StaticInst::branchTarget() panics. The trace next PC is the
+            // ground truth for the fetch/decode consumers here.
+            return std::make_unique<TheISA::PCState>(traceBranchNextPC());
+        }
+        return staticInst->branchTarget(*pc);
     }
 
     /** Returns the number of source registers. */

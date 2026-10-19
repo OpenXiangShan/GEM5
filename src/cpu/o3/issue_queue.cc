@@ -69,6 +69,144 @@ namespace gem5
 namespace o3
 {
 
+namespace
+{
+
+struct FdivFormat
+{
+    unsigned width;
+    unsigned exponentBits;
+    unsigned fractionBits;
+    int exponentBias;
+    int minNormalExponent;
+    uint32_t normalLatency;
+};
+
+struct FdivLatency
+{
+    uint32_t cycles;
+    const char* latencyClass;
+};
+
+constexpr FdivFormat FdivF64 = {64, 11, 52, 1023, -1022, 12};
+constexpr FdivFormat FdivF32 = {32, 8, 23, 127, -126, 7};
+constexpr FdivFormat FdivF16 = {16, 5, 10, 15, -14, 5};
+constexpr uint32_t FdivFastLatency = 4;
+
+const FdivFormat*
+fdivFormat(unsigned width)
+{
+    switch (width) {
+      case 64:
+        return &FdivF64;
+      case 32:
+        return &FdivF32;
+      case 16:
+        return &FdivF16;
+      default:
+        return nullptr;
+    }
+}
+
+uint64_t
+lowBitsMask(unsigned width)
+{
+    return width == 64 ? ~uint64_t{0} : (uint64_t{1} << width) - 1;
+}
+
+bool
+isNanBoxed(uint64_t value, const FdivFormat& format)
+{
+    if (format.width == 64) {
+        return true;
+    }
+    const uint64_t upperMask = ~lowBitsMask(format.width);
+    return (value & upperMask) == upperMask;
+}
+
+struct NormalizedFdivOperand
+{
+    int exponent;
+    uint64_t significand;
+};
+
+NormalizedFdivOperand
+normalizeFdivOperand(uint64_t exponent, uint64_t fraction,
+                     const FdivFormat& format)
+{
+    if (exponent != 0) {
+        return {
+            static_cast<int>(exponent) - format.exponentBias,
+            (uint64_t{1} << format.fractionBits) | fraction
+        };
+    }
+
+    assert(fraction != 0);
+    const unsigned leadingBit = 63 - __builtin_clzll(fraction);
+    const unsigned shift = format.fractionBits - leadingBit;
+    return {
+        format.minNormalExponent - static_cast<int>(shift),
+        fraction << shift
+    };
+}
+
+FdivLatency
+classifyFdivLatency(uint64_t rawOpa, uint64_t rawOpb,
+                    const FdivFormat& format)
+{
+    const uint64_t valueMask = lowBitsMask(format.width);
+    const uint64_t exponentMask = lowBitsMask(format.exponentBits);
+    const uint64_t fractionMask = lowBitsMask(format.fractionBits);
+    const uint64_t opa = rawOpa & valueMask;
+    const uint64_t opb = rawOpb & valueMask;
+    const uint64_t opaExp = (opa >> format.fractionBits) & exponentMask;
+    const uint64_t opbExp = (opb >> format.fractionBits) & exponentMask;
+    const uint64_t opaFrac = opa & fractionMask;
+    const uint64_t opbFrac = opb & fractionMask;
+    const bool opaBoxed = isNanBoxed(rawOpa, format);
+    const bool opbBoxed = isNanBoxed(rawOpb, format);
+
+    const bool opaZero = opaBoxed && opaExp == 0 && opaFrac == 0;
+    const bool opbZero = opbBoxed && opbExp == 0 && opbFrac == 0;
+    const bool opaInf = opaBoxed && opaExp == exponentMask && opaFrac == 0;
+    const bool opbInf = opbBoxed && opbExp == exponentMask && opbFrac == 0;
+    const bool opaNan = !opaBoxed ||
+                        (opaExp == exponentMask && opaFrac != 0);
+    const bool opbNan = !opbBoxed ||
+                        (opbExp == exponentMask && opbFrac != 0);
+    const bool invalid = (opaInf && opbInf) || (opaZero && opbZero);
+    const bool earlyFinish = opaNan || opbNan || invalid ||
+                             opaInf || opbZero || opaZero || opbInf;
+
+    // The RTL bypasses the iterative path for special results and for a
+    // finite normal divisor whose fraction is zero.
+    if (earlyFinish || opbFrac == 0) {
+        return {FdivFastLatency, "fast"};
+    }
+
+    const bool inputSubnormal = opaExp == 0 || opbExp == 0;
+    const auto normalizedOpa =
+        normalizeFdivOperand(opaExp, opaFrac, format);
+    const auto normalizedOpb =
+        normalizeFdivOperand(opbExp, opbFrac, format);
+    int quotientExponent = normalizedOpa.exponent - normalizedOpb.exponent;
+    if (normalizedOpa.significand < normalizedOpb.significand) {
+        --quotientExponent;
+    }
+    const bool resultSubnormal =
+        quotientExponent < format.minNormalExponent;
+
+    const uint32_t latency = format.normalLatency + inputSubnormal +
+                             resultSubnormal;
+    const char* latencyClass =
+        inputSubnormal && resultSubnormal ? "input+result-subnormal" :
+        inputSubnormal ? "input-subnormal" :
+        resultSubnormal ? "result-subnormal" : "normal";
+    return {latency, latencyClass};
+}
+
+} // anonymous namespace
+
 IssuePort::IssuePort(const IssuePortParams& params) : SimObject(params), rp(params.rp), fu(params.fu)
 {
     for (auto it0 : params.fu) {
@@ -922,7 +1060,7 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
         if (dst->isFixedMapping() || dst->getNumPinnedWritesToComplete() != 1) [[unlikely]] {
             continue;
         }
-        scheduler->regCache.insert(dst->flatIndex(), {});
+        scheduler->insertRegCache(inst, dst);
         DPRINTF(Schedule, "was %s woken by p%lu [sn:%llu]\n", speculative ? "spec" : "wb", dst->flatIndex(),
                 inst->seqNum);
         auto& depgraph = subDepGraph[dst->flatIndex()];
@@ -1107,7 +1245,8 @@ IssueQue::selectInst()
                     if (psrc->isIntReg() && intRdRfTPI[pi].size() > i) {
                         // TX dynamic port optimization: src1 can borrow src0's port if src0 is in regcache
                         if (enableMainRdpOpt && i == 1 &&
-                            scheduler->regCache.contains(inst->renamedSrcIdx(0)->flatIndex())) {
+                            scheduler->containsRegCache(
+                                inst, inst->renamedSrcIdx(0))) {
                             rfTypePortId = intRdRfTPI[pi][0]; // borrow src0's port
                         } else {
                             rfTypePortId = intRdRfTPI[pi][i];
@@ -1473,7 +1612,7 @@ Scheduler::Scheduler(const SchedulerParams& params)
     : SimObject(params), old_disp(params.useOldDisp),
       intRegfileBanks(params.intRegfileBanks), stats(this), issueQues(params.IQs)
 {
-    dispTable.resize(enums::OpClass::Num_OpClass);
+    dispTable.resize(MaxThreads, std::vector<IQGroup>(enums::OpClass::Num_OpClass));
     opExecTimeTable.resize(enums::OpClass::Num_OpClass, 1);
     opPipelined.resize(enums::OpClass::Num_OpClass, false);
 
@@ -1530,7 +1669,13 @@ Scheduler::Scheduler(const SchedulerParams& params)
                 opExecTimeTable[op->opClass] = op->opLat;
                 opPipelined[op->opClass] = op->pipelined;
                 if (!registeredOpClasses.test(op->opClass)) {
-                    dispTable[op->opClass].push_back(issueQues[i]);
+                    if (params.enableSpMT) {
+                        dispTable[i % 2][op->opClass].push_back(issueQues[i]);
+                    } else {
+                        for (int j = 0; j < MaxThreads; j++) {
+                            dispTable[j][op->opClass].push_back(issueQues[i]);
+                        }
+                    }
                     registeredOpClasses.set(op->opClass);
                 }
                 opChecker.set(op->opClass);
@@ -1559,6 +1704,34 @@ Scheduler::Scheduler(const SchedulerParams& params)
             }
         }
     }
+
+    // check whether equality
+    if (params.enableSpMT) {
+        for (auto opClass = 0; opClass < enums::OpClass::Num_OpClass; opClass++) {
+            bool check_fail = false;
+            if (dispTable[0][opClass].size() != dispTable[1][opClass].size()) {
+                check_fail = true;
+            }
+            for (int j = 0; j < dispTable[0][opClass].size() && !check_fail; j++) {
+                if (dispTable[0][opClass][j]->getId() + 1 != dispTable[1][opClass][j]->getId()) {
+                    check_fail = true;
+                    break;
+                }
+            }
+            if (check_fail) {
+                std::string tid0_str, tid1_str;
+                for (size_t k = 0; k < dispTable[0][opClass].size(); k++) {
+                    tid0_str += std::to_string(dispTable[0][opClass][k]->getId()) + " ";
+                }
+                for (size_t k = 0; k < dispTable[1][opClass].size(); k++) {
+                    tid1_str += std::to_string(dispTable[1][opClass][k]->getId()) + " ";
+                }
+                panic("unexpected dispTable in opClass:%d, tid0 IQs: [%s], tid1 IQs: [%s]\n",
+                        opClass, tid0_str.c_str(), tid1_str.c_str());
+            }
+        }
+    }
+
     DPRINTF(Schedule, "Derived LSQ pipes from scheduler: load=%u store=%u\n",
             loadPipeCount, storePipeCount);
     maxRdTypePortId += 1;
@@ -1574,28 +1747,45 @@ Scheduler::Scheduler(const SchedulerParams& params)
 
 
     // dispatch distance counter allocate
-    dispOpdist.resize(Num_OpClasses, nullptr);
-    totalDispCounter.reserve(Num_OpClasses);
+    dispOpdist.resize(MaxThreads,
+                      std::vector<uint8_t*>(Num_OpClasses, nullptr));
+    // Keep counter addresses stable when SpMT allocates two per group.
+    totalDispCounter.reserve(Num_OpClasses * (params.enableSpMT ? 2 : 1));
     std::vector<std::vector<OpClass>> reuse_table;
+    std::vector<int> reuse_group(Num_OpClasses, -1);
     for (int i = 0; i < Num_OpClasses; i++) {
         bool counter_reuse = false;
         int reuse_op = 0;
-        for (int j = 0; j < Num_OpClasses; j++) {
-            if (dispTable[i] == dispTable[j]) {
+        for (int j = 0; j < i; j++) {
+            if (dispTable[0][i] == dispTable[0][j]) {
                 counter_reuse = true;
                 reuse_op = j;  // op "i" can reuse the "j" counter
                 break;
             }
         }
 
-        if (counter_reuse && dispOpdist[reuse_op]) {
-            dispOpdist[i] = dispOpdist[reuse_op];
+        if (counter_reuse && dispOpdist[0][reuse_op]) {
+            for (int tid = 0; tid < MaxThreads; tid++) {
+                dispOpdist[tid][i] = dispOpdist[tid][reuse_op];
+            }
+            assert(reuse_group[reuse_op] != -1);
+            reuse_group[i] = reuse_group[reuse_op];
         } else {
-            totalDispCounter.push_back(0);
-            dispOpdist[i] = &totalDispCounter.back();
+            if (params.enableSpMT) {
+                totalDispCounter.push_back(0);
+                dispOpdist[0][i] = &totalDispCounter.back();
+                totalDispCounter.push_back(0);
+                dispOpdist[1][i] = &totalDispCounter.back();
+            } else {
+                totalDispCounter.push_back(0);
+                for (int tid = 0; tid < MaxThreads; tid++) {
+                    dispOpdist[tid][i] = &totalDispCounter.back();
+                }
+            }
+            reuse_group[i] = reuse_table.size();
             reuse_table.push_back(std::vector<OpClass>());
         }
-        reuse_table.back().push_back((OpClass)i);
+        reuse_table[reuse_group[i]].push_back((OpClass)i);
     }
 
     for (auto it : reuse_table) {
@@ -1655,7 +1845,9 @@ Scheduler::Scheduler(const SchedulerParams& params)
         }
     }
 
-    assert(dispTable[MemWriteOp].size() == dispTable[StoreDataOp].size());
+    for (int i = 0; i < MaxThreads; i++) {
+        assert(dispTable[i][MemWriteOp].size() == dispTable[i][StoreDataOp].size());
+    }
 
     dispSeqVec.resize(64);
 }
@@ -1668,6 +1860,20 @@ Scheduler::setCPU(CPU* cpu, LSQ* lsq)
     const auto& cpuParams =
         dynamic_cast<const BaseO3CPUParams&>(cpu->params());
     smtIQPolicy = cpuParams.smtIQPolicy;
+    enableSpMT = cpuParams.enableSpMT;
+    if (enableSpMT) {
+        panic_if(cpuParams.numThreads != 2,
+                 "enableSpMT requires exactly two hardware threads, got %u",
+                 cpuParams.numThreads);
+        panic_if(cpuParams.numPhysIntRegs % 2 != 0,
+                 "enableSpMT requires an even number of integer physical "
+                 "registers, got %u", cpuParams.numPhysIntRegs);
+        panic_if((cpuParams.numPhysIntRegs / intRegfileBanks) % 2 != 0,
+                 "enableSpMT requires an even number of integer physical "
+                 "registers per bank, got %u", 
+                 cpuParams.numPhysIntRegs / intRegfileBanks);
+        spmtIntRegsPerThread = cpuParams.numPhysIntRegs / 2;
+    }
     for (auto it : issueQues) {
         it->setCPU(cpu);
         it->selector->setparent(this, it);
@@ -1778,15 +1984,16 @@ Scheduler::lookahead(std::deque<DynInstPtr>& insts)
         std::fill(totalDispCounter.begin(), totalDispCounter.end(), 0);
         int i = 0;
         for (auto& it : insts) {
-            auto& iqs = dispTable[it->opClass()];
+            auto& iqs = dispTable[it->threadNumber][it->opClass()];
             std::sort(iqs.begin(), iqs.end(), disp_policy(it->opClass()));
             if (it->isSplitStoreAddr()) {
-                auto& iqs = dispTable[StoreDataOp];
+                auto& iqs = dispTable[it->threadNumber][StoreDataOp];
                 std::sort(iqs.begin(), iqs.end(), disp_policy(StoreDataOp));
             }
 
-            dispSeqVec[i] = (*dispOpdist[it->opClass()]) % iqs.size();
-            (*dispOpdist[it->opClass()])++;
+            auto& counter = *dispOpdist[it->threadNumber][it->opClass()];
+            dispSeqVec[i] = counter % iqs.size();
+            counter++;
             i++;
         }
     }
@@ -1801,7 +2008,7 @@ Scheduler::ready(const DynInstPtr& inst, int disp_seq)
         return false;
     }
 
-    auto& iqs = dispTable[inst->opClass()];
+    auto& iqs = dispTable[inst->threadNumber][inst->opClass()];
     assert(!iqs.empty());
 
     if (old_disp) [[unlikely]] {
@@ -1823,7 +2030,7 @@ Scheduler::ready(const DynInstPtr& inst, int disp_seq)
 bool
 Scheduler::ready(OpClass op, ThreadID tid, int disp_seq)
 {
-    auto& iqs = dispTable[op];
+    auto& iqs = dispTable[tid][op];
     assert(!iqs.empty());
 
     if (old_disp) {
@@ -1896,7 +2103,7 @@ Scheduler::insert(const DynInstPtr& inst, int disp_seq)
         inst->buildStoreAddrUop();
     }
 
-    auto& iqs = dispTable[inst->opClass()];
+    auto& iqs = dispTable[inst->threadNumber][inst->opClass()];
     ThreadID tid = inst->threadNumber;
 
     if (old_disp) {
@@ -1921,7 +2128,7 @@ Scheduler::insert(const DynInstPtr& inst, int disp_seq)
 void
 Scheduler::insertNonSpec(const DynInstPtr& inst)
 {
-    auto& iqs = dispTable[inst->opClass()];
+    auto& iqs = dispTable[inst->threadNumber][inst->opClass()];
     ThreadID tid = inst->threadNumber;
 
     for (auto iq : iqs) {
@@ -2035,11 +2242,8 @@ Scheduler::getInstToFU()
 void
 Scheduler::useRfRdPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int typePortId, int pri)
 {
-    if (regid->is(IntRegClass)) {
-        if (regCache.contains(regid->flatIndex())) {
-            regCache.get(regid->flatIndex());
-            return;
-        }
+    if (regid->is(IntRegClass) && accessRegCache(inst, regid)) {
+        return;
     }
 
     int bankid = 0;
@@ -2070,6 +2274,40 @@ Scheduler::useRfRdPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int ty
 
     t_inst = inst;
     t_pri = pri;
+}
+
+Scheduler::RegCache &
+Scheduler::regCacheFor(ThreadID tid)
+{
+    if (!enableSpMT)
+        return regCache;
+    assert(tid < 2);
+    return tid == 0 ? spmtRegCache0 : spmtRegCache1;
+}
+
+void
+Scheduler::insertRegCache(const DynInstPtr& inst, PhysRegIdPtr reg)
+{
+    if (!enableSpMT || reg->isIntReg())
+        regCacheFor(inst->threadNumber).insert(reg->flatIndex(), {});
+}
+
+bool
+Scheduler::containsRegCache(const DynInstPtr& inst, PhysRegIdPtr reg)
+{
+    if (enableSpMT && !reg->isIntReg())
+        return false;
+    return regCacheFor(inst->threadNumber).contains(reg->flatIndex());
+}
+
+bool
+Scheduler::accessRegCache(const DynInstPtr& inst, PhysRegIdPtr reg)
+{
+    auto &cache = regCacheFor(inst->threadNumber);
+    if (!cache.contains(reg->flatIndex()))
+        return false;
+    cache.get(reg->flatIndex());
+    return true;
 }
 
 void
@@ -2240,7 +2478,8 @@ uint32_t
 Scheduler::getOpLatency(const DynInstPtr& inst)
 {
     if (inst->opClass() == FloatDivOp) [[unlikely]] {
-        if (inst->staticInst->operWid() == 64) {
+        const auto* format = fdivFormat(inst->staticInst->operWid());
+        if (format) {
             const int cached = inst->getFdivLatency();
             if (cached >= 0) {
                 return cached;
@@ -2255,63 +2494,23 @@ Scheduler::getOpLatency(const DynInstPtr& inst)
                 const auto src = inst->renamedSrcIdx(i);
                 if (!src->isFixedMapping() &&
                     !bypassScoreboard[src->flatIndex()]) {
-                    return 12;
+                    return format->normalLatency;
                 }
             }
 
             // Read the renamed physical registers so an out-of-order
             // producer is observed at the same point as normal execution.
-            const uint64_t opa = cpu->peekReg(inst->renamedSrcIdx(0));
-            const uint64_t opb = cpu->peekReg(inst->renamedSrcIdx(1));
-            const uint64_t opaExp = (opa >> 52) & 0x7ff;
-            const uint64_t opbExp = (opb >> 52) & 0x7ff;
-            const uint64_t opaFrac = opa & ((uint64_t(1) << 52) - 1);
-            const uint64_t opbFrac = opb & ((uint64_t(1) << 52) - 1);
-
-            const bool opaZero = opaExp == 0 && opaFrac == 0;
-            const bool opbZero = opbExp == 0 && opbFrac == 0;
-            const bool opaInf = opaExp == 0x7ff && opaFrac == 0;
-            const bool opbInf = opbExp == 0x7ff && opbFrac == 0;
-            const bool opaNan = opaExp == 0x7ff && opaFrac != 0;
-            const bool opbNan = opbExp == 0x7ff && opbFrac != 0;
-
-            // This is the same early-finish partition used by the RTL:
-            // NaN, invalid (Inf/Inf or 0/0), Inf result, or exact zero.
-            const bool invalid = (opaInf && opbInf) ||
-                                 (opaZero && opbZero);
-            const bool earlyFinish = opaNan || opbNan || invalid ||
-                                     opaInf || opbZero || opaZero || opbInf;
-
-            uint32_t latency = 12;
-            if (earlyFinish || (!opbInf && !opbZero && opbFrac == 0)) {
-                latency = 4;
-            } else if (opaExp == 0 || opbExp == 0) {
-                latency = 13;
-            } else {
-                // For normal finite operands, the quotient exponent is
-                // determined by the unbiased exponent difference and the
-                // significand comparison.  An exponent below -1022 means
-                // the RTL takes its extra denormal post-processing cycle.
-                const uint64_t opaSig = (uint64_t(1) << 52) | opaFrac;
-                const uint64_t opbSig = (uint64_t(1) << 52) | opbFrac;
-                int quotientExp = static_cast<int>(opaExp) - 1023 -
-                                   (static_cast<int>(opbExp) - 1023);
-                if (opaSig < opbSig) {
-                    --quotientExp;
-                }
-                if (quotientExp < -1022) {
-                    latency = 13;
-                }
-            }
-            inst->setFdivLatency(latency);
+            const uint64_t rawOpa = cpu->peekReg(inst->renamedSrcIdx(0));
+            const uint64_t rawOpb = cpu->peekReg(inst->renamedSrcIdx(1));
+            const auto latency =
+                classifyFdivLatency(rawOpa, rawOpb, *format);
+            inst->setFdivLatency(latency.cycles);
             DPRINTF(Schedule,
-                    "[sn:%llu] semantic fdiv latency opLat=%u "
-                    "(AtFU->bypass=%u), opa=%#lx opb=%#lx\n",
-                    inst->seqNum, latency, latency - 1, opa, opb);
-            return latency;
-        }
-        if (inst->staticInst->operWid() == 32) {
-            return 11;
+                    "[sn:%llu] semantic fdiv width=%u class=%s opLat=%u "
+                    "(AtFU->bypass=%u), raw_opa=%#lx raw_opb=%#lx\n",
+                    inst->seqNum, format->width, latency.latencyClass,
+                    latency.cycles, latency.cycles - 1, rawOpa, rawOpb);
+            return latency.cycles;
         }
     } else if (inst->opClass() == FloatSqrtOp) [[unlikely]] {
         if (inst->staticInst->operWid() == 32) {

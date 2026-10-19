@@ -45,6 +45,7 @@
 #include <algorithm>
 #include <array>
 #include <iostream>
+#include <iterator>
 #include <list>
 #include <queue>
 
@@ -139,11 +140,18 @@ class UnifiedFreeList
 
     std::array<SimpleFreeList, RMiscRegClass + 1> freeLists;
 
+    /** Per-thread physical-register pools used only by strict SpMT. */
+    std::array<std::array<SimpleFreeList, RMiscRegClass + 1>, MaxThreads>
+        spmtFreeLists;
+
     /**
      * The register file object is used only to distinguish integer
      * from floating-point physical register indices.
      */
     PhysRegFile *regFile;
+
+    /** Whether physical-register identities are statically partitioned. */
+    const bool enableSpMT;
 
     /** SMT resource sharing policy for the Preg free lists. */
     SMTQueuePolicy pregPolicy;
@@ -193,6 +201,26 @@ class UnifiedFreeList
      *  Only counts active threads to avoid deadlocking single-thread runs. */
     unsigned borrowingLimit(RegClassType type, ThreadID tid) const;
 
+    SimpleFreeList &selectedFreeList(RegClassType type, ThreadID tid)
+    {
+        assert(!enableSpMT || tid < 2);
+        return enableSpMT ? spmtFreeLists[tid][type] : freeLists[type];
+    }
+
+    const SimpleFreeList &
+    selectedFreeList(RegClassType type, ThreadID tid) const
+    {
+        assert(!enableSpMT || tid < 2);
+        return enableSpMT ? spmtFreeLists[tid][type] : freeLists[type];
+    }
+
+    ThreadID spmtOwner(PhysRegIdPtr reg) const
+    {
+        const RegClassType type = reg->classValue();
+        assert(enableSpMT && numPhysRegs[type] % 2 == 0);
+        return reg->index() < numPhysRegs[type] / 2 ? 0 : 1;
+    }
+
   public:
     /** Constructs a free list.
      *  @param _my_name Name of the free list, for DPRINTF.
@@ -229,7 +257,8 @@ class UnifiedFreeList
     PhysRegIdPtr
     getReg(RegClassType type, ThreadID tid)
     {
-        PhysRegIdPtr reg = freeLists[type].getReg();
+        PhysRegIdPtr reg = selectedFreeList(type, tid).getReg();
+        assert(!enableSpMT || spmtOwner(reg) == tid);
         threadUsed[tid][type]++;
         return reg;
     }
@@ -241,6 +270,20 @@ class UnifiedFreeList
     void
     addRegs(InputIt first, InputIt last)
     {
+        if (enableSpMT) {
+            const unsigned count = std::distance(first, last);
+            panic_if(count % 2 != 0,
+                     "%s: SpMT requires an even number of physical "
+                     "registers per class, got %u", _name, count);
+            const unsigned split = count / 2;
+            unsigned pos = 0;
+            for (auto it = first; it != last; ++it, ++pos) {
+                const ThreadID owner = pos < split ? 0 : 1;
+                assert(it->index() == pos);
+                spmtFreeLists[owner][it->classValue()].addReg(&*it);
+            }
+            return;
+        }
         std::for_each(first, last,
                       [this](auto &reg) { this->addReg(&reg); });
     }
@@ -253,6 +296,8 @@ class UnifiedFreeList
     void
     addReg(PhysRegIdPtr freed_reg)
     {
+        assert(!enableSpMT);
+        assert(freed_reg->getRef() == 0);
         freeLists[freed_reg->classValue()].addReg(freed_reg);
     }
 
@@ -265,8 +310,15 @@ class UnifiedFreeList
     {
         assert(tid < MaxThreads &&
                threadUsed[tid][freed_reg->classValue()] > 0);
+        assert(freed_reg->getRef() == 0);
         threadUsed[tid][freed_reg->classValue()]--;
-        freeLists[freed_reg->classValue()].addReg(freed_reg);
+        if (enableSpMT) {
+            const ThreadID owner = spmtOwner(freed_reg);
+            assert(owner == tid);
+            spmtFreeLists[owner][freed_reg->classValue()].addReg(freed_reg);
+        } else {
+            freeLists[freed_reg->classValue()].addReg(freed_reg);
+        }
     }
 
     /** Resets per-thread occupancy accounting on thread removal.
@@ -284,14 +336,20 @@ class UnifiedFreeList
     bool
     hasFreeRegs(RegClassType type) const
     {
-        return freeLists[type].hasFreeRegs();
+        if (!enableSpMT)
+            return freeLists[type].hasFreeRegs();
+        return spmtFreeLists[0][type].hasFreeRegs() ||
+               spmtFreeLists[1][type].hasFreeRegs();
     }
 
     /** Returns the number of free registers of type type. */
     unsigned
     numFreeRegs(RegClassType type) const
     {
-        return freeLists[type].numFreeRegs();
+        if (!enableSpMT)
+            return freeLists[type].numFreeRegs();
+        return spmtFreeLists[0][type].numFreeRegs() +
+               spmtFreeLists[1][type].numFreeRegs();
     }
 
     /** Whether thread tid may allocate n more registers of type type

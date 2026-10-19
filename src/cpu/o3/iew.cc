@@ -267,7 +267,9 @@ IEW::IEWStats::IEWStats(CPU *cpu)
     ADD_STAT(renameStallReason, statistics::units::Count::get(),
              "Number of rename stall reasons each tick (Total)"),
     ADD_STAT(dispatchStallReason, statistics::units::Count::get(),
-             "Number of dispatch stall reasons each tick (Total)")
+             "Number of dispatch stall reasons each tick (Total)"),
+    ADD_STAT(cacheAccessDepthDist, statistics::units::Count::get(),
+             "distribution of cache access depth for load inst")
 {
     idleCycles
         .init(cpu->numThreads)
@@ -410,6 +412,9 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         renameStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
         dispatchStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
     }
+
+    cacheAccessDepthDist
+        .init(0, 4, 1);
 }
 
 IEW::IEWStats::ExecutedInstStats::ExecutedInstStats(CPU *cpu)
@@ -683,7 +688,11 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
         toCommit->squashedSeqNum[tid] = inst->seqNum;
         toCommit->squashedTargetId[tid] = inst->getFtqId();
         toCommit->squashedLoopIter[tid] = inst->getLoopIteration();
-        toCommit->branchTaken[tid] = inst->pcState().branching();
+        if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {
+            toCommit->branchTaken[tid] = inst->traceBranchTaken();
+        } else {
+            toCommit->branchTaken[tid] = inst->pcState().branching();
+        }
 
         set(toCommit->pc[tid], inst->pcState());
         inst->staticInst->advancePC(*toCommit->pc[tid]);
@@ -1615,10 +1624,13 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
             if (i < dispatched) {   // dispatch success, no stall
                 dispatchStalls.at(i) = StallReason::NoStall;
             } else {    // dispatch no insts, pass rename stall
-                if (fromRename->renameStallReason.size() == 0) {    // initialize, no stall
+                const auto &rename_stalls =
+                    fromRename->renameStallReason[tid];
+                if (rename_stalls.empty()) {    // initialize, no stall
                     dispatchStalls.at(i) = StallReason::NoStall;
                 } else {    // not dispatch initialize, pass rename stall
-                    dispatchStalls.at(i) = fromRename->renameStallReason.at(i);
+                    dispatchStalls.at(i) = i < rename_stalls.size() ?
+                        rename_stalls[i] : StallReason::NoStall;
                 }
             }
         }
@@ -1737,10 +1749,13 @@ IEW::classifyInstToDispQue(ThreadID tid, unsigned max_insts,
             if (i < dispatched) {   // dispatch success, no stall
                 dispatchStalls.at(i) = StallReason::NoStall;
             } else {    // dispatch no insts, pass rename stall
-                if (fromRename->renameStallReason.size() == 0) {    // initialize, no stall
+                const auto &rename_stalls =
+                    fromRename->renameStallReason[tid];
+                if (rename_stalls.empty()) {    // initialize, no stall
                     dispatchStalls.at(i) = StallReason::NoStall;
                 } else {    // not dispatch initialize, pass rename stall
-                    dispatchStalls.at(i) = fromRename->renameStallReason.at(i);
+                    dispatchStalls.at(i) = i < rename_stalls.size() ?
+                        rename_stalls[i] : StallReason::NoStall;
                 }
             }
         }
@@ -2233,6 +2248,33 @@ IEW::writebackInsts()
 
         if (inst->isLoad()) {
             inst->pf_source = ldstQueue.getLoadPFSource(inst);
+
+            // MLP feedback
+            if (!inst->isSquashed()) {
+                int depth = inst->cacheAccessDepth;
+
+                // VP hit (correct prediction) eliminates dependency chain,
+                // treat as short latency regardless of actual cache depth
+                if (inst->vpResult.speculative && !inst->vpMisprediction) {
+                    depth = 0;
+                }
+
+                // Record depth distribution (treat < 0 as 0)
+                int depthForStats = (depth < 0) ? 0 : depth;
+                iewStats.cacheAccessDepthDist.sample(depthForStats);
+
+                // Moved to commit.cc commitHead()
+                // bool actualLongLatency =
+                //     (depth >= (int)mlpLongLatencyCacheDepth);
+                // inst->longLatencyLoad = actualLongLatency;
+                //
+                // auto &fb = toFetch->iewInfo[tid];
+                // fb.loadFeedback.push_back({
+                //     inst->pcState().instAddr(),
+                //     actualLongLatency,
+                //     inst->mlpPredictedLongLatency,
+                //     inst->mlpPredictedDistance});
+            }
         }
 
         DPRINTF(IEW, "Sending instructions to commit, [sn:%lli] PC %s.\n",
@@ -2278,14 +2320,20 @@ void
 IEW::tick()
 {
     blockReason = StallReason::NoStall;
-    for (int i = 0;i < fromRename->fetchStallReason.size();i++) {
-        iewStats.fetchStallReason[fromRename->fetchStallReason[i]]++;
+    for (const ThreadID tid : *activeThreads) {
+        for (const auto reason : fromRename->fetchStallReason[tid]) {
+            iewStats.fetchStallReason[reason]++;
+        }
     }
-    for (int i = 0;i < fromRename->decodeStallReason.size();i++) {
-        iewStats.decodeStallReason[fromRename->decodeStallReason[i]]++;
+    for (const ThreadID tid : *activeThreads) {
+        for (const auto reason : fromRename->decodeStallReason[tid]) {
+            iewStats.decodeStallReason[reason]++;
+        }
     }
-    for (int i = 0;i < fromRename->renameStallReason.size();i++) {
-        iewStats.renameStallReason[fromRename->renameStallReason[i]]++;
+    for (const ThreadID tid : *activeThreads) {
+        for (const auto reason : fromRename->renameStallReason[tid]) {
+            iewStats.renameStallReason[reason]++;
+        }
     }
 
     wbNumInst = 0;
@@ -2598,7 +2646,7 @@ IEW::checkLoadStoreInst(DynInstPtr inst)
         assert(inst->pendingCacheReq);
         depth = inst->pendingCacheReq->mainReq()->depth;
     }
-    assert(depth < 5);
+    panic_if(depth >= 5, "Unexpected depth:%d in [sn:%d]\n", depth, inst->seqNum);
     bool in_l1 = depth == 0;
     bool in_l2 = depth == 1;
     bool in_l3 = depth == 2;
@@ -2751,6 +2799,11 @@ IEW::checkLSQStall(ThreadID tid, bool isLoad)
 
     DynInstPtr head_inst = ldstQueue.getLSQHeadInst(tid, isLoad);
     return checkLoadStoreInst(head_inst);
+}
+
+StallReason
+IEW::checkingLoadStoreInst(DynInstPtr inst) {
+    return checkLoadStoreInst(inst);
 }
 
 void

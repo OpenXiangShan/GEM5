@@ -42,6 +42,8 @@
 #ifndef __CPU_O3_COMM_HH__
 #define __CPU_O3_COMM_HH__
 
+#include <array>
+#include <cstdint>
 #include <vector>
 
 #include "arch/generic/pcstate.hh"
@@ -159,7 +161,8 @@ struct FetchStruct
     Fault fetchFault;
     InstSeqNum fetchFaultSN;
     bool clearFetchFault;
-    std::vector<StallReason> fetchStallReason;
+    /** Per-thread fetch stall reasons for the logical decode lanes. */
+    std::array<std::vector<StallReason>, MaxThreads> fetchStallReason;
 };
 
 /** Struct that defines the information passed from decode to rename. */
@@ -168,8 +171,10 @@ struct DecodeStruct
     int size;
 
     DynInstPtr insts[MaxWidth];
-    std::vector<StallReason> fetchStallReason;
-    std::vector<StallReason> decodeStallReason;
+    /** Per-thread fetch stall reasons for the logical decode lanes. */
+    std::array<std::vector<StallReason>, MaxThreads> fetchStallReason;
+    /** Per-thread decode stall reasons for the logical decode lanes. */
+    std::array<std::vector<StallReason>, MaxThreads> decodeStallReason;
 };
 
 /** Struct that defines the information passed from rename to IEW. */
@@ -178,9 +183,12 @@ struct RenameStruct
     int size;
 
     DynInstPtr insts[MaxWidth];
-    std::vector<StallReason> fetchStallReason;
-    std::vector<StallReason> decodeStallReason;
-    std::vector<StallReason> renameStallReason;
+    /** Per-thread fetch stall reasons for the logical decode lanes. */
+    std::array<std::vector<StallReason>, MaxThreads> fetchStallReason;
+    /** Decode stall reasons preserved by thread across rename. */
+    std::array<std::vector<StallReason>, MaxThreads> decodeStallReason;
+    /** Per-thread rename stall reasons for the logical rename lanes. */
+    std::array<std::vector<StallReason>, MaxThreads> renameStallReason;
 };
 
 /** Struct that defines the information passed from IEW to commit. */
@@ -304,6 +312,9 @@ struct TimeStruct
         unsigned iqCount;
         unsigned ldstqCount;
         unsigned robCount;
+
+        // MLP predictor load-completion feedback moved to CommitComm
+        // (loadFeedback is commit-produced and rides the commit wire).
     };
 
     IewComm iewInfo[MaxThreads]; // iew to rename, fetch
@@ -389,6 +400,33 @@ struct TimeStruct
         // Trace ctrl-flow faults: notify fetch how far to rollback trace reader.
         InstSeqNum traceTrapSeqNum; // *F
         bool traceTrapSkipInst;     // *F
+
+        // MLP predictor: load-completion feedback from commit (miss-pattern
+        // table training). Rides the commit wire, consistent with llsrPush.
+        struct LoadCompleteFeedback
+        {
+            Addr loadPC = 0;
+            bool actualLongLatency = false;
+            bool predictedLongLatency = false;
+            uint32_t predictedDistance = 0;
+        };
+        // Dynamically sized, no compile-time limit needed.
+        // Runtime check: loadFeedback.size() < number of load pipes.
+        std::vector<LoadCompleteFeedback> loadFeedback;
+
+        // MLP predictor: LLSR push feedback from commit
+        struct LLSRPushEntry
+        {
+            bool isLongLatencyLoad = false;
+            Addr pc = 0;
+            // Prediction and table validity captured when this load was fetched.
+            uint32_t predictedDistance = 0;
+            bool predictionValid = false;
+            bool isFusionPlaceholder = false;
+        };
+        // Dynamically sized; a fusion emits two architectural slots.
+        // Runtime check: llsrPush.size() <= 2 * commitWidth * instsPerGroup.
+        std::vector<LLSRPushEntry> llsrPush;
 
     };
 

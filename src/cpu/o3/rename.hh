@@ -308,22 +308,21 @@ class Rename
     /** True when the active recovery policy consumes RAT checkpoints
      *  (NaiveCpt). Derived from robWalkPolicy at construction. */
     bool ratSnapshotActive;
-    /** Maximum number of live checkpoints (slots). */
+    /** Maximum number of live checkpoints per thread. */
     int numMaxRatSnapshot;
     /** Minimum instructions between successive checkpoints. */
     unsigned ratSnapshotDistance;
-    /** Live checkpoints across all threads (checkpoints are thread-shared). */
-    int numRatSnapshotInUse{0};
-    /** Instructions renamed since the last checkpoint was taken. */
-    unsigned lastRatSnapshotDistance{0};
+    /** Live checkpoints owned by each thread. */
+    int numRatSnapshotInUse[MaxThreads] = {};
+    /** Per-thread instructions renamed since the last checkpoint was taken. */
+    unsigned lastRatSnapshotDistance[MaxThreads] = {};
 
-    /** Total live checkpoints across threads (invariant check). */
-    int countRatSnapshots();
-    size_t countRatSnapshots(ThreadID tid);
-    /** Whether a free checkpoint slot exists. */
-    bool ratSnapshotAvailable() {
-        assert(numRatSnapshotInUse == countRatSnapshots());
-        return numRatSnapshotInUse < numMaxRatSnapshot;
+    /** Live checkpoints owned by tid (invariant check). */
+    size_t countRatSnapshots(ThreadID tid) const;
+    /** Whether tid has a free checkpoint slot. */
+    bool ratSnapshotAvailable(ThreadID tid) {
+        assert(numRatSnapshotInUse[tid] == countRatSnapshots(tid));
+        return numRatSnapshotInUse[tid] < numMaxRatSnapshot;
     }
     /** Record a checkpoint on this instruction. */
     void takeSnapshot(const DynInstPtr &inst, ThreadID tid);
@@ -332,7 +331,7 @@ class Rename
     /** Release checkpoints strictly younger than the squash point. */
     void squashSnapshot(InstSeqNum squash_seq_num, ThreadID tid);
     /** Whether the instruction may carry a checkpoint. */
-    bool suitableForRatSnapshot(const DynInstPtr &inst);
+    bool suitableForRatSnapshot(const DynInstPtr &inst, ThreadID tid);
 
     /** Pointer to CPU. */
     CPU *cpu;
@@ -529,7 +528,7 @@ class Rename
 
     } stats;
 
-    std::vector<StallReason> renameStalls;
+    std::array<std::vector<StallReason>, MaxThreads> renameStalls;
 
     StallReason blockReason{NoStall};
 
@@ -537,7 +536,7 @@ class Rename
      *  used to avoid double-incrementing stallEvents[RegFull]. */
     bool regFullThisCycle{false};
 
-    void setAllStalls(StallReason renameStall);
+    void setAllStalls(ThreadID tid, StallReason renameStall);
 
     StallReason checkRenameStallFromIEW(ThreadID tid);
 

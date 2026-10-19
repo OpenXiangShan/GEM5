@@ -64,6 +64,7 @@
 #include "cpu/o3/free_list.hh"
 #include "cpu/o3/iew.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/mlp_predictor.hh"
 #include "cpu/o3/perfCCT.hh"
 #include "cpu/o3/rename.hh"
 #include "cpu/o3/rob.hh"
@@ -384,6 +385,11 @@ class CPU : public BaseCPU
         return fetch.isTraceEOF();
     }
 
+    /** Current trace reader position (records consumed from the stream;
+     *  replay from history does not advance it). Used by the EOF
+     *  reconciliation invariant in Commit. */
+    uint64_t getTraceReaderIndex() const { return fetch.getTraceReaderIndex(); }
+
     /**
      * Wrapper for internal drain check used by trace-mode helpers.
      * Keeps isCpuDrained() private while still allowing components
@@ -521,6 +527,9 @@ class CPU : public BaseCPU
     Scoreboard scoreboard;
 
     std::vector<TheISA::ISA *> isa;
+
+    /** The MLP predictor. */
+    MLPredictor mlpPredictor;
 
   public:
     /** Enum to give each stage a specific index, so when calling
