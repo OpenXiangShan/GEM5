@@ -110,6 +110,8 @@ CPU::CPU(const BaseO3CPUParams &params)
 
       rob(this, params),
 
+      tea(this, params),
+
       scoreboard(name() + ".scoreboard", regFile.totalNumPhysRegs()),
 
       isa(numThreads, NULL),
@@ -171,6 +173,8 @@ CPU::CPU(const BaseO3CPUParams &params)
     rename.setActiveThreads(&activeThreads);
     iew.setActiveThreads(&activeThreads);
     commit.setActiveThreads(&activeThreads);
+    tea.setROB(&rob);
+    tea.setActiveThreads(&activeThreads);
     // Set up MLP predictor if enabled
     if (params.mlpPredictorEnable) {
         fetch.setMlpPredictor(&mlpPredictor);
@@ -655,6 +659,8 @@ CPU::tick()
     if (removeInstsThisCycle) {
         cleanUpRemovedInsts();
     }
+
+    tea.tick();
 
     if (!tickEvent.scheduled()) {
         if (_status == SwitchedOut) {

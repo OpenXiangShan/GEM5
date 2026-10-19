@@ -44,6 +44,7 @@
 #include <list>
 
 #include "base/logging.hh"
+#include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/commit.hh"
@@ -511,6 +512,7 @@ ROB::insertInst(const DynInstPtr &inst)
     tail--;
 
     inst->setInROB();
+    cpu->getTea()->allocate(inst);
 
     ++numInstsInROB;
 
@@ -518,6 +520,23 @@ ROB::insertInst(const DynInstPtr &inst)
 
     DPRINTF(ROB, "[tid:%i] Now has %d instructions.\n", tid,
             threadGroups[tid].size());
+}
+
+DynInstPtr
+ROB::headStallInst(ThreadID tid) const
+{
+    if (threadGroups[tid].empty() || instList[tid].empty()) {
+        return nullptr;
+    }
+
+    auto it = instList[tid].begin();
+    const unsigned group_size = threadGroups[tid].front();
+    for (unsigned i = 0; i < group_size; ++i, ++it) {
+        if (!(*it)->readyToCommit()) {
+            return *it;
+        }
+    }
+    return nullptr;
 }
 
 void
@@ -702,6 +721,7 @@ ROB::doSquash(ThreadID tid)
         // Mark the instruction as squashed, and ready to commit so that
         // it can drain out of the pipeline.
         (*squashIt[tid])->setSquashed();
+        cpu->getTea()->squash(*squashIt[tid]);
 
         (*squashIt[tid])->setCanCommit();
 

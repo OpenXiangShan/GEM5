@@ -279,6 +279,9 @@ class ROB
     bool isDoneSquashing(ThreadID tid) const
     { return doneSquashing[tid]; }
 
+    /** Return the oldest member of the head group that is not ready. */
+    DynInstPtr headStallInst(ThreadID tid) const;
+
     /** Checks if the ROB is still in the process of squashing instructions for
      *  any thread.
      */
