@@ -1099,7 +1099,7 @@ Decode::tickCompaction()
     wroteToTimeBuffer = false;
     toRenameIndex = 0;
     blockReason = StallReason::NoStall;
-    setAllStalls(StallReason::NoStall);
+    setAllStalls(0, StallReason::NoStall);
 
     checkSquash();
     receiveCompactionInsts();
@@ -1123,7 +1123,7 @@ Decode::tickCompaction()
         ++stats.smtidleCycles[0];
         ++stats.smtnotactiveCycles[0];
         blockReason = StallReason::OtherFetchStall;
-        for (const auto reason : fromFetch->fetchStallReason) {
+        for (const auto reason : fromFetch->fetchStallReason[0]) {
             if (reason != StallReason::NoStall) {
                 blockReason = reason;
                 break;
@@ -1149,8 +1149,8 @@ Decode::tickCompaction()
     stats.instsDecodedPerCycle.sample(raw);
     measureDecodeBubbles(toRenameIndex, 0);
 
-    for (unsigned i = toRenameIndex; i < decodeWidth; ++i) {
-        decodeStalls[i] = blockReason;
+    for (unsigned lane = toRenameIndex; lane < decodeWidth; ++lane) {
+        decodeStalls[0][lane] = blockReason;
     }
     toRename->decodeStallReason = decodeStalls;
 
@@ -1406,11 +1406,25 @@ Decode::processInstControl(const DynInstPtr &inst, ThreadID tid)
     if (!inst->isPredecodeChecked() &&
         inst->isReturn() && !inst->isNonSpeculative() &&
         !inst->readPredTaken()) {
+        std::unique_ptr<PCStateBase> target;
+        if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {
+            target = std::make_unique<RiscvISA::PCState>(
+                inst->traceBranchNextPC());
+            if (TraceRecoveryRules::returnTargetMatchesPrediction(
+                    *target, inst->readPredTarg())) {
+                DPRINTF(Decode,
+                        "[tid:%i] [sn:%llu] Trace return target already "
+                        "matches prediction: PredPC: %s TracePC: %s\n",
+                        tid, inst->seqNum, inst->readPredTarg(), *target);
+                return StallReason::NoStall;
+            }
+        } else {
+            // return target cannot be computed in decode stage since it is an indirect branch
+            // need to inquire bpu to get the target
+            auto return_addr = fetch_ptr->getPreservedReturnAddr(inst);
+            target = std::make_unique<RiscvISA::PCState>(return_addr);
+        }
         ++stats.branchMispred;
-        // return target cannot be computed in decode stage since it is an indirect branch
-        // need to inquire bpu to get the target
-        auto return_addr = fetch_ptr->getPreservedReturnAddr(inst);
-        auto target = std::make_unique<RiscvISA::PCState>(return_addr);
         DPRINTF(Decode, "[tid:%i] [sn:%llu] Updating predictions:"
                 " Return not identified by bp: predTaken %d, PredPC: %s Now PC %s\n",
                 tid, inst->seqNum, inst->readPredTaken(), inst->readPredTarg(), *target);
