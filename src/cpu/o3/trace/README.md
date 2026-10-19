@@ -28,6 +28,34 @@ scons -j$(nproc) --gold-linker build/RISCV/gem5.opt
 
 `kmhv3.py` 在启用 trace 模式时放宽 `--generic-rv-cpt` 的必选性，并打印 trace 文件、格式与 `--maxinsts` 摘要。
 
+### 运行 Google TRACERTL trace
+
+以下命令均从仓库根目录执行。先构建优化版本：
+
+```bash
+scons build/RISCV/gem5.opt --gold-linker -j64
+```
+
+运行命令如下：
+mkdir -p m5out/tracertl_delta_8
+
+./build/RISCV/gem5.opt \
+  --outdir=m5out/tracertl_delta_8 \
+  --stats-file=YOURTRACESTATS \
+  configs/example/kmhv3.py \
+  --mem-type=DDR4_2400_8x8 \
+  --enable-trace-mode \
+  --trace-file=YOURTRACEFILE \
+  --trace-format=tracertl \
+  --maxinsts=46233024 \
+  --warmup-insts-no-switch=23463846 \
+  --trace-enable-decoupled-bp
+```
+
+运行完成后，性能统计位于 `YOURTRACESTATS`。正常的完整
+trace 会以 `Trace-driven CPU committed last traced instruction` 退出；日志中不应出现
+`Trace supply PC ... is outside FTQ range`。
+
 ### Trace 专用 CLI（`configs/example/kmhv3.py`）
 
 - `--trace-format {champsim,cbp2025,tracertl}`（默认 `champsim`；`nemu` 为 `tracertl` 别名）
