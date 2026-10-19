@@ -41,6 +41,7 @@ MLOPPrefetcher::MLOPStats::MLOPStats(statistics::Group *parent)
       ADD_STAT(l1Candidates, statistics::units::Count::get(), "MLOP candidates targeting L1"),
       ADD_STAT(l2Candidates, statistics::units::Count::get(), "MLOP candidates targeting L2"),
       ADD_STAT(llcCandidates, statistics::units::Count::get(), "MLOP candidates targeting LLC"),
+      ADD_STAT(crossPageDropped, statistics::units::Count::get(), "MLOP candidates dropped at a zone/page boundary"),
       ADD_STAT(l1SubmittedOffsetDist, statistics::units::Count::get(), "Offsets submitted by MLOP for L1 prefetching"),
       ADD_STAT(l2SubmittedOffsetDist, statistics::units::Count::get(), "Offsets submitted by MLOP for L2 prefetching"),
       ADD_STAT(llcSubmittedOffsetDist, statistics::units::Count::get(),
@@ -310,7 +311,7 @@ MLOPPrefetcher::finishRound()
 }
 
 std::vector<std::pair<uint64_t, uint8_t>>
-MLOPPrefetcher::candidates(uint64_t block, bool secure) const
+MLOPPrefetcher::candidates(uint64_t block, bool secure)
 {
     const ZoneKey key{block / BlocksInZone, secure};
     const auto *zone = findZone(key);
@@ -324,6 +325,7 @@ MLOPPrefetcher::candidates(uint64_t block, bool secure) const
         for (const int offset : prefetchOffsets[depth]) {
             const int target = origin + offset;
             if (target < 0 || target >= static_cast<int>(BlocksInZone)) {
+                ++statsMLOP.crossPageDropped;
                 continue;
             }
             const auto index = static_cast<unsigned>(target);

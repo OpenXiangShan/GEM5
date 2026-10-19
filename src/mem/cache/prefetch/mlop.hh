@@ -89,6 +89,7 @@ class MLOPPrefetcher : public WorkerPrefetcher
         statistics::Scalar l1Candidates;
         statistics::Scalar l2Candidates;
         statistics::Scalar llcCandidates;
+        statistics::Scalar crossPageDropped;
         statistics::Distribution l1SubmittedOffsetDist;
         statistics::Distribution l2SubmittedOffsetDist;
         statistics::Distribution llcSubmittedOffsetDist;
@@ -126,7 +127,7 @@ class MLOPPrefetcher : public WorkerPrefetcher
     void mark(uint64_t block, State state, uint8_t level, bool secure);
     void learn(uint64_t block, bool secure);
     void finishRound();
-    std::vector<std::pair<uint64_t, uint8_t>> candidates(uint64_t block, bool secure) const;
+    std::vector<std::pair<uint64_t, uint8_t>> candidates(uint64_t block, bool secure);
     void sampleSubmittedOffset(uint8_t level, int64_t offset);
 
   protected:
