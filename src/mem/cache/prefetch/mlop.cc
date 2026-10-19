@@ -41,12 +41,19 @@ MLOPPrefetcher::MLOPStats::MLOPStats(statistics::Group *parent)
       ADD_STAT(l1Candidates, statistics::units::Count::get(), "MLOP candidates targeting L1"),
       ADD_STAT(l2Candidates, statistics::units::Count::get(), "MLOP candidates targeting L2"),
       ADD_STAT(llcCandidates, statistics::units::Count::get(), "MLOP candidates targeting LLC"),
+      ADD_STAT(l1SubmittedOffsetDist, statistics::units::Count::get(), "Offsets submitted by MLOP for L1 prefetching"),
+      ADD_STAT(l2SubmittedOffsetDist, statistics::units::Count::get(), "Offsets submitted by MLOP for L2 prefetching"),
+      ADD_STAT(llcSubmittedOffsetDist, statistics::units::Count::get(),
+               "Offsets submitted by MLOP for LLC prefetching"),
       ADD_STAT(l1Accepted, statistics::units::Count::get(), "MLOP L1 candidates accepted by a prefetch queue"),
       ADD_STAT(l2Accepted, statistics::units::Count::get(), "MLOP L2 candidates accepted by a prefetch queue"),
       ADD_STAT(llcAccepted, statistics::units::Count::get(), "MLOP LLC candidates handed to a downstream prefetcher"),
       ADD_STAT(downstreamUnavailable, statistics::units::Count::get(),
                "MLOP downstream candidates without a downstream prefetcher")
 {
+    l1SubmittedOffsetDist.init(-63, 63, 1).prereq(l1SubmittedOffsetDist);
+    l2SubmittedOffsetDist.init(-63, 63, 1).prereq(l2SubmittedOffsetDist);
+    llcSubmittedOffsetDist.init(-63, 63, 1).prereq(llcSubmittedOffsetDist);
 }
 
 MLOPPrefetcher::MLOPPrefetcher(const MLOPPrefetcherParams &p)
@@ -331,6 +338,24 @@ MLOPPrefetcher::candidates(uint64_t block, bool secure) const
 }
 
 void
+MLOPPrefetcher::sampleSubmittedOffset(uint8_t level, int64_t offset)
+{
+    switch (level) {
+        case 1:
+            statsMLOP.l1SubmittedOffsetDist.sample(offset);
+            break;
+        case 2:
+            statsMLOP.l2SubmittedOffsetDist.sample(offset);
+            break;
+        case 3:
+            statsMLOP.llcSubmittedOffsetDist.sample(offset);
+            break;
+        default:
+            panic("MLOP submitted an invalid target level");
+    }
+}
+
+void
 MLOPPrefetcher::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
 {
     if (pfi.isWrite() || pfi.isStore()) {
@@ -396,6 +421,7 @@ MLOPPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrior
         }
 
         const Addr candidateAddr = candidateBlock * blkSize;
+        const auto offset = static_cast<int64_t>(candidateBlock) - static_cast<int64_t>(block);
         if (usePFBuffer) {
             const bool alreadyBuffered =
                 std::any_of(PFRequestBuffer.begin(), PFRequestBuffer.end(), [&](const AddrPriority &pending) {
@@ -415,8 +441,10 @@ MLOPPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrior
         if (usePFBuffer) {
             address.pf_trigger_info = pfi.trigger_info;
             InsertPFRequestToBuffer(address);
+            sampleSubmittedOffset(level, offset);
         } else {
             addresses.push_back(address);
+            sampleSubmittedOffset(level, offset);
         }
     }
 
