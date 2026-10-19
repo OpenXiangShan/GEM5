@@ -3115,6 +3115,8 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
         }
         assert(request);
         request->_byteEnable = byte_enable;
+        // Nuke checks can observe the request as soon as translation finishes.
+        inst->effSize = size;
         inst->setRequest();
         request->taskId(cpu->taskId());
 
@@ -3141,7 +3143,6 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
     if (request->isTranslationComplete()) {
         if (request->isMemAccessRequired()) {
             inst->effAddr = request->getVaddr();
-            inst->effSize = size;
             inst->effAddrValid(true);
 
             if (cpu->checker) {
