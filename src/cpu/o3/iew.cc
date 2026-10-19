@@ -1251,6 +1251,10 @@ IEW::canInsertLDSTQue(ThreadID tid)
 
     int lastClockLQPopEntries = ldstQueue.getAndResetLastLQPopEntries(tid);
     int lastClockSQPopEntries = ldstQueue.getAndResetLastSQPopEntries(tid);
+    if (rob->isEmpty(tid) &&
+        freeSQEntries < renameWidth + lastClockSQPopEntries) {
+        cpu->getRename()->markTeaStoreQueueStall(tid);
+    }
     if (freeLQEntries >= renameWidth + lastClockLQPopEntries &&
         freeSQEntries >= renameWidth + lastClockSQPopEntries) {
         return true;
@@ -1489,6 +1493,12 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
         // Check LSQ if inst is LD/ST
         if ((inst->isAtomic() && ldstQueue.sqFull(tid)) || (inst->isLoad() && ldstQueue.lqFull(tid)) ||
             (inst->isStore() && ldstQueue.sqFull(tid))) {
+            // gem5 allocates the ROB before Dispatch. A blocked head store
+            // has no older ROB work, matching the pre-enqueue DR_SQ case.
+            if ((inst->isStore() || inst->isAtomic()) &&
+                (rob->isEmpty(tid) || rob->readHeadInst(tid) == inst)) {
+                inst->teaSetEvent(TeaEvent::DR_SQ);
+            }
             DPRINTF(IEW, "[tid:%i] Dispatch: %s has become full.\n", tid, inst->isLoad() ? "LQ" : "SQ");
 
             iewStats.stallEvents[LSQFull]++;
@@ -1812,6 +1822,10 @@ IEW::dispatchInstFromDispQue()
             if ((inst->isAtomic() && ldstQueue.sqFull(tid)) ||
                 (inst->isLoad() && ldstQueue.lqFull(tid)) ||
                 (inst->isStore() && ldstQueue.sqFull(tid))) {
+                if ((inst->isStore() || inst->isAtomic()) &&
+                    (rob->isEmpty(tid) || rob->readHeadInst(tid) == inst)) {
+                    inst->teaSetEvent(TeaEvent::DR_SQ);
+                }
                 DPRINTF(IEW, "[tid:%i] Dispatch: %s has become full.\n",tid,
                         inst->isLoad() ? "LQ" : "SQ");
 
