@@ -434,9 +434,21 @@ Walker::doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc, BaseMMU::Tr
     l2state.translation = translation;
     l2state.mode = mode;
     l2state.Paddr = Paddr;
-    l2state.entry = entry;
-    l2state.entryVsstage = entryVsstage;
-    l2state.entryGstage = entryGstage;
+    l2state.hasEntry = entry != nullptr;
+    l2state.hasEntryVsstage = entryVsstage != nullptr;
+    l2state.hasEntryGstage = entryGstage != nullptr;
+    if (entry) {
+        l2state.entry = *entry;
+        l2state.entry.trieHandle = nullptr;
+    }
+    if (entryVsstage) {
+        l2state.entryVsstage = *entryVsstage;
+        l2state.entryVsstage.trieHandle = nullptr;
+    }
+    if (entryGstage) {
+        l2state.entryGstage = *entryGstage;
+        l2state.entryGstage.trieHandle = nullptr;
+    }
     L2TLBrequestors.push_back(l2state);
 }
 
@@ -618,6 +630,9 @@ Walker::WalkerState::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *trans
                                  BaseMMU::Mode _mode, bool from_l2tlb, Addr asid, bool from_forward_pre_req,
                                  bool from_back_pre_req)
 {
+    if (nextlineOnly)
+        return std::make_pair(false, NoFault);
+
 
     SATP _satp = _tc->readMiscReg(MISCREG_SATP);
     bool priv_match;
@@ -720,23 +735,40 @@ Walker::dol2TLBHit()
         //assert(l2tlbFault == NoFault);
         if (l2tlbFault == NoFault) {
             if (enableL1L2replace){ //write back entry from L2 to L1
-                if (dol2TLBHitrequestors.entry != nullptr) {
+                if (dol2TLBHitrequestors.hasEntry) {
+                    TlbEntry &entry = dol2TLBHitrequestors.entry;
                     TlbEntry l1_entry;
                     if (tlb->isL1DirectCompressionEnabled() &&
                         tlb->buildSingleL1CompressedEntry(dol2TLBHitrequestors.req->getVaddr(),
-                                                          *dol2TLBHitrequestors.entry, direct, l1_entry)) {
+                                                          entry, direct, l1_entry)) {
                         tlb->insert(l1_entry.vaddr, l1_entry, false, direct);
                         tlb->recordL1CompressedEntry(l1_entry);
                     } else if (!tlb->isL1DirectCompressionEnabled()) {
-                        tlb->insert(dol2TLBHitrequestors.entry->vaddr, *dol2TLBHitrequestors.entry, false, direct);
+                        tlb->insert(entry.vaddr, entry, false, direct);
                     }
                 }
-                if (dol2TLBHitrequestors.entryVsstage != nullptr)
-                    tlb->insert(dol2TLBHitrequestors.entryVsstage->vaddr, *dol2TLBHitrequestors.entryVsstage, false,
-                            vsstage);
-                if (dol2TLBHitrequestors.entryGstage != nullptr)
-                    tlb->insert(dol2TLBHitrequestors.entryGstage->gpaddr, *dol2TLBHitrequestors.entryGstage, false,
-                            gstage);
+                if (dol2TLBHitrequestors.hasEntryVsstage) {
+                    TlbEntry &entry = dol2TLBHitrequestors.entryVsstage;
+                    TlbEntry l1_entry;
+                    if (tlb->isL1DirectCompressionEnabled() &&
+                        tlb->buildSingleL1CompressedEntry(entry.vaddr, entry, vsstage, l1_entry)) {
+                        tlb->insert(l1_entry.vaddr, l1_entry, false, vsstage);
+                        tlb->recordL1CompressedEntry(l1_entry);
+                    } else if (!tlb->isL1DirectCompressionEnabled()) {
+                        tlb->insert(entry.vaddr, entry, false, vsstage);
+                    }
+                }
+                if (dol2TLBHitrequestors.hasEntryGstage) {
+                    TlbEntry &entry = dol2TLBHitrequestors.entryGstage;
+                    TlbEntry l1_entry;
+                    if (tlb->isL1DirectCompressionEnabled() &&
+                        tlb->buildSingleL1CompressedEntry(entry.gpaddr, entry, gstage, l1_entry)) {
+                        tlb->insert(l1_entry.vaddr, l1_entry, false, gstage);
+                        tlb->recordL1CompressedEntry(l1_entry);
+                    } else if (!tlb->isL1DirectCompressionEnabled()) {
+                        tlb->insert(entry.gpaddr, entry, false, gstage);
+                    }
+                }
             }
             dol2TLBHitrequestors.translation->finish(
                 l2tlbFault, dol2TLBHitrequestors.req, dol2TLBHitrequestors.tc,
@@ -875,6 +907,91 @@ Walker::WalkerState::startFunctional(Addr &addr, unsigned &logBytes,
     addr = entry.paddr << PageShift;
 
     return fault;
+}
+
+Fault
+Walker::WalkerState::twoStageNextlineWalk(PacketPtr &write)
+{
+    write = nullptr;
+    const Addr nextlineBasicGpaddr = nextlineEntry.gpaddr;
+
+    for (int i = 0; i < l2tlbLineSize; i++) {
+        nextlineEntry.gpaddr =
+            (((nextlineBasicGpaddr >> (PageShift + L2TLB_BLK_OFFSET))
+              << L2TLB_BLK_OFFSET) + i)
+            << PageShift;
+        nextlineEntry.vaddr = nextlineEntry.gpaddr;
+        nextlineEntry.pte = read->getLE_l2tlb<uint64_t>(i);
+        nextlineEntry.paddr = nextlineEntry.pte.ppn;
+        nextlineEntry.index =
+            (nextlineEntry.gpaddr >> (PageShift + L2TLB_BLK_OFFSET)) &
+            walker->tlb->L2TLB_L0_MASK;
+        walker->tlb->L2TLBInsert(nextlineEntry.gpaddr, nextlineEntry, 0,
+                                 L_L2L0, i, false, gstage);
+    }
+
+    DPRINTF(PageTableWalkerTwoStage,
+            "H nextline: refill G-stage L2L0 base %#lx\n",
+            nextlineBasicGpaddr);
+    nextline = false;
+    endWalk();
+    return NoFault;
+}
+
+bool
+Walker::WalkerState::startTwoStageNextline(PacketPtr oldRead,
+                                            unsigned readSize,
+                                            Request::Flags flags)
+{
+    if (twoStageLevel != 0 || !timing || !openNextline ||
+        !autoNextlineSign || fromPre || fromBackPre)
+        return false;
+
+    const Addr nextRead = oldRead->getAddr() + readSize;
+    if ((oldRead->getAddr() >> PageShift) != (nextRead >> PageShift))
+        return false;
+
+    TlbEntry prefetchedEntry = entry;
+    prefetchedEntry.gpaddr = entry.gpaddr +
+        (l2tlbLineSize << PageShift);
+    prefetchedEntry.vaddr = prefetchedEntry.gpaddr;
+    prefetchedEntry.asid = vsatp.asid;
+    prefetchedEntry.vmid = hgatp.vmid;
+    prefetchedEntry.logBytes = PageShift;
+    prefetchedEntry.level = 0;
+    prefetchedEntry.isSquashed = false;
+    prefetchedEntry.used = false;
+    prefetchedEntry.isPre = true;
+    prefetchedEntry.fromForwardPreReq = false;
+    prefetchedEntry.fromBackPreReq = false;
+    prefetchedEntry.preSign = false;
+    prefetchedEntry.trieHandle = nullptr;
+
+    RequestPtr request = std::make_shared<Request>(
+        nextRead, readSize, flags, walker->requestorId);
+    WalkerState *nextlineState = new WalkerState(walker, nullptr, mainReq);
+    nextlineState->state = Waiting;
+    nextlineState->nextState = Translate;
+    nextlineState->timing = true;
+    nextlineState->started = true;
+    nextlineState->translateMode = twoStageMode;
+    nextlineState->nextline = true;
+    nextlineState->nextlineOnly = true;
+    nextlineState->finishDefaultTranslate = true;
+    nextlineState->nextlineEntry = prefetchedEntry;
+    if (!walker->reservePtwLevel(nextlineState, 0)) {
+        delete nextlineState;
+        return false;
+    }
+    nextlineState->read = new Packet(request, MemCmd::ReadReq);
+    nextlineState->read->allocate();
+    walker->currStates.push_back(nextlineState);
+    nextlineState->sendPackets();
+
+    DPRINTF(PageTableWalkerTwoStage,
+            "H nextline: issue G-stage L0 read %#lx for gpaddr %#lx\n",
+            nextRead, prefetchedEntry.gpaddr);
+    return true;
 }
 
 Fault
@@ -1027,7 +1144,29 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
             DPRINTF(PageTableWalkerTwoStage, "twoStageStepWalk(G): found the leaf pte.\n");
 
             if (finishGVA && (!isVsatp0Mode)) {
-                walker->tlb->insert(entry.gpaddr, entry, false, gstage);
+                if (walker->tlb->isL1DirectCompressionEnabled()) {
+                    TlbEntry compressed_entry;
+                    bool inserted_compressed = false;
+                    if (!tlbHit) {
+                        std::array<PTE, l2tlbLineSize> l1_compress_ptes;
+                        for (int compress_i = 0; compress_i < l2tlbLineSize; compress_i++) {
+                            l1_compress_ptes[compress_i] = read->getLE_l2tlb<uint64_t>(compress_i);
+                        }
+                        if (walker->tlb->buildL1CompressedEntry(entry.gpaddr, entry, l1_compress_ptes, gstage,
+                                                                 twoStageLevel, compressed_entry)) {
+                            walker->tlb->insert(compressed_entry.vaddr, compressed_entry, false, gstage);
+                            walker->tlb->recordL1CompressedEntry(compressed_entry);
+                            inserted_compressed = true;
+                        }
+                    }
+                    if (!inserted_compressed &&
+                        walker->tlb->buildSingleL1CompressedEntry(entry.gpaddr, entry, gstage, compressed_entry)) {
+                        walker->tlb->insert(compressed_entry.vaddr, compressed_entry, false, gstage);
+                        walker->tlb->recordL1CompressedEntry(compressed_entry);
+                    }
+                } else {
+                    walker->tlb->insert(entry.gpaddr, entry, false, gstage);
+                }
                 int l2_level = twoStageLevel;
                 inl2Entry.gpaddr = entry.gpaddr;
                 inl2Entry.pte = pte;
@@ -1102,6 +1241,8 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
             walker->tlb->insert(entry.vaddr, entry, false, allstage);
 
 
+            walker->releasePtwLevel(this);
+            startTwoStageNextline(oldRead, oldSize, flags);
             endWalk();
             return NoFault;
         } else if ((!doEndWalk) || (doLLwalk)) {
@@ -1113,6 +1254,8 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
                 entry.level = twoStageLevel;
                 entry.gpaddr = entry.vaddr;
                 walker->tlb->insert(entry.vaddr, entry, false, gstage);
+                walker->releasePtwLevel(this);
+                startTwoStageNextline(oldRead, oldSize, flags);
                 endWalk();
                 return NoFault;
             }
@@ -1234,7 +1377,30 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                         gPaddr = gPaddr | (entry.vaddr & PGMASK);
 
                         entry.paddr = (gPaddr >> 12) << 12;
-                        walker->tlb->insert(entry.vaddr, entry, false, vsstage);
+                        if (walker->tlb->isL1DirectCompressionEnabled()) {
+                            TlbEntry compressed_entry;
+                            bool inserted_compressed = false;
+                            if (!tlbHit) {
+                                std::array<PTE, l2tlbLineSize> l1_compress_ptes;
+                                for (int compress_i = 0; compress_i < l2tlbLineSize; compress_i++) {
+                                    l1_compress_ptes[compress_i] = read->getLE_l2tlb<uint64_t>(compress_i);
+                                }
+                                if (walker->tlb->buildL1CompressedEntry(entry.vaddr, entry, l1_compress_ptes, vsstage,
+                                                                         level, compressed_entry)) {
+                                    walker->tlb->insert(compressed_entry.vaddr, compressed_entry, false, vsstage);
+                                    walker->tlb->recordL1CompressedEntry(compressed_entry);
+                                    inserted_compressed = true;
+                                }
+                            }
+                            if (!inserted_compressed &&
+                                walker->tlb->buildSingleL1CompressedEntry(entry.vaddr, entry, vsstage,
+                                                                           compressed_entry)) {
+                                walker->tlb->insert(compressed_entry.vaddr, compressed_entry, false, vsstage);
+                                walker->tlb->recordL1CompressedEntry(compressed_entry);
+                            }
+                        } else {
+                            walker->tlb->insert(entry.vaddr, entry, false, vsstage);
+                        }
                         if (!tlbHit) {
                             int l2_level = level;
                             inl2Entry.gpaddr = gPaddr;
@@ -2070,9 +2236,9 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tl
     Fault fault = NoFault;
     if (translateMode == twoStageMode) {
         nextline = false;
-        autoNextlineSign = false;
+        openNextline = open_nextline;
+        autoNextlineSign = auto_open_nextline;
         preHitInPtw = false;
-        nextline = false;
         topAddr = (vsatp.ppn << PageShift) + (idx * sizeof(PTE));
         gPaddr = (vsatp.ppn << PageShift) + (idx_f * sizeof(PTE));
         if ((mainReq->get_level() != top_level) && (mainReq->getgPaddr() != 0)) {
@@ -2246,7 +2412,11 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
         nextState = Ready;
         PacketPtr write = NULL;
         read = pkt;
-        if ((translateMode == twoStageMode) && (inGstage)) {
+        if ((translateMode == twoStageMode) && nextlineOnly) {
+            DPRINTF(PageTableWalker,
+                    "recvPacket in twoStageMode: G-stage nextline.\n");
+            mainFault = twoStageNextlineWalk(write);
+        } else if ((translateMode == twoStageMode) && (inGstage)) {
             DPRINTF(PageTableWalker, "recvPacket in twoStageMode: Gstage.\n");
             mainFault = twoStageStepWalk(write);
         } else if ((translateMode == twoStageMode) && (!inGstage)) {
@@ -2281,6 +2451,11 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
     if (waitingForPtwLevel)
         return false;
 
+    if (nextlineOnly && inflight == 0 && read == NULL && writes.size() == 0) {
+        state = Ready;
+        nextState = Waiting;
+        return true;
+    }
     if ((inflight == 0 && read == NULL && writes.size() == 0) && (translateMode == twoStageMode)) {
         state = Ready;
         nextState = Waiting;

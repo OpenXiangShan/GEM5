@@ -249,6 +249,7 @@ class TLB : public BaseTLB
     Port *getTableWalkerPort() override;
 
     Addr getEntryPaddr(const TlbEntry *entry, Addr vaddr) const;
+    PTE getEntryPte(const TlbEntry *entry, Addr vaddr) const;
     bool refillHintMaySatisfy(const RequestPtr &req, ThreadContext *tc,
                               BaseMMU::Mode mode, const TlbEntry &entry,
                               uint8_t translateMode) const;

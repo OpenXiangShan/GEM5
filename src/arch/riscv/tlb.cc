@@ -103,6 +103,27 @@ l1CompressedBlockBase(Addr vaddr)
 }
 
 static bool
+isL1CompressionMode(uint8_t translateMode)
+{
+    return translateMode == direct || translateMode == vsstage ||
+           translateMode == gstage;
+}
+
+static uint16_t
+l1CompressionContextId(const TlbEntry &entry, uint8_t translateMode)
+{
+    return translateMode == gstage ? entry.vmid : entry.asid;
+}
+
+static bool
+sameL1CompressionContext(const TlbEntry &entry, uint16_t asid,
+                         uint8_t translateMode)
+{
+    return entry.translateMode == translateMode &&
+           l1CompressionContextId(entry, translateMode) == asid;
+}
+
+static bool
 isCompressibleLeafPte(PTE pte)
 {
     return pte.v && !(!pte.r && pte.w) && (pte.r || pte.x);
@@ -689,11 +710,11 @@ TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update,uint8_t transla
             vpn, translateMode == gstage ? entry.vmid : entry.asid, entry.paddr, entry.pte, entry.size());
 
     if (!squashed_update && enableL1DirectCompression &&
-        translateMode == direct && !entry.isCompressed) {
+        isL1CompressionMode(translateMode) && !entry.isCompressed) {
         TlbEntry compressed_entry;
         panic_if(!buildSingleL1CompressedEntry(vpn, entry, translateMode,
                                                compressed_entry),
-                 "normal direct L1 entry inserted while compression is "
+                 "normal L1 entry inserted while compression is "
                  "enabled: vpn %#x pte %#x level %d\n",
                  vpn, entry.pte, (int)entry.level);
         return insert(compressed_entry.vaddr, compressed_entry, false,
@@ -701,7 +722,7 @@ TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update,uint8_t transla
     }
 
     if (!squashed_update && enableL1DirectCompression &&
-        translateMode == direct) {
+        isL1CompressionMode(translateMode)) {
         TlbEntry *merged_entry = prepareL1CompressedInsert(
             entry, translateMode);
         if (merged_entry) {
@@ -734,7 +755,7 @@ TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update,uint8_t transla
     }
 
     if (newEntry) {
-        if (entry.isCompressed && translateMode == direct &&
+        if (entry.isCompressed && isL1CompressionMode(translateMode) &&
             newEntry->isCompressed && newEntry->l1CompressedNarrow)
             newEntry = nullptr;
     }
@@ -781,21 +802,23 @@ TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update,uint8_t transla
         return newEntry;
     }
 
+    Addr key = buildKey(vpn, entry.asid, translateMode);
+    if (translateMode == gstage)
+        key = buildKey(vpn, entry.vmid, translateMode);
+    const unsigned trie_width =
+        TlbEntryTrie::MaxBits - entry.logBytes + PGSHFT;
+
     if (freeList.empty())
         evictLRU();
 
     newEntry = freeList.front();
     freeList.pop_front();
 
-    Addr key = buildKey(vpn, entry.asid, translateMode);
-    if (translateMode == gstage)
-        key = buildKey(vpn, entry.vmid, translateMode);
     *newEntry = entry;
     newEntry->translateMode = translateMode;
     newEntry->lruSeq = nextSeq();
     newEntry->vaddr = vpn;
-    newEntry->trieHandle = trie.insert(
-        key, TlbEntryTrie::MaxBits - entry.logBytes + PGSHFT, newEntry);
+    newEntry->trieHandle = trie.insert(key, trie_width, newEntry);
     DPRINTF(TLBVerbosel2, "trie insert key %#x logbytes %#x paddr %#x\n", key,
             entry.logBytes, newEntry->paddr);
     // stats all insert number
@@ -1356,6 +1379,23 @@ TLB::getEntryPaddr(const TlbEntry *entry, Addr vaddr) const
     return (ppn << PageShift) | (vaddr & mask(PageShift));
 }
 
+PTE
+TLB::getEntryPte(const TlbEntry *entry, Addr vaddr) const
+{
+    assert(entry != nullptr);
+
+    PTE pte = entry->pte;
+    if (!entry->isCompressed || entry->level != 0)
+        return pte;
+
+    const uint8_t sub_idx = (vaddr >> PageShift) & VADDR_CHOOSE_MASK;
+    assert(entry->validIdx & (1 << sub_idx));
+
+    pte.ppn = (entry->paddr << L2TLB_BLK_OFFSET) |
+              entry->ppnLow[sub_idx];
+    return pte;
+}
+
 bool
 TLB::refillHintMaySatisfy(const RequestPtr &req, ThreadContext *tc,
                           BaseMMU::Mode mode, const TlbEntry &entry,
@@ -1419,7 +1459,7 @@ TLB::lookupL1CompressedFallback(Addr vaddr, uint16_t asid,
                                 uint8_t translateMode,
                                 const TlbEntry *missed_entry)
 {
-    if (!enableL1DirectCompression || translateMode != direct)
+    if (!enableL1DirectCompression || !isL1CompressionMode(translateMode))
         return nullptr;
 
     const uint8_t sub_idx = (vaddr >> PageShift) & VADDR_CHOOSE_MASK;
@@ -1430,10 +1470,10 @@ TLB::lookupL1CompressedFallback(Addr vaddr, uint16_t asid,
         TlbEntry &entry = tlb[i];
         if (&entry == missed_entry || !entry.trieHandle)
             continue;
-        if (!entry.isCompressed || entry.translateMode != direct)
+        if (!entry.isCompressed ||
+            !sameL1CompressionContext(entry, asid, translateMode))
             continue;
-        if (entry.asid != asid ||
-            l1CompressedBlockBase(entry.vaddr) != block_base ||
+        if (l1CompressedBlockBase(entry.vaddr) != block_base ||
             entry.level != 0)
             continue;
         if (!(entry.validIdx & (1 << sub_idx)))
@@ -1449,7 +1489,7 @@ TLB::lookupL1CompressedFallback(Addr vaddr, uint16_t asid,
 TlbEntry *
 TLB::prepareL1CompressedInsert(const TlbEntry &entry, uint8_t translateMode)
 {
-    if (!entry.isCompressed || translateMode != direct)
+    if (!entry.isCompressed || !isL1CompressionMode(translateMode))
         return nullptr;
 
     TlbEntry *merged_entry = nullptr;
@@ -1457,8 +1497,8 @@ TLB::prepareL1CompressedInsert(const TlbEntry &entry, uint8_t translateMode)
         tlbKeyComparablePageBase(entry.vaddr, entry.logBytes);
     const Addr block_limit = block_base + entry.size();
 
-    auto reinsert_narrow = [this](TlbEntry &narrow_entry,
-                                  size_t entry_idx) {
+    auto reinsert_narrow = [this, translateMode](TlbEntry &narrow_entry,
+                                                 size_t entry_idx) {
         const int narrow_idx = firstValidIdx(narrow_entry.validIdx);
         panic_if(narrow_idx < 0,
                  "compressed TLB entry has no valid subentry\n");
@@ -1468,6 +1508,9 @@ TLB::prepareL1CompressedInsert(const TlbEntry &entry, uint8_t translateMode)
             narrow_entry.trieHandle = nullptr;
         }
         narrow_entry.l1CompressedNarrow = true;
+        const uint8_t keep_idx = 1 << narrow_idx;
+        narrow_entry.validIdx &= keep_idx;
+        narrow_entry.pteIdx &= keep_idx;
 
         const Addr narrow_base =
             tlbKeyComparablePageBase(narrow_entry.vaddr,
@@ -1480,10 +1523,20 @@ TLB::prepareL1CompressedInsert(const TlbEntry &entry, uint8_t translateMode)
                 continue;
 
             TlbEntry &other_entry = tlb[j];
-            if (!other_entry.trieHandle || !other_entry.isCompressed ||
-                !other_entry.l1CompressedNarrow ||
-                other_entry.translateMode != direct ||
-                other_entry.asid != narrow_entry.asid)
+            if (!other_entry.trieHandle ||
+                other_entry.translateMode != translateMode ||
+                l1CompressionContextId(other_entry, translateMode) !=
+                l1CompressionContextId(narrow_entry, translateMode))
+                continue;
+
+            if (!other_entry.isCompressed) {
+                if (other_entry.logBytes == PageShift &&
+                    other_entry.vaddr == narrow_vaddr)
+                    remove(j);
+                continue;
+            }
+
+            if (!other_entry.l1CompressedNarrow)
                 continue;
 
             const int other_idx = firstValidIdx(other_entry.validIdx);
@@ -1501,8 +1554,10 @@ TLB::prepareL1CompressedInsert(const TlbEntry &entry, uint8_t translateMode)
                 remove(j);
         }
 
-        const Addr narrow_key =
-            buildKey(narrow_vaddr, narrow_entry.asid, direct);
+        const Addr narrow_key = buildKey(
+            narrow_vaddr, l1CompressionContextId(narrow_entry, translateMode),
+            translateMode);
+
         narrow_entry.trieHandle =
             trie.insert(narrow_key, TlbEntryTrie::MaxBits, &narrow_entry);
     };
@@ -1511,9 +1566,10 @@ TLB::prepareL1CompressedInsert(const TlbEntry &entry, uint8_t translateMode)
         TlbEntry &old_entry = tlb[i];
         if (!old_entry.trieHandle)
             continue;
-        if (old_entry.translateMode != direct)
+        if (old_entry.translateMode != translateMode)
             continue;
-        if (old_entry.asid != entry.asid)
+        if (l1CompressionContextId(old_entry, translateMode) !=
+            l1CompressionContextId(entry, translateMode))
             continue;
 
         const Addr old_base =
@@ -1577,7 +1633,7 @@ TLB::buildL1CompressedEntry(Addr vaddr, const TlbEntry &base_entry,
                             uint8_t translateMode, int level,
                             TlbEntry &compressed_entry) const
 {
-    if (translateMode != direct || level != 0)
+    if (!isL1CompressionMode(translateMode) || level != 0)
         return false;
 
     if (!isCompressibleLeafPte(base_entry.pte))
@@ -1628,7 +1684,7 @@ TLB::buildSingleL1CompressedEntry(Addr vaddr, const TlbEntry &base_entry,
                                   uint8_t translateMode,
                                   TlbEntry &compressed_entry) const
 {
-    if (translateMode != direct)
+    if (!isL1CompressionMode(translateMode))
         return false;
 
     if (!isCompressibleLeafPte(base_entry.pte))
@@ -1681,7 +1737,7 @@ TLB::recordL1CompressionPotential(Addr vaddr, PTE base_pte,
                                   const std::array<PTE, l2tlbLineSize> &ptes,
                                   uint8_t translateMode, int level)
 {
-    if (translateMode != direct || level != 0)
+    if (!isL1CompressionMode(translateMode) || level != 0)
         return;
 
     stats.l1CompressPotentialAttempts++;
@@ -2012,28 +2068,29 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
         e[0] = lookup(vaddr, vsatp.asid, mode, false, true, vsstage,
                       is_prefetch);
         if (e[0]){
-            req->setPte(e[0]->pte);
+            PTE vs_pte = getEntryPte(e[0], vaddr);
+            req->setPte(vs_pte);
             hit_type = h_l1VSstageHit;
-            gPaddr = e[0]->pte.ppn <<12;
-            DPRINTF(TLB, "l1tlb hit in VSstage: level %d, ppn %#x\n", e[0]->level, e[0]->pte.ppn);
+            gPaddr = vs_pte.ppn <<12;
+            DPRINTF(TLB, "l1tlb hit in VSstage: level %d, ppn %#x\n", e[0]->level, vs_pte.ppn);
             if (e[0]->level >0){
                 pg_mask =  (1ULL << (12 + 9 * e[0]->level)) - 1;
-                gPaddr = ((e[0]->pte.ppn << 12) & ~pg_mask) | (vaddr & pg_mask & ~PGMASK);
+                gPaddr = ((vs_pte.ppn << 12) & ~pg_mask) | (vaddr & pg_mask & ~PGMASK);
             }
             gPaddr = gPaddr | (vaddr & PGMASK);
-            if (mode == BaseMMU::Write && !e[0]->pte.d) {
+            if (mode == BaseMMU::Write && !vs_pte.d) {
                 fault = createPagefault(vaddr, 0, mode, false);
                 //return fault;
                 return std::make_pair(hit_type,fault);
             } else {
-                fault = checkPermissions(vstatus, pmode, vaddr, mode, e[0]->pte, 0, false);
+                fault = checkPermissions(vstatus, pmode, vaddr, mode, vs_pte, 0, false);
                 if (fault != NoFault) {
                     return std::make_pair(hit_type, fault);
                 }
             }
             req->setPaddr(gPaddr);
-            ppn = e[0]->pte.ppn;
-            pte = e[0]->pte;
+            ppn = vs_pte.ppn;
+            pte = vs_pte;
 
             DPRINTFR(TLB, "\tpass check, try to lookup for Gstage pte\n");
 
@@ -2041,14 +2098,15 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                           is_prefetch);
             if (e[0]) {
                 hit_type = h_l1GstageHit;
-                DPRINTF(TLB, "l1tlb hit in Gstage: level %d, ppn %#x\n", e[0]->level, e[0]->pte.ppn);
+                PTE g_pte = getEntryPte(e[0], gPaddr);
+                DPRINTF(TLB, "l1tlb hit in Gstage: level %d, ppn %#x\n", e[0]->level, g_pte.ppn);
                 std::pair(continuePtw, fault) =
-                    checkGPermissions(status, vaddr, gPaddr, mode, e[0]->pte, req->get_h_inst());
+                    checkGPermissions(status, vaddr, gPaddr, mode, g_pte, req->get_h_inst());
                 if (e[0]->level >0){
                     pg_mask = (1ULL << (12 + 9 * e[0]->level)) - 1;
-                    pgBase = ((e[0]->pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
+                    pgBase = ((g_pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
                 } else {
-                    pgBase = e[0]->pte.ppn << 12;
+                    pgBase = g_pte.ppn << 12;
                 }
                 gPaddr = pgBase |(gPaddr & PGMASK);
 
@@ -2059,7 +2117,7 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
 
 
                 walker->doL2TLBHitSchedule(req, tc, translation, mode, gPaddr, e_l2tlb, e_l2tlbVsstage, e_l2tlbGstage,
-                                           3);
+                                           1);
                 return std::make_pair(hit_type,NoFault);
             } else {
                 DPRINTF(TLB, "l1tlb miss in Gstage, set TwoStagePageTableWalk\n");
@@ -2133,12 +2191,13 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
         if (e[0]) {
             e_l2tlbGstage = e[0];
             gPaddr = req->getgPaddr();
+            PTE g_pte = getEntryPte(e[0], gPaddr);
             std::pair<bool, Fault> result =
-                checkGPermissions(status, vaddr, gPaddr, mode, e[0]->pte, req->get_h_inst());
+                checkGPermissions(status, vaddr, gPaddr, mode, g_pte, req->get_h_inst());
             continuePtw = result.first;
             fault = result.second;
             DPRINTF(TLB, "l2tlb hit in Gstage: "
-                    "level %d, hit_flag %d, ppn %#x\n", hit_level, hit_flag, e[0]->pte.ppn);
+                    "level %d, hit_flag %d, ppn %#x\n", hit_level, hit_flag, g_pte.ppn);
             if (fault != NoFault) {
                 return std::make_pair(hit_type, fault);
             } else if (continuePtw) {
@@ -2149,7 +2208,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                     assert(0);
                 }
                 DPRINTFR(TLB, "\tneed continue to PTW(h_l2GstageHitContinue)\n");
-                req->setTwoPtwWalk(true, 0, e[0]->level-1, e[0]->pte.ppn, true);
+                req->setTwoPtwWalk(true, 0, e[0]->level-1, g_pte.ppn, true);
                 req->setgPaddr(gPaddr);
                 return std::make_pair(hit_type, fault);
             } else {
@@ -2157,10 +2216,10 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                 DPRINTFR(TLB, "\tfind the leaf pte(h_l2GstageHitEnd)\n");
                 if (e[0]->level > 0) {
                     pg_mask = (1ULL << (12 + 9 * e[0]->level)) - 1;
-                    pgBase = ((e[0]->pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
+                    pgBase = ((g_pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
                 }
                 else {
-                    pgBase = e[0]->pte.ppn << 12;
+                    pgBase = g_pte.ppn << 12;
                 }
                 gPaddr = pgBase | (gPaddr & PGMASK);
                 walker->doL2TLBHitSchedule(req, tc, translation, mode, gPaddr, e_l2tlb, e_l2tlbVsstage, e_l2tlbGstage,
@@ -2178,6 +2237,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
         DPRINTF(TLB, "l1tlb miss, lookup l2tlb at VSstage.\n");
         e[0] = lookup(vaddr, vsatp.asid, mode, false, true, vsstage,
                       is_prefetch);
+        bool vs_hit_l1 = e[0] != nullptr;
         hit_level = PTW_TOP_LEVEL(vsatp.mode);
         if (!e[0]) {
             for (int i_e = 1; i_e < L_L2SUM; i_e++) {
@@ -2195,25 +2255,27 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
         }
         if (e[0]) {
             DPRINTF(TLB, "l2 tlb hit in VSstage (h_l2VSstageHitContinue).\n");
-            e_l2tlbVsstage = e[0];
+            if (!vs_hit_l1)
+                e_l2tlbVsstage = e[0];
             hit_type = h_l2VSstageHitContinue;
             level = e[0]->level;
-            fault = L2TLBCheck(e[0]->pte, e[0]->level, vstatus, pmode, vaddr, mode, req, false, false);
+            PTE vs_pte = getEntryPte(e[0], vaddr);
+            fault = L2TLBCheck(vs_pte, e[0]->level, vstatus, pmode, vaddr, mode, req, false, false);
             finishgva = hitInSp;
-            req->setPte(e[0]->pte);
+            req->setPte(vs_pte);
             uint64_t hit_vaddr = e[0]->vaddr;
             if (fault != NoFault) {
                 DPRINTF(TLB, "l2 tlb pte check with fault, return. (h_l2VSstageHitContinue).\n");
                 return std::make_pair(hit_type, fault);
             } else {
                 DPRINTF(TLB, "l2 tlb pte pass check: level %d, isLeaf? %d, ppn %#x. (h_l2VSstageHitEnd).\n",
-                        level, hitInSp, e[0]->pte.ppn);
+                        level, hitInSp, vs_pte.ppn);
                 hit_type = h_l2VSstageHitEnd;
-                gPaddr = e[0]->pte.ppn << 12;
+                gPaddr = vs_pte.ppn << 12;
                 if (finishgva) {
                     if (e[0]->level > 0) {
                         pg_mask = (1ULL << (12 + 9 * e[0]->level)) - 1;
-                        gPaddr = ((e[0]->pte.ppn << 12) & ~pg_mask) | (vaddr & pg_mask & ~PGMASK);
+                        gPaddr = ((vs_pte.ppn << 12) & ~pg_mask) | (vaddr & pg_mask & ~PGMASK);
                     }
                     gPaddr = gPaddr | (vaddr & PGMASK);
                 } else {
@@ -2221,13 +2283,14 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                     Addr shift = (PageShift + LEVEL_BITS * level);
                     Addr idx_f = (vaddr >> shift) & LEVEL_MASK;
                     Addr idx = (idx_f >> L2TLB_BLK_OFFSET) << L2TLB_BLK_OFFSET;
-                    gPaddr = (e[0]->pte.ppn << PageShift) + (idx_f * l2tlbLineSize);
+                    gPaddr = (vs_pte.ppn << PageShift) + (idx_f * l2tlbLineSize);
                 }
 
                 DPRINTFR(TLB, "\tlookup (gPaddr: %#x) in l1tlb again for Gstage.\n", gPaddr);
                 e[0] = nullptr;
                 e[0] = lookup(gPaddr, hgatp.vmid, mode, false, true, gstage,
                               is_prefetch);
+                bool g_hit_l1 = e[0] != nullptr;
                 if (!e[0]) {
                     DPRINTF(TLB, "l1tlb miss, lookup (gPaddr: %#x) l2tlb for Gstage.\n", gPaddr);
                     hit_level = PTW_TOP_LEVEL(hgatp.mode);
@@ -2247,22 +2310,24 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                     }
                 }
                 if (e[0]) {
-                    e_l2tlbGstage = e[0];
+                    if (!g_hit_l1)
+                        e_l2tlbGstage = e[0];
                     twoStageLevel = e[0]->level;
                     req->setgPaddr(gPaddr);
-                    auto check_res = checkGPermissions(status, vaddr, gPaddr, mode, e[0]->pte, req->get_h_inst());
+                    PTE g_pte = getEntryPte(e[0], gPaddr);
+                    auto check_res = checkGPermissions(status, vaddr, gPaddr, mode, g_pte, req->get_h_inst());
                     continuePtw = check_res.first;
                     fault = check_res.second;
                     DPRINTF(TLB, "found pte for gPaddr: %#x in Gstage -> "
                             "level:%d, ppn:%#x, pte.(v:%d, r:%d, w:%d, x:%d).\n",
-                            gPaddr, e[0]->level, e[0]->pte.ppn, e[0]->pte.v, e[0]->pte.r, e[0]->pte.w, e[0]->pte.x);
+                            gPaddr, e[0]->level, g_pte.ppn, g_pte.v, g_pte.r, g_pte.w, g_pte.x);
                     if (fault != NoFault) {
                         return std::make_pair(hit_type, fault);
                     } else if (continuePtw) {
                         DPRINTFR(TLB, "\tneed to continue PageTableWalk, setTwoStagePtW. "
                                  "(h_l2GstageHitContinue)\n");
                         hit_type = h_l2GstageHitContinue;
-                        req->setTwoPtwWalk(true, level, twoStageLevel-1, e[0]->pte.ppn, hitInSp);
+                        req->setTwoPtwWalk(true, level, twoStageLevel-1, g_pte.ppn, hitInSp);
                         req->setgPaddr(gPaddr);
                         return std::make_pair(hit_type, fault);
                     } else {
@@ -2272,9 +2337,9 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                         if (finishgva) {
                             if (e[0]->level > 0) {
                                 pg_mask = (1ULL << (12 + 9 * e[0]->level)) - 1;
-                                pgBase = ((e[0]->pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
+                                pgBase = ((g_pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
                             } else {
-                                pgBase = (e[0]->pte.ppn << 12);
+                                pgBase = (g_pte.ppn << 12);
                             }
                             gPaddr = pgBase | (gPaddr & PGMASK);
                             DPRINTFR(TLB, "GVA finish, got HPA %#x, "
@@ -2284,9 +2349,9 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                         } else {
                             DPRINTFR(TLB, "GVA not finish, "
                                      "still need to setTwoStagePTW. (h_l2VSstageHitContinue)\n");
-                            uint64_t ppppn = e[0]->pte.ppn;
+                            uint64_t ppppn = g_pte.ppn;
                             hit_type = h_l2VSstageHitContinue;
-                            req->setTwoPtwWalk(false, level, e[0]->level, e[0]->pte.ppn, hitInSp);
+                            req->setTwoPtwWalk(false, level, e[0]->level, g_pte.ppn, hitInSp);
                         }
                         return std::make_pair(hit_type, NoFault);
                     }
@@ -3106,7 +3171,7 @@ void
 TLB::serialize(CheckpointOut &cp) const
 {
     // Only store the entries in use.
-    printf("serialize\n");
+    DPRINTF(TLB, "serialize\n");
     uint32_t _size = size - freeList.size();
     SERIALIZE_SCALAR(_size);
     SERIALIZE_SCALAR(lruSeq);
@@ -3122,7 +3187,7 @@ void
 TLB::unserialize(CheckpointIn &cp)
 {
     // Do not allow to restore with a smaller tlb.
-    printf("unserialize\n");
+    DPRINTF(TLB, "unserialize\n");
     uint32_t _size;
     UNSERIALIZE_SCALAR(_size);
     if (_size > size) {
@@ -3146,7 +3211,9 @@ TLB::unserialize(CheckpointIn &cp)
             key_vaddr += static_cast<Addr>(narrow_idx) << PageShift;
             trie_width = TlbEntryTrie::MaxBits;
         }
-        Addr key = buildKey(key_vaddr, newEntry->asid, 0);
+        const uint16_t key_id =
+            l1CompressionContextId(*newEntry, newEntry->translateMode);
+        Addr key = buildKey(key_vaddr, key_id, newEntry->translateMode);
         newEntry->trieHandle = trie.insert(key, trie_width, newEntry);
     }
 }
