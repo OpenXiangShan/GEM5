@@ -37,6 +37,7 @@ jobs:
        github.event.pull_request.head.repo.full_name == github.repository))
     # 使用 open runner 可见的固定 H/V NEMU reference
     runs-on: [self-hosted, open]
+    timeout-minutes: 720
     continue-on-error: false
     name: XS-GEM5 - Running h test checkpoints
     steps:
