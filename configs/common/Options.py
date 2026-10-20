@@ -163,6 +163,26 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--l2_slices", type=int, default=4)
     parser.add_argument("--classic-l2", action="store_true", default=False,
                         help="use classic L2 cache, instead of RTL aligned L2 cache")
+    parser.add_argument("--cchi", action="store_true", default=False,
+                        help="use the CCHI (CHIron Cohestra) fabric instead of "
+                        "the classic tol2bus/L2/L3 hierarchy: each core's L1 "
+                        "attaches to a CCHIL1Agent (Taurus node) connected to "
+                        "a CCHIFabric with a pluggable downstream home. "
+                        "Requires a WITH_CCHI=True build (e.g. RISCV_CCHI).")
+    parser.add_argument("--cchi-downstream", type=str, default="earth",
+                        choices=["earth", "rtl"],
+                        help="CCHI downstream endpoint: 'earth' (vendored "
+                        "behavioral home) or 'rtl' (Verilator backend, "
+                        "requires a WITH_CCHI_RTL=True build)")
+    parser.add_argument("--no-cchi-l2-pf", action="store_true", default=False,
+                        help="Disable the CCHI-hosted L2 prefetch engine "
+                        "(no stash emissions via DoPrefetchLoad/Store); use "
+                        "for downstreams that do not properly support "
+                        "stash/prefetch traffic (e.g. the XSCache RTL)")
+    parser.add_argument("--cchi-flit-trace", action="store_true", default=False,
+                        help="Attach CHIron's CCHIFlitLogger to the CCHI "
+                        "fabric ([cchi] verbose=1): flit-level transaction "
+                        "log from the Taurus nodes (very verbose; debug runs)")
 
     parser.add_argument("--l3_size", type=str, default="16MB")
     parser.add_argument("--l3_assoc", type=int, default=16)

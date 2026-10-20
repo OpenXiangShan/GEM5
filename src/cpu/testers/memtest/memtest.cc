@@ -106,7 +106,8 @@ MemTest::MemTest(const Params &p)
       nextProgressMessage(p.progress_interval),
       maxLoads(p.max_loads),
       atomic(p.system->isAtomicMode()),
-      suppressFuncErrors(p.suppress_func_errors), stats(this)
+      suppressFuncErrors(p.suppress_func_errors),
+      checkData(p.check_data), stats(this)
 {
     id = TESTER_ALLOCATOR++;
     fatal_if(id >= blockSize, "Too many testers, only %d allowed\n",
@@ -155,7 +156,7 @@ MemTest::completeRequest(PacketPtr pkt, bool functional)
     } else {
         if (pkt->isRead()) {
             uint8_t ref_data = referenceData[req->getPaddr()];
-            if (pkt_data[0] != ref_data) {
+            if (checkData && pkt_data[0] != ref_data) {
                 panic("%s: read of %x (blk %x) @ cycle %d "
                       "returns %x, expected %x\n", name(),
                       req->getPaddr(), blockAlign(req->getPaddr()), curTick(),
