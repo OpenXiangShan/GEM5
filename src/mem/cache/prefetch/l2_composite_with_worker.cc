@@ -79,10 +79,8 @@ L2CompositeWithWorkerPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std:
         cdp->calculatePrefetch(pfi, addresses);
     }
     if (enableBOP) {
+        // The large BOP owns the merged large/small offset list.
         largeBOP->calculatePrefetch(
-            pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP,
-            activeBOPReplayAccessSeq);
-        smallBOP->calculatePrefetch(
             pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP,
             activeBOPReplayAccessSeq);
     }
@@ -269,9 +267,6 @@ L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriorit
     if (!L2PFsent && largeBOP->hasPFRequestsInBuffer()){
         L2PFsent = largeBOP->GetPFRequestsFromBuffer(addresses);
     }
-    if (!L2PFsent && smallBOP->hasPFRequestsInBuffer()){
-        L2PFsent = smallBOP->GetPFRequestsFromBuffer(addresses);
-    }
     if (!L2PFsent && despacitoStream->hasPFRequestsInBuffer()){
         L2PFsent = despacitoStream->GetPFRequestsFromBuffer(addresses);
     }
@@ -291,7 +286,6 @@ L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriorit
 }
 bool L2CompositeWithWorkerPrefetcher::hasPFRequestsInBuffer() {
     return  largeBOP->hasPFRequestsInBuffer() ||
-            smallBOP->hasPFRequestsInBuffer() ||
             cmc->hasPFRequestsInBuffer() ||
             cdp->hasPFRequestsInBuffer() ||
             despacitoStream->hasPFRequestsInBuffer();

@@ -1004,7 +1004,10 @@ class XSVirtualLargeBOP(BOPPrefetcher):
     student_delay_queue_size = 64
     student_delay_queue_cycles = 300
 
-    offsets = [
+    # Keep the large learner's order while explicitly including every offset
+    # from the small learner.  dict.fromkeys removes values already present in
+    # the large list without changing the order of the existing candidates.
+    offsets = list(dict.fromkeys([
           -117, -147, -91, 117, 147, 91,
           -256, -250, -243, -240, -225, -216, -200,
           -192, -180, -162, -160, -150, -144, -135, -128,
@@ -1020,7 +1023,7 @@ class XSVirtualLargeBOP(BOPPrefetcher):
           90, 96, 100, 108, 120, 125, 128, 135,
           144, 150, 160, 162, 180, 192, 200, 216,
           225, 240, 243, 250
-    ]
+    ] + XSPhysicalSmallBOP.offsets))
 
 class SmallBOPPrefetcher(BOPPrefetcher):
     direct_quality_kind = 2
