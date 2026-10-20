@@ -813,7 +813,7 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
         return false;
     }
 
-    if (pkt->cacheAccessDepth > 0) {
+    if (pkt->req->getAccessDepth() > 0) {
         threads[tid].cacheReq.teaPsv |= TeaEvent::bit(TeaEvent::DR_L1);
     }
 
