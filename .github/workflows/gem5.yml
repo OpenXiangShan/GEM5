@@ -109,8 +109,8 @@ jobs:
           set -uo pipefail
 
           for case_dir in \
-            "./log_root_h/rungem5/checkpoint-0-0-0/astar_biglakes" \
-            "./log_root_h/rungem5/checkpoint-0-0-0/wrf"
+            "./log_root_h/rungem5/checkpoint/astar_biglakes" \
+            "./log_root_h/rungem5/checkpoint/wrf"
           do
             echo
             echo "=================================================="
