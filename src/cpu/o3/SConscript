@@ -62,6 +62,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('thread_state.cc')
     Source('issue_queue.cc')
     Source('perfCCT.cc')
+    Source('tea.cc')
 
     # Trace reader sources for trace-driven simulation
     Source('trace/TraceReader.cc')

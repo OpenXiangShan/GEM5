@@ -1166,6 +1166,11 @@ Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
     DynInstPtr instruction = new (arrays) DynInst(
             arrays, fused_inst, fused_inst, thispc, predPC, inst_pair[0]->seqNum, cpu);
 
+    if (cpu->getTea()->enabled()) {
+        instruction->teaFusionMembers = {inst_pair[0], inst_pair[1]};
+        instruction->teaPsv = inst_pair[0]->teaPSV() | inst_pair[1]->teaPSV();
+    }
+
 
     instruction->setVersion(inst_pair[1]->getVersion());
     instruction->setTid(inst_pair[1]->threadNumber);

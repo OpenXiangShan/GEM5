@@ -68,6 +68,7 @@
 #include "cpu/o3/rename.hh"
 #include "cpu/o3/rob.hh"
 #include "cpu/o3/scoreboard.hh"
+#include "cpu/o3/tea.hh"
 #include "cpu/o3/thread_state.hh"
 #include "cpu/simple_thread.hh"
 #include "cpu/timebuf.hh"
@@ -447,6 +448,7 @@ class CPU : public BaseCPU
     Rename *getRename() { return &rename; }
     IEW *getIEW() { return &iew; }
     Commit *getCommit() { return &commit; }
+    Tea *getTea() { return &tea; }
 
     /**
      * Return the oldest in-flight instruction sequence number.
@@ -511,6 +513,9 @@ class CPU : public BaseCPU
 
     /** The re-order buffer. */
     ROB rob;
+
+    /** Optional Timing Event Attribution companion to the ROB. */
+    Tea tea;
 
     /** Active Threads List */
     std::list<ThreadID> activeThreads;

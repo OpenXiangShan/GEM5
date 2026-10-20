@@ -683,6 +683,17 @@ Rename::canRename(ThreadID tid)
     return true;
 }
 
+void
+Rename::markTeaStoreQueueStall(ThreadID tid)
+{
+    if (!fixedbuffer[tid].empty()) {
+        const auto &inst = fixedbuffer[tid].front();
+        if (!inst->isSquashed() && (inst->isStore() || inst->isAtomic())) {
+            inst->teaSetEvent(TeaEvent::DR_SQ);
+        }
+    }
+}
+
 bool
 Rename::hasPregDemand(ThreadID tid) const
 {

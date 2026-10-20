@@ -272,6 +272,9 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
 {
     LSQRequest *request = dynamic_cast<LSQRequest *>(pkt->senderState);
     DynInstPtr inst = request->instruction();
+    if (pkt->req->getAccessDepth() > 0) {
+        inst->teaSetEvent(TeaEvent::ST_L1);
+    }
 
     // hardware transactional memory
     // sanity check
@@ -1509,6 +1512,7 @@ LSQUnit::loadDoTranslate(const DynInstPtr &inst)
 
     if (inst->isTranslationDelayed() && load_fault == NoFault) {
         inst->setTLBMissReplay();
+        inst->teaSetEvent(TeaEvent::ST_TLB);
         DPRINTF(LoadPipeline, "Load [sn:%llu] setTLBMissReplay\n", inst->seqNum);
     }
 
@@ -1658,6 +1662,12 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
         earlyWakeupCacheMissReplay ||
         (lsq->enableLdMissReplay() && request && request->isNormalLd() &&
          !inst->fullForward() && !inst->cacheHit());
+    // Record the observed miss even if another replay reason wins priority.
+    // An early wakeup without data alone does not establish an L1 miss.
+    if (request && request->isNormalLd() && !inst->fullForward() &&
+        !inst->cacheHit()) {
+        inst->teaSetEvent(TeaEvent::ST_L1);
+    }
     const bool bankConflictReplay = inst->isNormalLd() && !request;
 
     bool nukeReplay = false;
@@ -1979,6 +1989,7 @@ LSQUnit::storeDoTranslate(const DynInstPtr &inst)
 
     if (inst->isTranslationDelayed() && store_fault == NoFault) {
         inst->setTLBMissReplay();
+        inst->teaSetEvent(TeaEvent::ST_TLB);
     }
 
     return store_fault;
