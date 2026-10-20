@@ -281,6 +281,17 @@ def _validate_shadow_dst_windows_non_overlapping(dst_bases, window_sizes):
 
 def _configure_mlop_types(options):
     """Resolve the independent MLOP switches into cache prefetcher types."""
+    if options.l2_berti_enable and not options.l2cache:
+        fatal("--l2-berti-enable requires --l2cache")
+    if options.l2_berti_enable and options.l2_mlop_enable:
+        fatal("--l2-berti-enable cannot be combined with --l2-mlop-enable")
+    if options.l2_berti_enable and options.no_pf:
+        fatal("--l2-berti-enable cannot be combined with --no-pf")
+    if options.l2_berti_enable and (
+            options.l2_hwp_type != 'PrefetcherForwarder' or
+            options.l2_wrapper_hwp_type != 'L2CompositeWithWorkerPrefetcher'):
+        fatal("--l2-berti-enable requires the L2 composite prefetcher")
+
     if options.l1d_mlop_enable:
         if not options.caches:
             fatal("--l1d-mlop-enable requires --caches")

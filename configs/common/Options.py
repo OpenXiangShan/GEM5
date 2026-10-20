@@ -266,6 +266,8 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         help="enable the DPC-3 MLOP prefetcher at L1D")
     parser.add_argument("--l2-mlop-enable", action="store_true", default=False,
                         help="enable the DPC-3 MLOP prefetcher at L2")
+    parser.add_argument("--l2-berti-enable", action="store_true", default=False,
+                        help="enable Berti in the L2 composite prefetcher")
     parser.add_argument("--l1-mlop-max-zones", type=int, default=0,
                         help="L1 MLOP AMT entries (0 uses the DPC-3 capacity formula)")
     parser.add_argument("--l2-mlop-max-zones", type=int, default=256,

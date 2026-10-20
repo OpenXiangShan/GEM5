@@ -17,11 +17,13 @@ namespace prefetch
 L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2CompositeWithWorkerPrefetcherParams &p)
     : CompositeWithWorkerPrefetcher(p),
       cdp(p.cdp),
+      berti(p.berti),
       largeBOP(p.bop_large),
       smallBOP(p.bop_small),
       cmc(p.cmc),
       despacitoStream(p.despacito_stream),
       enableBOP(p.enable_bop),
+      enableBerti(p.enable_berti),
       enableCDP(p.enable_cdp),
       enableCMC(p.enable_cmc),
       enableDespacitoStream(p.enable_despacito_stream),
@@ -30,11 +32,13 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
 {
     setSharedFilterContextQualified(true);
     cdp->setSharedFilterContextQualified(true);
+    berti->setSharedFilterContextQualified(true);
     largeBOP->setSharedFilterContextQualified(true);
     smallBOP->setSharedFilterContextQualified(true);
     cmc->setSharedFilterContextQualified(true);
     despacitoStream->setSharedFilterContextQualified(true);
     cdp->pfLRUFilter = &pfLRUFilter;
+    berti->filter = &pfLRUFilter;
     largeBOP->filter = &pfLRUFilter;
     smallBOP->filter = &pfLRUFilter;
     largeBOP->shareDirectQualityGateWith(*smallBOP);
@@ -77,6 +81,9 @@ L2CompositeWithWorkerPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std:
     }
     if (enableCDP) {
         cdp->calculatePrefetch(pfi, addresses);
+    }
+    if (enableBerti) {
+        berti->calculatePrefetch(pfi, addresses, late, pf_source, miss_repeat);
     }
     if (enableBOP) {
         largeBOP->calculatePrefetch(
@@ -145,7 +152,7 @@ L2CompositeWithWorkerPrefetcher::pfHitNotify(float accuracy, PrefetchSourceType 
     }
 
     if (usePFBuffer) {
-        if (cdp->hasPFRequestsInBuffer() && !PFReqSendEvent.scheduled()) {
+        if (hasPFRequestsInBuffer() && !PFReqSendEvent.scheduled()) {
             schedule(PFReqSendEvent, nextCycle());
         }
     } else if (addressGenBuffer.size()) {
@@ -160,6 +167,7 @@ L2CompositeWithWorkerPrefetcher::setParentInfo(System *sys, ProbeManager *pm, Ca
 {
     cdp->setParentInfo(sys, pm, _cache, blk_size);
     cdp->setStatsPtr(&prefetchStats);
+    berti->setParentInfo(sys, pm, _cache, blk_size);
     largeBOP->setParentInfo(sys, pm, _cache, blk_size);
     smallBOP->setParentInfo(sys, pm, _cache, blk_size);
     cmc->setParentInfo(sys, pm, _cache, blk_size);
@@ -241,12 +249,16 @@ L2CompositeWithWorkerPrefetcher::hintData(const lldp::Hint &hint,
 void
 L2CompositeWithWorkerPrefetcher::notifyFill(const PacketPtr &pkt)
 {
+    if (enableBerti) {
+        berti->notifyFill(pkt);
+    }
+
     if (enableCDP) {
         cdp->notifyFill(pkt, addressGenBuffer);
     }
 
     if (usePFBuffer) {
-        if (cdp->hasPFRequestsInBuffer() && !PFReqSendEvent.scheduled()) {
+        if (hasPFRequestsInBuffer() && !PFReqSendEvent.scheduled()) {
             schedule(PFReqSendEvent, nextCycle());
         }
     } else if (addressGenBuffer.size()) {
@@ -266,19 +278,22 @@ L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriorit
     }
     bool L2PFsent = false;
     L2PFsent = ticksToCycles(latestTransferTick) == ticksToCycles(curTick());
-    if (!L2PFsent && largeBOP->hasPFRequestsInBuffer()){
+    if (!L2PFsent && enableBerti && berti->hasPFRequestsInBuffer()) {
+        L2PFsent = berti->GetPFRequestsFromBuffer(addresses);
+    }
+    if (!L2PFsent && enableBOP && largeBOP->hasPFRequestsInBuffer()){
         L2PFsent = largeBOP->GetPFRequestsFromBuffer(addresses);
     }
-    if (!L2PFsent && smallBOP->hasPFRequestsInBuffer()){
+    if (!L2PFsent && enableBOP && smallBOP->hasPFRequestsInBuffer()){
         L2PFsent = smallBOP->GetPFRequestsFromBuffer(addresses);
     }
-    if (!L2PFsent && despacitoStream->hasPFRequestsInBuffer()){
+    if (!L2PFsent && enableDespacitoStream && despacitoStream->hasPFRequestsInBuffer()){
         L2PFsent = despacitoStream->GetPFRequestsFromBuffer(addresses);
     }
-    if (!L2PFsent && cdp->hasPFRequestsInBuffer()){
+    if (!L2PFsent && enableCDP && cdp->hasPFRequestsInBuffer()){
         L2PFsent = cdp->GetPFRequestsFromBuffer(addresses);
     }
-    if (!L2PFsent && cmc->hasPFRequestsInBuffer()){
+    if (!L2PFsent && enableCMC && cmc->hasPFRequestsInBuffer()){
         L2PFsent = cmc->GetPFRequestsFromBuffer(addresses);
     }
     // For now we dont have L3PF
@@ -290,11 +305,12 @@ L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriorit
     return L2PFsent;
 }
 bool L2CompositeWithWorkerPrefetcher::hasPFRequestsInBuffer() {
-    return  largeBOP->hasPFRequestsInBuffer() ||
-            smallBOP->hasPFRequestsInBuffer() ||
-            cmc->hasPFRequestsInBuffer() ||
-            cdp->hasPFRequestsInBuffer() ||
-            despacitoStream->hasPFRequestsInBuffer();
+    return (enableBerti && berti->hasPFRequestsInBuffer()) ||
+            (enableBOP && largeBOP->hasPFRequestsInBuffer()) ||
+            (enableBOP && smallBOP->hasPFRequestsInBuffer()) ||
+            (enableCMC && cmc->hasPFRequestsInBuffer()) ||
+            (enableCDP && cdp->hasPFRequestsInBuffer()) ||
+            (enableDespacitoStream && despacitoStream->hasPFRequestsInBuffer());
         }
 }  // namespace prefetch
 }  // namespace gem5

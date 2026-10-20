@@ -301,10 +301,6 @@ BertiPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vecto
     if (using_best_delta_and_confident) {
         lastUsedBestDelta = blockIndex(addr) - blockIndex(pfi.getAddr());
     }
-    if (isSubPrefetcher) {
-        InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
-    }
-
     Addr filter_key = sharedFilterKey(pfi, addr);
     if (filter->contains(filter_key)) {
         DPRINTF(BertiPrefetcher, "Skip recently prefetched: %lx\n", addr);
@@ -314,6 +310,9 @@ BertiPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vecto
         topDeltas[blk_delta] = topDeltas.count(blk_delta) ? topDeltas[blk_delta] + 1 : 1;
         DPRINTF(BertiPrefetcher, "Send pf: %lx\n", addr);
         filter->insert(filter_key, 0);
+        if (isSubPrefetcher) {
+            InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
+        }
         if (!isSubPrefetcher && usePFBuffer) {
             InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
         }

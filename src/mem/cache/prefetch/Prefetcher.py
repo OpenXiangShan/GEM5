@@ -1499,6 +1499,9 @@ class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     cxx_header = "mem/cache/prefetch/l2_composite_with_worker.hh"
 
     cdp = Param.CDP(CDP(is_sub_prefetcher=True), "")
+    berti = Param.BertiPrefetcher(
+        BertiPrefetcher(is_sub_prefetcher=True),
+        "Berti used in the L2 composite prefetcher")
     cmc = Param.CMCPrefetcher(CMCPrefetcher(is_sub_prefetcher=True), "")
     bop_large = Param.BOPPrefetcher(BOPPrefetcher(is_sub_prefetcher=True),
                                      "Large BOP used in composite prefetcher ")
@@ -1507,6 +1510,7 @@ class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     despacito_stream = Param.DespacitoStreamPrefetcher(DespacitoStreamPrefetcher(is_sub_prefetcher=True),
                                                        "DespacitoStream used in composite prefetcher")
     enable_bop = Param.Bool(False, "Enable BOP")
+    enable_berti = Param.Bool(False, "Enable Berti")
     enable_cdp = Param.Bool(False, "Enable CDP")
     enable_cmc = Param.Bool(False, "Enable CMC")
     enable_despacito_stream = Param.Bool(False, "Enable despacito stream")

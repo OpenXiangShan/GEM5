@@ -584,12 +584,16 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
     if hasattr(options, 'l2_enable_lldp') and hasattr(prefetcher, 'enable_lldp'):
         prefetcher.enable_lldp = options.l2_enable_lldp
 
-    # Disable all L2 composite components for the no-BOP experiment.
-    prefetcher.enable_bop = False
-    prefetcher.enable_cdp = False
-    prefetcher.enable_cmc = False
-    prefetcher.enable_despacito_stream = False
-    prefetcher.enable_lldp = False
+    # Keep L2 experiments isolated: only the explicitly selected component is
+    # enabled. Berti shares the wrapper queue, PF buffer, and issue boundary
+    # with the L2 BOP profile.
+    if prefetcher_name == 'L2CompositeWithWorkerPrefetcher':
+        prefetcher.enable_bop = False
+        prefetcher.enable_berti = getattr(options, 'l2_berti_enable', False)
+        prefetcher.enable_cdp = False
+        prefetcher.enable_cmc = False
+        prefetcher.enable_despacito_stream = False
+        prefetcher.enable_lldp = False
 
 def _configure_l2_prefetcher(prefetcher, prefetcher_name, options,
                              pf_buffer_enabled):
