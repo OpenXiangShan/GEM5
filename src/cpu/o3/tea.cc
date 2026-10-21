@@ -179,6 +179,7 @@ Tea::cacheMiss(const DynInstPtr &inst, unsigned depth)
 {
     if (enabledFlag && lastLevelCache && depth >= lastLevelCache &&
         inst->isLoad()) {
+        inst->teaSetEvent(TeaEvent::ST_L1);
         inst->teaSetEvent(TeaEvent::ST_LLC);
     }
 }
