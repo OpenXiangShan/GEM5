@@ -47,7 +47,7 @@ APFStats::APFStats(statistics::Group *parent)
       ADD_STAT(decodeDemand, statistics::units::Count::get(),
                "APF predecode uop demand"),
       ADD_STAT(decodeGranted, statistics::units::Count::get(),
-               "APF predecode uops granted shared Decode slots"),
+               "APF predecode uops granted Decode bandwidth"),
       ADD_STAT(decodeBlockedCycles, statistics::units::Cycle::get(),
                "Cycles where APF predecode had no Decode slot"),
       ADD_STAT(decodePartialCycles, statistics::units::Cycle::get(),
@@ -98,6 +98,7 @@ Fetch::initAPF(const BaseO3CPUParams &params)
     apfBufferEntries = params.apfBufferEntries;
     apfBufferUops = params.apfBufferUops;
     apfWidth = params.apfWidth;
+    apfShareDecode = params.apfShareDecode;
     apfGenerationCycles = params.apfGenerationCycles;
     apfBranchEntries = params.apfBranchEntries;
     apfReplayWidth = params.renameWidth;
@@ -178,7 +179,8 @@ Fetch::generateAPF(AlternatePathContext &path)
     auto &pred = prediction.prediction;
     const Addr blockEnd = pred.getFallThrough(dbpbtb->alternatePredictWidth());
     const auto initialSize = path.uops.size();
-    const unsigned decodeGrant = cpu->getDecode()->reserveAPFDecodeSlots(apfWidth);
+    const unsigned decodeGrant = apfShareDecode ?
+        cpu->getDecode()->reserveAPFDecodeSlots(apfWidth) : apfWidth;
     apfStats->decodeDemand += apfWidth;
     apfStats->decodeGranted += decodeGrant;
     if (!decodeGrant) {

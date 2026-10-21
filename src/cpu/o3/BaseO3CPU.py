@@ -155,6 +155,8 @@ class BaseO3CPU(BaseCPU):
     apfBufferEntries = Param.Unsigned(6, "Completed alternate-path buffers")
     apfBufferUops = Param.Unsigned(104, "Maximum uops per alternate path")
     apfWidth = Param.Unsigned(8, "Maximum alternate uops generated per cycle")
+    apfShareDecode = Param.Bool(True,
+        "Share main-path Decode bandwidth with APF generation")
     apfGenerationCycles = Param.Unsigned(13, "Maximum generation cycles per path")
     apfFetchLatency = Param.Cycles(1, "Ideal alternate instruction-read latency")
     apfBranchEntries = Param.Unsigned(20, "Shadow branch queue entries per path")

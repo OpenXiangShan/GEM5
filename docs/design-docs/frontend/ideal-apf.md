@@ -21,6 +21,22 @@ Enable with `--param='system.cpu[0].enableAPF=True'` on `kmhv3.py`.
 | `apfFetchLatency` | 1 | Cycles before each ideal read/generation step |
 | `apfBranchEntries` | 20 | Maximum control-flow records per path |
 
+Resource experiments can independently relax the APF query and generation
+constraints. All three switches default to true to preserve the current model:
+
+| Parameter | Effect when false |
+| --- | --- |
+| `branchPred.enable_apf_tage_resource_conflict` | Allow APF TAGE queries without reserving a shared read bank |
+| `branchPred.enable_apf_mbtb_resource_conflict` | Allow APF MBTB queries without reserving a shared read bank |
+| `apfShareDecode` | Give APF its own `apfWidth` Decode slots per generation step |
+
+The query switches retain predictor lookup and training semantics; they only
+remove APF read-port reservations. They do not change TAGE's separate
+`enableBankConflict` prediction/update model. Independent Decode keeps normal
+Decode width, APF generation latency, replay bandwidth and Rename backpressure.
+Compare each disabled constraint against the all-enabled model. The measured
+effects can interact and must not be added as independent cycle penalties.
+
 At the defaults generation starts one cycle after selection and has at most 13
 generation steps. A step can stop at a taken branch or the predictor's aligned
 block boundary, so 104 uops is a capacity, not a promised fill amount. Increasing

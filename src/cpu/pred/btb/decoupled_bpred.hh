@@ -163,6 +163,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     const bool enableH2PTable;
     const bool enableH2PWeakConfidence;
     const bool enableAPFMTBResourceConflict;
+    const bool enableAPFTAGEResourceConflict;
     const unsigned h2pTableEntries;
     const uint64_t h2pAgeInsts;
 

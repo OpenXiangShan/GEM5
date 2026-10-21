@@ -116,6 +116,7 @@ class Fetch
 
   private:
     bool apfEnabled = false;
+    bool apfShareDecode = true;
     bool apfInvalidated = false;
     unsigned apfBufferEntries = 0, apfBufferUops = 0, apfWidth = 0;
     unsigned apfGenerationCycles = 0, apfBranchEntries = 0;
