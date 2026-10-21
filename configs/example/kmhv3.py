@@ -275,6 +275,7 @@ if __name__ == '__m5_main__':
     args.l2_size = '2MB'
     args.l3_size = '32MB'
     args.kmh_align = True   # align prefetcher in RTL, spec06 decrease 1 score
+    args.l1d_enable_lldp = True
     args.cdp_use_dynamic_degree = False
     args.cdp_accuracy_threshold = 0.05
     args.cdp_use_accuracy_dependent_alignment = False
