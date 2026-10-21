@@ -295,6 +295,10 @@ void
 BTBTAGE::beginResourceCycle()
 {
     resourceBankBusy.assign(numBanks, false);
+    resourceUpdateBank = pendingUpdateBank;
+    pendingUpdateBank.reset();
+    if (resourceUpdateBank)
+        resourceBankBusy[*resourceUpdateBank] = true;
 }
 
 bool
@@ -304,6 +308,8 @@ BTBTAGE::tryReserveShadowBank(Addr startAddr)
     ++tageStats.shadowQueries;
     if (resourceBankBusy[bank]) {
         ++tageStats.shadowBankConflicts;
+        if (resourceUpdateBank && bank == *resourceUpdateBank)
+            ++tageStats.shadowUpdateBankConflicts;
         ++tageStats.shadowDeferredCycles;
         tageStats.shadowBankConflictPerBank[bank]++;
         return false;
@@ -915,6 +921,8 @@ void
 BTBTAGE::doResolveUpdate(
     const PredictionUpdateContext &stream, const PreparedUpdate &update)
 {
+    if (enableBankConflict)
+        pendingUpdateBank = getBankId(stream.getRealStartPC());
     if (enableBankConflict && predBankValid) {
         // Prediction consumed; clear bank tag for next cycle
         predBankValid = false;
@@ -1433,6 +1441,8 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
         "APF shadow TAGE query attempts"),
     ADD_STAT(shadowBankConflicts, statistics::units::Count::get(),
         "APF shadow TAGE queries blocked by a bank conflict"),
+    ADD_STAT(shadowUpdateBankConflicts, statistics::units::Count::get(),
+        "APF shadow TAGE queries blocked by an accepted resolve update"),
     ADD_STAT(shadowDeferredCycles, statistics::units::Cycle::get(),
         "Cycles where APF shadow TAGE query was deferred"),
     ADD_STAT(shadowBankConflictPerBank, statistics::units::Count::get(),

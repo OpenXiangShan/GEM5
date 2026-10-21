@@ -37,6 +37,20 @@ Decode width, APF generation latency, replay bandwidth and Rename backpressure.
 Compare each disabled constraint against the all-enabled model. The measured
 effects can interact and must not be added as independent cycle penalties.
 
+`kmhv3.py` also enables `branchPred.tage.enableBankConflict`. The existing
+prediction/update model compares a resolve update with the registered primary
+prediction bank and defers a conflicting update for retry. After eight failed
+resolve dequeues, the coordinator suppresses one primary prediction to help
+the resolve queue progress. Accepted updates reserve their bank before APF
+queries; both accepted updates and primary queries take priority over APF.
+These physical reservations are not part of the speculative path checkpoint.
+`tage.shadowUpdateBankConflicts` counts APF queries blocked by accepted updates.
+Disabling `enable_apf_tage_resource_conflict` lets APF bypass both primary-query
+and accepted-update bank reservations; primary prediction/update arbitration
+remains enabled independently.
+The original update-banking flag also changes TAGE index/tag PC shifts, so its
+performance delta includes that mapping change as well as conflict stalls.
+
 At the defaults generation starts one cycle after selection and has at most 13
 generation steps. A step can stop at a taken branch or the predictor's aligned
 block boundary, so 104 uops is a capacity, not a promised fill amount. Increasing

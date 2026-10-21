@@ -6,6 +6,7 @@
 #include <deque>
 #include <map>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -372,7 +373,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // ========== Bank Configuration ==========
     // Bank mechanism to simulate hardware bank conflicts
-    // When prediction and update access the same bank in one cycle, update is dropped
+    // A conflict with a registered prediction defers the resolved update.
     const unsigned numBanks;         // Number of banks (e.g., 4)
     const unsigned bankIdWidth;      // log2(numBanks), computed in constructor
     const unsigned blockWidth;       // floorLog2(blockSize), e.g., 5 for 32B blocks
@@ -442,6 +443,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Vector predAccessPerBank;          // Prediction accesses per bank
         Scalar shadowQueries;
         Scalar shadowBankConflicts;
+        Scalar shadowUpdateBankConflicts;
         Scalar shadowDeferredCycles;
         Vector shadowBankConflictPerBank;
 
@@ -482,8 +484,12 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     TageStats tageStats;
 
-    // Banks occupied by primary and shadow queries in the current BPU cycle.
+    // Banks occupied by primary/shadow queries or an accepted resolve update.
     std::vector<bool> resourceBankBusy;
+    // Fetch accepts resolve updates before the BPU starts its resource cycle.
+    // Carry that reservation into the cycle so APF cannot steal its port.
+    std::optional<unsigned> pendingUpdateBank;
+    std::optional<unsigned> resourceUpdateBank;
 
 #ifndef UNIT_TEST
     TraceManager *tageMissTrace;

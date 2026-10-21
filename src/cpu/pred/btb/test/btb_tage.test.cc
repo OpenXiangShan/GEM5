@@ -1479,6 +1479,86 @@ TEST_F(BTBTAGETest, ShadowQueryBankReservation)
     EXPECT_TRUE(bankTage->tryReserveShadowBank(0x108));
 }
 
+TEST_F(BTBTAGETest, AcceptedUpdateBlocksShadowQuery)
+{
+    BTBTAGE bankTage(4, 2, 1024, 4);
+    bankTage.enableBankConflict = true;
+    bankTage.setTrainingStage(PredictorTrainingStage::Resolve);
+    boost::dynamic_bitset<> testHistory(128);
+    std::vector<FullBTBPrediction> testStagePreds(5);
+    testStagePreds[1].btbEntries = {createBTBEntry(0x100)};
+    bankTage.putPCHistory(0x100, testHistory, testStagePreds);
+    auto restore = bankTage.saveSpeculativeState(0);
+
+    // The registered primary prediction uses bank 0; update uses bank 2.
+    const auto entry = createBTBEntry(0x104);
+    auto stream = createStream(0x104, entry, bankTage.getPredictionMeta());
+    auto update = createPreparedUpdate(stream, entry, true);
+    ASSERT_TRUE(bankTage.canResolveUpdate(
+        PredictionUpdateContext(stream), update));
+    bankTage.doResolveUpdate(PredictionUpdateContext(stream), update);
+
+    // Fetch applies the update before beginning the BPU resource cycle.
+    bankTage.beginResourceCycle();
+    bankTage.putPCHistory(0x100, testHistory, testStagePreds);
+    ASSERT_TRUE(bankTage.tryReserveShadowBank(0x102));
+    bankTage.releaseShadowBank(0x102);
+    restore();
+
+    // Restoring a path or releasing another bank cannot cancel a write port.
+    EXPECT_FALSE(bankTage.tryReserveShadowBank(0x104));
+    EXPECT_EQ(bankTage.tageStats.shadowUpdateBankConflicts, 1);
+    EXPECT_FALSE(bankTage.tryReserveShadowBank(0x100));
+    EXPECT_EQ(bankTage.tageStats.shadowUpdateBankConflicts, 1);
+
+    // Accepted updates hold their bank for exactly one resource cycle.
+    bankTage.beginResourceCycle();
+    EXPECT_TRUE(bankTage.tryReserveShadowBank(0x104));
+}
+
+TEST_F(BTBTAGETest, DeferredUpdateDoesNotReserveShadowBank)
+{
+    BTBTAGE bankTage(4, 2, 1024, 4);
+    bankTage.enableBankConflict = true;
+    bankTage.setTrainingStage(PredictorTrainingStage::Resolve);
+    boost::dynamic_bitset<> testHistory(128);
+    std::vector<FullBTBPrediction> testStagePreds(5);
+    testStagePreds[1].btbEntries = {createBTBEntry(0x100)};
+    bankTage.putPCHistory(0x100, testHistory, testStagePreds);
+
+    const auto entry = createBTBEntry(0x100);
+    auto stream = createStream(0x100, entry, bankTage.getPredictionMeta());
+    auto update = createPreparedUpdate(stream, entry, true);
+    ASSERT_FALSE(bankTage.canResolveUpdate(
+        PredictionUpdateContext(stream), update));
+
+    bankTage.beginResourceCycle();
+    EXPECT_TRUE(bankTage.tryReserveShadowBank(0x100));
+    EXPECT_EQ(bankTage.tageStats.shadowUpdateBankConflicts, 0);
+}
+
+TEST_F(BTBTAGETest, DisabledUpdateBankingDoesNotBlockShadowQuery)
+{
+    BTBTAGE bankTage(4, 2, 1024, 4);
+    bankTage.enableBankConflict = false;
+    bankTage.setTrainingStage(PredictorTrainingStage::Resolve);
+    boost::dynamic_bitset<> testHistory(128);
+    std::vector<FullBTBPrediction> testStagePreds(5);
+    testStagePreds[1].btbEntries = {createBTBEntry(0x100)};
+    bankTage.putPCHistory(0x100, testHistory, testStagePreds);
+
+    const auto entry = createBTBEntry(0x100);
+    auto stream = createStream(0x100, entry, bankTage.getPredictionMeta());
+    auto update = createPreparedUpdate(stream, entry, true);
+    ASSERT_TRUE(bankTage.canResolveUpdate(
+        PredictionUpdateContext(stream), update));
+    bankTage.doResolveUpdate(PredictionUpdateContext(stream), update);
+
+    bankTage.beginResourceCycle();
+    EXPECT_TRUE(bankTage.tryReserveShadowBank(0x100));
+    EXPECT_EQ(bankTage.tageStats.shadowUpdateBankConflicts, 0);
+}
+
 class BTBTAGEUpperBoundTest : public ::testing::Test
 {
   protected:
