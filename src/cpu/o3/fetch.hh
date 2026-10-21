@@ -858,7 +858,7 @@ class Fetch
 
         /** Number of completed packets received */
         unsigned completedPackets;
-        uint8_t teaPsv = 0;
+        uint16_t teaPsv = 0;
 
         /** Constructor */
         CacheRequest() : baseAddr(0), totalSize(0), completedPackets(0) {}

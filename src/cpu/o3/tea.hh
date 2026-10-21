@@ -43,13 +43,14 @@ enum Event : uint8_t
     FL_MO,
     ST_L1,
     ST_TLB,
+    ST_LLC,
     NumEvents
 };
 
-constexpr uint8_t
+constexpr uint16_t
 bit(Event event)
 {
-    return static_cast<uint8_t>(1u << event);
+    return static_cast<uint16_t>(1u << event);
 }
 } // namespace TeaEvent
 
@@ -65,7 +66,7 @@ enum class TeaState : uint8_t
 struct TeaMember
 {
     Addr pc;
-    uint8_t psv;
+    uint16_t psv;
 };
 
 /**
@@ -91,11 +92,11 @@ class Tea
         DynInstPtr stalled;
         std::unordered_map<InstSeqNum, PendingTarget> targets;
         uint64_t drainSamples = 0;
-        uint8_t macroPSV = 0;
+        uint16_t macroPSV = 0;
         bool recovering = false;
         bool flushValid = false;
         Addr flushPC = 0;
-        uint8_t flushPSV = 0;
+        uint16_t flushPSV = 0;
     };
 
     struct TeaStats : public statistics::Group
@@ -122,6 +123,7 @@ class Tea
     uint64_t countdown = 0;
     const bool enabledFlag;
     const uint64_t samplePeriod;
+    const unsigned lastLevelCache;
     const std::string outputName;
     // Negative PSV values identify cancelled, pending and unknown targets.
     std::map<std::tuple<ThreadID, Addr, int>, double> weights;
@@ -147,13 +149,15 @@ class Tea
     void allocate(const DynInstPtr &inst);
     /** Record a commit blocker, or select the first unready group member. */
     void stall(ThreadID tid, const DynInstPtr &inst = nullptr);
+    /** Record the deepest cache miss reported by a cacheable data response. */
+    void cacheMiss(const DynInstPtr &inst, unsigned depth);
     /** Called after an instruction has passed the architectural commit point. */
     void commit(const DynInstPtr &inst);
     /** Called when an in-flight instruction is discarded by a ROB squash. */
     void squash(const DynInstPtr &inst);
 
     /** Set or clear the cause visible during a recovery/flush interval. */
-    void setFlush(ThreadID tid, Addr pc, uint8_t psv, bool valid = true);
+    void setFlush(ThreadID tid, Addr pc, uint16_t psv, bool valid = true);
 
     /** Retain walk activity even when this cycle finishes the ROB walk. */
     void markRecovery(ThreadID tid)

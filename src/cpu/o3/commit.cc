@@ -1240,7 +1240,7 @@ Commit::commit()
                     if (cause_inst) {
                         cause_inst->teaSetEvent(event);
                     }
-                    const uint8_t cause_psv =
+                    const uint16_t cause_psv =
                         (cause_inst ? cause_inst->teaPSV() : 0) |
                         TeaEvent::bit(event);
                     cpu->getTea()->setFlush(tid, cause_pc, cause_psv);
