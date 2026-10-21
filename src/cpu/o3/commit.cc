@@ -1223,27 +1223,30 @@ Commit::commit()
                 curSquashCause[tid] = SquashCause::MemOrderViolation;
             }
 
-            auto cause_inst = fromIEW->mispredictInst[tid];
-            if (!cause_inst) {
-                cause_inst = rob->findInst(tid, fromIEW->squashedSeqNum[tid]);
-            }
-            const Addr cause_pc = cause_inst ?
-                cause_inst->pcState().instAddr() : fromIEW->pc[tid]->instAddr();
-            uint8_t cause_psv = cause_inst ? cause_inst->teaPSV() : 0;
-            if (curSquashCause[tid] == SquashCause::BranchMispredict) {
-                if (cause_inst) {
-                    cause_inst->teaSetEvent(TeaEvent::FL_MB);
+            if (cpu->getTea()->enabled()) {
+                if (curSquashCause[tid] == SquashCause::BranchMispredict ||
+                    curSquashCause[tid] == SquashCause::MemOrderViolation) {
+                    auto cause_inst = fromIEW->mispredictInst[tid];
+                    if (!cause_inst) {
+                        cause_inst = rob->findInst(
+                            tid, fromIEW->squashedSeqNum[tid]);
+                    }
+                    const Addr cause_pc = cause_inst ?
+                        cause_inst->pcState().instAddr() :
+                        fromIEW->pc[tid]->instAddr();
+                    const auto event =
+                        curSquashCause[tid] == SquashCause::BranchMispredict ?
+                        TeaEvent::FL_MB : TeaEvent::FL_MO;
+                    if (cause_inst) {
+                        cause_inst->teaSetEvent(event);
+                    }
+                    const uint8_t cause_psv =
+                        (cause_inst ? cause_inst->teaPSV() : 0) |
+                        TeaEvent::bit(event);
+                    cpu->getTea()->setFlush(tid, cause_pc, cause_psv);
+                } else {
+                    cpu->getTea()->setFlush(tid, 0, 0, false);
                 }
-                cause_psv |= TeaEvent::bit(TeaEvent::FL_MB);
-                cpu->getTea()->setFlush(tid, cause_pc, cause_psv);
-            } else if (curSquashCause[tid] == SquashCause::MemOrderViolation) {
-                if (cause_inst) {
-                    cause_inst->teaSetEvent(TeaEvent::FL_MO);
-                }
-                cause_psv |= TeaEvent::bit(TeaEvent::FL_MO);
-                cpu->getTea()->setFlush(tid, cause_pc, cause_psv);
-            } else {
-                cpu->getTea()->setFlush(tid, 0, 0, false);
             }
 
             DPRINTF(Commit, "[tid:%i] Redirecting to PC %#x\n",
@@ -1570,6 +1573,7 @@ Commit::commitInsts()
             head_inst = rob->readHeadInst(commit_thread);
 
             if (!rob->isHeadGroupReady(commit_thread)) {
+                cpu->getTea()->stall(commit_thread);
                 if (debug::Commit && head_inst->readyToCommit()) {
                     InstSeqNum seqnum =
                         rob->getHeadGroupLastDoneSeq(commit_thread);
@@ -1946,6 +1950,7 @@ Commit::commitInsts()
                         onInstBoundary && cpu->checkInterrupts(0))
                         squashAfter(tid, head_inst);
                 } else {
+                    cpu->getTea()->stall(tid, head_inst);
                     if (logical_trace_record_retired) {
                         ++num_committed;
                         ++num_committed_per_thread[tid];

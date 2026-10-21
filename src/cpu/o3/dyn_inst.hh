@@ -880,10 +880,10 @@ class DynInst : public ExecContext, public RefCounted
     {
         teaPsv |= TeaEvent::bit(event);
         if (teaFusionMembers[0]) {
+            const bool memory_event = event == TeaEvent::ST_L1 ||
+                event == TeaEvent::ST_TLB || event == TeaEvent::FL_MO ||
+                event == TeaEvent::DR_SQ;
             for (const auto &member : teaFusionMembers) {
-                const bool memory_event = event == TeaEvent::ST_L1 ||
-                    event == TeaEvent::ST_TLB || event == TeaEvent::FL_MO ||
-                    event == TeaEvent::DR_SQ;
                 if ((!memory_event || member->isMemRef()) &&
                     (event != TeaEvent::FL_MB || member->isControl())) {
                     member->teaSetEvent(event);
