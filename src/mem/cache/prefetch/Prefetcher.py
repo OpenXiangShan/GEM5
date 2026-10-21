@@ -977,7 +977,7 @@ class XSPhysicalSmallBOP(BOPPrefetcher):
 
     offsets = [x for i in [
         1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 27, 30
-    ] for x in (i, -i)] + [-32]
+    ] for x in (i, -i)] + [-32, 32, 36, 40, 45, 48, 50, 54, 60, 64]
 
 class XSVirtualLargeBOP(BOPPrefetcher):
     direct_quality_kind = 1
