@@ -18,7 +18,6 @@
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
-#include "cpu/o3/limits.hh"
 
 namespace gem5
 {
@@ -89,6 +88,7 @@ class Tea
     struct ThreadState
     {
         std::vector<TeaMember> committed;
+        DynInstPtr stalled;
         std::unordered_map<InstSeqNum, PendingTarget> targets;
         uint64_t drainSamples = 0;
         uint8_t macroPSV = 0;
@@ -145,6 +145,8 @@ class Tea
 
     /** Called when an instruction is accepted by the ROB. */
     void allocate(const DynInstPtr &inst);
+    /** Record a commit blocker, or select the first unready group member. */
+    void stall(ThreadID tid, const DynInstPtr &inst = nullptr);
     /** Called after an instruction has passed the architectural commit point. */
     void commit(const DynInstPtr &inst);
     /** Called when an in-flight instruction is discarded by a ROB squash. */

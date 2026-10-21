@@ -103,6 +103,7 @@ Tea::TeaStats::resetStats()
         state.targets.clear();
         state.drainSamples = 0;
         state.committed.clear();
+        state.stalled = nullptr;
     }
 }
 
@@ -116,9 +117,6 @@ Tea::Tea(CPU *cpu, const BaseO3CPUParams &params)
 bool
 Tea::active(ThreadID tid) const
 {
-    if (!activeThreads) {
-        return true;
-    }
     for (const auto active_tid : *activeThreads) {
         if (active_tid == tid) {
             return true;
@@ -163,6 +161,15 @@ Tea::allocate(const DynInstPtr &inst)
 {
     if (enabledFlag) {
         threads[inst->threadNumber].flushValid = false;
+    }
+}
+
+void
+Tea::stall(ThreadID tid, const DynInstPtr &inst)
+{
+    if (enabledFlag && countdown == 0) {
+        // Capture before markCompletedInsts changes commit readiness.
+        threads[tid].stalled = inst ? inst : rob->headStallInst(tid);
     }
 }
 
@@ -263,10 +270,18 @@ Tea::tick()
                 break;
               }
               case TeaState::Stalled: {
-                const auto inst = rob->headStallInst(tid);
+                const auto &inst = state.stalled;
                 if (inst) {
                     auto &target = state.targets[inst->seqNum];
                     target.inst = inst;
+                    if (inst->isFusion() && inst->isMemRef()) {
+                        for (const auto &member : inst->teaFusionMembers) {
+                            if (member->isMemRef()) {
+                                target.inst = member;
+                                break;
+                            }
+                        }
+                    }
                     ++target.samples;
                 } else {
                     ++stats.unresolvedTargets;
@@ -290,6 +305,7 @@ Tea::tick()
             }
         }
         state.committed.clear();
+        state.stalled = nullptr;
         state.recovering = false;
     }
 }
