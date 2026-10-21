@@ -79,8 +79,8 @@ L2CompositeWithWorkerPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std:
         cdp->calculatePrefetch(pfi, addresses);
     }
     if (enableBOP) {
-        // The large BOP owns the merged large/small offset list.
-        largeBOP->calculatePrefetch(
+        // The small BOP is the active L2 BOP for this experiment.
+        smallBOP->calculatePrefetch(
             pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP,
             activeBOPReplayAccessSeq);
     }
@@ -113,7 +113,7 @@ void
 L2CompositeWithWorkerPrefetcher::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
 {
     if (pkt->isDemand() && pkt->isRead() && !pkt->isWrite())
-        largeBOP->notifyDirectQualityDemand(pfi.getAddr());
+        smallBOP->notifyDirectQualityDemand(pfi.getAddr());
     activeBOPReplayAccessSeq = 0;
     if (archDBer && archDBer->dumpBopReplayTrace &&
         pkt->isDemand() && pkt->isRead() && !pkt->isWrite()) {
@@ -264,8 +264,8 @@ L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriorit
     }
     bool L2PFsent = false;
     L2PFsent = ticksToCycles(latestTransferTick) == ticksToCycles(curTick());
-    if (!L2PFsent && largeBOP->hasPFRequestsInBuffer()){
-        L2PFsent = largeBOP->GetPFRequestsFromBuffer(addresses);
+    if (!L2PFsent && smallBOP->hasPFRequestsInBuffer()){
+        L2PFsent = smallBOP->GetPFRequestsFromBuffer(addresses);
     }
     if (!L2PFsent && despacitoStream->hasPFRequestsInBuffer()){
         L2PFsent = despacitoStream->GetPFRequestsFromBuffer(addresses);
@@ -285,7 +285,7 @@ L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriorit
     return L2PFsent;
 }
 bool L2CompositeWithWorkerPrefetcher::hasPFRequestsInBuffer() {
-    return  largeBOP->hasPFRequestsInBuffer() ||
+    return  smallBOP->hasPFRequestsInBuffer() ||
             cmc->hasPFRequestsInBuffer() ||
             cdp->hasPFRequestsInBuffer() ||
             despacitoStream->hasPFRequestsInBuffer();
