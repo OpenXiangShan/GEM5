@@ -533,7 +533,6 @@ class DynInst : public ExecContext, public RefCounted
 
     /** Performance signature accumulated for Timing Event Attribution. */
     uint16_t teaPsv = 0;
-    std::array<DynInstPtr, 2> teaFusionMembers;
 
     int pf_source  = -1; // if load cache line is prefetched
 
@@ -876,28 +875,11 @@ class DynInst : public ExecContext, public RefCounted
     bool isFloating()     const { return staticInst->isFloating(); }
     bool isVector()       const { return staticInst->isVector(); }
 
-    void teaSetEvent(TeaEvent::Event event)
-    {
-        teaPsv |= TeaEvent::bit(event);
-        if (teaFusionMembers[0]) {
-            const bool memory_event = event == TeaEvent::ST_L1 ||
-                event == TeaEvent::ST_LLC ||
-                event == TeaEvent::ST_TLB || event == TeaEvent::FL_MO ||
-                event == TeaEvent::DR_SQ;
-            for (const auto &member : teaFusionMembers) {
-                if ((!memory_event || member->isMemRef()) &&
-                    (event != TeaEvent::FL_MB || member->isControl())) {
-                    member->teaSetEvent(event);
-                }
-            }
-        }
-    }
-
+    /** TEA hooks are called only when CPU::getTea() is non-null. */
+    void teaSetEvent(TeaEvent::Event event);
     uint16_t teaPSV() const { return teaPsv; }
-    const DynInst *teaFirstMember() const
-    {
-        return teaFusionMembers[0] ? teaFusionMembers[0].get() : this;
-    }
+    std::array<DynInst *, 2> teaFusionMembers() const;
+    const DynInst *teaFirstMember() const;
     bool isControl()      const
     {
         return traceBranchInfoValid || staticInst->isControl();

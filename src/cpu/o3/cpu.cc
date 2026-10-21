@@ -110,7 +110,7 @@ CPU::CPU(const BaseO3CPUParams &params)
 
       rob(this, params),
 
-      tea(this, params),
+      tea(params.enableTea ? std::make_unique<Tea>(this, params) : nullptr),
 
       scoreboard(name() + ".scoreboard", regFile.totalNumPhysRegs()),
 
@@ -173,8 +173,10 @@ CPU::CPU(const BaseO3CPUParams &params)
     rename.setActiveThreads(&activeThreads);
     iew.setActiveThreads(&activeThreads);
     commit.setActiveThreads(&activeThreads);
-    tea.setROB(&rob);
-    tea.setActiveThreads(&activeThreads);
+    if (tea) {
+        tea->setROB(&rob);
+        tea->setActiveThreads(&activeThreads);
+    }
     // Set up MLP predictor if enabled
     if (params.mlpPredictorEnable) {
         fetch.setMlpPredictor(&mlpPredictor);
@@ -660,7 +662,9 @@ CPU::tick()
         cleanUpRemovedInsts();
     }
 
-    tea.tick();
+    if (tea) {
+        tea->tick();
+    }
 
     if (!tickEvent.scheduled()) {
         if (_status == SwitchedOut) {

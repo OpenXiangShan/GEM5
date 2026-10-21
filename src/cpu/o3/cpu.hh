@@ -449,7 +449,7 @@ class CPU : public BaseCPU
     Rename *getRename() { return &rename; }
     IEW *getIEW() { return &iew; }
     Commit *getCommit() { return &commit; }
-    Tea *getTea() { return &tea; }
+    Tea *getTea() const { return tea.get(); }
 
     /**
      * Return the oldest in-flight instruction sequence number.
@@ -516,7 +516,7 @@ class CPU : public BaseCPU
     ROB rob;
 
     /** Optional Timing Event Attribution companion to the ROB. */
-    Tea tea;
+    std::unique_ptr<Tea> tea;
 
     /** Active Threads List */
     std::list<ThreadID> activeThreads;

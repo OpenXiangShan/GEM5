@@ -512,7 +512,9 @@ ROB::insertInst(const DynInstPtr &inst)
     tail--;
 
     inst->setInROB();
-    cpu->getTea()->allocate(inst);
+    if (auto *tea = cpu->getTea()) {
+        tea->allocate(inst);
+    }
 
     ++numInstsInROB;
 
@@ -721,7 +723,9 @@ ROB::doSquash(ThreadID tid)
         // Mark the instruction as squashed, and ready to commit so that
         // it can drain out of the pipeline.
         (*squashIt[tid])->setSquashed();
-        cpu->getTea()->squash(*squashIt[tid]);
+        if (auto *tea = cpu->getTea()) {
+            tea->squash(*squashIt[tid]);
+        }
 
         (*squashIt[tid])->setCanCommit();
 
