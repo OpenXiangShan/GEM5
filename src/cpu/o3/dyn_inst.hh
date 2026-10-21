@@ -532,7 +532,7 @@ class DynInst : public ExecContext, public RefCounted
     uint8_t goldenData[16] = {0};
 
     /** Performance signature accumulated for Timing Event Attribution. */
-    uint8_t teaPsv = 0;
+    uint16_t teaPsv = 0;
     std::array<DynInstPtr, 2> teaFusionMembers;
 
     int pf_source  = -1; // if load cache line is prefetched
@@ -881,6 +881,7 @@ class DynInst : public ExecContext, public RefCounted
         teaPsv |= TeaEvent::bit(event);
         if (teaFusionMembers[0]) {
             const bool memory_event = event == TeaEvent::ST_L1 ||
+                event == TeaEvent::ST_LLC ||
                 event == TeaEvent::ST_TLB || event == TeaEvent::FL_MO ||
                 event == TeaEvent::DR_SQ;
             for (const auto &member : teaFusionMembers) {
@@ -892,7 +893,7 @@ class DynInst : public ExecContext, public RefCounted
         }
     }
 
-    uint8_t teaPSV() const { return teaPsv; }
+    uint16_t teaPSV() const { return teaPsv; }
     const DynInst *teaFirstMember() const
     {
         return teaFusionMembers[0] ? teaFusionMembers[0].get() : this;

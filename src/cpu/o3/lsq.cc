@@ -3679,6 +3679,9 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
     // before the packet is discarded or replayed
     LSQRequest::_inst->cacheAccessDepth = std::max(
         LSQRequest::_inst->cacheAccessDepth, pkt->cacheAccessDepth);
+    if (!mainReq()->isUncacheable()) {
+        lsq->cpu->getTea()->cacheMiss(_inst, pkt->cacheAccessDepth);
+    }
     // All responses received in 1 cycle are cache hit.
     bool cacheHit = LSQRequest::_inst->getCpuPtr()->ticksToCycles(curTick() - pkt->sendTick) <= 1;
     // Dump inst num, request addr, and packet addr
@@ -3756,6 +3759,9 @@ LSQ::SplitDataRequest::recvTimingResp(PacketPtr pkt)
     // Propagate cache access depth from response packet to DynInst
     LSQRequest::_inst->cacheAccessDepth = std::max(
         LSQRequest::_inst->cacheAccessDepth, pkt->cacheAccessDepth);
+    if (!mainReq()->isUncacheable()) {
+        _port.getLsq()->cpu->getTea()->cacheMiss(_inst, pkt->cacheAccessDepth);
+    }
     uint32_t pktIdx = 0;
     while (pktIdx < _packets.size() && pkt != _packets[pktIdx])
         pktIdx++;

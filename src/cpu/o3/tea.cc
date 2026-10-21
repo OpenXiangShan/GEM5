@@ -40,7 +40,7 @@ Tea::TeaStats::TeaStats(CPU *cpu, Tea &tea)
 {
     const char *states[] = {"Computing", "Stalled", "Flushed", "Drained"};
     const char *events[] = {"DR_L1", "DR_TLB", "DR_SQ", "FL_MB",
-                            "FL_EX", "FL_MO", "ST_L1", "ST_TLB"};
+                            "FL_EX", "FL_MO", "ST_L1", "ST_TLB", "ST_LLC"};
     samplesByState.init(static_cast<unsigned>(TeaState::NumStates));
     for (unsigned i = 0; i < static_cast<unsigned>(TeaState::NumStates); ++i) {
         samplesByState.subname(i, states[i]);
@@ -110,6 +110,7 @@ Tea::TeaStats::resetStats()
 Tea::Tea(CPU *cpu, const BaseO3CPUParams &params)
     : stats(cpu, *this), threads(params.numThreads),
       enabledFlag(params.enableTea), samplePeriod(params.teaSamplePeriod),
+      lastLevelCache(params.teaLastLevelCache),
       outputName(cpu->name() + ".tea.csv")
 {
 }
@@ -174,6 +175,15 @@ Tea::stall(ThreadID tid, const DynInstPtr &inst)
 }
 
 void
+Tea::cacheMiss(const DynInstPtr &inst, unsigned depth)
+{
+    if (enabledFlag && lastLevelCache && depth >= lastLevelCache &&
+        inst->isLoad()) {
+        inst->teaSetEvent(TeaEvent::ST_LLC);
+    }
+}
+
+void
 Tea::commit(const DynInstPtr &inst)
 {
     if (!enabledFlag) {
@@ -224,7 +234,7 @@ Tea::squash(const DynInstPtr &inst)
 }
 
 void
-Tea::setFlush(ThreadID tid, Addr pc, uint8_t psv, bool valid)
+Tea::setFlush(ThreadID tid, Addr pc, uint16_t psv, bool valid)
 {
     if (!enabledFlag) {
         return;

@@ -661,6 +661,9 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
         if args.xiangshan_ecore and args.no_l3cache:
             args.l2_size = '4MB'
 
+        for cpu in test_sys.cpu:
+            cpu.teaLastLevelCache = 3 if args.l3cache else 2
+
         CacheConfig.config_cache(args, test_sys)
 
         MemConfig.config_mem(args, test_sys)
