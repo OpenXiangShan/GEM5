@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <list>
+#include <map>
 #include <queue>
 #include <string>
 #include <unordered_map>
@@ -46,7 +47,15 @@ class Scheduler;
 class MemDepUnit;
 
 using ReadyQue = std::list<DynInstPtr>;
-using SelectQue = std::vector<std::pair<uint32_t, DynInstPtr>>;
+struct SelectedInst
+{
+    uint32_t first;
+    DynInstPtr second;
+    uint64_t attempt;
+    SelectedInst(uint32_t port, const DynInstPtr& inst)
+        : first(port), second(inst), attempt(inst->fpWake.attempt) {}
+};
+using SelectQue = std::vector<SelectedInst>;
 
 /**
  *          insert into queue
@@ -118,6 +127,7 @@ class IssueQue : public SimObject
     const int scheduleToExecDelay;
     const bool deferNewEnqueueSelection;
     const std::string iqname;
+    const int fpWbPort;
     std::vector<std::bitset<Num_OpClasses>> portFuDescs;
     std::vector<FUDesc*> fuDescs;
     std::vector<bool> opPipelined;
@@ -146,6 +156,7 @@ class IssueQue : public SimObject
     {
         int size;
         DynInstPtr insts[8];
+        uint64_t attempts[8];
         void push(const DynInstPtr& inst);
         DynInstPtr pop();
     };
@@ -261,6 +272,7 @@ class IssueQue : public SimObject
     void releaseVectorDelayedReadyQ();
     void issueToFu();
     void wakeUpDependents(const DynInstPtr& inst, bool speculative);
+    void releaseFpSlot(const DynInstPtr& inst);
     void selectInst();
     void scheduleInst();
     void addIfReady(const DynInstPtr& inst);
@@ -331,6 +343,7 @@ class Scheduler : public SimObject
     {
       public:
         DynInstPtr inst;
+        uint64_t attempt;
         PendingWakeEventsType* owner;
         IssueQue* to_issue_queue = nullptr;
 
@@ -342,6 +355,37 @@ class Scheduler : public SimObject
     CPU* cpu;
     MemDepUnit* memDepUnit;
     LSQ* lsq;
+    const bool fpWakeEnabled;
+    struct FpWork
+    {
+        DynInstPtr inst;
+        uint64_t attempt;
+        fpw::Phase phase = fpw::Phase::M2;
+        IssueQue* target = nullptr;
+        bool cleanup = false;
+    };
+    std::multimap<fpw::Cycle, FpWork> fpWakeups;
+    std::multimap<fpw::Cycle, FpWork> fpValidations;
+    std::vector<std::shared_ptr<fpw::WakeToken>> fpProducers;
+    fpw::WritebackReservations fpWritebacks;
+    fpw::WritebackReservations fpOutputSlots;
+    fpw::ExecutionResources fpExecution;
+    fpw::Cycle fpCycle() const;
+    bool managesFp(const DynInstPtr& inst) const;
+    int fpAddendSource(const DynInstPtr& inst) const;
+    bool fpDestination(const DynInstPtr& inst) const;
+    bool fpDivider(const DynInstPtr& inst) const;
+    unsigned fpEndpoint(const DynInstPtr& inst) const;
+    bool prepareFp(const DynInstPtr& inst, bool replay = false,
+                   unsigned port = 0);
+    bool checkFpAdmission(const DynInstPtr& inst);
+    void processFpWakeups();
+    void broadcastFp(const DynInstPtr& inst, fpw::Phase phase,
+                     IssueQue* target = nullptr);
+    void cancelFp(const DynInstPtr& inst, fpw::ReplayReason reason);
+    void cancelFpDependents(const DynInstPtr& producer);
+    void invalidateFp(const DynInstPtr& inst);
+    void inheritFpWakeups(const DynInstPtr& inst);
     const int intel_fewops = 4;
     bool old_disp = false;
     const int intRegfileBanks;
@@ -359,6 +403,16 @@ class Scheduler : public SimObject
         statistics::Scalar memstall_l1miss;
         statistics::Scalar memstall_l2miss;
         statistics::Scalar memstall_l3miss;
+        statistics::Scalar fpOwnedIqSlots;
+        statistics::Scalar fpPendingWakeups;
+        statistics::Scalar fpPendingValidations;
+        statistics::Scalar fpWritebackReservations;
+        statistics::Scalar fpDividerOwners;
+        statistics::Scalar fpM2Wakeups;
+        statistics::Scalar fpM4Wakeups;
+        statistics::Scalar fpReplays;
+        statistics::Scalar fpWbConflicts;
+        statistics::Scalar fpDividerStalls;
         statistics::Scalar lldpWakeups;
         statistics::Scalar lldpChains;
         statistics::Scalar lldpSingleSrcImmediateArithmetic;
@@ -378,6 +432,7 @@ class Scheduler : public SimObject
     std::vector<uint32_t> opExecTimeTable;
     std::vector<bool> opPipelined;
     std::vector<std::vector<IQGroup>> dispTable;
+    std::vector<IQGroup> fpWakeMatrix;
     std::vector<IssueQue*> issueQues;
     std::vector<std::vector<IssueQue*>> wakeMatrix;
     uint32_t combinedFus;
@@ -385,7 +440,7 @@ class Scheduler : public SimObject
     std::vector<uint8_t> totalDispCounter;
     std::vector<std::vector<uint8_t*>> dispOpdist;
 
-    std::vector<DynInstPtr> instsToFu;
+    std::vector<std::pair<DynInstPtr, uint64_t>> instsToFu;
 
     std::vector<bool> earlyScoreboard;
     std::vector<bool> bypassScoreboard;
@@ -429,6 +484,13 @@ class Scheduler : public SimObject
 
   public:
     PendingWakeEventsType specWakeEvents;
+    bool fpWakeupEnabled() const { return fpWakeEnabled; }
+    void preDumpStats() override;
+    void fpFuAccepted(const DynInstPtr& inst, uint32_t& opLatency);
+    bool fpAttemptValid(const DynInstPtr& inst, uint64_t attempt) const;
+    bool fpCanExecute(const DynInstPtr& inst, uint64_t attempt) const;
+    void validateFpSources();
+    void fpLoadWakeup(const DynInstPtr& inst);
 
     Scheduler(const SchedulerParams& params);
     unsigned getLoadPipeCount() const { return loadPipeCount; }

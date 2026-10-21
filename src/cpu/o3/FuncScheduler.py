@@ -47,6 +47,10 @@ class FUPool(SimObject):
     cxx_header = "cpu/o3/fu_pool.hh"
     FUList = VectorParam.FUDesc("list of FU's for this pool")
 
+class FpWakeupMode(Enum):
+    vals = ["legacy", "kmhv3"]
+
+
 class SpecWakeupChannel(SimObject):
     type = 'SpecWakeupChannel'
     cxx_class = 'gem5::o3::SpecWakeupChannel'
@@ -82,6 +86,7 @@ class IssueQue(SimObject):
 
     name = Param.String("IQ name")
     size = Param.Int(16, "")
+    fpWbPort = Param.Int(-1, "FP result endpoint; -1 uses the IQ identifier")
     inports = Param.Int(2, "")
     scheduleToExecDelay = Param.Cycles(2, "")
     deferNewEnqueueSelection = Param.Bool(
@@ -98,6 +103,7 @@ class Scheduler(SimObject):
     cxx_class = 'gem5::o3::Scheduler'
     cxx_header = "cpu/o3/issue_queue.hh"
 
+    fpWakeupMode = Param.FpWakeupMode("legacy", "Scalar FP wakeup timing profile")
     IQs = VectorParam.IssueQue([], "")
     specWakeupNetwork = VectorParam.SpecWakeupChannel([], "")
     xbarWakeup = Param.Bool(False, "use xbar wakeup network, (will override specWakeupNetwork)")
