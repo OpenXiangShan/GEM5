@@ -39,6 +39,9 @@ class FusionInst : public RiscvStaticInst
         fused = inst.get();
     }
 
+    const o3::DynInstPtr &firstInst() const { return first; }
+    const o3::DynInstPtr &secondInst() const { return second; }
+
     // true if aligned
     virtual bool correctMisalign(Addr addr) const { return false; }
 

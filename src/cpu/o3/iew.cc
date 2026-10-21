@@ -1251,7 +1251,7 @@ IEW::canInsertLDSTQue(ThreadID tid)
 
     int lastClockLQPopEntries = ldstQueue.getAndResetLastLQPopEntries(tid);
     int lastClockSQPopEntries = ldstQueue.getAndResetLastSQPopEntries(tid);
-    if (rob->isEmpty(tid) &&
+    if (cpu->getTea() && rob->isEmpty(tid) &&
         freeSQEntries < renameWidth + lastClockSQPopEntries) {
         cpu->getRename()->markTeaStoreQueueStall(tid);
     }
@@ -1495,7 +1495,7 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
             (inst->isStore() && ldstQueue.sqFull(tid))) {
             // gem5 allocates the ROB before Dispatch. A blocked head store
             // has no older ROB work, matching the pre-enqueue DR_SQ case.
-            if ((inst->isStore() || inst->isAtomic()) &&
+            if (cpu->getTea() && (inst->isStore() || inst->isAtomic()) &&
                 (rob->isEmpty(tid) || rob->readHeadInst(tid) == inst)) {
                 inst->teaSetEvent(TeaEvent::DR_SQ);
             }
@@ -1822,7 +1822,7 @@ IEW::dispatchInstFromDispQue()
             if ((inst->isAtomic() && ldstQueue.sqFull(tid)) ||
                 (inst->isLoad() && ldstQueue.lqFull(tid)) ||
                 (inst->isStore() && ldstQueue.sqFull(tid))) {
-                if ((inst->isStore() || inst->isAtomic()) &&
+                if (cpu->getTea() && (inst->isStore() || inst->isAtomic()) &&
                     (rob->isEmpty(tid) || rob->readHeadInst(tid) == inst)) {
                     inst->teaSetEvent(TeaEvent::DR_SQ);
                 }

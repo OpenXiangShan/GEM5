@@ -944,7 +944,7 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
         return false;
     }
 
-    if (pkt->cacheAccessDepth > 0) {
+    if (cpu->getTea() && pkt->cacheAccessDepth > 0) {
         threads[tid].cacheReq.teaPsv |= TeaEvent::bit(TeaEvent::DR_L1);
     }
 
@@ -1510,7 +1510,7 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req,
         return;
     }
 
-    if (delayed) {
+    if (cpu->getTea() && delayed) {
         threads[tid].cacheReq.teaPsv |= TeaEvent::bit(TeaEvent::DR_TLB);
     }
 
@@ -3038,7 +3038,8 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
 
     // Keep fetch events with their request through refill and backpressure,
     // then attach the packet signature to its first architectural member.
-    if (!instruction->isMicroop() || instruction->isFirstMicroop()) {
+    if (cpu->getTea() &&
+        (!instruction->isMicroop() || instruction->isFirstMicroop())) {
         instruction->teaPsv = threads[tid].cacheReq.teaPsv;
         threads[tid].cacheReq.teaPsv = 0;
     }

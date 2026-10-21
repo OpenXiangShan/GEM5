@@ -57,10 +57,6 @@ void
 Tea::TeaStats::preDumpStats()
 {
     statistics::Group::preDumpStats();
-    if (!owner.enabledFlag) {
-        return;
-    }
-
     auto snapshot = owner.weights;
     uint64_t pending = 0;
     for (ThreadID tid = 0; tid < owner.threads.size(); ++tid) {
@@ -109,7 +105,7 @@ Tea::TeaStats::resetStats()
 
 Tea::Tea(CPU *cpu, const BaseO3CPUParams &params)
     : stats(cpu, *this), threads(params.numThreads),
-      enabledFlag(params.enableTea), samplePeriod(params.teaSamplePeriod),
+      samplePeriod(params.teaSamplePeriod),
       lastLevelCache(params.teaLastLevelCache),
       outputName(cpu->name() + ".tea.csv")
 {
@@ -160,15 +156,13 @@ Tea::finishTarget(ThreadID tid, const PendingTarget &target, bool cancelled)
 void
 Tea::allocate(const DynInstPtr &inst)
 {
-    if (enabledFlag) {
-        threads[inst->threadNumber].flushValid = false;
-    }
+    threads[inst->threadNumber].flushValid = false;
 }
 
 void
 Tea::stall(ThreadID tid, const DynInstPtr &inst)
 {
-    if (enabledFlag && countdown == 0) {
+    if (countdown == 0) {
         // Capture before markCompletedInsts changes commit readiness.
         threads[tid].stalled = inst ? inst : rob->headStallInst(tid);
     }
@@ -177,8 +171,7 @@ Tea::stall(ThreadID tid, const DynInstPtr &inst)
 void
 Tea::cacheMiss(const DynInstPtr &inst, unsigned depth)
 {
-    if (enabledFlag && lastLevelCache && depth >= lastLevelCache &&
-        inst->isLoad()) {
+    if (lastLevelCache && depth >= lastLevelCache && inst->isLoad()) {
         inst->teaSetEvent(TeaEvent::ST_L1);
         inst->teaSetEvent(TeaEvent::ST_LLC);
     }
@@ -187,9 +180,6 @@ Tea::cacheMiss(const DynInstPtr &inst, unsigned depth)
 void
 Tea::commit(const DynInstPtr &inst)
 {
-    if (!enabledFlag) {
-        return;
-    }
     const auto tid = inst->threadNumber;
     auto &state = threads[tid];
     auto target = state.targets.find(inst->seqNum);
@@ -204,7 +194,7 @@ Tea::commit(const DynInstPtr &inst)
     }
     const auto first = state.committed.size();
     if (inst->isFusion()) {
-        for (const auto &member : inst->teaFusionMembers) {
+        for (const auto *member : inst->teaFusionMembers()) {
             state.committed.push_back({member->pcState().instAddr(), member->teaPSV()});
         }
     } else {
@@ -222,9 +212,6 @@ Tea::commit(const DynInstPtr &inst)
 void
 Tea::squash(const DynInstPtr &inst)
 {
-    if (!enabledFlag) {
-        return;
-    }
     const auto tid = inst->threadNumber;
     auto &state = threads[tid];
     auto target = state.targets.find(inst->seqNum);
@@ -237,9 +224,6 @@ Tea::squash(const DynInstPtr &inst)
 void
 Tea::setFlush(ThreadID tid, Addr pc, uint16_t psv, bool valid)
 {
-    if (!enabledFlag) {
-        return;
-    }
     auto &state = threads[tid];
     state.recovering = true;
     state.flushValid = valid;
@@ -250,10 +234,6 @@ Tea::setFlush(ThreadID tid, Addr pc, uint16_t psv, bool valid)
 void
 Tea::tick()
 {
-    if (!enabledFlag) {
-        return;
-    }
-
     const bool due = countdown == 0;
     if (due) {
         countdown = samplePeriod == 0 ? 0 : samplePeriod - 1;
@@ -286,7 +266,7 @@ Tea::tick()
                     auto &target = state.targets[inst->seqNum];
                     target.inst = inst;
                     if (inst->isFusion() && inst->isMemRef()) {
-                        for (const auto &member : inst->teaFusionMembers) {
+                        for (auto *member : inst->teaFusionMembers()) {
                             if (member->isMemRef()) {
                                 target.inst = member;
                                 break;

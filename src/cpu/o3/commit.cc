@@ -811,8 +811,9 @@ Commit::generateTCEvent(ThreadID tid)
 void
 Commit::squashAll(ThreadID tid)
 {
-    if (curSquashCause[tid] != SquashCause::Trap) {
-        cpu->getTea()->setFlush(tid, 0, 0, false);
+    if (auto *tea = cpu->getTea();
+        tea && curSquashCause[tid] != SquashCause::Trap) {
+        tea->setFlush(tid, 0, 0, false);
     }
 
     // If we want to include the squashing instruction in the squash,
@@ -998,7 +999,9 @@ Commit::tick()
             } else {
                 DPRINTF(Commit,"[tid:%i] Still Squashing, cannot commit any"
                         " insts this cycle.\n", tid);
-                cpu->getTea()->markRecovery(tid);
+                if (auto *tea = cpu->getTea()) {
+                    tea->markRecovery(tid);
+                }
                 rob->doSquash(tid);
                 changedROBNumEntries[tid] = true;
                 toIEW->commitInfo[tid].robSquashing = true;
@@ -1105,7 +1108,9 @@ Commit::handleInterrupt()
         interrupt = NoFault;
 
         // Generate trap squash event.
-        cpu->getTea()->setFlush(0, 0, 0, false);
+        if (auto *tea = cpu->getTea()) {
+            tea->setFlush(0, 0, 0, false);
+        }
         generateTrapEvent(0, interrupt);
 
         avoidQuiesceLiveLock = false;
@@ -1223,7 +1228,7 @@ Commit::commit()
                 curSquashCause[tid] = SquashCause::MemOrderViolation;
             }
 
-            if (cpu->getTea()->enabled()) {
+            if (auto *tea = cpu->getTea()) {
                 if (curSquashCause[tid] == SquashCause::BranchMispredict ||
                     curSquashCause[tid] == SquashCause::MemOrderViolation) {
                     auto cause_inst = fromIEW->mispredictInst[tid];
@@ -1243,9 +1248,9 @@ Commit::commit()
                     const uint16_t cause_psv =
                         (cause_inst ? cause_inst->teaPSV() : 0) |
                         TeaEvent::bit(event);
-                    cpu->getTea()->setFlush(tid, cause_pc, cause_psv);
+                    tea->setFlush(tid, cause_pc, cause_psv);
                 } else {
-                    cpu->getTea()->setFlush(tid, 0, 0, false);
+                    tea->setFlush(tid, 0, 0, false);
                 }
             }
 
@@ -1474,8 +1479,10 @@ Commit::handleMdpViolation(const DynInstPtr &head_inst, ThreadID tid)
     // Do not retire the violating load. Keep the last older instruction in
     // the ROB and refetch from the violating load's resolved PC.
     const InstSeqNum squashed_inst = head_inst->seqNum - 1;
-    head_inst->teaSetEvent(TeaEvent::FL_MO);
-    cpu->getTea()->setFlush(tid, head_inst->getPC(), head_inst->teaPSV());
+    if (auto *tea = cpu->getTea()) {
+        head_inst->teaSetEvent(TeaEvent::FL_MO);
+        tea->setFlush(tid, head_inst->getPC(), head_inst->teaPSV());
+    }
     youngestSeqNum[tid] = squashed_inst;
     rob->squash(squashed_inst, tid);
     changedROBNumEntries[tid] = true;
@@ -1573,7 +1580,9 @@ Commit::commitInsts()
             head_inst = rob->readHeadInst(commit_thread);
 
             if (!rob->isHeadGroupReady(commit_thread)) {
-                cpu->getTea()->stall(commit_thread);
+                if (auto *tea = cpu->getTea()) {
+                    tea->stall(commit_thread);
+                }
                 if (debug::Commit && head_inst->readyToCommit()) {
                     InstSeqNum seqnum =
                         rob->getHeadGroupLastDoneSeq(commit_thread);
@@ -1950,7 +1959,9 @@ Commit::commitInsts()
                         onInstBoundary && cpu->checkInterrupts(0))
                         squashAfter(tid, head_inst);
                 } else {
-                    cpu->getTea()->stall(tid, head_inst);
+                    if (auto *tea = cpu->getTea()) {
+                        tea->stall(tid, head_inst);
+                    }
                     if (logical_trace_record_retired) {
                         ++num_committed;
                         ++num_committed_per_thread[tid];
@@ -2230,9 +2241,10 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num,
         }
 
         // Generate trap squash event.
-        head_inst->teaSetEvent(TeaEvent::FL_EX);
-        cpu->getTea()->setFlush(
-            tid, head_inst->getPC(), head_inst->teaPSV());
+        if (auto *tea = cpu->getTea()) {
+            head_inst->teaSetEvent(TeaEvent::FL_EX);
+            tea->setFlush(tid, head_inst->getPC(), head_inst->teaPSV());
+        }
         generateTrapEvent(tid, inst_fault);
         return false;
     }
@@ -2413,7 +2425,9 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num,
     }
 
     // Finally clear the head ROB entry.
-    cpu->getTea()->commit(head_inst);
+    if (auto *tea = cpu->getTea()) {
+        tea->commit(head_inst);
+    }
     rob->retireHead(tid);
 
 #if TRACING_ON

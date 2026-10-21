@@ -121,7 +121,6 @@ class Tea
     std::list<ThreadID> *activeThreads = nullptr;
     std::vector<ThreadState> threads;
     uint64_t countdown = 0;
-    const bool enabledFlag;
     const uint64_t samplePeriod;
     const unsigned lastLevelCache;
     const std::string outputName;
@@ -136,8 +135,6 @@ class Tea
 
   public:
     Tea(CPU *cpu, const BaseO3CPUParams &params);
-
-    bool enabled() const { return enabledFlag; }
 
     void setROB(ROB *rob_ptr) { rob = rob_ptr; }
     void setActiveThreads(std::list<ThreadID> *threads_ptr)
@@ -162,9 +159,7 @@ class Tea
     /** Retain walk activity even when this cycle finishes the ROB walk. */
     void markRecovery(ThreadID tid)
     {
-        if (enabledFlag) {
-            threads[tid].recovering = true;
-        }
+        threads[tid].recovering = true;
     }
 
     /** Take one cycle sample after all O3 stages have advanced. */

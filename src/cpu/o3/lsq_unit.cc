@@ -276,7 +276,7 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
     // Use max to avoid overwrite by replay packet (depth=0)
     inst->cacheAccessDepth = std::max(inst->cacheAccessDepth,
                                        pkt->cacheAccessDepth);
-    if (pkt->cacheAccessDepth > 0) {
+    if (cpu->getTea() && pkt->cacheAccessDepth > 0) {
         inst->teaSetEvent(TeaEvent::ST_L1);
     }
     DPRINTF(LSQUnit, "[sn:%llu] completeDataAccess: depth=%d (pkt=%d), addr=%#lx\n",
@@ -1520,7 +1520,9 @@ LSQUnit::loadDoTranslate(const DynInstPtr &inst)
 
     if (inst->isTranslationDelayed() && load_fault == NoFault) {
         inst->setTLBMissReplay();
-        inst->teaSetEvent(TeaEvent::ST_TLB);
+        if (cpu->getTea()) {
+            inst->teaSetEvent(TeaEvent::ST_TLB);
+        }
         DPRINTF(LoadPipeline, "Load [sn:%llu] setTLBMissReplay\n", inst->seqNum);
     }
 
@@ -1672,7 +1674,7 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
          !inst->fullForward() && !inst->cacheHit());
     // Record the observed miss even if another replay reason wins priority.
     // An early wakeup without data alone does not establish an L1 miss.
-    if (request && request->isNormalLd() && !inst->fullForward() &&
+    if (cpu->getTea() && request && request->isNormalLd() && !inst->fullForward() &&
         !inst->cacheHit()) {
         inst->teaSetEvent(TeaEvent::ST_L1);
     }
@@ -1997,7 +1999,9 @@ LSQUnit::storeDoTranslate(const DynInstPtr &inst)
 
     if (inst->isTranslationDelayed() && store_fault == NoFault) {
         inst->setTLBMissReplay();
-        inst->teaSetEvent(TeaEvent::ST_TLB);
+        if (cpu->getTea()) {
+            inst->teaSetEvent(TeaEvent::ST_TLB);
+        }
     }
 
     return store_fault;
