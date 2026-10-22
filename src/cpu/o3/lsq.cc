@@ -475,18 +475,88 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent, unsigned num_threads)
                "Number of store buffer requests blocked when issuing from fake dcache mainpipe S2"),
       ADD_STAT(dcacheMainPipeStoreS2MissExit,
                statistics::units::Count::get(),
-               "Number of store buffer requests that miss and exit fake dcache mainpipe at S2")
+               "Number of store buffer requests that miss and exit fake dcache mainpipe at S2"),
+      ADD_STAT(lqBorrowingStateChange, statistics::units::Count::get(),
+               "Changing times of LQ borrowing donor state"),
+      ADD_STAT(sqBorrowingStateChange, statistics::units::Count::get(),
+               "Changing times of SQ borrowing donor state"),
+      ADD_STAT(lqStateHoldCycle, statistics::units::Cycle::get(),
+               "SMT LQ base/donor state holding cycle distribution"),
+      ADD_STAT(sqStateHoldCycle, statistics::units::Cycle::get(),
+               "SMT SQ base/donor state holding cycle distribution"),
+      ADD_STAT(lqEntriesWhileStateChange, statistics::units::Count::get(),
+               "SMT LQ thread used/free entries distribution while borrowing state changes"),
+      ADD_STAT(sqEntriesWhileStateChange, statistics::units::Count::get(),
+               "SMT SQ thread used/free entries distribution while borrowing state changes"),
+      ADD_STAT(lqBorrowingState, statistics::units::Count::get(),
+               "LQ borrowing donor state combination per cycle "
+               "(0=both Base, 1=tid0 Donor, 2=tid1 Donor, 3=both Donor)"),
+      ADD_STAT(sqBorrowingState, statistics::units::Count::get(),
+               "SQ borrowing donor state combination per cycle "
+               "(0=both Base, 1=tid0 Donor, 2=tid1 Donor, 3=both Donor)")
 {
     lqFullCycles.init(num_threads);
     sqFullCycles.init(num_threads);
     lsqFullCycles.init(num_threads);
     sbufferFullCycles.init(num_threads);
+    lqBorrowingStateChange
+        .init(num_threads)
+        .flags(statistics::total);
+    sqBorrowingStateChange
+        .init(num_threads)
+        .flags(statistics::total);
+
+    lqStateHoldCycle
+        .init(2, 0, 100, 10)
+        .flags(statistics::pdf);
+    lqStateHoldCycle.subname(0, "Base");
+    lqStateHoldCycle.subname(1, "Donor");
+    sqStateHoldCycle
+        .init(2, 0, 100, 10)
+        .flags(statistics::pdf);
+    sqStateHoldCycle.subname(0, "Base");
+    sqStateHoldCycle.subname(1, "Donor");
+
+    lqEntriesWhileStateChange
+        .init(4, 0, 128, 8)
+        .flags(statistics::pdf);
+    lqEntriesWhileStateChange.subname(0, "BaseToDonor_used");
+    lqEntriesWhileStateChange.subname(1, "BaseToDonor_free");
+    lqEntriesWhileStateChange.subname(2, "DonorToBase_used");
+    lqEntriesWhileStateChange.subname(3, "DonorToBase_free");
+    sqEntriesWhileStateChange
+        .init(4, 0, 64, 4)
+        .flags(statistics::pdf);
+    sqEntriesWhileStateChange.subname(0, "BaseToDonor_used");
+    sqEntriesWhileStateChange.subname(1, "BaseToDonor_free");
+    sqEntriesWhileStateChange.subname(2, "DonorToBase_used");
+    sqEntriesWhileStateChange.subname(3, "DonorToBase_free");
+
+    // Same combination indexing as fetch's fetchBlockState: one bit per
+    // thread, tid0 in the least significant bit.
+    lqBorrowingState
+        .init(1 << num_threads)
+        .flags(statistics::total);
+    lqBorrowingState.subname(0, "BothBase");
+    lqBorrowingState.subname(1, "Tid0Donor");
+    lqBorrowingState.subname(2, "Tid1Donor");
+    lqBorrowingState.subname(3, "BothDonor");
+    sqBorrowingState
+        .init(1 << num_threads)
+        .flags(statistics::total);
+    sqBorrowingState.subname(0, "BothBase");
+    sqBorrowingState.subname(1, "Tid0Donor");
+    sqBorrowingState.subname(2, "Tid1Donor");
+    sqBorrowingState.subname(3, "BothDonor");
+
     for (ThreadID tid = 0; tid < num_threads; ++tid) {
         const std::string thread_name = csprintf("thread%d", tid);
         lqFullCycles.subname(tid, thread_name);
         sqFullCycles.subname(tid, thread_name);
         lsqFullCycles.subname(tid, thread_name);
         sbufferFullCycles.subname(tid, thread_name);
+        lqBorrowingStateChange.subname(tid, thread_name);
+        sqBorrowingStateChange.subname(tid, thread_name);
     }
 }
 
@@ -2359,7 +2429,6 @@ LSQ::borrowingLimitLQ(ThreadID tid) const
         return logicalMaxLoadEntries(tid);
     }
 
-    const unsigned active_threads = std::max(1U, activeLSQThreads());
     const unsigned base = lqBorrowBaseReserveEntries;
     const unsigned donor_resume_quota =
         std::min(base, lqBorrowDonorReserveEntries);
@@ -2394,7 +2463,6 @@ LSQ::borrowingLimitSQ(ThreadID tid) const
         return logicalMaxStoreEntries(tid);
     }
 
-    const unsigned active_threads = std::max(1U, activeLSQThreads());
     const unsigned base = sqBorrowBaseReserveEntries;
     const unsigned donor_resume_quota =
         std::min(base, sqBorrowDonorReserveEntries);
@@ -2422,6 +2490,18 @@ void
 LSQ::setLQBorrowingDonor(ThreadID tid, bool donor)
 {
     if (lqBorrowingDonor[tid] != donor) {
+        bool old_donor = lqBorrowingDonor[tid];
+        unsigned state_hold_cycle = lqBorrowingStateHoldCycle[tid];
+        unsigned lq_entries_used = thread[tid].numLoads();
+        unsigned lq_entries_free = logicalFreeLoadEntries(tid);
+
+        stats.lqBorrowingStateChange[tid]++;
+        stats.lqStateHoldCycle[old_donor].sample(state_hold_cycle);
+        stats.lqEntriesWhileStateChange[(int)(old_donor) * 2]
+            .sample(lq_entries_used);
+        stats.lqEntriesWhileStateChange[(int)(old_donor) * 2 + 1]
+            .sample(lq_entries_free);
+
         lqBorrowingDonor[tid] = donor;
         lqBorrowingStateHoldCycle[tid] = 0;
     }
@@ -2431,6 +2511,18 @@ void
 LSQ::setSQBorrowingDonor(ThreadID tid, bool donor)
 {
     if (sqBorrowingDonor[tid] != donor) {
+        bool old_donor = sqBorrowingDonor[tid];
+        unsigned state_hold_cycle = sqBorrowingStateHoldCycle[tid];
+        unsigned sq_entries_used = thread[tid].numStores();
+        unsigned sq_entries_free = logicalFreeStoreEntries(tid);
+
+        stats.sqBorrowingStateChange[tid]++;
+        stats.sqStateHoldCycle[old_donor].sample(state_hold_cycle);
+        stats.sqEntriesWhileStateChange[(int)(old_donor) * 2]
+            .sample(sq_entries_used);
+        stats.sqEntriesWhileStateChange[(int)(old_donor) * 2 + 1]
+            .sample(sq_entries_free);
+
         sqBorrowingDonor[tid] = donor;
         sqBorrowingStateHoldCycle[tid] = 0;
     }
@@ -2443,6 +2535,18 @@ LSQ::addBorrowingStateHoldCycle()
         lqBorrowingStateHoldCycle[tid]++;
         sqBorrowingStateHoldCycle[tid]++;
     }
+
+    // Sample the per-cycle donor state combination of all threads, using the
+    // same bit-packing as fetch's fetchBlockState (tid0 = least significant
+    // bit), so 0=both Base, 1=tid0 Donor, 2=tid1 Donor, 3=both Donor.
+    int lq_state = 0;
+    int sq_state = 0;
+    for (ThreadID tid = numThreads - 1; tid >= 0; tid--) {
+        lq_state = (lq_state << 1) + (int)(lqBorrowingDonor[tid]);
+        sq_state = (sq_state << 1) + (int)(sqBorrowingDonor[tid]);
+    }
+    stats.lqBorrowingState[lq_state]++;
+    stats.sqBorrowingState[sq_state]++;
 }
 
 unsigned
