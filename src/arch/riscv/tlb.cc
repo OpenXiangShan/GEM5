@@ -949,6 +949,9 @@ TLB::L2TLBInsertIn(Addr vpn, const TlbEntry &entry, int choose, EntryList *List,
     *newEntry = entry;
     newEntry->lruSeq = nextSeq();
     newEntry->vaddr = vpn;
+    // Use the receiving TLB's geometry, which may differ from L1.
+    if (choose == L_L2L0)
+        newEntry->index = (vpn >> (PageShift + L2TLB_BLK_OFFSET)) & L2TLB_L0_MASK;
     if (entry.paddr == 0) {
         DPRINTF(TLB, " l2tlb num is outside vaddr %#x paddr %#x \n",
                 entry.vaddr, entry.paddr);
