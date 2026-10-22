@@ -1,13 +1,15 @@
-# TEA 使用说明
+# TEA Usage Guide
 
-TEA（Timing Event Attribution）用于香山 O3 CPU 的性能归因：按周期采样流水线
-状态，把样本权重分配给相关指令的 PC 和事件签名 PSV（Performance Signature
-Vector）。它与已有的 Topdown 统计配合使用，默认关闭。
+TEA (Timing Event Attribution) samples pipeline states in the XiangShan O3 CPU
+and attributes sample weights to instruction PCs and event signatures, called
+Performance Signature Vectors (PSVs). Use it alongside the existing Topdown
+statistics. TEA is disabled by default.
 
-## 开启与关闭
+## Enabling and Disabling TEA
 
-先按仓库 [README](../../../README.md) 编译 `build/RISCV/gem5.opt`，准备可运行的
-镜像或 checkpoint。下面从仓库根目录运行一个普通 bin 镜像：
+Build `build/RISCV/gem5.opt` as described in the repository
+[README](../../../README.md) and prepare a runnable image or checkpoint.
+Run a raw binary image from the repository root:
 
 ```sh
 ./build/RISCV/gem5.opt --outdir=m5out/tea \
@@ -16,7 +18,7 @@ Vector）。它与已有的 Topdown 统计配合使用，默认关闭。
     --enable-tea --tea-sample-period=1
 ```
 
-运行 GCPT 切片时使用 checkpoint 路径，省略 `--raw-cpt`：
+For a GCPT slice, specify the checkpoint path and omit `--raw-cpt`:
 
 ```sh
 ./build/RISCV/gem5.opt --outdir=m5out/tea \
@@ -25,95 +27,110 @@ Vector）。它与已有的 Topdown 统计配合使用，默认关闭。
     --enable-tea --tea-sample-period=16
 ```
 
-上述命令沿用正常运行的 difftest 配置，例如已设置的 `GCBV_REF_SO`；TEA 无需
-额外的 REF 或 restorer。普通单核 GCPT 切片使用自带的 restorer 即可。
+These commands use the normal difftest configuration, such as an existing
+`GCBV_REF_SO` setting. TEA requires no additional reference model or restorer.
+Normal single-core GCPT slices use their embedded restorer.
 
-| 参数 | 默认值 | 含义 |
+| Option | Default | Meaning |
 | --- | --- | --- |
-| `--enable-tea` | 关闭 | 创建 TEA 统计器并开启归因 |
-| `--tea-sample-period=N` | `1` | 每 N 个 CPU 周期采样一次；`0` 与 `1` 都是逐周期采样 |
+| `--enable-tea` | Disabled | Create the TEA tracker and enable attribution |
+| `--tea-sample-period=N` | `1` | Sample every N CPU cycles; both `0` and `1` sample every cycle |
 
-关闭 TEA 时省略 `--enable-tea`。只设置采样周期不会开启 TEA，把周期设为 `0`
-也不会关闭 TEA。关闭时不创建统计器，不执行归因回调和事件标记，不生成 TEA
-统计组或 CSV；正常路径仍有开关判断和少量字段初始化。
+Omit `--enable-tea` to disable TEA. Setting the sample period alone does not
+enable it, and setting the period to `0` does not disable it. When disabled,
+TEA creates no tracker, runs no attribution callbacks or event marking, and
+produces no TEA statistics group or CSV. The normal execution path retains
+enable checks and a small amount of field initialization.
 
-需要降低采样成本时可使用 `--enable-tea --tea-sample-period=16`。增大周期会减少
-采样和目标查询，但已开启的事件跟踪仍会执行；固定周期采样也可能遗漏短事件。
-比较配置时应保持采样周期和测量窗口一致。
+Use `--enable-tea --tea-sample-period=16` to reduce sampling overhead. A larger
+period reduces sampling and target queries, while event tracking remains
+active. Fixed-period sampling can miss short events. Keep the sample period
+and measurement window consistent when comparing configurations.
 
-自定义 Python 配置可直接设置 O3 CPU 的 `enableTea`、`teaSamplePeriod` 和
-`teaLastLevelCache`。最后一项用于判定 ST_LLC，`0` 表示不记录该事件；
-`kmhv3.py` 的常规缓存配置会根据是否启用 L3 将其设置为 `3` 或 `2`。
+Custom Python configurations can set the O3 CPU parameters `enableTea`,
+`teaSamplePeriod`, and `teaLastLevelCache` directly. The last parameter defines
+the cache depth used to identify ST_LLC; `0` disables that event. The normal
+cache configuration in `kmhv3.py` sets it to `3` with L3 enabled or `2` otherwise.
 
-## 输出文件
+## Output Files
 
-TEA 在 gem5 dump stats 时生成两类输出。以默认单核对象名 `system.cpu` 为例：
+TEA produces two kinds of output when gem5 dumps statistics. For the default
+single-core object name `system.cpu`:
 
-- `m5out/tea/stats.txt` 中的 `system.cpu.tea.*`：状态、事件及归因质量统计。
-- `m5out/tea/system.cpu.tea.csv`：按线程、PC 和 PSV 聚合的样本权重。
+- `system.cpu.tea.*` in `m5out/tea/stats.txt` contains state, event, and
+  attribution quality statistics.
+- `m5out/tea/system.cpu.tea.csv` contains sample weights grouped by thread,
+  PC, and PSV.
 
-实际文件名以前缀 CPU 对象名为准，多 CPU 各自输出。CSV 表头为：
+The file prefix follows the CPU object name. Each CPU produces its own output
+in a multi-CPU configuration. The CSV header is:
 
 ```text
 thread,pc,psv,sample_weight
 ```
 
-| 列 | 含义 |
+| Column | Meaning |
 | --- | --- |
-| `thread` | CPU 内的硬件线程编号 |
-| `pc` | 指令地址，十六进制；没有已知目标地址时为空 |
-| `psv` | 事件位掩码，十进制；负值表示特殊归因状态 |
-| `sample_weight` | 样本权重，可为小数；同周期多个架构提交之间会均分权重 |
+| `thread` | Hardware thread ID within the CPU |
+| `pc` | Instruction address in hexadecimal; empty when no target address is known |
+| `psv` | Event bitmask in decimal; negative values indicate special attribution states |
+| `sample_weight` | Sample weight, possibly fractional; a cycle with multiple architectural commits splits its weight equally among them |
 
-CSV 在每次 dump 时覆盖为当前统计窗口的快照，stats reset 会清空累计权重和
-待归因样本。若运行包含 warmup/reset，分析结束时的 CSV 应配对 `stats.txt` 的
-最后一个统计区段，避免与预热统计相加。CSV 没有单独的逐 PC 流水线状态列。
+Each dump overwrites the CSV with a snapshot of the current statistics window.
+A statistics reset clears accumulated weights and pending samples. For runs
+with warmup and reset, pair the final CSV with the last statistics block in
+`stats.txt`; do not add warmup statistics to it. The CSV has no separate
+pipeline state column for each PC.
 
-## 状态与事件
+## States and Events
 
-`samplesByState::*` 中四类状态互斥，按 Computing、Flushed、Drained、Stalled
-的优先级判定，每个活跃线程在采样点记一个样本：
+The four states in `samplesByState::*` are mutually exclusive. They are selected
+in the priority order Computing, Flushed, Drained, then Stalled. Each active
+thread contributes one sample at each sampling boundary:
 
-| 状态 | 含义与归因方式 |
+| State | Meaning and attribution |
 | --- | --- |
-| Computing | 本周期有计入 TEA 的架构提交，在这些提交间均分；不表示提交带宽已用满 |
-| Flushed | 无上述提交，正在恢复、ROB walk，或处于带有效恢复原因的空 ROB 阶段；归给恢复原因 |
-| Drained | 无上述提交和恢复且 ROB 为空，样本等待归给后续首个架构提交 |
-| Stalled | 其余 ROB 非空且无提交的周期，选择提交阻塞目标，等待其退休或被 squash |
+| Computing | At least one architectural commit is counted by TEA this cycle; split the weight equally among those commits. This does not imply full commit bandwidth utilization |
+| Flushed | No such commit, and recovery or a ROB walk is active, or the ROB is empty with a valid recovery cause; attribute to the recovery cause |
+| Drained | No such commit or recovery, and the ROB is empty; retain the sample until the next architectural commit |
+| Stalled | Otherwise, the ROB is nonempty with no commit; select a commit blocker and wait for its retirement or squash |
 
-PSV 的事件位定义如下。多个事件可同时出现在同一指令上：
+PSV event bits are defined below. An instruction can carry multiple events:
 
-| 位 | 掩码 | 事件 | 含义 |
+| Bit | Mask | Event | Meaning |
 | --- | ---: | --- | --- |
-| 0 | 1 | DR_L1 | 取指响应记录了 L1 之后的缓存访问 |
-| 1 | 2 | DR_TLB | 取指地址翻译发生延迟 |
-| 2 | 4 | DR_SQ | 无更老 ROB 工作时，store/atomic 因 SQ 压力无法继续 |
-| 3 | 8 | FL_MB | 分支预测错误引起恢复 |
-| 4 | 16 | FL_EX | 指令异常引起恢复 |
-| 5 | 32 | FL_MO | 内存顺序冲突或提交时 MDP 违例引起恢复 |
-| 6 | 64 | ST_L1 | 访存路径记录的 L1 数据访问未命中 |
-| 7 | 128 | ST_TLB | 数据地址翻译发生延迟 |
-| 8 | 256 | ST_LLC | cacheable load 响应达到配置的末级缓存未命中深度 |
+| 0 | 1 | DR_L1 | An instruction fetch response records cache access beyond L1 |
+| 1 | 2 | DR_TLB | Instruction address translation is delayed |
+| 2 | 4 | DR_SQ | A store or atomic cannot proceed due to SQ pressure with no older ROB work |
+| 3 | 8 | FL_MB | A branch misprediction triggers recovery |
+| 4 | 16 | FL_EX | An instruction exception triggers recovery |
+| 5 | 32 | FL_MO | A memory ordering conflict or a commit-time MDP violation triggers recovery |
+| 6 | 64 | ST_L1 | The data access path records an L1 miss |
+| 7 | 128 | ST_TLB | Data address translation is delayed |
+| 8 | 256 | ST_LLC | A cacheable load response reaches the configured last-level cache miss depth |
 
-例如 `psv=320` 是 `ST_L1|ST_LLC`，`psv=448` 是
-`ST_L1|ST_TLB|ST_LLC`。`psv=0` 表示这些事件位均未设置，仍属于成功归因，
-不能据此认为没有瓶颈；普通标量执行等待等情况没有独立事件位。
+For example, `psv=320` means `ST_L1|ST_LLC`, and `psv=448` means
+`ST_L1|ST_TLB|ST_LLC`. A value of `0` means none of these event bits is set and
+still counts as successful attribution. It does not imply the absence of a
+bottleneck: ordinary scalar execution waits, for example, have no dedicated
+event bit.
 
-| 特殊 PSV | 含义 | 对应统计 |
+| Special PSV | Meaning | Corresponding statistic |
 | --- | --- | --- |
-| `-1` | Stalled 的目标被 squash，样本取消 | `cancelledTargets` |
-| `-2` | 目标尚未退休，或 Drained 样本尚未等到后继提交 | `pendingSamples` |
-| `-3` | 没有可选择的目标或已知恢复原因 | `unresolvedTargets` |
+| `-1` | A Stalled target was squashed; its samples were cancelled | `cancelledTargets` |
+| `-2` | A target has not retired, or a Drained sample is waiting for a successor commit | `pendingSamples` |
+| `-3` | No selectable target or known recovery cause | `unresolvedTargets` |
 
-## 读取与分析
+## Reading and Analyzing Results
 
-先查看统计组：
+Inspect the statistics group:
 
 ```sh
 rg 'system.cpu.tea\.' m5out/tea/stats.txt
 ```
 
-在同一统计窗口内，检查以下守恒关系；归因权重应允许浮点舍入误差：
+Within the same statistics window, check these conservation relationships,
+allowing for floating-point rounding in attribution weights:
 
 ```text
 samples = sum(samplesByState::*)
@@ -121,14 +138,17 @@ samples = attributedSamples + cancelledTargets + unresolvedTargets + pendingSamp
 samples = sum(CSV sample_weight)
 ```
 
-状态比例使用 `samplesByState::<state> / samples`，事件比例使用
-`samplesByEvent::<event> / samples`。事件统计是带对应 PSV 位的成功归因样本
-权重，多个事件的比例不能相加；状态和事件也不是一一对应，例如 Computing
-样本可以归给带 FL_MB 的指令。`committedByThread::*` 统计观察到的架构提交数，
-不受采样周期稀疏化，不应用作这些比例的分母。
+Compute state shares as `samplesByState::<state> / samples` and event shares as
+`samplesByEvent::<event> / samples`. Event statistics count successfully
+attributed sample weights carrying the corresponding PSV bit. Events overlap,
+so their shares must not be added. States and events do not map one to one:
+a Computing sample can be attributed to an instruction carrying FL_MB.
+`committedByThread::*` counts observed architectural commits regardless of the
+sampling period; do not use it as the denominator for these shares.
 
-可用下面的命令汇总成功归因的前 10 个 PC。分母包含取消、未决和未知样本，
-分子只计成功归因，按（线程，PC）分别累计：
+The following command lists the top 10 successfully attributed PCs, grouped by
+(thread, PC). The denominator includes cancelled, pending, and unknown samples;
+the numerator includes only successful attribution:
 
 ```sh
 python3 - m5out/tea/system.cpu.tea.csv <<'PY'
@@ -148,16 +168,23 @@ for (thread, pc), weight in sorted(pcs.items(), key=lambda x: -x[1])[:10]:
 PY
 ```
 
-PC 权重包含所有状态的成功归因样本，不能全部当作停顿周期或可消除的性能损失。
-采样周期 N 大于 1 时，权重仍以样本为单位；单线程估算周期量可乘以 N，比例无需
-缩放。SMT 下每个活跃线程各自采样，总样本数不是物理 CPU 周期数。
+PC weights include successfully attributed samples from every state. They do
+not directly represent stall cycles or removable performance losses. With a
+sampling period N greater than 1, weights remain in sample units. Multiply by
+N to estimate cycle counts for a single thread; shares need no scaling. Under
+SMT, each active thread is sampled separately, so the total sample count is
+not the physical CPU cycle count.
 
-跨 SimPoint 汇总时，应先用测量窗口指令数归一化，再乘 SimPoint 权重及对应
-workload 的 profile 指令总量，最后计算比例；不要直接平均切片百分比。
-保留相同窗口的 `stats.txt`、CSV、`config.json` 和切片权重以便复核。
+When aggregating SimPoints, first normalize by the instruction count in each
+measurement window, then multiply by the SimPoint weight and the workload's
+profile instruction count before computing shares. Do not directly average
+slice percentages. Retain `stats.txt`, the CSV, `config.json`, and slice weights
+for the same measurement window so the results can be checked.
 
-## 当前限制
+## Current Limitations
 
-当前实现仍有已知归因边界：中间 RVV 微操作退休周期未计入 Computing，部分
-split 访存可能漏记 ST_L1，部分退休的 RVV 指令异常后 macroPSV 可能带入异常
-处理路径。涉及这些场景时，应结合已有 Topdown 计数器及指令 trace 交叉分析。
+Known attribution limitations remain: cycles that retire intermediate RVV
+micro-ops are not counted as Computing; some split memory accesses may miss
+ST_L1 marking; and macroPSV from a partially retired RVV instruction may carry
+into the exception handler. Cross-check these cases with existing Topdown
+counters and instruction traces.
