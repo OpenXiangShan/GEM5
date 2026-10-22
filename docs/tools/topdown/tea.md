@@ -181,6 +181,56 @@ profile instruction count before computing shares. Do not directly average
 slice percentages. Retain `stats.txt`, the CSV, `config.json`, and slice weights
 for the same measurement window so the results can be checked.
 
+## Visualization
+
+Use [util/plot_tea.py](../../../util/plot_tea.py) to draw a stacked state chart
+and an event heatmap. The script requires Python 3 and Matplotlib and runs
+without a graphical display. Install Matplotlib in your Python environment
+if needed:
+
+```sh
+python3 -m pip install matplotlib
+```
+
+Plot the last statistics block from a single run:
+
+```sh
+python3 util/plot_tea.py m5out/tea/stats.txt \
+    --output /path/to/plots/tea-breakdown.png
+```
+
+Compare runs with one row per input file, in the supplied order:
+
+```sh
+python3 util/plot_tea.py /path/to/run-a/stats.txt /path/to/run-b/stats.txt \
+    --labels "Run A" "Run B" --title "TEA comparison" \
+    --output /path/to/plots/tea-comparison.svg
+```
+
+Use `--cpu system.cpu0` to select a different CPU object; the default is
+`system.cpu`. The output file extension selects the format, including PNG,
+SVG, and PDF. Parent output directories are created automatically.
+
+The script also accepts an already aggregated summary CSV:
+
+```sh
+python3 util/plot_tea.py /path/to/summary.csv \
+    --output /path/to/plots/tea-summary.pdf
+```
+
+The CSV must contain `benchmark`, one `<State>_pct` column for each of the four
+states, and one `<Event>_pct` column for each of the nine events listed above.
+Each row is a workload or configuration; `benchmark` supplies its display
+label. Values are percentages in the range 0 to 100, with the four state
+shares summing to 100. Additional columns are ignored. This is a summary
+format, not the raw `system.cpu.tea.csv` format. Apply SimPoint weighting
+before producing this summary; the plotting script does not aggregate slices
+or average percentages across files.
+
+Both panels use all samples as the denominator, including cancelled, pending,
+and unresolved samples. Event weights overlap and do not represent removable
+stall cycles. The script rejects missing TEA counters or zero-sample runs.
+
 ## Current Limitations
 
 Known attribution limitations remain: cycles that retire intermediate RVV
