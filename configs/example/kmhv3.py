@@ -81,7 +81,7 @@ def setKmhV3Params(args, system):
         cpu.numPhysIntRegs = 224
         cpu.numPhysFloatRegs = 256
         cpu.enable_storeSet_train = True
-        cpu.EnablePHASTMDP = False
+        cpu.EnablePHASTMDP = True
 
         # dispatch
         cpu.enableDispatchStage = False
