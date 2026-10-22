@@ -72,6 +72,8 @@ def setKmhV3Params(args, system):
         cpu.decodeWidth = 8
         cpu.enable_loadFusion = False
         cpu.enableConstantFolding = True
+        cpu.valuePred = ConstantLVP(
+            numPredictionPorts=3, numUpdatePorts=2, resetConfidence=True)
 
         # rename
         cpu.renameWidth = 8
