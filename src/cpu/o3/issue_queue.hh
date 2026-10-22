@@ -333,8 +333,11 @@ class Scheduler : public SimObject
         DynInstPtr inst;
         PendingWakeEventsType* owner;
         IssueQue* to_issue_queue = nullptr;
+        bool loadWakeup;
 
-        SpecWakeupCompletion(const DynInstPtr& inst, IssueQue* to, PendingWakeEventsType* owner);
+        SpecWakeupCompletion(const DynInstPtr& inst, IssueQue* to,
+                             PendingWakeEventsType* owner,
+                             bool load_wakeup = false);
         void process() override;
         const char* description() const override;
     };
@@ -388,6 +391,7 @@ class Scheduler : public SimObject
     std::vector<DynInstPtr> instsToFu;
 
     std::vector<bool> earlyScoreboard;
+    std::vector<Tick> loadDataReadyTime;
     std::vector<bool> bypassScoreboard;
     std::vector<bool> scoreboard;
 
