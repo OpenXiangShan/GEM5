@@ -589,10 +589,8 @@ InstructionQueue::execLatencyCheck(const DynInstPtr& inst, uint32_t& op_latency)
     int delay_;
     switch (inst->opClass()) {
         case OpClass::IntDiv:
-            rs1 = cpu->readArchIntReg(inst->srcRegIdx(0).index(),
-                                      inst->threadNumber);
-            rs2 = cpu->readArchIntReg(inst->srcRegIdx(1).index(),
-                                      inst->threadNumber);
+            rs1 = cpu->peekReg(inst->extRenamedSrcIdx(0));
+            rs2 = cpu->peekReg(inst->extRenamedSrcIdx(1));
             // rs1 / rs2 : 0x80/0x8 ,delay_ = 4
             // get the leading zero difference between rs1 and rs2 (rs1 > rs2)
             delay_ = std::max(clz(rs2) - clz(rs1), 0);
