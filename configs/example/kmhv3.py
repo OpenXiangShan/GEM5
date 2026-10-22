@@ -49,7 +49,7 @@ def setKmhV3Params(args, system):
         cpu.fetchToDecodeDelay = 3
         cpu.decodeWidth = 8
         cpu.enable_loadFusion = False
-        cpu.enableConstantFolding = False
+        cpu.enableConstantFolding = True
 
         # rename
         cpu.renameWidth = 8
