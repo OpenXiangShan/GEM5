@@ -61,8 +61,8 @@ def setKmhV3Params(args, system):
         setPtwLevelLimitParams(args, cpu.mmu.itb)
         setPtwLevelLimitParams(args, cpu.mmu.dtb)
         cpu.fetchWidth = 32
-        cpu.iewToFetchDelay = 4 # for resolved update, should train branch after squash
-        cpu.commitToFetchDelay = 4
+        cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
+        cpu.commitToFetchDelay = 2
         cpu.fetchQueueSize = 64
         predecode_enabled = not getattr(args, "enable_trace_mode", False)
         cpu.enablePredecode = predecode_enabled
