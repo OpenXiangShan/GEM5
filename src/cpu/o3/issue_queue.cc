@@ -2528,10 +2528,11 @@ Scheduler::loadCancel(const DynInstPtr& inst)
                             if (depInst->readySrcIdx(srcIdx)) {
                                 depInst->clearSrcRegReady(srcIdx);
                                 depInst->fpWake.sources[srcIdx] = {};
-                                if (inst->vpMisprediction && depInst->isExecuted()) {
-                                    // Value prediction may be disproved after
-                                    // functional execution. Preserve its native
-                                    // squash fallback instead of local replay.
+                                if (inst->vpMisprediction && depInst->isIssued()) {
+                                    // An issued consumer may already have
+                                    // released its IQ slot at FU admission.
+                                    // Preserve native VP squash recovery;
+                                    // local replay must retain IQ ownership.
                                     depInst->setCancel();
                                     invalidateFp(depInst);
                                     dfs.push(depInst);
