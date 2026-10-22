@@ -130,8 +130,7 @@ class Tea
     bool active(ThreadID tid) const;
     void attribute(ThreadID tid, TeaMember member, double weight = 1.0);
     void recordSample(TeaState state);
-    void finishTarget(ThreadID tid, const PendingTarget &target,
-                      bool cancelled);
+    void finishTarget(const DynInstPtr &inst, bool cancelled);
 
   public:
     Tea(CPU *cpu, const BaseO3CPUParams &params);
