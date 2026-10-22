@@ -144,8 +144,8 @@ class Tea
 
     /** Called when an instruction is accepted by the ROB. */
     void allocate(const DynInstPtr &inst);
-    /** Record a commit blocker, or select the first unready group member. */
-    void stall(ThreadID tid, const DynInstPtr &inst = nullptr);
+    /** Record the blocker observed by the commit predicate. */
+    void stall(ThreadID tid, const DynInstPtr &inst);
     /** Record the deepest cache miss reported by a cacheable data response. */
     void cacheMiss(const DynInstPtr &inst, unsigned depth);
     /** Called after an instruction has passed the architectural commit point. */

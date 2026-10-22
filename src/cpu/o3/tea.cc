@@ -164,7 +164,7 @@ Tea::stall(ThreadID tid, const DynInstPtr &inst)
 {
     if (countdown == 0) {
         // Capture before markCompletedInsts changes commit readiness.
-        threads[tid].stalled = inst ? inst : rob->headStallInst(tid);
+        threads[tid].stalled = inst;
     }
 }
 

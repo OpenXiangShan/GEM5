@@ -5,6 +5,32 @@ and attributes sample weights to instruction PCs and event signatures, called
 Performance Signature Vectors (PSVs). Use it alongside the existing Topdown
 statistics. TEA is disabled by default.
 
+## Relationship to PerfCCT
+
+TEA provides PC and event-signature weights through online aggregation.
+The PerfCCT work in [#1216](https://github.com/OpenXiangShan/GEM5/pull/1216)
+and [#1217](https://github.com/OpenXiangShan/GEM5/pull/1217) also ranks slow
+PCs and commit blockers, and retains dynamic instruction and resource
+relationships for detailed queries. Either can identify hotspots; PerfCCT
+does not require a preceding TEA run. TEA can run without an ArchDB database.
+
+The ROB readiness predicate is the source of commit-blocker selection.
+`isHeadGroupReady(tid, &blocker)` returns the instruction whose readiness
+check actually stopped commit. TEA consumes that result at the commit site,
+using the same interface as #1216, rather than scanning the head group again.
+An unready younger member behind a serialization boundary does not block
+an otherwise eligible head prefix. LSU attempts, replay decisions and cache
+responses are other existing observation points that both consumers can use;
+their different output formats do not require duplicate timing decisions.
+
+Compare the same ROI, thread and PC when relating the two outputs. Account
+for partially used commit windows, fusion, RVV and recovery: TEA classifies
+a cycle with any architectural commit as Computing, while PerfCCT can retain
+the blocker that stopped further commits. Neither observed time nor event
+weight directly measures recoverable IPC. PerfCCT's current causal coverage
+is a subset of the mechanisms discussed by
+[Microflow](https://arxiv.org/html/2607.13184v2).
+
 ## Enabling and Disabling TEA
 
 Build `build/RISCV/gem5.opt` as described in the repository
