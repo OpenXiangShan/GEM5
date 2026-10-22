@@ -242,7 +242,7 @@ Scheduler::prepareFp(const DynInstPtr& inst, bool replay, unsigned port)
     if (token->load) {
         // Native load S0 admission is selection + depth + 1. M4 is
         // broadcast one cycle earlier; the S1 callback confirms it as M2.
-        if (!replay)
+        if (fpLoadM4Enabled && !replay)
             token->m4Cycle = now + depth;
         token->m2Cycle = now + depth + 2;
         token->cancelSafeCycle = token->readyCycle + 1;

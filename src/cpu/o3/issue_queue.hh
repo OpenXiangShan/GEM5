@@ -356,6 +356,7 @@ class Scheduler : public SimObject
     MemDepUnit* memDepUnit;
     LSQ* lsq;
     const bool fpWakeEnabled;
+    const bool fpLoadM4Enabled;
     struct FpWork
     {
         DynInstPtr inst;

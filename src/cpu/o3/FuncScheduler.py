@@ -104,6 +104,9 @@ class Scheduler(SimObject):
     cxx_header = "cpu/o3/issue_queue.hh"
 
     fpWakeupMode = Param.FpWakeupMode("legacy", "Scalar FP wakeup timing profile")
+    fpLoadM4Enabled = Param.Bool(
+        True, "Enable speculative load M4 wakeups in the kmhv3 FP timing profile"
+    )
     IQs = VectorParam.IssueQue([], "")
     specWakeupNetwork = VectorParam.SpecWakeupChannel([], "")
     xbarWakeup = Param.Bool(False, "use xbar wakeup network, (will override specWakeupNetwork)")
