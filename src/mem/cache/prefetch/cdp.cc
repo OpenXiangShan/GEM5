@@ -161,8 +161,7 @@ CDP::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addre
     int pf_depth = pfi.getXsMetadata().prefetchDepth;
     bool is_l1_prefetch =
         system->getRequestorName(pfi.getRequestorId()).find("dcache.prefetcher") != std::string::npos;
-    bool is_l2_prefetch =
-        system->getRequestorName(pfi.getRequestorId()).find("l2_caches.prefetcher") != std::string::npos;
+    bool is_l2_prefetch = pfi.getRequestorId() == parentRid;
     // demand access hits a block which is fetched by cdp previously
     bool pf_hit_cdp = !is_l1_prefetch && !is_l2_prefetch && \
                        pfi.isPfFirstHit() && (pf_source == PrefetchSourceType::CDP);
