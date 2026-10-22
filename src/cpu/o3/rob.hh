@@ -190,8 +190,8 @@ class ROB
     /** Is the oldest instruction across all threads ready. */
 //    bool isHeadReady();
 
-    /** Is the oldest group of instructions across a particular thread ready. */
-    bool isHeadGroupReady(ThreadID tid);
+    /** Check the oldest group and optionally return the first commit blocker. */
+    bool isHeadGroupReady(ThreadID tid, DynInstPtr *blocker = nullptr);
 
     InstSeqNum getHeadGroupLastDoneSeq(ThreadID tid);
 
@@ -278,9 +278,6 @@ class ROB
      */
     bool isDoneSquashing(ThreadID tid) const
     { return doneSquashing[tid]; }
-
-    /** Return the oldest member of the head group that is not ready. */
-    DynInstPtr headStallInst(ThreadID tid) const;
 
     /** Checks if the ROB is still in the process of squashing instructions for
      *  any thread.

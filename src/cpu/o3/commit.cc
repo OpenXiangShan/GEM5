@@ -1583,9 +1583,10 @@ Commit::commitInsts()
                 commitStatus[commit_thread] == FetchTrapPending)) {
             head_inst = rob->readHeadInst(commit_thread);
 
-            if (!rob->isHeadGroupReady(commit_thread)) {
+            DynInstPtr group_blocker;
+            if (!rob->isHeadGroupReady(commit_thread, &group_blocker)) {
                 if (auto *tea = cpu->getTea()) {
-                    tea->stall(commit_thread);
+                    tea->stall(commit_thread, group_blocker);
                 }
                 if (debug::Commit && head_inst->readyToCommit()) {
                     InstSeqNum seqnum =

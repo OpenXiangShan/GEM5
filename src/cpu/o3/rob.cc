@@ -524,23 +524,6 @@ ROB::insertInst(const DynInstPtr &inst)
             threadGroups[tid].size());
 }
 
-DynInstPtr
-ROB::headStallInst(ThreadID tid) const
-{
-    if (threadGroups[tid].empty() || instList[tid].empty()) {
-        return nullptr;
-    }
-
-    auto it = instList[tid].begin();
-    const unsigned group_size = threadGroups[tid].front();
-    for (unsigned i = 0; i < group_size; ++i, ++it) {
-        if (!(*it)->readyToCommit()) {
-            return *it;
-        }
-    }
-    return nullptr;
-}
-
 void
 ROB::retireHead(ThreadID tid)
 {
@@ -609,9 +592,12 @@ ROB::drainSquashedHead(ThreadID tid)
 }
 
 bool
-ROB::isHeadGroupReady(ThreadID tid)
+ROB::isHeadGroupReady(ThreadID tid, DynInstPtr *blocker)
 {
     stats.reads++;
+    if (blocker) {
+        *blocker = nullptr;
+    }
 
     if (!threadGroups[tid].empty() && threadGroups[tid].front() != 0) {
         auto it = instList[tid].begin();
@@ -621,6 +607,11 @@ ROB::isHeadGroupReady(ThreadID tid)
             if (!inst->readyToCommit()) {
                 if (i > 0 && inst->isSerializeBefore()) {
                     return true;
+                }
+                // This is the first observed failing predicate, not
+                // necessarily the only unfinished member of the group.
+                if (blocker) {
+                    *blocker = inst;
                 }
                 return false;
             }
