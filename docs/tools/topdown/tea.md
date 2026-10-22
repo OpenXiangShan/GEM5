@@ -68,6 +68,22 @@ TEA creates no tracker, runs no attribution callbacks or event marking, and
 produces no TEA statistics group or CSV. The normal execution path retains
 enable checks and a small amount of field initialization.
 
+TEA and PerfCCT have independent controls and are both disabled by default.
+In this branch, `--arch-db-dump-lifetime` enables PerfCCT lifetime recording;
+`--enable-arch-db` and `--arch-db-file` configure its database output.
+Append the following arguments to the same simulation command:
+
+| Mode | Additional arguments |
+| --- | --- |
+| Both disabled | None |
+| TEA only | `--enable-tea` |
+| PerfCCT only | `--enable-arch-db --arch-db-file=m5out/perfcct.db --arch-db-dump-lifetime` |
+| Both enabled | `--enable-tea --enable-arch-db --arch-db-file=m5out/perfcct.db --arch-db-dump-lifetime` |
+
+Enabling ArchDB alone does not enable PerfCCT lifetime recording. Neither
+profiler enables or requires the other; shared observation points use each
+profiler's own enable check.
+
 Use `--enable-tea --tea-sample-period=16` to reduce sampling overhead. A larger
 period reduces sampling and target queries, while event tracking remains
 active. Fixed-period sampling can miss short events. Keep the sample period

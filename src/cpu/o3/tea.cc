@@ -142,15 +142,23 @@ Tea::recordSample(TeaState state)
 }
 
 void
-Tea::finishTarget(ThreadID tid, const PendingTarget &target, bool cancelled)
+Tea::finishTarget(const DynInstPtr &inst, bool cancelled)
 {
-    const auto *member = target.inst->teaFirstMember();
-    if (cancelled) {
-        stats.cancelledTargets += target.samples;
-        weights[{tid, member->pcState().instAddr(), -1}] += target.samples;
-    } else {
-        attribute(tid, {member->pcState().instAddr(), member->teaPSV()}, target.samples);
+    const auto tid = inst->threadNumber;
+    auto &targets = threads[tid].targets;
+    const auto target = targets.find(inst->seqNum);
+    if (target == targets.end()) {
+        return;
     }
+    const auto *member = target->second.inst->teaFirstMember();
+    const auto samples = target->second.samples;
+    if (cancelled) {
+        stats.cancelledTargets += samples;
+        weights[{tid, member->pcState().instAddr(), -1}] += samples;
+    } else {
+        attribute(tid, {member->pcState().instAddr(), member->teaPSV()}, samples);
+    }
+    targets.erase(target);
 }
 
 void
@@ -182,11 +190,7 @@ Tea::commit(const DynInstPtr &inst)
 {
     const auto tid = inst->threadNumber;
     auto &state = threads[tid];
-    auto target = state.targets.find(inst->seqNum);
-    if (target != state.targets.end()) {
-        finishTarget(tid, target->second, false);
-        state.targets.erase(target);
-    }
+    finishTarget(inst, false);
 
     state.macroPSV |= inst->teaPSV();
     if (inst->isMicroop() && !inst->isLastMicroop()) {
@@ -212,13 +216,7 @@ Tea::commit(const DynInstPtr &inst)
 void
 Tea::squash(const DynInstPtr &inst)
 {
-    const auto tid = inst->threadNumber;
-    auto &state = threads[tid];
-    auto target = state.targets.find(inst->seqNum);
-    if (target != state.targets.end()) {
-        finishTarget(tid, target->second, true);
-        state.targets.erase(target);
-    }
+    finishTarget(inst, true);
 }
 
 void
