@@ -1385,7 +1385,9 @@ IssueQue::insert(const DynInstPtr& inst)
             if (scheduler->scoreboard[src->flatIndex()]) {
                 inst->markSrcRegReady(i);
             } else {
-                if (scheduler->earlyScoreboard[src->flatIndex()]) {
+                if (scheduler->earlyScoreboard[src->flatIndex()] &&
+                    cpu->clockEdge(Cycles(getIssueStages())) - 1 >=
+                        scheduler->loadDataReadyTime[src->flatIndex()]) {
                     inst->markSrcRegReady(i);
                 }
                 DPRINTF(Schedule, "[sn:%llu] src p%d add to depGraph\n", inst->seqNum, src->flatIndex());
@@ -1547,14 +1549,20 @@ IssueQue::decInIQInstsCounter(ThreadID tid)
 }
 
 Scheduler::SpecWakeupCompletion::SpecWakeupCompletion(const DynInstPtr& inst, IssueQue* to,
-                                                      PendingWakeEventsType* owner)
-    : Event(Stat_Event_Pri, AutoDelete), inst(inst), owner(owner), to_issue_queue(to)
+                                                      PendingWakeEventsType* owner,
+                                                      bool load_wakeup)
+    : Event(Stat_Event_Pri, AutoDelete), inst(inst), owner(owner),
+      to_issue_queue(to), loadWakeup(load_wakeup)
 {
 }
 
 void
 Scheduler::SpecWakeupCompletion::process()
 {
+    if (loadWakeup && inst->isSquashed()) {
+        (*owner)[inst->seqNum].erase(this);
+        return;
+    }
     to_issue_queue->wakeUpDependents(inst, true);
     (*owner)[inst->seqNum].erase(this);
 }
@@ -1886,6 +1894,7 @@ Scheduler::resetDepGraph(uint64_t numPhysRegs)
     scoreboard.resize(numPhysRegs, true);
     bypassScoreboard.resize(numPhysRegs, true);
     earlyScoreboard.resize(numPhysRegs, true);
+    loadDataReadyTime.resize(numPhysRegs, 0);
     for (auto it : issueQues) {
         it->resetDepGraph(numPhysRegs);
     }
@@ -2094,6 +2103,7 @@ Scheduler::addProducer(const DynInstPtr& inst)
         scoreboard[dst->flatIndex()] = false;
         bypassScoreboard[dst->flatIndex()] = false;
         earlyScoreboard[dst->flatIndex()] = false;
+        loadDataReadyTime[dst->flatIndex()] = 0;
         DPRINTF(Schedule, "mark scoreboard p%lu not ready\n", dst->flatIndex());
     }
 }
@@ -2209,6 +2219,7 @@ Scheduler::specWakeUpFromVP(const DynInstPtr& inst)
         }
         earlyScoreboard[dst->flatIndex()] = true;
         bypassScoreboard[dst->flatIndex()] = true;
+        loadDataReadyTime[dst->flatIndex()] = 0;
         // NOTE: intentionally NOT setting scoreboard[dst] = true
         // so consumers go through the earlyScoreboard path in insert()
         // which adds them to subDepGraph
@@ -2220,11 +2231,22 @@ Scheduler::specWakeUpFromLoadPipe(const DynInstPtr& inst)
 {
     assert(inst->isLoad());
     auto from_issue_queue = inst->issueQue;
+    // S1 wakeup assumes two cycles from selection to operand consumption.
+    // Shorter consumer pipes must wait so their operands meet the same load
+    // data boundary. Newly enqueued consumers check their own issue latency.
     for (auto to : wakeMatrix[from_issue_queue->getId()]) {
-
-        DPRINTF(Schedule, "[sn:%llu] %s create wakeupEvent to %s at loadpipe, no delay\n", inst->seqNum,
-                from_issue_queue->getName(), to->getName());
-        to->wakeUpDependents(inst, true);
+        int wakeDelay = std::max(0, 2 - to->getIssueStages());
+        DPRINTF(Schedule, "[sn:%llu] %s loadpipe wakeup to %s, delay %d cycles\n",
+                inst->seqNum, from_issue_queue->getName(), to->getName(),
+                wakeDelay);
+        if (wakeDelay > 0) {
+            auto wakeEvent = new SpecWakeupCompletion(
+                inst, to, &specWakeEvents, true);
+            specWakeEvents[inst->seqNum].insert(wakeEvent);
+            cpu->schedule(wakeEvent, cpu->clockEdge(Cycles(wakeDelay)) - 1);
+        } else {
+            to->wakeUpDependents(inst, true);
+        }
 
         for (int i = 0; i < inst->numDestRegs(); i++) {
             PhysRegIdPtr dst = inst->renamedDestIdx(i);
@@ -2232,6 +2254,9 @@ Scheduler::specWakeUpFromLoadPipe(const DynInstPtr& inst)
                 continue;
             }
             earlyScoreboard[dst->flatIndex()] = true;
+            loadDataReadyTime[dst->flatIndex()] =
+                inst->vpResult.speculative && !inst->vpMisprediction ? 0 :
+                    cpu->clockEdge(Cycles(2)) - 1;
         }
     }
 }
@@ -2381,6 +2406,7 @@ Scheduler::loadCancel(const DynInstPtr& inst)
                 continue;
             }
             earlyScoreboard[dst->flatIndex()] = false;
+            loadDataReadyTime[dst->flatIndex()] = 0;
             for (auto iq : issueQues) {
                 for (auto& it : iq->subDepGraph[dst->flatIndex()]) {
                     int srcIdx = it.first;
