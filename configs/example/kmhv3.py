@@ -260,6 +260,7 @@ def setKmhV3Params(args, system):
 
     # l3 cache
     if args.l3cache:
+        system.l3.size = '64MiB'
         system.l3.mshrs = 64
         system.l3.do_fast_writeline = True
         system.l3.prefetch_can_offload = False
