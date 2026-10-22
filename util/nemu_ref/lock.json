@@ -1,5 +1,5 @@
 {
-  "release": "d30fff1ece9e-gem5-r3",
+  "release": "d30fff1ece9e-gem5-r3-multi16g-zfa-cbo",
   "commit": "d30fff1ece9e0480146caf504660a0239b994eef",
   "repository": "https://github.com/OpenXiangShan/NEMU.git",
   "base_defconfig": "riscv64-gem5-ref_defconfig",
@@ -9,5 +9,10 @@
     "resource/LibCheckpoint": "2115c400af664ba06c57114db39a777ee7e5f1d0",
     "resource/nanopb": "5b070b65ae53f72c5e9b5050519933bcd4cc0eff"
   },
-  "variants": ["normal", "normal-dedup", "h", "multi"]
+  "variants": [
+    "normal",
+    "normal-dedup",
+    "h",
+    "multi"
+  ]
 }

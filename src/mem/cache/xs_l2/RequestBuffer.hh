@@ -3,6 +3,7 @@
 
 #include <deque>
 
+#include "mem/cache/xs_l2/TaskSource.hh"
 #include "mem/packet.hh"
 
 namespace gem5
@@ -11,18 +12,24 @@ namespace gem5
 class RequestBuffer
 {
   public:
+    struct Entry
+    {
+        PacketPtr pkt;
+        TaskSource source;
+    };
+
     explicit RequestBuffer(unsigned size);
 
     bool isFull() const;
     bool empty() const;
     unsigned size() const;
-    void push(PacketPtr pkt);
+    void push(PacketPtr pkt, TaskSource source);
     void pop();
-    PacketPtr front();
+    Entry front() const;
 
   private:
     const unsigned _size;
-    std::deque<PacketPtr> buffer;
+    std::deque<Entry> buffer;
 };
 
 } // namespace gem5

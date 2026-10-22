@@ -37,6 +37,10 @@ if __name__ == '__m5_main__':
 
     args = parser.parse_args()
 
+    if args.enable_spmt:
+        fatal("--enable-spmt is not supported by this entry point; "
+              "use kmhv3.py or idealkmhv3.py instead.")
+
     args.xiangshan_system = True
     args.enable_difftest = False
     args.enable_riscv_vector = True

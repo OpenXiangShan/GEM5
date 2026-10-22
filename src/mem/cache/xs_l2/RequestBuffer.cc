@@ -29,10 +29,10 @@ RequestBuffer::size() const
 }
 
 void
-RequestBuffer::push(PacketPtr pkt)
+RequestBuffer::push(PacketPtr pkt, TaskSource source)
 {
     fatal_if(isFull(), "RequestBuffer is full");
-    buffer.push_back(pkt);
+    buffer.push_back({pkt, source});
 }
 
 void
@@ -42,8 +42,8 @@ RequestBuffer::pop()
     buffer.pop_front();
 }
 
-PacketPtr
-RequestBuffer::front()
+RequestBuffer::Entry
+RequestBuffer::front() const
 {
     fatal_if(empty(), "RequestBuffer is empty");
     return buffer.front();

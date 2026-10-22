@@ -42,6 +42,8 @@ def setKmhV3Params(args, system):
         cpu.iewToFetchDelay = 4 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 4
         cpu.fetchQueueSize = 64
+        predecode_enabled = not getattr(args, "enable_trace_mode", False)
+        cpu.enablePredecode = predecode_enabled
 
         # decode
         cpu.fetchToDecodeDelay = 3
@@ -62,23 +64,44 @@ def setKmhV3Params(args, system):
         cpu.dispWidth = [8, 8, 8]
 
         # scheduler
-        cpu.scheduler = KMHV3Scheduler()
+        if args.enable_spmt:
+            cpu.scheduler = KMHV3SpMTScheduler()
+        else:
+            cpu.scheduler = KMHV3Scheduler()
+        
         cpu.scheduler.disableAllRegArb()
         for iq in cpu.scheduler.IQs:
             iq.deferNewEnqueueSelection = not args.smt
         cpu.scheduler.enableMainRdpOpt = False
         cpu.scheduler.intRegfileBanks = 1
-        # intiq0
-        cpu.scheduler.IQs[0].oports[0].rp = [IntRD(0, 0), IntRD(1, 0)]
-        cpu.scheduler.IQs[0].oports[1].rp = [IntRD(0, 1), IntRD(1, 1)]
+        if args.enable_spmt:
+            # intiq0
+            cpu.scheduler.IQs[0].oports[0].rp = [IntRD(0, 0), IntRD(2, 0)]
+            cpu.scheduler.IQs[0].oports[1].rp = [IntRD(0, 1), IntRD(2, 1)]
 
-        # intiq1
-        cpu.scheduler.IQs[1].oports[0].rp = [IntRD(2, 0), IntRD(3, 0)]
-        cpu.scheduler.IQs[1].oports[1].rp = [IntRD(2, 1), IntRD(3, 1)]
+            # intiq1
+            cpu.scheduler.IQs[1].oports[0].rp = [IntRD(1, 0), IntRD(3, 0)]
+            cpu.scheduler.IQs[1].oports[1].rp = [IntRD(1, 1), IntRD(3, 1)]
 
-        # intiq2
-        cpu.scheduler.IQs[2].oports[0].rp = [IntRD(4, 0), IntRD(5, 0)]
-        cpu.scheduler.IQs[2].oports[1].rp = [IntRD(4, 1), IntRD(5, 1)]
+            # intiq2
+            cpu.scheduler.IQs[2].oports[0].rp = [IntRD(4, 0), IntRD(6, 0)]
+            cpu.scheduler.IQs[2].oports[1].rp = [IntRD(4, 1), IntRD(6, 1)]
+            
+            # intiq3
+            cpu.scheduler.IQs[3].oports[0].rp = [IntRD(5, 0), IntRD(7, 0)]
+            cpu.scheduler.IQs[3].oports[1].rp = [IntRD(5, 1), IntRD(7, 1)]
+        else:
+            # intiq0
+            cpu.scheduler.IQs[0].oports[0].rp = [IntRD(0, 0), IntRD(1, 0)]
+            cpu.scheduler.IQs[0].oports[1].rp = [IntRD(0, 1), IntRD(1, 1)]
+
+            # intiq1
+            cpu.scheduler.IQs[1].oports[0].rp = [IntRD(2, 0), IntRD(3, 0)]
+            cpu.scheduler.IQs[1].oports[1].rp = [IntRD(2, 1), IntRD(3, 1)]
+
+            # intiq2
+            cpu.scheduler.IQs[2].oports[0].rp = [IntRD(4, 0), IntRD(5, 0)]
+            cpu.scheduler.IQs[2].oports[1].rp = [IntRD(4, 1), IntRD(5, 1)]
 
         # rob
         cpu.commitWidth = 8
@@ -95,6 +118,7 @@ def setKmhV3Params(args, system):
         cpu.EnablePipeNukeCheck = True
         cpu.BankConflictCheck = True
         cpu.sbufferBankWriteAccurately = True
+        cpu.vectorMemCompletionDelay = 3
 
         # lsq
         cpu.LQEntries = 120

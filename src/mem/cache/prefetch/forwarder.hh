@@ -47,6 +47,11 @@ class PrefetcherForwarder : public Base
     bool hasPendingPacket() override;
     Tick nextPrefetchReadyTime() const override;
 
+    lldp::Hint loadTrain(const PacketPtr &pkt, bool miss) override
+    { return real_pf ? real_pf->loadTrain(pkt, miss) : lldp::Hint(); }
+    void hintData(const lldp::Hint &hint, const PacketPtr &demand,
+                  const uint8_t *data, unsigned size) override
+    { if (real_pf) real_pf->hintData(hint, demand, data, size); }
     void notifyFill(const PacketPtr &pkt) override;
     void coreDirectAddrNotify(const PacketPtr &pkt) override;
     bool hasHintDownStream() const override;

@@ -64,6 +64,7 @@
 #include "cpu/o3/free_list.hh"
 #include "cpu/o3/iew.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/mlp_predictor.hh"
 #include "cpu/o3/perfCCT.hh"
 #include "cpu/o3/rename.hh"
 #include "cpu/o3/rob.hh"
@@ -191,6 +192,7 @@ class CPU : public BaseCPU
     /** Constructs a CPU with the given parameters. */
     CPU(const BaseO3CPUParams &params);
 
+    ProbePointArg<XsDynInstMetaPtr> *ppLldpDependenceTrain;
     ProbePointArg<PacketPtr> *ppInstAccessComplete;
     ProbePointArg<std::pair<DynInstPtr, PacketPtr> > *ppDataAccessComplete;
 
@@ -383,6 +385,11 @@ class CPU : public BaseCPU
         return fetch.isTraceEOF();
     }
 
+    /** Current trace reader position (records consumed from the stream;
+     *  replay from history does not advance it). Used by the EOF
+     *  reconciliation invariant in Commit. */
+    uint64_t getTraceReaderIndex() const { return fetch.getTraceReaderIndex(); }
+
     /**
      * Wrapper for internal drain check used by trace-mode helpers.
      * Keeps isCpuDrained() private while still allowing components
@@ -520,6 +527,9 @@ class CPU : public BaseCPU
     Scoreboard scoreboard;
 
     std::vector<TheISA::ISA *> isa;
+
+    /** The MLP predictor. */
+    MLPredictor mlpPredictor;
 
   public:
     /** Enum to give each stage a specific index, so when calling
@@ -668,6 +678,9 @@ class CPU : public BaseCPU
     struct CPUStats : public statistics::Group
     {
         CPUStats(CPU *cpu);
+        void preDumpStats() override;
+
+        CPU &owner;
 
         /** Stat for total number of times the CPU is descheduled. */
         statistics::Scalar timesIdled;
@@ -700,9 +713,9 @@ class CPU : public BaseCPU
         /** Frontend Bandwidth Bound */
         statistics::Formula frontendBandwidthBound;
         /** BadSpec Bound */
-        statistics::Formula badSpecBound;
+        statistics::Vector badSpecBound;
         /** Branch Miss Prediction Bound */
-        statistics::Formula branchMissPrediction;
+        statistics::Vector branchMissPrediction;
         /** Machine clears */
         statistics::Formula machineClears;
         /** Backend Bound */

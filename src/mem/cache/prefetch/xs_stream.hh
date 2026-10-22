@@ -35,6 +35,7 @@ class XsStreamPrefetcher : public Queued
     int badPreNum;
     bool enableAutoDepth;
     bool enableL3StreamPre;
+    const bool strictActive;
     const unsigned l2Depth;
     const int l2Ratio = 2;
     const int l3Ratio = 3;
@@ -91,6 +92,7 @@ class XsStreamPrefetcher : public Queued
         {}
     };
     AssociativeSet<STREAMEntry> stream_array;
+    bool isActiveNeighbor(const STREAMEntry *entry) const;
     STREAMEntry *streamLookup(const PrefetchInfo &pfi, bool &in_active_page, bool &decr);
     void sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                           PrefetchSourceType src, int pf_degree, int ahead_level = -1, STREAMEntry *entry = nullptr);

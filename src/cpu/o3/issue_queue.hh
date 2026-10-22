@@ -21,6 +21,7 @@
 #include "cpu/o3/smt_sched.hh"
 #include "cpu/reg_class.hh"
 #include "cpu/timebuf.hh"
+#include "enums/SMTQueuePolicy.hh"
 #include "params/BaseSelector.hh"
 #include "params/IssuePort.hh"
 #include "params/IssueQue.hh"
@@ -212,6 +213,12 @@ class IssueQue : public SimObject
     // iq per-thread occupancy counter, used for fetch-side feedback stats
     InstsCounter* instsCounter = nullptr;
 
+    // SMT IQ partitioning
+    SMTQueuePolicy smtIQPolicy = SMTQueuePolicy::Dynamic;
+    int smtIQWatermark = 0;
+    int numThreads = 1;
+    uint32_t threadEntries[MaxThreads] = {};
+
     struct IssueQueStats : public statistics::Group
     {
         IssueQueStats(statistics::Group* parent, IssueQue* que, std::string name);
@@ -221,12 +228,14 @@ class IssueQue : public SimObject
         statistics::Scalar arbFailed;
         statistics::Scalar tagRefillBlock;
         statistics::Scalar issueOccupy;
+        /** Late load-cancel recoveries found during issue selection. */
+        statistics::Scalar lateLoadCancel;
         statistics::Vector insertDist;
         statistics::Vector issueDist;
         statistics::Vector portissued;
         statistics::Vector portBusy;
         statistics::Average avgInsts;
-        statistics::Vector instsNum; 
+        statistics::Vector instsNum;
     }* iqstats = nullptr;
 
     void replay(const DynInstPtr& inst);
@@ -275,7 +284,7 @@ class IssueQue : public SimObject
     bool hasInstsCounter() const { return instsCounter != nullptr; }
 
     void tick();
-    bool ready();
+    bool ready(ThreadID tid);
     int emptyEntries() const { return iqsize - instNum; }
     void insert(const DynInstPtr& inst);
     void insertNonSpec(const DynInstPtr& inst);
@@ -333,7 +342,7 @@ class Scheduler : public SimObject
     CPU* cpu;
     MemDepUnit* memDepUnit;
     LSQ* lsq;
-    const int intel_fewops = 8;
+    const int intel_fewops = 4;
     bool old_disp = false;
     const int intRegfileBanks;
 
@@ -350,6 +359,12 @@ class Scheduler : public SimObject
         statistics::Scalar memstall_l1miss;
         statistics::Scalar memstall_l2miss;
         statistics::Scalar memstall_l3miss;
+        statistics::Scalar lldpWakeups;
+        statistics::Scalar lldpChains;
+        statistics::Scalar lldpSingleSrcImmediateArithmetic;
+        statistics::Scalar lldpDualSrcRegisterArithmetic;
+        statistics::Distribution lldpChainLengths;
+        statistics::Vector lldpArithmeticTypes;
     } stats;
 
     struct disp_policy
@@ -362,13 +377,13 @@ class Scheduler : public SimObject
 
     std::vector<uint32_t> opExecTimeTable;
     std::vector<bool> opPipelined;
-    std::vector<IQGroup> dispTable;
+    std::vector<std::vector<IQGroup>> dispTable;
     std::vector<IssueQue*> issueQues;
     std::vector<std::vector<IssueQue*>> wakeMatrix;
     uint32_t combinedFus;
 
     std::vector<uint8_t> totalDispCounter;
-    std::vector<uint8_t*> dispOpdist;
+    std::vector<std::vector<uint8_t*>> dispOpdist;
 
     std::vector<DynInstPtr> instsToFu;
 
@@ -384,18 +399,33 @@ class Scheduler : public SimObject
 
     struct NullStruct {};
 
-    // regcache only for integer
-    boost::compute::detail::lru_cache<int, NullStruct> regCache =
-        boost::compute::detail::lru_cache<int, NullStruct>(28);
+    using RegCache = boost::compute::detail::lru_cache<int, NullStruct>;
+    static constexpr unsigned RegCacheEntries = 28;
+
+    // Legacy SMT shares one cache. Strict SpMT statically splits its total
+    // capacity between the two threads.
+    RegCache regCache{RegCacheEntries};
+    RegCache spmtRegCache0{RegCacheEntries / 2};
+    RegCache spmtRegCache1{RegCacheEntries / 2};
+    bool enableSpMT = false;
+    unsigned spmtIntRegsPerThread = 0;
+
+    RegCache &regCacheFor(ThreadID tid);
+    void insertRegCache(const DynInstPtr& inst, PhysRegIdPtr reg);
+    bool containsRegCache(const DynInstPtr& inst, PhysRegIdPtr reg);
+    bool accessRegCache(const DynInstPtr& inst, PhysRegIdPtr reg);
 
     // used for searching dependency chain
     std::stack<DynInstPtr> dfs;
 
     std::vector<int> dispSeqVec;
 
+    // SMT IQ policy forwarded to each IssueQue in setCPU().
+    SMTQueuePolicy smtIQPolicy = SMTQueuePolicy::Dynamic;
+
     // should call at issue first/last cycle,
     void specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_queue);
-    bool ready(OpClass op, int disp_seq);
+    bool ready(OpClass op, ThreadID tid, int disp_seq);
 
   public:
     PendingWakeEventsType specWakeEvents;

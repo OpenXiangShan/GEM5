@@ -61,7 +61,7 @@ class L2CacheWrapper : public ClockedObject
     bool prefetch_blocked = false;
     PacketPtr outstanding_prefetch = nullptr;
 
-    void scheduleSendPrefetch();
+    void scheduleSendPrefetch(Tick ready = MaxTick);
     bool needPrefetch();
 
   public:

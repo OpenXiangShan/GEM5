@@ -1029,6 +1029,15 @@ class LSQUnit
     /** Returns the index of the head load instruction. */
     int getLoadHead() { return loadQueue.head(); }
 
+    /** Returns the DynInst at a relative offset from the LQ head. */
+    DynInstPtr getLoadInst(int offset)
+    {
+        int idx = loadQueue.head() + offset;
+        if (idx >= loadQueue.head() + loadQueue.size() || !loadQueue[idx].valid())
+            return nullptr;
+        return loadQueue[idx].instruction();
+    }
+
     /** Returns the sequence number of the head load instruction. */
     InstSeqNum getLoadHeadSeqNum();
 

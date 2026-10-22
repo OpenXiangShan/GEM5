@@ -346,7 +346,8 @@ class ROB
 
     unsigned replayWidth{6};
 
-    unsigned dynSquashWidth{6};
+    /** Per-thread squash width; simultaneous SMT recovery must not overwrite it. */
+    unsigned dynSquashWidth[MaxThreads] = {};
 
     unsigned constSquashCycle{1};
 
@@ -380,6 +381,9 @@ class ROB
     InstIt squashIt[MaxThreads];
 
   public:
+    /** Returns the max instructions per ROB group. */
+    unsigned getInstsPerGroup() const { return instsPerGroup; }
+
     /** Number of instructions in the ROB. */
     int numInstsInROB;
 

@@ -39,9 +39,8 @@
 
 #include <algorithm>
 #include <cassert>
-#include <linux/limits.h>
-#include <string>
 #include <climits>
+#include <string>
 
 #include "arch/generic/tlb.hh"
 #include "base/logging.hh"
@@ -1502,7 +1501,12 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
     Addr target_paddr;
     bool has_target_pa = false;
     RequestPtr translation_req = nullptr;
-    if (samePage(orig_addr, new_pfi.getAddr())) {
+    if (addr_prio.forceTranslation) {
+        if (!tlb || !pkt->req->hasContextId() || !pkt->req->hasVaddr())
+            return;
+        translation_req = createPrefetchRequest(new_pfi.getAddr(), new_pfi,
+            pkt, addr_prio.pfSource, addr_prio.depth);
+    } else if (samePage(orig_addr, new_pfi.getAddr())) {
         if (useVirtualAddresses) {
             // if we trained with virtual addresses,
             // compute the target PA using the original PA and adding the

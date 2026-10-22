@@ -64,22 +64,25 @@ class SMTFetchBlockPolicy(ScopedEnum):
     #
     # BlockThrottlePolicy (Throttle):
     #   The block signal REPLACES the base throttle entirely. throttle_now is driven
-    #   solely by threadFetchBlocked[tid]. The block state continuously refreshes the
+    #   solely by threadFetchThrottled[tid]. The block state continuously refreshes the
     #   smtBorrowThrottleCycles hold counter, keeping the thread throttled.
     #
-    # FlushFromLoadPolicy (Flush V1):
+    # FlushFromLoadPolicy:
     #   Squash ALL instructions after the long-latency load (including pipeline in-flight).
     #   Same throttle behavior as BlockThrottlePolicy, plus resource reclamation via squash.
     #
-    # FlushFromUsePolicy (Flush V2):
+    # FlushFromUsePolicy:
     #   Squash from the first consumer of the load's result. If no consumer exists in the
     #   ROB, squash from ROB tail (preserving independent instructions). Same throttle
     #   behavior as BlockThrottlePolicy.
-    vals = [ 'BaseLine', 'BlockStallPolicy', 'BlockThrottlePolicy',
-             'FlushFromLoadPolicy', 'FlushFromUsePolicy' ]
+    vals = [ 'BaseLine', 'BlockThrottlePolicy', 'BlockStallPolicy',
+             'FlushFromLoadPolicy', 'FlushFromUsePolicy', ]
+
+class SMTMLPFetchBlockPolicy(ScopedEnum):
+    vals = [ 'DisableMlp', 'MlpAwarePolicy', 'MlpDetectPolicy' ]
 
 class SMTQueuePolicy(ScopedEnum):
-    vals = [ 'Dynamic', 'Partitioned', 'Threshold', 'DynamicBorrowing' ]
+    vals = [ 'Dynamic', 'Partitioned', 'Threshold', 'DynamicBorrowing', 'Watermark' ]
 
 class SMTLSQMode(ScopedEnum):
     vals = [ 'Independent', 'Shared' ]
@@ -159,6 +162,8 @@ class BaseO3CPU(BaseCPU):
         "Maximum fetch-buffer window covered by two-fetch")
     fetchQueueSize = Param.Unsigned(48, "Fetch queue size in micro-ops "
                                     "per-thread")
+    enablePredecode = Param.Bool(False,
+        "Enable the RISC-V frontend predecode pipeline")
 
     renameToDecodeDelay = Param.Cycles(1, "Rename to decode delay")
     iewToDecodeDelay = Param.Cycles(1, "Issue/Execute/Writeback to decode "
@@ -195,7 +200,7 @@ class BaseO3CPU(BaseCPU):
     ConstSquashCycle = Param.Unsigned(1, "Squash width with redo rob walk")
     robWalkPolicy = Param.ROBWalkPolicy('Replay', "Squash with a specific policy")
     numMaxRatSnapshot = Param.Unsigned(4,
-        "Number of rename-map (RAT) checkpoints for NaiveCpt recovery")
+        "Number of rename-map (RAT) checkpoints per thread for NaiveCpt recovery")
     ratSnapshotDistance = Param.Unsigned(32,
         "Minimum instructions between successive RAT checkpoints")
     robWalkByDestRegs = Param.Bool(True,
@@ -328,7 +333,7 @@ class BaseO3CPU(BaseCPU):
                                            "SMT shared RARQ allocation policy")
     smtRAWQPolicy   = Param.SMTQueuePolicy('Dynamic',
                                            "SMT shared RAWQ allocation policy")
-    smtIQPolicy    = Param.SMTQueuePolicy('Partitioned',
+    smtIQPolicy    = Param.SMTQueuePolicy('Dynamic',
                                           "SMT IQ Sharing Policy")
     smtIQThreshold = Param.Int(100, "SMT IQ Threshold Sharing Parameter")
     smtROBPolicy   = Param.SMTQueuePolicy('Partitioned',
@@ -351,13 +356,29 @@ class BaseO3CPU(BaseCPU):
     smtFetchBlockThreshold = Param.Unsigned(15,
         "Number of cycles a load must wait in the LQ before it is considered "
         "long-latency and triggers fetch blocking (T15 from Tullsen & Brown's paper)")
+    smtMlpFetchBlockPolicy = Param.SMTMLPFetchBlockPolicy('DisableMlp',
+        "SMT fetch block policy for long-latency loads")
+    mlpPredictorEnable = Param.Bool(False,
+        "Enable MLP-aware fetch predictor (HPCA07)")
+    mlpMissPatternTableSize = Param.Unsigned(2048,
+        "Miss-pattern predictor table size per thread")
+    mlpDistanceTableSize = Param.Unsigned(2048,
+        "MLP distance predictor table size per thread")
+    mlpLongLatencyCacheDepth = Param.Unsigned(3,
+        "Cache depth threshold to classify a load as long-latency. "
+        "Loads with depth >= this value are long-latency. "
+        "For example, 2 means L2 miss (L3/mem access).")
+
     smtFetchDelayedSchedulerDelay = Param.Unsigned(2,
         "Number of cycles the DelayedICount Policy delayed")
     smtBorrowThrottleCycles = Param.Unsigned(
-        8, "Cycles to keep a backend-stalled SMT thread throttled at fetch, 0 means disable throttle")
+        8, "Cycles to keep a backend-stalled SMT thread throttled at fetch")
 
     smtPregPolicy = Param.SMTQueuePolicy('Dynamic',
                                          "SMT Preg (physical register) Sharing Policy")
+    enableSpMT = Param.Bool(False,
+        "Enable strict two-thread SpMT physical-register, bank, and "
+        "register-cache partitioning")
     smtPregFixedBase = Param.Unsigned(0,
         "Fixed per-thread base quota for DynamicBorrowing (0 = numPhysRegs/activeThreads)")
     smtPregDonorReservePercent = Param.Unsigned(
@@ -407,7 +428,7 @@ class BaseO3CPU(BaseCPU):
     # Trace mode parameters for trace-driven simulation
     enableTraceMode = Param.Bool(False, "Enable trace-driven simulation mode")
     traceFile = Param.String("", "Path to trace file for trace-driven simulation")
-    traceFormat = Param.String("champsim", "Trace format (champsim, cbp2025)")
+    traceFormat = Param.String("champsim", "Trace format (champsim, cbp2025, tracertl)")
     enableDecoupledBPInTrace = Param.Bool(False, "Enable decoupled branch predictor in trace mode")
     traceCheckpointInterval = Param.Unsigned(64, "Checkpoint interval for trace rollback (0 disables)")
     traceBPValidation = Param.Bool(True, "Enable branch predictor validation against trace")
@@ -426,9 +447,12 @@ class BaseO3CPU(BaseCPU):
     tracePTLeafPageSize = Param.UInt64(4 * 1024,
         "Synthetic mapping page size for trace timing PTW (4KiB or 2MiB)")
 
-    # Trace-driven branch predictor training and control-flow modeling
-    traceTrainBranches = Param.Bool(True,
-        "Enable BP training and use real branch opcodes under trace mode")
+    # Some formats (tracertl) record the real instruction encoding per
+    # record. Default: feed the real bits to the decoder. Set to True to
+    # force the synthetic encoding path instead (A/B diagnostic).
+    traceUseSyntheticEnc = Param.Bool(False,
+        "Force synthetic instruction encoding even when the trace carries "
+        "the real encoding (tracertl); A/B diagnostic")
 
     # On a branch misprediction (predicted vs. trace ground truth), stall
     # the fetch stage for this many cycles to emulate redirect/recovery cost.

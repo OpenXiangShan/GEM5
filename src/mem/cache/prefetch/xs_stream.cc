@@ -16,12 +16,21 @@ XsStreamPrefetcher::XsStreamPrefetcher(const XsStreamPrefetcherParams &p)
       badPreNum(0),
       enableAutoDepth(p.enable_auto_depth),
       enableL3StreamPre(p.enable_l3_stream_pre),
+      strictActive(p.strict_active),
       l2Depth(p.xs_stream_l2_depth),
       stream_array(p.xs_stream_entries, p.xs_stream_entries, p.xs_stream_indexing_policy,
                    p.xs_stream_replacement_policy, STREAMEntry()),
       streamBlkFilter(pfFilterSize)
 {
 }
+
+bool
+XsStreamPrefetcher::isActiveNeighbor(const STREAMEntry *entry) const
+{
+    return entry && entry->active &&
+           (!strictActive || entry->cnt > ACTIVETHRESHOLD);
+}
+
 void
 XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, int late_num)
 {
@@ -89,15 +98,15 @@ XsStreamPrefetcher::streamLookup(const PrefetchInfo &pfi, bool &in_active_page, 
     STREAMEntry *entry_min = stream_array.findEntry(
         contextKey(regionHashTag(vaddr_tag_num - 1), context_id), secure);
 
-    bool entry_plus_active = entry_plus && entry_plus->active;
-    bool entry_min_active = entry_min && entry_min->active;
+    const bool has_active_neighbor =
+        isActiveNeighbor(entry_plus) || isActiveNeighbor(entry_min);
 
     if (entry) {
         stream_array.accessEntry(entry);
         uint64_t region_bit_accessed = 1UL << vaddr_offset;
         if (entry_plus)
             entry->decrMode = true;
-        if ((entry_plus_active || entry_min_active) || (entry->cnt > ACTIVETHRESHOLD))
+        if (has_active_neighbor || (entry->cnt > ACTIVETHRESHOLD))
             entry->active = true;
         in_active_page = entry->active;
         decr = entry->decrMode;
@@ -111,7 +120,7 @@ XsStreamPrefetcher::streamLookup(const PrefetchInfo &pfi, bool &in_active_page, 
         contextKey(regionHashTag(vaddr_tag_num), context_id);
     entry = stream_array.findVictim(stream_key);
 
-    in_active_page = (entry_plus_active || entry_min_active);
+    in_active_page = has_active_neighbor;
     decr = entry_plus != nullptr;
     entry->tag = regionHashTag(vaddr_tag_num);
     entry->decrMode = decr;

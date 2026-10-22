@@ -23,13 +23,33 @@
 **触发**: 每次 push 到 PR 分支
 
 **内容**:
-- ✅ 编译 GEM5 opt 版本
+- ✅ 使用 GCC 编译 GEM5 opt 版本
+- ✅ 独立 job 使用 Clang 编译 GEM5 fast 版本，检查关闭断言和 tracing 后的编译错误
 - ✅ 单元测试 (Unit Tests)
 - ✅ 冒烟测试 (Difftest Check)
 
-**说明**: 
+**说明**:
 - 遵循 DRY 原则，这些测试不会在 Post-Merge 阶段重复运行
 - 使用本地 DRAMSim3 缓存，避免网络IO
+
+---
+
+## macOS 编译与 Linux 演示检查
+
+**文件**: `.github/workflows/macos-smoke.yml`
+
+参考上游的独立 macOS 编译 job，仅手动触发运行一个
+`macos-26` ARM64 job：安装 Homebrew 依赖 → 构建 DRAMSim3 和 `gem5.opt` →
+关闭 Difftest 启动 `linux.bin`。检查 `Hello, XiangShan!`、正常 `m5_exit`
+和非空统计文件，最后在 Actions 日志里展示启动输出。镜像只下载固定版本的
+`linux.bin`，无需克隆整个 ready-to-run 仓库。
+
+它不依赖 NFS、NEMU reference 或外部 restorer，不替代现有 Linux 回归。
+只构建 RISCV/opt，不增加编译矩阵或每日缓存任务；同一分支再次手动运行会取消旧检查。
+日常使用本地增量编译，峰会或发布前可在 Actions 页面手动运行干净环境检查。
+该 workflow 不在 PR 或合入后自动运行，也不作为合入门槛。现有 Linux job 使用
+self-hosted runner，并没有分别验证 Ubuntu 20.04/22.04/24.04；README 中的
+安装方法不等同于逐版本的 CI 承诺。
 
 ---
 
@@ -74,6 +94,45 @@
 | `True` | 显式启用动态预取控制，窗口为 8000 cycles，并打开 L1D/L2/L2Wrapper PFBad 表 |
 
 如果 `extra_args` 没有显式传 `--enable-dynamic-pf`，`idealkmhv3.py` 会默认保持关闭。SMT 配置保持现有默认行为不变。
+
+### LLDP 与 kmhv3 预取器组合
+
+`manual-perf.yml` 的 `configuration` 选择 `kmhv3.py` 后，将下面整行分别填入
+`Extra gem5 args appended to config runs`。`-P` 参数不包含空格，因此可直接被
+workflow 的并行 runner 传递。
+
+1. 仅打开 L1 stream/stride，关闭其他 L1/L2/L3 预取器：
+
+```text
+--l1d-hwp-type=XSCompositePrefetcher --l2-hwp-type=PrefetcherForwarder --l2-wrapper-hwp-type=PrefetcherForwarder --l3-hwp-type=PrefetcherForwarder -P system.cpu.dcache.prefetcher.enable_activepage=False -P system.cpu.dcache.prefetcher.enable_pht=False -P system.cpu.dcache.prefetcher.enable_berti=False -P system.cpu.dcache.prefetcher.enable_bop=False -P system.cpu.dcache.prefetcher.enable_temporal=False -P system.cpu.dcache.prefetcher.enable_sstride=True -P system.cpu.dcache.prefetcher.enable_xsstream=True -P system.cpu.dcache.prefetcher.enable_spp=False -P system.cpu.dcache.prefetcher.enable_cplx=False -P system.cpu.dcache.prefetcher.enable_opt=False
+```
+
+2. 仅打开 L1 stream/stride + LLDP，关闭其他 L2 预取器：
+
+```text
+--l1d-hwp-type=XSCompositePrefetcher --l1d-enable-lldp --l2-hwp-type=PrefetcherForwarder --l2-wrapper-hwp-type=LLDPrefetcher --l3-hwp-type=PrefetcherForwarder -P system.cpu.dcache.prefetcher.enable_activepage=False -P system.cpu.dcache.prefetcher.enable_pht=False -P system.cpu.dcache.prefetcher.enable_berti=False -P system.cpu.dcache.prefetcher.enable_bop=False -P system.cpu.dcache.prefetcher.enable_temporal=False -P system.cpu.dcache.prefetcher.enable_sstride=True -P system.cpu.dcache.prefetcher.enable_xsstream=True -P system.cpu.dcache.prefetcher.enable_spp=False -P system.cpu.dcache.prefetcher.enable_cplx=False -P system.cpu.dcache.prefetcher.enable_opt=False
+```
+
+需要单独 L2 LLDP 时保留这组 L1 参数，把 `--l2-wrapper-hwp-type=LLDPrefetcher`
+作为独立 L2 LLDP；需要保留 kmhv3 L2 composite 并叠加 LLDP 时改回
+`--l2-wrapper-hwp-type=L2CompositeWithWorkerPrefetcher --l2-enable-lldp`。
+
+3. 保留 kmhv3 的 L1/L2 预取配置，额外打开 L1 LLDP：
+
+```text
+--l1d-enable-lldp
+```
+
+如果同时要在 kmhv3 的 L2 composite 中打开 LLDP，使用：
+
+```text
+--l1d-enable-lldp --l2-enable-lldp
+```
+
+如果需要保留 L2 composite 并同时打开 L2 LLDP，将 `--l2-wrapper-hwp-type=LLDPrefetcher`
+换成 `--l2-enable-lldp`；这会启用 L2 composite 内嵌的 LLDP 子组件。使用
+`--l1d-hwp-type=MultiPrefetcher --l1d-enable-lldp` 可启用 Multi 中的 LLDP 与其他
+子预取器，Multi 会把 CPU 的 `dependenceTrain`、TLB 和 PFQ ready 回调传给 LLDP 子组件。
 
 ### 性能结果
 
@@ -120,7 +179,7 @@
 
 #### 4. 其他测试
 - `gem5-vector.yml` - RVV 扩展测试
-- `gem5-ideal-btb-perf-weekly.yml` - 定时任务（每周四），包含 gcc16 rva23-novec/spec17 常规回归、gcc12 `idealkmhv3.py` 动态预取回归，以及 SMT SPEC06 int-only dynamic prefetch 回归
+- `gem5-ideal-btb-perf-weekly.yml` - 定时任务（每周四），包含 GCC16 SPEC06 align 与 ideal 回归、SPEC17 align 回归、XSCC SPEC06 align 回归、SPEC26 align 回归、SPEC06/SPEC17 SMT 回归，以及 GCC12 `idealkmhv3.py` 动态预取回归；SPEC17/SPEC26 ideal job 暂时注释保留
 
 ---
 

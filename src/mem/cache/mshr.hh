@@ -118,6 +118,9 @@ class MSHR : public QueueEntry, public Printable
     /** Did we snoop a read while waiting for data? */
     bool postDowngrade;
 
+    // RTL permits later stores to merge only into a store-allocated miss.
+    bool sbufferStoreOrigin = false;
+
   public:
 
     /** Track if we sent this as a whole line write or not */
@@ -136,6 +139,8 @@ class MSHR : public QueueEntry, public Printable
             FromSnoop,
             FromPrefetcher
         };
+
+        lldp::Hint lldpHint;
 
         const Source source;  //!< Request from cpu, memory, or prefetcher?
 
@@ -161,7 +166,8 @@ class MSHR : public QueueEntry, public Printable
 
         Target(PacketPtr _pkt, Tick _readyTime, Counter _order,
                Source _source, bool _markedPending, bool alloc_on_fill)
-            : QueueEntry::Target(_pkt, _readyTime, _order), source(_source),
+            : QueueEntry::Target(_pkt, _readyTime, _order),
+              lldpHint(_pkt->lldpHint), source(_source),
               markedPending(_markedPending), allocOnFill(alloc_on_fill)
         {}
     };
@@ -349,6 +355,8 @@ class MSHR : public QueueEntry, public Printable
     }
 
     bool sendPacket(BaseCache &cache) override;
+
+    bool canMergeSbufferStore(const Packet *predecessor) const;
 
     bool allocOnFill() const {
         return targets.allocOnFill;

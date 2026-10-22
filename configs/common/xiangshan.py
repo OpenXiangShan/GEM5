@@ -456,6 +456,11 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
     for cpu in test_sys.cpu:
         if args.smt:
             cpu.numThreads = 2
+        cpu.enableSpMT = args.enable_spmt
+        if args.enable_spmt:
+            assert args.smt, "--enable-spmt requires --smt to be enabled"
+            cpu.smtPregPolicy = 'Partitioned'
+            cpu.smtIQPolicy = 'Dynamic'  # SpMT: each IQ belongs to one thread
         # === Block Policy: pass SMT fetch block parameters ===
         from m5.objects.BaseO3CPU import SMTDecodePolicy
         cpu.smtDecodePolicy = SMTDecodePolicy(args.smt_decode_policy)
@@ -463,6 +468,12 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
         cpu.smtFetchBlockPolicy = SMTFetchBlockPolicy(args.smt_fetch_block_policy)
         cpu.smtFetchBlockThreshold = args.smt_fetch_block_threshold
         cpu.smtBorrowThrottleCycles = args.smt_fetch_throttle_cycles
+        # === MLP predictor: pass parameters ===
+        cpu.mlpPredictorEnable = args.mlp_predictor_enable
+        cpu.smtMlpFetchBlockPolicy = SMTMLPFetchBlockPolicy(args.smt_mlp_fetch_block_policy)
+        cpu.mlpMissPatternTableSize = args.mlp_miss_pattern_table_size
+        cpu.mlpDistanceTableSize = args.mlp_distance_table_size
+        cpu.mlpLongLatencyCacheDepth = args.mlp_long_latency_cache_depth
         cpu.mmu.pma_checker = PMAChecker(
             uncacheable=[AddrRange(0, size=0x80000000)])
         cpu.mmu.functional = args.functional_tlb
@@ -530,6 +541,10 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
             cpu.traceEnableWrongPath = (not args.trace_disable_wrongpath)
             if hasattr(args, 'trace_wrongpath_use_traceinst') and args.trace_wrongpath_use_traceinst:
                 cpu.traceWrongPathUseTraceInst = True
+            # A/B diagnostic: force synthetic encoding even when the trace
+            # records the real instruction bits (tracertl).
+            if getattr(args, 'trace_use_synthetic_enc', False):
+                cpu.traceUseSyntheticEnc = True
 
             # Note: Difftest configured at system level, not CPU level
 
@@ -989,8 +1004,8 @@ def xiangshan_system_init():
         "--smt-fetch-block-policy",
         type=str,
         default="BaseLine",
-        choices=["BaseLine", "BlockStallPolicy", "BlockThrottlePolicy",
-                 "FlushFromLoadPolicy", "FlushFromUsePolicy"],
+        choices=["BaseLine", "BlockThrottlePolicy", "BlockStallPolicy",
+                 "FlushFromLoadPolicy", "FlushFromUsePolicy" ],
         help="SMT fetch block/flush policy for long-latency loads: "
              "BaseLine (no blocking), BlockStallPolicy (block + base throttle), "
              "BlockThrottlePolicy (block drives throttle), "
@@ -1005,10 +1020,45 @@ def xiangshan_system_init():
              "long-latency load before IEW signals Fetch to block (T15 from Tullsen & Brown)",
     )
     parser.add_argument(
+        "--smt-mlp-fetch-block-policy",
+        type=str,
+        default="DisableMlp",
+        choices=["DisableMlp", "MlpAwarePolicy", "MlpDetectPolicy"],
+        help="SMT MLP fetch block/flush policy for long-latency loads: "
+             "DisableMlp (no MLP policy), "
+             "MlpAwarePolicy (try to predict MLP in fetch stage), "
+             "MlpDetectPolicy (try to consider MLP while flush, no effort in block policy)"
+    )
+    parser.add_argument(
         "--smt-fetch-throttle-cycles",
         type=int,
         default=8,
-        help="Cycles to keep a backend-stalled SMT thread throttled at fetch, 0 means disable throttle",
+        help="Cycles to keep a backend-stalled SMT thread throttled at fetch",
+    )
+    parser.add_argument(
+        "--mlp-predictor-enable",
+        action="store_true",
+        default=False,
+        help="Enable MLP-aware fetch predictor",
+    )
+    parser.add_argument(
+        "--mlp-miss-pattern-table-size",
+        type=int,
+        default=2048,
+        help="Miss-pattern predictor table size per thread (must be power of 2)",
+    )
+    parser.add_argument(
+        "--mlp-distance-table-size",
+        type=int,
+        default=2048,
+        help="MLP distance predictor table size per thread (must be power of 2)",
+    )
+    parser.add_argument(
+        "--mlp-long-latency-cache-depth",
+        type=int,
+        default=3,
+        help="Cache depth threshold for long-latency classification. "
+             "Loads with depth >= this value are long-latency (default 3 = L3 miss).",
     )
 
     parser.add_argument(
@@ -1038,10 +1088,72 @@ def xiangshan_system_init():
               "RAT-checkpoint recovery-cost model.",
     )
 
+    parser.add_argument(
+        "--smt-iq-policy",
+        type=str,
+        default="Dynamic",
+        help="SMT IQ partitioning policy (Dynamic/Watermark)",
+    )
+    parser.add_argument(
+        "--smt-iq-watermark-int",
+        type=int,
+        default=0,
+        help="SMT IQ watermark for intIQ (entries reserved per thread)",
+    )
+    parser.add_argument(
+        "--smt-iq-watermark-mem",
+        type=int,
+        default=0,
+        help="SMT IQ watermark for memIQ (entries reserved per thread)",
+    )
+    parser.add_argument(
+        "--smt-iq-watermark-fp",
+        type=int,
+        default=0,
+        help="SMT IQ watermark for fpIQ/vecIQ (entries reserved per thread)",
+    )
+
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:
         Ruby.define_options(parser)
     args = parser.parse_args()
+
+    # Validate MLP-aware policy combinations before CPU construction:
+    # MlpAwarePolicy needs its predictor and a non-BaseLine fetch block
+    # policy; otherwise Fetch::checkLongLatencyLoads() aborts on
+    # assert(mlpPredictor) in debug builds, or silently does nothing in
+    # opt builds (BaseLine returns early before the MlpAware path).
+    if args.smt_mlp_fetch_block_policy == "MlpAwarePolicy":
+        if not args.mlp_predictor_enable:
+            parser.error("--smt-mlp-fetch-block-policy=MlpAwarePolicy "
+                          "requires --mlp-predictor-enable")
+        if args.smt_fetch_block_policy == "BaseLine":
+            parser.error("MlpAwarePolicy requires a non-BaseLine "
+                          "--smt-fetch-block-policy (BaseLine skips the "
+                          "block/flush path that MlpAwarePolicy builds on)")
+    
+    # Validate MLP predictor is not used with Ruby memory system:
+    # Ruby does not populate the cacheAccessDepth field on packets, so every
+    # response retains depth 0. This causes the MLP predictor to classify
+    # even memory misses as short latency, preventing it from learning or
+    # activating. Populate this field from the Ruby hierarchy or reject.
+    if args.mlp_predictor_enable and args.ruby:
+        parser.error("--mlp-predictor-enable is not supported with --ruby. "
+                     "Ruby memory system does not populate cacheAccessDepth, "
+                     "preventing the MLP predictor from functioning correctly.")
+
+    # Validate MLP predictor table sizes: must be a power of two >= 2.
+    # hashIndex() uses __builtin_ctz(tableSize); a size of 1 gives
+    # indexBits=0 and an infinite XOR-fold loop, and 0 / non-power-of-
+    # two values are undefined behavior in opt builds (the C++ assert
+    # is debug-only).
+    for _name, _val in (("--mlp-miss-pattern-table-size",
+                          args.mlp_miss_pattern_table_size),
+                         ("--mlp-distance-table-size",
+                          args.mlp_distance_table_size)):
+        if _val < 2 or (_val & (_val - 1)) != 0:
+            parser.error(f"{_name} must be a power of two >= 2, "
+                          f"got {_val}")
 
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)

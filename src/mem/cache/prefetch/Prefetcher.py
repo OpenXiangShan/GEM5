@@ -239,6 +239,26 @@ class QueuedPrefetcher(BasePrefetcher):
     max_pf_buffer_size = Param.Int(16, "size of prefetch buffer")
 
 
+class LLDPrefetcher(QueuedPrefetcher):
+    type = 'LLDPrefetcher'
+    cxx_class = 'gem5::prefetch::LLDPrefetcher'
+    cxx_header = "mem/cache/prefetch/lldp.hh"
+
+    use_virtual_addresses = True
+    on_read = True
+    on_write = False
+    on_data = True
+    on_inst = False
+    training_cpu = Param.BaseCPU(NULL, "L1 IQ dependenceTrain source; NULL learns L2 loads")
+    training_queue_size = Param.Unsigned(64, "Dependency training FIFO entries")
+    confidence_bits = Param.Unsigned(3, "Width of saturating LLDT confidence counters")
+    initial_confidence = Param.Unsigned(1, "Initial consumer and immediate confidence")
+    producer_initial_confidence = Param.Unsigned(2, "Initial producer confidence")
+    producer_threshold = Param.Unsigned(2, "Producer hint confidence threshold")
+    consumer_threshold = Param.Unsigned(3, "Consumer replay confidence threshold")
+    immediate_threshold = Param.Unsigned(3, "Load immediate stability threshold")
+
+
 class XSStridePrefetcher(QueuedPrefetcher):
     type = 'XSStridePrefetcher'
     cxx_class = 'gem5::prefetch::XSStridePrefetcher'
@@ -352,6 +372,10 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     )
     enable_auto_depth = Param.Bool(False, "enable autp depth.")
     enable_l3_stream_pre = Param.Bool(False, "enable l3 stream pre.")
+    strict_active = Param.Bool(
+        True,
+        "Require neighboring active regions to exceed the active threshold"
+    )
     xs_stream_entries = Param.MemorySize(
         "16",
         "num of active generation table entries"
@@ -1320,6 +1344,9 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     enable_cplx = Param.Bool(False, "Enable CPLX component")
     enable_spp = Param.Bool(False, "Enable SPP component")
     enable_opt = Param.Bool(False,"Enable opt component")
+    lldp = Param.LLDPrefetcher(LLDPrefetcher(is_sub_prefetcher=True),
+                               "LLDP component")
+    enable_lldp = Param.Bool(False, "Enable LLDP component")
 
 class MultiPrefetcher(BasePrefetcher):
     type = 'MultiPrefetcher'
@@ -1333,7 +1360,8 @@ class MultiPrefetcher(BasePrefetcher):
     on_data  = True
     on_inst  = False
 
-    prefetchers = VectorParam.BasePrefetcher([XSCompositePrefetcher(), BOPPrefetcher()],
+    prefetchers = VectorParam.BasePrefetcher(
+        [XSCompositePrefetcher(), BOPPrefetcher()],
         "Array of prefetchers")
 
 class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
@@ -1353,6 +1381,13 @@ class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     enable_cdp = Param.Bool(False, "Enable CDP")
     enable_cmc = Param.Bool(False, "Enable CMC")
     enable_despacito_stream = Param.Bool(False, "Enable despacito stream")
+    lldp = Param.LLDPrefetcher(LLDPrefetcher(is_sub_prefetcher=True),
+                               "LLDP component")
+    enable_lldp = Param.Bool(False, "Enable LLDP component")
+    offload_low_accuracy = Param.Bool(
+        False,
+        "Offload low-accuracy upstream pfahead sources to L3 when CDP dominates L2"
+    )
 
 class L3CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     type = 'L3CompositeWithWorkerPrefetcher'
