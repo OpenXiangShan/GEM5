@@ -80,7 +80,7 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
       aggregateDecodeWidth(decodeWidth * numPreDispatchThreads),
       numThreads(params.numThreads),
       enableLoadFusion(params.enable_loadFusion),
-      stats(_cpu, params.decodeWidth)
+      stats(_cpu, aggregateDecodeWidth)
 {
     panic_if(numPreDispatchThreads == 0 ||
              numPreDispatchThreads > numThreads ||

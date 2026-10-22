@@ -1454,6 +1454,7 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
     updateCacheRequestStatusByRequest(tid, mem_req, AccessFailed);
 
     // Translation faulted, icache request won't be sent.
+    const auto tea_psv = threads[tid].cacheReq.teaPsv;
     threads[tid].cacheReq.reset();
 
     // Send the fault to commit.  This thread will not do anything
@@ -1465,6 +1466,9 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
     // We will use a nop in order to carry the fault.
     DynInstPtr instruction = buildInst(tid, nopStaticInstPtr, nullptr,
             fetch_pc, fetch_pc, false);
+    if (cpu->getTea()) {
+        instruction->teaPsv = tea_psv;
+    }
     instruction->setVersion(localSquashVer[tid]);
     instruction->setNotAnInst();
 
