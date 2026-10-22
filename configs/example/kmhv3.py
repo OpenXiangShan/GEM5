@@ -93,7 +93,9 @@ def setKmhV3Params(args, system):
             cpu.scheduler = KMHV3SpMTScheduler()
         else:
             cpu.scheduler = KMHV3Scheduler()
-        
+            for iq in cpu.scheduler.IQs[:13]:
+                iq.scheduleToExecDelay = 1
+
         cpu.scheduler.disableAllRegArb()
         for iq in cpu.scheduler.IQs:
             iq.deferNewEnqueueSelection = not args.smt
