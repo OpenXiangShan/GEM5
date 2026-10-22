@@ -30,6 +30,116 @@ Scheduler::preDumpStats()
     stats.fpPendingValidations = fpValidations.size();
     stats.fpWritebackReservations = fpWritebacks.size() + fpOutputSlots.size();
     stats.fpDividerOwners = fpExecution.size();
+    stats.fpLoadM4PendingSamples = fpLoadM4Pending.size();
+}
+
+bool
+Scheduler::shouldSendLoadM4(const DynInstPtr& inst)
+{
+    if (!inst->fpLoadM4Sample) {
+        // Eligibility is known before translation; unusual accesses are
+        // discarded when their actual request/predicate/fault becomes known.
+        if (inst->opClass() != FloatMemReadOp || inst->isVector() ||
+            inst->vpApplied || !fpDestination(inst)) {
+            return fpLoadM4Enabled;
+        }
+        auto sample = std::make_shared<fpw::LoadM4Sample>();
+        sample->decision.tid = inst->threadNumber;
+        sample->decision.pc = inst->pcState().instAddr();
+        sample->decision.enabled = fpLoadM4Enabled;
+        if (fpLoadM4Predictor) {
+            panic_if(inst->threadNumber >= MaxThreads,
+                     "Load M4 predictor thread exceeds CPU thread bound");
+            sample->decision = fpLoadM4Predictor->predict(
+                inst->threadNumber, inst->pcState().instAddr());
+            stats.fpLoadM4Cold += sample->decision.cold;
+            stats.fpLoadM4Replacements += sample->decision.replaced;
+        }
+        inst->fpLoadM4Sample = sample;
+        fpLoadM4Pending.emplace(inst->seqNum, inst);
+        stats.fpLoadM4PendingPeak = std::max<double>(
+            stats.fpLoadM4PendingPeak.value(), fpLoadM4Pending.size());
+        if (sample->decision.enabled)
+            ++stats.fpLoadM4Allowed;
+        else
+            ++stats.fpLoadM4Suppressed;
+        DPRINTF(FpWakeup,
+                "event=load_m4_predict cycle=%llu tid=%u seq=%llu pc=%#lx "
+                "generation=%llu allowed=%u cold=%u replaced=%u\n",
+                fpCycle(), inst->threadNumber, inst->seqNum,
+                sample->decision.pc, sample->decision.generation,
+                sample->decision.enabled, sample->decision.cold,
+                sample->decision.replaced);
+    }
+    return inst->fpLoadM4Sample->decision.enabled;
+}
+
+void
+Scheduler::startLoadM4Sample(const DynInstPtr& inst)
+{
+    if (inst->fpLoadM4Sample)
+        inst->fpLoadM4Sample->admit();
+}
+
+void
+Scheduler::resolveLoadM4Sample(const DynInstPtr& inst,
+                               fpw::LoadM4Outcome outcome)
+{
+    const auto &sample = inst->fpLoadM4Sample;
+    if (!sample || !sample->resolve(outcome))
+        return;
+    fpLoadM4Pending.erase(inst->seqNum);
+    if (outcome == fpw::LoadM4Outcome::Aborted) {
+        ++stats.fpLoadM4Aborted;
+        return;
+    }
+    const bool success = outcome == fpw::LoadM4Outcome::Success;
+    if (success) {
+        ++stats.fpLoadM4Success;
+        stats.fpLoadM4OffSuccess += !sample->decision.enabled;
+        // A source deadline can fail before S3 supplies the native outcome.
+        if (sample->deadlineFailed && sample->noteDeadlineFailure())
+            ++stats.fpLoadM4DeadlineFailures;
+    } else {
+        ++stats.fpLoadM4Failure;
+        if (inst->getReplayType())
+            ++stats.fpLoadM4ReplayReasons[*inst->getReplayType()];
+    }
+    fpw::LoadM4Predictor::Update update;
+    if (fpLoadM4Predictor) {
+        update = fpLoadM4Predictor->train(sample->decision, success);
+        stats.fpLoadM4StaleFeedback += !update.applied;
+        stats.fpLoadM4EnabledTransitions += update.enabledTransition;
+        stats.fpLoadM4DisabledTransitions += update.disabledTransition;
+    }
+    DPRINTF(FpWakeup,
+            "event=load_m4_train cycle=%llu tid=%u seq=%llu pc=%#lx "
+            "generation=%llu success=%u reason=%d applied=%u score=%u "
+            "enabled=%u\n",
+            fpCycle(), inst->threadNumber, inst->seqNum, sample->decision.pc,
+            sample->decision.generation, success,
+            inst->getReplayType() ? static_cast<int>(*inst->getReplayType()) : -1,
+            update.applied, update.confidence, update.enabled);
+}
+
+void
+Scheduler::noteLoadM4Deadline(const std::shared_ptr<fpw::WakeToken>& token)
+{
+    if (token && token->loadM4Sample &&
+        token->loadM4Sample->noteDeadlineFailure()) {
+        ++stats.fpLoadM4DeadlineFailures;
+    }
+}
+
+void
+Scheduler::resetLoadM4Predictor()
+{
+    while (!fpLoadM4Pending.empty()) {
+        auto inst = fpLoadM4Pending.begin()->second;
+        resolveLoadM4Sample(inst, fpw::LoadM4Outcome::Aborted);
+    }
+    if (fpLoadM4Predictor)
+        fpLoadM4Predictor->clear();
 }
 
 fpw::Cycle
@@ -242,8 +352,15 @@ Scheduler::prepareFp(const DynInstPtr& inst, bool replay, unsigned port)
     if (token->load) {
         // Native load S0 admission is selection + depth + 1. M4 is
         // broadcast one cycle earlier; the S1 callback confirms it as M2.
-        if (fpLoadM4Enabled && !replay)
-            token->m4Cycle = now + depth;
+        if (!replay) {
+            const bool allow = shouldSendLoadM4(inst);
+            if (allow)
+                token->m4Cycle = now + depth;
+            if (inst->fpLoadM4Sample && !inst->fpLoadM4Sample->admitted &&
+                inst->fpLoadM4Sample->outcome == fpw::LoadM4Outcome::Pending) {
+                token->loadM4Sample = inst->fpLoadM4Sample;
+            }
+        }
         token->m2Cycle = now + depth + 2;
         token->cancelSafeCycle = token->readyCycle + 1;
     } else if (!fpDivider(inst)) {
@@ -279,6 +396,8 @@ Scheduler::broadcastFp(const DynInstPtr& inst, fpw::Phase phase, IssueQue* targe
     auto token = inst->fpWake.output;
     if (!token || token->cancelled)
         return;
+    if (phase == fpw::Phase::M4 && token->loadM4Sample)
+        token->loadM4Sample->m4Sent = true;
     const auto preg = token->producer.preg;
     const auto &destinations = fpWakeMatrix[inst->issueQue->getId()];
     const size_t count = target ? 1 : destinations.size();
@@ -457,6 +576,8 @@ Scheduler::checkFpAdmission(const DynInstPtr& inst)
         auto producer = getInstByDstReg(reg->flatIndex(),
                                         inst->threadNumber, inst->seqNum);
         if (producer && producer->isLoad()) {
+            if (binding.phase == fpw::Phase::M4)
+                noteLoadM4Deadline(binding.token);
             loadCancel(producer);
             return false;
         }
@@ -648,6 +769,8 @@ Scheduler::validateFpSources()
                 continue;
             if (token->cancelled || (binding.phase == fpw::Phase::M4 &&
                 now >= token->m2Cycle && !token->confirmed)) {
+                if (!token->cancelled && binding.phase == fpw::Phase::M4)
+                    noteLoadM4Deadline(token);
                 cancelFp(inst, token->cancelled && token->load ?
                     fpw::ReplayReason::LoadCancel : fpw::ReplayReason::MissingConfirmation);
                 replay = true;
@@ -672,6 +795,8 @@ Scheduler::validateFpSources()
             if (now >= use && !token->dataReady &&
                 !bypassScoreboard[inst->renamedSrcIdx(src)->flatIndex()]) {
                 if (token->load) {
+                    if (binding.phase == fpw::Phase::M4)
+                        noteLoadM4Deadline(token);
                     token->cancel();
                     cancelFp(inst, fpw::ReplayReason::LoadCancel);
                     replay = true;

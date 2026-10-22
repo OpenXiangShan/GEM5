@@ -478,6 +478,7 @@ void
 InstructionQueue::takeOverFrom()
 {
     resetState();
+    scheduler->resetLoadM4Predictor();
 }
 
 bool
