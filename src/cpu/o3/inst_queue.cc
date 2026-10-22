@@ -146,6 +146,7 @@ InstructionQueue::InstructionQueue(CPU *cpu_ptr, IEW *iew_ptr,
       totalWidth(8),
       commitToIEWDelay(params.commitToIEWDelay),
       enableReplayBasedMDP(params.EnableReplayBasedMDP),
+      unsignedDivPowerOfTwoLatency(params.unsignedDivPowerOfTwoLatency),
       iqStats(cpu, totalWidth),
       iqIOStats(cpu)
 {
@@ -192,6 +193,8 @@ InstructionQueue::IQStats::IQStats(CPU *cpu, const unsigned &total_width)
              "Number of non-speculative instructions added to the IQ"),
     ADD_STAT(instsIssued, statistics::units::Count::get(),
              "Number of instructions issued"),
+    ADD_STAT(unsignedDivPowerOfTwoFastPaths, statistics::units::Count::get(),
+             "Unsigned divide/remainder issues using the power-of-two fast path"),
     ADD_STAT(intInstsIssued, statistics::units::Count::get(),
              "Number of integer instructions issued"),
     ADD_STAT(floatInstsIssued, statistics::units::Count::get(),
@@ -591,6 +594,17 @@ InstructionQueue::execLatencyCheck(const DynInstPtr& inst, uint32_t& op_latency)
         case OpClass::IntDiv:
             rs1 = cpu->peekReg(inst->extRenamedSrcIdx(0));
             rs2 = cpu->peekReg(inst->extRenamedSrcIdx(1));
+            if (unsignedDivPowerOfTwoLatency != Cycles(0)) {
+                const auto &name = inst->staticInst->getName();
+                const bool word = name == "divuw" || name == "remuw";
+                const bool unsigned_op = word || name == "divu" || name == "remu";
+                const RegVal divisor = word ? static_cast<uint32_t>(rs2) : rs2;
+                if (unsigned_op && divisor && !(divisor & (divisor - 1))) {
+                    op_latency = unsignedDivPowerOfTwoLatency;
+                    iqStats.unsignedDivPowerOfTwoFastPaths++;
+                    return true;
+                }
+            }
             // rs1 / rs2 : 0x80/0x8 ,delay_ = 4
             // get the leading zero difference between rs1 and rs2 (rs1 > rs2)
             delay_ = std::max(clz(rs2) - clz(rs1), 0);

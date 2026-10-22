@@ -457,6 +457,7 @@ class InstructionQueue
     Cycles commitToIEWDelay;
 
     bool enableReplayBasedMDP;
+    const Cycles unsignedDivPowerOfTwoLatency;
 
     /** The sequence number of the squashed instruction. */
     InstSeqNum squashedSeqNum[MaxThreads];
@@ -471,6 +472,7 @@ class InstructionQueue
         statistics::Scalar nonSpecInstsAdded;
 
         statistics::Scalar instsIssued;
+        statistics::Scalar unsignedDivPowerOfTwoFastPaths;
         /** Stat for number of integer instructions issued. */
         statistics::Scalar intInstsIssued;
         /** Stat for number of floating point instructions issued. */
