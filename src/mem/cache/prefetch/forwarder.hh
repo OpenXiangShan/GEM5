@@ -75,6 +75,9 @@ class PrefetcherForwarder : public Base
     void notifyPrefetchUseful(PrefetchSourceType source,
                               uint64_t candidate_id) override;
     void notifyPrefetchMerged(uint64_t candidate_id) override;
+    void notifyPrefetchSent(const PacketPtr &pkt) override;
+    void notifyPrefetchDemandHit(PrefetchSourceType source, uint64_t id,
+        const PacketPtr &demand, bool ready, bool miss) override;
     void notifyCandidateDemand(uint64_t candidate_id,
                                const PacketPtr &demand) override;
     void notifyPrefetchEvictsDemand(

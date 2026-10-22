@@ -226,6 +226,21 @@ PrefetcherForwarder::notifyPrefetchMerged(uint64_t candidate_id)
 }
 
 void
+PrefetcherForwarder::notifyPrefetchSent(const PacketPtr &pkt)
+{
+    if (real_pf)
+        real_pf->notifyPrefetchSent(pkt);
+}
+
+void
+PrefetcherForwarder::notifyPrefetchDemandHit(PrefetchSourceType source,
+    uint64_t id, const PacketPtr &demand, bool ready, bool miss)
+{
+    if (real_pf)
+        real_pf->notifyPrefetchDemandHit(source, id, demand, ready, miss);
+}
+
+void
 PrefetcherForwarder::notifyCandidateDemand(
     uint64_t candidate_id, const PacketPtr &demand)
 {

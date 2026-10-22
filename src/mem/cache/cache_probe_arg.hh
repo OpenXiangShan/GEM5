@@ -69,6 +69,9 @@ struct CacheAccessor
 
     virtual Request::XsMetadata getHitBlkXsMetadata(PacketPtr pkt) = 0;
 
+    virtual bool prefetchDataReady(const PacketPtr &pkt) const
+    { return false; }
+
     /** Determine if address is in cache miss queue */
     virtual bool inMissQueue(Addr addr, bool is_secure) const = 0;
 

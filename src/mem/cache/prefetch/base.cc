@@ -508,7 +508,8 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
         prefetchStats.pfUseful_srcs[pf_source]++;
         const auto hit_meta = cache->getHitBlkXsMetadata(pkt);
         notifyCandidateDemand(hit_meta.prefetchCandidateId, pkt);
-        notifyPrefetchUseful(pf_source, hit_meta.prefetchCandidateId);
+        notifyPrefetchDemandHit(pf_source, hit_meta.prefetchCandidateId,
+            pkt, !miss && cache->prefetchDataReady(pkt), miss);
         if (miss)
             // This case happens when a demand hits on a prefetched line
             // that's not in the requested coherency state.

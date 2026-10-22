@@ -967,6 +967,14 @@ XSCompositePrefetcher::notifyPrefetchMerged(uint64_t candidate_id)
 }
 
 void
+XSCompositePrefetcher::notifyPrefetchSent(const PacketPtr &pkt)
+{
+    if (enableTP && pkt->req->hasXsMetadata() &&
+        pkt->req->getXsMetadata().prefetchSource == PrefetchSourceType::TP)
+        tp->notifyPrefetchSent(pkt);
+}
+
+void
 XSCompositePrefetcher::notifyCandidateDemand(
     uint64_t candidate_id, const PacketPtr &demand)
 {

@@ -1172,6 +1172,10 @@ class Base : public ClockedObject
                                       uint64_t candidate_id)
     { notifyPrefetchUseful(source); }
     virtual void notifyPrefetchMerged(uint64_t candidate_id) {}
+    virtual void notifyPrefetchSent(const PacketPtr &pkt) {}
+    virtual void notifyPrefetchDemandHit(PrefetchSourceType source,
+        uint64_t candidate_id, const PacketPtr &demand, bool ready, bool miss)
+    { notifyPrefetchUseful(source, candidate_id); }
     virtual void notifyCandidateDemand(uint64_t candidate_id,
                                        const PacketPtr &demand) {}
 

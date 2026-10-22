@@ -244,7 +244,7 @@ class TemporalPrefetcher(QueuedPrefetcher):
     cxx_class = "gem5::prefetch::TemporalPrefetcher"
     cxx_header = "mem/cache/prefetch/temporal.hh"
     training_cpu = Param.BaseCPU(NULL, "CPU providing LLDP PC role probes")
-    record_length = Param.Unsigned(12, "512-bit record with 42-bit PA lines")
+    record_length = Param.Unsigned(12, "Maximum lines per TP record")
     throttle_cycles = Param.Unsigned(4, "Minimum cycles between TP packet issues")
     on_write = False
     on_inst = False

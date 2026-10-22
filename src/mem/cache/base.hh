@@ -1717,6 +1717,12 @@ public:
         return block->getXsMetadata();
     }
 
+    bool prefetchDataReady(const PacketPtr &pkt) const override
+    {
+        const auto *block = tags->findBlock(pkt->getAddr(), pkt->isSecure());
+        return block && block->getWhenReady() <= curTick();
+    }
+
     bool inMissQueue(Addr addr, bool is_secure) const override {
         return mshrQueue.findMatch(addr, is_secure);
     }
