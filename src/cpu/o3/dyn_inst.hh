@@ -531,6 +531,9 @@ class DynInst : public ExecContext, public RefCounted
     /** If load data is from cache then it must be golden */
     uint8_t goldenData[16] = {0};
 
+    /** Performance signature accumulated for Timing Event Attribution. */
+    uint16_t teaPsv = 0;
+
     int pf_source  = -1; // if load cache line is prefetched
 
     // MLP predictor: frontend prediction results
@@ -871,6 +874,12 @@ class DynInst : public ExecContext, public RefCounted
     bool isInteger()      const { return staticInst->isInteger(); }
     bool isFloating()     const { return staticInst->isFloating(); }
     bool isVector()       const { return staticInst->isVector(); }
+
+    /** TEA hooks are called only when CPU::getTea() is non-null. */
+    void teaSetEvent(TeaEvent::Event event);
+    uint16_t teaPSV() const { return teaPsv; }
+    std::array<DynInst *, 2> teaFusionMembers() const;
+    const DynInst *teaFirstMember() const;
     bool isControl()      const
     {
         return traceBranchInfoValid || staticInst->isControl();

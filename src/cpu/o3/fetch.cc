@@ -944,6 +944,10 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
         return false;
     }
 
+    if (cpu->getTea() && pkt->cacheAccessDepth > 0) {
+        threads[tid].cacheReq.teaPsv |= TeaEvent::bit(TeaEvent::DR_L1);
+    }
+
     DPRINTF(Fetch, "[tid:%i] Packet successfully matched and stored. Current status: %s\n",
             tid, threads[tid].cacheReq.getStatusSummary().c_str());
 
@@ -1450,6 +1454,7 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
     updateCacheRequestStatusByRequest(tid, mem_req, AccessFailed);
 
     // Translation faulted, icache request won't be sent.
+    const auto tea_psv = threads[tid].cacheReq.teaPsv;
     threads[tid].cacheReq.reset();
 
     // Send the fault to commit.  This thread will not do anything
@@ -1461,6 +1466,9 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
     // We will use a nop in order to carry the fault.
     DynInstPtr instruction = buildInst(tid, nopStaticInstPtr, nullptr,
             fetch_pc, fetch_pc, false);
+    if (cpu->getTea()) {
+        instruction->teaPsv = tea_psv;
+    }
     instruction->setVersion(localSquashVer[tid]);
     instruction->setNotAnInst();
 
@@ -1484,7 +1492,8 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
 }
 
 void
-Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
+Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req,
+                         bool delayed)
 {
     ThreadID tid = cpu->contextToThread(mem_req->contextId());
 
@@ -1503,6 +1512,10 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
     // Validate if this request should be processed
     if (!validateTranslationRequest(tid, mem_req)) {
         return;
+    }
+
+    if (cpu->getTea() && delayed) {
+        threads[tid].cacheReq.teaPsv |= TeaEvent::bit(TeaEvent::DR_TLB);
     }
 
     // Handle translation result
@@ -3026,6 +3039,14 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
             arrays, staticInst, curMacroop, this_pc, next_pc, seq, cpu);
 
     instruction->setTid(tid);
+
+    // Keep fetch events with their request through refill and backpressure,
+    // then attach the packet signature to its first architectural member.
+    if (cpu->getTea() &&
+        (!instruction->isMicroop() || instruction->isFirstMicroop())) {
+        instruction->teaPsv = threads[tid].cacheReq.teaPsv;
+        threads[tid].cacheReq.teaPsv = 0;
+    }
 
     cpu->perfCCT->createMeta(instruction);
     cpu->perfCCT->updateInstPos(instruction->seqNum, PerfRecord::AtFetch);

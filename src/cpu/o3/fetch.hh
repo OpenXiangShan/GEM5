@@ -133,18 +133,19 @@ class Fetch
     {
       protected:
         Fetch *fetch;
+        bool delayed = false;
 
       public:
         FetchTranslation(Fetch *_fetch) : fetch(_fetch) {}
 
-        void markDelayed() {}
+        void markDelayed() override { delayed = true; }
 
         void
         finish(const Fault &fault, const RequestPtr &req,
-            gem5::ThreadContext *tc, BaseMMU::Mode mode)
+            gem5::ThreadContext *tc, BaseMMU::Mode mode) override
         {
             assert(mode == BaseMMU::Execute);
-            fetch->finishTranslation(fault, req);
+            fetch->finishTranslation(fault, req, delayed);
             delete this;
         }
     };
@@ -489,7 +490,8 @@ class Fetch
     Addr pendingTraceInstructionPc[MaxThreads]{};
     bool pendingTraceSupplyValid[MaxThreads]{};
 
-    void finishTranslation(const Fault &fault, const RequestPtr &mem_req);
+    void finishTranslation(const Fault &fault, const RequestPtr &mem_req,
+                           bool delayed = false);
 
     /** Validate if a translation request is expected and should be processed.
      * @param tid Thread ID
@@ -856,6 +858,7 @@ class Fetch
 
         /** Number of completed packets received */
         unsigned completedPackets;
+        uint16_t teaPsv = 0;
 
         /** Constructor */
         CacheRequest() : baseAddr(0), totalSize(0), completedPackets(0) {}
@@ -908,6 +911,7 @@ class Fetch
             baseAddr = 0;
             totalSize = 0;
             completedPackets = 0;
+            teaPsv = 0;
         }
 
         /** Add a new request */

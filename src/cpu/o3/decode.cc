@@ -80,7 +80,7 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
       aggregateDecodeWidth(decodeWidth * numPreDispatchThreads),
       numThreads(params.numThreads),
       enableLoadFusion(params.enable_loadFusion),
-      stats(_cpu)
+      stats(_cpu, aggregateDecodeWidth)
 {
     panic_if(numPreDispatchThreads == 0 ||
              numPreDispatchThreads > numThreads ||
@@ -145,7 +145,7 @@ Decode::name() const
     return cpu->name() + ".decode";
 }
 
-Decode::DecodeStats::DecodeStats(CPU *cpu)
+Decode::DecodeStats::DecodeStats(CPU *cpu, unsigned decode_width)
     : statistics::Group(cpu, "decode"),
       ADD_STAT(idleCycles, statistics::units::Cycle::get(),
                "Number of cycles decode is idle"),
@@ -200,8 +200,6 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
       ADD_STAT(decodeEfficiency, statistics::units::Ratio::get(),
                "Decode efficiency: actual decoded insts vs ideal width")
 {
-    // Get decodeWidth using helper function to work around protected member access
-    
     idleCycles.prereq(idleCycles);
     blockedCycles.prereq(blockedCycles);
     runCycles.prereq(runCycles);
@@ -244,7 +242,8 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
     //         .flags(statistics::nozero);
     
     // Initialize decodeEfficiency formula
-    decodeEfficiency = decodedInsts / (cpu->baseStats.numCycles * cpu->issueWidth);
+    decodeEfficiency =
+        decodedInsts / (cpu->baseStats.numCycles * decode_width);
 }
 
 void
@@ -1166,6 +1165,10 @@ Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
     // Create a new DynInst from the instruction fetched.
     DynInstPtr instruction = new (arrays) DynInst(
             arrays, fused_inst, fused_inst, thispc, predPC, inst_pair[0]->seqNum, cpu);
+
+    if (cpu->getTea()) {
+        instruction->teaPsv = inst_pair[0]->teaPSV() | inst_pair[1]->teaPSV();
+    }
 
     DynInstPtr representative = nullptr;
     bool representativeLL = false;
