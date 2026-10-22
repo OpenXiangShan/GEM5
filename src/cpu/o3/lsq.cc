@@ -667,22 +667,24 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
             "bank count=%u\n",
             cpu_ptr->cacheLineSize(), dcacheBankBytes, numBank);
 
-    panic_if(lqBorrowBaseReserveEntries * numThreads > LQEntries,
-             "lqBorrowBaseReserveEntries * numThreads must be not more than "
-             "LQEntries, but now %d * %d > %d\n",
-             lqBorrowBaseReserveEntries, numThreads, LQEntries);
-    panic_if(lqBorrowDonorReserveEntries * numThreads > LQEntries,
-             "lqBorrowDonorReserveEntries * numThreads must be not more than "
-             "LQEntries, but now %d * %d > %d\n",
-             lqBorrowDonorReserveEntries, numThreads, LQEntries);
-    panic_if(sqBorrowBaseReserveEntries * numThreads > SQEntries,
-             "sqBorrowBaseReserveEntries * numThreads must be not more than "
-             "SQEntries, but now %d * %d > %d\n",
-             sqBorrowBaseReserveEntries, numThreads, SQEntries);
-    panic_if(sqBorrowDonorReserveEntries * numThreads > SQEntries,
-             "sqBorrowDonorReserveEntries * numThreads must be not more than "
-             "SQEntries, but now %d * %d > %d\n",
-             sqBorrowDonorReserveEntries, numThreads, SQEntries);
+    if (lsqPolicy == SMTQueuePolicy::DynamicBorrowing) {
+        panic_if(lqBorrowBaseReserveEntries * numThreads > LQEntries,
+                "lqBorrowBaseReserveEntries * numThreads must be not more than "
+                "LQEntries, but now %d * %d > %d\n",
+                lqBorrowBaseReserveEntries, numThreads, LQEntries);
+        panic_if(lqBorrowDonorReserveEntries * numThreads > LQEntries,
+                "lqBorrowDonorReserveEntries * numThreads must be not more than "
+                "LQEntries, but now %d * %d > %d\n",
+                lqBorrowDonorReserveEntries, numThreads, LQEntries);
+        panic_if(sqBorrowBaseReserveEntries * numThreads > SQEntries,
+                "sqBorrowBaseReserveEntries * numThreads must be not more than "
+                "SQEntries, but now %d * %d > %d\n",
+                sqBorrowBaseReserveEntries, numThreads, SQEntries);
+        panic_if(sqBorrowDonorReserveEntries * numThreads > SQEntries,
+                "sqBorrowDonorReserveEntries * numThreads must be not more than "
+                "SQEntries, but now %d * %d > %d\n",
+                sqBorrowDonorReserveEntries, numThreads, SQEntries);
+    }
 
     cpu->addStatGroup("lsq", &stats);
 
