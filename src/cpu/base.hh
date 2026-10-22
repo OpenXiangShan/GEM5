@@ -134,6 +134,8 @@ struct DiffAllStates
     RefProxy *proxy;
 
     bool hasCommit{false};
+    // Count validated FS/SD differences for the difftest exit diagnostic.
+    uint64_t acceptedFsDifferences = 0;
 };
 
 class BaseCPU : public ClockedObject

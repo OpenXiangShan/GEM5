@@ -63,6 +63,7 @@
 #include "base/trace.hh"
 #include "cpu/checker/cpu.hh"
 #include "cpu/difftest.hh"
+#include "cpu/difftest_fs.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Diff.hh"
@@ -217,6 +218,13 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
     recentCommittedStores.resize(numThreads);
     syncVisibleStoreReplayArmed.resize(numThreads, false);
     if (enableDifftest) {
+        registerExitCallback([this]() {
+            for (ThreadID tid = 0; tid < numThreads; ++tid) {
+                inform("Difftest legal FS/SD differences tid=%u: accepted=%llu",
+                       tid,
+                       diffAllStates[tid]->acceptedFsDifferences);
+            }
+        });
         assert(params().difftest_ref_so.length() > 2);
         for (ThreadID tid = 0; tid < numThreads; ++tid) {
             diffAllStates[tid] = std::make_shared<DiffAllStates>();
@@ -1245,6 +1253,16 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         diffAllStates->diff.will_handle_intr = false;
     }
 
+    // Capture REF's actual pre-step state, including initialization and traps.
+    // After each accepted step it is the common FP input state of both models.
+    riscv64_CPU_regfile fp_before{};
+    // Checking legal FS transitions requires the complete FP state. Older
+    // references without FCSR support retain exact mstatus comparison.
+    const bool check_fs = diffAllStates->proxy->hasFcsr();
+    if (check_fs) {
+        diffAllStates->proxy->regcpy(&fp_before, REF_TO_DIFFTEST);
+    }
+
     if (is_mmio) {
         DPRINTF(Diff, "Skip step NEMU due to mmio access\n");
         diffAllStates->referenceRegFile.pc = diffInfo.pc->as<RiscvISA::PCState>().npc();
@@ -1398,6 +1416,69 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         }
     }
 
+    bool sync_fs = false;
+    const auto dut_status = readMiscRegNoEffect(RiscvISA::MISCREG_STATUS, tid);
+    // The privileged ISA permits conservative FS dirtiness. Validate both
+    // transitions before accepting that difference; never mask FS/SD blindly.
+    // Require aligned PCs to preserve the existing PC retry path. Guest FS
+    // also depends on vsstatus, so virtualized steps keep exact comparison.
+    const bool relax_fs = check_fs && nemu_pc == gem5_pc &&
+        fp_before.v == 0 &&
+        diffAllStates->referenceRegFile.v == 0 &&
+        readMiscRegNoEffect(RiscvISA::MISCREG_VIRMODE, tid) == 0;
+    if (relax_fs) {
+        auto &dut = diffAllStates->gem5RegFile;
+        const auto &ref = diffAllStates->referenceRegFile;
+        bool dut_fp_changed = dut.fcsr != fp_before.fcsr;
+        bool ref_fp_changed = ref.fcsr != fp_before.fcsr;
+        // Compare actual committed values, not only FP instruction classes.
+        // This also covers macro-ops and detects a shared missing-Dirty bug.
+        for (unsigned i = 0; i < 32; ++i) {
+            dut.fpr[i]._64 = getContext(tid)->getReg(
+                RegId(FloatRegClass, i));
+            dut_fp_changed |= dut.fpr[i]._64 != fp_before.fpr[i]._64;
+            ref_fp_changed |= ref.fpr[i]._64 != fp_before.fpr[i]._64;
+            if (dut.fpr[i]._64 != ref.fpr[i]._64) {
+                diffMsg << csprintf("Diff at f%u: REF %#lx, GEM5 %#lx\n",
+                                    i, ref.fpr[i]._64, dut.fpr[i]._64);
+                diffInfo.errorRegsValue[i + 32] = true;
+                diff_at = ValueDiff;
+            }
+        }
+        // Successful software writes may explicitly clear FS, including to
+        // Off. Faulting CSR instructions must not authorize such a change.
+        auto requested = std::optional<unsigned>{};
+        if (diffInfo.instFault == NoFault) {
+            requested = difftest::requestedFs(
+                machInst, fp_before.gpr[(machInst >> 15) & 31]._64,
+                fp_before.mstatus);
+        }
+        // A real FPR/FCSR change must produce Dirty on each side, even if
+        // both implementations would otherwise agree on an incorrect FS.
+        const bool dut_valid = difftest::legalFsTransition(
+            difftest::fs(fp_before.mstatus), difftest::fs(dut_status),
+            dut_fp_changed, requested) && difftest::validSd(dut_status);
+        const bool ref_valid = difftest::legalFsTransition(
+            difftest::fs(fp_before.mstatus), difftest::fs(ref.mstatus),
+            ref_fp_changed, requested) && difftest::validSd(ref.mstatus);
+        const bool off_access = difftest::fs(fp_before.mstatus) == 0 &&
+            difftest::accessesFp(machInst, diffInfo.inst->isFloating()) &&
+            diffInfo.instFault == NoFault;
+        if (!dut_valid || !ref_valid || off_access) {
+            diffMsg << csprintf(
+                "Illegal FS/SD transition: before=%#lx GEM5=%#lx REF=%#lx "
+                "FP changed(GEM5/REF)=%d/%d valid=%d/%d off_access=%d\n",
+                fp_before.mstatus, dut_status, ref.mstatus,
+                dut_fp_changed, ref_fp_changed, dut_valid, ref_valid,
+                off_access);
+            diffInfo.errorCsrsValue[CsrRegIndex::mstatus] = true;
+            diff_at = ValueDiff;
+        } else {
+            sync_fs = dut_status != ref.mstatus &&
+                difftest::equivalentFsStatus(dut_status, ref.mstatus);
+        }
+    }
+
     // always check some CSR regs
     {
         // mstatus
@@ -1406,7 +1487,9 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         diffAllStates->gem5RegFile.mstatus = gem5_val;
         // readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, 0);
         auto ref_val = diffAllStates->referenceRegFile.mstatus;
-        if (gem5_val != ref_val) {
+        // sync_fs permits only independently validated FS/SD differences;
+        // every other mstatus bit still has to match exactly.
+        if (gem5_val != ref_val && !sync_fs) {
             csrDiffMessage(gem5_val, ref_val, CsrRegIndex::mstatus, diffAllStates->gem5RegFile.mstatus, seq, "mstatus",
                            diff_at);
             diffMsg <<
@@ -2014,6 +2097,24 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                 }
             }
         }
+    }
+    if (sync_fs && diff_at == NoneDiff) {
+        // Normalize only after every other comparison succeeds. Update only
+        // REF's FS/SD (and the sstatus alias), leaving DUT execution intact.
+        // This gives subsequent CSR reads and FP steps a common input state
+        // without hiding FPR/FCSR mismatches or unrelated CSR differences.
+        auto &ref = diffAllStates->referenceRegFile;
+        const uint64_t mask = difftest::FsMask | difftest::SdMask;
+        const auto old_status = ref.mstatus;
+        ref.mstatus = (ref.mstatus & ~mask) | (dut_status & mask);
+        ref.sstatus = (ref.sstatus & ~mask) | (dut_status & mask);
+        diffAllStates->proxy->regcpy(&ref, DUT_TO_REF);
+        if (++diffAllStates->acceptedFsDifferences == 1) {
+            inform("Difftest accepted legal FS/SD difference at pc=%#lx "
+                   "tid=%u: REF=%#lx GEM5=%#lx; normalized REF only",
+                   gem5_pc, tid, old_status, dut_status);
+        }
+        DPRINTF(Diff, "Accepted legal FS/SD difference at %#lx\n", gem5_pc);
     }
     if (diff_at) {
         diffMsg << csprintf("In CPU%d: NEMU PC: %#10lx, GEM5 PC: %#10lx, inst: %s\n", cpuId(),

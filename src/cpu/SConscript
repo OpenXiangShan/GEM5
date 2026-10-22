@@ -89,6 +89,8 @@ Source('pc_event.cc')
 SimObject('FuncUnit.py', sim_objects=['OpDesc', 'FUDesc'], enums=['OpClass'])
 SimObject('StaticInstFlags.py', enums=['StaticInstFlags'])
 
+GTest('difftest_fs.test', 'difftest_fs.test.cc')
+
 if env['CONF']['TARGET_ISA'] == 'null':
     Return()
 
