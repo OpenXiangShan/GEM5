@@ -2544,7 +2544,12 @@ Walker::WalkerState::pageFaultOnRequestor(RequestorState &r, bool G)
         gpaddr = ((mainReq->getgPaddr() >> 12) << 12) | (vaddr & 0xfff);
     }
     if (r.req->isInstFetch()) {
-        return walker->tlb->createPagefault(r.req->getPC(), gpaddr, mode, G);
+        if (r.req->getPC() < page_start) {
+            return walker->tlb->createPagefault(page_start, gpaddr, mode, G);
+        } else {
+            return walker->tlb->createPagefault(r.req->getPC(), gpaddr,
+                                                mode, G);
+        }
     } else {
         return walker->tlb->createPagefault(r.req->getVaddr(), gpaddr, mode, G);
     }

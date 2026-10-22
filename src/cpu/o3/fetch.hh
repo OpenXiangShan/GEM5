@@ -225,6 +225,7 @@ class Fetch
         CacheWaitResponse,     // Waiting for cache data return
         CacheWaitRetry,        // Waiting for cache retry opportunity
         AccessComplete,        // Access completed, data available
+        DeferredFault,         // Translation fault for bytes not yet consumed
         AccessFailed,          // Access failed (invalid address etc.)
         Cancelled,             // Request cancelled (squash etc.)
         NumCacheRequestStatus
@@ -511,6 +512,14 @@ class Fetch
      * @param fault The translation fault
      */
     void handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fault &fault);
+
+    /** Build the fault-carrying dynamic instruction once its bytes are needed. */
+    void materializeTranslationFault(ThreadID tid,
+                                     const RequestPtr &mem_req,
+                                     const Fault &fault);
+
+    /** Finish a full or partial fetch after all requests are resolved. */
+    void completeCacheLineFetch(ThreadID tid);
 
     /** Handle multi-cacheline fetch that spans two cache lines.
      * Creates and sends two separate cache requests.
@@ -857,8 +866,16 @@ class Fetch
         /** Number of completed packets received */
         unsigned completedPackets;
 
+        /** Fault from a later request, held until decode needs those bytes. */
+        Fault deferredFault;
+        RequestPtr deferredFaultReq;
+        Addr deferredFaultAddr;
+
         /** Constructor */
-        CacheRequest() : baseAddr(0), totalSize(0), completedPackets(0) {}
+        CacheRequest()
+            : baseAddr(0), totalSize(0), completedPackets(0),
+              deferredFault(NoFault), deferredFaultAddr(0)
+        {}
 
         /** Check if all packets have been completed */
         bool allCompleted() const {
@@ -882,6 +899,30 @@ class Fetch
             return true;
         }
 
+        /** Check whether every request either supplied data or was deferred. */
+        bool allResolved() const {
+            if (requestStatus.empty()) return false;
+            for (const auto& status : requestStatus) {
+                if (status != AccessComplete && status != DeferredFault) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        bool hasDeferredFault() const {
+            return deferredFault != NoFault;
+        }
+
+        void deferFault(const RequestPtr &req, const Fault &fault) {
+            const size_t index = findRequestIndex(req);
+            assert(index != SIZE_MAX);
+            requestStatus[index] = DeferredFault;
+            deferredFault = fault;
+            deferredFaultReq = req;
+            deferredFaultAddr = req->getVaddr();
+        }
+
         /** Get overall status of the cache request group (NEW) */
         CacheRequestStatus getOverallStatus() const {
             if (requestStatus.empty()) return CacheIdle;
@@ -895,7 +936,7 @@ class Fetch
             }
 
             // Check if all are completed
-            if (allReady()) return AccessComplete;
+            if (allResolved()) return AccessComplete;
 
             return CacheIdle;
         }
@@ -908,6 +949,9 @@ class Fetch
             baseAddr = 0;
             totalSize = 0;
             completedPackets = 0;
+            deferredFault = NoFault;
+            deferredFaultReq.reset();
+            deferredFaultAddr = 0;
         }
 
         /** Add a new request */
@@ -961,6 +1005,7 @@ class Fetch
                     case CacheWaitResponse: summary += "CacheWait"; break;
                     case CacheWaitRetry: summary += "Retry"; break;
                     case AccessComplete: summary += "Complete"; break;
+                    case DeferredFault: summary += "DeferredFault"; break;
                     case AccessFailed: summary += "Failed"; break;
                     case Cancelled: summary += "Cancelled"; break;
                     default: summary += "Unknown"; break;
@@ -1028,13 +1073,16 @@ class Fetch
         /** Whether this buffer has already crossed one FTQ boundary. */
         bool usedForTwoFetch;
 
+        /** Number of contiguous bytes available from startPC. */
+        unsigned validSize;
+
         /** Size of the fetch buffer in bytes. Set by Fetch class during init. */
         unsigned size;
 
         /** Constructor initializes buffer with default size */
         FetchBuffer()
             : data(nullptr), startPC(0), valid(false),
-              usedForTwoFetch(false), size(0)
+              usedForTwoFetch(false), validSize(0), size(0)
         {
         }
 
@@ -1047,12 +1095,13 @@ class Fetch
             valid = false;
             startPC = 0;
             usedForTwoFetch = false;
+            validSize = 0;
             // No need to clear data as it will be overwritten
         }
 
         /** Check if a PC is within the current buffer range */
         bool contains(Addr pc) const {
-            return valid && (pc >= startPC) && (pc < startPC + size);
+            return valid && (pc >= startPC) && (pc < startPC + validSize);
         }
 
         /** Get offset of PC within the buffer */
