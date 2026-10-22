@@ -153,7 +153,7 @@ def setKmhV3Params(args, system):
             cpu.branchPred.microtage.usingS3Pred = True
             cpu.branchPred.mbtb.enabled = True
             cpu.branchPred.tage.enabled = True
-            cpu.branchPred.tage.tableSizes = [4096] * 8
+            cpu.branchPred.tage.tableSizes = [8192] * 8
             cpu.branchPred.ittage.enabled = True
             cpu.branchPred.mgsc.enabled = True
             cpu.branchPred.mgsc.enableLTable = True
