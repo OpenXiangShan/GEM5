@@ -218,6 +218,7 @@ def setKmhV3Params(args, system):
     # l3 cache
     if args.l3cache:
         system.l3.mshrs = 64
+        system.l3.replacement_policy = XSDRRIPRP(mode=2, num_sets=32768)
         system.l3.do_fast_writeline = True
         system.l3.prefetch_can_offload = False
         system.l3.num_slices = 4
