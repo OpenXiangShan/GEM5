@@ -1135,6 +1135,11 @@ def xiangshan_system_init():
         Ruby.define_options(parser)
     args = parser.parse_args()
 
+    if args.enable_tea and args.ruby:
+        parser.error("--enable-tea is not supported with --ruby. "
+                     "Ruby memory system does not populate cacheAccessDepth "
+                     "required for TEA cache event attribution.")
+
     # Validate MLP-aware policy combinations before CPU construction:
     # MlpAwarePolicy needs its predictor and a non-BaseLine fetch block
     # policy; otherwise Fetch::checkLongLatencyLoads() aborts on

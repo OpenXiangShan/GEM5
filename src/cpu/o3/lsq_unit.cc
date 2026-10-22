@@ -1033,6 +1033,9 @@ LSQUnit::checkSnoop(PacketPtr pkt)
 
                 // Mark the load for re-execution
                 ld_inst->fault = std::make_shared<ReExec>();
+                if (cpu->getTea()) {
+                    ld_inst->teaSetEvent(TeaEvent::FL_MO);
+                }
                 request->setStateToFault();
             } else {
                 DPRINTF(LSQUnit, "HitExternal Snoop for addr %#x [sn:%lli]\n",
@@ -1674,8 +1677,8 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
          !inst->fullForward() && !inst->cacheHit());
     // Record the observed miss even if another replay reason wins priority.
     // An early wakeup without data alone does not establish an L1 miss.
-    if (cpu->getTea() && request && request->isNormalLd() && !inst->fullForward() &&
-        !inst->cacheHit()) {
+    if (cpu->getTea() && lsq->enableLdMissReplay() && request &&
+        request->isNormalLd() && !inst->fullForward() && !inst->cacheHit()) {
         inst->teaSetEvent(TeaEvent::ST_L1);
     }
     const bool bankConflictReplay = inst->isNormalLd() && !request;

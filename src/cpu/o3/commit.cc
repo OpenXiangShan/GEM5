@@ -1008,6 +1008,10 @@ Commit::tick()
                 toIEW->commitInfo[tid].squashCause = curSquashCause[tid];
                 wroteToTimeBuffer = true;
             }
+        } else if (commitStatus[tid] == TrapPending) {
+            if (auto *tea = cpu->getTea()) {
+                tea->markRecovery(tid);
+            }
         }
     }
     
@@ -2242,7 +2246,9 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num,
 
         // Generate trap squash event.
         if (auto *tea = cpu->getTea()) {
-            head_inst->teaSetEvent(TeaEvent::FL_EX);
+            if (dynamic_cast<ReExec *>(inst_fault.get()) == nullptr) {
+                head_inst->teaSetEvent(TeaEvent::FL_EX);
+            }
             tea->setFlush(tid, head_inst->getPC(), head_inst->teaPSV());
         }
         generateTrapEvent(tid, inst_fault);
