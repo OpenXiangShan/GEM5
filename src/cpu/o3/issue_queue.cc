@@ -1984,6 +1984,10 @@ Scheduler::lookahead(std::deque<DynInstPtr>& insts)
         std::fill(totalDispCounter.begin(), totalDispCounter.end(), 0);
         int i = 0;
         for (auto& it : insts) {
+            if (it->isNop() || it->isEliminated()) {
+                ++i;
+                continue;
+            }
             auto& iqs = dispTable[it->threadNumber][it->opClass()];
             std::sort(iqs.begin(), iqs.end(), disp_policy(it->opClass()));
             if (it->isSplitStoreAddr()) {
@@ -2002,6 +2006,10 @@ Scheduler::lookahead(std::deque<DynInstPtr>& insts)
 bool
 Scheduler::ready(const DynInstPtr& inst, int disp_seq)
 {
+    // These instructions complete in dispatch without entering an IQ.
+    if (inst->isNop() || inst->isEliminated()) {
+        return true;
+    }
     ThreadID tid = inst->threadNumber;
     if (inst->staticInst->isSplitStoreAddr() &&
         !ready(StoreDataOp, tid, disp_seq)) {
