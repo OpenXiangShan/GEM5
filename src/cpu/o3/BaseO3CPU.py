@@ -397,11 +397,18 @@ class BaseO3CPU(BaseCPU):
     smtLQBorrowBaseReserveEntries = Param.Unsigned(
         60, "Minimum LQ entries reserved for a borrowing base thread to resume")
     smtLQBorrowDonorReserveEntries = Param.Unsigned(
-        6, "Minimum LQ entries reserved for a borrowing donor thread to resume")
+        60, "Minimum LQ entries reserved for a borrowing donor thread to resume")
     smtSQBorrowBaseReserveEntries = Param.Unsigned(
         32, "Minimum SQ entries reserved for a borrowing base thread to resume")
     smtSQBorrowDonorReserveEntries = Param.Unsigned(
-        4, "Minimum SQ entries reserved for a borrowing donor thread to resume")
+        32, "Minimum SQ entries reserved for a borrowing donor thread to resume")
+    smtLQBorrowDonorHoldCycles = Param.Unsigned(
+        1, "Cycles to keep an SMT thread marked as an LQ borrowing donor")
+    smtSQBorrowDonorHoldCycles = Param.Unsigned(
+        1, "Cycles to keep an SMT thread marked as an SQ borrowing donor")
+    lsqBorrowDonorSkipRenameGate = Param.Bool(
+        False, "Force has_buffered_rename to false in LSQ borrowing donor "
+        "gating, i.e. disable the rename-buffer gate (evaluation only)")
 
     branchPred = Param.BranchPredictor(DecoupledBPUWithBTB(),
                                        "Branch Predictor")

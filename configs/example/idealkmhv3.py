@@ -69,10 +69,10 @@ def setKmhV3IdealParams(args, system):
         cpu.squashWidth = 8
         cpu.phyregReleaseWidth = 8
         cpu.RobCompressPolicy = 'kmhv3'
-        cpu.numROBEntries = args.ROBTotalEntry
+        cpu.numROBEntries = args.rob_total_entry
         cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
-        cpu.smtBorrowDonorReserveEntries = args.smtROBDonorEntry
-        cpu.smtBorrowBaseReserveEntries = args.smtROBBaseEntry
+        cpu.smtBorrowDonorReserveEntries = args.smt_rob_donor_entry
+        cpu.smtBorrowBaseReserveEntries = args.smt_rob_base_entry
         cpu.robWalkPolicy = 'NaiveCpt' # ideal core recovers via RAT checkpoints
 
         # lsu
@@ -82,6 +82,13 @@ def setKmhV3IdealParams(args, system):
         cpu.BankConflictCheck = True
         cpu.sbufferBankWriteAccurately = True
         cpu.DcacheSetDivNum = 2
+        cpu.smtLQBorrowDonorReserveEntries = args.smt_lq_donor_entry
+        cpu.smtLQBorrowBaseReserveEntries = args.smt_lq_base_entry
+        cpu.smtSQBorrowDonorReserveEntries = args.smt_sq_donor_entry
+        cpu.smtSQBorrowBaseReserveEntries = args.smt_sq_base_entry
+        cpu.smtLQBorrowDonorHoldCycles = args.smt_lq_donor_hold_cycles
+        cpu.smtSQBorrowDonorHoldCycles = args.smt_sq_donor_hold_cycles
+        cpu.lsqBorrowDonorSkipRenameGate = args.lsq_borrow_donor_skip_rename_gate
 
         # value predictor
         cpu.valuePred = CompositeValuePredictor(
