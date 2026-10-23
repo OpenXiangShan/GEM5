@@ -32,32 +32,21 @@ void commitMeta(InstSeqNum sn);
 ```
 
 ### 开启perfCCT
-首先需要开启gem5的archdb，再在 `configs/common/xiangshan.py` 里做如下修改
 
-将dump_lifetime改为True即可
+使用 `--arch-db-dump-lifetime` 开启 PerfCCT lifetime 记录，同时用
+`--enable-arch-db` 和 `--arch-db-file` 配置数据库输出。默认关闭，无需修改配置代码：
 
-```python
-test_sys.arch_db = ArchDBer(arch_db_file=args.arch_db_file)
-test_sys.arch_db.dump_from_start = args.arch_db_fromstart
-test_sys.arch_db.enable_rolling = args.enable_rolling
-test_sys.arch_db.dump_l1_pf_trace = False
-test_sys.arch_db.dump_mem_trace = False
-test_sys.arch_db.dump_l1_evict_trace = False
-test_sys.arch_db.dump_l2_evict_trace = False
-test_sys.arch_db.dump_l3_evict_trace = False
-test_sys.arch_db.dump_l1_miss_trace = False
-test_sys.arch_db.dump_bop_train_trace = False
-test_sys.arch_db.dump_sms_train_trace = False
-test_sys.arch_db.dump_lifetime = False -> True
-```
-
-此外还需要同时打开--enable-arch-db, 指定db-file
-
-```python
-./build/RISCV/gem5.debug ./configs/example/kmhv3.py --raw-cpt --generic-rv-cpt=/nfs/home/yanyue/tools/nexus-am-xs/tests/cputest/build/ifuwidth-riscv64-xs.bin --enable-arch-db --arch-db-file=m5out/test.db
+```sh
+./build/RISCV/gem5.opt ./configs/example/kmhv3.py \
+    --raw-cpt --generic-rv-cpt=/path/to/image.bin \
+    --enable-arch-db --arch-db-file=m5out/test.db --arch-db-dump-lifetime
 
 python3 util/perfcct.py m5out/test.db --zoom 1.5 -p 333 --visual | less
 ```
+
+PerfCCT 与 TEA 的 `--enable-tea` 开关独立，可以单独开启或同时开启。
+仅开启 ArchDB 不会启用 lifetime 记录；关闭 PerfCCT 时省略
+`--arch-db-dump-lifetime` 即可。完整组合见 [TEA 使用说明](../topdown/tea.md#enabling-and-disabling-tea)。
 
 ### 分析脚本
 gem5的perfCCT分析脚本位于util/perfcct.py中
