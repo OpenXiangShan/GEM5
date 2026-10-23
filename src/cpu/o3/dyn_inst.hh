@@ -53,6 +53,7 @@
 #include <string>
 #include <utility>
 
+#include "arch/riscv/regs/int.hh"
 #include "base/refcnt.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
@@ -1919,6 +1920,13 @@ class DynInst : public ExecContext, public RefCounted
 
     bool canLVP(){
         return isLoad() && !isVector() && !isLoadReserved();
+    }
+
+    bool
+    isStackPointerLoad() const
+    {
+        return isLoad() && numSrcRegs() > 0 &&
+            srcRegIdx(0) == RiscvISA::StackPointerReg;
     }
 };
 

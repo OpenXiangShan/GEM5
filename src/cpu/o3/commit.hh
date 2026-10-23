@@ -694,6 +694,8 @@ class Commit
         statistics::Vector squashDueToBranch;
         statistics::Vector squashDueToOrderViolation;
         statistics::Vector squashDueToValuePrediction;
+        statistics::Scalar stackLoadValuePredictions;
+        statistics::Scalar stackLoadValueMispredictions;
         /** Number of Commit-triggered RAW MDP recoveries. */
         statistics::Scalar mdpViolationSquashes;
         statistics::Vector squashDueToTrap;

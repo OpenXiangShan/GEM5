@@ -120,7 +120,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       enablePredecode(params.enablePredecode),
       icachePort(this, _cpu),
       finishTranslationEvents(), fetchStats(_cpu, this),
-      valuePred(params.valuePred)
+      valuePred(params.valuePred),
+      enableStackLoadValuePrediction(params.enableStackLoadValuePrediction)
 {
     // Validate public CPU parameters here as well as in the XiangShan CLI.
     // The predictor pointer is wired later by CPU, so check its enable parameter
@@ -3519,7 +3520,8 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
     }
 
     // Value prediction must run before a predecode recovery can return early.
-    if (valuePred && instruction->canLVP()) {
+    if (valuePred && instruction->canLVP() &&
+        (enableStackLoadValuePrediction || !instruction->isStackPointerLoad())) {
         valuepred::VPPredictRequest predictRequest;
         predictRequest.pc = instruction->getPC();
         predictRequest.seqNo = instruction->seqNum;

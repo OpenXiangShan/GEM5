@@ -333,6 +333,10 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Number of squash due to order violation"),
       ADD_STAT(squashDueToValuePrediction, statistics::units::Count::get(),
                "Number of squash due to value prediction"),
+      ADD_STAT(stackLoadValuePredictions, statistics::units::Count::get(),
+               "Committed stack-pointer loads with applied value predictions"),
+      ADD_STAT(stackLoadValueMispredictions, statistics::units::Count::get(),
+               "Committed stack-pointer loads with wrong value predictions"),
       ADD_STAT(mdpViolationSquashes, statistics::units::Count::get(),
                "Number of RAW MDP recoveries triggered at Commit"),
       ADD_STAT(squashDueToTrap, statistics::units::Count::get(),
@@ -2402,6 +2406,12 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num,
         valuePred->stats.VPsupported++;
         if (head_inst->vpApplied) {
             valuePred->stats.VPpredicted++;
+            if (head_inst->isStackPointerLoad()) {
+                stats.stackLoadValuePredictions++;
+                if (head_inst->vpMisprediction) {
+                    stats.stackLoadValueMispredictions++;
+                }
+            }
             if (!head_inst->vpMisprediction) {
                 valuePred->stats.VPcorrected++;
             }

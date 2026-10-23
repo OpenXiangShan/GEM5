@@ -1373,6 +1373,7 @@ public:
 
     /** Value predictor */
     valuepred::VPUnit *valuePred;
+    const bool enableStackLoadValuePrediction;
 };
 
 } // namespace o3

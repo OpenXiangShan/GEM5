@@ -432,6 +432,8 @@ class BaseO3CPU(BaseCPU):
 
     # value predictor
     valuePred = Param.ValuePredictor(NULL, "valuepred unit")
+    enableStackLoadValuePrediction = Param.Bool(
+        True, "Allow value prediction for loads based on the stack pointer")
     enableSelectiveVPFlush = Param.Bool(False,
         "Enable selective rollback for value prediction misprediction")
 
