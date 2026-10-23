@@ -49,6 +49,8 @@ XS-GEM5 is enhanced with
 - Xiangshan RVGCpt: a cross-platform full-system checkpoint for RISC-V.
 - Xiangshan online Difftest: an API to check execution results online.
 - Topdown performance counters
+- [TEA timing event attribution](docs/tools/topdown/tea.md): optional cycle
+  sampling with attribution to instruction PCs and event signatures.
 - Frontend microarchitecture calibrated with Xiangshan V3 (Kunminghu)
   * Decoupled frontend
   * TAGESC, ITTAGE, and optinal Loop predictor (performs better than LTAGE and TAGE-SCL shipped in official version on SPECCPU)

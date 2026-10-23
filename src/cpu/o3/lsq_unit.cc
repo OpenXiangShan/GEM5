@@ -256,6 +256,15 @@ LSQUnit::recvTimingResp(PacketPtr pkt)
     bool ret = true;
     /* Check that the request is still alive before any further action. */
     if (!request->isReleased()) {
+        // Record response facts before per-request replay or completion.
+        if (const auto &inst = request->instruction()) {
+            inst->cacheAccessDepth = std::max(
+                inst->cacheAccessDepth, pkt->cacheAccessDepth);
+            if (auto *tea = cpu->getTea();
+                tea && !request->mainReq()->isUncacheable()) {
+                tea->cacheMiss(inst, pkt->cacheAccessDepth);
+            }
+        }
         ret = request->recvTimingResp(pkt);
     } else if (request->instruction()) {
         DPRINTF(LoadPipeline, "LSQUnit::recvTimingResp [sn:%lu] pkt: %s - ignored\n",
@@ -276,6 +285,9 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
     // Use max to avoid overwrite by replay packet (depth=0)
     inst->cacheAccessDepth = std::max(inst->cacheAccessDepth,
                                        pkt->cacheAccessDepth);
+    if (cpu->getTea() && pkt->cacheAccessDepth > 0) {
+        inst->teaSetEvent(TeaEvent::ST_L1);
+    }
     DPRINTF(LSQUnit, "[sn:%llu] completeDataAccess: depth=%d (pkt=%d), addr=%#lx\n",
             inst->seqNum, inst->cacheAccessDepth, pkt->cacheAccessDepth,
             pkt->getAddr());
@@ -1030,6 +1042,9 @@ LSQUnit::checkSnoop(PacketPtr pkt)
 
                 // Mark the load for re-execution
                 ld_inst->fault = std::make_shared<ReExec>();
+                if (cpu->getTea()) {
+                    ld_inst->teaSetEvent(TeaEvent::FL_MO);
+                }
                 request->setStateToFault();
             } else {
                 DPRINTF(LSQUnit, "HitExternal Snoop for addr %#x [sn:%lli]\n",
@@ -1517,6 +1532,9 @@ LSQUnit::loadDoTranslate(const DynInstPtr &inst)
 
     if (inst->isTranslationDelayed() && load_fault == NoFault) {
         inst->setTLBMissReplay();
+        if (cpu->getTea()) {
+            inst->teaSetEvent(TeaEvent::ST_TLB);
+        }
         DPRINTF(LoadPipeline, "Load [sn:%llu] setTLBMissReplay\n", inst->seqNum);
     }
 
@@ -1662,10 +1680,14 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
         }
     }
 
-    const bool cacheMissReplay =
-        earlyWakeupCacheMissReplay ||
-        (lsq->enableLdMissReplay() && request && request->isNormalLd() &&
-         !inst->fullForward() && !inst->cacheHit());
+    const bool cacheMiss = lsq->enableLdMissReplay() && request &&
+        request->isNormalLd() && !inst->fullForward() && !inst->cacheHit();
+    const bool cacheMissReplay = earlyWakeupCacheMissReplay || cacheMiss;
+    // Record the observed miss even if another replay reason wins priority.
+    // An early wakeup without data alone does not establish an L1 miss.
+    if (cpu->getTea() && cacheMiss) {
+        inst->teaSetEvent(TeaEvent::ST_L1);
+    }
     const bool bankConflictReplay = inst->isNormalLd() && !request;
 
     bool nukeReplay = false;
@@ -1987,6 +2009,9 @@ LSQUnit::storeDoTranslate(const DynInstPtr &inst)
 
     if (inst->isTranslationDelayed() && store_fault == NoFault) {
         inst->setTLBMissReplay();
+        if (cpu->getTea()) {
+            inst->teaSetEvent(TeaEvent::ST_TLB);
+        }
     }
 
     return store_fault;

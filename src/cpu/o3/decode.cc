@@ -200,8 +200,6 @@ Decode::DecodeStats::DecodeStats(CPU *cpu, unsigned decode_width)
       ADD_STAT(decodeEfficiency, statistics::units::Ratio::get(),
                "Decode efficiency: actual decoded insts vs ideal width")
 {
-    // Get decodeWidth using helper function to work around protected member access
-    
     idleCycles.prereq(idleCycles);
     blockedCycles.prereq(blockedCycles);
     runCycles.prereq(runCycles);
@@ -245,7 +243,8 @@ Decode::DecodeStats::DecodeStats(CPU *cpu, unsigned decode_width)
     
     // Initialize decodeEfficiency formula
     // CPU::issueWidth is initialized after the pipeline stages.
-    decodeEfficiency = decodedInsts / (cpu->baseStats.numCycles * decode_width);
+    decodeEfficiency =
+        decodedInsts / (cpu->baseStats.numCycles * decode_width);
 }
 
 void
@@ -1167,6 +1166,10 @@ Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
     // Create a new DynInst from the instruction fetched.
     DynInstPtr instruction = new (arrays) DynInst(
             arrays, fused_inst, fused_inst, thispc, predPC, inst_pair[0]->seqNum, cpu);
+
+    if (cpu->getTea()) {
+        instruction->teaPsv = inst_pair[0]->teaPSV() | inst_pair[1]->teaPSV();
+    }
 
     DynInstPtr representative = nullptr;
     bool representativeLL = false;

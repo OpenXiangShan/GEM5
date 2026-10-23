@@ -207,6 +207,8 @@ class Rename
      */
     void tick();
 
+    void markTeaStoreQueueStall(ThreadID tid);
+
     /** Debugging function used to dump history buffer of renamings. */
     void dumpHistory();
 
