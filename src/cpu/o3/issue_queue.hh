@@ -393,6 +393,11 @@ class Scheduler : public SimObject
     void cancelFp(const DynInstPtr& inst, fpw::ReplayReason reason);
     void cancelFpDependents(const DynInstPtr& producer);
     void invalidateFp(const DynInstPtr& inst);
+    void revokeFpAttempt(const DynInstPtr& inst, const char* reason);
+    void clearFpSource(const DynInstPtr& inst, unsigned src,
+                       const char* reason);
+    void clearInvalidFpSources(const DynInstPtr& inst);
+    void rearmFpSources(const DynInstPtr& inst);
     void inheritFpWakeups(const DynInstPtr& inst);
     const int intel_fewops = 4;
     bool old_disp = false;

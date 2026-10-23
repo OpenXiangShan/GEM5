@@ -942,8 +942,7 @@ IssueQue::issueToFu()
         if (scheduler->fpWakeupEnabled() && scheduler->fpDestination(inst) &&
             !scheduler->prepareFp(inst, true))
             break;
-        // A rejected reservation consumes no load/store admission bandwidth.
-        // Charging it early can starve both replay and ordinary load requests.
+        // Only admitted requests consume native load/store bandwidth.
         issuedLoad += inst->isLoad();
         issuedStore += inst->isStore();
         scheduler->addToFU(inst);
@@ -974,9 +973,16 @@ IssueQue::issueToFu()
                 scheduler->cancelFp(inst, fpw::ReplayReason::ResourceReject);
                 continue;
             }
+            // The stream entry has been popped. Revoke an ordinary load's
+            // escaped M4 before requeueing it with a new attempt identity.
+            if (scheduler->fpWakeupEnabled() && inst->fpWake.output)
+                scheduler->revokeFpAttempt(inst, "admission");
             inst->clearScheduled();
             // only for load/store
-            READYQ_PUSH(inst);
+            if (scheduler->fpWakeupEnabled())
+                addIfReady(inst);
+            else
+                READYQ_PUSH(inst);
             DPRINTF(Schedule, "[sn:%llu] issue failed due to being occupied\n",
                     inst->seqNum);
             continue;
@@ -1224,10 +1230,16 @@ IssueQue::cancel(const DynInstPtr& inst)
     // before issued
     assert(!inst->isIssued());
 
+    if (scheduler->fpWakeupEnabled() && inst->canceled())
+        return;
     inst->setCancel();
     if (inst->isScheduled() && !opPipelined[inst->opClass()]) {
         inst->clearScheduled();
         portBusy[inst->issueportid] = 0;
+    }
+    if (scheduler->fpWakeupEnabled()) {
+        inst->clearScheduled();
+        scheduler->revokeFpAttempt(inst, "native_cancel");
     }
 
     iqstats->canceledInst++;
@@ -1340,11 +1352,14 @@ IssueQue::scheduleInst()
         } else if (inst->arbFailed()) {
             DPRINTF(Schedule, "[sn:%llu] arbitration failed, retry\n", inst->seqNum);
             iqstats->arbFailed++;
-            if (scheduler->fpWakeupEnabled())
-                scheduler->invalidateFp(inst);
-            assert(inst->readyToIssue());
-
-            READYQ_PUSH(inst);
+            if (scheduler->fpWakeupEnabled()) {
+                scheduler->revokeFpAttempt(inst, "arbitration");
+                inst->clearScheduled();
+                addIfReady(inst);
+            } else {
+                assert(inst->readyToIssue());
+                READYQ_PUSH(inst);
+            }
         } else [[likely]] {
             DPRINTF(Schedule, "[sn:%llu] no conflict, scheduled\n", inst->seqNum);
             iqstats->portissued[pi]++;
@@ -2423,8 +2438,10 @@ Scheduler::getInstToFU()
     while (!instsToFu.empty()) {
         auto work = instsToFu.back();
         instsToFu.pop_back();
-        if (!fpWakeEnabled || !work.first->fpWake.managed ||
-            fpAttemptValid(work.first, work.second))
+        if (!fpWakeEnabled ||
+            (work.first->fpWake.attempt == work.second &&
+             (!work.first->fpWake.managed ||
+              fpAttemptValid(work.first, work.second))))
             return work.first;
     }
     return nullptr;
@@ -2549,8 +2566,7 @@ Scheduler::loadCancel(const DynInstPtr& inst)
     }
 
     if (fpWakeEnabled && inst->fpWake.output) {
-        cancelFpDependents(inst);
-        invalidateFp(inst);
+        revokeFpAttempt(inst, "load_cancel");
     }
 
     dfs.push(inst);
@@ -2576,8 +2592,7 @@ Scheduler::loadCancel(const DynInstPtr& inst)
                     if (depInst->threadNumber == inst->threadNumber) {
                         if (fpWakeEnabled && depInst->fpWake.managed) {
                             if (depInst->readySrcIdx(srcIdx)) {
-                                depInst->clearSrcRegReady(srcIdx);
-                                depInst->fpWake.sources[srcIdx] = {};
+                                clearFpSource(depInst, srcIdx, "load_cancel");
                                 if (inst->vpMisprediction && depInst->isIssued()) {
                                     // An issued consumer may already have
                                     // released its IQ slot at FU admission.

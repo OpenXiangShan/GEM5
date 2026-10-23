@@ -261,6 +261,85 @@ Scheduler::invalidateFp(const DynInstPtr& inst)
     state.divResource = false;
 }
 
+void
+Scheduler::clearFpSource(const DynInstPtr& inst, unsigned src,
+                         const char* reason)
+{
+    auto &binding = inst->fpWake.sources[src];
+    if (binding.token) {
+        const auto &producer = binding.token->producer;
+        DPRINTF(FpWakeup,
+                "event=source_clear cycle=%llu tid=%u consumer=%llu "
+                "consumer_attempt=%llu src=%u producer=%llu "
+                "producer_attempt=%llu consumer_canceled=%u "
+                "ready_before=%u reason=%s\n",
+                fpCycle(), inst->threadNumber, inst->seqNum,
+                inst->fpWake.attempt, src, producer.seq, producer.attempt,
+                inst->canceled(), inst->readySrcIdx(src), reason);
+    }
+    if (inst->readySrcIdx(src))
+        inst->clearSrcRegReady(src);
+    binding = {};
+}
+
+void
+Scheduler::clearInvalidFpSources(const DynInstPtr& inst)
+{
+    for (unsigned src = 0; src < inst->fpWake.sources.size(); ++src) {
+        const auto &binding = inst->fpWake.sources[src];
+        if (binding.token && (binding.token->cancelled ||
+            (binding.phase == fpw::Phase::M4 && !binding.token->confirmed &&
+             fpCycle() >= binding.token->m2Cycle))) {
+            if (!binding.token->cancelled)
+                noteLoadM4Deadline(binding.token);
+            clearFpSource(inst, src, binding.token->cancelled ?
+                          "token" : "deadline");
+        }
+    }
+}
+
+void
+Scheduler::rearmFpSources(const DynInstPtr& inst)
+{
+    // invalidateFp removes the old attempt's validations, but valid input
+    // promises survive an output retry. Keep their original M2 deadlines.
+    for (unsigned src = 0; src < inst->fpWake.sources.size(); ++src) {
+        const auto &binding = inst->fpWake.sources[src];
+        const auto &token = binding.token;
+        if (!token || token->cancelled || token->confirmed ||
+            binding.phase != fpw::Phase::M4)
+            continue;
+        fpValidations.emplace(std::max(fpCycle(), token->m2Cycle),
+            FpWork{inst, inst->fpWake.attempt});
+        DPRINTF(FpWakeup,
+                "event=source_validation cycle=%llu tid=%u consumer=%llu "
+                "consumer_attempt=%llu src=%u producer=%llu "
+                "producer_attempt=%llu deadline=%llu\n",
+                fpCycle(), inst->threadNumber, inst->seqNum,
+                inst->fpWake.attempt, src, token->producer.seq,
+                token->producer.attempt, token->m2Cycle);
+    }
+}
+
+void
+Scheduler::revokeFpAttempt(const DynInstPtr& inst, const char* reason)
+{
+    if (!fpWakeEnabled)
+        return;
+    DPRINTF(FpWakeup,
+            "event=revoke cycle=%llu tid=%u seq=%llu attempt=%llu "
+            "next_attempt=%llu reason=%s\n",
+            fpCycle(), inst->threadNumber, inst->seqNum, inst->fpWake.attempt,
+            inst->fpWake.attempt + 1, reason);
+    // Capture and propagate the output identity before invalidation clears it.
+    // In particular, a VP load has no actual-result token to revoke here.
+    if (inst->fpWake.output)
+        cancelFpDependents(inst);
+    invalidateFp(inst);
+    clearInvalidFpSources(inst);
+    rearmFpSources(inst);
+}
+
 bool
 Scheduler::prepareFp(const DynInstPtr& inst, bool replay, unsigned port)
 {
@@ -274,10 +353,8 @@ Scheduler::prepareFp(const DynInstPtr& inst, bool replay, unsigned port)
     auto &state = inst->fpWake;
     if (state.selected == fpCycle())
         return true;
-    if (state.output) {
-        cancelFpDependents(inst);
-        invalidateFp(inst);
-    }
+    if (state.output)
+        revokeFpAttempt(inst, "replace");
     state.managed = managesFp(inst);
     const auto selected = fpCycle();
     const auto depth = inst->issueQue->getIssueStages();
@@ -334,9 +411,10 @@ Scheduler::prepareFp(const DynInstPtr& inst, bool replay, unsigned port)
         ++stats.fpWbConflicts;
         return false;
     }
-    // The load hit path predicts S2; replay revokes that reservation.
-    // Dynamic divider results reserve at their completion-ahead notification.
-    if (!fpDivider(inst) && fpDestination(inst) &&
+    // Loads have uncertain latency and compete at native load-pipe admission,
+    // not through a predicted future FP writeback slot. Dynamic divider
+    // results reserve at their completion-ahead notification.
+    if (!token->load && !fpDivider(inst) && fpDestination(inst) &&
         !fpWritebacks.reserve(token->wbPort, token->wbCycle,
                               token->producer)) {
         fpExecution.release(token->producer);
@@ -424,6 +502,7 @@ Scheduler::broadcastFp(const DynInstPtr& inst, fpw::Phase phase, IssueQue* targe
                  consumer->readySrcIdx(src)))
                 continue;
             auto &bindings = consumer->fpWake.sources;
+            const bool wasCanceled = consumer->canceled();
             if (bindings.size() != consumer->numSrcRegs())
                 bindings.resize(consumer->numSrcRegs());
             // An in-flight M4 consumer retains its late-source deadline
@@ -450,11 +529,13 @@ Scheduler::broadcastFp(const DynInstPtr& inst, fpw::Phase phase, IssueQue* targe
             DPRINTF(FpWakeup,
                 "event=wake cycle=%llu tid=%u producer=%llu consumer=%llu "
                 "src=%u phase=%s producer_select=%llu consumer_enq=%llu "
-                "producer_attempt=%llu consumer_attempt=%llu\n",
+                "producer_attempt=%llu consumer_attempt=%llu "
+                "consumer_canceled=%u m2_cycle=%llu ready_cycle=%llu\n",
                 fpCycle(), inst->threadNumber, inst->seqNum, consumer->seqNum,
                 src, phase == fpw::Phase::M4 ? "M4" : "M2",
                 inst->fpWake.selected, consumer->fpWake.enqueued,
-                inst->fpWake.attempt, consumer->fpWake.attempt);
+                inst->fpWake.attempt, consumer->fpWake.attempt, wasCanceled,
+                token->m2Cycle, token->readyCycle);
         }
         if (phase == fpw::Phase::M2)
             iq->wakeUpDependents(inst, true);
@@ -584,6 +665,22 @@ Scheduler::checkFpAdmission(const DynInstPtr& inst)
         panic("FP source misses its use deadline: consumer %llu src %d\n",
               inst->seqNum, src);
     }
+    for (unsigned src = 0; src < inst->fpWake.sources.size(); ++src) {
+        const auto &binding = inst->fpWake.sources[src];
+        if (!binding.token)
+            continue;
+        const auto use = atFu +
+            ((binding.lateUse && fpAddendSource(inst) == src) ? 2 : 0);
+        DPRINTF(FpWakeup,
+                "event=source_bind cycle=%llu tid=%u seq=%llu attempt=%llu "
+                "src=%u producer=%llu producer_attempt=%llu "
+                "ready_cycle=%llu use_cycle=%llu phase=%s late_use=%u\n",
+                fpCycle(), inst->threadNumber, inst->seqNum,
+                inst->fpWake.attempt, src, binding.token->producer.seq,
+                binding.token->producer.attempt, binding.token->readyCycle,
+                use, binding.phase == fpw::Phase::M4 ? "M4" : "M2",
+                binding.lateUse);
+    }
     return true;
 }
 
@@ -629,15 +726,6 @@ Scheduler::fpLoadWakeup(const DynInstPtr& inst)
         return;
     const auto ready = fpCycle() + 1;
     const auto wb = fpCycle() + 2;
-    if (wb != token->wbCycle) {
-        fpWritebacks.release(token->producer);
-        if (!fpWritebacks.reserve(token->wbPort, wb, token->producer)) {
-            ++stats.fpWbConflicts;
-            cancelFpDependents(inst);
-            invalidateFp(inst);
-            return;
-        }
-    }
     token->m2Cycle = fpCycle();
     token->readyCycle = ready;
     token->wbCycle = wb;
@@ -650,14 +738,16 @@ Scheduler::fpLoadWakeup(const DynInstPtr& inst)
 void
 Scheduler::cancelFpDependents(const DynInstPtr& producer)
 {
-    std::vector<DynInstPtr> pending{producer};
+    // Keep each output identity until its edges have been visited. Native
+    // integer descendants can have no token, but still have speculative wakes.
+    using Work = std::pair<DynInstPtr, std::shared_ptr<fpw::WakeToken>>;
+    std::vector<Work> pending{{producer, producer->fpWake.output}};
     std::set<InstSeqNum> visited;
     while (!pending.empty()) {
-        auto parent = pending.back();
+        auto [parent, token] = pending.back();
         pending.pop_back();
         if (!visited.insert(parent->seqNum).second)
             continue;
-        auto token = parent->fpWake.output;
         if (token)
             token->cancel();
         for (int dst = 0; dst < parent->numDestRegs(); ++dst) {
@@ -669,24 +759,31 @@ Scheduler::cancelFpDependents(const DynInstPtr& producer)
                     auto consumer = edge.second;
                     const auto src = edge.first;
                     if (consumer->threadNumber != parent->threadNumber ||
-                        consumer->isSquashed() || consumer->canceled())
+                        consumer->isSquashed())
                         continue;
                     if (token && (consumer->fpWake.sources.size() <= src ||
                         consumer->fpWake.sources[src].token != token))
                         continue;
-                    if (!consumer->readySrcIdx(src))
+                    if (!token && !consumer->readySrcIdx(src))
                         continue;
+                    if (!consumer->fpWake.managed && consumer->isIssued())
+                        continue;
+                    if (consumer->fpWake.sources.size() <= src)
+                        consumer->fpWake.sources.resize(consumer->numSrcRegs());
+                    clearFpSource(consumer, src, "token");
                     if (consumer->fpWake.managed) {
                         cancelFp(consumer, token && token->load ?
                             fpw::ReplayReason::LoadCancel :
                             fpw::ReplayReason::MissingConfirmation);
-                    } else if (!consumer->isIssued()) {
+                    } else if (!consumer->isIssued() && !consumer->canceled()) {
                         // Preserve the native pre-issue cancellation path for
-                        // integer/store-data descendants of FP producers.
+                        // integer/store-data descendants. cancel() revokes a
+                        // tokenized output itself; only tokenless native wakes
+                        // need this worklist's graph walk.
+                        auto output = consumer->fpWake.output;
                         iq->cancel(consumer);
-                        consumer->clearSrcRegReady(src);
-                        pending.push_back(consumer);
-                        invalidateFp(consumer);
+                        if (!output)
+                            pending.emplace_back(consumer, nullptr);
                     }
                 }
             }
@@ -697,26 +794,23 @@ Scheduler::cancelFpDependents(const DynInstPtr& producer)
 void
 Scheduler::cancelFp(const DynInstPtr& inst, fpw::ReplayReason reason)
 {
-    if (inst->isSquashed() || inst->canceled())
+    if (inst->isSquashed())
         return;
+    // A waiting, already-cancelled entry can acquire another speculative
+    // input. Revoking that input must still clear its ready bit and binding.
+    clearInvalidFpSources(inst);
+    if (inst->canceled()) {
+        assert(!inst->fpWake.output && inst->fpWake.selected == fpw::Never &&
+               inst->fpWake.atFu == fpw::Never);
+        return;
+    }
     panic_if(inst->isExecuted(),
              "FP cancellation after functional execution for %llu\n", inst->seqNum);
     const auto cancelledAttempt = inst->fpWake.attempt;
-    cancelFpDependents(inst);
-    invalidateFp(inst);
     inst->setCancel();
     inst->clearScheduled();
     inst->clearIssued();
-    for (unsigned src = 0; src < inst->fpWake.sources.size(); ++src) {
-        auto &binding = inst->fpWake.sources[src];
-        if (binding.token && (binding.token->cancelled ||
-            (binding.phase == fpw::Phase::M4 && !binding.token->confirmed &&
-             fpCycle() >= binding.token->m2Cycle))) {
-            if (inst->readySrcIdx(src))
-                inst->clearSrcRegReady(src);
-            binding = {};
-        }
-    }
+    revokeFpAttempt(inst, "cancel");
     ++stats.fpReplays;
     DPRINTF(FpWakeup,
             "event=cancel cycle=%llu tid=%u seq=%llu attempt=%llu reason=%u next_attempt=%llu\n",
@@ -736,10 +830,12 @@ Scheduler::validateFpSources()
         auto work = fpValidations.begin()->second;
         fpValidations.erase(fpValidations.begin());
         auto inst = work.inst;
-        if (!fpAttemptValid(inst, work.attempt))
+        if (!inst || inst->isSquashed() || inst->fpWake.attempt != work.attempt)
             continue;
         auto &state = inst->fpWake;
         if (work.cleanup) {
+            if (inst->canceled())
+                continue;
             auto token = state.output;
             if (token && !token->cancelled) {
                 for (auto iq : issueQues) {
@@ -758,6 +854,12 @@ Scheduler::validateFpSources()
                         }), edges.end());
                 }
             }
+            continue;
+        }
+        if (inst->canceled()) {
+            // A cancelled waiter still receives new input promises. It needs
+            // their deadline cleanup, but has no live FU use or IQ release.
+            clearInvalidFpSources(inst);
             continue;
         }
         bool replay = false;
