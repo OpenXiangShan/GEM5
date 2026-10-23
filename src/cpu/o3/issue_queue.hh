@@ -116,6 +116,7 @@ class IssueQue : public SimObject
     const int iqsize;
     const int replayQsize = 32;
     const int scheduleToExecDelay;
+    const bool earlyStoreDataReplayWakeup;
     const bool deferNewEnqueueSelection;
     const std::string iqname;
     std::vector<std::bitset<Num_OpClasses>> portFuDescs;
@@ -230,6 +231,7 @@ class IssueQue : public SimObject
         statistics::Scalar issueOccupy;
         /** Late load-cancel recoveries found during issue selection. */
         statistics::Scalar lateLoadCancel;
+        statistics::Scalar earlyStoreDataWakeups;
         statistics::Vector insertDist;
         statistics::Vector issueDist;
         statistics::Vector portissued;

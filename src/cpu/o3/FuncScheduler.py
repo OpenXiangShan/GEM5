@@ -84,6 +84,8 @@ class IssueQue(SimObject):
     size = Param.Int(16, "")
     inports = Param.Int(2, "")
     scheduleToExecDelay = Param.Cycles(2, "")
+    earlyStoreDataReplayWakeup = Param.Bool(
+        False, "Wake STLF replays when store data passes scheduling arbitration")
     deferNewEnqueueSelection = Param.Bool(
         False, "Delay selection of newly enqueued instructions until the next cycle"
     )

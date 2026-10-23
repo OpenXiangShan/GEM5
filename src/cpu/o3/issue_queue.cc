@@ -315,6 +315,8 @@ IssueQue::IssueQueStats::IssueQueStats(statistics::Group* parent, IssueQue* que,
       ADD_STAT(issueOccupy, statistics::units::Count::get(), "count of replayQ blocked"),
       ADD_STAT(lateLoadCancel, statistics::units::Count::get(),
                "late load-cancel recoveries found during issue selection"),
+      ADD_STAT(earlyStoreDataWakeups, statistics::units::Count::get(),
+               "store-data scheduling notifications to the STLF replay queue"),
       ADD_STAT(insertDist, statistics::units::Count::get(), "distruibution of insert"),
       ADD_STAT(issueDist, statistics::units::Count::get(), "distruibution of issue"),
       ADD_STAT(portissued, statistics::units::Count::get(), "count each port issues"),
@@ -340,6 +342,7 @@ IssueQue::IssueQue(const IssueQueParams& params)
       outports(params.oports.size()),
       iqsize(params.size),
       scheduleToExecDelay(params.scheduleToExecDelay),
+      earlyStoreDataReplayWakeup(params.earlyStoreDataReplayWakeup),
       deferNewEnqueueSelection(params.deferNewEnqueueSelection),
       iqname(params.name),
       vectorSplitUnits(params.vectorSplitUnits),
@@ -1300,6 +1303,12 @@ IssueQue::scheduleInst()
             }
 
             scheduler->specWakeUpDependents(inst, this);
+            if (earlyStoreDataReplayWakeup && inst->isSplitStoreData()) {
+                // Retry through the normal load pipe, which still checks
+                // actual store-data readiness before forwarding.
+                cpu->getIEW()->instQueue.resolveSTLFFailInst(inst->seqNum);
+                iqstats->earlyStoreDataWakeups++;
+            }
             cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueArb);
         }
         inst->clearArbFailed();
