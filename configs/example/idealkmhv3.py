@@ -154,9 +154,9 @@ def setKmhV3IdealParams(args, system):
                 l2_prefetcher = l2_wrapper.prefetcher
             if l2_prefetcher != NULL and hasattr(l2_prefetcher, 'offload_low_accuracy'):
                 l2_prefetcher.offload_low_accuracy = True
-            system.tol2bus_list[i].forward_latency = 3  # 0->3
-            system.tol2bus_list[i].response_latency = 3  # 0->3
-            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1  # 0->1
+            system.tol2bus_list[i].forward_latency = 0
+            system.tol2bus_list[i].response_latency = 1
+            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1
 
             # Enable dual-port for DCache → L2 communication
             # ReqLayer[0]: ICache+DCache+ITB+DTB → L2, allow 2 requests per cycle
