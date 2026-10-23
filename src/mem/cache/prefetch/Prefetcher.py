@@ -960,7 +960,7 @@ class XSPhysicalSmallBOP(BOPPrefetcher):
     delay_queue_enable = True
     delay_queue_size = 16
     delay_queue_cycles = 300
-    crossPage = False
+    crossPage = True
     enable_student_cover = False
     student_teacher_top_n = 1
     student_pool_size = 8
