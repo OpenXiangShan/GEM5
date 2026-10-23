@@ -130,6 +130,10 @@ Rename::RenameStats::RenameStats(CPU *cpu, Rename *rename)
                "Distinct SMT threads renamed in one cycle"),
       ADD_STAT(instsRenamedPerCycle, statistics::units::Count::get(),
                "Instructions renamed across all SMT threads in one cycle"),
+      ADD_STAT(eligibleCycles, statistics::units::Cycle::get(),
+               "Cycles with rename input and no backend stall"),
+      ADD_STAT(eligibleFullWidthCycles, statistics::units::Cycle::get(),
+               "Eligible cycles that rename the complete configured width"),
       ADD_STAT(squashedInsts, statistics::units::Count::get(),
                "Number of squashed instructions processed by rename"),
       ADD_STAT(ROBFullEvents, statistics::units::Count::get(),
@@ -543,6 +547,13 @@ Rename::tick()
             freezeActiveThread(tid);
         }
     }
+
+    // Sample eligibility before rename consumes input or fills the outgoing
+    // time-buffer slot. A valid primary thread already guarantees non-empty
+    // input and no incoming backend/free-register stall.
+    const bool eligible = !fixedbuffer[primary_tid].empty() &&
+        !stallSig->blockRename[primary_tid] && canRename(primary_tid) &&
+        toIEW->size == 0;
 
     unsigned renamed_this_cycle = 0;
     unsigned threads_renamed = 0;
