@@ -71,7 +71,7 @@ Clint::raiseInterruptPin(int id)
 
         // Update misc reg file
         ISA* isa = dynamic_cast<ISA*>(tc->getIsaPtr());
-        isa->setMiscRegNoEffect(MISCREG_TIME, mtime);
+        isa->updateTime(mtime);
 
         // Post timer interrupt
         uint64_t mtimecmp = registers.mtimecmp[context_id].get();
