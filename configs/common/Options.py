@@ -763,3 +763,7 @@ def addXiangshanTraceOptions(parser):
                 action.required = False
                 action.default = "trace_mode_dummy"
                 break
+    parser.add_argument("--fp-wakeup-mode", choices=("legacy", "kmhv3"),
+                        default=None, help="Override scalar FP wakeup model")
+    parser.add_argument("--fp-load-m4-policy", choices=("always", "adaptive"),
+                        default=None, help="Override load M4 wakeup policy")

@@ -77,14 +77,28 @@ namespace o3
 InstructionQueue::FUCompletion::FUCompletion(const DynInstPtr &_inst,
     int fu_idx, InstructionQueue *iq_ptr)
     : Event(Stat_Event_Pri, AutoDelete),
-      inst(_inst), fuIdx(fu_idx), iqPtr(iq_ptr), freeFU(false)
+      inst(_inst), attempt(_inst->fpWake.attempt),
+      readyCycle(_inst->fpWake.output ? _inst->fpWake.output->readyCycle : fpw::Never),
+      fuIdx(fu_idx),
+      iqPtr(iq_ptr), freeFU(false)
 {
 }
 
 void
 InstructionQueue::FUCompletion::process()
 {
-    iqPtr->processFUCompletion(inst, -1);
+    auto token = inst->fpWake.output;
+    if (iqPtr->scheduler->fpWakeupEnabled() && inst->fpWake.managed &&
+        iqPtr->scheduler->fpAttemptValid(inst, attempt) && token &&
+        token->readyCycle > readyCycle) {
+        const auto delay = token->readyCycle - readyCycle;
+        readyCycle = token->readyCycle;
+        // Keep the original outstanding completion and its -1 tick phase.
+        // A rescheduled AutoDelete event remains alive until its final fire.
+        iqPtr->cpu->schedule(this, when() + iqPtr->cpu->cyclesToTicks(Cycles(delay)));
+        return;
+    }
+    iqPtr->processFUCompletion(inst, -1, attempt);
     inst = NULL;
 }
 
@@ -442,7 +456,7 @@ bool
 InstructionQueue::isDrained() const
 {
     bool drained = scheduler->isDrained() &&
-                   instsToExecute.empty() &&
+                   instsToExecute.empty() && pendingFpFus.empty() &&
                    wbOutstanding == 0;
     drained = drained && !hasPhysicalSQFullReplayInsts();
     for (ThreadID tid = 0; tid < numThreads; ++tid)
@@ -464,6 +478,7 @@ void
 InstructionQueue::takeOverFrom()
 {
     resetState();
+    scheduler->resetLoadM4Predictor();
 }
 
 bool
@@ -532,12 +547,25 @@ InstructionQueue::insertBarrier(const DynInstPtr &barr_inst)
     insertNonSpec(barr_inst);
 }
 
+InstructionQueue::AttemptInst::AttemptInst(const DynInstPtr &inst)
+    : inst(inst), attempt(inst->fpWake.attempt)
+{
+}
+
 DynInstPtr
-InstructionQueue::getInstToExecute()
+InstructionQueue::getInstToExecute(uint64_t &attempt)
 {
     assert(!instsToExecute.empty());
-    DynInstPtr inst = std::move(instsToExecute.front());
+    auto entry = std::move(instsToExecute.front());
     instsToExecute.pop_front();
+    attempt = entry.attempt;
+    DynInstPtr inst = std::move(entry.inst);
+    // Consume exactly one entry per issue-to-execute queue slot, including
+    // stale attempts. IEW skips the null result without executing it.
+    if (scheduler->fpWakeupEnabled() && inst->fpWake.managed &&
+        !scheduler->fpAttemptValid(inst, attempt)) {
+        return nullptr;
+    }
     if (inst->isFloating()) {
         iqIOStats.fpInstQueueReads++;
     } else if (inst->isVector()) {
@@ -549,14 +577,19 @@ InstructionQueue::getInstToExecute()
 }
 
 void
-InstructionQueue::processFUCompletion(const DynInstPtr &inst, int fu_idx)
+InstructionQueue::processFUCompletion(const DynInstPtr &inst, int fu_idx,
+                                      uint64_t attempt)
 {
     DPRINTF(IQ, "Processing FU completion [sn:%llu]\n", inst->seqNum);
     assert(!cpu->switchedOut());
     // The CPU could have been sleeping until this op completed (*extremely*
     // long latency op).  Wake it if it was.  This may be overkill.
-   --wbOutstanding;
+    --wbOutstanding;
     iewStage->wakeCPU();
+    if (scheduler->fpWakeupEnabled() && inst->fpWake.managed &&
+        !scheduler->fpAttemptValid(inst, attempt)) {
+        return;
+    }
 
     // @todo: Ensure that these FU Completions happen at the beginning
     // of a cycle, otherwise they could add too many instructions to
@@ -661,6 +694,11 @@ InstructionQueue::scheduleReadyInsts()
     int total_issued = 0;
     DynInstPtr issued_inst;
     while ((issued_inst = scheduler->getInstToFU())) {
+        if (scheduler->fpWakeupEnabled() && issued_inst->fpWake.managed &&
+            !scheduler->fpAttemptValid(issued_inst,
+                                       issued_inst->fpWake.attempt)) {
+            continue;
+        }
 
         if (issued_inst->isFloating()) {
             iqIOStats.fpInstQueueReads++;
@@ -682,19 +720,31 @@ InstructionQueue::scheduleReadyInsts()
             iqIOStats.intAluAccesses++;
         }
 
-        uint32_t op_latency = scheduler->getOpLatency(issued_inst);
-        execLatencyCheck(issued_inst, op_latency);
-        assert(op_latency < 64);
-        DPRINTF(Schedule, "[sn:%llu] start execute %u cycles\n", issued_inst->seqNum, op_latency);
         cpu->perfCCT->updateInstPos(issued_inst->seqNum, PerfRecord::AtFU);
-        if (op_latency <= 1 || issued_inst->isLoad() || issued_inst->isStore()) {
-            i2e_info->size++;
-            instsToExecute.push_back(issued_inst);
-        }
-        else {
+        const bool dynamicFp = scheduler->fpWakeupEnabled() &&
+            issued_inst->fpWake.managed &&
+            (issued_inst->opClass() == FloatDivOp ||
+             issued_inst->opClass() == FloatSqrtOp);
+        if (dynamicFp) {
+            // A promised source can materialize in executeInsts this cycle.
+            // Reserve one completion now, but classify real operands later
+            // in the same AtFU cycle rather than cache a stale/fallback value.
             ++wbOutstanding;
-            FUCompletion *execution = new FUCompletion(issued_inst, 0, this);
-            cpu->schedule(execution, cpu->clockEdge(Cycles(op_latency - 1))-1);
+            pendingFpFus.push_back(issued_inst);
+        } else {
+            uint32_t op_latency = scheduler->getOpLatency(issued_inst);
+            execLatencyCheck(issued_inst, op_latency);
+            scheduler->fpFuAccepted(issued_inst, op_latency);
+            assert(op_latency < 64);
+            DPRINTF(Schedule, "[sn:%llu] start execute %u cycles\n", issued_inst->seqNum, op_latency);
+            if (op_latency <= 1 || issued_inst->isLoad() || issued_inst->isStore()) {
+                i2e_info->size++;
+                instsToExecute.push_back(issued_inst);
+            } else {
+                ++wbOutstanding;
+                FUCompletion *execution = new FUCompletion(issued_inst, 0, this);
+                cpu->schedule(execution, cpu->clockEdge(Cycles(op_latency - 1))-1);
+            }
         }
         ++total_issued;
         if (issued_inst->firstIssue == -1) {
@@ -718,6 +768,28 @@ InstructionQueue::scheduleReadyInsts()
     } else {
         DPRINTF(IQ, "Not able to schedule any instructions.\n");
     }
+}
+
+void
+InstructionQueue::finalizeFpFus()
+{
+    for (const auto &entry : pendingFpFus) {
+        auto inst = entry.inst;
+        if (!scheduler->fpAttemptValid(inst, entry.attempt)) {
+            --wbOutstanding;
+            continue;
+        }
+        uint32_t latency = scheduler->getOpLatency(inst);
+        execLatencyCheck(inst, latency);
+        panic_if(latency <= 1 || latency >= 64,
+                 "Invalid dynamic FP execution latency %u for %llu\n",
+                 latency, inst->seqNum);
+        scheduler->fpFuAccepted(inst, latency);
+        DPRINTF(Schedule, "[sn:%llu] start execute %u cycles\n", inst->seqNum, latency);
+        auto completion = new FUCompletion(inst, 0, this);
+        cpu->schedule(completion, cpu->clockEdge(Cycles(latency - 1)) - 1);
+    }
+    pendingFpFus.clear();
 }
 
 void

@@ -47,6 +47,14 @@ class FUPool(SimObject):
     cxx_header = "cpu/o3/fu_pool.hh"
     FUList = VectorParam.FUDesc("list of FU's for this pool")
 
+class FpWakeupMode(Enum):
+    vals = ["legacy", "kmhv3"]
+
+
+class FpLoadM4Policy(Enum):
+    vals = ["always", "adaptive"]
+
+
 class SpecWakeupChannel(SimObject):
     type = 'SpecWakeupChannel'
     cxx_class = 'gem5::o3::SpecWakeupChannel'
@@ -82,6 +90,7 @@ class IssueQue(SimObject):
 
     name = Param.String("IQ name")
     size = Param.Int(16, "")
+    fpWbPort = Param.Int(-1, "FP result endpoint; -1 uses the IQ identifier")
     inports = Param.Int(2, "")
     scheduleToExecDelay = Param.Cycles(2, "")
     deferNewEnqueueSelection = Param.Bool(
@@ -98,6 +107,17 @@ class Scheduler(SimObject):
     cxx_class = 'gem5::o3::Scheduler'
     cxx_header = "cpu/o3/issue_queue.hh"
 
+    fpWakeupMode = Param.FpWakeupMode("legacy", "Scalar FP wakeup timing profile")
+    fpLoadM4Enabled = Param.Bool(
+        True, "Enable speculative load M4 wakeups in the kmhv3 FP timing profile"
+    )
+    fpLoadM4Policy = Param.FpLoadM4Policy(
+        "always", "Load M4 policy; fpLoadM4Enabled remains the master switch"
+    )
+    fpLoadM4Entries = Param.Unsigned(256, "PC entries per hardware thread")
+    fpLoadM4FailurePenalty = Param.Unsigned(3, "First-attempt replay penalty (1..7)")
+    fpLoadM4EnableThreshold = Param.Unsigned(6, "Enable M4 at this confidence (1..7)")
+    fpLoadM4DisableThreshold = Param.Unsigned(3, "Disable M4 at or below this confidence")
     IQs = VectorParam.IssueQue([], "")
     specWakeupNetwork = VectorParam.SpecWakeupChannel([], "")
     xbarWakeup = Param.Bool(False, "use xbar wakeup network, (will override specWakeupNetwork)")
