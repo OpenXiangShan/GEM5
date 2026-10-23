@@ -474,6 +474,8 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
         cpu.mlpMissPatternTableSize = args.mlp_miss_pattern_table_size
         cpu.mlpDistanceTableSize = args.mlp_distance_table_size
         cpu.mlpLongLatencyCacheDepth = args.mlp_long_latency_cache_depth
+        cpu.enableTea = args.enable_tea
+        cpu.teaSamplePeriod = args.tea_sample_period
         cpu.mmu.pma_checker = PMAChecker(
             uncacheable=[AddrRange(0, size=0x80000000)])
         cpu.mmu.functional = args.functional_tlb
@@ -658,6 +660,9 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
 
         if args.xiangshan_ecore and args.no_l3cache:
             args.l2_size = '4MB'
+
+        for cpu in test_sys.cpu:
+            cpu.teaLastLevelCache = 3 if args.l3cache else 2
 
         CacheConfig.config_cache(args, test_sys)
 
@@ -1036,6 +1041,18 @@ def xiangshan_system_init():
         default=False,
         help="Disable direction TAGE sources in kmhv3 and force MGSC standalone SC prediction",
     )
+    parser.add_argument(
+        "--enable-tea",
+        action="store_true",
+        default=False,
+        help="Enable O3 Timing Event Attribution sampling",
+    )
+    parser.add_argument(
+        "--tea-sample-period",
+        type=int,
+        default=1,
+        help="TEA sample period in CPU cycles; zero samples every cycle",
+    )
 
     parser.add_argument(
         "--smt-decode-policy",
@@ -1165,6 +1182,11 @@ def xiangshan_system_init():
     if '--ruby' in sys.argv:
         Ruby.define_options(parser)
     args = parser.parse_args()
+
+    if args.enable_tea and args.ruby:
+        parser.error("--enable-tea is not supported with --ruby. "
+                     "Ruby memory system does not populate cacheAccessDepth "
+                     "required for TEA cache event attribution.")
 
     # Validate MLP-aware policy combinations before CPU construction:
     # MlpAwarePolicy needs its predictor and a non-BaseLine fetch block
