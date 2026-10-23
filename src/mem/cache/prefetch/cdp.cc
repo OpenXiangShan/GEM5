@@ -72,6 +72,7 @@ CDP::CDP(const CDPParams &p)
           FilterTableEntry(p.filter_entry_region_blks)),
       filterRegionBlks(p.filter_entry_region_blks),
       filterEntryGranularityBits(ceil(log2(p.filter_entry_granularity))),
+      parentRid(requestorId),
       l3_miss_info(0, 0),
       byteOrder(p.sys->getGuestByteOrder()),
       cdpStats(this)
