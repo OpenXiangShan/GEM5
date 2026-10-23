@@ -940,7 +940,8 @@ ROB::computeSnapshotSquashWidth(InstSeqNum squash_num, ThreadID tid)
     for (auto it = instList[tid].begin(); it != instList[tid].end(); ++it) {
         unsigned w = robWalkByDestRegs ? (*it)->numDestRegs() : 1;
         if ((*it)->seqNum > squash_num) {
-            younger_before_squash += w;
+            // doSquash consumes dynSquashWidth in instructions.
+            younger_before_squash++;
         } else if ((*it)->seqNum < squash_num) {
             older_after_snapshot =
                 (*it)->isRatSnapshotted() ? 0 : older_after_snapshot + w;
