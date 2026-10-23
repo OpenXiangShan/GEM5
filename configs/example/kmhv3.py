@@ -151,6 +151,7 @@ def setKmhV3Params(args, system):
             cpu.enableMovImmElimination = False
             cpu.RobCompressPolicy = 'hybrid'
             cpu.CROB_instPerGroup = 8
+            cpu.decodeWidth = 8
             cpu.renameWidth = 8
             cpu.commitWidth = 8
 
