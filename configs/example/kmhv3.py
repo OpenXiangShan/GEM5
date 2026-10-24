@@ -240,20 +240,20 @@ def setKmhV3Params(args, system):
                 system.l2_caches[i].replacement_policy = XSDRRIPRP(mode=2, num_sets=4096)
             else:
                 l2_wrapper = system.l2_wrappers[i]
-                l2_wrapper.cache_size = '4MiB'
+                l2_wrapper.cache_size = '8MiB'
                 l2_wrapper.prefetcher.enable_cdp = False
                 l2_wrapper.data_sram_banks = 2
                 l2_wrapper.dir_sram_banks = 2
                 l2_wrapper.pipe_dir_write_stage = 3
                 l2_wrapper.dir_read_bypass = False
                 for j in range(args.l2_slices):
-                    l2_wrapper.slices[j].inner_cache.size = '1MiB'
+                    l2_wrapper.slices[j].inner_cache.size = '2MiB'
                     l2_wrapper.slices[j].inner_cache.wpu = NULL
                     l2_wrapper.slices[j].inner_cache.do_fast_writeline = True
                     l2_wrapper.slices[j].inner_cache.prefetch_can_offload = False
                     # Configure XSDRRIP replacement policy (DRRIP mode)
-                    # Each slice: 4MiB/4 = 1MiB, 8-way, 64B line → 2048 sets
-                    l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=2048)
+                    # Each slice: 8MiB/4 = 2MiB, 8-way, 64B line → 4096 sets
+                    l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=4096)
             system.tol2bus_list[i].forward_latency = 0
             system.tol2bus_list[i].response_latency = 1
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1
