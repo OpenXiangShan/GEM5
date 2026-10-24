@@ -5,9 +5,10 @@
 This is a single-thread, instruction-driven, scalar APF model. It generates real
 decoded instructions before a redirect and replays them at the Rename input.
 It is not a PC-only recovery shortcut or a cycle-accurate implementation of the
-paper's pipeline. Existing H2P classification, confidence and allocation filters
-are unchanged. `enableAPF` defaults to false. The old metadata-only H2P buffer
-has been removed; only the real decoded-path APF buffer is modeled.
+paper's pipeline. H2P table classification and allocation are separate from
+the optional APF confidence filter. `enableAPF` defaults to false. The old
+metadata-only H2P buffer has been removed; only the real decoded-path APF buffer
+is modeled.
 
 Enable with `--param='system.cpu[0].enableAPF=True'` on `kmhv3.py`.
 
@@ -62,6 +63,26 @@ while keeping the single active slot, 104-uop path limit and H2P classification
 unchanged. It also removes the independent metadata-only buffer, which did not
 control APF admission, recovery or simulated timing. Its comparison baseline
 is the 64B two-way APF commit `966ecb5bae` (manual perf run 1352).
+
+## APF confidence filter
+
+`enable_h2p_weak_confidence` defaults to false. When enabled, an H2P candidate
+must also pass `TageInfoForMGSC::isLowConfidenceForAPF()` on both primary and
+shadow paths. The predicate accepts unsaturated three-bit main-provider
+counters (-3, -2, -1, 0, 1, 2), using the existing low and medium confidence
+bits. It preserves the existing low-confidence policy when no main provider
+matches. Missing TAGE metadata or default metadata with no confidence bits set
+does not pass the filter.
+
+SC's `tage_pred_conf_low` remains restricted to main-provider counters -1/0
+or a missing main provider. Its confidence bits, bias indexing, prediction and
+training rules are not changed. APF confidence is still based on the main
+provider, not the selected alternate provider or SC's final prediction.
+
+This is still a hard admission filter (`H2P && APF low confidence`), not the
+paper's low-confidence-first selection with an H2P fallback. Candidate age
+ordering, allocation filters and resource arbitration are unchanged. With the
+weak-confidence switch off, the new predicate is bypassed.
 
 ## Predictor and instruction state
 

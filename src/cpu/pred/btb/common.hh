@@ -265,6 +265,15 @@ struct TageInfoForMGSC
             tage_pred_alt_diff(tage_pred_alt_diff)
     {
     }
+
+    bool
+    isLowConfidenceForAPF() const
+    {
+        // APF accepts unsaturated main-provider counters, not just the weak
+        // counters used by SC. Preserve the low-confidence no-provider case
+        // without accepting unknown metadata (all confidence flags false).
+        return tage_pred_conf_low || tage_pred_conf_mid;
+    }
 };
 
 struct LFSR64

@@ -628,6 +628,70 @@ TEST_F(BTBTAGETest, DoesNotReportLowConfidenceForMidOrStrongProvider)
               3);
 }
 
+TEST_F(BTBTAGETest, APFConfidenceIncludesMidWithoutChangingSCFlags)
+{
+    const Addr pc = 0x1000;
+    const auto entry = createBTBEntry(pc);
+
+    for (short counter = -4; counter <= 3; ++counter) {
+        SCOPED_TRACE(counter);
+        setupTageEntry(tage, pc, 3, counter);
+
+        const auto checkConfidence = [counter](const TageInfoForMGSC &info) {
+            EXPECT_EQ(info.isLowConfidenceForAPF(),
+                      counter > -4 && counter < 3);
+            EXPECT_EQ(info.tage_pred_conf_low,
+                      counter == -1 || counter == 0);
+            EXPECT_EQ(info.tage_pred_conf_mid,
+                      counter == -3 || counter == -2 ||
+                      counter == 1 || counter == 2);
+            EXPECT_EQ(info.tage_pred_conf_high,
+                      counter == -4 || counter == 3);
+        };
+
+        predictTAGE(tage, pc, {entry}, history, stagePreds);
+        ASSERT_NE(stagePreds[1].tageInfoForMgscs.find(pc),
+                  stagePreds[1].tageInfoForMgscs.end());
+        checkConfidence(stagePreds[1].tageInfoForMgscs.at(pc));
+
+        FullBTBPrediction shadow;
+        shadow.bbStart = pc;
+        shadow.btbEntries = {entry};
+        tage->predictShadow(pc, history, shadow);
+        ASSERT_NE(shadow.tageInfoForMgscs.find(pc),
+                  shadow.tageInfoForMgscs.end());
+        checkConfidence(shadow.tageInfoForMgscs.at(pc));
+    }
+}
+
+TEST_F(BTBTAGETest, APFConfidencePreservesMissingProviderPolicy)
+{
+    const Addr pc = 0x1000;
+    const auto entry = createBTBEntry(pc);
+
+    predictTAGE(tage, pc, {entry}, history, stagePreds);
+    ASSERT_NE(stagePreds[1].tageInfoForMgscs.find(pc),
+              stagePreds[1].tageInfoForMgscs.end());
+    const auto &info = stagePreds[1].tageInfoForMgscs.at(pc);
+    EXPECT_TRUE(info.tage_pred_conf_low);
+    EXPECT_TRUE(info.isLowConfidenceForAPF());
+
+    FullBTBPrediction shadow;
+    shadow.bbStart = pc;
+    shadow.btbEntries = {entry};
+    tage->predictShadow(pc, history, shadow);
+    ASSERT_NE(shadow.tageInfoForMgscs.find(pc),
+              shadow.tageInfoForMgscs.end());
+    EXPECT_TRUE(shadow.tageInfoForMgscs.at(pc).tage_pred_conf_low);
+    EXPECT_TRUE(shadow.tageInfoForMgscs.at(pc).isLowConfidenceForAPF());
+}
+
+TEST_F(BTBTAGETest, APFConfidenceRejectsUnknownMetadata)
+{
+    const TageInfoForMGSC info;
+    EXPECT_FALSE(info.isLowConfidenceForAPF());
+}
+
 // Test basic history update functionality (PHR semantics)
 TEST_F(BTBTAGETest, HistoryUpdate) {
     // Use a fixed control PC to derive PHR bits

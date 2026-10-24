@@ -1396,7 +1396,7 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
                             dbpBtbStats.h2pConfidenceMissing++;
                             dbpBtbStats.h2pConfidenceRejected++;
                             accepted = false;
-                        } else if (!tageInfo->second.tage_pred_conf_low) {
+                        } else if (!tageInfo->second.isLowConfidenceForAPF()) {
                             dbpBtbStats.h2pConfidenceRejected++;
                             accepted = false;
                         }
@@ -1849,7 +1849,7 @@ DecoupledBPUWithBTB::predictAlternate(const AlternateCheckpoint &state,
             result.target.h2pTableBranchPCs.push_back(branch.pc);
             if (!enableH2PWeakConfidence ||
                 (info != pred.tageInfoForMgscs.end() &&
-                 info->second.tage_pred_conf_low)) {
+                 info->second.isLowConfidenceForAPF())) {
                 result.target.h2pBranchPCs.push_back(branch.pc);
                 result.target.apfBranches.push_back(branch);
             }
