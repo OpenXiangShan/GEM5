@@ -2024,6 +2024,10 @@ Commit::diffInst(ThreadID tid, const DynInstPtr &inst) {
 }
 
 
+/**
+ * Try to commit the ROB head, handling execution constraints and faults.
+ * Return true on successful retirement and notify the value predictor.
+ */
 bool
 Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num,
                    bool &logical_trace_record_retired)
@@ -2348,6 +2352,13 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num,
                 valuePred->stats.VPcorrected++;
             }
         }
+    }
+
+    if (valuePred) {
+        valuepred::VPCommitInfo commit_info;
+        commit_info.seqNo = head_inst->seqNum;
+        commit_info.tid = tid;
+        valuePred->commitInstruction(commit_info);
     }
 
     if (head_inst->isLoad()) {
