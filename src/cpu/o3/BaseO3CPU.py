@@ -94,7 +94,7 @@ class ROBWalkPolicy(ScopedEnum):
     vals = [ 'Rollback', 'Replay', 'ConstCycle', 'NaiveCpt', 'ConfidentCpt' ]
 
 class ROBCompressPolicy(ScopedEnum):
-    vals = [ 'none', 'kmhv2', 'MohBoE' ,'kmhv3' ]
+    vals = [ 'none', 'kmhv2', 'MohBoE' ,'kmhv3', 'hybrid' ]
 
 class PerfRecord(ScopedEnum):
     vals = [
@@ -200,7 +200,7 @@ class BaseO3CPU(BaseCPU):
     iewToCommitDelay = Param.Cycles(1, "Issue/Execute/Writeback to commit "
                "delay")
     renameToROBDelay = Param.Cycles(1, "Rename to reorder buffer delay")
-    commitWidth = Param.Unsigned(8, "Commit width")
+    commitWidth = Param.Unsigned(8, "Physical entry commit width for Hybrid; group window otherwise")
 
     squashWidth = Param.Unsigned(8, "Squash width with rollback/redo rob walk")
     ConstSquashCycle = Param.Unsigned(1, "Squash width with redo rob walk")
@@ -403,11 +403,18 @@ class BaseO3CPU(BaseCPU):
     smtLQBorrowBaseReserveEntries = Param.Unsigned(
         60, "Minimum LQ entries reserved for a borrowing base thread to resume")
     smtLQBorrowDonorReserveEntries = Param.Unsigned(
-        6, "Minimum LQ entries reserved for a borrowing donor thread to resume")
+        60, "Minimum LQ entries reserved for a borrowing donor thread to resume")
     smtSQBorrowBaseReserveEntries = Param.Unsigned(
         32, "Minimum SQ entries reserved for a borrowing base thread to resume")
     smtSQBorrowDonorReserveEntries = Param.Unsigned(
-        4, "Minimum SQ entries reserved for a borrowing donor thread to resume")
+        32, "Minimum SQ entries reserved for a borrowing donor thread to resume")
+    smtLQBorrowDonorHoldCycles = Param.Unsigned(
+        1, "Cycles to keep an SMT thread marked as an LQ borrowing donor")
+    smtSQBorrowDonorHoldCycles = Param.Unsigned(
+        1, "Cycles to keep an SMT thread marked as an SQ borrowing donor")
+    lsqBorrowDonorSkipRenameGate = Param.Bool(
+        False, "Force has_buffered_rename to false in LSQ borrowing donor "
+        "gating, i.e. disable the rename-buffer gate (evaluation only)")
 
     branchPred = Param.BranchPredictor(DecoupledBPUWithBTB(),
                                        "Branch Predictor")

@@ -152,6 +152,10 @@ class DynInst : public ExecContext, public RefCounted
     /** The sequence number of the instruction. */
     InstSeqNum seqNum = 0;
 
+    /** Physical Hybrid ROB entry and slot; zero means not allocated. */
+    uint64_t hybridEntryId = 0;
+    bool hybridSlotIsFormer = true;
+
     /** The StaticInst used by this BaseDynInst. */
     const StaticInstPtr staticInst;
 
@@ -475,7 +479,7 @@ class DynInst : public ExecContext, public RefCounted
     unsigned memReqFlags = 0;
 
     /** The size of the request */
-    unsigned effSize;
+    unsigned effSize = 0;
 
     /** Pointer to the data for the memory access. */
     uint8_t *memData = nullptr;

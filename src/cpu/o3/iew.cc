@@ -100,6 +100,9 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
       iewToCommitDelay(params.iewToCommitDelay),
       wbWidth(params.wbWidth),
       vectorMemCompletionDelay(params.vectorMemCompletionDelay),
+      smtLQBorrowDonorHoldCycles(params.smtLQBorrowDonorHoldCycles),
+      smtSQBorrowDonorHoldCycles(params.smtSQBorrowDonorHoldCycles),
+      lsqBorrowDonorSkipRenameGate(params.lsqBorrowDonorSkipRenameGate),
       enableStoreSetTrain(params.enable_storeSet_train),
       mdpViolationAtCommit(params.mdp_violation_timing == "atCommit"),
       numThreads(params.numThreads),
@@ -141,6 +144,8 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         fetchRedirect[tid] = false;
         serializeOnNextInst[tid] = false;
+        lqBorrowingDonorCycles[tid] = 0;
+        sqBorrowingDonorCycles[tid] = 0;
     }
 
     assert(renameToIEWDelay == 1);
@@ -507,6 +512,12 @@ IEW::setTimeBuffer(TimeBuffer<TimeStruct> *tb_ptr)
 
     toFetch = timeBuffer->getWire(0);
 
+    // Setup a dedicated delayed read port on IEW's own slot. The LSQ
+    // borrowing donor decision needs the stall reasons dispatchInsts()
+    // wrote in the previous cycle; toFetch (getWire(0)) is the
+    // current-cycle write port and reads as all zeros at decision time.
+    prevIewInfo = timeBuffer->getWire(-1);
+
     // Instruction queue also needs main time buffer.
     instQueue.setTimeBuffer(tb_ptr);
 }
@@ -619,6 +630,8 @@ IEW::takeOverFrom()
 
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         fetchRedirect[tid] = false;
+        lqBorrowingDonorCycles[tid] = 0;
+        sqBorrowingDonorCycles[tid] = 0;
     }
 
     updateLSQNextCycle = false;
@@ -2354,29 +2367,47 @@ IEW::tick()
     scheduler->tick();
     ldstQueue.tick();
 
-    // Update LSQ borrowing donor status for LQ and SQ
-    // A thread becomes a donor if it has no buffered rename instructions and is stalled
-    // Use hold cycles to avoid frequent donor state transitions
+    // Update LSQ borrowing donor status for LQ and SQ.
+    // A thread becomes a donor if it has no buffered rename instructions and
+    // was stalled last cycle. The stall reasons are read from prevIewInfo
+    // (getWire(-1) of IEW's own slot): toFetch is the current-cycle write
+    // port whose iewInfo is written later by dispatchInsts(), so reading it
+    // here would always observe NoStall. Hold cycles provide hysteresis to
+    // avoid frequent donor state transitions, mirroring the ROB donor logic
+    // in Commit::tick().
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        bool has_buffered_rename = !fixedbuffer[tid].empty();
+        bool has_buffered_rename =
+            !lsqBorrowDonorSkipRenameGate && !fixedbuffer[tid].empty();
 
-        // For LQ: determine if thread should be a donor
         bool lq_donor = false;
-        lq_donor = smtHasBorrowThrottleLQStall(toFetch->iewInfo[tid]);
-        if (lq_donor) {
-            ldstQueue.setLQBorrowingDonor(tid, true);
+        bool sq_donor = false;
+        if (has_buffered_rename) {
+            // The thread still has rename instructions buffered and will
+            // keep consuming LQ/SQ entries; drop any pending donor marking.
+            lqBorrowingDonorCycles[tid] = 0;
+            sqBorrowingDonorCycles[tid] = 0;
         } else {
-            ldstQueue.setLQBorrowingDonor(tid, false);
+            // For LQ: determine if thread should be a donor
+            lq_donor = smtHasBorrowThrottleLQStall(prevIewInfo->iewInfo[tid]);
+            if (lq_donor) {
+                lqBorrowingDonorCycles[tid] = smtLQBorrowDonorHoldCycles;
+            } else if (lqBorrowingDonorCycles[tid] > 0) {
+                --lqBorrowingDonorCycles[tid];
+            }
+            lq_donor = lqBorrowingDonorCycles[tid] > 0;
+
+            // For SQ: determine if thread should be a donor
+            sq_donor = smtHasBorrowThrottleSQStall(prevIewInfo->iewInfo[tid]);
+            if (sq_donor) {
+                sqBorrowingDonorCycles[tid] = smtSQBorrowDonorHoldCycles;
+            } else if (sqBorrowingDonorCycles[tid] > 0) {
+                --sqBorrowingDonorCycles[tid];
+            }
+            sq_donor = sqBorrowingDonorCycles[tid] > 0;
         }
 
-        // For SQ: determine if thread should be a donor
-        bool sq_donor = false;
-        sq_donor = smtHasBorrowThrottleSQStall(toFetch->iewInfo[tid]);
-        if (sq_donor) {
-            ldstQueue.setSQBorrowingDonor(tid, true);
-        } else {
-            ldstQueue.setSQBorrowingDonor(tid, false);
-        }
+        ldstQueue.setLQBorrowingDonor(tid, lq_donor);
+        ldstQueue.setSQBorrowingDonor(tid, sq_donor);
     }
 
     // Add borrowing state hold cycle for LSQ

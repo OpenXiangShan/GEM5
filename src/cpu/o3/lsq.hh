@@ -1621,6 +1621,23 @@ class LSQ
         statistics::Scalar dcacheMainPipeBlockedByDataConflict;
         statistics::Scalar dcacheMainPipeStoreS2IssueBlocked;
         statistics::Scalar dcacheMainPipeStoreS2MissExit;
+        /** Per-thread LQ/SQ borrowing donor state change counts. */
+        statistics::Vector lqBorrowingStateChange;
+        statistics::Vector sqBorrowingStateChange;
+        /** LQ/SQ base/donor state holding cycle distribution, indexed by the
+         *  state before the change (0 = Base, 1 = Donor). */
+        statistics::VectorDistribution lqStateHoldCycle;
+        statistics::VectorDistribution sqStateHoldCycle;
+        /** LQ/SQ used/free entries sampled at donor state changes, indexed by
+         *  {BaseToDonor, DonorToBase} x {used, free}. */
+        statistics::VectorDistribution lqEntriesWhileStateChange;
+        statistics::VectorDistribution sqEntriesWhileStateChange;
+        /** Per-cycle LQ/SQ borrowing donor state combination across threads,
+         *  indexed like fetch's fetchBlockState (one bit per thread, tid0 in
+         *  the least significant bit): 0 = both Base, 1 = tid0 Donor,
+         *  2 = tid1 Donor, 3 = both Donor. */
+        statistics::Vector lqBorrowingState;
+        statistics::Vector sqBorrowingState;
     } stats;
 
     void recordStoreBufferEviction(StoreBufferEvictCause cause);

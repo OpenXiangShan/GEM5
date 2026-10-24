@@ -286,8 +286,18 @@ def render(data, summary, now):
     ).astimezone(SHANGHAI)
     counts = data["counts"]
     lines = [
-        f"统计窗口：{start:%Y-%m-%d %H:%M} ～ {now.astimezone(SHANGHAI):%Y-%m-%d %H:%M}（北京时间）",
-        f"活动统计：合并 PR {counts['merged_prs']}；新建 PR {counts['new_prs']}；更新 PR {counts['updated_prs']}；新建 issue {counts['new_issues']}；更新 issue {counts['updated_issues']}。各项可能重叠，更新时间不等于实质变更。",
+        (
+            f"统计窗口：{start:%Y-%m-%d %H:%M} ～ "
+            f"{now.astimezone(SHANGHAI):%Y-%m-%d %H:%M}（北京时间）"
+        ),
+        (
+            f"活动统计：合并 PR {counts['merged_prs']}；"
+            f"新建 PR {counts['new_prs']}；"
+            f"更新 PR {counts['updated_prs']}；"
+            f"新建 issue {counts['new_issues']}；"
+            f"更新 issue {counts['updated_issues']}。"
+            "各项可能重叠，更新时间不等于实质变更。"
+        ),
         "",
         summary,
         "",
