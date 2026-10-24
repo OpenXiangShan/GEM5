@@ -87,6 +87,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       smtFTQThreshold(p.smtFTQThreshold),
       ftq(p.numThreads, p.ftq_size),
       resolveBlockThreshold(p.resolveBlockThreshold),
+      idealTwoTaken(p.idealTwoTaken),
       dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum, p.numThreads)
 {
     panic_if(numPredictingThreads == 0 ||
@@ -98,6 +99,11 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     panic_if(numPredictingThreads > 1 && pairtage->isEnabled(),
              "PairTAGE does not yet support concurrent SMT predictions; "
              "disable PairTAGE or set smtNumPredictingThreads to one");
+    fatal_if(idealTwoTaken && pairtage->isEnabled() &&
+             pairtage->secondBlockEnabled(),
+             "idealTwoTaken cannot be combined with PairTAGE second block");
+    fatal_if(idealTwoTaken && numPredictingThreads > 1,
+             "idealTwoTaken does not support concurrent SMT predictions");
     panic_if(ftqMode == SMTFTQMode::Shared &&
              ftqPolicy == SMTFTQPolicy::Threshold &&
              smtFTQThreshold > ftqEntries,
@@ -349,6 +355,19 @@ DecoupledBPUWithBTB::tick()
         return;
     }
 
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        if (!isThreadActive(tid)) {
+            continue;
+        }
+        dbpBtbStats.ftqOccupancyPerCycle.sample(ftq.size(tid));
+        const unsigned pendingFetch = ftqHasFetching(tid) ?
+            ftq.backId(tid) - ftq.fetchId(tid) + 1 : 0;
+        dbpBtbStats.ftqPendingFetchPerCycle.sample(pendingFetch);
+        if (pendingFetch == 0) {
+            dbpBtbStats.ftqNoPendingFetchCycles++;
+        }
+    }
+
     // On squash, reset state if there was a valid prediction.
     for (int tid = 0; tid < numThreads; tid++) {
         if (threads[tid].squashing) {
@@ -386,6 +405,25 @@ DecoupledBPUWithBTB::tick()
             numOverrideBubbles--;
             dbpBtbStats.overrideBubbleNum++;
             DPRINTF(Override, "Consuming override bubble, %d remaining\n", numOverrideBubbles);
+        }
+    }
+
+    // Upper bound: once a block is enqueued without bubbles, run one more
+    // complete prediction from the updated s0 state in the same tick.
+    if (idealTwoTaken) {
+        for (const ThreadID tid : scheduledTids) {
+            auto &thread = threads[tid];
+            if (!thread.firstBlockProcessedThisTick ||
+                thread.numOverrideBubbles > 0 ||
+                thread.blockPredictionPending ||
+                !canStartPrediction(tid)) {
+                continue;
+            }
+            requestNewPrediction(tid);
+            processNewPrediction(tid);
+            if (!thread.validprediction) {
+                dbpBtbStats.idealSecondPredictions++;
+            }
         }
     }
 
@@ -479,6 +517,11 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
 
     finalPred.s1Source = -1;//meaning fallthrough
     finalPred.s3Source = -1;
+
+    finalPred.s1Taken = predsOfEachStage[0].isTaken();
+    finalPred.s1BranchPC = finalPred.s1Taken ?
+        predsOfEachStage[0].getTakenEntry().pc : 0;
+    finalPred.s1Target = predsOfEachStage[0].getTarget(predictWidth);
 
     if (predsOfEachStage[0].btbEntries.size() != 0) {
         for (auto entry : predsOfEachStage[0].btbEntries){
@@ -781,7 +824,16 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
         tid, secondPred,
         thread.twoTakenTageContextReady ? &thread.twoTakenTageContext :
                                           nullptr);
+    // The second block has no separate S1 stage: PairTAGE is its predictor.
+    secondPred.s1Taken = secondPred.isTaken();
+    secondPred.s1BranchPC = secondPred.s1Taken ?
+        secondPred.getTakenEntry().pc : 0;
+    secondPred.s1Target = secondPred.getTarget(predictWidth);
     auto entry = createFetchTargetEntry(tid, thread.s0PC, secondPred);
+    entry.isSecondBlock = true;
+    if (thread.finalPred.isTaken() && secondPred.isTaken()) {
+        dbpBtbStats.twoTakenBothTaken++;
+    }
 
     thread.s0PC = secondPred.getTarget(predictWidth);
     updateHistoryForPrediction(entry, secondPred);
@@ -1342,6 +1394,9 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
 
     entry.s1Source = pred.s1Source;
     entry.s3Source = pred.s3Source;
+    entry.s1PredTaken = pred.s1Taken;
+    entry.s1PredBranchPC = pred.s1BranchPC;
+    entry.s1PredTarget = pred.s1Target;
 
     // Save predictors' metadata
     for (int i = 0; i < numComponents; i++) {

@@ -161,6 +161,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     std::vector<HistoryManager> historyManagers;
     std::vector<unsigned> resolveDequeueFailCounters;
     const unsigned resolveBlockThreshold;
+    const bool idealTwoTaken;
 
     bool sharedFTQMode() const;
     unsigned activeFTQThreads() const;
@@ -348,6 +349,26 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar s3PredWrongTage;
         statistics::Scalar s3PredWrongIttage;
         statistics::Scalar s3PredWrongRas;
+
+        // Per-cycle FTQ occupancy, sampled at the start of every BPU tick
+        statistics::Distribution ftqOccupancyPerCycle;
+        statistics::Distribution ftqPendingFetchPerCycle;
+        statistics::Scalar ftqNoPendingFetchCycles;
+
+        // Commit-time block-level accuracy of S1 and final predictions
+        statistics::Scalar commitBlocks;
+        statistics::Scalar commitBlocksS1Correct;
+        statistics::Scalar commitBlocksFinalCorrect;
+        statistics::Formula commitBlockS1Accuracy;
+        statistics::Formula commitBlockFinalAccuracy;
+
+        // PairTAGE second-block and ideal two-taken accounting
+        statistics::Scalar twoTakenBothTaken;
+        statistics::Scalar secondBlockCommitted;
+        statistics::Scalar secondBlockCommitMispred;
+        statistics::Formula secondBlockCommitAccuracy;
+        statistics::Vector secondBlockCommitByType;
+        statistics::Scalar idealSecondPredictions;
 
         DBPBTBStats(statistics::Group* parent, unsigned numStages,
                     unsigned fsqSize, unsigned maxInstsNum,
@@ -783,6 +804,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool resolveUpdate(const std::vector<BranchOutcome> &events);
     void updatePredictorComponents(const PredictionUpdateContext &context,
                                    const PreparedUpdate &update);
+    void updateBlockAccuracyStats(const FetchTarget &target,
+                                  const PreparedUpdate &update);
     void updateStatistics(const FetchTarget &target,
                           const PreparedUpdate &update);
     void notifyResolveSuccess(ThreadID tid);

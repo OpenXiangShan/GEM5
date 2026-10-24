@@ -20,14 +20,51 @@ namespace btb_pred
 namespace
 {
 
-constexpr int NumS1SourceBuckets = 3;
+constexpr int NumS1SourceBuckets = 4;
 constexpr int NumOverrideReasonBuckets = 4;
 
 constexpr const char *S1SourceLabels[NumS1SourceBuckets] = {
     "fallthrough",
     "ubtb",
-    "abtb"
+    "abtb",
+    "pairtage"
 };
+
+constexpr int NumSecondBlockTypes = 6;
+
+constexpr const char *SecondBlockTypeLabels[NumSecondBlockTypes] = {
+    "fallthrough",
+    "cond",
+    "direct_jump",
+    "call",
+    "ret",
+    "indirect"
+};
+
+// Classify a committed block by its actual exit.
+int
+secondBlockTypeBucket(const std::vector<BranchOutcome> &branches)
+{
+    for (const auto &branch : branches) {
+        if (!branch.taken) {
+            continue;
+        }
+        if (branch.isReturn) {
+            return 4;
+        }
+        if (branch.isCall) {
+            return 3;
+        }
+        if (branch.isIndirect) {
+            return 5;
+        }
+        if (branch.isCond) {
+            return 1;
+        }
+        return 2;
+    }
+    return 0;
+}
 
 constexpr const char *OverrideReasonLabels[NumOverrideReasonBuckets] = {
     "no_override",
@@ -520,7 +557,35 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(s3PredWrongMbtb, statistics::units::Count::get(), "S3pred wrong blame mbtb "),
     ADD_STAT(s3PredWrongTage, statistics::units::Count::get(), "S3pred wrong blame tage "),
     ADD_STAT(s3PredWrongIttage, statistics::units::Count::get(), "S3pred wrong blame ittage "),
-    ADD_STAT(s3PredWrongRas, statistics::units::Count::get(), "S3pred wrong blame ras ")
+    ADD_STAT(s3PredWrongRas, statistics::units::Count::get(), "S3pred wrong blame ras "),
+    ADD_STAT(ftqOccupancyPerCycle, statistics::units::Count::get(),
+             "FTQ entries (fetched or not, uncommitted) sampled every BPU tick"),
+    ADD_STAT(ftqPendingFetchPerCycle, statistics::units::Count::get(),
+             "FTQ entries not yet fetched, sampled every BPU tick"),
+    ADD_STAT(ftqNoPendingFetchCycles, statistics::units::Count::get(),
+             "BPU ticks where the FTQ has no entry left for fetch"),
+    ADD_STAT(commitBlocks, statistics::units::Count::get(),
+             "committed FTQ blocks evaluated for block-level accuracy"),
+    ADD_STAT(commitBlocksS1Correct, statistics::units::Count::get(),
+             "committed blocks whose S1 exit matches the actual exit"),
+    ADD_STAT(commitBlocksFinalCorrect, statistics::units::Count::get(),
+             "committed blocks without a control misprediction"),
+    ADD_STAT(commitBlockS1Accuracy, statistics::units::Ratio::get(),
+             "block-level S1 accuracy on the commit path"),
+    ADD_STAT(commitBlockFinalAccuracy, statistics::units::Ratio::get(),
+             "block-level final prediction accuracy on the commit path"),
+    ADD_STAT(twoTakenBothTaken, statistics::units::Count::get(),
+             "PairTAGE pairs enqueued with both blocks ending in a taken branch"),
+    ADD_STAT(secondBlockCommitted, statistics::units::Count::get(),
+             "committed PairTAGE second blocks"),
+    ADD_STAT(secondBlockCommitMispred, statistics::units::Count::get(),
+             "committed PairTAGE second blocks with a control misprediction"),
+    ADD_STAT(secondBlockCommitAccuracy, statistics::units::Ratio::get(),
+             "execution accuracy of committed PairTAGE second blocks"),
+    ADD_STAT(secondBlockCommitByType, statistics::units::Count::get(),
+             "committed PairTAGE second blocks by actual exit type"),
+    ADD_STAT(idealSecondPredictions, statistics::units::Count::get(),
+             "extra blocks enqueued by the idealTwoTaken second prediction")
 
 {
     predsOfEachStage.init(numStages);
@@ -541,6 +606,17 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     }
     for (int i = 0; i < NumOverrideReasonBuckets; ++i) {
         s1PredWrongBySourceAndReason.ysubname(i, OverrideReasonLabels[i]);
+    }
+    ftqOccupancyPerCycle.init(0, fsqSize, 1).flags(statistics::pdf);
+    ftqPendingFetchPerCycle.init(0, fsqSize, 1).flags(statistics::pdf);
+    commitBlockS1Accuracy = commitBlocksS1Correct / commitBlocks;
+    commitBlockFinalAccuracy = commitBlocksFinalCorrect / commitBlocks;
+    secondBlockCommitAccuracy =
+        (secondBlockCommitted - secondBlockCommitMispred) /
+        secondBlockCommitted;
+    secondBlockCommitByType.init(NumSecondBlockTypes);
+    for (int i = 0; i < NumSecondBlockTypes; ++i) {
+        secondBlockCommitByType.subname(i, SecondBlockTypeLabels[i]);
     }
     for (size_t i = 0; i < NumBranchClasses; ++i) {
         branchClassCounts.subname(i, BranchClassLabels[i]);
@@ -799,6 +875,8 @@ DecoupledBPUWithBTB::updateStatistics(
     dbpBtbStats.commitPredsFromEachStage[target.predSource]++;
     overrideStats(target.overrideReason);
 
+    updateBlockAccuracyStats(target, update);
+
     // --- Instruction Statistics ---
     // Track committed instruction counts
     dbpBtbStats.commitFsqEntryHasInsts.sample(target.commitInstNum, 1);
@@ -839,6 +917,54 @@ DecoupledBPUWithBTB::updateStatistics(
         } else {
             find_it_hist->second++;
         }
+    }
+}
+
+void
+DecoupledBPUWithBTB::updateBlockAccuracyStats(
+    const FetchTarget &target, const PreparedUpdate &update)
+{
+    const auto &branches = update.branches;
+    const bool finalCorrect = std::none_of(
+        branches.begin(), branches.end(),
+        [](const BranchOutcome &branch) { return branch.mispredicted; });
+
+    // S1 matched the final prediction when there was no override; second
+    // blocks are predicted by PairTAGE alone.
+    bool s1Correct = finalCorrect;
+    if (!target.isSecondBlock && target.predSource != 0) {
+        const auto taken = std::find_if(
+            branches.begin(), branches.end(),
+            [](const BranchOutcome &branch) { return branch.taken; });
+        if (taken != branches.end()) {
+            s1Correct = target.s1PredTaken &&
+                        target.s1PredBranchPC == taken->pc &&
+                        target.s1PredTarget == taken->target;
+        } else if (finalCorrect || branches.empty()) {
+            s1Correct = !target.s1PredTaken;
+        } else {
+            // Only the region up to the mispredicted not-taken branch is
+            // known; an S1 exit beyond it is not contradicted.
+            s1Correct = !target.s1PredTaken ||
+                        target.s1PredBranchPC > branches.back().pc;
+        }
+    }
+
+    dbpBtbStats.commitBlocks++;
+    if (s1Correct) {
+        dbpBtbStats.commitBlocksS1Correct++;
+    }
+    if (finalCorrect) {
+        dbpBtbStats.commitBlocksFinalCorrect++;
+    }
+
+    if (target.isSecondBlock) {
+        dbpBtbStats.secondBlockCommitted++;
+        if (!finalCorrect) {
+            dbpBtbStats.secondBlockCommitMispred++;
+        }
+        dbpBtbStats.secondBlockCommitByType[
+            secondBlockTypeBucket(branches)]++;
     }
 }
 
@@ -924,7 +1050,10 @@ DecoupledBPUWithBTB::commitPredWrongSource(
     } else if (s1PredSource == abtbid) {
         dbpBtbStats.s1PredWrongAbtb++;
         s1SourceBucket = 2;
-    }else {
+    } else if (pairtage->isEnabled() &&
+               s1PredSource == pairtage->getComponentIdx()) {
+        s1SourceBucket = 3;
+    } else {
         dbpBtbStats.s1PredWrongFallthrough++;
     }
 

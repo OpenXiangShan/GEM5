@@ -1252,3 +1252,6 @@ class DecoupledBPUWithBTB(BranchPredictor):
 
     bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
     resolveBlockThreshold = Param.Unsigned(8, "Consecutive resolve dequeue failures before blocking prediction once")
+    idealTwoTaken = Param.Bool(False,
+        "Upper-bound evaluation: run a second full prediction in the same "
+        "BPU tick after the first block is enqueued")

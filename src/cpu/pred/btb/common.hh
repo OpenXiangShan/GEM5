@@ -366,6 +366,12 @@ struct FetchTarget
     int s1Source; // which stage the prediction comes from
     int s3Source; // which stage the prediction comes from
 
+    // S1 prediction exit, compared with the committed outcome (profiling)
+    bool s1PredTaken;
+    Addr s1PredBranchPC;
+    Addr s1PredTarget;
+    bool isSecondBlock; // enqueued as a PairTAGE second block
+
    FetchTarget()
        : tid(0),
          asidHash(0),
@@ -385,7 +391,11 @@ struct FetchTarget
          fetchInstNum(0),
          commitInstNum(0),
          s1Source(-1),
-         s3Source(-1)
+         s3Source(-1),
+         s1PredTaken(false),
+         s1PredBranchPC(0),
+         s1PredTarget(0),
+         isSecondBlock(false)
    {
        predMetas.fill(nullptr);
    }
@@ -613,6 +623,10 @@ struct FullBTBPrediction
     //only use for countering the source of the prediction
     int s1Source;
     int s3Source;
+    // S1 (stage 0) prediction exit, recorded before stage preds are cleared
+    bool s1Taken;
+    Addr s1BranchPC;
+    Addr s1Target;
     FullBTBPrediction() :
         tid(0),
         asidHash(0),
@@ -626,7 +640,10 @@ struct FullBTBPrediction
         overrideReason(OverrideReason::NO_OVERRIDE),
         predTick(0),
         s1Source(-1),
-        s3Source(-1) {}
+        s3Source(-1),
+        s1Taken(false),
+        s1BranchPC(0),
+        s1Target(0) {}
 
     /**
      * Combine a supplemental BTB layout with an authoritative predicted exit.
