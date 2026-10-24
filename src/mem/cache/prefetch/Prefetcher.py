@@ -969,7 +969,7 @@ class XSPhysicalSmallBOP(BOPPrefetcher):
     student_filter_entries = 2048
     student_hash_mode = "splitmix"
     student_hash_count = 1
-    student_large_offset_priority_enable = False
+    student_large_offset_priority_enable = True
     student_large_offset_priority_coeff = 0.99
     student_delay_queue_enable = False
     student_delay_queue_size = 16
