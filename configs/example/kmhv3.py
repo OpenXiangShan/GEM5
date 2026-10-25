@@ -63,7 +63,7 @@ def setKmhV3Params(args, system):
         setPtwLevelLimitParams(args, cpu.mmu.dtb)
         cpu.fetchWidth = 32
         cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
-        cpu.commitToFetchDelay = 2
+        cpu.commitToFetchDelay = 1
         cpu.fetchQueueSize = 64
         predecode_enabled = not getattr(args, "enable_trace_mode", False)
         cpu.enablePredecode = predecode_enabled
@@ -95,6 +95,8 @@ def setKmhV3Params(args, system):
             cpu.scheduler = KMHV3Scheduler()
             for iq in cpu.scheduler.IQs[:13]:
                 iq.scheduleToExecDelay = 1
+            for iq in cpu.scheduler.IQs[13:17]:
+                iq.size = 24
 
         cpu.scheduler.disableAllRegArb()
         for iq in cpu.scheduler.IQs:
@@ -203,6 +205,7 @@ def setKmhV3Params(args, system):
             cpu.branchPred.mbtb.enabled = True
             cpu.branchPred.tage.enabled = True
             cpu.branchPred.tage.tableSizes = [8192] * 8
+            cpu.branchPred.tage.numWays = [8] * 8
             cpu.branchPred.ittage.enabled = True
             cpu.branchPred.mgsc.enabled = True
             cpu.branchPred.mgsc.enableLTable = True
@@ -240,20 +243,20 @@ def setKmhV3Params(args, system):
                 system.l2_caches[i].replacement_policy = XSDRRIPRP(mode=2, num_sets=4096)
             else:
                 l2_wrapper = system.l2_wrappers[i]
-                l2_wrapper.cache_size = '16MiB'
+                l2_wrapper.cache_size = '32MiB'
                 l2_wrapper.prefetcher.enable_cdp = False
                 l2_wrapper.data_sram_banks = 2
                 l2_wrapper.dir_sram_banks = 2
                 l2_wrapper.pipe_dir_write_stage = 3
                 l2_wrapper.dir_read_bypass = False
                 for j in range(args.l2_slices):
-                    l2_wrapper.slices[j].inner_cache.size = '4MiB'
+                    l2_wrapper.slices[j].inner_cache.size = '8MiB'
                     l2_wrapper.slices[j].inner_cache.wpu = NULL
                     l2_wrapper.slices[j].inner_cache.do_fast_writeline = True
                     l2_wrapper.slices[j].inner_cache.prefetch_can_offload = False
                     # Configure XSDRRIP replacement policy (DRRIP mode)
-                    # Each slice: 16MiB/4 = 4MiB, 8-way, 64B line → 8192 sets
-                    l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=8192)
+                    # Each slice: 32MiB/4 = 8MiB, 8-way, 64B line → 16384 sets
+                    l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=16384)
             system.tol2bus_list[i].forward_latency = 0
             system.tol2bus_list[i].response_latency = 1
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1
@@ -265,6 +268,8 @@ def setKmhV3Params(args, system):
                 LayerBandwidthConfig(direction="req", port_index=0, max_per_cycle=2),
                 LayerBandwidthConfig(direction="resp", port_index=1, max_per_cycle=2),
             ]
+
+    system.tol3bus.snoop_filter.max_capacity = '64MiB'
 
     # l3 cache
     if args.l3cache:
