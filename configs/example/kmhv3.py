@@ -269,10 +269,9 @@ def setKmhV3Params(args, system):
                 LayerBandwidthConfig(direction="resp", port_index=1, max_per_cycle=2),
             ]
 
-    system.tol3bus.snoop_filter.max_capacity = '64MiB'
-
     # l3 cache
     if args.l3cache:
+        system.tol3bus.snoop_filter.max_capacity = '64MiB'
         system.l3.size = '64MiB'
         system.l3.mshrs = 64
         system.l3.do_fast_writeline = True
