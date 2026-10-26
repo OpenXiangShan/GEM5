@@ -18,8 +18,8 @@ CompositeValuePredictorFixedPriorityArb::choose(
     // this table is never selected, even when it is the only candidate.
     constexpr ValuePredType priority[] = {
         ValuePredType::IdealConstantLVP,
-        ValuePredType::EgDiff,
         ValuePredType::EStride,
+        ValuePredType::EgDiff,
     };
 
     for (const auto predictorType : priority) {
