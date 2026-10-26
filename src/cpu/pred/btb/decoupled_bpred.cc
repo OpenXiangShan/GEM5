@@ -270,7 +270,19 @@ DecoupledBPUWithBTB::isThreadActive(ThreadID tid) const
     }
 
     auto *tc = cpu->getContext(tid);
-    return tc && tc->status() == gem5::ThreadContext::Active;
+    return tc && tc->status() == gem5::ThreadContext::Active &&
+        !cpu->isSMTThreadStopping(tid);
+}
+
+void
+DecoupledBPUWithBTB::parkThread(ThreadID tid)
+{
+    // The normal commit squash already recovered speculative history.
+    // The partially consumed final target has no future instructions now.
+    ftq.clear(tid);
+    threads[tid].validprediction = false;
+    threads[tid].redirectPending = false;
+    threads[tid].twoTakenTrainReady = false;
 }
 
 bool
@@ -376,6 +388,10 @@ DecoupledBPUWithBTB::tick()
     dbpBtbStats.predictionsStartedPerCycle.sample(predictionsStarted);
 
     for (int tid = 0; tid < numThreads; tid++) {
+        if (cpu && cpu->isSMTThreadStopping(tid)) {
+            threads[tid].validprediction = false;
+            continue;
+        }
         processNewPrediction(tid);
 
         // Decrement override bubbles counter

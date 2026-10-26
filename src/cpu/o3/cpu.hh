@@ -43,6 +43,7 @@
 #ifndef __CPU_O3_CPU_HH__
 #define __CPU_O3_CPU_HH__
 
+#include <array>
 #include <iostream>
 #include <list>
 #include <queue>
@@ -135,6 +136,14 @@ class CPU : public BaseCPU
 
     bool dump_done = false;
     bool warmup_done = false;
+
+    // Experimental single-active-thread mode. Keep the thread active until
+    // its squash and memory cleanup have finished; preserve its rename maps.
+    enum class SMTThreadParkState { Disabled, Requested, Stopping, Parked };
+    std::array<SMTThreadParkState, MaxThreads> smtThreadParkState{};
+    unsigned smtParkQuietCycles = 0;
+    bool smtParkPending = false;
+    void updateSMTThreadPark();
 
 
     /** The tick event used for scheduling CPU ticks. */
@@ -253,6 +262,24 @@ class CPU : public BaseCPU
 
     /** Update The Order In Which We Process Threads. */
     void updateThreadPriority();
+
+    /** Park T1 after a safe commit boundary, without changing SMT policies. */
+    void requestSMTThreadPark(ThreadID tid);
+    void beginSMTThreadPark(ThreadID tid);
+    bool isSMTThreadParkRequested(ThreadID tid) const
+    {
+        return smtThreadParkState[tid] == SMTThreadParkState::Requested;
+    }
+    bool isSMTThreadStopping(ThreadID tid) const
+    {
+        return smtThreadParkState[tid] == SMTThreadParkState::Stopping ||
+               isSMTThreadParked(tid);
+    }
+    bool isSMTThreadParked(ThreadID tid) const
+    {
+        return smtThreadParkState[tid] == SMTThreadParkState::Parked;
+    }
+    Addr getSMTThreadPC(ThreadID tid);
 
     /** Is the CPU draining? */
     bool isDraining() const { return drainState() == DrainState::Draining; }

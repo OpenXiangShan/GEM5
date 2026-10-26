@@ -1070,6 +1070,24 @@ Fetch::processCacheCompletion(PacketPtr pkt)
     setThreadStatus(tid, Running);
 }
 
+bool
+Fetch::isSMTThreadParkReady(ThreadID tid) const
+{
+    return smtParkSquashSeen[tid] && fetchQueue[tid].empty() &&
+        predecodeStage0[tid].size == 0 && predecodeStage1[tid].size == 0 &&
+        !hasPendingCacheRequests(tid) &&
+        !finishTranslationEvents[tid]->scheduled();
+}
+
+void
+Fetch::finishSMTThreadPark(ThreadID tid)
+{
+    assert(isSMTThreadParkReady(tid));
+    clearResolveQueue(tid);
+    dbpbtb->parkThread(tid);
+    setThreadStatus(tid, Idle);
+}
+
 void
 Fetch::drainResume()
 {
@@ -1754,6 +1772,9 @@ Fetch::initializeTickState()
         // for each thread.
         bool updated_status = checkSignalsAndUpdate(tid);
         status_change =  status_change || updated_status;
+        if (cpu->isSMTThreadStopping(tid) && smtParkSquashSeen[tid]) {
+            setThreadStatus(tid, Idle);
+        }
         if (fromCommit->commitInfo[tid].emptyROB) {
             waitForVsetvl[tid] = false;
         }
@@ -1869,7 +1890,8 @@ Fetch::selectUnstalledThread()
         }
 
         // thread can not candidate has lowest priv, should not be chosen
-        if (stallSig->blockFetch[tid] || fetchQueue[tid].empty()) {
+        if (cpu->isSMTThreadStopping(tid) ||
+            stallSig->blockFetch[tid] || fetchQueue[tid].empty()) {
             smtBorrowThrottleCycles[tid] = 0;
             lsqCounter->setCounter(tid, UINT64_MAX);
             iqCounter->setCounter(tid, UINT64_MAX);
@@ -2063,7 +2085,8 @@ Fetch::sendInstructionsToDecode()
          tid < numThreads && selected_tids.size() < numPreDispatchThreads;
          ++tid) {
         bool block_policy_active = isThrottlePolicyActive();
-        if (tid != primary_tid && !stallSig->blockFetch[tid] &&
+        if (tid != primary_tid && !cpu->isSMTThreadStopping(tid) &&
+            !stallSig->blockFetch[tid] &&
             !fetchQueue[tid].empty() &&
             !(block_policy_active && (mlpAwareMode[tid] ? 
                 mlpThreadFetchThrottled[tid] : threadFetchThrottled[tid]))) {
@@ -2930,6 +2953,9 @@ Fetch::handleCommitSignals(ThreadID tid)
     squash(*fromCommit->commitInfo[tid].pc, squash_seq,
            squash_inst, tid);
 
+    if (cpu->isSMTThreadStopping(tid)) {
+        smtParkSquashSeen[tid] = true;
+    }
     localSquashVer[tid].update(
         fromCommit->commitInfo[tid].squashVersion.getVersion());
     DPRINTF(Fetch, "Updating squash version to %u\n",
@@ -3257,7 +3283,8 @@ Fetch::getEligibleFetchTargetTid(
     std::array<bool, MaxThreads> eligible;
     eligible.fill(true);
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        eligible[tid] = !redirectPending[tid] && !excluded[tid];
+        eligible[tid] = !cpu->isSMTThreadStopping(tid) &&
+            !redirectPending[tid] && !excluded[tid];
         if (fetchStatus[tid] == Idle || fetchStatus[tid] == Blocked ||
             fetchStatus[tid] == TrapPending ||
             fetchStatus[tid] == WaitingCache) {

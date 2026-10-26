@@ -771,6 +771,81 @@ def run(options, root, testsys, cpu_class):
     if exit_event.getCode() != 0:
         print("Simulated exit code not 0! Exit code is", exit_event.getCode())
 
+def run_smt_single_thread(options, testsys, maxtick):
+    """Restore A+A, safely park T1, and count the measurement using T0 only."""
+    import json
+    import os
+
+    cpu = testsys.cpu[0]
+    measure_insts = options.smt_single_thread_measure_insts or options.maxinsts
+    if not measure_insts or measure_insts <= 0:
+        fatal("--smt-single-thread needs --smt-single-thread-measure-insts or --maxinsts > 0")
+    warmup_insts = options.smt_single_thread_warmup_insts
+    if warmup_insts is None:
+        warmup_insts = options.warmup_insts_no_switch or 0
+    report = {"parked_tid": 1, "measured_tid": 0, "num_threads": 2,
+              "checkpoint": str(testsys.gcpt_file),
+              "requested_warmup_insts": warmup_insts,
+              "requested_measurement_insts": measure_insts, "phases": []}
+
+    def snapshot(phase):
+        counts = [int(cpu.getCurrentInstCount(tid)) for tid in range(2)]
+        point = {"phase": phase, "tick": int(m5.curTick()), "insts": counts}
+        report["phases"].append(point)
+        print("SMT single-thread: %s tick=%d T0=%d T1=%d" %
+              (phase, point["tick"], counts[0], counts[1]))
+        return point
+
+    def simulate_until(cause):
+        event = m5.simulate(max(0, maxtick - m5.curTick()))
+        if event.getCause() != cause or event.getCode() != 0:
+            fatal("SMT single-thread expected '%s', got '%s' (code %d)",
+                  cause, event.getCause(), event.getCode())
+        return event
+
+    # Run startup/restorer with both threads present. A count alone does not
+    # prove restoration, so also reject a PC still inside the restorer area.
+    cpu.scheduleInstStop(0, options.smt_park_after_insts,
+                         "SMT single-thread restore boundary")
+    simulate_until("SMT single-thread restore boundary")
+    if testsys.restore_from_gcpt and not options.raw_cpt:
+        restorer_start = int(testsys.mem_ranges[0].start)
+        restorer_end = restorer_start + int(testsys.gcpt_restorer_size_limit)
+        for tid in range(2):
+            pc = int(cpu.getSMTThreadPC(tid))
+            if restorer_start <= pc < restorer_end:
+                fatal("T%d PC %#x is still in the restorer; increase --smt-park-after-insts",
+                      tid, pc)
+    snapshot("park_requested")
+    cpu.requestSMTThreadPark(1)
+    simulate_until("SMT thread parked")
+    if not cpu.isSMTThreadParked(1):
+        fatal("T1 did not enter the parked state")
+    parked = snapshot("parked")
+
+    if warmup_insts:
+        cpu.scheduleInstStop(0, warmup_insts,
+                             "SMT single-thread warmup complete")
+        simulate_until("SMT single-thread warmup complete")
+    start = snapshot("measurement_start")
+    if start["insts"][1] != parked["insts"][1]:
+        fatal("T1 committed instructions during the single-thread warmup")
+    m5.stats.reset()
+    cpu.scheduleInstStop(0, measure_insts, "SMT single-thread measurement complete")
+    event = simulate_until("SMT single-thread measurement complete")
+    end = snapshot("measurement_end")
+    if end["insts"][1] != parked["insts"][1] or not cpu.isSMTThreadParked(1):
+        fatal("T1 resumed during the single-thread measurement")
+    report["measurement_insts"] = [
+        end["insts"][tid] - start["insts"][tid] for tid in range(2)]
+    report["measurement_ticks"] = end["tick"] - start["tick"]
+    m5.stats.dump()
+    with open(os.path.join(m5.options.outdir, "smt-single-thread.json"), "w") as stream:
+        json.dump(report, stream, indent=2)
+        stream.write("\n")
+    return event
+
+
 def run_vanilla(options, root, testsys, cpu_class):
     # Setup global stat filtering.
     stat_root_simobjs = []
@@ -781,7 +856,11 @@ def run_vanilla(options, root, testsys, cpu_class):
     np = options.num_cpus
     switch_cpus = None
 
-    if options.maxinsts:
+    single_thread = getattr(options, "smt_single_thread", False)
+    if single_thread and (np != 1 or int(testsys.cpu[0].numThreads) != 2 or cpu_class):
+        fatal("--smt-single-thread requires one two-thread O3 CPU without switching")
+
+    if options.maxinsts and not single_thread:
         for i in range(np):
             testsys.cpu[i].max_insts_any_thread = options.maxinsts
 
@@ -816,7 +895,7 @@ def run_vanilla(options, root, testsys, cpu_class):
         print("No switch cpu_class provided")
 
     for i in range(np):
-        if options.warmup_insts_no_switch != None:
+        if options.warmup_insts_no_switch != None and not single_thread:
             testsys.cpu[i].warmupInstCount = options.warmup_insts_no_switch
 
     checkpoint_dir = None
@@ -847,7 +926,10 @@ def run_vanilla(options, root, testsys, cpu_class):
 
     # If checkpoints are being taken, then the checkpoint instruction
     # will occur in the benchmark code it self.
-    exit_event = benchCheckpoints(testsys, options, maxtick, cptdir=None)
+    if single_thread:
+        exit_event = run_smt_single_thread(options, testsys, maxtick)
+    else:
+        exit_event = benchCheckpoints(testsys, options, maxtick, cptdir=None)
 
     print('Exiting @ tick %i because %s' %
           (m5.curTick(), exit_event.getCause()))

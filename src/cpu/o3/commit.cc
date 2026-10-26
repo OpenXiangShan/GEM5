@@ -1944,6 +1944,16 @@ Commit::commitInsts()
                             traceOnMacroCommit(tid);
                         }
 
+                    if (cpu->isSMTThreadParkRequested(tid) &&
+                        (!head_inst->isMicroop() ||
+                         head_inst->isLastMicroop()) &&
+                        pc[tid]->microPC() == 0 && interrupt == NoFault &&
+                        !thread[tid]->trapPending &&
+                        !executingHtmTransaction(tid)) {
+                        squashAfter(tid, head_inst);
+                        cpu->beginSMTThreadPark(tid);
+                    }
+
                     // Check if an instruction just enabled interrupts and we've
                     // previously had an interrupt pending that was not handled
                     // because interrupts were subsequently disabled before the

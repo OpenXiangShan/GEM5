@@ -70,6 +70,7 @@
 #include "sim/cur_tick.hh"
 #include "sim/full_system.hh"
 #include "sim/process.hh"
+#include "sim/sim_exit.hh"
 #include "sim/stat_control.hh"
 #include "sim/system.hh"
 
@@ -656,6 +657,10 @@ CPU::tick()
         cleanUpRemovedInsts();
     }
 
+    if (smtParkPending) {
+        updateSMTThreadPark();
+    }
+
     if (!tickEvent.scheduled()) {
         if (_status == SwitchedOut) {
             DPRINTF(O3CPU, "Switched out!\n");
@@ -777,6 +782,11 @@ void
 CPU::activateContext(ThreadID tid)
 {
     assert(!switchedOut());
+    if (isSMTThreadParked(tid)) {
+        // ThreadContext::activate() sets Active before calling us.
+        thread[tid]->setStatus(gem5::ThreadContext::Suspended);
+        return;
+    }
 
     // Needs to set each stage to running as well.
     activateThread(tid);
@@ -829,6 +839,77 @@ CPU::suspendContext(ThreadID tid)
     DPRINTF(Quiesce, "Suspending Context\n");
 
     BaseCPU::suspendContext(tid);
+}
+
+Addr
+CPU::getSMTThreadPC(ThreadID tid)
+{
+    fatal_if(tid >= numThreads, "Invalid SMT thread id %u", tid);
+    return pcState(tid).instAddr();
+}
+
+void
+CPU::requestSMTThreadPark(ThreadID tid)
+{
+    fatal_if(numThreads != 2 || tid != 1,
+             "SMT single-thread experiment requires two threads and parks T1");
+    fatal_if(isDraining() || drainState() == DrainState::Drained,
+             "Cannot request SMT thread parking during drain");
+    fatal_if(smtThreadParkState[tid] != SMTThreadParkState::Disabled ||
+             thread[tid]->status() != gem5::ThreadContext::Active,
+             "SMT thread %u is already stopping or inactive", tid);
+    smtThreadParkState[tid] = SMTThreadParkState::Requested;
+    smtParkPending = true;
+    smtParkQuietCycles = 0;
+    inform("SMT park requested: tid=%u committed=%llu PC=%#lx", tid,
+           thread[tid]->numInst, getSMTThreadPC(tid));
+    wakeCPU();
+    activityThisCycle();
+}
+
+void
+CPU::beginSMTThreadPark(ThreadID tid)
+{
+    assert(isSMTThreadParkRequested(tid));
+    smtThreadParkState[tid] = SMTThreadParkState::Stopping;
+}
+
+void
+CPU::updateSMTThreadPark()
+{
+    const ThreadID tid = 1;
+    activityThisCycle();
+    if (smtThreadParkState[tid] != SMTThreadParkState::Stopping) {
+        return;
+    }
+
+    // Flush committed stores before removing T1 from the lists that drive
+    // LSQ progress. A suspended thread keeps its architectural registers.
+    const bool stores_done = iew.flushStores(tid);
+    const bool insts_left = std::any_of(
+        instList.begin(), instList.end(), [tid](const DynInstPtr &inst) {
+            return inst->threadNumber == tid;
+        });
+    if (insts_left || !rob.isEmpty(tid) ||
+        iew.ldstQueue.getCount(tid) != 0 || !stores_done ||
+        !fetch.isSMTThreadParkReady(tid)) {
+        smtParkQuietCycles = 0;
+        return;
+    }
+
+    // Let the bounded inter-stage buffers consume remaining squash/commit
+    // feedback before dropping the final speculative FTQ entry.
+    if (++smtParkQuietCycles <= static_cast<unsigned>(timeBuffer.getSize())) {
+        return;
+    }
+    fetch.finishSMTThreadPark(tid);
+    threadContexts[tid]->suspend();
+    assert(thread[tid]->status() == gem5::ThreadContext::Suspended);
+    smtThreadParkState[tid] = SMTThreadParkState::Parked;
+    smtParkPending = false;
+    inform("SMT thread parked: tid=%u committed=%llu activeThreads=%u", tid,
+           thread[tid]->numInst, numActiveThreads());
+    exitSimLoop("SMT thread parked");
 }
 
 void
@@ -1675,6 +1756,9 @@ CPU::wakeCPU()
 void
 CPU::wakeup(ThreadID tid)
 {
+    if (isSMTThreadParked(tid)) {
+        return;
+    }
     if (thread[tid]->status() != gem5::ThreadContext::Suspended)
         return;
 

@@ -352,6 +352,10 @@ class Fetch
     /** Processes cache completion event. */
     void processCacheCompletion(PacketPtr pkt);
 
+    /** Check/finalize the frontend after a requested thread park squash. */
+    bool isSMTThreadParkReady(ThreadID tid) const;
+    void finishSMTThreadPark(ThreadID tid);
+
     /** Resume after a drain. */
     void drainResume();
 
@@ -1082,6 +1086,9 @@ class Fetch
 
     /** The size of the fetch queue in micro-ops */
     unsigned fetchQueueSize;
+
+    /** A commit squash has reached fetch for the parking thread. */
+    std::array<bool, MaxThreads> smtParkSquashSeen{};
 
     /** Queue of fetched instructions. Per-thread to prevent HoL blocking. */
     std::deque<DynInstPtr> fetchQueue[MaxThreads];

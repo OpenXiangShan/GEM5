@@ -1161,10 +1161,36 @@ def xiangshan_system_init():
         help="SMT IQ watermark for fpIQ/vecIQ (entries reserved per thread)",
     )
 
+    parser.add_argument(
+        "--smt-single-thread", action="store_true",
+        help="Restore A+A, park T1 safely, then measure only T0",
+    )
+    parser.add_argument(
+        "--smt-park-after-insts", type=int, default=1000000,
+        help="T0 instructions before requesting T1 parking (includes restorer)",
+    )
+    parser.add_argument(
+        "--smt-single-thread-warmup-insts", type=int, default=None,
+        help="T0 warmup after T1 parking; defaults to --warmup-insts-no-switch or 0",
+    )
+    parser.add_argument(
+        "--smt-single-thread-measure-insts", type=int, default=None,
+        help="T0 measurement instructions after warmup; defaults to --maxinsts",
+    )
+
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:
         Ruby.define_options(parser)
     args = parser.parse_args()
+    if args.smt_single_thread:
+        for name in ("smt_park_after_insts", "smt_single_thread_warmup_insts"):
+            if getattr(args, name) is not None and getattr(args, name) < 0:
+                parser.error("--" + name.replace("_", "-") + " must be >= 0")
+        if args.smt_single_thread_measure_insts is not None and \
+                args.smt_single_thread_measure_insts <= 0:
+            parser.error("--smt-single-thread-measure-insts must be > 0")
+        if args.num_cpus != 1 or args.enable_spmt:
+            parser.error("--smt-single-thread requires one CPU without SpMT")
 
     # Validate MLP-aware policy combinations before CPU construction:
     # MlpAwarePolicy needs its predictor and a non-BaseLine fetch block

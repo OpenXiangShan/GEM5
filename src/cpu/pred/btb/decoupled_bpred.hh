@@ -66,6 +66,8 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     DecoupledBPUWithBTB(const Params &params);
 
+    void parkThread(ThreadID tid);
+
   private:
     // FSQ storage: a simple FIFO queue with implicit IDs (baseId + index),
     // which is closer to RTL than std::map and makes "head" explicit.
