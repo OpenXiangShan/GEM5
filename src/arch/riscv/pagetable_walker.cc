@@ -618,19 +618,42 @@ Walker::WalkerState::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *trans
                                  BaseMMU::Mode _mode, bool from_l2tlb, Addr asid, bool from_forward_pre_req,
                                  bool from_back_pre_req)
 {
+    const bool isExistingTwoStage = (translateMode == twoStageMode); // same with "mainReq->get_two_stage_state()"
+    const bool isIncomingTwoStage = req->get_two_stage_state();
 
-    SATP _satp = _tc->readMiscReg(MISCREG_SATP);
+    if (isExistingTwoStage != isIncomingTwoStage) {
+        return std::make_pair(false, NoFault);
+    }
+
+    const bool two_stage_resume_match =
+        !isExistingTwoStage ||
+        ((mainReq->get_h_gstage() == req->get_h_gstage()) &&
+         (mainReq->get_finish_gva() == req->get_finish_gva()));
+
+    if (!two_stage_resume_match) {
+        return std::make_pair(false, NoFault);
+    }
+
     bool priv_match;
-    if (from_l2tlb) {
-        priv_match = mode == _mode && satp == _satp &&
-                     pmode == walker->tlb->getMemPriv(_tc, _mode) &&
-                     status == _tc->readMiscReg(MISCREG_STATUS) &&
-                     satp.asid == asid;
+    if (isExistingTwoStage) {
+        SATP _vsatp = _tc->readMiscReg(MISCREG_VSATP);
+        HGATP _hgatp = _tc->readMiscReg(MISCREG_HGATP);
 
+        priv_match = mode == _mode && vsatp == _vsatp && hgatp == _hgatp &&
+                    pmode == static_cast<PrivilegeMode>(
+                              req->get_twoStageTranslateMode()) &&
+                    status == _tc->readMiscReg(MISCREG_STATUS) &&
+                    vsstatus == _tc->readMiscReg(MISCREG_VSSTATUS) &&
+                    isHInst == req->get_h_inst();
     } else {
+        SATP _satp = _tc->readMiscReg(MISCREG_SATP);
+
         priv_match = mode == _mode && satp == _satp &&
-                     pmode == walker->tlb->getMemPriv(_tc, _mode) &&
-                     status == _tc->readMiscReg(MISCREG_STATUS);
+                    pmode == walker->tlb->getMemPriv(_tc, _mode) &&
+                    status == _tc->readMiscReg(MISCREG_STATUS);
+        if (from_l2tlb) {
+            priv_match = priv_match && satp.asid == asid;
+        }
     }
 
     bool addr_match;
@@ -2530,19 +2553,16 @@ Walker::WalkerState::pageFaultOnRequestor(RequestorState &r, bool G)
 {
     Addr gpaddr = mainReq->getgPaddr();
     Addr page_start = (entry.vaddr >> PageShift) << PageShift;
-    if (G && (gpaddrMode == 0) && isVsatp0Mode) {
-        Addr vaddr = 0;
+    const bool target_gpa_fault = G && (finishGVA || isVsatp0Mode);
+    if (target_gpa_fault) {
+        Addr vaddr = r.req->getVaddr();
         if (r.req->isInstFetch()) {
-            if (r.req->getPC() < page_start) {
-                vaddr = page_start;
-            } else {
-                vaddr = r.req->getPC();
-            }
-
-        } else {
-            vaddr = r.req->getVaddr();
+            const Addr pc = r.req->getPC();
+            vaddr = pc < page_start ? page_start : pc;
         }
-        gpaddr = ((mainReq->getgPaddr() >> 12) << 12) | (vaddr & 0xfff);
+        const Addr page_offset_mask = mask(PageShift);
+        gpaddr = (gpaddr & ~page_offset_mask) |
+                 (vaddr & page_offset_mask);
     }
     if (r.req->isInstFetch()) {
         if (r.req->getPC() < page_start) {
