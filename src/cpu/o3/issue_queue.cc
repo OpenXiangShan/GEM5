@@ -26,6 +26,7 @@
 #include "debug/Dispatch.hh"
 #include "debug/FpWakeup.hh"
 #include "debug/Schedule.hh"
+#include "enums/FpLoadM4Policy.hh"
 #include "enums/FpWakeupMode.hh"
 #include "enums/OpClass.hh"
 #include "params/BaseO3CPU.hh"
@@ -1685,6 +1686,36 @@ Scheduler::SchedulerStats::SchedulerStats(statistics::Group* parent)
       ADD_STAT(fpReplays, statistics::units::Count::get(), "Cancelled FP execution attempts"),
       ADD_STAT(fpWbConflicts, statistics::units::Count::get(), "FP result/output and writeback slot conflicts"),
       ADD_STAT(fpDividerStalls, statistics::units::Count::get(), "Shared FP DIV/SQRT busy FU admission rejections"),
+      ADD_STAT(fpLoadM4Allowed, statistics::units::Count::get(),
+               "Initial load M4 decisions allowed"),
+      ADD_STAT(fpLoadM4Suppressed, statistics::units::Count::get(),
+               "Initial load M4 decisions suppressed"),
+      ADD_STAT(fpLoadM4Cold, statistics::units::Count::get(),
+               "Cold PC table allocations"),
+      ADD_STAT(fpLoadM4Replacements, statistics::units::Count::get(),
+               "Load M4 PC table replacements"),
+      ADD_STAT(fpLoadM4Success, statistics::units::Count::get(),
+               "Successful first native FP load attempts"),
+      ADD_STAT(fpLoadM4Failure, statistics::units::Count::get(),
+               "Replayed first native FP load attempts"),
+      ADD_STAT(fpLoadM4Aborted, statistics::units::Count::get(),
+               "Squashed, faulted or invalid load samples"),
+      ADD_STAT(fpLoadM4OffSuccess, statistics::units::Count::get(),
+               "Success feedback from M4-suppressed loads"),
+      ADD_STAT(fpLoadM4StaleFeedback, statistics::units::Count::get(),
+               "Feedback dropped after PC table replacement"),
+      ADD_STAT(fpLoadM4EnabledTransitions, statistics::units::Count::get(),
+               "Adaptive disabled to enabled transitions"),
+      ADD_STAT(fpLoadM4DisabledTransitions, statistics::units::Count::get(),
+               "Adaptive enabled to disabled transitions"),
+      ADD_STAT(fpLoadM4PendingSamples, statistics::units::Count::get(),
+               "Unresolved first load samples"),
+      ADD_STAT(fpLoadM4PendingPeak, statistics::units::Count::get(),
+               "Peak unresolved first load samples since stats reset"),
+      ADD_STAT(fpLoadM4DeadlineFailures, statistics::units::Count::get(),
+               "LSQ-first-success loads with an M4 source deadline failure"),
+      ADD_STAT(fpLoadM4ReplayReasons, statistics::units::Count::get(),
+               "First FP load failures by native replay reason"),
       ADD_STAT(lldpWakeups, statistics::units::Count::get(),
                "IQ source operands successfully woken"),
       ADD_STAT(lldpChains, statistics::units::Count::get(),
@@ -1700,6 +1731,9 @@ Scheduler::SchedulerStats::SchedulerStats(statistics::Group* parent)
       ADD_STAT(lldpArithmeticTypes, statistics::units::Count::get(),
                "Arithmetic operation classes in LLDP chains")
 {
+    fpLoadM4ReplayReasons.init(LdStReplayTypeCount);
+    for (int i = 0; i < LdStReplayTypeCount; ++i)
+        fpLoadM4ReplayReasons.subname(i, load_store_replay_event_str[i]);
     lldpChainLengths.init(1, 64, 1).flags(statistics::nozero);
     lldpArithmeticTypes.init(5).flags(statistics::nozero);
     const char *names[] = {"add_sub", "shift", "logic", "mul_div", "other"};
@@ -1720,9 +1754,24 @@ Scheduler::Scheduler(const SchedulerParams& params)
     : SimObject(params),
       fpWakeEnabled(params.fpWakeupMode == enums::FpWakeupMode::kmhv3),
       fpLoadM4Enabled(params.fpLoadM4Enabled),
+      fpLoadM4Adaptive(params.fpLoadM4Policy == enums::FpLoadM4Policy::adaptive),
       old_disp(params.useOldDisp),
       intRegfileBanks(params.intRegfileBanks), stats(this), issueQues(params.IQs)
 {
+    panic_if(!params.fpLoadM4Entries ||
+                 (params.fpLoadM4Entries & (params.fpLoadM4Entries - 1)),
+             "fpLoadM4Entries must be a nonzero power of two");
+    panic_if(params.fpLoadM4FailurePenalty < 1 ||
+                 params.fpLoadM4FailurePenalty > 7 ||
+                 params.fpLoadM4EnableThreshold > 7 ||
+                 params.fpLoadM4EnableThreshold <= params.fpLoadM4DisableThreshold,
+             "Invalid load M4 confidence parameters: require penalty 1..7 "
+             "and 0 <= disable < enable <= 7");
+    if (fpWakeEnabled && fpLoadM4Enabled && fpLoadM4Adaptive) {
+        fpLoadM4Predictor = std::make_unique<fpw::LoadM4Predictor>(
+            params.fpLoadM4Entries, params.fpLoadM4FailurePenalty,
+            params.fpLoadM4EnableThreshold, params.fpLoadM4DisableThreshold);
+    }
     dispTable.resize(MaxThreads, std::vector<IQGroup>(enums::OpClass::Num_OpClass));
     opExecTimeTable.resize(enums::OpClass::Num_OpClass, 1);
     opPipelined.resize(enums::OpClass::Num_OpClass, false);
@@ -2775,6 +2824,13 @@ void
 Scheduler::doSquash(SquashInfo squashInfo)
 {
     DPRINTF(Schedule, "doSquash until seqNum %lu\n", squashInfo.squashSn);
+    for (auto it = fpLoadM4Pending.begin(); it != fpLoadM4Pending.end();) {
+        auto inst = (it++)->second;
+        if (inst->threadNumber == squashInfo.squashTid &&
+            inst->seqNum > squashInfo.squashSn) {
+            resolveLoadM4Sample(inst, fpw::LoadM4Outcome::Aborted);
+        }
+    }
     for (auto it : issueQues) {
         it->doSquash(squashInfo);
     }

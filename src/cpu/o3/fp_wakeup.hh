@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include "cpu/o3/fp_load_m4.hh"
 
 namespace gem5
 {
@@ -57,6 +58,8 @@ struct WakeToken
     bool confirmed = false;
     bool dataReady = false;
     bool cancelled = false;
+    // Only the first native attempt owns this observation; replays do not.
+    std::shared_ptr<LoadM4Sample> loadM4Sample;
 
     void confirm();
     void cancel();

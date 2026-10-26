@@ -357,6 +357,13 @@ class Scheduler : public SimObject
     LSQ* lsq;
     const bool fpWakeEnabled;
     const bool fpLoadM4Enabled;
+    const bool fpLoadM4Adaptive;
+    std::unique_ptr<fpw::LoadM4Predictor> fpLoadM4Predictor;
+    // Bounded by in-flight instructions. Retain pending samples through IQ
+    // removal until the LSQ resolves them or squash aborts them.
+    std::map<InstSeqNum, DynInstPtr> fpLoadM4Pending;
+    bool shouldSendLoadM4(const DynInstPtr& inst);
+    void noteLoadM4Deadline(const std::shared_ptr<fpw::WakeToken>& token);
     struct FpWork
     {
         DynInstPtr inst;
@@ -419,6 +426,21 @@ class Scheduler : public SimObject
         statistics::Scalar fpReplays;
         statistics::Scalar fpWbConflicts;
         statistics::Scalar fpDividerStalls;
+        statistics::Scalar fpLoadM4Allowed;
+        statistics::Scalar fpLoadM4Suppressed;
+        statistics::Scalar fpLoadM4Cold;
+        statistics::Scalar fpLoadM4Replacements;
+        statistics::Scalar fpLoadM4Success;
+        statistics::Scalar fpLoadM4Failure;
+        statistics::Scalar fpLoadM4Aborted;
+        statistics::Scalar fpLoadM4OffSuccess;
+        statistics::Scalar fpLoadM4StaleFeedback;
+        statistics::Scalar fpLoadM4EnabledTransitions;
+        statistics::Scalar fpLoadM4DisabledTransitions;
+        statistics::Scalar fpLoadM4PendingSamples;
+        statistics::Scalar fpLoadM4PendingPeak;
+        statistics::Scalar fpLoadM4DeadlineFailures;
+        statistics::Vector fpLoadM4ReplayReasons;
         statistics::Scalar lldpWakeups;
         statistics::Scalar lldpChains;
         statistics::Scalar lldpSingleSrcImmediateArithmetic;
@@ -498,6 +520,9 @@ class Scheduler : public SimObject
     bool fpCanExecute(const DynInstPtr& inst, uint64_t attempt) const;
     void validateFpSources();
     void fpLoadWakeup(const DynInstPtr& inst);
+    void startLoadM4Sample(const DynInstPtr& inst);
+    void resolveLoadM4Sample(const DynInstPtr& inst, fpw::LoadM4Outcome outcome);
+    void resetLoadM4Predictor();
 
     Scheduler(const SchedulerParams& params);
     unsigned getLoadPipeCount() const { return loadPipeCount; }
