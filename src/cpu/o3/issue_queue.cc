@@ -1740,8 +1740,7 @@ Scheduler::tick()
 void
 Scheduler::issueAndSelect()
 {
-    // must wait for all insts was issued
-    latePredictReadyLoads();
+    iew->processLatePredictions();
     for (auto it : issueQues) {
         it->selectInst();
     }
@@ -1770,26 +1769,6 @@ Scheduler::issueAndSelect()
     } else if (instsToFu.size() < intel_fewops) {
         if (lsq->anyStoreNotExecute())
             stats.memstall_any_store++;
-    }
-}
-
-void
-Scheduler::latePredictReadyLoads()
-{
-    std::vector<DynInstPtr> candidates;
-    for (auto *iq : issueQues) {
-        for (const auto &inst : iq->instList) {
-            if (!inst || !inst->canLVP() ||
-                inst->vpApplied || inst->isScheduled() || inst->isIssued() ||
-                inst->isSquashed()) {
-                continue;
-            }
-            candidates.push_back(inst);
-        }
-    }
-
-    for (const auto &inst : candidates) {
-        iew->tryLateValuePrediction(inst);
     }
 }
 

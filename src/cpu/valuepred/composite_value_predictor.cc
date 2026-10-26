@@ -39,7 +39,18 @@ CompositeValuePredictor::CompositeValuePredictor(const Params &params)
         compositeStats.childOffered.subname(i, childName);
         compositeStats.childSelected.subname(i, childName);
         compositeStats.childWouldHaveBeenCorrect.subname(i, childName);
+        const auto childIndex = i;
+        predictors[i]->setLatePredictReadyCallback(
+                [this, childIndex](const VPLatePredictReadyInfo &info) {
+                    DPRINTF(VPCOMMON,
+                            "[VPComposite][late-ready] tid=%u seq=%llu "
+                            "child=%d readyCycle=%llu\n",
+                            info.tid, info.seqNo,
+                            static_cast<int>(childIndex), info.readyCycle);
+                    notifyLatePredictReady(info);
+                });
     }
+
 }
 
 VPPredictionCandidate

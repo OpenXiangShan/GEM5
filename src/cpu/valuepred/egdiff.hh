@@ -86,6 +86,8 @@ class EgDiff : public VPUnit
          * GVQs.
          */
         std::map<uint64_t, HistoryEntry> history;
+        // Targets waiting for a value from each base ordinal.
+        std::map<uint64_t, std::vector<uint64_t>> deferredWaiters;
     };
 
     struct LastMispActivation
@@ -131,6 +133,9 @@ class EgDiff : public VPUnit
     void makeSpecValueAvailable(ThreadState &state, ThreadID tid,
             HistoryEntry &base, RegVal value, ValueSource source,
             uint64_t cycle);
+    void notifyReady(ThreadID tid, const HistoryEntry &target);
+    void removeDeferredWaiter(ThreadState &state, uint64_t baseOrdinal,
+            uint64_t targetOrdinal);
     void wakeDeferred(ThreadState &state, ThreadID tid,
             HistoryEntry &base, uint64_t cycle);
     void pruneHistory(ThreadState &state, ThreadID tid);

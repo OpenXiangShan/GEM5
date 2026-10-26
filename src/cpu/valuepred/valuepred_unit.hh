@@ -1,8 +1,10 @@
 #ifndef __VALUEPRED_UNIT_HH__
 #define __VALUEPRED_UNIT_HH__
 
+#include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "base/statistics.hh"
 #include "base/types.hh"
@@ -18,8 +20,6 @@ namespace gem5
 namespace valuepred
 {
 
-
-
 class VPUnit : public SimObject
 {
   private:
@@ -28,10 +28,22 @@ class VPUnit : public SimObject
   protected:
     const unsigned numThreads;
 
+    using LatePredictReadyCallback =
+        std::function<void(const VPLatePredictReadyInfo &)>;
+
+    LatePredictReadyCallback latePredictReadyCallback;
+
+    void notifyLatePredictReady(const VPLatePredictReadyInfo &info);
     void assertValidTid(ThreadID tid) const;
 
   public:
     VPUnit(const Params &params);
+
+    void setLatePredictReadyCallback(
+            std::function<void(const VPLatePredictReadyInfo &)> callback)
+    {
+        latePredictReadyCallback = std::move(callback);
+    }
 
     std::string name() const { return "valuePredict.base"; }
 

@@ -1,6 +1,7 @@
 #ifndef __VALUEPRED_METADATA_HH_
 #define __VALUEPRED_METADATA_HH_
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -158,6 +159,15 @@ class VPLatePredictRequest
     uint64_t seqNo = 0;
     ThreadID tid = 0;
     uint64_t cycle = 0;
+};
+
+class VPLatePredictReadyInfo
+{
+  public:
+    Addr pc = 0;
+    uint64_t seqNo = 0;
+    ThreadID tid = 0;
+    uint64_t readyCycle = 0;
 };
 
 class VPValueAvailableInfo

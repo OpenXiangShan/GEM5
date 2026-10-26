@@ -309,3 +309,11 @@ cpu.valuePred = CompositeValuePredictor(
 8. `src/cpu/valuepred/example_value_predictor.cc`
 
 看完这一圈，通常就已经能在当前框架上加一个新的 direct-value predictor 了。
+
+## 8. Late value prediction 的事件驱动集成
+
+late value prediction 的依赖跟踪和 ready 状态属于具体 predictor。以 EgDiff 为例，`dispatch()` 记录 target 与 base load 的 ordinal 依赖及训练得到的差值；base load 通过 `valueAvailable()` 或 `predictionApplied()` 提供值后，EgDiff 只访问该 base 的 waiter 列表，并在模拟延迟到期时通过 `VPUnit` 的 late-ready hook 报告 `(tid, seqNo, pc, readyCycle)`。
+
+IEW 接收这个算法无关的通知，维护动态指令索引、按 cycle 排序的共享事件和到期待处理集合。事件回调只唤醒 IEW；真正的 `latePredict()` 仍在 `Scheduler::issueAndSelect()` 的 IQ 选择前执行，因此 Composite 仍收集所有 child 候选并负责 arbitration，同时保留 late-prediction latency、speculative wakeup 和 `predictionApplied()` 回调。
+
+目标尚未进入 IQ、已经被 schedule、完成、取消或被 squash 时，IEW 会保留或清理对应状态。通知交付前会核对动态指令的 thread、sequence number 和 PC；predictor 的 waiter 也会在 value available、prune 和 squash 时解除，避免 stale event 影响重放指令。该路径不再每周期扫描所有 IQ entry。
