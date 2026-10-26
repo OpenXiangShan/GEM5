@@ -135,6 +135,8 @@ jobs:
 
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 fast
+        env:
+          build_threads: 24
         run: |
           export GEM5_HOME=$(pwd)
           # PGO always uses a single-core raw CoreMark image.
