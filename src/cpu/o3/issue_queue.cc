@@ -1742,8 +1742,7 @@ Scheduler::tick()
 void
 Scheduler::issueAndSelect()
 {
-    // must wait for all insts was issued
-    latePredictReadyLoads();
+    iew->processLatePredictions();
     for (auto it : issueQues) {
         it->selectInst();
     }
@@ -1779,26 +1778,6 @@ Scheduler::issueAndSelect()
  * Collect eligible unissued loads and ask IEW to apply late predictions.
  * Snapshot the candidates before prediction can wake dependent instructions.
  */
-void
-Scheduler::latePredictReadyLoads()
-{
-    std::vector<DynInstPtr> candidates;
-    for (auto *iq : issueQues) {
-        for (const auto &inst : iq->instList) {
-            if (!inst || !inst->canLVP() ||
-                inst->vpApplied || inst->isScheduled() || inst->isIssued() ||
-                inst->isSquashed()) {
-                continue;
-            }
-            candidates.push_back(inst);
-        }
-    }
-
-    for (const auto &inst : candidates) {
-        iew->tryLateValuePrediction(inst);
-    }
-}
-
 void
 Scheduler::lookahead(std::deque<DynInstPtr>& insts)
 {

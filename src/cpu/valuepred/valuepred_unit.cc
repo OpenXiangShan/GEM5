@@ -27,6 +27,14 @@ VPUnit::assertValidTid(ThreadID tid) const
                 name().c_str(), static_cast<unsigned>(tid), numThreads);
 }
 
+void
+VPUnit::notifyLatePredictReady(const VPLatePredictReadyInfo &info)
+{
+    if (latePredictReadyCallback) {
+        latePredictReadyCallback(info);
+    }
+}
+
 VPResult
 VPUnit::valuePredict(const VPPredictRequest &request,
         std::unique_ptr<VPPredictionRecord> &record)

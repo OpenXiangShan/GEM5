@@ -48,6 +48,7 @@
 #include <algorithm>
 #include <cassert>
 #include <queue>
+#include <tuple>
 
 #include "arch/riscv/pcstate.hh"
 #include "base/output.hh"
@@ -84,6 +85,8 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
     : dqSize(params.numDQEntries),
       issueToExecQueue(params.backComSize, params.forwardComSize),
       valuePred(params.valuePred),
+      latePredictionEvent([this]() { processLatePredictionEvent(); },
+                          "iew.latePredictionEvent"),
       enableSelectiveVPFlush(params.enableSelectiveVPFlush),
       cpu(_cpu),
       scheduler(params.scheduler),
@@ -151,6 +154,13 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
     skidBufferMax = (renameToIEWDelay + 1) * params.renameWidth * 2;
 
     dispatchStalls.resize(renameWidth, StallReason::NoStall);
+
+    if (valuePred) {
+        valuePred->setLatePredictReadyCallback(
+                [this](const valuepred::VPLatePredictReadyInfo &info) {
+                    latePredictionReady(info);
+                });
+    }
 
 }
 
@@ -477,6 +487,16 @@ IEW::startupStage()
 void
 IEW::clearStates(ThreadID tid)
 {
+    std::vector<DynInstPtr> lateTargets;
+    for (const auto &[key, inst] : latePredictionTargets) {
+        if (key.tid == tid) {
+            lateTargets.push_back(inst);
+        }
+    }
+    for (const auto &inst : lateTargets) {
+        unregisterLatePrediction(inst);
+    }
+
     for (auto it = delayedVectorMemCompletionQ.begin();
          it != delayedVectorMemCompletionQ.end();) {
         const auto &inst = it->inst;
@@ -569,11 +589,141 @@ IEW::lvpWakeDependents(const DynInstPtr &inst) {
  * that has not already received a prediction.
  */
 void
+IEW::registerLatePrediction(const DynInstPtr &inst)
+{
+    if (!inst || !inst->canLVP()) {
+        return;
+    }
+    const LatePredictionKey key{inst->threadNumber, inst->seqNum};
+    auto old = latePredictionTargets.find(key);
+    if (old != latePredictionTargets.end() && old->second != inst) {
+        unregisterLatePrediction(old->second);
+    }
+    latePredictionTargets[key] = inst;
+}
+
+void
+IEW::unregisterLatePrediction(const DynInstPtr &inst)
+{
+    if (!inst) {
+        return;
+    }
+    const LatePredictionKey key{inst->threadNumber, inst->seqNum};
+    latePredictionTargets.erase(key);
+    auto cycleIt = latePredictionCycles.find(key);
+    if (cycleIt != latePredictionCycles.end()) {
+        auto bucketIt = latePredictionByCycle.find(cycleIt->second);
+        if (bucketIt != latePredictionByCycle.end()) {
+            bucketIt->second.erase(key);
+            if (bucketIt->second.empty()) {
+                latePredictionByCycle.erase(bucketIt);
+            }
+        }
+        latePredictionCycles.erase(cycleIt);
+    }
+    latePredictionReady.erase(key);
+    if (latePredictionByCycle.empty() && latePredictionEvent.scheduled()) {
+        cpu->deschedule(latePredictionEvent);
+    }
+}
+
+void
+IEW::latePredictionReady(const valuepred::VPLatePredictReadyInfo &info)
+{
+    const LatePredictionKey key{info.tid, info.seqNo};
+    auto target = latePredictionTargets.find(key);
+    if (target == latePredictionTargets.end() || !target->second ||
+        target->second->getPC() != info.pc) {
+        return;
+    }
+    auto old = latePredictionCycles.find(key);
+    if (old != latePredictionCycles.end() && old->second != info.readyCycle) {
+        auto bucket = latePredictionByCycle.find(old->second);
+        if (bucket != latePredictionByCycle.end()) {
+            bucket->second.erase(key);
+            if (bucket->second.empty()) {
+                latePredictionByCycle.erase(bucket);
+            }
+        }
+    }
+    latePredictionCycles[key] = info.readyCycle;
+    latePredictionByCycle[info.readyCycle].insert(key);
+    const uint64_t currentCycle = static_cast<uint64_t>(cpu->curCycle());
+    const Cycles delay = info.readyCycle > currentCycle ?
+        Cycles(info.readyCycle - currentCycle) : Cycles(0);
+    const Tick when = cpu->clockEdge(delay);
+    if (!latePredictionEvent.scheduled() ||
+        when < latePredictionEvent.when()) {
+        if (latePredictionEvent.scheduled()) {
+            cpu->reschedule(latePredictionEvent, when, true);
+        } else {
+            cpu->schedule(latePredictionEvent, when);
+        }
+    }
+}
+
+void
+IEW::processLatePredictionEvent()
+{
+    const uint64_t cycle = static_cast<uint64_t>(cpu->curCycle());
+    auto it = latePredictionByCycle.begin();
+    while (it != latePredictionByCycle.end() && it->first <= cycle) {
+        for (const auto &key : it->second) {
+            latePredictionReady.insert(key);
+        }
+        it = latePredictionByCycle.erase(it);
+    }
+    if (!latePredictionReady.empty()) {
+        wakeCPU();
+        activateStage();
+    }
+    if (it != latePredictionByCycle.end()) {
+        const Tick when = cpu->clockEdge(Cycles(it->first - cycle));
+        cpu->schedule(latePredictionEvent, when);
+    }
+}
+
+void
+IEW::processLatePredictions()
+{
+    const auto ready = latePredictionReady;
+    for (const auto &key : ready) {
+        latePredictionReady.erase(key);
+
+        auto target = latePredictionTargets.find(key);
+        if (target == latePredictionTargets.end()) {
+            latePredictionCycles.erase(key);
+            continue;
+        }
+        auto inst = target->second;
+        if (!inst || inst->isSquashed() || inst->isIssued() ||
+            inst->vpApplied) {
+            if (inst) {
+                unregisterLatePrediction(inst);
+            } else {
+                latePredictionTargets.erase(target);
+                latePredictionCycles.erase(key);
+            }
+            continue;
+        }
+        if (!inst->issueQue || inst->isScheduled()) {
+            latePredictionReady.insert(key);
+            continue;
+        }
+        if (!tryLateValuePrediction(inst)) {
+            unregisterLatePrediction(inst);
+            continue;
+        }
+        unregisterLatePrediction(inst);
+    }
+}
+
+bool
 IEW::tryLateValuePrediction(const DynInstPtr &inst)
 {
     if (!valuePred || !inst->vpSupported || inst->vpApplied ||
         !inst->vpRecord || inst->numDestRegs() != 1) {
-        return;
+        return false;
     }
 
     valuepred::VPLatePredictRequest request;
@@ -583,7 +733,7 @@ IEW::tryLateValuePrediction(const DynInstPtr &inst)
     request.cycle = static_cast<uint64_t>(cpu->curCycle());
     auto candidate = valuePred->latePredict(request, inst->vpRecord.get());
     if (!candidate.result.speculative) {
-        return;
+        return false;
     }
 
     inst->vpResult = candidate.result;
@@ -604,6 +754,7 @@ IEW::tryLateValuePrediction(const DynInstPtr &inst)
             "[EgDiff][apply] tid=%u seq=%llu pc=%#lx predicted=%#llx\n",
             inst->threadNumber, inst->seqNum, inst->getPC(),
             static_cast<unsigned long long>(inst->vpResult.value));
+    return true;
 }
 
 /** Report the applied value and current cycle with the instruction's VP record. */
@@ -639,6 +790,8 @@ IEW::notifyValueAvailable(const DynInstPtr &inst, RegVal actualValue)
     value_info.actualValue = actualValue;
     value_info.cycle = static_cast<uint64_t>(cpu->curCycle());
     valuePred->valueAvailable(value_info, inst->vpRecord.get());
+    unregisterLatePrediction(inst);
+
     DPRINTF(EgDiff,
             "[EgDiff][verify] tid=%u seq=%llu pc=%#lx actual=%#llx "
             "applied=%d predicted=%#llx\n",
@@ -666,6 +819,12 @@ IEW::notifyValueMispredicted(const DynInstPtr &inst)
 bool
 IEW::isDrained() const
 {
+    if (!latePredictionReady.empty() || !latePredictionByCycle.empty() ||
+        !latePredictionTargets.empty()) {
+        DPRINTF(Drain, "Late value prediction requests not drained.\n");
+        return false;
+    }
+
     bool drained = ldstQueue.isDrained() && instQueue.isDrained();
     if (!drained) {
         DPRINTF(Drain, "LDSTQ or IQ not drained.\n");
@@ -705,6 +864,14 @@ IEW::takeOverFrom()
     exeStatus = Running;
     wbStatus = Idle;
 
+    if (latePredictionEvent.scheduled()) {
+        cpu->deschedule(latePredictionEvent);
+    }
+    latePredictionTargets.clear();
+    latePredictionCycles.clear();
+    latePredictionByCycle.clear();
+    latePredictionReady.clear();
+
     instQueue.takeOverFrom();
     ldstQueue.takeOverFrom();
     delayedVectorMemCompletionQ.clear();
@@ -730,6 +897,17 @@ IEW::squash(ThreadID tid)
     recordThreadSquash(tid);
 
     DPRINTF(IEW, "[tid:%i] Squashing all instructions.\n", tid);
+
+    const InstSeqNum squash_seq = fromCommit->commitInfo[tid].doneSeqNum;
+    std::vector<DynInstPtr> lateTargets;
+    for (const auto &[key, inst] : latePredictionTargets) {
+        if (key.tid == tid && key.seqNo > squash_seq) {
+            lateTargets.push_back(inst);
+        }
+    }
+    for (const auto &inst : lateTargets) {
+        unregisterLatePrediction(inst);
+    }
 
     for (auto& dp : dispQue) {
         for (auto& it : dp) {
@@ -1211,6 +1389,7 @@ IEW::updateActivate()
     instQueue.iqIOStats.intInstQueueReads++;
     if (_status == Active && !instQueue.hasReadyInsts() &&
         !ldstQueue.willWB() && delayedVectorMemCompletionQ.empty() &&
+        latePredictionReady.empty() && latePredictionByCycle.empty() &&
         !any_unblocking) {
         DPRINTF(IEW, "IEW switching to idle\n");
 
@@ -1220,6 +1399,8 @@ IEW::updateActivate()
     } else if (_status == Inactive && (instQueue.hasReadyInsts() ||
                                        ldstQueue.willWB() ||
                                        !delayedVectorMemCompletionQ.empty() ||
+                                       !latePredictionReady.empty() ||
+                                       !latePredictionByCycle.empty() ||
                                        any_unblocking)) {
         // Otherwise there is internal activity.  Set to active.
         DPRINTF(IEW, "IEW switching to active\n");
@@ -1646,6 +1827,7 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
 
             ldstQueue.insertLoad(inst);
             if (valuePred && inst->vpSupported && inst->vpRecord) {
+                registerLatePrediction(inst);
                 valuepred::VPDispatchInfo dispatch_info;
                 dispatch_info.pc = inst->getPC();
                 dispatch_info.seqNo = inst->seqNum;
@@ -1826,6 +2008,7 @@ IEW::classifyInstToDispQue(ThreadID tid, unsigned max_insts,
 
             if (valuePred && inst->vpSupported && inst->canLVP() &&
                 inst->vpRecord) {
+                registerLatePrediction(inst);
                 valuepred::VPDispatchInfo dispatch_info;
                 dispatch_info.pc = inst->getPC();
                 dispatch_info.seqNo = inst->seqNum;

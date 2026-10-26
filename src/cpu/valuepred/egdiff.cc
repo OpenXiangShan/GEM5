@@ -321,15 +321,48 @@ EgDiff::valueSourceName(ValueSource source)
  * Drop requests whose target has already completed; fanout is unbounded.
  */
 void
+EgDiff::notifyReady(ThreadID tid, const HistoryEntry &target)
+{
+    VPLatePredictReadyInfo ready;
+    ready.pc = target.pc;
+    ready.seqNo = target.seqNo;
+    ready.tid = tid;
+    ready.readyCycle = target.readyCycle;
+    notifyLatePredictReady(ready);
+}
+
+void
+EgDiff::removeDeferredWaiter(ThreadState &state, uint64_t baseOrdinal,
+        uint64_t targetOrdinal)
+{
+    auto it = state.deferredWaiters.find(baseOrdinal);
+    if (it == state.deferredWaiters.end()) {
+        return;
+    }
+    auto &waiters = it->second;
+    waiters.erase(std::remove(waiters.begin(), waiters.end(), targetOrdinal),
+            waiters.end());
+    if (waiters.empty()) {
+        state.deferredWaiters.erase(it);
+    }
+}
+
+void
 EgDiff::wakeDeferred(ThreadState &state, ThreadID tid,
         HistoryEntry &base, uint64_t cycle)
 {
-    /*
-     * Unlike the paper's single Wake index per base entry, this model scans
-     * the full history and wakes every matching deferred request, with no
-     * binding or fanout limit.
-     */
-    for (auto &[ordinal, target] : state.history) {
+    auto waitersIt = state.deferredWaiters.find(base.ordinal);
+    if (waitersIt == state.deferredWaiters.end()) {
+        return;
+    }
+    auto waiters = std::move(waitersIt->second);
+    state.deferredWaiters.erase(waitersIt);
+    for (const auto targetOrdinal : waiters) {
+        auto targetIt = state.history.find(targetOrdinal);
+        if (targetIt == state.history.end()) {
+            continue;
+        }
+        auto &target = targetIt->second;
         if (!target.requestPending || target.baseOrdinal != base.ordinal) {
             continue;
         }
@@ -339,22 +372,20 @@ EgDiff::wakeDeferred(ThreadState &state, ThreadID tid,
             DPRINTF(EgDiff,
                     "[EgDiff][deferred-drop] tid=%u seq=%llu pc=%#lx "
                     "ordinal=%llu baseOrdinal=%llu reason=target-completed\n",
-                    tid, target.seqNo, target.pc, ordinal, base.ordinal);
+                    tid, target.seqNo, target.pc, target.ordinal, base.ordinal);
             continue;
         }
-        gem5_assert(ordinal >= target.predictionDistance &&
-                    ordinal - target.predictionDistance == base.ordinal,
-                    "EgDiff deferred distance no longer identifies its base");
         target.requestPending = false;
         target.requestReady = true;
         target.readyCycle = cycle + deferredPredictionLatency;
         egdiffStats.deferredWakeups++;
+        notifyReady(tid, target);
         DPRINTF(EgDiff,
                 "[EgDiff][deferred-wake] tid=%u seq=%llu pc=%#lx "
                 "ordinal=%llu baseSeq=%llu basePc=%#lx baseOrdinal=%llu "
                 "readyCycle=%llu\n",
-                tid, target.seqNo, target.pc, ordinal, base.seqNo, base.pc,
-                base.ordinal, target.readyCycle);
+                tid, target.seqNo, target.pc, target.ordinal, base.seqNo,
+                base.pc, base.ordinal, target.readyCycle);
     }
 }
 
@@ -412,6 +443,8 @@ EgDiff::pruneHistory(ThreadState &state, ThreadID tid)
     for (auto it = state.history.begin();
          it != state.history.end() && it->first < oldest_needed;) {
         if (it->second.committed) {
+            removeDeferredWaiter(state, it->second.baseOrdinal,
+                    it->second.ordinal);
             it = state.history.erase(it);
             removed++;
         } else {
@@ -515,6 +548,7 @@ EgDiff::dispatch(const VPDispatchInfo &info, VPPredictionRecord *record)
         target.requestReady = true;
         target.readyCycle = info.cycle + normalPredictionLatency;
         egdiffStats.normalRequests++;
+        notifyReady(info.tid, target);
         DPRINTF(EgDiff,
                 "[EgDiff][request] tid=%u seq=%llu pc=%#lx ordinal=%llu "
                 "baseOrdinal=%llu distance=%u diff=%#llx kind=normal "
@@ -525,6 +559,7 @@ EgDiff::dispatch(const VPDispatchInfo &info, VPPredictionRecord *record)
                 target.readyCycle);
     } else {
         target.requestPending = true;
+        state.deferredWaiters[target.baseOrdinal].push_back(target.ordinal);
         egdiffStats.deferredBindings++;
         DPRINTF(EgDiff,
                 "[EgDiff][request] tid=%u seq=%llu pc=%#lx ordinal=%llu "
@@ -685,6 +720,7 @@ EgDiff::valueAvailable(const VPValueAvailableInfo &info,
     if (slot->requestPending || slot->requestReady) {
         egdiffStats.targetCompletedDrops++;
     }
+    removeDeferredWaiter(state, slot->baseOrdinal, slot->ordinal);
     slot->requestPending = false;
     slot->requestReady = false;
     makeSpecValueAvailable(state, info.tid, *slot, info.actualValue,
@@ -951,6 +987,7 @@ EgDiff::squash(ThreadID tid, const uint64_t seq_no)
         if (!it->second.committed && it->second.seqNo > seq_no) {
             rewind_ordinal = std::min(rewind_ordinal, it->first);
             cancelled += it->second.requestPending || it->second.requestReady;
+            removeDeferredWaiter(state, it->second.baseOrdinal, it->second.ordinal);
             it = state.history.erase(it);
             removed++;
         } else {

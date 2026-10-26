@@ -430,7 +430,6 @@ class Scheduler : public SimObject
 
     void tick();
     void issueAndSelect();
-    void latePredictReadyLoads();
     void lookahead(std::deque<DynInstPtr>& insts);
     bool ready(const DynInstPtr& inst, int disp_seq);
     DynInstPtr getInstByDstReg(RegIndex flatIdx, ThreadID tid,
