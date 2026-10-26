@@ -46,4 +46,5 @@ class PrefetchSourceType(Enum):
         "DespacitoStream",
         "LLDP",
         "MLOP",
+        "Sandbox",
     ]

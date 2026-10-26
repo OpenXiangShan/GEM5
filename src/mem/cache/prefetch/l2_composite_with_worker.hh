@@ -10,6 +10,7 @@
 #include "mem/cache/prefetch/composite_with_worker.hh"
 #include "mem/cache/prefetch/despacito_stream.hh"
 #include "mem/cache/prefetch/lldp.hh"
+#include "mem/cache/prefetch/sandbox.hh"
 #include "params/L2CompositeWithWorkerPrefetcher.hh"
 
 namespace gem5
@@ -65,10 +66,12 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     CDP* cdp;
     BOP* largeBOP;
     BOP* smallBOP;
+    SandboxPrefetcher* sandbox;
     CMCPrefetcher* cmc;
     DespacitoStreamPrefetcher* despacitoStream;
 
     const bool enableBOP;
+    const bool enableSandbox;
     const bool enableCDP;
     const bool enableCMC;
     const bool enableDespacitoStream;

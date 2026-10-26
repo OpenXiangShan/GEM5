@@ -28,6 +28,7 @@ PF_SOURCE_NAMES = [
     "DespacitoStream",
     "LLDP",
     "MLOP",
+    "Sandbox",
 ]
 
 
@@ -586,10 +587,13 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
 
     # Disable all L2 composite components for the no-BOP experiment.
     prefetcher.enable_bop = False
+    prefetcher.enable_sandbox = False
     prefetcher.enable_cdp = False
     prefetcher.enable_cmc = False
     prefetcher.enable_despacito_stream = False
     prefetcher.enable_lldp = False
+    if prefetcher_name == 'L2CompositeWithWorkerPrefetcher':
+        prefetcher.enable_sandbox = getattr(options, 'l2_enable_sandbox', False)
 
 def _configure_l2_prefetcher(prefetcher, prefetcher_name, options,
                              pf_buffer_enabled):

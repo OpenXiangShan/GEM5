@@ -292,6 +292,9 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         help="compatibility alias for L2 MLOP LLC score threshold")
     parser.add_argument("--l3-hwp-type", default='WorkerPrefetcher',
                         choices=ObjectList.hwp_list.get_names(), help="L3 cache hardware prefetcher")
+    parser.add_argument("--l2-enable-sandbox", action="store_true",
+                        default=False,
+                        help="enable Sandbox in the L2 composite prefetcher")
     parser.add_argument("--enable-bop-cqf",
                         "--enable-bop-direct-quality-gate",
                         dest="enable_bop_cqf",

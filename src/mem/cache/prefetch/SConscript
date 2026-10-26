@@ -40,7 +40,7 @@ SimObject('Prefetcher.py', sim_objects=[
     'WorkerPrefetcher', 'DespacitoStreamPrefetcher',
     'BOPPrefetcher', 'SBOOEPrefetcher', 'STeMSPrefetcher', 'PIFPrefetcher', 'IPCPrefetcher',
     'CompositeWithWorkerPrefetcher', 'L2CompositeWithWorkerPrefetcher', 'PrefetcherForwarder',
-    'LLDPrefetcher', 'MLOPPrefetcher'])
+    'LLDPrefetcher', 'MLOPPrefetcher', 'SandboxPrefetcher'])
 
 
 DebugFlag('BOPPrefetcher')
@@ -64,11 +64,14 @@ DebugFlag('LLDPrefetcher')
 
 GTest('context_key.test', 'context_key.test.cc')
 GTest('lldp_logic.test', 'lldp_logic.test.cc')
+GTest('sandbox_logic.test', 'sandbox_logic.test.cc', 'sandbox_logic.cc')
 
 Source('access_map_pattern_matching.cc')
 Source('base.cc')
 Source('multi.cc')
 Source('bop.cc')
+Source('sandbox_logic.cc')
+Source('sandbox.cc')
 Source('direct_quality_gate.cc')
 GTest('direct_quality_gate.test', 'direct_quality_gate.test.cc',
       'direct_quality_gate.cc',

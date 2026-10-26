@@ -1493,6 +1493,27 @@ class MultiPrefetcher(BasePrefetcher):
         [XSCompositePrefetcher(), BOPPrefetcher()],
         "Array of prefetchers")
 
+class SandboxPrefetcher(QueuedPrefetcher):
+    type = "SandboxPrefetcher"
+    cxx_class = "gem5::prefetch::SandboxPrefetcher"
+    cxx_header = "mem/cache/prefetch/sandbox.hh"
+
+    use_virtual_addresses = False
+    prefetch_on_pf_hit = True
+    on_read = True
+    on_write = False
+    on_data = True
+    on_inst = False
+
+    prefetch_degree = Param.Unsigned(4, "Fixed prefetch degree per direction")
+    detect_streams = Param.Bool(True, "Score strided streams in the sandbox")
+    stream_length = Param.Unsigned(3, "Number of previous stream lines to score")
+    accesses_per_phase = Param.Unsigned(256, "Training events per candidate")
+    cycle_offsets = Param.Unsigned(4, "Offsets rotated after each round")
+    bloom_bits = Param.Unsigned(2048, "Sandbox Bloom filter size in bits")
+    bloom_seed = Param.Unsigned(300, "Sandbox Bloom filter hash seed")
+
+
 class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     type = 'L2CompositeWithWorkerPrefetcher'
     cxx_class = 'gem5::prefetch::L2CompositeWithWorkerPrefetcher'
@@ -1504,9 +1525,13 @@ class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
                                      "Large BOP used in composite prefetcher ")
     bop_small = Param.BOPPrefetcher(SmallBOPPrefetcher(is_sub_prefetcher=True),
                                      "Small BOP used in composite prefetcher ")
+    sandbox = Param.SandboxPrefetcher(
+        SandboxPrefetcher(is_sub_prefetcher=True),
+        "Sandbox prefetcher used in L2 composite")
     despacito_stream = Param.DespacitoStreamPrefetcher(DespacitoStreamPrefetcher(is_sub_prefetcher=True),
                                                        "DespacitoStream used in composite prefetcher")
     enable_bop = Param.Bool(False, "Enable BOP")
+    enable_sandbox = Param.Bool(False, "Enable L2 Sandbox")
     enable_cdp = Param.Bool(False, "Enable CDP")
     enable_cmc = Param.Bool(False, "Enable CMC")
     enable_despacito_stream = Param.Bool(False, "Enable despacito stream")

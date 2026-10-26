@@ -19,9 +19,11 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
       cdp(p.cdp),
       largeBOP(p.bop_large),
       smallBOP(p.bop_small),
+      sandbox(p.sandbox),
       cmc(p.cmc),
       despacitoStream(p.despacito_stream),
       enableBOP(p.enable_bop),
+      enableSandbox(p.enable_sandbox),
       enableCDP(p.enable_cdp),
       enableCMC(p.enable_cmc),
       enableDespacitoStream(p.enable_despacito_stream),
@@ -32,11 +34,13 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
     cdp->setSharedFilterContextQualified(true);
     largeBOP->setSharedFilterContextQualified(true);
     smallBOP->setSharedFilterContextQualified(true);
+    sandbox->setSharedFilterContextQualified(true);
     cmc->setSharedFilterContextQualified(true);
     despacitoStream->setSharedFilterContextQualified(true);
     cdp->pfLRUFilter = &pfLRUFilter;
     largeBOP->filter = &pfLRUFilter;
     smallBOP->filter = &pfLRUFilter;
+    sandbox->filter = &pfLRUFilter;
     largeBOP->shareDirectQualityGateWith(*smallBOP);
     cmc->filter = &pfLRUFilter;
     despacitoStream->filter = &pfLRUFilter;
@@ -85,6 +89,9 @@ L2CompositeWithWorkerPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std:
         smallBOP->calculatePrefetch(
             pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP,
             activeBOPReplayAccessSeq);
+    }
+    if (enableSandbox) {
+        sandbox->calculatePrefetch(pfi, addresses);
     }
     if (enableDespacitoStream) {
         despacitoStream->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::DespacitoStream);
@@ -162,6 +169,7 @@ L2CompositeWithWorkerPrefetcher::setParentInfo(System *sys, ProbeManager *pm, Ca
     cdp->setStatsPtr(&prefetchStats);
     largeBOP->setParentInfo(sys, pm, _cache, blk_size);
     smallBOP->setParentInfo(sys, pm, _cache, blk_size);
+    sandbox->setParentInfo(sys, pm, _cache, blk_size);
     cmc->setParentInfo(sys, pm, _cache, blk_size);
     despacitoStream->setParentInfo(sys, pm, _cache, blk_size);
     lldp->setParentInfo(sys, pm, _cache, blk_size);
@@ -272,6 +280,9 @@ L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriorit
     if (!L2PFsent && smallBOP->hasPFRequestsInBuffer()){
         L2PFsent = smallBOP->GetPFRequestsFromBuffer(addresses);
     }
+    if (!L2PFsent && enableSandbox && sandbox->hasPFRequestsInBuffer()) {
+        L2PFsent = sandbox->GetPFRequestsFromBuffer(addresses);
+    }
     if (!L2PFsent && despacitoStream->hasPFRequestsInBuffer()){
         L2PFsent = despacitoStream->GetPFRequestsFromBuffer(addresses);
     }
@@ -292,6 +303,7 @@ L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriorit
 bool L2CompositeWithWorkerPrefetcher::hasPFRequestsInBuffer() {
     return  largeBOP->hasPFRequestsInBuffer() ||
             smallBOP->hasPFRequestsInBuffer() ||
+            (enableSandbox && sandbox->hasPFRequestsInBuffer()) ||
             cmc->hasPFRequestsInBuffer() ||
             cdp->hasPFRequestsInBuffer() ||
             despacitoStream->hasPFRequestsInBuffer();
