@@ -16,10 +16,13 @@ CompositeValuePredictorFixedPriorityArb::choose(
 {
     // Only the listed types may win: a predictor whose type is absent from
     // this table is never selected, even when it is the only candidate.
+    // VTAGE is last so a lone --vp-type=vtage still issues, while it loses
+    // to IdealConstantLVP, EgDiff, and EStride when they also speculate.
     constexpr ValuePredType priority[] = {
         ValuePredType::IdealConstantLVP,
         ValuePredType::EgDiff,
         ValuePredType::EStride,
+        ValuePredType::VTAGE,
     };
 
     for (const auto predictorType : priority) {
