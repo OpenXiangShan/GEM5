@@ -32,7 +32,8 @@ Import('*')
 
 if env['CONF']['TARGET_ISA'] != 'null':
     SimObject('FuncScheduler.py', sim_objects=['FUPool', 'SpecWakeupChannel',
-              'IssuePort', 'IssueQue', 'BaseSelector', 'PAgeSelector', 'Scheduler'])
+              'IssuePort', 'IssueQue', 'BaseSelector', 'PAgeSelector', 'Scheduler'],
+              enums=['FpWakeupMode'])
     SimObject('FuncUnitConfig.py', sim_objects=[])
     SimObject('BaseO3CPU.py', sim_objects=['BaseO3CPU'], enums=[
         'SMTFetchPolicy', 'SMTDecodePolicy', 'SMTFetchBlockPolicy',
@@ -46,6 +47,8 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('fetch.cc')
     Source('free_list.cc')
     Source('fu_pool.cc')
+    Source('fp_wakeup.cc')
+    Source('fp_wakeup_scheduler.cc')
     Source('iew.cc')
     Source('inst_queue.cc')
     Source('lsq.cc')
@@ -93,6 +96,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
     DebugFlag('FetchVerbose')
     DebugFlag('Counters')
     DebugFlag('Schedule')
+    DebugFlag('FpWakeup')
     DebugFlag('Dispatch')
     DebugFlag('LoadPipeline')
     DebugFlag('StorePipeline')
