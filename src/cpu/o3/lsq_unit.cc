@@ -1373,6 +1373,7 @@ LSQUnit::issueToLoadPipe(const DynInstPtr &inst)
     panic_if(inst->inPipe(), "load [sn:%llu] is already in pipeline", inst->seqNum);
     inst->beginPipelining();
     inst->setSkipRawCheck();
+    iewStage->getScheduler()->startLoadM4Sample(inst);
 
     loadPipeSx[0]->insts.push_back(inst);
     loadPipeSx[0]->size = static_cast<int>(loadPipeSx[0]->insts.size());
@@ -1819,6 +1820,8 @@ LSQUnit::executeLoadPipeSx()
                 DPRINTF(LoadPipeline, "Instruction was squashed. PC: %s, [tid:%i]"
                     " [sn:%llu]\n", inst->pcState(), inst->threadNumber,
                     inst->seqNum);
+                iewStage->getScheduler()->resolveLoadM4Sample(
+                    inst, fpw::LoadM4Outcome::Aborted);
                 inst->setExecuted();
                 inst->setCanCommit();
                 inst = nullptr;
@@ -1866,6 +1869,19 @@ LSQUnit::executeLoadPipeSx()
                 }
             }
 
+            auto *sampleRequest = currentLoadRequest(inst);
+            const bool specialRequest = sampleRequest &&
+                (sampleRequest->isSplit() ||
+                 (sampleRequest->isTranslationComplete() &&
+                  (!sampleRequest->isNormalLd() ||
+                   sampleRequest->mainReq()->isLocalAccess())));
+            if (inst->getFault() != NoFault || !inst->readPredicate() ||
+                !inst->readMemAccPredicate() || specialRequest ||
+                (inst->replayOrSkipFollowingPipe() && !inst->needReplay())) {
+                iewStage->getScheduler()->resolveLoadM4Sample(
+                    inst, fpw::LoadM4Outcome::Aborted);
+            }
+
             // Terminal path 2: replay paths that are resolved before the
             // common loadWhenToReplay point.  These either already inserted
             // the load into a replay queue or must cancel the scheduler view
@@ -1896,6 +1912,8 @@ LSQUnit::executeLoadPipeSx()
                 }
                 cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::LastReplay, curTick());
 
+                iewStage->getScheduler()->resolveLoadM4Sample(
+                    inst, fpw::LoadM4Outcome::Failure);
                 iewStage->loadCancel(inst);
                 inst->endPipelining();
                 inst = nullptr;
@@ -1951,6 +1969,8 @@ LSQUnit::executeLoadPipeSx()
                 }
                 cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::LastReplay, curTick());
 
+                iewStage->getScheduler()->resolveLoadM4Sample(
+                    inst, fpw::LoadM4Outcome::Failure);
                 iewStage->loadCancel(inst);
                 inst->endPipelining();
                 inst = nullptr;
@@ -1960,6 +1980,12 @@ LSQUnit::executeLoadPipeSx()
             if (i == loadPipeStages - 1 && !inst->needReplay()) {
                 // Terminal path 4: only a non-replayed load at the last pipe
                 // stage can finish the IEW side and become ready to commit.
+                const bool validSample = inst->getFault() == NoFault &&
+                    inst->readPredicate() && inst->readMemAccPredicate() &&
+                    inst->isNormalLd() && inst->isExecuted();
+                iewStage->getScheduler()->resolveLoadM4Sample(
+                    inst, validSample ? fpw::LoadM4Outcome::Success :
+                                        fpw::LoadM4Outcome::Aborted);
                 if (inst->isExecuted() &&
                     (inst->isNormalLd() || !inst->readMemAccPredicate())) {
                     iewStage->readyToFinish(inst);

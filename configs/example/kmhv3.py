@@ -71,6 +71,8 @@ def setKmhV3Params(args, system):
         
         cpu.scheduler.fpWakeupMode = getattr(args, "fp_wakeup_mode", None) or (
             "legacy" if args.enable_spmt else "kmhv3")
+        if getattr(args, "fp_load_m4_policy", None) is not None:
+            cpu.scheduler.fpLoadM4Policy = args.fp_load_m4_policy
         cpu.scheduler.disableAllRegArb()
         for iq in cpu.scheduler.IQs:
             iq.deferNewEnqueueSelection = not args.smt

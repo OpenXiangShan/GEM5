@@ -99,6 +99,8 @@ class DynInst : public ExecContext, public RefCounted
 
   public:
     fpw::InstState fpWake;
+    // Learning belongs to the dynamic load, not its replayable wakeup token.
+    std::shared_ptr<fpw::LoadM4Sample> fpLoadM4Sample;
 
     // The list of instructions iterator type.
     typedef typename std::list<DynInstPtr>::iterator ListIt;
