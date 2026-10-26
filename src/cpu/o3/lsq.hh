@@ -197,13 +197,20 @@ class LSQ
                    const std::vector<bool> &mask);
 
         bool recordForward(RequestPtr req, LSQRequest *lsqreq,
-                           ThreadID load_tid, InstSeqNum load_seq);
+                           ThreadID load_tid);
 
         // The eviction packet has been built or sent; younger same-line stores
         // must go to a vice entry instead of mutating this entry's payload.
         bool evictionInProgress() const
         {
-            return sending || inDcacheMainPipe || replayQueued;
+            // Once the Sbuffer request has been built, its packet byte-enable
+            // mask is a snapshot of validMask.  Even if admission to the
+            // fake DCache pipe is blocked at S0, later same-line stores must
+            // not merge into this entry or mutate data without updating that
+            // already-built request.  Treat request ownership as eviction
+            // progress and route such stores through a vice entry.
+            return request != nullptr || sending || inDcacheMainPipe ||
+                replayQueued;
         }
     };
 
@@ -980,6 +987,9 @@ class LSQ
     /** Returns the sequence number of the head of the load queue. */
     InstSeqNum getLoadHeadSeqNum(ThreadID tid);
 
+    /** Returns the DynInst at a relative offset from the LQ head. */
+    DynInstPtr getLoadInst(ThreadID tid, int offset);
+
     /** Returns the head index of the store queue. */
     int getStoreHead(ThreadID tid);
 
@@ -1097,10 +1107,9 @@ class LSQ
     bool flushStores(ThreadID tid);
     bool flushStores(ThreadID tid, InstSeqNum seq_num);
     StoreBufferEntry *findForwardingStoreBufferEntry(Addr block_paddr,
-                                                     ThreadID load_tid,
-                                                     InstSeqNum load_seq) const;
+                                                     ThreadID load_tid) const;
     StoreBufferEntry *find_inflight_store_buffer_entry(
-        Addr block_paddr, ThreadID load_tid) const;
+        Addr block_paddr, ThreadID load_tid, int byte_idx = -1) const;
     void notifyOtherThreadsStoreVisible(ThreadID tid, Addr store_paddr,
                                         const std::vector<bool> &byte_enable);
 
@@ -1500,7 +1509,10 @@ class LSQ
     const uint64_t storeBufferInactiveThreshold;
     const uint32_t maxStoreBufferEntriesAcceptedFromSQPerCycle = 2;
     StoreBuffer storeBuffer;
-    std::unordered_map<Addr, SbufferRequest *> sbufferMissRequests;
+    // Keep each accepted target alive until its own cache response. The
+    // per-line order also supplies youngest-eligible-byte forwarding.
+    std::unordered_map<Addr, std::vector<SbufferRequest *>> sbufferMissRequests;
+    unsigned sbufferMissRequestCount = 0;
     std::multiset<InstSeqNum> sbufferMissSeqs[MaxThreads];
     void release_sbuffer_miss_entry(SbufferRequest *request);
     bool _storeBufferFlushing[MaxThreads] = {false};
@@ -1601,6 +1613,7 @@ class LSQ
         statistics::Scalar sbufferMissEntriesReleased;
         statistics::Average sbufferMissPending;
         statistics::Scalar sbufferMissSameLineReplay;
+        statistics::Scalar sbufferMissMerged;
         statistics::Scalar sbufferMissForward;
         statistics::Scalar sbufferDcacheReqBlocked;
         statistics::Scalar sbufferDcacheReqBlockedByMainPipe;
@@ -1617,6 +1630,23 @@ class LSQ
         statistics::Scalar dcacheMainPipeBlockedByDataConflict;
         statistics::Scalar dcacheMainPipeStoreS2IssueBlocked;
         statistics::Scalar dcacheMainPipeStoreS2MissExit;
+        /** Per-thread LQ/SQ borrowing donor state change counts. */
+        statistics::Vector lqBorrowingStateChange;
+        statistics::Vector sqBorrowingStateChange;
+        /** LQ/SQ base/donor state holding cycle distribution, indexed by the
+         *  state before the change (0 = Base, 1 = Donor). */
+        statistics::VectorDistribution lqStateHoldCycle;
+        statistics::VectorDistribution sqStateHoldCycle;
+        /** LQ/SQ used/free entries sampled at donor state changes, indexed by
+         *  {BaseToDonor, DonorToBase} x {used, free}. */
+        statistics::VectorDistribution lqEntriesWhileStateChange;
+        statistics::VectorDistribution sqEntriesWhileStateChange;
+        /** Per-cycle LQ/SQ borrowing donor state combination across threads,
+         *  indexed like fetch's fetchBlockState (one bit per thread, tid0 in
+         *  the least significant bit): 0 = both Base, 1 = tid0 Donor,
+         *  2 = tid1 Donor, 3 = both Donor. */
+        statistics::Vector lqBorrowingState;
+        statistics::Vector sqBorrowingState;
     } stats;
 
     void recordStoreBufferEviction(StoreBufferEvictCause cause);

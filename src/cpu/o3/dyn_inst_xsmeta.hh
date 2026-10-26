@@ -50,6 +50,8 @@
 
 #include "base/refcnt.hh"
 #include "base/types.hh"
+#include "cpu/inst_seq.hh"
+#include "mem/lldp.hh"
 
 namespace gem5
 {
@@ -63,6 +65,13 @@ class XsDynInstMeta : public RefCounted
     bool squashed;
     Addr instAddr;
     InstSeqNum seqNum;
+
+    lldp::Chain lldpChain;
+    int64_t lldpLoadImm{0};
+    ContextID lldpContext{InvalidContextID};
+    bool lldpLoad{false};
+    bool lldpSigned{false};
+    uint8_t lldpSize{0};
 
   public:
     XsDynInstMeta(): squashed(false), instAddr(0), seqNum(0) {}

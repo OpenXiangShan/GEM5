@@ -233,6 +233,9 @@ class Commit
     /** Sets the pointer to the queue coming from IEW. */
     void setIEWQueue(TimeBuffer<IEWStruct> *iq_ptr);
 
+    /** Sets ptr to MLP predictor. */
+    void setMlpPredictor(MLPredictor *mlp_predictor) { mlpPredictor = mlp_predictor; }
+
     /** Sets the pointer to the IEW stage. */
     void setIEWStage(IEW *iew_stage);
 
@@ -384,7 +387,8 @@ class Commit
     /** Tries to commit the head ROB instruction passed in.
      * @param head_inst The instruction to be committed.
      */
-    bool commitHead(const DynInstPtr &head_inst, unsigned inst_num);
+    bool commitHead(const DynInstPtr &head_inst, unsigned inst_num,
+                    bool &logical_trace_record_retired);
 
     /** Gets instructions from rename and inserts them into the ROB. */
     void moveInstsToBuffer();
@@ -523,7 +527,7 @@ class Commit
     /** Aggregate Rename->ROB admission width across SMT threads. */
     const unsigned aggregateRenameWidth;
 
-    /** Commit width, in instructions. */
+    /** Physical entry width for Hybrid; expanded group window otherwise. */
     const unsigned commitWidth;
 
     /** Number of Active Threads */
@@ -531,6 +535,9 @@ class Commit
 
     /** Cycles to keep a stalled thread marked as a ROB borrowing donor. */
     const unsigned smtBorrowDonorHoldCycles;
+
+    /** cache depth to be consider as long latency for MLP Policy */
+    unsigned mlpLongLatencyCacheDepth;
 
     /** Is a drain pending? Commit is looking for an instruction boundary while
      * there are no pending interrupts
@@ -666,6 +673,9 @@ class Commit
 
         /** Number of cycles where the commit bandwidth limit is reached. */
         statistics::Scalar commitEligibleSamples;
+        /** Physical Hybrid entries released by commit or squash draining. */
+        statistics::Scalar hybridCommittedEntries;
+        statistics::Scalar hybridDrainedEntries;
         /** Number of load get the same pc && addr && value*/
         statistics::Scalar loadTriple;
         statistics::Scalar loadEAReused;
@@ -694,6 +704,7 @@ class Commit
 
         statistics::Vector ROBFull;
         statistics::Distribution smtRestEntryWhileROBFull;
+        statistics::Distribution commitCacheAccessDepthDist;
         statistics::Vector ROBBorrowingStateChange;
         statistics::VectorDistribution smtStateHoldCycle;
         statistics::VectorDistribution smtROBEntriesWhileStateChange;
@@ -707,14 +718,18 @@ class Commit
 
     ArchDBer *archDBer;
 
+    MLPredictor *mlpPredictor;
     // Trace-mode commit stream index per thread: expected next trace instruction index
     uint64_t traceCommitIndex[MaxThreads] = {0};
+    uint64_t traceLastHeartbeatIndex[MaxThreads] = {0};
 
     // Trace-mode helpers (implementation in src/cpu/o3/trace/CommitTrace.cc)
     bool traceMaybeExitOnPipelineDrainFromStuckCheck();
     bool traceMaybeExitOnEofDrainFromTick();
     void traceUpdateSquashInfo(ThreadID tid, InstSeqNum squashed_inst);
     void traceMaybeInjectCtrlFlowChangeFault(
+        ThreadID tid, const DynInstPtr &head_inst);
+    bool traceAccountInjectedCtrlFlowRecord(
         ThreadID tid, const DynInstPtr &head_inst);
     bool traceMaybeExitOnLastTraceInst(const DynInstPtr &head_inst);
     void traceOnCommit(ThreadID tid, const DynInstPtr &head_inst);

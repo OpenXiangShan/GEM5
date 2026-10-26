@@ -51,6 +51,10 @@ def autoCalibrateParams(args, system):
 if __name__ == '__m5_main__':
     args = xiangshan_system_init()
 
+    if args.enable_spmt:
+        fatal("--enable-spmt is not supported by this entry point; "
+              "use kmhv3.py or idealkmhv3.py instead.")
+
     args.enable_difftest = False
     args.raw_cpt = True
     args.no_pf = True

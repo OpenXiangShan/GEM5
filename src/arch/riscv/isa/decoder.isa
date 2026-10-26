@@ -586,6 +586,26 @@ decode QUADRANT {
                 0x1: fence_i({{
                 }}, uint64_t, IsNonSpeculative, IsSerializeAfter, No_OpClass);
             }
+            0x2: decode RD {
+                0x0: decode FUNCT12 {
+                    0x4: CBMOp::cbo_zero({{
+                        auto pm = (PrivilegeMode)xc->readMiscReg(MISCREG_PRV);
+                        bool virt = xc->readMiscReg(MISCREG_VIRMODE);
+                        bool men = bits(xc->readMiscReg(MISCREG_MENVCFG), 7);
+                        bool sen = bits(xc->readMiscReg(MISCREG_SENVCFG), 7);
+                        bool hen = bits(xc->readMiscReg(MISCREG_HENVCFG), 7);
+                        if ((pm != PRV_M && !men) ||
+                            (!virt && pm == PRV_U && !sen)) {
+                            return std::make_shared<IllegalInstFault>(
+                                "cbo.zero disabled by envcfg", machInst);
+                        }
+                        if (virt && (!hen || (pm == PRV_U && !sen))) {
+                            return std::make_shared<HVFault>(machInst);
+                        }
+                        Mem = 0;
+                    }}, mem_flags=[CACHE_BLOCK_ZERO]);
+                }
+            }
         }
 
         0x04: decode FUNCT3 {
@@ -2434,9 +2454,22 @@ decode QUADRANT {
         }}, IsDirectControl, IsUncondControl);
 
         0x1c: decode FUNCT3 {
-            format LoadH {
-                0x04:  decode HFUNCT2{
-                    0x643: hlvx_hu({{
+            0x4: decode FUNCT7 {
+                format MopOp {
+                    // MOP.R fixes bits 24:22 to 111; bits 21:20 are its number.
+                    0x40, 0x42, 0x44, 0x46,
+                    0x60, 0x62, 0x64, 0x66: decode RS2 {
+                        0x1c, 0x1d, 0x1e, 0x1f: mop_r({{
+                            Rd = 0;
+                        }});
+                    }
+                    0x41, 0x43, 0x45, 0x47,
+                    0x61, 0x63, 0x65, 0x67: mop_rr({{
+                        Rd = 0;
+                    }});
+                }
+                default: decode HFUNCT2 {
+                    0x643: LoadH::hlvx_hu({{
                         Rd = Mem_uh;
                     }},inst_flags = IsHInst);
                 }
@@ -2699,12 +2732,8 @@ decode QUADRANT {
                 }
                 0x2: decode FUNCT12 {
                     0x001:csrrs_fflags({{
-                        auto Rs1_use = Rs1;
-                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
-                        if((FUNCT12 == 0x104) && v)
-                            Rs1_use = Rs1 <<1;
                         Rd = data;
-                        data |= Rs1_use;
+                        data |= Rs1;
                         write = RS1 != 0;
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                     0x100:csrrs_s({{
@@ -2716,23 +2745,15 @@ decode QUADRANT {
                         write = RS1 != 0;
                     }}, IsUpdateVsstatusSd,IsUpdateMstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
                     default:csrrs({{
-                        auto Rs1_use = Rs1;
-                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
-                        if((FUNCT12 == 0x104) && v)
-                            Rs1_use = Rs1 <<1;
                         Rd = data;
-                        data |= Rs1_use;
+                        data |= Rs1;
                         write = RS1 != 0;
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                 }
                 0x3: decode FUNCT12 {
                     0x001:csrrc_fflags({{
-                        auto Rs1_use = Rs1;
-                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
-                        if((FUNCT12 == 0x104) && v)
-                            Rs1_use = Rs1 <<1;
                         Rd = data;
-                        data &= ~Rs1_use;
+                        data &= ~Rs1;
                         write = RS1 != 0;
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                     0x100:csrrc_s({{
@@ -2744,12 +2765,8 @@ decode QUADRANT {
                         write = RS1 != 0;
                     }}, IsUpdateVsstatusSd,IsUpdateMstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
                     default:csrrc({{
-                        auto Rs1_use = Rs1;
-                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
-                        if((FUNCT12 == 0x104) && v)
-                            Rs1_use = Rs1 <<1;
                         Rd = data;
-                        data &= ~Rs1_use;
+                        data &= ~Rs1;
                         write = RS1 != 0;
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                 }
@@ -2775,12 +2792,8 @@ decode QUADRANT {
                 }
                 0x6: decode FUNCT12 {
                     0x001:csrrsi_fflags({{
-                        auto uimm_use = uimm;
-                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
-                        if((FUNCT12 == 0x104) && v)
-                            uimm_use =uimm<<1;
                         Rd = data;
-                        data |= uimm_use;
+                        data |= uimm;
                         write = uimm != 0;
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                     0x100:csrrsi_s({{
@@ -2792,12 +2805,8 @@ decode QUADRANT {
                         write = uimm != 0;
                     }}, IsUpdateVsstatusSd,IsSerializeAfter, IsNonSpeculative, No_OpClass);
                     default:csrrsi({{
-                        auto uimm_use = uimm;
-                        auto v = xc->readMiscReg(MISCREG_VIRMODE);
-                        if((FUNCT12 == 0x104) && v)
-                            uimm_use =uimm<<1;
                         Rd = data;
-                        data |= uimm_use;
+                        data |= uimm;
                         write = uimm != 0;
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                 }

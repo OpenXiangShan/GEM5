@@ -96,6 +96,9 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       delayedSchedulerDelay(params.smtFetchDelayedSchedulerDelay),
       smtFetchBlockPolicy(params.smtFetchBlockPolicy),
       longLatencyThreshold(params.smtFetchBlockThreshold),
+      mlpPredictor(nullptr),
+      smtMlpFetchBlockPolicy(params.smtMlpFetchBlockPolicy),
+      mlpLongLatencyCacheDepth(params.mlpLongLatencyCacheDepth),
       cpu(_cpu),
       branchPred(nullptr),
       dbpbtb(nullptr),
@@ -115,10 +118,22 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       numThreads(params.numThreads),
       numFetchingThreads(params.smtNumFetchingThreads),
       numFetchTargetThreads(params.smtNumFetchTargetThreads),
+      enablePredecode(params.enablePredecode),
       icachePort(this, _cpu),
       finishTranslationEvents(), fetchStats(_cpu, this),
       valuePred(params.valuePred)
 {
+    // Validate public CPU parameters here as well as in the XiangShan CLI.
+    // The predictor pointer is wired later by CPU, so check its enable parameter
+    // rather than the still-null pointer. These checks must survive NDEBUG.
+    if (smtMlpFetchBlockPolicy == SMTMLPFetchBlockPolicy::MlpAwarePolicy) {
+        fatal_if(!params.mlpPredictorEnable,
+                 "MlpAwarePolicy requires mlpPredictorEnable=true");
+        fatal_if(!isBlockPolicy() && !isFlushPolicy(),
+                 "MlpAwarePolicy requires a Block or Flush smtFetchBlockPolicy; "
+                 "BaseLine is not supported");
+    }
+
     if (numThreads > MaxThreads)
         fatal("numThreads (%d) is larger than compiled limit (%d),\n"
               "\tincrease MaxThreads in src/cpu/o3/limits.hh\n",
@@ -181,11 +196,23 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         redirectPendingCycles[i] = 0;
         lastIcacheStall[i] = 0;
         smtBorrowThrottleCycles[i] = 0;
-        threadFetchBlocked[i] = false;
+        threadFetchThrottled[i] = false;
+        mlpThreadFetchThrottled[i] = false;
+        lastLoadHeadSeqNumForStats[i] = 0;
+        lqReasonForStats[i] = StallReason::NumStallReasons;
+        longLatencyStallReasonCyclesForStats[i] = 0;
+        longLatencyStallCyclesForStats[i] = 0;
         blockStateHoldCycles[i] = 0;
+        mlpBlockStateHoldCycles[i] = 0;
         longLatencyStallCycles[i] = 0;
         lastLoadHeadSeqNum[i] = UINT64_MAX;
+        mlpAwareMode[i] = false;
+        mlpRemainingInsts[i] = 0;
+        mlpLongLatencyLoadSeqNum[i] = 0;
         flushFromInitiated[i] = false;
+        mlpFlushFromInitiated[i] = false;
+        deferVsetvlDecode[i] = false;
+        postSquashFetchBatchSize[i] = 0;
     }
     smtLdstqHighWater = params.smtBorrowLdstqHighWater;
     if (smtLdstqHighWater == 0) {
@@ -221,7 +248,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
 
     // Get the size of an instruction.
     // stallReason size should be the same as decodeWidth,renameWidth,dispWidth
-    stallReason.resize(decodeWidth, StallReason::NoStall);
+    for (auto &v : stallReason)
+        v.resize(decodeWidth, StallReason::NoStall);
 
     traceFetch = std::make_unique<TraceFetch>(*this, params);
 
@@ -231,6 +259,18 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
 }
 
 Fetch::~Fetch() = default;
+
+Fetch::PredecodeEntry::PredecodeEntry() = default;
+Fetch::PredecodeEntry::~PredecodeEntry() = default;
+Fetch::PredecodeStage::~PredecodeStage() = default;
+
+void
+Fetch::PredecodeStage::clear()
+{
+    for (unsigned i = 0; i < size; ++i)
+        entries[i].instruction = nullptr;
+    size = 0;
+}
 
 void
 Fetch::clearRedirectPending(ThreadID tid)
@@ -254,6 +294,12 @@ Fetch::isTraceEOF() const
     return traceFetch && traceFetch->isEOF();
 }
 
+uint64_t
+Fetch::getTraceReaderIndex() const
+{
+    return traceFetch ? traceFetch->getTraceReaderIndex() : 0;
+}
+
 std::string Fetch::name() const { return cpu->name() + ".fetch"; }
 
 void
@@ -275,6 +321,8 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of branches that fetch encountered"),
     ADD_STAT(predictedBranches, statistics::units::Count::get(),
              "Number of branches that fetch has predicted taken"),
+    ADD_STAT(predecodeRedirects, statistics::units::Count::get(),
+             "Redirects issued by predecode"),
     ADD_STAT(cycles, statistics::units::Cycle::get(),
              "Number of cycles fetch has run and was not squashing or "
              "blocked"),
@@ -311,6 +359,16 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of outstanding ITLB misses that were squashed"),
     ADD_STAT(nisnDist, statistics::units::Count::get(),
              "Number of instructions fetched each cycle (Total)"),
+    ADD_STAT(loadFeedbackDist, statistics::units::Count::get(),
+             "Distribution of load feedback entries per cycle from IEW"),
+    ADD_STAT(llsrPushDist, statistics::units::Count::get(),
+             "Distribution of LLSR push entries per cycle from Commit"),
+    ADD_STAT(mlpLongLatencyPred, statistics::units::Count::get(),
+             "MLP predictor: long-latency prediction accuracy"),
+    ADD_STAT(mlpDistancePred, statistics::units::Count::get(),
+             "MLP predictor: MLP distance prediction accuracy"),
+    ADD_STAT(mlpDistanceOverPredDist, statistics::units::Count::get(),
+             "MLP predictor: distribution of over-prediction distance"),
     ADD_STAT(decodeThreadsPerCycle, statistics::units::Count::get(),
              "Distinct SMT threads sent to Decode in one cycle"),
     ADD_STAT(instsSentToDecodePerCycle, statistics::units::Count::get(),
@@ -400,13 +458,27 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Decode policy thread state combination per cycle, Th means "
              "uncandidated or throttled. (0=both not Th, 1=tid0 Th, 2=tid1 Th, 3=both Th)"),
     ADD_STAT(fetchBlockHoldCycle, statistics::units::Count::get(),
-             "Per-thread block/unblock state holding cycle distribution"),
+             "Per-thread block/unblock state holding cycle distribution in base mode"),
+    ADD_STAT(loadStallReasonHoldCycle, statistics::units::Count::get(),
+             "LqHead StallReason Holding cycle distribution"),
+    ADD_STAT(loadStallReasonRaiseCycle, statistics::units::Count::get(),
+             "LqHead StallReason Raise cycle distribution"),
     ADD_STAT(flushForFlushPolicy, statistics::units::Count::get(),
              "Number of long-latency load flush events per thread"),
     ADD_STAT(flushFromFirstUseFound, statistics::units::Count::get(),
              "FlushFromUse: first-use consumer found, squash initiated"),
     ADD_STAT(flushFromFirstUseNoConsumer, statistics::units::Count::get(),
-             "FlushFromUse: no consumer found, squash from ROB tail")
+             "FlushFromUse: no consumer found, squash from ROB tail"),
+    ADD_STAT(mlpAwarePolicyActive, statistics::units::Count::get(),
+             "Per-thread MlpAwarePolicy active/inactive state combination per cycle. "
+             "(0=both InActive, 1=tid0 Active, 2=tid1 Active, 3=both Active)"),
+    ADD_STAT(mlpFetchBlockState, statistics::units::Count::get(),
+             "Block policy thread state combination per cycle for mlp policy"
+             "(0=both unblocked, 1=tid0 blocked, 2=tid1 blocked, 3=both blocked)"),
+    ADD_STAT(mlpFetchBlockHoldCycle, statistics::units::Count::get(),
+             "Per-thread block/unblock state holding cycle distribution in mlp mode"),
+    ADD_STAT(mlpPolicyContribute, statistics::units::Count::get(),
+             "whether MlpPolicy find MLP behavior in block/flush Policy")
 {
         icacheStallCycles
             .prereq(icacheStallCycles);
@@ -448,6 +520,26 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .init(/* base value */ 0,
               /* last value */ fetch->fetchWidth,
               /* bucket size */ 1)
+            .flags(statistics::pdf);
+        loadFeedbackDist
+            .init(0, 4, 1)
+            .flags(statistics::pdf);
+        llsrPushDist
+            .init(0 ,159, 10)
+            .flags(statistics::pdf);
+        mlpLongLatencyPred
+            .init(4)
+            .subname(0, "TruePositive")
+            .subname(1, "TrueNegative")
+            .subname(2, "FalsePositive")
+            .subname(3, "FalseNegative");
+        mlpDistancePred
+            .init(3)
+            .subname(0, "FinePredicted")
+            .subname(1, "OverPredicted")
+            .subname(2, "MisPredicted");
+        mlpDistanceOverPredDist
+            .init(0, 128, 16)
             .flags(statistics::pdf);
         decodeThreadsPerCycle
             .init(0, fetch->numPreDispatchThreads, 1)
@@ -534,8 +626,14 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
         fetchBlockHoldCycle
             .init(2, 0, 999, 100)
             .flags(statistics::pdf);
-        fetchBlockHoldCycle.subname(0, "Unblocked");
+        fetchBlockHoldCycle.subname(0, "UnBlocked");
         fetchBlockHoldCycle.subname(1, "Blocked");
+        loadStallReasonHoldCycle
+            .init((int)(StallReason::NumStallReasons) + 1, 0, 63, 8)
+            .flags(statistics::pdf);
+        loadStallReasonRaiseCycle
+            .init((int)(StallReason::NumStallReasons) + 1, 0, 63, 8)
+            .flags(statistics::pdf);
         flushForFlushPolicy
             .init(cpu->numThreads)
             .flags(statistics::total);
@@ -543,6 +641,30 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .prereq(flushForFlushPolicy);
         flushFromFirstUseNoConsumer
             .prereq(flushFromFirstUseNoConsumer);
+        mlpAwarePolicyActive
+            .init(1 << cpu->numThreads)
+            .flags(statistics::total);
+        mlpAwarePolicyActive.subname(0, "BothInActive");
+        mlpAwarePolicyActive.subname(1, "Tid0Active");
+        mlpAwarePolicyActive.subname(2, "Tid1Active");
+        mlpAwarePolicyActive.subname(3, "BothActive");
+        mlpFetchBlockState
+            .init(1 << cpu->numThreads)
+            .flags(statistics::total);
+        mlpFetchBlockState.subname(0, "BothUnBlocked");
+        mlpFetchBlockState.subname(1, "Tid0Blocked");
+        mlpFetchBlockState.subname(2, "Tid1Blocked");
+        mlpFetchBlockState.subname(3, "BothBlocked");
+        mlpFetchBlockHoldCycle
+            .init(2, 0, 999, 100)
+            .flags(statistics::pdf);
+        mlpFetchBlockHoldCycle.subname(0, "UnBlocked");
+        mlpFetchBlockHoldCycle.subname(1, "Blocked");
+        mlpPolicyContribute
+            .init(2)
+            .flags(statistics::total);
+        mlpPolicyContribute.subname(0, "NoMLP");
+        mlpPolicyContribute.subname(1, "FindMLP");
 }
 
 void
@@ -640,7 +762,29 @@ Fetch::clearStates(ThreadID tid)
     clearRedirectPending(tid);
     threads[tid].cacheReq.reset();
     threads[tid].reset();
+    pendingTraceSupplyValid[tid] = false;
     fetchQueue[tid].clear();
+    deferVsetvlDecode[tid] = false;
+    postSquashFetchBatchSize[tid] = 0;
+    clearPredecodePipeline(tid);
+
+    // Thread removal discards in-flight commit notifications. Clear the
+    // policy latches here instead of waiting for a boundary that is gone.
+    mlpAwareMode[tid] = false;
+    mlpThreadFetchThrottled[tid] = false;
+    mlpRemainingInsts[tid] = 0;
+    mlpLongLatencyLoadSeqNum[tid] = 0;
+    mlpFlushFromInitiated[tid] = false;
+    mlpBlockStateHoldCycles[tid] = 0;
+
+    // Leaving MLP mode selects the base policy; it must not retain the old
+    // thread's block/flush state or its derived scheduler throttle either.
+    threadFetchThrottled[tid] = false;
+    lastLoadHeadSeqNum[tid] = UINT64_MAX;
+    longLatencyStallCycles[tid] = 0;
+    flushFromInitiated[tid] = false;
+    blockStateHoldCycles[tid] = 0;
+    smtBorrowThrottleCycles[tid] = 0;
 
     // TODO not sure what to do with priorityList for now
     // priorityList.push_back(tid);
@@ -671,12 +815,32 @@ Fetch::resetStage()
         threads[tid].cacheReq.reset();
 
         threads[tid].reset();
+        pendingTraceSupplyValid[tid] = false;
         ftqEntryFetchedInsts[tid] = 0;
 
         fetchQueue[tid].clear();
+        clearPredecodePipeline(tid);
 
         priorityList.push_back(tid);
+        deferVsetvlDecode[tid] = false;
+        postSquashFetchBatchSize[tid] = 0;
         waitForVsetvl[tid] = false;
+
+        // Startup and CPU takeover begin without any old in-flight MLP
+        // boundary. Match clearStates() so stale policy latches cannot block
+        // the new instruction stream. Keep learned predictor state intact.
+        mlpAwareMode[tid] = false;
+        mlpThreadFetchThrottled[tid] = false;
+        mlpRemainingInsts[tid] = 0;
+        mlpLongLatencyLoadSeqNum[tid] = 0;
+        mlpFlushFromInitiated[tid] = false;
+        mlpBlockStateHoldCycles[tid] = 0;
+
+        threadFetchThrottled[tid] = false;
+        lastLoadHeadSeqNum[tid] = UINT64_MAX;
+        longLatencyStallCycles[tid] = 0;
+        flushFromInitiated[tid] = false;
+        blockStateHoldCycles[tid] = 0;
         smtBorrowThrottleCycles[tid] = 0;
     }
 
@@ -726,7 +890,7 @@ Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
 
     // Initiate translation for first request
     updateCacheRequestStatusByRequest(tid, first_mem_req, TlbWait);
-    setAllFetchStalls(StallReason::ITlbStall);
+    setAllFetchStalls(tid, StallReason::ITlbStall);
     FetchTranslation *trans = new FetchTranslation(this);
     cpu->mmu->translateTiming(first_mem_req, cpu->thread[tid]->getTC(),
                               trans, BaseMMU::Execute);
@@ -755,7 +919,7 @@ Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
 
     // Always initiate translation for second request, regardless of first request status
     updateCacheRequestStatusByRequest(tid, second_mem_req, TlbWait);
-    setAllFetchStalls(StallReason::ITlbStall);
+    setAllFetchStalls(tid, StallReason::ITlbStall);
     FetchTranslation *trans2 = new FetchTranslation(this);
     cpu->mmu->translateTiming(second_mem_req, cpu->thread[tid]->getTC(),
                               trans2, BaseMMU::Execute);
@@ -1016,13 +1180,15 @@ Fetch::deactivateThread(ThreadID tid)
 bool
 Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
                              bool allow_two_fetch,
-                             bool &continued_to_next_target)
+                             bool &continued_to_next_target,
+                             bool &false_hit)
 {
     // Do branch prediction check here.
     // A bit of a misnomer...next_PC is actually the current PC until
     // this function updates it.
     bool predict_taken = false;
     continued_to_next_target = false;
+    false_hit = false;
 
     // Decoupled+BTB-only: compute next PC directly from the supplying FSQ entry.
     ThreadID tid = inst->threadNumber;
@@ -1060,7 +1226,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
 
     // Track how many dynamic instructions were fetched for this (legacy) FTQ/FSQ entry.
     ftqEntryFetchedInsts[tid]++;
-    const bool false_hit = run_out && prediction.taken && !predict_taken;
+    false_hit = run_out && prediction.taken && !predict_taken;
     if (false_hit) {
         DPRINTF(DecoupleBP,
                 "False BTB hit at FTQ %lu: stream [%#lx, %#lx) "
@@ -1149,7 +1315,7 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
     // Check for blocking conditions
     if (cacheBlocked) {
         DPRINTF(Fetch, "[tid:%i] Can't fetch cache line, cache blocked\n", tid);
-        setAllFetchStalls(StallReason::IcacheStall);
+        setAllFetchStalls(tid, StallReason::IcacheStall);
         return false;
     } else if (checkInterrupt(pc) && !delayedCommit[tid]) {
         // Hold off fetch from getting new instructions when:
@@ -1157,7 +1323,7 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
         // while an interrupt is pending and we're not in PAL mode, or
         // fetch is switched out.
         DPRINTF(Fetch, "[tid:%i] Can't fetch cache line, interrupt pending\n", tid);
-        setAllFetchStalls(StallReason::IntStall);
+        setAllFetchStalls(tid, StallReason::IntStall);
         return false;
     }
 
@@ -1201,7 +1367,7 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
 
         // Update cache request status using new interface
         updateCacheRequestStatusByRequest(tid, mem_req, AccessFailed);
-        setAllFetchStalls(StallReason::OtherFetchStall);
+        setAllFetchStalls(tid, StallReason::OtherFetchStall);
         // Note: Don't reset here, let the caller handle cleanup based on overall status
         return;
     }
@@ -1226,7 +1392,7 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
                 tid, mem_req->getVaddr());
 
         updateCacheRequestStatusByRequest(tid, mem_req, CacheWaitRetry);
-        setAllFetchStalls(StallReason::IcacheStall);
+        setAllFetchStalls(tid, StallReason::IcacheStall);
         retryPkt.push_back(data_pkt);
         return;
     }
@@ -1240,7 +1406,7 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
         data_pkt->setRetriedPkt();
         DPRINTF(Fetch, "[tid:%i] mem_req.addr=%#lx needs retry.\n", tid,
                 mem_req->getVaddr());
-        setAllFetchStalls(StallReason::IcacheStall);
+        setAllFetchStalls(tid, StallReason::IcacheStall);
         retryPkt.push_back(data_pkt);
         cacheBlocked = true;
     } else {
@@ -1250,7 +1416,7 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
 
         // Update cache request status using new interface
         updateCacheRequestStatusByRequest(tid, mem_req, CacheWaitResponse);
-        setAllFetchStalls(StallReason::IcacheStall);
+        setAllFetchStalls(tid, StallReason::IcacheStall);
         // Notify Fetch Request probe when a packet containing a fetch request is successfully sent
         ppFetchRequestSent->notify(mem_req);
     }
@@ -1311,7 +1477,7 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
     cpu->activityThisCycle();
 
     setThreadStatus(tid, TrapPending);
-    setAllFetchStalls(StallReason::TrapStall);
+    setAllFetchStalls(tid, StallReason::TrapStall);
 
     DPRINTF(Fetch, "[tid:%i] Blocked, need to handle the trap.\n", tid);
     DPRINTF(Fetch, "[tid:%i] fault (%s) detected @ PC %s.\n",
@@ -1412,6 +1578,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
 
     // Reset the cache request after cancelling
     threads[tid].cacheReq.reset();
+    pendingTraceSupplyValid[tid] = false;
 
     // Drop any retry packets that belong to this squashed thread.
     for (auto it = retryPkt.begin(); it != retryPkt.end();) {
@@ -1432,10 +1599,14 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     }
 
     setThreadStatus(tid, Squashing);
-    setAllFetchStalls(StallReason::BpStall); // may caused by other stages like load and store
+    setAllFetchStalls(tid, StallReason::BpStall); // may caused by other stages like load and store
 
     // Empty fetch queue
     fetchQueue[tid].clear();
+    deferVsetvlDecode[tid] = true;
+    postSquashFetchBatchSize[tid] = 0;
+    clearPredecodePipeline(tid);
+
 
     // microops are being squashed, it is not known wheather the
     // youngest non-squashed microop was  marked delayed commit
@@ -1559,7 +1730,8 @@ Fetch::initializeTickState()
     bool status_change = false;
 
     wroteToTimeBuffer = false;
-    setAllFetchStalls(StallReason::NoStall);
+    for (ThreadID tid = 0; tid < numThreads; ++tid)
+        setAllFetchStalls(tid, StallReason::NoStall);
 
     // get the distribution of fetch status
     fetchStats.fetchStatusDist[fetchStatus[0]]++;
@@ -1574,9 +1746,6 @@ Fetch::initializeTickState()
             --redirectPendingCycles[tid];
         }
     }
-
-    // === Block Policy: consume IEW long-latency signals ===
-    checkLongLatencyLoads();
 
     // Check signal updates for all active threads
     while (threads != end) {
@@ -1600,12 +1769,17 @@ Fetch::initializeTickState()
 void
 Fetch::fetchAndProcessInstructions(bool status_change)
 {
+    advancePredecodePipeline();
+
     // Fetch instructions from active threads
     for (threadFetched = 0; threadFetched < numFetchingThreads;
          threadFetched++) {
         // Fetch each of the actively fetching threads.
         fetch(status_change);
     }
+
+    // === Block Policy: consume IEW long-latency signals ===
+    checkLongLatencyLoads();
 
     // Pass stall reasons to decode stage
     toDecode->fetchStallReason = stallReason;
@@ -1650,9 +1824,6 @@ Fetch::selectUnstalledThread()
     bool candidate[MaxThreads];
     bool throttled[MaxThreads];
 
-    // update smtBorrowThrottleCycles and check whether has candidate
-    const bool block_active = isBlockPolicyActive();
-
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         candidate[tid] = true;
         throttled[tid] = false;
@@ -1662,19 +1833,22 @@ Fetch::selectUnstalledThread()
         // Policy differences:
         //   BlockStallPolicy (Hold):
         //     - throttle_now uses BASE throttle (ROB/IQ full, memory pressure)
-        //     - block is an ADDITIONAL throttle source: when isBlockPolicyActive()
+        //     - block is an ADDITIONAL throttle source: when isThrottlePolicyActive()
         //       and thread is blocked, throttled[tid] is set directly (OR with base)
         //   BlockThrottlePolicy (Drive):
-        //     - throttle_now = threadFetchBlocked[tid] (block REPLACES base throttle)
+        //     - throttle_now = threadFetchThrottled[tid] (block REPLACES base throttle)
         //     - the block signal continuously refreshes smtBorrowThrottleCycles hold counter
         //   FlushFromLoadPolicy / FlushFromUsePolicy:
         //     - same throttle behavior as BlockThrottlePolicy (block drives throttle)
         //     - additionally initiates a squash to free pipeline resources
+        bool throttle_active = isThrottlePolicyActive();
+        bool thread_fetch_throttled = mlpAwareMode[tid] ?
+            mlpThreadFetchThrottled[tid] : threadFetchThrottled[tid];
         {
             bool throttle_now = false;
-            if (smtFetchBlockPolicy == SMTFetchBlockPolicy::BlockThrottlePolicy) {
+            if (isBlockPolicy()) {
                 // BlockThrottlePolicy completely replaces base throttle policy
-                throttle_now = threadFetchBlocked[tid];
+                throttle_now = thread_fetch_throttled;
             } else {
                 // base throttle policy
                 throttle_now =
@@ -1688,8 +1862,8 @@ Fetch::selectUnstalledThread()
             }
             // BlockStallPolicy and Flush*Policy will directly set throttled[tid]
             if ((smtFetchBlockPolicy == SMTFetchBlockPolicy::BlockStallPolicy ||
-                 isFlushFromPolicy()) &&
-                block_active && threadFetchBlocked[tid]) {
+                 isFlushPolicy()) &&
+                throttle_active && thread_fetch_throttled) {
                 throttled[tid] = true;
             }
             throttled[tid] |= smtBorrowThrottleCycles[tid] > 0;
@@ -1705,7 +1879,9 @@ Fetch::selectUnstalledThread()
             continue;
         }
         // flush policy: should not pipedown insts
-        if (isFlushFromPolicy() && block_active && threadFetchBlocked[tid]) {
+        if ((smtFetchBlockPolicy == SMTFetchBlockPolicy::BlockStallPolicy ||
+             isFlushPolicy()) &&
+             throttle_active && thread_fetch_throttled) {
             smtBorrowThrottleCycles[tid] = 0;
             lsqCounter->setCounter(tid, UINT64_MAX);
             iqCounter->setCounter(tid, UINT64_MAX);
@@ -1718,6 +1894,8 @@ Fetch::selectUnstalledThread()
     if (has_candidate) {
         for (ThreadID tid = 0; tid < numThreads; ++tid) {
             if (!candidate[tid]) continue;
+            bool thread_fetch_throttled = mlpAwareMode[tid] ?
+                mlpThreadFetchThrottled[tid] : threadFetchThrottled[tid];
             lsqCounter->setCounter(tid, fromIEW->iewInfo[tid].ldstqCount);
             iqCounter->setCounter(tid, fromIEW->iewInfo[tid].iqCount);
             robCounter->setCounter(tid, fromIEW->iewInfo[tid].robCount);
@@ -1730,7 +1908,7 @@ Fetch::selectUnstalledThread()
             }
             DPRINTF(Fetch,
                     "[tid:%i] block=%u mem_pressure=%u hold=%u throttled=%u lsq=%u iq=%u rob=%u\n",
-                    tid, threadFetchBlocked[tid],
+                    tid, thread_fetch_throttled,
                     smtHasMemoryPressure(fromIEW->iewInfo[tid], smtLdstqHighWater),
                     smtBorrowThrottleCycles[tid], throttled[tid], fromIEW->iewInfo[tid].ldstqCount,
                     fromIEW->iewInfo[tid].iqCount, fromIEW->iewInfo[tid].robCount);
@@ -1757,19 +1935,18 @@ Fetch::selectUnstalledThread()
 }
 
 bool
-Fetch::isBlockPolicyActive() const
+Fetch::isThrottlePolicyActive()
 {
-    if (smtFetchBlockPolicy != SMTFetchBlockPolicy::BlockStallPolicy &&
-        smtFetchBlockPolicy != SMTFetchBlockPolicy::BlockThrottlePolicy &&
-        smtFetchBlockPolicy != SMTFetchBlockPolicy::FlushFromLoadPolicy &&
-        smtFetchBlockPolicy != SMTFetchBlockPolicy::FlushFromUsePolicy) {
+    if (smtFetchBlockPolicy == SMTFetchBlockPolicy::BaseLine) {
         return false;
     }
     int blocked_count = 0;
     int unblocked_count = 0;
 
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        if (threadFetchBlocked[tid])
+        bool thread_fetch_throttled = mlpAwareMode[tid] ?
+            mlpThreadFetchThrottled[tid] : threadFetchThrottled[tid];
+        if (thread_fetch_throttled)
             blocked_count++;
         else
             unblocked_count++;
@@ -1796,29 +1973,63 @@ Fetch::sendInstructionsToDecode()
         }
 
         // === Flush Policy: initiate flush after asymmetric check passes ===
-        if (isFlushFromPolicy() && isBlockPolicyActive() &&
-            threadFetchBlocked[i] && !flushFromInitiated[i]) {
-            InstSeqNum loadSeqNum = iewStage->ldstQueue.getLoadHeadSeqNum(i);
-            DynInstPtr loadInst = iewStage->findRobInst(i, loadSeqNum);
-            if (loadInst && loadInst->isLoad()) {
-                bool fromUse = (smtFetchBlockPolicy == SMTFetchBlockPolicy::FlushFromUsePolicy);
-                flushFromInitiateFlush(loadInst, i, fromUse);
+        if (isFlushPolicy() && isThrottlePolicyActive()) {
+            bool fromUse = smtFetchBlockPolicy == SMTFetchBlockPolicy::FlushFromUsePolicy;
+            bool isMlpDetect = smtMlpFetchBlockPolicy == SMTMLPFetchBlockPolicy::MlpDetectPolicy;
+            if (mlpAwareMode[i]) {
+                if (mlpThreadFetchThrottled[i] && !mlpFlushFromInitiated[i]) {
+                    DynInstPtr mlpInst = iewStage->findRobInst(i, mlpLongLatencyLoadSeqNum[i]);
+                    if (mlpInst) {
+                        flushFromInitiateFlush(mlpInst, i, fromUse, mlpAwareMode[i]);
+                    }
+                }
+            } else {
+                if (threadFetchThrottled[i] && !flushFromInitiated[i]) {
+                    if (isMlpDetect) {
+                        // MLP Detect: find the youngest miss Load in LoadQueue
+                        InstSeqNum loadSeqNum = iewStage->ldstQueue.getLoadHeadSeqNum(i);
+                        DynInstPtr loadInst = iewStage->findRobInst(i, loadSeqNum);
+                        bool findMlp = false;
+                        int lqSize = iewStage->ldstQueue.numLoads(i);
+                        for (int lqOffset = 0; lqOffset < lqSize; lqOffset++) {
+                            DynInstPtr inst =
+                                iewStage->ldstQueue.getLoadInst(i, lqOffset);
+                            if (!inst) continue;
+                            if (inst->seqNum <= loadSeqNum) continue;
+                            StallReason lqReason = iewStage->checkingLoadStoreInst(inst);
+                            if (isLongLatency(lqReason)) {
+                                loadSeqNum = inst->seqNum;
+                                loadInst = inst;
+                                findMlp = true;
+                            }
+                        }
+                        if (loadInst) {
+                            assert(!loadInst->isControl());
+                            flushFromInitiateFlush(loadInst, i, fromUse, mlpAwareMode[i]);
+                            fetchStats.mlpPolicyContribute[(int)findMlp]++;
+                        }
+                    } else {
+                        InstSeqNum loadSeqNum = iewStage->ldstQueue.getLoadHeadSeqNum(i);
+                        DynInstPtr loadInst = iewStage->findRobInst(i, loadSeqNum);
+                        if (loadInst) {
+                            assert(!loadInst->isControl());
+                            flushFromInitiateFlush(loadInst, i, fromUse, mlpAwareMode[i]);
+                        }
+                    }
+                }
             }
         }
     }
 
     if (!any_thread_active) {
-        // All threads are blocked, no instructions to send
-        ThreadID blocked_tid = InvalidThreadID;
+        // All threads are blocked, no instructions to send.
+        // Publish each blocked thread's own stall reason; initializeTickState
+        // reset them all to NoStall, so the first-blocked-tid-only pattern
+        // left the others with bogus NoStall samples in IEW.
         for (int i = 0; i < numThreads; i++) {
             if (stallSig->blockFetch[i]) {
-                blocked_tid = i;
-                break;
+                setAllFetchStalls(i, stallSig->fetchBlockReason[i]);
             }
-        }
-
-        if (blocked_tid != InvalidThreadID) {
-            setAllFetchStalls(stallSig->fetchBlockReason[blocked_tid]);
         }
 
         toDecode->fetchStallReason = stallReason;
@@ -1835,6 +2046,11 @@ Fetch::sendInstructionsToDecode()
 
     if (primary_tid == InvalidThreadID) {
         DPRINTF(Fetch, "All threads are stalled, no thread selected.\n");
+        // Active threads still need to replace initializeTickState's default
+        // NoStall even when none has queued instructions to select.
+        for (const ThreadID tid : *activeThreads) {
+            updateStallReasons(0, tid);
+        }
         for (int i = 0; i < numThreads; i++) {
             measureFrontendBubbles(0, i);
         }
@@ -1844,13 +2060,14 @@ Fetch::sendInstructionsToDecode()
     }
 
     std::vector<ThreadID> selected_tids{primary_tid};
-    const bool block_policy_active = isBlockPolicyActive();
     for (ThreadID tid = 0;
          tid < numThreads && selected_tids.size() < numPreDispatchThreads;
          ++tid) {
+        bool block_policy_active = isThrottlePolicyActive();
         if (tid != primary_tid && !stallSig->blockFetch[tid] &&
             !fetchQueue[tid].empty() &&
-            !(block_policy_active && threadFetchBlocked[tid])) {
+            !(block_policy_active && (mlpAwareMode[tid] ?
+                mlpThreadFetchThrottled[tid] : threadFetchThrottled[tid]))) {
             selected_tids.push_back(tid);
         }
     }
@@ -1861,6 +2078,35 @@ Fetch::sendInstructionsToDecode()
 
         unsigned thread_insts = 0;
         auto &insts = fetchQueue[tid];
+
+        if (deferVsetvlDecode[tid] && postSquashFetchBatchSize[tid] > 0) {
+            const auto batch_end = insts.begin() +
+                std::min<size_t>(postSquashFetchBatchSize[tid], insts.size());
+            const bool has_vsetvli = std::any_of(
+                    insts.begin(), batch_end,
+                    [](const DynInstPtr& inst) {
+                        if (!inst->staticInst->isVectorConfig())
+                            return false;
+                        const auto *vset = static_cast<const RiscvISA::VConfOp *>(
+                            inst->staticInst.get());
+                        return vset->vtypeIsImm;
+                    });
+            deferVsetvlDecode[tid] = false;
+            postSquashFetchBatchSize[tid] = 0;
+            if (has_vsetvli) {
+                DPRINTF(Fetch,
+                        "[tid:%i] Deferring post-squash vsetvli/vsetivli batch "
+                        "in fetch queue for one cycle.\n",
+                        tid);
+                measureFrontendBubbles(0, tid);
+                // Record BpStall for the deferred cycle; without this the
+                // initializeTickState NoStall reset leaks through and IEW
+                // undercounts fetch-bound stalls on the squash cycle.
+                setAllFetchStalls(tid, StallReason::BpStall);
+                continue;
+            }
+        }
+
         while (!insts.empty() && thread_insts < decodeWidth) {
             assert(toDecode->size < MaxWidth);
             const auto &inst = insts.front();
@@ -1877,12 +2123,53 @@ Fetch::sendInstructionsToDecode()
 
         total_insts_to_decode += thread_insts;
         measureFrontendBubbles(thread_insts, tid);
+        updateStallReasons(thread_insts, tid);
+
+        // MLP block: count instructions sent after LL load
+        if (smtMlpFetchBlockPolicy == SMTMLPFetchBlockPolicy::MlpAwarePolicy &&
+            isBlockPolicy() && mlpAwareMode[tid]) {
+            // Count instructions sent to decode this cycle
+            // Check if any were sent after the LL load
+            int instsAfterLL = 0;
+            for (int i = 0; i < thread_insts; i++) {
+                const auto &inst = toDecode->insts[toDecode->size - thread_insts + i];
+                if (inst->seqNum >= mlpLongLatencyLoadSeqNum[tid]) {
+                    instsAfterLL++;
+                }
+            }
+            mlpRemainingInsts[tid] -= instsAfterLL;
+            if (mlpRemainingInsts[tid] <= 0) {
+                assert(toDecode->size >= 1);
+                mlpLongLatencyLoadSeqNum[tid] = toDecode->insts[toDecode->size-1]->seqNum;
+            }
+            DPRINTF(Fetch,
+                "[tid:%i] MLP-block: sent %d insts after LL, remaining=%d\n",
+                tid, instsAfterLL, mlpRemainingInsts[tid]);
+        }
     }
 
-    // Legacy stall-reason vectors describe one logical decode lane. Keep
-    // that attribution while the explicit distributions below expose the
-    // widened aggregate SMT transfer.
-    updateStallReasons(total_insts_to_decode, primary_tid);
+    // Per-thread fetch stall reasons are published inside the supply loop
+    // above via updateStallReasons(thread_insts, tid). Threads that were not
+    // selected still need their stall reason published; initializeTickState
+    // reset them all to NoStall, so fix up here. Blocked threads get their
+    // own block reason; runnable-but-unselected threads (lost pre-dispatch
+    // arbitration with smtNumPreDispatchThreads < numThreads) get
+    // OtherFragStall so IEW does not count them as non-stalled.
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        bool selected = false;
+        for (const ThreadID st : selected_tids) {
+            if (st == tid) { selected = true; break; }
+        }
+        if (!selected) {
+            if (stallSig->blockFetch[tid]) {
+                setAllFetchStalls(tid, stallSig->fetchBlockReason[tid]);
+            } else if (!fetchQueue[tid].empty()) {
+                setAllFetchStalls(tid, StallReason::OtherFragStall);
+            }
+        }
+    }
+
+    // total_insts_to_decode is kept only for the aggregate stats sample below.
     fetchStats.decodeThreadsPerCycle.sample(selected_tids.size());
     fetchStats.instsSentToDecodePerCycle.sample(total_insts_to_decode);
 
@@ -1896,28 +2183,29 @@ Fetch::sendInstructionsToDecode()
 void
 Fetch::updateStallReasons(unsigned insts_to_decode, ThreadID tid)
 {
+    // Per-thread: publish toDecode->fetchStallReason[tid] for this thread
+    // only, so decode can read each thread's fetch lane reasons
+    // independently instead of from a shared aggregate vector.
     if (stallSig->blockFetch[tid]) {
-        setAllFetchStalls(stallSig->fetchBlockReason[tid]);
+        setAllFetchStalls(tid, stallSig->fetchBlockReason[tid]);
+        return;
     } else if (insts_to_decode == 0) {
-        // fetch stalled
-        if (stallReason[0] != StallReason::NoStall) {
-            // previously set stall reason
-            setAllFetchStalls(stallReason[0]);
+        // fetch stalled: keep the thread-specific reason set during fetch
+        // (e.g. IcacheStall/ITlbStall), or mark OtherFetchStall.
+        if (stallReason[tid].empty() ||
+            stallReason[tid][0] == StallReason::NoStall) {
+            setAllFetchStalls(tid, StallReason::OtherFetchStall);
         } else {
-            setAllFetchStalls(StallReason::OtherFetchStall);
+            setAllFetchStalls(tid, stallReason[tid][0]);
         }
-    } else {
-        // fetch partially stalled or no stall
-        for (int i = 0; i < stallReason.size(); i++) {
-            if (i < insts_to_decode)
-                stallReason[i] = StallReason::NoStall;
-            else {
-                stallReason[i] = StallReason::FetchFragStall;
-            }
-        }
+        return;
     }
-
-    toDecode->fetchStallReason = stallReason;
+    // fetch partially stalled or no stall: per-lane NoStall/FetchFragStall.
+    auto &scratch = stallReason[tid];
+    scratch.assign(decodeWidth, StallReason::NoStall);
+    for (int i = insts_to_decode; i < decodeWidth; i++)
+        scratch[i] = StallReason::FetchFragStall;
+    toDecode->fetchStallReason[tid] = scratch;
 }
 
 void
@@ -1989,7 +2277,14 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
 
 
 bool
-Fetch::isFlushFromPolicy() const
+Fetch::isBlockPolicy() const
+{
+    return smtFetchBlockPolicy == SMTFetchBlockPolicy::BlockThrottlePolicy ||
+           smtFetchBlockPolicy == SMTFetchBlockPolicy::BlockStallPolicy;
+}
+
+bool
+Fetch::isFlushPolicy() const
 {
     return smtFetchBlockPolicy == SMTFetchBlockPolicy::FlushFromLoadPolicy ||
            smtFetchBlockPolicy == SMTFetchBlockPolicy::FlushFromUsePolicy;
@@ -2049,7 +2344,7 @@ Fetch::findFirstUse(const DynInstPtr &loadInst, ThreadID tid)
 }
 
 void
-Fetch::flushFromInitiateFlush(const DynInstPtr &loadInst, ThreadID tid, bool fromUse)
+Fetch::flushFromInitiateFlush(const DynInstPtr &loadInst, ThreadID tid, bool fromUse, bool isMlp)
 {
     DynInstPtr squashFromInst = nullptr;
     bool includeSquashInst = true;
@@ -2109,7 +2404,12 @@ Fetch::flushFromInitiateFlush(const DynInstPtr &loadInst, ThreadID tid, bool fro
         }
     }
 
-    flushFromInitiated[tid] = true;
+    if (isMlp) {
+        mlpFlushFromInitiated[tid] = true;
+    } else {
+        flushFromInitiated[tid] = true;
+    }
+
     fetchStats.flushForFlushPolicy[tid]++;
 
     iewStage->squashDueToLongLatencyLoad(loadInst, squashFromInst, tid,
@@ -2117,66 +2417,329 @@ Fetch::flushFromInitiateFlush(const DynInstPtr &loadInst, ThreadID tid, bool fro
 }
 
 void
+Fetch::fusionInstUpdate(ThreadID tid, InstSeqNum seqNum0, InstSeqNum seqNum1)
+{
+    if (seqNum1 == mlpLongLatencyLoadSeqNum[tid]) {
+        mlpLongLatencyLoadSeqNum[tid] = seqNum0;
+        DPRINTF(Fetch, "[tid:%d] updates mlpLongLatencyLoadSeqNum from [sn:%d] to [sn:%d] "
+                "for fusion\n", tid, seqNum1, seqNum0);
+    }
+}
+
+void
+Fetch::consumeLoadFeedback()
+{
+    assert(mlpPredictor);
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        // Commit feedback: load completion (miss-pattern table) and LLSR push
+        // (MLP distance table). Both ride the commit wire (commitToFetchDelay).
+        auto &commitInfo = fromCommit->commitInfo[tid];
+        fetchStats.loadFeedbackDist.sample(commitInfo.loadFeedback.size());
+        for (const auto &fb : commitInfo.loadFeedback) {
+            auto &pred = mlpPredictor->getPredictor(tid);
+            auto result = pred.updateOnLoadComplete(
+                fb.loadPC, fb.actualLongLatency,
+                fb.predictedLongLatency, fb.predictedDistance);
+            fetchStats.mlpLongLatencyPred[result]++;
+        }
+        commitInfo.loadFeedback.clear();
+        fetchStats.llsrPushDist.sample(commitInfo.llsrPush.size());
+        for (const auto &entry : commitInfo.llsrPush) {
+            auto &pred = mlpPredictor->getPredictor(tid);
+            int64_t result = pred.pushLLSR(
+                entry.isLongLatencyLoad, entry.pc,
+                entry.predictedDistance, entry.predictionValid,
+                entry.isFusionPlaceholder);
+            // Compare the dynamic snapshot; INT64_MAX means no scored sample.
+            if (result != INT64_MAX) {
+                if (result < 0) {
+                    fetchStats.mlpDistancePred[2]++;
+                } else {
+                    if (result >= 32) {
+                        fetchStats.mlpDistancePred[1]++;
+                    } else {
+                        fetchStats.mlpDistancePred[0]++;
+                    }
+                    fetchStats.mlpDistanceOverPredDist.sample(result);
+                }
+            }
+        }
+        commitInfo.llsrPush.clear();
+    }
+}
+
+bool
+Fetch::isLongLatency(StallReason lqReason)
+{
+    return (lqReason == StallReason::LoadL2Bound ||
+            lqReason == StallReason::LoadL3Bound ||
+            lqReason == StallReason::LoadMemBound);
+}
+
+void
 Fetch::checkLongLatencyLoads()
 {
-    if (smtFetchBlockPolicy == SMTFetchBlockPolicy::BaseLine) {
-        return;
-    }
+    // just for stats
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        blockStateHoldCycles[tid]++;
-
-        // Get LQ head stall reason for this thread
         StallReason lqReason = iewStage->ldstQueue.lqEmpty(tid)
             ? StallReason::NoStall
             : iewStage->checkLsqStall(tid, true);
+        InstSeqNum newLoadHead = iewStage->ldstQueue.getLoadHeadSeqNum(tid);
 
-        // Check if LQ head is stuck on a long-latency load
-        bool is_long_latency =
-            (lqReason == StallReason::LoadL2Bound ||
-            lqReason == StallReason::LoadL3Bound ||
-            lqReason == StallReason::LoadMemBound);
-
-        if (is_long_latency) {
-            InstSeqNum newLoadHead = iewStage->ldstQueue.getLoadHeadSeqNum(tid);
-            if (newLoadHead == lastLoadHeadSeqNum[tid]) {
-                if (!threadFetchBlocked[tid] &&
-                    longLatencyStallCycles[tid] >= longLatencyThreshold) {
-                    threadFetchBlocked[tid] = true;
-                    fetchStats.fetchBlockHoldCycle[0].sample(blockStateHoldCycles[tid]);
-                    blockStateHoldCycles[tid] = 0;
-                    DPRINTF(Fetch, "[tid:%i] Long-latency load detected: "
-                        "LQ head stalled for %llu cycles (reason=%d)\n",
-                        tid, longLatencyStallCycles[tid], (int)lqReason);
-                }
-                longLatencyStallCycles[tid]++;
+        if (newLoadHead == lastLoadHeadSeqNumForStats[tid]) {
+            if (lqReason == lqReasonForStats[tid]) {
+                ;
             } else {
-                if (threadFetchBlocked[tid]) {
-                    threadFetchBlocked[tid] = false;
+                fetchStats.loadStallReasonHoldCycle[lqReasonForStats[tid]]
+                    .sample(longLatencyStallReasonCyclesForStats[tid]);
+                fetchStats.loadStallReasonRaiseCycle[lqReason]
+                    .sample(longLatencyStallCyclesForStats[tid]);
+                lqReasonForStats[tid] = lqReason;
+                longLatencyStallReasonCyclesForStats[tid] = 0;
+            }
+        } else {
+            fetchStats.loadStallReasonHoldCycle[lqReasonForStats[tid]]
+                .sample(longLatencyStallReasonCyclesForStats[tid]);
+            fetchStats.loadStallReasonRaiseCycle[lqReason]
+                .sample(longLatencyStallCyclesForStats[tid]);
+            lastLoadHeadSeqNumForStats[tid] = newLoadHead;
+            lqReasonForStats[tid] = lqReason;
+            longLatencyStallReasonCyclesForStats[tid] = 0;
+            longLatencyStallCyclesForStats[tid] = 0;
+        }
+        longLatencyStallReasonCyclesForStats[tid]++;
+        longLatencyStallCyclesForStats[tid]++;
+    }
+
+    if (smtFetchBlockPolicy == SMTFetchBlockPolicy::BaseLine) {
+        return;
+    }
+
+    if (mlpPredictor) {
+        // MLP prediction: get feedback for backend
+        consumeLoadFeedback();
+        // MLP prediction: query and record on DynInst
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            for (const auto &instruction : fetchQueue[tid]) {
+                if (instruction->isLoad() && !instruction->mlpPredictionMade) {
+                    auto &pred = mlpPredictor->getPredictor(tid);
+                    Addr mlpPC = instruction->pcState().instAddr();
+                    instruction->mlpLoadPC = mlpPC;
+                    instruction->mlpLoadPCValid = true;
+                    instruction->mlpPredictionMade = true;
+                    instruction->mlpPredictedLongLatency = pred.predictLongLatency(mlpPC);
+                    // Do not overwrite a distance already used to arm Block.
+                    if (!instruction->mlpDistanceSnapshotLocked) {
+                        instruction->mlpPredictedDistance = pred.predictMLPDistance(
+                            mlpPC, &instruction->mlpDistanceValid);
+                    }
+                }
+            }
+        }
+    }
+
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        blockStateHoldCycles[tid]++;
+        mlpBlockStateHoldCycles[tid]++;
+
+        // ========== MLP-aware path ==========
+        if (smtMlpFetchBlockPolicy == SMTMLPFetchBlockPolicy::MlpAwarePolicy) {
+            assert(mlpPredictor);
+            // =========== MlpBlockPolicy ==========
+            if (isBlockPolicy()) {
+                if (!mlpAwareMode[tid]) {
+                    // Pre-scan fetchQueue for predicted long-latency loads
+                    DynInstPtr predictedLongLatencyLoad = nullptr;
+                    for (const auto &inst : fetchQueue[tid]) {
+                        if (inst->mlpPredictionMade &&
+                            inst->mlpPredictedLongLatency &&
+                            inst->seqNum > mlpLongLatencyLoadSeqNum[tid]) {
+                            predictedLongLatencyLoad = inst;
+                            break;
+                        }
+                    }
+                    // MlpBlockPolicy: Track instructions sent after LL load
+                    if (predictedLongLatencyLoad) {
+                        // First time seeing this LL load
+                        predictedLongLatencyLoad->mlpDistanceSnapshotLocked = true;
+                        mlpAwareMode[tid] = true;
+                        mlpRemainingInsts[tid] =
+                            predictedLongLatencyLoad->mlpPredictedDistance + 1;
+                        assert(mlpRemainingInsts[tid] >= 1);
+                        mlpLongLatencyLoadSeqNum[tid] = predictedLongLatencyLoad->seqNum;
+                        fetchStats.mlpPolicyContribute[(int)(mlpRemainingInsts[tid] > 1)]++;
+                        DPRINTF(Fetch,
+                            "[tid:%i] MLP-block ON: load [sn:%llu] "
+                            "PC=%#x dist=%u\n",
+                            tid, predictedLongLatencyLoad->seqNum,
+                            predictedLongLatencyLoad->pcState().instAddr(),
+                            mlpRemainingInsts[tid]);
+                    }
+                }
+
+                if (mlpAwareMode[tid] &&
+                    ((fromCommit->commitInfo[tid].squash &&
+                    fromCommit->commitInfo[tid].doneSeqNum < mlpLongLatencyLoadSeqNum[tid]) ||
+                    (fromDecode->decodeInfo[tid].squash &&
+                    fromDecode->decodeInfo[tid].doneSeqNum < mlpLongLatencyLoadSeqNum[tid]) ||
+                    (fromCommit->commitInfo[tid].doneSeqNum >= mlpLongLatencyLoadSeqNum[tid] &&
+                    fromCommit->commitInfo[tid].doneSeqNum != 0))) {
+                    // when mlp-inst is commited or squashed, release throttle
+                    if (mlpThreadFetchThrottled[tid]){
+                        mlpThreadFetchThrottled[tid] = false;
+                        fetchStats.mlpFetchBlockHoldCycle[1].sample(mlpBlockStateHoldCycles[tid]);
+                        mlpBlockStateHoldCycles[tid] = 0;
+                        mlpAwareMode[tid] = false;
+                        DPRINTF(Fetch, "[tid:%i] MLP-block: [sn:%d] commited, block Done\n",
+                                        tid, mlpLongLatencyLoadSeqNum[tid]);
+                    } else {
+                        // when mlp-inst is commited or squashed while
+                        // mlpRemainingInsts[tid] <= 0 firstly (!mlpThreadFetchThrottled[tid]),
+                        // no need to block
+                        mlpThreadFetchThrottled[tid] = false;
+                        mlpAwareMode[tid] = false;
+                        DPRINTF(Fetch, "[tid:%i] MLP-block: [sn:%d] is commited/squashed before try to triggered "
+                                        "block, so no need to block\n", tid, mlpLongLatencyLoadSeqNum[tid]);
+                    }
+                } else if (mlpAwareMode[tid] && !mlpThreadFetchThrottled[tid] &&
+                           mlpRemainingInsts[tid] <= 0) {
+                    // when mlpRemainingInsts[tid] <= 0 firstly (!mlpThreadFetchThrottled[tid]), set throttle
+                    mlpThreadFetchThrottled[tid] = true;
+                    fetchStats.mlpFetchBlockHoldCycle[0].sample(mlpBlockStateHoldCycles[tid]);
+                    mlpBlockStateHoldCycles[tid] = 0;
+                    DPRINTF(Fetch, "[tid:%i] MLP-block: [sn:%d] has been send to decode, "
+                                   "triggered block\n", tid, mlpLongLatencyLoadSeqNum[tid]);
+                }
+            }
+
+            // =========== MlpFlushPolicy ==========
+            if (isFlushPolicy()) {
+                // Check LQ head
+                InstSeqNum curLoadHead =
+                    iewStage->ldstQueue.getLoadHeadSeqNum(tid);
+                DynInstPtr loadInst =
+                    iewStage->findRobInst(tid, curLoadHead);
+
+                if (loadInst && loadInst->mlpPredictionMade &&
+                    loadInst->mlpPredictedLongLatency &&
+                    !mlpThreadFetchThrottled[tid]) {
+
+                    uint32_t mlpDist =
+                        loadInst->mlpPredictedDistance;
+                    // Traverse ROB from loadInst, find flushFromInst
+                    DynInstPtr flushFromInst = loadInst;
+                    // Get ROB iterator starting from loadInst
+                    auto &robList = iewStage->getRobInstList(tid);
+                    auto it = std::find_if(robList.begin(), robList.end(),
+                        [loadInst](const DynInstPtr &inst) {
+                            return inst == loadInst;
+                        });
+                    if (it != robList.end()) {
+                        ++it;
+                        // LLSR distances start at the fusion's first slot and
+                        // count pre-fusion instructions. Skipping a fused source
+                        // also crosses its own placeholder at distance one.
+                        // Keep each later fusion whole if the boundary falls
+                        // inside it; its second slot is the conservative endpoint
+                        // used by LLSR. This does not change the first-slot window
+                        // approximation or reconstruct component-specific PCs.
+                        // Use a wider counter so crossing a pair cannot wrap a
+                        // maximum uint32_t prediction back to zero.
+                        for (uint64_t instCount = 0;
+                             instCount < mlpDist && it != robList.end(); ++it) {
+                            // Track last non-control instruction, but count all
+                            // entries, including controls, in the distance.
+                            if (!(*it)->isControl()) {
+                                flushFromInst = *it;
+                            }
+                            instCount += (*it)->isFusion() ? 2 : 1;
+                        }
+                    }
+                    if (it == robList.end()) {
+                        // nothing need to do
+                    } else {
+                        // flush
+                        mlpThreadFetchThrottled[tid] = true;
+                        mlpAwareMode[tid] = true;
+                        fetchStats.mlpPolicyContribute[(int)(flushFromInst != loadInst)]++;
+                        mlpLongLatencyLoadSeqNum[tid] = flushFromInst->seqNum;
+                        fetchStats.mlpFetchBlockHoldCycle[0].sample(mlpBlockStateHoldCycles[tid]);
+                        mlpBlockStateHoldCycles[tid] = 0;
+                        DPRINTF(Fetch, "[tid:%i] MLP-flush: Long-latency load [sn:%d] detected: "
+                                       "MLP-dist:%d, flush after [sn:%d]",
+                                       tid, curLoadHead, mlpDist, mlpLongLatencyLoadSeqNum[tid]);
+                    }
+                }
+                // when mlpLongLatencyLoadSeqNum[i] leave rob, release throttle
+                if (mlpThreadFetchThrottled[tid] &&
+                    !(iewStage->findRobInst(tid, mlpLongLatencyLoadSeqNum[tid]))) {
+                    mlpThreadFetchThrottled[tid] = false;
+                    mlpAwareMode[tid] = false;
+                    mlpFlushFromInitiated[tid] = false;
+                    fetchStats.mlpFetchBlockHoldCycle[1].sample(mlpBlockStateHoldCycles[tid]);
+                    mlpBlockStateHoldCycles[tid] = 0;
+                    DPRINTF(Fetch, "[tid:%i] MLP-flush: Long-latency load with MLP "
+                                   "to [sn:%d] Done\n", tid, mlpLongLatencyLoadSeqNum[tid]);
+
+                }
+            }
+        }
+
+        // ========== Base/MlpDetect Block/Flush Polciy ==========
+        if (1) {
+            StallReason lqReason = iewStage->ldstQueue.lqEmpty(tid)
+                ? StallReason::NoStall
+                : iewStage->checkLsqStall(tid, true);
+            if (isLongLatency(lqReason)) {
+                InstSeqNum newLoadHead = iewStage->ldstQueue.getLoadHeadSeqNum(tid);
+                if (newLoadHead == lastLoadHeadSeqNum[tid]) {
+                    if (!threadFetchThrottled[tid] &&
+                        longLatencyStallCycles[tid] >= longLatencyThreshold) {
+                        threadFetchThrottled[tid] = true;
+                        fetchStats.fetchBlockHoldCycle[0].sample(blockStateHoldCycles[tid]);
+                        blockStateHoldCycles[tid] = 0;
+                        DPRINTF(Fetch, "[tid:%i] Long-latency load detected: "
+                            "LQ head stalled for %llu cycles (reason=%d)\n",
+                            tid, longLatencyStallCycles[tid], (int)lqReason);
+                    }
+                    longLatencyStallCycles[tid]++;
+                } else {
+                    if (threadFetchThrottled[tid]) {
+                        threadFetchThrottled[tid] = false;
+                        flushFromInitiated[tid] = false;
+                        fetchStats.fetchBlockHoldCycle[1].sample(blockStateHoldCycles[tid]);
+                        blockStateHoldCycles[tid] = 0;
+                        DPRINTF(Fetch, "[tid:%i] Long-latency load Done\n", tid);
+                    }
+                    longLatencyStallCycles[tid] = 0;
+                    lastLoadHeadSeqNum[tid] = newLoadHead;
+                }
+            } else {
+                if (threadFetchThrottled[tid]) {
+                    threadFetchThrottled[tid] = false;
                     flushFromInitiated[tid] = false;
                     fetchStats.fetchBlockHoldCycle[1].sample(blockStateHoldCycles[tid]);
                     blockStateHoldCycles[tid] = 0;
                     DPRINTF(Fetch, "[tid:%i] Long-latency load Done\n", tid);
                 }
                 longLatencyStallCycles[tid] = 0;
-                lastLoadHeadSeqNum[tid] = newLoadHead;
+                lastLoadHeadSeqNum[tid] = UINT64_MAX;
             }
-        } else {
-            if (threadFetchBlocked[tid]) {
-                threadFetchBlocked[tid] = false;
-                flushFromInitiated[tid] = false;
-                fetchStats.fetchBlockHoldCycle[1].sample(blockStateHoldCycles[tid]);
-                blockStateHoldCycles[tid] = 0;
-                DPRINTF(Fetch, "[tid:%i] Long-latency load Done\n", tid);
-            }
-            longLatencyStallCycles[tid] = 0;
-            lastLoadHeadSeqNum[tid] = UINT64_MAX;
         }
     }
+
+    // blockState stats
     int blockState = 0;
+    int mlpBlockState = 0;
+    int mlpActiveState = 0;
     for (ThreadID tid = numThreads - 1; tid >= 0; tid--) {
-        blockState = (blockState << 1) + (int)(threadFetchBlocked[tid]);
+        blockState = (blockState << 1) + (int)(threadFetchThrottled[tid]);
+        mlpBlockState = (mlpBlockState << 1) + (int)(mlpThreadFetchThrottled[tid]);
+        mlpActiveState = (mlpActiveState << 1) + (int)(mlpAwareMode[tid]);
     }
     fetchStats.fetchBlockState[blockState]++;
+    fetchStats.mlpFetchBlockState[mlpBlockState]++;
+    fetchStats.mlpAwarePolicyActive[mlpActiveState]++;
 }
 
 void
@@ -2381,7 +2944,7 @@ Fetch::handleCommitSignals(ThreadID tid)
         const auto corr_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
         assert(dbpbtb);
         dbpbtb->controlSquash(mispred_inst->getFtqId(), mispred_inst->pcState(),
-                              corr_pc, mispred_inst->staticInst,
+                              corr_pc, mispred_inst, mispred_inst->staticInst,
                               mispred_inst->getInstBytes(), fromCommit->commitInfo[tid].branchTaken,
                               mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(), true);
     } else if (fromCommit->commitInfo[tid].isTrapSquash) {
@@ -2427,10 +2990,12 @@ Fetch::handleDecodeSquash(ThreadID tid)
                 mispred_inst->getFtqId(),
                 mispred_inst->pcState(),
                 next_pc,
+                mispred_inst,
                 mispred_inst->staticInst, mispred_inst->getInstBytes(),
                 fromDecode->decodeInfo[tid].branchTaken,
                 mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(),
-                false);
+                false, false,
+                isTraceMode() && mispred_inst->hasTraceBranchInfo());
         } else {
             warn("Unexpected non-control squash from decode.\n");
         }
@@ -2520,13 +3085,166 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
 }
 
 bool
+Fetch::predecodePipelineEnabled(ThreadID tid) const
+{
+    return enablePredecode && numThreads == 1 && tid < numThreads &&
+        !isTraceMode();
+}
+
+bool
+Fetch::predecodeEnabled(ThreadID tid, const StaticInstPtr &staticInst,
+                        const StaticInstPtr &curMacroop) const
+{
+    return predecodePipelineEnabled(tid) &&
+        !curMacroop && staticInst && !staticInst->isMacroop() &&
+        !staticInst->isVectorConfig();
+}
+
+void
+Fetch::clearPredecodePipeline(ThreadID tid)
+{
+    predecodeStage0[tid].clear();
+    predecodeStage1[tid].clear();
+}
+
+bool
+Fetch::processPredecodeStage(ThreadID tid)
+{
+    auto &stage = predecodeStage1[tid];
+    for (unsigned i = 0; i < stage.size; ++i) {
+        const DynInstPtr instruction = stage.entries[i].instruction;
+        if (!instruction || instruction->isSquashed())
+            continue;
+
+        const auto fault = classifyPredecodeFault(
+            instruction, instruction->staticInst);
+        instruction->setPredecodeChecked();
+        DPRINTF(Fetch,
+                "[tid:%i] Predecode checker at PC %#lx, seq=%llu, fault=%u\n",
+                tid, instruction->pcState().instAddr(), instruction->seqNum,
+                static_cast<unsigned>(fault));
+        if (fault != PredecodeFault::None) {
+            handlePredecodeFault(tid, instruction, fault);
+            return true;
+        }
+    }
+    stage.clear();
+    return false;
+}
+
+void
+Fetch::advancePredecodePipeline()
+{
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        if (!predecodePipelineEnabled(tid))
+            continue;
+
+        if (processPredecodeStage(tid))
+            continue;
+
+        predecodeStage1[tid] = std::move(predecodeStage0[tid]);
+        predecodeStage0[tid].clear();
+    }
+}
+
+Fetch::PredecodeFault
+Fetch::classifyPredecodeFault(const DynInstPtr &instruction,
+                              const StaticInstPtr &staticInst) const
+{
+    if (instruction->readPredTaken() && !staticInst->isControl())
+        return PredecodeFault::NonCfiTaken;
+    if (staticInst->isReturn() && !staticInst->isNonSpeculative() &&
+        !instruction->readPredTaken())
+        return PredecodeFault::ReturnNotTaken;
+    if (staticInst->isDirectCtrl()) {
+        if (!instruction->readPredTaken() && staticInst->isUncondCtrl())
+            return PredecodeFault::DirectNotTaken;
+        if (instruction->readPredTaken()) {
+            const auto target = instruction->branchTarget();
+            if (target->instAddr() !=
+                instruction->readPredTarg().instAddr())
+                return PredecodeFault::DirectTargetMismatch;
+        }
+    }
+    return PredecodeFault::None;
+}
+
+void
+Fetch::handlePredecodeFault(ThreadID tid, const DynInstPtr &instruction,
+                            PredecodeFault fault)
+{
+    RiscvISA::PCState target = instruction->pcState().as<RiscvISA::PCState>();
+    bool actuallyTaken = true;
+    const char *faultName = "unknown";
+    switch (fault) {
+      case PredecodeFault::DirectNotTaken:
+        faultName = "direct-not-taken";
+        target = instruction->branchTarget()->as<RiscvISA::PCState>();
+        break;
+      case PredecodeFault::DirectTargetMismatch:
+        faultName = "direct-target-mismatch";
+        target = instruction->branchTarget()->as<RiscvISA::PCState>();
+        break;
+      case PredecodeFault::ReturnNotTaken:
+        faultName = "return-not-taken";
+        target.set(getPreservedReturnAddr(instruction));
+        break;
+      case PredecodeFault::NonCfiTaken:
+        faultName = "taken-non-cfi";
+        target.set(instruction->pcState().getFallThruPC());
+        actuallyTaken = false;
+        break;
+      case PredecodeFault::None:
+        return;
+    }
+
+    DPRINTF(Fetch,
+            "[tid:%i] Predecode redirect (%s) at PC %#lx to %#lx, seq=%llu\n",
+            tid, faultName, instruction->pcState().instAddr(),
+            target.instAddr(), instruction->seqNum);
+
+    instruction->setPredTaken(actuallyTaken);
+    instruction->setPredTarg(target);
+    assert(dbpbtb);
+    if (fault == PredecodeFault::NonCfiTaken) {
+        dbpbtb->nonControlSquash(
+            instruction->getFtqId(), instruction->pcState(),
+            instruction->seqNum, tid, instruction->getLoopIteration());
+    } else {
+        dbpbtb->controlSquash(
+            instruction->getFtqId(), instruction->pcState(), target,
+            instruction,
+            instruction->staticInst, instruction->getInstBytes(),
+            actuallyTaken, instruction->seqNum, tid,
+            instruction->getLoopIteration(), false, true);
+    }
+
+    // The faulting instruction is already registered. Preserve older entries
+    // that may still be waiting for Decode; squash only removes younger work.
+    std::deque<DynInstPtr> preservedFetchEntries;
+    for (const auto &queued : fetchQueue[tid]) {
+        if (queued->seqNum <= instruction->seqNum)
+            preservedFetchEntries.push_back(queued);
+    }
+
+    // Redirect Fetch and mark younger in-flight front-end instructions as
+    // squashed. At this point they cannot have reached the ROB yet.
+    doSquash(target, instruction, instruction->seqNum, tid);
+    cpu->removeInstsUntil(instruction->seqNum, tid);
+    fetchQueue[tid] = std::move(preservedFetchEntries);
+    delayedCommit[tid] = !fetchQueue[tid].empty() &&
+        fetchQueue[tid].back()->isDelayedCommit();
+    ++fetchStats.predecodeRedirects;
+}
+
+bool
 Fetch::checkDecoupledFrontend(ThreadID tid)
 {
     assert(dbpbtb);
     if (!isTraceMode() && !dbpbtb->ftqHasFetching(tid)) {
         dbpbtb->addFtqNotValid();
         DPRINTF(Fetch, "Skip fetch when FSQ head is not available\n");
-        setAllFetchStalls(StallReason::FTQBubble);
+        setAllFetchStalls(tid, StallReason::FTQBubble);
         return false;
     }
     return true;
@@ -2581,7 +3299,7 @@ Fetch::prepareFetchAddress(ThreadID tid, bool &status_change)
     if (threads[tid].cacheReq.getOverallStatus() == AccessComplete) {
         DPRINTF(Fetch, "[tid:%i] Icache miss is complete.\n", tid);
         setThreadStatus(tid, Running);
-        setAllFetchStalls(StallReason::NoStall);
+        setAllFetchStalls(tid, StallReason::NoStall);
         status_change = true;
         return true;
     } else if (canFetchInstructions(tid)) {
@@ -2667,7 +3385,7 @@ Fetch::fetch(bool &status_change)
 }
 
 StallReason
-Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
+Fetch::checkMemoryNeeds(ThreadID tid, PCStateBase &this_pc,
                         const StaticInstPtr &curMacroop)
 {
     // If we are in the middle of a macro-op, the decoder does not need
@@ -2777,12 +3495,42 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
     set(next_pc, pc);
 
     // Handle branch prediction and update next_pc for both modes
+    bool false_hit = false;
     predictedBranch = lookupAndUpdateNextPC(
-        instruction, *next_pc, allow_two_fetch, continued_to_next_target);
+        instruction, *next_pc, allow_two_fetch, continued_to_next_target,
+        false_hit);
 
     if (predictedBranch) {
         DPRINTF(Fetch, "[tid:%i] Branch detected with PC = %s, target = %s\n",
                 instruction->threadNumber, pc, *next_pc);
+    }
+
+    // Value prediction must run before a predecode recovery can return early.
+    if (valuePred && instruction->canLVP()) {
+        valuepred::VPPredictRequest predictRequest;
+        predictRequest.pc = instruction->getPC();
+        predictRequest.seqNo = instruction->seqNum;
+        predictRequest.tid = tid;
+        // ExampleValuePredictor shows how a predictor can extend the public
+        // request with extra fetch-time inputs without changing core fields.
+        predictRequest.emplaceExt<valuepred::ExamplePredictRequestExt>(
+                curTick(), instruction->opClass());
+        if (dbpbtb && dbpbtb->ftqHasFetching(tid)) {
+            predictRequest.emplaceExt<valuepred::VPHistoryRequestExt>(
+                    &dbpbtb->ftqFetchingTarget(tid));
+        }
+        instruction->vpResult =
+            valuePred->valuePredict(predictRequest, instruction->vpRecord);
+    }
+
+    if (predecodeEnabled(tid, staticInst, curMacroop) &&
+        !false_hit) {
+        auto &stage = predecodeStage0[tid];
+        assert(stage.size < MaxWidth);
+        stage.entries[stage.size++].instruction = instruction;
+        DPRINTF(Fetch,
+                "[tid:%i] Predecode stage0 at PC %#lx, seq=%llu\n",
+                tid, instruction->pcState().instAddr(), instruction->seqNum);
     }
 
     if (isTraceMode()) {
@@ -2800,24 +3548,6 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 
     // Update the main PC state for the next instruction.
     set(pc, *next_pc);
-
-    // Do the value prediction
-    if (valuePred && instruction->canLVP()) {
-        valuepred::VPPredictRequest predictRequest;
-        predictRequest.pc = instruction->getPC();
-        predictRequest.seqNo = instruction->seqNum;
-        predictRequest.tid = tid;
-        // ExampleValuePredictor shows how a predictor can extend the public
-        // request with extra fetch-time inputs without changing core fields.
-        predictRequest.emplaceExt<valuepred::ExamplePredictRequestExt>(
-                curTick(), instruction->opClass());
-        if (dbpbtb && dbpbtb->ftqHasFetching(tid)) {
-            predictRequest.emplaceExt<valuepred::VPHistoryRequestExt>(
-                    &dbpbtb->ftqFetchingTarget(tid));
-        }
-        instruction->vpResult =
-            valuePred->valuePredict(predictRequest, instruction->vpRecord);
-    }
 
     return predictedBranch;
 }
@@ -2878,12 +3608,14 @@ Fetch::performInstructionFetch(ThreadID tid)
 
     // Handle stall conditions and update statistics
     if (stall != StallReason::NoStall) {
-        setAllFetchStalls(stall);
+        setAllFetchStalls(tid, stall);
     }
 
     // Log why fetch stopped
     if (stopFetchThisCycle) {
-        DPRINTF(Fetch, "[tid:%i] Done fetching, predicted branch instruction encountered.\n", tid);
+        DPRINTF(Fetch,
+                "[tid:%i] Done fetching, predicted branch instruction "
+                "encountered.\n", tid);
     } else if (numInst >= fetchWidth) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, reached fetch bandwidth for this cycle.\n", tid);
     } else if (stall != StallReason::NoStall) {
@@ -2896,16 +3628,65 @@ Fetch::performInstructionFetch(ThreadID tid)
     // Update persistent state
     macroop[tid] = curMacroop;
 
+    if (deferVsetvlDecode[tid] && postSquashFetchBatchSize[tid] == 0 &&
+        !fetchQueue[tid].empty()) {
+        postSquashFetchBatchSize[tid] = fetchQueue[tid].size();
+    }
+
     if (numInst > 0) {
         wroteToTimeBuffer = true;
     }
 
-   // assert(fetchStatus[tid] == Running && "Fetch should be running");
+    // assert(fetchStatus[tid] == Running && "Fetch should be running");
+}
+
+bool
+Fetch::traceInstructionBytesReady(
+    ThreadID tid, Addr instruction_pc, unsigned instruction_size) const
+{
+    const auto &buffer = threads[tid];
+    const auto &cache_req = buffer.cacheReq;
+    if (!buffer.valid || instruction_size == 0 ||
+        instruction_size > fetchBufferSize ||
+        cache_req.getOverallStatus() != AccessComplete ||
+        instruction_pc < buffer.startPC ||
+        instruction_pc - buffer.startPC > fetchBufferSize - instruction_size) {
+        return false;
+    }
+
+    // Require completed demand responses for every instruction byte, including
+    // an instruction spanning two cache lines. Synthetic decoder bytes carry
+    // instruction semantics, but must not manufacture cache supply readiness.
+    for (unsigned offset = 0; offset < instruction_size; ++offset) {
+        const Addr byte = instruction_pc + offset;
+        bool covered = false;
+        for (size_t index = 0; index < cache_req.requests.size(); ++index) {
+            const auto &req = cache_req.requests[index];
+            if (!req || !req->hasVaddr() ||
+                index >= cache_req.requestStatus.size() ||
+                cache_req.requestStatus[index] != AccessComplete) {
+                continue;
+            }
+            const Addr begin = req->getVaddr();
+            if (byte >= begin && byte - begin < req->getSize()) {
+                covered = true;
+                break;
+            }
+        }
+        if (!covered) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool
 Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
     if (threads[tid].valid) {
+        return false;
+    }
+
+    if (isTraceMode() && !pendingTraceSupplyValid[tid]) {
         return false;
     }
 
@@ -2919,6 +3700,14 @@ Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
     const auto prediction = dbpbtb->ftqFetchBlock(tid);
     const Addr start_pc = prediction.startPC;
     const Addr current_pc = pc_state.instAddr();
+    if (isTraceMode()) {
+        panic_if(pendingTraceInstructionPc[tid] < prediction.startPC ||
+                     pendingTraceInstructionPc[tid] >= prediction.endPC,
+                 "Trace supply PC %#llx is outside FTQ range [%#llx, %#llx)",
+                 static_cast<unsigned long long>(pendingTraceInstructionPc[tid]),
+                 static_cast<unsigned long long>(prediction.startPC),
+                 static_cast<unsigned long long>(prediction.endPC));
+    }
     threads[tid].startPC = start_pc;
 
     if (current_pc < prediction.startPC ||
@@ -3015,11 +3804,10 @@ Fetch::profileStall(ThreadID tid)
 }
 
 void
-Fetch::setAllFetchStalls(StallReason stall)
+Fetch::setAllFetchStalls(ThreadID tid, StallReason stall)
 {
-    for (int i = 0; i < stallReason.size(); i++) {
-        stallReason[i] = stall;
-    }
+    stallReason[tid].assign(decodeWidth, stall);
+    toDecode->fetchStallReason[tid] = stallReason[tid];
 }
 
 

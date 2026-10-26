@@ -345,7 +345,8 @@ def template CSRExecute {{
         RegVal data, olddata;
         auto lowestAllowedMode = (PrivilegeMode)bits(csr, 9, 8);
         auto pm = (PrivilegeMode)xc->readMiscReg(MISCREG_PRV);
-        if ((pm < lowestAllowedMode) && ((csr <CSR_HSTATUS
+        bool isSstcCmp = (csr == CSR_STIMECMP) || (csr == CSR_VSTIMECMP);
+        if ((pm < lowestAllowedMode) && !isSstcCmp && ((csr <CSR_HSTATUS
                 ) ||(csr >CSR_HGATP)) && ((csr <CSR_VSSTATUS) || (
                     csr > CSR_VSATP))) {
             return std::make_shared<IllegalInstFault>(
@@ -407,6 +408,40 @@ def template CSRExecute {{
             }
             break;
           }
+          case CSR_STIMECMP:
+          case CSR_VSTIMECMP: {
+            if(pm == PRV_M) {
+                break;
+            }
+            int v = xc->readMiscReg(MISCREG_VIRMODE);
+            bool mStce = (xc->readMiscReg(MISCREG_MENVCFG) & MENVCFG_STCE) != 0;
+            bool mTm = (xc->readMiscReg(MISCREG_MCOUNTEREN) & MCOUNTEREN_TM) != 0;
+            if (!mStce || !mTm) {
+                return std::make_shared<IllegalInstFault>(
+                "Sstc CSR access disabled by menvcfg.STCE/mcounteren.TM\n",
+                machInst);
+            }
+            if (v == 0) {
+                if (pm != PRV_S) {
+                    return std::make_shared<IllegalInstFault>(
+                        "Sstc CSR access requires S/HS-mode or M-mode\n",
+                        machInst);
+                }
+            } else { // v == 1
+                if (csr == CSR_VSTIMECMP) {
+                    return std::make_shared<HVFault>(machInst);
+                }
+                if (pm != PRV_S) {
+                    return std::make_shared<HVFault>(machInst);
+                }
+                bool hStce = (xc->readMiscReg(MISCREG_HENVCFG) & HENVCFG_STCE) != 0;
+                bool hTm =bits(xc->readMiscReg(MISCREG_HCOUNTEREN), 1) != 0;
+                if (!hStce || !hTm) {
+                    return std::make_shared<HVFault>(machInst);
+                }
+            }
+            break;
+          }
           case CSR_TIME: {
             if (!isa->hpmCounterEnabled(MISCREG_TIME)) {
                 return std::make_shared<HVFault>(machInst);
@@ -417,33 +452,38 @@ def template CSRExecute {{
             break;
         }
 
+        RegIndex effectiveMiscReg = midx;
+        RegVal visibleMask = maskVal;
+        const bool guestInterruptCsr =
+            (csr == CSR_SIE || csr == CSR_SIP) &&
+            xc->readMiscReg(MISCREG_VIRMODE) == 1;
+
+        if (guestInterruptCsr) {
+            effectiveMiscReg =
+                (csr == CSR_SIE) ? MISCREG_VSIE : MISCREG_VSIP;
+            visibleMask = SI_MASK;
+        } else if (csr == CSR_SIE) {
+            visibleMask = SI_MASK & xc->readMiscReg(MISCREG_MIDELEG);
+        }
+
         if (csr == CSR_FCSR) {
             olddata = xc->readMiscReg(MISCREG_FFLAGS) |
                       (xc->readMiscReg(MISCREG_FRM) << FRM_OFFSET);
         } else {
-            olddata = xc->readMiscReg(midx);
+            olddata = xc->readMiscReg(effectiveMiscReg);
         }
         auto olddata_all = olddata;
-        uint64_t maskVal_num = maskVal;
-        if(csr == CSR_SIE){
-            if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
-                maskVal_num = (1ULL << 2)|(1ULL << 6)|(1ULL << 10);
 
-            } else {
-                maskVal_num = 0x222 & xc->readMiscReg(MISCREG_MIDELEG);
-            }
-        }
-
-        olddata &= maskVal_num;
+        olddata &= visibleMask;
         DPRINTF(RiscvMisc, "Reading CSR %s: %#x\n", csrName, olddata);
         data = olddata;
         bool write = false;
 
         %(code)s;
 
-        data &= maskVal_num;
+        data &= visibleMask;
         if(csr == CSR_HIE){
-            xc->setMiscReg(midx, data);
+            xc->setMiscReg(effectiveMiscReg, data);
         }
         // NOTE: may has bug
         if (data != olddata || csr == CSR_FCSR || (csr == CSR_FRM && write) || csr == CSR_VCSR) {
@@ -455,7 +495,7 @@ def template CSRExecute {{
             // We must keep those original bits not in mask.
             // olddata and data only contain the bits visable
             // in current privilige level.
-            newdata_all = (olddata_all & ~maskVal_num) | data;
+            newdata_all = (olddata_all & ~visibleMask) | data;
             DPRINTF(RiscvMisc, "Writing %#x to CSR %s.\n",
                     newdata_all, csrName);
             switch (csr) {
@@ -468,7 +508,7 @@ def template CSRExecute {{
               case CSR_MSTATUS: case CSR_SSTATUS:
               case CSR_HSTATUS:
                 if (newdata_all != olddata_all) {
-                    xc->setMiscReg(midx, newdata_all);
+                    xc->setMiscReg(effectiveMiscReg, newdata_all);
                     auto new_val = xc->readMiscReg(MISCREG_STATUS);
                     DPRINTF(RiscvMisc, "After writing mstatus: %#lx.\n",
                             new_val);
@@ -479,7 +519,7 @@ def template CSRExecute {{
                 }
                 break;
               default:
-                xc->setMiscReg(midx, data);
+                xc->setMiscReg(effectiveMiscReg, data);
                 break;
             }
         }
@@ -490,6 +530,14 @@ def template CSRExecute {{
 
 def format ROp(code, *opt_flags) {{
     iop = InstObjParams(name, Name, 'RegOp', code, opt_flags)
+    header_output = BasicDeclare.subst(iop)
+    decoder_output = BasicConstructor.subst(iop)
+    decode_block = BasicDecode.subst(iop)
+    exec_output = BasicExecute.subst(iop)
+}};
+
+def format MopOp(code) {{
+    iop = InstObjParams(name, Name, 'MopOp', code, ['IntAluOp'])
     header_output = BasicDeclare.subst(iop)
     decoder_output = BasicConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)

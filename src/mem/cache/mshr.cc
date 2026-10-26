@@ -46,6 +46,7 @@
 
 #include "mem/cache/mshr.hh"
 
+#include <algorithm>
 #include <cassert>
 #include <string>
 
@@ -335,6 +336,7 @@ MSHR::allocate(Addr blk_addr, unsigned blk_size, PacketPtr target,
     assert(target);
     isForward = false;
     wasWholeLineWrite = false;
+    sbufferStoreOrigin = target->isDcacheMainPipeSbufferReq();
     _isUncacheable = target->req->isUncacheable();
     inService = false;
     downstreamPending = false;
@@ -392,6 +394,22 @@ MSHR::deallocate()
     targets.resetFlags();
     assert(deferredTargets.isReset());
     inService = false;
+}
+
+bool
+MSHR::canMergeSbufferStore(const Packet *predecessor) const
+{
+    if (!sbufferStoreOrigin || !deferredTargets.empty() ||
+        (inService && (hasPostInvalidate() || hasPostDowngrade() ||
+                       !isPendingModified() || isForward))) {
+        return false;
+    }
+    // Once refill has consumed the store target, a late CPU response does
+    // not keep the merge window open (nor does a reused MSHR for this line).
+    return std::any_of(targets.begin(), targets.end(),
+        [predecessor](const Target &target) {
+            return target.pkt == predecessor;
+        });
 }
 
 /*
@@ -584,11 +602,87 @@ MSHR::pushReadyTargets(TargetList &ready_targets, Target &tgt)
     // in the case when sbuffer store and load missed at the same block
     // make sure write packet is processed before read packet
     // so that load can get the right data after sbuffer store has updated the cache
-    if (tgt.pkt->isWrite()) {
+    if (tgt.pkt->isDcacheMainPipeSbufferReq()) {
+        // Preserve the existing store-before-load policy, but never reverse
+        // successive SBuffer writes: older bytes must not overwrite newer
+        // bytes when several stores share a miss.
+        auto pos = std::find_if(ready_targets.begin(), ready_targets.end(),
+            [](const Target &target) { return !target.pkt->isWrite(); });
+        ready_targets.insert(pos, tgt);
+    } else if (tgt.pkt->isWrite()) {
         ready_targets.push_front(tgt);
     } else {
         ready_targets.push_back(tgt);
     }
+}
+
+const MSHR::Target *
+MSHR::blockingSbufferStore(const Target &load) const
+{
+    const PacketPtr load_pkt = load.pkt;
+    if (load.source != Target::FromCPU || !load_pkt->isRead() ||
+        load_pkt->cmd == MemCmd::LockedRMWReadReq ||
+        !load_pkt->req->hasContextId() ||
+        !load_pkt->req->hasInstSeqNum()) {
+        return nullptr;
+    }
+
+    const Addr load_start = load_pkt->getAddr();
+    const Addr load_end = load_start + load_pkt->getSize();
+    for (const auto &store : deferredTargets) {
+        const PacketPtr store_pkt = store.pkt;
+        if (!store_pkt->isDcacheMainPipeSbufferReq() ||
+            !store_pkt->req->hasContextId() ||
+            !store_pkt->req->hasInstSeqNum() ||
+            store_pkt->req->contextId() != load_pkt->req->contextId() ||
+            store_pkt->req->getReqInstSeqNum() >=
+                load_pkt->req->getReqInstSeqNum()) {
+            continue;
+        }
+
+        const Addr store_start = store_pkt->getAddr();
+        const Addr overlap_start = std::max(load_start, store_start);
+        const Addr overlap_end = std::min(
+            load_end, store_start + store_pkt->getSize());
+        if (overlap_start >= overlap_end) {
+            continue;
+        }
+
+        const auto &store_mask = store_pkt->req->getByteEnable();
+        const auto &load_mask = load_pkt->req->getByteEnable();
+        for (Addr addr = overlap_start; addr < overlap_end; ++addr) {
+            if (store_mask[addr - store_start] &&
+                load_mask[addr - load_start]) {
+                return &store;
+            }
+        }
+    }
+
+    return nullptr;
+}
+
+void
+MSHR::deferLoadsBehindSbufferStores()
+{
+    auto it = targets.begin();
+    while (it != targets.end()) {
+        const Target *store = blockingSbufferStore(*it);
+        if (!store) {
+            ++it;
+            continue;
+        }
+
+        DPRINTF(MSHR,
+                "Deferring load addr=%#x sn=%llu behind SBuffer store "
+                "sn=%llu\n",
+                it->pkt->getAddr(), it->pkt->req->getReqInstSeqNum(),
+                store->pkt->req->getReqInstSeqNum());
+        auto blocked = it++;
+        deferredTargets.splice(deferredTargets.end(), targets, blocked);
+    }
+
+    targets.populateFlags();
+    deferredTargets.populateFlags();
 }
 
 MSHR::TargetList
@@ -596,6 +690,12 @@ MSHR::extractServiceableTargets(PacketPtr pkt)
 {
     TargetList ready_targets;
     ready_targets.init(blkAddr, blkSize);
+    deferLoadsBehindSbufferStores();
+
+    if (targets.empty()) {
+        return ready_targets;
+    }
+
     // If the downstream MSHR got an invalidation request then we only
     // service the first of the FromCPU targets and any other
     // non-FromCPU target. This way the remaining FromCPU targets
@@ -603,22 +703,26 @@ MSHR::extractServiceableTargets(PacketPtr pkt)
     // avoid memory consistency violations.
     if (pkt->cmd == MemCmd::ReadRespWithInvalidate) {
         auto it = targets.begin();
-        assert((it->source == Target::FromCPU) ||
-               (it->source == Target::FromPrefetcher));
-        pushReadyTargets(ready_targets, *it);
-        // Leave the Locked RMW Read until the corresponding Locked Write
-        // request comes in
-        if (it->pkt->cmd != MemCmd::LockedRMWReadReq) {
-            it = targets.erase(it);
-            while (it != targets.end()) {
-                if (it->source == Target::FromCPU) {
-                    it++;
-                } else {
-                    assert(it->source == Target::FromSnoop);
-                    pushReadyTargets(ready_targets, *it);
-                    it = targets.erase(it);
+        bool serviced_cpu = false;
+        while (it != targets.end()) {
+            if (it->source == Target::FromCPU ||
+                it->source == Target::FromPrefetcher) {
+                if (serviced_cpu) {
+                    ++it;
+                    continue;
                 }
+
+                serviced_cpu = true;
+                pushReadyTargets(ready_targets, *it);
+                // Leave a Locked RMW Read in place and stop at the lock.
+                if (it->pkt->cmd == MemCmd::LockedRMWReadReq) {
+                    break;
+                }
+            } else {
+                assert(it->source == Target::FromSnoop);
+                pushReadyTargets(ready_targets, *it);
             }
+            it = targets.erase(it);
         }
         ready_targets.populateFlags();
     } else {
@@ -657,7 +761,9 @@ MSHR::copyServiceableTargets(PacketPtr pkt)
         auto it = targets.begin();
         assert((it->source == Target::FromCPU) ||
                (it->source == Target::FromPrefetcher));
-        pushReadyTargets(ready_targets, *it);
+        if (!blockingSbufferStore(*it)) {
+            pushReadyTargets(ready_targets, *it);
+        }
         // Leave the Locked RMW Read until the corresponding Locked Write
         // request comes in
         if (it->pkt->cmd != MemCmd::LockedRMWReadReq) {
@@ -676,7 +782,9 @@ MSHR::copyServiceableTargets(PacketPtr pkt)
         while (it != targets.end()) {
             DPRINTF(Cache, "target's packet addr: %#lx\n", it->pkt);
             DPRINTF(Cache, "Get target: %s from targets\n", it->pkt->print());
-            pushReadyTargets(ready_targets, *it);
+            if (!blockingSbufferStore(*it)) {
+                pushReadyTargets(ready_targets, *it);
+            }
             if (it->pkt->cmd == MemCmd::LockedRMWReadReq) {
                 // Leave the Locked RMW Read until the corresponding Locked
                 // Write comes in. Also don't service any later targets as the

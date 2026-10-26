@@ -774,6 +774,20 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
         switch (target.source) {
           case MSHR::Target::FromCPU:
             from_core = true;
+            if (prefetcher && target.lldpHint.valid && !is_error) {
+                const uint8_t *line = nullptr;
+                unsigned bytes = 0;
+                if (blk && blk->isValid() && (!mshr->isForward || !pkt->hasData())) {
+                    line = blk->data;
+                    bytes = blkSize;
+                } else if (pkt->hasData() && pkt->getSize() == blkSize) {
+                    line = pkt->getConstPtr<uint8_t>();
+                    bytes = pkt->getSize();
+                }
+                prefetcher->hintData(target.lldpHint, tgt_pkt, line, bytes);
+                target.lldpHint.valid = false;
+            }
+
 
             Tick completion_time;
             // Here we charge on completion_time the delay of the xbar if the
@@ -944,6 +958,10 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
                 DPRINTF(Cache, "%s: updated cmd to %s\n", __func__,
                         tgt_pkt->print());
             }
+
+            // Propagate cache access depth from response packet to target packet
+            tgt_pkt->cacheAccessDepth = std::max(tgt_pkt->cacheAccessDepth,
+                                                  pkt->cacheAccessDepth);
 
             // Reset the bus additional time as it is now accounted for
             tgt_pkt->headerDelay = tgt_pkt->payloadDelay = 0;

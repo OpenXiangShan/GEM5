@@ -49,6 +49,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/trace/TraceRecoveryRules.hh"
 #include "debug/Activity.hh"
 #include "debug/Counters.hh"
 #include "debug/Decode.hh"
@@ -79,7 +80,7 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
       aggregateDecodeWidth(decodeWidth * numPreDispatchThreads),
       numThreads(params.numThreads),
       enableLoadFusion(params.enable_loadFusion),
-      stats(_cpu)
+      stats(_cpu, aggregateDecodeWidth)
 {
     panic_if(numPreDispatchThreads == 0 ||
              numPreDispatchThreads > numThreads ||
@@ -109,7 +110,6 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
     }
 
 
-    decodeStalls.resize(decodeWidth, StallReason::NoStall);
     statistics::registerDumpCallback([this]() {
         int idx = 0;
         for (auto it : this->fusionType) {
@@ -145,7 +145,7 @@ Decode::name() const
     return cpu->name() + ".decode";
 }
 
-Decode::DecodeStats::DecodeStats(CPU *cpu)
+Decode::DecodeStats::DecodeStats(CPU *cpu, unsigned decode_width)
     : statistics::Group(cpu, "decode"),
       ADD_STAT(idleCycles, statistics::units::Cycle::get(),
                "Number of cycles decode is idle"),
@@ -244,7 +244,8 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
     //         .flags(statistics::nozero);
     
     // Initialize decodeEfficiency formula
-    decodeEfficiency = decodedInsts / (cpu->baseStats.numCycles * cpu->issueWidth);
+    // CPU::issueWidth is initialized after the pipeline stages.
+    decodeEfficiency = decodedInsts / (cpu->baseStats.numCycles * decode_width);
 }
 
 void
@@ -343,7 +344,11 @@ Decode::selfSquash(const DynInstPtr &inst, ThreadID tid)
     toFetch->decodeInfo[tid].mispredictInst = inst;
     toFetch->decodeInfo[tid].squash = true;
     toFetch->decodeInfo[tid].doneSeqNum = inst->seqNum;
-    if (inst->isControl()) {
+    if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {
+        auto trace_next = std::make_unique<RiscvISA::PCState>(
+            inst->traceBranchNextPC());
+        set(toFetch->decodeInfo[tid].nextPC, *trace_next);
+    } else if (inst->isControl()) {
         if (!inst->isReturn()) {
             set(toFetch->decodeInfo[tid].nextPC, *inst->branchTarget());
         } else {
@@ -364,8 +369,12 @@ Decode::selfSquash(const DynInstPtr &inst, ThreadID tid)
     // Using PCState::branching()  will send execution on the
     // fallthrough and this will not be caught at execution (since
     // branch was correctly predicted taken)
-    toFetch->decodeInfo[tid].branchTaken = inst->readPredTaken() ||
-                                           inst->isUncondCtrl();
+    if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {
+        toFetch->decodeInfo[tid].branchTaken = inst->traceBranchTaken();
+    } else {
+        toFetch->decodeInfo[tid].branchTaken = inst->readPredTaken() ||
+                                               inst->isUncondCtrl();
+    }
 
     toFetch->decodeInfo[tid].squashInst = inst;
 
@@ -632,7 +641,9 @@ Decode::tick()
     wroteToTimeBuffer = false;
     toRenameIndex = 0;
     blockReason = StallReason::NoStall;
-    setAllStalls(StallReason::NoStall);
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        decodeStalls[tid].assign(decodeWidth, StallReason::NoStall);
+    }
 
     moveInstsToBuffer();
 
@@ -645,6 +656,7 @@ Decode::tick()
     auto freezeActiveThread = [this](ThreadID tid) {
         stallSig->blockFetch[tid] = true;
         stallSig->fetchBlockReason[tid] = StallReason::OtherFragStall;
+        setAllStalls(tid, StallReason::OtherFragStall);
         toFetch->decodeInfo[tid].blockReason =
             stallSig->fetchBlockReason[tid];
     };
@@ -698,8 +710,11 @@ Decode::tick()
         if (active) {
             active_tids.push_back(i);
             active_arbiter.observe(i, smtBorrowPriority(fromIEW->iewInfo[i]));
-        } else if (block && blocked_tid == InvalidThreadID) {
-            blocked_tid = i;
+        } else if (block) {
+            setAllStalls(i, stallSig->decodeBlockReason[i]);
+            if (blocked_tid == InvalidThreadID) {
+                blocked_tid = i;
+            }
         }
     }
     const ThreadID primary_tid = active_arbiter.selected();
@@ -711,7 +726,6 @@ Decode::tick()
         }
         
         if (blocked_tid != InvalidThreadID) {
-            setAllStalls(stallSig->fetchBlockReason[blocked_tid]);
             blockReason = stallSig->fetchBlockReason[blocked_tid];
         }
         toRename->decodeStallReason = decodeStalls;
@@ -739,12 +753,31 @@ Decode::tick()
     unsigned decoded_threads_this_cycle = 0;
     for (const ThreadID tid : selected_tids) {
         DPRINTF(Decode, "Processing [tid:%i]\n", tid);
+        setAllStalls(tid, StallReason::NoStall);
         const unsigned before = toRenameIndex;
         decodeInsts(tid, decodeWidth);
         const unsigned decoded = toRenameIndex - before;
         decoded_this_cycle += decoded;
         decoded_threads_this_cycle += decoded != 0;
         measureDecodeBubbles(decoded, tid);
+
+        // Populate unused decode lanes with the per-lane fetch stall
+        // reasons so frontend/fragment stalls propagate to rename and
+        // IEW.  Per-thread port of the lane-fill logic dropped by the
+        // strict SpMT refactor; without it, partially-decoded threads
+        // (1..decodeWidth-1 insts, no decode-level stall) leave the tail
+        // lanes as NoStall and downstream Topdown attribution
+        // undercounts fetch-bound stalls, even in single-thread runs.
+        if (!decodeStalls[tid].empty() &&
+            decodeStalls[tid][0] == StallReason::NoStall) {
+            const auto &fetch_stalls = fromFetch->fetchStallReason[tid];
+            for (unsigned lane = 0; lane < decodeStalls[tid].size(); ++lane) {
+                decodeStalls[tid][lane] = lane < decoded ?
+                    StallReason::NoStall :
+                    lane < fetch_stalls.size() ? fetch_stalls[lane] :
+                    StallReason::NoStall;
+            }
+        }
 
         if (!fixedbuffer[tid].empty()) {
             stallSig->blockFetch[tid] = true;
@@ -763,38 +796,7 @@ Decode::tick()
     stats.threadsDecodedPerCycle.sample(decoded_threads_this_cycle);
     stats.instsDecodedPerCycle.sample(decoded_this_cycle);
 
-    if (stallSig->blockDecode[primary_tid]) {
-        setAllStalls(stallSig->decodeBlockReason[primary_tid]);
-    } else if (toRenameIndex > 0 && decodeStalls[0] == StallReason::NoStall) {
-        for (int i = 0; i < decodeStalls.size(); i++) {
-            if (i < toRenameIndex) {
-                decodeStalls.at(i) = StallReason::NoStall;
-            } else {
-                decodeStalls.at(i) = fromFetch->fetchStallReason.at(i);
-            }
-        }
-    }
     updateActivate();
-
-    // if (stalls[tid].rename) {
-    //     // stall from rename, pass rename stall
-    //     setAllStalls(fromRename->renameInfo[tid].blockReason);
-    // } else if (toRenameIndex == 0) {
-    //     if (decodeStalls[0] != StallReason::NoStall) {
-    //         setAllStalls(decodeStalls[0]);
-    //     } else {
-    //         // warn("decode have other Stall Reason!");
-    //     }
-    // } else {
-    //     // no stall from decode, pass fetch stall(no stall/FetchFragStall/fetch all stall)
-    //     for (int i = 0; i < decodeStalls.size(); i++) {
-    //         if (i < toRenameIndex) {    // decode success, no stall
-    //             decodeStalls.at(i) = StallReason::NoStall;
-    //         } else {    // no insts to decode, pass fetch frag stall
-    //             decodeStalls.at(i) = fromFetch->fetchStallReason.at(i);
-    //         }
-    //     }
-    // }
 
     toRename->decodeStallReason = decodeStalls;
 
@@ -824,13 +826,13 @@ Decode::decodeInsts(ThreadID tid, unsigned max_insts)
         ++stats.smtidleCycles[tid];
 
         StallReason stall = StallReason::NoStall;
-        for (auto iter : fromFetch->fetchStallReason) {
+        for (auto iter : fromFetch->fetchStallReason[tid]) {
             if (iter != StallReason::NoStall) {
                 stall = iter;
                 break;
             }
         }
-        setAllStalls(stall);
+        setAllStalls(tid, stall);
         return;
     }
 
@@ -916,7 +918,8 @@ Decode::decodeInsts(ThreadID tid, unsigned max_insts)
 
         // Ensure that if it was predicted as a branch, it really is a
         // branch.
-        if (inst->readPredTaken() && !inst->isControl()) {
+        if (inst->readPredTaken() && !inst->isControl() &&
+            !inst->isPredecodeChecked()) {
             // panic("Instruction predicted as a branch!");
 
             ++stats.controlMispred;
@@ -939,7 +942,8 @@ Decode::decodeInsts(ThreadID tid, unsigned max_insts)
         //（hasTraceCtrlFlowChange），则交由 trap/wrong-path 逻辑处理，不在 decode
         // 再做一次基于静态分支目标的校验，避免把 cond->trap 误统计为普通分支
         // mispredict，或在这里产生“错误”的 redirect。
-        if (!(cpu->isTraceMode() && inst->hasTraceCtrlFlowChange()) &&
+        if (!inst->isPredecodeChecked() &&
+            !(cpu->isTraceMode() && inst->hasTraceCtrlFlowChange()) &&
             inst->isDirectCtrl() &&
             (inst->isUncondCtrl() || inst->readPredTaken()))
         {
@@ -1001,14 +1005,32 @@ Decode::decodeInsts(ThreadID tid, unsigned max_insts)
             }
         }
         // unpredicted return can make use of ras results to get earlier resteer
-        if (inst->isReturn() && !inst->isNonSpeculative() && !inst->readPredTaken()) {
+        if (!inst->isPredecodeChecked() &&
+            inst->isReturn() && !inst->isNonSpeculative() &&
+            !inst->readPredTaken()) {
+            std::unique_ptr<PCStateBase> target;
+            if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {
+                target = std::make_unique<RiscvISA::PCState>(
+                    inst->traceBranchNextPC());
+                // Anchored decision (TraceRecoveryRules.hh; guards commit
+                // 803b6ec090): full PC-state equality, no resteer needed.
+                if (TraceRecoveryRules::returnTargetMatchesPrediction(
+                        *target, inst->readPredTarg())) {
+                    DPRINTF(Decode,
+                            "[tid:%i] [sn:%llu] Trace return target already "
+                            "matches prediction: PredPC: %s TracePC: %s\n",
+                            tid, inst->seqNum, inst->readPredTarg(), *target);
+                    continue;
+                }
+            } else {
+                // return target cannot be computed in decode stage since it
+                // is an indirect branch; inquire bpu to get the target.
+                auto return_addr = fetch_ptr->getPreservedReturnAddr(inst);
+                target = std::make_unique<RiscvISA::PCState>(return_addr);
+            }
             ++stats.branchMispred;
             decode_stalls.push(StallReason::InstMisPred);
             breakDecode = StallReason::InstMisPred;
-            // return target cannot be computed in decode stage since it is an indirect branch
-            // need to inquire bpu to get the target
-            auto return_addr = fetch_ptr->getPreservedReturnAddr(inst);
-            auto target = std::make_unique<RiscvISA::PCState>(return_addr);
             DPRINTF(Decode, "[tid:%i] [sn:%llu] Updating predictions:"
                     " Return not identified by bp: predTaken %d, PredPC: %s Now PC %s\n",
                     tid, inst->seqNum, inst->readPredTaken(), inst->readPredTarg(), *target);
@@ -1048,10 +1070,10 @@ Decode::decodeInsts(ThreadID tid, unsigned max_insts)
 
     // this stage is totally stalled, set all decode stalls
     if (!decode_stalls.empty()) {
-        setAllStalls(decode_stalls.front());
+        setAllStalls(tid, decode_stalls.front());
         decode_stalls.pop();
     } else if (breakDecode != StallReason::NoStall) {
-        setAllStalls(breakDecode);
+        setAllStalls(tid, breakDecode);
     }
 
     // If we didn't process all instructions, then we will need to block
@@ -1126,6 +1148,15 @@ Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
     arrays.numSrcs = fused_inst->numSrcRegs();
     arrays.numDests = fused_inst->numDestRegs();
 
+    DPRINTF(Decode, "fusion [sn:%d] and [sn:%d]\n",
+        inst_pair[0]->seqNum, inst_pair[1]->seqNum);
+
+    // ugly but works ^_^
+    {
+        fetch_ptr->fusionInstUpdate(
+            inst_pair[1]->threadNumber, inst_pair[0]->seqNum, inst_pair[1]->seqNum);
+    }
+
     // ugly but works for now
     RiscvISA::PCState thispc, predPC;
     thispc.set(inst_pair[0]->getPC());
@@ -1137,6 +1168,38 @@ Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
     DynInstPtr instruction = new (arrays) DynInst(
             arrays, fused_inst, fused_inst, thispc, predPC, inst_pair[0]->seqNum, cpu);
 
+    DynInstPtr representative = nullptr;
+    bool representativeLL = false;
+    // OR load predictions; take max distance only among predicted LL loads.
+    for (const auto &candidate : inst_pair) {
+        if (!candidate->isLoad()) {
+            continue;
+        }
+        const bool candidateLL = candidate->mlpPredictionMade &&
+                                 candidate->mlpPredictedLongLatency;
+        instruction->mlpPredictionMade |= candidate->mlpPredictionMade;
+        instruction->mlpPredictedLongLatency |= candidateLL;
+        // Keep the first load on ties or when the LL candidate set is empty.
+        if (!representative ||
+            (candidateLL && (!representativeLL ||
+             candidate->mlpPredictedDistance >
+                 representative->mlpPredictedDistance))) {
+            representative = candidate;
+            representativeLL = candidateLL;
+        }
+    }
+    if (representative) {
+        instruction->mlpPredictedDistance =
+            instruction->mlpPredictedLongLatency ?
+                representative->mlpPredictedDistance : 0;
+        instruction->mlpDistanceValid = representative->mlpDistanceValid;
+        instruction->mlpDistanceSnapshotLocked =
+            representative->mlpDistanceSnapshotLocked;
+        // Preserve the representative load PC for predictor feedback.
+        instruction->mlpLoadPC = representative->mlpLoadPCValid ?
+            representative->mlpLoadPC : representative->getPC();
+        instruction->mlpLoadPCValid = true;
+    }
 
     instruction->setVersion(inst_pair[1]->getVersion());
     instruction->setTid(inst_pair[1]->threadNumber);
@@ -1160,11 +1223,9 @@ Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
 }
 
 void
-Decode::setAllStalls(StallReason decodeStall)
+Decode::setAllStalls(ThreadID tid, StallReason decodeStall)
 {
-    for (int i = 0;i < decodeStalls.size();i++) {
-        decodeStalls.at(i) = decodeStall;
-    }
+    decodeStalls[tid].assign(decodeWidth, decodeStall);
 }
 
 } // namespace o3

@@ -133,7 +133,7 @@ LSQ::StoreBufferEntry::merge(uint64_t offset, uint8_t *datas, uint64_t size,
 
 bool
 LSQ::StoreBufferEntry::recordForward(RequestPtr req, LSQRequest *lsqreq,
-                                     ThreadID load_tid, InstSeqNum load_seq)
+                                     ThreadID load_tid)
 {
     int offset = req->getPaddr() & (validMask.size() - 1);
     // the offset in the split request
@@ -147,11 +147,13 @@ LSQ::StoreBufferEntry::recordForward(RequestPtr req, LSQRequest *lsqreq,
         blockPaddr, load_tid);
     bool miss_forward = false;
     auto byteEligible = [&](StoreBufferEntry *entry, int byte_idx) {
-        return entry && entry->tid == load_tid && entry->seqNum < load_seq &&
+        return entry && entry->tid == load_tid &&
                entry->validMask[byte_idx];
     };
     for (int i = 0; i < req->getSize(); i++) {
         assert(goffset + i < lsqreq->_size);
+        auto *inflight_byte = lsq->find_inflight_store_buffer_entry(
+            blockPaddr, load_tid, offset + i);
         const bool vice_eligible = byteEligible(vice, offset + i);
         const bool self_eligible = byteEligible(this, offset + i);
         if (vice_eligible) {
@@ -165,11 +167,11 @@ LSQ::StoreBufferEntry::recordForward(RequestPtr req, LSQRequest *lsqreq,
                 LSQRequest::FWDPacket{
                     .idx = goffset + i, .byte = blockDatas[offset + i]});
             miss_forward |= this == inflight_entry;
-        } else if (byteEligible(inflight_entry, offset + i)) {
+        } else if (inflight_byte) {
             lsqreq->SBforwardPackets.push_back(
                 LSQRequest::FWDPacket{
                     .idx = goffset + i,
-                    .byte = inflight_entry->blockDatas[offset + i]});
+                    .byte = inflight_byte->blockDatas[offset + i]});
             miss_forward = true;
         } else {
             full_forward = false;
@@ -428,6 +430,8 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent, unsigned num_threads)
                "Outstanding store misses whose SBuffer entries are released"),
       ADD_STAT(sbufferMissSameLineReplay, statistics::units::Count::get(),
                "S2 store retries waiting for an outstanding same-line store"),
+      ADD_STAT(sbufferMissMerged, statistics::units::Count::get(),
+               "Store misses accepted into an outstanding store-origin MSHR"),
       ADD_STAT(sbufferMissForward, statistics::units::Count::get(),
                "Load forwarding queries using accepted store miss data"),
       ADD_STAT(sbufferDcacheReqBlocked, statistics::units::Count::get(),
@@ -471,18 +475,88 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent, unsigned num_threads)
                "Number of store buffer requests blocked when issuing from fake dcache mainpipe S2"),
       ADD_STAT(dcacheMainPipeStoreS2MissExit,
                statistics::units::Count::get(),
-               "Number of store buffer requests that miss and exit fake dcache mainpipe at S2")
+               "Number of store buffer requests that miss and exit fake dcache mainpipe at S2"),
+      ADD_STAT(lqBorrowingStateChange, statistics::units::Count::get(),
+               "Changing times of LQ borrowing donor state"),
+      ADD_STAT(sqBorrowingStateChange, statistics::units::Count::get(),
+               "Changing times of SQ borrowing donor state"),
+      ADD_STAT(lqStateHoldCycle, statistics::units::Cycle::get(),
+               "SMT LQ base/donor state holding cycle distribution"),
+      ADD_STAT(sqStateHoldCycle, statistics::units::Cycle::get(),
+               "SMT SQ base/donor state holding cycle distribution"),
+      ADD_STAT(lqEntriesWhileStateChange, statistics::units::Count::get(),
+               "SMT LQ thread used/free entries distribution while borrowing state changes"),
+      ADD_STAT(sqEntriesWhileStateChange, statistics::units::Count::get(),
+               "SMT SQ thread used/free entries distribution while borrowing state changes"),
+      ADD_STAT(lqBorrowingState, statistics::units::Count::get(),
+               "LQ borrowing donor state combination per cycle "
+               "(0=both Base, 1=tid0 Donor, 2=tid1 Donor, 3=both Donor)"),
+      ADD_STAT(sqBorrowingState, statistics::units::Count::get(),
+               "SQ borrowing donor state combination per cycle "
+               "(0=both Base, 1=tid0 Donor, 2=tid1 Donor, 3=both Donor)")
 {
     lqFullCycles.init(num_threads);
     sqFullCycles.init(num_threads);
     lsqFullCycles.init(num_threads);
     sbufferFullCycles.init(num_threads);
+    lqBorrowingStateChange
+        .init(num_threads)
+        .flags(statistics::total);
+    sqBorrowingStateChange
+        .init(num_threads)
+        .flags(statistics::total);
+
+    lqStateHoldCycle
+        .init(2, 0, 100, 10)
+        .flags(statistics::pdf);
+    lqStateHoldCycle.subname(0, "Base");
+    lqStateHoldCycle.subname(1, "Donor");
+    sqStateHoldCycle
+        .init(2, 0, 100, 10)
+        .flags(statistics::pdf);
+    sqStateHoldCycle.subname(0, "Base");
+    sqStateHoldCycle.subname(1, "Donor");
+
+    lqEntriesWhileStateChange
+        .init(4, 0, 128, 8)
+        .flags(statistics::pdf);
+    lqEntriesWhileStateChange.subname(0, "BaseToDonor_used");
+    lqEntriesWhileStateChange.subname(1, "BaseToDonor_free");
+    lqEntriesWhileStateChange.subname(2, "DonorToBase_used");
+    lqEntriesWhileStateChange.subname(3, "DonorToBase_free");
+    sqEntriesWhileStateChange
+        .init(4, 0, 64, 4)
+        .flags(statistics::pdf);
+    sqEntriesWhileStateChange.subname(0, "BaseToDonor_used");
+    sqEntriesWhileStateChange.subname(1, "BaseToDonor_free");
+    sqEntriesWhileStateChange.subname(2, "DonorToBase_used");
+    sqEntriesWhileStateChange.subname(3, "DonorToBase_free");
+
+    // Same combination indexing as fetch's fetchBlockState: one bit per
+    // thread, tid0 in the least significant bit.
+    lqBorrowingState
+        .init(1 << num_threads)
+        .flags(statistics::total);
+    lqBorrowingState.subname(0, "BothBase");
+    lqBorrowingState.subname(1, "Tid0Donor");
+    lqBorrowingState.subname(2, "Tid1Donor");
+    lqBorrowingState.subname(3, "BothDonor");
+    sqBorrowingState
+        .init(1 << num_threads)
+        .flags(statistics::total);
+    sqBorrowingState.subname(0, "BothBase");
+    sqBorrowingState.subname(1, "Tid0Donor");
+    sqBorrowingState.subname(2, "Tid1Donor");
+    sqBorrowingState.subname(3, "BothDonor");
+
     for (ThreadID tid = 0; tid < num_threads; ++tid) {
         const std::string thread_name = csprintf("thread%d", tid);
         lqFullCycles.subname(tid, thread_name);
         sqFullCycles.subname(tid, thread_name);
         lsqFullCycles.subname(tid, thread_name);
         sbufferFullCycles.subname(tid, thread_name);
+        lqBorrowingStateChange.subname(tid, thread_name);
+        sqBorrowingStateChange.subname(tid, thread_name);
     }
 }
 
@@ -592,6 +666,25 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     DPRINTF(LSQ, "Dcache bank model: line bytes=%u, bank bytes=%u, "
             "bank count=%u\n",
             cpu_ptr->cacheLineSize(), dcacheBankBytes, numBank);
+
+    if (lsqPolicy == SMTQueuePolicy::DynamicBorrowing) {
+        panic_if(lqBorrowBaseReserveEntries * numThreads > LQEntries,
+                "lqBorrowBaseReserveEntries * numThreads must be not more than "
+                "LQEntries, but now %d * %d > %d\n",
+                lqBorrowBaseReserveEntries, numThreads, LQEntries);
+        panic_if(lqBorrowDonorReserveEntries * numThreads > LQEntries,
+                "lqBorrowDonorReserveEntries * numThreads must be not more than "
+                "LQEntries, but now %d * %d > %d\n",
+                lqBorrowDonorReserveEntries, numThreads, LQEntries);
+        panic_if(sqBorrowBaseReserveEntries * numThreads > SQEntries,
+                "sqBorrowBaseReserveEntries * numThreads must be not more than "
+                "SQEntries, but now %d * %d > %d\n",
+                sqBorrowBaseReserveEntries, numThreads, SQEntries);
+        panic_if(sqBorrowDonorReserveEntries * numThreads > SQEntries,
+                "sqBorrowDonorReserveEntries * numThreads must be not more than "
+                "SQEntries, but now %d * %d > %d\n",
+                sqBorrowDonorReserveEntries, numThreads, SQEntries);
+    }
 
     cpu->addStatGroup("lsq", &stats);
 
@@ -1506,10 +1599,9 @@ LSQ::processWriteback()
     storeBufferWriteback();
 
 
-    if (storeBufferBlocked()) {
-        DPRINTF(StoreBuffer, "Store buffer is blocking, skip SQ offload\n");
-        return;
-    }
+    // Output backpressure is independent from SQ->SBuffer enqueue ready.
+    // Continue offering entries that can allocate or merge; the blocked
+    // eviction/replay is retried by its own path below.
 
     std::vector<uint32_t> offload_quota(numThreads, 0);
     std::vector<uint32_t> offload_demand(numThreads, 0);
@@ -1663,10 +1755,10 @@ LSQ::storeBufferWriteback()
             entry->request = new SbufferRequest(cpu, &owner_unit,
                                                 entry->blockPaddr,
                                                 entry->blockDatas.data());
+            entry->request->sbuffer_entry = entry;
             entry->request->addReq(entry->blockVaddr, entry->blockPaddr,
                                    entry->validMask);
             entry->request->buildPackets();
-            entry->request->sbuffer_entry = entry;
             bool success = entry->request->sendPacketToCache();
             if (!success) {
                 setBlockedStoreBufferEntry(
@@ -1779,16 +1871,42 @@ LSQ::issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt, Tick issue_tick)
 
     // Issue to the real classic cache only at fake S2 so StoreBuffer misses
     // cannot allocate or merge MSHRs at fake-pipe admission time.
-    if (sbufferMissRequests.count(data_pkt->getAddr())) {
-        ++stats.sbufferMissSameLineReplay;
+    auto pending = sbufferMissRequests.find(data_pkt->getAddr());
+    const bool same_line = pending != sbufferMissRequests.end();
+    bool compatible = true;
+    data_pkt->sbufferMergeTarget = nullptr;
+    data_pkt->sbufferMergeFailed = false;
+    if (same_line) {
+        auto *previous = pending->second.back();
+        const auto *previous_entry = previous->sbuffer_entry;
+        // Do not merge different SMT threads or virtual aliases. The cache
+        // additionally checks that the predecessor is still in a mergeable
+        // store-origin MSHR, rather than only awaiting its CPU response.
+        compatible = previous_entry->tid == request->sbuffer_entry->tid &&
+            getDcacheSetKey(previous_entry->blockVaddr) ==
+            getDcacheSetKey(request->sbuffer_entry->blockVaddr);
+        data_pkt->sbufferMergeTarget = previous->mainPacket();
+    }
+    if (!compatible) {
         result = DcacheMainPipeS2Result::Blocked;
     } else if (!cacheBlocked() && cachePortAvailable(false)) {
         if (!dcachePort.sendTimingReq(data_pkt)) {
             result = DcacheMainPipeS2Result::Blocked;
-            cache_got_blocked = true;
+            // A same-line SBuffer merge failure is replayed through S0 and
+            // does not mean that the cache port is unavailable.
+            cache_got_blocked = !data_pkt->sbufferMergeFailed;
         }
     } else {
         result = DcacheMainPipeS2Result::Blocked;
+    }
+    data_pkt->sbufferMergeTarget = nullptr;
+    if (same_line) {
+        if (result == DcacheMainPipeS2Result::Blocked) {
+            ++stats.sbufferMissSameLineReplay;
+        } else {
+            assert(!data_pkt->isDcacheMainPipeSbufferHit());
+            ++stats.sbufferMissMerged;
+        }
     }
 
     if (result == DcacheMainPipeS2Result::GoToS3) {
@@ -1840,19 +1958,18 @@ LSQ::release_sbuffer_miss_entry(SbufferRequest *request)
     request->mainPacket()->deleteData();
     request->mainPacket()->dataStatic(request->_data);
 
-    const auto [iterator, inserted] = sbufferMissRequests.emplace(
-        entry->blockPaddr, request);
-    assert(inserted);
+    sbufferMissRequests[entry->blockPaddr].push_back(request);
+    ++sbufferMissRequestCount;
     sbufferMissSeqs[entry->tid].insert(entry->seqNum);
     entry->request = nullptr;
     storeBuffer.release(entry);
     ++stats.sbufferMissEntriesReleased;
-    stats.sbufferMissPending = sbufferMissRequests.size();
+    stats.sbufferMissPending = sbufferMissRequestCount;
     DPRINTF(StoreBuffer,
             "[tid:%u] Release sbuffer entry[%#lx] on miss acceptance, "
             "sbuffer size: %llu, pending misses: %llu\n",
             request->sbuffer_entry->tid, request->mainReq()->getPaddr(),
-            storeBuffer.size(), sbufferMissRequests.size());
+            storeBuffer.size(), sbufferMissRequestCount);
 }
 
 void
@@ -1877,13 +1994,20 @@ LSQ::completeSbufferEvict(PacketPtr pkt)
         auto *entry = request->sbuffer_entry;
         auto pending = sbufferMissRequests.find(entry->blockPaddr);
         assert(pending != sbufferMissRequests.end());
-        assert(pending->second == request);
-        sbufferMissRequests.erase(pending);
+        auto &requests = pending->second;
+        auto target = std::find(requests.begin(), requests.end(), request);
+        assert(target != requests.end());
+        requests.erase(target);
+        if (requests.empty()) {
+            sbufferMissRequests.erase(pending);
+        }
+        assert(sbufferMissRequestCount > 0);
+        --sbufferMissRequestCount;
         auto &sequences = sbufferMissSeqs[entry->tid];
         auto sequence = sequences.find(entry->seqNum);
         assert(sequence != sequences.end());
         sequences.erase(sequence);
-        stats.sbufferMissPending = sbufferMissRequests.size();
+        stats.sbufferMissPending = sbufferMissRequestCount;
     } else {
         storeBuffer.release(request->sbuffer_entry);
     }
@@ -1934,6 +2058,12 @@ InstSeqNum
 LSQ::getLoadHeadSeqNum(ThreadID tid)
 {
     return thread.at(tid).getLoadHeadSeqNum();
+}
+
+DynInstPtr
+LSQ::getLoadInst(ThreadID tid, int offset)
+{
+    return thread.at(tid).getLoadInst(offset);
 }
 
 int
@@ -2348,7 +2478,6 @@ LSQ::borrowingLimitLQ(ThreadID tid) const
         return logicalMaxLoadEntries(tid);
     }
 
-    const unsigned active_threads = std::max(1U, activeLSQThreads());
     const unsigned base = lqBorrowBaseReserveEntries;
     const unsigned donor_resume_quota =
         std::min(base, lqBorrowDonorReserveEntries);
@@ -2383,7 +2512,6 @@ LSQ::borrowingLimitSQ(ThreadID tid) const
         return logicalMaxStoreEntries(tid);
     }
 
-    const unsigned active_threads = std::max(1U, activeLSQThreads());
     const unsigned base = sqBorrowBaseReserveEntries;
     const unsigned donor_resume_quota =
         std::min(base, sqBorrowDonorReserveEntries);
@@ -2411,6 +2539,18 @@ void
 LSQ::setLQBorrowingDonor(ThreadID tid, bool donor)
 {
     if (lqBorrowingDonor[tid] != donor) {
+        bool old_donor = lqBorrowingDonor[tid];
+        unsigned state_hold_cycle = lqBorrowingStateHoldCycle[tid];
+        unsigned lq_entries_used = thread[tid].numLoads();
+        unsigned lq_entries_free = logicalFreeLoadEntries(tid);
+
+        stats.lqBorrowingStateChange[tid]++;
+        stats.lqStateHoldCycle[old_donor].sample(state_hold_cycle);
+        stats.lqEntriesWhileStateChange[(int)(old_donor) * 2]
+            .sample(lq_entries_used);
+        stats.lqEntriesWhileStateChange[(int)(old_donor) * 2 + 1]
+            .sample(lq_entries_free);
+
         lqBorrowingDonor[tid] = donor;
         lqBorrowingStateHoldCycle[tid] = 0;
     }
@@ -2420,6 +2560,18 @@ void
 LSQ::setSQBorrowingDonor(ThreadID tid, bool donor)
 {
     if (sqBorrowingDonor[tid] != donor) {
+        bool old_donor = sqBorrowingDonor[tid];
+        unsigned state_hold_cycle = sqBorrowingStateHoldCycle[tid];
+        unsigned sq_entries_used = thread[tid].numStores();
+        unsigned sq_entries_free = logicalFreeStoreEntries(tid);
+
+        stats.sqBorrowingStateChange[tid]++;
+        stats.sqStateHoldCycle[old_donor].sample(state_hold_cycle);
+        stats.sqEntriesWhileStateChange[(int)(old_donor) * 2]
+            .sample(sq_entries_used);
+        stats.sqEntriesWhileStateChange[(int)(old_donor) * 2 + 1]
+            .sample(sq_entries_free);
+
         sqBorrowingDonor[tid] = donor;
         sqBorrowingStateHoldCycle[tid] = 0;
     }
@@ -2432,6 +2584,18 @@ LSQ::addBorrowingStateHoldCycle()
         lqBorrowingStateHoldCycle[tid]++;
         sqBorrowingStateHoldCycle[tid]++;
     }
+
+    // Sample the per-cycle donor state combination of all threads, using the
+    // same bit-packing as fetch's fetchBlockState (tid0 = least significant
+    // bit), so 0=both Base, 1=tid0 Donor, 2=tid1 Donor, 3=both Donor.
+    int lq_state = 0;
+    int sq_state = 0;
+    for (ThreadID tid = numThreads - 1; tid >= 0; tid--) {
+        lq_state = (lq_state << 1) + (int)(lqBorrowingDonor[tid]);
+        sq_state = (sq_state << 1) + (int)(sqBorrowingDonor[tid]);
+    }
+    stats.lqBorrowingState[lq_state]++;
+    stats.sqBorrowingState[sq_state]++;
 }
 
 unsigned
@@ -2866,37 +3030,33 @@ LSQ::flushStores(ThreadID tid, InstSeqNum seq_num)
 }
 
 LSQ::StoreBufferEntry *
-LSQ::findForwardingStoreBufferEntry(Addr block_paddr, ThreadID load_tid,
-                                    InstSeqNum load_seq) const
+LSQ::findForwardingStoreBufferEntry(Addr block_paddr, ThreadID load_tid) const
 {
     auto entry = storeBuffer.get(load_tid, block_paddr);
     if (!entry) {
         entry = find_inflight_store_buffer_entry(block_paddr, load_tid);
     }
-    if (!entry) {
-        return nullptr;
-    }
-
-    if (entry->seqNum < load_seq ||
-        (entry->vice && entry->vice->seqNum < load_seq)) {
-        return entry;
-    }
-
-    auto *inflight_entry = find_inflight_store_buffer_entry(
-        block_paddr, load_tid);
-    return inflight_entry && inflight_entry->seqNum < load_seq ?
-        inflight_entry : nullptr;
+    return entry;
 }
 
 LSQ::StoreBufferEntry *
-LSQ::find_inflight_store_buffer_entry(Addr block_paddr, ThreadID load_tid) const
+LSQ::find_inflight_store_buffer_entry(Addr block_paddr, ThreadID load_tid,
+                                      int byte_idx) const
 {
     auto pending = sbufferMissRequests.find(block_paddr);
-    if (pending == sbufferMissRequests.end() ||
-        pending->second->sbuffer_entry->tid != load_tid) {
+    if (pending == sbufferMissRequests.end()) {
         return nullptr;
     }
-    return pending->second->sbuffer_entry;
+    // Each list is bounded by accepted cache targets and pending responses.
+    for (auto it = pending->second.rbegin(); it != pending->second.rend();
+         ++it) {
+        auto *entry = (*it)->sbuffer_entry;
+        if (entry->tid == load_tid &&
+            (byte_idx < 0 || entry->validMask[byte_idx])) {
+            return entry;
+        }
+    }
+    return nullptr;
 }
 
 void
@@ -3076,6 +3236,10 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
         return inst->getFault();
     }
 
+    // A delayed translation can complete after this call returns. Keep the
+    // request size valid while the instruction waits in the memory pipeline.
+    inst->effSize = size;
+
     ThreadID tid = cpu->contextToThread(inst->contextId());
     auto cacheLineSize = cpu->cacheLineSize();
     bool needs_burst = transferNeedsBurst(addr, size, cacheLineSize);
@@ -3122,7 +3286,11 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
     if (!isLoad && !isAtomic) {
         // store inst temporally saves its data in memData
         inst->memData = new uint8_t[size];
-        memcpy(inst->memData, data, size);
+        if (flags & Request::STORE_NO_DATA) {
+            memset(inst->memData, 0, size);
+        } else {
+            memcpy(inst->memData, data, size);
+        }
     }
 
     /* This is the place were instructions get the effAddr. */
@@ -3130,7 +3298,6 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
     if (request->isTranslationComplete()) {
         if (request->isMemAccessRequired()) {
             inst->effAddr = request->getVaddr();
-            inst->effSize = size;
             inst->effAddrValid(true);
 
             if (cpu->checker) {
@@ -3416,7 +3583,7 @@ LSQ::SbufferRequest::SbufferRequest(CPU* cpu, LSQUnit* port, Addr blockpaddr, ui
     lsq = port->getLsq();
     port->numSBufferRequest++;
     assert(port->numSBufferRequest <= lsq->getSbufferEntries() +
-           lsq->sbufferMissRequests.size());
+           lsq->sbufferMissRequestCount);
 }
 
 LSQ::SbufferRequest::~SbufferRequest() {
@@ -3427,10 +3594,12 @@ LSQ::SbufferRequest::~SbufferRequest() {
 void
 LSQ::SbufferRequest::addReq(Addr blockVaddr, Addr blockPaddr, const std::vector<bool> byteEnable)
 {
+    assert(sbuffer_entry);
     auto req = std::make_shared<Request>(
         blockPaddr, _port.cacheLineSize(), Request::Flags(),
         cpu->dataRequestorId());
     req->setContext(cpu->getContext(_port.lsqID)->contextId());
+    req->setReqInstSeqNum(sbuffer_entry->seqNum);
     req->setByteEnable(byteEnable);
 
     _reqs.push_back(req);
@@ -3664,6 +3833,10 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
     LSQ* lsq = this->_port.getLsq();
     bool isNormalLd = this->isNormalLd();
     bool enableLdMissReplay = lsq->enableLdMissReplay();
+    // Propagate cache access depth from response packet to DynInst
+    // before the packet is discarded or replayed
+    LSQRequest::_inst->cacheAccessDepth = std::max(
+        LSQRequest::_inst->cacheAccessDepth, pkt->cacheAccessDepth);
     // All responses received in 1 cycle are cache hit.
     const auto observedLatencyCycles =
         static_cast<uint32_t>(LSQRequest::_inst->getCpuPtr()->ticksToCycles(
@@ -3745,6 +3918,9 @@ LSQ::SplitDataRequest::recvTimingResp(PacketPtr pkt)
 {
     DPRINTF(LSQ, "Spilt Req::recvTimingResp: inst: %llu, pkt: %#lx\n", pkt->req->getReqInstSeqNum(),
             pkt->getAddr());
+    // Propagate cache access depth from response packet to DynInst
+    LSQRequest::_inst->cacheAccessDepth = std::max(
+        LSQRequest::_inst->cacheAccessDepth, pkt->cacheAccessDepth);
     uint32_t pktIdx = 0;
     while (pktIdx < _packets.size() && pkt != _packets[pktIdx])
         pktIdx++;
@@ -3968,17 +4144,18 @@ LSQ::SingleDataRequest::sendPacketToCache()
         DPRINTF(LoadPipeline, "Load [sn:%ld] setBankConflictReplay\n",
                 _inst->seqNum);
     }
-    if (mshr_used) {
+    // Stores/AMOs here are past the store pipe: NeedReplay would never clear.
+    if (isLoad() && mshr_used) {
         instruction()->setMshrArbFailReplay();
         DPRINTF(LoadPipeline, "Load [sn:%ld] setMshrArbFailReplay\n",
                 _inst->seqNum);
     }
-    if (mshr_alias_fail) {
+    if (isLoad() && mshr_alias_fail) {
         instruction()->setMshrAliasFailReplay();
         DPRINTF(LoadPipeline, "Load [sn:%ld] setMshrAliasReplay\n",
                 _inst->seqNum);
     }
-    if (hit_in_write_buffer) {
+    if (isLoad() && hit_in_write_buffer) {
         instruction()->setHitInWriteBufferReplay();
         DPRINTF(LoadPipeline, "Load [sn:%ld] setHitInWriteBufferReplay\n",
                 _inst->seqNum);
@@ -4040,17 +4217,18 @@ LSQ::SplitDataRequest::sendPacketToCache()
     if (tag_read_fail) {
         lsqUnit()->tagReadFailReplaySchedule();
     }
-    if (mshr_used) {
+    // Stores/AMOs here are past the store pipe: NeedReplay would never clear.
+    if (isLoad() && mshr_used) {
         instruction()->setMshrArbFailReplay();
         DPRINTF(LoadPipeline, "Load [sn:%ld] setMshrArbFailReplay\n",
                 _inst->seqNum);
     }
-    if (mshr_alias_fail){
+    if (isLoad() && mshr_alias_fail) {
         instruction()->setMshrAliasFailReplay();
         DPRINTF(LoadPipeline, "Load [sn:%ld] setMshrAliasFailReplay\n",
                 _inst->seqNum);
     }
-    if (hit_in_write_buffer) {
+    if (isLoad() && hit_in_write_buffer) {
         instruction()->setHitInWriteBufferReplay();
         DPRINTF(LoadPipeline, "Load [sn:%ld] setHitInWriteBufferReplay\n",
                 _inst->seqNum);

@@ -408,6 +408,15 @@ class IEW
     /** Wire to get commit's output from backwards time buffer. */
     TimeBuffer<TimeStruct>::wire fromCommit;
 
+    /**
+     * Wire to read IEW's own TimeStruct slot from the previous cycle.
+     * The LSQ borrowing donor decision needs the stall reasons that
+     * dispatchInsts() wrote last cycle; toFetch (getWire(0)) is the
+     * current-cycle write port and always reads as zero here. A dedicated
+     * getWire(-1) keeps this independent of commitToIEWDelay.
+     */
+    TimeBuffer<TimeStruct>::wire prevIewInfo;
+
     /** Wire to write information heading to previous stages. */
     TimeBuffer<TimeStruct>::wire toRename;
 
@@ -539,6 +548,19 @@ class IEW
     /** Extra delay after vector memory completion before IEW writeback. */
     const Cycles vectorMemCompletionDelay;
 
+    /** Cycles an LSQ borrowing donor marking is held after its trigger
+     *  clears, tracked separately for LQ and SQ. */
+    const unsigned smtLQBorrowDonorHoldCycles;
+    const unsigned smtSQBorrowDonorHoldCycles;
+
+    /** Evaluation knob: when true, has_buffered_rename is forced to false in
+     *  the LSQ borrowing donor decision, disabling the rename-buffer gate. */
+    const bool lsqBorrowDonorSkipRenameGate;
+
+    /** Per-thread hysteresis counters for LSQ borrowing donor state. */
+    unsigned lqBorrowingDonorCycles[MaxThreads];
+    unsigned sqBorrowingDonorCycles[MaxThreads];
+
     struct DelayedVectorMemCompletion
     {
         Tick readyTick;
@@ -577,6 +599,8 @@ class IEW
         statistics::Scalar unblockCycles;
         /** Stat for total number of instructions dispatched. */
         statistics::Vector dispatchedInsts;
+        /** Dispatched ops counted with the same filters as committedOps. */
+        statistics::Vector dispatchedOps;
         /** Stat for total number of squashed instructions dispatch skips. */
         statistics::Scalar dispSquashedInsts;
         /** Stat for total number of dispatched load instructions. */
@@ -670,6 +694,7 @@ class IEW
         /** Distribution of number of dispatch stall reasons each tick. */
 
         statistics::Vector dispatchStallReason;
+        statistics::Distribution cacheAccessDepthDist;
     } iewStats;
 
     /** The width that can be dispatched to the scheduler per cycle. */
@@ -700,6 +725,8 @@ class IEW
     StallReason checkLsqStall(ThreadID tid, bool isLoad) {
       return checkLSQStall(tid, isLoad);
     }
+
+    StallReason checkingLoadStoreInst(DynInstPtr inst);
 
     /** Sends commit proper information for a squash due to a long-latency
      * load detected by the fetch stage's flush policy.

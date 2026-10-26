@@ -281,6 +281,11 @@ enum MiscRegIndex
     MISCREG_HSTATEEN2,
     MISCREG_HSTATEEN3,
 
+    MISCREG_STIMECMP,
+    // stimecmph rv32 only
+    MISCREG_VSTIMECMP,
+    // vstimecmph rv32 only
+
     NUM_MISCREGS,
     MISCREG_FFLAGS_EXE = NUM_MISCREGS,
     NUM_MISC_AND_HELPER_REGS
@@ -340,6 +345,8 @@ enum CSRIndex
     CSR_STVAL = 0x143,
     CSR_SIP = 0x144,
     CSR_SATP = 0x180,
+    CSR_STIMECMP = 0x14D,
+    // STIMECMPH rv32 only
 
     CSR_MVENDORID = 0xF11,
     CSR_MARCHID = 0xF12,
@@ -517,6 +524,8 @@ enum CSRIndex
     CSR_VSTVAL      = 0x243,
     CSR_VSIP        = 0x244,
     CSR_VSATP       = 0x280,
+    CSR_VSTIMECMP   = 0x24D,
+    // VSTIMECMPH rv32 only
     CSR_MTINST      = 0x34A,
     CSR_MTVAL2      = 0x34B,
 };
@@ -608,6 +617,7 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_STVAL, {"stval", MISCREG_STVAL}},
     {CSR_SIP, {"sip", MISCREG_IP}},
     {CSR_SATP, {"satp", MISCREG_SATP}},
+    {CSR_STIMECMP, {"stimecmp", MISCREG_STIMECMP}},
 
     {CSR_MVENDORID, {"mvendorid", MISCREG_VENDORID}},
     {CSR_MARCHID, {"marchid", MISCREG_ARCHID}},
@@ -756,6 +766,7 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_VSTVAL, {"vstval", MISCREG_VSTVAL}},
     {CSR_VSIP, {"vsip", MISCREG_VSIP}},
     {CSR_VSATP, {"vsatp", MISCREG_VSATP}},
+    {CSR_VSTIMECMP, {"vstimecmp", MISCREG_VSTIMECMP}},
     {CSR_MTINST, {"mtinst", MISCREG_MTINST}},
     {CSR_MTVAL2, {"mtval2", MISCREG_MTVAL2}},
 };
@@ -866,10 +877,13 @@ EndBitUnion(HGATP)
  */
 BitUnion64(INTERRUPT)
     Bitfield<11> mei;
+    Bitfield<10> vsei;
     Bitfield<9> sei;
     Bitfield<7> mti;
+    Bitfield<6> vsti;
     Bitfield<5> sti;
     Bitfield<3> msi;
+    Bitfield<2> vssi;
     Bitfield<1> ssi;
 EndBitUnion(INTERRUPT)
 
@@ -922,7 +936,7 @@ const uint64_t NEMU_HIP_RMASK = NEMU_HS_MASK;
 const uint64_t NEMU_HVIP_MASK = ((1 << 10) | (1 << 6) | (1 << 2));
 const uint64_t NEMU_VSIP_WMASK = (1 << 2);
 const uint64_t NEMU_MIDELEG_FORCED_MASK = ((1 << 12) | (1 << 10) | (1 << 6) | (1 << 2));
-const uint64_t NEMU_SENVCFG_WMASK = 0;
+const uint64_t NEMU_SENVCFG_WMASK = 0xF0ULL; // CBZE+CBCFE+CBIE, matches NEMU with CONFIG_RV_CBO=y.
 const RegVal STATUS_SD_MASK = 1ULL << ((sizeof(uint64_t) * 8) - 1);
 const RegVal STATUS_SXL_MASK = 3ULL << SXL_OFFSET;
 const RegVal STATUS_UXL_MASK = 3ULL << UXL_OFFSET;
@@ -968,6 +982,10 @@ const RegVal NEMU_MIE_MASK_BASE = 0xaaa;
 const RegVal NEMU_MIE_MASK_H = (1 << 2) | (1 << 6) | (1 << 10) | (1 << 12);
 const RegVal NEMU_LCOFI = 0;
 const RegVal NEMU_MIE_MASK = NEMU_MIE_MASK_BASE | NEMU_MIE_MASK_H | NEMU_LCOFI;
+
+const RegVal MENVCFG_STCE  = 1ULL << 63;
+const RegVal HENVCFG_STCE  = 1ULL << 63;
+const RegVal MCOUNTEREN_TM = 1ULL << 1;
 
 const std::map<int, RegVal> CSRMasks = {
     {CSR_FFLAGS, FFLAGS_MASK},

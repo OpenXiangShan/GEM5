@@ -155,6 +155,9 @@ class ISA : public BaseISA
     void handleLockedSnoop(PacketPtr pkt, Addr cacheBlockMask) override;
 
     void globalClearExclusive() override;
+
+    void evaluateSstcTimers();
+    void updateTime(RegVal time);
 };
 
 } // namespace RiscvISA

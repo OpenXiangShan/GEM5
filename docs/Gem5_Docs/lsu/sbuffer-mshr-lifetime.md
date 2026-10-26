@@ -57,14 +57,18 @@ MSHR 满、target 满、分配仲裁失败、alias/write-buffer 冲突及缓存�
 `sbufferMissRequests` 按物理 cache line 索引被接受的 store miss，模拟 MSHR 中保存的 store forwarding 数据。只向同线程且更年轻的 load 转发，逐字节优先级为：
 
 ```text
-live SBuffer vice → live SBuffer entry → 已接收 miss 的快照
+live SBuffer vice → live SBuffer entry → 同行已接收 miss 的快照（逐字节从新到旧）
 ```
 
 它支持全覆盖转发，以及新 store 只覆盖部分字节时与旧 miss 数据组合；不把旧 miss 的字节覆盖到更年轻的 store 上，也不跨 SMT 线程直接转发。
 
 这里复用原有 SBuffer forwarding 完成路径保存 miss 数据的可转发性，没有新增 RTL MissQueue forwarding 的独立查询端口和拍级延迟。本次校正的是容量寿命，并非完整重建 MSHR forwarding 流水线。
 
-同一物理行最多保留一个尚未完成的 SBuffer miss。后续同地址 store 在 S2 replay，等待前一个请求最终响应后再发送。这是有意的保守约束：不新增 RTL 没有承诺的任意 store-to-store MSHR 合并，也避免经典缓存 write target 排序反转造成旧写覆盖新写。不同物理行仍可并行占用不同 MSHR，不再被已接收请求的 SBuffer 表项限制。
+后续同地址 store 仍在原有 fake MainPipe S2 发送。当上一笔仍属于由 SBuffer store 分配的 MSHR、线程和虚拟 index 相同，且没有 deferred target 或失效/降级等一致性障碍时，允许加入该 MSHR；正常 cache 端口、MSHR 仲裁和 target 数量限制保持不变。这对应 RTL `MissQueue.before_data_refill_can_merge()` 的 store-origin 合并窗口。load/prefetch-origin MSHR 中已合入的 store 不会据此开放后续 store 合并。
+
+classic cache 用多个有序 target 表示合并的字节写，不另行创建下级 miss。回填应用各 target 时，保留原 store-before-load 策略，但 SBuffer writes 按接收顺序应用，防止旧写覆盖新写。每个被接受的 target 各自保存快照、释放 SBuffer 物理槽，并在最终响应时清理；forwarding 按同线程、比 load 更老的条件逐字节选择最新快照，fence/drain 等待全部 target。
+
+合并窗口在 classic refill 消费对应 target 时关闭。即使该请求仍在等待 CPU response，或同地址已经重新分配了 MSHR，也不能误认为旧窗口仍开放。该模型仍由 classic cache 执行实际回填，fake refill S4 只保留既有资源/credit 时序；本次没有将功能回填推迟到 fake S4，也没有修改 MainPipe 阶段、ACK 省略、重试策略或 MSHR credit 寿命。
 
 ### Flush、fence、drain 和可见性
 
@@ -86,10 +90,10 @@ MSHR 和 fake refill credit 原有的分配/释放时点不变；本修改只分
 
 本修改不调整 `SbufferEntries`、`SbufferEvictThreshold`、MSHR 数量或端口带宽。默认开启会改变 store-miss 较重 workload 的 SBuffer 占用和阻塞趋势，这是预期行为。
 
-- miss 地址索引平均 O(1)；同地址重试和转发查询不扫描整个 MSHR 集合。
+- miss 地址索引平均 O(1)；每行保存已接收请求列表，不扫描整个 MSHR 集合。合并资格检查、响应删除为 O(T)，T 为该行在途 target 数；逐字节 forwarding 为 O(bytes × T)。
 - 每个被接受的 miss 复制一条 cache line，成本 O(cache-line bytes)。
 - 每线程序号 multiset 插入/删除为 O(log M)，查看最早未完成序号为 O(1)。
-- 每行最多一个快照；数量受 MSHR、接收带宽以及最终响应排队/延迟共同约束。由于 classic MSHR 释放和 CPU 收到响应可能不同拍，快照数量不应被硬性断言为不超过 MSHR 配置值。
+- 每个已接收请求一个快照；每行可以有多个，数量受 MSHR target 容量、接收带宽以及最终响应排队/延迟共同约束。由于 classic MSHR 释放和 CPU 收到响应可能不同拍，快照数量不应被硬性断言为不超过 MSHR 配置值。
 - 不逐信号复制 RTL：RTL S2 接收后下一拍 ACK，本模型在现有 S2 回调中完成容量移交，省略单独 ACK 寄存器，保留资源寿命差异和所有失败重试边界。
 
 新增统计位于 LSQ stats group：
@@ -98,7 +102,8 @@ MSHR 和 fake refill credit 原有的分配/释放时点不变；本修改只分
 | --- | --- |
 | `sbufferMissEntriesReleased` | miss 接收时提前释放的表项数 |
 | `sbufferMissPending` | 已释放表项但仍待最终响应的 store miss 平均数量 |
-| `sbufferMissSameLineReplay` | 因同物理行已有未完成 store 而被拒绝的 S2 尝试数 |
+| `sbufferMissSameLineReplay` | 同行存在未完成 store 时被拒绝的 S2 尝试数（含资源阻塞） |
+| `sbufferMissMerged` | 后续 store 成功加入已有 store-origin MSHR 的次数 |
 | `sbufferMissForward` | 使用已接收 miss 数据的 load forwarding 查询数 |
 
 结合原有 `sbufferAvgEntryNum`、`sbufferFullCycles`、`sbufferDcacheReqBlocked`、`dcacheMainPipeStoreS2MissExit` 观察瓶颈从 SBuffer 容量转向 MSHR/端口竞争。`StoreBuffer` debug flag 会输出提前释放时点、原请求的最终响应和物理占用。
@@ -143,3 +148,38 @@ python3 util/xs_scripts/sbuffer_release/run.py \
 - 使用 `/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so` 的三组回归：`/tmp/xs-sbuffer-release-difftest/results.json`。
 
 这些结果仅用于证明本修改的资源生命周期、转发和重试因果关系，不代表 SPEC 收益。尚未执行完整 SPEC checkpoint 回归、SMT 多线程运行或 drain/checkpoint 专项测试；SMT 隔离与 drain 条件已做源码检查，但不能把这部分视为已完成运行验证。
+
+## 6. 同行 store MSHR 合并定向回归
+
+```sh
+python3 util/xs_scripts/sbuffer_merge/run.py \
+  --outdir /tmp/sbuffer-merge-regression \
+  --ref-so /nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so
+```
+
+脚本运行正常合并、每个 MSHR 仅2个 target、旧物理槽释放方式三组。汇编覆盖重叠 byte/halfword 写、不同快照组合转发、fence 后 cache 数据验证，以及小 SBuffer 的槽位复用。正常模式必须出现 `sbufferMissMerged` 和 `sbufferMissForward`，旧模式不得出现合并。输出命令、日志、StoreBuffer trace、stats 和 `results.json`。XS 的退出指令不检查 a0，故错误分支刻意自旋，脚本要求确实到达成功退出指令，不能把指令数上限退出视为通过。
+
+### 本地实测：2026-09-16
+
+基于 `e1997d377c` 加本次修改，三组均通过数据自检和 NEMU difftest：
+
+| 场景 | 同行 MSHR 合并 | miss 数据转发查询 | 提前释放表项 | 同行 S2 replay |
+| --- | ---: | ---: | ---: | ---: |
+| 正常合并 / 32 targets | 45 | 31 | 61 | 0 |
+| 容量压力 / 2 targets | 16 | 16 | 32 | 15 |
+| 旧物理槽释放方式 | 0 | 0 | 0 | 0 |
+
+另外执行 SPEC06 1.0c 的 cactusADM/163 小回归，使用切片配套的 CI NEMU reference；该 reference 要求开启 memory dedup：
+
+```sh
+build/RISCV/gem5.opt --outdir=/tmp/sbuffer-merge-cactus163-ci-dedup \
+  configs/example/kmhv3.py \
+  --generic-rv-cpt=/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/cactusADM/163/_163_0.560381_memory_.zstd \
+  --warmup-insts-no-switch=100000 --maxinsts=1100000 \
+  --enable-difftest --enable-mem-dedup \
+  --difftest-ref-so=/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3/normal-dedup/riscv64-nemu-interpreter-so
+```
+
+正常达到指令数上限，退出码 0，NEMU 对拍通过。预热段为 100,007 条指令；reset 后测量段为 999,997 条指令、242,016 cycles，发生 482 次同行 MSHR 合并、1,114 次表项提前释放、0 次同行 S2 replay。`config.ini` 确认 difftest 开启。初次使用非配套 reference 在 checkpoint 的 CSR 恢复阶段对拍失败；上述配套 reference 加 dedup 的运行已通过。
+
+构建 `scons build/RISCV/gem5.opt --gold-linker -j32`、修改文件的 repository style check 和 `git diff --check` 均通过。定向结果位于 `/tmp/sbuffer-merge-regression/results.json`，SPEC 命令、日志与统计位于上述 outdir。这是功能及合并路径的小回归，没有做修改前后的完整 SPEC 性能对比，不能据此量化对原 14% 差距的改善；SMT、一致性 snoop 和 drain/checkpoint 专项运行仍未覆盖。

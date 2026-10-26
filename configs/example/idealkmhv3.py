@@ -106,17 +106,20 @@ def setKmhV3IdealParams(args, system):
         cpu.dispWidth = [8, 8, 8]
 
         # scheduler
-        cpu.scheduler = KMHV3Scheduler()
+        if args.enable_spmt:
+            cpu.scheduler = KMHV3SpMTScheduler()
+        else:
+            cpu.scheduler = KMHV3Scheduler()
 
         # rob
         cpu.commitWidth = 8
         cpu.squashWidth = 8
         cpu.phyregReleaseWidth = 8
         cpu.RobCompressPolicy = 'kmhv3'
-        cpu.numROBEntries = args.ROBTotalEntry
+        cpu.numROBEntries = args.rob_total_entry
         cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
-        cpu.smtBorrowDonorReserveEntries = args.smtROBDonorEntry
-        cpu.smtBorrowBaseReserveEntries = args.smtROBBaseEntry
+        cpu.smtBorrowDonorReserveEntries = args.smt_rob_donor_entry
+        cpu.smtBorrowBaseReserveEntries = args.smt_rob_base_entry
         cpu.robWalkPolicy = 'NaiveCpt' # ideal core recovers via RAT checkpoints
 
         # lsu
@@ -126,6 +129,13 @@ def setKmhV3IdealParams(args, system):
         cpu.BankConflictCheck = True
         cpu.sbufferBankWriteAccurately = True
         cpu.DcacheSetDivNum = 2
+        cpu.smtLQBorrowDonorReserveEntries = args.smt_lq_donor_entry
+        cpu.smtLQBorrowBaseReserveEntries = args.smt_lq_base_entry
+        cpu.smtSQBorrowDonorReserveEntries = args.smt_sq_donor_entry
+        cpu.smtSQBorrowBaseReserveEntries = args.smt_sq_base_entry
+        cpu.smtLQBorrowDonorHoldCycles = args.smt_lq_donor_hold_cycles
+        cpu.smtSQBorrowDonorHoldCycles = args.smt_sq_donor_hold_cycles
+        cpu.lsqBorrowDonorSkipRenameGate = args.lsq_borrow_donor_skip_rename_gate
 
         # value predictor
         if args.enable_vp:
@@ -215,6 +225,7 @@ def setKmhV3IdealParams(args, system):
             if args.classic_l2:
                 system.l2_caches[i].wpu = NULL
                 system.l2_caches[i].slice_num = 0 # 4 -> 0, no slice
+                l2_prefetcher = system.l2_caches[i].prefetcher
             else:
                 l2_wrapper = system.l2_wrappers[i]
                 l2_wrapper.data_sram_banks = 2
@@ -226,9 +237,12 @@ def setKmhV3IdealParams(args, system):
                     # Configure XSDRRIP replacement policy (DRRIP mode)
                     # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
                     l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
-            system.tol2bus_list[i].forward_latency = 3  # 0->3
-            system.tol2bus_list[i].response_latency = 3  # 0->3
-            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1  # 0->1
+                l2_prefetcher = l2_wrapper.prefetcher
+            if l2_prefetcher != NULL and hasattr(l2_prefetcher, 'offload_low_accuracy'):
+                l2_prefetcher.offload_low_accuracy = True
+            system.tol2bus_list[i].forward_latency = 0
+            system.tol2bus_list[i].response_latency = 1
+            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1
 
             # Enable dual-port for DCache → L2 communication
             # ReqLayer[0]: ICache+DCache+ITB+DTB → L2, allow 2 requests per cycle
@@ -255,6 +269,8 @@ if __name__ == '__m5_main__':
     args.bp_type = 'DecoupledBPUWithBTB'
     args.l2_size = '2MB'
     args.l3_size = '32MB'
+    args.l1d_enable_lldp = True
+    args.l2_enable_lldp = True
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)
 

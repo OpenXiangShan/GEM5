@@ -288,6 +288,109 @@ TEST_F(BTBTest, TidPartitionKeepsSamePcEntriesIndependent) {
     }
 }
 
+TEST_F(BTBTest, PrivateVictimCachesKeepSamePcTargetsIndependent)
+{
+    MBTB btb(16, 20, 4, 1, 32);
+    btb.setSmtTidPartitioned(true);
+    constexpr Addr startPC = 0x1000;
+
+    for (ThreadID tid = 0; tid < 2; ++tid) {
+        for (unsigned i = 0; i < 5; ++i) {
+            auto branch = createBranchInfo(
+                startPC + i * 4, 0x2000 + tid * 0x1000 + i * 16, true);
+            predictUpdateCycle(
+                &btb, startPC, branch, true,
+                boost::dynamic_bitset<>(8, 0), tid);
+        }
+    }
+
+    // One branch is resident only in the VC. Update all five to exercise it
+    // without depending on which SRAM way was evicted. No update may consume
+    // or overwrite the other thread's same-PC entry.
+    const auto updatesBefore = btb.btbStats.updateInVC;
+    for (unsigned i = 0; i < 5; ++i) {
+        auto updated = createBranchInfo(startPC + i * 4, 0x4000 + i * 16, true);
+        predictUpdateCycle(
+            &btb, startPC, updated, true, boost::dynamic_bitset<>(8, 0), 0);
+    }
+    EXPECT_EQ(btb.btbStats.updateInVC, updatesBefore + 1);
+
+    for (ThreadID tid = 0; tid < 2; ++tid) {
+        const auto entries = btb.getPredictedEntriesNoSideEffect(
+            startPC, tid, 0);
+        std::vector<FullBTBPrediction> predictions(4);
+        for (auto &prediction : predictions) {
+            prediction.tid = tid;
+        }
+        btb.putPCHistory(startPC, boost::dynamic_bitset<>(8, 0), predictions);
+        ASSERT_EQ(entries.size(), 5);
+        const auto &predictedEntries = predictions[btb.getDelay()].btbEntries;
+        ASSERT_EQ(predictedEntries.size(), entries.size());
+        for (unsigned i = 0; i < entries.size(); ++i) {
+            EXPECT_EQ(entries[i].pc, startPC + i * 4);
+            const Addr expected = (tid == 0 ? 0x4000 : 0x3000) + i * 16;
+            EXPECT_EQ(entries[i].target, expected);
+            EXPECT_EQ(predictedEntries[i].target, expected);
+        }
+    }
+}
+
+TEST_F(BTBTest, PrivateVictimCacheReplacementDoesNotEvictOtherThread)
+{
+    MBTB btb(16, 20, 4, 1, 32);
+    btb.setSmtTidPartitioned(true);
+    constexpr unsigned residentEntries = 4 + 32;
+
+    for (ThreadID tid = 0; tid < 2; ++tid) {
+        // All entries use SRAM0 and the thread's single set. Thread 1 then
+        // overflows its VC, exercising both replacement and same-PC cleanup.
+        const unsigned count = tid == 0 ? residentEntries : 80;
+        for (unsigned i = 0; i < count; ++i) {
+            const Addr pc = 0x1000 + i * 64;
+            auto branch = createBranchInfo(
+                pc, 0x10000 + tid * 0x10000 + i * 64, true);
+            predictUpdateCycle(
+                &btb, pc, branch, true,
+                boost::dynamic_bitset<>(8, 0), tid);
+        }
+    }
+
+    // Each thread retains a full 32-entry VC in addition to its SRAM ways.
+    for (ThreadID tid = 0; tid < 2; ++tid) {
+        const unsigned first = tid == 0 ? 0 : 80 - residentEntries;
+        for (unsigned i = first; i < first + residentEntries; ++i) {
+            const Addr pc = 0x1000 + i * 64;
+            const auto entries = btb.getPredictedEntriesNoSideEffect(
+                pc, tid, 0);
+            ASSERT_EQ(entries.size(), 1) << "tid=" << tid << " i=" << i;
+            EXPECT_EQ(entries[0].pc, pc);
+            EXPECT_EQ(entries[0].target,
+                      0x10000 + tid * 0x10000 + i * 64);
+        }
+    }
+}
+
+TEST_F(BTBTest, DisabledVictimCacheSupportsTidPartitionedStorage)
+{
+    MBTB btb(16, 20, 4, 1, 0);
+    btb.setSmtTidPartitioned(true);
+    constexpr Addr startPC = 0x1000;
+
+    for (ThreadID tid = 0; tid < 2; ++tid) {
+        for (unsigned i = 0; i < 5; ++i) {
+            auto branch = createBranchInfo(
+                startPC + i * 4, 0x2000 + tid * 0x1000 + i * 16, true);
+            predictUpdateCycle(
+                &btb, startPC, branch, true,
+                boost::dynamic_bitset<>(8, 0), tid);
+        }
+        EXPECT_EQ(btb.getPredictedEntriesNoSideEffect(startPC, tid, 0).size(),
+                  4);
+    }
+    EXPECT_EQ(btb.btbStats.victimCacheHit, 0);
+    EXPECT_EQ(btb.btbStats.updateInVC, 0);
+}
+
 // BTB actual update process:
 // 1. putPCHistory, store result in stagePreds, update meta
 // 2. getPredictionMeta, set to stream.predMetas[0]

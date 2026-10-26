@@ -42,6 +42,7 @@
 #define __CPU_O3_FETCH_HH__
 
 #include <array>
+#include <cstdint>
 #include <cstring>
 #include <deque>
 #include <memory>
@@ -49,6 +50,7 @@
 
 #include "arch/generic/decoder.hh"
 #include "arch/generic/mmu.hh"
+#include "arch/riscv/pcstate.hh"
 #include "arch/riscv/types.hh"
 #include "base/statistics.hh"
 #include "config/the_isa.hh"
@@ -56,6 +58,7 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/iew.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/mlp_predictor.hh"
 #include "cpu/o3/smt_sched.hh"
 #include "cpu/pc_event.hh"
 #include "cpu/pred/bpred_unit.hh"
@@ -66,6 +69,7 @@
 #include "enums/SMTDecodePolicy.hh"
 #include "enums/SMTFetchBlockPolicy.hh"
 #include "enums/SMTFetchPolicy.hh"
+#include "enums/SMTMLPFetchBlockPolicy.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
 #include "sim/eventq.hh"
@@ -248,25 +252,42 @@ class Fetch
     unsigned smtLdstqHighWater;
     int delayedSchedulerDelay; // only for DelayedICcountPolicy
 
-    /**  Block Policy: long-latency load fetch blocking */
+    // ===  Block Policy: long-latency load fetch blocking ===
     SMTFetchBlockPolicy smtFetchBlockPolicy;
+    bool isLongLatency(StallReason lqReason);
     void checkLongLatencyLoads();
-    bool isBlockPolicyActive() const;
+    bool isThrottlePolicyActive();
     unsigned longLatencyThreshold;
     InstSeqNum lastLoadHeadSeqNum[MaxThreads];
     uint64_t longLatencyStallCycles[MaxThreads];
-    bool threadFetchBlocked[MaxThreads];
+    bool threadFetchThrottled[MaxThreads];
+    bool mlpThreadFetchThrottled[MaxThreads];
+    // / for stats
+    InstSeqNum lastLoadHeadSeqNumForStats[MaxThreads];
+    StallReason lqReasonForStats[MaxThreads];
+    uint64_t longLatencyStallReasonCyclesForStats[MaxThreads];
+    uint64_t longLatencyStallCyclesForStats[MaxThreads];
 
-    /** Block Policy: per-thread state tracking for statistics */
-    uint64_t blockStateHoldCycles[MaxThreads];
-
-    // === FlushFrom Policy state ===
+    // === Flush Policy status and methods ===
     bool flushFromInitiated[MaxThreads];
-
-    // FlushFrom Policy methods
-    bool isFlushFromPolicy() const;
+    bool mlpFlushFromInitiated[MaxThreads];
+    bool isBlockPolicy() const;
+    bool isFlushPolicy() const;
     DynInstPtr findFirstUse(const DynInstPtr &loadInst, ThreadID tid);
-    void flushFromInitiateFlush(const DynInstPtr &loadInst, ThreadID tid, bool fromUse);
+    void flushFromInitiateFlush(const DynInstPtr &loadInst, ThreadID tid, bool fromUse, bool isMlp);
+
+    // === MLP Aware Policy: MLP predictor ===
+    o3::MLPredictor *mlpPredictor = nullptr;
+    SMTMLPFetchBlockPolicy smtMlpFetchBlockPolicy;
+    unsigned mlpLongLatencyCacheDepth;
+    bool mlpAwareMode[MaxThreads];
+    int32_t mlpRemainingInsts[MaxThreads];
+    InstSeqNum mlpLongLatencyLoadSeqNum[MaxThreads];
+    void consumeLoadFeedback();
+
+    /** per-thread state tracking for statistics */
+    uint64_t blockStateHoldCycles[MaxThreads];
+    uint64_t mlpBlockStateHoldCycles[MaxThreads];
 
     /** List that has the threads organized by priority. */
     std::list<ThreadID> priorityList;
@@ -298,6 +319,9 @@ class Fetch
 
     /** Sets ptr to iew. */
     void setIEWStage(IEW *iew_stage);
+    /** Sets ptr to MLP predictor. */
+    void setMlpPredictor(MLPredictor *mlp_predictor) { mlpPredictor = mlp_predictor; }
+
 
     /** Sets the main backwards communication time buffer pointer. */
     void setTimeBuffer(TimeBuffer<TimeStruct> *time_buffer);
@@ -315,6 +339,9 @@ class Fetch
     /** Trace-mode status (delegated to TraceFetch). */
     bool isTraceMode() const;
     bool isTraceEOF() const;
+    /** Current trace reader position (records consumed; see
+     *  TraceFetch::getTraceReaderIndex). */
+    uint64_t getTraceReaderIndex() const;
 
     /** Clear all thread-specific states*/
     void clearStates(ThreadID tid);
@@ -359,6 +386,10 @@ class Fetch
 
     // Select a thread that is not fetch-blocked, using scheduler
     ThreadID selectUnstalledThread();
+
+    // Decode update mlpLongLatencyLoadSeqNum for MlpAwarePoilcy while fusion
+    void fusionInstUpdate(ThreadID tid, InstSeqNum seqNum0, InstSeqNum seqNum1);
+
   private:
     /** Reset this pipeline stage */
     void resetStage();
@@ -423,11 +454,13 @@ class Fetch
      * @param allow_two_fetch Whether this buffer may cross an FTQ boundary.
      * @param continued_to_next_target Whether the current buffer was retained
      *        for the next FTQ target.
+     * @param prediction receives the prediction and false-BTB-hit result.
      * @return true if a branch was predicted taken.
      */
     bool lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
                                bool allow_two_fetch,
-                               bool &continued_to_next_target);
+                               bool &continued_to_next_target,
+                               bool &false_hit);
 
     /**
      * Fetches the cache line that contains the fetch PC.  Returns any
@@ -449,6 +482,12 @@ class Fetch
      * @return true if the request group was started, false if it was blocked.
      */
     bool sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state);
+
+    bool traceInstructionBytesReady(
+        ThreadID tid, Addr instruction_pc, unsigned instruction_size) const;
+
+    Addr pendingTraceInstructionPc[MaxThreads]{};
+    bool pendingTraceSupplyValid[MaxThreads]{};
 
     void finishTranslation(const Fault &fault, const RequestPtr &mem_req);
 
@@ -585,6 +624,44 @@ class Fetch
             StaticInstPtr curMacroop, const PCStateBase &this_pc,
             const PCStateBase &next_pc, bool trace);
 
+    enum class PredecodeFault : uint8_t
+    {
+        None,
+        DirectNotTaken,
+        DirectTargetMismatch,
+        NonCfiTaken,
+        ReturnNotTaken
+    };
+
+    struct PredecodeEntry
+    {
+        DynInstPtr instruction;
+
+        PredecodeEntry();
+        ~PredecodeEntry();
+    };
+
+    struct PredecodeStage
+    {
+        std::array<PredecodeEntry, MaxWidth> entries;
+        unsigned size = 0;
+
+        ~PredecodeStage();
+        void clear();
+    };
+
+    bool predecodePipelineEnabled(ThreadID tid) const;
+    bool predecodeEnabled(ThreadID tid, const StaticInstPtr &staticInst,
+                          const StaticInstPtr &curMacroop) const;
+    void advancePredecodePipeline();
+    bool processPredecodeStage(ThreadID tid);
+    void clearPredecodePipeline(ThreadID tid);
+    PredecodeFault classifyPredecodeFault(
+            const DynInstPtr &instruction,
+            const StaticInstPtr &staticInst) const;
+    void handlePredecodeFault(ThreadID tid, const DynInstPtr &instruction,
+                              PredecodeFault fault);
+
     /** Pipeline the next I-cache access to the current one. */
     void pipelineIcacheAccesses(ThreadID tid);
 
@@ -592,7 +669,7 @@ class Fetch
     void profileStall(ThreadID tid);
 
     /** Set the reasons of all fetch stalls. */
-    void setAllFetchStalls(StallReason stall);
+    void setAllFetchStalls(ThreadID tid, StallReason stall);
 
     /** Check decoupled frontend (FTQ) availability.
      * @param tid Thread ID
@@ -644,7 +721,7 @@ class Fetch
      * @param curMacroop Current macroop (if any)
      * @return StallReason if stalled, NoStall otherwise
      */
-    StallReason checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
+    StallReason checkMemoryNeeds(ThreadID tid, PCStateBase &this_pc,
                                  const StaticInstPtr &curMacroop);
 
 
@@ -1009,6 +1086,10 @@ class Fetch
     /** Queue of fetched instructions. Per-thread to prevent HoL blocking. */
     std::deque<DynInstPtr> fetchQueue[MaxThreads];
 
+    /** Fixed two-cycle check pipeline; it neither queues nor backpressures. */
+    PredecodeStage predecodeStage0[MaxThreads];
+    PredecodeStage predecodeStage1[MaxThreads];
+
     unsigned currentLoopIter{0};  // todo: remove this
 
     /** Icache stall statistics. */
@@ -1025,6 +1106,9 @@ class Fetch
 
     /** Maximum number of threads that may start an FTQ fetch each cycle. */
     const unsigned numFetchTargetThreads;
+
+    /** Optional RISC-V predecode owner, disabled by default. */
+    bool enablePredecode;
 
     /** Thread ID being fetched. */
     ThreadID threadFetched;
@@ -1054,7 +1138,7 @@ class Fetch
     unsigned ftqEntryFetchedInsts[MaxThreads]{};
 
     /** fetch stall reasons */
-    std::vector<StallReason> stallReason;
+    std::array<std::vector<StallReason>, MaxThreads> stallReason;
 
     /**
      * Check if the thread can fetch instructions
@@ -1121,6 +1205,8 @@ class Fetch
         statistics::Scalar branches;
         /** Stat for total number of predicted branches. */
         statistics::Scalar predictedBranches;
+        /** RISC-V predecode-owned recovery events. */
+        statistics::Scalar predecodeRedirects;
         /** Stat for total number of cycles spent fetching. */
         statistics::Scalar cycles;
         /** Stat for total number of cycles spent squashing. */
@@ -1163,6 +1249,16 @@ class Fetch
         statistics::Scalar tlbSquashes;
         /** Distribution of number of instructions fetched each cycle. */
         statistics::Distribution nisnDist;
+        /** Distribution of load feedback entries per cycle from IEW */
+        statistics::Distribution loadFeedbackDist;
+        /** Distribution of LLSR push entries per cycle from Commit */
+        statistics::Distribution llsrPushDist;
+        /** MLP predictor: long-latency prediction accuracy */
+        statistics::Vector mlpLongLatencyPred;
+        /** MLP predictor: MLP distance prediction accuracy */
+        statistics::Vector mlpDistancePred;
+        /** MLP predictor: MLP distance over prediction distribution */
+        statistics::Distribution mlpDistanceOverPredDist;
         /** Distinct SMT threads sent to Decode in one cycle. */
         statistics::Distribution decodeThreadsPerCycle;
         /** Instructions sent from per-thread fetch queues to Decode. */
@@ -1242,11 +1338,19 @@ class Fetch
         statistics::Vector fetchBlockState;
         statistics::Vector fetchThrottleState;
         statistics::VectorDistribution fetchBlockHoldCycle;  // [0]=Unblocked [1]=Blocked
+        statistics::VectorDistribution loadStallReasonHoldCycle;
+        statistics::VectorDistribution loadStallReasonRaiseCycle;
 
         // === FlushFrom Policy statistics ===
         statistics::Vector flushForFlushPolicy;
         statistics::Scalar flushFromFirstUseFound;
         statistics::Scalar flushFromFirstUseNoConsumer;
+
+        // === MLP Policy statistics ===
+        statistics::Vector mlpAwarePolicyActive;
+        statistics::Vector mlpFetchBlockState;
+        statistics::VectorDistribution mlpFetchBlockHoldCycle;  // [0]=Unblocked [1]=Blocked
+        statistics::Vector mlpPolicyContribute;
     } fetchStats;
 
     SquashVersion localSquashVer[MaxThreads];
@@ -1255,6 +1359,11 @@ public:
     const FetchStatGroup &getFetchStats() { return fetchStats; }
 
   private:
+
+    /** Delay the first post-squash vector-config batch in the fetch queue. */
+    bool deferVsetvlDecode[MaxThreads];
+    /** Number of instructions in the first post-squash fetch batch. */
+    unsigned postSquashFetchBatchSize[MaxThreads];
 
     bool waitForVsetvl [MaxThreads];
 

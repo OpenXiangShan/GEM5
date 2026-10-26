@@ -90,11 +90,11 @@ class MD5FileTestSuite(unittest.TestCase):
         dictionary.
         """
         self.assertTrue("resources" in json)
-        self.assertEquals(2, len(json["resources"]))
+        self.assertEqual(2, len(json["resources"]))
         self.assertTrue("name" in json["resources"][0])
-        self.assertEquals("riscv-disk-img", json["resources"][0]["name"])
+        self.assertEqual("riscv-disk-img", json["resources"][0]["name"])
         self.assertTrue("name" in json["resources"][1])
-        self.assertEquals("riscv-lupio-busybox-img",
+        self.assertEqual("riscv-lupio-busybox-img",
                           json["resources"][1]["name"])
 
     def test_get_resources_json_at_path(self) -> None:

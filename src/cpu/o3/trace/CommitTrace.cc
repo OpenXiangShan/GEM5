@@ -62,6 +62,25 @@ bool
 Commit::traceMaybeExitOnEofDrainFromTick()
 {
     if (cpu->isTraceMode() && cpu->isTraceEOF() && cpu->isTracePipelineDrained()) {
+        // EOF reconciliation invariant (runtime self-check; the per-trace
+        // "committed count == reader instrRead" accounting from the
+        // e87d6b5db4 validation batch, made resident): with the pipeline
+        // drained and the reader at EOF, every consumed record must have
+        // been committed exactly once — the committed trace index equals
+        // the reader position. The reader is a single stream bound to
+        // thread 0 (initTraceMode), so only thread 0's committed index is
+        // comparable; other threads' indices would misfire under any
+        // SMT+trace mix.
+        const uint64_t reader_idx = cpu->getTraceReaderIndex();
+        {
+            const uint64_t committed_idx = traceCommitIndex[0];
+            panic_if(committed_idx != reader_idx,
+                     "[Commit][tid:0] EOF reconciliation failed: committed "
+                     "trace index %llu != reader index %llu: replay and "
+                     "commit have diverged",
+                     (unsigned long long)committed_idx,
+                     (unsigned long long)reader_idx);
+        }
         warn("[Commit] Trace mode reached EOF and pipeline drained; exiting cleanly.\n");
         exitSimLoop("Trace-driven CPU reached EOF and drained");
         return true;
@@ -88,26 +107,75 @@ Commit::traceUpdateSquashInfo(ThreadID tid, InstSeqNum squashed_inst)
 void
 Commit::traceMaybeInjectCtrlFlowChangeFault(ThreadID tid, const DynInstPtr &head_inst)
 {
-    if (!cpu->isTraceMode() || head_inst->getFault() != NoFault) {
+    if (!cpu->isTraceMode()) {
         return;
     }
 
-    if (const o3::TraceInstruction *ti_meta =
-            cpu->getTraceInstMetadata(head_inst->seqNum)) {
-        if (ti_meta->isCtrlFlowChange()) {
-            head_inst->setTraceCtrlFlowChange(true);
-            traceCtrlFaultPending[tid] = true;
-            traceCtrlFaultSeqNum[tid] = head_inst->seqNum;
-            head_inst->getFault() =
-                std::make_shared<TraceCtrlFlowFault>(ti_meta->getCtrlFlowTarget());
-            DPRINTF(
-                CommitTrace,
-                "[tid:%d idx:%llu sn:%llu] Trace ctrl-flow change -> inject fault to "
-                "target 0x%lx\n",
-                tid, (unsigned long long)traceCommitIndex[tid], head_inst->seqNum,
-                (unsigned long)ti_meta->getCtrlFlowTarget());
-        }
+    const o3::TraceInstruction *ti_meta =
+        cpu->getTraceInstMetadata(head_inst->seqNum);
+    if (!ti_meta || !ti_meta->isCtrlFlowChange()) {
+        return;
     }
+
+    // commitHead() can retry a fault while older stores drain. Keep the
+    // injected fault stable across retries, but let trace control-flow truth
+    // override faults produced by executing a record in the synthetic trace
+    // environment (for example an Address fault from a traced store).
+    const Fault previous_fault = head_inst->getFault();
+    if (std::dynamic_pointer_cast<TraceCtrlFlowFault>(previous_fault)) {
+        return;
+    }
+
+    if (previous_fault != NoFault) {
+        DPRINTF(CommitTrace,
+                "[tid:%d idx:%llu sn:%llu] Replacing local fault %s with "
+                "trace ctrl-flow target 0x%lx\n",
+                tid, (unsigned long long)traceCommitIndex[tid],
+                head_inst->seqNum, previous_fault->name(),
+                (unsigned long)ti_meta->getCtrlFlowTarget());
+    }
+
+    head_inst->setTraceCtrlFlowChange(true);
+    traceCtrlFaultPending[tid] = true;
+    traceCtrlFaultSeqNum[tid] = head_inst->seqNum;
+    head_inst->getFault() =
+        std::make_shared<TraceCtrlFlowFault>(ti_meta->getCtrlFlowTarget());
+    DPRINTF(CommitTrace,
+            "[tid:%d idx:%llu sn:%llu] Trace ctrl-flow change -> inject fault "
+            "to target 0x%lx\n",
+            tid, (unsigned long long)traceCommitIndex[tid], head_inst->seqNum,
+            (unsigned long)ti_meta->getCtrlFlowTarget());
+}
+
+bool
+Commit::traceAccountInjectedCtrlFlowRecord(
+    ThreadID tid, const DynInstPtr &head_inst)
+{
+    if (!cpu->isTraceMode() || !traceCtrlFaultPending[tid] ||
+        traceCtrlFaultSeqNum[tid] != head_inst->seqNum ||
+        !head_inst->hasTraceCtrlFlowChange()) {
+        return false;
+    }
+
+    panic_if(!cpu->isTraceInstruction(head_inst->seqNum),
+             "Trace control-flow fault [sn:%llu] has no trace metadata",
+             head_inst->seqNum);
+    panic_if(head_inst->isMicroop() && !head_inst->isLastMicroop(),
+             "Trace control-flow fault [sn:%llu] is not an instruction boundary",
+             head_inst->seqNum);
+
+    // The fault already applied the recorded target. Account the source record
+    // exactly once while preserving the existing trap squash and ROB removal.
+    updateComInstStats(head_inst);
+    stats.committedInstType[tid][head_inst->opClass()]++;
+    traceOnCommit(tid, head_inst);
+    traceOnMacroCommit(tid);
+
+    DPRINTF(CommitTrace,
+            "[tid:%d idx:%llu sn:%llu] Logically retired trace control-flow record\n",
+            tid, (unsigned long long)cpu->getTraceIndexForSeqNum(head_inst->seqNum),
+            (unsigned long long)head_inst->seqNum);
+    return true;
 }
 
 bool
@@ -137,6 +205,24 @@ Commit::traceOnCommit(ThreadID tid, const DynInstPtr &head_inst)
     // a sliding window based on the oldest in-flight seqNum and a guard distance.
     if (cpu->isTraceInstruction(head_inst->seqNum)) {
         cpu->cleanupTraceMetadataOnCommit(head_inst->seqNum);
+    }
+
+    static constexpr uint64_t TraceHeartbeatInterval = 5000000;
+    const uint64_t current_idx = traceCommitIndex[tid];
+    const bool first_heartbeat =
+        (current_idx != 0 && traceLastHeartbeatIndex[tid] == 0);
+    const bool periodic_heartbeat =
+        (current_idx != 0 &&
+         (current_idx / TraceHeartbeatInterval) >
+             (traceLastHeartbeatIndex[tid] / TraceHeartbeatInterval));
+    if (first_heartbeat || periodic_heartbeat) {
+        traceLastHeartbeatIndex[tid] = current_idx;
+        warn("[TraceHeartbeat][tid:%d] idx=%llu sn=%llu pc=0x%lx tick=%llu\n",
+             tid,
+             (unsigned long long)current_idx,
+             (unsigned long long)head_inst->seqNum,
+             (unsigned long)head_inst->pcState().instAddr(),
+             (unsigned long long)curTick());
     }
 }
 
@@ -256,15 +342,22 @@ Commit::traceCommitDifftest(ThreadID tid, const DynInstPtr &head_inst)
         };
 
         auto commit_type = classifyInstType(head_inst->staticInst);
-        auto trace_type = ti_meta->getInstType();
-        // Allow trace hints to override static decode for call/return/indirect
-        if (head_inst->traceIsCall()) {
-            trace_type = head_inst->traceIsIndirect()
-                ? o3::TraceInstruction::InstType::CALL_INDIRECT
-                : o3::TraceInstruction::InstType::CALL_DIRECT;
-        } else if (head_inst->traceIsReturn()) {
-            trace_type = o3::TraceInstruction::InstType::RETURN;
+        if (head_inst->hasTraceBranchInfo()) {
+            if (head_inst->traceIsCond()) {
+                commit_type = o3::TraceInstruction::InstType::COND_BRANCH;
+            } else if (head_inst->traceIsCall()) {
+                commit_type = head_inst->traceIsIndirect()
+                    ? o3::TraceInstruction::InstType::CALL_INDIRECT
+                    : o3::TraceInstruction::InstType::CALL_DIRECT;
+            } else if (head_inst->traceIsReturn()) {
+                commit_type = o3::TraceInstruction::InstType::RETURN;
+            } else {
+                commit_type = head_inst->traceIsIndirect()
+                    ? o3::TraceInstruction::InstType::UNCOND_INDIRECT_BRANCH
+                    : o3::TraceInstruction::InstType::UNCOND_DIRECT_BRANCH;
+            }
         }
+        auto trace_type = ti_meta->getInstType();
         const bool skip_type_check =
             (ti_meta->getInstSizeBytes() == 2 &&
              ti_meta->getInstType() == o3::TraceInstruction::InstType::FP);

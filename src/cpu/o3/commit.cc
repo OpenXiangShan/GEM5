@@ -156,13 +156,15 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
       commitWidth(params.commitWidth),
       numThreads(params.numThreads),
       smtBorrowDonorHoldCycles(params.smtBorrowDonorHoldCycles),
+      mlpLongLatencyCacheDepth(params.mlpLongLatencyCacheDepth),
       drainPending(false),
       drainImminent(false),
       trapLatency(params.trapLatency),
       canHandleInterrupts(true),
       avoidQuiesceLiveLock(false),
       stats(_cpu, this),
-      archDBer(params.arch_db)
+      archDBer(params.arch_db),
+      mlpPredictor(nullptr)
 {
     if (commitWidth > MaxWidth)
         fatal("commitWidth (%d) is larger than compiled limit (%d),\n"
@@ -210,6 +212,7 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         traceCommitIndex[tid] = 0;
         committedTargetId[tid] = 1;
         committedLoopIter[tid] = 0;
+        traceLastHeartbeatIndex[tid] = 0;
         const unsigned capacity = renameWidth *
             (numPreDispatchThreads > 1 ? 2 : 1);
         fixedbuffer[tid] = boost::circular_buffer<DynInstPtr>(capacity);
@@ -299,6 +302,10 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Class of committed instruction"),
       ADD_STAT(commitEligibleSamples, statistics::units::Cycle::get(),
                "number cycles where commit BW limit reached"),
+      ADD_STAT(hybridCommittedEntries, statistics::units::Count::get(),
+               "Hybrid physical entries released by successful retirement"),
+      ADD_STAT(hybridDrainedEntries, statistics::units::Count::get(),
+               "Hybrid physical entries released by squashed-head draining"),
       ADD_STAT(loadTriple, statistics::units::Cycle::get(),
                "load trip number"),
       ADD_STAT(loadEAReused, statistics::units::Cycle::get(),
@@ -343,6 +350,8 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Total number of ROBFull"),
       ADD_STAT(smtRestEntryWhileROBFull, statistics::units::Count::get(),
                "Distribution of total rest entries while ROBFull in SMT mode"),
+      ADD_STAT(commitCacheAccessDepthDist, statistics::units::Count::get(),
+               "Distribution of cache access depth at commit (0=L1, 1=L2, 2+=L3/Mem)"),
       ADD_STAT(ROBBorrowingStateChange, statistics::units::Count::get(),
                "changing times of borrowing state"),
       ADD_STAT(smtStateHoldCycle, statistics::units::Count::get(),
@@ -359,8 +368,11 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
         .init(cpu->numThreads)
         .flags(total);
 
+    const auto &params = static_cast<const BaseO3CPUParams &>(cpu->params());
     numCommittedDist
-        .init(0,commit->commitWidth * 8,1)
+        .init(0, commit->commitWidth *
+              (params.RobCompressPolicy == ROBCompressPolicy::hybrid ?
+               params.CROB_instPerGroup : 8), 1)
         .flags(statistics::pdf).flags(statistics::nozero);
 
     segUnitStrideNF
@@ -475,6 +487,10 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
 
     smtRestEntryWhileROBFull
         .init(0, 160, 5)
+        .flags(statistics::pdf);
+
+    commitCacheAccessDepthDist
+        .init(0, 4, 1)
         .flags(statistics::pdf);
 
     ROBBorrowingStateChange
@@ -1218,15 +1234,20 @@ Commit::commit()
             // then use one older sequence number.
             InstSeqNum squashed_inst = fromIEW->squashedSeqNum[tid];
 
-            if (fromIEW->includeSquashInst[tid]) {
-                squashed_inst--;
+            const auto redirect = rob->isHybrid() ?
+                rob->findInst(tid, squashed_inst) : nullptr;
+            if (redirect) {
+                squashed_inst = rob->squashHybrid(
+                    redirect, fromIEW->includeSquashInst[tid], tid);
+            } else {
+                if (fromIEW->includeSquashInst[tid]) {
+                    --squashed_inst;
+                }
+                rob->squash(squashed_inst, tid);
             }
 
-            // All younger instructions will be squashed. Set the sequence
-            // number as the youngest instruction in the ROB.
+            // All stages recover to the same retained prefix.
             youngestSeqNum[tid] = squashed_inst;
-
-            rob->squash(squashed_inst, tid);
             changedROBNumEntries[tid] = true;
 
             if (valuePred)
@@ -1258,7 +1279,11 @@ Commit::commit()
             toIEW->commitInfo[tid].squashedLoopIter = fromIEW->squashedLoopIter[tid];
 
             if (toIEW->commitInfo[tid].mispredictInst) {
-                if (toIEW->commitInfo[tid].mispredictInst->isUncondCtrl()) {
+                auto mispredictInst = toIEW->commitInfo[tid].mispredictInst;
+                if (cpu->isTraceMode() && mispredictInst->hasTraceBranchInfo()) {
+                    toIEW->commitInfo[tid].branchTaken =
+                        mispredictInst->traceBranchTaken();
+                } else if (mispredictInst->isUncondCtrl()) {
                      toIEW->commitInfo[tid].branchTaken = true;
                 }
                 ++stats.branchMispredicts[tid];
@@ -1429,9 +1454,13 @@ Commit::handleMdpViolation(const DynInstPtr &head_inst, ThreadID tid)
 
     // Do not retire the violating load. Keep the last older instruction in
     // the ROB and refetch from the violating load's resolved PC.
-    const InstSeqNum squashed_inst = head_inst->seqNum - 1;
+    InstSeqNum squashed_inst = head_inst->seqNum - 1;
+    if (rob->isHybrid()) {
+        squashed_inst = rob->squashHybrid(head_inst, true, tid);
+    } else {
+        rob->squash(squashed_inst, tid);
+    }
     youngestSeqNum[tid] = squashed_inst;
-    rob->squash(squashed_inst, tid);
     changedROBNumEntries[tid] = true;
 
     if (valuePred) {
@@ -1479,7 +1508,23 @@ Commit::commitInsts()
 
     DPRINTF(Commit, "Trying to commit instructions in the ROB.\n");
 
+    // Interrupt delivery must also run after the pipeline drains, when no
+    // commit group remains to enter the retirement loop. Interrupts currently
+    // target thread 0, so use its transaction state even in SMT mode.
+    if (interrupt != NoFault) {
+        if (executingHtmTransaction(0)) {
+            cpu->clearInterrupts(0);
+            toIEW->commitInfo[0].clearInterrupt = true;
+            interrupt = NoFault;
+            avoidQuiesceLiveLock = true;
+        } else {
+            handleInterrupt();
+        }
+    }
+
     unsigned num_committed = 0;
+    unsigned completed_entries = 0;
+    uint64_t checked_entry = 0;
     std::array<unsigned, MaxThreads> num_committed_per_thread = {};
     std::array<unsigned, MaxThreads> commit_width_per_thread = {};
 
@@ -1487,7 +1532,7 @@ Commit::commitInsts()
 
     int commit_width = 0;
     for (ThreadID tid : *activeThreads) {
-        commit_width_per_thread[tid] =
+        commit_width_per_thread[tid] = rob->isHybrid() ? 0 :
             rob->countInstsOfGroups(tid, commitWidth);
         commit_width += commit_width_per_thread[tid];
     }
@@ -1504,33 +1549,27 @@ Commit::commitInsts()
             continue;
         }
 
-        while (num_committed < commit_width &&
-               num_committed_per_thread[commit_thread] <
-                   commit_width_per_thread[commit_thread] &&
+        while ((rob->isHybrid() ?
+                (completed_entries < commitWidth &&
+                 !rob->isEmpty(commit_thread)) :
+                (num_committed < commit_width &&
+                 num_committed_per_thread[commit_thread] <
+                     commit_width_per_thread[commit_thread])) &&
                (commitStatus[commit_thread] == Running ||
                 commitStatus[commit_thread] == Idle ||
                 commitStatus[commit_thread] == FetchTrapPending)) {
-            // hardware transactionally memory
-            // If executing within a transaction,
-            // need to handle interrupts specially
-
-            // Check for any interrupt that we've already squashed for
-            // and start processing it.
-            if (interrupt != NoFault) {
-                // If inside a transaction, postpone interrupts
-                if (executingHtmTransaction(commit_thread)) {
-                    cpu->clearInterrupts(0);
-                    toIEW->commitInfo[0].clearInterrupt = true;
-                    interrupt = NoFault;
-                    avoidQuiesceLiveLock = true;
-                } else {
-                    handleInterrupt();
-                }
-            }
-
             head_inst = rob->readHeadInst(commit_thread);
 
-            if (!rob->isHeadGroupReady(commit_thread)) {
+            if (!head_inst) {
+                break;
+            }
+            // Scan at most one bounded entry per selection. Fault/non-spec
+            // escape paths still require every following head to be ready.
+            const bool entry_ready = rob->isHybrid() &&
+                checked_entry == head_inst->hybridEntryId ?
+                head_inst->readyToCommit() :
+                rob->isHeadGroupReady(commit_thread);
+            if (!entry_ready) {
                 if (debug::Commit && head_inst->readyToCommit()) {
                     InstSeqNum seqnum =
                         rob->getHeadGroupLastDoneSeq(commit_thread);
@@ -1544,6 +1583,9 @@ Commit::commitInsts()
             }
 
             ThreadID tid = head_inst->threadNumber;
+            checked_entry = head_inst->hybridEntryId;
+            const bool finishes_entry = rob->isHybrid() &&
+                rob->headGroupSize(tid) == 1;
 
             assert(tid == commit_thread);
 
@@ -1564,6 +1606,10 @@ Commit::commitInsts()
                         "ROB.\n");
 
                 rob->drainSquashedHead(commit_thread);
+                if (finishes_entry) {
+                    ++completed_entries;
+                    stats.hybridDrainedEntries++;
+                }
 
                 if (!mdpViolationAtCommit && head_inst->isLoad() &&
                     head_inst->memDepInfo.violatingStoreSeqNum &&
@@ -1589,10 +1635,16 @@ Commit::commitInsts()
                 traceMaybeInjectCtrlFlowChangeFault(tid, head_inst);
 
                 // Try to commit the head instruction.
-                bool commit_success = commitHead(head_inst,
-                                                num_committed_per_thread[tid]);
+                bool logical_trace_record_retired = false;
+                bool commit_success = commitHead(
+                    head_inst, num_committed_per_thread[tid],
+                    logical_trace_record_retired);
 
                 if (commit_success) {
+                    if (finishes_entry) {
+                        ++completed_entries;
+                        stats.hybridCommittedEntries++;
+                    }
                     recordCommittedInst(head_inst);
                     cpu->perfCCT->updateInstPos(head_inst->seqNum,
                                                 PerfRecord::AtCommit);
@@ -1905,6 +1957,10 @@ Commit::commitInsts()
                         onInstBoundary && cpu->checkInterrupts(0))
                         squashAfter(tid, head_inst);
                 } else {
+                    if (logical_trace_record_retired) {
+                        ++num_committed;
+                        ++num_committed_per_thread[tid];
+                    }
                     DPRINTF(Commit, "Unable to commit head instruction PC:%s "
                             "[tid:%i] [sn:%llu].\n",
                             head_inst->pcState(), tid ,head_inst->seqNum);
@@ -1917,8 +1973,11 @@ Commit::commitInsts()
     // if store was at head group and fronts were all readytocommit
     // then the store can be written to storebuffer
     for (int tid = 0; tid < MaxThreads; tid++) {
-        toIEW->commitInfo[tid].doneMemSeqNum =
-            std::max(toIEW->commitInfo[tid].doneSeqNum, rob->getHeadGroupLastDoneSeq(tid));
+        if (!rob->isHybrid() || !toIEW->commitInfo[tid].squash) {
+            toIEW->commitInfo[tid].doneMemSeqNum = std::max(
+                toIEW->commitInfo[tid].doneSeqNum,
+                rob->getHeadGroupLastDoneSeq(tid));
+        }
 
         InstSeqNum robheadSeqNum = 0;
         if (auto& it = rob->readHeadInst(tid)) {
@@ -1930,7 +1989,8 @@ Commit::commitInsts()
     DPRINTF(CommitRate, "%i\n", num_committed);
     stats.numCommittedDist.sample(num_committed);
 
-    if (num_committed == commitWidth) {
+    assert(!rob->isHybrid() || completed_entries <= commitWidth);
+    if ((rob->isHybrid() ? completed_entries : num_committed) == commitWidth) {
         stats.commitEligibleSamples++;
     }
 }
@@ -1966,9 +2026,11 @@ Commit::diffInst(ThreadID tid, const DynInstPtr &inst) {
 
 
 bool
-Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
+Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num,
+                   bool &logical_trace_record_retired)
 {
     assert(head_inst);
+    logical_trace_record_retired = false;
 
     ThreadID tid = head_inst->threadNumber;
 
@@ -2102,6 +2164,14 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         cpu->trap(inst_fault, tid,
                   head_inst->notAnInst() ? nullStaticInstPtr :
                       head_inst->staticInst);
+
+        // TraceCtrlFlowFault redirects to the source-record successor and
+        // intentionally keeps the faulting DynInst in the ROB for squash.
+        // Its source record still defines one trace ROI instruction, so count
+        // it once after the redirect without entering the normal ROB-retire
+        // path below.
+        logical_trace_record_retired =
+            traceAccountInjectedCtrlFlowRecord(tid, head_inst);
 
         // Exit state update mode to avoid accidental updating.
         thread[tid]->noSquashFromTC = false;
@@ -2302,6 +2372,70 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         head_inst->clearProducerStorePC();
     }
 
+    // A fused load trains the original representative load PC, not the
+    // architectural PC of the first instruction in the fusion pair.
+    const Addr mlpLoadPC = head_inst->isLoad()
+        ? (head_inst->mlpLoadPCValid ? head_inst->mlpLoadPC
+                                    : head_inst->pcState().instAddr())
+        : 0;
+
+    // MLP predictor: set longLatencyLoad and generate load feedback
+    if (head_inst->isLoad() && !head_inst->isSquashed()) {
+        int depth = head_inst->cacheAccessDepth;
+        // VP hit (correct prediction) eliminates dependency chain
+        if (head_inst->vpResult.speculative && !head_inst->vpMisprediction) {
+            depth = 0;
+        }
+        int depthForStats = (depth < 0) ? 0 : depth;
+        stats.commitCacheAccessDepthDist.sample(depthForStats);
+        bool actualLongLatency = (depth >= (int)mlpLongLatencyCacheDepth);
+        head_inst->longLatencyLoad = actualLongLatency;
+
+        if (mlpPredictor) {
+            // loadFeedback rides the commit wire (commitToFetchDelay),
+            // consistent with llsrPush below, instead of the IEW wire.
+            auto &fb = toIEW->commitInfo[tid];
+            fb.loadFeedback.push_back({
+                mlpLoadPC,
+                actualLongLatency,
+                head_inst->mlpPredictedLongLatency,
+                head_inst->mlpPredictedDistance});
+        }
+    }
+
+    // MLP predictor: record LLSR push for fetch to consume
+    if (mlpPredictor) {
+        bool isLL = head_inst->isLoad() && head_inst->longLatencyLoad;
+        auto &commitInfo = toIEW->commitInfo[tid];
+        const unsigned numSlots = head_inst->isFusion() ? 2 : 1;
+        assert(commitInfo.llsrPush.size() + numSlots <=
+               2 * commitWidth * rob->getInstsPerGroup());
+        const auto entry = TimeStruct::CommitComm::LLSRPushEntry{
+            isLL, mlpLoadPC,
+            head_inst->isLoad() ? head_inst->mlpPredictedDistance : 0,
+            head_inst->isLoad() && head_inst->mlpPredictionMade &&
+                head_inst->mlpDistanceValid, false};
+        commitInfo.llsrPush.push_back(entry);
+        if (head_inst->isFusion()) {
+            // Approximation: represent a fusion with two pre-fusion instruction
+            // slots, rather than reconstructing each component's load feedback.
+            // Both slots copy the fused LL state, representative load PC and
+            // prediction snapshot; only the first trains on eviction. The second
+            // is a non-training placeholder that still contributes to distance.
+            // This avoids fusion-compression underestimation within the observed
+            // window, conservatively counting a later LL fusion through its end.
+            // The copied LL state may belong to a different component than the
+            // representative PC, so training can be attributed to the wrong PC.
+            // The window intentionally starts at the first slot, even if the
+            // actual LL load is second; do not extend it to recover that load's
+            // final lookahead slot. This boundary limitation is part of the
+            // compromise, not a guarantee against all distance underprediction.
+            auto placeholder = entry;
+            placeholder.isFusionPlaceholder = true;
+            commitInfo.llsrPush.push_back(placeholder);
+        }
+    }
+
     // Finally clear the head ROB entry.
     rob->retireHead(tid);
 
@@ -2365,6 +2499,26 @@ Commit::moveInstsToBuffer()
         rob->setBorrowingDonor(i, donor, this);
     }
 
+    // Hybrid is single-threaded. The plan lives only for this invocation:
+    // failed admission leaves the window intact and retries reclassify it.
+    // Count positions before filtering squash marks; never refill the window.
+    const unsigned hybrid_window = rob->isHybrid() ?
+        std::min<unsigned>(fixedbuffer[0].size(), renameWidth) : 0;
+    std::vector<DynInstPtr> hybrid_insts;
+    ROB::HybridPlan hybrid_plan;
+    if (rob->isHybrid()) {
+        hybrid_insts.reserve(hybrid_window);
+        for (unsigned pos = 0; pos < hybrid_window; ++pos) {
+            const auto &inst = fixedbuffer[0][pos];
+            if (!inst->isSquashed()) {
+                hybrid_insts.push_back(inst);
+            }
+        }
+        hybrid_plan = rob->planHybridBatch(hybrid_insts);
+        DPRINTF(Commit, "Hybrid window=%u valid=%u requiredGroups=%u\n",
+                hybrid_window, hybrid_insts.size(), hybrid_plan.size());
+    }
+
     // check threads stall & status
     SmtActiveThreadArbiter active_arbiter;
     std::vector<ThreadID> active_tids;
@@ -2375,7 +2529,7 @@ Commit::moveInstsToBuffer()
     for (int i = 0; i < numThreads; i++) {
         bool robblock = commitStatus[i] == ROBSquashing ||
                         commitStatus[i] == TrapPending;
-        const unsigned allocation =
+        const unsigned allocation = rob->isHybrid() ? hybrid_plan.size() :
             std::min<unsigned>(fixedbuffer[i].size(), renameWidth);
         bool block = !rob->canAllocate(i, allocation) || robblock;
         bool active = !block && !fixedbuffer[i].empty();
@@ -2435,34 +2589,50 @@ Commit::moveInstsToBuffer()
     for (const ThreadID tid : selected_tids) {
         const unsigned insts_to_process =
             std::min<unsigned>(fixedbuffer[tid].size(), renameWidth);
-        if (!rob->canAllocate(tid, insts_to_process)) {
+        const unsigned required_groups = rob->isHybrid() ?
+            hybrid_plan.size() : insts_to_process;
+        if (!rob->canAllocate(tid, required_groups)) {
             stallSig->blockIEW[tid] = true;
             stallSig->iewBlockReason[tid] = StallReason::ROBFull;
             stats.ROBFull[tid]++;
             continue;
         }
 
-        for (unsigned inst_num = 0; inst_num < insts_to_process; ++inst_num) {
-            const DynInstPtr &inst = fixedbuffer[tid].front();
-            if (!inst->isSquashed() &&
-                commitStatus[tid] != ROBSquashing &&
-                commitStatus[tid] != TrapPending) {
+        if (rob->isHybrid()) {
+            assert(tid == 0 && insts_to_process == hybrid_window);
+            assert(commitStatus[tid] != ROBSquashing &&
+                   commitStatus[tid] != TrapPending);
+            rob->insertHybridBatch(hybrid_insts, hybrid_plan);
+            if (!hybrid_insts.empty()) {
                 changedROBNumEntries[tid] = true;
-
-                DPRINTF(Commit,
-                        "[tid:%i] [sn:%llu] Inserting PC %s into ROB.\n",
-                        tid, inst->seqNum, inst->pcState());
-
-                rob->insertInst(inst);
-                assert(rob->canAllocate(tid, 0));
-                youngestSeqNum[tid] = inst->seqNum;
-            } else {
-                DPRINTF(Commit, "[tid:%i] [sn:%llu] "
-                        "Instruction PC %s was squashed, skipping.\n",
-                        tid, inst->seqNum, inst->pcState());
+                youngestSeqNum[tid] = hybrid_insts.back()->seqNum;
             }
+            for (unsigned pos = 0; pos < hybrid_window; ++pos) {
+                fixedbuffer[tid].pop_front();
+            }
+        } else {
+            for (unsigned inst_num = 0; inst_num < insts_to_process; ++inst_num) {
+                const DynInstPtr &inst = fixedbuffer[tid].front();
+                if (!inst->isSquashed() &&
+                    commitStatus[tid] != ROBSquashing &&
+                    commitStatus[tid] != TrapPending) {
+                    changedROBNumEntries[tid] = true;
 
-            fixedbuffer[tid].pop_front();
+                    DPRINTF(Commit,
+                            "[tid:%i] [sn:%llu] Inserting PC %s into ROB.\n",
+                            tid, inst->seqNum, inst->pcState());
+
+                    rob->insertInst(inst);
+                    assert(rob->canAllocate(tid, 0));
+                    youngestSeqNum[tid] = inst->seqNum;
+                } else {
+                    DPRINTF(Commit, "[tid:%i] [sn:%llu] "
+                            "Instruction PC %s was squashed, skipping.\n",
+                            tid, inst->seqNum, inst->pcState());
+                }
+
+                fixedbuffer[tid].pop_front();
+            }
         }
 
         if (!fixedbuffer[tid].empty()) {

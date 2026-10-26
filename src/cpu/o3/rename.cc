@@ -102,7 +102,6 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
 
     assert(decodeToRenameDelay == 1);
 
-    renameStalls.resize(renameWidth, StallReason::NoStall);
 }
 
 std::string
@@ -304,6 +303,9 @@ void
 Rename::clearStates(ThreadID tid)
 {
     stalls[tid].iew = false;
+    ratSnapshotBuffer[tid].clear();
+    numRatSnapshotInUse[tid] = 0;
+    lastRatSnapshotDistance[tid] = 0;
 }
 
 void
@@ -319,10 +321,9 @@ Rename::resetStage()
         finalCommitSeq[tid] = 0;
         releaseSeq[tid] = 0;
         ratSnapshotBuffer[tid].clear();
+        numRatSnapshotInUse[tid] = 0;
+        lastRatSnapshotDistance[tid] = 0;
     }
-
-    numRatSnapshotInUse = 0;
-    lastRatSnapshotDistance = 0;
 }
 
 void
@@ -376,6 +377,7 @@ Rename::drainSanityCheck() const
         assert(historyBuffer[tid].empty());
         assert(fixedbuffer[tid].empty());
         assert(ratSnapshotBuffer[tid].empty());
+        assert(numRatSnapshotInUse[tid] == 0);
     }
 }
 
@@ -405,7 +407,9 @@ Rename::tick()
 
     wroteToTimeBuffer = false;
     blockReason = StallReason::NoStall;
-    setAllStalls(StallReason::NoStall);
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        renameStalls[tid].assign(renameWidth, StallReason::NoStall);
+    }
 
     moveInstsToBuffer();
 
@@ -441,6 +445,7 @@ Rename::tick()
     auto freezeActiveThread = [this](ThreadID tid) {
         stallSig->blockDecode[tid] = true;
         stallSig->decodeBlockReason[tid] = StallReason::OtherFragStall;
+        setAllStalls(tid, StallReason::OtherFragStall);
         toDecode->renameInfo[tid].blockReason =
             stallSig->decodeBlockReason[tid];
     };
@@ -490,6 +495,9 @@ Rename::tick()
         stallSig->decodeBlockReason[i] =
             stallSig->blockDecode[i] ? block_reason : StallReason::NoStall;
         toDecode->renameInfo[i].blockReason = stallSig->decodeBlockReason[i];
+        if (block && !fixedbuffer[i].empty()) {
+            setAllStalls(i, block_reason);
+        }
         if (active) {
             active_tids.push_back(i);
             const auto freeze = active_arbiter.observe(
@@ -513,7 +521,6 @@ Rename::tick()
     if (primary_tid == InvalidThreadID) {
         // all threads are stalled, no need to process
         if (blocked_tid != InvalidThreadID) {
-            setAllStalls(stallSig->decodeBlockReason[blocked_tid]);
             blockReason = stallSig->decodeBlockReason[blocked_tid];
         }
         toIEW->renameStallReason = renameStalls;
@@ -540,6 +547,7 @@ Rename::tick()
     unsigned renamed_this_cycle = 0;
     unsigned threads_renamed = 0;
     for (const ThreadID tid : selected_tids) {
+        setAllStalls(tid, StallReason::NoStall);
         if (toIEW->size >= aggregateRenameWidth) {
             freezeActiveThread(tid);
             continue;
@@ -551,6 +559,7 @@ Rename::tick()
             stallSig->blockDecode[tid] = true;
             stallSig->decodeBlockReason[tid] = StallReason::RegFull;
             toDecode->renameInfo[tid].blockReason = StallReason::RegFull;
+            setAllStalls(tid, StallReason::RegFull);
             continue;
         }
 
@@ -560,8 +569,17 @@ Rename::tick()
         threads_renamed += renamed != 0;
 
         if (stallSig->blockRename[tid]) {
-            setAllStalls(stallSig->renameBlockReason[tid]);
+            setAllStalls(tid, stallSig->renameBlockReason[tid]);
             stats.smtStallEvents[stallSig->renameBlockReason[tid]].sample(tid);
+        } else if (!renameStalls[tid].empty() &&
+                   renameStalls[tid][0] == StallReason::NoStall) {
+            const auto &decode_stalls = fromDecode->decodeStallReason[tid];
+            for (unsigned lane = 0; lane < renameStalls[tid].size(); ++lane) {
+                renameStalls[tid][lane] = lane < renamed ?
+                    StallReason::NoStall :
+                    lane < decode_stalls.size() ? decode_stalls[lane] :
+                    StallReason::NoStall;
+            }
         }
         stallSig->decodeBlockReason[tid] =
             stallSig->blockDecode[tid] ? blockReason : StallReason::NoStall;
@@ -571,18 +589,6 @@ Rename::tick()
 
     stats.threadsRenamedPerCycle.sample(threads_renamed);
     stats.instsRenamedPerCycle.sample(renamed_this_cycle);
-
-    if (stallSig->blockRename[primary_tid]) {
-        setAllStalls(stallSig->renameBlockReason[primary_tid]);
-    } else if (toIEW->size > 0 && renameStalls[0] == StallReason::NoStall) {
-        for (int i = 0; i < renameStalls.size(); i++) {
-            if (i < toIEW->size) {
-                renameStalls.at(i) = StallReason::NoStall;
-            } else {
-                renameStalls.at(i) = fromDecode->decodeStallReason.at(i);
-            }
-        }
-    }
 
     toIEW->renameStallReason = renameStalls;
 
@@ -762,10 +768,11 @@ Rename::renameInsts(ThreadID tid, unsigned max_insts)
         renameDestRegs(inst, inst->threadNumber);
 
         if (ratSnapshotActive) {
-            if (ratSnapshotAvailable() && suitableForRatSnapshot(inst)) {
+            if (ratSnapshotAvailable(tid) &&
+                suitableForRatSnapshot(inst, tid)) {
                 takeSnapshot(inst, tid);
             } else {
-                ++lastRatSnapshotDistance;
+                ++lastRatSnapshotDistance[tid];
             }
         }
 
@@ -819,10 +826,10 @@ Rename::renameInsts(ThreadID tid, unsigned max_insts)
     }
 
     if (!rename_stalls.empty()) {
-        setAllStalls(rename_stalls.front());
+        setAllStalls(tid, rename_stalls.front());
         rename_stalls.pop();
     } else if (breakRename != StallReason::NoStall) {
-        setAllStalls(breakRename);
+        setAllStalls(tid, breakRename);
     }
 
     stats.renamedInsts[tid] += renamed_insts;
@@ -989,17 +996,8 @@ Rename::doSquash(const InstSeqNum &squashed_seq_num, ThreadID tid)
     }
 }
 
-int
-Rename::countRatSnapshots()
-{
-    int total = 0;
-    for (ThreadID tid = 0; tid < numThreads; tid++)
-        total += countRatSnapshots(tid);
-    return total;
-}
-
 size_t
-Rename::countRatSnapshots(ThreadID tid)
+Rename::countRatSnapshots(ThreadID tid) const
 {
     return ratSnapshotBuffer[tid].size();
 }
@@ -1007,17 +1005,18 @@ Rename::countRatSnapshots(ThreadID tid)
 void
 Rename::takeSnapshot(const DynInstPtr &inst, ThreadID tid)
 {
+    assert(numRatSnapshotInUse[tid] == countRatSnapshots(tid));
     inst->setRatSnapshotted();
-    numRatSnapshotInUse++;
+    numRatSnapshotInUse[tid]++;
     ratSnapshotBuffer[tid].push_front(inst->seqNum);
-    assert(numRatSnapshotInUse <= numMaxRatSnapshot);
+    assert(numRatSnapshotInUse[tid] <= numMaxRatSnapshot);
 
     stats.assignedRatSnapshot++;
-    stats.distanceRatSnapshot.sample(lastRatSnapshotDistance);
-    lastRatSnapshotDistance = 0;
+    stats.distanceRatSnapshot.sample(lastRatSnapshotDistance[tid]);
+    lastRatSnapshotDistance[tid] = 0;
 
     DPRINTF(Rename, "[tid:%i] Took RAT checkpoint at [sn:%llu], inUse %d\n",
-            tid, inst->seqNum, numRatSnapshotInUse);
+            tid, inst->seqNum, numRatSnapshotInUse[tid]);
 }
 
 void
@@ -1027,10 +1026,11 @@ Rename::commitSnapshot(InstSeqNum commit_seq_num, ThreadID tid)
     while (!ratSnapshotBuffer[tid].empty() &&
            ratSnapshotBuffer[tid].back() <= commit_seq_num) {
         ratSnapshotBuffer[tid].pop_back();
-        numRatSnapshotInUse--;
+        assert(numRatSnapshotInUse[tid] > 0);
+        numRatSnapshotInUse[tid]--;
         stats.committedRatSnapshot++;
     }
-    assert(numRatSnapshotInUse >= 0);
+    assert(numRatSnapshotInUse[tid] == countRatSnapshots(tid));
 }
 
 void
@@ -1042,16 +1042,18 @@ Rename::squashSnapshot(InstSeqNum squash_seq_num, ThreadID tid)
     while (!ratSnapshotBuffer[tid].empty() &&
            ratSnapshotBuffer[tid].front() > squash_seq_num) {
         ratSnapshotBuffer[tid].pop_front();
-        numRatSnapshotInUse--;
+        assert(numRatSnapshotInUse[tid] > 0);
+        numRatSnapshotInUse[tid]--;
         stats.squashedRatSnapshot++;
     }
-    assert(numRatSnapshotInUse >= 0);
+    assert(numRatSnapshotInUse[tid] == countRatSnapshots(tid));
 }
 
 bool
-Rename::suitableForRatSnapshot(const DynInstPtr &inst)
+Rename::suitableForRatSnapshot(const DynInstPtr &inst, ThreadID tid)
 {
-    return inst->isControl() && lastRatSnapshotDistance >= ratSnapshotDistance;
+    return inst->isControl() &&
+           lastRatSnapshotDistance[tid] >= ratSnapshotDistance;
 }
 
 void
@@ -1377,11 +1379,9 @@ Rename::dumpHistory()
 }
 
 void
-Rename::setAllStalls(StallReason renameStall)
+Rename::setAllStalls(ThreadID tid, StallReason renameStall)
 {
-    for (int i = 0;i < renameStalls.size();i++) {
-        renameStalls.at(i) = renameStall;
-    }
+    renameStalls[tid].assign(renameWidth, renameStall);
 }
 
 StallReason

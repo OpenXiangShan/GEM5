@@ -5,12 +5,12 @@
 `lock.json` 是唯一源码版本入口。普通单核、H、SMT/多核都使用同一个
 NEMU commit，依赖库也固定 commit；不要求将 NEMU 加入 GEM5 submodule。
 
-| 变体 | 用途 | memdedup | RVV agnostic | Multicore difftest |
-| --- | --- | --- | --- | --- |
-| `normal` | 普通单核、RVV、solver、PGO、Quick Check | 关闭 | 开启 | 关闭 |
-| `normal-dedup` | 普通 SPEC06/17/26、RVV 性能切片 | 开启 | 开启 | 关闭 |
-| `h` | H checkpoint / H 功能测试 | 关闭 | 关闭 | 关闭 |
-| `multi` | SMT、真正多核 | 开启 | 开启 | 开启 |
+| 变体 | 用途 | memdedup | RVV agnostic | Multicore difftest | 内存窗口 |
+| --- | --- | --- | --- | --- | --- |
+| `normal` | 普通单核、RVV、solver、PGO、Quick Check | 关闭 | 开启 | 关闭 | 8 GiB |
+| `normal-dedup` | 普通 SPEC06/17/26、RVV 性能切片 | 开启 | 开启 | 关闭 | 8 GiB |
+| `h` | H checkpoint / H 功能测试 | 关闭 | 关闭 | 关闭 | **16 GiB** |
+| `multi` | SMT、真正多核 | 开启 | 开启 | 开启 | 16 GiB |
 
 `normal` 和 `normal-dedup` 只在内存分配方式上不同，不是两条源码版本线。
 SPEC 年份不决定 REF：普通单核统一选择 normal 系列，H 和多核按运行方式选择。
@@ -18,7 +18,18 @@ SPEC 年份不决定 REF：普通单核统一选择 normal 系列，H 和多核�
 
 公共配置固定 RVV、RVH、VCSR、FCSR 布局，寄存器区为 1376 字节，并支持 Sv48。
 普通单核通过 `scalar.config` 保留 Smstateen、Zacas 等此前 scalar REF 的扩展；
-H/多核不继承这些扩展增量，例如 H 的 SSTC 必须与 GEM5 H 执行路径匹配。
+H/多核不继承整个 scalar 配置。`multi` 单独开启 Smstateen、Zacas、Zawrs、
+Zfa、CBO，并固定为 16GiB。使用它时 GEM5 必须指定 `--mem-size=16GB`，
+包括旧 8GiB SMT 切片；memdedup 的共享内存接口要求两侧内存大小一致。
+性能 CI 会自动设置此参数。
+
+`h.config` 面向 260822 H 切片集（`spec06_gcc16_rv64gcb_h_260822`，145 个
+cov0.3 切片）：该集合的 gcpt restorer 会写 `mstateen0`，guest stage-1 PTE
+可能携带 PBMT 编码，且镜像是 16 GiB 全内存。因此 h 变体在 r3 的四个开关
+之外追加 Smstateen、Svpbmt、CBO、Sstc 与 `CONFIG_MSIZE=0x400000000`。
+其中 CBO 与 SSTC 需要 GEM5 侧具备对应支持：SSTC 对应 H 执行路径中的
+`stimecmp`，CBO 对应 `NEMU_SENVCFG_WMASK` 的 `0xF0` 掩码。
+
 `TVAL_EX_II`、`GUIDED_TVAL` 均开启。普通单核保留 SDTRIG 执行支持，但不将
 SDTRIG CSR 加入 regcpy 布局，因为 GEM5 尚未提供这些同步字段。
 
@@ -33,7 +44,7 @@ GEM5 正式同步并检查 `fcsr = (frm << 5) | fflags`。NEMU REF 不再兼容
 ```bash
 python3 util/nemu_ref/build.py \
   --source /path/to/NEMU \
-  --output /tmp/nemu-release/d30fff1ece9e-gem5-r3 \
+  --output /tmp/nemu-release/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc \
   --jobs 8
 ```
 

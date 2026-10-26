@@ -8,25 +8,13 @@
 #include "base/types.hh"
 #include "mem/cache/xs_l2/CacheWrapper.hh"
 #include "mem/cache/xs_l2/PipelineResources.hh"
+#include "mem/cache/xs_l2/TaskSource.hh"
 #include "mem/packet.hh"
 
 namespace gem5
 {
 
 class L2CacheSlice;
-
-// For task source
-// Indicate the source of the task that is being processed by the pipeline.
-enum TaskSource
-{
-    NoWhere,
-    L1MSHR,
-    L1WQ,
-    L2PF,
-    L3Snoop,
-    L2MSHRGrant,
-    L2MSHRRelease,
-};
 
 class L2MainPipe
 {

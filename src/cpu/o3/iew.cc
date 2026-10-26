@@ -106,6 +106,9 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
       iewToCommitDelay(params.iewToCommitDelay),
       wbWidth(params.wbWidth),
       vectorMemCompletionDelay(params.vectorMemCompletionDelay),
+      smtLQBorrowDonorHoldCycles(params.smtLQBorrowDonorHoldCycles),
+      smtSQBorrowDonorHoldCycles(params.smtSQBorrowDonorHoldCycles),
+      lsqBorrowDonorSkipRenameGate(params.lsqBorrowDonorSkipRenameGate),
       enableStoreSetTrain(params.enable_storeSet_train),
       mdpViolationAtCommit(params.mdp_violation_timing == "atCommit"),
       numThreads(params.numThreads),
@@ -147,6 +150,8 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         fetchRedirect[tid] = false;
         serializeOnNextInst[tid] = false;
+        lqBorrowingDonorCycles[tid] = 0;
+        sqBorrowingDonorCycles[tid] = 0;
     }
 
     assert(renameToIEWDelay == 1);
@@ -198,6 +203,9 @@ IEW::IEWStats::IEWStats(CPU *cpu)
              "Number of cycles IEW is unblocking"),
     ADD_STAT(dispatchedInsts, statistics::units::Count::get(),
              "Number of instructions dispatched to IQ"),
+    ADD_STAT(dispatchedOps, statistics::units::Count::get(),
+             "Number of dispatched ops excluding NOPs and instruction "
+             "prefetches"),
     ADD_STAT(dispSquashedInsts, statistics::units::Count::get(),
              "Number of squashed instructions skipped by dispatch"),
     ADD_STAT(dispLoadInsts, statistics::units::Count::get(),
@@ -272,7 +280,9 @@ IEW::IEWStats::IEWStats(CPU *cpu)
     ADD_STAT(renameStallReason, statistics::units::Count::get(),
              "Number of rename stall reasons each tick (Total)"),
     ADD_STAT(dispatchStallReason, statistics::units::Count::get(),
-             "Number of dispatch stall reasons each tick (Total)")
+             "Number of dispatch stall reasons each tick (Total)"),
+    ADD_STAT(cacheAccessDepthDist, statistics::units::Count::get(),
+             "distribution of cache access depth for load inst")
 {
     idleCycles
         .init(cpu->numThreads)
@@ -303,6 +313,10 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         .flags(statistics::total);
 
     dispatchedInsts
+        .init(cpu->numThreads)
+        .flags(statistics::total);
+
+    dispatchedOps
         .init(cpu->numThreads)
         .flags(statistics::total);
 
@@ -411,6 +425,9 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         renameStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
         dispatchStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
     }
+
+    cacheAccessDepthDist
+        .init(0, 4, 1);
 }
 
 IEW::IEWStats::ExecutedInstStats::ExecutedInstStats(CPU *cpu)
@@ -502,6 +519,12 @@ IEW::setTimeBuffer(TimeBuffer<TimeStruct> *tb_ptr)
     toRename = timeBuffer->getWire(0);
 
     toFetch = timeBuffer->getWire(0);
+
+    // Setup a dedicated delayed read port on IEW's own slot. The LSQ
+    // borrowing donor decision needs the stall reasons dispatchInsts()
+    // wrote in the previous cycle; toFetch (getWire(0)) is the
+    // current-cycle write port and reads as all zeros at decision time.
+    prevIewInfo = timeBuffer->getWire(-1);
 
     // Instruction queue also needs main time buffer.
     instQueue.setTimeBuffer(tb_ptr);
@@ -726,6 +749,8 @@ IEW::takeOverFrom()
 
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         fetchRedirect[tid] = false;
+        lqBorrowingDonorCycles[tid] = 0;
+        sqBorrowingDonorCycles[tid] = 0;
     }
 
     updateLSQNextCycle = false;
@@ -795,7 +820,11 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
         toCommit->squashedSeqNum[tid] = inst->seqNum;
         toCommit->squashedTargetId[tid] = inst->getFtqId();
         toCommit->squashedLoopIter[tid] = inst->getLoopIteration();
-        toCommit->branchTaken[tid] = inst->pcState().branching();
+        if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {
+            toCommit->branchTaken[tid] = inst->traceBranchTaken();
+        } else {
+            toCommit->branchTaken[tid] = inst->pcState().branching();
+        }
 
         set(toCommit->pc[tid], inst->pcState());
         inst->staticInst->advancePC(*toCommit->pc[tid]);
@@ -1718,6 +1747,9 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
         ppDispatch->notify(inst);
 
         ++iewStats.dispatchedInsts[tid];
+        if (!inst->isNop() && !inst->isInstPrefetch()) {
+            ++iewStats.dispatchedOps[tid];
+        }
 
         insts_to_dispatch.pop_front();
         dispatched++;
@@ -1735,10 +1767,13 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
             if (i < dispatched) {   // dispatch success, no stall
                 dispatchStalls.at(i) = StallReason::NoStall;
             } else {    // dispatch no insts, pass rename stall
-                if (fromRename->renameStallReason.size() == 0) {    // initialize, no stall
+                const auto &rename_stalls =
+                    fromRename->renameStallReason[tid];
+                if (rename_stalls.empty()) {    // initialize, no stall
                     dispatchStalls.at(i) = StallReason::NoStall;
                 } else {    // not dispatch initialize, pass rename stall
-                    dispatchStalls.at(i) = fromRename->renameStallReason.at(i);
+                    dispatchStalls.at(i) = i < rename_stalls.size() ?
+                        rename_stalls[i] : StallReason::NoStall;
                 }
             }
         }
@@ -1819,6 +1854,9 @@ IEW::classifyInstToDispQue(ThreadID tid, unsigned max_insts,
                 }
             }
             ++iewStats.dispatchedInsts[tid];
+            if (!inst->isNop() && !inst->isInstPrefetch()) {
+                ++iewStats.dispatchedOps[tid];
+            }
             dispQue[id].push_back(inst);
 
             if (valuePred && inst->vpSupported && inst->canLVP() &&
@@ -1867,10 +1905,13 @@ IEW::classifyInstToDispQue(ThreadID tid, unsigned max_insts,
             if (i < dispatched) {   // dispatch success, no stall
                 dispatchStalls.at(i) = StallReason::NoStall;
             } else {    // dispatch no insts, pass rename stall
-                if (fromRename->renameStallReason.size() == 0) {    // initialize, no stall
+                const auto &rename_stalls =
+                    fromRename->renameStallReason[tid];
+                if (rename_stalls.empty()) {    // initialize, no stall
                     dispatchStalls.at(i) = StallReason::NoStall;
                 } else {    // not dispatch initialize, pass rename stall
-                    dispatchStalls.at(i) = fromRename->renameStallReason.at(i);
+                    dispatchStalls.at(i) = i < rename_stalls.size() ?
+                        rename_stalls[i] : StallReason::NoStall;
                 }
             }
         }
@@ -2363,6 +2404,33 @@ IEW::writebackInsts()
 
         if (inst->isLoad()) {
             inst->pf_source = ldstQueue.getLoadPFSource(inst);
+
+            // MLP feedback
+            if (!inst->isSquashed()) {
+                int depth = inst->cacheAccessDepth;
+
+                // VP hit (correct prediction) eliminates dependency chain,
+                // treat as short latency regardless of actual cache depth
+                if (inst->vpResult.speculative && !inst->vpMisprediction) {
+                    depth = 0;
+                }
+
+                // Record depth distribution (treat < 0 as 0)
+                int depthForStats = (depth < 0) ? 0 : depth;
+                iewStats.cacheAccessDepthDist.sample(depthForStats);
+
+                // Moved to commit.cc commitHead()
+                // bool actualLongLatency =
+                //     (depth >= (int)mlpLongLatencyCacheDepth);
+                // inst->longLatencyLoad = actualLongLatency;
+                //
+                // auto &fb = toFetch->iewInfo[tid];
+                // fb.loadFeedback.push_back({
+                //     inst->pcState().instAddr(),
+                //     actualLongLatency,
+                //     inst->mlpPredictedLongLatency,
+                //     inst->mlpPredictedDistance});
+            }
         }
 
         DPRINTF(IEW, "Sending instructions to commit, [sn:%lli] PC %s.\n",
@@ -2408,14 +2476,20 @@ void
 IEW::tick()
 {
     blockReason = StallReason::NoStall;
-    for (int i = 0;i < fromRename->fetchStallReason.size();i++) {
-        iewStats.fetchStallReason[fromRename->fetchStallReason[i]]++;
+    for (const ThreadID tid : *activeThreads) {
+        for (const auto reason : fromRename->fetchStallReason[tid]) {
+            iewStats.fetchStallReason[reason]++;
+        }
     }
-    for (int i = 0;i < fromRename->decodeStallReason.size();i++) {
-        iewStats.decodeStallReason[fromRename->decodeStallReason[i]]++;
+    for (const ThreadID tid : *activeThreads) {
+        for (const auto reason : fromRename->decodeStallReason[tid]) {
+            iewStats.decodeStallReason[reason]++;
+        }
     }
-    for (int i = 0;i < fromRename->renameStallReason.size();i++) {
-        iewStats.renameStallReason[fromRename->renameStallReason[i]]++;
+    for (const ThreadID tid : *activeThreads) {
+        for (const auto reason : fromRename->renameStallReason[tid]) {
+            iewStats.renameStallReason[reason]++;
+        }
     }
 
     wbNumInst = 0;
@@ -2436,29 +2510,47 @@ IEW::tick()
     scheduler->tick();
     ldstQueue.tick();
 
-    // Update LSQ borrowing donor status for LQ and SQ
-    // A thread becomes a donor if it has no buffered rename instructions and is stalled
-    // Use hold cycles to avoid frequent donor state transitions
+    // Update LSQ borrowing donor status for LQ and SQ.
+    // A thread becomes a donor if it has no buffered rename instructions and
+    // was stalled last cycle. The stall reasons are read from prevIewInfo
+    // (getWire(-1) of IEW's own slot): toFetch is the current-cycle write
+    // port whose iewInfo is written later by dispatchInsts(), so reading it
+    // here would always observe NoStall. Hold cycles provide hysteresis to
+    // avoid frequent donor state transitions, mirroring the ROB donor logic
+    // in Commit::tick().
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        bool has_buffered_rename = !fixedbuffer[tid].empty();
+        bool has_buffered_rename =
+            !lsqBorrowDonorSkipRenameGate && !fixedbuffer[tid].empty();
 
-        // For LQ: determine if thread should be a donor
         bool lq_donor = false;
-        lq_donor = smtHasBorrowThrottleLQStall(toFetch->iewInfo[tid]);
-        if (lq_donor) {
-            ldstQueue.setLQBorrowingDonor(tid, true);
+        bool sq_donor = false;
+        if (has_buffered_rename) {
+            // The thread still has rename instructions buffered and will
+            // keep consuming LQ/SQ entries; drop any pending donor marking.
+            lqBorrowingDonorCycles[tid] = 0;
+            sqBorrowingDonorCycles[tid] = 0;
         } else {
-            ldstQueue.setLQBorrowingDonor(tid, false);
+            // For LQ: determine if thread should be a donor
+            lq_donor = smtHasBorrowThrottleLQStall(prevIewInfo->iewInfo[tid]);
+            if (lq_donor) {
+                lqBorrowingDonorCycles[tid] = smtLQBorrowDonorHoldCycles;
+            } else if (lqBorrowingDonorCycles[tid] > 0) {
+                --lqBorrowingDonorCycles[tid];
+            }
+            lq_donor = lqBorrowingDonorCycles[tid] > 0;
+
+            // For SQ: determine if thread should be a donor
+            sq_donor = smtHasBorrowThrottleSQStall(prevIewInfo->iewInfo[tid]);
+            if (sq_donor) {
+                sqBorrowingDonorCycles[tid] = smtSQBorrowDonorHoldCycles;
+            } else if (sqBorrowingDonorCycles[tid] > 0) {
+                --sqBorrowingDonorCycles[tid];
+            }
+            sq_donor = sqBorrowingDonorCycles[tid] > 0;
         }
 
-        // For SQ: determine if thread should be a donor
-        bool sq_donor = false;
-        sq_donor = smtHasBorrowThrottleSQStall(toFetch->iewInfo[tid]);
-        if (sq_donor) {
-            ldstQueue.setSQBorrowingDonor(tid, true);
-        } else {
-            ldstQueue.setSQBorrowingDonor(tid, false);
-        }
+        ldstQueue.setLQBorrowingDonor(tid, lq_donor);
+        ldstQueue.setSQBorrowingDonor(tid, sq_donor);
     }
 
     // Add borrowing state hold cycle for LSQ
@@ -2748,7 +2840,7 @@ IEW::checkLoadStoreInst(DynInstPtr inst)
         assert(inst->pendingCacheReq);
         depth = inst->pendingCacheReq->mainReq()->depth;
     }
-    assert(depth < 5);
+    panic_if(depth >= 5, "Unexpected depth:%d in [sn:%d]\n", depth, inst->seqNum);
     bool in_l1 = depth == 0;
     bool in_l2 = depth == 1;
     bool in_l3 = depth == 2;
@@ -2901,6 +2993,11 @@ IEW::checkLSQStall(ThreadID tid, bool isLoad)
 
     DynInstPtr head_inst = ldstQueue.getLSQHeadInst(tid, isLoad);
     return checkLoadStoreInst(head_inst);
+}
+
+StallReason
+IEW::checkingLoadStoreInst(DynInstPtr inst) {
+    return checkLoadStoreInst(inst);
 }
 
 void

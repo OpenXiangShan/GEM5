@@ -39,8 +39,11 @@ We are grateful for their contributions and hope to continue to work together to
 
 ## Features
 
-XS-GEM5 is not as easy to use as official GEM5, because it only supports full-system simulation
-with Xiangshan's specific formats, refer to [Workflows](#workflows-how-to-run-workloads) for more details.
+Full-system simulation with Xiangshan-specific checkpoint formats is the
+primary XS-GEM5 workflow. Limited syscall-emulation support for RISC-V Linux
+user-space ELF files and upstream SE workloads is available through
+`configs/example/se.py`. Refer to [Workflows](#workflows-how-to-run-workloads)
+for more details.
 
 XS-GEM5 is enhanced with
 - Xiangshan RVGCpt: a cross-platform full-system checkpoint for RISC-V.
@@ -91,9 +94,16 @@ Because XS-GEM5 is currently under internal development, we have several branche
 
 - Cannot run Boom's baremetal app
   * We only support [Abstract Machine](https://github.com/OpenXiangShan/nexus-am) baremetal environment or Linux for Xiangshan.
-- Cannot directly run an ELF
-  * GEM5's System call emulation is not supported.([What is system call emulation](https://stackoverflow.com/questions/48986597/when-to-use-full-system-fs-vs-syscall-emulation-se-with-userland-programs-in-gem))
-  * QEMU's User space emulation is not supported.([What is user space emulation](https://www.qemu.org/docs/master/user/main.html))
+- SE mode does not support online Difftest with NEMU. RISC-V Linux user-space
+  ELF files can be run with `configs/example/se.py`; statically linked binaries
+  are the recommended starting point. Its default KmhV3-like profile matches
+  major core/cache capacities but is not FS/GCPT performance-equivalent. The
+  entry point can also download upstream gem5 SE workloads by resource ID. See
+  the [quick-start guide](docs/quick_start.md).
+- Atomic-to-O3 fast-forward is not supported by `configs/example/se.py` yet.
+  The configuration currently supports `DerivO3CPU` and its subclasses. Use
+  the default O3 CPU directly and `--warmup-insts-no-switch` when O3 warmup
+  statistics should be excluded.
 - Checkpoint is not compatible with GEM5's SE checkpoints or m5 checkpoints.
   * Cannot produce GEM5's SE checkpoints or m5 checkpoints
   * Cannot run GEM5's SE checkpoints or m5 checkpoints
@@ -202,10 +212,33 @@ separate Python environment is required.
 
 ``` shell
 sudo apt update
-sudo apt install build-essential git m4 scons zlib1g zlib1g-dev \
+sudo apt install build-essential git m4 scons cmake zlib1g zlib1g-dev \
     libprotobuf-dev protobuf-compiler libprotoc-dev libgoogle-perftools-dev \
     python3-dev libboost-all-dev pkg-config libsqlite3-dev zstd libzstd-dev
 ```
+
+Ubuntu 22.04 can use the same package list with system Python 3.10.
+For Ubuntu 20.04, install `gcc-10 g++-10` and select them with
+`CC=gcc-10 CXX=g++-10`; this older environment is not covered by a dedicated CI job.
+
+### Setup on macOS
+
+Install Xcode Command Line Tools and Homebrew, then run from the GEM5 root:
+
+```shell
+brew install scons python pkg-config zstd boost cmake
+git clone https://github.com/umd-memsys/DRAMsim3.git ext/dramsim3/DRAMsim3
+cmake -S ext/dramsim3/DRAMsim3 -B ext/dramsim3/DRAMsim3/build \
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+cmake --build ext/dramsim3/DRAMsim3/build --target dramsim3 -j3
+CC=clang CXX=clang++ scons build/RISCV/gem5.opt -j3
+```
+
+Skip cloning DRAMSim3 if it is already present. Use the native Apple linker;
+`--gold-linker` is for Linux. The raw Linux demo below runs without NEMU.
+The [macOS CI](.github/workflows/macos-smoke.yml) checks this build/boot path
+on GitHub-hosted runners only when manually triggered, for example before a demo
+or release. Use local incremental builds for day-to-day validation.
 
 ### Setup using [Nix](https://github.com/NixOS/nix)
 
@@ -268,7 +301,8 @@ Users should set the following environment variables before running GEM5:
 These files can be found in the release page.
 Users can also opt to build them from source ([Difftest with NEMU](#difftest-with-nemu) and
 [Build GCPT restorer](#build-gcpt-restorer)).
-A tested working matrix of repos & revisions is here:
+For current mainline, use the latest prebuilt reference in the example below.
+The following tables describe historical checkpoint/reference combinations:
 
 |  Checkpoint Type  | reference design | GCPT restorer
 | ---------- | --------- | --------- |
@@ -288,13 +322,30 @@ If above branches are not working, you can try the following commits:
 
 
 **NOTE**:
-- Current scripts enforce Difftest (cosimulating against NEMU or spike).
-If a user does not want Difftest, please manually edit `configs/common/xiangshan.py` (see `xiangshan_system_init()`) to disable it.
+- Difftest is enabled by default. Pass `--disable-difftest` to run without a
+reference library; no configuration file edits are needed.
 Simulation error without Difftest **will NOT be responded.**
 - When running a GCB checkpoint, it is OK to use GCBV reference design but not vice versa.
 - When running a GCB checkpoint, user must use GCB restorer but not GCBV restorer.
 
 ### Example command
+
+#### Boot Linux without Difftest (Linux or macOS)
+
+Download only the demo image and run it; no NEMU reference or restorer is needed.
+Keep the filename `linux.bin` so `kmhv3.py` automatically configures the Linux DTB.
+
+```shell
+mkdir -p ready-to-run
+curl -fL --retry 3 -o ready-to-run/linux.bin \
+    https://raw.githubusercontent.com/OpenXiangShan/ready-to-run/af4f593700ed3b871e722d501d360ec55f412b3d/linux.bin
+./build/RISCV/gem5.opt -r -d m5out/linux-demo \
+    configs/example/kmhv3.py --raw-cpt \
+    --generic-rv-cpt=ready-to-run/linux.bin --disable-difftest
+tail -n 100 m5out/linux-demo/simout
+```
+
+Successful execution prints `Hello, XiangShan!` and exits through `m5_exit`.
 
 #### Easy to run
 Easy to run a single workload(not a checkpoint, just a single binary file)
@@ -302,15 +353,21 @@ Easy to run a single workload(not a checkpoint, just a single binary file)
 ```shell
 # prepare the binary file
 git clone https://github.com/OpenXiangShan/ready-to-run.git
-# prepare nemu reference design
-wget https://github.com/OpenXiangShan/GEM5/releases/download/2024-10-16/riscv64-nemu-interpreter-c1469286ca32-so
-# set environment variables
-export GCBV_REF_SO=`realpath riscv64-nemu-interpreter-c1469286ca32-so`
+# download the latest single-core NEMU reference
+curl -fL --retry 3 -o riscv64-nemu-interpreter-so \
+    https://github.com/OpenXiangShan/GEM5/releases/latest/download/riscv64-nemu-interpreter-so
+export GCBV_REF_SO="$(pwd)/riscv64-nemu-interpreter-so"
 # run the workload
 ./build/RISCV/gem5.opt ./configs/example/kmhv3.py --raw-cpt --generic-rv-cpt=./ready-to-run/coremark-2-iteration.bin
 # get the ipc
 grep 'cpu.ipc' m5out/stats.txt
 ```
+The prebuilt reference is for **Linux x86-64 with glibc >= 2.38** (for example
+Ubuntu 24.04). On Ubuntu 20.04/22.04 or other hosts, use a compatible source
+build; for the macOS demo, use `--disable-difftest`. See the
+[latest release notes](https://github.com/OpenXiangShan/GEM5/releases/latest)
+for the current binary's requirements.
+
 kmhv3.py is the recommended configuration for XS-GEM5.
 If you still run a legacy entrypoint named `xiangshan.py`, `configs/common/xiangshan.py` will emit a deprecation warning.
 
@@ -391,28 +448,11 @@ build-->so
 so-->cosim
 ```
 
-We the [gem5-ref-main branch of NEMU](https://github.com/OpenXiangShan/NEMU/tree/gem5-ref-main) for difftest with XS-GEM5.
-
-``` shell
-git clone https://github.com/OpenXiangShan/NEMU.git
-cd NEMU
-export NEMU_HOME=`pwd`
-make riscv64-gem5-ref_defconfig
-make -j 10
-```
-
-Then the contents of `build` directory should be
-```
-build
-|-- obj-riscv64-nemu-interpreter-so
-|   `-- src
-`-- riscv64-nemu-interpreter-so
-```
-
-then use `riscv64-nemu-interpreter-so` as reference for GEM5,
-``` shell
-export GCB_REF_SO=`realpath build/riscv64-nemu-interpreter-so`
-```
+For ordinary single-core use, download the latest prebuilt reference using the
+[example above](#easy-to-run). For source builds or specialized configurations,
+see the [NEMU reference build guide](util/nemu_ref/README.md). It records the
+source/configuration used by this GEM5 revision; the historical NEMU branches
+in the checkpoint tables are not the current build instructions.
 
 ## Difftest with spike
 

@@ -257,25 +257,155 @@ class KMHV3Scheduler(Scheduler):
             IssuePort(fu=[FP_ALU(), FP_MAC()],
                       rp=[FpRD(9,0), FpRD(10,0), FpRD(11,0)])
         ]),
-        IssueQue(name='vecIQ0', inports=5, size=16+16+10, oports=[
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()])
+    ]
+    __vecIQs = [
+        IssueQue(name='vecIQ0', inports=2, size=16, oports=[
+            IssuePort(fu=[VecIALU(), VecIMAC(), VecMOVE(), VecFCVT(), VecFMAC()])
+        ], scheduleToExecDelay=3),
+        IssueQue(name='vecIQ1', inports=2, size=16, oports=[
+            IssuePort(fu=[VecIALU(), VecIDIV(), VecFMAC(), VecFDIV()])
+        ], scheduleToExecDelay=3),
+        IssueQue(name='vecIQ2', inports=2, size=16, oports=[
+            IssuePort(fu=[VecIALU()])
+        ], scheduleToExecDelay=3),
+        IssueQue(name='vecIQ3', inports=2, size=16, oports=[
+            IssuePort(fu=[VecIALU()])
         ], scheduleToExecDelay=3),
     ]
 
     intRegfileBanks = 2
 
-    IQs = __intIQs + __memIQs + __fpIQs
+    IQs = __intIQs + __memIQs + __fpIQs + __vecIQs
     __int_bank = [i.name for i in __intIQs]
     __mem_bank = [i.name for i in __memIQs]
     __fp_bank = [i.name for i in __fpIQs]
+    __vec_bank = [i.name for i in __vecIQs]
     specWakeupNetwork = [
         SpecWakeupChannel(srcs=__int_bank + __mem_bank + ['fpIQ0'], dsts=__int_bank + __mem_bank),
-        SpecWakeupChannel(srcs=__mem_bank, dsts=__fp_bank),
-        SpecWakeupChannel(srcs=__fp_bank, dsts=__fp_bank + ['std0', 'std1'])
+        SpecWakeupChannel(srcs=__mem_bank, dsts=__fp_bank + __vec_bank),
+        SpecWakeupChannel(srcs=__fp_bank + __vec_bank,
+                          dsts=__fp_bank + __vec_bank + ['std0', 'std1'])
+    ]
+
+    enableMainRdpOpt = True  # TX dynamic read port optimization
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # self.disableAllRegArb()
+
+    def disableAllRegArb(self):
+        print("Disable regfile arbitration")
+        for iq in self.IQs:
+            for port in iq.oports:
+                port.rp.clear()
+
+class KMHV3SpMTScheduler(Scheduler):
+    __intIQs = [
+        IssueQue(name='intIQ0', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU()],
+                      rp=[IntRD(0, 0), IntRD(2, 0), IntWR(0, 0)]),
+            IssuePort(fu=[IntBJU()],
+                      rp=[IntRD(2, 1), IntRD(8, 2), IntWR(0, 1)])
+        ]),
+        IssueQue(name='intIQ1', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU()],
+                      rp=[IntRD(1, 0), IntRD(3, 0), IntWR(1, 0)]),
+            IssuePort(fu=[IntBJU()],
+                      rp=[IntRD(3, 1), IntRD(9, 2), IntWR(1, 1)])
+        ]),
+        IssueQue(name='intIQ2', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU(), IntCvt()],
+                      rp=[IntRD(4, 0), IntRD(6, 0), IntWR(2, 0)]),
+            IssuePort(fu=[IntBRU()],
+                      rp=[IntRD(6, 1), IntRD(10, 2), IntWR(2, 1)])
+        ]),
+        IssueQue(name='intIQ3', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU(), IntCvt()],
+                      rp=[IntRD(5, 0), IntRD(7, 0), IntWR(3, 0)]),
+            IssuePort(fu=[IntBRU()],
+                      rp=[IntRD(7, 1), IntRD(11, 2), IntWR(3, 1)])
+        ]),
+        IssueQue(name='intIQ4', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU(), IntMult(), IntDiv(), IntMisc()],
+                      rp=[IntRD(8, 1), IntRD(10, 1)]),
+        ]),
+        IssueQue(name='intIQ5', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU(), IntMult(), IntDiv(), IntMisc()],
+                      rp=[IntRD(9, 1), IntRD(11, 1)]),
+        ]),
+    ]
+    __memIQs = [
+        IssueQue(name='ld0', inports=2, size=16, oports=[
+            IssuePort(fu=[ReadPort()],
+                      rp=[IntRD(8, 0)])]),
+        IssueQue(name='ld1', inports=2, size=16, oports=[
+            IssuePort(fu=[ReadPort()],
+                      rp=[IntRD(9, 0)])]),
+        IssueQue(name='ld2', inports=2, size=16, oports=[
+            IssuePort(fu=[ReadPort()],
+                      rp=[IntRD(10, 0)])]),
+        IssueQue(name='ld3', inports=2, size=16, oports=[
+            IssuePort(fu=[ReadPort()],
+                      rp=[IntRD(11, 0)])]),
+        IssueQue(name='sta0', inports=2, size=16, oports=[
+            IssuePort(fu=[WritePort()],
+                      rp=[IntRD(4, 1)])]),
+        IssueQue(name='sta1', inports=2, size=16, oports=[
+            IssuePort(fu=[WritePort()],
+                      rp=[IntRD(5, 1)])]),
+        IssueQue(name='std0', inports=2, size=16, oports=[
+            IssuePort(fu=[StoreDataPort()],
+                      rp=[IntRD(0, 1), FpRD(12, 0)])]),
+        IssueQue(name='std1', inports=2, size=16, oports=[
+            IssuePort(fu=[StoreDataPort()],
+                      rp=[IntRD(1, 1), FpRD(13, 0)])]),
+    ]
+    __fpIQs = [
+        IssueQue(name='fpIQ0', inports=2, size=18, oports=[
+            IssuePort(fu=[FP_ALU(), FP_MISC(), FP_MAC()],
+                      rp=[FpRD(0,0), FpRD(2, 0), FpRD(4,0)])
+        ]),
+        IssueQue(name='fpIQ1', inports=2, size=18, oports=[
+            IssuePort(fu=[FP_ALU(), FP_MISC(), FP_MAC()],
+                      rp=[FpRD(1,0), FpRD(3,0), FpRD(5,0)])
+        ]),
+        IssueQue(name='fpIQ2', inports=2, size=18, oports=[
+            IssuePort(fu=[FP_ALU(), FP_MAC(), FP_SLOW()],
+                      rp=[FpRD(6,0), FpRD(8,0), FpRD(10,0)])
+        ]),
+        IssueQue(name='fpIQ3', inports=2, size=18, oports=[
+            IssuePort(fu=[FP_ALU(), FP_MAC(), FP_SLOW()],
+                      rp=[FpRD(7,0), FpRD(9,0), FpRD(11,0)])
+        ]),
+    ]
+    __vecIQs = [
+        IssueQue(name='vecIQ0', inports=2, size=16, oports=[
+            IssuePort(fu=[VecIALU(), VecIMAC(), VecIDIV(), VecMOVE(), VecFCVT(), VecFMAC(), VecFDIV()])
+        ], scheduleToExecDelay=3),
+        IssueQue(name='vecIQ1', inports=2, size=16, oports=[
+            IssuePort(fu=[VecIALU(), VecIMAC(), VecIDIV(), VecMOVE(), VecFCVT(), VecFMAC(), VecFDIV()])
+        ], scheduleToExecDelay=3),
+        IssueQue(name='vecIQ2', inports=2, size=16, oports=[
+            IssuePort(fu=[VecIALU()])
+        ], scheduleToExecDelay=3),
+        IssueQue(name='vecIQ3', inports=2, size=16, oports=[
+            IssuePort(fu=[VecIALU()])
+        ], scheduleToExecDelay=3),
+    ]
+
+    intRegfileBanks = 2
+    enableSpMT = True  # SpMT mode enabled by default
+
+    IQs = __intIQs + __memIQs + __fpIQs + __vecIQs
+    __int_bank = [i.name for i in __intIQs]
+    __mem_bank = [i.name for i in __memIQs]
+    __fp_bank = [i.name for i in __fpIQs]
+    __vec_bank = [i.name for i in __vecIQs]
+    specWakeupNetwork = [
+        SpecWakeupChannel(srcs=__int_bank + __mem_bank + ['fpIQ0', 'fpIQ1'], dsts=__int_bank + __mem_bank),
+        SpecWakeupChannel(srcs=__mem_bank, dsts=__fp_bank + __vec_bank),
+        SpecWakeupChannel(srcs=__fp_bank + __vec_bank,
+                          dsts=__fp_bank + __vec_bank + ['std0', 'std1'])
     ]
 
     enableMainRdpOpt = True  # TX dynamic read port optimization

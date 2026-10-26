@@ -91,6 +91,7 @@ class IssueQue(SimObject):
         2, "Number of independent vector load/store split units per direction")
     oports = VectorParam.IssuePort("")
     sel = Param.BaseSelector(BaseSelector(), "Selector for this IQ")
+    smtIQWatermark = Param.Int(0, "SMT IQ watermark per thread")
 
 class Scheduler(SimObject):
     type = 'Scheduler'
@@ -104,3 +105,4 @@ class Scheduler(SimObject):
     enableMainRdpOpt = Param.Bool(False, "Enable TX dynamic read port optimization")
 
     intRegfileBanks = Param.Int(1, "number of integer register file banks")
+    enableSpMT = Param.Bool(False, "Enable SpMT mode")

@@ -1,13 +1,18 @@
 {
-  "release": "d30fff1ece9e-gem5-r3",
-  "commit": "d30fff1ece9e0480146caf504660a0239b994eef",
+  "release": "af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc",
+  "commit": "af9d4ce51fc2087156b09f26d64a8e1cfb83332f",
   "repository": "https://github.com/OpenXiangShan/NEMU.git",
   "base_defconfig": "riscv64-gem5-ref_defconfig",
   "dependencies": {
-    "resource/softfloat/repo": "b51ef8f3201669b2288104c28546fc72532a1ea4",
-    "resource/gcpt_restore": "c5c2fef74133fb2b8ef8642633f60e0996493f29",
-    "resource/LibCheckpoint": "2115c400af664ba06c57114db39a777ee7e5f1d0",
-    "resource/nanopb": "5b070b65ae53f72c5e9b5050519933bcd4cc0eff"
+    "resource/softfloat/repo": "a0c6494cdc11865811dec815d5c0049fba9d82a8",
+    "resource/gcpt_restore": "5169da768d18f4682a489eaabe7c071df6d6ef88",
+    "resource/LibCheckpoint": "1d8905cc2803c242ef257569128c2e68bf4272aa",
+    "resource/nanopb": "0f6d088e777a33dd7b54297f137ef10d745c5da8"
   },
-  "variants": ["normal", "normal-dedup", "h", "multi"]
+  "variants": [
+    "normal",
+    "normal-dedup",
+    "h",
+    "multi"
+  ]
 }

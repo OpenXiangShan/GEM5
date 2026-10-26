@@ -114,7 +114,7 @@ class Parametrisable {
       *m = static_cast<T>(getParameter(paramName));
       return true;
     } else {
-      *m = static_cast<T>(0);
+      *m = T{};
       return false;
     }
   }
