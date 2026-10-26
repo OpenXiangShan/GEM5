@@ -60,6 +60,7 @@ ready-to-run/
 compile_commands.json
 .direnv
 .cursor/
+.zcode/
 
 docs/exec-plans/
 
