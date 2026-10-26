@@ -1795,7 +1795,8 @@ Commit::commitInsts()
                                     RiscvISA::MISCREG_VTYPE);
                             tc->getDecoderPtr()->as<RiscvISA::Decoder>().setVtype(new_vtype);
                         }
-                        if (hasExecutedYoungerInst(tid, head_inst->seqNum)) {
+                        if (!vset->vtypeIsImm &&
+                            hasExecutedYoungerInst(tid, head_inst->seqNum)) {
                             DPRINTF(Commit,
                                     "[tid:%i] [sn:%llu] Vector config "
                                     "committed with executed younger "
