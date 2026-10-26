@@ -273,6 +273,90 @@ Both panels use all samples as the denominator, including cancelled, pending,
 and unresolved samples. Event weights overlap and do not represent removable
 stall cycles. The script rejects missing TEA counters or zero-sample runs.
 
+## Weighted Comparisons
+
+Use [util/compare_tea.py](../../../util/compare_tea.py) to compare paired
+slice tables, aggregate CPI and TEA metrics, and select the largest weighted
+improvement and regression within each benchmark. It needs only Python 3's
+standard library. Run it with a JSON configuration and a new output directory:
+
+```sh
+python3 util/compare_tea.py comparison.json --output /path/to/comparison
+```
+
+The input is an exported table with one row per `(benchmark, workload, point)`,
+not the raw PC/PSV CSV. Map the columns for each side explicitly. For example,
+if `before.csv` and `after.csv` each contain `benchmark`, `workload`, `point`,
+`cycles`, `instructions`, `weight`, the four state names and `ST_LLC`:
+
+```json
+{
+  "title": "Weighted TEA comparison",
+  "baseline": {
+    "label": "Before",
+    "path": "before.csv",
+    "columns": {
+      "benchmark": "benchmark", "workload": "workload", "point": "point",
+      "cycles": "cycles", "instructions": "instructions", "weight": "weight"
+    },
+    "states": {
+      "Computing": "Computing", "Stalled": "Stalled",
+      "Flushed": "Flushed", "Drained": "Drained"
+    },
+    "events": {"ST_LLC": "ST_LLC"}
+  },
+  "candidate": {
+    "label": "After",
+    "path": "after.csv",
+    "columns": {
+      "benchmark": "benchmark", "workload": "workload", "point": "point",
+      "cycles": "cycles", "instructions": "instructions", "weight": "weight"
+    },
+    "states": {
+      "Computing": "Computing", "Stalled": "Stalled",
+      "Flushed": "Flushed", "Drained": "Drained"
+    },
+    "events": {"ST_LLC": "ST_LLC"}
+  }
+}
+```
+
+Input paths are relative to the configuration file. Both sides may use the
+same wide CSV with different column mappings. Their point identities and
+metric names must match. Cycles and retired instructions must refer to the
+same measurement window. Without a profile, weights must match between sides
+and sum to one within each benchmark.
+
+Alternatively, set `"profile": "profile.json"` at the top level and omit the
+weight columns. The profile maps workload names to instruction counts and
+SimPoint weights, for example:
+
+```json
+{"input_a": {"insts": 1000000000, "points": {"1": 0.4, "2": 0.6}}}
+```
+
+The tables must cover every profile workload and point exactly. The tool
+normalizes point weights within each workload and combines workloads within
+a benchmark by their profile instruction counts. Optional `groups`, such as
+`{"INT": ["benchmark_a", "benchmark_b"]}`, define benchmark groups for
+geometric mean speedups; the default group includes all benchmarks.
+
+Each configured metric is a total count, normalized by that side's retired
+instructions before weighting. Configured states must sum to cycles: use
+single-thread, every-cycle TEA data or prepare cycle-equivalent state counts
+before comparing. Omit `states` when this relationship does not apply.
+Events may overlap and are never required to sum to cycles. Only cycle-valued
+metrics can be interpreted as CPI contributions.
+
+Optional `columns.ipc` on both sides supplies a separate scoring basis for
+rounded official IPC. Weighted point selection always uses actual
+`cycles / instructions`, preserving differences hidden by IPC rounding.
+Outputs are `points.csv`, `benchmarks.csv`, `summary.json`, `report.md`, and
+`audit.json` with configuration, tool and input SHA256 hashes. Optional
+`evidence` paths add hashes for external evidence. These hashes identify the
+inputs; check correctness, configuration and measurement provenance against
+the original run evidence.
+
 ## Current Limitations
 
 Known attribution limitations remain: cycles that retire intermediate RVV
