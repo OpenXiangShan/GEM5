@@ -2991,6 +2991,7 @@ TLB::configVmodeInTLB(const RequestPtr &req, ThreadContext *tc,
 {
     PrivilegeMode pmode = getMemPriv(tc, mode);
     SATP vsatp = tc->readMiscReg(MISCREG_VSATP);
+    HGATP hgatp = tc->readMiscReg(MISCREG_HGATP);
     STATUS status = tc->readMiscReg(MISCREG_STATUS);
     HSTATUS hstatus = tc->readMiscReg(MISCREG_HSTATUS);
     int v_mode = tc->readMiscReg(MISCREG_VIRMODE);
@@ -3010,7 +3011,9 @@ TLB::configVmodeInTLB(const RequestPtr &req, ThreadContext *tc,
     if (v_mode != 0) {
         req->setVsatp0Mode(vsatp.mode == 0);
         req->setTwoStageState(true, v_mode, two_stage_pmode);
-        req->setTwoPtwWalk(false, 2, 2, 0, false);
+        req->setTwoPtwWalk(false, PTW_TOP_LEVEL(vsatp.mode),
+                           PTW_TOP_LEVEL(hgatp.mode), 0, false);
+        req->setgPaddr(0);
     }
 }
 
