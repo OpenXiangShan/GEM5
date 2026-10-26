@@ -37,6 +37,7 @@ jobs:
        github.event.pull_request.head.repo.full_name == github.repository))
     # 使用 open runner 可见的固定 H/V NEMU reference
     runs-on: [self-hosted, open]
+    timeout-minutes: 720
     continue-on-error: false
     name: XS-GEM5 - Running h test checkpoints
     steps:
@@ -109,8 +110,8 @@ jobs:
           set -uo pipefail
 
           for case_dir in \
-            "./log_root_h/rungem5/checkpoint-0-0-0/astar_biglakes" \
-            "./log_root_h/rungem5/checkpoint-0-0-0/wrf"
+            "./log_root_h/rungem5/checkpoint/astar_biglakes" \
+            "./log_root_h/rungem5/checkpoint/wrf"
           do
             echo
             echo "=================================================="
