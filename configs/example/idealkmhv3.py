@@ -162,6 +162,7 @@ def setKmhV3IdealParams(args, system):
     if args.l3cache:
         system.l3.mshrs = 64
         system.l3.num_slices = 4
+        system.l3.clusivity = 'mostly_incl'
 
 if __name__ == '__m5_main__':
     FutureClass = None
@@ -176,8 +177,9 @@ if __name__ == '__m5_main__':
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3
     args.bp_type = 'DecoupledBPUWithBTB'
-    args.l2_size = '512kB'
-    args.l2_assoc = 4
+    args.l2_size = '1MB'
+    args.l2_assoc = 8
+    args.l2_slices = 4
     args.l3_size = '32MB'
     args.l1d_enable_lldp = True
     args.l2_enable_lldp = True
