@@ -264,6 +264,15 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         choices=ObjectList.hwp_list.get_names(), help="L2 wrapper cache hardware prefetcher")
     parser.add_argument("--l1d-mlop-enable", action="store_true", default=False,
                         help="enable the DPC-3 MLOP prefetcher at L1D")
+    parser.add_argument("--l1d-small-bop-enable", action="store_true",
+                        default=False,
+                        help="attach the virtual-address small BOP to CHI L1D")
+    parser.add_argument("--l1d-small-bop-student-cover", action="store_true",
+                        default=False,
+                        help="enable the L1D small BOP student coverage learner")
+    parser.add_argument("--l1d-small-bop-cqf", action="store_true",
+                        default=False,
+                        help="enable CQF admission for L1D small BOP")
     parser.add_argument("--l2-mlop-enable", action="store_true", default=False,
                         help="enable the DPC-3 MLOP prefetcher at L2")
     parser.add_argument("--l1-mlop-max-zones", type=int, default=0,

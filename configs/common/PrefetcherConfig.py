@@ -8,7 +8,8 @@ from m5.util import fatal
 from m5.util.convert import toMemorySize
 from common.Caches import *
 from common import ObjectList
-from m5.objects.Prefetcher import XSPhysicalSmallBOP, XSVirtualLargeBOP
+from m5.objects.Prefetcher import (
+    XSL1SmallBOP, XSPhysicalSmallBOP, XSVirtualLargeBOP)
 
 PF_SOURCE_NAMES = [
     "PF_NONE",
@@ -683,7 +684,27 @@ def create_prefetcher(cpu, cache_level, options):
     prefetcher_name = ''
     prefetcher = NULL
     pf_buffer_enabled = is_pf_buffer_enabled(options)
-    if hasattr(options, prefetcher_attr):
+    l1_small_bop = (cache_level == 'l1d' and
+                    getattr(options, 'l1d_small_bop_enable', False))
+    if cache_level == 'l1d' and not l1_small_bop and (
+            getattr(options, 'l1d_small_bop_student_cover', False) or
+            getattr(options, 'l1d_small_bop_cqf', False)):
+        fatal('L1D small BOP student/CQF requires --l1d-small-bop-enable')
+    if l1_small_bop:
+        if not getattr(options, 'CHI', False):
+            fatal('--l1d-small-bop-enable requires --CHI')
+        if getattr(options, 'l1d_mlop_enable', False):
+            fatal('--l1d-small-bop-enable conflicts with --l1d-mlop-enable')
+        if getattr(options, 'no_pf', False):
+            fatal('--l1d-small-bop-enable conflicts with --no-pf')
+        if not pf_buffer_enabled:
+            fatal('L1D small BOP requires PFRequestBuffer')
+        prefetcher_name = 'XSL1SmallBOP'
+        prefetcher = XSL1SmallBOP(
+            enable_student_cover=options.l1d_small_bop_student_cover,
+            enable_direct_quality_gate=options.l1d_small_bop_cqf)
+        print(f"create_prefetcher at {cache_level}: {prefetcher_name}")
+    elif hasattr(options, prefetcher_attr):
         prefetcher_name = getattr(options, prefetcher_attr)
         prefetcher = _get_hwp(prefetcher_name)
         print(f"create_prefetcher at {cache_level}: {prefetcher_name}")
