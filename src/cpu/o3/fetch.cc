@@ -115,6 +115,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       numFetchingThreads(params.smtNumFetchingThreads),
       numFetchTargetThreads(params.smtNumFetchTargetThreads),
       enablePredecode(params.enablePredecode),
+      predecodeLatency(params.predecodeLatency),
       icachePort(this, _cpu),
       finishTranslationEvents(), fetchStats(_cpu, this),
       valuePred(params.valuePred)
@@ -152,6 +153,13 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     panic_if(decodeWidth * numPreDispatchThreads > MaxWidth,
              "aggregate SMT decode width (%u * %u) exceeds MaxWidth (%u)",
              decodeWidth, numPreDispatchThreads, MaxWidth);
+    fatal_if(enablePredecode && predecodeLatency != Cycles(1) &&
+             predecodeLatency != Cycles(2),
+             "predecodeLatency must be one or two cycles");
+    fatal_if(enablePredecode &&
+             params.fetchToDecodeDelay <= predecodeLatency,
+             "fetchToDecodeDelay must exceed predecodeLatency so predecode "
+             "checks instructions before Decode consumes them");
 
     finishTranslationEvents.reserve(numThreads);
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
@@ -2559,7 +2567,8 @@ Fetch::clearPredecodePipeline(ThreadID tid)
 bool
 Fetch::processPredecodeStage(ThreadID tid)
 {
-    auto &stage = predecodeStage1[tid];
+    auto &stage = predecodeLatency == Cycles(1) ?
+        predecodeStage0[tid] : predecodeStage1[tid];
     for (unsigned i = 0; i < stage.size; ++i) {
         const DynInstPtr instruction = stage.entries[i].instruction;
         if (!instruction || instruction->isSquashed())
@@ -2591,8 +2600,10 @@ Fetch::advancePredecodePipeline()
         if (processPredecodeStage(tid))
             continue;
 
-        predecodeStage1[tid] = std::move(predecodeStage0[tid]);
-        predecodeStage0[tid].clear();
+        if (predecodeLatency == Cycles(2)) {
+            predecodeStage1[tid] = std::move(predecodeStage0[tid]);
+            predecodeStage0[tid].clear();
+        }
     }
 }
 

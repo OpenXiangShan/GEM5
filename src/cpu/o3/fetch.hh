@@ -1051,7 +1051,7 @@ class Fetch
     /** Queue of fetched instructions. Per-thread to prevent HoL blocking. */
     std::deque<DynInstPtr> fetchQueue[MaxThreads];
 
-    /** Fixed two-cycle check pipeline; it neither queues nor backpressures. */
+    /** One- or two-cycle check pipeline; it neither queues nor backpressures. */
     PredecodeStage predecodeStage0[MaxThreads];
     PredecodeStage predecodeStage1[MaxThreads];
 
@@ -1074,6 +1074,9 @@ class Fetch
 
     /** Optional RISC-V predecode owner, disabled by default. */
     bool enablePredecode;
+
+    /** Cycles from instruction fetch to its predecode check. */
+    const Cycles predecodeLatency;
 
     /** Thread ID being fetched. */
     ThreadID threadFetched;
