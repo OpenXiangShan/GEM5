@@ -139,8 +139,13 @@ def setKmhV3IdealParams(args, system):
                 for j in range(args.l2_slices):
                     l2_wrapper.slices[j].inner_cache.wpu = NULL
                     # Configure XSDRRIP replacement policy (DRRIP mode)
-                    # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
-                    l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
+                    cache = l2_wrapper.slices[j].inner_cache
+                    num_sets = int(cache.size) // (
+                        int(cache.assoc) * int(system.cache_line_size)
+                    )
+                    cache.replacement_policy = XSDRRIPRP(
+                        mode=2, num_sets=num_sets
+                    )
             system.tol2bus_list[i].forward_latency = 3  # 0->3
             system.tol2bus_list[i].response_latency = 3  # 0->3
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1  # 0->1
@@ -171,7 +176,8 @@ if __name__ == '__m5_main__':
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3
     args.bp_type = 'DecoupledBPUWithBTB'
-    args.l2_size = '2MB'
+    args.l2_size = '512kB'
+    args.l2_assoc = 4
     args.l3_size = '32MB'
     args.l1d_enable_lldp = True
     args.l2_enable_lldp = True
