@@ -46,6 +46,7 @@ def setKmhV3IdealParams(args, system):
         cpu.decodeWidth = 8
         cpu.enable_loadFusion = False
         cpu.enableConstantFolding = False
+        cpu.enableDecodeFusionCompaction = True
 
         # rename
         cpu.renameWidth = 8
@@ -69,10 +70,10 @@ def setKmhV3IdealParams(args, system):
         cpu.squashWidth = 8
         cpu.phyregReleaseWidth = 8
         cpu.RobCompressPolicy = 'kmhv3'
-        cpu.numROBEntries = args.ROBTotalEntry
+        cpu.numROBEntries = args.rob_total_entry
         cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
-        cpu.smtBorrowDonorReserveEntries = args.smtROBDonorEntry
-        cpu.smtBorrowBaseReserveEntries = args.smtROBBaseEntry
+        cpu.smtBorrowDonorReserveEntries = args.smt_rob_donor_entry
+        cpu.smtBorrowBaseReserveEntries = args.smt_rob_base_entry
         cpu.robWalkPolicy = 'NaiveCpt' # ideal core recovers via RAT checkpoints
 
         # lsu
@@ -82,6 +83,13 @@ def setKmhV3IdealParams(args, system):
         cpu.BankConflictCheck = True
         cpu.sbufferBankWriteAccurately = True
         cpu.DcacheSetDivNum = 2
+        cpu.smtLQBorrowDonorReserveEntries = args.smt_lq_donor_entry
+        cpu.smtLQBorrowBaseReserveEntries = args.smt_lq_base_entry
+        cpu.smtSQBorrowDonorReserveEntries = args.smt_sq_donor_entry
+        cpu.smtSQBorrowBaseReserveEntries = args.smt_sq_base_entry
+        cpu.smtLQBorrowDonorHoldCycles = args.smt_lq_donor_hold_cycles
+        cpu.smtSQBorrowDonorHoldCycles = args.smt_sq_donor_hold_cycles
+        cpu.lsqBorrowDonorSkipRenameGate = args.lsq_borrow_donor_skip_rename_gate
 
         # value predictor
         cpu.valuePred = CompositeValuePredictor(
@@ -147,9 +155,9 @@ def setKmhV3IdealParams(args, system):
                 l2_prefetcher = l2_wrapper.prefetcher
             if l2_prefetcher != NULL and hasattr(l2_prefetcher, 'offload_low_accuracy'):
                 l2_prefetcher.offload_low_accuracy = True
-            system.tol2bus_list[i].forward_latency = 3  # 0->3
-            system.tol2bus_list[i].response_latency = 3  # 0->3
-            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1  # 0->1
+            system.tol2bus_list[i].forward_latency = 0
+            system.tol2bus_list[i].response_latency = 1
+            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1
 
             # Enable dual-port for DCache → L2 communication
             # ReqLayer[0]: ICache+DCache+ITB+DTB → L2, allow 2 requests per cycle

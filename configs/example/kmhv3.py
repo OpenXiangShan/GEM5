@@ -22,6 +22,24 @@ from common.Caches import *
 from common.xiangshan import *
 from util.solver.runtime.integration import maybe_handle_solver_runtime
 
+
+def hybrid_policy_requested(args):
+    """Return whether command-line --param selects the Hybrid ROB policy.
+
+    The common XiangShan option parser already exposes --param, so KMHV3 can
+    opt into Hybrid without adding a second, config-specific parser.
+    """
+    import re
+
+    pattern = re.compile(
+        r"(?:^|\.)RobCompressPolicy\s*=\s*['\"]?hybrid['\"]?\s*;?\s*$"
+    )
+    return any(
+        pattern.search(param.strip())
+        for param in getattr(args, "param", [])
+    )
+
+
 def setPtwLevelLimitParams(args, tlb):
     tlb.walker.enable_ptw_level_limit = args.enable_ptw_level_limit
     tlb.walker.ptw_level0_limit = args.ptw_level0_limit
@@ -31,6 +49,10 @@ def setPtwLevelLimitParams(args, tlb):
     tlb.walker.ptw_miss_queue_size = args.ptw_miss_queue_size
 
 def setKmhV3Params(args, system):
+    hybrid = hybrid_policy_requested(args)
+    if hybrid and args.smt:
+        fatal("Hybrid ROB compression requires numThreads=1")
+
     for cpu in system.cpu:
 
         # fetch (idealfetch not care)
@@ -50,6 +72,7 @@ def setKmhV3Params(args, system):
         cpu.decodeWidth = 8
         cpu.enable_loadFusion = False
         cpu.enableConstantFolding = False
+        cpu.enableDecodeFusionCompaction = False
 
         # rename
         cpu.renameWidth = 8
@@ -111,6 +134,27 @@ def setKmhV3Params(args, system):
         cpu.numROBEntries = 352
         cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
         cpu.robWalkPolicy = args.rob_walk_policy
+
+        if hybrid:
+            # --param can select Hybrid while retaining the normal KMHV3
+            # entry point.  Apply all required defaults before root.apply_config
+            # runs, so explicit --param overrides still take precedence.
+            cpu.numThreads = 1
+            cpu.valuePred = NULL
+            cpu.enable_loadFusion = False
+            cpu.enableConstantFolding = False
+            cpu.enableMoveElimination = True
+            cpu.enableMovImmElimination = False
+            cpu.RobCompressPolicy = 'hybrid'
+            cpu.CROB_instPerGroup = 8
+            cpu.renameWidth = 8
+            cpu.commitWidth = 8
+
+        if args.enable_value_prediction:
+            cpu.valuePred = CompositeValuePredictor(
+                predictors=[IdealConstantLVP()],
+                arb=CVPConfidenceArb(counterBits=6),
+            )
 
         # lsu
         cpu.StoreWbStage = 4
@@ -199,9 +243,9 @@ def setKmhV3Params(args, system):
                     # Configure XSDRRIP replacement policy (DRRIP mode)
                     # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
                     l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
-            system.tol2bus_list[i].forward_latency = 3  # 3->0
-            system.tol2bus_list[i].response_latency = 3  # 3->0
-            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1  # 1->0
+            system.tol2bus_list[i].forward_latency = 0
+            system.tol2bus_list[i].response_latency = 1
+            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1
 
             # Enable dual-port for DCache → L2 communication
             # ReqLayer[0]: ICache+DCache+ITB+DTB → L2, allow 2 requests per cycle

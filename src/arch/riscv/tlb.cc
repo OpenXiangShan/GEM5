@@ -629,6 +629,12 @@ TLB::lookupL2TLB(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, int f
                     }
                 }
             }
+        } else if (!hidden) {
+            if (mode == BaseMMU::Write) {
+                stats.writeL2l0TlbMisses++;
+            } else {
+                stats.ReadL2l0TlbMisses++;
+            }
         }
     }
     if (f_level == L_L2sp3) {
@@ -2985,6 +2991,7 @@ TLB::configVmodeInTLB(const RequestPtr &req, ThreadContext *tc,
 {
     PrivilegeMode pmode = getMemPriv(tc, mode);
     SATP vsatp = tc->readMiscReg(MISCREG_VSATP);
+    HGATP hgatp = tc->readMiscReg(MISCREG_HGATP);
     STATUS status = tc->readMiscReg(MISCREG_STATUS);
     HSTATUS hstatus = tc->readMiscReg(MISCREG_HSTATUS);
     int v_mode = tc->readMiscReg(MISCREG_VIRMODE);
@@ -3004,7 +3011,9 @@ TLB::configVmodeInTLB(const RequestPtr &req, ThreadContext *tc,
     if (v_mode != 0) {
         req->setVsatp0Mode(vsatp.mode == 0);
         req->setTwoStageState(true, v_mode, two_stage_pmode);
-        req->setTwoPtwWalk(false, 2, 2, 0, false);
+        req->setTwoPtwWalk(false, PTW_TOP_LEVEL(vsatp.mode),
+                           PTW_TOP_LEVEL(hgatp.mode), 0, false);
+        req->setgPaddr(0);
     }
 }
 
@@ -3191,9 +3200,9 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
       ADD_STAT(removeNoUseForwardPre, statistics::units::Count::get(),
                "number of unused forward pre"),
       ADD_STAT(writeL2l0TlbMisses, statistics::units::Count::get(),
-               "write misses in l2tlb"),
+               "non-hidden write lookup misses in the L2 TLB L0 table"),
       ADD_STAT(ReadL2l0TlbMisses, statistics::units::Count::get(),
-               "read misses in l2tlb"),
+               "non-hidden non-write lookup misses in the L2 TLB L0 table"),
       ADD_STAT(writeL2Tlbl0Hits, statistics::units::Count::get(),
                "write hits in l2tlb"),
       ADD_STAT(ReadL2Tlbl0Hits, statistics::units::Count::get(),

@@ -1,5 +1,41 @@
 # NEMU 统一版本验证记录
 
+## 2026-10-22：H 切片配套 release（af9d4ce5，四变体重建）
+
+release `af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc`，发布在
+`/nfs/home/share/gem5_ci/ref/releases/`。源码 commit
+`af9d4ce51fc2087156b09f26d64a8e1cfb83332f`（2026-10-20），四个变体全部从该
+commit 重建，没有 carried 变体。依赖 pin 更新为该 NEMU 工作区实际使用的版本：
+softfloat `a0c6494c`、gcpt_restore `5169da76`、LibCheckpoint `1d8905cc`、
+nanopb `0f6d088e`。
+
+| 变体 | SHA256 | 内存窗口 | 主要配置 |
+| --- | --- | --- | --- |
+| normal | `93dc5fc89d620e83cf1670d912921ed0edf2910baf77f4b8ec4eedfb5fbb0d86` | 8 GiB | USE_MMAP、RVV_AGNOSTIC、scalar 扩展 |
+| normal-dedup | `dcc1dfd52cc7bad5a308d4e94e2d77ee48640cad047cef4400dc5233f59a1e71` | 8 GiB | MEM_DEDUP、RVV_AGNOSTIC、scalar 扩展 |
+| h | `70bd2000a589d4ad6b7aff0d9681f61940b0a0872cdefe8b8371c23bd13bdde2` | 16 GiB | USE_MMAP、SMSTATEEN、SVPBMT、SSTC、CBO |
+| multi | `20fa4acc21b6818198092530d596132d78ac117e86c0157c2972a9fcf87e5a2d` | 16 GiB | MEM_DEDUP、MULTICORE_DIFF、SMSTATEEN、CBO |
+
+四个变体的 `DIFFTEST_REG_SIZE` 均为 1376；`CONFIG_TVAL_EX_II`、
+`CONFIG_GUIDED_TVAL`、`CONFIG_GUIDED_EXEC` 三个宏齐全；`ldd` 无缺失依赖；
+`difftest_{init,exec,regcpy}` 符号存在。
+
+静态验证（`resolve.py` 对四变体均通过，含 manifest 的 commit / release /
+variant / register_size / dependencies / `lock_sha256`、`.so` 与 `.config`
+的 SHA256、以及各变体实际用到的配置片段 SHA256）：
+
+- `python3 util/nemu_ref/resolve.py normal|normal-dedup|h|multi` 全部返回路径。
+- h 的 `.config` 与 `configs/riscv64-gem5-ci-h-smstateen_defconfig` 生成的
+  配置逐字节一致；`nm -D` 中 `stimecmp` 符号 2 个、`stateen|pbmt` 相关 13 个。
+- h 三宏与 REG_SIZE 检查同 `gem5.yml` 的 "Verify H NEMU reference" 步骤一致。
+- 本 release 只做了构建、校验链和静态检查，没有运行 H/SMT/SPEC 功能回归，
+  也没有生成性能数据。首次使用前应跑一轮 H 切片确认。
+
+二进制哈希说明：h 的 `.config` 与 `~/artifacts/NEMU/-261022-10` 逐字节一致，
+但 `.so` 的 SHA256 不同（`70bd2000…` 对 `fa2e9564…`）。原因是 `build.py`
+在独立目录构建，NEMU 二进制内嵌了编译期源文件绝对路径；源码 commit、
+依赖 pin 与配置相同，符合本文档"构建路径改变二进制哈希"的既有边界。
+
 ## 2026-09-15：SMT 16GiB REF
 
 当前 release 为 `d30fff1ece9e-gem5-r3-multi16g-zfa-cbo`，源码和依赖

@@ -920,6 +920,12 @@ def xiangshan_system_init():
     Options.addXiangshanFSOptions(parser)
     Options.addXiangshanTraceOptions(parser)
     parser.add_argument(
+        "--enable-value-prediction",
+        action="store_true",
+        default=False,
+        help="Enable combined constant and stride load value prediction in kmhv3",
+    )
+    parser.add_argument(
         "--btb-tage-upper-bound",
         action="store_true",
         default=False,
@@ -970,19 +976,61 @@ def xiangshan_system_init():
         help="PTW MissQueue size",
     )
     parser.add_argument(
-        "--smtROBDonorEntry",
+        "--smt-rob-donor-entry",
         type=int,
         default=8,
         help="Minimum ROB entries reserved for a borrowing donor to resume",
     )
     parser.add_argument(
-        "--smtROBBaseEntry",
+        "--smt-rob-base-entry",
         type=int,
         default=80,
         help="Minimum ROB entries reserved for a borrowing base to resume",
     )
     parser.add_argument(
-        "--ROBTotalEntry",
+        "--smt-lq-donor-entry",
+        type=int,
+        default=60,
+        help="Minimum LQ entries reserved for a borrowing donor thread to resume",
+    )
+    parser.add_argument(
+        "--smt-lq-base-entry",
+        type=int,
+        default=60,
+        help="Minimum LQ entries reserved for a borrowing base thread to resume",
+    )
+    parser.add_argument(
+        "--smt-sq-donor-entry",
+        type=int,
+        default=32,
+        help="Minimum SQ entries reserved for a borrowing donor thread to resume",
+    )
+    parser.add_argument(
+        "--smt-sq-base-entry",
+        type=int,
+        default=32,
+        help="Minimum SQ entries reserved for a borrowing base thread to resume",
+    )
+    parser.add_argument(
+        "--smt-lq-donor-hold-cycles",
+        type=int,
+        default=1,
+        help="Cycles to keep an SMT thread marked as an LQ borrowing donor",
+    )
+    parser.add_argument(
+        "--smt-sq-donor-hold-cycles",
+        type=int,
+        default=1,
+        help="Cycles to keep an SMT thread marked as an SQ borrowing donor",
+    )
+    parser.add_argument(
+        "--lsq-borrow-donor-skip-rename-gate",
+        action="store_true",
+        default=False,
+        help="Force has_buffered_rename to false in LSQ borrowing donor gating (evaluation only)",
+    )
+    parser.add_argument(
+        "--rob-total-entry",
         type=int,
         default=160,
         help="Number of reorder buffer entries",
