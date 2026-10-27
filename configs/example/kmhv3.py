@@ -48,6 +48,16 @@ def setPtwLevelLimitParams(args, tlb):
     tlb.walker.ptw_level3_limit = args.ptw_level3_limit
     tlb.walker.ptw_miss_queue_size = args.ptw_miss_queue_size
 
+def makeL2ReplacementPolicy(args, num_sets):
+    """Create an independent replacement policy for each KMHV3 L2 cache."""
+    if args.l2_replacement_policy == "lru":
+        return LRURP()
+    if args.l2_replacement_policy == "ship-pc":
+        # Preserve the existing SHiP training behavior for this comparison.
+        return SHiPPCRP()
+    return XSDRRIPRP(mode=2, num_sets=num_sets)
+
+
 def setKmhV3Params(args, system):
     hybrid = hybrid_policy_requested(args)
     if hybrid and args.smt:
@@ -227,9 +237,9 @@ def setKmhV3Params(args, system):
                 system.l2_caches[i].wpu = NULL
                 system.l2_caches[i].do_fast_writeline = True
                 system.l2_caches[i].prefetch_can_offload = False
-                # Configure XSDRRIP replacement policy (DRRIP mode)
-                # L2: 2MB, 8-way, 64B line → 4096 sets
-                system.l2_caches[i].replacement_policy = XSDRRIPRP(mode=2, num_sets=4096)
+                # L2: 2MB, 8-way, 64B line -> 4096 sets.
+                system.l2_caches[i].replacement_policy = (
+                    makeL2ReplacementPolicy(args, num_sets=4096))
             else:
                 l2_wrapper = system.l2_wrappers[i]
                 l2_wrapper.data_sram_banks = 1
@@ -240,9 +250,9 @@ def setKmhV3Params(args, system):
                     l2_wrapper.slices[j].inner_cache.wpu = NULL
                     l2_wrapper.slices[j].inner_cache.do_fast_writeline = True
                     l2_wrapper.slices[j].inner_cache.prefetch_can_offload = False
-                    # Configure XSDRRIP replacement policy (DRRIP mode)
-                    # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
-                    l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
+                    # Each slice: 512KB, 8-way, 64B line -> 1024 sets.
+                    l2_wrapper.slices[j].inner_cache.replacement_policy = (
+                        makeL2ReplacementPolicy(args, num_sets=1024))
             system.tol2bus_list[i].forward_latency = 0
             system.tol2bus_list[i].response_latency = 1
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1
