@@ -2724,6 +2724,16 @@ Scheduler::getOpLatency(const DynInstPtr& inst)
             return latency.cycles;
         }
     } else if (inst->opClass() == FloatSqrtOp) [[unlikely]] {
+        if (fpWakeEnabled) {
+            // These are opLat values; without writeback contention,
+            // AtFU-to-bypass latency is opLat - 1 cycles.
+            switch (inst->staticInst->operWid()) {
+              case 16: return 4;
+              case 32: return 7;
+              case 64: return 11;
+              default: break;
+            }
+        }
         if (inst->staticInst->operWid() == 32) {
             return 13;
         }
