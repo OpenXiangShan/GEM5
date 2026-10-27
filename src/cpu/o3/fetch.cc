@@ -866,6 +866,7 @@ Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
     // Reset cache request state for this thread
     threads[tid].cacheReq.reset();
     threads[tid].usedForTwoFetch = false;
+    threads[tid].validSize = 0;
     threads[tid].cacheReq.baseAddr = vaddr;
     threads[tid].cacheReq.totalSize = fetchBufferSize;
 
@@ -928,32 +929,44 @@ Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
 bool
 Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
 {
-    DPRINTF(Fetch, "[tid:%i] Processing dual cacheline fetch completion for addr %#lx.\n",
-            tid, pkt->getAddr());
+    auto &buffer = threads[tid];
+    auto &cache_req = buffer.cacheReq;
 
-    // Mark this packet as completed in the cache request (this also stores the packet)
-    bool found_packet = threads[tid].cacheReq.markCompletedAndStorePacket(pkt);
-    if (!found_packet) {
-        DPRINTF(Fetch, "[tid:%i] Packet doesn't match current requests, deleting pkt %#lx\n",
+    if (pkt) {
+        DPRINTF(Fetch,
+                "[tid:%i] Processing dual cacheline fetch completion for "
+                "addr %#lx.\n",
                 tid, pkt->getAddr());
-        DPRINTF(Fetch, "[tid:%i] Expected requests: ", tid);
-        for (size_t i = 0; i < threads[tid].cacheReq.requests.size(); i++) {
-            DPRINTF(Fetch, "req[%d]=0x%lx ", i, threads[tid].cacheReq.requests[i]->getVaddr());
+
+        // Mark this packet as completed in the cache request.
+        bool found_packet = cache_req.markCompletedAndStorePacket(pkt);
+        if (!found_packet) {
+            DPRINTF(Fetch,
+                    "[tid:%i] Packet doesn't match current requests, "
+                    "deleting pkt %#lx\n",
+                    tid, pkt->getAddr());
+            DPRINTF(Fetch, "[tid:%i] Expected requests: ", tid);
+            for (const auto &req : cache_req.requests) {
+                DPRINTF(Fetch, "req=0x%lx ", req->getVaddr());
+            }
+            DPRINTF(Fetch, "\n");
+            return false;
         }
-        DPRINTF(Fetch, "\n");
-        return false;
     }
 
     DPRINTF(Fetch, "[tid:%i] Packet successfully matched and stored. Current status: %s\n",
-            tid, threads[tid].cacheReq.getStatusSummary().c_str());
+            tid, cache_req.getStatusSummary().c_str());
 
-    // Check if we're still waiting for other packets
-    if (!threads[tid].cacheReq.allCompleted()) {
-        DPRINTF(Fetch, "[tid:%i] Waiting for remaining packets. Completed: %d, Total: %d\n",
-                tid, threads[tid].cacheReq.completedPackets, threads[tid].cacheReq.packets.size());
+    // A deferred translation fault is terminal for its request, just like a
+    // returned packet. Wait only for requests that can still produce data.
+    if (!cache_req.allResolved()) {
+        DPRINTF(Fetch,
+                "[tid:%i] Waiting for remaining requests. Completed: %d, "
+                "Total: %d\n",
+                tid, cache_req.completedPackets, cache_req.packets.size());
 
         bool waitingOnRetry = false;
-        for (const auto status : threads[tid].cacheReq.requestStatus) {
+        for (const auto status : cache_req.requestStatus) {
             if (status == CacheWaitRetry) {
                 waitingOnRetry = true;
                 break;
@@ -965,7 +978,7 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
             const ThreadID queuedTid =
                 cpu->contextToThread(queuedPkt->req->contextId());
             const bool sameThreadRetry = queuedTid == tid &&
-                threads[tid].cacheReq.findRequestIndex(queuedPkt->req) != SIZE_MAX;
+                cache_req.findRequestIndex(queuedPkt->req) != SIZE_MAX;
 
             if (sameThreadRetry && icachePort.sendTimingReq(queuedPkt)) {
                 DPRINTF(Fetch,
@@ -982,38 +995,75 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
             }
         }
 
-        return false;  // Return false to indicate we're still waiting
+        return false;
     }
 
-    // All packets have arrived - merge them directly into fetchBuffer
-    DPRINTF(Fetch, "[tid:%i] All packets arrived, merging data into fetchBuffer.\n", tid);
+    DPRINTF(Fetch,
+            "[tid:%i] All fetch requests resolved, merging available data.\n",
+            tid);
 
-    // Find the packets by request number
-    PacketPtr firstPkt = nullptr;
-    PacketPtr secondPkt = nullptr;
+    unsigned valid_size = 0;
+    for (size_t i = 0; i < cache_req.requests.size(); ++i) {
+        const auto &req = cache_req.requests[i];
+        const auto status = cache_req.requestStatus[i];
+        if (status == DeferredFault) {
+            break;
+        }
 
-    for (size_t i = 0; i < threads[tid].cacheReq.packets.size(); i++) {
-        if (threads[tid].cacheReq.requests[i]->getReqNum() == 1) {
-            firstPkt = threads[tid].cacheReq.packets[i];
-        } else if (threads[tid].cacheReq.requests[i]->getReqNum() == 2) {
-            secondPkt = threads[tid].cacheReq.packets[i];
+        assert(status == AccessComplete);
+        PacketPtr completed_pkt = cache_req.packets[i];
+        assert(completed_pkt);
+        assert(req->getVaddr() == cache_req.baseAddr + valid_size);
+        memcpy(buffer.data + valid_size,
+               completed_pkt->getConstPtr<uint8_t>(),
+               completed_pkt->getSize());
+        valid_size += completed_pkt->getSize();
+    }
+
+    buffer.validSize = valid_size;
+    buffer.usedForTwoFetch = false;
+    buffer.valid = valid_size != 0;
+
+    for (auto &completed_pkt : cache_req.packets) {
+        if (completed_pkt) {
+            delete completed_pkt;
+            completed_pkt = nullptr;
         }
     }
 
-    assert(firstPkt && secondPkt);
-
-    // Copy merged data directly into fetchBuffer
-    memcpy(threads[tid].data, firstPkt->getConstPtr<uint8_t>(), firstPkt->getSize());
-    memcpy(threads[tid].data + firstPkt->getSize(), secondPkt->getConstPtr<uint8_t>(), secondPkt->getSize());
-    threads[tid].usedForTwoFetch = false;
-    threads[tid].valid = true;
-
-    // Clean up the packets
-    delete firstPkt;
-    delete secondPkt;
-
-    DPRINTF(Fetch, "[tid:%i] Dual cacheline fetch completion processed successfully.\n", tid);
+    DPRINTF(Fetch,
+            "[tid:%i] Fetch completion produced %u contiguous bytes%s.\n",
+            tid, valid_size,
+            cache_req.hasDeferredFault() ? " with a deferred fault" : "");
     return true;
+}
+
+void
+Fetch::completeCacheLineFetch(ThreadID tid)
+{
+    DPRINTF(Fetch, "[tid:%i] Fetch data is ready for decode.\n", tid);
+
+    assert(!cpu->switchedOut());
+
+    if (isTraceMode()) {
+        DPRINTF(TraceReader,
+                "[TRACE] Icache completion: keep timing only; no trace "
+                "bytes injection\n");
+    }
+
+    if (threads[tid].valid && dbpbtb->ftqHasFetching(tid)) {
+        const auto prediction = dbpbtb->ftqFetchBlock(tid);
+        if (threads[tid].startPC != prediction.startPC) {
+            panic("fetchBufferPC %#x should be aligned with FSQ startPC %#x",
+                  threads[tid].startPC, prediction.startPC);
+        }
+    }
+
+    cpu->wakeCPU();
+    DPRINTF(Activity, "[tid:%i] Activating fetch due to cache completion\n",
+            tid);
+    switchToActive();
+    setThreadStatus(tid, Running);
 }
 
 void
@@ -1037,37 +1087,7 @@ Fetch::processCacheCompletion(PacketPtr pkt)
         return;
     }
 
-    // Data has been merged into fetchBuffer, we can proceed
-    DPRINTF(Fetch, "[tid:%i] All misaligned packets received and merged.\n", tid);
-
-    assert(!cpu->switchedOut());
-
-    // Trace 按需消费：不在 icache 完成时写入 trace 指令码，避免批量消费。
-    if (isTraceMode()) {
-        DPRINTF(TraceReader,
-                "[TRACE] Icache completion: keep timing only; no trace bytes injection\n");
-    }
-
-    // Verify fetchBufferPC alignment with the supplying FSQ entry.
-    if (threads[tid].valid && dbpbtb->ftqHasFetching(tid)) {
-        const auto prediction = dbpbtb->ftqFetchBlock(tid);
-        if (threads[tid].startPC != prediction.startPC) {
-            panic("fetchBufferPC %#x should be aligned with FSQ startPC %#x",
-                  threads[tid].startPC, prediction.startPC);
-        }
-    }
-
-    // Wake up the CPU (if it went to sleep and was waiting on
-    // this completion event).
-    cpu->wakeCPU();
-
-    DPRINTF(Activity, "[tid:%i] Activating fetch due to cache completion\n",
-            tid);
-
-    switchToActive();
-
-    // Transition from WaitingCache back to Running when cache access completes
-    setThreadStatus(tid, Running);
+    completeCacheLineFetch(tid);
 }
 
 void
@@ -1382,6 +1402,7 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
 
     threads[tid].startPC = fetchPC;
     threads[tid].valid = false;
+    threads[tid].validSize = 0;
     DPRINTF(Fetch, "Fetch: Doing instruction read.\n");
 
     fetchStats.cacheLines++;
@@ -1426,6 +1447,54 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
 {
     DPRINTF(FetchFault, "fault, mem_req.addr=%#lx\n", mem_req->getVaddr());
 
+    auto &buffer = threads[tid];
+    auto &cache_req = buffer.cacheReq;
+    const size_t req_index = cache_req.findRequestIndex(mem_req);
+
+    // A later cache-line request covers bytes beyond the instruction that
+    // initiated this fetch. Keep its translation fault dormant until decode
+    // actually reaches an instruction that needs those bytes.
+    if (req_index != SIZE_MAX && req_index > 0) {
+        DPRINTF(FetchFault,
+                "[tid:%i] Deferring fetch fault at %#lx; current fetch "
+                "starts at %#lx\n",
+                tid, mem_req->getVaddr(), cache_req.baseAddr);
+        cache_req.deferFault(mem_req, fault);
+        if (processMultiCacheLineCompletion(tid, nullptr)) {
+            completeCacheLineFetch(tid);
+        }
+        return;
+    }
+
+    materializeTranslationFault(tid, mem_req, fault);
+}
+
+void
+Fetch::retryTranslationFault(const Fault &fault,
+                             const RequestPtr &mem_req)
+{
+    const ThreadID tid = cpu->contextToThread(mem_req->contextId());
+    materializeTranslationFault(tid, mem_req, fault);
+}
+
+void
+Fetch::materializeTranslationFault(ThreadID tid,
+                                   const RequestPtr &mem_req,
+                                   const Fault &fault)
+{
+    auto &cache_req = threads[tid].cacheReq;
+    if (cache_req.findRequestIndex(mem_req) == SIZE_MAX) {
+        DPRINTF(FetchFault,
+                "[tid:%i] Ignoring stale deferred fetch fault at %#lx.\n",
+                tid, mem_req->getVaddr());
+        ++fetchStats.tlbSquashes;
+        return;
+    }
+
+    DPRINTF(FetchFault,
+            "[tid:%i] Materializing fetch fault at %#lx for PC %#lx\n",
+            tid, mem_req->getVaddr(), threads[tid].fetchpc->instAddr());
+
     // Don't send an instruction to decode if we can't handle it.
     if (!(numInst < fetchWidth) || !(fetchQueue[tid].size() < fetchQueueSize)) {
         auto &finish_event = *finishTranslationEvents[tid];
@@ -1443,14 +1512,19 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
         return;
     }
 
+    // Deferred faults are stored inside cacheReq. Copy both shared pointers
+    // before reset() clears their owning fields.
+    const Fault fault_to_commit = fault;
+    const RequestPtr fault_req = mem_req;
+
     DPRINTF(Fetch, "[tid:%i] Got back req with addr %#x but expected base addr %#x\n",
-            tid, mem_req->getVaddr(), threads[tid].cacheReq.baseAddr);
+            tid, fault_req->getVaddr(), cache_req.baseAddr);
 
     // Update new cache request status system
-    updateCacheRequestStatusByRequest(tid, mem_req, AccessFailed);
+    updateCacheRequestStatusByRequest(tid, fault_req, AccessFailed);
 
     // Translation faulted, icache request won't be sent.
-    threads[tid].cacheReq.reset();
+    cache_req.reset();
 
     // Send the fault to commit.  This thread will not do anything
     // until commit handles the fault.  The only other way it can
@@ -1465,7 +1539,7 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
     instruction->setNotAnInst();
 
     instruction->setPredTarg(fetch_pc);
-    instruction->fault = fault;
+    instruction->fault = fault_to_commit;
     std::unique_ptr<PCStateBase> next_pc(fetch_pc.clone());
     instruction->staticInst->advancePC(*next_pc);
     set(instruction->predPC, next_pc);
@@ -1480,7 +1554,7 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
 
     DPRINTF(Fetch, "[tid:%i] Blocked, need to handle the trap.\n", tid);
     DPRINTF(Fetch, "[tid:%i] fault (%s) detected @ PC %s.\n",
-            tid, fault->name(), *threads[tid].fetchpc);
+            tid, fault_to_commit->name(), *threads[tid].fetchpc);
 }
 
 void
@@ -3400,26 +3474,64 @@ Fetch::checkMemoryNeeds(ThreadID tid, PCStateBase &this_pc,
     }
 
     Addr fetch_pc = this_pc.instAddr();
+    auto &buffer = threads[tid];
+    auto &cache_req = buffer.cacheReq;
 
     // Check if fetch buffer is valid and contains this PC
-    if (!threads[tid].valid) {
+    if (!buffer.valid) {
         DPRINTF(Fetch, "[tid:%i] Fetch buffer invalid, stalling on ICache\n", tid);
         return StallReason::IcacheStall;
     }
 
-    // Check if the fetch buffer contains enough bytes for this instruction
-    // We need at least 4 bytes to decode any RISC-V instruction (including compressed)
-    if (fetch_pc < threads[tid].startPC ||
-        fetch_pc + 4 > threads[tid].startPC + fetchBufferSize) {
+    const Addr valid_end = buffer.startPC + buffer.validSize;
+    if (fetch_pc < buffer.startPC || fetch_pc >= valid_end) {
+        if (cache_req.hasDeferredFault() &&
+            fetch_pc >= cache_req.deferredFaultAddr) {
+            materializeTranslationFault(tid, cache_req.deferredFaultReq,
+                                        cache_req.deferredFault);
+            return StallReason::TrapStall;
+        }
         DPRINTF(Fetch, "[tid:%i] PC %#x outside fetch buffer range [%#x, %#x), stalling on ICache\n",
-                tid, fetch_pc, threads[tid].startPC, threads[tid].startPC + fetchBufferSize);
+                tid, fetch_pc, buffer.startPC, valid_end);
         return StallReason::IcacheStall;
     }
 
-    // Supply bytes to decoder - always provide 4 bytes for RISC-V
     auto *dec_ptr = decoder[tid];
-    Addr offset_in_buffer = fetch_pc - threads[tid].startPC;
-    memcpy(dec_ptr->moreBytesPtr(), threads[tid].data + offset_in_buffer, 4);
+    Addr offset_in_buffer = fetch_pc - buffer.startPC;
+    const unsigned available = valid_end - fetch_pc;
+
+    if (available < sizeof(RiscvISA::MachInst)) {
+        if (available >= sizeof(uint16_t)) {
+            uint16_t first_half = 0;
+            memcpy(&first_half, buffer.data + offset_in_buffer,
+                   sizeof(first_half));
+            if ((letoh(first_half) & 0x3) != 0x3) {
+                RiscvISA::MachInst padded_inst = 0;
+                memcpy(&padded_inst, buffer.data + offset_in_buffer,
+                       sizeof(first_half));
+                memcpy(dec_ptr->moreBytesPtr(), &padded_inst,
+                       sizeof(padded_inst));
+                decoder[tid]->moreBytes(this_pc, fetch_pc);
+                return StallReason::NoStall;
+            }
+        }
+
+        if (cache_req.hasDeferredFault() &&
+            fetch_pc + sizeof(RiscvISA::MachInst) >
+                cache_req.deferredFaultAddr) {
+            materializeTranslationFault(tid, cache_req.deferredFaultReq,
+                                        cache_req.deferredFault);
+            return StallReason::TrapStall;
+        }
+
+        DPRINTF(Fetch,
+                "[tid:%i] Only %u instruction bytes available at PC %#x.\n",
+                tid, available, fetch_pc);
+        return StallReason::IcacheStall;
+    }
+
+    memcpy(dec_ptr->moreBytesPtr(), buffer.data + offset_in_buffer,
+           sizeof(RiscvISA::MachInst));
 
     DPRINTF(Fetch, "[tid:%i] Supplying 4 bytes from fetchBuffer at PC %#x (offset %d)\n",
             tid, fetch_pc, offset_in_buffer);
