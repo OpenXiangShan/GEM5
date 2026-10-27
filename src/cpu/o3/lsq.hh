@@ -571,6 +571,15 @@ class LSQ
                  !flags.isSet(Flag::WritebackDone));
         }
 
+        unsigned
+        outstandingStateMask() const
+        {
+            return (numInTranslationFragments > 0 ? 1u : 0u) |
+                (_numOutstandingPackets > 0 ? 2u : 0u) |
+                (flags.isSet(Flag::WritebackScheduled) &&
+                 !flags.isSet(Flag::WritebackDone) ? 4u : 0u);
+        }
+
         /**
          * Test if the LSQRequest has been released, i.e. self-owned.
          * An LSQRequest manages itself when the resources on the LSQ are freed
@@ -987,7 +996,18 @@ class LSQ
     /** Returns the total number of loads for a single thread. */
     int numLoads(ThreadID tid) const;
 
-    int anyInflightLoadsNotComplete();
+    struct LoadStallSnapshot
+    {
+        unsigned depthMask = 0;
+        unsigned stateMask = 0;
+        unsigned requests = 0;
+        unsigned oldestDepth = 0;
+        unsigned oldestState = 0;
+        Addr oldestPC = 0;
+        InstSeqNum oldestSeq = 0;
+    };
+
+    int anyInflightLoadsNotComplete(LoadStallSnapshot *snapshot = nullptr);
 
     bool anyStoreNotExecute();
 

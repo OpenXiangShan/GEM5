@@ -65,7 +65,8 @@ SDBPCore::SDBPCore(const Config &config) : cfg(config)
             throw std::invalid_argument(message);
     };
     require(powerOfTwo(cfg.numSets) && cfg.numSets >= 4, "num_sets must be a power of two >= 4");
-    require(cfg.samplerNum >= 2 && cfg.samplerNum <= cfg.numSets / 2, "sampler_num must be in [2, num_sets/2]");
+    require(powerOfTwo(cfg.samplerNum) && cfg.samplerNum >= 2 && cfg.samplerNum <= cfg.numSets,
+            "sampler_num must be a power of two in [2, num_sets]");
     require(cfg.samplerAssoc >= 1, "sampler_assoc must be positive");
     require(cfg.predictorTables >= 1 && cfg.predictorTables <= 32, "predictor_tables must be in [1, 32]");
     require(powerOfTwo(cfg.predictorEntries) && cfg.predictorEntries >= 2,
@@ -95,14 +96,9 @@ SDBPCore::SDBPCore(const Config &config) : cfg(config)
     unsigned set_bits = 0;
     for (unsigned sets = cfg.numSets; sets > 1; sets >>= 1)
         ++set_bits;
-    auto distance = [&](unsigned h) {
-        const int64_t difference = (int64_t(1) << h) - int64_t(cfg.samplerNum);
-        return difference < 0 ? -difference : difference;
-    };
-    for (unsigned h = 2; h < set_bits; ++h) {
-        if (distance(h) < distance(halfSetBits))
-            halfSetBits = h;
-    }
+    halfSetBits = 0;
+    for (unsigned sets = cfg.samplerNum; sets > 1; sets >>= 1)
+        ++halfSetBits;
     matchBits = set_bits - halfSetBits;
     tables.assign(cfg.predictorTables, std::vector<uint8_t>(cfg.predictorEntries, 0));
     sampler.assign(samplerSets(), std::vector<Entry>(cfg.samplerAssoc));
@@ -182,7 +178,8 @@ SDBPCore::train(uint64_t signature, bool dead)
 }
 
 SDBPCore::AccessResult
-SDBPCore::access(unsigned set, uint64_t tag, bool secure, uint64_t pc)
+SDBPCore::access(unsigned set, uint64_t tag, RequestType type,
+                 bool has_pc, uint64_t pc)
 {
     AccessResult result;
     const int sample = sampleIndex(set);
@@ -193,7 +190,7 @@ SDBPCore::access(unsigned set, uint64_t tag, bool secure, uint64_t pc)
     tag &= mask(cfg.partialTagBits);
     Entry *selected = nullptr;
     for (auto &entry : entries) {
-        if (entry.valid && entry.tag == tag && entry.secure == secure) {
+        if (entry.valid && entry.tag == tag) {
             selected = &entry;
             result.hit = true;
             break;
@@ -223,14 +220,29 @@ SDBPCore::access(unsigned set, uint64_t tag, bool secure, uint64_t pc)
 
     if (selected->valid) {
         result.previousDead = selected->dead;
+        result.previousSignatureValid = selected->signatureValid;
         result.previousSignature = selected->signature;
-        train(selected->signature, !result.hit);
+        if (selected->signatureValid) {
+            if (result.hit && type == RequestType::Demand)
+                train(selected->signature, false);
+            else if (!result.hit)
+                train(selected->signature, true);
+        }
     }
+
+    // A prefetch hit is deliberately invisible to sampler metadata and LRU.
+    if (result.hit && type == RequestType::Prefetch)
+        return result;
+
     selected->valid = true;
     selected->tag = tag;
-    selected->secure = secure;
-    selected->signature = signature(pc);
-    selected->dead = predict(selected->signature);
+    selected->signatureValid = type == RequestType::Demand && has_pc;
+    if (selected->signatureValid) {
+        selected->signature = signature(pc);
+        selected->dead = predict(selected->signature);
+    } else {
+        selected->dead = false;
+    }
     selected->lastUse = ++sequence;
     return result;
 }

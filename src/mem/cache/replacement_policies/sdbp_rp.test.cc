@@ -69,7 +69,7 @@ TEST_F(SDBPInterface, ResetDoesNotTrainAndResponsePcPredicts)
     SDBP policy(params);
     auto demand = packet();
     for (unsigned tag = 0; tag < 8; ++tag)
-        policy.observe(demand.get(), 0, tag, false);
+        policy.observeFill(demand.get(), 0, tag);
     EXPECT_EQ(stat(policy, "deadTraining"), 6);
     auto data = policy.instantiateEntry();
     auto response = packet(MemCmd::ReadResp);
@@ -81,7 +81,7 @@ TEST_F(SDBPInterface, ResetDoesNotTrainAndResponsePcPredicts)
     EXPECT_EQ(stat(policy, "deadHits"), 1);
 }
 
-TEST_F(SDBPInterface, FiltersPrefetchWritebackEvictionAndMissingPc)
+TEST_F(SDBPInterface, FiltersPrefetchRequestsWritebackEvictionAndMissingPc)
 {
     auto params = testParams(true, 0);
     SDBP policy(params);
@@ -89,24 +89,38 @@ TEST_F(SDBPInterface, FiltersPrefetchWritebackEvictionAndMissingPc)
     for (auto cmd : {MemCmd::HardPFReq, MemCmd::SoftPFReq, MemCmd::HardPFResp, MemCmd::WritebackDirty,
                      MemCmd::WritebackClean, MemCmd::CleanEvict, MemCmd::WriteClean}) {
         auto excluded = packet(cmd);
-        policy.observe(excluded.get(), 0, 1, false);
-        policy.reset(data, excluded.get());
-    }
-    // Prefetches may reach lower caches as ordinary reads. The Request flag
-    // must exclude both the request and its response even with a valid PC.
-    for (auto cmd : {MemCmd::ReadReq, MemCmd::ReadResp}) {
-        auto excluded = packet(cmd);
-        excluded->req->setFlags(Request::PREFETCH);
-        policy.observe(excluded.get(), 0, 1, false);
+        policy.observe(excluded.get(), 0, 1, true);
         policy.reset(data, excluded.get());
     }
     auto missing = packet(MemCmd::ReadReq, false);
-    policy.observe(missing.get(), 0, 2, false);
+    policy.observeFill(missing.get(), 0, 2);
     policy.reset(data, missing.get());
-    EXPECT_EQ(stat(policy, "samplerAccesses"), 0);
-    EXPECT_EQ(stat(policy, "predictionQueries"), 0);
-    EXPECT_EQ(stat(policy, "excludedAccesses"), 9);
+    EXPECT_EQ(stat(policy, "samplerAccesses"), 4);
+    // An unflagged HardPFResp is treated as a demand response by isDemand.
+    EXPECT_EQ(stat(policy, "predictionQueries"), 1);
+    EXPECT_EQ(stat(policy, "excludedAccesses"), 4);
     EXPECT_EQ(stat(policy, "noPcAccesses"), 1);
+}
+
+TEST_F(SDBPInterface, TrainsAndPredictsForwardedPrefetchMisses)
+{
+    SDBP policy(testParams(true, 0));
+    auto data = policy.instantiateEntry();
+    unsigned tag = 0;
+    for (auto flag : {Request::PREFETCH, Request::PF_EXCLUSIVE}) {
+        for (auto cmd : {MemCmd::ReadReq, MemCmd::ReadSharedReq, MemCmd::ReadCleanReq,
+                         MemCmd::ReadExReq, MemCmd::ReadResp}) {
+            auto forwarded = packet(cmd);
+            forwarded->req->setFlags(flag);
+            policy.observeFill(forwarded.get(), 0, ++tag);
+            policy.reset(data, forwarded.get());
+        }
+    }
+    EXPECT_EQ(stat(policy, "samplerAccesses"), 10);
+    EXPECT_EQ(stat(policy, "deadTraining"), 8);
+    EXPECT_EQ(stat(policy, "predictionQueries"), 0);
+    EXPECT_EQ(stat(policy, "deadPredictions"), 0);
+    EXPECT_EQ(stat(policy, "excludedAccesses"), 0);
 }
 
 TEST_F(SDBPInterface, InvalidThenDeadThenLruAndPacketlessFallback)
@@ -144,6 +158,21 @@ TEST_F(SDBPInterface, DeadVictimCanOverrideLru)
     EXPECT_EQ(stat(policy, "deadVictims"), 1);
     EXPECT_EQ(stat(policy, "nonLruDeadVictims"), 1);
     EXPECT_EQ(stat(policy, "lruVictims"), 0);
+    EXPECT_EQ(SDBP::victimClass(a.replacementData), 2);
+    EXPECT_EQ(SDBP::victimClass(b.replacementData), 1);
+    // The diagnostic snapshot must precede invalidation.
+    const unsigned snapshot = SDBP::victimClass(a.replacementData);
+    policy.invalidate(a.replacementData);
+    EXPECT_EQ(snapshot, 2);
+    EXPECT_EQ(SDBP::victimClass(a.replacementData), 1);
+
+    demand->replacementVictimClass = snapshot + 1;
+    demand->replacementProbe = true;
+    demand->replacementProbeMask = 7;
+    Packet snoop(demand.get(), true, false);
+    EXPECT_EQ(snoop.replacementVictimClass, 0);
+    EXPECT_FALSE(snoop.replacementProbe);
+    EXPECT_EQ(snoop.replacementProbeMask, 0);
 }
 
 TEST_F(SDBPInterface, BypassOnlyFullSetsWithEligiblePc)
@@ -164,9 +193,11 @@ TEST_F(SDBPInterface, BypassOnlyFullSetsWithEligiblePc)
     auto missing = packet(MemCmd::ReadReq, false);
     EXPECT_NE(policy.getVictim(candidates, missing.get()), nullptr);
     auto prefetch = packet(MemCmd::HardPFResp);
+    EXPECT_EQ(policy.getVictim(candidates, prefetch.get()), nullptr);
+    prefetch->req->setFlags(Request::PREFETCH);
     EXPECT_NE(policy.getVictim(candidates, prefetch.get()), nullptr);
     EXPECT_NE(policy.getVictim(candidates), nullptr);
-    EXPECT_EQ(stat(policy, "bypasses"), 2);
+    EXPECT_EQ(stat(policy, "bypasses"), 3);
 }
 
 TEST_F(SDBPInterface, InvalidationDoesNotForgetIndependentSampler)
@@ -175,10 +206,10 @@ TEST_F(SDBPInterface, InvalidationDoesNotForgetIndependentSampler)
     SDBP policy(params);
     auto demand = packet();
     auto data = policy.instantiateEntry();
-    policy.observe(demand.get(), 0, 1, false);
+    policy.observeFill(demand.get(), 0, 1);
     policy.reset(data, demand.get());
     policy.invalidate(data);
-    policy.observe(demand.get(), 0, 1, false);
+    policy.observe(demand.get(), 0, 1, true);
     EXPECT_EQ(stat(policy, "samplerHits"), 1);
     EXPECT_EQ(stat(policy, "liveTraining"), 1);
     EXPECT_EQ(stat(policy, "deadTraining"), 0);

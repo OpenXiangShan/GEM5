@@ -391,11 +391,16 @@ class Packet : public Printable
 
     bool retriedPkt = false;
 
+    // Transient refill metadata: a prefetch MSHR was upgraded by a demand.
+    bool samplerDemand = false;
+
   public:
     typedef MemCmd::Command Command;
 
     /// The command field of the packet.
     MemCmd cmd;
+    void setSamplerDemand() { samplerDemand = true; }
+    bool isSamplerDemand() const { return samplerDemand; }
     /// The tick when the packet is sent
     Tick sendTick = 0;
 
@@ -573,6 +578,14 @@ class Packet : public Printable
     SenderState *senderState;
 
     o3::LSQ *lsqPtr = nullptr;
+
+    // Local replacement diagnostic, consumed by the evicting cache only.
+    // Packet copies deliberately start untagged (including snoop copies).
+    // 0: untagged; 1: other policy; 2: SDBP live; 3: SDBP dead.
+    uint8_t replacementVictimClass = 0;
+    bool replacementProbe = false;
+    // OR of observations on the existing snoop: resident=1, MSHR=2, WB=4.
+    uint8_t replacementProbeMask = 0;
 
     /**
      * Push a new sender state to the packet and make the current

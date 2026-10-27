@@ -26,6 +26,7 @@ class SDBP : public Base
     void startup() override;
     void bindCache(unsigned num_sets);
     void observe(const PacketPtr pkt, unsigned set, Addr tag, bool hit);
+    void observeFill(const PacketPtr pkt, unsigned set, Addr tag);
 
     void invalidate(const std::shared_ptr<ReplacementData> &data) override;
     void touch(const std::shared_ptr<ReplacementData> &data, const PacketPtr pkt) override;
@@ -36,6 +37,13 @@ class SDBP : public Base
     ReplaceableEntry *getVictim(const ReplacementCandidates &candidates, const PacketPtr pkt) const;
     std::shared_ptr<ReplacementData> instantiateEntry() override;
 
+    // Diagnostic for SDBP metadata only: 1 for live, 2 for dead.
+    static unsigned victimClass(const std::shared_ptr<ReplacementData> &data)
+    {
+        const auto entry = std::static_pointer_cast<SDBPReplData>(data);
+        return entry->dead ? 2 : 1;
+    }
+
   private:
     struct SDBPReplData : ReplacementData
     {
@@ -45,6 +53,9 @@ class SDBP : public Base
     };
 
     static bool eligible(const PacketPtr pkt);
+    static bool isPrefetch(const PacketPtr pkt);
+    static bool isDemand(const PacketPtr pkt);
+    static bool hasPc(const PacketPtr pkt);
     bool predict(const PacketPtr pkt) const;
     SDBPCore core;
     const bool enableBypass;

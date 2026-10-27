@@ -203,7 +203,23 @@ Cache::doWritebacks(PacketList& writebacks, Tick forward_time)
 
         // Call isCachedAbove for Writebacks, CleanEvicts and
         // WriteCleans to discover if the block is cached above.
-        if (isCachedAbove(wbPkt)) {
+        const bool cached_above = isCachedAbove(wbPkt);
+        if (wbPkt->replacementVictimClass) {
+            assert(wbPkt->replacementVictimClass <= 3);
+            const unsigned state = forwardSnoops ? unsigned(cached_above) : 2;
+            ++stats.replacementUpperPresence[
+                (wbPkt->replacementVictimClass - 1) * 3 + state];
+            if (forwardSnoops) {
+                assert(cached_above == bool(wbPkt->replacementProbeMask));
+                ++stats.replacementUpperSourceMask[
+                    (wbPkt->replacementVictimClass - 1) * 8 +
+                    wbPkt->replacementProbeMask];
+            }
+            wbPkt->replacementVictimClass = 0;
+            wbPkt->replacementProbe = false;
+            wbPkt->replacementProbeMask = 0;
+        }
+        if (cached_above) {
             if (wbPkt->cmd == MemCmd::CleanEvict) {
                 // Delete CleanEvict because cached copies exist above. The
                 // packet destructor will delete the request object because
@@ -243,7 +259,23 @@ Cache::doWritebacksAtomic(PacketList& writebacks)
         // Call isCachedAbove for both Writebacks and CleanEvicts. If
         // isCachedAbove returns true we set BLOCK_CACHED flag in Writebacks
         // and discard CleanEvicts.
-        if (isCachedAbove(wbPkt, false)) {
+        const bool cached_above = isCachedAbove(wbPkt, false);
+        if (wbPkt->replacementVictimClass) {
+            assert(wbPkt->replacementVictimClass <= 3);
+            const unsigned state = forwardSnoops ? unsigned(cached_above) : 2;
+            ++stats.replacementUpperPresence[
+                (wbPkt->replacementVictimClass - 1) * 3 + state];
+            if (forwardSnoops) {
+                assert(cached_above == bool(wbPkt->replacementProbeMask));
+                ++stats.replacementUpperSourceMask[
+                    (wbPkt->replacementVictimClass - 1) * 8 +
+                    wbPkt->replacementProbeMask];
+            }
+            wbPkt->replacementVictimClass = 0;
+            wbPkt->replacementProbe = false;
+            wbPkt->replacementProbeMask = 0;
+        }
+        if (cached_above) {
             if (wbPkt->cmd == MemCmd::WritebackDirty ||
                 wbPkt->cmd == MemCmd::WriteClean) {
                 // Set BLOCK_CACHED flag in Writeback and send below,
@@ -1201,11 +1233,13 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
             // the pointer along in case of static data), in case
             // there is a snoop hit in upper levels
             Packet snoopPkt(pkt, true, true);
+            snoopPkt.replacementProbe = pkt->replacementProbe;
             snoopPkt.setExpressSnoop();
             // the snoop packet does not need to wait any additional
             // time
             snoopPkt.headerDelay = snoopPkt.payloadDelay = 0;
             cpuSidePort.sendTimingSnoopReq(&snoopPkt);
+            pkt->replacementProbeMask |= snoopPkt.replacementProbeMask;
 
             // add the header delay (including crossbar and snoop
             // delays) of the upward snoop to the snoop delay for this
@@ -1415,6 +1449,9 @@ Cache::recvTimingSnoopReq(PacketPtr pkt)
 
     bool is_secure = pkt->isSecure();
     CacheBlk *blk = tags->findBlock(pkt->getAddr(), is_secure);
+    if (pkt->replacementProbe && blk && blk->isValid()) {
+        pkt->replacementProbeMask |= 1;
+    }
 
     Addr blk_addr = pkt->getBlockAddr(blkSize);
     MSHR *mshr = mshrQueue.findMatch(blk_addr, is_secure);
@@ -1430,6 +1467,9 @@ Cache::recvTimingSnoopReq(PacketPtr pkt)
     // Inform request(Prefetch, CleanEvict or Writeback) from below of
     // MSHR hit, set setBlockCached.
     if (mshr && pkt->mustCheckAbove()) {
+        if (pkt->replacementProbe) {
+            pkt->replacementProbeMask |= 2;
+        }
         DPRINTF(Cache, "Setting block cached for %s from lower cache on "
                 "mshr hit\n", pkt->print());
         pkt->setBlockCached();
@@ -1463,6 +1503,9 @@ Cache::recvTimingSnoopReq(PacketPtr pkt)
         assert(wb_pkt->isEviction() || wb_pkt->cmd == MemCmd::WriteClean);
 
         if (pkt->isEviction()) {
+            if (pkt->replacementProbe) {
+                pkt->replacementProbeMask |= 4;
+            }
             // if the block is found in the write queue, set the BLOCK_CACHED
             // flag for Writeback/CleanEvict snoop. On return the snoop will
             // propagate the BLOCK_CACHED flag in Writeback packets and prevent
@@ -1532,6 +1575,9 @@ Cache::recvAtomicSnoop(PacketPtr pkt)
     }
 
     CacheBlk *blk = tags->findBlock(pkt->getAddr(), pkt->isSecure());
+    if (pkt->replacementProbe && blk && blk->isValid()) {
+        pkt->replacementProbeMask |= 1;
+    }
     uint32_t snoop_delay = handleSnoop(pkt, blk, false, false, false, nullptr);
     return snoop_delay + lookupLatency * clockPeriod();
 }
@@ -1548,6 +1594,7 @@ Cache::isCachedAbove(PacketPtr pkt, bool is_timing)
     // of the block.
     if (is_timing) {
         Packet snoop_pkt(pkt, true, false);
+        snoop_pkt.replacementProbe = pkt->replacementVictimClass != 0;
         snoop_pkt.setExpressSnoop();
         // Assert that packet is either Writeback or CleanEvict and not a
         // prefetch request because prefetch requests need an MSHR and may
@@ -1555,10 +1602,12 @@ Cache::isCachedAbove(PacketPtr pkt, bool is_timing)
         assert(pkt->isEviction() || pkt->cmd == MemCmd::WriteClean);
         snoop_pkt.senderState = nullptr;
         cpuSidePort.sendTimingSnoopReq(&snoop_pkt);
+        pkt->replacementProbeMask = snoop_pkt.replacementProbeMask;
         // Writeback/CleanEvict snoops do not generate a snoop response.
         assert(!(snoop_pkt.cacheResponding()));
         return snoop_pkt.isBlockCached();
     } else {
+        pkt->replacementProbe = pkt->replacementVictimClass != 0;
         cpuSidePort.sendAtomicSnoop(pkt);
         return pkt->isBlockCached();
     }

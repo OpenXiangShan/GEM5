@@ -77,10 +77,33 @@ SDBP::startup()
 bool
 SDBP::eligible(const PacketPtr pkt)
 {
-    // Read responses retain the original Request but are not isDemand().
-    return pkt && pkt->req && pkt->req->hasPC() && !pkt->req->isPrefetch() && !pkt->cmd.isPrefetch() &&
-           !pkt->isEviction() && pkt->cmd != MemCmd::WriteClean &&
-           (pkt->isDemand() || (pkt->isResponse() && (pkt->isRead() || pkt->isWrite())));
+    return isDemand(pkt) || isPrefetch(pkt);
+}
+
+bool
+SDBP::isPrefetch(const PacketPtr pkt)
+{
+    if (pkt && pkt->isSamplerDemand())
+        return false;
+    return pkt && pkt->req && !pkt->isEviction() &&
+           pkt->cmd != MemCmd::WriteClean &&
+           (pkt->req->isPrefetch() ||
+            (pkt->cmd.isPrefetch() && !pkt->isResponse()));
+}
+
+bool
+SDBP::isDemand(const PacketPtr pkt)
+{
+    return pkt && pkt->req && !pkt->isEviction() &&
+           pkt->cmd != MemCmd::WriteClean && !isPrefetch(pkt) &&
+           (pkt->isDemand() ||
+            (pkt->isResponse() && (pkt->isRead() || pkt->isWrite())));
+}
+
+bool
+SDBP::hasPc(const PacketPtr pkt)
+{
+    return pkt && pkt->req && pkt->req->hasPC();
 }
 
 void
@@ -88,22 +111,69 @@ SDBP::observe(const PacketPtr pkt, unsigned set, Addr tag, bool hit)
 {
     ++stats.lookups;
     if (!eligible(pkt)) {
-        if (pkt->isDemand() && !pkt->req->hasPC())
+        if (isDemand(pkt) && !hasPc(pkt))
             ++stats.noPcAccesses;
         else
             ++stats.excludedAccesses;
         return;
     }
     ++stats.eligibleAccesses;
-    if (!hit)
+    if (isDemand(pkt) && !hasPc(pkt))
+        ++stats.noPcAccesses;
+    if (!hit) {
         ++stats.eligibleMisses;
-    const auto result = core.access(set, tag, pkt->isSecure(), pkt->req->getPC());
+        return;
+    }
+
+    const auto result = core.access(
+        set, tag, isPrefetch(pkt) ? SDBPCore::RequestType::Prefetch :
+                                    SDBPCore::RequestType::Demand,
+        hasPc(pkt), hasPc(pkt) ? pkt->req->getPC() : 0);
     if (!result.sampled)
         return;
     ++stats.samplerAccesses;
     if (result.hit) {
         ++stats.samplerHits;
-        ++stats.liveTraining;
+        if (result.previousSignatureValid && isDemand(pkt)) {
+            ++stats.liveTraining;
+        }
+        if (result.previousDead)
+            ++stats.samplerDeadHits;
+    }
+    DPRINTF(SDBP,
+            "sample addr=%#x pc=%#x set=%u tag=%#x cache_hit=1 "
+            "sampler_hit=%d evicted=%d old_sig=%#x old_dead=%d\n",
+            pkt->getAddr(), hasPc(pkt) ? pkt->req->getPC() : 0, set, tag,
+            result.hit, result.evicted, result.previousSignature,
+            result.previousDead);
+}
+
+void
+SDBP::observeFill(const PacketPtr pkt, unsigned set, Addr tag)
+{
+    ++stats.lookups;
+    if (!eligible(pkt)) {
+        if (isDemand(pkt) && !hasPc(pkt))
+            ++stats.noPcAccesses;
+        else
+            ++stats.excludedAccesses;
+        return;
+    }
+    ++stats.eligibleAccesses;
+    if (isDemand(pkt) && !hasPc(pkt))
+        ++stats.noPcAccesses;
+    ++stats.eligibleMisses;
+    const auto result = core.access(
+        set, tag, isPrefetch(pkt) ? SDBPCore::RequestType::Prefetch :
+                                    SDBPCore::RequestType::Demand,
+        hasPc(pkt), hasPc(pkt) ? pkt->req->getPC() : 0);
+    if (!result.sampled)
+        return;
+    ++stats.samplerAccesses;
+    if (result.hit) {
+        ++stats.samplerHits;
+        if (result.previousSignatureValid && isDemand(pkt))
+            ++stats.liveTraining;
         if (result.previousDead)
             ++stats.samplerDeadHits;
     } else if (result.evicted) {
@@ -114,15 +184,17 @@ SDBP::observe(const PacketPtr pkt, unsigned set, Addr tag, bool hit)
     }
     DPRINTF(SDBP,
             "sample addr=%#x pc=%#x set=%u tag=%#x cache_hit=%d "
+            "sample fill addr=%#x pc=%#x set=%u tag=%#x "
             "sampler_hit=%d evicted=%d old_sig=%#x old_dead=%d\n",
-            pkt->getAddr(), pkt->req->getPC(), set, tag, hit, result.hit, result.evicted, result.previousSignature,
+            pkt->getAddr(), hasPc(pkt) ? pkt->req->getPC() : 0, set, tag,
+            result.hit, result.evicted, result.previousSignature,
             result.previousDead);
 }
 
 bool
 SDBP::predict(const PacketPtr pkt) const
 {
-    if (!eligible(pkt))
+    if (!isDemand(pkt) || !hasPc(pkt))
         return false;
     ++stats.predictionQueries;
     const auto signature = core.signature(pkt->req->getPC());
@@ -147,10 +219,11 @@ void
 SDBP::touch(const std::shared_ptr<ReplacementData> &data, const PacketPtr pkt)
 {
     auto &entry = *std::static_pointer_cast<SDBPReplData>(data);
-    if (entry.dead && eligible(pkt))
+    if (entry.dead && isDemand(pkt) && hasPc(pkt))
         ++stats.deadHits;
     entry.lastUse = ++sequence;
-    entry.dead = predict(pkt);
+    if (isDemand(pkt))
+        entry.dead = predict(pkt);
 }
 
 void
@@ -165,7 +238,8 @@ void
 SDBP::reset(const std::shared_ptr<ReplacementData> &data, const PacketPtr pkt)
 {
     reset(data);
-    std::static_pointer_cast<SDBPReplData>(data)->dead = predict(pkt);
+    std::static_pointer_cast<SDBPReplData>(data)->dead =
+        isDemand(pkt) ? predict(pkt) : false;
     ++stats.fills;
 }
 

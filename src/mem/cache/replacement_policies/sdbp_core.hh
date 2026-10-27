@@ -44,7 +44,14 @@ class SDBPCore
         bool hit = false;
         bool evicted = false;
         bool previousDead = false;
+        bool previousSignatureValid = false;
         uint64_t previousSignature = 0;
+    };
+
+    enum class RequestType
+    {
+        Demand,
+        Prefetch
     };
 
     explicit SDBPCore(const Config &config);
@@ -58,7 +65,12 @@ class SDBPCore
     unsigned confidence(uint64_t signature) const;
     bool predict(uint64_t signature) const;
     void train(uint64_t signature, bool dead);
-    AccessResult access(unsigned set, uint64_t tag, bool secure, uint64_t pc);
+    AccessResult access(unsigned set, uint64_t tag, RequestType type,
+                        bool has_pc, uint64_t pc);
+    AccessResult access(unsigned set, uint64_t tag, uint64_t pc)
+    {
+        return access(set, tag, RequestType::Demand, true, pc);
+    }
 
   private:
     struct Entry
@@ -67,7 +79,7 @@ class SDBPCore
         uint64_t signature = 0;
         uint64_t lastUse = 0;
         bool valid = false;
-        bool secure = false;
+        bool signatureValid = false;
         bool dead = false;
     };
 

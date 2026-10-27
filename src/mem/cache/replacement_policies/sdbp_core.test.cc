@@ -18,11 +18,13 @@ namespace replacement_policy
 TEST(SDBPCore, SamplingMapsEveryIndexExactlyOnce)
 {
     for (unsigned bits = 2; bits <= 14; ++bits) {
-        for (unsigned half = 1; half < bits; ++half) {
+        for (unsigned half = 1; half <= bits; ++half) {
             SDBPCore::Config cfg;
             cfg.numSets = 1U << bits;
             cfg.samplerNum = 1U << half;
             SDBPCore core(cfg);
+            EXPECT_EQ(core.samplerSets(), cfg.samplerNum);
+            EXPECT_EQ(core.halfBits(), half);
             std::set<int> indices;
             unsigned count = 0;
             for (unsigned set = 0; set < cfg.numSets; ++set) {
@@ -39,15 +41,15 @@ TEST(SDBPCore, SamplingMapsEveryIndexExactlyOnce)
     }
 }
 
-TEST(SDBPCore, SamplingRoundsToNearestAndTiesDown)
+TEST(SDBPCore, SamplingRejectsNonPowerOfTwo)
 {
     SDBPCore::Config cfg;
     cfg.samplerNum = 24;
-    EXPECT_EQ(SDBPCore(cfg).samplerSets(), 16U);
+    EXPECT_THROW(SDBPCore{cfg}, std::invalid_argument);
     cfg.samplerNum = 25;
-    EXPECT_EQ(SDBPCore(cfg).samplerSets(), 32U);
+    EXPECT_THROW(SDBPCore{cfg}, std::invalid_argument);
     cfg.samplerNum = 31;
-    EXPECT_EQ(SDBPCore(cfg).samplerSets(), 32U);
+    EXPECT_THROW(SDBPCore{cfg}, std::invalid_argument);
 }
 
 TEST(SDBPCore, CounterSaturationAndCrcLiveUpdate)
@@ -94,16 +96,16 @@ TEST(SDBPCore, TrainsOldSignatureAndNeverInvalidEntries)
     SDBPCore core(cfg);
     const auto first = core.signature(0x1000);
     const auto second = core.signature(0x2000);
-    const auto initial = core.access(0, 5, false, 0x1000);
+    const auto initial = core.access(0, 5, 0x1000);
     EXPECT_TRUE(initial.sampled);
     EXPECT_FALSE(initial.evicted);
     EXPECT_EQ(core.confidence(0), 0U);
     core.train(first, true);
-    const auto hit = core.access(0, 5, false, 0x2000);
+    const auto hit = core.access(0, 5, 0x2000);
     EXPECT_TRUE(hit.hit);
     EXPECT_EQ(hit.previousSignature, first);
     EXPECT_EQ(core.confidence(first), 0U);
-    const auto evicted = core.access(0, 6, false, 0x3000);
+    const auto evicted = core.access(0, 6, 0x3000);
     EXPECT_TRUE(evicted.evicted);
     EXPECT_EQ(evicted.previousSignature, second);
     EXPECT_EQ(core.confidence(second), 3U);
@@ -114,7 +116,7 @@ TEST(SDBPCore, UnsampledSetsDoNotTrain)
     SDBPCore core{SDBPCore::Config()};
     EXPECT_EQ(core.sampleIndex(1), -1);
     for (unsigned tag = 0; tag < 100; ++tag)
-        EXPECT_FALSE(core.access(1, tag, false, 0x1000).sampled);
+        EXPECT_FALSE(core.access(1, tag, 0x1000).sampled);
     EXPECT_EQ(core.confidence(core.signature(0x1000)), 0U);
 }
 
@@ -124,30 +126,28 @@ TEST(SDBPCore, InvalidBeforeDeadThenLru)
     cfg.samplerAssoc = 2;
     cfg.deadThreshold = 0;
     SDBPCore core(cfg);
-    core.access(0, 1, false, 0x1000);
-    EXPECT_FALSE(core.access(0, 2, false, 0x2000).evicted);
+    core.access(0, 1, 0x1000);
+    EXPECT_FALSE(core.access(0, 2, 0x2000).evicted);
     // Both dead: choose first way even though it has just been touched.
-    core.access(0, 1, false, 0x1000);
-    EXPECT_EQ(core.access(0, 3, false, 0x3000).previousSignature, core.signature(0x1000));
+    core.access(0, 1, 0x1000);
+    EXPECT_EQ(core.access(0, 3, 0x3000).previousSignature, core.signature(0x1000));
 
     cfg.deadThreshold = 8;
     SDBPCore lru(cfg);
-    lru.access(0, 1, false, 0x1000);
-    lru.access(0, 2, false, 0x2000);
-    lru.access(0, 1, false, 0x1000);
-    EXPECT_EQ(lru.access(0, 3, false, 0x3000).previousSignature, lru.signature(0x2000));
+    lru.access(0, 1, 0x1000);
+    lru.access(0, 2, 0x2000);
+    lru.access(0, 1, 0x1000);
+    EXPECT_EQ(lru.access(0, 3, 0x3000).previousSignature, lru.signature(0x2000));
 }
 
-TEST(SDBPCore, PartialTagsAliasButSecurityDomainsDoNot)
+TEST(SDBPCore, PartialTagsAlias)
 {
     SDBPCore::Config cfg;
     cfg.partialTagBits = 3;
     SDBPCore core(cfg);
-    core.access(0, 1, false, 0x1000);
-    EXPECT_TRUE(core.access(0, 9, false, 0x2000).hit);
-    EXPECT_FALSE(core.access(0, 1, true, 0x3000).hit);
-    EXPECT_TRUE(core.access(0, 1, false, 0x4000).hit);
-    EXPECT_TRUE(core.access(0, 1, true, 0x5000).hit);
+    core.access(0, 1, 0x1000);
+    EXPECT_TRUE(core.access(0, 9, 0x2000).hit);
+    EXPECT_TRUE(core.access(0, 1, 0x4000).hit);
 }
 
 TEST(SDBPCore, HashUsesHighPcBitsAndDistinctTableMappings)
@@ -244,12 +244,12 @@ TEST(SDBPCore, TrainingPropagatesToUnsampledSetsAndRecoversOnReuse)
     SDBPCore core(cfg);
     const auto signature = core.signature(0x1000);
     for (unsigned tag = 0; tag < 8; ++tag)
-        core.access(0, tag, false, 0x1000);
+        core.access(0, tag, 0x1000);
     EXPECT_TRUE(core.predict(signature));
     const auto confidence = core.confidence(signature);
-    EXPECT_FALSE(core.access(1, 123, false, 0x1000).sampled);
+    EXPECT_FALSE(core.access(1, 123, 0x1000).sampled);
     EXPECT_EQ(core.confidence(signature), confidence);
-    const auto hit = core.access(0, 7, false, 0x1000);
+    const auto hit = core.access(0, 7, 0x1000);
     EXPECT_TRUE(hit.hit);
     EXPECT_TRUE(hit.previousDead);
     EXPECT_FALSE(core.predict(signature));

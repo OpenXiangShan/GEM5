@@ -71,6 +71,7 @@
 #include "mem/cache/mshr.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
 #include "mem/cache/queue_entry.hh"
+#include "mem/cache/tags/base_set_assoc.hh"
 #include "mem/cache/tags/compressed_tags.hh"
 #include "mem/cache/tags/super_blk.hh"
 #include "mem/packet.hh"
@@ -1069,6 +1070,20 @@ BaseCache::recvTimingResp(PacketPtr pkt)
          mshr->wasWholeLineWrite);
     const bool pure_prefetch_fill =
         mshr->hasFromPref() && !mshr->hasFromCPU();
+    // A demand merged into a prefetch MSHR determines the sampler event at
+    // refill time.  The downstream response may still carry the prefetch
+    // request metadata, so copy the representative demand metadata onto the
+    // refill packet before it reaches tags->insertBlock().
+    if (!pure_prefetch_fill) {
+        PacketPtr sampler_target = mshr->samplerTarget();
+        if (sampler_target && sampler_target->req &&
+            !sampler_target->req->isPrefetch() && sampler_target->isDemand()) {
+            pkt->setSamplerDemand();
+            pkt->req->clearFlags(Request::PREFETCH | Request::PF_EXCLUSIVE);
+            if (sampler_target->req->hasPC())
+                pkt->req->setPC(sampler_target->req->getPC());
+        }
+    }
     if (pure_prefetch_fill) {
         const PrefetchSourceType pf_source = mshr->getPFSource();
         const int pf_depth = mshr->getPFDepth();
@@ -1668,7 +1683,22 @@ BaseCache::handleEvictions(std::vector<CacheBlk*> &evict_blks,
                         }
                     }
                 }
+                // Snapshot before invalidateBlock clears replacement metadata.
+                const auto *set_assoc = dynamic_cast<BaseSetAssoc *>(tags);
+                const unsigned victim_class = set_assoc ?
+                    set_assoc->replacementVictimClass(blk) : 0;
+                const auto previous_size = writebacks.size();
+                ++stats.committedReplacementBlocks;
                 evictBlock(blk, writebacks, evicted_dirty);
+                if (writebacks.size() != previous_size) {
+                    assert(writebacks.size() == previous_size + 1);
+                    auto *pkt = writebacks.back();
+                    assert(pkt->replacementVictimClass == 0);
+                    pkt->replacementVictimClass = victim_class + 1;
+                    ++stats.replacementPackets;
+                } else {
+                    ++stats.replacementNoPacket;
+                }
             }
         }
     }
@@ -3115,6 +3145,18 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
     ADD_STAT(avgBlocked, statistics::units::Rate<
                 statistics::units::Cycle, statistics::units::Count>::get(),
              "average number of cycles each access was blocked"),
+    ADD_STAT(committedReplacementBlocks, statistics::units::Count::get(),
+             "Valid blocks evicted by successful handleEvictions calls"),
+    ADD_STAT(replacementPackets, statistics::units::Count::get(),
+             "Committed replacement blocks generating an eviction packet"),
+    ADD_STAT(replacementNoPacket, statistics::units::Count::get(),
+             "Committed replacement blocks generating no eviction packet"),
+    ADD_STAT(replacementUpperPresence, statistics::units::Count::get(),
+             "Replacement packets at existing upper snoop: policy and presence; "
+             "unknown means snoop forwarding disabled"),
+    ADD_STAT(replacementUpperSourceMask, statistics::units::Count::get(),
+             "Replacement snoop observations by policy: resident=1 MSHR=2 WB=4; "
+             "only when forwarding enabled"),
     ADD_STAT(writebacks, statistics::units::Count::get(),
              "number of writebacks"),
     ADD_STAT(demandMshrHits, statistics::units::Count::get(),
@@ -3363,6 +3405,21 @@ BaseCache::CacheStats::regStats()
         .subname(Blocked_NoTargets, "no_targets")
         ;
     avgBlocked = blockedCycles / blockedCauses;
+
+    replacementUpperSourceMask.init(24).flags(total);
+    replacementUpperPresence.init(9).flags(total);
+    const char *victim_classes[] = {"other", "sdbpLive", "sdbpDead"};
+    const char *presence[] = {"absent", "present", "unknown"};
+    for (unsigned kind = 0; kind < 3; ++kind) {
+        for (unsigned mask = 0; mask < 8; ++mask) {
+            replacementUpperSourceMask.subname(kind * 8 + mask,
+                std::string(victim_classes[kind]) + "_" + std::to_string(mask));
+        }
+        for (unsigned state = 0; state < 3; ++state) {
+            replacementUpperPresence.subname(kind * 3 + state,
+                std::string(victim_classes[kind]) + "_" + presence[state]);
+        }
+    }
 
     writebacks
         .init(max_requestors)

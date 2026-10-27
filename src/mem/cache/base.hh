@@ -1248,6 +1248,12 @@ class BaseCache : public ClockedObject, public CacheAccessor
         /** The average number of cycles blocked for each blocked cause. */
         statistics::Formula avgBlocked;
 
+        /** Diagnostics for committed replacement blocks and upper snoops. */
+        statistics::Scalar committedReplacementBlocks;
+        statistics::Scalar replacementPackets;
+        statistics::Scalar replacementNoPacket;
+        statistics::Vector replacementUpperPresence;
+        statistics::Vector replacementUpperSourceMask;
         /** Number of blocks written back per thread. */
         statistics::Vector writebacks;
 
