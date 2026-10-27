@@ -85,6 +85,9 @@ class BOP : public Queued
         const unsigned int delayTicks;
         /** Cross page parameters */
         const bool crossPage;
+        const bool standaloneL1;
+        std::unique_ptr<boost::compute::detail::lru_cache<Addr, Addr>>
+            standaloneFilter;
         /** Adapt Bop Offset */
         const bool enableAdaptOffset;
         const bool negativeOffsetsEnabled;
@@ -347,7 +350,9 @@ class BOP : public Queued
         } stats;
 
     public:
-        boost::compute::detail::lru_cache<Addr, Addr> *filter;
+        boost::compute::detail::lru_cache<Addr, Addr> *filter = nullptr;
+
+        void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
 
         /** Update the RR right table after a prefetch fill */
         void notifyFill(const PacketPtr& pkt) override;
@@ -362,6 +367,11 @@ class BOP : public Queued
         };
 
         using Queued::calculatePrefetch;
+
+        void calculatePrefetch(const PrefetchInfo &pfi,
+                               std::vector<AddrPriority> &addresses, bool late,
+                               PrefetchSourceType source,
+                               bool miss_repeat) override;
 
         void calculatePrefetch(const PrefetchInfo &pfi,
                                std::vector<AddrPriority> &addresses,

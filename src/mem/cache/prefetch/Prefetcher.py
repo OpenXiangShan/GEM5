@@ -894,6 +894,8 @@ class BOPPrefetcher(QueuedPrefetcher):
                               150, 160, 162, 180, 192, 200, 216, 225, 240, 243, 250, 256], "Predefined offsets")
 
     crossPage = Param.Bool(True, "Cross page prefetching")
+    standalone_l1 = Param.Bool(False,
+        "Attach BOP directly to L1D with its own candidate filter")
     enable_adaptoffset = Param.Bool(True, "enable adapt offset")
     enable_direct_quality_gate = Param.Bool(False,
         "Enable the CQF admission controller for raw BOP candidates")
@@ -978,6 +980,15 @@ class XSPhysicalSmallBOP(BOPPrefetcher):
     offsets = [x for i in [
         1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 27, 30
     ] for x in (i, -i)] + [-32]
+
+class XSL1SmallBOP(XSPhysicalSmallBOP):
+    # Reuse the L2 small BOP learning and offset parameters at CHI L1D.
+    standalone_l1 = True
+    use_virtual_addresses = True
+    use_pf_buffer = True
+    enable_adaptoffset = False
+    prefetch_train = False
+    queue_filter = False
 
 class XSVirtualLargeBOP(BOPPrefetcher):
     direct_quality_kind = 1

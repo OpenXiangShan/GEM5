@@ -70,6 +70,10 @@ BOP::BOP(const BOPPrefetcherParams &p)
       delayQueueSize(p.delay_queue_size),
       delayTicks(cyclesToTicks(p.delay_queue_cycles)),
       crossPage(p.crossPage),
+      standaloneL1(p.standalone_l1),
+      standaloneFilter(p.standalone_l1 ?
+          std::make_unique<boost::compute::detail::lru_cache<Addr, Addr>>(
+              256) : nullptr),
       enableAdaptOffset(p.enable_adaptoffset),
       negativeOffsetsEnabled(p.negative_offsets_enable),
       autoLearning(p.autoLearning),
@@ -99,6 +103,12 @@ BOP::BOP(const BOPPrefetcherParams &p)
       bestScore(0), round(0),
       stats(this, p.student_pool_size, p.student_delay_queue_size)
 {
+    if (standaloneL1) {
+        fatal_if(!usePFBuffer, "%s: standalone L1 BOP requires PFRequestBuffer",
+                 name());
+        filter = standaloneFilter.get();
+        setSharedFilterContextQualified(true);
+    }
     if (enableDirectQualityGate) {
         DirectQualityGate::Config config;
         config.qualityEntries = p.direct_quality_entries;
@@ -984,6 +994,24 @@ BOP::writeBOPReplayMeta()
 }
 
 void
+BOP::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
+{
+    if (standaloneL1 && pkt->isDemand() && pkt->isRead() && !pkt->isWrite()) {
+        notifyDirectQualityDemand(pfi.getAddr());
+    }
+    Queued::notify(pkt, pfi);
+}
+
+void
+BOP::calculatePrefetch(const PrefetchInfo &pfi,
+        std::vector<AddrPriority> &addresses, bool late,
+        PrefetchSourceType source, bool miss_repeat)
+{
+    calculatePrefetch(pfi, addresses,
+                      late && source == PrefetchSourceType::HWP_BOP);
+}
+
+void
 BOP::calculatePrefetch(const PrefetchInfo &pfi,
         std::vector<AddrPriority> &addresses, bool late,
         uint64_t replay_access_seq)
@@ -1024,7 +1052,11 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     bool cqf_allowed = true;
     if (algorithm_issue) {
         Addr prefetch_addr = addr + (selected_offset * (1ULL << lBlkSize));
-        if (enableDirectQualityGate && directQualityGate && pfi.hasPC()) {
+        // A standalone L1 candidate that crosses a page is never issued.
+        // Do not add it to the CQF feedback ledger.
+        if ((!standaloneL1 || crossPage ||
+             samePage(pfi.getAddr(), prefetch_addr)) &&
+            enableDirectQualityGate && directQualityGate && pfi.hasPC()) {
             const auto decision = directQualityGate->admit(
                 pfi.getPC(), static_cast<uint8_t>(directQualityKind), addr,
                 blockAddress(prefetch_addr));
@@ -1077,6 +1109,24 @@ BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriori
         // Count filtered prefetch (cross-page)
         prefetchStats.pfFiltered++;
         return false;
+    }
+    if (standaloneL1) {
+        const Addr filter_key = sharedFilterKey(pfi, addr);
+        if (filter->contains(filter_key)) {
+            DPRINTF(BOPPrefetcher, "Skip recently prefetched: %lx\n", addr);
+            prefetchStats.pfFiltered++;
+            return false;
+        }
+        filter->insert(filter_key, 0);
+        if (archDBer && cache->level() == 1) {
+            archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getAddr(),
+                                     addr, src);
+        }
+        // The standalone L1 path has one producer and one PFRequestBuffer.
+        // Do not also enqueue the same candidate via the direct queue path.
+        InsertPFRequestToBuffer(
+            AddrPriority(addr, prio, src, pfi.trigger_info));
+        return true;
     }
     if (archDBer && cache->level() == 1) {
         archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getAddr(), addr, src);
