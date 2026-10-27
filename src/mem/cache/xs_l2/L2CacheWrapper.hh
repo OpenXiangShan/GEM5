@@ -5,8 +5,10 @@
 #include <unordered_set>
 #include <vector>
 
+#include "base/statistics.hh"
 #include "base/types.hh"
 #include "mem/cache/base.hh"
+#include "mem/cache/prefetch/sliced.hh"
 #include "mem/cache/xs_l2/L2CacheSlice.hh"
 #include "mem/cache/xs_l2/SlicedCacheAccessor.hh"
 #include "mem/packet.hh"
@@ -60,9 +62,12 @@ class L2CacheWrapper : public ClockedObject
 
     bool prefetch_blocked = false;
     PacketPtr outstanding_prefetch = nullptr;
+    std::vector<bool> prefetch_blocked_by_slice;
+    std::vector<PacketPtr> outstanding_prefetches;
 
     void scheduleSendPrefetch(Tick ready = MaxTick);
     bool needPrefetch();
+    bool demandWaitingForSlice(PortID slice_id) const;
 
   public:
     L2CacheWrapper(const L2CacheWrapperParams &p);
@@ -158,20 +163,38 @@ class L2CacheWrapper : public ClockedObject
     const uint64_t dirSramBanks;
     SlicedCacheAccessor sliced_cache_accessor;
     prefetch::Base *prefetcher;
+    prefetch::SlicedPrefetcher *sliced_prefetcher;
 
     System* system;
 
-    inline PortID getSliceId(Addr addr) const {
+    struct WrapperStats : public statistics::Group
+    {
+        WrapperStats(statistics::Group *parent, unsigned num_slices);
+
+        statistics::Distribution pfqDequeueWidth;
+        statistics::Vector pfqSendBlocked;
+    } stats;
+
+    inline PortID
+    getSliceId(Addr addr) const
+    {
         return ((addr >> block_bits) & sliceMask);
     }
 
     // Return the last tick of next cycle
-    Tick nextCycleLastTick() {
-      return clockEdge(Cycles(2)) - 1;
+    Tick
+    nextCycleLastTick()
+    {
+        Tick next_cycle = clockEdge();
+        if (next_cycle == curTick()) {
+            next_cycle += clockPeriod();
+        }
+        return next_cycle + clockPeriod() - 1;
     }
 
     bool upper_resp_blocked = false;
     bool upper_req_blocked = false;
+    PortID blocked_req_slice = InvalidPortID;
     std::unordered_set<PortID> resp_waiting_slice;
 };
 

@@ -10,6 +10,22 @@
 namespace gem5
 {
 
+L2CacheWrapper::WrapperStats::WrapperStats(
+    statistics::Group *parent, unsigned num_slices)
+    : statistics::Group(parent, "slicedPfq"),
+      ADD_STAT(pfqDequeueWidth, statistics::units::Count::get(),
+               "PFQ entries dequeued in one cycle"),
+      ADD_STAT(pfqSendBlocked, statistics::units::Count::get(),
+               "Prefetch sends rejected by each slice")
+{
+    using namespace statistics;
+    pfqDequeueWidth.init(0, num_slices, 1);
+    pfqSendBlocked.init(num_slices).flags(total | nozero);
+    for (unsigned slice = 0; slice < num_slices; ++slice) {
+        pfqSendBlocked.subname(slice, std::to_string(slice));
+    }
+}
+
 L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
     : ClockedObject(p),
       sendPrefetchEvent([this]{ processSendPrefetchEvent(); }, "SendPrefetchEvent"),
@@ -23,7 +39,10 @@ L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
       dirSramBanks(p.dir_sram_banks),
       sliced_cache_accessor(this),
       prefetcher(p.prefetcher),
-      system(p.system)
+      sliced_prefetcher(
+          dynamic_cast<prefetch::SlicedPrefetcher *>(p.prefetcher)),
+      system(p.system),
+      stats(this, p.num_slices)
 {
     if (p.num_slices == 0 || (p.num_slices & (p.num_slices - 1)) != 0) {
         fatal("L2CacheWrapper: num_slices must be a power of 2.");
@@ -40,7 +59,15 @@ L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
     for (int i = 0; i < p.num_slices; ++i) {
         slice_cpuside_ports.emplace_back(p.name + ".slice_cpuside_ports." + std::to_string(i), *this, i);
     }
+    prefetch_blocked_by_slice.assign(p.num_slices, false);
+    outstanding_prefetches.assign(p.num_slices, nullptr);
     if (prefetcher) {
+        if (sliced_prefetcher) {
+            sliced_prefetcher->configureSlices(
+                p.num_slices, [this](Addr addr) {
+                    return static_cast<unsigned>(getSliceId(addr));
+                });
+        }
         prefetcher->setParentInfo(system, getProbeManager(), &sliced_cache_accessor, 1 << block_bits);
         prefetcher->setPacketReadyCallback(
             [this](Tick ready) { scheduleSendPrefetch(ready); });
@@ -50,8 +77,34 @@ L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
 bool
 L2CacheWrapper::needPrefetch()
 {
+    if (!prefetcher) {
+        return false;
+    }
+
+    if (sliced_prefetcher) {
+        if (sliced_prefetcher->hasPendingIngress()) {
+            return true;
+        }
+        for (unsigned slice = 0;
+             slice < sliced_prefetcher->numSlices(); ++slice) {
+            if (!prefetch_blocked_by_slice[slice] &&
+                !demandWaitingForSlice(slice) &&
+                (outstanding_prefetches[slice] ||
+                 sliced_prefetcher->hasPendingPacket(slice))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     return prefetcher && (prefetcher->nextPrefetchReadyTime() != MaxTick ||
                           outstanding_prefetch) && !prefetch_blocked;
+}
+
+bool
+L2CacheWrapper::demandWaitingForSlice(PortID slice_id) const
+{
+    return upper_req_blocked && blocked_req_slice == slice_id;
 }
 
 void
@@ -60,10 +113,31 @@ L2CacheWrapper::scheduleSendPrefetch(Tick ready)
     if (!needPrefetch())
         return;
 
-    Tick nextReady = outstanding_prefetch ? curTick() :
-        prefetcher->nextPrefetchReadyTime();
+    Tick nextReady = MaxTick;
+    if (sliced_prefetcher) {
+        if (sliced_prefetcher->hasPendingIngress()) {
+            nextReady = curTick();
+        }
+        for (unsigned slice = 0;
+             slice < sliced_prefetcher->numSlices(); ++slice) {
+            if (prefetch_blocked_by_slice[slice] ||
+                demandWaitingForSlice(slice)) {
+                continue;
+            }
+            const Tick slice_ready = outstanding_prefetches[slice] ?
+                curTick() :
+                sliced_prefetcher->nextPrefetchReadyTime(slice);
+            nextReady = std::min(nextReady, slice_ready);
+        }
+    } else {
+        nextReady = outstanding_prefetch ? curTick() :
+            prefetcher->nextPrefetchReadyTime();
+    }
     if (ready != MaxTick)
         nextReady = std::min(nextReady, ready);
+    if (nextReady == MaxTick) {
+        return;
+    }
     const Tick sendTick = std::max(nextCycleLastTick(), nextReady);
 
     if (!sendPrefetchEvent.scheduled())
@@ -75,6 +149,51 @@ L2CacheWrapper::scheduleSendPrefetch(Tick ready)
 void
 L2CacheWrapper::processSendPrefetchEvent()
 {
+    if (sliced_prefetcher) {
+        unsigned dequeue_width = 0;
+        for (unsigned slice = 0;
+             slice < sliced_prefetcher->numSlices(); ++slice) {
+            if (prefetch_blocked_by_slice[slice] ||
+                demandWaitingForSlice(slice)) {
+                continue;
+            }
+
+            if (!outstanding_prefetches[slice] &&
+                sliced_prefetcher->hasPendingPacket(slice) &&
+                sliced_prefetcher->nextPrefetchReadyTime(slice) <=
+                    curTick()) {
+                outstanding_prefetches[slice] =
+                    sliced_prefetcher->getPacket(slice);
+                dequeue_width += outstanding_prefetches[slice] != nullptr;
+            }
+
+            PacketPtr pkt = outstanding_prefetches[slice];
+            if (!pkt) {
+                continue;
+            }
+
+            panic_if(getSliceId(pkt->getAddr()) != slice,
+                     "L2 PFQ slice %u produced address %#x for slice %d",
+                     slice, pkt->getAddr(), getSliceId(pkt->getAddr()));
+            prefetch_blocked_by_slice[slice] =
+                !slice_cpuside_ports[slice].sendTimingReq(pkt);
+            if (prefetch_blocked_by_slice[slice]) {
+                stats.pfqSendBlocked[slice]++;
+            }
+            if (!prefetch_blocked_by_slice[slice]) {
+                outstanding_prefetches[slice] = nullptr;
+            }
+        }
+        stats.pfqDequeueWidth.sample(dequeue_width);
+
+        // The dequeue phase above is committed before input arbitration. A
+        // full slice PFQ that dequeued this cycle therefore accepts a new
+        // entry without dropping another queued request.
+        sliced_prefetcher->processIngress();
+        scheduleSendPrefetch();
+        return;
+    }
+
     if (prefetch_blocked) {
         return;
     }
@@ -93,8 +212,10 @@ L2CacheWrapper::processSendPrefetchEvent()
 
     auto slice_id = getSliceId(pkt->getAddr());
 
-    if (upper_req_blocked) {
-        DPRINTF(L2CacheWrapper, "Upper req is blocked, dropping prefetch for addr %#x\n", pkt->getAddr());
+    if (demandWaitingForSlice(slice_id)) {
+        DPRINTF(L2CacheWrapper,
+                "Demand is waiting for slice %d; deferring prefetch %#x\n",
+                slice_id, pkt->getAddr());
         return;
     }
 
@@ -155,9 +276,14 @@ L2CacheWrapper::CPUSidePort::recvTimingReq(PacketPtr pkt)
     auto slice_id = owner.getSliceId(pkt->getAddr());
     DPRINTF(L2CacheWrapper, "Got timing req for addr %#x, routing to slice %d\n", pkt->getAddr(), slice_id);
 
-    if (owner.prefetch_blocked || !owner.slice_cpuside_ports[slice_id].sendTimingReq(pkt)) {
+    const bool prefetch_blocked = owner.sliced_prefetcher ?
+        owner.prefetch_blocked_by_slice[slice_id] :
+        owner.prefetch_blocked;
+    if (prefetch_blocked ||
+        !owner.slice_cpuside_ports[slice_id].sendTimingReq(pkt)) {
         DPRINTF(L2CacheWrapper, "Slice %d is busy, blocking CPU side\n", slice_id);
         owner.upper_req_blocked = true;
+        owner.blocked_req_slice = slice_id;
         return false;
     }
 
@@ -237,16 +363,24 @@ L2CacheWrapper::SliceCPUSidePort::recvTimingResp(PacketPtr pkt)
 void
 L2CacheWrapper::SliceCPUSidePort::recvReqRetry()
 {
-    assert(owner.prefetch_blocked || owner.upper_req_blocked);
+    const bool demand_waiting = owner.demandWaitingForSlice(id);
+    const bool prefetch_waiting = owner.sliced_prefetcher ?
+        owner.prefetch_blocked_by_slice[id] : owner.prefetch_blocked;
+    assert(prefetch_waiting || demand_waiting);
     DPRINTF(L2CacheWrapper, "Got retry from slice %d\n", id);
-    if (owner.prefetch_blocked) {
+
+    if (owner.sliced_prefetcher) {
+        owner.prefetch_blocked_by_slice[id] = false;
+    } else {
         owner.prefetch_blocked = false;
-        owner.scheduleSendPrefetch();
     }
-    if (owner.upper_req_blocked) {
+
+    if (demand_waiting) {
         owner.upper_req_blocked = false;
+        owner.blocked_req_slice = InvalidPortID;
         owner.cpu_side_port.sendRetryReq();
     }
+    owner.scheduleSendPrefetch();
 }
 
 void
