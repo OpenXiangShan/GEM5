@@ -2,7 +2,8 @@
 
 The performance workflow consumes this module through its CLI, while the
 solver imports the same resolver. Consumer-specific capability checks stay in
-their respective workflows or runtimes.
+their respective workflows or runtimes. Trace suites reuse the shell runners;
+the CLI also checks their measurement results.
 """
 
 from __future__ import annotations
@@ -25,9 +26,11 @@ class BenchmarkConfig:
     comment: str
     score_script: str = "gem5-score-ci.sh"
     archive_subdir: str = ""
+    # Set only for trace suites; checkpoint outputs remain unchanged.
+    trace_format: str = ""
 
     def as_dict(self) -> dict[str, str]:
-        return {
+        values = {
             "benchmark_type": self.benchmark_type,
             "archive_subdir": self.archive_subdir or self.benchmark_type,
             "checkpoint_list": self.checkpoint_list,
@@ -36,9 +39,12 @@ class BenchmarkConfig:
             "score_script": self.score_script,
             "comment": self.comment,
         }
+        if self.trace_format:
+            values["trace_format"] = self.trace_format
+        return values
 
     def github_outputs(self) -> dict[str, str]:
-        return {
+        values = {
             "benchmark_type": self.benchmark_type,
             "archive_subdir": self.archive_subdir or self.benchmark_type,
             "checkpoint_list": self.checkpoint_list,
@@ -47,6 +53,9 @@ class BenchmarkConfig:
             "cluster_config": self.cluster_config,
             "comment": self.comment,
         }
+        if self.trace_format:
+            values["trace_format"] = self.trace_format
+        return values
 
 
 def _index_benchmarks(
@@ -198,6 +207,34 @@ _BENCHMARKS = _index_benchmarks(
     )
 )
 
+# Keep trace profiles separate from the checkpoint solver catalog.
+_TRACE_BENCHMARKS = _index_benchmarks(
+    (
+        BenchmarkConfig(
+            benchmark_type="trace-google",
+            checkpoint_list=(
+                "/nfs/home/share/gem5_ci/gem5_trace/google_trace/google_traces.lst"
+            ),
+            checkpoint_root="/nfs/home/share/gem5_ci/gem5_trace/google_trace",
+            cluster_config="",
+            score_script="",
+            comment="run all Google trace SimPoint slices",
+            trace_format="tracertl",
+        ),
+        BenchmarkConfig(
+            benchmark_type="trace-cbp",
+            checkpoint_list=(
+                "/nfs/home/share/gem5_ci/gem5_trace/cbp_traces/cbp_traces.lst"
+            ),
+            checkpoint_root="/nfs/home/share/gem5_ci/gem5_trace/cbp_traces",
+            cluster_config="",
+            score_script="",
+            comment="run all CBP traces",
+            trace_format="cbp2025",
+        ),
+    )
+)
+
 
 def benchmark_types() -> tuple[str, ...]:
     return tuple(_BENCHMARKS)
@@ -341,6 +378,75 @@ def resolve_custom_benchmark(
     )
 
 
+def resolve_trace_benchmark(benchmark_type: str) -> BenchmarkConfig:
+    try:
+        return _TRACE_BENCHMARKS[benchmark_type]
+    except KeyError:
+        supported = ", ".join(_TRACE_BENCHMARKS)
+        raise KeyError(
+            f"unsupported trace benchmark_type {benchmark_type!r}; "
+            f"supported values: {supported}"
+        ) from None
+
+# Trace has no score calculation scripts like SPEC, so write a simple one
+def summarize_trace_results(
+    benchmark_type: str, workload_list: str | Path, stats_root: str | Path
+) -> int:
+    """Print measurement IPC/MPKI using only archived run outputs."""
+    failed = 0
+    print(f"{benchmark_type}: measurement after warmup")
+    print(f"{'Trace':<32} {'Status':<8} {'IPC':>12} {'Branch MPKI':>12}")
+    for line in Path(workload_list).read_text().splitlines():
+        name, _, _, fw, dw, _ = line.split()
+        directory = Path(stats_root) / name
+        try:
+            if (
+                not (directory / "completed").is_file()
+                or (directory / "abort").exists()
+                or (directory / "running").exists()
+            ):
+                raise ValueError("run did not complete")
+            # The final complete dump contains post-warmup measurements.
+            blocks, current = [], None
+            for entry in (directory / "stats.txt").read_text().splitlines():
+                if "Begin Simulation Statistics" in entry:
+                    current = {}
+                elif "End Simulation Statistics" in entry:
+                    if current is not None:
+                        blocks.append(current)
+                    current = None
+                elif current is not None:
+                    fields = entry.split()
+                    if fields and fields[0] in (
+                        "simInsts",
+                        "system.cpu.numCycles",
+                        "system.cpu.commit.branchMispredicts",
+                    ):
+                        current[fields[0]] = float(fields[1])
+            if not blocks or (int(fw) + int(dw) > 0 and len(blocks) < 2):
+                raise ValueError("missing measurement dump after warmup")
+            stats = blocks[-1]
+            insts = stats["simInsts"]
+            cycles = stats["system.cpu.numCycles"]
+            misses = stats["system.cpu.commit.branchMispredicts"]
+            if (
+                not all(math.isfinite(v) for v in (insts, cycles, misses))
+                or insts <= 0
+                or cycles <= 0
+                or misses < 0
+            ):
+                raise ValueError("invalid measurement statistics")
+            print(
+                f"{name:<32} {'passed':<8} {insts / cycles:>12.6f} "
+                f"{1000 * misses / insts:>12.6f}"
+            )
+        except (OSError, ValueError, KeyError, IndexError) as error:
+            failed += 1
+            print(f"{name:<32} failed: {error}")
+    print(f"Failed traces: {failed}")
+    return int(failed > 0)
+
+
 def write_github_outputs(
     config: BenchmarkConfig, output_path: str | Path
 ) -> None:
@@ -365,10 +471,21 @@ def main() -> int:
     parser.add_argument("--checkpoint-path", default="")
     parser.add_argument("--json-path", default="")
     parser.add_argument("--output-dir", default=".")
+    parser.add_argument(
+        "--trace-results", help="Check trace results and print the IPC report."
+    )
     args = parser.parse_args()
 
     try:
-        if args.benchmark_type == "custom" or args.benchmark_type.startswith(
+        if args.trace_results:
+            return summarize_trace_results(
+                args.benchmark_type,
+                Path(args.output_dir) / "checkpoints.lst",
+                args.trace_results,
+            )
+        if args.benchmark_type in _TRACE_BENCHMARKS:
+            config = resolve_trace_benchmark(args.benchmark_type)
+        elif args.benchmark_type == "custom" or args.benchmark_type.startswith(
             "custom-spec"
         ):
             config = resolve_custom_benchmark(

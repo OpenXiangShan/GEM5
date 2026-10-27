@@ -14,13 +14,13 @@
 #
 # 用法（与 parallel_sim.sh 保持一致）：
 #   bash util/xs_scripts/trace/parallel_trace_sim.sh \\
-#       arch_script.sh workload_list.lst checkpoint_top_dir task_tag
+#       <config.py|arch_script.sh> workload_list.lst checkpoint_top_dir task_tag
 
 set -euo pipefail
 
 function print_help() {
     printf "Usage:
-    bash %s arch_script.sh workload_list.lst checkpoint_top_dir task_tag\n" "$0"
+    bash %s <config.py|arch_script.sh> workload_list.lst checkpoint_top_dir task_tag\n" "$0"
     exit 1
 }
 
@@ -35,6 +35,10 @@ TRACE_FORMAT=${TRACE_FORMAT:-champsim}
 export TRACE_FORMAT
 
 export arch_script=$(realpath "$1")
+# Match parallel_sim.sh: accept a config directly or an existing wrapper.
+if [[ "${arch_script}" == *.py ]]; then
+    source "$(dirname "$(readlink -f "$0")")/../common.sh"
+fi
 export workload_list=$(realpath "$2")
 export cpt_dir=$(realpath "$3")
 export tag="$4"
@@ -83,7 +87,15 @@ function run() {
     rm -f abort completed
     touch running
 
-    bash "${arch_script}" "$1"  # checkpoint/trace path
+    if [[ "${arch_script}" == *.py ]]; then
+        "${gem5}" "--outdir=$PWD" "--stats-file=$PWD/stats.txt" \
+            "${arch_script}" --enable-trace-mode --trace-enable-decoupled-bp \
+            "--trace-file=$1" "--trace-format=${TRACE_FORMAT}" \
+            "--warmup-insts-no-switch=${XS_WARMUP_INSTS_NO_SWITCH}" \
+            "--maxinsts=${XS_MAX_INSTS}"
+    else
+        bash "${arch_script}" "$1"
+    fi
     check $?
 
     rm -f running
@@ -141,7 +153,8 @@ function arg_wrapper() {
     # 拆分为字段，避免依赖 set/位置参数行为。
     local line="$1"
     local task task_path skip fw dw sample
-    IFS=' ' read -r task task_path skip fw dw sample <<< "${line}"
+    # Accept the existing space- or tab-separated CI lists directly.
+    IFS=$' \t' read -r task task_path skip fw dw sample <<< "${line}"
 
     prepare_env "${task}" "${task_path}" "${skip}" "${fw}" "${dw}" "${sample}"
 
