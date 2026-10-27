@@ -350,6 +350,30 @@ jobs:
           if [[ "$CLUSTER_CONFIG" != /* ]]; then
             CLUSTER_CONFIG="$GEM5_HOME/$CLUSTER_CONFIG"
           fi
+          # Report failed simulations before attempting to score their stats.
+          ABORT_COUNT=$(find "$PERF_ARCHIVE_DIR/spec_all" -type f -name "abort" | wc -l)
+          if [ "$ABORT_COUNT" -gt 0 ]; then
+            echo "### :x: Test Failures Detected!" >> $GITHUB_STEP_SUMMARY
+            echo "Failed test count: $ABORT_COUNT" >> $GITHUB_STEP_SUMMARY
+            echo "First 10 failed tests:" >> $GITHUB_STEP_SUMMARY
+            find "$PERF_ARCHIVE_DIR/spec_all" -type f -name "abort" |
+              sed 's|.*/\([^/]*\)/abort|\1|' |
+              sed -n '1,10p' |
+              while read -r line; do
+                echo "- $line" >> $GITHUB_STEP_SUMMARY
+              done
+              if [ "${{ inputs.check_result }}" == "true" ]; then
+                exit 1
+              fi
+          fi
+
+          # Even when partial results are allowed, empty stats cannot be scored.
+          if ! find "$PERF_ARCHIVE_DIR/spec_all" -type f -name "stats.txt" \
+              -size +0c -print -quit | grep -q .; then
+            echo "::error::No nonempty simulation stats found; inspect slice log.txt files."
+            exit 1
+          fi
+
           # 使用已有的数据spec_all生成测试报告
           bash example-scripts/${{ steps.config.outputs.score_script }} \
             "$PERF_ARCHIVE_DIR/spec_all" \
@@ -366,22 +390,6 @@ jobs:
           echo "### Key indicators" >> $GITHUB_STEP_SUMMARY
           echo "- Final Int score per GHz: **${FINAL_SCORE}**" >> $GITHUB_STEP_SUMMARY
 
-          # 最后检查是否存在abort文件， 如果存在，打出前10个错误名字
-          ABORT_COUNT=$(find "$PERF_ARCHIVE_DIR/spec_all" -type f -name "abort" | wc -l)
-          if [ "$ABORT_COUNT" -gt 0 ]; then
-            echo "### :x: Test Failures Detected!" >> $GITHUB_STEP_SUMMARY
-            echo "Failed test count: $ABORT_COUNT" >> $GITHUB_STEP_SUMMARY
-            echo "First 10 failed tests:" >> $GITHUB_STEP_SUMMARY
-            find "$PERF_ARCHIVE_DIR/spec_all" -type f -name "abort" |
-              sed 's|.*/\([^/]*\)/abort|\1|' |
-              head -n 10 |
-              while read -r line; do
-                echo "- $line" >> $GITHUB_STEP_SUMMARY
-              done
-              if [ "${{ inputs.check_result }}" == "true" ]; then
-                exit 1
-              fi
-          fi
       - name: Archive performance data
         if: ${{ always() && steps.archive.outputs.target_dir != '' }}
         run: |

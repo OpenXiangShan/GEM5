@@ -110,6 +110,11 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         static std::vector<DynInstPtr> debug_insts;
 
         for (ThreadID tid = 0; tid < numThreads; tid++) {
+            // An experimentally parked thread deliberately stops committing.
+            // Keep checking T0 and threads still completing their park squash.
+            if (cpu->isSMTThreadParked(tid)) {
+                continue;
+            }
             if (cpu->curCycle() - this->lastCommitCycle[tid] > 40000) {
                 if (traceMaybeExitOnPipelineDrainFromStuckCheck()) {
                     return;

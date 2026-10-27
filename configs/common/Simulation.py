@@ -830,6 +830,9 @@ def run_smt_single_thread(options, testsys, maxtick):
     start = snapshot("measurement_start")
     if start["insts"][1] != parked["insts"][1]:
         fatal("T1 committed instructions during the single-thread warmup")
+    # CI readers expect a warmup block followed by a measurement block.
+    # Dump before reset; the final block must contain only T0 measurement.
+    m5.stats.dump()
     m5.stats.reset()
     cpu.scheduleInstStop(0, measure_insts, "SMT single-thread measurement complete")
     event = simulate_until("SMT single-thread measurement complete")

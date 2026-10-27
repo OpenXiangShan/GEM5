@@ -54,7 +54,7 @@ has a compatible one. Raw binaries skip this GCPT-specific PC check.
 
 The output directory contains `smt-single-thread.json`, with phase ticks,
 per-thread cumulative instruction counts, and actual measurement instruction
-and tick deltas. `stats.txt` contains the measurement statistics. The runner
+and tick deltas. `stats.txt` contains the warmup block followed by the measurement block. The runner
 fails if T1's committed instruction count changes during warmup or measurement,
 if an unexpected exit occurs, or if the simulation tick limit is reached early.
 
@@ -91,3 +91,7 @@ warmup instructions and a 100,000-instruction measurement, T1 stayed at
 T0=100,001 and T1=0. The default A+A smoke run also exited normally with both
 threads committing. These short runs validate control flow and difftest, not
 SPEC-wide performance or every SMT allocation policy.
+
+The commit progress watchdog excludes a thread only after parking completes.
+T0 and T1 during parking cleanup remain covered by the normal deadlock check.
+Smoke tests must run beyond 40,000 cycles after parking to cover this watchdog.
