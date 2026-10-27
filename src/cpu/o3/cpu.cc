@@ -887,7 +887,7 @@ CPU::updateSMTThreadPark()
     // LSQ progress. A suspended thread keeps its architectural registers.
     const bool stores_done = iew.flushStores(tid);
     const bool insts_left = std::any_of(
-        instList.begin(), instList.end(), [tid](const DynInstPtr &inst) {
+        instList.begin(), instList.end(), [](const DynInstPtr &inst) {
             return inst->threadNumber == tid;
         });
     if (insts_left || !rob.isEmpty(tid) ||
