@@ -1,0 +1,35 @@
+{
+  "scope": "Read-only ELF disassembly and reference-source semantics; no simulation or new TEA",
+  "profile": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820",
+  "cluster_03c": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/cluster.json",
+  "reference_source_warning": "cpu2006v99 source is readable reference only; actual build source unavailable and binary lacks exact DWARF lines; semantic candidates are not verified exact source mappings",
+  "workloads": {
+    "mcf": {
+      "elf": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/elf/mcf.elf",
+      "sha256": "818d286599edb64b3493bb75d083cbf2bc8fb6e76a39c3da79aeb62cdf828766",
+      "points": {"6753": "0.218742", "12886": "0.149435"},
+      "instructions": {"0x108d2": "lw t4,24(a5)", "0x108d6": "blez t4,108cc", "0x108da": "ld t6,8(a5)", "0x108de": "ld t5,16(a5)", "0x108e4": "ld t6,0(t6)", "0x108e8": "ld t5,0(t5)"},
+      "candidate_source": "/nfs/home/share/speccpu_install/cpu2006v99/benchspec/CPU2006/429.mcf/src/pbeampp.c:165-170",
+      "verified": "load at 108da produces address for 108e4; load 108de produces address for 108e8; branch 108d6 controls reaching these loads",
+      "hypotheses": ["pointer-chain latency rather than insufficient load width limits this loop; compare dependent load latency and per-PC trace against 3-to-4 load alone", "L2 data/directory contention affects key load service; measure demand miss latency, bank arbitration retries and key PC CPI under a single-bank-axis intervention", "translation pressure gates a material part of this chain; inspect demand DTLB initial misses and walker service with load timeline; vary only one PTW limit if evidence supports"]
+    },
+    "perlbench_checkspam": {
+      "elf": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/elf/perlbench_checkspam.elf",
+      "sha256": "df8fd054a6a9c78b6058a8af595c06e6c1b654867a9c59b0a1642b3a4346721d",
+      "points": {"5886": "0.199334", "28089": "0.127421"},
+      "instructions": {"0x92e14": "sh2add a5,s0,a5", "0x92e18": "lw a5,0(a5)", "0x92e1a": "jr a5", "0x96d10": "bgeu s2,a3,96cee"},
+      "candidate_sources": ["/nfs/home/share/speccpu_install/cpu2006v99/benchspec/CPU2006/400.perlbench/src/regexec.c:2296", "/nfs/home/share/speccpu_install/cpu2006v99/benchspec/CPU2006/400.perlbench/src/regexec.c:2327", "/nfs/home/share/speccpu_install/cpu2006v99/benchspec/CPU2006/400.perlbench/src/regexec.c:2398", "/nfs/home/share/speccpu_install/cpu2006v99/benchspec/CPU2006/400.perlbench/src/regexec.c:961"],
+      "verified": "S_regmatch load-to-indirect-jump and S_find_byclass conditional branch established by disassembly; mapping to reference switch is candidate",
+      "hypotheses": ["indirect target supply and prediction for 92e1a limit throughput; measure per-PC target errors/redirects and FTQ starvation on A/B/C; targeted indirect predictor probe", "92e18 table load delays indirect branch despite prediction; inspect per-PC load service and 92e18-to-92e1a timeline; isolate cache or predictor intervention", "class scan branch 96d10 or related path affects control supply; collect ROI direction/context and prediction-stage source, not lifetime BPU; test single control intervention"]
+    },
+    "astar_biglakes": {
+      "elf": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/elf/astar_biglakes.elf",
+      "sha256": "73f872defdb08b3bc7a0c18a4583d87beed14dca3311fe4e623fee3052d98f52",
+      "points": {"5863": "0.193943", "6185": "0.171593"},
+      "instructions": {"0x1db7a": "lhu a6,16(s0)", "0x1db8a": "lhu a7,0(a5)", "0x1db8e": "bne a7,a6,1db08", "0x1dba2": "bne s3,s8,1db6e"},
+      "candidate_sources": ["/nfs/home/share/speccpu_install/cpu2006v99/benchspec/CPU2006/473.astar/src/Way2_.cpp:180-187", "/nfs/home/share/speccpu_install/cpu2006v99/benchspec/CPU2006/473.astar/src/RegWay_.cpp:118-122"],
+      "verified": "two halfword loads feed branch at 1db8e; function symbol way2obj::createway clone; candidate fillnum comparison is not exact source mapping",
+      "hypotheses": ["data-dependent fillnum branch direction or aliasing drives recovery; obtain per-PC ROI outcomes/history and branch-source errors, test one predictor axis", "frontend bandwidth changes speculate/training and worsens net performance despite more targets; compare A/B/C override, FTQ supply and per-PC branch correctness before single-axis probe", "grid load service delays branch resolution; measure producer-load response-to-branch-resolve and cache miss/latency with an isolated cache intervention"]
+    }
+  }
+}

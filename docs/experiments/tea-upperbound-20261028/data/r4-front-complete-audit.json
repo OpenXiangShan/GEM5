@@ -1,0 +1,67 @@
+{
+  "time": "2026-10-28T16:25:26.756320+08:00",
+  "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_150611_36584ada_kmhv3_run1674",
+  "prior_143_audit": "/tmp/tea-upperbound-20261028/r4-front-provisional-audit.json",
+  "prior_count": 143,
+  "added_count": 2,
+  "cluster_point_count": 145,
+  "unique_audited_count": 145,
+  "point_set_match": true,
+  "prior_exceptions": [],
+  "new_exceptions": [],
+  "new_points": [
+    {
+      "name": "bzip2_combined_5764",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_150611_36584ada_kmhv3_run1674/spec_all/bzip2_combined_5764",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": true
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999992,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_source_3760",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_150611_36584ada_kmhv3_run1674/spec_all/bzip2_source_3760",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": true
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000000,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    }
+  ],
+  "scope": "145 selected points; prior 143 reused without rechecking markers"
+}

@@ -1,6 +1,6 @@
 {
   "name": "mcf_12886",
-  "scope": "20M warmup + 2M diagnostic ROI; not a SPEC score; PC weights include Computing and overlapping events",
+  "scope": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
   "elf": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/elf/mcf.elf",
   "elf_sha256": "818d286599edb64b3493bb75d083cbf2bc8fb6e76a39c3da79aeb62cdf828766",
   "sides": [
@@ -708,5 +708,12 @@
         }
       ]
     }
-  ]
+  ],
+  "window_correction": {
+    "actual_window": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
+    "supersedes": "original post-warmup scope and window-passed claims",
+    "audit": "local-window-correction-audit.json",
+    "full_CI_affected": false
+  },
+  "original_scope_superseded": "20M warmup + 2M diagnostic ROI; not a SPEC score; PC weights include Computing and overlapping events"
 }

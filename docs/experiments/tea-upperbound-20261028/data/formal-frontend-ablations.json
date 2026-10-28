@@ -33,7 +33,13 @@
       "system.cpu.mmu.itb.l1InitialLookupMisses": 81.0
     },
     "passed": true,
-    "exit_code": 0
+    "exit_code": 0,
+    "window_correction": {
+      "actual_window": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
+      "supersedes": "original post-warmup scope and window-passed claims",
+      "audit": "local-window-correction-audit.json",
+      "full_CI_affected": false
+    }
   },
   {
     "workload": "perlbench_checkspam_5886",
@@ -61,7 +67,13 @@
       "system.cpu.mmu.itb.l1InitialLookupMisses": 0.0
     },
     "passed": true,
-    "exit_code": 0
+    "exit_code": 0,
+    "window_correction": {
+      "actual_window": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
+      "supersedes": "original post-warmup scope and window-passed claims",
+      "audit": "local-window-correction-audit.json",
+      "full_CI_affected": false
+    }
   },
   {
     "workload": "perlbench_checkspam_5886",
@@ -89,7 +101,13 @@
       "system.cpu.mmu.itb.l1InitialLookupMisses": 0.0
     },
     "passed": true,
-    "exit_code": 0
+    "exit_code": 0,
+    "window_correction": {
+      "actual_window": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
+      "supersedes": "original post-warmup scope and window-passed claims",
+      "audit": "local-window-correction-audit.json",
+      "full_CI_affected": false
+    }
   },
   {
     "workload": "perlbench_checkspam_5886",
@@ -117,7 +135,13 @@
       "system.cpu.mmu.itb.l1InitialLookupMisses": 0.0
     },
     "passed": true,
-    "exit_code": 0
+    "exit_code": 0,
+    "window_correction": {
+      "actual_window": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
+      "supersedes": "original post-warmup scope and window-passed claims",
+      "audit": "local-window-correction-audit.json",
+      "full_CI_affected": false
+    }
   },
   {
     "workload": "perlbench_checkspam_5886",
@@ -145,7 +169,13 @@
       "system.cpu.mmu.itb.l1InitialLookupMisses": 0.0
     },
     "passed": true,
-    "exit_code": 0
+    "exit_code": 0,
+    "window_correction": {
+      "actual_window": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
+      "supersedes": "original post-warmup scope and window-passed claims",
+      "audit": "local-window-correction-audit.json",
+      "full_CI_affected": false
+    }
   },
   {
     "workload": "perlbench_checkspam_5886",
@@ -181,7 +211,13 @@
       "system.cpu.mmu.itb.l1InitialLookupMisses": 86.0
     },
     "passed": true,
-    "exit_code": 0
+    "exit_code": 0,
+    "window_correction": {
+      "actual_window": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
+      "supersedes": "original post-warmup scope and window-passed claims",
+      "audit": "local-window-correction-audit.json",
+      "full_CI_affected": false
+    }
   },
   {
     "workload": "libquantum_69175",
@@ -217,7 +253,13 @@
       "system.cpu.mmu.itb.l1InitialLookupMisses": 14.0
     },
     "passed": true,
-    "exit_code": 0
+    "exit_code": 0,
+    "window_correction": {
+      "actual_window": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
+      "supersedes": "original post-warmup scope and window-passed claims",
+      "audit": "local-window-correction-audit.json",
+      "full_CI_affected": false
+    }
   },
   {
     "workload": "libquantum_69175",
@@ -245,7 +287,13 @@
       "system.cpu.mmu.itb.l1InitialLookupMisses": 0.0
     },
     "passed": true,
-    "exit_code": 0
+    "exit_code": 0,
+    "window_correction": {
+      "actual_window": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
+      "supersedes": "original post-warmup scope and window-passed claims",
+      "audit": "local-window-correction-audit.json",
+      "full_CI_affected": false
+    }
   },
   {
     "workload": "libquantum_69175",
@@ -273,7 +321,13 @@
       "system.cpu.mmu.itb.l1InitialLookupMisses": 0.0
     },
     "passed": true,
-    "exit_code": 0
+    "exit_code": 0,
+    "window_correction": {
+      "actual_window": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
+      "supersedes": "original post-warmup scope and window-passed claims",
+      "audit": "local-window-correction-audit.json",
+      "full_CI_affected": false
+    }
   },
   {
     "workload": "libquantum_69175",
@@ -301,7 +355,13 @@
       "system.cpu.mmu.itb.l1InitialLookupMisses": 0.0
     },
     "passed": true,
-    "exit_code": 0
+    "exit_code": 0,
+    "window_correction": {
+      "actual_window": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
+      "supersedes": "original post-warmup scope and window-passed claims",
+      "audit": "local-window-correction-audit.json",
+      "full_CI_affected": false
+    }
   },
   {
     "workload": "libquantum_69175",
@@ -329,7 +389,13 @@
       "system.cpu.mmu.itb.l1InitialLookupMisses": 0.0
     },
     "passed": true,
-    "exit_code": 0
+    "exit_code": 0,
+    "window_correction": {
+      "actual_window": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
+      "supersedes": "original post-warmup scope and window-passed claims",
+      "audit": "local-window-correction-audit.json",
+      "full_CI_affected": false
+    }
   },
   {
     "workload": "libquantum_69175",
@@ -365,6 +431,12 @@
       "system.cpu.mmu.itb.l1InitialLookupMisses": 14.0
     },
     "passed": true,
-    "exit_code": 0
+    "exit_code": 0,
+    "window_correction": {
+      "actual_window": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
+      "supersedes": "original post-warmup scope and window-passed claims",
+      "audit": "local-window-correction-audit.json",
+      "full_CI_affected": false
+    }
   }
 ]

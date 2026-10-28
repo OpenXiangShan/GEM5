@@ -33,13 +33,26 @@
 
 astar的4load单独略退，但在扩容背景下改善4.12%；mcf、omnetpp的条件收益分别为2.58%、1.30%。gcc在这些配置中的变化很小且有回退。因此端口收益依赖可见并发和窗口压力，这轮没有把扩容组收益单独归于ROB或LQ。
 
-## 完整点集对照已创建
+## 完整点集结果
 
 代码仍为`36584adaf67da1e848d7b3a61d5ab18e84b2c12e`，通过CLI覆盖七项容量即可，无新增C++或配置逻辑。新增两组与第四轮形成“有无扩容×有无理想前端”的对照，全部保持12宽与原整数拓扑：
 
 - [12宽＋4load＋容量扩容](https://github.com/OpenXiangShan/GEM5/actions/runs/40648078898)。
 - [12宽＋4load＋容量扩容＋理想前端](https://github.com/OpenXiangShan/GEM5/actions/runs/40648104599)。
 
-当前容量组已完成145点，带理想前端组合仍在运行；提交与全部参数见[runs.json](runs.json)。不重复运行基线，继续复用已测量的同点集数据。
+两组均已完成145点并通过CI。带理想前端时，4load的29.62660扩大容量后达到30.20846，条件收益1.9640%；相对原26.72579基线累计提高13.0311%。提交与全部参数见[runs.json](runs.json)。
+
+| 完整INT子项 | 容量扩容相对理想前端＋4load的条件收益 |
+| --- | ---: |
+| astar | +5.135% |
+| hmmer | +3.729% |
+| mcf | +3.597% |
+| omnetpp | +2.711% |
+| h264ref | +2.702% |
+| libquantum | −0.031% |
+
+当前证据支持保留容量组，但没有将七项资源的收益独立分解；不能把组合收益全部归给ROB或LQ。
 
 完整分数见[data/r5-fourload-window-full-score.csv](data/r5-fourload-window-full-score.csv)，逐点验证见[data/r4-r5-complete-audit.json](data/r4-r5-complete-audit.json)。
+
+带理想前端的完整分数见[data/r5-front-full-score.csv](data/r5-front-full-score.csv)，全部145点的20M ROI、difftest、12宽与原整数FU审计见[data/r5-r7-audit.json](data/r5-r7-audit.json)。

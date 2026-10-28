@@ -1,6 +1,6 @@
 # 第三轮 用TEA复查组合后的残余瓶颈
 
-**正式预热后的短窗口中，Combined使gcc IPC提高3.98%、mcf提高23.52%。** gcc的前端Drained几乎消失，mcf仍以Stalled为主。此处是同切片20M预热后的约2M诊断窗口，不是新的SPEC得分。
+**恢复后前约2M的冷启动窗口中，旧16宽Combined使gcc IPC提高3.98%、mcf提高23.52%。** gcc的前端Drained几乎消失，mcf仍以Stalled为主。本轮原先误标为“20M预热＋2M”，复核发现总退出上限仅2M，预热没有执行完成；结果降级为冷启动机制探针，不能解释正式CI收益。[窗口纠正审计](data/local-window-correction-audit.md)
 
 ## 配置、口径与验证
 

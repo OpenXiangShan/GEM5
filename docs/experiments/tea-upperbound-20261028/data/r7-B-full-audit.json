@@ -1,0 +1,86 @@
+{
+  "time": "2026-10-28T17:04:28.909896+08:00",
+  "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_155204_36584ada_kmhv3_run1678",
+  "prior_audit": "/tmp/tea-upperbound-20261028/r5-r7-audit.json",
+  "prior_reused": 143,
+  "supplement": 2,
+  "unique": 145,
+  "exceptions": [],
+  "config_exception": [],
+  "config_fingerprint": {
+    "decodeWidth": "12",
+    "renameWidth": "12",
+    "numROBEntries": "352",
+    "numPhysIntRegs": "224",
+    "numPhysFloatRegs": "256",
+    "LQEntries": "120",
+    "SQEntries": "64",
+    "RARQEntries": "96",
+    "RAWQEntries": "56",
+    "idealInstructionFetch": "true",
+    "enableTwoFetch": "true",
+    "idealPredictionsPerCycle": "2",
+    "idealNoOverrideBubbles": "false",
+    "ld3": "False"
+  },
+  "new_points": [
+    {
+      "name": "bzip2_source_16629",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_155204_36584ada_kmhv3_run1678/spec_all/bzip2_source_16629",
+      "roi": 19999993,
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "errors": [],
+      "integer_config_differing_sections": [],
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "numROBEntries": "352",
+        "numPhysIntRegs": "224",
+        "numPhysFloatRegs": "256",
+        "LQEntries": "120",
+        "SQEntries": "64",
+        "RARQEntries": "96",
+        "RAWQEntries": "56",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "false",
+        "ld3": "False"
+      }
+    },
+    {
+      "name": "bzip2_source_3760",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_155204_36584ada_kmhv3_run1678/spec_all/bzip2_source_3760",
+      "roi": 19999999,
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "errors": [],
+      "integer_config_differing_sections": [],
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "numROBEntries": "352",
+        "numPhysIntRegs": "224",
+        "numPhysFloatRegs": "256",
+        "LQEntries": "120",
+        "SQEntries": "64",
+        "RARQEntries": "96",
+        "RAWQEntries": "56",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "false",
+        "ld3": "False"
+      }
+    }
+  ],
+  "scope": "145 selected points; prior 143 audit reused",
+  "cluster_point_set_match": true
+}

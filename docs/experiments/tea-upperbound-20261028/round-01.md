@@ -49,7 +49,7 @@
 
 乘积交互比率定义为`(Combined/Base) / ((Frontend/Base) × (Backend/Base))`。这些端点上的比率大于1，说明整包组合收益超出两个单包收益的乘积基准；并未由此辨认具体内部机制。perlbench的后端单包回退在理想前端背景下得到逆转，libquantum的组合增益也远大于单包。这提示后续选择切片时必须覆盖这些程序，不能只依赖先前四个1M无预热点。
 
-[逐点审计与计算数据](data/r1-seven-comparison.json)、[前端标准score CSV](data/r1-seven-frontend-score.csv)、[组合标准score CSV](data/r1-seven-combined-score.csv)保留原值。标准CSV中的int_avg只覆盖7个有效benchmark，不作为完整INT引用。正在对perlbench和libquantum补20M预热+2M窗口的前端组件消融。
+[逐点审计与计算数据](data/r1-seven-comparison.json)、[前端标准score CSV](data/r1-seven-frontend-score.csv)、[组合标准score CSV](data/r1-seven-combined-score.csv)保留原值。标准CSV中的int_avg只覆盖7个有效benchmark，不作为完整INT引用。随后补充的perlbench/libquantum局部消融见第六轮；其原“20M预热＋2M”标注已纠正为恢复后前2M冷启动探针。
 
 ## 正式ROI的提前估分：共同140点
 

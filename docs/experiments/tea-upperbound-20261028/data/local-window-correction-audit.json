@@ -1,0 +1,380 @@
+{
+  "source": {
+    "warmup": "src/cpu/o3/cpu.cc:1485-1493",
+    "stop": "src/cpu/base.cc:369-372",
+    "config": "configs/common/Simulation.py:784-786,818-820"
+  },
+  "families": {
+    "tea-roi": [
+      {
+        "path": "/tmp/tea-upperbound-20261028/tea-roi/gcc/baseline/tea",
+        "max_insts_any_thread": "2000000",
+        "warmupInstCount": "20000000",
+        "blocks": [
+          {
+            "simInsts": "2000001",
+            "system.cpu.numCycles": "874323",
+            "system.cpu.committedInsts": "2000001"
+          }
+        ],
+        "warmup_log": false,
+        "normal_maxinst_exit": true,
+        "validation_exists": true
+      },
+      {
+        "path": "/tmp/tea-upperbound-20261028/tea-roi/gcc/combined/tea",
+        "max_insts_any_thread": "2000000",
+        "warmupInstCount": "20000000",
+        "blocks": [
+          {
+            "simInsts": "2000001",
+            "system.cpu.numCycles": "840861",
+            "system.cpu.committedInsts": "2000001"
+          }
+        ],
+        "warmup_log": false,
+        "normal_maxinst_exit": true,
+        "validation_exists": true
+      },
+      {
+        "path": "/tmp/tea-upperbound-20261028/tea-roi/mcf/baseline/tea",
+        "max_insts_any_thread": "2000000",
+        "warmupInstCount": "20000000",
+        "blocks": [
+          {
+            "simInsts": "2000008",
+            "system.cpu.numCycles": "2282039",
+            "system.cpu.committedInsts": "2000008"
+          }
+        ],
+        "warmup_log": false,
+        "normal_maxinst_exit": true,
+        "validation_exists": true
+      },
+      {
+        "path": "/tmp/tea-upperbound-20261028/tea-roi/mcf/combined/tea",
+        "max_insts_any_thread": "2000000",
+        "warmupInstCount": "20000000",
+        "blocks": [
+          {
+            "simInsts": "2000000",
+            "system.cpu.numCycles": "1847491",
+            "system.cpu.committedInsts": "2000000"
+          }
+        ],
+        "warmup_log": false,
+        "normal_maxinst_exit": true,
+        "validation_exists": true
+      }
+    ],
+    "formal-frontend-ablations": [
+      {
+        "path": "/tmp/tea-upperbound-20261028/formal-frontend-ablations/libquantum_69175/baseline",
+        "max_insts_any_thread": "2000000",
+        "warmupInstCount": "20000000",
+        "blocks": [
+          {
+            "simInsts": "2000006",
+            "system.cpu.numCycles": "343768",
+            "system.cpu.committedInsts": "2000006"
+          }
+        ],
+        "warmup_log": false,
+        "normal_maxinst_exit": true,
+        "validation_exists": true
+      },
+      {
+        "path": "/tmp/tea-upperbound-20261028/formal-frontend-ablations/libquantum_69175/fetch1",
+        "max_insts_any_thread": "2000000",
+        "warmupInstCount": "20000000",
+        "blocks": [
+          {
+            "simInsts": "2000006",
+            "system.cpu.numCycles": "342087",
+            "system.cpu.committedInsts": "2000006"
+          }
+        ],
+        "warmup_log": false,
+        "normal_maxinst_exit": true,
+        "validation_exists": true
+      },
+      {
+        "path": "/tmp/tea-upperbound-20261028/formal-frontend-ablations/libquantum_69175/frontend",
+        "max_insts_any_thread": "2000000",
+        "warmupInstCount": "20000000",
+        "blocks": [
+          {
+            "simInsts": "2000000",
+            "system.cpu.numCycles": "344254",
+            "system.cpu.committedInsts": "2000000"
+          }
+        ],
+        "warmup_log": false,
+        "normal_maxinst_exit": true,
+        "validation_exists": true
+      },
+      {
+        "path": "/tmp/tea-upperbound-20261028/formal-frontend-ablations/libquantum_69175/override_bubbles",
+        "max_insts_any_thread": "2000000",
+        "warmupInstCount": "20000000",
+        "blocks": [
+          {
+            "simInsts": "2000002",
+            "system.cpu.numCycles": "343042",
+            "system.cpu.committedInsts": "2000002"
+          }
+        ],
+        "warmup_log": false,
+        "normal_maxinst_exit": true,
+        "validation_exists": true
+      },
+      {
+        "path": "/tmp/tea-upperbound-20261028/formal-frontend-ablations/libquantum_69175/predict1",
+        "max_insts_any_thread": "2000000",
+        "warmupInstCount": "20000000",
+        "blocks": [
+          {
+            "simInsts": "2000000",
+            "system.cpu.numCycles": "343169",
+            "system.cpu.committedInsts": "2000000"
+          }
+        ],
+        "warmup_log": false,
+        "normal_maxinst_exit": true,
+        "validation_exists": true
+      },
+      {
+        "path": "/tmp/tea-upperbound-20261028/formal-frontend-ablations/libquantum_69175/timing_fetch",
+        "max_insts_any_thread": "2000000",
+        "warmupInstCount": "20000000",
+        "blocks": [
+          {
+            "simInsts": "2000002",
+            "system.cpu.numCycles": "345000",
+            "system.cpu.committedInsts": "2000002"
+          }
+        ],
+        "warmup_log": false,
+        "normal_maxinst_exit": true,
+        "validation_exists": true
+      },
+      {
+        "path": "/tmp/tea-upperbound-20261028/formal-frontend-ablations/perlbench_checkspam_5886/baseline",
+        "max_insts_any_thread": "2000000",
+        "warmupInstCount": "20000000",
+        "blocks": [
+          {
+            "simInsts": "2000000",
+            "system.cpu.numCycles": "566946",
+            "system.cpu.committedInsts": "2000000"
+          }
+        ],
+        "warmup_log": false,
+        "normal_maxinst_exit": true,
+        "validation_exists": true
+      },
+      {
+        "path": "/tmp/tea-upperbound-20261028/formal-frontend-ablations/perlbench_checkspam_5886/fetch1",
+        "max_insts_any_thread": "2000000",
+        "warmupInstCount": "20000000",
+        "blocks": [
+          {
+            "simInsts": "2000001",
+            "system.cpu.numCycles": "495672",
+            "system.cpu.committedInsts": "2000001"
+          }
+        ],
+        "warmup_log": false,
+        "normal_maxinst_exit": true,
+        "validation_exists": true
+      },
+      {
+        "path": "/tmp/tea-upperbound-20261028/formal-frontend-ablations/perlbench_checkspam_5886/frontend",
+        "max_insts_any_thread": "2000000",
+        "warmupInstCount": "20000000",
+        "blocks": [
+          {
+            "simInsts": "2000000",
+            "system.cpu.numCycles": "449340",
+            "system.cpu.committedInsts": "2000000"
+          }
+        ],
+        "warmup_log": false,
+        "normal_maxinst_exit": true,
+        "validation_exists": true
+      },
+      {
+        "path": "/tmp/tea-upperbound-20261028/formal-frontend-ablations/perlbench_checkspam_5886/override_bubbles",
+        "max_insts_any_thread": "2000000",
+        "warmupInstCount": "20000000",
+        "blocks": [
+          {
+            "simInsts": "2000006",
+            "system.cpu.numCycles": "459458",
+            "system.cpu.committedInsts": "2000006"
+          }
+        ],
+        "warmup_log": false,
+        "normal_maxinst_exit": true,
+        "validation_exists": true
+      },
+      {
+        "path": "/tmp/tea-upperbound-20261028/formal-frontend-ablations/perlbench_checkspam_5886/predict1",
+        "max_insts_any_thread": "2000000",
+        "warmupInstCount": "20000000",
+        "blocks": [
+          {
+            "simInsts": "2000001",
+            "system.cpu.numCycles": "493550",
+            "system.cpu.committedInsts": "2000001"
+          }
+        ],
+        "warmup_log": false,
+        "normal_maxinst_exit": true,
+        "validation_exists": true
+      },
+      {
+        "path": "/tmp/tea-upperbound-20261028/formal-frontend-ablations/perlbench_checkspam_5886/timing_fetch",
+        "max_insts_any_thread": "2000000",
+        "warmupInstCount": "20000000",
+        "blocks": [
+          {
+            "simInsts": "2000001",
+            "system.cpu.numCycles": "520729",
+            "system.cpu.committedInsts": "2000001"
+          }
+        ],
+        "warmup_log": false,
+        "normal_maxinst_exit": true,
+        "validation_exists": true
+      }
+    ],
+    "override-separation": [
+      {
+        "path": "/tmp/tea-upperbound-20261028/override-separation/libquantum_69175/double_supply_override",
+        "max_insts_any_thread": "2000000",
+        "warmupInstCount": "20000000",
+        "blocks": [
+          {
+            "simInsts": "2000002",
+            "system.cpu.numCycles": "343042",
+            "system.cpu.committedInsts": "2000002"
+          }
+        ],
+        "warmup_log": false,
+        "normal_maxinst_exit": true,
+        "validation_exists": true
+      },
+      {
+        "path": "/tmp/tea-upperbound-20261028/override-separation/libquantum_69175/single_supply_override",
+        "max_insts_any_thread": "2000000",
+        "warmupInstCount": "20000000",
+        "blocks": [
+          {
+            "simInsts": "2000004",
+            "system.cpu.numCycles": "342183",
+            "system.cpu.committedInsts": "2000004"
+          }
+        ],
+        "warmup_log": false,
+        "normal_maxinst_exit": true,
+        "validation_exists": true
+      },
+      {
+        "path": "/tmp/tea-upperbound-20261028/override-separation/perlbench_checkspam_5886/double_supply_override",
+        "max_insts_any_thread": "2000000",
+        "warmupInstCount": "20000000",
+        "blocks": [
+          {
+            "simInsts": "2000006",
+            "system.cpu.numCycles": "459458",
+            "system.cpu.committedInsts": "2000006"
+          }
+        ],
+        "warmup_log": false,
+        "normal_maxinst_exit": true,
+        "validation_exists": true
+      },
+      {
+        "path": "/tmp/tea-upperbound-20261028/override-separation/perlbench_checkspam_5886/single_supply_override",
+        "max_insts_any_thread": "2000000",
+        "warmupInstCount": "20000000",
+        "blocks": [
+          {
+            "simInsts": "2000000",
+            "system.cpu.numCycles": "518204",
+            "system.cpu.committedInsts": "2000000"
+          }
+        ],
+        "warmup_log": false,
+        "normal_maxinst_exit": true,
+        "validation_exists": true
+      }
+    ],
+    "final-twelve-tea": [
+      {
+        "path": "/tmp/tea-upperbound-20261028/final-twelve-tea/astar_rivers_8610/baseline/tea",
+        "max_insts_any_thread": "20000000",
+        "warmupInstCount": "20000000",
+        "blocks": [],
+        "warmup_log": false,
+        "normal_maxinst_exit": false,
+        "validation_exists": false
+      },
+      {
+        "path": "/tmp/tea-upperbound-20261028/final-twelve-tea/mcf_6753/baseline/tea",
+        "max_insts_any_thread": "20000000",
+        "warmupInstCount": "20000000",
+        "blocks": [],
+        "warmup_log": false,
+        "normal_maxinst_exit": false,
+        "validation_exists": false
+      },
+      {
+        "path": "/tmp/tea-upperbound-20261028/final-twelve-tea/mcf_6753/candidate/tea",
+        "max_insts_any_thread": "20000000",
+        "warmupInstCount": "20000000",
+        "blocks": [],
+        "warmup_log": false,
+        "normal_maxinst_exit": false,
+        "validation_exists": false
+      },
+      {
+        "path": "/tmp/tea-upperbound-20261028/final-twelve-tea/perlbench_checkspam_5886/baseline/tea",
+        "max_insts_any_thread": "20000000",
+        "warmupInstCount": "20000000",
+        "blocks": [
+          {
+            "simInsts": "20000011",
+            "system.cpu.numCycles": "4429945",
+            "system.cpu.committedInsts": "20000011"
+          }
+        ],
+        "warmup_log": true,
+        "normal_maxinst_exit": true,
+        "validation_exists": true
+      },
+      {
+        "path": "/tmp/tea-upperbound-20261028/final-twelve-tea/perlbench_checkspam_5886/candidate/tea",
+        "max_insts_any_thread": "20000000",
+        "warmupInstCount": "20000000",
+        "blocks": [],
+        "warmup_log": false,
+        "normal_maxinst_exit": false,
+        "validation_exists": false
+      }
+    ]
+  },
+  "ci_perlbench_5886": [
+    {
+      "simInsts": "20000011",
+      "system.cpu.numCycles": "4429945",
+      "system.cpu.committedInsts": "20000011"
+    },
+    {
+      "simInsts": "19999994",
+      "system.cpu.numCycles": "4102519",
+      "system.cpu.committedInsts": "19999994"
+    }
+  ]
+}

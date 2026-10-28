@@ -1,5 +1,5 @@
 {
-  "scope": "20M warmup + 2M ROI, not SPEC score",
+  "scope": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
   "workloads": {
     "perlbench_checkspam_5886": {
       "runs": {
@@ -361,5 +361,12 @@
       },
       "frontend_relative_to_baseline_percent": -0.14147440578936576
     }
-  }
+  },
+  "window_correction": {
+    "actual_window": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
+    "supersedes": "original post-warmup scope and window-passed claims",
+    "audit": "local-window-correction-audit.json",
+    "full_CI_affected": false
+  },
+  "original_scope_superseded": "20M warmup + 2M ROI, not SPEC score"
 }

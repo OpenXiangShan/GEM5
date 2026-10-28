@@ -49,6 +49,17 @@ def point(directory):
     assert not re.search(r'panic:|fatal:|Difftest.*(?:failed|mismatch)',
                          log, re.I)
     values = stats(directory / 'stats.txt')
+    blocks = re.findall(r'Begin Simulation Statistics(.*?)'
+                        r'End Simulation Statistics',
+                        (directory / 'stats.txt').read_text(), re.S)
+    warmup = config.getint('system.cpu', 'warmupInstCount')
+    maximum = config.getint('system.cpu', 'max_insts_any_thread')
+    reset = ('Will trigger stat dump and reset' in log and len(blocks) >= 2)
+    window = {'configured_warmup': warmup, 'configured_total_limit': maximum,
+              'complete_stats_blocks': len(blocks),
+              'warmup_completed_before_measurement': reset,
+              'kind': 'post-warmup ROI' if reset else 'restore prefix',
+              'executed_warmup': warmup if reset else 0}
     insts = values['system.cpu.committedInsts']
     tea = {k.removeprefix('system.cpu.tea.'): v for k, v in values.items()
            if k.startswith('system.cpu.tea.')}
@@ -82,7 +93,7 @@ def point(directory):
     for event in EVENTS:
         near(events[event], tea['samplesByEvent::' + event])
     return {
-        'directory': str(directory), 'instructions': insts,
+        'directory': str(directory), 'instructions': insts, 'window': window,
         'cycles': values['system.cpu.numCycles'],
         'ipc': insts / values['system.cpu.numCycles'],
         'state_cpi': {s: tea['samplesByState::' + s] / insts for s in STATES},
@@ -135,9 +146,15 @@ def main():
             'instruction': symbols.get(pc, ('', ''))[1],
             'events': [{e: v.get(e, 0) for e in EVENTS} for v in cells]})
     ranked.sort(key=lambda v: abs(v['delta_cpi']), reverse=True)
+    assert sides[0]['window'] == sides[1]['window'], 'Unmatched windows'
+    window = sides[0]['window']
+    scope = (f"{window['executed_warmup']} executed warmup instructions; "
+             f"{window['kind']}; approximately "
+             f"{sides[0]['instructions']:.0f} measured instructions; "
+             'not a weighted SPEC score; PC weights include Computing '
+             'and overlapping events')
     result = {'name': args.name, 'sides': sides, 'ranked_pcs': ranked,
-              'scope': '20M warmup + 2M diagnostic ROI; not a SPEC score; '
-                       'PC weights include Computing and overlapping events'}
+              'scope': scope}
     if args.elf:
         result['elf'] = str(args.elf)
         result['elf_sha256'] = hashlib.sha256(args.elf.read_bytes()).hexdigest()
@@ -145,7 +162,7 @@ def main():
     prefix.with_suffix('.json').write_text(
         json.dumps(result, ensure_ascii=False, indent=2) + '\n')
     lines = [f'# {args.name} TEA残余诊断', '',
-             '20M预热、2M正式窗口；状态互斥，事件可重叠。'
+             scope + '。状态互斥，事件可重叠。'
              'PC总权重包含Computing，不能视为可移除停顿。', '',
              '| 状态CPI | Baseline | Combined | ΔCPI |',
              '| --- | ---: | ---: | ---: |']

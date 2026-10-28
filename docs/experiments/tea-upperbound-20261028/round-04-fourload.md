@@ -1,6 +1,6 @@
 # 第四轮 保留原12宽，独立增加第4个load口
 
-保留24分基线已有的12宽和整数FU拓扑，仅增加第4个load IQ。完整145点INT26.72579→27.07359，提升1.3014%；带理想前端的组合仍在运行。原16宽整包只作参照。
+保留24分基线已有的12宽和整数FU拓扑，仅增加第4个load IQ。完整145点INT26.72579→27.07359，提升1.3014%；理想前端背景下，28.99774→29.62660，条件收益2.1687%。原16宽整包只作参照。
 
 ## 从旧报告确认范围
 
@@ -27,7 +27,7 @@ CoreMark及四个SPEC代表点×原前端/理想前端共8组均通过difftest�
 
 以上均约1M、无预热窗口，用于检查方向；局部收益较小且不一致。不能用原宽后端整包的+4.56%替代第4个load口的单项收益。若完整点集证实收益依赖资源窗口，下一步保持12宽，独立扩大ROB/PRF/LSU，而不是恢复10整数口/16宽作为默认。
 
-代码已提交到`36584adaf67da1e848d7b3a61d5ab18e84b2c12e`，两组完整0.3c中，仅4load已完成，前端组合仍在运行：
+代码已提交到`36584adaf67da1e848d7b3a61d5ab18e84b2c12e`，两组完整0.3c均已完成：
 
 - [原12宽+4load](https://github.com/OpenXiangShan/GEM5/actions/runs/40646873569)。
 - [原12宽+4load+理想前端](https://github.com/OpenXiangShan/GEM5/actions/runs/40646888439)。
@@ -35,3 +35,5 @@ CoreMark及四个SPEC代表点×原前端/理想前端共8组均通过difftest�
 原始局部验证见[data/fourload-local-probes.json](data/fourload-local-probes.json)，完整命令、INI、日志和stats在`/tmp/tea-upperbound-20261028/fourload-spec/`。新增Python配置无需改动C++；沿用已构建的探针二进制完成本地检查，正式CI使用上述精确源码SHA。
 
 完整分数见[data/r4-fourload-full-score.csv](data/r4-fourload-full-score.csv)，逐点验证见[data/r4-r5-complete-audit.json](data/r4-r5-complete-audit.json)。
+
+理想前端＋4load的完整分数见[data/r4-front-full-score.csv](data/r4-front-full-score.csv)，最后两点与全量审计见[data/r4-front-complete-audit.json](data/r4-front-complete-audit.json)、[data/r4-front-last2-audit.json](data/r4-front-last2-audit.json)。两组均为145点；早期143共同点估分已被完整结果替代。

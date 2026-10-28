@@ -1,0 +1,28 @@
+{
+  "scope": "read-only source and disassembly, no full build provenance validation",
+  "source_root": "/nfs/home/wujiabin/work/workload-builder/build/linux-workloads/spec2006/spec-src/benchspec/CPU2006",
+  "caveat": "PC-to-single-line mapping is not verified without DWARF; source structures and control flow are established from readable source and instruction semantics; exact build provenance separately audited",
+  "mcf": {
+    "elf": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/elf/mcf.elf",
+    "elf_sha256": "818d286599edb64b3493bb75d083cbf2bc8fb6e76a39c3da79aeb62cdf828766",
+    "function_symbol": "main+0x58c (inlined)",
+    "source": ["429.mcf/src/defines.h:68-69", "429.mcf/src/defines.h:107-110", "429.mcf/src/defines.h:126-133", "429.mcf/src/pbeampp.c:162-171"],
+    "confirmed": "two disassembly dependencies: 108da ld t6,8(a5) -> 108e4 ld t6,0(t6), 108de ld t5,16(a5) -> 108e8 ld t5,0(t5); 108d2 lw t4,24(a5) -> 108d6 blez governs reachability",
+    "candidate": "source arc layout cost/tail/head/ident matches offsets 0/8/16/24 under RV64 LP64; node.potential first field matches dereference at offset 0; arithmetic matches source reduced cost; exact PC to line remains inferred"
+  },
+  "perlbench_checkspam": {
+    "elf": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/elf/perlbench_checkspam.elf",
+    "elf_sha256": "df8fd054a6a9c78b6058a8af595c06e6c1b654867a9c59b0a1642b3a4346721d",
+    "sources": ["400.perlbench/src/regexec.c:961-975", "400.perlbench/src/regexec.c:994-1009", "400.perlbench/src/regexec.c:2296-2298", "400.perlbench/src/regexec.c:2324-2327", "400.perlbench/src/regexec.c:2394-2398", "400.perlbench/src/run.c:35-38"],
+    "confirmed": "S_regmatch 92e14 sh2add -> 92e18 lw -> 92e1a jr; S_find_byclass.isra.0 96cf8-96d26 contains byte reads, character transformations and conditional branches",
+    "candidate": "92e18/jr consistent with compiler lowering of switch(OP(scan)); 96d10 is within S_find_byclass but exact case and source expression not established"
+  },
+  "astar_rivers": {
+    "elf": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/elf/astar_rivers.elf",
+    "elf_sha256": "73f872defdb08b3bc7a0c18a4583d87beed14dca3311fe4e623fee3052d98f52",
+    "point": "astar_rivers_8610",
+    "source": ["473.astar/src/Way_.h:17-20", "473.astar/src/Way_.h:35-54", "473.astar/src/Way_.cpp:45-69", "473.astar/src/Way_.cpp:78-86", "473.astar/src/Way_.cpp:95-103"],
+    "confirmed": "symbol is wayobj::makebound2 clone; 1c1d0 lhu a6,578(a5), 1c1d4 sh2add t1,a4,a7, 1c1d8 lhu t3,0(t1), 1c1dc beq t3,a6,1c216; then 1c1e0-1c1ec load map entry and branch, 1c1f0-1c206 append and update two halfwords",
+    "candidate": "structure fields and branch/store sequence are consistent with waymap[index1].fillnum != fillnum, maparp[index1] == 0, enqueue and update fillnum/num; eight unrolled neighbor cases make exact source line unresolved"
+  }
+}

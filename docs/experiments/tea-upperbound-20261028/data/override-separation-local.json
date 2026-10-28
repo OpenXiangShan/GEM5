@@ -35,7 +35,13 @@
       "passed": true,
       "exit_code": 0
     },
-    "source": "new A measurement"
+    "source": "new A measurement",
+    "window_correction": {
+      "actual_window": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
+      "supersedes": "original post-warmup scope and window-passed claims",
+      "audit": "local-window-correction-audit.json",
+      "full_CI_affected": false
+    }
   },
   {
     "workload": "perlbench_checkspam_5886",
@@ -73,7 +79,13 @@
       "passed": true,
       "exit_code": 0
     },
-    "source": "reused round06 measurement"
+    "source": "reused round06 measurement",
+    "window_correction": {
+      "actual_window": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
+      "supersedes": "original post-warmup scope and window-passed claims",
+      "audit": "local-window-correction-audit.json",
+      "full_CI_affected": false
+    }
   },
   {
     "workload": "perlbench_checkspam_5886",
@@ -111,7 +123,13 @@
       "passed": true,
       "exit_code": 0
     },
-    "source": "reused round06 measurement"
+    "source": "reused round06 measurement",
+    "window_correction": {
+      "actual_window": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
+      "supersedes": "original post-warmup scope and window-passed claims",
+      "audit": "local-window-correction-audit.json",
+      "full_CI_affected": false
+    }
   },
   {
     "workload": "libquantum_69175",
@@ -149,7 +167,13 @@
       "passed": true,
       "exit_code": 0
     },
-    "source": "new A measurement"
+    "source": "new A measurement",
+    "window_correction": {
+      "actual_window": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
+      "supersedes": "original post-warmup scope and window-passed claims",
+      "audit": "local-window-correction-audit.json",
+      "full_CI_affected": false
+    }
   },
   {
     "workload": "libquantum_69175",
@@ -187,7 +211,13 @@
       "passed": true,
       "exit_code": 0
     },
-    "source": "reused round06 measurement"
+    "source": "reused round06 measurement",
+    "window_correction": {
+      "actual_window": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
+      "supersedes": "original post-warmup scope and window-passed claims",
+      "audit": "local-window-correction-audit.json",
+      "full_CI_affected": false
+    }
   },
   {
     "workload": "libquantum_69175",
@@ -225,6 +255,12 @@
       "passed": true,
       "exit_code": 0
     },
-    "source": "reused round06 measurement"
+    "source": "reused round06 measurement",
+    "window_correction": {
+      "actual_window": "checkpoint restore prefix; approximately 2M instructions; 20M warmup threshold not reached",
+      "supersedes": "original post-warmup scope and window-passed claims",
+      "audit": "local-window-correction-audit.json",
+      "full_CI_affected": false
+    }
   }
 ]
