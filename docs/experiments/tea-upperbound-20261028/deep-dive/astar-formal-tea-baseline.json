@@ -1,0 +1,450 @@
+{
+  "validation": "/tmp/tea-upperbound-20261028/final-twelve-tea-roi-v2/astar_rivers_8610/baseline/tea/validation.json",
+  "csv": "/tmp/tea-upperbound-20261028/final-twelve-tea-roi-v2/astar_rivers_8610/baseline/tea/system.cpu.tea.csv",
+  "elf": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/elf/astar_rivers.elf",
+  "cycles": 4222025.0,
+  "instructions": 19999993.0,
+  "states": {
+    "Computing": 2361500.0,
+    "Stalled": 1508813.0,
+    "Flushed": 350239.0,
+    "Drained": 1473.0
+  },
+  "special_weights": {
+    "-3": 182.0
+  },
+  "attributed_weight": 4221843.000000225,
+  "top": {
+    "total": [
+      {
+        "pc": "0x1daa2",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "lhu\ta1,0(a5)",
+        "weight": 399425.068462473,
+        "cpi": 0.019971260413064795,
+        "cycle_percent": 9.460509316322689,
+        "all_event_weights": {
+          "total": 399425.068462473,
+          "ST_L1": 54250.120213119895,
+          "ST_TLB": 49231.785692085155
+        }
+      },
+      {
+        "pc": "0x1db4e",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "sw\ts3,0(a2)",
+        "weight": 330589.6806889479,
+        "cpi": 0.01652948981976883,
+        "cycle_percent": 7.830121344353667,
+        "all_event_weights": {
+          "total": 330589.6806889479,
+          "ST_TLB": 396.48351648351615
+        }
+      },
+      {
+        "pc": "0x1db8e",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "bne\ta7,a6,1db08 <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0x20c>",
+        "weight": 244353.33666636044,
+        "cpi": 0.01221767110950291,
+        "cycle_percent": 5.7875862096117485,
+        "all_event_weights": {
+          "total": 244353.33666636044,
+          "FL_MB": 178066.20265014138
+        }
+      },
+      {
+        "pc": "0x1db8a",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "lhu\ta7,0(a5)",
+        "weight": 242528.47610385856,
+        "cpi": 0.012126428049442745,
+        "cycle_percent": 5.744363808927199,
+        "all_event_weights": {
+          "total": 242528.47610385856,
+          "ST_L1": 106765.02099289926,
+          "ST_TLB": 24950.979409479492,
+          "ST_LLC": 15591.525641025642
+        }
+      },
+      {
+        "pc": "0x1daa4",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "beq\ta1,a4,1dbe0 <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0x2e4>",
+        "weight": 187770.86935278669,
+        "cpi": 0.009388546753630699,
+        "cycle_percent": 4.447412541441292,
+        "all_event_weights": {
+          "total": 187770.86935278669,
+          "FL_MB": 155284.02631535535
+        }
+      }
+    ],
+    "DR_L1": [
+      {
+        "pc": "0x1aca2",
+        "function": "main",
+        "assembly": "ld\ts6,0(s9)",
+        "weight": 207.2,
+        "cpi": 1.0360003626001269e-05,
+        "cycle_percent": 0.0049075976575221605,
+        "all_event_weights": {
+          "total": 207.2,
+          "DR_L1": 207.2
+        }
+      },
+      {
+        "pc": "0x1bb02",
+        "function": "main",
+        "assembly": "mulw\ts8,t6,s8",
+        "weight": 205.0,
+        "cpi": 1.0250003587501256e-05,
+        "cycle_percent": 0.004855489960386307,
+        "all_event_weights": {
+          "total": 205.0,
+          "DR_L1": 205.0
+        }
+      },
+      {
+        "pc": "0x1d922",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "mv\ts5,a1",
+        "weight": 204.5,
+        "cpi": 1.0225003578751253e-05,
+        "cycle_percent": 0.004843647301946341,
+        "all_event_weights": {
+          "total": 204.5,
+          "DR_L1": 204.5
+        }
+      },
+      {
+        "pc": "0x1bac0",
+        "function": "main",
+        "assembly": "subw\ta3,a3,t0",
+        "weight": 196.0,
+        "cpi": 9.800003430001201e-06,
+        "cycle_percent": 0.004642322108466909,
+        "all_event_weights": {
+          "total": 196.0,
+          "DR_L1": 196.0
+        }
+      },
+      {
+        "pc": "0x1ba80",
+        "function": "main",
+        "assembly": "mul\tt2,s1,a3",
+        "weight": 179.5,
+        "cpi": 8.9750031412511e-06,
+        "cycle_percent": 0.004251514379948011,
+        "all_event_weights": {
+          "total": 179.5,
+          "DR_L1": 179.5
+        }
+      }
+    ],
+    "DR_TLB": [],
+    "DR_SQ": [],
+    "FL_MB": [
+      {
+        "pc": "0x1db8e",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "bne\ta7,a6,1db08 <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0x20c>",
+        "weight": 178066.20265014138,
+        "cpi": 0.008903313248666707,
+        "cycle_percent": 4.217554435375001,
+        "all_event_weights": {
+          "total": 244353.33666636044,
+          "FL_MB": 178066.20265014138
+        }
+      },
+      {
+        "pc": "0x1daa4",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "beq\ta1,a4,1dbe0 <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0x2e4>",
+        "weight": 155284.02631535535,
+        "cpi": 0.007764204033239179,
+        "cycle_percent": 3.677951369671079,
+        "all_event_weights": {
+          "total": 187770.86935278669,
+          "FL_MB": 155284.02631535535
+        }
+      },
+      {
+        "pc": "0x1dbe4",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "bne\ta5,s6,1da7c <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0x180>",
+        "weight": 25092.783566433234,
+        "cpi": 0.0012546396174455278,
+        "cycle_percent": 0.5943305301705516,
+        "all_event_weights": {
+          "total": 43577.71081976212,
+          "FL_MB": 25092.783566433234
+        }
+      },
+      {
+        "pc": "0x1dbda",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "beq\ta5,t1,1dd66 <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0x46a>",
+        "weight": 1912.0423382173378,
+        "cpi": 9.560215037161952e-05,
+        "cycle_percent": 0.045287328668526076,
+        "all_event_weights": {
+          "total": 6261.882792204612,
+          "FL_MB": 1912.0423382173378
+        }
+      },
+      {
+        "pc": "0x1dc06",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "beqz\ta3,1d9e6 <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0xea>",
+        "weight": 1510.2680458430448,
+        "cpi": 7.55134287218523e-05,
+        "cycle_percent": 0.03577117723943001,
+        "all_event_weights": {
+          "total": 1719.0215534465533,
+          "FL_MB": 1510.2680458430448
+        }
+      }
+    ],
+    "FL_EX": [],
+    "FL_MO": [
+      {
+        "pc": "0x1db3a",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "lw\ta2,16(a5)",
+        "weight": 397.0,
+        "cpi": 1.9850006947502433e-05,
+        "cycle_percent": 0.009403070801333483,
+        "all_event_weights": {
+          "total": 94587.61040359981,
+          "FL_MO": 397.0,
+          "ST_L1": 128.23076923076923
+        }
+      },
+      {
+        "pc": "0x1db56",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "lw\ta6,16(a5)",
+        "weight": 80.0,
+        "cpi": 4.00000140000049e-06,
+        "cycle_percent": 0.0018948253503946566,
+        "all_event_weights": {
+          "total": 17997.726748280926,
+          "FL_MO": 80.0,
+          "ST_L1": 1.2307692307692306
+        }
+      }
+    ],
+    "ST_L1": [
+      {
+        "pc": "0x1db8a",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "lhu\ta7,0(a5)",
+        "weight": 106765.02099289926,
+        "cpi": 0.005338252918033484,
+        "cycle_percent": 2.52876335390954,
+        "all_event_weights": {
+          "total": 242528.47610385856,
+          "ST_L1": 106765.02099289926,
+          "ST_TLB": 24950.979409479492,
+          "ST_LLC": 15591.525641025642
+        }
+      },
+      {
+        "pc": "0x1daa2",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "lhu\ta1,0(a5)",
+        "weight": 54250.120213119895,
+        "cpi": 0.0027125069600334307,
+        "cycle_percent": 1.2849312880222141,
+        "all_event_weights": {
+          "total": 399425.068462473,
+          "ST_L1": 54250.120213119895,
+          "ST_TLB": 49231.785692085155
+        }
+      },
+      {
+        "pc": "0x1db08",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "lbu\ta5,0(t1)",
+        "weight": 48057.13609722836,
+        "cpi": 0.002402857645861594,
+        "cycle_percent": 1.1382484968049302,
+        "all_event_weights": {
+          "total": 151906.24048993987,
+          "ST_L1": 48057.13609722836,
+          "ST_TLB": 9278.185497835502,
+          "ST_LLC": 8766.563492063491
+        }
+      },
+      {
+        "pc": "0x1da8c",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "lw\ta3,4(a4)",
+        "weight": 39373.345862458424,
+        "cpi": 0.001968667982156715,
+        "cycle_percent": 0.9325701733755348,
+        "all_event_weights": {
+          "total": 76950.21045336734,
+          "ST_L1": 39373.345862458424,
+          "ST_TLB": 9130.132997557967
+        }
+      },
+      {
+        "pc": "0x1da8e",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "lw\tt1,0(a4)",
+        "weight": 14086.964718621399,
+        "cpi": 0.0007043484824530388,
+        "cycle_percent": 0.33365422323698696,
+        "all_event_weights": {
+          "total": 33422.98642747652,
+          "ST_L1": 14086.964718621399,
+          "ST_TLB": 507.085256410256
+        }
+      }
+    ],
+    "ST_TLB": [
+      {
+        "pc": "0x1daa2",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "lhu\ta1,0(a5)",
+        "weight": 49231.785692085155,
+        "cpi": 0.0024615901461608088,
+        "cycle_percent": 1.1660704446819987,
+        "all_event_weights": {
+          "total": 399425.068462473,
+          "ST_L1": 54250.120213119895,
+          "ST_TLB": 49231.785692085155
+        }
+      },
+      {
+        "pc": "0x1db8a",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "lhu\ta7,0(a5)",
+        "weight": 24950.979409479492,
+        "cpi": 0.001247549407116267,
+        "cycle_percent": 0.5909718537782106,
+        "all_event_weights": {
+          "total": 242528.47610385856,
+          "ST_L1": 106765.02099289926,
+          "ST_TLB": 24950.979409479492,
+          "ST_LLC": 15591.525641025642
+        }
+      },
+      {
+        "pc": "0x1db08",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "lbu\ta5,0(t1)",
+        "weight": 9278.185497835502,
+        "cpi": 0.00046390943726007817,
+        "cycle_percent": 0.2197567635870347,
+        "all_event_weights": {
+          "total": 151906.24048993987,
+          "ST_L1": 48057.13609722836,
+          "ST_TLB": 9278.185497835502,
+          "ST_LLC": 8766.563492063491
+        }
+      },
+      {
+        "pc": "0x1da8c",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "lw\ta3,4(a4)",
+        "weight": 9130.132997557967,
+        "cpi": 0.0004565068096552817,
+        "cycle_percent": 0.21625009320309488,
+        "all_event_weights": {
+          "total": 76950.21045336734,
+          "ST_L1": 39373.345862458424,
+          "ST_TLB": 9130.132997557967
+        }
+      },
+      {
+        "pc": "0x1db92",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "lhu\ta5,2(a5)",
+        "weight": 657.1871933621935,
+        "cpi": 3.285937116888959e-05,
+        "cycle_percent": 0.015565686924217491,
+        "all_event_weights": {
+          "total": 107611.97424218054,
+          "ST_L1": 4779.345887446122,
+          "ST_TLB": 657.1871933621935
+        }
+      }
+    ],
+    "ST_LLC": [
+      {
+        "pc": "0x1db8a",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "lhu\ta7,0(a5)",
+        "weight": 15591.525641025642,
+        "cpi": 0.0007795765549030763,
+        "cycle_percent": 0.3692902254492961,
+        "all_event_weights": {
+          "total": 242528.47610385856,
+          "ST_L1": 106765.02099289926,
+          "ST_TLB": 24950.979409479492,
+          "ST_LLC": 15591.525641025642
+        }
+      },
+      {
+        "pc": "0x1db08",
+        "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+        "assembly": "lbu\ta5,0(t1)",
+        "weight": 8766.563492063491,
+        "cpi": 0.00043832832801808934,
+        "cycle_percent": 0.20763883425757762,
+        "all_event_weights": {
+          "total": 151906.24048993987,
+          "ST_L1": 48057.13609722836,
+          "ST_TLB": 9278.185497835502,
+          "ST_LLC": 8766.563492063491
+        }
+      },
+      {
+        "pc": "0x24b0c",
+        "function": "malloc",
+        "assembly": "ld\ta7,0(a3)",
+        "weight": 553.1742424242424,
+        "cpi": 2.765872180176475e-05,
+        "cycle_percent": 0.013102107221635172,
+        "all_event_weights": {
+          "total": 553.1742424242424,
+          "ST_L1": 553.1742424242424,
+          "ST_LLC": 553.1742424242424,
+          "ST_TLB": 369.0833333333333
+        }
+      },
+      {
+        "pc": "0x271ea",
+        "function": "free",
+        "assembly": "lw\ta5,0(t6)",
+        "weight": 401.0,
+        "cpi": 2.0050007017502457e-05,
+        "cycle_percent": 0.009497812068853216,
+        "all_event_weights": {
+          "total": 401.0,
+          "ST_L1": 401.0,
+          "ST_TLB": 401.0,
+          "ST_LLC": 401.0
+        }
+      },
+      {
+        "pc": "0x24ad8",
+        "function": "malloc",
+        "assembly": "ld\tt6,0(t4)",
+        "weight": 282.3333333333333,
+        "cpi": 1.4116671607501729e-05,
+        "cycle_percent": 0.006687154465767809,
+        "all_event_weights": {
+          "total": 282.3333333333333,
+          "ST_L1": 282.3333333333333,
+          "ST_LLC": 282.3333333333333
+        }
+      }
+    ]
+  },
+  "ci_residual": "/tmp/tea-upperbound-20261028/astar-ci-residual-notes.json",
+  "source_candidates": "/nfs/home/wujiabin/work/workload-builder/build/linux-workloads/spec2006/spec-src/benchspec/CPU2006/473.astar/src/Way2_.cpp:40-84,166-187"
+}

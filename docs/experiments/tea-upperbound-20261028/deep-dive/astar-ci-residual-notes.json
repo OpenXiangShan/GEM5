@@ -1,0 +1,2018 @@
+{
+  "point": "astar_rivers_8610",
+  "note": "R7 C equals R1-frontend; last complete block 20M; nozero omitted fields are null, not assumed zero",
+  "runs": {
+    "baseline24": {
+      "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667",
+      "run_id": 40638589458,
+      "instructions": 19999993.0,
+      "cycles": 4222025.0,
+      "ipc": 4.73706171801446,
+      "cpi": 0.21110132388546335,
+      "stats": {
+        "system.cpu.numCycles": {
+          "value": 4222025.0,
+          "description": "Number of cpu cycles simulated (Cycle)"
+        },
+        "system.cpu.committedInsts": {
+          "value": 19999993.0,
+          "description": "Number of Instructions Simulated (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::cond_branch": {
+          "value": 2825108.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::direct_call": {
+          "value": 5.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::indirect_call": {
+          "value": 0.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::return": {
+          "value": 5.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::direct_jump": {
+          "value": 521.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::indirect_jump": {
+          "value": 0.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::unknown": {
+          "value": 0.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::cond_branch": {
+          "value": 45367.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::direct_call": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::indirect_call": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::return": {
+          "value": 1.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::direct_jump": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::indirect_jump": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::unknown": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.overrideBubbleNum": {
+          "value": 425591.0,
+          "description": "the number of override bubbles (Count)"
+        },
+        "system.cpu.commit.branchMispredicts": {
+          "value": 48222.0,
+          "description": "The number of times a branch was mispredicted (Count)"
+        },
+        "system.cpu.commit.ROBFull": {
+          "value": 0.0,
+          "description": "Total number of ROBFull (Count)"
+        },
+        "system.cpu.dcache.ReadReq.misses::cpu.data": {
+          "value": 206072.0,
+          "description": "number of ReadReq misses (Count)"
+        },
+        "system.cpu.dcache.ReadReq.misses::total": {
+          "value": 206072.0,
+          "description": "number of ReadReq misses (Count)"
+        },
+        "system.cpu.dcache.ReadReq.missLatency::cpu.data": {
+          "value": 337024971.0,
+          "description": "number of ReadReq miss ticks (Tick)"
+        },
+        "system.cpu.dcache.ReadReq.missLatency::total": {
+          "value": 337024971.0,
+          "description": "number of ReadReq miss ticks (Tick)"
+        },
+        "system.cpu.fetch.twoFetchSuccesses": {
+          "value": 0.0,
+          "description": "FTQ boundaries crossed using the current fetch buffer (Count)"
+        },
+        "system.cpu.iew.stallEvents::IQFull": {
+          "value": 685445.0,
+          "description": "Number of events the IEW has stalled (Count)"
+        },
+        "system.cpu.iew.stallEvents::LSQFull": {
+          "value": 0.0,
+          "description": "Number of events the IEW has stalled (Count)"
+        },
+        "system.cpu.lsq0.RARQueueFull": {
+          "value": 0.0,
+          "description": "Number of times RAR queue was full (Unspecified)"
+        },
+        "system.cpu.lsq0.RARQueueFullCycles": {
+          "value": 0.0,
+          "description": "Number of cycles that RAR queue is physically full (Cycle)"
+        },
+        "system.cpu.lsq0.RAWQueueFull": {
+          "value": 2040.0,
+          "description": "Number of times RAW queue was full (Unspecified)"
+        },
+        "system.cpu.lsq0.RAWQueueFullCycles": {
+          "value": 2399.0,
+          "description": "Number of cycles that RAW queue is physically full (Cycle)"
+        },
+        "system.cpu.lsq0.storeReplayPhysicalSQFull": {
+          "value": 0.0,
+          "description": "Number of post-issue store replays caused by a full physical SQ window (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::TLBMissReplay": {
+          "value": 34107.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::CacheMissReplay": {
+          "value": 236486.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::RescheduleReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::PhysicalSQFullReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::STLFReplay": {
+          "value": 114932.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::MdpAddrReplay": {
+          "value": 4970.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::NukeReplay": {
+          "value": 2088.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::CacheBlockedReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::BankConflictReplay": {
+          "value": 594712.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::RARReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::RAWReplay": {
+          "value": 2040.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::MshrAliasFailReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::HitInWriteBufferReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::MshrArbFailReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::total": {
+          "value": 989335.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.rename.fullRegistersEvents": {
+          "value": 0.0,
+          "description": "Number of times there has been no free registers (Count)"
+        },
+        "system.cpu.rename.stallEvents::ROBWalk": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::IEWStall": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::ROBFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::IQFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::LSQFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::RegFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::SerializeInst": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::BWFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::total": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.scheduler.intIQ0.portissued::0": {
+          "value": 1737584.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ0.portissued::1": {
+          "value": 1144995.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ0.avgInsts": {
+          "value": 9.585226,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ1.portissued::0": {
+          "value": 1737274.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ1.portissued::1": {
+          "value": 1145039.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ1.avgInsts": {
+          "value": 9.586393,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.portissued::0": {
+          "value": 1737540.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.portissued::1": {
+          "value": 1144657.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.avgInsts": {
+          "value": 9.582155,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ3.portissued": {
+          "value": 1896130.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ3.portBusy": {
+          "value": 345404.0,
+          "description": "count each port busy cycles (Count)"
+        },
+        "system.cpu.scheduler.intIQ3.avgInsts": {
+          "value": 6.269329,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ4.portissued": {
+          "value": 1895878.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ4.portBusy": {
+          "value": 345009.0,
+          "description": "count each port busy cycles (Count)"
+        },
+        "system.cpu.scheduler.intIQ4.avgInsts": {
+          "value": 6.268566,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ5.portissued": {
+          "value": 1741850.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ5.avgInsts": {
+          "value": 5.950573,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.ld0.portissued": {
+          "value": 2601832.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.ld0.avgInsts": {
+          "value": 6.08387,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.ld1.portissued": {
+          "value": 2602018.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.ld1.avgInsts": {
+          "value": 6.08503,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.ld2.portissued": {
+          "value": 2601857.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.ld2.avgInsts": {
+          "value": 6.082358,
+          "description": "average insts (Count)"
+        }
+      }
+    },
+    "R1-frontend": {
+      "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670",
+      "run_id": 40641369657,
+      "instructions": 19999994.0,
+      "cycles": 4304891.0,
+      "ipc": 4.645876980392767,
+      "cpi": 0.21524461457338437,
+      "stats": {
+        "system.cpu.numCycles": {
+          "value": 4304891.0,
+          "description": "Number of cpu cycles simulated (Cycle)"
+        },
+        "system.cpu.committedInsts": {
+          "value": 19999994.0,
+          "description": "Number of Instructions Simulated (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::cond_branch": {
+          "value": 2825108.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::direct_call": {
+          "value": 5.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::indirect_call": {
+          "value": 0.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::return": {
+          "value": 5.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::direct_jump": {
+          "value": 521.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::indirect_jump": {
+          "value": 0.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::unknown": {
+          "value": 0.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::cond_branch": {
+          "value": 44663.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::direct_call": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::indirect_call": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::return": {
+          "value": 1.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::direct_jump": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::indirect_jump": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::unknown": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.overrideBubbleNum": {
+          "value": 0.0,
+          "description": "the number of override bubbles (Count)"
+        },
+        "system.cpu.branchPred.idealSecondPredictionEnqueues": {
+          "value": 1932294.0,
+          "description": "second serial targets enqueued in the same CPU cycle (Count)"
+        },
+        "system.cpu.commit.branchMispredicts": {
+          "value": 47746.0,
+          "description": "The number of times a branch was mispredicted (Count)"
+        },
+        "system.cpu.commit.ROBFull": {
+          "value": 92.0,
+          "description": "Total number of ROBFull (Count)"
+        },
+        "system.cpu.dcache.ReadReq.misses::cpu.data": {
+          "value": 204725.0,
+          "description": "number of ReadReq misses (Count)"
+        },
+        "system.cpu.dcache.ReadReq.misses::total": {
+          "value": 204725.0,
+          "description": "number of ReadReq misses (Count)"
+        },
+        "system.cpu.dcache.ReadReq.missLatency::cpu.data": {
+          "value": 332572761.0,
+          "description": "number of ReadReq miss ticks (Tick)"
+        },
+        "system.cpu.dcache.ReadReq.missLatency::total": {
+          "value": 332572761.0,
+          "description": "number of ReadReq miss ticks (Tick)"
+        },
+        "system.cpu.fetch.twoFetchSuccesses": {
+          "value": 972625.0,
+          "description": "predicted-taken FTQ boundaries crossed in the same fetch cycle (Count)"
+        },
+        "system.cpu.iew.stallEvents::IQFull": {
+          "value": 769620.0,
+          "description": "Number of events the IEW has stalled (Count)"
+        },
+        "system.cpu.iew.stallEvents::LSQFull": {
+          "value": 0.0,
+          "description": "Number of events the IEW has stalled (Count)"
+        },
+        "system.cpu.lsq0.RARQueueFull": {
+          "value": 2.0,
+          "description": "Number of times RAR queue was full (Unspecified)"
+        },
+        "system.cpu.lsq0.RARQueueFullCycles": {
+          "value": 279.0,
+          "description": "Number of cycles that RAR queue is physically full (Cycle)"
+        },
+        "system.cpu.lsq0.RAWQueueFull": {
+          "value": 23374.0,
+          "description": "Number of times RAW queue was full (Unspecified)"
+        },
+        "system.cpu.lsq0.RAWQueueFullCycles": {
+          "value": 11818.0,
+          "description": "Number of cycles that RAW queue is physically full (Cycle)"
+        },
+        "system.cpu.lsq0.storeReplayPhysicalSQFull": {
+          "value": 7.0,
+          "description": "Number of post-issue store replays caused by a full physical SQ window (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::TLBMissReplay": {
+          "value": 37193.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::CacheMissReplay": {
+          "value": 234942.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::RescheduleReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::PhysicalSQFullReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::STLFReplay": {
+          "value": 188689.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::MdpAddrReplay": {
+          "value": 68287.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::NukeReplay": {
+          "value": 2719.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::CacheBlockedReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::BankConflictReplay": {
+          "value": 565535.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::RARReplay": {
+          "value": 2.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::RAWReplay": {
+          "value": 23374.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::MshrAliasFailReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::HitInWriteBufferReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::MshrArbFailReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::total": {
+          "value": 1120741.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.rename.fullRegistersEvents": {
+          "value": 0.0,
+          "description": "Number of times there has been no free registers (Count)"
+        },
+        "system.cpu.rename.stallEvents::ROBWalk": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::IEWStall": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::ROBFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::IQFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::LSQFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::RegFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::SerializeInst": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::BWFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::total": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.scheduler.intIQ0.portissued::0": {
+          "value": 1707492.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ0.portissued::1": {
+          "value": 1131058.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ0.avgInsts": {
+          "value": 9.467756,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ1.portissued::0": {
+          "value": 1707744.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ1.portissued::1": {
+          "value": 1130403.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ1.avgInsts": {
+          "value": 9.46591,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.portissued::0": {
+          "value": 1707020.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.portissued::1": {
+          "value": 1131284.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.portBusy::0": {
+          "value": 2.0,
+          "description": "count each port busy cycles (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.avgInsts": {
+          "value": 9.465601,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ3.portissued": {
+          "value": 1893094.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ3.portBusy": {
+          "value": 331176.0,
+          "description": "count each port busy cycles (Count)"
+        },
+        "system.cpu.scheduler.intIQ3.avgInsts": {
+          "value": 6.180471,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ4.portissued": {
+          "value": 1891901.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ4.portBusy": {
+          "value": 332347.0,
+          "description": "count each port busy cycles (Count)"
+        },
+        "system.cpu.scheduler.intIQ4.avgInsts": {
+          "value": 6.181586,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ5.portissued": {
+          "value": 1715705.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ5.avgInsts": {
+          "value": 5.876917,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.ld0.portissued": {
+          "value": 2592024.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.ld0.avgInsts": {
+          "value": 5.975945,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.ld1.portissued": {
+          "value": 2588557.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.ld1.avgInsts": {
+          "value": 5.978458,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.ld2.portissued": {
+          "value": 2588677.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.ld2.avgInsts": {
+          "value": 5.978111,
+          "description": "average insts (Count)"
+        }
+      }
+    },
+    "R4-fourload-frontend": {
+      "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_150611_36584ada_kmhv3_run1674",
+      "run_id": 40646888439,
+      "instructions": 19999994.0,
+      "cycles": 4204810.0,
+      "ipc": 4.756456058656633,
+      "cpi": 0.21024056307216893,
+      "stats": {
+        "system.cpu.numCycles": {
+          "value": 4204810.0,
+          "description": "Number of cpu cycles simulated (Cycle)"
+        },
+        "system.cpu.committedInsts": {
+          "value": 19999994.0,
+          "description": "Number of Instructions Simulated (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::cond_branch": {
+          "value": 2825108.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::direct_call": {
+          "value": 5.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::indirect_call": {
+          "value": 0.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::return": {
+          "value": 5.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::direct_jump": {
+          "value": 521.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::indirect_jump": {
+          "value": 0.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::unknown": {
+          "value": 0.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::cond_branch": {
+          "value": 44251.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::direct_call": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::indirect_call": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::return": {
+          "value": 1.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::direct_jump": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::indirect_jump": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::unknown": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.overrideBubbleNum": {
+          "value": 0.0,
+          "description": "the number of override bubbles (Count)"
+        },
+        "system.cpu.branchPred.idealSecondPredictionEnqueues": {
+          "value": 1922027.0,
+          "description": "second serial targets enqueued in the same CPU cycle (Count)"
+        },
+        "system.cpu.commit.branchMispredicts": {
+          "value": 47530.0,
+          "description": "The number of times a branch was mispredicted (Count)"
+        },
+        "system.cpu.commit.ROBFull": {
+          "value": 91.0,
+          "description": "Total number of ROBFull (Count)"
+        },
+        "system.cpu.dcache.ReadReq.misses::cpu.data": {
+          "value": 215267.0,
+          "description": "number of ReadReq misses (Count)"
+        },
+        "system.cpu.dcache.ReadReq.misses::total": {
+          "value": 215267.0,
+          "description": "number of ReadReq misses (Count)"
+        },
+        "system.cpu.dcache.ReadReq.missLatency::cpu.data": {
+          "value": 352947033.0,
+          "description": "number of ReadReq miss ticks (Tick)"
+        },
+        "system.cpu.dcache.ReadReq.missLatency::total": {
+          "value": 352947033.0,
+          "description": "number of ReadReq miss ticks (Tick)"
+        },
+        "system.cpu.fetch.twoFetchSuccesses": {
+          "value": 969869.0,
+          "description": "predicted-taken FTQ boundaries crossed in the same fetch cycle (Count)"
+        },
+        "system.cpu.iew.stallEvents::IQFull": {
+          "value": 591349.0,
+          "description": "Number of events the IEW has stalled (Count)"
+        },
+        "system.cpu.iew.stallEvents::LSQFull": {
+          "value": 0.0,
+          "description": "Number of events the IEW has stalled (Count)"
+        },
+        "system.cpu.lsq0.RARQueueFull": {
+          "value": 1.0,
+          "description": "Number of times RAR queue was full (Unspecified)"
+        },
+        "system.cpu.lsq0.RARQueueFullCycles": {
+          "value": 755.0,
+          "description": "Number of cycles that RAR queue is physically full (Cycle)"
+        },
+        "system.cpu.lsq0.RAWQueueFull": {
+          "value": 78831.0,
+          "description": "Number of times RAW queue was full (Unspecified)"
+        },
+        "system.cpu.lsq0.RAWQueueFullCycles": {
+          "value": 36968.0,
+          "description": "Number of cycles that RAW queue is physically full (Cycle)"
+        },
+        "system.cpu.lsq0.storeReplayPhysicalSQFull": {
+          "value": 2.0,
+          "description": "Number of post-issue store replays caused by a full physical SQ window (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::TLBMissReplay": {
+          "value": 34085.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::CacheMissReplay": {
+          "value": 248590.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::RescheduleReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::PhysicalSQFullReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::STLFReplay": {
+          "value": 185184.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::MdpAddrReplay": {
+          "value": 68047.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::NukeReplay": {
+          "value": 4095.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::CacheBlockedReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::BankConflictReplay": {
+          "value": 719583.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::RARReplay": {
+          "value": 1.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::RAWReplay": {
+          "value": 78831.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::MshrAliasFailReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::HitInWriteBufferReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::MshrArbFailReplay": {
+          "value": 2.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::total": {
+          "value": 1338418.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.rename.fullRegistersEvents": {
+          "value": 0.0,
+          "description": "Number of times there has been no free registers (Count)"
+        },
+        "system.cpu.rename.stallEvents::ROBWalk": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::IEWStall": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::ROBFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::IQFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::LSQFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::RegFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::SerializeInst": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::BWFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::total": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.scheduler.intIQ0.portissued::0": {
+          "value": 1708538.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ0.portissued::1": {
+          "value": 1130758.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ0.avgInsts": {
+          "value": 9.296552,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ1.portissued::0": {
+          "value": 1708714.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ1.portissued::1": {
+          "value": 1130567.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ1.avgInsts": {
+          "value": 9.296491,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.portissued::0": {
+          "value": 1708783.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.portissued::1": {
+          "value": 1129993.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.portBusy::0": {
+          "value": 2.0,
+          "description": "count each port busy cycles (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.avgInsts": {
+          "value": 9.297868,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ3.portissued": {
+          "value": 1895801.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ3.portBusy": {
+          "value": 337078.0,
+          "description": "count each port busy cycles (Count)"
+        },
+        "system.cpu.scheduler.intIQ3.avgInsts": {
+          "value": 6.05204,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ4.portissued": {
+          "value": 1895618.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ4.portBusy": {
+          "value": 337603.0,
+          "description": "count each port busy cycles (Count)"
+        },
+        "system.cpu.scheduler.intIQ4.avgInsts": {
+          "value": 6.051853,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ5.portissued": {
+          "value": 1716876.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ5.avgInsts": {
+          "value": 5.745776,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.ld0.portissued": {
+          "value": 1931516.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.ld0.avgInsts": {
+          "value": 4.103227,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.ld1.portissued": {
+          "value": 1932614.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.ld1.avgInsts": {
+          "value": 4.101181,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.ld2.portissued": {
+          "value": 1931440.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.ld2.avgInsts": {
+          "value": 4.101396,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.ld3.portissued": {
+          "value": 1932813.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.ld3.avgInsts": {
+          "value": 4.101371,
+          "description": "average insts (Count)"
+        }
+      }
+    },
+    "R5-fourload-window-frontend": {
+      "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_152834_36584adaf6_kmhv3_run1676",
+      "run_id": 40648104599,
+      "instructions": 19999994.0,
+      "cycles": 4019343.0,
+      "ipc": 4.9759361169225915,
+      "cpi": 0.2009672102901631,
+      "stats": {
+        "system.cpu.numCycles": {
+          "value": 4019343.0,
+          "description": "Number of cpu cycles simulated (Cycle)"
+        },
+        "system.cpu.committedInsts": {
+          "value": 19999994.0,
+          "description": "Number of Instructions Simulated (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::cond_branch": {
+          "value": 2825108.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::direct_call": {
+          "value": 5.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::indirect_call": {
+          "value": 0.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::return": {
+          "value": 5.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::direct_jump": {
+          "value": 521.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::indirect_jump": {
+          "value": 0.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::unknown": {
+          "value": 0.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::cond_branch": {
+          "value": 43834.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::direct_call": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::indirect_call": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::return": {
+          "value": 1.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::direct_jump": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::indirect_jump": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::unknown": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.overrideBubbleNum": {
+          "value": 0.0,
+          "description": "the number of override bubbles (Count)"
+        },
+        "system.cpu.branchPred.idealSecondPredictionEnqueues": {
+          "value": 1893082.0,
+          "description": "second serial targets enqueued in the same CPU cycle (Count)"
+        },
+        "system.cpu.commit.branchMispredicts": {
+          "value": 47426.0,
+          "description": "The number of times a branch was mispredicted (Count)"
+        },
+        "system.cpu.commit.ROBFull": {
+          "value": 0.0,
+          "description": "Total number of ROBFull (Count)"
+        },
+        "system.cpu.dcache.ReadReq.misses::cpu.data": {
+          "value": 226617.0,
+          "description": "number of ReadReq misses (Count)"
+        },
+        "system.cpu.dcache.ReadReq.misses::total": {
+          "value": 226617.0,
+          "description": "number of ReadReq misses (Count)"
+        },
+        "system.cpu.dcache.ReadReq.missLatency::cpu.data": {
+          "value": 366569730.0,
+          "description": "number of ReadReq miss ticks (Tick)"
+        },
+        "system.cpu.dcache.ReadReq.missLatency::total": {
+          "value": 366569730.0,
+          "description": "number of ReadReq miss ticks (Tick)"
+        },
+        "system.cpu.fetch.twoFetchSuccesses": {
+          "value": 981530.0,
+          "description": "predicted-taken FTQ boundaries crossed in the same fetch cycle (Count)"
+        },
+        "system.cpu.iew.stallEvents::IQFull": {
+          "value": 1110195.0,
+          "description": "Number of events the IEW has stalled (Count)"
+        },
+        "system.cpu.iew.stallEvents::LSQFull": {
+          "value": 0.0,
+          "description": "Number of events the IEW has stalled (Count)"
+        },
+        "system.cpu.lsq0.RARQueueFull": {
+          "value": 8.0,
+          "description": "Number of times RAR queue was full (Unspecified)"
+        },
+        "system.cpu.lsq0.RARQueueFullCycles": {
+          "value": 181.0,
+          "description": "Number of cycles that RAR queue is physically full (Cycle)"
+        },
+        "system.cpu.lsq0.RAWQueueFull": {
+          "value": 441.0,
+          "description": "Number of times RAW queue was full (Unspecified)"
+        },
+        "system.cpu.lsq0.RAWQueueFullCycles": {
+          "value": 2383.0,
+          "description": "Number of cycles that RAW queue is physically full (Cycle)"
+        },
+        "system.cpu.lsq0.storeReplayPhysicalSQFull": {
+          "value": 0.0,
+          "description": "Number of post-issue store replays caused by a full physical SQ window (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::TLBMissReplay": {
+          "value": 35477.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::CacheMissReplay": {
+          "value": 261772.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::RescheduleReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::PhysicalSQFullReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::STLFReplay": {
+          "value": 206116.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::MdpAddrReplay": {
+          "value": 73143.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::NukeReplay": {
+          "value": 4566.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::CacheBlockedReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::BankConflictReplay": {
+          "value": 735053.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::RARReplay": {
+          "value": 8.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::RAWReplay": {
+          "value": 441.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::MshrAliasFailReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::HitInWriteBufferReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::MshrArbFailReplay": {
+          "value": 3.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::total": {
+          "value": 1316579.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.rename.fullRegistersEvents": {
+          "value": 0.0,
+          "description": "Number of times there has been no free registers (Count)"
+        },
+        "system.cpu.rename.stallEvents::ROBWalk": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::IEWStall": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::ROBFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::IQFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::LSQFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::RegFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::SerializeInst": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::BWFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::total": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.scheduler.intIQ0.portissued::0": {
+          "value": 1728609.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ0.portissued::1": {
+          "value": 1140236.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ0.avgInsts": {
+          "value": 11.006626,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ1.portissued::0": {
+          "value": 1728397.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ1.portissued::1": {
+          "value": 1138984.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ1.avgInsts": {
+          "value": 11.007761,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.portissued::0": {
+          "value": 1726949.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.portissued::1": {
+          "value": 1138747.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.portBusy::0": {
+          "value": 4.0,
+          "description": "count each port busy cycles (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.avgInsts": {
+          "value": 11.008733,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ3.portissued": {
+          "value": 1899287.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ3.portBusy": {
+          "value": 378086.0,
+          "description": "count each port busy cycles (Count)"
+        },
+        "system.cpu.scheduler.intIQ3.avgInsts": {
+          "value": 7.101295,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ4.portissued": {
+          "value": 1900416.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ4.portBusy": {
+          "value": 380291.0,
+          "description": "count each port busy cycles (Count)"
+        },
+        "system.cpu.scheduler.intIQ4.avgInsts": {
+          "value": 7.102349,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ5.portissued": {
+          "value": 1737613.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ5.avgInsts": {
+          "value": 6.850626,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.ld0.portissued": {
+          "value": 1980725.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.ld0.avgInsts": {
+          "value": 4.912738,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.ld1.portissued": {
+          "value": 1980522.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.ld1.avgInsts": {
+          "value": 4.911719,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.ld2.portissued": {
+          "value": 1979788.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.ld2.avgInsts": {
+          "value": 4.913523,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.ld3.portissued": {
+          "value": 1980826.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.ld3.avgInsts": {
+          "value": 4.912182,
+          "description": "average insts (Count)"
+        }
+      }
+    },
+    "R7-single-supply-override": {
+      "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_155121_36584adaf_kmhv3_run1677",
+      "run_id": 40651698971,
+      "instructions": 19999995.0,
+      "cycles": 4192621.0,
+      "ipc": 4.7702845069945505,
+      "cpi": 0.2096311024077756,
+      "stats": {
+        "system.cpu.numCycles": {
+          "value": 4192621.0,
+          "description": "Number of cpu cycles simulated (Cycle)"
+        },
+        "system.cpu.committedInsts": {
+          "value": 19999995.0,
+          "description": "Number of Instructions Simulated (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::cond_branch": {
+          "value": 2825108.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::direct_call": {
+          "value": 5.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::indirect_call": {
+          "value": 0.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::return": {
+          "value": 5.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::direct_jump": {
+          "value": 521.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::indirect_jump": {
+          "value": 0.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::unknown": {
+          "value": 0.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::cond_branch": {
+          "value": 45464.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::direct_call": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::indirect_call": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::return": {
+          "value": 1.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::direct_jump": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::indirect_jump": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::unknown": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.overrideBubbleNum": {
+          "value": 441949.0,
+          "description": "the number of override bubbles (Count)"
+        },
+        "system.cpu.branchPred.idealSecondPredictionEnqueues": {
+          "value": 0.0,
+          "description": "second serial targets enqueued in the same CPU cycle (Count)"
+        },
+        "system.cpu.commit.branchMispredicts": {
+          "value": 48340.0,
+          "description": "The number of times a branch was mispredicted (Count)"
+        },
+        "system.cpu.commit.ROBFull": {
+          "value": 126.0,
+          "description": "Total number of ROBFull (Count)"
+        },
+        "system.cpu.dcache.ReadReq.misses::cpu.data": {
+          "value": 206065.0,
+          "description": "number of ReadReq misses (Count)"
+        },
+        "system.cpu.dcache.ReadReq.misses::total": {
+          "value": 206065.0,
+          "description": "number of ReadReq misses (Count)"
+        },
+        "system.cpu.dcache.ReadReq.missLatency::cpu.data": {
+          "value": 333490509.0,
+          "description": "number of ReadReq miss ticks (Tick)"
+        },
+        "system.cpu.dcache.ReadReq.missLatency::total": {
+          "value": 333490509.0,
+          "description": "number of ReadReq miss ticks (Tick)"
+        },
+        "system.cpu.fetch.twoFetchSuccesses": {
+          "value": 0.0,
+          "description": "predicted-taken FTQ boundaries crossed in the same fetch cycle (Count)"
+        },
+        "system.cpu.iew.stallEvents::IQFull": {
+          "value": 688806.0,
+          "description": "Number of events the IEW has stalled (Count)"
+        },
+        "system.cpu.iew.stallEvents::LSQFull": {
+          "value": 0.0,
+          "description": "Number of events the IEW has stalled (Count)"
+        },
+        "system.cpu.lsq0.RARQueueFull": {
+          "value": 2.0,
+          "description": "Number of times RAR queue was full (Unspecified)"
+        },
+        "system.cpu.lsq0.RARQueueFullCycles": {
+          "value": 243.0,
+          "description": "Number of cycles that RAR queue is physically full (Cycle)"
+        },
+        "system.cpu.lsq0.RAWQueueFull": {
+          "value": 1889.0,
+          "description": "Number of times RAW queue was full (Unspecified)"
+        },
+        "system.cpu.lsq0.RAWQueueFullCycles": {
+          "value": 1028.0,
+          "description": "Number of cycles that RAW queue is physically full (Cycle)"
+        },
+        "system.cpu.lsq0.storeReplayPhysicalSQFull": {
+          "value": 0.0,
+          "description": "Number of post-issue store replays caused by a full physical SQ window (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::TLBMissReplay": {
+          "value": 33158.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::CacheMissReplay": {
+          "value": 236255.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::RescheduleReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::PhysicalSQFullReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::STLFReplay": {
+          "value": 114081.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::MdpAddrReplay": {
+          "value": 5074.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::NukeReplay": {
+          "value": 2162.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::CacheBlockedReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::BankConflictReplay": {
+          "value": 593683.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::RARReplay": {
+          "value": 2.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::RAWReplay": {
+          "value": 1889.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::MshrAliasFailReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::HitInWriteBufferReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::MshrArbFailReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::total": {
+          "value": 986304.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.rename.fullRegistersEvents": {
+          "value": 0.0,
+          "description": "Number of times there has been no free registers (Count)"
+        },
+        "system.cpu.rename.stallEvents::ROBWalk": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::IEWStall": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::ROBFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::IQFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::LSQFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::RegFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::SerializeInst": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::BWFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::total": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.scheduler.intIQ0.portissued::0": {
+          "value": 1739233.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ0.portissued::1": {
+          "value": 1145750.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ0.avgInsts": {
+          "value": 9.652481,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ1.portissued::0": {
+          "value": 1738965.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ1.portissued::1": {
+          "value": 1145442.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ1.avgInsts": {
+          "value": 9.652736,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.portissued::0": {
+          "value": 1739726.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.portissued::1": {
+          "value": 1145781.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.portBusy::0": {
+          "value": 4.0,
+          "description": "count each port busy cycles (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.avgInsts": {
+          "value": 9.653818,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ3.portissued": {
+          "value": 1897774.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ3.portBusy": {
+          "value": 345061.0,
+          "description": "count each port busy cycles (Count)"
+        },
+        "system.cpu.scheduler.intIQ3.avgInsts": {
+          "value": 6.314075,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ4.portissued": {
+          "value": 1896729.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ4.portBusy": {
+          "value": 345062.0,
+          "description": "count each port busy cycles (Count)"
+        },
+        "system.cpu.scheduler.intIQ4.avgInsts": {
+          "value": 6.315099,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ5.portissued": {
+          "value": 1742182.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ5.avgInsts": {
+          "value": 5.993189,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.ld0.portissued": {
+          "value": 2602195.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.ld0.avgInsts": {
+          "value": 6.126335,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.ld1.portissued": {
+          "value": 2600462.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.ld1.avgInsts": {
+          "value": 6.128125,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.ld2.portissued": {
+          "value": 2602100.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.ld2.avgInsts": {
+          "value": 6.125402,
+          "description": "average insts (Count)"
+        }
+      }
+    },
+    "R7-double-supply-override": {
+      "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_155204_36584ada_kmhv3_run1678",
+      "run_id": 40651748060,
+      "instructions": 19999996.0,
+      "cycles": 4330247.0,
+      "ipc": 4.618673253511867,
+      "cpi": 0.21651239330247865,
+      "stats": {
+        "system.cpu.numCycles": {
+          "value": 4330247.0,
+          "description": "Number of cpu cycles simulated (Cycle)"
+        },
+        "system.cpu.committedInsts": {
+          "value": 19999996.0,
+          "description": "Number of Instructions Simulated (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::cond_branch": {
+          "value": 2825108.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::direct_call": {
+          "value": 5.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::indirect_call": {
+          "value": 0.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::return": {
+          "value": 5.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::direct_jump": {
+          "value": 521.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::indirect_jump": {
+          "value": 0.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassCounts::unknown": {
+          "value": 0.0,
+          "description": "branch counts by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::cond_branch": {
+          "value": 44605.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::direct_call": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::indirect_call": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::return": {
+          "value": 1.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::direct_jump": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::indirect_jump": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.branchClassMisses::unknown": {
+          "value": 0.0,
+          "description": "branch mispredictions by fine-grained class (Count)"
+        },
+        "system.cpu.branchPred.overrideBubbleNum": {
+          "value": 528133.0,
+          "description": "the number of override bubbles (Count)"
+        },
+        "system.cpu.branchPred.idealSecondPredictionEnqueues": {
+          "value": 1824154.0,
+          "description": "second serial targets enqueued in the same CPU cycle (Count)"
+        },
+        "system.cpu.commit.branchMispredicts": {
+          "value": 47430.0,
+          "description": "The number of times a branch was mispredicted (Count)"
+        },
+        "system.cpu.commit.ROBFull": {
+          "value": 92.0,
+          "description": "Total number of ROBFull (Count)"
+        },
+        "system.cpu.dcache.ReadReq.misses::cpu.data": {
+          "value": 203468.0,
+          "description": "number of ReadReq misses (Count)"
+        },
+        "system.cpu.dcache.ReadReq.misses::total": {
+          "value": 203468.0,
+          "description": "number of ReadReq misses (Count)"
+        },
+        "system.cpu.dcache.ReadReq.missLatency::cpu.data": {
+          "value": 332399601.0,
+          "description": "number of ReadReq miss ticks (Tick)"
+        },
+        "system.cpu.dcache.ReadReq.missLatency::total": {
+          "value": 332399601.0,
+          "description": "number of ReadReq miss ticks (Tick)"
+        },
+        "system.cpu.fetch.twoFetchSuccesses": {
+          "value": 962353.0,
+          "description": "predicted-taken FTQ boundaries crossed in the same fetch cycle (Count)"
+        },
+        "system.cpu.iew.stallEvents::IQFull": {
+          "value": 751594.0,
+          "description": "Number of events the IEW has stalled (Count)"
+        },
+        "system.cpu.iew.stallEvents::LSQFull": {
+          "value": 0.0,
+          "description": "Number of events the IEW has stalled (Count)"
+        },
+        "system.cpu.lsq0.RARQueueFull": {
+          "value": 1.0,
+          "description": "Number of times RAR queue was full (Unspecified)"
+        },
+        "system.cpu.lsq0.RARQueueFullCycles": {
+          "value": 343.0,
+          "description": "Number of cycles that RAR queue is physically full (Cycle)"
+        },
+        "system.cpu.lsq0.RAWQueueFull": {
+          "value": 22671.0,
+          "description": "Number of times RAW queue was full (Unspecified)"
+        },
+        "system.cpu.lsq0.RAWQueueFullCycles": {
+          "value": 11222.0,
+          "description": "Number of cycles that RAW queue is physically full (Cycle)"
+        },
+        "system.cpu.lsq0.storeReplayPhysicalSQFull": {
+          "value": 2.0,
+          "description": "Number of post-issue store replays caused by a full physical SQ window (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::TLBMissReplay": {
+          "value": 33264.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::CacheMissReplay": {
+          "value": 233435.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::RescheduleReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::PhysicalSQFullReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::STLFReplay": {
+          "value": 195805.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::MdpAddrReplay": {
+          "value": 74228.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::NukeReplay": {
+          "value": 2823.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::CacheBlockedReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::BankConflictReplay": {
+          "value": 559990.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::RARReplay": {
+          "value": 1.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::RAWReplay": {
+          "value": 22671.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::MshrAliasFailReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::HitInWriteBufferReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::MshrArbFailReplay": {
+          "value": 0.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.lsq0.loadReplayEvents::total": {
+          "value": 1122217.0,
+          "description": "event distribution of load replay (Count)"
+        },
+        "system.cpu.rename.fullRegistersEvents": {
+          "value": 0.0,
+          "description": "Number of times there has been no free registers (Count)"
+        },
+        "system.cpu.rename.stallEvents::ROBWalk": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::IEWStall": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::ROBFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::IQFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::LSQFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::RegFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::SerializeInst": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::BWFull": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.rename.stallEvents::total": {
+          "value": 0.0,
+          "description": "count of stall events (Count)"
+        },
+        "system.cpu.scheduler.intIQ0.portissued::0": {
+          "value": 1703324.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ0.portissued::1": {
+          "value": 1128729.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ0.avgInsts": {
+          "value": 9.399552,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ1.portissued::0": {
+          "value": 1702550.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ1.portissued::1": {
+          "value": 1127733.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ1.avgInsts": {
+          "value": 9.397964,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.portissued::0": {
+          "value": 1702190.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.portissued::1": {
+          "value": 1128088.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.portBusy::0": {
+          "value": 6.0,
+          "description": "count each port busy cycles (Count)"
+        },
+        "system.cpu.scheduler.intIQ2.avgInsts": {
+          "value": 9.398294,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ3.portissued": {
+          "value": 1888966.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ3.portBusy": {
+          "value": 323856.0,
+          "description": "count each port busy cycles (Count)"
+        },
+        "system.cpu.scheduler.intIQ3.avgInsts": {
+          "value": 6.134578,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ4.portissued": {
+          "value": 1888864.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ4.portBusy": {
+          "value": 323614.0,
+          "description": "count each port busy cycles (Count)"
+        },
+        "system.cpu.scheduler.intIQ4.avgInsts": {
+          "value": 6.137462,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.intIQ5.portissued": {
+          "value": 1711469.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.intIQ5.avgInsts": {
+          "value": 5.834892,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.ld0.portissued": {
+          "value": 2584692.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.ld0.avgInsts": {
+          "value": 5.923122,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.ld1.portissued": {
+          "value": 2582197.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.ld1.avgInsts": {
+          "value": 5.9222,
+          "description": "average insts (Count)"
+        },
+        "system.cpu.scheduler.ld2.portissued": {
+          "value": 2584005.0,
+          "description": "count each port issues (Count)"
+        },
+        "system.cpu.scheduler.ld2.avgInsts": {
+          "value": 5.91961,
+          "description": "average insts (Count)"
+        }
+      }
+    }
+  }
+}

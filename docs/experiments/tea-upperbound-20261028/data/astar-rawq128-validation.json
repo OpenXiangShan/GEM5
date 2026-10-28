@@ -1,0 +1,26 @@
+{
+  "case": "astar_rivers_8610",
+  "parameter": "system.cpu.RAWQEntries",
+  "value": "128",
+  "baseline_label": "R4-fourload-frontend",
+  "config_changes": {
+    "system.cpu.RAWQEntries": {
+      "baseline": "56",
+      "probe": "128"
+    }
+  },
+  "path_changes": {
+    "system.mem_ctrls.configFile": {
+      "baseline": "/nfs/home/cirunner/actions-runner-gem5/node031-1/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+      "probe": "/nfs/home/yanyue/workspace/GEM5_5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+    }
+  },
+  "cpi": [
+    0.21024056307216893,
+    0.2094789418957884
+  ],
+  "ipc_gain_pct": 0.3635788731257916,
+  "elapsed_seconds": 3128.894322872162,
+  "stats_sha256": "1967711adc6262640c55f9d473495ec02e18e2a3d32f69fac6bdf896a0e42369",
+  "passed": true
+}

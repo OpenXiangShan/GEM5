@@ -1,0 +1,16 @@
+{
+  "changes": {
+    "system.cpu.RAWQEntries": {
+      "baseline": "128",
+      "probe": "56"
+    }
+  },
+  "equivalent_inputs": {
+    "system.mem_ctrls.configFile": {
+      "baseline": "/nfs/home/cirunner/actions-runner-gem5/node028-1/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+      "probe": "/nfs/home/yanyue/workspace/GEM5_5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+      "sha256": "790c80e7fa4342ec2494d490606365d3ae65a0a7ca4d9a1b3defe6f5ef6c2f3f"
+    }
+  },
+  "phase": "configuration verified; measurement still running"
+}

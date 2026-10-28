@@ -1,0 +1,612 @@
+{
+  "scope": "baseline official validated 20M ROI TEA period1; total PC weight includes Computing, events may overlap",
+  "elf": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/elf/perlbench_checkspam.elf",
+  "elf_sha256": "df8fd054a6a9c78b6058a8af595c06e6c1b654867a9c59b0a1642b3a4346721d",
+  "baseline": {
+    "directory": "/tmp/tea-upperbound-20261028/final-twelve-tea-roi-v2/perlbench_checkspam_5886/baseline/tea",
+    "instructions": 19999994.0,
+    "window": {
+      "configured_warmup": 20000000,
+      "configured_total_limit": 40000000,
+      "complete_stats_blocks": 2,
+      "warmup_completed_before_measurement": true,
+      "kind": "post-warmup ROI",
+      "executed_warmup": 20000000
+    },
+    "cycles": 4102519.0,
+    "ipc": 4.875052132604383,
+    "state_cpi": {
+      "Computing": 0.14720329416098824,
+      "Stalled": 0.04753436426030928,
+      "Flushed": 0.009724652917395875,
+      "Drained": 0.0006637001991100597
+    },
+    "event_cpi": {
+      "DR_L1": 4.875667962866909e-05,
+      "DR_TLB": 0.0,
+      "DR_SQ": 0.0,
+      "FL_MB": 0.009019897990963574,
+      "FL_EX": 0.0,
+      "FL_MO": 4.810001443000433e-05,
+      "ST_L1": 0.012057600384403379,
+      "ST_TLB": 0.007275919828602218,
+      "ST_LLC": 0.011239423610477585
+    },
+    "unattributed_cpi": {
+      "cancelledTargets": 0.0,
+      "pendingSamples": 0.0,
+      "unresolvedTargets": 0.0010261003078300924
+    },
+    "conservation": "passed",
+    "stats_sha256": "73a5536db59f3f696187576e08d5d63b17f6b932fa9d3c4aadf36d0b7dd3140d",
+    "tea_csv_sha256": "64ba181973421ef212a13ea381dad9684af89a2a383d5370d468966afd4a3bea"
+  },
+  "tops": {
+    "total": [
+      {
+        "pc": "0x92e18",
+        "function": "S_regmatch",
+        "instruction": "lw\ta5,0(a5)",
+        "cpi": 0.013937670133691417,
+        "all": {
+          "total": 0.013937670133691417,
+          "ST_L1": 9.118592479167488e-07
+        }
+      },
+      {
+        "pc": "0x92f36",
+        "function": "S_regmatch",
+        "instruction": "lbu\ta2,1(a4)",
+        "cpi": 0.004731700734083689,
+        "all": {
+          "total": 0.004731700734083689,
+          "ST_L1": 0.00010084808580998131,
+          "ST_LLC": 9.897808524898113e-05
+        }
+      },
+      {
+        "pc": "0x96d10",
+        "function": "S_find_byclass.isra.0",
+        "instruction": "bgeu\ts2,a3,96cee <S_find_byclass.isra.0+0x380>",
+        "cpi": 0.004401875555772306,
+        "all": {
+          "total": 0.004401875555772306,
+          "FL_MB": 0.0038438660936360287
+        }
+      },
+      {
+        "pc": "0x9bafa",
+        "function": "Perl_runops_standard",
+        "instruction": "ld\ta5,16(a5)",
+        "cpi": 0.003641423267335429,
+        "all": {
+          "total": 0.003641423267335429,
+          "ST_L1": 0.003008632365016169,
+          "ST_TLB": 0.0011888978841418927,
+          "ST_LLC": 0.0027064471406054694
+        }
+      },
+      {
+        "pc": "0x92dfc",
+        "function": "S_regmatch",
+        "instruction": "sub\ta4,s5,s2",
+        "cpi": 0.0022733042739518385,
+        "all": {
+          "total": 0.0022733042739518385
+        }
+      },
+      {
+        "pc": "0x976b4",
+        "function": "S_find_byclass.isra.0",
+        "instruction": "or\ta5,a5,a4",
+        "cpi": 0.0021177496486726797,
+        "all": {
+          "total": 0.0021177496486726797
+        }
+      },
+      {
+        "pc": "0x9667a",
+        "function": "S_regtry",
+        "instruction": "sw\ta5,0(a3)",
+        "cpi": 0.0020696847154221916,
+        "all": {
+          "total": 0.0020696847154221916,
+          "ST_TLB": 3.0166675716669386e-06
+        }
+      },
+      {
+        "pc": "0x933fe",
+        "function": "S_regmatch",
+        "instruction": "ld\ts1,344(sp)",
+        "cpi": 0.0020663760136858376,
+        "all": {
+          "total": 0.0020663760136858376,
+          "FL_MO": 2.00000060000018e-07
+        }
+      }
+    ],
+    "ST_L1": [
+      {
+        "pc": "0x9bafa",
+        "function": "Perl_runops_standard",
+        "instruction": "ld\ta5,16(a5)",
+        "cpi": 0.003008632365016169,
+        "all": {
+          "total": 0.003641423267335429,
+          "ST_L1": 0.003008632365016169,
+          "ST_TLB": 0.0011888978841418927,
+          "ST_LLC": 0.0027064471406054694
+        }
+      },
+      {
+        "pc": "0x262cc",
+        "function": "S_hv_fetch_common.lto_priv.0",
+        "instruction": "ld\ta5,8(s0)",
+        "cpi": 0.0011671170168017716,
+        "all": {
+          "total": 0.0012351172752970874,
+          "ST_L1": 0.0011671170168017716,
+          "ST_TLB": 0.0010063169685617572,
+          "ST_LLC": 0.0011519503455851036
+        }
+      },
+      {
+        "pc": "0x262d2",
+        "function": "S_hv_fetch_common.lto_priv.0",
+        "instruction": "lw\ta4,0(a5)",
+        "cpi": 0.0010052003015600904,
+        "all": {
+          "total": 0.001090063898447741,
+          "ST_L1": 0.0010052003015600904,
+          "ST_TLB": 0.0004860662172484366,
+          "ST_LLC": 0.0009968002990400897
+        }
+      },
+      {
+        "pc": "0x6eba8",
+        "function": "Perl_pp_entersub",
+        "instruction": "ld\ta5,56(a5)",
+        "cpi": 0.0008843502653050797,
+        "all": {
+          "total": 0.0008843502653050797,
+          "ST_L1": 0.0008843502653050797,
+          "ST_TLB": 0.0008843502653050797,
+          "ST_LLC": 0.0008837002651100796
+        }
+      },
+      {
+        "pc": "0x6eff8",
+        "function": "Perl_pp_entersub",
+        "instruction": "ld\ta5,0(a5)",
+        "cpi": 0.0008700835943584116,
+        "all": {
+          "total": 0.0008700835943584116,
+          "ST_L1": 0.0008700835943584116,
+          "ST_TLB": 0.0005086334859233792,
+          "ST_LLC": 0.0008688502606550781
+        }
+      },
+      {
+        "pc": "0x6ebaa",
+        "function": "Perl_pp_entersub",
+        "instruction": "lw\ta4,64(a5)",
+        "cpi": 0.0007184002155200646,
+        "all": {
+          "total": 0.0007184002155200646,
+          "ST_L1": 0.0007184002155200646,
+          "ST_LLC": 0.0007168502150550645,
+          "ST_TLB": 2.265000679500204e-05
+        }
+      },
+      {
+        "pc": "0x70d88",
+        "function": "Perl_pp_helem",
+        "instruction": "lw\ta5,12(a0)",
+        "cpi": 0.000611157127791583,
+        "all": {
+          "total": 0.000612357128151583,
+          "ST_L1": 0.000611157127791583,
+          "ST_TLB": 0.000600757124671582,
+          "ST_LLC": 0.0006017307360747765
+        }
+      },
+      {
+        "pc": "0x658da",
+        "function": "Perl_pp_and",
+        "instruction": "ld\ta3,24(a3)",
+        "cpi": 0.0006048876814663045,
+        "all": {
+          "total": 0.0006060060151351379,
+          "ST_L1": 0.0006048876814663045,
+          "ST_TLB": 0.0005605726681718005,
+          "ST_LLC": 0.0005829751748925525
+        }
+      }
+    ],
+    "ST_TLB": [
+      {
+        "pc": "0x9bafa",
+        "function": "Perl_runops_standard",
+        "instruction": "ld\ta5,16(a5)",
+        "cpi": 0.0011888978841418927,
+        "all": {
+          "total": 0.003641423267335429,
+          "ST_L1": 0.003008632365016169,
+          "ST_TLB": 0.0011888978841418927,
+          "ST_LLC": 0.0027064471406054694
+        }
+      },
+      {
+        "pc": "0x262cc",
+        "function": "S_hv_fetch_common.lto_priv.0",
+        "instruction": "ld\ta5,8(s0)",
+        "cpi": 0.0010063169685617572,
+        "all": {
+          "total": 0.0012351172752970874,
+          "ST_L1": 0.0011671170168017716,
+          "ST_TLB": 0.0010063169685617572,
+          "ST_LLC": 0.0011519503455851036
+        }
+      },
+      {
+        "pc": "0x6eba8",
+        "function": "Perl_pp_entersub",
+        "instruction": "ld\ta5,56(a5)",
+        "cpi": 0.0008843502653050797,
+        "all": {
+          "total": 0.0008843502653050797,
+          "ST_L1": 0.0008843502653050797,
+          "ST_TLB": 0.0008843502653050797,
+          "ST_LLC": 0.0008837002651100796
+        }
+      },
+      {
+        "pc": "0x70d88",
+        "function": "Perl_pp_helem",
+        "instruction": "lw\ta5,12(a0)",
+        "cpi": 0.000600757124671582,
+        "all": {
+          "total": 0.000612357128151583,
+          "ST_L1": 0.000611157127791583,
+          "ST_TLB": 0.000600757124671582,
+          "ST_LLC": 0.0006017307360747765
+        }
+      },
+      {
+        "pc": "0x658da",
+        "function": "Perl_pp_and",
+        "instruction": "ld\ta3,24(a3)",
+        "cpi": 0.0005605726681718005,
+        "all": {
+          "total": 0.0006060060151351379,
+          "ST_L1": 0.0006048876814663045,
+          "ST_TLB": 0.0005605726681718005,
+          "ST_LLC": 0.0005829751748925525
+        }
+      },
+      {
+        "pc": "0x6eff8",
+        "function": "Perl_pp_entersub",
+        "instruction": "ld\ta5,0(a5)",
+        "cpi": 0.0005086334859233792,
+        "all": {
+          "total": 0.0008700835943584116,
+          "ST_L1": 0.0008700835943584116,
+          "ST_TLB": 0.0005086334859233792,
+          "ST_LLC": 0.0008688502606550781
+        }
+      },
+      {
+        "pc": "0x262d2",
+        "function": "S_hv_fetch_common.lto_priv.0",
+        "instruction": "lw\ta4,0(a5)",
+        "cpi": 0.0004860662172484366,
+        "all": {
+          "total": 0.001090063898447741,
+          "ST_L1": 0.0010052003015600904,
+          "ST_TLB": 0.0004860662172484366,
+          "ST_LLC": 0.0009968002990400897
+        }
+      },
+      {
+        "pc": "0x262b6",
+        "function": "S_hv_fetch_common.lto_priv.0",
+        "instruction": "ld\ts0,0(a5)",
+        "cpi": 0.0003698280149888086,
+        "all": {
+          "total": 0.0003725997546370693,
+          "ST_L1": 0.0003280588105388553,
+          "ST_TLB": 0.0003698280149888086,
+          "ST_LLC": 0.0003155500946650284
+        }
+      }
+    ],
+    "ST_LLC": [
+      {
+        "pc": "0x9bafa",
+        "function": "Perl_runops_standard",
+        "instruction": "ld\ta5,16(a5)",
+        "cpi": 0.0027064471406054694,
+        "all": {
+          "total": 0.003641423267335429,
+          "ST_L1": 0.003008632365016169,
+          "ST_TLB": 0.0011888978841418927,
+          "ST_LLC": 0.0027064471406054694
+        }
+      },
+      {
+        "pc": "0x262cc",
+        "function": "S_hv_fetch_common.lto_priv.0",
+        "instruction": "ld\ta5,8(s0)",
+        "cpi": 0.0011519503455851036,
+        "all": {
+          "total": 0.0012351172752970874,
+          "ST_L1": 0.0011671170168017716,
+          "ST_TLB": 0.0010063169685617572,
+          "ST_LLC": 0.0011519503455851036
+        }
+      },
+      {
+        "pc": "0x262d2",
+        "function": "S_hv_fetch_common.lto_priv.0",
+        "instruction": "lw\ta4,0(a5)",
+        "cpi": 0.0009968002990400897,
+        "all": {
+          "total": 0.001090063898447741,
+          "ST_L1": 0.0010052003015600904,
+          "ST_TLB": 0.0004860662172484366,
+          "ST_LLC": 0.0009968002990400897
+        }
+      },
+      {
+        "pc": "0x6eba8",
+        "function": "Perl_pp_entersub",
+        "instruction": "ld\ta5,56(a5)",
+        "cpi": 0.0008837002651100796,
+        "all": {
+          "total": 0.0008843502653050797,
+          "ST_L1": 0.0008843502653050797,
+          "ST_TLB": 0.0008843502653050797,
+          "ST_LLC": 0.0008837002651100796
+        }
+      },
+      {
+        "pc": "0x6eff8",
+        "function": "Perl_pp_entersub",
+        "instruction": "ld\ta5,0(a5)",
+        "cpi": 0.0008688502606550781,
+        "all": {
+          "total": 0.0008700835943584116,
+          "ST_L1": 0.0008700835943584116,
+          "ST_TLB": 0.0005086334859233792,
+          "ST_LLC": 0.0008688502606550781
+        }
+      },
+      {
+        "pc": "0x6ebaa",
+        "function": "Perl_pp_entersub",
+        "instruction": "lw\ta4,64(a5)",
+        "cpi": 0.0007168502150550645,
+        "all": {
+          "total": 0.0007184002155200646,
+          "ST_L1": 0.0007184002155200646,
+          "ST_LLC": 0.0007168502150550645,
+          "ST_TLB": 2.265000679500204e-05
+        }
+      },
+      {
+        "pc": "0x70d88",
+        "function": "Perl_pp_helem",
+        "instruction": "lw\ta5,12(a0)",
+        "cpi": 0.0006017307360747765,
+        "all": {
+          "total": 0.000612357128151583,
+          "ST_L1": 0.000611157127791583,
+          "ST_TLB": 0.000600757124671582,
+          "ST_LLC": 0.0006017307360747765
+        }
+      },
+      {
+        "pc": "0x658da",
+        "function": "Perl_pp_and",
+        "instruction": "ld\ta3,24(a3)",
+        "cpi": 0.0005829751748925525,
+        "all": {
+          "total": 0.0006060060151351379,
+          "ST_L1": 0.0006048876814663045,
+          "ST_TLB": 0.0005605726681718005,
+          "ST_LLC": 0.0005829751748925525
+        }
+      }
+    ],
+    "FL_MB": [
+      {
+        "pc": "0x96d10",
+        "function": "S_find_byclass.isra.0",
+        "instruction": "bgeu\ts2,a3,96cee <S_find_byclass.isra.0+0x380>",
+        "cpi": 0.0038438660936360287,
+        "all": {
+          "total": 0.004401875555772306,
+          "FL_MB": 0.0038438660936360287
+        }
+      },
+      {
+        "pc": "0x976b6",
+        "function": "S_find_byclass.isra.0",
+        "instruction": "beqz\ta5,97702 <S_find_byclass.isra.0+0xd94>",
+        "cpi": 0.0009115520429461349,
+        "all": {
+          "total": 0.0011904932413473407,
+          "FL_MB": 0.0009115520429461349
+        }
+      },
+      {
+        "pc": "0x935ba",
+        "function": "S_regmatch",
+        "instruction": "beq\ta4,s6,935e2 <S_regmatch+0x834>",
+        "cpi": 0.0006900261052762353,
+        "all": {
+          "total": 0.0011260703217257535,
+          "FL_MB": 0.0006900261052762353
+        }
+      },
+      {
+        "pc": "0x92e76",
+        "function": "S_regmatch",
+        "instruction": "bge\ta4,s6,92e7e <S_regmatch+0xd0>",
+        "cpi": 0.0005159279103561298,
+        "all": {
+          "total": 0.0007099015538519051,
+          "FL_MB": 0.0005159279103561298
+        }
+      },
+      {
+        "pc": "0x96d26",
+        "function": "S_find_byclass.isra.0",
+        "instruction": "bne\ta5,s4,96cf2 <S_find_byclass.isra.0+0x384>",
+        "cpi": 0.00045600169163456146,
+        "all": {
+          "total": 0.0006266248290408868,
+          "FL_MB": 0.00045600169163456146
+        }
+      },
+      {
+        "pc": "0x92e1a",
+        "function": "S_regmatch",
+        "instruction": "jr\ta5",
+        "cpi": 0.00031310726079309504,
+        "all": {
+          "total": 0.0013687388488493853,
+          "FL_MB": 0.00031310726079309504
+        }
+      },
+      {
+        "pc": "0x96cf4",
+        "function": "S_find_byclass.isra.0",
+        "instruction": "bgeu\ts5,s0,97656 <S_find_byclass.isra.0+0xce8>",
+        "cpi": 0.000286509236385671,
+        "all": {
+          "total": 0.0010516650106662294,
+          "FL_MB": 0.000286509236385671
+        }
+      },
+      {
+        "pc": "0x976f6",
+        "function": "S_find_byclass.isra.0",
+        "instruction": "beq\ta5,a2,9773a <S_find_byclass.isra.0+0xdcc>",
+        "cpi": 0.00027100256145949864,
+        "all": {
+          "total": 0.0003374684959014438,
+          "FL_MB": 0.00027100256145949864
+        }
+      }
+    ],
+    "DR_L1": [
+      {
+        "pc": "0x928c0",
+        "function": "S_regrepeat",
+        "instruction": "bne\ts1,s0,928b0 <S_regrepeat+0x5dc>",
+        "cpi": 1.0900003270000982e-05,
+        "all": {
+          "total": 1.1664170165917717e-05,
+          "FL_MB": 1.1450003435001031e-05,
+          "DR_L1": 1.0900003270000982e-05
+        }
+      },
+      {
+        "pc": "0x9b98e",
+        "function": "S_regrepeat_hard",
+        "instruction": "addi\tsp,sp,-80",
+        "cpi": 9.700002910000873e-06,
+        "all": {
+          "total": 9.700002910000873e-06,
+          "DR_L1": 9.700002910000873e-06
+        }
+      },
+      {
+        "pc": "0x9b9c0",
+        "function": "S_regrepeat_hard",
+        "instruction": "mv\ts7,s0",
+        "cpi": 8.55000256500077e-06,
+        "all": {
+          "total": 8.55000256500077e-06,
+          "DR_L1": 8.55000256500077e-06
+        }
+      },
+      {
+        "pc": "0x95a62",
+        "function": "S_regmatch",
+        "instruction": "sub\ta3,a5,s2",
+        "cpi": 7.058335450833968e-06,
+        "all": {
+          "total": 7.058335450833968e-06,
+          "DR_L1": 7.058335450833968e-06
+        }
+      },
+      {
+        "pc": "0x95a3c",
+        "function": "S_regmatch",
+        "instruction": "sd\ta5,24(sp)",
+        "cpi": 6.962502088750627e-06,
+        "all": {
+          "total": 6.962502088750627e-06,
+          "DR_L1": 6.962502088750627e-06
+        }
+      },
+      {
+        "pc": "0x92824",
+        "function": "S_regrepeat",
+        "instruction": "lbu\ta4,0(s0)",
+        "cpi": 4.500001350000405e-07,
+        "all": {
+          "total": 7.934345814647179e-07,
+          "DR_L1": 4.500001350000405e-07
+        }
+      },
+      {
+        "pc": "0x93872",
+        "function": "S_regmatch",
+        "instruction": "ld\ta5,32(sp)",
+        "cpi": 4.2500012750003827e-07,
+        "all": {
+          "total": 4.2500012750003827e-07,
+          "DR_L1": 4.2500012750003827e-07
+        }
+      },
+      {
+        "pc": "0x95af2",
+        "function": "S_regmatch",
+        "instruction": "lbu\ta3,276(gp) # 1b5794 <PL_reg_match_utf8>",
+        "cpi": 4.1250012375003713e-07,
+        "all": {
+          "total": 4.1250012375003713e-07,
+          "DR_L1": 4.1250012375003713e-07
+        }
+      }
+    ],
+    "DR_TLB": [],
+    "DR_SQ": []
+  },
+  "old_candidate_pc": {
+    "0x92e18": {
+      "total": 0.013937670133691417,
+      "ST_L1": 9.118592479167488e-07
+    },
+    "0x92e1a": {
+      "total": 0.0013687388488493853,
+      "FL_MB": 0.00031310726079309504
+    },
+    "0x96d10": {
+      "total": 0.004401875555772306,
+      "FL_MB": 0.0038438660936360287
+    }
+  },
+  "source_semantic_candidates": {
+    "S_regmatch": "/nfs/home/wujiabin/work/workload-builder/build/linux-workloads/spec2006/spec-src/benchspec/CPU2006/400.perlbench/src/regexec.c:2296",
+    "S_find_byclass.isra.0": "/nfs/home/wujiabin/work/workload-builder/build/linux-workloads/spec2006/spec-src/benchspec/CPU2006/400.perlbench/src/regexec.c:961",
+    "Perl_runops_standard": "/nfs/home/wujiabin/work/workload-builder/build/linux-workloads/spec2006/spec-src/benchspec/CPU2006/400.perlbench/src/run.c:35",
+    "S_hv_fetch_common.lto_priv.0": "/nfs/home/wujiabin/work/workload-builder/build/linux-workloads/spec2006/spec-src/benchspec/CPU2006/400.perlbench/src/hv.c:383"
+  },
+  "source_scope": "symbol-level semantic candidates; current source hash historical match unknown; no app DWARF line mapping",
+  "candidate_validation": "not yet available when inspected"
+}

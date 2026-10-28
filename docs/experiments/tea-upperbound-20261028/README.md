@@ -16,8 +16,12 @@
 | [第五轮](round-05-window.md) | 12宽下分离容量与load带宽 |
 | [第六轮](round-06-frontend-roi.md) | 前端开关的冷启动消融，已更正原窗口标注 |
 | [第七轮](round-07-override.md) | 固定12宽，将双供给与override气泡分开比较 |
+| [第八轮](round-08-lsu-bank.md) | Sbuffer和L2 data bank单轴完整CI，执行中 |
 | [计划与继续入口](plan.md) | 最新约束、未完成项及中间文件位置 |
 | [实验索引](runs.json) | CI、被测SHA、完整参数和分数 |
+| [当前12宽配置](best-config.md) | 30.21分组合的精确参数与复现边界 |
+| [深入分析入口](deep-dive/README.md) | 当前TEA、源码与翻译计数专题 |
+| [下一轮探索方法](analysis-workflow.md) | 从热点、计数和反例选择可并行的实验 |
 
 图文统一采用Markdown、独立PNG和Mermaid。共享时保留本目录；源码入口按仓库位置解析。`data/`保存原值与审计，`figures/`保存静态图，`scripts/`保存TEA汇总工具。
 

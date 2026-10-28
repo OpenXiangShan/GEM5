@@ -36,3 +36,7 @@ ELF `perlbench_checkspam.elf` 的 `S_regmatch` 有 `92e14 sh2add a5,s0,a5` → `
 源码 [Way_.h](/nfs/home/wujiabin/work/workload-builder/build/linux-workloads/spec2006/spec-src/benchspec/CPU2006/473.astar/src/Way_.h:17) 的 `waymapcellt` 含两个 `w16` 字段 `fillnum`、`num`；类中有 `maparp`、`waymap`、`step`、`fillnum`（[:46](/nfs/home/wujiabin/work/workload-builder/build/linux-workloads/spec2006/spec-src/benchspec/CPU2006/473.astar/src/Way_.h:46)）。实际 [Way_.cpp](/nfs/home/wujiabin/work/workload-builder/build/linux-workloads/spec2006/spec-src/benchspec/CPU2006/473.astar/src/Way_.cpp:45) 循环扩展邻居：比较 fillnum、检查 `maparp[index1] == 0`，入队并更新 fillnum/num（如 [:61](/nfs/home/wujiabin/work/workload-builder/build/linux-workloads/spec2006/spec-src/benchspec/CPU2006/473.astar/src/Way_.cpp:61)）。ELF 4-byte 索引、半字比较、后续 map 检查及两次半字写入与此逻辑相符；对象偏移到字段及 `1c1dc` 属于多个类似邻居检查中的哪一行仍是推断，不能给出精确行号。
 
 上述是语义定位，不直接证明性能因果；与同版本 TEA 热点、branch outcome、load 返回/resolve 时序和单轴干预配对后才能判断瓶颈。
+
+## 新正式TEA对旧候选的更新
+
+astar_rivers_8610正式baseline Top 5实测全部位于`way2obj::createway`，不是上文预先选择的`makebound2 / 1c1dc`；以[新Top 5](astar-formal-tea-baseline.md)为本切片依据。上文makebound2仅保留为真实指令的语义候选，不能当作该窗口热点。

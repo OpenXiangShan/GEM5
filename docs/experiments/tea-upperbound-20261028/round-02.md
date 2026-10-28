@@ -35,7 +35,7 @@ L2扩容消除L2无MSHR阻塞的同时，L3出现更多无MSHR周期，平均服
 
 ## 下一步与复核入口
 
-下一项有区分力的实验是独立扩大L3并发容量，或控制预取负载，观察上游扩容的回退是否消失；随后在正式ROI与共同点集上检验，不能将本轮短窗口百分比外推成SPEC收益。gcc/mcf的Baseline与Combined TEA采集已完成，见[第三轮](round-03-tea.md)：恢复后前2M冷启动窗口，原20M＋2M标注已纠正；只作局部机制探针，详见[窗口审计](data/local-window-correction-audit.md)。
+后续按最新资源讨论，优先检查LSU entries，L2/L3总容量默认保持；MSHR/bank仍可做有依据的单轴诊断，也可控制预取负载，观察回退是否随并发、冲突或污染变化。只有容量证据明显时再扩大总容量，不将本轮冷窗口百分比外推成SPEC收益。gcc/mcf的Baseline与旧16宽Combined TEA采集见[第三轮](round-03-tea.md)：恢复后前2M冷启动窗口，原20M＋2M标注已纠正；只作局部机制探针，详见[窗口审计](data/local-window-correction-audit.md)。
 
 - 参数：`--param=system.cpu[0].dcache.mshrs=64`；L2分别对`system.l2_wrappers[0].slices[0..3].inner_cache.mshrs`设置64。
 - 原值、每slice统计、延迟与请求构成见[data/memory-ablation-analysis.json](data/memory-ablation-analysis.json)。

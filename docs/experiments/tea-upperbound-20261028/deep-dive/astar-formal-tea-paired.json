@@ -1,0 +1,630 @@
+{
+  "point": "astar_rivers_8610",
+  "elf": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/elf/astar_rivers.elf",
+  "sides": {
+    "baseline": {
+      "validation": "/tmp/tea-upperbound-20261028/final-twelve-tea-roi-v2/astar_rivers_8610/baseline/tea/validation.json",
+      "instructions": 19999993.0,
+      "cycles": 4222025.0,
+      "cpi": 0.21110132388546335,
+      "states": {
+        "Computing": 0.11807504132626447,
+        "Stalled": 0.07544067640423674,
+        "Flushed": 0.017511956129184644,
+        "Drained": 7.365002577750902e-05
+      },
+      "events": {
+        "DR_L1": 7.605832207495818e-05,
+        "DR_TLB": 0.0,
+        "DR_SQ": 0.0,
+        "FL_MB": 0.018374466348369006,
+        "FL_EX": 0.0,
+        "FL_MO": 2.3850008347502923e-05,
+        "ST_L1": 0.013612039314107786,
+        "ST_TLB": 0.004781504656515838,
+        "ST_LLC": 0.0013089677178234605
+      },
+      "special": {
+        "-3": 182.0
+      },
+      "top": {
+        "total": [
+          {
+            "pc": "0x1daa2",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lhu\ta1,0(a5)",
+            "cpi": 0.019971260413064795,
+            "cycle_percent": 9.460509316322689
+          },
+          {
+            "pc": "0x1db4e",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "sw\ts3,0(a2)",
+            "cpi": 0.01652948981976883,
+            "cycle_percent": 7.830121344353667
+          },
+          {
+            "pc": "0x1db8e",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "bne\ta7,a6,1db08 <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0x20c>",
+            "cpi": 0.01221767110950291,
+            "cycle_percent": 5.7875862096117485
+          },
+          {
+            "pc": "0x1db8a",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lhu\ta7,0(a5)",
+            "cpi": 0.012126428049442745,
+            "cycle_percent": 5.744363808927199
+          },
+          {
+            "pc": "0x1daa4",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "beq\ta1,a4,1dbe0 <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0x2e4>",
+            "cpi": 0.009388546753630699,
+            "cycle_percent": 4.447412541441292
+          }
+        ],
+        "DR_L1": [
+          {
+            "pc": "0x1aca2",
+            "function": "main",
+            "assembly": "ld\ts6,0(s9)",
+            "cpi": 1.0360003626001269e-05,
+            "cycle_percent": 0.0049075976575221605
+          },
+          {
+            "pc": "0x1bb02",
+            "function": "main",
+            "assembly": "mulw\ts8,t6,s8",
+            "cpi": 1.0250003587501256e-05,
+            "cycle_percent": 0.004855489960386307
+          },
+          {
+            "pc": "0x1d922",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "mv\ts5,a1",
+            "cpi": 1.0225003578751253e-05,
+            "cycle_percent": 0.004843647301946341
+          },
+          {
+            "pc": "0x1bac0",
+            "function": "main",
+            "assembly": "subw\ta3,a3,t0",
+            "cpi": 9.800003430001201e-06,
+            "cycle_percent": 0.004642322108466909
+          },
+          {
+            "pc": "0x1ba80",
+            "function": "main",
+            "assembly": "mul\tt2,s1,a3",
+            "cpi": 8.9750031412511e-06,
+            "cycle_percent": 0.004251514379948011
+          }
+        ],
+        "DR_TLB": [],
+        "DR_SQ": [],
+        "FL_MB": [
+          {
+            "pc": "0x1db8e",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "bne\ta7,a6,1db08 <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0x20c>",
+            "cpi": 0.008903313248666707,
+            "cycle_percent": 4.217554435375001
+          },
+          {
+            "pc": "0x1daa4",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "beq\ta1,a4,1dbe0 <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0x2e4>",
+            "cpi": 0.007764204033239179,
+            "cycle_percent": 3.677951369671079
+          },
+          {
+            "pc": "0x1dbe4",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "bne\ta5,s6,1da7c <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0x180>",
+            "cpi": 0.0012546396174455278,
+            "cycle_percent": 0.5943305301705516
+          },
+          {
+            "pc": "0x1dbda",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "beq\ta5,t1,1dd66 <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0x46a>",
+            "cpi": 9.560215037161952e-05,
+            "cycle_percent": 0.045287328668526076
+          },
+          {
+            "pc": "0x1dc06",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "beqz\ta3,1d9e6 <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0xea>",
+            "cpi": 7.55134287218523e-05,
+            "cycle_percent": 0.03577117723943001
+          }
+        ],
+        "FL_EX": [],
+        "FL_MO": [
+          {
+            "pc": "0x1db3a",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lw\ta2,16(a5)",
+            "cpi": 1.9850006947502433e-05,
+            "cycle_percent": 0.009403070801333483
+          },
+          {
+            "pc": "0x1db56",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lw\ta6,16(a5)",
+            "cpi": 4.00000140000049e-06,
+            "cycle_percent": 0.0018948253503946566
+          }
+        ],
+        "ST_L1": [
+          {
+            "pc": "0x1db8a",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lhu\ta7,0(a5)",
+            "cpi": 0.005338252918033484,
+            "cycle_percent": 2.52876335390954
+          },
+          {
+            "pc": "0x1daa2",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lhu\ta1,0(a5)",
+            "cpi": 0.0027125069600334307,
+            "cycle_percent": 1.2849312880222141
+          },
+          {
+            "pc": "0x1db08",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lbu\ta5,0(t1)",
+            "cpi": 0.002402857645861594,
+            "cycle_percent": 1.1382484968049302
+          },
+          {
+            "pc": "0x1da8c",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lw\ta3,4(a4)",
+            "cpi": 0.001968667982156715,
+            "cycle_percent": 0.9325701733755348
+          },
+          {
+            "pc": "0x1da8e",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lw\tt1,0(a4)",
+            "cpi": 0.0007043484824530388,
+            "cycle_percent": 0.33365422323698696
+          }
+        ],
+        "ST_TLB": [
+          {
+            "pc": "0x1daa2",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lhu\ta1,0(a5)",
+            "cpi": 0.0024615901461608088,
+            "cycle_percent": 1.1660704446819987
+          },
+          {
+            "pc": "0x1db8a",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lhu\ta7,0(a5)",
+            "cpi": 0.001247549407116267,
+            "cycle_percent": 0.5909718537782106
+          },
+          {
+            "pc": "0x1db08",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lbu\ta5,0(t1)",
+            "cpi": 0.00046390943726007817,
+            "cycle_percent": 0.2197567635870347
+          },
+          {
+            "pc": "0x1da8c",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lw\ta3,4(a4)",
+            "cpi": 0.0004565068096552817,
+            "cycle_percent": 0.21625009320309488
+          },
+          {
+            "pc": "0x1db92",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lhu\ta5,2(a5)",
+            "cpi": 3.285937116888959e-05,
+            "cycle_percent": 0.015565686924217491
+          }
+        ],
+        "ST_LLC": [
+          {
+            "pc": "0x1db8a",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lhu\ta7,0(a5)",
+            "cpi": 0.0007795765549030763,
+            "cycle_percent": 0.3692902254492961
+          },
+          {
+            "pc": "0x1db08",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lbu\ta5,0(t1)",
+            "cpi": 0.00043832832801808934,
+            "cycle_percent": 0.20763883425757762
+          },
+          {
+            "pc": "0x24b0c",
+            "function": "malloc",
+            "assembly": "ld\ta7,0(a3)",
+            "cpi": 2.765872180176475e-05,
+            "cycle_percent": 0.013102107221635172
+          },
+          {
+            "pc": "0x271ea",
+            "function": "free",
+            "assembly": "lw\ta5,0(t6)",
+            "cpi": 2.0050007017502457e-05,
+            "cycle_percent": 0.009497812068853216
+          },
+          {
+            "pc": "0x24ad8",
+            "function": "malloc",
+            "assembly": "ld\tt6,0(t4)",
+            "cpi": 1.4116671607501729e-05,
+            "cycle_percent": 0.006687154465767809
+          }
+        ]
+      }
+    },
+    "candidate": {
+      "validation": "/tmp/tea-upperbound-20261028/final-twelve-tea-roi-v2/astar_rivers_8610/candidate/tea/validation.json",
+      "instructions": 19999994.0,
+      "cycles": 4019343.0,
+      "cpi": 0.2009672102901631,
+      "states": {
+        "Computing": 0.1155793346738004,
+        "Stalled": 0.06464146939244082,
+        "Flushed": 0.020745206223561866,
+        "Drained": 1.200000360000108e-06
+      },
+      "events": {
+        "DR_L1": 0.0,
+        "DR_TLB": 0.0,
+        "DR_SQ": 0.0,
+        "FL_MB": 0.021427933049399606,
+        "FL_EX": 0.0,
+        "FL_MO": 5.99500179850054e-05,
+        "ST_L1": 0.009060993850915204,
+        "ST_TLB": 0.0030534914441305303,
+        "ST_LLC": 0.0009281613229594407
+      },
+      "special": {
+        "-3": 596.0
+      },
+      "top": {
+        "total": [
+          {
+            "pc": "0x1db4e",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "sw\ts3,0(a2)",
+            "cpi": 0.019756980160337317,
+            "cycle_percent": 9.830947114114554
+          },
+          {
+            "pc": "0x1db8e",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "bne\ta7,a6,1db08 <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0x20c>",
+            "cpi": 0.013223354940212505,
+            "cycle_percent": 6.579856943389018
+          },
+          {
+            "pc": "0x1daa4",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "beq\ta1,a4,1dbe0 <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0x2e4>",
+            "cpi": 0.009998550079705475,
+            "cycle_percent": 4.975214645846573
+          },
+          {
+            "pc": "0x1daa2",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lhu\ta1,0(a5)",
+            "cpi": 0.009380793505351972,
+            "cycle_percent": 4.667822920867376
+          },
+          {
+            "pc": "0x1db3a",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lw\ta2,16(a5)",
+            "cpi": 0.009314270265431756,
+            "cycle_percent": 4.634721381654004
+          }
+        ],
+        "DR_L1": [],
+        "DR_TLB": [],
+        "DR_SQ": [],
+        "FL_MB": [
+          {
+            "pc": "0x1db8e",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "bne\ta7,a6,1db08 <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0x20c>",
+            "cpi": 0.010403007912917083,
+            "cycle_percent": 5.1764702798515625
+          },
+          {
+            "pc": "0x1daa4",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "beq\ta1,a4,1dbe0 <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0x2e4>",
+            "cpi": 0.00874723887292359,
+            "cycle_percent": 4.352570183112975
+          },
+          {
+            "pc": "0x1dbe4",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "bne\ta5,s6,1da7c <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0x180>",
+            "cpi": 0.0017525417549499806,
+            "cycle_percent": 0.872053581487051
+          },
+          {
+            "pc": "0x1dbda",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "beq\ta5,t1,1dd66 <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0x46a>",
+            "cpi": 0.00012621992520086482,
+            "cycle_percent": 0.06280622844822513
+          },
+          {
+            "pc": "0x1dc06",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "beqz\ta3,1d9e6 <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0xea>",
+            "cpi": 0.0001026985350830647,
+            "cycle_percent": 0.05110213498748635
+          }
+        ],
+        "FL_EX": [],
+        "FL_MO": [
+          {
+            "pc": "0x1db3a",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lw\ta2,16(a5)",
+            "cpi": 4.2250012675003805e-05,
+            "cycle_percent": 0.02102333640099887
+          },
+          {
+            "pc": "0x1db56",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lw\ta6,16(a5)",
+            "cpi": 1.7700005310001594e-05,
+            "cycle_percent": 0.008807409569175858
+          }
+        ],
+        "ST_L1": [
+          {
+            "pc": "0x1db8a",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lhu\ta7,0(a5)",
+            "cpi": 0.003669181111438729,
+            "cycle_percent": 1.8257610811938147
+          },
+          {
+            "pc": "0x1db08",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lbu\ta5,0(t1)",
+            "cpi": 0.0018114811331320895,
+            "cycle_percent": 0.9013814395475827
+          },
+          {
+            "pc": "0x1da8c",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lw\ta3,4(a4)",
+            "cpi": 0.0014847567220666793,
+            "cycle_percent": 0.7388054598175188
+          },
+          {
+            "pc": "0x1daa2",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lhu\ta1,0(a5)",
+            "cpi": 0.0013444462311172328,
+            "cycle_percent": 0.6689878558676696
+          },
+          {
+            "pc": "0x1da8e",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lw\tt1,0(a4)",
+            "cpi": 0.0004347140494115772,
+            "cycle_percent": 0.21631093390007392
+          }
+        ],
+        "ST_TLB": [
+          {
+            "pc": "0x1daa2",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lhu\ta1,0(a5)",
+            "cpi": 0.0013066101251665715,
+            "cycle_percent": 0.6501608512553091
+          },
+          {
+            "pc": "0x1db8a",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lhu\ta7,0(a5)",
+            "cpi": 0.00089065211409875,
+            "cycle_percent": 0.4431828022157431
+          },
+          {
+            "pc": "0x1da8c",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lw\ta3,4(a4)",
+            "cpi": 0.0003490528568248545,
+            "cycle_percent": 0.17368647169898038
+          },
+          {
+            "pc": "0x1db08",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lbu\ta5,0(t1)",
+            "cpi": 0.0003415542300053993,
+            "cycle_percent": 0.16995520289715524
+          },
+          {
+            "pc": "0x1de10",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "sw\ta1,0(a5)",
+            "cpi": 5.6944461527782845e-05,
+            "cycle_percent": 0.028335200277480366
+          }
+        ],
+        "ST_LLC": [
+          {
+            "pc": "0x1db8a",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lhu\ta7,0(a5)",
+            "cpi": 0.0005454559328675486,
+            "cycle_percent": 0.271415387654534
+          },
+          {
+            "pc": "0x1db08",
+            "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+            "assembly": "lbu\ta5,0(t1)",
+            "cpi": 0.0003171571922167544,
+            "cycle_percent": 0.15781539274931086
+          },
+          {
+            "pc": "0x24b0c",
+            "function": "malloc",
+            "assembly": "ld\ta7,0(a3)",
+            "cpi": 1.955871798882752e-05,
+            "cycle_percent": 0.009732293124131043
+          },
+          {
+            "pc": "0x271ea",
+            "function": "free",
+            "assembly": "lw\ta5,0(t6)",
+            "cpi": 1.8375005512501655e-05,
+            "cycle_percent": 0.00914328535783087
+          },
+          {
+            "pc": "0x24ad8",
+            "function": "malloc",
+            "assembly": "ld\tt6,0(t4)",
+            "cpi": 1.3970837524584589e-05,
+            "cycle_percent": 0.0069517995022237876
+          }
+        ]
+      }
+    }
+  },
+  "top_pc_changes": [
+    {
+      "pc": "0x1daa2",
+      "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+      "assembly": "lhu\ta1,0(a5)",
+      "baseline_cpi": 0.019971260413064795,
+      "candidate_cpi": 0.009380793505351972,
+      "delta_cpi": -0.010590466907712823
+    },
+    {
+      "pc": "0x1db3a",
+      "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+      "assembly": "lw\ta2,16(a5)",
+      "baseline_cpi": 0.004729382175463752,
+      "candidate_cpi": 0.009314270265431756,
+      "delta_cpi": 0.004584888089968004
+    },
+    {
+      "pc": "0x1db4e",
+      "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+      "assembly": "sw\ts3,0(a2)",
+      "baseline_cpi": 0.01652948981976883,
+      "candidate_cpi": 0.019756980160337317,
+      "delta_cpi": 0.003227490340568486
+    },
+    {
+      "pc": "0x1db8a",
+      "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+      "assembly": "lhu\ta7,0(a5)",
+      "baseline_cpi": 0.012126428049442745,
+      "candidate_cpi": 0.009236952587078785,
+      "delta_cpi": -0.0028894754623639603
+    },
+    {
+      "pc": "0x1da96",
+      "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+      "assembly": "mulw\ta5,a5,a3",
+      "baseline_cpi": 0.004843991775587329,
+      "candidate_cpi": 0.00305693507500633,
+      "delta_cpi": -0.0017870567005809994
+    },
+    {
+      "pc": "0x1da9e",
+      "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+      "assembly": "sh2add\ta5,a5,a1",
+      "baseline_cpi": 0.003940571788509493,
+      "candidate_cpi": 0.0023319655311458782,
+      "delta_cpi": -0.001608606257363615
+    },
+    {
+      "pc": "0x1db08",
+      "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+      "assembly": "lbu\ta5,0(t1)",
+      "baseline_cpi": 0.0075953146828571325,
+      "candidate_cpi": 0.0060097150077625255,
+      "delta_cpi": -0.001585599675094607
+    },
+    {
+      "pc": "0x1db0e",
+      "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+      "assembly": "lbu\ta6,18(a5)",
+      "baseline_cpi": 0.009041037337424264,
+      "candidate_cpi": 0.007461428126710901,
+      "delta_cpi": -0.0015796092107133626
+    },
+    {
+      "pc": "0x1da9a",
+      "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+      "assembly": "addw\ta5,a5,t1",
+      "baseline_cpi": 0.0033588481207345844,
+      "candidate_cpi": 0.00207800422327154,
+      "delta_cpi": -0.0012808438974630442
+    },
+    {
+      "pc": "0x1db22",
+      "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+      "assembly": "srliw\ta2,a2,0x18",
+      "baseline_cpi": 0.0009986897126790474,
+      "candidate_cpi": 0.0021191545292100927,
+      "delta_cpi": 0.0011204648165310453
+    },
+    {
+      "pc": "0x1db92",
+      "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+      "assembly": "lhu\ta5,2(a5)",
+      "baseline_cpi": 0.005380600595319236,
+      "candidate_cpi": 0.004289964663609482,
+      "delta_cpi": -0.001090635931709754
+    },
+    {
+      "pc": "0x1db1e",
+      "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+      "assembly": "sraiw\ta2,a5,0x1f",
+      "baseline_cpi": 0.0009810377104415837,
+      "candidate_cpi": 0.00201750426908359,
+      "delta_cpi": 0.0010364665586420061
+    },
+    {
+      "pc": "0x1dbe0",
+      "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+      "assembly": "ld\ta5,64(sp)",
+      "baseline_cpi": 0.004719317088813567,
+      "candidate_cpi": 0.003699505524320098,
+      "delta_cpi": -0.0010198115644934696
+    },
+    {
+      "pc": "0x1db8e",
+      "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+      "assembly": "bne\ta7,a6,1db08 <way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]+0x20c>",
+      "baseline_cpi": 0.01221767110950291,
+      "candidate_cpi": 0.013223354940212505,
+      "delta_cpi": 0.0010056838307095951
+    },
+    {
+      "pc": "0x1daa8",
+      "function": "way2obj::createway(int, int, int, int, unsigned char*, pointt*&, int&) [clone .constprop.0]",
+      "assembly": "sh\ta4,0(a5)",
+      "baseline_cpi": 0.004630255926142922,
+      "candidate_cpi": 0.003625448129482423,
+      "delta_cpi": -0.0010048077966604988
+    }
+  ]
+}

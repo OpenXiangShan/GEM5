@@ -1,0 +1,22 @@
+[
+  {
+    "conclusion": "",
+    "createdAt": "2026-10-28T10:25:38Z",
+    "databaseId": 40672028525,
+    "displayTitle": "Upperbound R8 l2-data-banks4 preserve12 20261028 - kmhv3.py - spec06-rva23-novec-gcc16-0.3c - 36584adaf67da1e848d7b3a61d5ab18e84b2c12e - --upperbound-four-load --param=system.cpu[0].numROBEntries=640 --param=system.cpu[0].numPhysIntRegs=512 --param=system.cpu[0].numPhysFloatRegs=384 --param=system.cpu[0].LQEntries=256 --param=system.cpu[0].SQEntries=128 --param=system.cpu[0].RARQEntries=192 --param=system.cpu[0].RAWQEntries=128 --param=system.cpu[0].branchPred.idealPredictionsPerCycle=2 --param=system.cp...",
+    "headBranch": "tea-main55-ci24-20261026",
+    "headSha": "7d184a523b977d6c39a52feb155858919b2124f7",
+    "status": "in_progress",
+    "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/40672028525"
+  },
+  {
+    "conclusion": "",
+    "createdAt": "2026-10-28T10:25:28Z",
+    "databaseId": 40672006278,
+    "displayTitle": "Upperbound R8 sbuffer32 preserve12 20261028 - kmhv3.py - spec06-rva23-novec-gcc16-0.3c - 36584adaf67da1e848d7b3a61d5ab18e84b2c12e - --upperbound-four-load --param=system.cpu[0].numROBEntries=640 --param=system.cpu[0].numPhysIntRegs=512 --param=system.cpu[0].numPhysFloatRegs=384 --param=system.cpu[0].LQEntries=256 --param=system.cpu[0].SQEntries=128 --param=system.cpu[0].RARQEntries=192 --param=system.cpu[0].RAWQEntries=128 --param=system.cpu[0].branchPred.idealPredictionsPerCycle=2 --param=system.cpu[0]....",
+    "headBranch": "tea-main55-ci24-20261026",
+    "headSha": "7d184a523b977d6c39a52feb155858919b2124f7",
+    "status": "in_progress",
+    "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/40672006278"
+  }
+]

@@ -1,0 +1,10 @@
+{
+  "baseline": {
+    "common_numeric_fields": 12254,
+    "non_host_differences": {}
+  },
+  "candidate": {
+    "common_numeric_fields": 11950,
+    "non_host_differences": {}
+  }
+}

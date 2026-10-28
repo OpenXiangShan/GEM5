@@ -414,5 +414,63 @@
     "observed_step": "completed",
     "score_file": "data/r7-B-full-score.csv",
     "conclusion": "success"
+  },
+  {
+    "label": "R8-l2-data-banks4",
+    "run_id": 40672028525,
+    "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/40672028525",
+    "observed_status": "in_progress",
+    "conclusion": null,
+    "created_at": "2026-10-28T10:25:38Z",
+    "workflow_ref": "tea-main55-ci24-20261026",
+    "workflow_ref_sha": "7d184a523b977d6c39a52feb155858919b2124f7",
+    "tested_source_sha": "36584adaf67da1e848d7b3a61d5ab18e84b2c12e",
+    "dispatch": {
+      "ref": "tea-main55-ci24-20261026",
+      "inputs": {
+        "configuration": "kmhv3.py",
+        "benchmark_type": "spec06-rva23-novec-gcc16-0.3c",
+        "specific_benchmarks": "",
+        "distributed_servers": "default",
+        "distributed_jobs_per_server": "32",
+        "branch": "36584adaf67da1e848d7b3a61d5ab18e84b2c12e",
+        "note": "Upperbound R8 l2-data-banks4 preserve12 20261028",
+        "extra_args": "--upperbound-four-load --param=system.cpu[0].numROBEntries=640 --param=system.cpu[0].numPhysIntRegs=512 --param=system.cpu[0].numPhysFloatRegs=384 --param=system.cpu[0].LQEntries=256 --param=system.cpu[0].SQEntries=128 --param=system.cpu[0].RARQEntries=192 --param=system.cpu[0].RAWQEntries=128 --param=system.cpu[0].branchPred.idealPredictionsPerCycle=2 --param=system.cpu[0].branchPred.idealNoOverrideBubbles=True --param=system.cpu[0].idealInstructionFetch=True --param=system.cpu[0].enableTwoFetch=True --param=system.l2_wrappers[0].data_sram_banks=4"
+      }
+    },
+    "comparison_baseline_run_id": 40648104599,
+    "logical_axis": "L2 data_sram_banks 2 -> 4; dir banks/capacity/MSHR unchanged",
+    "score": null,
+    "archive_path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_183617_36584adaf_kmhv3_run1685",
+    "observed_step": "XS-GEM5 - Run performance test"
+  },
+  {
+    "label": "R8-sbuffer32",
+    "run_id": 40672006278,
+    "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/40672006278",
+    "observed_status": "in_progress",
+    "conclusion": null,
+    "created_at": "2026-10-28T10:25:28Z",
+    "workflow_ref": "tea-main55-ci24-20261026",
+    "workflow_ref_sha": "7d184a523b977d6c39a52feb155858919b2124f7",
+    "tested_source_sha": "36584adaf67da1e848d7b3a61d5ab18e84b2c12e",
+    "dispatch": {
+      "ref": "tea-main55-ci24-20261026",
+      "inputs": {
+        "configuration": "kmhv3.py",
+        "benchmark_type": "spec06-rva23-novec-gcc16-0.3c",
+        "specific_benchmarks": "",
+        "distributed_servers": "default",
+        "distributed_jobs_per_server": "32",
+        "branch": "36584adaf67da1e848d7b3a61d5ab18e84b2c12e",
+        "note": "Upperbound R8 sbuffer32 preserve12 20261028",
+        "extra_args": "--upperbound-four-load --param=system.cpu[0].numROBEntries=640 --param=system.cpu[0].numPhysIntRegs=512 --param=system.cpu[0].numPhysFloatRegs=384 --param=system.cpu[0].LQEntries=256 --param=system.cpu[0].SQEntries=128 --param=system.cpu[0].RARQEntries=192 --param=system.cpu[0].RAWQEntries=128 --param=system.cpu[0].branchPred.idealPredictionsPerCycle=2 --param=system.cpu[0].branchPred.idealNoOverrideBubbles=True --param=system.cpu[0].idealInstructionFetch=True --param=system.cpu[0].enableTwoFetch=True --param=system.cpu[0].SbufferEntries=32"
+      }
+    },
+    "comparison_baseline_run_id": 40648104599,
+    "logical_axis": "SbufferEntries 16 -> 32",
+    "score": null,
+    "archive_path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_183820_36584ada_kmhv3_run1684",
+    "observed_step": "XS-GEM5 - Run performance test"
   }
 ]

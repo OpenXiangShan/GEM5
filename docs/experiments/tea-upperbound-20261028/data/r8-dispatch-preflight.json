@@ -1,0 +1,10 @@
+{
+  "prepared_at_utc": "2026-10-28T10:25:58.502461+00:00",
+  "workflow_ref": "tea-main55-ci24-20261026",
+  "tested_sha": "36584adaf67da1e848d7b3a61d5ab18e84b2c12e",
+  "configuration": "kmhv3.py",
+  "benchmark_type": "spec06-rva23-novec-gcc16-0.3c",
+  "specific_benchmarks": "",
+  "coremark_smoke": "r8-coremark/summary.json",
+  "remote_schema_verified": true
+}

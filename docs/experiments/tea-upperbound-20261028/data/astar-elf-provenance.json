@@ -1,0 +1,15 @@
+{
+  "profile": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820",
+  "elf": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/elf/astar_rivers.elf",
+  "elf_sha256": "73f872defdb08b3bc7a0c18a4583d87beed14dca3311fe4e623fee3052d98f52",
+  "rootfs": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/rootfs/astar_rivers.rootfs.cpio",
+  "rootfs_sha256": "58842d30b3fb87dca248b3fa33c473f0d5d828b8ea706d7bfdfc037e37edd678",
+  "matching_cpio_entries": [
+    {
+      "entry": "spec/astar",
+      "size": 8001296,
+      "sha256": "73f872defdb08b3bc7a0c18a4583d87beed14dca3311fe4e623fee3052d98f52"
+    }
+  ],
+  "scope": "ELF identity inside archived rootfs; does not prove source version or each checkpoint code byte"
+}

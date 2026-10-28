@@ -1,0 +1,37 @@
+{
+  "scope": "one 20M ROI; R4 four-load frontend background",
+  "baseline_stats": {
+    "system.cpu.numCycles": 4204810.0,
+    "system.cpu.committedInsts": 19999994.0,
+    "system.cpu.commit.branchMispredicts": 47530.0,
+    "system.cpu.iew.stallEvents::IQFull": 591349.0,
+    "system.cpu.lsq0.RAWQueueFull": 78831.0,
+    "system.cpu.lsq0.RAWQueueFullCycles": 36968.0,
+    "system.cpu.lsq0.loadReplayEvents::RAWReplay": 78831.0
+  },
+  "probe_stats": {
+    "system.cpu.numCycles": 4189578.0,
+    "system.cpu.committedInsts": 19999996.0,
+    "system.cpu.commit.branchMispredicts": 47604.0,
+    "system.cpu.iew.stallEvents::IQFull": 587296.0,
+    "system.cpu.lsq0.RAWQueueFull": 0.0,
+    "system.cpu.lsq0.RAWQueueFullCycles": 0.0,
+    "system.cpu.lsq0.loadReplayEvents::RAWReplay": 0.0
+  },
+  "config_diff": {
+    "system.cpu.RAWQEntries": [
+      "56",
+      "128"
+    ],
+    "system.mem_ctrls.configFile": [
+      "/nfs/home/cirunner/actions-runner-gem5/node031-1/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+      "/nfs/home/yanyue/workspace/GEM5_5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+    ]
+  },
+  "baseline_cpi": 0.21024056307216893,
+  "probe_cpi": 0.2094789418957884,
+  "delta_cpi": -0.0007616211763805392,
+  "ipc_gain_percent": 0.36357887312581383,
+  "validation": "/tmp/tea-upperbound-20261028/residual-single-axis/astar_rivers_8610-RAWQEntries-128/validation.json",
+  "limits": "sufficiency in R4 context only; not necessity or allocation of R5 seven-resource benefit"
+}

@@ -1,0 +1,34 @@
+[
+  {
+    "case": "mcf_6753-mmu-dtb-size-512",
+    "target_change": {
+      "system.cpu.mmu.dtb.size": {
+        "baseline": "48",
+        "probe": "512"
+      }
+    },
+    "equivalent_input_files": {
+      "system.mem_ctrls.configFile": {
+        "baseline": "/nfs/home/cirunner/actions-runner-gem5/node028-1/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+        "probe": "/nfs/home/yanyue/workspace/GEM5_5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+        "sha256": "790c80e7fa4342ec2494d490606365d3ae65a0a7ca4d9a1b3defe6f5ef6c2f3f"
+      }
+    }
+  },
+  {
+    "case": "astar_rivers_8610-RAWQEntries-128",
+    "target_change": {
+      "system.cpu.RAWQEntries": {
+        "baseline": "56",
+        "probe": "128"
+      }
+    },
+    "equivalent_input_files": {
+      "system.mem_ctrls.configFile": {
+        "baseline": "/nfs/home/cirunner/actions-runner-gem5/node031-1/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+        "probe": "/nfs/home/yanyue/workspace/GEM5_5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+        "sha256": "790c80e7fa4342ec2494d490606365d3ae65a0a7ca4d9a1b3defe6f5ef6c2f3f"
+      }
+    }
+  }
+]

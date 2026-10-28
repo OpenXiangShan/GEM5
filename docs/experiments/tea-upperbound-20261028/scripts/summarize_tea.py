@@ -146,6 +146,22 @@ def main():
             'instruction': symbols.get(pc, ('', ''))[1],
             'events': [{e: v.get(e, 0) for e in EVENTS} for v in cells]})
     ranked.sort(key=lambda v: abs(v['delta_cpi']), reverse=True)
+    top_baseline = sorted(ranked, key=lambda v: v['baseline_cpi'],
+                          reverse=True)[:5]
+    top_candidate = sorted(ranked, key=lambda v: v['candidate_cpi'],
+                           reverse=True)[:5]
+    event_tops = []
+    for side in range(2):
+        events = {}
+        for event in EVENTS:
+            rows = [row for row in ranked if row['events'][side][event] > 0]
+            rows.sort(key=lambda row: row['events'][side][event], reverse=True)
+            events[event] = [
+                {'pc': row['pc'], 'function': row['function'],
+                 'instruction': row['instruction'],
+                 'event_cpi': row['events'][side][event]}
+                for row in rows[:5]]
+        event_tops.append(events)
     assert sides[0]['window'] == sides[1]['window'], 'Unmatched windows'
     window = sides[0]['window']
     scope = (f"{window['executed_warmup']} executed warmup instructions; "
@@ -154,6 +170,9 @@ def main():
              'not a weighted SPEC score; PC weights include Computing '
              'and overlapping events')
     result = {'name': args.name, 'sides': sides, 'ranked_pcs': ranked,
+              'top_baseline_pcs': top_baseline,
+              'top_candidate_pcs': top_candidate,
+              'event_top5_by_side': event_tops,
               'scope': scope}
     if args.elf:
         result['elf'] = str(args.elf)
@@ -174,18 +193,24 @@ def main():
     for event in EVENTS:
         a, b = [s['event_cpi'][event] for s in sides]
         lines.append(f'| {event} | {a:.6f} | {b:.6f} | {b-a:+.6f} |')
-    lines += ['', '| PC | 函数与指令 | Baseline总归因CPI | '
+    lines += ['', '## 当前组合Top 5', '',
+              '按当前组合的PC总归因排序；占比包含Computing，'
+              '不代表可优化空间。事件热点另列于JSON，不以Top 1决定方向。', '',
+              '| PC | 函数与指令 | Baseline总归因CPI | '
               'Combined总归因CPI | ΔCPI |',
               '| --- | --- | ---: | ---: | ---: |']
-    for row in ranked[:12]:
+    for row in top_candidate:
         label = (row['function'] + ' ' + row['instruction']).replace('|', '/')
         lines.append(f"| {row['pc']} | {label} | "
                      f"{row['baseline_cpi']:.6f} | "
                      f"{row['candidate_cpi']:.6f} | "
                      f"{row['delta_cpi']:+.6f} |")
+    lines += ['', '基线Top 5：' + '、'.join(
+        row['pc'] for row in top_baseline) + '。各事件只列非零热点；'
+        '原始PC差异排名保留在JSON，差额不是单个组件的净收益。']
     lines += ['', '四状态与CSV/PSV权重守恒检查通过。CSV没有PC×四状态联合字段；'
-              '本表只对PC展示总权重，事件明细保留在JSON。未额外验证本窗口'
-              '关闭TEA时的周期等价性；不得将PC差额视为单组件因果收益。']
+              '本表只对PC展示总权重，事件明细保留在JSON。守恒不证明观察等价，'
+              '关闭TEA对照以单独验收记录为准；不得将PC差额视为单组件因果收益。']
     prefix.with_suffix('.md').write_text('\n'.join(lines) + '\n')
     print(json.dumps({'name': args.name, 'ipc': [s['ipc'] for s in sides],
                       'checks': 'passed'}, ensure_ascii=False))

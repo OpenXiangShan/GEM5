@@ -1,0 +1,447 @@
+{
+  "scope": "20000000 executed warmup instructions; post-warmup ROI; approximately 19999994 measured instructions; not a weighted SPEC score; PC weights include Computing and overlapping events",
+  "elf": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/elf/perlbench_checkspam.elf",
+  "elf_sha256": "df8fd054a6a9c78b6058a8af595c06e6c1b654867a9c59b0a1642b3a4346721d",
+  "sides": [
+    {
+      "directory": "/tmp/tea-upperbound-20261028/final-twelve-tea-roi-v2/perlbench_checkspam_5886/baseline/tea",
+      "instructions": 19999994.0,
+      "window": {
+        "configured_warmup": 20000000,
+        "configured_total_limit": 40000000,
+        "complete_stats_blocks": 2,
+        "warmup_completed_before_measurement": true,
+        "kind": "post-warmup ROI",
+        "executed_warmup": 20000000
+      },
+      "cycles": 4102519.0,
+      "ipc": 4.875052132604383,
+      "state_cpi": {
+        "Computing": 0.14720329416098824,
+        "Stalled": 0.04753436426030928,
+        "Flushed": 0.009724652917395875,
+        "Drained": 0.0006637001991100597
+      },
+      "event_cpi": {
+        "DR_L1": 4.875667962866909e-05,
+        "DR_TLB": 0.0,
+        "DR_SQ": 0.0,
+        "FL_MB": 0.009019897990963574,
+        "FL_EX": 0.0,
+        "FL_MO": 4.810001443000433e-05,
+        "ST_L1": 0.012057600384403379,
+        "ST_TLB": 0.007275919828602218,
+        "ST_LLC": 0.011239423610477585
+      },
+      "unattributed_cpi": {
+        "cancelledTargets": 0.0,
+        "pendingSamples": 0.0,
+        "unresolvedTargets": 0.0010261003078300924
+      },
+      "conservation": "passed",
+      "stats_sha256": "73a5536db59f3f696187576e08d5d63b17f6b932fa9d3c4aadf36d0b7dd3140d",
+      "tea_csv_sha256": "64ba181973421ef212a13ea381dad9684af89a2a383d5370d468966afd4a3bea"
+    },
+    {
+      "directory": "/tmp/tea-upperbound-20261028/final-twelve-tea-roi-v2/perlbench_checkspam_5886/candidate/tea",
+      "instructions": 19999996.0,
+      "window": {
+        "configured_warmup": 20000000,
+        "configured_total_limit": 40000000,
+        "complete_stats_blocks": 2,
+        "warmup_completed_before_measurement": true,
+        "kind": "post-warmup ROI",
+        "executed_warmup": 20000000
+      },
+      "cycles": 3200583.0,
+      "ipc": 6.248860285766687,
+      "state_cpi": {
+        "Computing": 0.11864632372926474,
+        "Stalled": 0.03049500609900122,
+        "Flushed": 0.010863202172640434,
+        "Drained": 2.4650004930000987e-05
+      },
+      "event_cpi": {
+        "DR_L1": 0.0,
+        "DR_TLB": 0.0,
+        "DR_SQ": 0.0,
+        "FL_MB": 0.010166045851614932,
+        "FL_EX": 0.0,
+        "FL_MO": 0.00012715002543000508,
+        "ST_L1": 0.009255571014590305,
+        "ST_TLB": 0.005566057227513209,
+        "ST_LLC": 0.008638274253878744
+      },
+      "unattributed_cpi": {
+        "cancelledTargets": 0.0,
+        "pendingSamples": 0.0,
+        "unresolvedTargets": 0.000826200165240033
+      },
+      "conservation": "passed",
+      "stats_sha256": "1e64f6149f93a8b1ee4efecb8ce078e36976064bbed1f1aa1446e0a0005f4e43",
+      "tea_csv_sha256": "27d6dfb0204db55f4095b6b969379c21af764bd74ea914ebc65ad6d87b04ff74"
+    }
+  ],
+  "candidate_top5": [
+    {
+      "pc": "0x92e18",
+      "baseline_cpi": 0.013937670133691417,
+      "candidate_cpi": 0.009848598786665944,
+      "delta_cpi": -0.004089071347025472,
+      "function": "S_regmatch",
+      "instruction": "lw\ta5,0(a5)",
+      "events": [
+        {
+          "DR_L1": 0,
+          "DR_TLB": 0,
+          "DR_SQ": 0,
+          "FL_MB": 0,
+          "FL_EX": 0,
+          "FL_MO": 0,
+          "ST_L1": 9.118592479167488e-07,
+          "ST_TLB": 0,
+          "ST_LLC": 0
+        },
+        {
+          "DR_L1": 0,
+          "DR_TLB": 0,
+          "DR_SQ": 0,
+          "FL_MB": 0,
+          "FL_EX": 0,
+          "FL_MO": 0,
+          "ST_L1": 4.943224431868329e-07,
+          "ST_TLB": 0,
+          "ST_LLC": 0
+        }
+      ]
+    },
+    {
+      "pc": "0x96d10",
+      "baseline_cpi": 0.004401875555772306,
+      "candidate_cpi": 0.005189318613621356,
+      "delta_cpi": 0.0007874430578490499,
+      "function": "S_find_byclass.isra.0",
+      "instruction": "bgeu\ts2,a3,96cee <S_find_byclass.isra.0+0x380>",
+      "events": [
+        {
+          "DR_L1": 0,
+          "DR_TLB": 0,
+          "DR_SQ": 0,
+          "FL_MB": 0.0038438660936360287,
+          "FL_EX": 0,
+          "FL_MO": 0,
+          "ST_L1": 0,
+          "ST_TLB": 0,
+          "ST_LLC": 0
+        },
+        {
+          "DR_L1": 0,
+          "DR_TLB": 0,
+          "DR_SQ": 0,
+          "FL_MB": 0.004660898771284898,
+          "FL_EX": 0,
+          "FL_MO": 0,
+          "ST_L1": 0,
+          "ST_TLB": 0,
+          "ST_LLC": 0
+        }
+      ]
+    },
+    {
+      "pc": "0x92f36",
+      "baseline_cpi": 0.004731700734083689,
+      "candidate_cpi": 0.003510920471305658,
+      "delta_cpi": -0.001220780262778031,
+      "function": "S_regmatch",
+      "instruction": "lbu\ta2,1(a4)",
+      "events": [
+        {
+          "DR_L1": 0,
+          "DR_TLB": 0,
+          "DR_SQ": 0,
+          "FL_MB": 0,
+          "FL_EX": 0,
+          "FL_MO": 0,
+          "ST_L1": 0.00010084808580998131,
+          "ST_TLB": 0,
+          "ST_LLC": 9.897808524898113e-05
+        },
+        {
+          "DR_L1": 0,
+          "DR_TLB": 0,
+          "DR_SQ": 0,
+          "FL_MB": 0,
+          "FL_EX": 0,
+          "FL_MO": 0,
+          "ST_L1": 3.1570839647501264e-05,
+          "ST_TLB": 0,
+          "ST_LLC": 3.00116726690012e-05
+        }
+      ]
+    },
+    {
+      "pc": "0x9bafa",
+      "baseline_cpi": 0.003641423267335429,
+      "candidate_cpi": 0.0030673644857117975,
+      "delta_cpi": -0.0005740587816236314,
+      "function": "Perl_runops_standard",
+      "instruction": "ld\ta5,16(a5)",
+      "events": [
+        {
+          "DR_L1": 0,
+          "DR_TLB": 0,
+          "DR_SQ": 0,
+          "FL_MB": 0,
+          "FL_EX": 0,
+          "FL_MO": 0,
+          "ST_L1": 0.003008632365016169,
+          "ST_TLB": 0.0011888978841418927,
+          "ST_LLC": 0.0027064471406054694
+        },
+        {
+          "DR_L1": 0,
+          "DR_TLB": 0,
+          "DR_SQ": 0,
+          "FL_MB": 0,
+          "FL_EX": 0,
+          "FL_MO": 0,
+          "ST_L1": 0.0024029398496910907,
+          "ST_TLB": 0.001009866092887859,
+          "ST_LLC": 0.0021864067776076945
+        }
+      ]
+    },
+    {
+      "pc": "0x9667a",
+      "baseline_cpi": 0.0020696847154221916,
+      "candidate_cpi": 0.001646509198348583,
+      "delta_cpi": -0.00042317551707360857,
+      "function": "S_regtry",
+      "instruction": "sw\ta5,0(a3)",
+      "events": [
+        {
+          "DR_L1": 0,
+          "DR_TLB": 0,
+          "DR_SQ": 0,
+          "FL_MB": 0,
+          "FL_EX": 0,
+          "FL_MO": 0,
+          "ST_L1": 0,
+          "ST_TLB": 3.0166675716669386e-06,
+          "ST_LLC": 0
+        },
+        {
+          "DR_L1": 0,
+          "DR_TLB": 0,
+          "DR_SQ": 0,
+          "FL_MB": 0,
+          "FL_EX": 0,
+          "FL_MO": 0,
+          "ST_L1": 0,
+          "ST_TLB": 3.054167277500123e-06,
+          "ST_LLC": 0
+        }
+      ]
+    }
+  ],
+  "events_top5": {
+    "DR_L1": [],
+    "DR_TLB": [],
+    "DR_SQ": [],
+    "FL_MB": [
+      {
+        "pc": "0x96d10",
+        "function": "S_find_byclass.isra.0",
+        "instruction": "bgeu\ts2,a3,96cee <S_find_byclass.isra.0+0x380>",
+        "baseline_cpi": 0.0038438660936360287,
+        "candidate_cpi": 0.004660898771284898
+      },
+      {
+        "pc": "0x976b6",
+        "function": "S_find_byclass.isra.0",
+        "instruction": "beqz\ta5,97702 <S_find_byclass.isra.0+0xd94>",
+        "baseline_cpi": 0.0009115520429461349,
+        "candidate_cpi": 0.0007713426398385337
+      },
+      {
+        "pc": "0x92e76",
+        "function": "S_regmatch",
+        "instruction": "bge\ta4,s6,92e7e <S_regmatch+0xd0>",
+        "baseline_cpi": 0.0005159279103561298,
+        "candidate_cpi": 0.0007287032986988185
+      },
+      {
+        "pc": "0x935ba",
+        "function": "S_regmatch",
+        "instruction": "beq\ta4,s6,935e2 <S_regmatch+0x834>",
+        "baseline_cpi": 0.0006900261052762353,
+        "candidate_cpi": 0.0007124373556909463
+      },
+      {
+        "pc": "0x96d26",
+        "function": "S_find_byclass.isra.0",
+        "instruction": "bne\ta5,s4,96cf2 <S_find_byclass.isra.0+0x384>",
+        "baseline_cpi": 0.00045600169163456146,
+        "candidate_cpi": 0.0006440282366700068
+      }
+    ],
+    "FL_EX": [],
+    "FL_MO": [
+      {
+        "pc": "0x6babc",
+        "function": "Perl_pp_match",
+        "instruction": "ld\ts9,0(a4)",
+        "baseline_cpi": 0,
+        "candidate_cpi": 6.785001357000272e-05
+      },
+      {
+        "pc": "0x6c804",
+        "function": "Perl_pp_iter",
+        "instruction": "ld\ta4,120(a5)",
+        "baseline_cpi": 0,
+        "candidate_cpi": 1.3850002770000554e-05
+      },
+      {
+        "pc": "0x92ee0",
+        "function": "S_regmatch",
+        "instruction": "lw\ta0,8(s3)",
+        "baseline_cpi": 5.350001605000481e-06,
+        "candidate_cpi": 5.850001170000234e-06
+      },
+      {
+        "pc": "0x92ee8",
+        "function": "S_regmatch",
+        "instruction": "lw\ts5,12(s3)",
+        "baseline_cpi": 2.2500006750002025e-06,
+        "candidate_cpi": 3.200000640000128e-06
+      },
+      {
+        "pc": "0xa25b6",
+        "function": "Perl_sv_free",
+        "instruction": "lw\ta5,8(a0)",
+        "baseline_cpi": 0,
+        "candidate_cpi": 2.1500004300000862e-06
+      }
+    ],
+    "ST_L1": [
+      {
+        "pc": "0x9bafa",
+        "function": "Perl_runops_standard",
+        "instruction": "ld\ta5,16(a5)",
+        "baseline_cpi": 0.003008632365016169,
+        "candidate_cpi": 0.0024029398496910907
+      },
+      {
+        "pc": "0x262cc",
+        "function": "S_hv_fetch_common.lto_priv.0",
+        "instruction": "ld\ta5,8(s0)",
+        "baseline_cpi": 0.0011671170168017716,
+        "candidate_cpi": 0.0011373435608020455
+      },
+      {
+        "pc": "0x262d2",
+        "function": "S_hv_fetch_common.lto_priv.0",
+        "instruction": "lw\ta4,0(a5)",
+        "baseline_cpi": 0.0010052003015600904,
+        "candidate_cpi": 0.0011094543885575444
+      },
+      {
+        "pc": "0x6eff8",
+        "function": "Perl_pp_entersub",
+        "instruction": "ld\ta5,0(a5)",
+        "baseline_cpi": 0.0008700835943584116,
+        "candidate_cpi": 0.000836683500670033
+      },
+      {
+        "pc": "0x658da",
+        "function": "Perl_pp_and",
+        "instruction": "ld\ta3,24(a3)",
+        "baseline_cpi": 0.0006048876814663045,
+        "candidate_cpi": 0.00044692761463804815
+      }
+    ],
+    "ST_TLB": [
+      {
+        "pc": "0x262cc",
+        "function": "S_hv_fetch_common.lto_priv.0",
+        "instruction": "ld\ta5,8(s0)",
+        "baseline_cpi": 0.0010063169685617572,
+        "candidate_cpi": 0.0010561977112395423
+      },
+      {
+        "pc": "0x9bafa",
+        "function": "Perl_runops_standard",
+        "instruction": "ld\ta5,16(a5)",
+        "baseline_cpi": 0.0011888978841418927,
+        "candidate_cpi": 0.001009866092887859
+      },
+      {
+        "pc": "0x262d2",
+        "function": "S_hv_fetch_common.lto_priv.0",
+        "instruction": "lw\ta4,0(a5)",
+        "baseline_cpi": 0.0004860662172484366,
+        "candidate_cpi": 0.0005227247474020923
+      },
+      {
+        "pc": "0x658da",
+        "function": "Perl_pp_and",
+        "instruction": "ld\ta3,24(a3)",
+        "baseline_cpi": 0.0005605726681718005,
+        "candidate_cpi": 0.00042306094319804723
+      },
+      {
+        "pc": "0x6eff8",
+        "function": "Perl_pp_entersub",
+        "instruction": "ld\ta5,0(a5)",
+        "baseline_cpi": 0.0005086334859233792,
+        "candidate_cpi": 0.0004196000839200166
+      }
+    ],
+    "ST_LLC": [
+      {
+        "pc": "0x9bafa",
+        "function": "Perl_runops_standard",
+        "instruction": "ld\ta5,16(a5)",
+        "baseline_cpi": 0.0027064471406054694,
+        "candidate_cpi": 0.0021864067776076945
+      },
+      {
+        "pc": "0x262cc",
+        "function": "S_hv_fetch_common.lto_priv.0",
+        "instruction": "ld\ta5,8(s0)",
+        "baseline_cpi": 0.0011519503455851036,
+        "candidate_cpi": 0.001125575225115045
+      },
+      {
+        "pc": "0x262d2",
+        "function": "S_hv_fetch_common.lto_priv.0",
+        "instruction": "lw\ta4,0(a5)",
+        "baseline_cpi": 0.0009968002990400897,
+        "candidate_cpi": 0.0010970002194000438
+      },
+      {
+        "pc": "0x6eff8",
+        "function": "Perl_pp_entersub",
+        "instruction": "ld\ta5,0(a5)",
+        "baseline_cpi": 0.0008688502606550781,
+        "candidate_cpi": 0.000834616833590033
+      },
+      {
+        "pc": "0x658da",
+        "function": "Perl_pp_and",
+        "instruction": "ld\ta3,24(a3)",
+        "baseline_cpi": 0.0005829751748925525,
+        "candidate_cpi": 0.00042835841900501715
+      }
+    ]
+  },
+  "full_pc_data": "/tmp/tea-upperbound-20261028/perlbench-formal-paired/perlbench_formal.json",
+  "validation": "both passed, 20M warmup plus 20M ROI, selected counters exact match same CI; TEA OFF pending",
+  "limitations": [
+    "PC total includes Computing",
+    "events may overlap",
+    "no joint PC state breakdown",
+    "historical source identity and exact source line unverified",
+    "ELF instruction chains static, not measured dynamic critical path"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "baseline": {
+    "common_numeric_fields": 11556,
+    "non_host_differences": {},
+    "scope": "exact last20M ROI; excludes host statistics and both-NaN values"
+  },
+  "candidate": {
+    "common_numeric_fields": 11104,
+    "non_host_differences": {},
+    "scope": "exact last20M ROI; excludes host statistics and both-NaN values"
+  }
+}

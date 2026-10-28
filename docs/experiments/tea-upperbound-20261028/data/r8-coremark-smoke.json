@@ -1,0 +1,86 @@
+{
+  "scope": "Two 300k cold CoreMark functional and parameter checks; not SPEC performance",
+  "performance_source": "36584adaf67da1e848d7b3a61d5ab18e84b2c12e",
+  "runs": [
+    {
+      "variant": "sbuffer32",
+      "command": {
+        "command": [
+          "/nfs/home/yanyue/workspace/GEM5_5/build/RISCV/gem5.opt",
+          "--outdir=/tmp/tea-upperbound-20261028/r8-coremark/sbuffer32",
+          "configs/example/kmhv3.py",
+          "--generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin",
+          "--raw-cpt",
+          "--enable-mem-dedup",
+          "--warmup-insts-no-switch=0",
+          "--maxinsts=300000",
+          "--upperbound-four-load",
+          "--param=system.cpu[0].numROBEntries=640",
+          "--param=system.cpu[0].numPhysIntRegs=512",
+          "--param=system.cpu[0].numPhysFloatRegs=384",
+          "--param=system.cpu[0].LQEntries=256",
+          "--param=system.cpu[0].SQEntries=128",
+          "--param=system.cpu[0].RARQEntries=192",
+          "--param=system.cpu[0].RAWQEntries=128",
+          "--param=system.cpu[0].branchPred.idealPredictionsPerCycle=2",
+          "--param=system.cpu[0].branchPred.idealNoOverrideBubbles=True",
+          "--param=system.cpu[0].idealInstructionFetch=True",
+          "--param=system.cpu[0].enableTwoFetch=True",
+          "--param=system.cpu[0].SbufferEntries=32"
+        ],
+        "scope": "300k cold CoreMark functional/config smoke; not a SPEC score",
+        "performance_source": "36584adaf67da1e848d7b3a61d5ab18e84b2c12e"
+      },
+      "validation": {
+        "variant": "sbuffer32",
+        "exit_code": 0,
+        "instructions": 300000.0,
+        "cycles": 173728.0,
+        "passed": true,
+        "scope": "CoreMark functional/config smoke only"
+      },
+      "config_sha256": "08da955274fe6044b8fc8e59b3debe3872dc0bb119e1da8ccf8843d497dab1a2",
+      "stats_sha256": "810ef3d8e7faf5fad28ba5ac50f3e40a8d119cc8bb69166b57ad2d0cec52ad0d"
+    },
+    {
+      "variant": "l2-data-banks4",
+      "command": {
+        "command": [
+          "/nfs/home/yanyue/workspace/GEM5_5/build/RISCV/gem5.opt",
+          "--outdir=/tmp/tea-upperbound-20261028/r8-coremark/l2-data-banks4",
+          "configs/example/kmhv3.py",
+          "--generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin",
+          "--raw-cpt",
+          "--enable-mem-dedup",
+          "--warmup-insts-no-switch=0",
+          "--maxinsts=300000",
+          "--upperbound-four-load",
+          "--param=system.cpu[0].numROBEntries=640",
+          "--param=system.cpu[0].numPhysIntRegs=512",
+          "--param=system.cpu[0].numPhysFloatRegs=384",
+          "--param=system.cpu[0].LQEntries=256",
+          "--param=system.cpu[0].SQEntries=128",
+          "--param=system.cpu[0].RARQEntries=192",
+          "--param=system.cpu[0].RAWQEntries=128",
+          "--param=system.cpu[0].branchPred.idealPredictionsPerCycle=2",
+          "--param=system.cpu[0].branchPred.idealNoOverrideBubbles=True",
+          "--param=system.cpu[0].idealInstructionFetch=True",
+          "--param=system.cpu[0].enableTwoFetch=True",
+          "--param=system.l2_wrappers[0].data_sram_banks=4"
+        ],
+        "scope": "300k cold CoreMark functional/config smoke; not a SPEC score",
+        "performance_source": "36584adaf67da1e848d7b3a61d5ab18e84b2c12e"
+      },
+      "validation": {
+        "variant": "l2-data-banks4",
+        "exit_code": 0,
+        "instructions": 300000.0,
+        "cycles": 173728.0,
+        "passed": true,
+        "scope": "CoreMark functional/config smoke only"
+      },
+      "config_sha256": "d3984af4b222913b0153cbf2865f20c571d783c676092b3f22c36d9cee599a2f",
+      "stats_sha256": "1369037d2609c6235aa0c5f39412cc897025fe89445969c7242a7bf10c6bb074"
+    }
+  ]
+}

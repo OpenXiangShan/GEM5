@@ -1,8 +1,62 @@
 {
   "profile": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820",
-  "build_logs": {"mcf":"logs/build_elf/mcf.log", "perlbench_checkspam":"logs/build_elf/perlbench_checkspam.log", "spec_build_cwd":"/nfs/home/wujiabin/work/workload-builder/build/linux-workloads/spec2006/spec-src", "cwd_access":"Permission denied", "compiler":"GCC 16.1.0, riscv64-unknown-linux-gnu", "logged_optimization":"-O3 -flto -fno-tree-vectorize -fno-tree-loop-vectorize", "source_match":"readable shared source tree not confirmed identical to build tree"},
-  "dwarf": {"both_elf_have_debug_info":true, "observed_comp_dir_only":"/home/runner/work/riscv-gnu-toolchain/riscv-gnu-toolchain/build-gcc-linux-stage2/riscv64-unknown-linux-gnu/libgcc", "application_line_info":"not found by observed comp_dir; mcf PCs resolve to main ??:?", "interpretation":"presence of debug_info does not imply application DWARF"},
-  "mcf": {"elf":"elf/mcf.elf", "elf_sha256":"818d286599edb64b3493bb75d083cbf2bc8fb6e76a39c3da79aeb62cdf828766", "rootfs":"rootfs/mcf.rootfs.cpio", "rootfs_sha256":"e81d2a4824d5677bf520f1b153bb05ed285b46cd679681ca588c9ea27ba7beb6", "rootfs_binary":"spec/mcf", "rootfs_binary_sha256":"818d286599edb64b3493bb75d083cbf2bc8fb6e76a39c3da79aeb62cdf828766", "firmware":"bin/mcf.fw_payload.bin", "firmware_sha256":"cbb0e6dfeb5ddf953ff6a245d449fd3bd8a586de985e69b5867c0f37fb140ed8", "command":"./mcf inp.in", "readable_source_candidate":"/nfs/home/share/speccpu_install/cpu2006v99/benchspec/CPU2006/429.mcf/src", "known_pc":{"0x108d2":"main+0x592, lw t4,24(a5), no source line", "0x108e4":"main+0x5a4, ld t6,0(t6), no source line"}, "source_candidate":"pbeampp.c:167-170 has structurally similar scan and dependent loads; candidate only, no exact mapping confirmed"},
-  "perlbench_checkspam": {"elf":"elf/perlbench_checkspam.elf", "elf_sha256":"df8fd054a6a9c78b6058a8af595c06e6c1b654867a9c59b0a1642b3a4346721d", "rootfs":"rootfs/perlbench_checkspam.rootfs.cpio", "rootfs_sha256":"7291807680c24bf68d0da04ed7a379eb31e200ba0b9ef156a3513f5284fa96e8", "rootfs_binary":"spec/perlbench", "rootfs_binary_sha256":"df8fd054a6a9c78b6058a8af595c06e6c1b654867a9c59b0a1642b3a4346721d", "firmware":"bin/perlbench_checkspam.fw_payload.bin", "firmware_sha256":"321ed87e8270c92fbb50651e778d0bc6378a59409ee2ed19fa3d2545ff9a1657", "command":"./perlbench -I./lib checkspam.pl 2500 5 25 11 150 1 1 1 1", "readable_source_candidate":"/nfs/home/share/speccpu_install/cpu2006v99/benchspec/CPU2006/400.perlbench/src", "readable_input":"/nfs/home/share/speccpu_install/cpu2006v99/benchspec/CPU2006/400.perlbench/data/ref/input/checkspam.pl", "rootfs_and_readable_input_sha256":"b9668148e57059ef2c3657d074c21a4a313258a7bd6295b002448823651c0332"},
-  "limitations": ["build tree inaccessible so source ELF identity cannot be established", "checkpoint creation request records original firmware path but inaccessible; archived firmware hashes match archived per-case manifests", "LTO main inlining source attribution needs further evidence", "Perl top PC not yet selected"]
+  "build_logs": {
+    "mcf": "logs/build_elf/mcf.log",
+    "perlbench_checkspam": "logs/build_elf/perlbench_checkspam.log",
+    "spec_build_cwd": "/nfs/home/wujiabin/work/workload-builder/build/linux-workloads/spec2006/spec-src",
+    "cwd_access": "Permission denied",
+    "compiler": "GCC 16.1.0, riscv64-unknown-linux-gnu",
+    "logged_optimization": "-O3 -flto -fno-tree-vectorize -fno-tree-loop-vectorize",
+    "source_match": "readable shared source tree not confirmed identical to build tree"
+  },
+  "dwarf": {
+    "both_elf_have_debug_info": true,
+    "observed_comp_dir_only": "/home/runner/work/riscv-gnu-toolchain/riscv-gnu-toolchain/build-gcc-linux-stage2/riscv64-unknown-linux-gnu/libgcc",
+    "application_line_info": "not found by observed comp_dir; mcf PCs resolve to main ??:?",
+    "interpretation": "presence of debug_info does not imply application DWARF"
+  },
+  "mcf": {
+    "elf": "elf/mcf.elf",
+    "elf_sha256": "818d286599edb64b3493bb75d083cbf2bc8fb6e76a39c3da79aeb62cdf828766",
+    "rootfs": "rootfs/mcf.rootfs.cpio",
+    "rootfs_sha256": "e81d2a4824d5677bf520f1b153bb05ed285b46cd679681ca588c9ea27ba7beb6",
+    "rootfs_binary": "spec/mcf",
+    "rootfs_binary_sha256": "818d286599edb64b3493bb75d083cbf2bc8fb6e76a39c3da79aeb62cdf828766",
+    "firmware": "bin/mcf.fw_payload.bin",
+    "firmware_sha256": "cbb0e6dfeb5ddf953ff6a245d449fd3bd8a586de985e69b5867c0f37fb140ed8",
+    "command": "./mcf inp.in",
+    "readable_source_candidate": "/nfs/home/share/speccpu_install/cpu2006v99/benchspec/CPU2006/429.mcf/src",
+    "known_pc": {
+      "0x108d2": "main+0x592, lw t4,24(a5), no source line",
+      "0x108e4": "main+0x5a4, ld t6,0(t6), no source line"
+    },
+    "source_candidate": "pbeampp.c:167-170 has structurally similar scan and dependent loads; candidate only, no exact mapping confirmed"
+  },
+  "perlbench_checkspam": {
+    "elf": "elf/perlbench_checkspam.elf",
+    "elf_sha256": "df8fd054a6a9c78b6058a8af595c06e6c1b654867a9c59b0a1642b3a4346721d",
+    "rootfs": "rootfs/perlbench_checkspam.rootfs.cpio",
+    "rootfs_sha256": "7291807680c24bf68d0da04ed7a379eb31e200ba0b9ef156a3513f5284fa96e8",
+    "rootfs_binary": "spec/perlbench",
+    "rootfs_binary_sha256": "df8fd054a6a9c78b6058a8af595c06e6c1b654867a9c59b0a1642b3a4346721d",
+    "firmware": "bin/perlbench_checkspam.fw_payload.bin",
+    "firmware_sha256": "321ed87e8270c92fbb50651e778d0bc6378a59409ee2ed19fa3d2545ff9a1657",
+    "command": "./perlbench -I./lib checkspam.pl 2500 5 25 11 150 1 1 1 1",
+    "readable_source_candidate": "/nfs/home/share/speccpu_install/cpu2006v99/benchspec/CPU2006/400.perlbench/src",
+    "readable_input": "/nfs/home/share/speccpu_install/cpu2006v99/benchspec/CPU2006/400.perlbench/data/ref/input/checkspam.pl",
+    "rootfs_and_readable_input_sha256": "b9668148e57059ef2c3657d074c21a4a313258a7bd6295b002448823651c0332"
+  },
+  "limitations": [
+    "build tree inaccessible so source ELF identity cannot be established",
+    "checkpoint creation request records original firmware path but inaccessible; archived firmware hashes match archived per-case manifests",
+    "LTO main inlining source attribution needs further evidence",
+    "Perl top PC not yet selected"
+  ],
+  "updates": {
+    "actual_source_access": "User granted read access; current tree rebuilt October, not proven historical August source snapshot",
+    "source_audit": "../deep-dive/spec-actual-source-audit.json",
+    "formal_hotspots": "../deep-dive/perlbench-formal-tea-paired.json",
+    "astar_elf_rootfs_identity": "astar-elf-provenance.json",
+    "initial_snapshot_limitations": "Initial inaccessible-source and no-hot-PC observations are superseded by these updates"
+  }
 }
