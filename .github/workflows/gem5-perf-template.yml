@@ -79,6 +79,28 @@ jobs:
           echo "::error::Refusing to checkout an external fork PR head under pull_request_target."
           exit 1
 
+      # Quarantine the old tree without unlinking files still open on NFS.
+      # The runner keeps its workspace path; checkout gets a fresh directory.
+      - name: Isolate previous workspace before checkout
+        shell: bash
+        run: |
+          python3 - <<'PYCODE'
+          import os
+          from pathlib import Path
+          import uuid
+
+          workspace = Path(os.environ["GITHUB_WORKSPACE"])
+          if workspace.is_symlink():
+              raise RuntimeError("Refusing to relocate a symlink workspace")
+          if workspace.exists() and any(workspace.iterdir()):
+              quarantine = workspace.with_name(
+                  workspace.name + ".quarantine-" + uuid.uuid4().hex
+              )
+              workspace.rename(quarantine)
+              print(f"Previous workspace preserved at {quarantine}")
+          workspace.mkdir(parents=True, exist_ok=True)
+          PYCODE
+
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.pr_sha || github.sha }}

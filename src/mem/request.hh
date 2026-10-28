@@ -552,6 +552,9 @@ class Request
     /** A pointer to an atomic operation */
     AtomicOpFunctorPtr atomicOpFunctor = nullptr;
 
+    /** The cache has published this AMO's result in golden memory. */
+    bool _atomicGoldenUpdated = false;
+
     LocalAccessor _localAccessor;
 
     /** The instruction count at the time this request is created */
@@ -622,6 +625,7 @@ class Request
           _extraData(other._extraData), _contextId(other._contextId),
           _pc(other._pc), _reqInstSeqNum(other._reqInstSeqNum),
           _xsMetadata(other._xsMetadata),
+          _atomicGoldenUpdated(other._atomicGoldenUpdated),
           _localAccessor(other._localAccessor),
           translateDelta(other.translateDelta),
           accessDelta(other.accessDelta), depth(other.depth)
@@ -715,6 +719,7 @@ class Request
         accessDelta = 0;
         translateDelta = 0;
         atomicOpFunctor = std::move(amo_op);
+        _atomicGoldenUpdated = false;
         _localAccessor = nullptr;
     }
 
@@ -890,6 +895,9 @@ class Request
         assert(atomicOpFunctor);
         return atomicOpFunctor.get();
     }
+
+    bool atomicGoldenUpdated() const { return _atomicGoldenUpdated; }
+    void markAtomicGoldenUpdated() { _atomicGoldenUpdated = true; }
 
     /**
      * Accessor for hardware transactional memory abort cause.

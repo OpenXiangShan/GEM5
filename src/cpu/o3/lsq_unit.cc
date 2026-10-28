@@ -3128,7 +3128,9 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
                     paddr, *((uint64_t *)store_inst->memData), golden_mask, request->_size);
             cpu->goldenMemManager()->updateGoldenMem(paddr, store_inst->memData, golden_mask,
                                                      request->_size);
-        } else {
+        } else if (!request->mainReq()->atomicGoldenUpdated()) {
+            // Classic caches already publish at AMO execution, in memory
+            // order. Keep completion-time publication for other responders.
             uint8_t tmp_data[16];
             memset(tmp_data, 0, sizeof(tmp_data));
             assert(request->req()->getAtomicOpFunctor());

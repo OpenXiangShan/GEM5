@@ -56,6 +56,7 @@
 #include "base/stats/group.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
+#include "cpu/golden_global_mem.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/lsq.hh"
 #include "debug/ArchDB.hh"
@@ -1839,6 +1840,18 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
 
             // execute AMO operation
             (*(pkt->getAtomicOp()))(blk_data);
+
+            if (system->multiContextDifftest() &&
+                system->getGoldenMemManager()->inPmem(
+                    pkt->getAddr(), pkt->getSize())) {
+                // Publish at the AMO serialization point. Responses to two
+                // harts can arrive in the opposite order, so publishing at
+                // LSQ completion can roll golden memory back to an older AMO.
+                system->getGoldenMemManager()->updateGoldenMem(
+                    pkt->getAddr(), blk_data,
+                    pkt->req->getByteEnable(), pkt->getSize());
+                pkt->req->markAtomicGoldenUpdated();
+            }
 
             DPRINTF(CacheVerbose, "Atomic instruction Write to addr %#x size %lu\n", pkt->getAddr(), pkt->getSize());
             for (int i = 0; i < pkt->getSize(); i++) {
