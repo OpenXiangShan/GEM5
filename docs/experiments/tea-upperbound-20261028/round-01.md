@@ -21,7 +21,7 @@
 
 按相同比例外推历史1.0c基线24.36957，约为25.48；这只是估计，尚无新配置完整1.0c统计支持。用户已调整后续方向为保留原12宽、单独增加第4个load口，当前16宽与资源扩容整包作为已测量上限参照。
 
-完整INT对照：[基线](data/r1-common144-baseline24-score.csv)、[宽后端](data/r1-common144-backend-score.csv)。这两份CSV在只缺FP soplex点时生成，其中INT89/89完整；FP和overall列仍为当时子集，不作为最终FP全量分数。
+完整145点分数：[基线](data/r0-full-baseline24-score.csv)、[宽后端](data/r1-full-backend-score.csv)。宽后端FP为27.75762、overall为27.83426；INT/FP/overall与归档score.txt一致。
 
 ## 正式ROI的提前估分：共同140点
 

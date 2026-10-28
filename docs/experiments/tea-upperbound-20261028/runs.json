@@ -73,7 +73,7 @@
     "label": "R1-backend",
     "run_id": 40641366302,
     "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/40641366302",
-    "observed_status": "in_progress",
+    "observed_status": "completed",
     "dispatch": {
       "ref": "tea-main55-ci24-20261026",
       "inputs": {
@@ -87,13 +87,19 @@
         "branch": "515eb0cd1cf97280ddbd600ee42a9c92e722b7ab"
       }
     },
-    "score": null,
+    "score": {
+      "INT_per_GHz": 27.943188743711012,
+      "FP_per_GHz": 27.757619407924107,
+      "overall_per_GHz": 27.834256784238196,
+      "points": 145,
+      "provisional": false
+    },
     "observed_at": "2026-10-28T14:33:42+08:00",
-    "observed_step": "XS-GEM5 - Run performance test",
+    "observed_step": "completed",
     "archive_path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669",
     "markers": {
-      "completed": 138,
-      "running": 7,
+      "completed": 145,
+      "running": 0,
       "abort": 0
     },
     "provisional_result": {
@@ -104,7 +110,8 @@
       "backend_INT_subset": 27.81948258743636,
       "relative_gain_percent": 4.8388527967014205,
       "snapshot": "data/r1-backend-provisional-snapshot.json"
-    }
+    },
+    "conclusion": "success"
   },
   {
     "label": "R1-frontend",
@@ -161,5 +168,47 @@
       "running": 145,
       "abort": 0
     }
+  },
+  {
+    "label": "R4-fourload",
+    "run_id": 40646873569,
+    "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/40646873569",
+    "observed_status": "in_progress",
+    "observed_at": "2026-10-28T14:58:55.299185+08:00",
+    "dispatch": {
+      "ref": "tea-main55-ci24-20261026",
+      "inputs": {
+        "configuration": "kmhv3.py",
+        "benchmark_type": "spec06-rva23-novec-gcc16-0.3c",
+        "specific_benchmarks": "",
+        "distributed_servers": "default",
+        "distributed_jobs_per_server": "32",
+        "branch": "36584adaf67da1e848d7b3a61d5ab18e84b2c12e",
+        "note": "Upperbound R4 fourload preserve12 20261028",
+        "extra_args": "--upperbound-four-load"
+      }
+    },
+    "score": null
+  },
+  {
+    "label": "R4-fourload-frontend",
+    "run_id": 40646888439,
+    "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/40646888439",
+    "observed_status": "in_progress",
+    "observed_at": "2026-10-28T14:58:55.299337+08:00",
+    "dispatch": {
+      "ref": "tea-main55-ci24-20261026",
+      "inputs": {
+        "configuration": "kmhv3.py",
+        "benchmark_type": "spec06-rva23-novec-gcc16-0.3c",
+        "specific_benchmarks": "",
+        "distributed_servers": "default",
+        "distributed_jobs_per_server": "32",
+        "branch": "36584adaf67da1e848d7b3a61d5ab18e84b2c12e",
+        "note": "Upperbound R4 fourload-frontend preserve12 20261028",
+        "extra_args": "--upperbound-four-load --param=system.cpu[0].branchPred.idealPredictionsPerCycle=2 --param=system.cpu[0].branchPred.idealNoOverrideBubbles=True --param=system.cpu[0].idealInstructionFetch=True --param=system.cpu[0].enableTwoFetch=True"
+      }
+    },
+    "score": null
   }
 ]

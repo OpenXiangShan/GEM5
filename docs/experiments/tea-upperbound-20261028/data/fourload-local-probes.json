@@ -1,0 +1,386 @@
+[
+  {
+    "workload": "gcc",
+    "background": "baseline",
+    "exit_code": 0,
+    "instructions": 1000000.0,
+    "cycles": 474363.0,
+    "ipc": 2.108090217828962,
+    "load_pipes": {
+      "system.cpu.lsq0.loadPipeAccepted::pipe0": 5366.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe1": 5231.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe2": 5293.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe3": 5373.0
+    },
+    "allowed_config_diff": [
+      [
+        "system.cpu.scheduler",
+        "children",
+        "IQs00 IQs01 IQs02 IQs03 IQs04 IQs05 IQs06 IQs07 IQs08 IQs09 IQs10 IQs11 IQs12 IQs13 IQs14 IQs15 IQs16 IQs17 IQs18 IQs19 IQs20 specWakeupNetwork0 specWakeupNetwork1 specWakeupNetwork2",
+        "IQs00 IQs01 IQs02 IQs03 IQs04 IQs05 IQs06 IQs07 IQs08 IQs09 IQs10 IQs11 IQs12 IQs13 IQs14 IQs15 IQs16 IQs17 IQs18 IQs19 IQs20 fourthLoadIQ specWakeupNetwork0 specWakeupNetwork1 specWakeupNetwork2"
+      ],
+      [
+        "system.cpu.scheduler",
+        "IQs",
+        "system.cpu.scheduler.IQs00 system.cpu.scheduler.IQs01 system.cpu.scheduler.IQs02 system.cpu.scheduler.IQs03 system.cpu.scheduler.IQs04 system.cpu.scheduler.IQs05 system.cpu.scheduler.IQs06 system.cpu.scheduler.IQs07 system.cpu.scheduler.IQs08 system.cpu.scheduler.IQs09 system.cpu.scheduler.IQs10 system.cpu.scheduler.IQs11 system.cpu.scheduler.IQs12 system.cpu.scheduler.IQs13 system.cpu.scheduler.IQs14 system.cpu.scheduler.IQs15 system.cpu.scheduler.IQs16 system.cpu.scheduler.IQs17 system.cpu.scheduler.IQs18 system.cpu.scheduler.IQs19 system.cpu.scheduler.IQs20",
+        "system.cpu.scheduler.IQs00 system.cpu.scheduler.IQs01 system.cpu.scheduler.IQs02 system.cpu.scheduler.IQs03 system.cpu.scheduler.IQs04 system.cpu.scheduler.IQs05 system.cpu.scheduler.IQs06 system.cpu.scheduler.IQs07 system.cpu.scheduler.IQs08 system.cpu.scheduler.IQs09 system.cpu.scheduler.IQs10 system.cpu.scheduler.IQs11 system.cpu.scheduler.IQs12 system.cpu.scheduler.IQs13 system.cpu.scheduler.IQs14 system.cpu.scheduler.IQs15 system.cpu.scheduler.IQs16 system.cpu.scheduler.IQs17 system.cpu.scheduler.IQs18 system.cpu.scheduler.IQs19 system.cpu.scheduler.IQs20 system.cpu.scheduler.fourthLoadIQ"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork0",
+        "dsts",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 ld3"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork0",
+        "srcs",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 fpIQ0",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 fpIQ0 ld3"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork1",
+        "srcs",
+        "ld0 ld1 ld2 sta0 sta1 std0 std1",
+        "ld0 ld1 ld2 sta0 sta1 std0 std1 ld3"
+      ]
+    ],
+    "passed": true,
+    "scope": "1M no-warmup local four-load probe, not a SPEC score"
+  },
+  {
+    "workload": "gcc",
+    "background": "frontend",
+    "exit_code": 0,
+    "instructions": 1000000.0,
+    "cycles": 444336.0,
+    "ipc": 2.2505491339886934,
+    "load_pipes": {
+      "system.cpu.lsq0.loadPipeAccepted::pipe0": 6510.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe1": 6461.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe2": 6417.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe3": 6518.0
+    },
+    "allowed_config_diff": [
+      [
+        "system.cpu.scheduler",
+        "children",
+        "IQs00 IQs01 IQs02 IQs03 IQs04 IQs05 IQs06 IQs07 IQs08 IQs09 IQs10 IQs11 IQs12 IQs13 IQs14 IQs15 IQs16 IQs17 IQs18 IQs19 IQs20 specWakeupNetwork0 specWakeupNetwork1 specWakeupNetwork2",
+        "IQs00 IQs01 IQs02 IQs03 IQs04 IQs05 IQs06 IQs07 IQs08 IQs09 IQs10 IQs11 IQs12 IQs13 IQs14 IQs15 IQs16 IQs17 IQs18 IQs19 IQs20 fourthLoadIQ specWakeupNetwork0 specWakeupNetwork1 specWakeupNetwork2"
+      ],
+      [
+        "system.cpu.scheduler",
+        "IQs",
+        "system.cpu.scheduler.IQs00 system.cpu.scheduler.IQs01 system.cpu.scheduler.IQs02 system.cpu.scheduler.IQs03 system.cpu.scheduler.IQs04 system.cpu.scheduler.IQs05 system.cpu.scheduler.IQs06 system.cpu.scheduler.IQs07 system.cpu.scheduler.IQs08 system.cpu.scheduler.IQs09 system.cpu.scheduler.IQs10 system.cpu.scheduler.IQs11 system.cpu.scheduler.IQs12 system.cpu.scheduler.IQs13 system.cpu.scheduler.IQs14 system.cpu.scheduler.IQs15 system.cpu.scheduler.IQs16 system.cpu.scheduler.IQs17 system.cpu.scheduler.IQs18 system.cpu.scheduler.IQs19 system.cpu.scheduler.IQs20",
+        "system.cpu.scheduler.IQs00 system.cpu.scheduler.IQs01 system.cpu.scheduler.IQs02 system.cpu.scheduler.IQs03 system.cpu.scheduler.IQs04 system.cpu.scheduler.IQs05 system.cpu.scheduler.IQs06 system.cpu.scheduler.IQs07 system.cpu.scheduler.IQs08 system.cpu.scheduler.IQs09 system.cpu.scheduler.IQs10 system.cpu.scheduler.IQs11 system.cpu.scheduler.IQs12 system.cpu.scheduler.IQs13 system.cpu.scheduler.IQs14 system.cpu.scheduler.IQs15 system.cpu.scheduler.IQs16 system.cpu.scheduler.IQs17 system.cpu.scheduler.IQs18 system.cpu.scheduler.IQs19 system.cpu.scheduler.IQs20 system.cpu.scheduler.fourthLoadIQ"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork0",
+        "dsts",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 ld3"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork0",
+        "srcs",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 fpIQ0",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 fpIQ0 ld3"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork1",
+        "srcs",
+        "ld0 ld1 ld2 sta0 sta1 std0 std1",
+        "ld0 ld1 ld2 sta0 sta1 std0 std1 ld3"
+      ]
+    ],
+    "passed": true,
+    "scope": "1M no-warmup local four-load probe, not a SPEC score"
+  },
+  {
+    "workload": "astar",
+    "background": "baseline",
+    "exit_code": 0,
+    "instructions": 1000010.0,
+    "cycles": 296475.0,
+    "ipc": 3.372999409731006,
+    "load_pipes": {
+      "system.cpu.lsq0.loadPipeAccepted::pipe0": 93691.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe1": 93734.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe2": 93929.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe3": 93722.0
+    },
+    "allowed_config_diff": [
+      [
+        "system.cpu.scheduler",
+        "children",
+        "IQs00 IQs01 IQs02 IQs03 IQs04 IQs05 IQs06 IQs07 IQs08 IQs09 IQs10 IQs11 IQs12 IQs13 IQs14 IQs15 IQs16 IQs17 IQs18 IQs19 IQs20 specWakeupNetwork0 specWakeupNetwork1 specWakeupNetwork2",
+        "IQs00 IQs01 IQs02 IQs03 IQs04 IQs05 IQs06 IQs07 IQs08 IQs09 IQs10 IQs11 IQs12 IQs13 IQs14 IQs15 IQs16 IQs17 IQs18 IQs19 IQs20 fourthLoadIQ specWakeupNetwork0 specWakeupNetwork1 specWakeupNetwork2"
+      ],
+      [
+        "system.cpu.scheduler",
+        "IQs",
+        "system.cpu.scheduler.IQs00 system.cpu.scheduler.IQs01 system.cpu.scheduler.IQs02 system.cpu.scheduler.IQs03 system.cpu.scheduler.IQs04 system.cpu.scheduler.IQs05 system.cpu.scheduler.IQs06 system.cpu.scheduler.IQs07 system.cpu.scheduler.IQs08 system.cpu.scheduler.IQs09 system.cpu.scheduler.IQs10 system.cpu.scheduler.IQs11 system.cpu.scheduler.IQs12 system.cpu.scheduler.IQs13 system.cpu.scheduler.IQs14 system.cpu.scheduler.IQs15 system.cpu.scheduler.IQs16 system.cpu.scheduler.IQs17 system.cpu.scheduler.IQs18 system.cpu.scheduler.IQs19 system.cpu.scheduler.IQs20",
+        "system.cpu.scheduler.IQs00 system.cpu.scheduler.IQs01 system.cpu.scheduler.IQs02 system.cpu.scheduler.IQs03 system.cpu.scheduler.IQs04 system.cpu.scheduler.IQs05 system.cpu.scheduler.IQs06 system.cpu.scheduler.IQs07 system.cpu.scheduler.IQs08 system.cpu.scheduler.IQs09 system.cpu.scheduler.IQs10 system.cpu.scheduler.IQs11 system.cpu.scheduler.IQs12 system.cpu.scheduler.IQs13 system.cpu.scheduler.IQs14 system.cpu.scheduler.IQs15 system.cpu.scheduler.IQs16 system.cpu.scheduler.IQs17 system.cpu.scheduler.IQs18 system.cpu.scheduler.IQs19 system.cpu.scheduler.IQs20 system.cpu.scheduler.fourthLoadIQ"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork0",
+        "dsts",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 ld3"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork0",
+        "srcs",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 fpIQ0",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 fpIQ0 ld3"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork1",
+        "srcs",
+        "ld0 ld1 ld2 sta0 sta1 std0 std1",
+        "ld0 ld1 ld2 sta0 sta1 std0 std1 ld3"
+      ]
+    ],
+    "passed": true,
+    "scope": "1M no-warmup local four-load probe, not a SPEC score"
+  },
+  {
+    "workload": "mcf",
+    "background": "baseline",
+    "exit_code": 0,
+    "instructions": 1000011.0,
+    "cycles": 1275623.0,
+    "ipc": 0.7839392986799392,
+    "load_pipes": {
+      "system.cpu.lsq0.loadPipeAccepted::pipe0": 243225.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe1": 241908.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe2": 242157.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe3": 242581.0
+    },
+    "allowed_config_diff": [
+      [
+        "system.cpu.scheduler",
+        "children",
+        "IQs00 IQs01 IQs02 IQs03 IQs04 IQs05 IQs06 IQs07 IQs08 IQs09 IQs10 IQs11 IQs12 IQs13 IQs14 IQs15 IQs16 IQs17 IQs18 IQs19 IQs20 specWakeupNetwork0 specWakeupNetwork1 specWakeupNetwork2",
+        "IQs00 IQs01 IQs02 IQs03 IQs04 IQs05 IQs06 IQs07 IQs08 IQs09 IQs10 IQs11 IQs12 IQs13 IQs14 IQs15 IQs16 IQs17 IQs18 IQs19 IQs20 fourthLoadIQ specWakeupNetwork0 specWakeupNetwork1 specWakeupNetwork2"
+      ],
+      [
+        "system.cpu.scheduler",
+        "IQs",
+        "system.cpu.scheduler.IQs00 system.cpu.scheduler.IQs01 system.cpu.scheduler.IQs02 system.cpu.scheduler.IQs03 system.cpu.scheduler.IQs04 system.cpu.scheduler.IQs05 system.cpu.scheduler.IQs06 system.cpu.scheduler.IQs07 system.cpu.scheduler.IQs08 system.cpu.scheduler.IQs09 system.cpu.scheduler.IQs10 system.cpu.scheduler.IQs11 system.cpu.scheduler.IQs12 system.cpu.scheduler.IQs13 system.cpu.scheduler.IQs14 system.cpu.scheduler.IQs15 system.cpu.scheduler.IQs16 system.cpu.scheduler.IQs17 system.cpu.scheduler.IQs18 system.cpu.scheduler.IQs19 system.cpu.scheduler.IQs20",
+        "system.cpu.scheduler.IQs00 system.cpu.scheduler.IQs01 system.cpu.scheduler.IQs02 system.cpu.scheduler.IQs03 system.cpu.scheduler.IQs04 system.cpu.scheduler.IQs05 system.cpu.scheduler.IQs06 system.cpu.scheduler.IQs07 system.cpu.scheduler.IQs08 system.cpu.scheduler.IQs09 system.cpu.scheduler.IQs10 system.cpu.scheduler.IQs11 system.cpu.scheduler.IQs12 system.cpu.scheduler.IQs13 system.cpu.scheduler.IQs14 system.cpu.scheduler.IQs15 system.cpu.scheduler.IQs16 system.cpu.scheduler.IQs17 system.cpu.scheduler.IQs18 system.cpu.scheduler.IQs19 system.cpu.scheduler.IQs20 system.cpu.scheduler.fourthLoadIQ"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork0",
+        "dsts",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 ld3"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork0",
+        "srcs",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 fpIQ0",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 fpIQ0 ld3"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork1",
+        "srcs",
+        "ld0 ld1 ld2 sta0 sta1 std0 std1",
+        "ld0 ld1 ld2 sta0 sta1 std0 std1 ld3"
+      ]
+    ],
+    "passed": true,
+    "scope": "1M no-warmup local four-load probe, not a SPEC score"
+  },
+  {
+    "workload": "mcf",
+    "background": "frontend",
+    "exit_code": 0,
+    "instructions": 1000011.0,
+    "cycles": 1313934.0,
+    "ipc": 0.7610816068386996,
+    "load_pipes": {
+      "system.cpu.lsq0.loadPipeAccepted::pipe0": 241219.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe1": 241251.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe2": 241006.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe3": 241402.0
+    },
+    "allowed_config_diff": [
+      [
+        "system.cpu.scheduler",
+        "children",
+        "IQs00 IQs01 IQs02 IQs03 IQs04 IQs05 IQs06 IQs07 IQs08 IQs09 IQs10 IQs11 IQs12 IQs13 IQs14 IQs15 IQs16 IQs17 IQs18 IQs19 IQs20 specWakeupNetwork0 specWakeupNetwork1 specWakeupNetwork2",
+        "IQs00 IQs01 IQs02 IQs03 IQs04 IQs05 IQs06 IQs07 IQs08 IQs09 IQs10 IQs11 IQs12 IQs13 IQs14 IQs15 IQs16 IQs17 IQs18 IQs19 IQs20 fourthLoadIQ specWakeupNetwork0 specWakeupNetwork1 specWakeupNetwork2"
+      ],
+      [
+        "system.cpu.scheduler",
+        "IQs",
+        "system.cpu.scheduler.IQs00 system.cpu.scheduler.IQs01 system.cpu.scheduler.IQs02 system.cpu.scheduler.IQs03 system.cpu.scheduler.IQs04 system.cpu.scheduler.IQs05 system.cpu.scheduler.IQs06 system.cpu.scheduler.IQs07 system.cpu.scheduler.IQs08 system.cpu.scheduler.IQs09 system.cpu.scheduler.IQs10 system.cpu.scheduler.IQs11 system.cpu.scheduler.IQs12 system.cpu.scheduler.IQs13 system.cpu.scheduler.IQs14 system.cpu.scheduler.IQs15 system.cpu.scheduler.IQs16 system.cpu.scheduler.IQs17 system.cpu.scheduler.IQs18 system.cpu.scheduler.IQs19 system.cpu.scheduler.IQs20",
+        "system.cpu.scheduler.IQs00 system.cpu.scheduler.IQs01 system.cpu.scheduler.IQs02 system.cpu.scheduler.IQs03 system.cpu.scheduler.IQs04 system.cpu.scheduler.IQs05 system.cpu.scheduler.IQs06 system.cpu.scheduler.IQs07 system.cpu.scheduler.IQs08 system.cpu.scheduler.IQs09 system.cpu.scheduler.IQs10 system.cpu.scheduler.IQs11 system.cpu.scheduler.IQs12 system.cpu.scheduler.IQs13 system.cpu.scheduler.IQs14 system.cpu.scheduler.IQs15 system.cpu.scheduler.IQs16 system.cpu.scheduler.IQs17 system.cpu.scheduler.IQs18 system.cpu.scheduler.IQs19 system.cpu.scheduler.IQs20 system.cpu.scheduler.fourthLoadIQ"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork0",
+        "dsts",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 ld3"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork0",
+        "srcs",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 fpIQ0",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 fpIQ0 ld3"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork1",
+        "srcs",
+        "ld0 ld1 ld2 sta0 sta1 std0 std1",
+        "ld0 ld1 ld2 sta0 sta1 std0 std1 ld3"
+      ]
+    ],
+    "passed": true,
+    "scope": "1M no-warmup local four-load probe, not a SPEC score"
+  },
+  {
+    "workload": "astar",
+    "background": "frontend",
+    "exit_code": 0,
+    "instructions": 1000010.0,
+    "cycles": 289483.0,
+    "ipc": 3.4544688289122334,
+    "load_pipes": {
+      "system.cpu.lsq0.loadPipeAccepted::pipe0": 94887.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe1": 94822.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe2": 94632.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe3": 94474.0
+    },
+    "allowed_config_diff": [
+      [
+        "system.cpu.scheduler",
+        "children",
+        "IQs00 IQs01 IQs02 IQs03 IQs04 IQs05 IQs06 IQs07 IQs08 IQs09 IQs10 IQs11 IQs12 IQs13 IQs14 IQs15 IQs16 IQs17 IQs18 IQs19 IQs20 specWakeupNetwork0 specWakeupNetwork1 specWakeupNetwork2",
+        "IQs00 IQs01 IQs02 IQs03 IQs04 IQs05 IQs06 IQs07 IQs08 IQs09 IQs10 IQs11 IQs12 IQs13 IQs14 IQs15 IQs16 IQs17 IQs18 IQs19 IQs20 fourthLoadIQ specWakeupNetwork0 specWakeupNetwork1 specWakeupNetwork2"
+      ],
+      [
+        "system.cpu.scheduler",
+        "IQs",
+        "system.cpu.scheduler.IQs00 system.cpu.scheduler.IQs01 system.cpu.scheduler.IQs02 system.cpu.scheduler.IQs03 system.cpu.scheduler.IQs04 system.cpu.scheduler.IQs05 system.cpu.scheduler.IQs06 system.cpu.scheduler.IQs07 system.cpu.scheduler.IQs08 system.cpu.scheduler.IQs09 system.cpu.scheduler.IQs10 system.cpu.scheduler.IQs11 system.cpu.scheduler.IQs12 system.cpu.scheduler.IQs13 system.cpu.scheduler.IQs14 system.cpu.scheduler.IQs15 system.cpu.scheduler.IQs16 system.cpu.scheduler.IQs17 system.cpu.scheduler.IQs18 system.cpu.scheduler.IQs19 system.cpu.scheduler.IQs20",
+        "system.cpu.scheduler.IQs00 system.cpu.scheduler.IQs01 system.cpu.scheduler.IQs02 system.cpu.scheduler.IQs03 system.cpu.scheduler.IQs04 system.cpu.scheduler.IQs05 system.cpu.scheduler.IQs06 system.cpu.scheduler.IQs07 system.cpu.scheduler.IQs08 system.cpu.scheduler.IQs09 system.cpu.scheduler.IQs10 system.cpu.scheduler.IQs11 system.cpu.scheduler.IQs12 system.cpu.scheduler.IQs13 system.cpu.scheduler.IQs14 system.cpu.scheduler.IQs15 system.cpu.scheduler.IQs16 system.cpu.scheduler.IQs17 system.cpu.scheduler.IQs18 system.cpu.scheduler.IQs19 system.cpu.scheduler.IQs20 system.cpu.scheduler.fourthLoadIQ"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork0",
+        "dsts",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 ld3"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork0",
+        "srcs",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 fpIQ0",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 fpIQ0 ld3"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork1",
+        "srcs",
+        "ld0 ld1 ld2 sta0 sta1 std0 std1",
+        "ld0 ld1 ld2 sta0 sta1 std0 std1 ld3"
+      ]
+    ],
+    "passed": true,
+    "scope": "1M no-warmup local four-load probe, not a SPEC score"
+  },
+  {
+    "workload": "omnetpp",
+    "background": "baseline",
+    "exit_code": 0,
+    "instructions": 1000006.0,
+    "cycles": 1464325.0,
+    "ipc": 0.6829126047837741,
+    "load_pipes": {
+      "system.cpu.lsq0.loadPipeAccepted::pipe0": 149306.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe1": 149411.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe2": 150395.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe3": 150462.0
+    },
+    "allowed_config_diff": [
+      [
+        "system.cpu.scheduler",
+        "children",
+        "IQs00 IQs01 IQs02 IQs03 IQs04 IQs05 IQs06 IQs07 IQs08 IQs09 IQs10 IQs11 IQs12 IQs13 IQs14 IQs15 IQs16 IQs17 IQs18 IQs19 IQs20 specWakeupNetwork0 specWakeupNetwork1 specWakeupNetwork2",
+        "IQs00 IQs01 IQs02 IQs03 IQs04 IQs05 IQs06 IQs07 IQs08 IQs09 IQs10 IQs11 IQs12 IQs13 IQs14 IQs15 IQs16 IQs17 IQs18 IQs19 IQs20 fourthLoadIQ specWakeupNetwork0 specWakeupNetwork1 specWakeupNetwork2"
+      ],
+      [
+        "system.cpu.scheduler",
+        "IQs",
+        "system.cpu.scheduler.IQs00 system.cpu.scheduler.IQs01 system.cpu.scheduler.IQs02 system.cpu.scheduler.IQs03 system.cpu.scheduler.IQs04 system.cpu.scheduler.IQs05 system.cpu.scheduler.IQs06 system.cpu.scheduler.IQs07 system.cpu.scheduler.IQs08 system.cpu.scheduler.IQs09 system.cpu.scheduler.IQs10 system.cpu.scheduler.IQs11 system.cpu.scheduler.IQs12 system.cpu.scheduler.IQs13 system.cpu.scheduler.IQs14 system.cpu.scheduler.IQs15 system.cpu.scheduler.IQs16 system.cpu.scheduler.IQs17 system.cpu.scheduler.IQs18 system.cpu.scheduler.IQs19 system.cpu.scheduler.IQs20",
+        "system.cpu.scheduler.IQs00 system.cpu.scheduler.IQs01 system.cpu.scheduler.IQs02 system.cpu.scheduler.IQs03 system.cpu.scheduler.IQs04 system.cpu.scheduler.IQs05 system.cpu.scheduler.IQs06 system.cpu.scheduler.IQs07 system.cpu.scheduler.IQs08 system.cpu.scheduler.IQs09 system.cpu.scheduler.IQs10 system.cpu.scheduler.IQs11 system.cpu.scheduler.IQs12 system.cpu.scheduler.IQs13 system.cpu.scheduler.IQs14 system.cpu.scheduler.IQs15 system.cpu.scheduler.IQs16 system.cpu.scheduler.IQs17 system.cpu.scheduler.IQs18 system.cpu.scheduler.IQs19 system.cpu.scheduler.IQs20 system.cpu.scheduler.fourthLoadIQ"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork0",
+        "dsts",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 ld3"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork0",
+        "srcs",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 fpIQ0",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 fpIQ0 ld3"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork1",
+        "srcs",
+        "ld0 ld1 ld2 sta0 sta1 std0 std1",
+        "ld0 ld1 ld2 sta0 sta1 std0 std1 ld3"
+      ]
+    ],
+    "passed": true,
+    "scope": "1M no-warmup local four-load probe, not a SPEC score"
+  },
+  {
+    "workload": "omnetpp",
+    "background": "frontend",
+    "exit_code": 0,
+    "instructions": 1000007.0,
+    "cycles": 1409024.0,
+    "ipc": 0.7097160871638808,
+    "load_pipes": {
+      "system.cpu.lsq0.loadPipeAccepted::pipe0": 155594.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe1": 155372.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe2": 155644.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe3": 154308.0
+    },
+    "allowed_config_diff": [
+      [
+        "system.cpu.scheduler",
+        "children",
+        "IQs00 IQs01 IQs02 IQs03 IQs04 IQs05 IQs06 IQs07 IQs08 IQs09 IQs10 IQs11 IQs12 IQs13 IQs14 IQs15 IQs16 IQs17 IQs18 IQs19 IQs20 specWakeupNetwork0 specWakeupNetwork1 specWakeupNetwork2",
+        "IQs00 IQs01 IQs02 IQs03 IQs04 IQs05 IQs06 IQs07 IQs08 IQs09 IQs10 IQs11 IQs12 IQs13 IQs14 IQs15 IQs16 IQs17 IQs18 IQs19 IQs20 fourthLoadIQ specWakeupNetwork0 specWakeupNetwork1 specWakeupNetwork2"
+      ],
+      [
+        "system.cpu.scheduler",
+        "IQs",
+        "system.cpu.scheduler.IQs00 system.cpu.scheduler.IQs01 system.cpu.scheduler.IQs02 system.cpu.scheduler.IQs03 system.cpu.scheduler.IQs04 system.cpu.scheduler.IQs05 system.cpu.scheduler.IQs06 system.cpu.scheduler.IQs07 system.cpu.scheduler.IQs08 system.cpu.scheduler.IQs09 system.cpu.scheduler.IQs10 system.cpu.scheduler.IQs11 system.cpu.scheduler.IQs12 system.cpu.scheduler.IQs13 system.cpu.scheduler.IQs14 system.cpu.scheduler.IQs15 system.cpu.scheduler.IQs16 system.cpu.scheduler.IQs17 system.cpu.scheduler.IQs18 system.cpu.scheduler.IQs19 system.cpu.scheduler.IQs20",
+        "system.cpu.scheduler.IQs00 system.cpu.scheduler.IQs01 system.cpu.scheduler.IQs02 system.cpu.scheduler.IQs03 system.cpu.scheduler.IQs04 system.cpu.scheduler.IQs05 system.cpu.scheduler.IQs06 system.cpu.scheduler.IQs07 system.cpu.scheduler.IQs08 system.cpu.scheduler.IQs09 system.cpu.scheduler.IQs10 system.cpu.scheduler.IQs11 system.cpu.scheduler.IQs12 system.cpu.scheduler.IQs13 system.cpu.scheduler.IQs14 system.cpu.scheduler.IQs15 system.cpu.scheduler.IQs16 system.cpu.scheduler.IQs17 system.cpu.scheduler.IQs18 system.cpu.scheduler.IQs19 system.cpu.scheduler.IQs20 system.cpu.scheduler.fourthLoadIQ"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork0",
+        "dsts",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 ld3"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork0",
+        "srcs",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 fpIQ0",
+        "intIQ0 intIQ1 intIQ2 intIQ3 intIQ4 intIQ5 ld0 ld1 ld2 sta0 sta1 std0 std1 fpIQ0 ld3"
+      ],
+      [
+        "system.cpu.scheduler.specWakeupNetwork1",
+        "srcs",
+        "ld0 ld1 ld2 sta0 sta1 std0 std1",
+        "ld0 ld1 ld2 sta0 sta1 std0 std1 ld3"
+      ]
+    ],
+    "passed": true,
+    "scope": "1M no-warmup local four-load probe, not a SPEC score"
+  }
+]

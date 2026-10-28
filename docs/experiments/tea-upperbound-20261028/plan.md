@@ -36,8 +36,8 @@
 
 用户确认astar采样差异为已知背景，后续继续0.3c。用户进一步确认已有12宽，不再推进10整数口的设计方向；原宽后端整包保留作上限参照，不能代表4load单项收益。
 
-旧报告的12路为decode/rename/commit/物理寄存器释放各12；标准scheduler有9个整数IssuePort、3个load口，2 STA/2 STD。当前新增`--upperbound-four-load`只在原scheduler末尾追加ld3及对应wake网络，保留12宽、原FU、原资源和既有IQ索引；会额外增加一个16项load IQ。CoreMark正确性和四pipe激活通过，4个SPEC代表点×原前端/理想前端的8组1M检查正在运行于`/tmp/tea-upperbound-20261028/fourload-spec`。
+旧报告的12路为decode/rename/commit/物理寄存器释放各12；标准scheduler有9个整数IssuePort、3个load口，2 STA/2 STD。当前新增`--upperbound-four-load`只在原scheduler末尾追加ld3及对应wake网络，保留12宽、原FU、原资源和既有IQ索引；会额外增加一个16项load IQ。CoreMark正确性和四pipe激活通过，4个SPEC代表点×原前端/理想前端的8组1M检查全部通过于`/tmp/tea-upperbound-20261028/fourload-spec`。
 
-下一步：检查8组summary与完整INI差异，完成style/precommit，将两Python文件独立提交并push；随后在新精确SHA上触发4load与4load+frontend的两组完整0.3c。允许资源扩容的原始需求仍保留，窗口/LSU扩容应以独立参数对照评估，不将16宽整包纳入新的4load默认。
+下一步：两Python文件已提交并push为36584adaf67da1e848d7b3a61d5ab18e84b2c12e；8组完整INI仅出现新ld3及wakeup成员变化，style/precommit通过。4load与4load+frontend完整0.3c已触发，分别为40646873569、40646888439，见runs.json。等待结果后再决定窗口/LSU资源对照，避免重复dispatch。允许资源扩容的原始需求仍保留，窗口/LSU扩容应以独立参数对照评估，不将16宽整包纳入新的4load默认。
 
 原宽后端run1669现145/145成功，INT27.943188743711012，相对基线26.72578513064518提高4.5552%。前端run1671与组合run1670仍运行。20M预热+2M ROI的gcc/mcf两侧TEA已采集并通过四状态及CSV事件守恒；复用脚本在scripts/summarize_tea.py，完整中间输出位于`/tmp/tea-upperbound-20261028/tea-report`，需整理Markdown残余报告。TEA没有PC×四状态字段，不把PC总权重当可移除stall。
