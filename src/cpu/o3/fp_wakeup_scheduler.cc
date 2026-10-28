@@ -452,24 +452,26 @@ Scheduler::fpCancel(const DynInstPtr& inst, bool recovering)
         return false;
     bool needsSquash = false;
     std::vector<DynInstPtr> pending{inst};
-    std::unordered_set<InstSeqNum> seen;
+    std::unordered_set<const DynInst*> seen;
     while (!pending.empty()) {
         auto victim = pending.back();
         pending.pop_back();
-        if (!seen.insert(victim->seqNum).second)
+        // Split store address/data uops share a sequence number. Ordinary
+        // dependents must therefore be visited by instruction identity.
+        if (!seen.insert(victim.get()).second)
             continue;
         auto it = fpRecords.find(victim->seqNum);
-        if (it == fpRecords.end())
+        FpRecord* record = it != fpRecords.end() && it->second.inst == victim ?
+            &it->second : nullptr;
+        if (record && record->canceled)
             continue;
-        auto& record = it->second;
-        if (record.canceled)
-            continue;
-        record.canceled = true;
+        if (record)
+            record->canceled = true;
         panic_if(victim->isIssued() && !recovering && !victim->isSquashed(),
             "FMA RTL alignment: cancellation after IQ release tid=%u seq=%llu attempt=%llu",
             victim->threadNumber, victim->seqNum, victim->fpWakeAttempt);
-        if (record.output) {
-            for (const auto& user : record.output->users) {
+        if (record && record->output) {
+            for (const auto& user : record->output->users) {
                 auto binding = user.lock();
                 if (!binding)
                     continue;
@@ -480,40 +482,79 @@ Scheduler::fpCancel(const DynInstPtr& inst, bool recovering)
                     downstream->second.sources[binding->source] == binding)
                     pending.push_back(downstream->second.inst);
             }
-            fpWakeState.cancel(record.output->producer);
+            fpWakeState.cancel(record->output->producer);
+        }
+        // An ordinary speculative wake may already have reached dependents
+        // outside the FP token graph (for example FADD -> store data). Retire
+        // its pending events and revoke exactly those source-ready bits too.
+        auto events = specWakeEvents.find(victim->seqNum);
+        if (events != specWakeEvents.end()) {
+            for (auto event : events->second)
+                cpu->deschedule(event);
+            specWakeEvents.erase(events);
+        }
+        for (int i = 0; i < victim->numDestRegs(); ++i) {
+            auto dst = victim->renamedDestIdx(i);
+            if (dst->isFixedMapping())
+                continue;
+            earlyScoreboard[dst->flatIndex()] = false;
+            for (auto iq : issueQues) {
+                for (auto& edge : iq->subDepGraph[dst->flatIndex()]) {
+                    const auto source = edge.first;
+                    const auto& consumer = edge.second;
+                    if (consumer->threadNumber != victim->threadNumber ||
+                        consumer->seqNum <= victim->seqNum ||
+                        !consumer->readySrcIdx(source))
+                        continue;
+                    consumer->clearSrcRegReady(source);
+                    if (!consumer->lldpInputs.empty()) {
+                        consumer->lldpInputs[source] = {};
+                        consumer->selectLldpChain();
+                    }
+                    pending.push_back(consumer);
+                }
+            }
         }
         // A baseline VP recovery may cancel released work; it must use its
         // existing squash path. Never insert such instructions back into IQ.
         const bool released = victim->isIssued();
         needsSquash |= released && !victim->isSquashed();
-        for (auto& binding : record.sources) {
-            if (!binding)
-                continue;
-            auto previous = binding;
-            const bool usable = FpWakeupState::usable(previous);
-            previous->canceled = true;
-            binding.reset();
-            if (!usable && victim->readySrcIdx(previous->source))
-                victim->clearSrcRegReady(previous->source);
-            if (usable) {
-                auto next = fpIdentity(victim);
-                ++next.attempt;
-                binding = fpWakeState.bind(next, previous->source,
-                    previous->token, previous->token->m2Broadcast ? FpWakePath::M2 : previous->path);
+        if (record) {
+            for (auto& binding : record->sources) {
+                if (!binding)
+                    continue;
+                auto previous = binding;
+                const bool usable = FpWakeupState::usable(previous);
+                previous->canceled = true;
+                binding.reset();
+                if (!usable && victim->readySrcIdx(previous->source))
+                    victim->clearSrcRegReady(previous->source);
+                if (usable) {
+                    auto next = fpIdentity(victim);
+                    ++next.attempt;
+                    binding = fpWakeState.bind(next, previous->source,
+                        previous->token, previous->token->m2Broadcast ? FpWakePath::M2 : previous->path);
+                }
             }
         }
-        if (record.output) {
-            for (auto reg : record.output->registers) {
+        if (record && record->output) {
+            for (auto reg : record->output->registers) {
                 auto owner = fpRegisters.find(reg);
-                if (owner != fpRegisters.end() && owner->second == record.output)
+                if (owner != fpRegisters.end() && owner->second == record->output)
                     fpRegisters.erase(owner);
             }
-            fpWakeState.erase(record.output->producer);
-            record.output.reset();
+            fpWakeState.erase(record->output->producer);
+            record->output.reset();
         }
         ++victim->fpWakeAttempt;
-        record.attempt = victim->fpWakeAttempt;
+        if (record)
+            record->attempt = victim->fpWakeAttempt;
         victim->setCancel();
+        // Nonpipelined reservations do not expire by shifting. Release them
+        // before clearing Scheduled, including ordinary dependent attempts.
+        if (!released && victim->isScheduled() && victim->issueportid >= 0 &&
+            !opPipelined[victim->opClass()])
+            victim->issueQue->clearBusy(victim->issueportid);
         if (!released && !victim->isSquashed()) {
             victim->clearScheduled();
             victim->clearArbFailed();

@@ -166,7 +166,17 @@ FpWakeupState::bind(FpWakeIdentity consumer, unsigned source, const Token &token
     binding->source = source;
     binding->token = token;
     binding->path = path;
-    binding->ready = current(token) && token->published &&
+    // Commit may reclaim a producer before a consumer retries another input.
+    // Keep its real result usable without reviving a superseded attempt.
+    bool completed = token && token->confirmed && token->dataReady &&
+        !token->canceled && !token->faulted;
+    if (completed) {
+        auto key = token->producer;
+        key.attempt = 0;
+        completed = latest.find(key) == latest.end();
+    }
+    binding->ready = token && token->published &&
+        (current(token) || completed) &&
         (path == FpWakePath::M4 || token->m2Broadcast);
     if (token) {
         auto &users = token->users;

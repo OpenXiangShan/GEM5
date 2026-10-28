@@ -953,11 +953,14 @@ IssueQue::issueToFu()
             (inst->isStore() && (issuedStore >= numStorePipe)) || blockLoad;
         if (issueOccupied) {
             if (scheduler->enableFmaRtlAlignment &&
-                scheduler->fpRecords.count(inst->seqNum))
+                scheduler->fpRecords.count(inst->seqNum)) {
                 scheduler->fpCancel(inst);
-            inst->clearScheduled();
-            // only for load/store
-            READYQ_PUSH(inst);
+                addIfReady(inst);
+            } else {
+                inst->clearScheduled();
+                // Only load/store queues normally encounter occupied issues.
+                READYQ_PUSH(inst);
+            }
             DPRINTF(Schedule, "[sn:%llu] issue failed due to being occupied\n",
                     inst->seqNum);
             continue;
@@ -2469,8 +2472,13 @@ Scheduler::loadCancel(const DynInstPtr& inst)
                                 continue;
                             }
 
+                            // Preserve VP recovery through the FP cancellation
+                            // closure before the IQ's local cancel callback.
+                            needSquashFallback |=
+                                fpCancel(depInst, inst->vpMisprediction);
                             depInst->issueQue->cancel(depInst);
-                            depInst->clearSrcRegReady(srcIdx);
+                            if (depInst->readySrcIdx(srcIdx))
+                                depInst->clearSrcRegReady(srcIdx);
                             if (!depInst->lldpInputs.empty()) {
                                 depInst->lldpInputs[srcIdx] = {};
                                 depInst->selectLldpChain();
