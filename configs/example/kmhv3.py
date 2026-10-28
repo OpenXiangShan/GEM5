@@ -53,7 +53,6 @@ def makeL2ReplacementPolicy(args, num_sets):
     if args.l2_replacement_policy == "lru":
         return LRURP()
     if args.l2_replacement_policy == "ship-pc":
-        # Preserve the existing SHiP training behavior for this comparison.
         return SHiPPCRP()
     return XSDRRIPRP(mode=2, num_sets=num_sets)
 

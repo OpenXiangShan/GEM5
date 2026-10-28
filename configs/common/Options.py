@@ -164,7 +164,7 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument(
         "--l2-replacement-policy", default="xs-drrip",
         choices=("xs-drrip", "lru", "ship-pc"),
-        help="KMHV3 L2 replacement policy; ship-pc uses unmodified SHiPPCRP")
+        help="KMHV3 L2 replacement policy; ship-pc uses SHiPPCRP")
     parser.add_argument("--classic-l2", action="store_true", default=False,
                         help="use classic L2 cache, instead of RTL aligned L2 cache")
 
