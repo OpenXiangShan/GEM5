@@ -2260,8 +2260,12 @@ LSQUnit::executeAmo(const DynInstPtr &amo_inst)
 
     Fault amo_fault = amo_inst->initiateAcc();
 
-    if (amo_inst->isTranslationDelayed() && amo_fault == NoFault)
+    if (amo_inst->isTranslationDelayed() && amo_fault == NoFault) {
+        if (cpu->getTea()) {
+            amo_inst->teaSetEvent(TeaEvent::ST_TLB);
+        }
         return amo_fault;
+    }
 
     if (!amo_inst->readPredicate()) {
         DPRINTF(LSQUnit, "AMO [sn:%lli] not executed from predication\n",
