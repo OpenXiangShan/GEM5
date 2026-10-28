@@ -1,0 +1,13 @@
+{
+  "historical_input_csv": "/nfs/home/yanyue/.codex/visualizations/2026/10/28/01a180df-fcaf-7421-b733-add33665e1d1/tea-int24-review/data/final.csv",
+  "input_sha256": "2511f174e494c088f9a3402580b8029d81494db5e0de5ef8114e42d4b9f88a22",
+  "point_counts": {
+    "1.0c": 1094,
+    "0.3c": 145
+  },
+  "source_of_input_csv": "run1618 archival stats; standard gem5_data_proc batch output",
+  "process_logs": {
+    "historical-1c": "/tmp/tea-upperbound-20261028/historical-1c-process.log",
+    "historical-03c": "/tmp/tea-upperbound-20261028/historical-03c-process.log"
+  }
+}

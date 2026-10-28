@@ -1,0 +1,3931 @@
+{
+  "time": "2026-10-28T14:36:36.342439+08:00",
+  "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669",
+  "snapshot": "/tmp/tea-upperbound-20261028/r1-backend-provisional/snapshot.json",
+  "snapshot_count": 140,
+  "unique_count": 140,
+  "commit": "515eb0cd1cf97280ddbd600ee42a9c92e722b7ab",
+  "points": [
+    {
+      "name": "GemsFDTD_43464",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/GemsFDTD_43464",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000000,
+      "load_pipe_accepted": [
+        2242387,
+        2242585,
+        2243087,
+        2242437
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "GemsFDTD_65615",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/GemsFDTD_65615",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000006,
+      "load_pipe_accepted": [
+        1863806,
+        1863555,
+        1863756,
+        1864070
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "astar_biglakes_5863",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/astar_biglakes_5863",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999998,
+      "load_pipe_accepted": [
+        1915485,
+        1915078,
+        1915499,
+        1913946
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "astar_biglakes_6185",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/astar_biglakes_6185",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000000,
+      "load_pipe_accepted": [
+        2254520,
+        2256312,
+        2255001,
+        2255694
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "astar_rivers_11009",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/astar_rivers_11009",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000007,
+      "load_pipe_accepted": [
+        2031820,
+        2032532,
+        2031591,
+        2031644
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "astar_rivers_8610",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/astar_rivers_8610",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999997,
+      "load_pipe_accepted": [
+        2058606,
+        2056935,
+        2058976,
+        2059175
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "bwaves_13153",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/bwaves_13153",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999998,
+      "load_pipe_accepted": [
+        2435646,
+        2434617,
+        2435232,
+        2436501
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_chicken_2802",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/bzip2_chicken_2802",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000004,
+      "load_pipe_accepted": [
+        1107152,
+        1107193,
+        1108004,
+        1108600
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_chicken_3209",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/bzip2_chicken_3209",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000010,
+      "load_pipe_accepted": [
+        1426528,
+        1426351,
+        1425899,
+        1426342
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_combined_15288",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/bzip2_combined_15288",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999999,
+      "load_pipe_accepted": [
+        2360470,
+        2360670,
+        2360630,
+        2361626
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_html_4314",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/bzip2_html_4314",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999991,
+      "load_pipe_accepted": [
+        1449838,
+        1449766,
+        1449990,
+        1449666
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_html_4897",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/bzip2_html_4897",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999997,
+      "load_pipe_accepted": [
+        2302333,
+        2302691,
+        2302260,
+        2302308
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_liberty_4539",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/bzip2_liberty_4539",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999997,
+      "load_pipe_accepted": [
+        1416992,
+        1417445,
+        1416989,
+        1417230
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_program_16402",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/bzip2_program_16402",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000003,
+      "load_pipe_accepted": [
+        1561005,
+        1559547,
+        1560231,
+        1559498
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_program_5761",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/bzip2_program_5761",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999996,
+      "load_pipe_accepted": [
+        1265657,
+        1265611,
+        1266779,
+        1265767
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_source_16629",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/bzip2_source_16629",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000001,
+      "load_pipe_accepted": [
+        2479029,
+        2477859,
+        2476081,
+        2477454
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_source_20355",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/bzip2_source_20355",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000005,
+      "load_pipe_accepted": [
+        1635320,
+        1637794,
+        1635887,
+        1636584
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "cactusADM_163",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/cactusADM_163",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999993,
+      "load_pipe_accepted": [
+        2532659,
+        2532209,
+        2532329,
+        2533189
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "calculix_38207",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/calculix_38207",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999996,
+      "load_pipe_accepted": [
+        1639019,
+        1638448,
+        1639266,
+        1638097
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "calculix_5756",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/calculix_5756",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999995,
+      "load_pipe_accepted": [
+        2472294,
+        2472151,
+        2472067,
+        2472371
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "dealII_46309",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/dealII_46309",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999997,
+      "load_pipe_accepted": [
+        1893145,
+        1892756,
+        1892432,
+        1891658
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "dealII_8887",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/dealII_8887",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000002,
+      "load_pipe_accepted": [
+        2446640,
+        2446526,
+        2446715,
+        2446543
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "dealII_9896",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/dealII_9896",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999997,
+      "load_pipe_accepted": [
+        2510219,
+        2509988,
+        2510442,
+        2510470
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_cytosine_18796",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gamess_cytosine_18796",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999992,
+      "load_pipe_accepted": [
+        1595626,
+        1595919,
+        1594876,
+        1595158
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_cytosine_32829",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gamess_cytosine_32829",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000000,
+      "load_pipe_accepted": [
+        1605604,
+        1605668,
+        1606029,
+        1605695
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_cytosine_45124",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gamess_cytosine_45124",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000000,
+      "load_pipe_accepted": [
+        1556479,
+        1556911,
+        1556198,
+        1556487
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_cytosine_6705",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gamess_cytosine_6705",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000008,
+      "load_pipe_accepted": [
+        1535791,
+        1535313,
+        1535375,
+        1535440
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_gradient_12302",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gamess_gradient_12302",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000008,
+      "load_pipe_accepted": [
+        1579478,
+        1581084,
+        1579858,
+        1580313
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_gradient_12613",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gamess_gradient_12613",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999997,
+      "load_pipe_accepted": [
+        1600825,
+        1600821,
+        1601446,
+        1601124
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_gradient_3703",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gamess_gradient_3703",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000000,
+      "load_pipe_accepted": [
+        1633574,
+        1632918,
+        1633461,
+        1633440
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_triazolium_139471",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gamess_triazolium_139471",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000008,
+      "load_pipe_accepted": [
+        1545617,
+        1545950,
+        1544858,
+        1545634
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_triazolium_152243",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gamess_triazolium_152243",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999988,
+      "load_pipe_accepted": [
+        1542331,
+        1541942,
+        1542360,
+        1542139
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_triazolium_160006",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gamess_triazolium_160006",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999990,
+      "load_pipe_accepted": [
+        1641991,
+        1641959,
+        1641787,
+        1641204
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_triazolium_85938",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gamess_triazolium_85938",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000003,
+      "load_pipe_accepted": [
+        1683899,
+        1684397,
+        1684365,
+        1683787
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_166_2119",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gcc_166_2119",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999995,
+      "load_pipe_accepted": [
+        902325,
+        902059,
+        902117,
+        902623
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_166_800",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gcc_166_800",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000000,
+      "load_pipe_accepted": [
+        1696749,
+        1695109,
+        1696567,
+        1696782
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_200_1635",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gcc_200_1635",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999992,
+      "load_pipe_accepted": [
+        916292,
+        916634,
+        916551,
+        916365
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_200_4808",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gcc_200_4808",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000001,
+      "load_pipe_accepted": [
+        1382699,
+        1384237,
+        1385397,
+        1382794
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_200_5108",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gcc_200_5108",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000007,
+      "load_pipe_accepted": [
+        1707563,
+        1705797,
+        1707244,
+        1706221
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_cpdecl_1944",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gcc_cpdecl_1944",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000002,
+      "load_pipe_accepted": [
+        1682564,
+        1682283,
+        1681699,
+        1682723
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_cpdecl_4089",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gcc_cpdecl_4089",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000001,
+      "load_pipe_accepted": [
+        1505845,
+        1507368,
+        1508313,
+        1507448
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_expr2_1725",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gcc_expr2_1725",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999993,
+      "load_pipe_accepted": [
+        939657,
+        938547,
+        939413,
+        938012
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_expr2_3409",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gcc_expr2_3409",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999999,
+      "load_pipe_accepted": [
+        91902,
+        91922,
+        91878,
+        91884
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_expr_1687",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gcc_expr_1687",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999997,
+      "load_pipe_accepted": [
+        117799,
+        117489,
+        117811,
+        117832
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_expr_4993",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gcc_expr_4993",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999991,
+      "load_pipe_accepted": [
+        1632731,
+        1632481,
+        1634333,
+        1632239
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_g23_3542",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gcc_g23_3542",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000000,
+      "load_pipe_accepted": [
+        967166,
+        966703,
+        967817,
+        966683
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_g23_50",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gcc_g23_50",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999994,
+      "load_pipe_accepted": [
+        1443009,
+        1441858,
+        1442608,
+        1442247
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_s04_3001",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gcc_s04_3001",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000000,
+      "load_pipe_accepted": [
+        59304,
+        59584,
+        59745,
+        59203
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_s04_7954",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gcc_s04_7954",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999998,
+      "load_pipe_accepted": [
+        1411791,
+        1412719,
+        1411425,
+        1410771
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_scilab_2556",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gcc_scilab_2556",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000012,
+      "load_pipe_accepted": [
+        1422894,
+        1423308,
+        1424682,
+        1423730
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_scilab_373",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gcc_scilab_373",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000000,
+      "load_pipe_accepted": [
+        1740974,
+        1740528,
+        1740558,
+        1741906
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_typeck_2215",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gcc_typeck_2215",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999998,
+      "load_pipe_accepted": [
+        909875,
+        910350,
+        909532,
+        910231
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_typeck_4910",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gcc_typeck_4910",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999999,
+      "load_pipe_accepted": [
+        88761,
+        88930,
+        88279,
+        88675
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_typeck_730",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gcc_typeck_730",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000012,
+      "load_pipe_accepted": [
+        1443870,
+        1445879,
+        1445064,
+        1443054
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_13x13_5624",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gobmk_13x13_5624",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999998,
+      "load_pipe_accepted": [
+        1521611,
+        1520153,
+        1519575,
+        1520871
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_13x13_6011",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gobmk_13x13_6011",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000008,
+      "load_pipe_accepted": [
+        1472117,
+        1470719,
+        1471502,
+        1471908
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_13x13_8760",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gobmk_13x13_8760",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999995,
+      "load_pipe_accepted": [
+        1455290,
+        1455198,
+        1456165,
+        1455316
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_nngs_23480",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gobmk_nngs_23480",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999994,
+      "load_pipe_accepted": [
+        1432313,
+        1432820,
+        1431145,
+        1430613
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_nngs_28380",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gobmk_nngs_28380",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999988,
+      "load_pipe_accepted": [
+        1509885,
+        1508432,
+        1509332,
+        1508633
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_nngs_3689",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gobmk_nngs_3689",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999998,
+      "load_pipe_accepted": [
+        1462609,
+        1460255,
+        1462292,
+        1461882
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_score2_11938",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gobmk_score2_11938",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999994,
+      "load_pipe_accepted": [
+        1265992,
+        1266732,
+        1264853,
+        1264993
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_score2_13127",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gobmk_score2_13127",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999995,
+      "load_pipe_accepted": [
+        1466925,
+        1466612,
+        1466224,
+        1465502
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_score2_3645",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gobmk_score2_3645",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000001,
+      "load_pipe_accepted": [
+        1259462,
+        1259471,
+        1259520,
+        1259111
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_score2_875",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gobmk_score2_875",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999989,
+      "load_pipe_accepted": [
+        1453782,
+        1454295,
+        1452570,
+        1454454
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_trevorc_5366",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gobmk_trevorc_5366",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000014,
+      "load_pipe_accepted": [
+        1343636,
+        1348161,
+        1345087,
+        1345130
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_trevorc_883",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gobmk_trevorc_883",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999993,
+      "load_pipe_accepted": [
+        1465847,
+        1465545,
+        1464425,
+        1465209
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_trevord_4532",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gobmk_trevord_4532",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000000,
+      "load_pipe_accepted": [
+        1522100,
+        1521747,
+        1521800,
+        1522404
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_trevord_6799",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gobmk_trevord_6799",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999996,
+      "load_pipe_accepted": [
+        1373030,
+        1374214,
+        1373715,
+        1373435
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_trevord_7931",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gobmk_trevord_7931",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999995,
+      "load_pipe_accepted": [
+        1207438,
+        1207064,
+        1207856,
+        1208045
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gromacs_105",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gromacs_105",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999986,
+      "load_pipe_accepted": [
+        1583501,
+        1585190,
+        1585498,
+        1583870
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "gromacs_41110",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/gromacs_41110",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000004,
+      "load_pipe_accepted": [
+        1580912,
+        1581019,
+        1581371,
+        1580679
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "h264ref_foreman.baseline_1674",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/h264ref_foreman.baseline_1674",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000005,
+      "load_pipe_accepted": [
+        1667018,
+        1667085,
+        1667288,
+        1667156
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "h264ref_foreman.baseline_18077",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/h264ref_foreman.baseline_18077",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000005,
+      "load_pipe_accepted": [
+        2313615,
+        2313509,
+        2313573,
+        2313548
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "h264ref_foreman.baseline_1968",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/h264ref_foreman.baseline_1968",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000011,
+      "load_pipe_accepted": [
+        1701232,
+        1702174,
+        1702677,
+        1702595
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "h264ref_foreman.baseline_7788",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/h264ref_foreman.baseline_7788",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999998,
+      "load_pipe_accepted": [
+        1784912,
+        1785610,
+        1785704,
+        1784606
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "h264ref_foreman.main_11944",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/h264ref_foreman.main_11944",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000002,
+      "load_pipe_accepted": [
+        2026302,
+        2026637,
+        2026131,
+        2025973
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "h264ref_foreman.main_13366",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/h264ref_foreman.main_13366",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999998,
+      "load_pipe_accepted": [
+        1701863,
+        1701239,
+        1701644,
+        1702590
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "h264ref_foreman.main_17926",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/h264ref_foreman.main_17926",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000013,
+      "load_pipe_accepted": [
+        1664964,
+        1666204,
+        1663960,
+        1664793
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "h264ref_foreman.main_6311",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/h264ref_foreman.main_6311",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000000,
+      "load_pipe_accepted": [
+        1718090,
+        1718734,
+        1718346,
+        1718151
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "h264ref_sss_157672",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/h264ref_sss_157672",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999993,
+      "load_pipe_accepted": [
+        2009439,
+        2009036,
+        2009988,
+        2008856
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "h264ref_sss_185055",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/h264ref_sss_185055",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999998,
+      "load_pipe_accepted": [
+        2082209,
+        2081659,
+        2082171,
+        2081657
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "h264ref_sss_19498",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/h264ref_sss_19498",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000002,
+      "load_pipe_accepted": [
+        1661566,
+        1661111,
+        1659523,
+        1661367
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "h264ref_sss_667",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/h264ref_sss_667",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999999,
+      "load_pipe_accepted": [
+        1685969,
+        1685241,
+        1686109,
+        1685706
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "hmmer_nph3_7894",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/hmmer_nph3_7894",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000015,
+      "load_pipe_accepted": [
+        1413755,
+        1414589,
+        1414713,
+        1414276
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "hmmer_retro_23265",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/hmmer_retro_23265",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999986,
+      "load_pipe_accepted": [
+        1375524,
+        1375483,
+        1375757,
+        1375868
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "hmmer_retro_59969",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/hmmer_retro_59969",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000010,
+      "load_pipe_accepted": [
+        1375612,
+        1374896,
+        1375070,
+        1374373
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "lbm_6382",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/lbm_6382",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999991,
+      "load_pipe_accepted": [
+        1508255,
+        1508392,
+        1508665,
+        1507019
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "leslie3d_18494",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/leslie3d_18494",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999993,
+      "load_pipe_accepted": [
+        2207375,
+        2207817,
+        2208406,
+        2207966
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "leslie3d_34720",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/leslie3d_34720",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999993,
+      "load_pipe_accepted": [
+        2060800,
+        2059955,
+        2060468,
+        2060718
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "libquantum_27811",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/libquantum_27811",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000000,
+      "load_pipe_accepted": [
+        924606,
+        925171,
+        925363,
+        925075
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "libquantum_69175",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/libquantum_69175",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000004,
+      "load_pipe_accepted": [
+        956611,
+        955937,
+        957148,
+        956068
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "libquantum_86704",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/libquantum_86704",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999992,
+      "load_pipe_accepted": [
+        1056414,
+        1054461,
+        1054750,
+        1055065
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "mcf_12886",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/mcf_12886",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000006,
+      "load_pipe_accepted": [
+        7018618,
+        7001264,
+        7004352,
+        6997653
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "milc_13081",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/milc_13081",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000001,
+      "load_pipe_accepted": [
+        2830597,
+        2831064,
+        2830818,
+        2830677
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "milc_28462",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/milc_28462",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999987,
+      "load_pipe_accepted": [
+        2900291,
+        2900734,
+        2899991,
+        2902112
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "milc_30106",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/milc_30106",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999993,
+      "load_pipe_accepted": [
+        3007088,
+        3007197,
+        3007261,
+        3006697
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "milc_5841",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/milc_5841",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000001,
+      "load_pipe_accepted": [
+        2475184,
+        2477126,
+        2475168,
+        2476623
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "namd_40827",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/namd_40827",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000002,
+      "load_pipe_accepted": [
+        1716991,
+        1716614,
+        1714811,
+        1716841
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "namd_50633",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/namd_50633",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000001,
+      "load_pipe_accepted": [
+        1571141,
+        1570838,
+        1571613,
+        1570264
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "namd_65358",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/namd_65358",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000001,
+      "load_pipe_accepted": [
+        1688353,
+        1685589,
+        1684123,
+        1685956
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "namd_7092",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/namd_7092",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999999,
+      "load_pipe_accepted": [
+        1736640,
+        1743249,
+        1738028,
+        1739825
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "namd_84400",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/namd_84400",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000002,
+      "load_pipe_accepted": [
+        1669236,
+        1670257,
+        1668696,
+        1668598
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "perlbench_checkspam_28089",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/perlbench_checkspam_28089",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000004,
+      "load_pipe_accepted": [
+        1484919,
+        1483057,
+        1484772,
+        1485040
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "perlbench_checkspam_5886",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/perlbench_checkspam_5886",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000002,
+      "load_pipe_accepted": [
+        1501198,
+        1501557,
+        1500921,
+        1501511
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "perlbench_diffmail_2097",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/perlbench_diffmail_2097",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999998,
+      "load_pipe_accepted": [
+        1578589,
+        1578697,
+        1578196,
+        1581194
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "perlbench_splitmail_4191",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/perlbench_splitmail_4191",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000012,
+      "load_pipe_accepted": [
+        1620305,
+        1619807,
+        1623358,
+        1618129
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "povray_21991",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/povray_21991",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999999,
+      "load_pipe_accepted": [
+        2288037,
+        2288048,
+        2287505,
+        2288605
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "povray_28404",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/povray_28404",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999992,
+      "load_pipe_accepted": [
+        2210801,
+        2209916,
+        2208823,
+        2209536
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "povray_7650",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/povray_7650",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000000,
+      "load_pipe_accepted": [
+        2387880,
+        2387782,
+        2389093,
+        2388592
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "povray_8107",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/povray_8107",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999994,
+      "load_pipe_accepted": [
+        2214001,
+        2214019,
+        2213442,
+        2213445
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "sjeng_10181",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/sjeng_10181",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999990,
+      "load_pipe_accepted": [
+        1362344,
+        1360140,
+        1359981,
+        1360224
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "sjeng_104526",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/sjeng_104526",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999989,
+      "load_pipe_accepted": [
+        1332787,
+        1332613,
+        1332744,
+        1331732
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "sjeng_94536",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/sjeng_94536",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000001,
+      "load_pipe_accepted": [
+        1321473,
+        1323485,
+        1322739,
+        1322593
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "soplex_pds-50_12322",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/soplex_pds-50_12322",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000000,
+      "load_pipe_accepted": [
+        2922609,
+        2924028,
+        2923440,
+        2923672
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "soplex_pds-50_9466",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/soplex_pds-50_9466",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999995,
+      "load_pipe_accepted": [
+        3049717,
+        3049007,
+        3050602,
+        3049605
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "soplex_ref_17811",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/soplex_ref_17811",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000008,
+      "load_pipe_accepted": [
+        2739257,
+        2732972,
+        2739932,
+        2741530
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "soplex_ref_5312",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/soplex_ref_5312",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000000,
+      "load_pipe_accepted": [
+        2842406,
+        2842660,
+        2842511,
+        2842256
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "sphinx3_157921",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/sphinx3_157921",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000007,
+      "load_pipe_accepted": [
+        1480076,
+        1479884,
+        1480317,
+        1480218
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "sphinx3_39957",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/sphinx3_39957",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999987,
+      "load_pipe_accepted": [
+        1581249,
+        1584221,
+        1583280,
+        1583888
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "sphinx3_89031",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/sphinx3_89031",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999992,
+      "load_pipe_accepted": [
+        1541466,
+        1541612,
+        1541243,
+        1540075
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "tonto_10669",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/tonto_10669",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000002,
+      "load_pipe_accepted": [
+        1784552,
+        1785899,
+        1786821,
+        1786829
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "tonto_22517",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/tonto_22517",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000002,
+      "load_pipe_accepted": [
+        1493850,
+        1495342,
+        1494562,
+        1493341
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "tonto_24832",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/tonto_24832",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999997,
+      "load_pipe_accepted": [
+        1705387,
+        1703761,
+        1704794,
+        1702926
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "tonto_26200",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/tonto_26200",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000001,
+      "load_pipe_accepted": [
+        1640098,
+        1639631,
+        1641845,
+        1641120
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "wrf_20161",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/wrf_20161",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999996,
+      "load_pipe_accepted": [
+        1801800,
+        1801719,
+        1802645,
+        1801714
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "wrf_6877",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/wrf_6877",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000010,
+      "load_pipe_accepted": [
+        1861745,
+        1862045,
+        1861612,
+        1861602
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "wrf_9169",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/wrf_9169",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000004,
+      "load_pipe_accepted": [
+        1146759,
+        1146792,
+        1146387,
+        1145114
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "xalancbmk_10335",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/xalancbmk_10335",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000011,
+      "load_pipe_accepted": [
+        2053051,
+        2053717,
+        2052719,
+        2052974
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "xalancbmk_10486",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/xalancbmk_10486",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999989,
+      "load_pipe_accepted": [
+        2041991,
+        2041037,
+        2040971,
+        2041209
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "xalancbmk_12667",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/xalancbmk_12667",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000003,
+      "load_pipe_accepted": [
+        1725626,
+        1725591,
+        1725519,
+        1725567
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "xalancbmk_13770",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/xalancbmk_13770",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000008,
+      "load_pipe_accepted": [
+        1737463,
+        1737408,
+        1737331,
+        1736938
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "xalancbmk_20863",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/xalancbmk_20863",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999997,
+      "load_pipe_accepted": [
+        1666760,
+        1665367,
+        1665431,
+        1665372
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "xalancbmk_23046",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/xalancbmk_23046",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000001,
+      "load_pipe_accepted": [
+        1682637,
+        1682500,
+        1682435,
+        1682447
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "xalancbmk_24926",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/xalancbmk_24926",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000000,
+      "load_pipe_accepted": [
+        1687179,
+        1687708,
+        1688354,
+        1687767
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "xalancbmk_4478",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/xalancbmk_4478",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000002,
+      "load_pipe_accepted": [
+        2586504,
+        2584470,
+        2585282,
+        2586670
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "xalancbmk_6663",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/xalancbmk_6663",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999986,
+      "load_pipe_accepted": [
+        1865440,
+        1864326,
+        1866148,
+        1865087
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "xalancbmk_6881",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/xalancbmk_6881",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 20000007,
+      "load_pipe_accepted": [
+        2058712,
+        2057337,
+        2057530,
+        2057916
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "zeusmp_4119",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/zeusmp_4119",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999998,
+      "load_pipe_accepted": [
+        1243432,
+        1243422,
+        1243853,
+        1244026
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "zeusmp_47363",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/zeusmp_47363",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999993,
+      "load_pipe_accepted": [
+        1338387,
+        1338488,
+        1339393,
+        1338844
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    },
+    {
+      "name": "zeusmp_66319",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669/spec_all/zeusmp_66319",
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "roi": 19999997,
+      "load_pipe_accepted": [
+        1428321,
+        1428589,
+        1427827,
+        1426605
+      ],
+      "rob": 640,
+      "scheduler_enableSpMT": "false",
+      "iq_load_names": [
+        "ld0",
+        "ld1",
+        "ld2",
+        "ld3"
+      ],
+      "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+      "maxinst_exit_status0": true,
+      "difftest_enabled": true,
+      "errors": []
+    }
+  ],
+  "exceptions": []
+}

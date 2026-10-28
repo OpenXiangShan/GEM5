@@ -1,0 +1,549 @@
+{
+  "control": {
+    "path": "/tmp/tea-upperbound-20261028/frontend-ablations/mcf/combined/control",
+    "ipc": 0.9892901059612739,
+    "cycles": 1010841.0,
+    "instructions": 1000015.0,
+    "final_stats_complete": true,
+    "stats_block_count": 1,
+    "maxinst_exit": true,
+    "difftest_enabled": true,
+    "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+    "L1_mshrs": 16,
+    "L2_mshrs": [
+      16,
+      16,
+      16,
+      16
+    ],
+    "L1": {
+      "noMshrBlockedCycles": 268838.0,
+      "blockedCycles::no_mshrs": 268701.0,
+      "blockedCycles::no_targets": 178.0,
+      "blockedCauses::no_mshrs": 47492.0,
+      "blockedCauses::no_targets": 1.0,
+      "blockedCauses::no_WriteBuffer": 1606.0,
+      "mshrAvgEntryNum": 10.567227,
+      "mshrOccupancyRatio": 0.660452,
+      "demandMshrMisses::total": 161895.0,
+      "demandMshrMissLatency::total": 3448474407.0,
+      "demandAvgMshrMissLatency::total": 21300.685055,
+      "demandMshrHits::total": 158569.0
+    },
+    "L2": [
+      {
+        "noMshrBlockedCycles": 6994.0,
+        "blockedCycles::no_mshrs": 6994.0,
+        "blockedCycles::no_targets": 0.0,
+        "blockedCauses::no_mshrs": 459.0,
+        "blockedCauses::no_targets": 0.0,
+        "blockedCauses::no_WriteBuffer": 0.0,
+        "mshrAvgEntryNum": 7.118105,
+        "mshrOccupancyRatio": 0.444882,
+        "demandMshrMisses::total": 6034.0,
+        "demandMshrMissLatency::total": 546066659.0,
+        "demandAvgMshrMissLatency::total": 90498.286211,
+        "demandMshrHits::total": 3.0
+      },
+      {
+        "noMshrBlockedCycles": 4055.0,
+        "blockedCycles::no_mshrs": 4055.0,
+        "blockedCycles::no_targets": 0.0,
+        "blockedCauses::no_mshrs": 297.0,
+        "blockedCauses::no_targets": 0.0,
+        "blockedCauses::no_WriteBuffer": 0.0,
+        "mshrAvgEntryNum": 7.078497,
+        "mshrOccupancyRatio": 0.442406,
+        "demandMshrMisses::total": 5577.0,
+        "demandMshrMissLatency::total": 493097051.0,
+        "demandAvgMshrMissLatency::total": 88416.182715,
+        "demandMshrHits::total": 2.0
+      },
+      {
+        "noMshrBlockedCycles": 4739.0,
+        "blockedCycles::no_mshrs": 4739.0,
+        "blockedCycles::no_targets": 0.0,
+        "blockedCauses::no_mshrs": 329.0,
+        "blockedCauses::no_targets": 0.0,
+        "blockedCauses::no_WriteBuffer": 0.0,
+        "mshrAvgEntryNum": 7.164968,
+        "mshrOccupancyRatio": 0.447811,
+        "demandMshrMisses::total": 6007.0,
+        "demandMshrMissLatency::total": 544275150.0,
+        "demandAvgMshrMissLatency::total": 90606.817047,
+        "demandMshrHits::total": 46.0
+      },
+      {
+        "noMshrBlockedCycles": 5770.0,
+        "blockedCycles::no_mshrs": 5770.0,
+        "blockedCycles::no_targets": 0.0,
+        "blockedCauses::no_mshrs": 430.0,
+        "blockedCauses::no_targets": 0.0,
+        "blockedCauses::no_WriteBuffer": 0.0,
+        "mshrAvgEntryNum": 7.228632,
+        "mshrOccupancyRatio": 0.451789,
+        "demandMshrMisses::total": 6279.0,
+        "demandMshrMissLatency::total": 575439600.0,
+        "demandAvgMshrMissLatency::total": 91645.102723,
+        "demandMshrHits::total": 33.0
+      }
+    ],
+    "L3": {
+      "noMshrBlockedCycles": 0.0,
+      "blockedCycles::no_mshrs": 0.0,
+      "blockedCycles::no_targets": 0.0,
+      "blockedCauses::no_mshrs": 0.0,
+      "blockedCauses::no_targets": 0.0,
+      "blockedCauses::no_WriteBuffer": 0.0,
+      "mshrAvgEntryNum": 27.723924,
+      "mshrOccupancyRatio": 0.433186,
+      "demandMshrMisses::total": 101829.0,
+      "demandMshrMissLatency::total": 9332085161.0,
+      "demandAvgMshrMissLatency::total": 91644.670585,
+      "demandMshrHits::total": null
+    },
+    "dram": {
+      "bytesRead::total": 6516928.0,
+      "numReads::total": 101827.0,
+      "bwRead::total": 19360486679.0,
+      "bytesRead::cpu.data": 1414336.0,
+      "bytesRead::l2_wrappers.prefetcher": 4483584.0
+    },
+    "lsq": {
+      "blockedByCache": 42690.0,
+      "bankConflictTimes": 64839.0,
+      "loadReplayEvents::CacheBlockedReplay": 419358.0,
+      "loadReplayEventsFromIssueQueue::CacheBlockedReplay": 23092.0,
+      "loadReplayEvents::CacheMissReplay": 325188.0,
+      "loadReplayEvents::BankConflictReplay": 153030.0,
+      "loadReplayEvents::MshrArbFailReplay": 8.0
+    },
+    "config_diff_vs_control": []
+  },
+  "l1_mshr64": {
+    "path": "/tmp/tea-upperbound-20261028/memory-ablations/mcf/combined/l1_mshr64",
+    "ipc": 1.0124919381538702,
+    "cycles": 987677.0,
+    "instructions": 1000015.0,
+    "final_stats_complete": true,
+    "stats_block_count": 1,
+    "maxinst_exit": true,
+    "difftest_enabled": true,
+    "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+    "L1_mshrs": 64,
+    "L2_mshrs": [
+      16,
+      16,
+      16,
+      16
+    ],
+    "L1": {
+      "noMshrBlockedCycles": 0.0,
+      "blockedCycles::no_mshrs": 0.0,
+      "blockedCycles::no_targets": 178.0,
+      "blockedCauses::no_mshrs": 0.0,
+      "blockedCauses::no_targets": 1.0,
+      "blockedCauses::no_WriteBuffer": 2272.0,
+      "mshrAvgEntryNum": 12.378526,
+      "mshrOccupancyRatio": 0.193414,
+      "demandMshrMisses::total": 154432.0,
+      "demandMshrMissLatency::total": 3684378600.0,
+      "demandAvgMshrMissLatency::total": 23857.611117,
+      "demandMshrHits::total": 193896.0
+    },
+    "L2": [
+      {
+        "noMshrBlockedCycles": 10934.0,
+        "blockedCycles::no_mshrs": 10934.0,
+        "blockedCycles::no_targets": 0.0,
+        "blockedCauses::no_mshrs": 786.0,
+        "blockedCauses::no_targets": 0.0,
+        "blockedCauses::no_WriteBuffer": 0.0,
+        "mshrAvgEntryNum": 7.313899,
+        "mshrOccupancyRatio": 0.457119,
+        "demandMshrMisses::total": 5571.0,
+        "demandMshrMissLatency::total": 514437509.0,
+        "demandAvgMshrMissLatency::total": 92342.040747,
+        "demandMshrHits::total": 64.0
+      },
+      {
+        "noMshrBlockedCycles": 10900.0,
+        "blockedCycles::no_mshrs": 10900.0,
+        "blockedCycles::no_targets": 0.0,
+        "blockedCauses::no_mshrs": 727.0,
+        "blockedCauses::no_targets": 0.0,
+        "blockedCauses::no_WriteBuffer": 0.0,
+        "mshrAvgEntryNum": 7.36827,
+        "mshrOccupancyRatio": 0.460517,
+        "demandMshrMisses::total": 5647.0,
+        "demandMshrMissLatency::total": 528895757.0,
+        "demandAvgMshrMissLatency::total": 93659.599256,
+        "demandMshrHits::total": 44.0
+      },
+      {
+        "noMshrBlockedCycles": 14856.0,
+        "blockedCycles::no_mshrs": 14856.0,
+        "blockedCycles::no_targets": 0.0,
+        "blockedCauses::no_mshrs": 824.0,
+        "blockedCauses::no_targets": 0.0,
+        "blockedCauses::no_WriteBuffer": 0.0,
+        "mshrAvgEntryNum": 7.400986,
+        "mshrOccupancyRatio": 0.462562,
+        "demandMshrMisses::total": 5631.0,
+        "demandMshrMissLatency::total": 527042540.0,
+        "demandAvgMshrMissLatency::total": 93596.615166,
+        "demandMshrHits::total": 35.0
+      },
+      {
+        "noMshrBlockedCycles": 14694.0,
+        "blockedCycles::no_mshrs": 14694.0,
+        "blockedCycles::no_targets": 0.0,
+        "blockedCauses::no_mshrs": 821.0,
+        "blockedCauses::no_targets": 0.0,
+        "blockedCauses::no_WriteBuffer": 0.0,
+        "mshrAvgEntryNum": 7.37978,
+        "mshrOccupancyRatio": 0.461236,
+        "demandMshrMisses::total": 5849.0,
+        "demandMshrMissLatency::total": 549608326.0,
+        "demandAvgMshrMissLatency::total": 93966.203796,
+        "demandMshrHits::total": 32.0
+      }
+    ],
+    "L3": {
+      "noMshrBlockedCycles": 0.0,
+      "blockedCycles::no_mshrs": 0.0,
+      "blockedCycles::no_targets": 0.0,
+      "blockedCauses::no_mshrs": 0.0,
+      "blockedCauses::no_targets": 0.0,
+      "blockedCauses::no_WriteBuffer": 0.0,
+      "mshrAvgEntryNum": 28.562299,
+      "mshrOccupancyRatio": 0.446286,
+      "demandMshrMisses::total": 101362.0,
+      "demandMshrMissLatency::total": 9393222199.0,
+      "demandAvgMshrMissLatency::total": 92670.05583,
+      "demandMshrHits::total": null
+    },
+    "dram": {
+      "bytesRead::total": 6486464.0,
+      "numReads::total": 101351.0,
+      "bwRead::total": 19721923861.0,
+      "bytesRead::cpu.data": 1167040.0,
+      "bytesRead::l2_wrappers.prefetcher": 4585216.0
+    },
+    "lsq": {
+      "blockedByCache": 1320.0,
+      "bankConflictTimes": 29302.0,
+      "loadReplayEvents::CacheBlockedReplay": 7589.0,
+      "loadReplayEventsFromIssueQueue::CacheBlockedReplay": 1613.0,
+      "loadReplayEvents::CacheMissReplay": 350264.0,
+      "loadReplayEvents::BankConflictReplay": 30159.0,
+      "loadReplayEvents::MshrArbFailReplay": 8.0
+    },
+    "config_diff_vs_control": [
+      {
+        "section": "system.cpu.dcache",
+        "key": "mshrs",
+        "control": "16",
+        "variant": "64"
+      }
+    ]
+  },
+  "l2_mshr64": {
+    "path": "/tmp/tea-upperbound-20261028/memory-ablations/mcf/combined/l2_mshr64",
+    "ipc": 0.835812874334076,
+    "cycles": 1196458.0,
+    "instructions": 1000015.0,
+    "final_stats_complete": true,
+    "stats_block_count": 1,
+    "maxinst_exit": true,
+    "difftest_enabled": true,
+    "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+    "L1_mshrs": 16,
+    "L2_mshrs": [
+      64,
+      64,
+      64,
+      64
+    ],
+    "L1": {
+      "noMshrBlockedCycles": 244613.0,
+      "blockedCycles::no_mshrs": 244441.0,
+      "blockedCycles::no_targets": 178.0,
+      "blockedCauses::no_mshrs": 43347.0,
+      "blockedCauses::no_targets": 1.0,
+      "blockedCauses::no_WriteBuffer": 1517.0,
+      "mshrAvgEntryNum": 9.297796,
+      "mshrOccupancyRatio": 0.581112,
+      "demandMshrMisses::total": 160522.0,
+      "demandMshrMissLatency::total": 3551648796.0,
+      "demandAvgMshrMissLatency::total": 22125.620139,
+      "demandMshrHits::total": 158980.0
+    },
+    "L2": [
+      {
+        "noMshrBlockedCycles": 0.0,
+        "blockedCycles::no_mshrs": 0.0,
+        "blockedCycles::no_targets": 0.0,
+        "blockedCauses::no_mshrs": 0.0,
+        "blockedCauses::no_targets": 0.0,
+        "blockedCauses::no_WriteBuffer": 0.0,
+        "mshrAvgEntryNum": 10.579768,
+        "mshrOccupancyRatio": 0.165309,
+        "demandMshrMisses::total": 5752.0,
+        "demandMshrMissLatency::total": 621585126.0,
+        "demandAvgMshrMissLatency::total": 108064.173505,
+        "demandMshrHits::total": 6.0
+      },
+      {
+        "noMshrBlockedCycles": 0.0,
+        "blockedCycles::no_mshrs": 0.0,
+        "blockedCycles::no_targets": 0.0,
+        "blockedCauses::no_mshrs": 0.0,
+        "blockedCauses::no_targets": 0.0,
+        "blockedCauses::no_WriteBuffer": 0.0,
+        "mshrAvgEntryNum": 10.344002,
+        "mshrOccupancyRatio": 0.161625,
+        "demandMshrMisses::total": 5274.0,
+        "demandMshrMissLatency::total": 578419335.0,
+        "demandAvgMshrMissLatency::total": 109673.745734,
+        "demandMshrHits::total": 13.0
+      },
+      {
+        "noMshrBlockedCycles": 0.0,
+        "blockedCycles::no_mshrs": 0.0,
+        "blockedCycles::no_targets": 0.0,
+        "blockedCauses::no_mshrs": 0.0,
+        "blockedCauses::no_targets": 0.0,
+        "blockedCauses::no_WriteBuffer": 0.0,
+        "mshrAvgEntryNum": 10.265892,
+        "mshrOccupancyRatio": 0.160405,
+        "demandMshrMisses::total": 5152.0,
+        "demandMshrMissLatency::total": 569195568.0,
+        "demandAvgMshrMissLatency::total": 110480.506211,
+        "demandMshrHits::total": 10.0
+      },
+      {
+        "noMshrBlockedCycles": 0.0,
+        "blockedCycles::no_mshrs": 0.0,
+        "blockedCycles::no_targets": 0.0,
+        "blockedCauses::no_mshrs": 0.0,
+        "blockedCauses::no_targets": 0.0,
+        "blockedCauses::no_WriteBuffer": 0.0,
+        "mshrAvgEntryNum": 10.527656,
+        "mshrOccupancyRatio": 0.164495,
+        "demandMshrMisses::total": 5559.0,
+        "demandMshrMissLatency::total": 620089290.0,
+        "demandAvgMshrMissLatency::total": 111546.913114,
+        "demandMshrHits::total": 11.0
+      }
+    ],
+    "L3": {
+      "noMshrBlockedCycles": 206792.0,
+      "blockedCycles::no_mshrs": 206792.0,
+      "blockedCycles::no_targets": 0.0,
+      "blockedCauses::no_mshrs": 20854.0,
+      "blockedCauses::no_targets": 0.0,
+      "blockedCauses::no_WriteBuffer": 0.0,
+      "mshrAvgEntryNum": 40.406874,
+      "mshrOccupancyRatio": 0.631357,
+      "demandMshrMisses::total": 100782.0,
+      "demandMshrMissLatency::total": 16098103567.0,
+      "demandAvgMshrMissLatency::total": 159731.931962,
+      "demandMshrHits::total": null
+    },
+    "dram": {
+      "bytesRead::total": 6449344.0,
+      "numReads::total": 100771.0,
+      "bwRead::total": 16187292481.0,
+      "bytesRead::cpu.data": 1267904.0,
+      "bytesRead::l2_wrappers.prefetcher": 4685184.0
+    },
+    "lsq": {
+      "blockedByCache": 38787.0,
+      "bankConflictTimes": 60390.0,
+      "loadReplayEvents::CacheBlockedReplay": 378112.0,
+      "loadReplayEventsFromIssueQueue::CacheBlockedReplay": 19963.0,
+      "loadReplayEvents::CacheMissReplay": 323904.0,
+      "loadReplayEvents::BankConflictReplay": 138964.0,
+      "loadReplayEvents::MshrArbFailReplay": 8.0
+    },
+    "config_diff_vs_control": [
+      {
+        "section": "system.l2_wrappers.slices0.inner_cache",
+        "key": "mshrs",
+        "control": "16",
+        "variant": "64"
+      },
+      {
+        "section": "system.l2_wrappers.slices1.inner_cache",
+        "key": "mshrs",
+        "control": "16",
+        "variant": "64"
+      },
+      {
+        "section": "system.l2_wrappers.slices2.inner_cache",
+        "key": "mshrs",
+        "control": "16",
+        "variant": "64"
+      },
+      {
+        "section": "system.l2_wrappers.slices3.inner_cache",
+        "key": "mshrs",
+        "control": "16",
+        "variant": "64"
+      }
+    ]
+  },
+  "l1_l2_mshr64": {
+    "path": "/tmp/tea-upperbound-20261028/memory-ablations/mcf/combined/l1_l2_mshr64",
+    "ipc": 0.8546610806856331,
+    "cycles": 1170072.0,
+    "instructions": 1000015.0,
+    "final_stats_complete": true,
+    "stats_block_count": 1,
+    "maxinst_exit": true,
+    "difftest_enabled": true,
+    "difftest_ref": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+    "L1_mshrs": 64,
+    "L2_mshrs": [
+      64,
+      64,
+      64,
+      64
+    ],
+    "L1": {
+      "noMshrBlockedCycles": 0.0,
+      "blockedCycles::no_mshrs": 0.0,
+      "blockedCycles::no_targets": 178.0,
+      "blockedCauses::no_mshrs": 0.0,
+      "blockedCauses::no_targets": 1.0,
+      "blockedCauses::no_WriteBuffer": 1960.0,
+      "mshrAvgEntryNum": 10.818852,
+      "mshrOccupancyRatio": 0.169045,
+      "demandMshrMisses::total": 149839.0,
+      "demandMshrMissLatency::total": 3546015435.0,
+      "demandAvgMshrMissLatency::total": 23665.503874,
+      "demandMshrHits::total": 195258.0
+    },
+    "L2": [
+      {
+        "noMshrBlockedCycles": 11.0,
+        "blockedCycles::no_mshrs": 11.0,
+        "blockedCycles::no_targets": 0.0,
+        "blockedCauses::no_mshrs": 1.0,
+        "blockedCauses::no_targets": 0.0,
+        "blockedCauses::no_WriteBuffer": 0.0,
+        "mshrAvgEntryNum": 10.97527,
+        "mshrOccupancyRatio": 0.171489,
+        "demandMshrMisses::total": 5516.0,
+        "demandMshrMissLatency::total": 635665365.0,
+        "demandAvgMshrMissLatency::total": 115240.276468,
+        "demandMshrHits::total": 23.0
+      },
+      {
+        "noMshrBlockedCycles": 0.0,
+        "blockedCycles::no_mshrs": 0.0,
+        "blockedCycles::no_targets": 0.0,
+        "blockedCauses::no_mshrs": 0.0,
+        "blockedCauses::no_targets": 0.0,
+        "blockedCauses::no_WriteBuffer": 0.0,
+        "mshrAvgEntryNum": 10.549203,
+        "mshrOccupancyRatio": 0.164831,
+        "demandMshrMisses::total": 5414.0,
+        "demandMshrMissLatency::total": 619550829.0,
+        "demandAvgMshrMissLatency::total": 114434.951792,
+        "demandMshrHits::total": 39.0
+      },
+      {
+        "noMshrBlockedCycles": 0.0,
+        "blockedCycles::no_mshrs": 0.0,
+        "blockedCycles::no_targets": 0.0,
+        "blockedCauses::no_mshrs": 0.0,
+        "blockedCauses::no_targets": 0.0,
+        "blockedCauses::no_WriteBuffer": 0.0,
+        "mshrAvgEntryNum": 10.989563,
+        "mshrOccupancyRatio": 0.171712,
+        "demandMshrMisses::total": 5586.0,
+        "demandMshrMissLatency::total": 652258755.0,
+        "demandAvgMshrMissLatency::total": 116766.694415,
+        "demandMshrHits::total": 17.0
+      },
+      {
+        "noMshrBlockedCycles": 0.0,
+        "blockedCycles::no_mshrs": 0.0,
+        "blockedCycles::no_targets": 0.0,
+        "blockedCauses::no_mshrs": 0.0,
+        "blockedCauses::no_targets": 0.0,
+        "blockedCauses::no_WriteBuffer": 0.0,
+        "mshrAvgEntryNum": 10.489412,
+        "mshrOccupancyRatio": 0.163897,
+        "demandMshrMisses::total": 5609.0,
+        "demandMshrMissLatency::total": 646542144.0,
+        "demandAvgMshrMissLatency::total": 115268.701016,
+        "demandMshrHits::total": 24.0
+      }
+    ],
+    "L3": {
+      "noMshrBlockedCycles": 226096.0,
+      "blockedCycles::no_mshrs": 226096.0,
+      "blockedCycles::no_targets": 0.0,
+      "blockedCauses::no_mshrs": 24018.0,
+      "blockedCauses::no_targets": 0.0,
+      "blockedCauses::no_WriteBuffer": 0.0,
+      "mshrAvgEntryNum": 41.568054,
+      "mshrOccupancyRatio": 0.649501,
+      "demandMshrMisses::total": 100345.0,
+      "demandMshrMissLatency::total": 16184660146.0,
+      "demandAvgMshrMissLatency::total": 161290.150441,
+      "demandMshrHits::total": null
+    },
+    "dram": {
+      "bytesRead::total": 6418368.0,
+      "numReads::total": 100287.0,
+      "bwRead::total": 16472828041.0,
+      "bytesRead::cpu.data": 1018560.0,
+      "bytesRead::l2_wrappers.prefetcher": 4548096.0
+    },
+    "lsq": {
+      "blockedByCache": 1097.0,
+      "bankConflictTimes": 29052.0,
+      "loadReplayEvents::CacheBlockedReplay": 6137.0,
+      "loadReplayEventsFromIssueQueue::CacheBlockedReplay": 1259.0,
+      "loadReplayEvents::CacheMissReplay": 347482.0,
+      "loadReplayEvents::BankConflictReplay": 29809.0,
+      "loadReplayEvents::MshrArbFailReplay": 8.0
+    },
+    "config_diff_vs_control": [
+      {
+        "section": "system.cpu.dcache",
+        "key": "mshrs",
+        "control": "16",
+        "variant": "64"
+      },
+      {
+        "section": "system.l2_wrappers.slices0.inner_cache",
+        "key": "mshrs",
+        "control": "16",
+        "variant": "64"
+      },
+      {
+        "section": "system.l2_wrappers.slices1.inner_cache",
+        "key": "mshrs",
+        "control": "16",
+        "variant": "64"
+      },
+      {
+        "section": "system.l2_wrappers.slices2.inner_cache",
+        "key": "mshrs",
+        "control": "16",
+        "variant": "64"
+      },
+      {
+        "section": "system.l2_wrappers.slices3.inner_cache",
+        "key": "mshrs",
+        "control": "16",
+        "variant": "64"
+      }
+    ]
+  }
+}

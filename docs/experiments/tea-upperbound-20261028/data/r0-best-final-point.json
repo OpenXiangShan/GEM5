@@ -1,0 +1,12 @@
+{
+  "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/mcf_6753",
+  "normal_exit": true,
+  "exit_status_0": true,
+  "difftest": true,
+  "ROI": "19999999",
+  "committedInsts": "19999999",
+  "numCycles": "16707032",
+  "completed": true,
+  "running": false,
+  "abort": false
+}

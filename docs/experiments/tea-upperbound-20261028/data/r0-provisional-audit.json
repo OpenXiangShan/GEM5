@@ -1,0 +1,3376 @@
+{
+  "time": "2026-10-28T14:19:15.351142+08:00",
+  "expected": 145,
+  "common_completed_count": 144,
+  "cluster_sha256": [
+    "1e8e850e94dba6f7903c0e28c3ff365b54b380221dc4deaf63e7d72f3596f5b7",
+    "1e8e850e94dba6f7903c0e28c3ff365b54b380221dc4deaf63e7d72f3596f5b7"
+  ],
+  "checkpoint_list_sha256": [
+    "b8b50365f0b80348946149f037f68bb60eef18e2e62a515be8e56e8aab26ed7d",
+    "b8b50365f0b80348946149f037f68bb60eef18e2e62a515be8e56e8aab26ed7d"
+  ],
+  "cluster_list_match": [
+    true,
+    true
+  ],
+  "metadata_sha": [
+    "e34d8f6e7901b34fbd6111cfa5615136aaeefaf1",
+    "e34d8f6e7901b34fbd6111cfa5615136aaeefaf1"
+  ],
+  "dram_source_git_blob_e34": "74ece787dc8f034074709b9f1c6d58488a4959b9",
+  "dram_path_note": "config.ini absolute runner checkout paths differ; suffix equal; Git blob is commit source identity, deployed file content not independently hashed",
+  "omitted": [
+    {
+      "name": "mcf_6753",
+      "benchmark": "mcf",
+      "point": "6753",
+      "weight": "0.218742",
+      "base_status": {
+        "completed": true,
+        "running": false,
+        "abort": false
+      },
+      "test_status": {
+        "completed": false,
+        "running": true,
+        "abort": false
+      }
+    }
+  ],
+  "benchmark_count_expected": 55,
+  "benchmark_count_common": 55,
+  "points": [
+    {
+      "name": "GemsFDTD_43464",
+      "benchmark": "GemsFDTD",
+      "weight": "0.210201",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/GemsFDTD_43464",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/GemsFDTD_43464",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000007,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "GemsFDTD_65615",
+      "benchmark": "GemsFDTD",
+      "weight": "0.263094",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/GemsFDTD_65615",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000005,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/GemsFDTD_65615",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000005,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "astar_biglakes_5863",
+      "benchmark": "astar_biglakes",
+      "weight": "0.193943",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/astar_biglakes_5863",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000004,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/astar_biglakes_5863",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999996,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "astar_biglakes_6185",
+      "benchmark": "astar_biglakes",
+      "weight": "0.171593",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/astar_biglakes_6185",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/astar_biglakes_6185",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999996,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "astar_rivers_11009",
+      "benchmark": "astar_rivers",
+      "weight": "0.134264",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/astar_rivers_11009",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000005,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/astar_rivers_11009",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000005,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "astar_rivers_8610",
+      "benchmark": "astar_rivers",
+      "weight": "0.191952",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/astar_rivers_8610",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999993,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/astar_rivers_8610",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999996,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "bwaves_13153",
+      "benchmark": "bwaves",
+      "weight": "0.72016",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/bwaves_13153",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000007,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/bwaves_13153",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000005,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "bzip2_chicken_2802",
+      "benchmark": "bzip2_chicken",
+      "weight": "0.180509",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/bzip2_chicken_2802",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000004,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/bzip2_chicken_2802",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000004,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "bzip2_chicken_3209",
+      "benchmark": "bzip2_chicken",
+      "weight": "0.196264",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/bzip2_chicken_3209",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000003,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/bzip2_chicken_3209",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999996,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "bzip2_combined_15288",
+      "benchmark": "bzip2_combined",
+      "weight": "0.127776",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/bzip2_combined_15288",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000000,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/bzip2_combined_15288",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999996,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "bzip2_combined_5764",
+      "benchmark": "bzip2_combined",
+      "weight": "0.2439",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/bzip2_combined_5764",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000000,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/bzip2_combined_5764",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000000,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "bzip2_html_4314",
+      "benchmark": "bzip2_html",
+      "weight": "0.237521",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/bzip2_html_4314",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/bzip2_html_4314",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000003,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "bzip2_html_4897",
+      "benchmark": "bzip2_html",
+      "weight": "0.183166",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/bzip2_html_4897",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/bzip2_html_4897",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000003,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "bzip2_liberty_4539",
+      "benchmark": "bzip2_liberty",
+      "weight": "0.335009",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/bzip2_liberty_4539",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999998,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/bzip2_liberty_4539",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999992,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "bzip2_program_16402",
+      "benchmark": "bzip2_program",
+      "weight": "0.175701",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/bzip2_program_16402",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999993,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/bzip2_program_16402",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999996,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "bzip2_program_5761",
+      "benchmark": "bzip2_program",
+      "weight": "0.159504",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/bzip2_program_5761",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000004,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/bzip2_program_5761",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000004,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "bzip2_source_16629",
+      "benchmark": "bzip2_source",
+      "weight": "0.1217",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/bzip2_source_16629",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000000,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/bzip2_source_16629",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000003,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "bzip2_source_20355",
+      "benchmark": "bzip2_source",
+      "weight": "0.0964973",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/bzip2_source_20355",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999992,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/bzip2_source_20355",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999992,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "bzip2_source_3760",
+      "benchmark": "bzip2_source",
+      "weight": "0.127347",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/bzip2_source_3760",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/bzip2_source_3760",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "cactusADM_163",
+      "benchmark": "cactusADM",
+      "weight": "0.560381",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/cactusADM_163",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/cactusADM_163",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "calculix_38207",
+      "benchmark": "calculix",
+      "weight": "0.193486",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/calculix_38207",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000003,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/calculix_38207",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "calculix_5756",
+      "benchmark": "calculix",
+      "weight": "0.154315",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/calculix_5756",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000007,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/calculix_5756",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000007,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "dealII_46309",
+      "benchmark": "dealII",
+      "weight": "0.100129",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/dealII_46309",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/dealII_46309",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "dealII_8887",
+      "benchmark": "dealII",
+      "weight": "0.115884",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/dealII_8887",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000002,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/dealII_8887",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000006,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "dealII_9896",
+      "benchmark": "dealII",
+      "weight": "0.117535",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/dealII_9896",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/dealII_9896",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gamess_cytosine_18796",
+      "benchmark": "gamess_cytosine",
+      "weight": "0.079457",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gamess_cytosine_18796",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gamess_cytosine_18796",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999998,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gamess_cytosine_32829",
+      "benchmark": "gamess_cytosine",
+      "weight": "0.0782701",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gamess_cytosine_32829",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gamess_cytosine_32829",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gamess_cytosine_45124",
+      "benchmark": "gamess_cytosine",
+      "weight": "0.0820909",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gamess_cytosine_45124",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000000,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gamess_cytosine_45124",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000009,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gamess_cytosine_6705",
+      "benchmark": "gamess_cytosine",
+      "weight": "0.0901553",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gamess_cytosine_6705",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000011,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gamess_cytosine_6705",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000005,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gamess_gradient_12302",
+      "benchmark": "gamess_gradient",
+      "weight": "0.108753",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gamess_gradient_12302",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000008,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gamess_gradient_12302",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000007,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gamess_gradient_12613",
+      "benchmark": "gamess_gradient",
+      "weight": "0.144857",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gamess_gradient_12613",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gamess_gradient_12613",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999991,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gamess_gradient_3703",
+      "benchmark": "gamess_gradient",
+      "weight": "0.120994",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gamess_gradient_3703",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000007,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gamess_gradient_3703",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000007,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gamess_triazolium_139471",
+      "benchmark": "gamess_triazolium",
+      "weight": "0.0775778",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gamess_triazolium_139471",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000002,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gamess_triazolium_139471",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999998,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gamess_triazolium_152243",
+      "benchmark": "gamess_triazolium",
+      "weight": "0.0861867",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gamess_triazolium_152243",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999992,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gamess_triazolium_152243",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999992,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gamess_triazolium_160006",
+      "benchmark": "gamess_triazolium",
+      "weight": "0.0890307",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gamess_triazolium_160006",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000004,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gamess_triazolium_160006",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000004,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gamess_triazolium_85938",
+      "benchmark": "gamess_triazolium",
+      "weight": "0.0982248",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gamess_triazolium_85938",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gamess_triazolium_85938",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gcc_166_2119",
+      "benchmark": "gcc_166",
+      "weight": "0.1801",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gcc_166_2119",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gcc_166_2119",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gcc_166_800",
+      "benchmark": "gcc_166",
+      "weight": "0.15592",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gcc_166_800",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000004,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gcc_166_800",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000004,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gcc_200_1635",
+      "benchmark": "gcc_200",
+      "weight": "0.117029",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gcc_200_1635",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gcc_200_1635",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999998,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gcc_200_4808",
+      "benchmark": "gcc_200",
+      "weight": "0.140179",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gcc_200_4808",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999992,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gcc_200_4808",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gcc_200_5108",
+      "benchmark": "gcc_200",
+      "weight": "0.143446",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gcc_200_5108",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999998,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gcc_200_5108",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999991,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gcc_cpdecl_1944",
+      "benchmark": "gcc_cpdecl",
+      "weight": "0.216865",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gcc_cpdecl_1944",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999998,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gcc_cpdecl_1944",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999998,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gcc_cpdecl_4089",
+      "benchmark": "gcc_cpdecl",
+      "weight": "0.184346",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gcc_cpdecl_4089",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gcc_cpdecl_4089",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gcc_expr2_1725",
+      "benchmark": "gcc_expr2",
+      "weight": "0.159645",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gcc_expr2_1725",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000006,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gcc_expr2_1725",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000006,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gcc_expr2_3409",
+      "benchmark": "gcc_expr2",
+      "weight": "0.166093",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gcc_expr2_3409",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gcc_expr2_3409",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gcc_expr_1687",
+      "benchmark": "gcc_expr",
+      "weight": "0.190756",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gcc_expr_1687",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gcc_expr_1687",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gcc_expr_4993",
+      "benchmark": "gcc_expr",
+      "weight": "0.204661",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gcc_expr_4993",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999995,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gcc_expr_4993",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999995,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gcc_g23_3542",
+      "benchmark": "gcc_g23",
+      "weight": "0.156683",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gcc_g23_3542",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000000,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gcc_g23_3542",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000000,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gcc_g23_50",
+      "benchmark": "gcc_g23",
+      "weight": "0.161712",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gcc_g23_50",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999998,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gcc_g23_50",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000000,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gcc_s04_3001",
+      "benchmark": "gcc_s04",
+      "weight": "0.191839",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gcc_s04_3001",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000000,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gcc_s04_3001",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000000,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gcc_s04_7954",
+      "benchmark": "gcc_s04",
+      "weight": "0.193974",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gcc_s04_7954",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000002,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gcc_s04_7954",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999990,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gcc_scilab_2556",
+      "benchmark": "gcc_scilab",
+      "weight": "0.155771",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gcc_scilab_2556",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000009,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gcc_scilab_2556",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000008,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gcc_scilab_373",
+      "benchmark": "gcc_scilab",
+      "weight": "0.161001",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gcc_scilab_373",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999991,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gcc_scilab_373",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999991,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gcc_typeck_2215",
+      "benchmark": "gcc_typeck",
+      "weight": "0.129336",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gcc_typeck_2215",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999998,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gcc_typeck_2215",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999995,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gcc_typeck_4910",
+      "benchmark": "gcc_typeck",
+      "weight": "0.0943337",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gcc_typeck_4910",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gcc_typeck_4910",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gcc_typeck_730",
+      "benchmark": "gcc_typeck",
+      "weight": "0.134673",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gcc_typeck_730",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000008,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gcc_typeck_730",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000003,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gobmk_13x13_5624",
+      "benchmark": "gobmk_13x13",
+      "weight": "0.11901",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gobmk_13x13_5624",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000007,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gobmk_13x13_5624",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000007,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gobmk_13x13_6011",
+      "benchmark": "gobmk_13x13",
+      "weight": "0.113101",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gobmk_13x13_6011",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000002,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gobmk_13x13_6011",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000002,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gobmk_13x13_8760",
+      "benchmark": "gobmk_13x13",
+      "weight": "0.154928",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gobmk_13x13_8760",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gobmk_13x13_8760",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999996,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gobmk_nngs_23480",
+      "benchmark": "gobmk_nngs",
+      "weight": "0.127238",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gobmk_nngs_23480",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999996,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gobmk_nngs_23480",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999995,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gobmk_nngs_28380",
+      "benchmark": "gobmk_nngs",
+      "weight": "0.148264",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gobmk_nngs_28380",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gobmk_nngs_28380",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gobmk_nngs_3689",
+      "benchmark": "gobmk_nngs",
+      "weight": "0.107545",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gobmk_nngs_3689",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999998,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gobmk_nngs_3689",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999998,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gobmk_score2_11938",
+      "benchmark": "gobmk_score2",
+      "weight": "0.0804679",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gobmk_score2_11938",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999992,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gobmk_score2_11938",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999992,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gobmk_score2_13127",
+      "benchmark": "gobmk_score2",
+      "weight": "0.121245",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gobmk_score2_13127",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gobmk_score2_13127",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gobmk_score2_3645",
+      "benchmark": "gobmk_score2",
+      "weight": "0.0814905",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gobmk_score2_3645",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gobmk_score2_3645",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999995,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gobmk_score2_875",
+      "benchmark": "gobmk_score2",
+      "weight": "0.0860923",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gobmk_score2_875",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000002,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gobmk_score2_875",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000000,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gobmk_trevorc_5366",
+      "benchmark": "gobmk_trevorc",
+      "weight": "0.131787",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gobmk_trevorc_5366",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000007,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gobmk_trevorc_5366",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000011,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gobmk_trevorc_883",
+      "benchmark": "gobmk_trevorc",
+      "weight": "0.239453",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gobmk_trevorc_883",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gobmk_trevorc_883",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gobmk_trevord_4532",
+      "benchmark": "gobmk_trevord",
+      "weight": "0.122341",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gobmk_trevord_4532",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999993,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gobmk_trevord_4532",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000003,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gobmk_trevord_6799",
+      "benchmark": "gobmk_trevord",
+      "weight": "0.121577",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gobmk_trevord_6799",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000008,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gobmk_trevord_6799",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gobmk_trevord_7931",
+      "benchmark": "gobmk_trevord",
+      "weight": "0.112088",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gobmk_trevord_7931",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999992,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gobmk_trevord_7931",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999994,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gromacs_105",
+      "benchmark": "gromacs",
+      "weight": "0.20609",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gromacs_105",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000006,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gromacs_105",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999996,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "gromacs_41110",
+      "benchmark": "gromacs",
+      "weight": "0.147916",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/gromacs_41110",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/gromacs_41110",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "h264ref_foreman.baseline_1674",
+      "benchmark": "h264ref_foreman.baseline",
+      "weight": "0.0803481",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/h264ref_foreman.baseline_1674",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/h264ref_foreman.baseline_1674",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999995,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "h264ref_foreman.baseline_18077",
+      "benchmark": "h264ref_foreman.baseline",
+      "weight": "0.0940484",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/h264ref_foreman.baseline_18077",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/h264ref_foreman.baseline_18077",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "h264ref_foreman.baseline_1968",
+      "benchmark": "h264ref_foreman.baseline",
+      "weight": "0.0986018",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/h264ref_foreman.baseline_1968",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/h264ref_foreman.baseline_1968",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000005,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "h264ref_foreman.baseline_7788",
+      "benchmark": "h264ref_foreman.baseline",
+      "weight": "0.0973526",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/h264ref_foreman.baseline_7788",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999995,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/h264ref_foreman.baseline_7788",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999992,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "h264ref_foreman.main_11944",
+      "benchmark": "h264ref_foreman.main",
+      "weight": "0.0804007",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/h264ref_foreman.main_11944",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/h264ref_foreman.main_11944",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999992,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "h264ref_foreman.main_13366",
+      "benchmark": "h264ref_foreman.main",
+      "weight": "0.130439",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/h264ref_foreman.main_13366",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000005,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/h264ref_foreman.main_13366",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000006,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "h264ref_foreman.main_17926",
+      "benchmark": "h264ref_foreman.main",
+      "weight": "0.0630506",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/h264ref_foreman.main_17926",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000009,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/h264ref_foreman.main_17926",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000009,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "h264ref_foreman.main_6311",
+      "benchmark": "h264ref_foreman.main",
+      "weight": "0.071189",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/h264ref_foreman.main_6311",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000003,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/h264ref_foreman.main_6311",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "h264ref_sss_157672",
+      "benchmark": "h264ref_sss",
+      "weight": "0.0716096",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/h264ref_sss_157672",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000005,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/h264ref_sss_157672",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000005,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "h264ref_sss_185055",
+      "benchmark": "h264ref_sss",
+      "weight": "0.0735354",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/h264ref_sss_185055",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000009,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/h264ref_sss_185055",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000009,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "h264ref_sss_19498",
+      "benchmark": "h264ref_sss",
+      "weight": "0.105517",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/h264ref_sss_19498",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000002,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/h264ref_sss_19498",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999991,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "h264ref_sss_667",
+      "benchmark": "h264ref_sss",
+      "weight": "0.0719378",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/h264ref_sss_667",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999992,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/h264ref_sss_667",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000006,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "hmmer_nph3_7894",
+      "benchmark": "hmmer_nph3",
+      "weight": "0.319372",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/hmmer_nph3_7894",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999994,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/hmmer_nph3_7894",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "hmmer_retro_23265",
+      "benchmark": "hmmer_retro",
+      "weight": "0.171852",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/hmmer_retro_23265",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000000,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/hmmer_retro_23265",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999990,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "hmmer_retro_59969",
+      "benchmark": "hmmer_retro",
+      "weight": "0.195899",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/hmmer_retro_59969",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/hmmer_retro_59969",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "lbm_6382",
+      "benchmark": "lbm",
+      "weight": "0.375486",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/lbm_6382",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000003,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/lbm_6382",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999994,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "leslie3d_18494",
+      "benchmark": "leslie3d",
+      "weight": "0.181792",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/leslie3d_18494",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/leslie3d_18494",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "leslie3d_34720",
+      "benchmark": "leslie3d",
+      "weight": "0.164925",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/leslie3d_34720",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000005,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/leslie3d_34720",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "libquantum_27811",
+      "benchmark": "libquantum",
+      "weight": "0.111688",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/libquantum_27811",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000004,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/libquantum_27811",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000004,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "libquantum_69175",
+      "benchmark": "libquantum",
+      "weight": "0.137331",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/libquantum_69175",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000003,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/libquantum_69175",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "libquantum_86704",
+      "benchmark": "libquantum",
+      "weight": "0.0700298",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/libquantum_86704",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999996,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/libquantum_86704",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000005,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "mcf_12886",
+      "benchmark": "mcf",
+      "weight": "0.149435",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/mcf_12886",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000007,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/mcf_12886",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999990,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "milc_13081",
+      "benchmark": "milc",
+      "weight": "0.0750224",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/milc_13081",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/milc_13081",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000002,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "milc_28462",
+      "benchmark": "milc",
+      "weight": "0.0749584",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/milc_28462",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999998,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/milc_28462",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999998,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "milc_30106",
+      "benchmark": "milc",
+      "weight": "0.0852193",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/milc_30106",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/milc_30106",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "milc_5841",
+      "benchmark": "milc",
+      "weight": "0.0850275",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/milc_5841",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/milc_5841",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "namd_40827",
+      "benchmark": "namd",
+      "weight": "0.0581927",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/namd_40827",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000005,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/namd_40827",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000005,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "namd_50633",
+      "benchmark": "namd",
+      "weight": "0.0843034",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/namd_50633",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/namd_50633",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000000,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "namd_65358",
+      "benchmark": "namd",
+      "weight": "0.0693233",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/namd_65358",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000007,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/namd_65358",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000000,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "namd_7092",
+      "benchmark": "namd",
+      "weight": "0.0584825",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/namd_7092",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999993,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/namd_7092",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999998,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "namd_84400",
+      "benchmark": "namd",
+      "weight": "0.0647899",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/namd_84400",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000004,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/namd_84400",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000004,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "omnetpp_18492",
+      "benchmark": "omnetpp",
+      "weight": "0.31307",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/omnetpp_18492",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000003,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/omnetpp_18492",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999996,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "perlbench_checkspam_28089",
+      "benchmark": "perlbench_checkspam",
+      "weight": "0.127421",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/perlbench_checkspam_28089",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000005,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/perlbench_checkspam_28089",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000000,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "perlbench_checkspam_5886",
+      "benchmark": "perlbench_checkspam",
+      "weight": "0.199334",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/perlbench_checkspam_5886",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999994,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/perlbench_checkspam_5886",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999992,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "perlbench_diffmail_2097",
+      "benchmark": "perlbench_diffmail",
+      "weight": "0.421425",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/perlbench_diffmail_2097",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999998,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/perlbench_diffmail_2097",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999998,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "perlbench_splitmail_4191",
+      "benchmark": "perlbench_splitmail",
+      "weight": "0.564709",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/perlbench_splitmail_4191",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000008,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/perlbench_splitmail_4191",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000008,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "povray_21991",
+      "benchmark": "povray",
+      "weight": "0.0801992",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/povray_21991",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/povray_21991",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000003,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "povray_28404",
+      "benchmark": "povray",
+      "weight": "0.0977063",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/povray_28404",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000000,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/povray_28404",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "povray_7650",
+      "benchmark": "povray",
+      "weight": "0.0898665",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/povray_7650",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000004,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/povray_7650",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000004,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "povray_8107",
+      "benchmark": "povray",
+      "weight": "0.0750344",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/povray_8107",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999996,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/povray_8107",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999996,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "sjeng_10181",
+      "benchmark": "sjeng",
+      "weight": "0.107846",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/sjeng_10181",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/sjeng_10181",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "sjeng_104526",
+      "benchmark": "sjeng",
+      "weight": "0.109376",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/sjeng_104526",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000000,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/sjeng_104526",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000000,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "sjeng_94536",
+      "benchmark": "sjeng",
+      "weight": "0.133078",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/sjeng_94536",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999993,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/sjeng_94536",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999990,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "soplex_pds-50_12322",
+      "benchmark": "soplex_pds-50",
+      "weight": "0.0904542",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/soplex_pds-50_12322",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999993,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/soplex_pds-50_12322",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999993,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "soplex_pds-50_7893",
+      "benchmark": "soplex_pds-50",
+      "weight": "0.0872994",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/soplex_pds-50_7893",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000000,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/soplex_pds-50_7893",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "soplex_pds-50_9466",
+      "benchmark": "soplex_pds-50",
+      "weight": "0.12619",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/soplex_pds-50_9466",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/soplex_pds-50_9466",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000000,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "soplex_ref_17811",
+      "benchmark": "soplex_ref",
+      "weight": "0.09139",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/soplex_ref_17811",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000007,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/soplex_ref_17811",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000003,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "soplex_ref_5312",
+      "benchmark": "soplex_ref",
+      "weight": "0.294346",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/soplex_ref_5312",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999998,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/soplex_ref_5312",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "sphinx3_157921",
+      "benchmark": "sphinx3",
+      "weight": "0.136728",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/sphinx3_157921",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/sphinx3_157921",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "sphinx3_39957",
+      "benchmark": "sphinx3",
+      "weight": "0.0943629",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/sphinx3_39957",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/sphinx3_39957",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "sphinx3_89031",
+      "benchmark": "sphinx3",
+      "weight": "0.11833",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/sphinx3_89031",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000006,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/sphinx3_89031",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000006,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "tonto_10669",
+      "benchmark": "tonto",
+      "weight": "0.0737295",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/tonto_10669",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999996,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/tonto_10669",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999996,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "tonto_22517",
+      "benchmark": "tonto",
+      "weight": "0.0959619",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/tonto_22517",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000002,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/tonto_22517",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000002,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "tonto_24832",
+      "benchmark": "tonto",
+      "weight": "0.0866796",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/tonto_24832",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000004,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/tonto_24832",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999998,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "tonto_26200",
+      "benchmark": "tonto",
+      "weight": "0.085757",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/tonto_26200",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999992,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/tonto_26200",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999991,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "wrf_20161",
+      "benchmark": "wrf",
+      "weight": "0.0675957",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/wrf_20161",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999998,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/wrf_20161",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "wrf_6877",
+      "benchmark": "wrf",
+      "weight": "0.0453606",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/wrf_6877",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999992,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/wrf_6877",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000011,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "wrf_9169",
+      "benchmark": "wrf",
+      "weight": "0.218538",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/wrf_9169",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000004,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/wrf_9169",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000004,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "xalancbmk_10335",
+      "benchmark": "xalancbmk",
+      "weight": "0.0283309",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/xalancbmk_10335",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000004,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/xalancbmk_10335",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "xalancbmk_10486",
+      "benchmark": "xalancbmk",
+      "weight": "0.025525",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/xalancbmk_10486",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999996,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/xalancbmk_10486",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000003,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "xalancbmk_12667",
+      "benchmark": "xalancbmk",
+      "weight": "0.0536296",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/xalancbmk_12667",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000002,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/xalancbmk_12667",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999995,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "xalancbmk_13770",
+      "benchmark": "xalancbmk",
+      "weight": "0.0257965",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/xalancbmk_13770",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999998,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/xalancbmk_13770",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999998,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "xalancbmk_20863",
+      "benchmark": "xalancbmk",
+      "weight": "0.0276294",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/xalancbmk_20863",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999992,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/xalancbmk_20863",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999991,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "xalancbmk_23046",
+      "benchmark": "xalancbmk",
+      "weight": "0.0295755",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/xalancbmk_23046",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999994,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/xalancbmk_23046",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "xalancbmk_24926",
+      "benchmark": "xalancbmk",
+      "weight": "0.026317",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/xalancbmk_24926",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/xalancbmk_24926",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999995,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "xalancbmk_4478",
+      "benchmark": "xalancbmk",
+      "weight": "0.0319062",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/xalancbmk_4478",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/xalancbmk_4478",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "xalancbmk_6663",
+      "benchmark": "xalancbmk",
+      "weight": "0.0297791",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/xalancbmk_6663",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999999,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/xalancbmk_6663",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000008,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "xalancbmk_6881",
+      "benchmark": "xalancbmk",
+      "weight": "0.0272221",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/xalancbmk_6881",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/xalancbmk_6881",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999995,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "zeusmp_4119",
+      "benchmark": "zeusmp",
+      "weight": "0.121611",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/zeusmp_4119",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000001,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/zeusmp_4119",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 20000000,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "zeusmp_47363",
+      "benchmark": "zeusmp",
+      "weight": "0.130888",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/zeusmp_47363",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999997,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/zeusmp_47363",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999989,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    },
+    {
+      "name": "zeusmp_66319",
+      "benchmark": "zeusmp",
+      "weight": "0.0703694",
+      "base": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/zeusmp_66319",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999992,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "test": {
+        "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668/spec_all/zeusmp_66319",
+        "exit_maxinsts": true,
+        "stats_blocks": 2,
+        "roi_insts": 19999996,
+        "difftest_enabled": true,
+        "errors": []
+      },
+      "unexpected_config_diff": [],
+      "expected_config_diff_missing": []
+    }
+  ],
+  "exception_points": [],
+  "frozen_snapshot_match": true,
+  "baseline_extra_mcf_6753": {
+    "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667/spec_all/mcf_6753",
+    "maxinst_exit": true,
+    "exit_status": 0,
+    "roi_insts": 19999999,
+    "complete_stats_blocks": 2,
+    "difftest_log_and_config": true,
+    "tage_numWays": "8 8 8 8 8 8 8 8",
+    "fp_iq_sizes": [
+      "24",
+      "24",
+      "24",
+      "24"
+    ],
+    "data_sram_banks": "2"
+  },
+  "dram_source_sha256": "790c80e7fa4342ec2494d490606365d3ae65a0a7ca4d9a1b3defe6f5ef6c2f3f"
+}

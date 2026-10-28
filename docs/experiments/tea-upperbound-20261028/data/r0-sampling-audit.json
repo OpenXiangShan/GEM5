@@ -1,0 +1,3213 @@
+{
+  "new": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667",
+  "old": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-1.0c/20261026_095510_e34d8f6e7_kmhv3_run1618",
+  "points": {
+    "GemsFDTD_65615": {
+      "new_weight": "0.263094",
+      "old_weight": "0.263094",
+      "old": {
+        "system.cpu.numCycles": 3924648,
+        "system.cpu.committedInsts": 20000005
+      },
+      "new": {
+        "system.cpu.numCycles": 3924648,
+        "system.cpu.committedInsts": 20000005
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "GemsFDTD_43464": {
+      "new_weight": "0.210201",
+      "old_weight": "0.210201",
+      "old": {
+        "system.cpu.numCycles": 5074169,
+        "system.cpu.committedInsts": 19999999
+      },
+      "new": {
+        "system.cpu.numCycles": 5074169,
+        "system.cpu.committedInsts": 19999999
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "astar_biglakes_5863": {
+      "new_weight": "0.193943",
+      "old_weight": "0.193943",
+      "old": {
+        "system.cpu.numCycles": 3928345,
+        "system.cpu.committedInsts": 20000004
+      },
+      "new": {
+        "system.cpu.numCycles": 3928345,
+        "system.cpu.committedInsts": 20000004
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "astar_biglakes_6185": {
+      "new_weight": "0.171593",
+      "old_weight": "0.171593",
+      "old": {
+        "system.cpu.numCycles": 5007511,
+        "system.cpu.committedInsts": 20000001
+      },
+      "new": {
+        "system.cpu.numCycles": 5007511,
+        "system.cpu.committedInsts": 20000001
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "astar_rivers_8610": {
+      "new_weight": "0.191952",
+      "old_weight": "0.191952",
+      "old": {
+        "system.cpu.numCycles": 4222025,
+        "system.cpu.committedInsts": 19999993
+      },
+      "new": {
+        "system.cpu.numCycles": 4222025,
+        "system.cpu.committedInsts": 19999993
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "astar_rivers_11009": {
+      "new_weight": "0.134264",
+      "old_weight": "0.134264",
+      "old": {
+        "system.cpu.numCycles": 4366371,
+        "system.cpu.committedInsts": 20000005
+      },
+      "new": {
+        "system.cpu.numCycles": 4366371,
+        "system.cpu.committedInsts": 20000005
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "bwaves_13153": {
+      "new_weight": "0.72016",
+      "old_weight": "0.72016",
+      "old": {
+        "system.cpu.numCycles": 6127787,
+        "system.cpu.committedInsts": 20000007
+      },
+      "new": {
+        "system.cpu.numCycles": 6127787,
+        "system.cpu.committedInsts": 20000007
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "bzip2_chicken_3209": {
+      "new_weight": "0.196264",
+      "old_weight": "0.196264",
+      "old": {
+        "system.cpu.numCycles": 2200249,
+        "system.cpu.committedInsts": 20000003
+      },
+      "new": {
+        "system.cpu.numCycles": 2200249,
+        "system.cpu.committedInsts": 20000003
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "bzip2_chicken_2802": {
+      "new_weight": "0.180509",
+      "old_weight": "0.180509",
+      "old": {
+        "system.cpu.numCycles": 4823860,
+        "system.cpu.committedInsts": 20000004
+      },
+      "new": {
+        "system.cpu.numCycles": 4823860,
+        "system.cpu.committedInsts": 20000004
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "bzip2_combined_5764": {
+      "new_weight": "0.2439",
+      "old_weight": "0.2439",
+      "old": {
+        "system.cpu.numCycles": 10280874,
+        "system.cpu.committedInsts": 20000000
+      },
+      "new": {
+        "system.cpu.numCycles": 10280874,
+        "system.cpu.committedInsts": 20000000
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "bzip2_combined_15288": {
+      "new_weight": "0.127776",
+      "old_weight": "0.127776",
+      "old": {
+        "system.cpu.numCycles": 7781114,
+        "system.cpu.committedInsts": 20000000
+      },
+      "new": {
+        "system.cpu.numCycles": 7781114,
+        "system.cpu.committedInsts": 20000000
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "bzip2_html_4314": {
+      "new_weight": "0.237521",
+      "old_weight": "0.237521",
+      "old": {
+        "system.cpu.numCycles": 2226678,
+        "system.cpu.committedInsts": 19999999
+      },
+      "new": {
+        "system.cpu.numCycles": 2226678,
+        "system.cpu.committedInsts": 19999999
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "bzip2_html_4897": {
+      "new_weight": "0.183166",
+      "old_weight": "0.183166",
+      "old": {
+        "system.cpu.numCycles": 8174654,
+        "system.cpu.committedInsts": 19999999
+      },
+      "new": {
+        "system.cpu.numCycles": 8174654,
+        "system.cpu.committedInsts": 19999999
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "bzip2_liberty_4539": {
+      "new_weight": "0.335009",
+      "old_weight": "0.335009",
+      "old": {
+        "system.cpu.numCycles": 2147584,
+        "system.cpu.committedInsts": 19999998
+      },
+      "new": {
+        "system.cpu.numCycles": 2147584,
+        "system.cpu.committedInsts": 19999998
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "bzip2_program_16402": {
+      "new_weight": "0.175701",
+      "old_weight": "0.175701",
+      "old": {
+        "system.cpu.numCycles": 6846459,
+        "system.cpu.committedInsts": 19999993
+      },
+      "new": {
+        "system.cpu.numCycles": 6846459,
+        "system.cpu.committedInsts": 19999993
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "bzip2_program_5761": {
+      "new_weight": "0.159504",
+      "old_weight": "0.159504",
+      "old": {
+        "system.cpu.numCycles": 5788726,
+        "system.cpu.committedInsts": 20000004
+      },
+      "new": {
+        "system.cpu.numCycles": 5788726,
+        "system.cpu.committedInsts": 20000004
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "bzip2_source_3760": {
+      "new_weight": "0.127347",
+      "old_weight": "0.127347",
+      "old": {
+        "system.cpu.numCycles": 12099697,
+        "system.cpu.committedInsts": 19999999
+      },
+      "new": {
+        "system.cpu.numCycles": 12099697,
+        "system.cpu.committedInsts": 19999999
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "bzip2_source_16629": {
+      "new_weight": "0.1217",
+      "old_weight": "0.1217",
+      "old": {
+        "system.cpu.numCycles": 9321130,
+        "system.cpu.committedInsts": 20000000
+      },
+      "new": {
+        "system.cpu.numCycles": 9321130,
+        "system.cpu.committedInsts": 20000000
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "bzip2_source_20355": {
+      "new_weight": "0.0964973",
+      "old_weight": "0.0964973",
+      "old": {
+        "system.cpu.numCycles": 8142121,
+        "system.cpu.committedInsts": 19999992
+      },
+      "new": {
+        "system.cpu.numCycles": 8142121,
+        "system.cpu.committedInsts": 19999992
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "cactusADM_163": {
+      "new_weight": "0.560381",
+      "old_weight": "0.560381",
+      "old": {
+        "system.cpu.numCycles": 3844696,
+        "system.cpu.committedInsts": 19999997
+      },
+      "new": {
+        "system.cpu.numCycles": 3844696,
+        "system.cpu.committedInsts": 19999997
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "calculix_38207": {
+      "new_weight": "0.193486",
+      "old_weight": "0.193486",
+      "old": {
+        "system.cpu.numCycles": 3335386,
+        "system.cpu.committedInsts": 20000003
+      },
+      "new": {
+        "system.cpu.numCycles": 3335386,
+        "system.cpu.committedInsts": 20000003
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "calculix_5756": {
+      "new_weight": "0.154315",
+      "old_weight": "0.154315",
+      "old": {
+        "system.cpu.numCycles": 3953166,
+        "system.cpu.committedInsts": 20000007
+      },
+      "new": {
+        "system.cpu.numCycles": 3953166,
+        "system.cpu.committedInsts": 20000007
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "dealII_9896": {
+      "new_weight": "0.117535",
+      "old_weight": "0.117535",
+      "old": {
+        "system.cpu.numCycles": 3687853,
+        "system.cpu.committedInsts": 20000001
+      },
+      "new": {
+        "system.cpu.numCycles": 3687853,
+        "system.cpu.committedInsts": 20000001
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "dealII_8887": {
+      "new_weight": "0.115884",
+      "old_weight": "0.115884",
+      "old": {
+        "system.cpu.numCycles": 3917338,
+        "system.cpu.committedInsts": 20000002
+      },
+      "new": {
+        "system.cpu.numCycles": 3917338,
+        "system.cpu.committedInsts": 20000002
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "dealII_46309": {
+      "new_weight": "0.100129",
+      "old_weight": "0.100129",
+      "old": {
+        "system.cpu.numCycles": 12580738,
+        "system.cpu.committedInsts": 19999997
+      },
+      "new": {
+        "system.cpu.numCycles": 12580738,
+        "system.cpu.committedInsts": 19999997
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gamess_cytosine_6705": {
+      "new_weight": "0.0901553",
+      "old_weight": "0.0901553",
+      "old": {
+        "system.cpu.numCycles": 3531892,
+        "system.cpu.committedInsts": 20000011
+      },
+      "new": {
+        "system.cpu.numCycles": 3531892,
+        "system.cpu.committedInsts": 20000011
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gamess_cytosine_45124": {
+      "new_weight": "0.0820909",
+      "old_weight": "0.0820909",
+      "old": {
+        "system.cpu.numCycles": 3506897,
+        "system.cpu.committedInsts": 20000000
+      },
+      "new": {
+        "system.cpu.numCycles": 3506897,
+        "system.cpu.committedInsts": 20000000
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gamess_cytosine_18796": {
+      "new_weight": "0.079457",
+      "old_weight": "0.079457",
+      "old": {
+        "system.cpu.numCycles": 3577122,
+        "system.cpu.committedInsts": 19999997
+      },
+      "new": {
+        "system.cpu.numCycles": 3577122,
+        "system.cpu.committedInsts": 19999997
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gamess_cytosine_32829": {
+      "new_weight": "0.0782701",
+      "old_weight": "0.0782701",
+      "old": {
+        "system.cpu.numCycles": 3177035,
+        "system.cpu.committedInsts": 19999997
+      },
+      "new": {
+        "system.cpu.numCycles": 3177035,
+        "system.cpu.committedInsts": 19999997
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gamess_gradient_12613": {
+      "new_weight": "0.144857",
+      "old_weight": "0.144857",
+      "old": {
+        "system.cpu.numCycles": 2671615,
+        "system.cpu.committedInsts": 19999997
+      },
+      "new": {
+        "system.cpu.numCycles": 2671615,
+        "system.cpu.committedInsts": 19999997
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gamess_gradient_3703": {
+      "new_weight": "0.120994",
+      "old_weight": "0.120994",
+      "old": {
+        "system.cpu.numCycles": 2761252,
+        "system.cpu.committedInsts": 20000007
+      },
+      "new": {
+        "system.cpu.numCycles": 2761252,
+        "system.cpu.committedInsts": 20000007
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gamess_gradient_12302": {
+      "new_weight": "0.108753",
+      "old_weight": "0.108753",
+      "old": {
+        "system.cpu.numCycles": 2980118,
+        "system.cpu.committedInsts": 20000008
+      },
+      "new": {
+        "system.cpu.numCycles": 2980118,
+        "system.cpu.committedInsts": 20000008
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gamess_triazolium_85938": {
+      "new_weight": "0.0982248",
+      "old_weight": "0.0982248",
+      "old": {
+        "system.cpu.numCycles": 2914035,
+        "system.cpu.committedInsts": 19999997
+      },
+      "new": {
+        "system.cpu.numCycles": 2914035,
+        "system.cpu.committedInsts": 19999997
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gamess_triazolium_160006": {
+      "new_weight": "0.0890307",
+      "old_weight": "0.0890307",
+      "old": {
+        "system.cpu.numCycles": 3103680,
+        "system.cpu.committedInsts": 20000004
+      },
+      "new": {
+        "system.cpu.numCycles": 3103680,
+        "system.cpu.committedInsts": 20000004
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gamess_triazolium_152243": {
+      "new_weight": "0.0861867",
+      "old_weight": "0.0861867",
+      "old": {
+        "system.cpu.numCycles": 2777476,
+        "system.cpu.committedInsts": 19999992
+      },
+      "new": {
+        "system.cpu.numCycles": 2777476,
+        "system.cpu.committedInsts": 19999992
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gamess_triazolium_139471": {
+      "new_weight": "0.0775778",
+      "old_weight": "0.0775778",
+      "old": {
+        "system.cpu.numCycles": 2529318,
+        "system.cpu.committedInsts": 20000002
+      },
+      "new": {
+        "system.cpu.numCycles": 2529318,
+        "system.cpu.committedInsts": 20000002
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gcc_166_2119": {
+      "new_weight": "0.1801",
+      "old_weight": "0.1801",
+      "old": {
+        "system.cpu.numCycles": 3519258,
+        "system.cpu.committedInsts": 19999997
+      },
+      "new": {
+        "system.cpu.numCycles": 3519258,
+        "system.cpu.committedInsts": 19999997
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gcc_166_800": {
+      "new_weight": "0.15592",
+      "old_weight": "0.15592",
+      "old": {
+        "system.cpu.numCycles": 5480480,
+        "system.cpu.committedInsts": 20000004
+      },
+      "new": {
+        "system.cpu.numCycles": 5480480,
+        "system.cpu.committedInsts": 20000004
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gcc_200_5108": {
+      "new_weight": "0.143446",
+      "old_weight": "0.143446",
+      "old": {
+        "system.cpu.numCycles": 9335180,
+        "system.cpu.committedInsts": 19999998
+      },
+      "new": {
+        "system.cpu.numCycles": 9335180,
+        "system.cpu.committedInsts": 19999998
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gcc_200_4808": {
+      "new_weight": "0.140179",
+      "old_weight": "0.140179",
+      "old": {
+        "system.cpu.numCycles": 5675943,
+        "system.cpu.committedInsts": 19999992
+      },
+      "new": {
+        "system.cpu.numCycles": 5675943,
+        "system.cpu.committedInsts": 19999992
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gcc_200_1635": {
+      "new_weight": "0.117029",
+      "old_weight": "0.117029",
+      "old": {
+        "system.cpu.numCycles": 3709513,
+        "system.cpu.committedInsts": 19999997
+      },
+      "new": {
+        "system.cpu.numCycles": 3709513,
+        "system.cpu.committedInsts": 19999997
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gcc_cpdecl_1944": {
+      "new_weight": "0.216865",
+      "old_weight": "0.216865",
+      "old": {
+        "system.cpu.numCycles": 6107896,
+        "system.cpu.committedInsts": 19999998
+      },
+      "new": {
+        "system.cpu.numCycles": 6107896,
+        "system.cpu.committedInsts": 19999998
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gcc_cpdecl_4089": {
+      "new_weight": "0.184346",
+      "old_weight": "0.184346",
+      "old": {
+        "system.cpu.numCycles": 6646895,
+        "system.cpu.committedInsts": 20000001
+      },
+      "new": {
+        "system.cpu.numCycles": 6646895,
+        "system.cpu.committedInsts": 20000001
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gcc_expr_4993": {
+      "new_weight": "0.204661",
+      "old_weight": "0.204661",
+      "old": {
+        "system.cpu.numCycles": 10137480,
+        "system.cpu.committedInsts": 19999995
+      },
+      "new": {
+        "system.cpu.numCycles": 10137480,
+        "system.cpu.committedInsts": 19999995
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gcc_expr_1687": {
+      "new_weight": "0.190756",
+      "old_weight": "0.190756",
+      "old": {
+        "system.cpu.numCycles": 8006312,
+        "system.cpu.committedInsts": 19999997
+      },
+      "new": {
+        "system.cpu.numCycles": 8006312,
+        "system.cpu.committedInsts": 19999997
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gcc_expr2_3409": {
+      "new_weight": "0.166093",
+      "old_weight": "0.166093",
+      "old": {
+        "system.cpu.numCycles": 8047594,
+        "system.cpu.committedInsts": 19999999
+      },
+      "new": {
+        "system.cpu.numCycles": 8047594,
+        "system.cpu.committedInsts": 19999999
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gcc_expr2_1725": {
+      "new_weight": "0.159645",
+      "old_weight": "0.159645",
+      "old": {
+        "system.cpu.numCycles": 3760208,
+        "system.cpu.committedInsts": 20000006
+      },
+      "new": {
+        "system.cpu.numCycles": 3760208,
+        "system.cpu.committedInsts": 20000006
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gcc_g23_50": {
+      "new_weight": "0.161712",
+      "old_weight": "0.161712",
+      "old": {
+        "system.cpu.numCycles": 3476378,
+        "system.cpu.committedInsts": 19999998
+      },
+      "new": {
+        "system.cpu.numCycles": 3476378,
+        "system.cpu.committedInsts": 19999998
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gcc_g23_3542": {
+      "new_weight": "0.156683",
+      "old_weight": "0.156683",
+      "old": {
+        "system.cpu.numCycles": 3622832,
+        "system.cpu.committedInsts": 20000000
+      },
+      "new": {
+        "system.cpu.numCycles": 3622832,
+        "system.cpu.committedInsts": 20000000
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gcc_s04_7954": {
+      "new_weight": "0.193974",
+      "old_weight": "0.193974",
+      "old": {
+        "system.cpu.numCycles": 6702992,
+        "system.cpu.committedInsts": 20000002
+      },
+      "new": {
+        "system.cpu.numCycles": 6702992,
+        "system.cpu.committedInsts": 20000002
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gcc_s04_3001": {
+      "new_weight": "0.191839",
+      "old_weight": "0.191839",
+      "old": {
+        "system.cpu.numCycles": 7993287,
+        "system.cpu.committedInsts": 20000000
+      },
+      "new": {
+        "system.cpu.numCycles": 7993287,
+        "system.cpu.committedInsts": 20000000
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gcc_scilab_373": {
+      "new_weight": "0.161001",
+      "old_weight": "0.161001",
+      "old": {
+        "system.cpu.numCycles": 7155270,
+        "system.cpu.committedInsts": 19999991
+      },
+      "new": {
+        "system.cpu.numCycles": 7155270,
+        "system.cpu.committedInsts": 19999991
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gcc_scilab_2556": {
+      "new_weight": "0.155771",
+      "old_weight": "0.155771",
+      "old": {
+        "system.cpu.numCycles": 6360469,
+        "system.cpu.committedInsts": 20000009
+      },
+      "new": {
+        "system.cpu.numCycles": 6360469,
+        "system.cpu.committedInsts": 20000009
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gcc_typeck_730": {
+      "new_weight": "0.134673",
+      "old_weight": "0.134673",
+      "old": {
+        "system.cpu.numCycles": 7006901,
+        "system.cpu.committedInsts": 20000008
+      },
+      "new": {
+        "system.cpu.numCycles": 7006901,
+        "system.cpu.committedInsts": 20000008
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gcc_typeck_2215": {
+      "new_weight": "0.129336",
+      "old_weight": "0.129336",
+      "old": {
+        "system.cpu.numCycles": 3599339,
+        "system.cpu.committedInsts": 19999998
+      },
+      "new": {
+        "system.cpu.numCycles": 3599339,
+        "system.cpu.committedInsts": 19999998
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gcc_typeck_4910": {
+      "new_weight": "0.0943337",
+      "old_weight": "0.0943337",
+      "old": {
+        "system.cpu.numCycles": 8063694,
+        "system.cpu.committedInsts": 19999999
+      },
+      "new": {
+        "system.cpu.numCycles": 8063694,
+        "system.cpu.committedInsts": 19999999
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gobmk_13x13_8760": {
+      "new_weight": "0.154928",
+      "old_weight": "0.154928",
+      "old": {
+        "system.cpu.numCycles": 7314462,
+        "system.cpu.committedInsts": 20000001
+      },
+      "new": {
+        "system.cpu.numCycles": 7314462,
+        "system.cpu.committedInsts": 20000001
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gobmk_13x13_5624": {
+      "new_weight": "0.11901",
+      "old_weight": "0.11901",
+      "old": {
+        "system.cpu.numCycles": 7277999,
+        "system.cpu.committedInsts": 20000007
+      },
+      "new": {
+        "system.cpu.numCycles": 7277999,
+        "system.cpu.committedInsts": 20000007
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gobmk_13x13_6011": {
+      "new_weight": "0.113101",
+      "old_weight": "0.113101",
+      "old": {
+        "system.cpu.numCycles": 6990107,
+        "system.cpu.committedInsts": 20000002
+      },
+      "new": {
+        "system.cpu.numCycles": 6990107,
+        "system.cpu.committedInsts": 20000002
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gobmk_nngs_28380": {
+      "new_weight": "0.148264",
+      "old_weight": "0.148264",
+      "old": {
+        "system.cpu.numCycles": 7862610,
+        "system.cpu.committedInsts": 19999999
+      },
+      "new": {
+        "system.cpu.numCycles": 7862610,
+        "system.cpu.committedInsts": 19999999
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gobmk_nngs_23480": {
+      "new_weight": "0.127238",
+      "old_weight": "0.127238",
+      "old": {
+        "system.cpu.numCycles": 7168000,
+        "system.cpu.committedInsts": 19999996
+      },
+      "new": {
+        "system.cpu.numCycles": 7168000,
+        "system.cpu.committedInsts": 19999996
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gobmk_nngs_3689": {
+      "new_weight": "0.107545",
+      "old_weight": "0.107545",
+      "old": {
+        "system.cpu.numCycles": 7544176,
+        "system.cpu.committedInsts": 19999998
+      },
+      "new": {
+        "system.cpu.numCycles": 7544176,
+        "system.cpu.committedInsts": 19999998
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gobmk_score2_13127": {
+      "new_weight": "0.121245",
+      "old_weight": "0.121245",
+      "old": {
+        "system.cpu.numCycles": 7463255,
+        "system.cpu.committedInsts": 20000001
+      },
+      "new": {
+        "system.cpu.numCycles": 7463255,
+        "system.cpu.committedInsts": 20000001
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gobmk_score2_875": {
+      "new_weight": "0.0860923",
+      "old_weight": "0.0860923",
+      "old": {
+        "system.cpu.numCycles": 6044343,
+        "system.cpu.committedInsts": 20000002
+      },
+      "new": {
+        "system.cpu.numCycles": 6044343,
+        "system.cpu.committedInsts": 20000002
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gobmk_score2_3645": {
+      "new_weight": "0.0814905",
+      "old_weight": "0.0814905",
+      "old": {
+        "system.cpu.numCycles": 4572279,
+        "system.cpu.committedInsts": 19999997
+      },
+      "new": {
+        "system.cpu.numCycles": 4572279,
+        "system.cpu.committedInsts": 19999997
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gobmk_score2_11938": {
+      "new_weight": "0.0804679",
+      "old_weight": "0.0804679",
+      "old": {
+        "system.cpu.numCycles": 4534170,
+        "system.cpu.committedInsts": 19999992
+      },
+      "new": {
+        "system.cpu.numCycles": 4534170,
+        "system.cpu.committedInsts": 19999992
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gobmk_trevorc_883": {
+      "new_weight": "0.239453",
+      "old_weight": "0.239453",
+      "old": {
+        "system.cpu.numCycles": 7567099,
+        "system.cpu.committedInsts": 20000001
+      },
+      "new": {
+        "system.cpu.numCycles": 7567099,
+        "system.cpu.committedInsts": 20000001
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gobmk_trevorc_5366": {
+      "new_weight": "0.131787",
+      "old_weight": "0.131787",
+      "old": {
+        "system.cpu.numCycles": 5839961,
+        "system.cpu.committedInsts": 20000007
+      },
+      "new": {
+        "system.cpu.numCycles": 5839961,
+        "system.cpu.committedInsts": 20000007
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gobmk_trevord_4532": {
+      "new_weight": "0.122341",
+      "old_weight": "0.122341",
+      "old": {
+        "system.cpu.numCycles": 8059761,
+        "system.cpu.committedInsts": 19999993
+      },
+      "new": {
+        "system.cpu.numCycles": 8059761,
+        "system.cpu.committedInsts": 19999993
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gobmk_trevord_6799": {
+      "new_weight": "0.121577",
+      "old_weight": "0.121577",
+      "old": {
+        "system.cpu.numCycles": 6436798,
+        "system.cpu.committedInsts": 20000008
+      },
+      "new": {
+        "system.cpu.numCycles": 6436798,
+        "system.cpu.committedInsts": 20000008
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gobmk_trevord_7931": {
+      "new_weight": "0.112088",
+      "old_weight": "0.112088",
+      "old": {
+        "system.cpu.numCycles": 3958688,
+        "system.cpu.committedInsts": 19999992
+      },
+      "new": {
+        "system.cpu.numCycles": 3958688,
+        "system.cpu.committedInsts": 19999992
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gromacs_105": {
+      "new_weight": "0.20609",
+      "old_weight": "0.20609",
+      "old": {
+        "system.cpu.numCycles": 7025599,
+        "system.cpu.committedInsts": 20000006
+      },
+      "new": {
+        "system.cpu.numCycles": 7025599,
+        "system.cpu.committedInsts": 20000006
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "gromacs_41110": {
+      "new_weight": "0.147916",
+      "old_weight": "0.147916",
+      "old": {
+        "system.cpu.numCycles": 7019928,
+        "system.cpu.committedInsts": 20000001
+      },
+      "new": {
+        "system.cpu.numCycles": 7019928,
+        "system.cpu.committedInsts": 20000001
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "h264ref_foreman.baseline_1968": {
+      "new_weight": "0.0986018",
+      "old_weight": "0.0986018",
+      "old": {
+        "system.cpu.numCycles": 4475965,
+        "system.cpu.committedInsts": 19999999
+      },
+      "new": {
+        "system.cpu.numCycles": 4475965,
+        "system.cpu.committedInsts": 19999999
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "h264ref_foreman.baseline_7788": {
+      "new_weight": "0.0973526",
+      "old_weight": "0.0973526",
+      "old": {
+        "system.cpu.numCycles": 4374913,
+        "system.cpu.committedInsts": 19999995
+      },
+      "new": {
+        "system.cpu.numCycles": 4374913,
+        "system.cpu.committedInsts": 19999995
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "h264ref_foreman.baseline_18077": {
+      "new_weight": "0.0940484",
+      "old_weight": "0.0940484",
+      "old": {
+        "system.cpu.numCycles": 3239755,
+        "system.cpu.committedInsts": 20000001
+      },
+      "new": {
+        "system.cpu.numCycles": 3239755,
+        "system.cpu.committedInsts": 20000001
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "h264ref_foreman.baseline_1674": {
+      "new_weight": "0.0803481",
+      "old_weight": "0.0803481",
+      "old": {
+        "system.cpu.numCycles": 4706564,
+        "system.cpu.committedInsts": 20000001
+      },
+      "new": {
+        "system.cpu.numCycles": 4706564,
+        "system.cpu.committedInsts": 20000001
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "h264ref_foreman.main_13366": {
+      "new_weight": "0.130439",
+      "old_weight": "0.130439",
+      "old": {
+        "system.cpu.numCycles": 3173583,
+        "system.cpu.committedInsts": 20000005
+      },
+      "new": {
+        "system.cpu.numCycles": 3173583,
+        "system.cpu.committedInsts": 20000005
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "h264ref_foreman.main_11944": {
+      "new_weight": "0.0804007",
+      "old_weight": "0.0804007",
+      "old": {
+        "system.cpu.numCycles": 4000768,
+        "system.cpu.committedInsts": 20000001
+      },
+      "new": {
+        "system.cpu.numCycles": 4000768,
+        "system.cpu.committedInsts": 20000001
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "h264ref_foreman.main_6311": {
+      "new_weight": "0.071189",
+      "old_weight": "0.071189",
+      "old": {
+        "system.cpu.numCycles": 3192079,
+        "system.cpu.committedInsts": 20000003
+      },
+      "new": {
+        "system.cpu.numCycles": 3192079,
+        "system.cpu.committedInsts": 20000003
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "h264ref_foreman.main_17926": {
+      "new_weight": "0.0630506",
+      "old_weight": "0.0630506",
+      "old": {
+        "system.cpu.numCycles": 3619170,
+        "system.cpu.committedInsts": 20000009
+      },
+      "new": {
+        "system.cpu.numCycles": 3619170,
+        "system.cpu.committedInsts": 20000009
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "h264ref_sss_19498": {
+      "new_weight": "0.105517",
+      "old_weight": "0.105517",
+      "old": {
+        "system.cpu.numCycles": 2797822,
+        "system.cpu.committedInsts": 20000002
+      },
+      "new": {
+        "system.cpu.numCycles": 2797822,
+        "system.cpu.committedInsts": 20000002
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "h264ref_sss_185055": {
+      "new_weight": "0.0735354",
+      "old_weight": "0.0735354",
+      "old": {
+        "system.cpu.numCycles": 3519021,
+        "system.cpu.committedInsts": 20000009
+      },
+      "new": {
+        "system.cpu.numCycles": 3519021,
+        "system.cpu.committedInsts": 20000009
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "h264ref_sss_667": {
+      "new_weight": "0.0719378",
+      "old_weight": "0.0719378",
+      "old": {
+        "system.cpu.numCycles": 3036286,
+        "system.cpu.committedInsts": 19999992
+      },
+      "new": {
+        "system.cpu.numCycles": 3036286,
+        "system.cpu.committedInsts": 19999992
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "h264ref_sss_157672": {
+      "new_weight": "0.0716096",
+      "old_weight": "0.0716096",
+      "old": {
+        "system.cpu.numCycles": 3871601,
+        "system.cpu.committedInsts": 20000005
+      },
+      "new": {
+        "system.cpu.numCycles": 3871601,
+        "system.cpu.committedInsts": 20000005
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "hmmer_nph3_7894": {
+      "new_weight": "0.319372",
+      "old_weight": "0.319372",
+      "old": {
+        "system.cpu.numCycles": 2355012,
+        "system.cpu.committedInsts": 19999994
+      },
+      "new": {
+        "system.cpu.numCycles": 2355012,
+        "system.cpu.committedInsts": 19999994
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "hmmer_retro_59969": {
+      "new_weight": "0.195899",
+      "old_weight": "0.195899",
+      "old": {
+        "system.cpu.numCycles": 2456744,
+        "system.cpu.committedInsts": 19999997
+      },
+      "new": {
+        "system.cpu.numCycles": 2456744,
+        "system.cpu.committedInsts": 19999997
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "hmmer_retro_23265": {
+      "new_weight": "0.171852",
+      "old_weight": "0.171852",
+      "old": {
+        "system.cpu.numCycles": 2470987,
+        "system.cpu.committedInsts": 20000000
+      },
+      "new": {
+        "system.cpu.numCycles": 2470987,
+        "system.cpu.committedInsts": 20000000
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "lbm_6382": {
+      "new_weight": "0.375486",
+      "old_weight": "0.375486",
+      "old": {
+        "system.cpu.numCycles": 7527667,
+        "system.cpu.committedInsts": 20000003
+      },
+      "new": {
+        "system.cpu.numCycles": 7527667,
+        "system.cpu.committedInsts": 20000003
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "leslie3d_18494": {
+      "new_weight": "0.181792",
+      "old_weight": "0.181792",
+      "old": {
+        "system.cpu.numCycles": 4130748,
+        "system.cpu.committedInsts": 19999999
+      },
+      "new": {
+        "system.cpu.numCycles": 4130748,
+        "system.cpu.committedInsts": 19999999
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "leslie3d_34720": {
+      "new_weight": "0.164925",
+      "old_weight": "0.164925",
+      "old": {
+        "system.cpu.numCycles": 3638333,
+        "system.cpu.committedInsts": 20000005
+      },
+      "new": {
+        "system.cpu.numCycles": 3638333,
+        "system.cpu.committedInsts": 20000005
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "libquantum_69175": {
+      "new_weight": "0.137331",
+      "old_weight": "0.137331",
+      "old": {
+        "system.cpu.numCycles": 2763409,
+        "system.cpu.committedInsts": 20000003
+      },
+      "new": {
+        "system.cpu.numCycles": 2763409,
+        "system.cpu.committedInsts": 20000003
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "libquantum_27811": {
+      "new_weight": "0.111688",
+      "old_weight": "0.111688",
+      "old": {
+        "system.cpu.numCycles": 2893386,
+        "system.cpu.committedInsts": 20000004
+      },
+      "new": {
+        "system.cpu.numCycles": 2893386,
+        "system.cpu.committedInsts": 20000004
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "libquantum_86704": {
+      "new_weight": "0.0700298",
+      "old_weight": "0.0700298",
+      "old": {
+        "system.cpu.numCycles": 3137747,
+        "system.cpu.committedInsts": 19999996
+      },
+      "new": {
+        "system.cpu.numCycles": 3137747,
+        "system.cpu.committedInsts": 19999996
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "mcf_6753": {
+      "new_weight": "0.218742",
+      "old_weight": "0.218742",
+      "old": {
+        "system.cpu.numCycles": 17196781,
+        "system.cpu.committedInsts": 19999999
+      },
+      "new": {
+        "system.cpu.numCycles": 17196781,
+        "system.cpu.committedInsts": 19999999
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "mcf_12886": {
+      "new_weight": "0.149435",
+      "old_weight": "0.149435",
+      "old": {
+        "system.cpu.numCycles": 18613623,
+        "system.cpu.committedInsts": 20000007
+      },
+      "new": {
+        "system.cpu.numCycles": 18613623,
+        "system.cpu.committedInsts": 20000007
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "milc_30106": {
+      "new_weight": "0.0852193",
+      "old_weight": "0.0852193",
+      "old": {
+        "system.cpu.numCycles": 5560282,
+        "system.cpu.committedInsts": 19999997
+      },
+      "new": {
+        "system.cpu.numCycles": 5560282,
+        "system.cpu.committedInsts": 19999997
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "milc_5841": {
+      "new_weight": "0.0850275",
+      "old_weight": "0.0850275",
+      "old": {
+        "system.cpu.numCycles": 22215478,
+        "system.cpu.committedInsts": 19999999
+      },
+      "new": {
+        "system.cpu.numCycles": 22215478,
+        "system.cpu.committedInsts": 19999999
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "milc_13081": {
+      "new_weight": "0.0750224",
+      "old_weight": "0.0750224",
+      "old": {
+        "system.cpu.numCycles": 9428568,
+        "system.cpu.committedInsts": 20000001
+      },
+      "new": {
+        "system.cpu.numCycles": 9428568,
+        "system.cpu.committedInsts": 20000001
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "milc_28462": {
+      "new_weight": "0.0749584",
+      "old_weight": "0.0749584",
+      "old": {
+        "system.cpu.numCycles": 15389951,
+        "system.cpu.committedInsts": 19999998
+      },
+      "new": {
+        "system.cpu.numCycles": 15389951,
+        "system.cpu.committedInsts": 19999998
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "namd_50633": {
+      "new_weight": "0.0843034",
+      "old_weight": "0.0843034",
+      "old": {
+        "system.cpu.numCycles": 5264467,
+        "system.cpu.committedInsts": 19999997
+      },
+      "new": {
+        "system.cpu.numCycles": 5264467,
+        "system.cpu.committedInsts": 19999997
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "namd_65358": {
+      "new_weight": "0.0693233",
+      "old_weight": "0.0693233",
+      "old": {
+        "system.cpu.numCycles": 5138885,
+        "system.cpu.committedInsts": 20000007
+      },
+      "new": {
+        "system.cpu.numCycles": 5138885,
+        "system.cpu.committedInsts": 20000007
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "namd_84400": {
+      "new_weight": "0.0647899",
+      "old_weight": "0.0647899",
+      "old": {
+        "system.cpu.numCycles": 5703143,
+        "system.cpu.committedInsts": 20000004
+      },
+      "new": {
+        "system.cpu.numCycles": 5703143,
+        "system.cpu.committedInsts": 20000004
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "namd_7092": {
+      "new_weight": "0.0584825",
+      "old_weight": "0.0584825",
+      "old": {
+        "system.cpu.numCycles": 5761950,
+        "system.cpu.committedInsts": 19999993
+      },
+      "new": {
+        "system.cpu.numCycles": 5761950,
+        "system.cpu.committedInsts": 19999993
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "namd_40827": {
+      "new_weight": "0.0581927",
+      "old_weight": "0.0581927",
+      "old": {
+        "system.cpu.numCycles": 5147637,
+        "system.cpu.committedInsts": 20000005
+      },
+      "new": {
+        "system.cpu.numCycles": 5147637,
+        "system.cpu.committedInsts": 20000005
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "omnetpp_18492": {
+      "new_weight": "0.31307",
+      "old_weight": "0.31307",
+      "old": {
+        "system.cpu.numCycles": 8735843,
+        "system.cpu.committedInsts": 20000003
+      },
+      "new": {
+        "system.cpu.numCycles": 8735843,
+        "system.cpu.committedInsts": 20000003
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "perlbench_checkspam_5886": {
+      "new_weight": "0.199334",
+      "old_weight": "0.199334",
+      "old": {
+        "system.cpu.numCycles": 4102519,
+        "system.cpu.committedInsts": 19999994
+      },
+      "new": {
+        "system.cpu.numCycles": 4102519,
+        "system.cpu.committedInsts": 19999994
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "perlbench_checkspam_28089": {
+      "new_weight": "0.127421",
+      "old_weight": "0.127421",
+      "old": {
+        "system.cpu.numCycles": 4167922,
+        "system.cpu.committedInsts": 20000005
+      },
+      "new": {
+        "system.cpu.numCycles": 4167922,
+        "system.cpu.committedInsts": 20000005
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "perlbench_diffmail_2097": {
+      "new_weight": "0.421425",
+      "old_weight": "0.421425",
+      "old": {
+        "system.cpu.numCycles": 3750719,
+        "system.cpu.committedInsts": 19999998
+      },
+      "new": {
+        "system.cpu.numCycles": 3750719,
+        "system.cpu.committedInsts": 19999998
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "perlbench_splitmail_4191": {
+      "new_weight": "0.564709",
+      "old_weight": "0.564709",
+      "old": {
+        "system.cpu.numCycles": 3863497,
+        "system.cpu.committedInsts": 20000008
+      },
+      "new": {
+        "system.cpu.numCycles": 3863497,
+        "system.cpu.committedInsts": 20000008
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "povray_28404": {
+      "new_weight": "0.0977063",
+      "old_weight": "0.0977063",
+      "old": {
+        "system.cpu.numCycles": 4961448,
+        "system.cpu.committedInsts": 20000000
+      },
+      "new": {
+        "system.cpu.numCycles": 4961448,
+        "system.cpu.committedInsts": 20000000
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "povray_7650": {
+      "new_weight": "0.0898665",
+      "old_weight": "0.0898665",
+      "old": {
+        "system.cpu.numCycles": 5647622,
+        "system.cpu.committedInsts": 20000004
+      },
+      "new": {
+        "system.cpu.numCycles": 5647622,
+        "system.cpu.committedInsts": 20000004
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "povray_21991": {
+      "new_weight": "0.0801992",
+      "old_weight": "0.0801992",
+      "old": {
+        "system.cpu.numCycles": 5303130,
+        "system.cpu.committedInsts": 20000001
+      },
+      "new": {
+        "system.cpu.numCycles": 5303130,
+        "system.cpu.committedInsts": 20000001
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "povray_8107": {
+      "new_weight": "0.0750344",
+      "old_weight": "0.0750344",
+      "old": {
+        "system.cpu.numCycles": 5001826,
+        "system.cpu.committedInsts": 19999996
+      },
+      "new": {
+        "system.cpu.numCycles": 5001826,
+        "system.cpu.committedInsts": 19999996
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "sjeng_94536": {
+      "new_weight": "0.133078",
+      "old_weight": "0.133078",
+      "old": {
+        "system.cpu.numCycles": 5960403,
+        "system.cpu.committedInsts": 19999993
+      },
+      "new": {
+        "system.cpu.numCycles": 5960403,
+        "system.cpu.committedInsts": 19999993
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "sjeng_104526": {
+      "new_weight": "0.109376",
+      "old_weight": "0.109376",
+      "old": {
+        "system.cpu.numCycles": 5810319,
+        "system.cpu.committedInsts": 20000000
+      },
+      "new": {
+        "system.cpu.numCycles": 5810319,
+        "system.cpu.committedInsts": 20000000
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "sjeng_10181": {
+      "new_weight": "0.107846",
+      "old_weight": "0.107846",
+      "old": {
+        "system.cpu.numCycles": 6292683,
+        "system.cpu.committedInsts": 19999999
+      },
+      "new": {
+        "system.cpu.numCycles": 6292683,
+        "system.cpu.committedInsts": 19999999
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "soplex_pds-50_9466": {
+      "new_weight": "0.12619",
+      "old_weight": "0.12619",
+      "old": {
+        "system.cpu.numCycles": 6746735,
+        "system.cpu.committedInsts": 19999999
+      },
+      "new": {
+        "system.cpu.numCycles": 6746735,
+        "system.cpu.committedInsts": 19999999
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "soplex_pds-50_12322": {
+      "new_weight": "0.0904542",
+      "old_weight": "0.0904542",
+      "old": {
+        "system.cpu.numCycles": 7067960,
+        "system.cpu.committedInsts": 19999993
+      },
+      "new": {
+        "system.cpu.numCycles": 7067960,
+        "system.cpu.committedInsts": 19999993
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "soplex_pds-50_7893": {
+      "new_weight": "0.0872994",
+      "old_weight": "0.0872994",
+      "old": {
+        "system.cpu.numCycles": 8227335,
+        "system.cpu.committedInsts": 20000000
+      },
+      "new": {
+        "system.cpu.numCycles": 8227335,
+        "system.cpu.committedInsts": 20000000
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "soplex_ref_5312": {
+      "new_weight": "0.294346",
+      "old_weight": "0.294346",
+      "old": {
+        "system.cpu.numCycles": 7634057,
+        "system.cpu.committedInsts": 19999998
+      },
+      "new": {
+        "system.cpu.numCycles": 7634057,
+        "system.cpu.committedInsts": 19999998
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "soplex_ref_17811": {
+      "new_weight": "0.09139",
+      "old_weight": "0.09139",
+      "old": {
+        "system.cpu.numCycles": 3635998,
+        "system.cpu.committedInsts": 20000007
+      },
+      "new": {
+        "system.cpu.numCycles": 3635998,
+        "system.cpu.committedInsts": 20000007
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "sphinx3_157921": {
+      "new_weight": "0.136728",
+      "old_weight": "0.136728",
+      "old": {
+        "system.cpu.numCycles": 4293441,
+        "system.cpu.committedInsts": 20000001
+      },
+      "new": {
+        "system.cpu.numCycles": 4293441,
+        "system.cpu.committedInsts": 20000001
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "sphinx3_89031": {
+      "new_weight": "0.11833",
+      "old_weight": "0.11833",
+      "old": {
+        "system.cpu.numCycles": 4544479,
+        "system.cpu.committedInsts": 20000006
+      },
+      "new": {
+        "system.cpu.numCycles": 4544479,
+        "system.cpu.committedInsts": 20000006
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "sphinx3_39957": {
+      "new_weight": "0.0943629",
+      "old_weight": "0.0943629",
+      "old": {
+        "system.cpu.numCycles": 4864575,
+        "system.cpu.committedInsts": 19999997
+      },
+      "new": {
+        "system.cpu.numCycles": 4864575,
+        "system.cpu.committedInsts": 19999997
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "tonto_22517": {
+      "new_weight": "0.0959619",
+      "old_weight": "0.0959619",
+      "old": {
+        "system.cpu.numCycles": 10769369,
+        "system.cpu.committedInsts": 20000002
+      },
+      "new": {
+        "system.cpu.numCycles": 10769369,
+        "system.cpu.committedInsts": 20000002
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "tonto_24832": {
+      "new_weight": "0.0866796",
+      "old_weight": "0.0866796",
+      "old": {
+        "system.cpu.numCycles": 3482062,
+        "system.cpu.committedInsts": 20000004
+      },
+      "new": {
+        "system.cpu.numCycles": 3482062,
+        "system.cpu.committedInsts": 20000004
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "tonto_26200": {
+      "new_weight": "0.085757",
+      "old_weight": "0.085757",
+      "old": {
+        "system.cpu.numCycles": 4150925,
+        "system.cpu.committedInsts": 19999992
+      },
+      "new": {
+        "system.cpu.numCycles": 4150925,
+        "system.cpu.committedInsts": 19999992
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "tonto_10669": {
+      "new_weight": "0.0737295",
+      "old_weight": "0.0737295",
+      "old": {
+        "system.cpu.numCycles": 7925552,
+        "system.cpu.committedInsts": 19999996
+      },
+      "new": {
+        "system.cpu.numCycles": 7925552,
+        "system.cpu.committedInsts": 19999996
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "wrf_9169": {
+      "new_weight": "0.218538",
+      "old_weight": "0.218538",
+      "old": {
+        "system.cpu.numCycles": 3638876,
+        "system.cpu.committedInsts": 20000004
+      },
+      "new": {
+        "system.cpu.numCycles": 3638876,
+        "system.cpu.committedInsts": 20000004
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "wrf_20161": {
+      "new_weight": "0.0675957",
+      "old_weight": "0.0675957",
+      "old": {
+        "system.cpu.numCycles": 3910571,
+        "system.cpu.committedInsts": 19999998
+      },
+      "new": {
+        "system.cpu.numCycles": 3910571,
+        "system.cpu.committedInsts": 19999998
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "wrf_6877": {
+      "new_weight": "0.0453606",
+      "old_weight": "0.0453606",
+      "old": {
+        "system.cpu.numCycles": 2994495,
+        "system.cpu.committedInsts": 19999992
+      },
+      "new": {
+        "system.cpu.numCycles": 2994495,
+        "system.cpu.committedInsts": 19999992
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "xalancbmk_12667": {
+      "new_weight": "0.0536296",
+      "old_weight": "0.0536296",
+      "old": {
+        "system.cpu.numCycles": 3485269,
+        "system.cpu.committedInsts": 20000002
+      },
+      "new": {
+        "system.cpu.numCycles": 3485269,
+        "system.cpu.committedInsts": 20000002
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "xalancbmk_4478": {
+      "new_weight": "0.0319062",
+      "old_weight": "0.0319062",
+      "old": {
+        "system.cpu.numCycles": 6315979,
+        "system.cpu.committedInsts": 19999999
+      },
+      "new": {
+        "system.cpu.numCycles": 6315979,
+        "system.cpu.committedInsts": 19999999
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "xalancbmk_6663": {
+      "new_weight": "0.0297791",
+      "old_weight": "0.0297791",
+      "old": {
+        "system.cpu.numCycles": 4290910,
+        "system.cpu.committedInsts": 19999999
+      },
+      "new": {
+        "system.cpu.numCycles": 4290910,
+        "system.cpu.committedInsts": 19999999
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "xalancbmk_23046": {
+      "new_weight": "0.0295755",
+      "old_weight": "0.0295755",
+      "old": {
+        "system.cpu.numCycles": 4306583,
+        "system.cpu.committedInsts": 19999994
+      },
+      "new": {
+        "system.cpu.numCycles": 4306583,
+        "system.cpu.committedInsts": 19999994
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "xalancbmk_10335": {
+      "new_weight": "0.0283309",
+      "old_weight": "0.0283309",
+      "old": {
+        "system.cpu.numCycles": 4231144,
+        "system.cpu.committedInsts": 20000004
+      },
+      "new": {
+        "system.cpu.numCycles": 4231144,
+        "system.cpu.committedInsts": 20000004
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "xalancbmk_20863": {
+      "new_weight": "0.0276294",
+      "old_weight": "0.0276294",
+      "old": {
+        "system.cpu.numCycles": 4047592,
+        "system.cpu.committedInsts": 19999992
+      },
+      "new": {
+        "system.cpu.numCycles": 4047592,
+        "system.cpu.committedInsts": 19999992
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "xalancbmk_6881": {
+      "new_weight": "0.0272221",
+      "old_weight": "0.0272221",
+      "old": {
+        "system.cpu.numCycles": 4262717,
+        "system.cpu.committedInsts": 20000001
+      },
+      "new": {
+        "system.cpu.numCycles": 4262717,
+        "system.cpu.committedInsts": 20000001
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "xalancbmk_24926": {
+      "new_weight": "0.026317",
+      "old_weight": "0.026317",
+      "old": {
+        "system.cpu.numCycles": 4246412,
+        "system.cpu.committedInsts": 19999997
+      },
+      "new": {
+        "system.cpu.numCycles": 4246412,
+        "system.cpu.committedInsts": 19999997
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "xalancbmk_13770": {
+      "new_weight": "0.0257965",
+      "old_weight": "0.0257965",
+      "old": {
+        "system.cpu.numCycles": 3720882,
+        "system.cpu.committedInsts": 19999998
+      },
+      "new": {
+        "system.cpu.numCycles": 3720882,
+        "system.cpu.committedInsts": 19999998
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "xalancbmk_10486": {
+      "new_weight": "0.025525",
+      "old_weight": "0.025525",
+      "old": {
+        "system.cpu.numCycles": 4257026,
+        "system.cpu.committedInsts": 19999996
+      },
+      "new": {
+        "system.cpu.numCycles": 4257026,
+        "system.cpu.committedInsts": 19999996
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "zeusmp_47363": {
+      "new_weight": "0.130888",
+      "old_weight": "0.130888",
+      "old": {
+        "system.cpu.numCycles": 6759514,
+        "system.cpu.committedInsts": 19999997
+      },
+      "new": {
+        "system.cpu.numCycles": 6759514,
+        "system.cpu.committedInsts": 19999997
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "zeusmp_4119": {
+      "new_weight": "0.121611",
+      "old_weight": "0.121611",
+      "old": {
+        "system.cpu.numCycles": 4520952,
+        "system.cpu.committedInsts": 20000001
+      },
+      "new": {
+        "system.cpu.numCycles": 4520952,
+        "system.cpu.committedInsts": 20000001
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    },
+    "zeusmp_66319": {
+      "new_weight": "0.0703694",
+      "old_weight": "0.0703694",
+      "old": {
+        "system.cpu.numCycles": 6897077,
+        "system.cpu.committedInsts": 19999992
+      },
+      "new": {
+        "system.cpu.numCycles": 6897077,
+        "system.cpu.committedInsts": 19999992
+      },
+      "old_blocks": 2,
+      "new_blocks": 2,
+      "config_differences": {
+        "system.mem_ctrls.configFile": [
+          "/nfs/home/cirunner/actions-runner-gem5/node028-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+          "/nfs/home/cirunner/actions-runner-gem5/node030-2/_work/GEM5/GEM5/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
+        ]
+      },
+      "complete_marker_old": true,
+      "complete_marker_new": true
+    }
+  },
+  "missing": [],
+  "config_difference_frequency": {
+    "system.mem_ctrls.configFile": 145
+  },
+  "coverage": {
+    "requested": 145,
+    "matched": 145,
+    "missing": 0,
+    "same_cycles": 145,
+    "same_insts": 145,
+    "both_completed": 145,
+    "same_selected_raw_weight": 145,
+    "same_archived_dramsim3_json_sha256": 145,
+    "old_cluster_points": 1094,
+    "same_input_insts_weight": 55,
+    "input_count": 55
+  }
+}

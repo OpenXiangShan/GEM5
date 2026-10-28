@@ -1,0 +1,351 @@
+{
+  "scope": "1M no warmup, not SPEC score",
+  "runs": {
+    "gcc": {
+      "frontend": {
+        "control": {
+          "source_head_recorded": "e009c552fe5c0b21830c3ec58e125176cb12289d",
+          "binary_sha256_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha256_current": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_hash_matches_current": true,
+          "input_path": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/gcc_expr/1687/_1687_0.190756_memory_.zstd",
+          "input_sha256_recorded": "6c6d2501948f5d28c2daf69bc4e7019f6ebc6c4cc627704ca0f481b18cf96682",
+          "input_sha256_current": "6c6d2501948f5d28c2daf69bc4e7019f6ebc6c4cc627704ca0f481b18cf96682",
+          "input_hash_matches_current": true,
+          "exit_maxinsts": true,
+          "difftest_enabled": "true",
+          "reference": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+          "validation_passed": true,
+          "instructions": 1000000.0,
+          "cycles": 445090.0,
+          "ipc": 2.2467366150666157,
+          "branch_misses_per_kinst": 0.709,
+          "second_predictions": 23168.0,
+          "two_fetch_successes": 94634.0,
+          "second_predictions_per_kinst": 23.168,
+          "two_fetch_per_kinst": 94.634,
+          "prior_control_exact_cycles_and_insts": true
+        },
+        "predict1": {
+          "source_head_recorded": "e009c552fe5c0b21830c3ec58e125176cb12289d",
+          "binary_sha256_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha256_current": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_hash_matches_current": true,
+          "input_path": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/gcc_expr/1687/_1687_0.190756_memory_.zstd",
+          "input_sha256_recorded": "6c6d2501948f5d28c2daf69bc4e7019f6ebc6c4cc627704ca0f481b18cf96682",
+          "input_sha256_current": "6c6d2501948f5d28c2daf69bc4e7019f6ebc6c4cc627704ca0f481b18cf96682",
+          "input_hash_matches_current": true,
+          "exit_maxinsts": true,
+          "difftest_enabled": "true",
+          "reference": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+          "validation_passed": true,
+          "instructions": 1000000.0,
+          "cycles": 445316.0,
+          "ipc": 2.245596385488058,
+          "branch_misses_per_kinst": 0.724,
+          "second_predictions": 0.0,
+          "two_fetch_successes": 81090.0,
+          "second_predictions_per_kinst": 0.0,
+          "two_fetch_per_kinst": 81.09,
+          "prior_control_exact_cycles_and_insts": null,
+          "ipc_delta_percent": -0.05075047831203383
+        },
+        "fetch1": {
+          "source_head_recorded": "e009c552fe5c0b21830c3ec58e125176cb12289d",
+          "binary_sha256_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha256_current": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_hash_matches_current": true,
+          "input_path": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/gcc_expr/1687/_1687_0.190756_memory_.zstd",
+          "input_sha256_recorded": "6c6d2501948f5d28c2daf69bc4e7019f6ebc6c4cc627704ca0f481b18cf96682",
+          "input_sha256_current": "6c6d2501948f5d28c2daf69bc4e7019f6ebc6c4cc627704ca0f481b18cf96682",
+          "input_hash_matches_current": true,
+          "exit_maxinsts": true,
+          "difftest_enabled": "true",
+          "reference": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+          "validation_passed": true,
+          "instructions": 1000000.0,
+          "cycles": 445700.0,
+          "ipc": 2.243661655822302,
+          "branch_misses_per_kinst": 0.698,
+          "second_predictions": 23097.0,
+          "two_fetch_successes": 0.0,
+          "second_predictions_per_kinst": 23.097,
+          "two_fetch_per_kinst": 0.0,
+          "prior_control_exact_cycles_and_insts": null,
+          "ipc_delta_percent": -0.13686336100515728
+        }
+      },
+      "combined": {
+        "control": {
+          "source_head_recorded": "e009c552fe5c0b21830c3ec58e125176cb12289d",
+          "binary_sha256_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha256_current": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_hash_matches_current": true,
+          "input_path": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/gcc_expr/1687/_1687_0.190756_memory_.zstd",
+          "input_sha256_recorded": "6c6d2501948f5d28c2daf69bc4e7019f6ebc6c4cc627704ca0f481b18cf96682",
+          "input_sha256_current": "6c6d2501948f5d28c2daf69bc4e7019f6ebc6c4cc627704ca0f481b18cf96682",
+          "input_hash_matches_current": true,
+          "exit_maxinsts": true,
+          "difftest_enabled": "true",
+          "reference": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+          "validation_passed": true,
+          "instructions": 1000000.0,
+          "cycles": 441012.0,
+          "ipc": 2.267511995138454,
+          "branch_misses_per_kinst": 0.711,
+          "second_predictions": 22825.0,
+          "two_fetch_successes": 76407.0,
+          "second_predictions_per_kinst": 22.825,
+          "two_fetch_per_kinst": 76.407,
+          "prior_control_exact_cycles_and_insts": true
+        },
+        "predict1": {
+          "source_head_recorded": "e009c552fe5c0b21830c3ec58e125176cb12289d",
+          "binary_sha256_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha256_current": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_hash_matches_current": true,
+          "input_path": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/gcc_expr/1687/_1687_0.190756_memory_.zstd",
+          "input_sha256_recorded": "6c6d2501948f5d28c2daf69bc4e7019f6ebc6c4cc627704ca0f481b18cf96682",
+          "input_sha256_current": "6c6d2501948f5d28c2daf69bc4e7019f6ebc6c4cc627704ca0f481b18cf96682",
+          "input_hash_matches_current": true,
+          "exit_maxinsts": true,
+          "difftest_enabled": "true",
+          "reference": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+          "validation_passed": true,
+          "instructions": 1000000.0,
+          "cycles": 441956.0,
+          "ipc": 2.2626686819502395,
+          "branch_misses_per_kinst": 0.688,
+          "second_predictions": 0.0,
+          "two_fetch_successes": 59967.0,
+          "second_predictions_per_kinst": 0.0,
+          "two_fetch_per_kinst": 59.967,
+          "prior_control_exact_cycles_and_insts": null,
+          "ipc_delta_percent": -0.21359592357609314
+        },
+        "fetch1": {
+          "source_head_recorded": "e009c552fe5c0b21830c3ec58e125176cb12289d",
+          "binary_sha256_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha256_current": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_hash_matches_current": true,
+          "input_path": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/gcc_expr/1687/_1687_0.190756_memory_.zstd",
+          "input_sha256_recorded": "6c6d2501948f5d28c2daf69bc4e7019f6ebc6c4cc627704ca0f481b18cf96682",
+          "input_sha256_current": "6c6d2501948f5d28c2daf69bc4e7019f6ebc6c4cc627704ca0f481b18cf96682",
+          "input_hash_matches_current": true,
+          "exit_maxinsts": true,
+          "difftest_enabled": "true",
+          "reference": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+          "validation_passed": true,
+          "instructions": 1000000.0,
+          "cycles": 442379.0,
+          "ipc": 2.2605051324769034,
+          "branch_misses_per_kinst": 0.697,
+          "second_predictions": 23276.0,
+          "two_fetch_successes": 0.0,
+          "second_predictions_per_kinst": 23.276,
+          "two_fetch_per_kinst": 0.0,
+          "prior_control_exact_cycles_and_insts": null,
+          "ipc_delta_percent": -0.30901105160957565
+        }
+      }
+    },
+    "mcf": {
+      "frontend": {
+        "control": {
+          "source_head_recorded": "e009c552fe5c0b21830c3ec58e125176cb12289d",
+          "binary_sha256_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha256_current": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_hash_matches_current": true,
+          "input_path": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/mcf/12886/_12886_0.149435_memory_.zstd",
+          "input_sha256_recorded": "507dfd711629d62e08800c1321c45c6cfab77af5b10ce8c362ea23648cc86cc1",
+          "input_sha256_current": "507dfd711629d62e08800c1321c45c6cfab77af5b10ce8c362ea23648cc86cc1",
+          "input_hash_matches_current": true,
+          "exit_maxinsts": true,
+          "difftest_enabled": "true",
+          "reference": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+          "validation_passed": true,
+          "instructions": 1000011.0,
+          "cycles": 1326350.0,
+          "ipc": 0.7539571003128888,
+          "branch_misses_per_kinst": 0.4319952480522714,
+          "second_predictions": 42348.0,
+          "two_fetch_successes": 35761.0,
+          "second_predictions_per_kinst": 42.347534177124054,
+          "two_fetch_per_kinst": 35.760606633327036,
+          "prior_control_exact_cycles_and_insts": true
+        },
+        "predict1": {
+          "source_head_recorded": "e009c552fe5c0b21830c3ec58e125176cb12289d",
+          "binary_sha256_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha256_current": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_hash_matches_current": true,
+          "input_path": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/mcf/12886/_12886_0.149435_memory_.zstd",
+          "input_sha256_recorded": "507dfd711629d62e08800c1321c45c6cfab77af5b10ce8c362ea23648cc86cc1",
+          "input_sha256_current": "507dfd711629d62e08800c1321c45c6cfab77af5b10ce8c362ea23648cc86cc1",
+          "input_hash_matches_current": true,
+          "exit_maxinsts": true,
+          "difftest_enabled": "true",
+          "reference": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+          "validation_passed": true,
+          "instructions": 1000002.0,
+          "cycles": 1311984.0,
+          "ipc": 0.7622059415358724,
+          "branch_misses_per_kinst": 0.42099915800168397,
+          "second_predictions": 0.0,
+          "two_fetch_successes": 29608.0,
+          "second_predictions_per_kinst": 0.0,
+          "two_fetch_per_kinst": 29.607940784118433,
+          "prior_control_exact_cycles_and_insts": null,
+          "ipc_delta_percent": 1.0940730208071958
+        },
+        "fetch1": {
+          "source_head_recorded": "e009c552fe5c0b21830c3ec58e125176cb12289d",
+          "binary_sha256_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha256_current": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_hash_matches_current": true,
+          "input_path": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/mcf/12886/_12886_0.149435_memory_.zstd",
+          "input_sha256_recorded": "507dfd711629d62e08800c1321c45c6cfab77af5b10ce8c362ea23648cc86cc1",
+          "input_sha256_current": "507dfd711629d62e08800c1321c45c6cfab77af5b10ce8c362ea23648cc86cc1",
+          "input_hash_matches_current": true,
+          "exit_maxinsts": true,
+          "difftest_enabled": "true",
+          "reference": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+          "validation_passed": true,
+          "instructions": 1000011.0,
+          "cycles": 1308717.0,
+          "ipc": 0.7641155421683985,
+          "branch_misses_per_kinst": 0.42699530305166644,
+          "second_predictions": 42348.0,
+          "two_fetch_successes": 0.0,
+          "second_predictions_per_kinst": 42.347534177124054,
+          "two_fetch_per_kinst": 0.0,
+          "prior_control_exact_cycles_and_insts": null,
+          "ipc_delta_percent": 1.3473501146542777
+        }
+      },
+      "combined": {
+        "control": {
+          "source_head_recorded": "e009c552fe5c0b21830c3ec58e125176cb12289d",
+          "binary_sha256_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha256_current": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_hash_matches_current": true,
+          "input_path": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/mcf/12886/_12886_0.149435_memory_.zstd",
+          "input_sha256_recorded": "507dfd711629d62e08800c1321c45c6cfab77af5b10ce8c362ea23648cc86cc1",
+          "input_sha256_current": "507dfd711629d62e08800c1321c45c6cfab77af5b10ce8c362ea23648cc86cc1",
+          "input_hash_matches_current": true,
+          "exit_maxinsts": true,
+          "difftest_enabled": "true",
+          "reference": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+          "validation_passed": true,
+          "instructions": 1000015.0,
+          "cycles": 1010841.0,
+          "ipc": 0.9892901059612739,
+          "branch_misses_per_kinst": 0.43899341509877354,
+          "second_predictions": 59696.0,
+          "two_fetch_successes": 5274.0,
+          "second_predictions_per_kinst": 59.6951045734314,
+          "two_fetch_per_kinst": 5.273920891186632,
+          "prior_control_exact_cycles_and_insts": true
+        },
+        "predict1": {
+          "source_head_recorded": "e009c552fe5c0b21830c3ec58e125176cb12289d",
+          "binary_sha256_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha256_current": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_hash_matches_current": true,
+          "input_path": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/mcf/12886/_12886_0.149435_memory_.zstd",
+          "input_sha256_recorded": "507dfd711629d62e08800c1321c45c6cfab77af5b10ce8c362ea23648cc86cc1",
+          "input_sha256_current": "507dfd711629d62e08800c1321c45c6cfab77af5b10ce8c362ea23648cc86cc1",
+          "input_hash_matches_current": true,
+          "exit_maxinsts": true,
+          "difftest_enabled": "true",
+          "reference": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+          "validation_passed": true,
+          "instructions": 1000015.0,
+          "cycles": 1011948.0,
+          "ipc": 0.9882078921051279,
+          "branch_misses_per_kinst": 0.42899356509652353,
+          "second_predictions": 0.0,
+          "two_fetch_successes": 213.0,
+          "second_predictions_per_kinst": 0.0,
+          "two_fetch_per_kinst": 0.2129968050479243,
+          "prior_control_exact_cycles_and_insts": null,
+          "ipc_delta_percent": -0.10939297276144622
+        },
+        "fetch1": {
+          "source_head_recorded": "e009c552fe5c0b21830c3ec58e125176cb12289d",
+          "binary_sha256_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha256_current": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_hash_matches_current": true,
+          "input_path": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/mcf/12886/_12886_0.149435_memory_.zstd",
+          "input_sha256_recorded": "507dfd711629d62e08800c1321c45c6cfab77af5b10ce8c362ea23648cc86cc1",
+          "input_sha256_current": "507dfd711629d62e08800c1321c45c6cfab77af5b10ce8c362ea23648cc86cc1",
+          "input_hash_matches_current": true,
+          "exit_maxinsts": true,
+          "difftest_enabled": "true",
+          "reference": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+          "validation_passed": true,
+          "instructions": 1000015.0,
+          "cycles": 1007945.0,
+          "ipc": 0.9921325072300572,
+          "branch_misses_per_kinst": 0.4329935050974235,
+          "second_predictions": 59558.0,
+          "two_fetch_successes": 0.0,
+          "second_predictions_per_kinst": 59.557106643400346,
+          "two_fetch_per_kinst": 0.0,
+          "prior_control_exact_cycles_and_insts": null,
+          "ipc_delta_percent": 0.28731726433486315
+        }
+      }
+    }
+  },
+  "config_diffs": {
+    "gcc/frontend/predict1": {
+      "system.cpu.branchPred.idealPredictionsPerCycle": [
+        "2",
+        "1"
+      ]
+    },
+    "gcc/frontend/fetch1": {
+      "system.cpu.enableTwoFetch": [
+        "true",
+        "false"
+      ]
+    },
+    "gcc/combined/predict1": {
+      "system.cpu.branchPred.idealPredictionsPerCycle": [
+        "2",
+        "1"
+      ]
+    },
+    "gcc/combined/fetch1": {
+      "system.cpu.enableTwoFetch": [
+        "true",
+        "false"
+      ]
+    },
+    "mcf/frontend/predict1": {
+      "system.cpu.branchPred.idealPredictionsPerCycle": [
+        "2",
+        "1"
+      ]
+    },
+    "mcf/frontend/fetch1": {
+      "system.cpu.enableTwoFetch": [
+        "true",
+        "false"
+      ]
+    },
+    "mcf/combined/predict1": {
+      "system.cpu.branchPred.idealPredictionsPerCycle": [
+        "2",
+        "1"
+      ]
+    },
+    "mcf/combined/fetch1": {
+      "system.cpu.enableTwoFetch": [
+        "true",
+        "false"
+      ]
+    }
+  }
+}
