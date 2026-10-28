@@ -920,6 +920,11 @@ def xiangshan_system_init():
     Options.addXiangshanFSOptions(parser)
     Options.addXiangshanTraceOptions(parser)
     parser.add_argument(
+        "--upperbound-four-load",
+        action="store_true",
+        help="Add a fourth load IQ while retaining the normal KMHV3 backend",
+    )
+    parser.add_argument(
         "--upperbound-backend",
         action="store_true",
         help="Use the single-thread ten-integer-port, four-load backend probe",

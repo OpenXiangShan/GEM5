@@ -49,6 +49,28 @@ def setPtwLevelLimitParams(args, tlb):
     tlb.walker.ptw_miss_queue_size = args.ptw_miss_queue_size
 
 
+def setFourLoadParams(args, system):
+    if not args.upperbound_four_load:
+        return
+    if (args.upperbound_backend or args.smt or args.enable_spmt or
+            hybrid_policy_requested(args)):
+        fatal("The four-load probe requires the standard single-thread backend")
+    for cpu in system.cpu:
+        template = next(iq for iq in cpu.scheduler.IQs if str(iq.name) == "ld2")
+        cpu.scheduler.fourthLoadIQ = IssueQue(
+            name="ld3", inports=template.inports, size=template.size,
+            scheduleToExecDelay=template.scheduleToExecDelay,
+            deferNewEnqueueSelection=template.deferNewEnqueueSelection,
+            oports=[IssuePort(fu=[ReadPort()])])
+        # Append to preserve existing --param IQ indices, including FP queues.
+        cpu.scheduler.IQs = list(cpu.scheduler.IQs) + [cpu.scheduler.fourthLoadIQ]
+        for channel in cpu.scheduler.specWakeupNetwork:
+            if "ld2" in channel.srcs:
+                channel.srcs = list(channel.srcs) + ["ld3"]
+            if "ld2" in channel.dsts:
+                channel.dsts = list(channel.dsts) + ["ld3"]
+
+
 def setUpperboundBackendParams(args, system):
     if not args.upperbound_backend:
         return
@@ -342,6 +364,7 @@ if __name__ == '__m5_main__':
         configure_xiangshan_linux_workload(test_sys, args)
     # Set ideal parameters here with the highest priority, over command-line arguments
     setKmhV3Params(args, test_sys)
+    setFourLoadParams(args, test_sys)
     setUpperboundBackendParams(args, test_sys)
 
     root = Root(full_system=True, system=test_sys)
