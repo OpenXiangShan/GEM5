@@ -14,13 +14,13 @@
 #
 # 用法（与 parallel_sim.sh 保持一致）：
 #   bash util/xs_scripts/trace/parallel_trace_sim.sh \\
-#       <config.py|arch_script.sh> workload_list.lst checkpoint_top_dir task_tag
+#       <config.py|arch_script.sh> workload_list.lst checkpoint_top_dir task_tag [benchmark_filters] [extra_gem5_args]
 
 set -euo pipefail
 
 function print_help() {
     printf "Usage:
-    bash %s <config.py|arch_script.sh> workload_list.lst checkpoint_top_dir task_tag\n" "$0"
+    bash %s <config.py|arch_script.sh> workload_list.lst checkpoint_top_dir task_tag [benchmark_filters] [extra_gem5_args]\n" "$0"
     exit 1
 }
 
@@ -42,6 +42,8 @@ fi
 export workload_list=$(realpath "$2")
 export cpt_dir=$(realpath "$3")
 export tag="$4"
+export extra_gem5_args="${6:-}"
+benchmark_filters="${5:-}"
 
 export log_file='log.txt'
 
@@ -55,6 +57,30 @@ mkdir -p "${full_work_dir}"
 
 # 在调用目录下创建一个指向 FULL_WORK_DIR 的符号链接，便于查看结果。
 ln -sfn "${full_work_dir}" "${CALLER_CWD}/${tag}"
+
+# Match checkpoint CI: case-insensitive substring filters, joined by OR.
+mapfile -t selected_workloads < <(awk -v filters="$benchmark_filters" '
+    BEGIN {
+        n = split(tolower(filters), tokens, ",")
+        for (i = 1; i <= n; i++) {
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", tokens[i])
+            if (tokens[i] != "") active = 1
+        }
+    }
+    /^[[:space:]]*$/ { next }
+    {
+        if (!active) { print; next }
+        for (i = 1; i <= n; i++) {
+            if (tokens[i] != "" && index(tolower($0), tokens[i])) {
+                print; next
+            }
+        }
+    }
+' "$workload_list")
+if [[ "${#selected_workloads[@]}" -eq 0 ]]; then
+    echo "Error: benchmark_filters '$benchmark_filters' matched no workloads" >&2
+    exit 1
+fi
 
 check() {
     if [[ $1 -ne 0 ]]; then
@@ -92,7 +118,7 @@ function run() {
             "${arch_script}" --enable-trace-mode --trace-enable-decoupled-bp \
             "--trace-file=$1" "--trace-format=${TRACE_FORMAT}" \
             "--warmup-insts-no-switch=${XS_WARMUP_INSTS_NO_SWITCH}" \
-            "--maxinsts=${XS_MAX_INSTS}"
+            "--maxinsts=${XS_MAX_INSTS}" $extra_gem5_args
     else
         bash "${arch_script}" "$1"
     fi
@@ -188,7 +214,8 @@ num_threads=${xsgem5_para_jobs:-63}
 function parallel_run() {
     # 使用 gnu parallel 控制并行度。
     # 每行 workload 作为单个参数传递给 arg_wrapper（用 "{}" 保持整行不被 shell 拆分）。
-    parallel -a "${workload_list}" -j "${num_threads}" arg_wrapper "{}"
+    printf '%s\n' "${selected_workloads[@]}" | \
+        parallel -a - -j "${num_threads}" arg_wrapper "{}"
 }
 
 parallel_run

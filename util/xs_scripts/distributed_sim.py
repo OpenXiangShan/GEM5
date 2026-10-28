@@ -152,6 +152,11 @@ def parse_launcher_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]
         help="GEM5 build type used when --gem5 is not provided.",
     )
     parser.add_argument(
+        "--trace-format",
+        default="",
+        help="Run trace workloads instead of checkpoints (e.g. tracertl/cbp2025).",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Resolve workloads and print planned commands without launching jobs.",
@@ -465,6 +470,8 @@ def build_gem5_command(
     config_or_script: Path,
     checkpoint: Path,
     extra_gem5_args: str,
+    workload: Workload | None = None,
+    trace_format: str = "",
 ) -> list[str]:
     if config_or_script.suffix == ".sh":
         return ["bash", str(config_or_script), str(checkpoint)]
@@ -472,6 +479,23 @@ def build_gem5_command(
         raise ValueError(
             f"first argument must be a .py config or .sh wrapper: {config_or_script}"
         )
+    if trace_format:
+        # Trace list counts are records, not checkpoint counts in millions.
+        _, _, _, fw, dw, sample = workload.line.split()
+        warmup = int(fw) + int(dw)
+        return [
+            str(gem5),
+            "--outdir=.",
+            "--stats-file=stats.txt",
+            str(config_or_script),
+            "--enable-trace-mode",
+            "--trace-enable-decoupled-bp",
+            f"--trace-file={checkpoint}",
+            f"--trace-format={trace_format}",
+            f"--warmup-insts-no-switch={warmup}",
+            f"--maxinsts={warmup + int(sample)}",
+            *shlex.split(extra_gem5_args),
+        ]
     command = [
         str(gem5),
         str(config_or_script),
@@ -1049,6 +1073,7 @@ def run_scheduler(
     launch_retry_delay: float,
     launch_interval: float,
     force: bool,
+    trace_format: str = "",
 ) -> int:
     total = len(workloads)
     skipped = 0
@@ -1127,7 +1152,12 @@ def run_scheduler(
 
                 checkpoint = checkpoint_by_workload[workload]
                 command = build_gem5_command(
-                    gem5, config_or_script, checkpoint, extra_gem5_args
+                    gem5,
+                    config_or_script,
+                    checkpoint,
+                    extra_gem5_args,
+                    workload=workload,
+                    trace_format=trace_format,
                 )
                 script = make_job_script(
                     work_dir=work_dir,
@@ -1271,7 +1301,12 @@ def main(argv: list[str]) -> int:
         for index, workload in enumerate(workloads, start=1):
             checkpoint = find_checkpoint(cpt_dir, workload.checkpoint_key)
             command = build_gem5_command(
-                gem5, config_or_script, checkpoint, extra_gem5_args
+                gem5,
+                config_or_script,
+                checkpoint,
+                extra_gem5_args,
+                workload=workload,
+                trace_format=args.trace_format,
             )
             server = servers[(index - 1) % len(servers)].name
             print(
@@ -1299,6 +1334,7 @@ def main(argv: list[str]) -> int:
         launch_retry_delay=args.launch_retry_delay,
         launch_interval=args.launch_interval,
         force=args.force,
+        trace_format=args.trace_format,
     )
 
 

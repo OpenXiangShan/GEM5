@@ -278,40 +278,44 @@ jobs:
           echo "Resolved extra gem5 args: $extra_args"
           printf 'resolved_extra_args: %s\n' "$extra_args" >> "$PERF_ARCHIVE_DIR/metadata.txt"
 
+          # Reuse checkpoint scheduling and fallback; trace needs no REF.
+          trace_args=()
           if [[ -n "$TRACE_FORMAT" ]]; then
-            # Trace runs locally; checkpoint-only options do not apply.
-            bash "$GEM5_HOME/util/xs_scripts/trace/parallel_trace_sim.sh" \
-              "$CONFIG_PATH" "$CHECKPOINT_LIST" \
-              "$CHECKPOINT_ROOT_NODE" spec_all
-            exit 0
-          fi
+            trace_args=("--trace-format=$TRACE_FORMAT")
+          else
+            ref_so="${GCBV_MULTI_CORE_REF_SO:-${GCBH_REF_SO:-$GCBV_REF_SO}}"
+            test -r "$ref_so"
+            printf 'ref_so: %s\n' "$ref_so" >> "$PERF_ARCHIVE_DIR/metadata.txt"
+            sha256sum "$ref_so" >> "$PERF_ARCHIVE_DIR/metadata.txt"
+            if [[ -f "$(dirname "$ref_so")/manifest.json" ]]; then
+              cp "$(dirname "$ref_so")/manifest.json" "$PERF_ARCHIVE_DIR/ref-manifest.json"
+            fi
 
-          ref_so="${GCBV_MULTI_CORE_REF_SO:-${GCBH_REF_SO:-$GCBV_REF_SO}}"
-          test -r "$ref_so"
-          printf 'ref_so: %s\n' "$ref_so" >> "$PERF_ARCHIVE_DIR/metadata.txt"
-          sha256sum "$ref_so" >> "$PERF_ARCHIVE_DIR/metadata.txt"
-          if [[ -f "$(dirname "$ref_so")/manifest.json" ]]; then
-            cp "$(dirname "$ref_so")/manifest.json" "$PERF_ARCHIVE_DIR/ref-manifest.json"
-          fi
-
-          if [ -n "$GCBH_REF_SO" ]; then
-            test -r "$GCBH_REF_SO"
-            test -r "$GCBH_RESTORER"
-            test -d "$CHECKPOINT_ROOT_NODE"
-            {
-              echo "profile_ref_so: $GCBH_REF_SO"
-              echo "profile_restorer: $GCBH_RESTORER"
-            } >> "$PERF_ARCHIVE_DIR/metadata.txt"
+            if [ -n "$GCBH_REF_SO" ]; then
+              test -r "$GCBH_REF_SO"
+              test -r "$GCBH_RESTORER"
+              test -d "$CHECKPOINT_ROOT_NODE"
+              {
+                echo "profile_ref_so: $GCBH_REF_SO"
+                echo "profile_restorer: $GCBH_RESTORER"
+              } >> "$PERF_ARCHIVE_DIR/metadata.txt"
+            fi
           fi
 
           run_local_parallel() {
-            echo "Using local parallel_sim.sh runner"
-            bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
-              "$CHECKPOINT_LIST" \
-              "$CHECKPOINT_ROOT_NODE" \
-              spec_all \
-              "$SPECIFIC_BENCHMARKS_INPUT" \
-              "$extra_args"
+            if [[ -n "$TRACE_FORMAT" ]]; then
+              bash "$GEM5_HOME/util/xs_scripts/trace/parallel_trace_sim.sh" \
+                "$CONFIG_PATH" "$CHECKPOINT_LIST" "$CHECKPOINT_ROOT_NODE" \
+                spec_all "$SPECIFIC_BENCHMARKS_INPUT" "$extra_args"
+            else
+              echo "Using local parallel_sim.sh runner"
+              bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
+                "$CHECKPOINT_LIST" \
+                "$CHECKPOINT_ROOT_NODE" \
+                spec_all \
+                "$SPECIFIC_BENCHMARKS_INPUT" \
+                "$extra_args"
+            fi
           }
 
           distributed_servers="$DISTRIBUTED_SERVERS"
@@ -330,6 +334,7 @@ jobs:
               --ssh-option UserKnownHostsFile="$PERF_ARCHIVE_DIR/known_hosts" \
               --ssh-option ConnectTimeout=10 \
               --build-type "$GEM5_BUILD_TYPE" \
+              "${trace_args[@]}" \
               "$(realpath "$CONFIG_PATH")" \
               "$CHECKPOINT_LIST" \
               "$CHECKPOINT_ROOT_NODE" \
