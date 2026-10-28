@@ -20,6 +20,7 @@
 #include "cpu/pred/btb/common.hh"
 #include "cpu/valuepred/vtage_metadata.hh"
 #include "debug/VTAGE.hh"
+#include "debug/VTAGEBackoff.hh"
 
 namespace gem5
 {
@@ -68,8 +69,8 @@ VTAGE::VTAGE(const Params &params)
       tables(numThreads),
       valueArrays(numThreads),
       agingTicks(numThreads, 0),
-      lastSelectedMispredictSeq(numThreads, 0),
-      hasSelectedMispredictSeq(numThreads, false),
+      fetchedInstructions(numThreads, 0),
+      backoffThrough(numThreads, 0),
       vtageStats(this)
 {
     gem5_assert(numBanks > 0, "VTAGE needs at least one bank");
@@ -384,6 +385,11 @@ VTAGE::tryUpgradeToPointer(ThreadID tid, VTAGEEntry &entry, RegVal actual_value,
     for (const auto index : value_indices) {
         auto &value_entry = thread_values[index];
         if (value_entry.valid && value_entry.data == actual_value) {
+            DPRINTF(VTAGE,
+                    "[upgrade-hit] tid=%u value=%#llx index=%u "
+                    "old_ref=%u old_conf=%u old_useful=%u\n",
+                    tid, static_cast<unsigned long long>(actual_value), index,
+                    entry.hashOrValue, entry.conf, entry.useful);
             entry.hashOrValue = index;
             value_entry.useful = std::min(maxUseful(), value_entry.useful + 1);
             vtageStats.valueArrayHit++;
@@ -397,6 +403,11 @@ VTAGE::tryUpgradeToPointer(ThreadID tid, VTAGEEntry &entry, RegVal actual_value,
         const auto index = value_indices[(begin + offset) % ValueWays];
         auto &value_entry = thread_values[index];
         if (!value_entry.valid || value_entry.useful == 0) {
+            DPRINTF(VTAGE,
+                    "[upgrade-steal] tid=%u value=%#llx index=%u "
+                    "old_valid=%d old_useful=%u\n",
+                    tid, static_cast<unsigned long long>(actual_value), index,
+                    value_entry.valid, value_entry.useful);
             value_entry.data = actual_value;
             value_entry.useful = 1;
             value_entry.valid = true;
@@ -409,6 +420,10 @@ VTAGE::tryUpgradeToPointer(ThreadID tid, VTAGEEntry &entry, RegVal actual_value,
 
     if (enableStochasticTraining) {
         auto &value_entry = thread_values[value_indices[begin]];
+        DPRINTF(VTAGE,
+                "[upgrade-fail] tid=%u value=%#llx index=%u valid=%d useful=%u\n",
+                tid, static_cast<unsigned long long>(actual_value),
+                value_indices[begin], value_entry.valid, value_entry.useful);
         if (value_entry.useful > 0) {
             --value_entry.useful;
         }
@@ -444,17 +459,91 @@ VTAGE::advanceAging(ThreadID tid, unsigned delta)
     agingTicks[tid] += delta;
     while (agingTicks[tid] >= agingTickMax) {
         agingTicks[tid] -= agingTickMax;
+        DPRINTF(VTAGE, "[aging] tid=%u tick=%u\n", tid, agingTickMax);
         ageEntries(tid);
     }
 }
 
 bool
-VTAGE::backoffActive(ThreadID tid, uint64_t seq_no) const
+VTAGE::backoffActive(ThreadID tid) const
 {
-    if (!hasSelectedMispredictSeq[tid]) {
-        return false;
+    return mispredBackoffDistance != 0 &&
+        fetchedInstructions[tid] <= backoffThrough[tid];
+}
+
+void
+VTAGE::armBackoff(ThreadID tid, uint64_t seq_no, const char *source)
+{
+    const auto base = fetchedInstructions[tid];
+    const auto limit = std::numeric_limits<uint64_t>::max();
+    const auto through = base > limit - mispredBackoffDistance ?
+        limit : base + mispredBackoffDistance;
+    backoffThrough[tid] = std::max(backoffThrough[tid], through);
+    DPRINTF(VTAGEBackoff,
+            "[backoff-arm] tid=%u seq=%llu source=%s fetched=%llu "
+            "through=%llu distance=%llu\n",
+            tid, static_cast<unsigned long long>(seq_no), source,
+            static_cast<unsigned long long>(base),
+            static_cast<unsigned long long>(backoffThrough[tid]),
+            static_cast<unsigned long long>(mispredBackoffDistance));
+}
+
+void
+VTAGE::fetchInstruction(const VPFetchInfo &fetchInfo)
+{
+    assertValidTid(fetchInfo.tid);
+    auto &count = fetchedInstructions[fetchInfo.tid];
+    panic_if(count == std::numeric_limits<uint64_t>::max(),
+            "VTAGE fetch counter overflow");
+    ++count;
+    DPRINTF(VTAGEBackoff,
+            "[backoff-fetch] tid=%u seq=%llu fetched=%llu through=%llu "
+            "blocked=%d\n",
+            fetchInfo.tid, static_cast<unsigned long long>(fetchInfo.seqNo),
+            static_cast<unsigned long long>(count),
+            static_cast<unsigned long long>(backoffThrough[fetchInfo.tid]),
+            backoffActive(fetchInfo.tid));
+}
+
+void
+VTAGE::predictionApplied(const VPPredictionAppliedInfo &appliedInfo,
+        VPPredictionRecord *record)
+{
+    assertValidTid(appliedInfo.tid);
+    auto *vtage_record = dynamic_cast<VTAGEPredictionRecord *>(record);
+    gem5_assert(vtage_record, "VTAGE expects VTAGEPredictionRecord");
+    vtage_record->appliedByVTAGE = appliedInfo.producedByReceiver;
+}
+
+void
+VTAGE::valueMispredicted(const VPMispredictionInfo &mispInfo,
+        VPPredictionRecord *record)
+{
+    assertValidTid(mispInfo.tid);
+    auto *vtage_record = dynamic_cast<VTAGEPredictionRecord *>(record);
+    gem5_assert(vtage_record, "VTAGE expects VTAGEPredictionRecord");
+    if (!vtage_record->appliedByVTAGE ||
+            vtage_record->mispredictionReported) {
+        return;
     }
-    return seq_no - lastSelectedMispredictSeq[tid] < mispredBackoffDistance;
+    vtage_record->mispredictionReported = true;
+    armBackoff(mispInfo.tid, mispInfo.seqNo, "execute");
+}
+
+void
+VTAGE::recoveryApplied(const VPRecoveryInfo &recoveryInfo,
+        VPPredictionRecord *record)
+{
+    assertValidTid(recoveryInfo.tid);
+    auto *vtage_record = dynamic_cast<VTAGEPredictionRecord *>(record);
+    gem5_assert(vtage_record, "VTAGE expects VTAGEPredictionRecord");
+    if (!vtage_record->appliedByVTAGE ||
+            !vtage_record->mispredictionReported ||
+            vtage_record->recoveryReported) {
+        return;
+    }
+    vtage_record->recoveryReported = true;
+    armBackoff(recoveryInfo.tid, recoveryInfo.seqNo, "recovery");
 }
 
 VPPredictionCandidate
@@ -470,6 +559,10 @@ VTAGE::predict(const VPPredictRequest &request)
     const auto *history_ext = request.getExt<VPHistoryRequestExt>();
     if (!history_ext || !history_ext->fetchTarget) {
         vtageStats.missingHistoryReq++;
+        DPRINTF(VTAGE,
+                "[predict-no-history] tid=%u seq=%llu pc=%#llx\n",
+                request.tid, static_cast<unsigned long long>(request.seqNo),
+                static_cast<unsigned long long>(request.pc));
         if (requireHistoryExt) {
             fatal("VTAGE requires VPHistoryRequestExt when requireHistoryExt is true");
         }
@@ -491,8 +584,8 @@ VTAGE::predict(const VPPredictRequest &request)
     }
 
     if (record->hitBank >= 0) {
-        const auto &entry = thread_tables[record->hitBank]
-            [record->indices[record->hitBank]];
+        const auto bank = static_cast<unsigned>(record->hitBank);
+        const auto &entry = thread_tables[bank][record->indices[bank]];
         vtageStats.predictHitBank[record->hitBank]++;
         if (entry.hashOrValue < totalValueEntries) {
             record->pointerHit = true;
@@ -502,10 +595,11 @@ VTAGE::predict(const VPPredictRequest &request)
             vtageStats.predictHashOnlyHit++;
         }
 
-        record->backoffBlocked = backoffActive(request.tid, request.seqNo);
-        if (record->pointerHit &&
-                valueArrays[request.tid][entry.hashOrValue].valid &&
-                entry.conf >= predictConfThreshold &&
+        record->backoffBlocked = backoffActive(request.tid);
+        const bool valueValid = record->pointerHit &&
+            valueArrays[request.tid][entry.hashOrValue].valid;
+        const bool confidenceReady = entry.conf >= predictConfThreshold;
+        if (record->pointerHit && valueValid && confidenceReady &&
                 !record->backoffBlocked) {
             candidate.result.speculative = true;
             candidate.result.value =
@@ -514,12 +608,36 @@ VTAGE::predict(const VPPredictRequest &request)
                 static_cast<uint64_t>(record->hitBank);
             record->offeredPrediction = true;
             record->predictedValue = candidate.result.value;
-        } else if (record->pointerHit && entry.conf >= predictConfThreshold &&
+        } else if (record->pointerHit && confidenceReady &&
                 record->backoffBlocked) {
             vtageStats.predictBackoffBlocked++;
         }
+        DPRINTF(VTAGE,
+                "[predict-hit] tid=%u seq=%llu pc=%#llx bank=%u index=%u "
+                "tag=%#x kind=%s ref=%u conf=%u useful=%u value_valid=%d "
+                "conf_ready=%d backoff=%d offered=%d value=%#llx\n",
+                request.tid, static_cast<unsigned long long>(request.seqNo),
+                static_cast<unsigned long long>(request.pc), bank,
+                record->indices[bank], entry.tag,
+                record->pointerHit ? "pointer" : "hash", entry.hashOrValue,
+                entry.conf, entry.useful, valueValid, confidenceReady,
+                record->backoffBlocked, record->offeredPrediction,
+                static_cast<unsigned long long>(candidate.result.value));
+    } else {
+        DPRINTF(VTAGE,
+                "[predict-miss] tid=%u seq=%llu pc=%#llx\n",
+                request.tid, static_cast<unsigned long long>(request.seqNo),
+                static_cast<unsigned long long>(request.pc));
     }
 
+    DPRINTF(VTAGEBackoff,
+            "[backoff-predict] tid=%u seq=%llu pc=%#llx fetched=%llu "
+            "through=%llu blocked=%d offered=%d\n",
+            request.tid, static_cast<unsigned long long>(request.seqNo),
+            static_cast<unsigned long long>(request.pc),
+            static_cast<unsigned long long>(fetchedInstructions[request.tid]),
+            static_cast<unsigned long long>(backoffThrough[request.tid]),
+            backoffActive(request.tid), candidate.result.speculative);
     candidate.record = std::move(record);
     return candidate;
 }
@@ -529,6 +647,14 @@ VTAGE::update(const VPUpdateInfo &update_info, const VPPredictionRecord *record,
         const VPFeedback &feedback)
 {
     assertValidTid(update_info.tid);
+    DPRINTF(VTAGEBackoff,
+            "[backoff-commit] tid=%u seq=%llu applied=%d correct=%d "
+            "fetched=%llu through=%llu\n",
+            update_info.tid,
+            static_cast<unsigned long long>(update_info.seqNo),
+            feedback.applied, feedback.overallPredictionCorrect,
+            static_cast<unsigned long long>(fetchedInstructions[update_info.tid]),
+            static_cast<unsigned long long>(backoffThrough[update_info.tid]));
 
     const auto *vtage_record =
         dynamic_cast<const VTAGEPredictionRecord *>(record);
@@ -549,6 +675,22 @@ VTAGE::update(const VPUpdateInfo &update_info, const VPPredictionRecord *record,
         if (entry.valid && entry.tag == vtage_record->tags[bank]) {
             const bool satisfied = entryMatchesActualValue(update_info.tid,
                     entry, update_info.actualValue);
+            DPRINTF(VTAGE,
+                    "[update-hit] tid=%u seq=%llu pc=%#llx bank=%u index=%u "
+                    "kind=%s ref=%u conf=%u useful=%u applied=%d correct=%d "
+                    "satisfied=%d actual=%#llx train_hit=%d latency_valid=%d "
+                    "latency=%u critical=%d\n",
+                    update_info.tid,
+                    static_cast<unsigned long long>(update_info.seqNo),
+                    static_cast<unsigned long long>(update_info.pc), bank,
+                    vtage_record->indices[bank],
+                    entry.hashOrValue < totalValueEntries ? "pointer" : "hash",
+                    entry.hashOrValue, entry.conf, entry.useful,
+                    feedback.applied, feedback.overallPredictionCorrect,
+                    satisfied,
+                    static_cast<unsigned long long>(update_info.actualValue),
+                    train_info.cacheHit, train_info.latencyValid,
+                    train_info.observedLatencyCycles, train_info.criticalLoad);
             if (satisfied) {
                 vtageStats.commitSatisfiedHit++;
                 should_allocate = false;
@@ -566,21 +708,25 @@ VTAGE::update(const VPUpdateInfo &update_info, const VPPredictionRecord *record,
                     auto &value_entry =
                         valueArrays[update_info.tid][entry.hashOrValue];
                     if (value_entry.valid && entry.conf >= predictConfThreshold &&
-                            value_entry.useful < maxUseful()) {
+                            entry.useful < maxUseful()) {
                         ++value_entry.useful;
                     }
                 } else if (entry.conf >= hashOnlyUpgradeThreshold) {
+                    DPRINTF(VTAGE,
+                            "[upgrade-attempt] tid=%u seq=%llu bank=%u "
+                            "ref=%u conf=%u useful=%u actual=%#llx\n",
+                            update_info.tid,
+                            static_cast<unsigned long long>(update_info.seqNo),
+                            bank, entry.hashOrValue, entry.conf, entry.useful,
+                            static_cast<unsigned long long>(update_info.actualValue));
                     tryUpgradeToPointer(update_info.tid, entry,
                             update_info.actualValue, train_info);
                 }
             } else {
                 vtageStats.commitMismatchedHit++;
-                if (feedback.applied && !feedback.overallPredictionCorrect) {
-                    lastSelectedMispredictSeq[update_info.tid] =
-                        update_info.seqNo;
-                    hasSelectedMispredictSeq[update_info.tid] = true;
-                }
-
+                const auto old_hash_or_value = entry.hashOrValue;
+                const auto old_conf = entry.conf;
+                const auto old_useful = entry.useful;
                 entry.hashOrValue = actual_hash;
                 if (entry.conf > maxConf() / 2) {
                     entry.conf = std::max<uint32_t>(1, entry.conf / 2);
@@ -590,25 +736,62 @@ VTAGE::update(const VPUpdateInfo &update_info, const VPPredictionRecord *record,
                 if (entry.useful > 0) {
                     --entry.useful;
                 }
+                DPRINTF(VTAGE,
+                        "[mismatch-state] tid=%u seq=%llu bank=%u index=%u "
+                        "old_ref=%u old_conf=%u old_useful=%u new_ref=%u "
+                        "new_conf=%u new_useful=%u selected_mispred=%d\n",
+                        update_info.tid,
+                        static_cast<unsigned long long>(update_info.seqNo), bank,
+                        vtage_record->indices[bank], old_hash_or_value,
+                        old_conf, old_useful, entry.hashOrValue, entry.conf,
+                        entry.useful,
+                        feedback.applied && !feedback.overallPredictionCorrect);
             }
         } else {
-            vtageStats.commitMismatchedHit++;
+                vtageStats.commitMismatchedHit++;
+                DPRINTF(VTAGE,
+                        "[update-mismatch] tid=%u seq=%llu bank=%u index=%u "
+                        "entry_invalid_or_tag_mismatch=1 actual=%#llx\n",
+                        update_info.tid,
+                        static_cast<unsigned long long>(update_info.seqNo),
+                        bank, vtage_record->indices[bank],
+                        static_cast<unsigned long long>(update_info.actualValue));
+            }
         }
-    }
 
     if (should_allocate && numBanks > 1 && shouldAllocateEntry(train_info)) {
         const auto start_bank = chooseAllocationStartBank(vtage_record->hitBank);
+        DPRINTF(VTAGE,
+                "[alloc-attempt] tid=%u seq=%llu hit_bank=%d start_bank=%u "
+                "actual=%#llx cache_hit=%d latency_valid=%d latency=%u critical=%d\n",
+                update_info.tid,
+                static_cast<unsigned long long>(update_info.seqNo),
+                vtage_record->hitBank, start_bank,
+                static_cast<unsigned long long>(update_info.actualValue),
+                train_info.cacheHit, train_info.latencyValid,
+                train_info.observedLatencyCycles, train_info.criticalLoad);
         for (unsigned bank = start_bank; bank < numBanks; ++bank) {
             auto &entry =
                 tables[update_info.tid][bank][vtage_record->indices[bank]];
             if (!entry.valid || entry.useful == 0 || entry.conf <= 1) {
                 entry.valid = true;
                 entry.hashOrValue = actual_hash;
-                entry.conf = std::max<uint32_t>(1, maxConf() / 2);
+                // Allocate below both thresholds so a fresh entry must earn
+                // confidence before it can upgrade or issue predictions.
+                entry.conf = std::max<uint32_t>(1, predictConfThreshold / 2);
                 entry.tag = vtage_record->tags[bank];
                 entry.useful = 0;
                 allocated = true;
                 vtageStats.allocHashOnly++;
+                DPRINTF(VTAGE,
+                        "[alloc] tid=%u seq=%llu bank=%u index=%u tag=%#x "
+                        "ref=%u conf=%u useful=%u long_history=%d\n",
+                        update_info.tid,
+                        static_cast<unsigned long long>(update_info.seqNo), bank,
+                        vtage_record->indices[bank], entry.tag,
+                        entry.hashOrValue, entry.conf, entry.useful,
+                        vtage_record->hitBank < 0 ||
+                        bank > static_cast<unsigned>(vtage_record->hitBank));
                 if (vtage_record->hitBank < 0 ||
                         bank > static_cast<unsigned>(vtage_record->hitBank)) {
                     vtageStats.allocLongHistory++;

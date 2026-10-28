@@ -78,6 +78,20 @@ VPUnit::valueMispredicted(const VPMispredictionInfo &mispInfo,
 }
 
 void
+VPUnit::fetchInstruction(const VPFetchInfo &fetchInfo)
+{
+    (void)fetchInfo;
+}
+
+void
+VPUnit::recoveryApplied(const VPRecoveryInfo &recoveryInfo,
+        VPPredictionRecord *record)
+{
+    (void)recoveryInfo;
+    (void)record;
+}
+
+void
 VPUnit::commitInstruction(const VPCommitInfo &commitInfo)
 {
     (void)commitInfo;

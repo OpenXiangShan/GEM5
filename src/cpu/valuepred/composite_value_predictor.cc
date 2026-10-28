@@ -223,6 +223,29 @@ CompositeValuePredictor::valueMispredicted(
 }
 
 void
+CompositeValuePredictor::fetchInstruction(const VPFetchInfo &fetchInfo)
+{
+    for (auto *predictor : predictors) {
+        predictor->fetchInstruction(fetchInfo);
+    }
+}
+
+void
+CompositeValuePredictor::recoveryApplied(const VPRecoveryInfo &recoveryInfo,
+        VPPredictionRecord *record)
+{
+    auto *compositeRecord = dynamic_cast<CompositePredictionRecord *>(record);
+    gem5_assert(compositeRecord,
+            "CompositeValuePredictor expects CompositePredictionRecord");
+    gem5_assert(compositeRecord->children.size() == predictors.size(),
+            "Composite record size mismatch");
+    for (size_t i = 0; i < predictors.size(); ++i) {
+        predictors[i]->recoveryApplied(recoveryInfo,
+                compositeRecord->children[i].record.get());
+    }
+}
+
+void
 CompositeValuePredictor::commitInstruction(const VPCommitInfo &commitInfo)
 {
     for (auto *predictor : predictors) {

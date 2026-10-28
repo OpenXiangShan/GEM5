@@ -85,7 +85,8 @@ class VTAGE(ValuePredictor):
     hashOnlyUpgradeThreshold = Param.Unsigned(1023,
         "Minimum confidence before trying to upgrade hash-only entries")
     mispredBackoffDistance = Param.Unsigned(128,
-        "Number of dynamic instructions to suppress VTAGE after a selected misprediction")
+        "Per-thread fetched instructions to suppress VTAGE after an applied "
+        "misprediction; restart the window when its frontend recovery arrives")
     agingTickMax = Param.Unsigned(1024,
         "Threshold for triggering global usefulness aging")
     agingPenaltyOnAlloc = Param.Unsigned(1,

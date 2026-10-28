@@ -190,6 +190,20 @@ class VPMispredictionInfo
     uint64_t cycle = 0;
 };
 
+class VPFetchInfo
+{
+  public:
+    uint64_t seqNo = 0;
+    ThreadID tid = 0;
+};
+
+class VPRecoveryInfo
+{
+  public:
+    uint64_t seqNo = 0;
+    ThreadID tid = 0;
+};
+
 class VPCommitInfo
 {
   public:

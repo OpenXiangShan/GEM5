@@ -2931,6 +2931,15 @@ Fetch::handleCommitSignals(ThreadID tid)
     squash(*fromCommit->commitInfo[tid].pc, squash_seq,
            squash_inst, tid);
 
+    if (valuePred && commit_info.squashCause == SquashCause::ValuePrediction) {
+        gem5_assert(squash_inst && squash_inst->vpRecord,
+                "Value prediction recovery requires the retained load record");
+        valuepred::VPRecoveryInfo recovery_info;
+        recovery_info.tid = tid;
+        recovery_info.seqNo = squash_inst->seqNum;
+        valuePred->recoveryApplied(recovery_info, squash_inst->vpRecord.get());
+    }
+
     localSquashVer[tid].update(
         fromCommit->commitInfo[tid].squashVersion.getVersion());
     DPRINTF(Fetch, "Updating squash version to %u\n",
@@ -3072,6 +3081,13 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
     assert(numInst < fetchWidth);
     fetchQueue[tid].push_back(instruction);
     assert(fetchQueue[tid].size() <= fetchQueueSize);
+
+    if (valuePred) {
+        valuepred::VPFetchInfo fetch_info;
+        fetch_info.tid = tid;
+        fetch_info.seqNo = seq;
+        valuePred->fetchInstruction(fetch_info);
+    }
     DPRINTF(Fetch, "[tid:%i] Fetch queue entry created (%i/%i).\n",
             tid, fetchQueue[tid].size(), fetchQueueSize);
     //toDecode->insts[toDecode->size++] = instruction;

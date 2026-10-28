@@ -62,6 +62,13 @@ class VPUnit : public SimObject
     virtual void valueMispredicted(const VPMispredictionInfo &mispInfo,
             VPPredictionRecord *record);
 
+    // Called for every fetched dynamic instruction, including non-loads.
+    virtual void fetchInstruction(const VPFetchInfo &fetchInfo);
+
+    // Called when Fetch applies the redirect for this value misprediction.
+    virtual void recoveryApplied(const VPRecoveryInfo &recoveryInfo,
+            VPPredictionRecord *record);
+
     // Notify predictors for every architecturally committed instruction.
     virtual void commitInstruction(const VPCommitInfo &commitInfo);
 
