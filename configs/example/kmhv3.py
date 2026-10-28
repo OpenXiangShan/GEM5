@@ -135,6 +135,9 @@ def setKmhV3Params(args, system):
         cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
         cpu.robWalkPolicy = args.rob_walk_policy
 
+        # memory renaming
+        cpu.enableMemRename = True
+
         if hybrid:
             # --param can select Hybrid while retaining the normal KMHV3
             # entry point.  Apply all required defaults before root.apply_config

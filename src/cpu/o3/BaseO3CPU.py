@@ -432,6 +432,24 @@ class BaseO3CPU(BaseCPU):
     enableSelectiveVPFlush = Param.Bool(False,
         "Enable selective rollback for value prediction misprediction")
 
+    enableMemRename = Param.Bool(False,
+        "Enable store-to-load memory renaming")
+    memRenameEntries = Param.Unsigned(256,
+        "Number of entries in the memory-renaming predictor")
+    memRenameWays = Param.Unsigned(4,
+        "Associativity of the memory-renaming predictor")
+    memRenameTagBits = Param.Unsigned(16,
+        "Load-PC tag width in the memory-renaming predictor")
+    memRenameConfBits = Param.Unsigned(12,
+        "Confidence counter width in the memory-renaming predictor")
+    memRenameConfThreshold = Param.Unsigned(64,
+        "Minimum confidence required to offer a memory-renaming prediction")
+    memRenameConfRestPercent = Param.Percent(50,
+        "Confidence retained after failed validation as a percentage of the "
+        "prediction threshold")
+    memRenameUsefulBits = Param.Unsigned(2,
+        "Useful counter width in the memory-renaming predictor")
+
     enable_loadFusion = Param.Bool(False, "Enable load fusion")
 
     enableMoveElimination = Param.Bool(True, "Enable register move elimination")

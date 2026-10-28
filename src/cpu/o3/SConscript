@@ -50,6 +50,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('inst_queue.cc')
     Source('lsq.cc')
     Source('mlp_predictor.cc')
+    Source('mem_rename_predictor.cc')
     Source('lsq_unit.cc')
     Source('mem_dep_unit.cc')
     Source('phast.cc')
@@ -99,10 +100,12 @@ if env['CONF']['TARGET_ISA'] != 'null':
     DebugFlag('LoadPipeline')
     DebugFlag('StorePipeline')
     DebugFlag('TraceReader')
+    DebugFlag('MemRename')
 
     CompoundFlag('O3CPUAll', [ 'Fetch', 'Decode', 'Rename', 'IEW', 'Commit',
         'IQ', 'ROB', 'FreeList', 'LSQ', 'LSQUnit', 'StoreSet', 'MemDepUnit',
-        'DynInst', 'O3CPU', 'Activity', 'Scoreboard', 'Writeback' ])
+        'DynInst', 'O3CPU', 'Activity', 'Scoreboard', 'Writeback',
+        'MemRename' ])
 
 
     SimObject('BaseO3Checker.py', sim_objects=['BaseO3Checker'])

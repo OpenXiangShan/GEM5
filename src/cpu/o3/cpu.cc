@@ -92,6 +92,13 @@ CPU::CPU(const BaseO3CPUParams &params)
       instcount(0),
 #endif
       removeInstsThisCycle(false),
+      memRenamePredictor(
+          this, params.enableMemRename, params.memRenameEntries,
+          params.memRenameWays, params.memRenameTagBits,
+          params.memRenameConfBits, params.memRenameConfThreshold,
+          params.memRenameConfRestPercent, params.memRenameUsefulBits,
+          static_cast<uint64_t>(params.SQEntries) *
+              params.StoreQueueMultiple),
       fetch(this, params),
       decode(this, params),
       rename(this, params),

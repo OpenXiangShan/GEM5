@@ -41,6 +41,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <limits>
 
 #include "arch/generic/debugfaults.hh"
 #include "arch/riscv/faults.hh"
@@ -66,6 +67,7 @@
 #include "debug/HtmCpu.hh"
 #include "debug/IEW.hh"
 #include "debug/LSQUnit.hh"
+#include "debug/MemRename.hh"
 #include "debug/O3PipeView.hh"
 #include "debug/StoreBuffer.hh"
 #include "debug/StorePipeline.hh"
@@ -3024,7 +3026,9 @@ LSQUnit::writebackReg(const DynInstPtr &inst, PacketPtr pkt)
         inst->setExecuted();
 
         if (inst->fault == NoFault) {
-            // Complete access to copy data to proper place.
+            // completeAcc still computes the architectural load result.  A
+            // memory-renamed load captures it in DynInst instead of writing
+            // the shared producer Preg.
             inst->completeAcc(pkt);
         } else {
             // If the instruction has an outstanding fault, we cannot complete
@@ -3059,6 +3063,63 @@ LSQUnit::writebackReg(const DynInstPtr &inst, PacketPtr pkt)
 
             DPRINTF(LSQUnit, "Not completing instruction [sn:%lli] access "
                     "due to pending fault.\n", inst->seqNum);
+        }
+    }
+
+    if (inst->memRenameApplied) {
+        auto &predictor = cpu->getMemRenamePredictor();
+
+        if (inst->fault != NoFault) {
+            // Architectural faults use the normal Commit trap recovery.  Do
+            // not suppress confidence or generate a competing replay here.
+            predictor.recordValidationFailFault();
+            DPRINTF(MemRename,
+                    "faulting validation load [sn:%llu] pc=%s fault=%s\n",
+                    inst->seqNum, inst->pcState(), inst->fault->name());
+        } else {
+            bool valid = false;
+            if (!inst->memRenameActualSQForward) {
+                predictor.recordValidationFailNoSQForward();
+            } else if (!inst->memRenameActualPairEligible) {
+                predictor.recordValidationFailIneligiblePair();
+            } else if (inst->memRenameActualDistance !=
+                       inst->memRenamePredictedDistance) {
+                predictor.recordValidationFailDistance();
+            } else if (inst->memRenameActualStorePreg !=
+                       inst->memRenamePredictedPreg) {
+                predictor.recordValidationFailPreg();
+            } else {
+                valid = true;
+            }
+
+            if (valid) {
+                inst->memRenameValidated = true;
+                predictor.recordValidationSuccess();
+                DPRINTF(MemRename,
+                        "validation success load [sn:%llu] pc=%s "
+                        "distance=%u preg=%s\n",
+                        inst->seqNum, inst->pcState(),
+                        inst->memRenameActualDistance,
+                        inst->memRenameActualStorePreg->className());
+            } else {
+                predictor.suppressConfidence(
+                    inst->pcState().instAddr(),
+                    inst->memRenamePredictedDistance);
+                DPRINTF(MemRename,
+                        "validation failure load [sn:%llu] pc=%s "
+                        "predDistance=%u actualForward=%d "
+                        "eligible=%d actualDistance=%u "
+                        "predPreg=%p actualPreg=%p\n",
+                        inst->seqNum, inst->pcState(),
+                        inst->memRenamePredictedDistance,
+                        inst->memRenameActualSQForward,
+                        inst->memRenameActualPairEligible,
+                        inst->memRenameActualDistance,
+                        static_cast<void *>(inst->memRenamePredictedPreg),
+                        static_cast<void *>(inst->memRenameActualStorePreg));
+                iewStage->squashDueToMemRename(
+                    inst, inst->threadNumber);
+            }
         }
     }
 
@@ -3597,6 +3658,17 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 
     assert(!load_inst->isExecuted());
 
+    // Retries must not reuse producer metadata from an earlier access
+    // attempt.  Training and validation describe only the access that
+    // eventually completes this DynInst.
+    if (!request->hasCachePacketProgress()) {
+        load_inst->memRenameActualSQForward = false;
+        load_inst->memRenameActualDistance = 0;
+        load_inst->memRenameActualStorePreg = nullptr;
+        load_inst->memRenameActualPairEligible = false;
+        load_inst->memRenameTrainEligible = false;
+    }
+
     // Make sure this isn't a strictly ordered load
     // A bit of a hackish way to get strictly ordered accesses to work
     // only if they're at the head of the LSQ and are ready to commit
@@ -3940,6 +4012,54 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                             request->mainReq()->getPaddr(), first_word);
                 }
                 load_inst->setFullForward();
+
+                const auto &store_inst = store_it->instruction();
+                const bool exact_eight_byte_forward =
+                    !request->isSplit() && !store_is_split &&
+                    request->mainReq()->getSize() == sizeof(RegVal) &&
+                    store_size == sizeof(RegVal) && shift_amt == 0;
+                const bool compatible_classes =
+                    store_inst->memRenameStoreDataPreg &&
+                    load_inst->numDestRegs() == 1 &&
+                    store_inst->memRenameStoreDataPreg->classValue() ==
+                        load_inst->destRegIdx(0).classValue();
+                const bool ordinal_precedes_load =
+                    store_inst->memRenameStoreTracked &&
+                    store_inst->memRenameStoreOrdinal <
+                        load_inst->memRenameStoreBoundary;
+
+                load_inst->memRenameActualSQForward = true;
+                load_inst->memRenameActualStorePreg =
+                    store_inst->memRenameStoreDataPreg;
+                load_inst->memRenameActualPairEligible =
+                    exact_eight_byte_forward && ordinal_precedes_load &&
+                    MemRenamePredictor::supportsLoad(*load_inst) &&
+                    store_inst->memRenameStorePairEligible &&
+                    compatible_classes;
+
+                if (ordinal_precedes_load) {
+                    const uint64_t distance =
+                        load_inst->memRenameStoreBoundary -
+                        store_inst->memRenameStoreOrdinal - 1;
+                    panic_if(distance > std::numeric_limits<uint32_t>::max(),
+                             "Memory-renaming distance exceeds DynInst field");
+                    load_inst->memRenameActualDistance = distance;
+                }
+                load_inst->memRenameTrainEligible =
+                    load_inst->memRenameActualPairEligible;
+
+                DPRINTF(MemRename,
+                        "SQ producer load [sn:%llu] store [sn:%llu] "
+                        "boundary=%llu ordinal=%llu distance=%u preg=%p "
+                        "eligible=%d\n",
+                        load_inst->seqNum, store_inst->seqNum,
+                        static_cast<unsigned long long>(
+                            load_inst->memRenameStoreBoundary),
+                        static_cast<unsigned long long>(
+                            store_inst->memRenameStoreOrdinal),
+                        load_inst->memRenameActualDistance,
+                        static_cast<void *>(load_inst->memRenameActualStorePreg),
+                        load_inst->memRenameActualPairEligible);
 
                 // Don't need to do anything special for split loads.
                 ++stats.forwLoads;

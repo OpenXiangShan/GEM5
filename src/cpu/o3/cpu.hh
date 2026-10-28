@@ -64,6 +64,7 @@
 #include "cpu/o3/free_list.hh"
 #include "cpu/o3/iew.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/mem_rename_predictor.hh"
 #include "cpu/o3/mlp_predictor.hh"
 #include "cpu/o3/perfCCT.hh"
 #include "cpu/o3/rename.hh"
@@ -448,6 +449,10 @@ class CPU : public BaseCPU
     Rename *getRename() { return &rename; }
     IEW *getIEW() { return &iew; }
     Commit *getCommit() { return &commit; }
+    MemRenamePredictor &getMemRenamePredictor()
+    {
+        return memRenamePredictor;
+    }
 
     /**
      * Return the oldest in-flight instruction sequence number.
@@ -483,6 +488,9 @@ class CPU : public BaseCPU
     bool removeInstsThisCycle;
 
   protected:
+    /** Independent producer-distance predictor used by memory renaming. */
+    MemRenamePredictor memRenamePredictor;
+
     /** The fetch stage. */
     Fetch fetch;
 

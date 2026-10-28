@@ -2078,6 +2078,10 @@ void
 Scheduler::addProducer(const DynInstPtr& inst)
 {
     DPRINTF(Schedule, "[sn:%llu] addProdecer\n", inst->seqNum);
+    if (inst->memRenameApplied) {
+        return;
+    }
+
     for (int i = 0; i < inst->numDestRegs(); i++) {
         auto dst = inst->renamedDestIdx(i);
         if (dst->isFixedMapping()) {
@@ -2211,6 +2215,12 @@ void
 Scheduler::specWakeUpFromLoadPipe(const DynInstPtr& inst)
 {
     assert(inst->isLoad());
+    if (inst->memRenameApplied) {
+        // The aliased Preg belongs to the predicted store-data producer.
+        // Treating this younger load as a producer would also wake older
+        // consumers already waiting on that Preg.
+        return;
+    }
     auto from_issue_queue = inst->issueQue;
     for (auto to : wakeMatrix[from_issue_queue->getId()]) {
 
@@ -2430,6 +2440,10 @@ void
 Scheduler::writebackWakeup(const DynInstPtr& inst)
 {
     DPRINTF(Schedule, "[sn:%llu] was writeback\n", inst->seqNum);
+    if (inst->memRenameApplied) {
+        inst->setWriteback();
+        return;
+    }
     inst->setWriteback();  // clear in issueQue
     cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtWriteVal);
     for (int i = 0; i < inst->numDestRegs(); i++) {
@@ -2449,6 +2463,9 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
 {
     if (!opPipelined[inst->opClass()] && inst->issueportid >= 0) {
         inst->issueQue->portBusy[inst->issueportid] = 0;
+    }
+    if (inst->memRenameApplied) {
+        return;
     }
     cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtBypassVal);
     DPRINTF(Schedule, "[sn:%llu] bypass write\n", inst->seqNum);

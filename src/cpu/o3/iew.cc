@@ -68,6 +68,7 @@
 #include "debug/DecoupleBP.hh"
 #include "debug/Drain.hh"
 #include "debug/IEW.hh"
+#include "debug/MemRename.hh"
 #include "debug/O3PipeView.hh"
 #include "debug/Rename.hh"
 #include "params/BaseO3CPU.hh"
@@ -395,6 +396,7 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         {StallReason::ControlRecovery, "ControlRecovery"},
         {StallReason::MemVioRecovery, "MemVioRecovery"},
         {StallReason::VPRecovery, "VPRecovery"},
+        {StallReason::MemRenameRecovery, "MemRenameRecovery"},
         {StallReason::TrapRecovery, "TrapRecovery"},
         {StallReason::ROBFull, "ROBFull"},
         {StallReason::RegFull, "RegFull"},
@@ -712,6 +714,7 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
 
         toCommit->mispredictInst[tid] = inst;
         toCommit->includeSquashInst[tid] = false;
+        toCommit->memoryRenameError[tid] = false;
 
         wroteToTimeBuffer = true;
 
@@ -754,6 +757,7 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
 
         // Must include the memory violator in the squash.
         toCommit->includeSquashInst[tid] = true;
+        toCommit->memoryRenameError[tid] = false;
 
         wroteToTimeBuffer = true;
 
@@ -784,6 +788,7 @@ IEW::squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid)
         toCommit->squash[tid] = true;
 
         toCommit->valuePredictionError[tid] = true;
+        toCommit->memoryRenameError[tid] = false;
         toCommit->squashedSeqNum[tid] = inst->seqNum;
         toCommit->squashedTargetId[tid] = inst->getFtqId();
         toCommit->squashedLoopIter[tid] = inst->getLoopIteration();
@@ -810,6 +815,47 @@ IEW::squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid)
 
     cpu->getDecode()->squashBranchHistory(tid, inst->seqNum, true);
 
+    stallSig->blockRename[tid] = true;
+}
+
+
+void
+IEW::squashDueToMemRename(const DynInstPtr &inst, ThreadID tid)
+{
+    recordThreadSquash(tid);
+
+    DPRINTF(MemRename,
+            "validation failure [tid:%i] load [sn:%llu] pc=%s; "
+            "squash load and younger instructions\n",
+            tid, inst->seqNum, inst->pcState());
+
+    // The alias changed this load's architectural destination mapping.  The
+    // load itself must therefore be removed so Rename can restore the old RAT
+    // entry and release the aliased Preg reference.
+    if (!toCommit->squash[tid] ||
+        inst->seqNum < toCommit->squashedSeqNum[tid] ||
+        (inst->seqNum == toCommit->squashedSeqNum[tid] &&
+         !toCommit->includeSquashInst[tid])) {
+        fetchRedirect[tid] = true;
+        toFetch->iewInfo[tid].redirectPending = true;
+        toFetch->iewInfo[tid].redirectLastValidSeqNum = inst->seqNum - 1;
+
+        toCommit->squash[tid] = true;
+        toCommit->squashedSeqNum[tid] = inst->seqNum;
+        toCommit->squashedTargetId[tid] = inst->getFtqId();
+        toCommit->squashedLoopIter[tid] = inst->getLoopIteration();
+        set(toCommit->pc[tid], inst->pcState());
+        toCommit->mispredictInst[tid] = nullptr;
+        toCommit->branchTaken[tid] = false;
+        toCommit->includeSquashInst[tid] = true;
+        toCommit->valuePredictionError[tid] = false;
+        toCommit->longLatencyFlush[tid] = false;
+        toCommit->memoryRenameError[tid] = true;
+
+        wroteToTimeBuffer = true;
+    }
+
+    cpu->getDecode()->squashBranchHistory(tid, inst->seqNum, true);
     stallSig->blockRename[tid] = true;
 }
 
@@ -879,6 +925,7 @@ IEW::squashDueToLongLatencyLoad(const DynInstPtr &loadInst,
         toCommit->valuePredictionError[tid] = false;
         toCommit->includeSquashInst[tid] = includeSquashInst;
         toCommit->longLatencyFlush[tid] = true;
+        toCommit->memoryRenameError[tid] = false;
         wroteToTimeBuffer = true;
 
         DPRINTF(DecoupleBP,
@@ -2309,14 +2356,18 @@ IEW::writebackInsts()
             scheduler->writebackWakeup(inst);
             int dependents = instQueue.wakeDependents(inst);
 
-            for (int i = 0; i < inst->numDestRegs(); i++) {
-                // Mark register as ready if not pinned
-                if (inst->renamedDestIdx(i)->
-                        getNumPinnedWritesToComplete() == 0) {
-                    DPRINTF(IEW,"Setting Destination Register %i (%s)\n",
-                            inst->renamedDestIdx(i)->index(),
-                            inst->renamedDestIdx(i)->className());
-                    scoreboard->setReg(inst->renamedDestIdx(i));
+            // A memory-renamed load validates an existing store Preg.  Its
+            // completion must not change readiness for that shared producer.
+            if (!inst->memRenameApplied) {
+                for (int i = 0; i < inst->numDestRegs(); i++) {
+                    // Mark register as ready if not pinned
+                    if (inst->renamedDestIdx(i)->
+                            getNumPinnedWritesToComplete() == 0) {
+                        DPRINTF(IEW,"Setting Destination Register %i (%s)\n",
+                                inst->renamedDestIdx(i)->index(),
+                                inst->renamedDestIdx(i)->className());
+                        scoreboard->setReg(inst->renamedDestIdx(i));
+                    }
                 }
             }
 

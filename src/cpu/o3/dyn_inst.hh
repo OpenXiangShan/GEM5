@@ -46,6 +46,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdio>
+#include <cstring>
 #include <deque>
 #include <list>
 #include <memory>
@@ -525,6 +526,36 @@ class DynInst : public ExecContext, public RefCounted
         /** True after the RAW violation has trained PHAST once. */
         bool violationTrained = false;
     } memDepInfo;
+
+    /** Store-distance prediction and validation state, independent of VP. */
+    bool memRenameLookupDone = false;
+    bool memRenamePredicted = false;
+    uint32_t memRenamePredictedDistance = 0;
+    unsigned memRenameProviderSet = 0;
+    unsigned memRenameProviderWay = 0;
+    unsigned memRenameProviderConfidence = 0;
+
+    /** Load-side store boundary captured when this instruction is renamed. */
+    uint64_t memRenameStoreBoundary = 0;
+
+    /** Store-side logical order and data Preg carried through SQ forwarding. */
+    bool memRenameStoreTracked = false;
+    uint64_t memRenameStoreOrdinal = 0;
+    bool memRenameStoreDataHasIEOperand = false;
+    PhysRegIdPtr memRenameStoreDataPreg = nullptr;
+    bool memRenameStorePairEligible = false;
+
+    /** RAT alias and its execution-time identity check. */
+    bool memRenameApplied = false;
+    bool memRenameValidated = false;
+    PhysRegIdPtr memRenamePredictedPreg = nullptr;
+    bool memRenameActualSQForward = false;
+    uint32_t memRenameActualDistance = 0;
+    PhysRegIdPtr memRenameActualStorePreg = nullptr;
+    bool memRenameActualPairEligible = false;
+    bool memRenameTrainEligible = false;
+    bool memRenameActualValueCaptured = false;
+    RegVal memRenameActualValue = 0;
 
     /** Predicted producing stores (for replay-based MDP). */
     std::vector<InstSeqNum> mdpProducingStores;
@@ -1786,6 +1817,12 @@ class DynInst : public ExecContext, public RefCounted
         const PhysRegIdPtr reg = extRenamedDestIdx(idx).PhyReg();
         if (reg->is(InvalidRegClass))
             return;
+        if (memRenameApplied) {
+            memRenameActualValue = val;
+            memRenameActualValueCaptured = true;
+            setResult(val);
+            return;
+        }
         cpu->setReg(reg, val);
         setResult(val);
     }
@@ -1796,6 +1833,12 @@ class DynInst : public ExecContext, public RefCounted
         const PhysRegIdPtr reg = extRenamedDestIdx(idx).PhyReg();
         if (reg->is(InvalidRegClass))
             return;
+        if (memRenameApplied) {
+            std::memcpy(&memRenameActualValue, val,
+                        sizeof(memRenameActualValue));
+            memRenameActualValueCaptured = true;
+            return;
+        }
         cpu->setReg(reg, val);
         //TODO setResult
     }

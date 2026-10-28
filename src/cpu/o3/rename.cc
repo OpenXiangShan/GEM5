@@ -42,6 +42,7 @@
 #include "cpu/o3/rename.hh"
 
 #include <algorithm>
+#include <limits>
 #include <list>
 
 #include "cpu/o3/cpu.hh"
@@ -49,6 +50,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/reg_class.hh"
 #include "debug/Activity.hh"
+#include "debug/MemRename.hh"
 #include "debug/O3PipeView.hh"
 #include "debug/Rename.hh"
 #include "params/BaseO3CPU.hh"
@@ -90,6 +92,10 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
              "aggregate SMT rename width (%u * %u) exceeds MaxWidth (%u)",
              renameWidth, numPreDispatchThreads, MaxWidth);
 
+    if (cpu->getMemRenamePredictor().enabled()) {
+        memRenameSpqCapacity = cpu->getMemRenamePredictor().virtualSQEntries();
+    }
+
     for (uint32_t tid = 0; tid < MaxThreads; tid++) {
         const unsigned capacity = renameWidth *
             (numPreDispatchThreads > 1 ? 2 : 1);
@@ -108,6 +114,148 @@ std::string
 Rename::name() const
 {
     return cpu->name() + ".rename";
+}
+
+void
+Rename::updateMemRenameSpqStats()
+{
+    if (cpu->getMemRenamePredictor().enabled()) {
+        unsigned total_occupancy = 0;
+        for (ThreadID thread = 0; thread < numThreads; ++thread) {
+            total_occupancy += memRenameSpq[thread].size();
+        }
+        cpu->getMemRenamePredictor().updateSpqOccupancy(
+            total_occupancy);
+    }
+}
+
+void
+Rename::prepareMemRename(const DynInstPtr &inst, ThreadID tid)
+{
+    auto &predictor = cpu->getMemRenamePredictor();
+    if (!predictor.enabled()) {
+        return;
+    }
+
+    if (MemRenamePredictor::supportsLoad(*inst)) {
+        auto &spq = memRenameSpq[tid];
+        inst->memRenameStoreBoundary = nextMemRenameStoreOrdinal[tid];
+
+        if (inst->memRenamePredicted) {
+            const uint64_t distance = inst->memRenamePredictedDistance;
+            if (distance >= inst->memRenameStoreBoundary || spq.empty()) {
+                predictor.recordSpqDistanceOutOfRange();
+            } else {
+                const uint64_t target_ordinal =
+                    inst->memRenameStoreBoundary - distance - 1;
+                const auto oldest_ordinal = spq.front().ordinal;
+                if (target_ordinal < oldest_ordinal ||
+                    target_ordinal >= nextMemRenameStoreOrdinal[tid]) {
+                    predictor.recordSpqDistanceOutOfRange();
+                } else {
+                    const auto offset = target_ordinal - oldest_ordinal;
+                    panic_if(offset >= spq.size(),
+                             "SPQ ordinals are not contiguous for thread %u",
+                             tid);
+                    const auto &entry = spq[offset];
+                    const auto dest_class = inst->destRegIdx(0).classValue();
+                    if (!entry.hasDataPreg || entry.hasIEOperand ||
+                        !entry.dataPreg ||
+                        entry.dataPreg->classValue() != dest_class) {
+                        predictor.recordSpqPregClassMismatch();
+                    } else {
+                        inst->memRenameApplied = true;
+                        inst->memRenamePredictedPreg = entry.dataPreg;
+                        predictor.recordSpqLookupApplied(
+                            dest_class == FloatRegClass);
+                        DPRINTF(MemRename,
+                                "rename alias load [sn:%llu] distance=%u "
+                                "targetOrdinal=%llu preg=%s\n",
+                                inst->seqNum,
+                                inst->memRenamePredictedDistance,
+                                static_cast<unsigned long long>(target_ordinal),
+                                entry.dataPreg->className());
+                    }
+                }
+            }
+        }
+    }
+
+    // Every logical store occupies one ordinal. Split STA/STD uops are
+    // created later in IEW and therefore must not add a second SPQ entry.
+    if (!inst->isStore() && !inst->isAtomic()) {
+        return;
+    }
+
+    panic_if(memRenameSpq[tid].size() >= memRenameSpqCapacity,
+             "Memory-renaming SPQ overflow for thread %u (capacity %llu)",
+             tid, static_cast<unsigned long long>(memRenameSpqCapacity));
+    panic_if(nextMemRenameStoreOrdinal[tid] ==
+                 std::numeric_limits<uint64_t>::max(),
+             "Memory-renaming store ordinal wrapped for thread %u", tid);
+
+    MemRenameSpqEntry entry;
+    entry.seqNum = inst->seqNum;
+    entry.ordinal = nextMemRenameStoreOrdinal[tid]++;
+    if (inst->isStore() && inst->numSrcRegs() > 1) {
+        const auto data = inst->extRenamedSrcIdx(1);
+        entry.dataPreg = data.PhyReg();
+        entry.hasDataPreg = entry.dataPreg &&
+            entry.dataPreg->classValue() != InvalidRegClass;
+        entry.hasIEOperand = static_cast<bool>(data.IEOper());
+
+        inst->memRenameStoreTracked = true;
+        inst->memRenameStoreOrdinal = entry.ordinal;
+        inst->memRenameStoreDataPreg = entry.dataPreg;
+        inst->memRenameStoreDataHasIEOperand = entry.hasIEOperand;
+        inst->memRenameStorePairEligible =
+            MemRenamePredictor::supportsStore(*inst) &&
+            entry.hasDataPreg && !entry.hasIEOperand;
+    }
+    memRenameSpq[tid].push_back(entry);
+    updateMemRenameSpqStats();
+
+    DPRINTF(MemRename,
+            "SPQ push [tid:%u] store [sn:%llu] ordinal=%llu preg=%s "
+            "eligible=%d occupancy=%llu\n",
+            tid, inst->seqNum,
+            static_cast<unsigned long long>(entry.ordinal),
+            entry.dataPreg ? entry.dataPreg->className() : "none",
+            inst->memRenameStorePairEligible,
+            static_cast<unsigned long long>(memRenameSpq[tid].size()));
+}
+
+void
+Rename::commitMemRenameStores(InstSeqNum seq_num, ThreadID tid)
+{
+    auto &spq = memRenameSpq[tid];
+    while (!spq.empty() && spq.front().seqNum <= seq_num) {
+        panic_if(spq.front().ordinal != committedMemRenameStoreOrdinal[tid],
+                 "SPQ commit order mismatch for thread %u", tid);
+        committedMemRenameStoreOrdinal[tid] = spq.front().ordinal + 1;
+        DPRINTF(MemRename,
+                "SPQ pop committed store [tid:%u] [sn:%llu] ordinal=%llu\n",
+                tid, spq.front().seqNum,
+                static_cast<unsigned long long>(spq.front().ordinal));
+        spq.pop_front();
+    }
+    updateMemRenameSpqStats();
+}
+
+void
+Rename::squashMemRenameStores(InstSeqNum seq_num, ThreadID tid)
+{
+    auto &spq = memRenameSpq[tid];
+    while (!spq.empty() && spq.back().seqNum > seq_num) {
+        DPRINTF(MemRename,
+                "SPQ pop squashed store [tid:%u] [sn:%llu] ordinal=%llu\n",
+                tid, spq.back().seqNum,
+                static_cast<unsigned long long>(spq.back().ordinal));
+        spq.pop_back();
+    }
+    nextMemRenameStoreOrdinal[tid] = spq.empty() ?
+        committedMemRenameStoreOrdinal[tid] : spq.back().ordinal + 1;
+    updateMemRenameSpqStats();
 }
 
 Rename::RenameStats::RenameStats(CPU *cpu, Rename *rename)
@@ -303,6 +451,10 @@ void
 Rename::clearStates(ThreadID tid)
 {
     stalls[tid].iew = false;
+    memRenameSpq[tid].clear();
+    nextMemRenameStoreOrdinal[tid] = 0;
+    committedMemRenameStoreOrdinal[tid] = 0;
+    updateMemRenameSpqStats();
     ratSnapshotBuffer[tid].clear();
     numRatSnapshotInUse[tid] = 0;
     lastRatSnapshotDistance[tid] = 0;
@@ -320,6 +472,10 @@ Rename::resetStage()
         stalls[tid].iew = false;
         finalCommitSeq[tid] = 0;
         releaseSeq[tid] = 0;
+        memRenameSpq[tid].clear();
+        nextMemRenameStoreOrdinal[tid] = 0;
+        committedMemRenameStoreOrdinal[tid] = 0;
+        updateMemRenameSpqStats();
         ratSnapshotBuffer[tid].clear();
         numRatSnapshotInUse[tid] = 0;
         lastRatSnapshotDistance[tid] = 0;
@@ -358,6 +514,7 @@ Rename::isDrained() const
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         if (!historyBuffer[tid].empty() ||
             !fixedbuffer[tid].empty() ||
+            !memRenameSpq[tid].empty() ||
             !ratSnapshotBuffer[tid].empty())
             return false;
     }
@@ -376,6 +533,7 @@ Rename::drainSanityCheck() const
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         assert(historyBuffer[tid].empty());
         assert(fixedbuffer[tid].empty());
+        assert(memRenameSpq[tid].empty());
         assert(ratSnapshotBuffer[tid].empty());
         assert(numRatSnapshotInUse[tid] == 0);
     }
@@ -397,6 +555,7 @@ Rename::squash(const InstSeqNum &squash_seq_num, ThreadID tid)
     }
 
     doSquash(squash_seq_num, tid);
+    squashMemRenameStores(squash_seq_num, tid);
 }
 
 void
@@ -633,6 +792,7 @@ Rename::releasePhysRegs()
             !fromCommit->commitInfo[tid].robSquashing) {
 
             finalCommitSeq[tid] = fromCommit->commitInfo[tid].doneSeqNum;
+            commitMemRenameStores(finalCommitSeq[tid], tid);
             releaseSeq[tid] =
                 historyBuffer[tid].empty() ? 0 : historyBuffer[tid].back().instSeqNum;
         }
@@ -764,6 +924,7 @@ Rename::renameInsts(ThreadID tid, unsigned max_insts)
             tid, inst->seqNum, inst->pcState());
 
         renameSrcRegs(inst, inst->threadNumber);
+        prepareMemRename(inst, inst->threadNumber);
 
         renameDestRegs(inst, inst->threadNumber);
 
@@ -1192,7 +1353,10 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
 
         VirtRegId bypass_reg;
         bool inc_ref_of_last_dest_phy_reg = false;
-        if (cpu->enableMoveElimination && inst->isMov()) {
+        if (inst->memRenameApplied) {
+            bypass_reg = VirtRegId(inst->memRenamePredictedPreg);
+            inc_ref_of_last_dest_phy_reg = true;
+        } else if (cpu->enableMoveElimination && inst->isMov()) {
             // Move elimination
             bypass_reg =
                 map->lookup(tc->flattenRegId(inst->srcRegIdx(0)));
@@ -1265,6 +1429,14 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
         ++stats.renamedOperands;
 
         if (valuePred) {
+            if (inst->memRenameApplied) {
+                // Memory renaming aliases a producer Preg and cannot also
+                // apply a value prediction to that shared destination.
+                inst->vpSupported = false;
+                inst->vpResult.speculative = false;
+                inst->vpApplied = false;
+                continue;
+            }
             if (num_dest_regs != 1 || !inst->canLVP()) {
                 inst->vpSupported = false;
                 inst->vpResult.speculative = false;

@@ -281,6 +281,9 @@ class IEW
     /** Check misprediction  */
     void checkMisprediction(const DynInstPtr &inst);
 
+    /** Recover a load whose store-producer alias failed validation. */
+    void squashDueToMemRename(const DynInstPtr &inst, ThreadID tid);
+
     // hardware transactional memory
     // For debugging purposes, it is useful to keep track of the most recent
     // htmUid that has been committed (architecturally, not transactionally)

@@ -333,6 +333,8 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Number of squash due to order violation"),
       ADD_STAT(squashDueToValuePrediction, statistics::units::Count::get(),
                "Number of squash due to value prediction"),
+      ADD_STAT(squashDueToMemoryRenaming, statistics::units::Count::get(),
+               "Number of squash due to memory-renaming validation"),
       ADD_STAT(mdpViolationSquashes, statistics::units::Count::get(),
                "Number of RAW MDP recoveries triggered at Commit"),
       ADD_STAT(squashDueToTrap, statistics::units::Count::get(),
@@ -460,6 +462,10 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
         .init(cpu->numThreads)
         .flags(total);
 
+    squashDueToMemoryRenaming
+        .init(cpu->numThreads)
+        .flags(total);
+
     squashDueToTrap
         .init(cpu->numThreads)
         .flags(total);
@@ -477,7 +483,8 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
         .flags(total);
 
     totalSquash = squashDueToBranch + squashDueToOrderViolation + \
-        squashDueToValuePrediction + squashDueToTrap + squashDueToTC + \
+        squashDueToValuePrediction + squashDueToMemoryRenaming + \
+        squashDueToTrap + squashDueToTC + \
         squashDueToSquashAfter + squashDueToLongLatencyFlush;
 
     ROBFull
@@ -1210,6 +1217,14 @@ Commit::commit()
                     tid, fromIEW->squashedSeqNum[tid]);
                 stats.squashDueToValuePrediction[tid]++;
                 curSquashCause[tid] = SquashCause::ValuePrediction;
+            } else if (fromIEW->memoryRenameError[tid]) {
+                DPRINTF(Commit,
+                    "[tid:%i] Squashing due to memory-renaming "
+                    "validation [sn:%llu]\n",
+                    tid, fromIEW->squashedSeqNum[tid]);
+                stats.squashDueToMemoryRenaming[tid]++;
+                cpu->getMemRenamePredictor().recordRecoverySquash();
+                curSquashCause[tid] = SquashCause::MemoryRenaming;
             } else if (fromIEW->longLatencyFlush[tid]) {
                 DPRINTF(Commit,
                     "[tid:%i] Squashing due to long-latency flush [sn:%llu]\n",
@@ -2289,6 +2304,16 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num,
                 head_inst->lockedWriteSuccess());
         cpu->setSCSuccess(head_inst->lockedWriteSuccess(),
                           head_inst->physEffAddr, tid);
+    }
+
+    // Positive predictor updates are commit-only.  Execution records the
+    // actual SQ producer, but a wrong-path or replayed load never allocates or
+    // reinforces a predictor entry.
+    if (head_inst->isLoad() && head_inst->memRenameTrainEligible &&
+        inst_fault == NoFault) {
+        cpu->getMemRenamePredictor().train(
+            head_inst->pcState().instAddr(),
+            head_inst->memRenameActualDistance);
     }
 
     // Update the commit rename map

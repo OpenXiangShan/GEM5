@@ -47,6 +47,7 @@
 #include "base/trace.hh"
 #include "config/the_isa.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/trace/TraceRecoveryRules.hh"
@@ -54,6 +55,7 @@
 #include "debug/Counters.hh"
 #include "debug/Decode.hh"
 #include "debug/DecoupleBP.hh"
+#include "debug/MemRename.hh"
 #include "debug/O3PipeView.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/full_system.hh"
@@ -186,6 +188,34 @@ std::string
 Decode::name() const
 {
     return cpu->name() + ".decode";
+}
+
+void
+Decode::predictMemRename(const DynInstPtr &inst)
+{
+    auto &predictor = cpu->getMemRenamePredictor();
+    if (!predictor.enabled() || !MemRenamePredictor::supportsLoad(*inst)) {
+        return;
+    }
+
+    inst->memRenameLookupDone = true;
+    const auto prediction = predictor.lookup(inst->pcState().instAddr());
+    if (!prediction.confident) {
+        return;
+    }
+
+    inst->memRenamePredicted = true;
+    inst->memRenamePredictedDistance = prediction.distance;
+    inst->memRenameProviderSet = prediction.set;
+    inst->memRenameProviderWay = prediction.way;
+    inst->memRenameProviderConfidence = prediction.confidence;
+    predictor.recordPredictionOffered();
+
+    DPRINTF(MemRename,
+            "decode offer load [sn:%llu] pc=%#lx distance=%u provider=%u/%u "
+            "confidence=%u\n",
+            inst->seqNum, inst->pcState().instAddr(), prediction.distance,
+            prediction.set, prediction.way, prediction.confidence);
 }
 
 Decode::DecodeStats::DecodeStats(CPU *cpu, const BaseO3CPUParams &params,
@@ -1062,6 +1092,7 @@ Decode::decodeCompactedInsts(unsigned &raw, unsigned &discarded,
         if (output->numSrcRegs() == 0) {
             output->setCanIssue();
         }
+        predictMemRename(output);
         assert(toRename->size < decodeWidth);
         toRename->insts[toRename->size++] = output;
         ++toRenameIndex;
@@ -1284,6 +1315,7 @@ Decode::decodeInsts(ThreadID tid, unsigned max_insts)
         }
     }
     for (auto &fused_inst : fusionInst) {
+        predictMemRename(fused_inst);
         assert(toRename->size < MaxWidth);
         toRename->insts[toRename->size++] = fused_inst;
     }

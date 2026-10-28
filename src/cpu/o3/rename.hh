@@ -42,6 +42,8 @@
 #ifndef __CPU_O3_RENAME_HH__
 #define __CPU_O3_RENAME_HH__
 
+#include <array>
+#include <deque>
 #include <list>
 #include <utility>
 
@@ -285,6 +287,28 @@ class Rename
          */
         VirtRegId prevPhysReg;
     };
+
+    /** One logical store in program order, including stores we cannot train. */
+    struct MemRenameSpqEntry
+    {
+        InstSeqNum seqNum = 0;
+        uint64_t ordinal = 0;
+        PhysRegIdPtr dataPreg = nullptr;
+        bool hasDataPreg = false;
+        bool hasIEOperand = false;
+    };
+
+    /** Capture a supported prediction and append this instruction's store. */
+    void prepareMemRename(const DynInstPtr &inst, ThreadID tid);
+    /** Pop committed stores and roll back speculative tail entries. */
+    void commitMemRenameStores(InstSeqNum seq_num, ThreadID tid);
+    void squashMemRenameStores(InstSeqNum seq_num, ThreadID tid);
+    void updateMemRenameSpqStats();
+
+    std::array<std::deque<MemRenameSpqEntry>, MaxThreads> memRenameSpq;
+    std::array<uint64_t, MaxThreads> nextMemRenameStoreOrdinal = {};
+    std::array<uint64_t, MaxThreads> committedMemRenameStoreOrdinal = {};
+    uint64_t memRenameSpqCapacity = 0;
 
     /** A per-thread list of all destination register renames, used to either
      * undo rename mappings or free old physical registers.

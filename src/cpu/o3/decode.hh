@@ -153,6 +153,8 @@ class Decode
 
     /** Common control checks, performed only after consuming the instruction. */
     StallReason processInstControl(const DynInstPtr &inst, ThreadID tid);
+    /** Record a confident producer-distance prediction on a scalar load. */
+    void predictMemRename(const DynInstPtr &inst);
     StaticInstPtr prepareFusion(const DynInstPtr &first,
                                 const DynInstPtr &second);
     DynInstPtr applyFusion(const DynInstPtr &first, const DynInstPtr &second,
