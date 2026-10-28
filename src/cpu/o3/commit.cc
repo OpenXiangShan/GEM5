@@ -1247,15 +1247,25 @@ Commit::commit()
                         cause_inst = rob->findInst(
                             tid, fromIEW->squashedSeqNum[tid]);
                     }
-                    const Addr cause_pc = cause_inst ?
-                        cause_inst->pcState().instAddr() :
-                        fromIEW->pc[tid]->instAddr();
                     const auto event =
                         curSquashCause[tid] == SquashCause::BranchMispredict ?
                         TeaEvent::FL_MB : TeaEvent::FL_MO;
                     if (cause_inst) {
                         cause_inst->teaSetEvent(event);
+                        if (event == TeaEvent::FL_MO &&
+                            cause_inst->isFusion()) {
+                            // Match Stalled attribution to the memory member.
+                            for (auto *member : cause_inst->teaFusionMembers()) {
+                                if (member->isMemRef()) {
+                                    cause_inst = member;
+                                    break;
+                                }
+                            }
+                        }
                     }
+                    const Addr cause_pc = cause_inst ?
+                        cause_inst->pcState().instAddr() :
+                        fromIEW->pc[tid]->instAddr();
                     const uint16_t cause_psv =
                         (cause_inst ? cause_inst->teaPSV() : 0) |
                         TeaEvent::bit(event);
@@ -1497,7 +1507,17 @@ Commit::handleMdpViolation(const DynInstPtr &head_inst, ThreadID tid)
     InstSeqNum squashed_inst = head_inst->seqNum - 1;
     if (auto *tea = cpu->getTea()) {
         head_inst->teaSetEvent(TeaEvent::FL_MO);
-        tea->setFlush(tid, head_inst->getPC(), head_inst->teaPSV());
+        const DynInst *cause_inst = head_inst.get();
+        if (head_inst->isFusion()) {
+            for (auto *member : head_inst->teaFusionMembers()) {
+                if (member->isMemRef()) {
+                    cause_inst = member;
+                    break;
+                }
+            }
+        }
+        tea->setFlush(tid, cause_inst->pcState().instAddr(),
+                      cause_inst->teaPSV());
     }
     if (rob->isHybrid()) {
         squashed_inst = rob->squashHybrid(head_inst, true, tid);
