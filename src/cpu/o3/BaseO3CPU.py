@@ -202,6 +202,13 @@ class BaseO3CPU(BaseCPU):
     renameToROBDelay = Param.Cycles(1, "Rename to reorder buffer delay")
     commitWidth = Param.Unsigned(8, "Physical entry commit width for Hybrid; group window otherwise")
 
+    enableTea = Param.Bool(True,
+        "Enable Timing Event Attribution sampling")
+    teaSamplePeriod = Param.Unsigned(1,
+        "TEA sampling period in CPU cycles; zero samples every cycle")
+    teaLastLevelCache = Param.Unsigned(0,
+        "Last cache level for TEA ST-LLC; zero disables the event")
+
     squashWidth = Param.Unsigned(8, "Squash width with rollback/redo rob walk")
     ConstSquashCycle = Param.Unsigned(1, "Squash width with redo rob walk")
     robWalkPolicy = Param.ROBWalkPolicy('Replay', "Squash with a specific policy")

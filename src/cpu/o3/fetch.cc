@@ -944,6 +944,12 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
         return false;
     }
 
+    if (cpu->getTea() && pkt->cacheAccessDepth > 0) {
+        auto &request = threads[tid].cacheReq;
+        request.teaPsv[request.findRequestIndex(pkt->req)] |=
+            TeaEvent::bit(TeaEvent::DR_L1);
+    }
+
     DPRINTF(Fetch, "[tid:%i] Packet successfully matched and stored. Current status: %s\n",
             tid, threads[tid].cacheReq.getStatusSummary().c_str());
 
@@ -1450,17 +1456,24 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
     updateCacheRequestStatusByRequest(tid, mem_req, AccessFailed);
 
     // Translation faulted, icache request won't be sent.
+    const PCStateBase &fetch_pc = *threads[tid].fetchpc;
+    const auto tea_psv = cpu->getTea() ?
+        threads[tid].cacheReq.takeTeaEvents(
+            fetch_pc.instAddr(), fetch_pc.getFallThruPC() - fetch_pc.instAddr()) :
+        0;
     threads[tid].cacheReq.reset();
 
     // Send the fault to commit.  This thread will not do anything
     // until commit handles the fault.  The only other way it can
     // wake up is if a squash comes along and changes the PC.
-    const PCStateBase &fetch_pc = *threads[tid].fetchpc;
 
     DPRINTF(Fetch, "[tid:%i] Translation faulted, building noop.\n", tid);
     // We will use a nop in order to carry the fault.
     DynInstPtr instruction = buildInst(tid, nopStaticInstPtr, nullptr,
             fetch_pc, fetch_pc, false);
+    if (cpu->getTea()) {
+        instruction->teaPsv = tea_psv;
+    }
     instruction->setVersion(localSquashVer[tid]);
     instruction->setNotAnInst();
 
@@ -1484,7 +1497,8 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
 }
 
 void
-Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
+Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req,
+                         bool delayed)
 {
     ThreadID tid = cpu->contextToThread(mem_req->contextId());
 
@@ -1503,6 +1517,12 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
     // Validate if this request should be processed
     if (!validateTranslationRequest(tid, mem_req)) {
         return;
+    }
+
+    if (cpu->getTea() && delayed) {
+        auto &request = threads[tid].cacheReq;
+        request.teaPsv[request.findRequestIndex(mem_req)] |=
+            TeaEvent::bit(TeaEvent::DR_TLB);
     }
 
     // Handle translation result
@@ -3033,6 +3053,14 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
             arrays, staticInst, curMacroop, this_pc, next_pc, seq, cpu);
 
     instruction->setTid(tid);
+
+    // Attribute each line's events to the first architectural instruction
+    // using its bytes, including instructions that span both lines.
+    if (cpu->getTea() &&
+        (!instruction->isMicroop() || instruction->isFirstMicroop())) {
+        instruction->teaPsv = threads[tid].cacheReq.takeTeaEvents(
+            instruction->getPC(), instruction->getInstBytes());
+    }
 
     cpu->perfCCT->createMeta(instruction);
     cpu->perfCCT->updateInstPos(instruction->seqNum, PerfRecord::AtFetch);
