@@ -42,6 +42,6 @@ mcf中仅打开前端反而略退，宽后端与组合明显改善；这支持�
 
 ## 待完成
 
-0.3c完整145点的baseline与高资源R0对照仍运行中。下一步在同一被测SHA上跑Backend、Frontend、Combined完整对照，保留每个benchmark的回退，并在组合后重新用TEA/计数器分析剩余瓶颈。最终26–28目标及整体报告尚未完成。
+0.3c完整145点的baseline与高资源R0对照仍运行中。已在被测SHA `515eb0cd1cf97280ddbd600ee42a9c92e722b7ab` 上触发 [Backend](https://github.com/OpenXiangShan/GEM5/actions/runs/40641366302)、[Frontend](https://github.com/OpenXiangShan/GEM5/actions/runs/40641369657)、[Combined](https://github.com/OpenXiangShan/GEM5/actions/runs/40641372749) 完整对照，目前仅已创建/运行，未取得最终分数。后续继续，保留每个benchmark的回退，并在组合后重新用TEA/计数器分析剩余瓶颈。最终26–28目标及整体报告尚未完成。
 
 原始局部数据见[data/local-probes.csv](data/local-probes.csv)；命令、完整stats、config与日志位于 /tmp/tea-upperbound-20261028 下对应目录。标准可重复验证入口为 util/xs_scripts/upperbound_smoke.py。最后增补的构造参数保护只拒绝trace组合，普通FS测试路径不变。

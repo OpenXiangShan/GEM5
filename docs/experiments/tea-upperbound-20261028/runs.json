@@ -40,5 +40,65 @@
       }
     },
     "score": null
+  },
+  {
+    "label": "R1-backend",
+    "run_id": 40641366302,
+    "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/40641366302",
+    "observed_status": "in_progress",
+    "dispatch": {
+      "ref": "tea-main55-ci24-20261026",
+      "inputs": {
+        "note": "Upperbound R1 backend 20261028",
+        "configuration": "kmhv3.py",
+        "benchmark_type": "spec06-rva23-novec-gcc16-0.3c",
+        "specific_benchmarks": "",
+        "extra_args": "--upperbound-backend",
+        "distributed_servers": "default",
+        "distributed_jobs_per_server": "32",
+        "branch": "515eb0cd1cf97280ddbd600ee42a9c92e722b7ab"
+      }
+    },
+    "score": null
+  },
+  {
+    "label": "R1-frontend",
+    "run_id": 40641369657,
+    "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/40641369657",
+    "observed_status": "queued",
+    "dispatch": {
+      "ref": "tea-main55-ci24-20261026",
+      "inputs": {
+        "note": "Upperbound R1 frontend 20261028",
+        "configuration": "kmhv3.py",
+        "benchmark_type": "spec06-rva23-novec-gcc16-0.3c",
+        "specific_benchmarks": "",
+        "extra_args": "--param=system.cpu[0].branchPred.idealPredictionsPerCycle=2 --param=system.cpu[0].branchPred.idealNoOverrideBubbles=True --param=system.cpu[0].idealInstructionFetch=True --param=system.cpu[0].enableTwoFetch=True",
+        "distributed_servers": "default",
+        "distributed_jobs_per_server": "32",
+        "branch": "515eb0cd1cf97280ddbd600ee42a9c92e722b7ab"
+      }
+    },
+    "score": null
+  },
+  {
+    "label": "R1-combined",
+    "run_id": 40641372749,
+    "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/40641372749",
+    "observed_status": "queued",
+    "dispatch": {
+      "ref": "tea-main55-ci24-20261026",
+      "inputs": {
+        "note": "Upperbound R1 combined 20261028",
+        "configuration": "kmhv3.py",
+        "benchmark_type": "spec06-rva23-novec-gcc16-0.3c",
+        "specific_benchmarks": "",
+        "extra_args": "--upperbound-backend --param=system.cpu[0].branchPred.idealPredictionsPerCycle=2 --param=system.cpu[0].branchPred.idealNoOverrideBubbles=True --param=system.cpu[0].idealInstructionFetch=True --param=system.cpu[0].enableTwoFetch=True",
+        "distributed_servers": "default",
+        "distributed_jobs_per_server": "32",
+        "branch": "515eb0cd1cf97280ddbd600ee42a9c92e722b7ab"
+      }
+    },
+    "score": null
   }
 ]
