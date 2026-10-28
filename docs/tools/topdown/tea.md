@@ -3,7 +3,7 @@
 TEA (Timing Event Attribution) samples pipeline states in the XiangShan O3 CPU
 and attributes sample weights to instruction PCs and event signatures, called
 Performance Signature Vectors (PSVs). Use it alongside the existing Topdown
-statistics. TEA is disabled by default.
+statistics. TEA is enabled by default.
 
 ## Relationship to PerfCCT
 
@@ -59,25 +59,28 @@ Normal single-core GCPT slices use their embedded restorer.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--enable-tea` | Disabled | Create the TEA tracker and enable attribution |
+| `--enable-tea` | Enabled | Create the TEA tracker and enable attribution |
+| `--disable-tea` | Not set | Disable the TEA tracker and attribution |
 | `--tea-sample-period=N` | `1` | Sample every N CPU cycles; both `0` and `1` sample every cycle |
 
-Omit `--enable-tea` to disable TEA. Setting the sample period alone does not
-enable it, and setting the period to `0` does not disable it. When disabled,
+Use `--disable-tea` to disable TEA. Setting the sample period to `0` does not
+disable it. Ruby configurations require `--disable-tea` because Ruby does not
+provide cache-depth attribution. When disabled,
 TEA creates no tracker, runs no attribution callbacks or event marking, and
 produces no TEA statistics group or CSV. The normal execution path retains
 enable checks and a small amount of field initialization.
 
-TEA and PerfCCT have independent controls and are both disabled by default.
+TEA and PerfCCT have independent controls. TEA is enabled by default;
+PerfCCT lifetime recording is disabled by default.
 In this branch, `--arch-db-dump-lifetime` enables PerfCCT lifetime recording;
 `--enable-arch-db` and `--arch-db-file` configure its database output.
 Append the following arguments to the same simulation command:
 
 | Mode | Additional arguments |
 | --- | --- |
-| Both disabled | None |
-| TEA only | `--enable-tea` |
-| PerfCCT only | `--enable-arch-db --arch-db-file=m5out/perfcct.db --arch-db-dump-lifetime` |
+| Both disabled | `--disable-tea` |
+| TEA only | None |
+| PerfCCT only | `--disable-tea --enable-arch-db --arch-db-file=m5out/perfcct.db --arch-db-dump-lifetime` |
 | Both enabled | `--enable-tea --enable-arch-db --arch-db-file=m5out/perfcct.db --arch-db-dump-lifetime` |
 
 Enabling ArchDB alone does not enable PerfCCT lifetime recording. Neither

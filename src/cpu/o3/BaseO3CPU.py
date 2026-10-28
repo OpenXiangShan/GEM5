@@ -202,7 +202,7 @@ class BaseO3CPU(BaseCPU):
     renameToROBDelay = Param.Cycles(1, "Rename to reorder buffer delay")
     commitWidth = Param.Unsigned(8, "Physical entry commit width for Hybrid; group window otherwise")
 
-    enableTea = Param.Bool(False,
+    enableTea = Param.Bool(True,
         "Enable Timing Event Attribution sampling")
     teaSamplePeriod = Param.Unsigned(1,
         "TEA sampling period in CPU cycles; zero samples every cycle")

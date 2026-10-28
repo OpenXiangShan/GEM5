@@ -1044,8 +1044,14 @@ def xiangshan_system_init():
     parser.add_argument(
         "--enable-tea",
         action="store_true",
-        default=False,
-        help="Enable O3 Timing Event Attribution sampling",
+        default=True,
+        help="Enable O3 Timing Event Attribution sampling (default)",
+    )
+    parser.add_argument(
+        "--disable-tea",
+        dest="enable_tea",
+        action="store_false",
+        help="Disable O3 Timing Event Attribution sampling",
     )
     parser.add_argument(
         "--tea-sample-period",
@@ -1186,7 +1192,8 @@ def xiangshan_system_init():
     if args.enable_tea and args.ruby:
         parser.error("--enable-tea is not supported with --ruby. "
                      "Ruby memory system does not populate cacheAccessDepth "
-                     "required for TEA cache event attribution.")
+                     "required for TEA cache event attribution; "
+                     "use --disable-tea with --ruby.")
 
     # Validate MLP-aware policy combinations before CPU construction:
     # MlpAwarePolicy needs its predictor and a non-BaseLine fetch block
