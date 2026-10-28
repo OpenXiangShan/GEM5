@@ -1,43 +1,58 @@
-# TEA upper bound 探索计划
+# TEA性能上限探索：当前计划与继续入口
 
-目标是在固定 SPEC06 GCC16 RVA23 无向量 0.3c 点集上，将整数分数探索到 26–28/GHz。允许资源扩大、时序与端口限制放松；所有结果必须保留正确性、完整点集、实际配置与同窗口计数器证据。不能把目标分数写成已实现结果。
+## 当前约束
 
-## 基线和实现边界
+- 后续候选最高12宽，按本次讨论固定decode/rename/commit/物理寄存器释放宽度；原整数FU拓扑保留。旧16宽实验仅为参照，不能作为最终推荐或继续扩宽的理由。
+- 主线允许4load、ROB/PRF/LSU容量扩大、理想ITLB/Icache与双预测双取，不按RTL面积筛候选。
+- 理想前端主线可继续使用去override气泡，但必须单独报告双供给与去气泡收益；保留正常气泡的A/B完整对照已经创建。
+- 固定SPEC06 GCC16 RVA23 novec 0.3c，55输入、145点，INT为12项89点；20M预热＋20M正式测量。基线26.72578513064518；历史1c的24.369567216892225换0.3c JSON逐值复现该基线，采样差异不计优化收益。
 
-- 用户允许直接使用 24 分分支，因此从已测量的 e34d8f6e7901 建立 `codex/tea-upperbound-24base-20261028`。
-- R0 默认：原 24.36957/GHz 的配置，0.3c 重测 CI40638589458。
-- R0 高资源：在同一源码上使用 TAGE16、四 FP IQ 各32项、L2 data bank4，0.3c 重测 CI40638592517。历史1.0c的24.50935只作定位，不能替代本轮结果。
-- 保留原默认行为；新探针显式启用。全程保留 difftest，使用 pinned normal-dedup REF。
+## 已完成的完整结果
 
-## 探索轮次
+| 方案 | Run | INT/GHz | 宽度/范围 |
+| --- | --- | ---: | --- |
+| 基线 | 40638589458 | 26.72578513064518 | 12宽，原3load |
+| 基线高资源参数 | 40638592517 | 26.875325942402938 | 12宽，历史参数参照 |
+| 原宽后端整包 | 40641366302 | 27.943188743711012 | 旧16宽，非后续候选 |
+| 理想前端单独 | 40641369657 | 28.997744770093107 | 同一12宽后端，+8.5010% |
+| 仅4load | 40646873569 | 27.073585648319742 | 同一12宽，+1.3014% |
+| 4load＋容量 | 40648078898 | 27.48358089768087 | 12宽，+2.8354% |
 
-1. R0 统一点集基线：核验实际 SHA、配置、ROI、abort/completed、score与coverage。
-2. R1 后端：单线程10个整数输出口、4 load、2 STA/2 STD；增加ROB、PRF、LSQ/IQ和前后端供给。明确10指整数输出端口，不是所有操作合计每周期10条。
-3. R1 前端：每周期在第一项更新推测状态后串行调用BPU第二次；与PairTAGE互斥。额外独立探针移除override latency。第二FTQ项保留独立metadata/history/RAS恢复。
-4. R1 理想双取：沿用BPU结果，最多跨一个taken边界，可为任意目标；仅按实际使用的指令字节做Execute功能翻译与一致的内存读取。单独说明ITLB/Icache理想化，不查询REF未来控制流。
-5. R2 组合：base、backend、frontend、backend+frontend对照；按计数器和benchmark回退决定下一步，补资源/时序消融。
-6. R3 继续推进残余瓶颈直至26–28目标得到验证或有可审核证据解释搜索结果；每轮写中文图文报告和最终整体报告。
+上述145点完整，均有标准计分与逐点运行/配置审计；Actions最终状态仍应现场核对。数据和audit在data/，主报告为[report.md](report.md)。
 
-## 验证与报告
+## 已创建、必须跟进的CI
 
-- 构建、启动配置、CoreMark及代表checkpoint difftest；相关动态统计证实4个load管线与第二预测/第二fetch实际使用。
-- 前端关注第二目标为向后/远跳、FTQ仅一空位、第一/第二项squash、call/return、跨页压缩与32位指令、Execute权限和fault PC/tval。
-- baseline关闭新探针时保留原代码路径；需要同源码开关A/B证明统计口径与行为。
-- 完整CI验收要求完整0.3c点集、0 abort、正常退出和正式ROI。用户允许先忽略少数慢切片提前估分：冻结各组共同完成点集，保留原cluster权重，标明遗漏点、覆盖率和临时分数；完整结果到齐后补算。新CI创建/排队不等于通过。
-- 报告保存每轮配置、假设、分数、benchmark收益/回退、计数器与下一probe；不把事件占比或端口拒绝当成净收益。
-- 以[Markdown总入口](README.md)共享报告；定量图插入独立PNG/SVG，流程用Mermaid，保留相对路径以便随仓库阅读。
+| 方案 | Run | 意义 |
+| --- | --- | --- |
+| 原前后端组合 | 40641372749 | 旧16宽参照，不能推荐为最终配置 |
+| 12宽4load＋理想前端 | 40646888439 | load带宽与前端交互 |
+| 12宽4load＋容量＋理想前端 | 40648104599 | 当前主要组合候选 |
+| A：理想单供给、正常override | 40651698971 | 双供给对照分母 |
+| B：理想双供给、正常override | 40651748060 | 与已有C零气泡组分离收益 |
 
-当前状态：R0两组145点完整，INT26.72579→26.87533（+0.5595%）；保留共同144点的提前估分快照。历史同一1.0c统计换0.3c JSON逐值复现26.72579；采样差异作为已知背景，不计入新优化收益。R1代码已提交并push为515eb0cd1c，构建、CoreMark六模式、四点16组1M检查和Sv39/Sv48边界微测通过；前端20组单变量局部消融已通过。R1三组完整0.3c对照已创建，见runs.json，尚未确认新增配置的完整SPEC分数。
+不得因为观察超时而重复dispatch。精确输入与被测SHA均在[runs.json](runs.json)，归档身份按metadata.workflow_run_id匹配，不按目录时间或run号排序猜测。
 
-继续入口：先读取runs.json，对每个run核实终态/共享归档完整性，再用标准gem5_data_proc按归档cluster重算分数。已有本地快照与日志在/tmp/tea-upperbound-20261028；不因观察超时重复dispatch。若R1组合未达到26–28，按benchmark/counter残余证据继续资源和时序消融。
+## 源码状态
 
+分支`codex/tea-upperbound-24base-20261028`，最初从e34d8f6e7901建立。
 
-## 最新范围调整：保留12宽，独立评估4 load
+- 515eb0cd1c：串行双预测、独立零override开关、理想双取、旧宽后端探针，以及functional Execute canonical检查修复。
+- 36584adaf67da1e848d7b3a61d5ab18e84b2c12e：独立`--upperbound-four-load`，追加显式child fourthLoadIQ/ld3与wakeup，保留原12宽、FU及既有IQ索引。
+- 其后为报告提交；后续参数实验复用36584，无需改C++。
 
-用户确认astar采样差异为已知背景，后续继续0.3c。用户进一步确认已有12宽，不再推进10整数口的设计方向；原宽后端整包保留作上限参照，不能代表4load单项收益。
+容量组仅七项：ROB640、IntPRF512、FpPRF384、LQ256、SQ128、RAR192、RAW128。没有增加IQ容量、宽度或修改cache MSHR；第4个load口本身另增加16项IQ。
 
-旧报告的12路为decode/rename/commit/物理寄存器释放各12；标准scheduler有9个整数IssuePort、3个load口，2 STA/2 STD。当前新增`--upperbound-four-load`只在原scheduler末尾追加ld3及对应wake网络，保留12宽、原FU、原资源和既有IQ索引；会额外增加一个16项load IQ。CoreMark正确性和四pipe激活通过，4个SPEC代表点×原前端/理想前端的8组1M检查全部通过于`/tmp/tea-upperbound-20261028/fourload-spec`。
+## 已有验证与诊断
 
-下一步：两Python文件已提交并push为36584adaf67da1e848d7b3a61d5ab18e84b2c12e；8组完整INI仅出现新ld3及wakeup成员变化，style/precommit通过。4load与4load+frontend完整0.3c已触发，分别为40646873569、40646888439，见runs.json。等待结果后再决定窗口/LSU资源对照，避免重复dispatch。允许资源扩容的原始需求仍保留，窗口/LSU扩容应以独立参数对照评估，不将16宽整包纳入新的4load默认。
+- 构建、precommit/style与difftest；CoreMark多模式、四点16组原探针检查、独立4load的8组、容量组的8组局部检查通过。
+- Sv39/Sv48微测覆盖Execute权限、NX、非canonical、页末RVC、跨页32位指令和错误NX预测恢复；独立Review原件见review-initial.md/review-followup-b.md。
+- gcc/mcf的20M预热＋2M TEA诊断已完成，四状态与CSV/PSV守恒通过；没有PC×四状态联合统计，PC权重含Computing。
+- perlbench/libquantum的20M＋2M前端消融12组通过；R7 A两组新增，B/C复用已测结果。同参数B重跑逐值一致，不作独立样本。perlbench双供给B/A+12.786%、去气泡C/B+2.251%，不能外推全SPEC。
+- 所有原始中间文件在`/tmp/tea-upperbound-20261028`；共享CI在`/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/`。
 
-原宽后端run1669现145/145成功，INT27.943188743711012，相对基线26.72578513064518提高4.5552%。前端run1671与组合run1670仍运行。20M预热+2M ROI的gcc/mcf两侧TEA已采集并通过四状态及CSV事件守恒；复用脚本在scripts/summarize_tea.py，完整中间输出位于`/tmp/tea-upperbound-20261028/tea-report`，需整理Markdown残余报告。TEA没有PC×四状态字段，不把PC总权重当可移除stall。
+## 继续动作与完成条件
+
+1. 核对未完成run的实时job/归档状态，完整时用标准gem5_data_proc重算；少数慢点可先冻结共同点集临时估分，标明遗漏与权重。完整输入缺失时不称完整总分。
+2. 补齐12宽两个组合及R7 A/B的结果、审计和benchmark收益/回退，比较B/A与C/B，不把nominal saved当CPU净周期。
+3. 按用户要求保持主报告简明：结论、决策、关键子项收益、主要原因、待确认项；详细参数与计数器放逐轮附件。最终选12宽配置，补最终总报告/图/共享包。
+4. 目标数值范围已在12宽理想前端中超过，但组合评估、用户新增气泡分解和最终报告仍未完成，因此当前goal必须保持active。

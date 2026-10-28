@@ -25,7 +25,7 @@
       "points": 145,
       "provisional": false
     },
-    "observed_at": "2026-10-28T14:33:42+08:00",
+    "observed_at": "2026-10-28T16:03:33+08:00",
     "archive_path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667",
     "markers": {
       "completed": 145,
@@ -60,7 +60,7 @@
       "points": 145,
       "provisional": false
     },
-    "observed_at": "2026-10-28T14:33:42+08:00",
+    "observed_at": "2026-10-28T16:03:33+08:00",
     "archive_path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668",
     "markers": {
       "completed": 145,
@@ -94,7 +94,7 @@
       "points": 145,
       "provisional": false
     },
-    "observed_at": "2026-10-28T14:33:42+08:00",
+    "observed_at": "2026-10-28T16:03:33+08:00",
     "observed_step": "completed",
     "archive_path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_141258_515eb0c_kmhv3_run1669",
     "markers": {
@@ -117,7 +117,7 @@
     "label": "R1-frontend",
     "run_id": 40641369657,
     "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/40641369657",
-    "observed_status": "in_progress",
+    "observed_status": "completed",
     "dispatch": {
       "ref": "tea-main55-ci24-20261026",
       "inputs": {
@@ -131,15 +131,30 @@
         "branch": "515eb0cd1cf97280ddbd600ee42a9c92e722b7ab"
       }
     },
-    "score": null,
-    "observed_at": "2026-10-28T14:33:42+08:00",
-    "observed_step": "XS-GEM5 - Run performance test",
+    "score": {
+      "INT_per_GHz": 28.997744770093107,
+      "FP_per_GHz": 25.389024677940263,
+      "overall_per_GHz": 26.82436272041613,
+      "points": 145,
+      "provisional": false
+    },
+    "observed_at": "2026-10-28T16:03:33+08:00",
+    "observed_step": "completed",
     "archive_path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670",
     "markers": {
-      "completed": 0,
-      "running": 145,
+      "completed": 145,
+      "running": 0,
       "abort": 0
-    }
+    },
+    "provisional_result": {
+      "points": 137,
+      "INT_per_GHz": 29.735454801523986,
+      "matched_baseline_INT_per_GHz": 27.406677894894788,
+      "gain_percent": 8.497114884044343,
+      "snapshot": "data/r1-fourway-common-snapshot.json",
+      "provisional": true
+    },
+    "conclusion": "success"
   },
   {
     "label": "R1-combined",
@@ -160,21 +175,30 @@
       }
     },
     "score": null,
-    "observed_at": "2026-10-28T14:33:42+08:00",
+    "observed_at": "2026-10-28T16:03:33+08:00",
     "observed_step": "XS-GEM5 - Run performance test",
     "archive_path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_142907_515eb0cd_kmhv3_run1671",
     "markers": {
-      "completed": 0,
-      "running": 145,
+      "completed": 145,
+      "running": 0,
       "abort": 0
+    },
+    "provisional_result": {
+      "points": 137,
+      "INT_per_GHz": 33.02548666308479,
+      "matched_baseline_INT_per_GHz": 27.406677894894788,
+      "gain_percent": 20.501604717427835,
+      "snapshot": "data/r1-fourway-common-snapshot.json",
+      "provisional": true,
+      "scope": "legacy 16-wide reference only; all future candidates are at most twelve-wide"
     }
   },
   {
     "label": "R4-fourload",
     "run_id": 40646873569,
     "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/40646873569",
-    "observed_status": "in_progress",
-    "observed_at": "2026-10-28T14:58:55.299185+08:00",
+    "observed_status": "completed",
+    "observed_at": "2026-10-28T16:03:33+08:00",
     "dispatch": {
       "ref": "tea-main55-ci24-20261026",
       "inputs": {
@@ -188,14 +212,28 @@
         "extra_args": "--upperbound-four-load"
       }
     },
-    "score": null
+    "score": {
+      "INT_per_GHz": 27.073585648319742,
+      "FP_per_GHz": 25.477360050002456,
+      "overall_per_GHz": 26.126124050627915,
+      "points": 145,
+      "provisional": false
+    },
+    "markers": {
+      "completed": 145,
+      "running": 0,
+      "abort": 0
+    },
+    "observed_step": "completed",
+    "archive_path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_150621_36584adaf_kmhv3_run1673",
+    "conclusion": "success"
   },
   {
     "label": "R4-fourload-frontend",
     "run_id": 40646888439,
     "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/40646888439",
     "observed_status": "in_progress",
-    "observed_at": "2026-10-28T14:58:55.299337+08:00",
+    "observed_at": "2026-10-28T16:03:33+08:00",
     "dispatch": {
       "ref": "tea-main55-ci24-20261026",
       "inputs": {
@@ -209,6 +247,130 @@
         "extra_args": "--upperbound-four-load --param=system.cpu[0].branchPred.idealPredictionsPerCycle=2 --param=system.cpu[0].branchPred.idealNoOverrideBubbles=True --param=system.cpu[0].idealInstructionFetch=True --param=system.cpu[0].enableTwoFetch=True"
       }
     },
-    "score": null
+    "score": null,
+    "archive_path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_150611_36584ada_kmhv3_run1674",
+    "markers": {
+      "completed": 142,
+      "running": 3,
+      "abort": 0
+    }
+  },
+  {
+    "label": "R5-fourload-window",
+    "run_id": 40648078898,
+    "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/40648078898",
+    "observed_status": "completed",
+    "dispatch": {
+      "ref": "tea-main55-ci24-20261026",
+      "inputs": {
+        "configuration": "kmhv3.py",
+        "benchmark_type": "spec06-rva23-novec-gcc16-0.3c",
+        "specific_benchmarks": "",
+        "distributed_servers": "default",
+        "distributed_jobs_per_server": "32",
+        "branch": "36584adaf67da1e848d7b3a61d5ab18e84b2c12e",
+        "note": "Upperbound R5 fourload-window preserve12 20261028",
+        "extra_args": "--upperbound-four-load --param=system.cpu[0].numROBEntries=640 --param=system.cpu[0].numPhysIntRegs=512 --param=system.cpu[0].numPhysFloatRegs=384 --param=system.cpu[0].LQEntries=256 --param=system.cpu[0].SQEntries=128 --param=system.cpu[0].RARQEntries=192 --param=system.cpu[0].RAWQEntries=128"
+      }
+    },
+    "score": {
+      "INT_per_GHz": 27.48358089768087,
+      "FP_per_GHz": 26.765045741696746,
+      "overall_per_GHz": 27.06006372745814,
+      "points": 145,
+      "provisional": false
+    },
+    "markers": {
+      "completed": 145,
+      "running": 0,
+      "abort": 0
+    },
+    "observed_step": "completed",
+    "archive_path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_152100_36584ada_kmhv3_run1675",
+    "observed_at": "2026-10-28T16:03:33+08:00",
+    "conclusion": "success"
+  },
+  {
+    "label": "R5-fourload-window-frontend",
+    "run_id": 40648104599,
+    "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/40648104599",
+    "observed_status": "in_progress",
+    "dispatch": {
+      "ref": "tea-main55-ci24-20261026",
+      "inputs": {
+        "configuration": "kmhv3.py",
+        "benchmark_type": "spec06-rva23-novec-gcc16-0.3c",
+        "specific_benchmarks": "",
+        "distributed_servers": "default",
+        "distributed_jobs_per_server": "32",
+        "branch": "36584adaf67da1e848d7b3a61d5ab18e84b2c12e",
+        "note": "Upperbound R5 fourload-window-frontend preserve12 20261028",
+        "extra_args": "--upperbound-four-load --param=system.cpu[0].numROBEntries=640 --param=system.cpu[0].numPhysIntRegs=512 --param=system.cpu[0].numPhysFloatRegs=384 --param=system.cpu[0].LQEntries=256 --param=system.cpu[0].SQEntries=128 --param=system.cpu[0].RARQEntries=192 --param=system.cpu[0].RAWQEntries=128 --param=system.cpu[0].branchPred.idealPredictionsPerCycle=2 --param=system.cpu[0].branchPred.idealNoOverrideBubbles=True --param=system.cpu[0].idealInstructionFetch=True --param=system.cpu[0].enableTwoFetch=True"
+      }
+    },
+    "score": null,
+    "archive_path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_152834_36584adaf6_kmhv3_run1676",
+    "markers": {
+      "completed": 115,
+      "running": 30,
+      "abort": 0
+    },
+    "observed_at": "2026-10-28T16:03:33+08:00"
+  },
+  {
+    "label": "R7-single-supply-override",
+    "run_id": 40651698971,
+    "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/40651698971",
+    "observed_status": "in_progress",
+    "dispatch": {
+      "ref": "tea-main55-ci24-20261026",
+      "inputs": {
+        "configuration": "kmhv3.py",
+        "benchmark_type": "spec06-rva23-novec-gcc16-0.3c",
+        "specific_benchmarks": "",
+        "distributed_servers": "default",
+        "distributed_jobs_per_server": "32",
+        "branch": "36584adaf67da1e848d7b3a61d5ab18e84b2c12e",
+        "note": "Upperbound R7 single-supply-override fixed12 20261028",
+        "extra_args": "--param=system.cpu[0].branchPred.idealPredictionsPerCycle=1 --param=system.cpu[0].branchPred.idealNoOverrideBubbles=False --param=system.cpu[0].idealInstructionFetch=True --param=system.cpu[0].enableTwoFetch=False"
+      }
+    },
+    "score": null,
+    "archive_path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_155121_36584adaf_kmhv3_run1677",
+    "markers": {
+      "completed": 0,
+      "running": 145,
+      "abort": 0
+    },
+    "observed_at": "2026-10-28T16:03:33+08:00",
+    "observed_step": "XS-GEM5 - Run performance test"
+  },
+  {
+    "label": "R7-double-supply-override",
+    "run_id": 40651748060,
+    "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/40651748060",
+    "observed_status": "in_progress",
+    "dispatch": {
+      "ref": "tea-main55-ci24-20261026",
+      "inputs": {
+        "configuration": "kmhv3.py",
+        "benchmark_type": "spec06-rva23-novec-gcc16-0.3c",
+        "specific_benchmarks": "",
+        "distributed_servers": "default",
+        "distributed_jobs_per_server": "32",
+        "branch": "36584adaf67da1e848d7b3a61d5ab18e84b2c12e",
+        "note": "Upperbound R7 double-supply-override fixed12 20261028",
+        "extra_args": "--param=system.cpu[0].branchPred.idealPredictionsPerCycle=2 --param=system.cpu[0].branchPred.idealNoOverrideBubbles=False --param=system.cpu[0].idealInstructionFetch=True --param=system.cpu[0].enableTwoFetch=True"
+      }
+    },
+    "score": null,
+    "archive_path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_155204_36584ada_kmhv3_run1678",
+    "markers": {
+      "completed": 0,
+      "running": 145,
+      "abort": 0
+    },
+    "observed_at": "2026-10-28T16:03:33+08:00",
+    "observed_step": "XS-GEM5 - Run performance test"
   }
 ]

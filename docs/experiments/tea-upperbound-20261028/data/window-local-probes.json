@@ -1,0 +1,142 @@
+[
+  {
+    "workload": "gcc",
+    "variant": "window4load",
+    "instructions": 1000000.0,
+    "cycles": 473771.0,
+    "ipc": 2.1107243794998007,
+    "stats": {
+      "system.cpu.commit.ROBFull": 0.0,
+      "system.cpu.dcache.noMshrBlockedCycles": 0.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe0": 5314.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe1": 5308.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe2": 5380.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe3": 5375.0,
+      "system.cpu.lsq0.loadReplayEvents::CacheBlockedReplay": 0.0
+    },
+    "passed": true,
+    "exit_code": 0
+  },
+  {
+    "workload": "gcc",
+    "variant": "window3load",
+    "instructions": 1000000.0,
+    "cycles": 472383.0,
+    "ipc": 2.1169263076783036,
+    "stats": {
+      "system.cpu.commit.ROBFull": 0.0,
+      "system.cpu.dcache.noMshrBlockedCycles": 0.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe0": 7018.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe1": 7096.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe2": 7126.0,
+      "system.cpu.lsq0.loadReplayEvents::CacheBlockedReplay": 0.0
+    },
+    "passed": true,
+    "exit_code": 0
+  },
+  {
+    "workload": "astar",
+    "variant": "window3load",
+    "instructions": 1000010.0,
+    "cycles": 266246.0,
+    "ipc": 3.755962530892483,
+    "stats": {
+      "system.cpu.commit.ROBFull": 730.0,
+      "system.cpu.dcache.noMshrBlockedCycles": 0.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe0": 127034.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe1": 127056.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe2": 126890.0,
+      "system.cpu.lsq0.loadReplayEvents::CacheBlockedReplay": 31.0
+    },
+    "passed": true,
+    "exit_code": 0
+  },
+  {
+    "workload": "astar",
+    "variant": "window4load",
+    "instructions": 1000010.0,
+    "cycles": 255704.0,
+    "ipc": 3.9108109376466538,
+    "stats": {
+      "system.cpu.commit.ROBFull": 0.0,
+      "system.cpu.dcache.noMshrBlockedCycles": 0.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe0": 97769.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe1": 97594.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe2": 97738.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe3": 97247.0,
+      "system.cpu.lsq0.loadReplayEvents::CacheBlockedReplay": 50.0
+    },
+    "passed": true,
+    "exit_code": 0
+  },
+  {
+    "workload": "mcf",
+    "variant": "window4load",
+    "instructions": 1000007.0,
+    "cycles": 1049060.0,
+    "ipc": 0.9532409967018093,
+    "stats": {
+      "system.cpu.commit.ROBFull": 0.0,
+      "system.cpu.dcache.noMshrBlockedCycles": 21851.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe0": 233474.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe1": 233337.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe2": 232128.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe3": 231397.0,
+      "system.cpu.lsq0.loadReplayEvents::CacheBlockedReplay": 8701.0
+    },
+    "passed": true,
+    "exit_code": 0
+  },
+  {
+    "workload": "mcf",
+    "variant": "window3load",
+    "instructions": 1000011.0,
+    "cycles": 1076140.0,
+    "ipc": 0.929257345698515,
+    "stats": {
+      "system.cpu.commit.ROBFull": 0.0,
+      "system.cpu.dcache.noMshrBlockedCycles": 19272.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe0": 300390.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe1": 298961.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe2": 298042.0,
+      "system.cpu.lsq0.loadReplayEvents::CacheBlockedReplay": 7567.0
+    },
+    "passed": true,
+    "exit_code": 0
+  },
+  {
+    "workload": "omnetpp",
+    "variant": "window4load",
+    "instructions": 1000000.0,
+    "cycles": 1267655.0,
+    "ipc": 0.78885816724582,
+    "stats": {
+      "system.cpu.commit.ROBFull": 922.0,
+      "system.cpu.dcache.noMshrBlockedCycles": 15837.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe0": 150567.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe1": 150760.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe2": 150483.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe3": 151103.0,
+      "system.cpu.lsq0.loadReplayEvents::CacheBlockedReplay": 8646.0
+    },
+    "passed": true,
+    "exit_code": 0
+  },
+  {
+    "workload": "omnetpp",
+    "variant": "window3load",
+    "instructions": 1000004.0,
+    "cycles": 1284179.0,
+    "ipc": 0.7787107560550359,
+    "stats": {
+      "system.cpu.commit.ROBFull": 0.0,
+      "system.cpu.dcache.noMshrBlockedCycles": 16822.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe0": 197103.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe1": 196490.0,
+      "system.cpu.lsq0.loadPipeAccepted::pipe2": 195565.0,
+      "system.cpu.lsq0.loadReplayEvents::CacheBlockedReplay": 9030.0
+    },
+    "passed": true,
+    "exit_code": 0
+  }
+]

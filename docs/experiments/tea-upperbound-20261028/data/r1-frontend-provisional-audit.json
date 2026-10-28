@@ -1,0 +1,3665 @@
+{
+  "time": "2026-10-28T15:28:13.033148+08:00",
+  "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670",
+  "snapshot": "/tmp/tea-upperbound-20261028/r1-frontend-provisional/snapshot.json",
+  "prior_audit": "/tmp/tea-upperbound-20261028/r1-seven-benchmarks/comparison.json",
+  "prior_reused_count": 39,
+  "supplement_count": 103,
+  "prior_points_not_in_snapshot": [],
+  "exceptions": [],
+  "points": [
+    {
+      "name": "GemsFDTD_43464",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/GemsFDTD_43464",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000005,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "GemsFDTD_65615",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/GemsFDTD_65615",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000000,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "astar_biglakes_5863",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/astar_biglakes_5863",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000004,
+        "cycles": 3906630,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "astar_biglakes_6185",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/astar_biglakes_6185",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000000,
+        "cycles": 4999026,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "astar_rivers_11009",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/astar_rivers_11009",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000003,
+        "cycles": 4383610,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "astar_rivers_8610",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/astar_rivers_8610",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 19999994,
+        "cycles": 4304891,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "bwaves_13153",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/bwaves_13153",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999999,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_chicken_2802",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/bzip2_chicken_2802",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000011,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_chicken_3209",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/bzip2_chicken_3209",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999998,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_combined_15288",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/bzip2_combined_15288",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999995,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_html_4314",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/bzip2_html_4314",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999996,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_html_4897",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/bzip2_html_4897",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999999,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_liberty_4539",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/bzip2_liberty_4539",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999996,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_program_16402",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/bzip2_program_16402",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999998,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_program_5761",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/bzip2_program_5761",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000011,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_source_20355",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/bzip2_source_20355",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999994,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "cactusADM_163",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/cactusADM_163",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000001,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "calculix_38207",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/calculix_38207",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000001,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "calculix_5756",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/calculix_5756",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000007,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "dealII_46309",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/dealII_46309",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999997,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "dealII_8887",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/dealII_8887",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999998,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "dealII_9896",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/dealII_9896",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000001,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_cytosine_18796",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gamess_cytosine_18796",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999989,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_cytosine_32829",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gamess_cytosine_32829",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000004,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_cytosine_45124",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gamess_cytosine_45124",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999997,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_cytosine_6705",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gamess_cytosine_6705",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999996,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_gradient_12302",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gamess_gradient_12302",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000006,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_gradient_12613",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gamess_gradient_12613",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999997,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_gradient_3703",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gamess_gradient_3703",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000007,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_triazolium_139471",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gamess_triazolium_139471",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000000,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_triazolium_152243",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gamess_triazolium_152243",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999993,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_triazolium_160006",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gamess_triazolium_160006",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000006,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gamess_triazolium_85938",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gamess_triazolium_85938",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999997,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_166_2119",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gcc_166_2119",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999996,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_166_800",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gcc_166_800",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999998,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_200_1635",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gcc_200_1635",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999996,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_200_4808",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gcc_200_4808",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999993,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_200_5108",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gcc_200_5108",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000000,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_cpdecl_1944",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gcc_cpdecl_1944",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999998,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_cpdecl_4089",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gcc_cpdecl_4089",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999997,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_expr2_1725",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gcc_expr2_1725",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000006,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_expr2_3409",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gcc_expr2_3409",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999999,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_expr_1687",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gcc_expr_1687",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999997,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_expr_4993",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gcc_expr_4993",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000003,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_g23_3542",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gcc_g23_3542",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999997,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_g23_50",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gcc_g23_50",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999998,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_s04_3001",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gcc_s04_3001",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000000,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_s04_7954",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gcc_s04_7954",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999992,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_scilab_2556",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gcc_scilab_2556",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000009,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_scilab_373",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gcc_scilab_373",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999991,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_typeck_2215",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gcc_typeck_2215",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000007,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_typeck_4910",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gcc_typeck_4910",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999999,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gcc_typeck_730",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gcc_typeck_730",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000001,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_13x13_5624",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gobmk_13x13_5624",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000002,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_13x13_6011",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gobmk_13x13_6011",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000002,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_13x13_8760",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gobmk_13x13_8760",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000001,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_nngs_23480",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gobmk_nngs_23480",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999996,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_nngs_28380",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gobmk_nngs_28380",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000006,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_nngs_3689",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gobmk_nngs_3689",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999998,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_score2_11938",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gobmk_score2_11938",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999992,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_score2_13127",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gobmk_score2_13127",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000001,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_score2_3645",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gobmk_score2_3645",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000000,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_score2_875",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gobmk_score2_875",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000008,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_trevorc_5366",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gobmk_trevorc_5366",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000009,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_trevorc_883",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gobmk_trevorc_883",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000001,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_trevord_4532",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gobmk_trevord_4532",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000000,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_trevord_6799",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gobmk_trevord_6799",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000003,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gobmk_trevord_7931",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gobmk_trevord_7931",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999993,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gromacs_105",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gromacs_105",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000002,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "gromacs_41110",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/gromacs_41110",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000004,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "h264ref_foreman.baseline_1674",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/h264ref_foreman.baseline_1674",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 19999999,
+        "cycles": 3988664,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "h264ref_foreman.baseline_18077",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/h264ref_foreman.baseline_18077",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000001,
+        "cycles": 3208714,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "h264ref_foreman.baseline_1968",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/h264ref_foreman.baseline_1968",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000000,
+        "cycles": 3743546,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "h264ref_foreman.baseline_7788",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/h264ref_foreman.baseline_7788",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 19999994,
+        "cycles": 3699018,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "h264ref_foreman.main_11944",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/h264ref_foreman.main_11944",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 19999997,
+        "cycles": 3611423,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "h264ref_foreman.main_13366",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/h264ref_foreman.main_13366",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000009,
+        "cycles": 3067538,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "h264ref_foreman.main_17926",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/h264ref_foreman.main_17926",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000009,
+        "cycles": 3304489,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "h264ref_foreman.main_6311",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/h264ref_foreman.main_6311",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 19999994,
+        "cycles": 3082360,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "h264ref_sss_157672",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/h264ref_sss_157672",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 19999996,
+        "cycles": 3608583,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "h264ref_sss_185055",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/h264ref_sss_185055",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000000,
+        "cycles": 3338037,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "h264ref_sss_19498",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/h264ref_sss_19498",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 19999995,
+        "cycles": 2767477,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "h264ref_sss_667",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/h264ref_sss_667",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 19999992,
+        "cycles": 2907719,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "hmmer_nph3_7894",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/hmmer_nph3_7894",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 19999999,
+        "cycles": 2329854,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "hmmer_retro_23265",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/hmmer_retro_23265",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 19999994,
+        "cycles": 2436316,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "hmmer_retro_59969",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/hmmer_retro_59969",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 19999994,
+        "cycles": 2421722,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "lbm_6382",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/lbm_6382",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999994,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "leslie3d_18494",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/leslie3d_18494",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999991,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "leslie3d_34720",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/leslie3d_34720",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000006,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "libquantum_27811",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/libquantum_27811",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000005,
+        "cycles": 2792558,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "libquantum_69175",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/libquantum_69175",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000004,
+        "cycles": 2817329,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "libquantum_86704",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/libquantum_86704",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000010,
+        "cycles": 2660689,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "mcf_12886",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/mcf_12886",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000002,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "mcf_6753",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/mcf_6753",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000000,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "milc_13081",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/milc_13081",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999997,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "milc_28462",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/milc_28462",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000003,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "milc_30106",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/milc_30106",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000001,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "milc_5841",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/milc_5841",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999997,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "namd_40827",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/namd_40827",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999999,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "namd_50633",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/namd_50633",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999997,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "namd_65358",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/namd_65358",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000010,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "namd_7092",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/namd_7092",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000005,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "namd_84400",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/namd_84400",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000001,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "omnetpp_18492",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/omnetpp_18492",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999997,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "perlbench_checkspam_28089",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/perlbench_checkspam_28089",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000005,
+        "cycles": 3243718,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "perlbench_checkspam_5886",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/perlbench_checkspam_5886",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 19999996,
+        "cycles": 3336310,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "perlbench_diffmail_2097",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/perlbench_diffmail_2097",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000004,
+        "cycles": 3341091,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "perlbench_splitmail_4191",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/perlbench_splitmail_4191",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000008,
+        "cycles": 3031052,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "povray_21991",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/povray_21991",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999997,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "povray_28404",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/povray_28404",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999999,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "povray_7650",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/povray_7650",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000001,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "povray_8107",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/povray_8107",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999996,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "sjeng_10181",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/sjeng_10181",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000011,
+        "cycles": 5651897,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "sjeng_104526",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/sjeng_104526",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000000,
+        "cycles": 5102385,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "sjeng_94536",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/sjeng_94536",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000001,
+        "cycles": 5175555,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "soplex_pds-50_12322",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/soplex_pds-50_12322",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999995,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "soplex_pds-50_7893",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/soplex_pds-50_7893",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999999,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "soplex_pds-50_9466",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/soplex_pds-50_9466",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000000,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "soplex_ref_17811",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/soplex_ref_17811",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000006,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "soplex_ref_5312",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/soplex_ref_5312",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999998,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "sphinx3_157921",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/sphinx3_157921",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000001,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "sphinx3_39957",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/sphinx3_39957",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999997,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "sphinx3_89031",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/sphinx3_89031",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000003,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "tonto_10669",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/tonto_10669",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000001,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "tonto_22517",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/tonto_22517",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000002,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "tonto_24832",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/tonto_24832",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999996,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "tonto_26200",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/tonto_26200",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999993,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "wrf_20161",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/wrf_20161",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999998,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "wrf_6877",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/wrf_6877",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999992,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "wrf_9169",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/wrf_9169",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000004,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "xalancbmk_10335",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/xalancbmk_10335",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000007,
+        "cycles": 3813736,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "xalancbmk_10486",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/xalancbmk_10486",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000005,
+        "cycles": 3827086,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "xalancbmk_12667",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/xalancbmk_12667",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000001,
+        "cycles": 3089237,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "xalancbmk_13770",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/xalancbmk_13770",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 19999996,
+        "cycles": 3370691,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "xalancbmk_20863",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/xalancbmk_20863",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 19999996,
+        "cycles": 3423896,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "xalancbmk_23046",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/xalancbmk_23046",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 19999989,
+        "cycles": 3588743,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "xalancbmk_24926",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/xalancbmk_24926",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 19999998,
+        "cycles": 3580700,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "xalancbmk_4478",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/xalancbmk_4478",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000005,
+        "cycles": 5681589,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "xalancbmk_6663",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/xalancbmk_6663",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 19999998,
+        "cycles": 3481837,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "xalancbmk_6881",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/xalancbmk_6881",
+      "reused_prior": true,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "prior": {
+        "insts": 20000003,
+        "cycles": 3897262,
+        "blocks": 2,
+        "difftest": true,
+        "normal_exit": true,
+        "completed": true
+      },
+      "errors": []
+    },
+    {
+      "name": "zeusmp_4119",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/zeusmp_4119",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999996,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "zeusmp_47363",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/zeusmp_47363",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999990,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "zeusmp_66319",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/zeusmp_66319",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999999,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    }
+  ]
+}

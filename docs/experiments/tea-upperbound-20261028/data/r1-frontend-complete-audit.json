@@ -1,0 +1,93 @@
+{
+  "time": "2026-10-28T15:53:23.859938+08:00",
+  "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670",
+  "prior_142_audit": "/tmp/tea-upperbound-20261028/r1-frontend-provisional-audit.json",
+  "prior_count": 142,
+  "added_count": 3,
+  "cluster_point_count": 145,
+  "unique_audited_count": 145,
+  "point_set_match": true,
+  "prior_exceptions": [],
+  "new_exceptions": [],
+  "new_points": [
+    {
+      "name": "bzip2_combined_5764",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/bzip2_combined_5764",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 20000000,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_source_16629",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/bzip2_source_16629",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999993,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    },
+    {
+      "name": "bzip2_source_3760",
+      "path": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_143127_515eb0cd1c_kmhv3_run1670/spec_all/bzip2_source_3760",
+      "reused_prior": false,
+      "config": {
+        "decodeWidth": "12",
+        "renameWidth": "12",
+        "ROB": "352",
+        "SpMT": "false",
+        "idealInstructionFetch": "true",
+        "enableTwoFetch": "true",
+        "idealPredictionsPerCycle": "2",
+        "idealNoOverrideBubbles": "true",
+        "ld3": false
+      },
+      "markers": {
+        "completed": true,
+        "abort": false,
+        "running": false
+      },
+      "insts": 19999999,
+      "blocks": 2,
+      "difftest": true,
+      "normal_exit": true,
+      "errors": []
+    }
+  ],
+  "scope": "145 selected profile points, reused prior 142 snapshot audit; not rechecked current markers of prior points"
+}

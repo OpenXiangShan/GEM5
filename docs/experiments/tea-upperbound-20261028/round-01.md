@@ -1,6 +1,6 @@
 # 第一轮 探针实现与代表点验证
 
-本轮在已测量的24分源码 e34d8f6e7901 上，实现了单线程宽后端、串行双预测、理想指令供给与双取。代表点组合中，后端与前端共同放松有明显正向信号；宽后端完整0.3c INT已测得27.94319（+4.5552%）；前端与组合仍在运行。
+本轮在已测量的24分源码 e34d8f6e7901 上，实现了单线程宽后端、串行双预测、理想指令供给与双取。代表点组合中，后端与前端共同放松有明显正向信号；宽后端完整0.3c INT已测得27.94319（+4.5552%）；12宽理想前端现已完整145点，INT28.99774（+8.5010%）；旧16宽组合仍在运行。
 
 ## 配置与行为
 
@@ -22,6 +22,34 @@
 按相同比例外推历史1.0c基线24.36957，约为25.48；这只是估计，尚无新配置完整1.0c统计支持。用户已调整后续方向为保留原12宽、单独增加第4个load口，当前16宽与资源扩容整包作为已测量上限参照。
 
 完整145点分数：[基线](data/r0-full-baseline24-score.csv)、[宽后端](data/r1-full-backend-score.csv)。宽后端FP为27.75762、overall为27.83426；INT/FP/overall与归档score.txt一致。
+
+
+
+## 前端与组合的暂定总分
+
+共同137点的标准重算：12宽基线27.40668，16宽后端28.63876（+4.4955%），12宽理想前端29.73545（+8.4971%），16宽组合33.02549（+20.5016%）。共同集缺8点，但55个输入都有覆盖；不是完整145点总分。点集、覆盖和各侧score见[阶段总报告](report.md)。
+
+前端更完整的142点独立快照为基线26.92979→29.20800（+8.4598%），遗漏3个bzip2点。用户确认后续最高12宽，原16宽整包及其组合只保留作参照；新的12宽4load与容量对照见第四、五轮。
+
+## 七项完整benchmark的前后端交互
+
+![七项完整benchmark对照](figures/r1-seven-interaction.png)
+
+2026-10-28 15:03后的早期对照中，前端与组合各有以下7项的39/39个所选切片全部完成，正式ROI约20M、difftest启用，四侧cluster与各benchmark覆盖一致。表内只报告这些完整benchmark，不能作为全部12个INT的总分。
+
+| benchmark | 宽后端 | 理想前端 | 组合 | 乘积交互比率 |
+| --- | ---: | ---: | ---: | ---: |
+| perlbench | -2.972% | +23.358% | +35.048% | 1.1283 |
+| hmmer | +5.968% | +1.327% | +15.753% | 1.0780 |
+| sjeng | +2.639% | +13.520% | +21.376% | 1.0417 |
+| libquantum | +9.026% | +4.210% | +43.302% | 1.2613 |
+| h264ref | +10.031% | +5.772% | +20.514% | 1.0355 |
+| astar | +10.825% | -0.757% | +12.565% | 1.0234 |
+| xalancbmk | +2.962% | +14.273% | +33.236% | 1.1324 |
+
+乘积交互比率定义为`(Combined/Base) / ((Frontend/Base) × (Backend/Base))`。这些端点上的比率大于1，说明整包组合收益超出两个单包收益的乘积基准；并未由此辨认具体内部机制。perlbench的后端单包回退在理想前端背景下得到逆转，libquantum的组合增益也远大于单包。这提示后续选择切片时必须覆盖这些程序，不能只依赖先前四个1M无预热点。
+
+[逐点审计与计算数据](data/r1-seven-comparison.json)、[前端标准score CSV](data/r1-seven-frontend-score.csv)、[组合标准score CSV](data/r1-seven-combined-score.csv)保留原值。标准CSV中的int_avg只覆盖7个有效benchmark，不作为完整INT引用。正在对perlbench和libquantum补20M预热+2M窗口的前端组件消融。
 
 ## 正式ROI的提前估分：共同140点
 
@@ -103,3 +131,7 @@ mcf体现条件交互：Frontend背景下关闭双取改善1.35%，恢复timing�
 0.3c基线完整145点已重算为26.72579；与高资源配置的共同144点对照见[第零轮](round-00.md)。已在被测SHA `515eb0cd1cf97280ddbd600ee42a9c92e722b7ab` 上触发 [Backend](https://github.com/OpenXiangShan/GEM5/actions/runs/40641366302)、[Frontend](https://github.com/OpenXiangShan/GEM5/actions/runs/40641369657)、[Combined](https://github.com/OpenXiangShan/GEM5/actions/runs/40641372749) 完整对照，目前仅已创建/运行，未取得最终分数。后续保留每个benchmark的收益与回退，在组合配置上重新用TEA/计数器定位剩余瓶颈。最终26–28目标及整体报告尚未完成。
 
 原始局部数据见[data/local-probes.csv](data/local-probes.csv)；命令、完整stats、config与日志位于 /tmp/tea-upperbound-20261028 下对应目录。标准可重复验证入口为 util/xs_scripts/upperbound_smoke.py。最后增补的构造参数保护只拒绝trace组合，普通FS测试路径不变。
+
+## 最新完整前端结果
+
+12宽后端不变，理想前端145/145完整，INT26.72579→28.99774（+8.5010%），此前早期估分仅保留过程记录。完整分数见[data/r1-front-latest-frontend-score.csv](data/r1-front-latest-frontend-score.csv)，审计见[data/r1-frontend-complete-audit.json](data/r1-frontend-complete-audit.json)。主结论与后续选择以[精简主报告](report.md)为准。

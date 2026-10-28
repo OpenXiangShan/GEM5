@@ -1,0 +1,365 @@
+{
+  "scope": "20M warmup + 2M ROI, not SPEC score",
+  "workloads": {
+    "perlbench_checkspam_5886": {
+      "runs": {
+        "baseline": {
+          "source_head_recorded": "891eabfffcea94953f9b2720c83c69915fa78ef8",
+          "binary_sha_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha_actual": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_matches": true,
+          "input_sha_recorded": "ae7a6344dfca34e2999c949c045a3f8577dd0ee411bcc4531a333a51498d93c0",
+          "input_sha_actual": "ae7a6344dfca34e2999c949c045a3f8577dd0ee411bcc4531a333a51498d93c0",
+          "input_matches": true,
+          "input": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/perlbench_checkspam/5886/_5886_0.199334_memory_.zstd",
+          "warmup_config": "20000000",
+          "maxinsts_config": "2000000",
+          "difftest": "true",
+          "exit_maxinst": true,
+          "log_error": false,
+          "validation_passed": true,
+          "validation_exit_code": 0,
+          "stats_blocks": 1,
+          "insts": 2000000,
+          "cycles": 566946,
+          "ipc": 3.5276728295110997,
+          "branch_errors_per_kinst": 2.3995,
+          "second_predictions": 0,
+          "two_fetch_successes": 0
+        },
+        "frontend": {
+          "source_head_recorded": "891eabfffcea94953f9b2720c83c69915fa78ef8",
+          "binary_sha_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha_actual": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_matches": true,
+          "input_sha_recorded": "ae7a6344dfca34e2999c949c045a3f8577dd0ee411bcc4531a333a51498d93c0",
+          "input_sha_actual": "ae7a6344dfca34e2999c949c045a3f8577dd0ee411bcc4531a333a51498d93c0",
+          "input_matches": true,
+          "input": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/perlbench_checkspam/5886/_5886_0.199334_memory_.zstd",
+          "warmup_config": "20000000",
+          "maxinsts_config": "2000000",
+          "difftest": "true",
+          "exit_maxinst": true,
+          "log_error": false,
+          "validation_passed": true,
+          "validation_exit_code": 0,
+          "stats_blocks": 1,
+          "insts": 2000000,
+          "cycles": 449340,
+          "ipc": 4.450972537499443,
+          "branch_errors_per_kinst": 2.4195,
+          "second_predictions": 264987,
+          "two_fetch_successes": 237553
+        },
+        "predict1": {
+          "source_head_recorded": "891eabfffcea94953f9b2720c83c69915fa78ef8",
+          "binary_sha_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha_actual": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_matches": true,
+          "input_sha_recorded": "ae7a6344dfca34e2999c949c045a3f8577dd0ee411bcc4531a333a51498d93c0",
+          "input_sha_actual": "ae7a6344dfca34e2999c949c045a3f8577dd0ee411bcc4531a333a51498d93c0",
+          "input_matches": true,
+          "input": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/perlbench_checkspam/5886/_5886_0.199334_memory_.zstd",
+          "warmup_config": "20000000",
+          "maxinsts_config": "2000000",
+          "difftest": "true",
+          "exit_maxinst": true,
+          "log_error": false,
+          "validation_passed": true,
+          "validation_exit_code": 0,
+          "stats_blocks": 1,
+          "insts": 2000001,
+          "cycles": 493550,
+          "ipc": 4.052276365109918,
+          "branch_errors_per_kinst": 2.3779988110005945,
+          "second_predictions": 0,
+          "two_fetch_successes": 23805,
+          "relative_to_frontend_percent": -8.957506905075462
+        },
+        "fetch1": {
+          "source_head_recorded": "891eabfffcea94953f9b2720c83c69915fa78ef8",
+          "binary_sha_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha_actual": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_matches": true,
+          "input_sha_recorded": "ae7a6344dfca34e2999c949c045a3f8577dd0ee411bcc4531a333a51498d93c0",
+          "input_sha_actual": "ae7a6344dfca34e2999c949c045a3f8577dd0ee411bcc4531a333a51498d93c0",
+          "input_matches": true,
+          "input": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/perlbench_checkspam/5886/_5886_0.199334_memory_.zstd",
+          "warmup_config": "20000000",
+          "maxinsts_config": "2000000",
+          "difftest": "true",
+          "exit_maxinst": true,
+          "log_error": false,
+          "validation_passed": true,
+          "validation_exit_code": 0,
+          "stats_blocks": 1,
+          "insts": 2000001,
+          "cycles": 495672,
+          "ipc": 4.034928339708517,
+          "branch_errors_per_kinst": 2.3669988165005917,
+          "second_predictions": 271929,
+          "two_fetch_successes": 0,
+          "relative_to_frontend_percent": -9.347264991768734
+        },
+        "override_bubbles": {
+          "source_head_recorded": "891eabfffcea94953f9b2720c83c69915fa78ef8",
+          "binary_sha_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha_actual": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_matches": true,
+          "input_sha_recorded": "ae7a6344dfca34e2999c949c045a3f8577dd0ee411bcc4531a333a51498d93c0",
+          "input_sha_actual": "ae7a6344dfca34e2999c949c045a3f8577dd0ee411bcc4531a333a51498d93c0",
+          "input_matches": true,
+          "input": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/perlbench_checkspam/5886/_5886_0.199334_memory_.zstd",
+          "warmup_config": "20000000",
+          "maxinsts_config": "2000000",
+          "difftest": "true",
+          "exit_maxinst": true,
+          "log_error": false,
+          "validation_passed": true,
+          "validation_exit_code": 0,
+          "stats_blocks": 1,
+          "insts": 2000006,
+          "cycles": 459458,
+          "ipc": 4.352968062369139,
+          "branch_errors_per_kinst": 2.4474926575220275,
+          "second_predictions": 253062,
+          "two_fetch_successes": 229071,
+          "relative_to_frontend_percent": -2.201866542752551
+        },
+        "timing_fetch": {
+          "source_head_recorded": "891eabfffcea94953f9b2720c83c69915fa78ef8",
+          "binary_sha_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha_actual": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_matches": true,
+          "input_sha_recorded": "ae7a6344dfca34e2999c949c045a3f8577dd0ee411bcc4531a333a51498d93c0",
+          "input_sha_actual": "ae7a6344dfca34e2999c949c045a3f8577dd0ee411bcc4531a333a51498d93c0",
+          "input_matches": true,
+          "input": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/perlbench_checkspam/5886/_5886_0.199334_memory_.zstd",
+          "warmup_config": "20000000",
+          "maxinsts_config": "2000000",
+          "difftest": "true",
+          "exit_maxinst": true,
+          "log_error": false,
+          "validation_passed": true,
+          "validation_exit_code": 0,
+          "stats_blocks": 1,
+          "insts": 2000001,
+          "cycles": 520729,
+          "ipc": 3.8407713033074784,
+          "branch_errors_per_kinst": 2.4129987935006034,
+          "second_predictions": 271112,
+          "two_fetch_successes": 47167,
+          "relative_to_frontend_percent": -13.709391128590875
+        }
+      },
+      "missing_at_audit_start": [],
+      "config_diffs": {
+        "predict1": {
+          "system.cpu.branchPred.idealPredictionsPerCycle": [
+            "2",
+            "1"
+          ]
+        },
+        "fetch1": {
+          "system.cpu.enableTwoFetch": [
+            "true",
+            "false"
+          ]
+        },
+        "override_bubbles": {
+          "system.cpu.branchPred.idealNoOverrideBubbles": [
+            "true",
+            "false"
+          ]
+        },
+        "timing_fetch": {
+          "system.cpu.idealInstructionFetch": [
+            "true",
+            "false"
+          ]
+        }
+      },
+      "frontend_relative_to_baseline_percent": 26.17305381225796
+    },
+    "libquantum_69175": {
+      "runs": {
+        "baseline": {
+          "source_head_recorded": "891eabfffcea94953f9b2720c83c69915fa78ef8",
+          "binary_sha_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha_actual": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_matches": true,
+          "input_sha_recorded": "cc1685b8d4c6e9c05db1be2008e23655f0d8092e74d2697a53dd8be24038ecc8",
+          "input_sha_actual": "cc1685b8d4c6e9c05db1be2008e23655f0d8092e74d2697a53dd8be24038ecc8",
+          "input_matches": true,
+          "input": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/libquantum/69175/_69175_0.137331_memory_.zstd",
+          "warmup_config": "20000000",
+          "maxinsts_config": "2000000",
+          "difftest": "true",
+          "exit_maxinst": true,
+          "log_error": false,
+          "validation_passed": true,
+          "validation_exit_code": 0,
+          "stats_blocks": 1,
+          "insts": 2000006,
+          "cycles": 343768,
+          "ipc": 5.817894626608643,
+          "branch_errors_per_kinst": 0.000999997000009,
+          "second_predictions": 0,
+          "two_fetch_successes": 0
+        },
+        "frontend": {
+          "source_head_recorded": "891eabfffcea94953f9b2720c83c69915fa78ef8",
+          "binary_sha_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha_actual": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_matches": true,
+          "input_sha_recorded": "cc1685b8d4c6e9c05db1be2008e23655f0d8092e74d2697a53dd8be24038ecc8",
+          "input_sha_actual": "cc1685b8d4c6e9c05db1be2008e23655f0d8092e74d2697a53dd8be24038ecc8",
+          "input_matches": true,
+          "input": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/libquantum/69175/_69175_0.137331_memory_.zstd",
+          "warmup_config": "20000000",
+          "maxinsts_config": "2000000",
+          "difftest": "true",
+          "exit_maxinst": true,
+          "log_error": false,
+          "validation_passed": true,
+          "validation_exit_code": 0,
+          "stats_blocks": 1,
+          "insts": 2000000,
+          "cycles": 344254,
+          "ipc": 5.809663794756197,
+          "branch_errors_per_kinst": 0.001,
+          "second_predictions": 35880,
+          "two_fetch_successes": 166696
+        },
+        "predict1": {
+          "source_head_recorded": "891eabfffcea94953f9b2720c83c69915fa78ef8",
+          "binary_sha_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha_actual": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_matches": true,
+          "input_sha_recorded": "cc1685b8d4c6e9c05db1be2008e23655f0d8092e74d2697a53dd8be24038ecc8",
+          "input_sha_actual": "cc1685b8d4c6e9c05db1be2008e23655f0d8092e74d2697a53dd8be24038ecc8",
+          "input_matches": true,
+          "input": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/libquantum/69175/_69175_0.137331_memory_.zstd",
+          "warmup_config": "20000000",
+          "maxinsts_config": "2000000",
+          "difftest": "true",
+          "exit_maxinst": true,
+          "log_error": false,
+          "validation_passed": true,
+          "validation_exit_code": 0,
+          "stats_blocks": 1,
+          "insts": 2000000,
+          "cycles": 343169,
+          "ipc": 5.828032252330485,
+          "branch_errors_per_kinst": 0.001,
+          "second_predictions": 0,
+          "two_fetch_successes": 166611,
+          "relative_to_frontend_percent": 0.31617074968894876
+        },
+        "fetch1": {
+          "source_head_recorded": "891eabfffcea94953f9b2720c83c69915fa78ef8",
+          "binary_sha_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha_actual": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_matches": true,
+          "input_sha_recorded": "cc1685b8d4c6e9c05db1be2008e23655f0d8092e74d2697a53dd8be24038ecc8",
+          "input_sha_actual": "cc1685b8d4c6e9c05db1be2008e23655f0d8092e74d2697a53dd8be24038ecc8",
+          "input_matches": true,
+          "input": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/libquantum/69175/_69175_0.137331_memory_.zstd",
+          "warmup_config": "20000000",
+          "maxinsts_config": "2000000",
+          "difftest": "true",
+          "exit_maxinst": true,
+          "log_error": false,
+          "validation_passed": true,
+          "validation_exit_code": 0,
+          "stats_blocks": 1,
+          "insts": 2000006,
+          "cycles": 342087,
+          "ipc": 5.846483496888219,
+          "branch_errors_per_kinst": 0.000999997000009,
+          "second_predictions": 34954,
+          "two_fetch_successes": 0,
+          "relative_to_frontend_percent": 0.6337664868878434
+        },
+        "override_bubbles": {
+          "source_head_recorded": "891eabfffcea94953f9b2720c83c69915fa78ef8",
+          "binary_sha_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha_actual": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_matches": true,
+          "input_sha_recorded": "cc1685b8d4c6e9c05db1be2008e23655f0d8092e74d2697a53dd8be24038ecc8",
+          "input_sha_actual": "cc1685b8d4c6e9c05db1be2008e23655f0d8092e74d2697a53dd8be24038ecc8",
+          "input_matches": true,
+          "input": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/libquantum/69175/_69175_0.137331_memory_.zstd",
+          "warmup_config": "20000000",
+          "maxinsts_config": "2000000",
+          "difftest": "true",
+          "exit_maxinst": true,
+          "log_error": false,
+          "validation_passed": true,
+          "validation_exit_code": 0,
+          "stats_blocks": 1,
+          "insts": 2000002,
+          "cycles": 343042,
+          "ipc": 5.830195719474584,
+          "branch_errors_per_kinst": 0.000999999000001,
+          "second_predictions": 35772,
+          "two_fetch_successes": 166693,
+          "relative_to_frontend_percent": 0.35340986060017343
+        },
+        "timing_fetch": {
+          "source_head_recorded": "891eabfffcea94953f9b2720c83c69915fa78ef8",
+          "binary_sha_recorded": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_sha_actual": "511cb9dda739f9f39cacc768b61e0f49d3956eb4989a74be47458b69511bd923",
+          "binary_matches": true,
+          "input_sha_recorded": "cc1685b8d4c6e9c05db1be2008e23655f0d8092e74d2697a53dd8be24038ecc8",
+          "input_sha_actual": "cc1685b8d4c6e9c05db1be2008e23655f0d8092e74d2697a53dd8be24038ecc8",
+          "input_matches": true,
+          "input": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/libquantum/69175/_69175_0.137331_memory_.zstd",
+          "warmup_config": "20000000",
+          "maxinsts_config": "2000000",
+          "difftest": "true",
+          "exit_maxinst": true,
+          "log_error": false,
+          "validation_passed": true,
+          "validation_exit_code": 0,
+          "stats_blocks": 1,
+          "insts": 2000002,
+          "cycles": 345000,
+          "ipc": 5.797107246376812,
+          "branch_errors_per_kinst": 0.000999999000001,
+          "second_predictions": 32867,
+          "two_fetch_successes": 99986,
+          "relative_to_frontend_percent": -0.2161321002898453
+        }
+      },
+      "missing_at_audit_start": [],
+      "config_diffs": {
+        "predict1": {
+          "system.cpu.branchPred.idealPredictionsPerCycle": [
+            "2",
+            "1"
+          ]
+        },
+        "fetch1": {
+          "system.cpu.enableTwoFetch": [
+            "true",
+            "false"
+          ]
+        },
+        "override_bubbles": {
+          "system.cpu.branchPred.idealNoOverrideBubbles": [
+            "true",
+            "false"
+          ]
+        },
+        "timing_fetch": {
+          "system.cpu.idealInstructionFetch": [
+            "true",
+            "false"
+          ]
+        }
+      },
+      "frontend_relative_to_baseline_percent": -0.14147440578936576
+    }
+  }
+}
