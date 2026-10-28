@@ -331,6 +331,14 @@ jobs:
           else
             run_local_parallel
           fi
+      - name: Validate software WFI loop measurements
+        if: contains(inputs.extra_args, '--smt-wfi-loop-test')
+        env:
+          PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
+        run: |
+          python3 util/xs_scripts/smt_wfi/validate.py \
+            --archive "$PERF_ARCHIVE_DIR/spec_all"
+
       - name: Setup gem5_data_proc environment
         run: |
           # 使用本地数据处理仓库，避免GitHub网络问题
@@ -339,6 +347,7 @@ jobs:
       - name: Check performance test result
         env:
           PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
+          EXTRA_GEM5_ARGS_RAW: ${{ inputs.extra_args }}
         run: |
           # 添加yanyue的 Python 包路径, 包含pandas等
           export PYTHONPATH=$GITHUB_WORKSPACE/gem5_data_proc:/nfs/home/yanyue/.local/lib/python3.12/site-packages:$PYTHONPATH
@@ -351,10 +360,19 @@ jobs:
             CLUSTER_CONFIG="$GEM5_HOME/$CLUSTER_CONFIG"
           fi
           # 使用已有的数据spec_all生成测试报告
-          bash example-scripts/${{ steps.config.outputs.score_script }} \
-            "$PERF_ARCHIVE_DIR/spec_all" \
-            "$CLUSTER_CONFIG" \
-            > $GITHUB_WORKSPACE/score.txt
+          if [[ "$EXTRA_GEM5_ARGS_RAW" == *--smt-wfi-loop-test* ]]; then
+            python3 "$GEM5_HOME/util/xs_scripts/smt_wfi/score_t0.py" \
+              --archive "$PERF_ARCHIVE_DIR/spec_all" \
+              --cluster "$CLUSTER_CONFIG" \
+              --data-proc "$GEM5_HOME/gem5_data_proc" \
+              --output-dir "$PERF_ARCHIVE_DIR/t0-score" \
+              > "$GITHUB_WORKSPACE/score.txt"
+          else
+            bash example-scripts/${{ steps.config.outputs.score_script }} \
+              "$PERF_ARCHIVE_DIR/spec_all" \
+              "$CLUSTER_CONFIG" \
+              > "$GITHUB_WORKSPACE/score.txt"
+          fi
           cp "$GITHUB_WORKSPACE/score.txt" "$PERF_ARCHIVE_DIR/"
           # 提取最后42行score信息
           echo "### performance test result :rocket:" >> $GITHUB_STEP_SUMMARY

@@ -1161,10 +1161,29 @@ def xiangshan_system_init():
         help="SMT IQ watermark for fpIQ/vecIQ (entries reserved per thread)",
     )
 
+    parser.add_argument(
+        "--smt-wfi-loop-test", action="store_true",
+        help="Measure T0 while T1 continuously executes a software WFI loop",
+    )
+    parser.add_argument(
+        "--smt-wfi-loop-restore-insts", type=int, default=1000000,
+        help="Minimum total T0 instructions before measuring the software loop",
+    )
+    parser.add_argument(
+        "--smt-wfi-loop-manifest", default=None,
+        help="Restorer manifest; defaults to manifest.json beside --gcpt-restorer",
+    )
+
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:
         Ruby.define_options(parser)
     args = parser.parse_args()
+    if args.smt_wfi_loop_test:
+        if args.num_cpus != 1 or args.enable_spmt:
+            parser.error("--smt-wfi-loop-test needs one SMT CPU without SpMT")
+        if not args.gcpt_restorer:
+            parser.error("--smt-wfi-loop-test requires an explicit WFI restorer")
+
 
     # Validate MLP-aware policy combinations before CPU construction:
     # MlpAwarePolicy needs its predictor and a non-BaseLine fetch block

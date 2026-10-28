@@ -780,8 +780,12 @@ def run_vanilla(options, root, testsys, cpu_class):
 
     np = options.num_cpus
     switch_cpus = None
+    wfi_loop = getattr(options, "smt_wfi_loop_test", False)
+    if wfi_loop and (np != 1 or int(testsys.cpu[0].numThreads) != 2 or cpu_class):
+        fatal("--smt-wfi-loop-test needs one two-thread CPU without switching")
 
-    if options.maxinsts:
+    # The loop can commit faster than SPEC. Only T0 may end warmup/run.
+    if options.maxinsts and not wfi_loop:
         for i in range(np):
             testsys.cpu[i].max_insts_any_thread = options.maxinsts
 
@@ -816,7 +820,7 @@ def run_vanilla(options, root, testsys, cpu_class):
         print("No switch cpu_class provided")
 
     for i in range(np):
-        if options.warmup_insts_no_switch != None:
+        if options.warmup_insts_no_switch != None and not wfi_loop:
             testsys.cpu[i].warmupInstCount = options.warmup_insts_no_switch
 
     checkpoint_dir = None
@@ -847,7 +851,11 @@ def run_vanilla(options, root, testsys, cpu_class):
 
     # If checkpoints are being taken, then the checkpoint instruction
     # will occur in the benchmark code it self.
-    exit_event = benchCheckpoints(testsys, options, maxtick, cptdir=None)
+    if wfi_loop:
+        from common import SMTWfiLoop
+        exit_event = SMTWfiLoop.run(options, testsys, maxtick)
+    else:
+        exit_event = benchCheckpoints(testsys, options, maxtick, cptdir=None)
 
     print('Exiting @ tick %i because %s' %
           (m5.curTick(), exit_event.getCause()))
