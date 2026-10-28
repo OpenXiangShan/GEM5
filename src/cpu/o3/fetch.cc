@@ -945,7 +945,9 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
     }
 
     if (cpu->getTea() && pkt->cacheAccessDepth > 0) {
-        threads[tid].cacheReq.teaPsv |= TeaEvent::bit(TeaEvent::DR_L1);
+        auto &request = threads[tid].cacheReq;
+        request.teaPsv[request.findRequestIndex(pkt->req)] |=
+            TeaEvent::bit(TeaEvent::DR_L1);
     }
 
     DPRINTF(Fetch, "[tid:%i] Packet successfully matched and stored. Current status: %s\n",
@@ -1454,13 +1456,16 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
     updateCacheRequestStatusByRequest(tid, mem_req, AccessFailed);
 
     // Translation faulted, icache request won't be sent.
-    const auto tea_psv = threads[tid].cacheReq.teaPsv;
+    const PCStateBase &fetch_pc = *threads[tid].fetchpc;
+    const auto tea_psv = cpu->getTea() ?
+        threads[tid].cacheReq.takeTeaEvents(
+            fetch_pc.instAddr(), fetch_pc.getFallThruPC() - fetch_pc.instAddr()) :
+        0;
     threads[tid].cacheReq.reset();
 
     // Send the fault to commit.  This thread will not do anything
     // until commit handles the fault.  The only other way it can
     // wake up is if a squash comes along and changes the PC.
-    const PCStateBase &fetch_pc = *threads[tid].fetchpc;
 
     DPRINTF(Fetch, "[tid:%i] Translation faulted, building noop.\n", tid);
     // We will use a nop in order to carry the fault.
@@ -1515,7 +1520,9 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req,
     }
 
     if (cpu->getTea() && delayed) {
-        threads[tid].cacheReq.teaPsv |= TeaEvent::bit(TeaEvent::DR_TLB);
+        auto &request = threads[tid].cacheReq;
+        request.teaPsv[request.findRequestIndex(mem_req)] |=
+            TeaEvent::bit(TeaEvent::DR_TLB);
     }
 
     // Handle translation result
@@ -3047,12 +3054,12 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
 
     instruction->setTid(tid);
 
-    // Keep fetch events with their request through refill and backpressure,
-    // then attach the packet signature to its first architectural member.
+    // Attribute each line's events to the first architectural instruction
+    // using its bytes, including instructions that span both lines.
     if (cpu->getTea() &&
         (!instruction->isMicroop() || instruction->isFirstMicroop())) {
-        instruction->teaPsv = threads[tid].cacheReq.teaPsv;
-        threads[tid].cacheReq.teaPsv = 0;
+        instruction->teaPsv = threads[tid].cacheReq.takeTeaEvents(
+            instruction->getPC(), instruction->getInstBytes());
     }
 
     cpu->perfCCT->createMeta(instruction);

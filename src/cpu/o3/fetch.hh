@@ -858,7 +858,8 @@ class Fetch
 
         /** Number of completed packets received */
         unsigned completedPackets;
-        uint16_t teaPsv = 0;
+        /** Pending events for the two demand cache-line requests. */
+        std::array<uint16_t, 2> teaPsv{};
 
         /** Constructor */
         CacheRequest() : baseAddr(0), totalSize(0), completedPackets(0) {}
@@ -911,7 +912,7 @@ class Fetch
             baseAddr = 0;
             totalSize = 0;
             completedPackets = 0;
-            teaPsv = 0;
+            teaPsv.fill(0);
         }
 
         /** Add a new request */
@@ -919,6 +920,21 @@ class Fetch
             requests.push_back(req);
             packets.push_back(nullptr);  // Initialize with null packet
             requestStatus.push_back(CacheIdle);  // Initialize status
+        }
+
+        /** Consume events only from requests supplying instruction bytes. */
+        uint16_t takeTeaEvents(Addr pc, unsigned size)
+        {
+            uint16_t psv = 0;
+            for (size_t i = 0; i < requests.size(); ++i) {
+                const auto &req = requests[i];
+                if (pc < req->getVaddr() + req->getSize() &&
+                    req->getVaddr() < pc + size) {
+                    psv |= teaPsv[i];
+                    teaPsv[i] = 0;
+                }
+            }
+            return psv;
         }
 
         /** Mark a specific request as failed (NEW) */
