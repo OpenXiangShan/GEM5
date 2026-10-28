@@ -1,0 +1,25 @@
+name: gem5 Trace Performance Test(0.3c)
+
+on:
+  push:
+    branches: [xs-dev]
+
+permissions:
+  contents: read
+
+jobs:
+  google_trace_0_3c:
+    name: Google trace 0.3c
+    uses: ./.github/workflows/gem5-perf-template.yml
+    with:
+      config_path: configs/example/kmhv3.py
+      benchmark_type: trace-google-0.3c
+      timeout_minutes: 360
+
+  cbp_trace_0_3c:
+    name: CBP trace 0.3c
+    uses: ./.github/workflows/gem5-perf-template.yml
+    with:
+      config_path: configs/example/kmhv3.py
+      benchmark_type: trace-cbp-0.3c
+      timeout_minutes: 360

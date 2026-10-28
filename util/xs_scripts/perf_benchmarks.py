@@ -232,6 +232,32 @@ _TRACE_BENCHMARKS = _index_benchmarks(
             comment="run all CBP traces",
             trace_format="cbp2025",
         ),
+        BenchmarkConfig(
+            benchmark_type="trace-google-0.3c",
+            checkpoint_list=(
+                "/nfs/home/share/gem5_ci/gem5_trace/"
+                "google_trace/google_traces_0.3c.lst"
+            ),
+            checkpoint_root="/nfs/home/share/gem5_ci/gem5_trace/google_trace",
+            cluster_config="",
+            score_script="",
+            comment=(
+                "run about 30% SimPoint weight coverage per Google workload"
+            ),
+            trace_format="tracertl",
+        ),
+        BenchmarkConfig(
+            benchmark_type="trace-cbp-0.3c",
+            checkpoint_list=(
+                "/nfs/home/share/gem5_ci/gem5_trace/"
+                "cbp_traces/cbp_traces_0.3c.lst"
+            ),
+            checkpoint_root="/nfs/home/share/gem5_ci/gem5_trace/cbp_traces",
+            cluster_config="",
+            score_script="",
+            comment="run about 30% of each CBP trace category",
+            trace_format="cbp2025",
+        ),
     )
 )
 
