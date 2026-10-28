@@ -920,6 +920,11 @@ def xiangshan_system_init():
     Options.addXiangshanFSOptions(parser)
     Options.addXiangshanTraceOptions(parser)
     parser.add_argument(
+        "--upperbound-backend",
+        action="store_true",
+        help="Use the single-thread ten-integer-port, four-load backend probe",
+    )
+    parser.add_argument(
         "--enable-value-prediction",
         action="store_true",
         default=False,

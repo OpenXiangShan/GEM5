@@ -1,0 +1,43 @@
+{
+  "time": "2026-10-28T13:54:09.568272+08:00",
+  "runs": [
+    {
+      "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135029_e34d8f6_kmhv3_run1667",
+      "cluster_sha256": "1e8e850e94dba6f7903c0e28c3ff365b54b380221dc4deaf63e7d72f3596f5b7",
+      "list_sha256": "b8b50365f0b80348946149f037f68bb60eef18e2e62a515be8e56e8aab26ed7d",
+      "cluster_point_count": 145,
+      "list_count": 145,
+      "cluster_list_equal": true,
+      "present_dirs": 145,
+      "unexpected": [],
+      "missing_count": 0,
+      "markers": {
+        "completed": 0,
+        "abort": 0,
+        "running": 145
+      },
+      "unmarked": 0,
+      "score_paths": [],
+      "score_contents": []
+    },
+    {
+      "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261028_135346_e34d8f6_kmhv3_run1668",
+      "cluster_sha256": "1e8e850e94dba6f7903c0e28c3ff365b54b380221dc4deaf63e7d72f3596f5b7",
+      "list_sha256": "b8b50365f0b80348946149f037f68bb60eef18e2e62a515be8e56e8aab26ed7d",
+      "cluster_point_count": 145,
+      "list_count": 145,
+      "cluster_list_equal": true,
+      "present_dirs": 0,
+      "unexpected": [],
+      "missing_count": 145,
+      "markers": {
+        "completed": 0,
+        "abort": 0,
+        "running": 0
+      },
+      "unmarked": 0,
+      "score_paths": [],
+      "score_contents": []
+    }
+  ]
+}

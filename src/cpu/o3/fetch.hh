@@ -513,6 +513,7 @@ class Fetch
      * @param fault The translation fault
      */
     void handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fault &fault);
+    void emitFetchFault(ThreadID tid, const Fault &fault, uint16_t tea_psv);
 
     /** Handle multi-cacheline fetch that spans two cache lines.
      * Creates and sends two separate cache requests.
@@ -725,6 +726,7 @@ class Fetch
      */
     StallReason checkMemoryNeeds(ThreadID tid, PCStateBase &this_pc,
                                  const StaticInstPtr &curMacroop);
+    StallReason supplyIdealInstructionBytes(ThreadID tid, PCStateBase &pc);
 
 
   private:
@@ -815,6 +817,8 @@ class Fetch
 
     /** Enable consuming two consecutive FTQ targets from one fetch buffer. */
     const bool enableTwoFetch;
+    const bool idealInstructionFetch;
+    unsigned idealFetchTargetsUsed = 0;
 
     /** Maximum byte window covered by limited two-fetch. */
     const unsigned twoFetchMaxBytes;
@@ -1327,6 +1331,10 @@ class Fetch
         statistics::Scalar twoFetchAttempts;
         /** FTQ boundaries crossed using the current fetch buffer. */
         statistics::Scalar twoFetchSuccesses;
+        statistics::Scalar idealInstructionSupplies;
+        statistics::Scalar idealInstructionBytes;
+        statistics::Scalar idealInstructionFaults;
+        statistics::Scalar idealFetchTargetsConsumed;
 
         // Trace metadata accounting (trace mode)
         /** Number of stored trace metadata records (seqNum -> traceInst). */

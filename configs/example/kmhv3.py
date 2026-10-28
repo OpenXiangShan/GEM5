@@ -48,6 +48,43 @@ def setPtwLevelLimitParams(args, tlb):
     tlb.walker.ptw_level3_limit = args.ptw_level3_limit
     tlb.walker.ptw_miss_queue_size = args.ptw_miss_queue_size
 
+
+def setUpperboundBackendParams(args, system):
+    if not args.upperbound_backend:
+        return
+    if args.smt or args.enable_spmt or hybrid_policy_requested(args):
+        fatal("The upper-bound backend probe requires an uncompressed single thread")
+    for cpu in system.cpu:
+        # Reuse the wider topology without the SpMT thread ownership rules.
+        cpu.scheduler = KMHV3SpMTScheduler(
+            enableSpMT=False, intRegfileBanks=1, enableMainRdpOpt=False)
+        cpu.scheduler.disableAllRegArb()
+        for iq in cpu.scheduler.IQs:
+            iq.size = 32
+            iq.deferNewEnqueueSelection = True
+            if not str(iq.name).startswith(("fpIQ", "vecIQ")):
+                iq.scheduleToExecDelay = 1
+
+        cpu.decodeWidth = 16
+        cpu.renameWidth = 16
+        cpu.commitWidth = 16
+        cpu.phyregReleaseWidth = 16
+        cpu.wbWidth = 32
+        cpu.numROBEntries = 640
+        cpu.numPhysIntRegs = 512
+        cpu.numPhysFloatRegs = 384
+        cpu.LQEntries = 256
+        cpu.SQEntries = 128
+        cpu.RARQEntries = 192
+        cpu.RAWQEntries = 128
+        cpu.LoadCompletionWidth = 16
+        cpu.StoreCompletionWidth = 8
+        cpu.RARDequeuePerCycle = 8
+        cpu.RAWDequeuePerCycle = 8
+        cpu.SbufferEntries = 32
+        cpu.SbufferEvictThreshold = 16
+        cpu.fetchQueueSize = 128
+
 def setKmhV3Params(args, system):
     hybrid = hybrid_policy_requested(args)
     if hybrid and args.smt:
@@ -305,6 +342,7 @@ if __name__ == '__m5_main__':
         configure_xiangshan_linux_workload(test_sys, args)
     # Set ideal parameters here with the highest priority, over command-line arguments
     setKmhV3Params(args, test_sys)
+    setUpperboundBackendParams(args, test_sys)
 
     root = Root(full_system=True, system=test_sys)
     if maybe_handle_solver_runtime(root, args):

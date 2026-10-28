@@ -1,0 +1,44 @@
+[
+  {
+    "label": "baseline24",
+    "run_id": 40638589458,
+    "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/40638589458",
+    "observed_status": "in_progress",
+    "observed_step": "Build GEM5 fast",
+    "dispatch": {
+      "ref": "tea-main55-ci24-20261026",
+      "inputs": {
+        "configuration": "kmhv3.py",
+        "benchmark_type": "spec06-rva23-novec-gcc16-0.3c",
+        "specific_benchmarks": "",
+        "distributed_servers": "default",
+        "distributed_jobs_per_server": "32",
+        "branch": "e34d8f6e7901b34fbd6111cfa5615136aaeefaf1",
+        "note": "Upperbound R0 baseline24 20261028",
+        "extra_args": ""
+      }
+    },
+    "score": null
+  },
+  {
+    "label": "best24",
+    "run_id": 40638592517,
+    "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/40638592517",
+    "observed_status": "in_progress",
+    "observed_step": "Build GEM5 fast",
+    "dispatch": {
+      "ref": "tea-main55-ci24-20261026",
+      "inputs": {
+        "configuration": "kmhv3.py",
+        "benchmark_type": "spec06-rva23-novec-gcc16-0.3c",
+        "specific_benchmarks": "",
+        "distributed_servers": "default",
+        "distributed_jobs_per_server": "32",
+        "branch": "e34d8f6e7901b34fbd6111cfa5615136aaeefaf1",
+        "note": "Upperbound R0 best24 20261028",
+        "extra_args": "--param=system.cpu[0].branchPred.tage.numWays=[16,16,16,16,16,16,16,16] --param=system.cpu[0].scheduler.IQs[13].size=32 --param=system.cpu[0].scheduler.IQs[14].size=32 --param=system.cpu[0].scheduler.IQs[15].size=32 --param=system.cpu[0].scheduler.IQs[16].size=32 --param=system.l2_wrappers[0].data_sram_banks=4"
+      }
+    },
+    "score": null
+  }
+]
