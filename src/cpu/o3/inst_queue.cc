@@ -77,14 +77,15 @@ namespace o3
 InstructionQueue::FUCompletion::FUCompletion(const DynInstPtr &_inst,
     int fu_idx, InstructionQueue *iq_ptr)
     : Event(Stat_Event_Pri, AutoDelete),
-      inst(_inst), fuIdx(fu_idx), iqPtr(iq_ptr), freeFU(false)
+      inst(_inst), attempt(_inst->fpWakeAttempt), fuIdx(fu_idx),
+      iqPtr(iq_ptr), freeFU(false)
 {
 }
 
 void
 InstructionQueue::FUCompletion::process()
 {
-    iqPtr->processFUCompletion(inst, -1);
+    iqPtr->processFUCompletion(inst, -1, attempt);
     inst = NULL;
 }
 
@@ -442,7 +443,7 @@ bool
 InstructionQueue::isDrained() const
 {
     bool drained = scheduler->isDrained() &&
-                   instsToExecute.empty() &&
+                   instsToExecute.empty() && deferredFpReads.empty() &&
                    wbOutstanding == 0;
     drained = drained && !hasPhysicalSQFullReplayInsts();
     for (ThreadID tid = 0; tid < numThreads; ++tid)
@@ -455,6 +456,7 @@ void
 InstructionQueue::drainSanityCheck() const
 {
     assert(instsToExecute.empty());
+    assert(deferredFpReads.empty());
     assert(!hasPhysicalSQFullReplayInsts());
     for (ThreadID tid = 0; tid < numThreads; ++tid)
         memDepUnit[tid].drainSanityCheck();
@@ -536,8 +538,15 @@ DynInstPtr
 InstructionQueue::getInstToExecute()
 {
     assert(!instsToExecute.empty());
-    DynInstPtr inst = std::move(instsToExecute.front());
+    auto pending = std::move(instsToExecute.front());
     instsToExecute.pop_front();
+    DynInstPtr inst = std::move(pending.inst);
+    if (scheduler->fmaRtlAlignmentEnabled() &&
+        !scheduler->fpAttemptCurrent(inst, pending.attempt)) {
+        DPRINTF(Schedule, "FPA discard-execute tid=%u seq=%llu attempt=%llu current=%llu\n",
+            inst->threadNumber, inst->seqNum, pending.attempt, inst->fpWakeAttempt);
+        return nullptr;
+    }
     if (inst->isFloating()) {
         iqIOStats.fpInstQueueReads++;
     } else if (inst->isVector()) {
@@ -549,20 +558,32 @@ InstructionQueue::getInstToExecute()
 }
 
 void
-InstructionQueue::processFUCompletion(const DynInstPtr &inst, int fu_idx)
+InstructionQueue::processFUCompletion(const DynInstPtr &inst, int fu_idx,
+                                      uint64_t attempt)
 {
     DPRINTF(IQ, "Processing FU completion [sn:%llu]\n", inst->seqNum);
     assert(!cpu->switchedOut());
     // The CPU could have been sleeping until this op completed (*extremely*
     // long latency op).  Wake it if it was.  This may be overkill.
-   --wbOutstanding;
+    // Each event owns exactly one outstanding charge, including stale events.
+    assert(wbOutstanding > 0);
+    --wbOutstanding;
+    if (scheduler->fmaRtlAlignmentEnabled())
+        DPRINTF(Schedule, "FPA settle tid=%u seq=%llu attempt=%llu outstanding=%d\n",
+            inst->threadNumber, inst->seqNum, attempt, wbOutstanding);
     iewStage->wakeCPU();
+    if (scheduler->fmaRtlAlignmentEnabled() &&
+        !scheduler->fpAttemptCurrent(inst, attempt)) {
+        DPRINTF(Schedule, "FPA discard-complete tid=%u seq=%llu attempt=%llu current=%llu\n",
+            inst->threadNumber, inst->seqNum, attempt, inst->fpWakeAttempt);
+        return;
+    }
 
     // @todo: Ensure that these FU Completions happen at the beginning
     // of a cycle, otherwise they could add too many instructions to
     // the queue.
     issueToExecuteQueue->access(0)->size++;
-    instsToExecute.push_back(inst);
+    instsToExecute.push_back({inst, attempt});
 }
 
 bool
@@ -682,14 +703,32 @@ InstructionQueue::scheduleReadyInsts()
             iqIOStats.intAluAccesses++;
         }
 
-        uint32_t op_latency = scheduler->getOpLatency(issued_inst);
-        execLatencyCheck(issued_inst, op_latency);
+        if (scheduler->fmaRtlAlignmentEnabled()) {
+            scheduler->fpAtFU(issued_inst);
+        }
+        const bool defer_fp_read = scheduler->fmaRtlAlignmentEnabled() &&
+            scheduler->fpNeedsDeferredRead(issued_inst);
+        uint32_t op_latency = defer_fp_read ? 0 :
+            scheduler->getOpLatency(issued_inst);
+        if (!defer_fp_read) {
+            execLatencyCheck(issued_inst, op_latency);
+        }
         assert(op_latency < 64);
-        DPRINTF(Schedule, "[sn:%llu] start execute %u cycles\n", issued_inst->seqNum, op_latency);
+        if (defer_fp_read) {
+            DPRINTF(Schedule, "[sn:%llu] start execute: defer same-cycle FP operand read\n",
+                    issued_inst->seqNum);
+        } else {
+            DPRINTF(Schedule, "[sn:%llu] start execute %u cycles\n", issued_inst->seqNum, op_latency);
+        }
         cpu->perfCCT->updateInstPos(issued_inst->seqNum, PerfRecord::AtFU);
-        if (op_latency <= 1 || issued_inst->isLoad() || issued_inst->isStore()) {
+        if (defer_fp_read) {
+            deferredFpReads.push_back(
+                {{issued_inst, issued_inst->fpWakeAttempt}, curTick()});
+        } else if (op_latency <= 1 || issued_inst->isLoad() ||
+                   issued_inst->isStore()) {
             i2e_info->size++;
-            instsToExecute.push_back(issued_inst);
+            instsToExecute.push_back(
+                {issued_inst, issued_inst->fpWakeAttempt});
         }
         else {
             ++wbOutstanding;
@@ -718,6 +757,34 @@ InstructionQueue::scheduleReadyInsts()
     } else {
         DPRINTF(IQ, "Not able to schedule any instructions.\n");
     }
+}
+
+void
+InstructionQueue::finishFpDeferredReads()
+{
+    for (const auto &read : deferredFpReads) {
+        const auto &inst = read.pending.inst;
+        if (!scheduler->fpAttemptCurrent(inst, read.pending.attempt) ||
+            inst->isSquashed()) {
+            continue;
+        }
+        if (!scheduler->fpExecutionReady(inst)) {
+            continue;
+        }
+        // This phase runs in the original AtFU tick, after real completions.
+        // Preserve the native DIV completion deadline and latency policy.
+        assert(read.atFuTick == curTick());
+        uint32_t op_latency = scheduler->getOpLatency(inst);
+        execLatencyCheck(inst, op_latency);
+        assert(op_latency > 1 && op_latency < 64);
+        DPRINTF(Schedule, "[sn:%llu] deferred FP read: native latency %u cycles\n",
+                inst->seqNum, op_latency);
+        ++wbOutstanding;
+        auto *execution = new FUCompletion(inst, 0, this);
+        cpu->schedule(execution,
+                      cpu->clockEdge(Cycles(op_latency - 1)) - 1);
+    }
+    deferredFpReads.clear();
 }
 
 void

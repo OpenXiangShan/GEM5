@@ -63,6 +63,8 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('thread_context.cc')
     Source('thread_state.cc')
     Source('issue_queue.cc')
+    Source('fp_wakeup.cc')
+    Source('fp_wakeup_scheduler.cc')
     Source('perfCCT.cc')
 
 

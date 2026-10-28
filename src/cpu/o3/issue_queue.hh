@@ -3,6 +3,8 @@
 
 #include <cstdint>
 #include <list>
+#include <map>
+#include <memory>
 #include <queue>
 #include <string>
 #include <unordered_map>
@@ -18,6 +20,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
+#include "cpu/o3/fp_wakeup.hh"
 #include "cpu/o3/smt_sched.hh"
 #include "cpu/reg_class.hh"
 #include "cpu/timebuf.hh"
@@ -46,7 +49,13 @@ class Scheduler;
 class MemDepUnit;
 
 using ReadyQue = std::list<DynInstPtr>;
-using SelectQue = std::vector<std::pair<uint32_t, DynInstPtr>>;
+struct SelectedInst
+{
+    uint32_t first;
+    DynInstPtr second;
+    uint64_t attempt;
+};
+using SelectQue = std::vector<SelectedInst>;
 
 /**
  *          insert into queue
@@ -146,6 +155,7 @@ class IssueQue : public SimObject
     {
         int size;
         DynInstPtr insts[8];
+        uint64_t attempts[8];
         void push(const DynInstPtr& inst);
         DynInstPtr pop();
     };
@@ -333,6 +343,7 @@ class Scheduler : public SimObject
         DynInstPtr inst;
         PendingWakeEventsType* owner;
         IssueQue* to_issue_queue = nullptr;
+        uint64_t attempt;
 
         SpecWakeupCompletion(const DynInstPtr& inst, IssueQue* to, PendingWakeEventsType* owner);
         void process() override;
@@ -353,6 +364,13 @@ class Scheduler : public SimObject
     struct SchedulerStats : public statistics::Group
     {
         SchedulerStats(statistics::Group* parent);
+        statistics::Scalar fpM2Hits;
+        statistics::Scalar fpM4Hits;
+        statistics::Scalar fpM4ArbFailed;
+        statistics::Scalar fpConfirmFailed;
+        statistics::Scalar fpRetries;
+        statistics::Scalar fpOutputConflicts;
+        statistics::Scalar fpStatePeak;
         statistics::Scalar exec_stall_cycle;
         statistics::Scalar memstall_any_load;
         statistics::Scalar memstall_any_store;
@@ -385,7 +403,56 @@ class Scheduler : public SimObject
     std::vector<uint8_t> totalDispCounter;
     std::vector<std::vector<uint8_t*>> dispOpdist;
 
-    std::vector<DynInstPtr> instsToFu;
+    struct FpPendingInst
+    {
+        DynInstPtr inst;
+        uint64_t attempt;
+    };
+    std::vector<FpPendingInst> instsToFu;
+
+    const bool enableFmaRtlAlignment;
+    FpWakeupState fpWakeState;
+    struct FpRecord
+    {
+        DynInstPtr inst;
+        uint64_t attempt = 0;
+        bool canceled = false;
+        FpWakeupState::Token output;
+        std::vector<FpWakeupState::Binding> sources;
+    };
+    struct FpWakeEvent
+    {
+        DynInstPtr inst;
+        FpWakeupState::Token token;
+        FpWakePath path;
+    };
+    std::unordered_map<InstSeqNum, FpRecord> fpRecords;
+    std::unordered_map<RegIndex, FpWakeupState::Token> fpRegisters;
+    std::multimap<Tick, FpWakeEvent> fpWakeDue;
+    struct FpDataCheck
+    {
+        FpWakeupState::Binding binding;
+        FpWakeIdentity consumer;
+    };
+    std::multimap<Tick, FpDataCheck> fpDataDue;
+
+    FpWakeIdentity fpIdentity(const DynInstPtr& inst) const;
+    bool fpProducer(const DynInstPtr& inst) const;
+    bool fpConsumer(const DynInstPtr& inst, unsigned source) const;
+    bool fpAddend(const DynInstPtr& inst, unsigned source) const;
+    FpRecord& fpRecord(const DynInstPtr& inst);
+    void fpSelected(const DynInstPtr& inst, unsigned port);
+    void fpPublished(const DynInstPtr& inst);
+    void fpProcessWakes();
+    void fpBroadcast(const FpWakeEvent& event);
+    bool fpAdmission(const DynInstPtr& inst);
+    bool fpBound(const DynInstPtr& inst, unsigned source) const;
+    bool fpCancel(const DynInstPtr& inst, bool recovering = false);
+    void fpArbitrationFailed(const DynInstPtr& inst);
+    void fpForget(const DynInstPtr& inst);
+    void fpInsert(const DynInstPtr& inst);
+    uint32_t getOutputDistance(const DynInstPtr& inst);
+
 
     std::vector<bool> earlyScoreboard;
     std::vector<bool> bypassScoreboard;
@@ -429,6 +496,14 @@ class Scheduler : public SimObject
 
   public:
     PendingWakeEventsType specWakeEvents;
+
+    bool fmaRtlAlignmentEnabled() const { return enableFmaRtlAlignment; }
+    bool fpAttemptCurrent(const DynInstPtr& inst, uint64_t attempt) const;
+    void fpAtFU(const DynInstPtr& inst);
+    bool fpNeedsDeferredRead(const DynInstPtr& inst) const;
+    bool fpExecutionReady(const DynInstPtr& inst);
+    void fpCheckDeadlines();
+    void fpComplete(const DynInstPtr& inst);
 
     Scheduler(const SchedulerParams& params);
     unsigned getLoadPipeCount() const { return loadPipeCount; }

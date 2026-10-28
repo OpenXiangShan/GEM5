@@ -152,6 +152,9 @@ class DynInst : public ExecContext, public RefCounted
     /** The sequence number of the instruction. */
     InstSeqNum seqNum = 0;
 
+    // Generation captured by FP scheduling, issue and completion records.
+    uint64_t fpWakeAttempt = 0;
+
     /** Physical Hybrid ROB entry and slot; zero means not allocated. */
     uint64_t hybridEntryId = 0;
     bool hybridSlotIsFormer = true;

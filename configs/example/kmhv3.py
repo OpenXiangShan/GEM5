@@ -92,6 +92,12 @@ def setKmhV3Params(args, system):
         else:
             cpu.scheduler = KMHV3Scheduler()
         
+        cpu.scheduler.enableFmaRtlAlignment = (
+            not args.disable_fma_rtl_alignment
+            and not args.enable_spmt
+            and not args.smt
+            and len(system.cpu) == 1
+        )
         cpu.scheduler.disableAllRegArb()
         for iq in cpu.scheduler.IQs:
             iq.deferNewEnqueueSelection = not args.smt

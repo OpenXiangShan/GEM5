@@ -662,6 +662,9 @@ def addFSOptions(parser):
 
 def addXiangshanCommonOptions(parser):
     # Xiangshan related options
+    parser.add_argument(
+        "--disable-fma-rtl-alignment", action="store_true", default=False,
+        help="Disable scalar FMUL/FMA RTL dependency timing alignment")
     parser.add_argument("--enable-spmt", action="store_true", default=False,
                         help="Enable strict two-thread SpMT resource partitioning")
     parser.add_argument("--xiangshan-system", action="store_true",
