@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
+
 #include "mem/cache/replacement_policies/sdbp_rp.hh"
 #include "params/SDBPRP.hh"
 #include "sim/eventq.hh"
@@ -148,13 +150,15 @@ TEST_F(SDBPInterface, DeadVictimCanOverrideLru)
 {
     auto params = testParams(false, 0);
     SDBP policy(params);
-    ReplaceableEntry a, b;
+    ReplaceableEntry a, b, c;
     a.replacementData = policy.instantiateEntry();
     b.replacementData = policy.instantiateEntry();
+    c.replacementData = policy.instantiateEntry();
     auto demand = packet();
     policy.reset(b.replacementData);
     policy.reset(a.replacementData, demand.get());
-    EXPECT_EQ(policy.getVictim(ReplacementCandidates{&a, &b}), &a);
+    policy.reset(c.replacementData);
+    EXPECT_EQ(policy.getVictim(ReplacementCandidates{&a, &b, &c}), &a);
     EXPECT_EQ(stat(policy, "deadVictims"), 1);
     EXPECT_EQ(stat(policy, "nonLruDeadVictims"), 1);
     EXPECT_EQ(stat(policy, "lruVictims"), 0);
@@ -173,6 +177,72 @@ TEST_F(SDBPInterface, DeadVictimCanOverrideLru)
     EXPECT_EQ(snoop.replacementVictimClass, 0);
     EXPECT_FALSE(snoop.replacementProbe);
     EXPECT_EQ(snoop.replacementProbeMask, 0);
+}
+
+TEST_F(SDBPInterface, MruDeadIsProtectedUntilAnotherWayIsTouched)
+{
+    SDBP policy(testParams(false, 0));
+    std::array<ReplaceableEntry, 8> entries;
+    ReplacementCandidates candidates;
+    auto demand = packet();
+    for (unsigned i = 0; i < entries.size(); ++i) {
+        entries[i].replacementData = policy.instantiateEntry();
+        candidates.push_back(&entries[i]);
+        if (i == 7)
+            policy.reset(entries[i].replacementData, demand.get());
+        else
+            policy.reset(entries[i].replacementData);
+    }
+    EXPECT_EQ(policy.getVictim(candidates), &entries[0]);
+    EXPECT_EQ(stat(policy, "lruVictims"), 1);
+    EXPECT_EQ(stat(policy, "deadVictims"), 0);
+    EXPECT_EQ(SDBP::victimClass(entries[7].replacementData), 2);
+
+    // A hit to another way ends protection without clearing the old dead bit.
+    policy.touch(entries[1].replacementData);
+    EXPECT_EQ(policy.getVictim(candidates), &entries[7]);
+    EXPECT_EQ(stat(policy, "deadVictims"), 1);
+    EXPECT_EQ(stat(policy, "nonLruDeadVictims"), 1);
+    EXPECT_EQ(SDBP::victimClass(entries[7].replacementData), 2);
+}
+
+TEST_F(SDBPInterface, MruGuardPreservesDeadCandidateAndInvalidPriority)
+{
+    SDBP policy(testParams(false, 0));
+    std::array<ReplaceableEntry, 8> entries;
+    ReplacementCandidates candidates;
+    auto demand = packet();
+    for (unsigned i = 0; i < entries.size(); ++i) {
+        entries[i].replacementData = policy.instantiateEntry();
+        if (i == 2 || i == 5 || i == 7)
+            policy.reset(entries[i].replacementData, demand.get());
+        else
+            policy.reset(entries[i].replacementData);
+    }
+    // MRU comes first; choose way 5 before the older dead way 2.
+    for (unsigned i : {7, 5, 2, 0, 1, 3, 4, 6})
+        candidates.push_back(&entries[i]);
+    EXPECT_EQ(policy.getVictim(candidates), &entries[5]);
+    EXPECT_EQ(SDBP::victimClass(entries[7].replacementData), 2);
+
+    // A fill also moves MRU and makes the previous MRU eligible.
+    policy.reset(entries[6].replacementData);
+    EXPECT_EQ(policy.getVictim(candidates), &entries[7]);
+    policy.invalidate(entries[3].replacementData);
+    EXPECT_EQ(policy.getVictim(candidates), &entries[3]);
+}
+
+TEST_F(SDBPInterface, MruGuardAllowsLruFallbackWithOneWay)
+{
+    SDBP policy(testParams(false, 0));
+    ReplaceableEntry entry;
+    entry.replacementData = policy.instantiateEntry();
+    auto demand = packet();
+    policy.reset(entry.replacementData, demand.get());
+    EXPECT_EQ(policy.getVictim(ReplacementCandidates{&entry}), &entry);
+    EXPECT_EQ(stat(policy, "lruVictims"), 1);
+    EXPECT_EQ(stat(policy, "deadVictims"), 0);
+    EXPECT_EQ(SDBP::victimClass(entry.replacementData), 2);
 }
 
 TEST_F(SDBPInterface, BypassOnlyFullSetsWithEligiblePc)

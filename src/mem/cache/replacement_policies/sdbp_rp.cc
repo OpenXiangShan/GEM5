@@ -261,8 +261,10 @@ SDBP::getVictim(const ReplacementCandidates &candidates, const PacketPtr pkt) co
 {
     assert(!candidates.empty());
     ReplaceableEntry *lru = candidates.front();
+    ReplaceableEntry *mru = lru;
     ReplaceableEntry *dead = nullptr;
     uint64_t oldest = std::static_pointer_cast<SDBPReplData>(lru->replacementData)->lastUse;
+    uint64_t newest = oldest;
     for (auto *candidate : candidates) {
         const auto &entry = *std::static_pointer_cast<SDBPReplData>(candidate->replacementData);
         if (!entry.valid) {
@@ -274,6 +276,23 @@ SDBP::getVictim(const ReplacementCandidates &candidates, const PacketPtr pkt) co
         if (entry.lastUse < oldest) {
             oldest = entry.lastUse;
             lru = candidate;
+        }
+        if (entry.lastUse > newest) {
+            newest = entry.lastUse;
+            mru = candidate;
+        }
+    }
+    // Mask the current MRU without clearing its stored dead prediction.
+    // Keep the original candidate priority for all other dead entries.
+    if (dead == mru) {
+        dead = nullptr;
+        for (auto *candidate : candidates) {
+            const auto &entry = *std::static_pointer_cast<SDBPReplData>(
+                candidate->replacementData);
+            if (candidate != mru && entry.dead) {
+                dead = candidate;
+                break;
+            }
         }
     }
     if (enableBypass && predict(pkt)) {
