@@ -643,6 +643,27 @@ bash util/xs_scripts/report_pc_mismatch_bind.sh \
 - 报告从最后一个完整 stats 段计算每条 trace 的 IPC 和提交阶段 branch MPKI。
 
 
+**IPC/MPKI 汇总**
+
+报告列出每条 trace 的结果和加权平均 IPC、branch MPKI。
+- Google：先按 RV64 指令权重计算每个 workload 的平均值，再对各 workload 等权平均。运行 0.3c 或筛选部分切片时，重新归一化所选切片的权重。
+- CBP：没有 SimPoint 权重，每条 trace 等权平均。
+
+Google 的原始 SimPoint 权重写在 trace 文件名中，例如 `_128_0.6_.trace.zstd` 中的 `0.6`。RV64 权重表保存在 `/nfs/home/share/gem5_ci/gem5_trace/google_trace/google_trace_weights.json`，记录原始权重、采样段的源记录数和 RV64 记录数。每个 workload 的权重计算方式如下：
+
+```text
+RV64 权重 = 原权重 × (采样段 RV64 记录数 / 采样段源记录数)
+归一化权重 = RV64 权重 / 该 workload 的 RV64 权重之和
+```
+
+换算权重时只使用 `.trace.log` 中的 Sampling Interval，不计 warmup。更换或重新转换 Google 语料后，运行以下独立脚本生成一次权重表：
+
+```bash
+python3 util/xs_scripts/trace/gen_google_trace_weights.py \
+  /nfs/home/share/gem5_ci/gem5_trace/google_trace \
+  /nfs/home/share/gem5_ci/gem5_trace/google_trace/google_trace_weights.json
+```
+
 **筛选与调度**
 
 - `specific_benchmarks` 支持逗号分隔、不区分大小写的子串匹配，与 checkpoint CI 相同。

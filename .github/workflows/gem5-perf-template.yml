@@ -179,7 +179,7 @@ jobs:
 
           mkdir -p "$TARGET_DIR"
           cp "$CHECKPOINT_LIST_INPUT" "$TARGET_DIR/checkpoints.lst"
-          # Trace suites do not use SPEC weight files.
+          # Archive SPEC or Google trace weights with the run.
           if [[ -n "$CLUSTER_CONFIG_INPUT" ]]; then
             cp "$CLUSTER_CONFIG_INPUT" "$TARGET_DIR/cluster.json"
           fi

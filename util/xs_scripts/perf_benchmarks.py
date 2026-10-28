@@ -216,7 +216,10 @@ _TRACE_BENCHMARKS = _index_benchmarks(
                 "/nfs/home/share/gem5_ci/gem5_trace/google_trace/google_traces.lst"
             ),
             checkpoint_root="/nfs/home/share/gem5_ci/gem5_trace/google_trace",
-            cluster_config="",
+            cluster_config=(
+                "/nfs/home/share/gem5_ci/gem5_trace/"
+                "google_trace/google_trace_weights.json"
+            ),
             score_script="",
             comment="run all Google trace SimPoint slices",
             trace_format="tracertl",
@@ -239,7 +242,10 @@ _TRACE_BENCHMARKS = _index_benchmarks(
                 "google_trace/google_traces_0.3c.lst"
             ),
             checkpoint_root="/nfs/home/share/gem5_ci/gem5_trace/google_trace",
-            cluster_config="",
+            cluster_config=(
+                "/nfs/home/share/gem5_ci/gem5_trace/"
+                "google_trace/google_trace_weights.json"
+            ),
             score_script="",
             comment=(
                 "run about 30% SimPoint weight coverage per Google workload"
@@ -414,15 +420,24 @@ def resolve_trace_benchmark(benchmark_type: str) -> BenchmarkConfig:
             f"supported values: {supported}"
         ) from None
 
-# Trace has no score calculation scripts like SPEC, so write a simple one
+
 def summarize_trace_results(
     benchmark_type: str, stats_root: str | Path
 ) -> int:
     """Print measurement IPC/MPKI using only archived run outputs."""
     root = Path(stats_root)
+    config = resolve_trace_benchmark(benchmark_type)
+    weights_path = None
+    if config.cluster_config:
+        archived = root.parent / "cluster.json"
+        weights_path = (
+            archived if archived.is_file() else config.cluster_config
+        )
     # Match checkpoint CI: scan existing stats and count abort markers.
     aborted = sorted(root.rglob("abort"))
     failed = len(aborted)
+    results = {}
+    incomplete = False
     print(f"{benchmark_type}: measurement after warmup")
     print(f"{'Trace':<32} {'Status':<8} {'IPC':>12} {'Branch MPKI':>12}")
     for marker in aborted:
@@ -435,6 +450,7 @@ def summarize_trace_results(
         directory = stats_file.parent
         name = directory.name
         if not (directory / "completed").is_file():
+            incomplete = True
             continue
         try:
             # The final complete dump contains post-warmup measurements.
@@ -467,6 +483,7 @@ def summarize_trace_results(
                 or misses < 0
             ):
                 raise ValueError("invalid measurement statistics")
+            results[name] = (insts / cycles, 1000 * misses / insts)
             print(
                 f"{name:<32} {'passed':<8} {insts / cycles:>12.6f} "
                 f"{1000 * misses / insts:>12.6f}"
@@ -474,6 +491,46 @@ def summarize_trace_results(
         except (OSError, ValueError, KeyError, IndexError) as error:
             failed += 1
             print(f"{name:<32} failed: {error}")
+    if not failed and not incomplete and results:
+        try:
+            groups = [dict.fromkeys(results, 1.0)]
+            if weights_path:
+                workloads = json.loads(Path(weights_path).read_text())[
+                    "workloads"
+                ]
+                groups = [
+                    {
+                        name: float(point["rv64_weight"])
+                        for name, point in points.items() if name in results
+                    }
+                    for points in workloads.values()
+                ]
+                groups = [points for points in groups if points]
+            weights = {}
+            for points in groups:
+                if any(
+                    not math.isfinite(w) or w <= 0 for w in points.values()
+                ):
+                    raise ValueError("invalid trace weights")
+                # Normalize selected slices, then weight workloads equally.
+                total = sum(points.values()) * len(groups)
+                weights.update({name: w / total for name, w in points.items()})
+            if results.keys() - weights.keys():
+                missing = sorted(results.keys() - weights.keys())
+                raise ValueError(f"traces missing weights: {missing}")
+            ipc = sum(weights[name] * row[0] for name, row in results.items())
+            mpki = sum(weights[name] * row[1] for name, row in results.items())
+            label = (
+                "equal workload weights" if weights_path
+                else "equal trace weights"
+            )
+            print(f"Overall IPC ({label}): {ipc:.6f}")
+            print(f"Overall branch MPKI ({label}): {mpki:.6f}")
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            failed += 1
+            print(f"Aggregation failed: {error}")
+    else:
+        print("Overall averages unavailable: failed or incomplete runs")
     print(f"Failed traces: {failed}")
     return int(failed > 0)
 
