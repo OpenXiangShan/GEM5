@@ -564,7 +564,7 @@ VTAGEIPCSearch
 - 当前 workflow / controller 都会拒绝 `gcc12-spec06-smt-*`，因为 solver runtime
   还没有接 SMT config
 - `distributed_servers` 留空时，solver 只在当前 CI runner 上执行仿真，行为与旧版一致
-- `distributed_servers = default` 会展开为 `node020-node034,node036-node039`
+- `distributed_servers = default` 会展开为 `node020-node029,node034,node036-node039`（node033 留给专人使用）
 - `distributed_servers` 填显式列表或 range 时，solver 会把 batch 内的
   `(trial, workload)` 任务按服务器空闲 CPU 和 per-server 上限分发到这些机器
 - `distributed_jobs_per_server = 0` 表示根据
