@@ -71,6 +71,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
       delayTicks(cyclesToTicks(p.delay_queue_cycles)),
       crossPage(p.crossPage),
       standaloneL1(p.standalone_l1),
+      offloadToL2(p.offload_to_l2),
       standaloneFilter(p.standalone_l1 ?
           std::make_unique<boost::compute::detail::lru_cache<Addr, Addr>>(
               256) : nullptr),
@@ -103,6 +104,8 @@ BOP::BOP(const BOPPrefetcherParams &p)
       bestScore(0), round(0),
       stats(this, p.student_pool_size, p.student_delay_queue_size)
 {
+    fatal_if(offloadToL2 && !standaloneL1,
+             "%s: L2 offload requires standalone L1 BOP", name());
     if (standaloneL1) {
         fatal_if(!usePFBuffer, "%s: standalone L1 BOP requires PFRequestBuffer",
                  name());
@@ -1111,6 +1114,9 @@ BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriori
         return false;
     }
     if (standaloneL1) {
+        fatal_if(offloadToL2 && !hasHintDownStream(),
+                 "%s: L2 offload requires an L1-to-L2 prefetch hint path",
+                 name());
         const Addr filter_key = sharedFilterKey(pfi, addr);
         if (filter->contains(filter_key)) {
             DPRINTF(BOPPrefetcher, "Skip recently prefetched: %lx\n", addr);
@@ -1124,8 +1130,10 @@ BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriori
         }
         // The standalone L1 path has one producer and one PFRequestBuffer.
         // Do not also enqueue the same candidate via the direct queue path.
-        InsertPFRequestToBuffer(
-            AddrPriority(addr, prio, src, pfi.trigger_info));
+        AddrPriority candidate(addr, prio, src, pfi.trigger_info);
+        candidate.pfahead = offloadToL2;
+        candidate.pfahead_host = offloadToL2 ? 2 : 0;
+        InsertPFRequestToBuffer(candidate);
         return true;
     }
     if (archDBer && cache->level() == 1) {

@@ -86,6 +86,7 @@ class BOP : public Queued
         /** Cross page parameters */
         const bool crossPage;
         const bool standaloneL1;
+        const bool offloadToL2;
         std::unique_ptr<boost::compute::detail::lru_cache<Addr, Addr>>
             standaloneFilter;
         /** Adapt Bop Offset */

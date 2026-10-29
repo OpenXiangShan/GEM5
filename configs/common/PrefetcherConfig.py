@@ -688,8 +688,10 @@ def create_prefetcher(cpu, cache_level, options):
                     getattr(options, 'l1d_small_bop_enable', False))
     if cache_level == 'l1d' and not l1_small_bop and (
             getattr(options, 'l1d_small_bop_student_cover', False) or
-            getattr(options, 'l1d_small_bop_cqf', False)):
-        fatal('L1D small BOP student/CQF requires --l1d-small-bop-enable')
+            getattr(options, 'l1d_small_bop_cqf', False) or
+            getattr(options, 'l1d_small_bop_to_l2', False)):
+        fatal('L1D small BOP student/CQF/L2 offload requires '
+              '--l1d-small-bop-enable')
     if l1_small_bop:
         if not getattr(options, 'CHI', False):
             fatal('--l1d-small-bop-enable requires --CHI')
@@ -699,10 +701,25 @@ def create_prefetcher(cpu, cache_level, options):
             fatal('--l1d-small-bop-enable conflicts with --no-pf')
         if not pf_buffer_enabled:
             fatal('L1D small BOP requires PFRequestBuffer')
+        if options.l1d_small_bop_to_l2 and (
+                not options.l2cache or not options.l1_to_l2_pf_hint):
+            fatal('L1D small BOP L2 offload requires an L2 cache and '
+                  '--l1-to-l2-pf-hint')
+        if options.l1d_small_bop_to_l2:
+            if getattr(options, 'ruby', False):
+                fatal('L1D small BOP L2 offload requires the classic cache '
+                      'path with an L2 worker prefetcher')
+            receiver = (options.l2_hwp_type if options.classic_l2 else
+                        options.l2_wrapper_hwp_type)
+            if receiver not in ('L2CompositeWithWorkerPrefetcher',
+                                'WorkerPrefetcher', 'MLOPPrefetcher'):
+                fatal('L1D small BOP L2 offload requires an L2 worker '
+                      'prefetcher')
         prefetcher_name = 'XSL1SmallBOP'
         prefetcher = XSL1SmallBOP(
             enable_student_cover=options.l1d_small_bop_student_cover,
-            enable_direct_quality_gate=options.l1d_small_bop_cqf)
+            enable_direct_quality_gate=options.l1d_small_bop_cqf,
+            offload_to_l2=options.l1d_small_bop_to_l2)
         print(f"create_prefetcher at {cache_level}: {prefetcher_name}")
     elif hasattr(options, prefetcher_attr):
         prefetcher_name = getattr(options, prefetcher_attr)

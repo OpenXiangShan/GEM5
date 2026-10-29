@@ -896,6 +896,8 @@ class BOPPrefetcher(QueuedPrefetcher):
     crossPage = Param.Bool(True, "Cross page prefetching")
     standalone_l1 = Param.Bool(False,
         "Attach BOP directly to L1D with its own candidate filter")
+    offload_to_l2 = Param.Bool(False,
+        "Send standalone L1 BOP prefetches to the L2 hint receiver")
     enable_adaptoffset = Param.Bool(True, "enable adapt offset")
     enable_direct_quality_gate = Param.Bool(False,
         "Enable the CQF admission controller for raw BOP candidates")
