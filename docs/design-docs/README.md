@@ -6,5 +6,6 @@
 
 - [Kunminghu Frontend 设计文档](frontend/README.md)：Kunminghu v3 前端与 BPU 的顶层演进和各预测器设计。
 - [SMT 设计说明](smt/README.md)：线程隔离、共享资源、流水线流控、访存可见性和 FS-SMT 验证路径。
+- [Store-to-Load Memory Renaming 设计](memory-renaming.md)：基于 store distance 和 SPQ 的 Preg alias、commit-only training、执行验证与失败恢复。
 
 阅读设计文档时，建议先建立模块边界和不变量，再沿文末的代码入口核对当前实现。源码变化后，设计意图与不变量通常比具体行号更稳定。

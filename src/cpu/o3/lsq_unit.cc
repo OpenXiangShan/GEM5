@@ -4023,40 +4023,42 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                     load_inst->numDestRegs() == 1 &&
                     store_inst->memRenameStoreDataPreg->classValue() ==
                         load_inst->destRegIdx(0).classValue();
-                const bool ordinal_precedes_load =
-                    store_inst->memRenameStoreTracked &&
-                    store_inst->memRenameStoreOrdinal <
-                        load_inst->memRenameStoreBoundary;
+
+                // CircularQueue iterators use monotonic logical indices, so
+                // their difference is the number of logical SQ positions
+                // between this producer and the load's insertion boundary.
+                // This remains correct across physical index wraparound and is
+                // independent of SPQ eviction or squash recovery.
+                const auto distance = (load_inst->sqIt - store_it) - 1;
+                panic_if(distance < 0,
+                         "Memory-renaming producer is not older than load");
+                panic_if(
+                    static_cast<uint64_t>(distance) >
+                        std::numeric_limits<uint32_t>::max(),
+                    "Memory-renaming distance exceeds DynInst field");
 
                 load_inst->memRenameActualSQForward = true;
                 load_inst->memRenameActualStorePreg =
                     store_inst->memRenameStoreDataPreg;
                 load_inst->memRenameActualPairEligible =
-                    exact_eight_byte_forward && ordinal_precedes_load &&
+                    exact_eight_byte_forward &&
                     MemRenamePredictor::supportsLoad(*load_inst) &&
                     store_inst->memRenameStorePairEligible &&
                     compatible_classes;
-
-                if (ordinal_precedes_load) {
-                    const uint64_t distance =
-                        load_inst->memRenameStoreBoundary -
-                        store_inst->memRenameStoreOrdinal - 1;
-                    panic_if(distance > std::numeric_limits<uint32_t>::max(),
-                             "Memory-renaming distance exceeds DynInst field");
-                    load_inst->memRenameActualDistance = distance;
-                }
+                load_inst->memRenameActualDistance =
+                    static_cast<uint32_t>(distance);
                 load_inst->memRenameTrainEligible =
                     load_inst->memRenameActualPairEligible;
 
                 DPRINTF(MemRename,
                         "SQ producer load [sn:%llu] store [sn:%llu] "
-                        "boundary=%llu ordinal=%llu distance=%u preg=%p "
-                        "eligible=%d\n",
+                        "loadSqBoundary=%llu storeSqIdx=%llu distance=%u "
+                        "preg=%p eligible=%d\n",
                         load_inst->seqNum, store_inst->seqNum,
                         static_cast<unsigned long long>(
-                            load_inst->memRenameStoreBoundary),
+                            load_inst->sqIt.idx()),
                         static_cast<unsigned long long>(
-                            store_inst->memRenameStoreOrdinal),
+                            store_it.idx()),
                         load_inst->memRenameActualDistance,
                         static_cast<void *>(load_inst->memRenameActualStorePreg),
                         load_inst->memRenameActualPairEligible);

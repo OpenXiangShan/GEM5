@@ -535,12 +535,7 @@ class DynInst : public ExecContext, public RefCounted
     unsigned memRenameProviderWay = 0;
     unsigned memRenameProviderConfidence = 0;
 
-    /** Load-side store boundary captured when this instruction is renamed. */
-    uint64_t memRenameStoreBoundary = 0;
-
-    /** Store-side logical order and data Preg carried through SQ forwarding. */
-    bool memRenameStoreTracked = false;
-    uint64_t memRenameStoreOrdinal = 0;
+    /** Store data Preg metadata carried through SQ forwarding. */
     bool memRenameStoreDataHasIEOperand = false;
     PhysRegIdPtr memRenameStoreDataPreg = nullptr;
     bool memRenameStorePairEligible = false;

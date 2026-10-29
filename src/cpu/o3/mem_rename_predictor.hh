@@ -76,6 +76,7 @@ class MemRenamePredictor : public statistics::Group
     void recordSpqLookupApplied(bool is_float);
     void recordSpqDistanceOutOfRange() { spqDistanceOutOfRange++; }
     void recordSpqPregClassMismatch() { spqPregClassMismatch++; }
+    void recordSpqEviction() { spqEvictions++; }
     void recordValidationSuccess() { validationSuccess++; }
     void recordValidationFailNoSQForward() { validationFailNoSQForward++; }
     void recordValidationFailDistance() { validationFailDistance++; }
@@ -130,6 +131,7 @@ class MemRenamePredictor : public statistics::Group
     statistics::Scalar spqLookupApplied;
     statistics::Scalar spqDistanceOutOfRange;
     statistics::Scalar spqPregClassMismatch;
+    statistics::Scalar spqEvictions;
     statistics::Scalar intAliasesApplied;
     statistics::Scalar fpAliasesApplied;
     statistics::Scalar validationSuccess;

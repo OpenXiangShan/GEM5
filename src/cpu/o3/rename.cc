@@ -42,7 +42,6 @@
 #include "cpu/o3/rename.hh"
 
 #include <algorithm>
-#include <limits>
 #include <list>
 
 #include "cpu/o3/cpu.hh"
@@ -139,64 +138,63 @@ Rename::prepareMemRename(const DynInstPtr &inst, ThreadID tid)
 
     if (MemRenamePredictor::supportsLoad(*inst)) {
         auto &spq = memRenameSpq[tid];
-        inst->memRenameStoreBoundary = nextMemRenameStoreOrdinal[tid];
 
         if (inst->memRenamePredicted) {
             const uint64_t distance = inst->memRenamePredictedDistance;
-            if (distance >= inst->memRenameStoreBoundary || spq.empty()) {
+            // SPQ is a bounded window of the youngest stores. A prediction
+            // outside the current window is not necessarily wrong; fall back
+            // to normal rename without changing predictor confidence.
+            if (distance >= spq.size()) {
                 predictor.recordSpqDistanceOutOfRange();
             } else {
-                const uint64_t target_ordinal =
-                    inst->memRenameStoreBoundary - distance - 1;
-                const auto oldest_ordinal = spq.front().ordinal;
-                if (target_ordinal < oldest_ordinal ||
-                    target_ordinal >= nextMemRenameStoreOrdinal[tid]) {
-                    predictor.recordSpqDistanceOutOfRange();
+                const auto &entry = spq[spq.size() - distance - 1];
+                const auto dest_class = inst->destRegIdx(0).classValue();
+                if (!entry.hasDataPreg || entry.hasIEOperand ||
+                    !entry.dataPreg ||
+                    entry.dataPreg->classValue() != dest_class) {
+                    predictor.recordSpqPregClassMismatch();
                 } else {
-                    const auto offset = target_ordinal - oldest_ordinal;
-                    panic_if(offset >= spq.size(),
-                             "SPQ ordinals are not contiguous for thread %u",
-                             tid);
-                    const auto &entry = spq[offset];
-                    const auto dest_class = inst->destRegIdx(0).classValue();
-                    if (!entry.hasDataPreg || entry.hasIEOperand ||
-                        !entry.dataPreg ||
-                        entry.dataPreg->classValue() != dest_class) {
-                        predictor.recordSpqPregClassMismatch();
-                    } else {
-                        inst->memRenameApplied = true;
-                        inst->memRenamePredictedPreg = entry.dataPreg;
-                        predictor.recordSpqLookupApplied(
-                            dest_class == FloatRegClass);
-                        DPRINTF(MemRename,
-                                "rename alias load [sn:%llu] distance=%u "
-                                "targetOrdinal=%llu preg=%s\n",
-                                inst->seqNum,
-                                inst->memRenamePredictedDistance,
-                                static_cast<unsigned long long>(target_ordinal),
-                                entry.dataPreg->className());
-                    }
+                    inst->memRenameApplied = true;
+                    inst->memRenamePredictedPreg = entry.dataPreg;
+                    predictor.recordSpqLookupApplied(
+                        dest_class == FloatRegClass);
+                    DPRINTF(MemRename,
+                            "rename alias load [sn:%llu] distance=%u "
+                            "store [sn:%llu] preg=%s\n",
+                            inst->seqNum,
+                            inst->memRenamePredictedDistance,
+                            entry.seqNum, entry.dataPreg->className());
                 }
             }
         }
     }
 
-    // Every logical store occupies one ordinal. Split STA/STD uops are
-    // created later in IEW and therefore must not add a second SPQ entry.
+    // Every logical store occupies one SPQ position. Split STA/STD uops are
+    // created later in IEW and therefore must not add a second entry.
     if (!inst->isStore() && !inst->isAtomic()) {
         return;
     }
 
-    panic_if(memRenameSpq[tid].size() >= memRenameSpqCapacity,
-             "Memory-renaming SPQ overflow for thread %u (capacity %llu)",
-             tid, static_cast<unsigned long long>(memRenameSpqCapacity));
-    panic_if(nextMemRenameStoreOrdinal[tid] ==
-                 std::numeric_limits<uint64_t>::max(),
-             "Memory-renaming store ordinal wrapped for thread %u", tid);
+    auto &spq = memRenameSpq[tid];
+    panic_if(spq.size() > memRenameSpqCapacity,
+             "Memory-renaming SPQ exceeded capacity for thread %u",
+             tid);
+
+    // SPQ is a non-blocking sliding window. Once full, retaining the new store
+    // trades coverage of the oldest producer for coverage of the youngest
+    // producer, while architectural correctness remains protected by the SQ.
+    if (spq.size() == memRenameSpqCapacity) {
+        DPRINTF(MemRename,
+                "SPQ evict oldest store [tid:%u] [sn:%llu] "
+                "occupancy=%llu\n",
+                tid, spq.front().seqNum,
+                static_cast<unsigned long long>(spq.size()));
+        spq.pop_front();
+        predictor.recordSpqEviction();
+    }
 
     MemRenameSpqEntry entry;
     entry.seqNum = inst->seqNum;
-    entry.ordinal = nextMemRenameStoreOrdinal[tid]++;
     if (inst->isStore() && inst->numSrcRegs() > 1) {
         const auto data = inst->extRenamedSrcIdx(1);
         entry.dataPreg = data.PhyReg();
@@ -204,25 +202,22 @@ Rename::prepareMemRename(const DynInstPtr &inst, ThreadID tid)
             entry.dataPreg->classValue() != InvalidRegClass;
         entry.hasIEOperand = static_cast<bool>(data.IEOper());
 
-        inst->memRenameStoreTracked = true;
-        inst->memRenameStoreOrdinal = entry.ordinal;
         inst->memRenameStoreDataPreg = entry.dataPreg;
         inst->memRenameStoreDataHasIEOperand = entry.hasIEOperand;
         inst->memRenameStorePairEligible =
             MemRenamePredictor::supportsStore(*inst) &&
             entry.hasDataPreg && !entry.hasIEOperand;
     }
-    memRenameSpq[tid].push_back(entry);
+    spq.push_back(entry);
     updateMemRenameSpqStats();
 
     DPRINTF(MemRename,
-            "SPQ push [tid:%u] store [sn:%llu] ordinal=%llu preg=%s "
+            "SPQ push [tid:%u] store [sn:%llu] preg=%s "
             "eligible=%d occupancy=%llu\n",
             tid, inst->seqNum,
-            static_cast<unsigned long long>(entry.ordinal),
             entry.dataPreg ? entry.dataPreg->className() : "none",
             inst->memRenameStorePairEligible,
-            static_cast<unsigned long long>(memRenameSpq[tid].size()));
+            static_cast<unsigned long long>(spq.size()));
 }
 
 void
@@ -230,13 +225,9 @@ Rename::commitMemRenameStores(InstSeqNum seq_num, ThreadID tid)
 {
     auto &spq = memRenameSpq[tid];
     while (!spq.empty() && spq.front().seqNum <= seq_num) {
-        panic_if(spq.front().ordinal != committedMemRenameStoreOrdinal[tid],
-                 "SPQ commit order mismatch for thread %u", tid);
-        committedMemRenameStoreOrdinal[tid] = spq.front().ordinal + 1;
         DPRINTF(MemRename,
-                "SPQ pop committed store [tid:%u] [sn:%llu] ordinal=%llu\n",
-                tid, spq.front().seqNum,
-                static_cast<unsigned long long>(spq.front().ordinal));
+                "SPQ pop committed store [tid:%u] [sn:%llu]\n",
+                tid, spq.front().seqNum);
         spq.pop_front();
     }
     updateMemRenameSpqStats();
@@ -248,13 +239,10 @@ Rename::squashMemRenameStores(InstSeqNum seq_num, ThreadID tid)
     auto &spq = memRenameSpq[tid];
     while (!spq.empty() && spq.back().seqNum > seq_num) {
         DPRINTF(MemRename,
-                "SPQ pop squashed store [tid:%u] [sn:%llu] ordinal=%llu\n",
-                tid, spq.back().seqNum,
-                static_cast<unsigned long long>(spq.back().ordinal));
+                "SPQ pop squashed store [tid:%u] [sn:%llu]\n",
+                tid, spq.back().seqNum);
         spq.pop_back();
     }
-    nextMemRenameStoreOrdinal[tid] = spq.empty() ?
-        committedMemRenameStoreOrdinal[tid] : spq.back().ordinal + 1;
     updateMemRenameSpqStats();
 }
 
@@ -452,8 +440,6 @@ Rename::clearStates(ThreadID tid)
 {
     stalls[tid].iew = false;
     memRenameSpq[tid].clear();
-    nextMemRenameStoreOrdinal[tid] = 0;
-    committedMemRenameStoreOrdinal[tid] = 0;
     updateMemRenameSpqStats();
     ratSnapshotBuffer[tid].clear();
     numRatSnapshotInUse[tid] = 0;
@@ -473,8 +459,6 @@ Rename::resetStage()
         finalCommitSeq[tid] = 0;
         releaseSeq[tid] = 0;
         memRenameSpq[tid].clear();
-        nextMemRenameStoreOrdinal[tid] = 0;
-        committedMemRenameStoreOrdinal[tid] = 0;
         updateMemRenameSpqStats();
         ratSnapshotBuffer[tid].clear();
         numRatSnapshotInUse[tid] = 0;
