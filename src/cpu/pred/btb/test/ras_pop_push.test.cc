@@ -170,6 +170,18 @@ TEST_F(RASPopPushTest, BlocksSpecUpdatesNearInflightOverflow) {
     check_return_target(0x6000, 0x3004);
 }
 
+TEST_F(RASPopPushTest, ShadowCheckpointRestoresStackAndMeta) {
+    auto meta = ras->getPredictionMeta();
+    auto restore = ras->saveSpeculativeState(0);
+    auto call = create_prediction(0x1000, 0x2000, true, false);
+    ras->specUpdateState(call);
+    check_return_target(0x2000, 0x1004);
+    EXPECT_NE(ras->getPredictionMeta(), meta);
+    restore();
+    EXPECT_EQ(ras->getPredictionMeta(), meta);
+    check_return_target(0x2000, 0x80000000L);
+}
+
 TEST_F(RASPopPushTest, RetainsCommittedPushAtInflightBottom) {
     reset_ras(4);
 

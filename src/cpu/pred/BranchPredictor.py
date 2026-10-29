@@ -1066,7 +1066,10 @@ class BTBTAGE(TimedBaseBTBPredictor):
     useAltOnNaSize = Param.Unsigned(128, "Size of the useAltOnNa table")
     useAltOnNaWidth = Param.Unsigned(7, "Width of the useAltOnNa table")
     numBanks = Param.Unsigned(4, "Number of banks for bank conflict simulation")
-    enableBankConflict = Param.Bool(False, "Enable bank conflict simulation")
+    useBankedIndex = Param.Bool(False,
+        "Exclude bank-selection bits from TAGE index and tag PC bits")
+    enableBankConflict = Param.Bool(False,
+        "Model prediction/update bank conflicts without changing index/tag mapping")
     numDelay = 1
 
 class BTBTAGEUpperBound(BTBTAGE):
@@ -1225,6 +1228,32 @@ class DecoupledBPUWithBTB(BranchPredictor):
         1, "Maximum number of distinct SMT threads predicted per cycle")
     fsq_size = Param.Unsigned(64, "Fetch stream queue size")
     maxHistLen = Param.Unsigned(970, "The length of history")
+    enable_h2p_table = Param.Bool(True,
+        "Enable the APF hard-to-predict branch table")
+    enable_h2p_weak_confidence = Param.Bool(False,
+        "Filter PC-H2P candidates by APF-specific TAGE low confidence")
+    enable_apf_mbtb_resource_conflict = Param.Bool(True,
+        "Model MBTB resource conflicts for APF shadow queries")
+    enable_apf_tage_resource_conflict = Param.Bool(True,
+        "Model TAGE bank conflicts for APF shadow queries")
+    h2p_table_entries = Param.Unsigned(128,
+        "Number of H2P table cache-line entries")
+    h2p_table_line_bytes = Param.Unsigned(32,
+        "H2P table aligned block size in bytes (power of two)")
+    h2p_table_ways = Param.Unsigned(2,
+        "H2P table associativity; entries selects fully associative mode")
+    h2p_branches_per_entry = Param.Unsigned(2,
+        "Maximum tracked branches per H2P aligned block")
+    h2p_counter_bits = Param.Unsigned(3,
+        "H2P saturating counter width in bits (1 to 8)")
+    h2p_counter_threshold = Param.Unsigned(3,
+        "Minimum counter value to classify a branch as H2P")
+    enable_h2p_provider_filter = Param.Bool(True,
+        "Restrict new H2P allocations to sufficiently long TAGE providers")
+    h2p_min_provider_table = Param.Unsigned(2,
+        "Minimum final TAGE provider table for new H2P allocations")
+    h2p_age_insts = Param.Unsigned(20000,
+        "Committed instructions between H2P counter aging passes")
 
     predictWidth = Param.Unsigned(64, "Maximum range in bytes that a single prediction can cover")
     numStages = Param.Unsigned(4, "Maximum number of stages in the pipeline")

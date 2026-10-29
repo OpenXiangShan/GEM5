@@ -99,6 +99,22 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     void tick() override;
     void dryRunCycle(Addr startAddr) override;
     // make predictions, record in stage preds
+    SpeculativeCheckpoint saveSpeculativeState(ThreadID tid) override
+    {
+        auto history = threadHistory[tid];
+        auto meta = threadMeta[tid];
+        auto entries = lookupEntries;
+        auto indices = lookupIndices;
+        auto tags = lookupTags;
+        return [this, tid, history, meta, entries, indices, tags] {
+            threadHistory[tid] = history;
+            threadMeta[tid] = meta;
+            lookupEntries = entries;
+            lookupIndices = indices;
+            lookupTags = tags;
+        };
+    }
+
     void putPCHistory(Addr startAddr,
                       const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;

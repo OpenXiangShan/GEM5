@@ -906,6 +906,32 @@ def xiangshan_system_init():
         help="Use BTBTAGEUpperBound in kmhv3 instead of the default BTBTAGE",
     )
     parser.add_argument(
+        "--enable-h2p-table",
+        action="store_true",
+        dest="enable_h2p_table",
+        default=True,
+        help="Enable the APF hard-to-predict branch table",
+    )
+    parser.add_argument(
+        "--disable-h2p-table",
+        action="store_false",
+        dest="enable_h2p_table",
+        help="Disable the APF hard-to-predict branch table",
+    )
+    parser.add_argument(
+        "--enable-h2p-weak-confidence",
+        action="store_true",
+        dest="enable_h2p_weak_confidence",
+        default=False,
+        help="Filter PC-H2P candidates by APF-specific TAGE low confidence",
+    )
+    parser.add_argument(
+        "--disable-h2p-weak-confidence",
+        action="store_false",
+        dest="enable_h2p_weak_confidence",
+        help="Classify H2P candidates using the PC-only table",
+    )
+    parser.add_argument(
         "--disable-l1-direct-compression",
         action="store_false",
         dest="enable_l1_direct_compression",

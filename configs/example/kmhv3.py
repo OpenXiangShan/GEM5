@@ -117,6 +117,9 @@ def setKmhV3Params(args, system):
         if args.bp_type == 'DecoupledBPUWithBTB':
             cpu.branchPred.ftq_size = 64
             cpu.branchPred.fsq_size = 64
+            cpu.branchPred.enable_h2p_table = args.enable_h2p_table
+            cpu.branchPred.enable_h2p_weak_confidence = \
+                args.enable_h2p_weak_confidence
 
             if args.btb_tage_upper_bound:
                 cpu.branchPred.tage = BTBTAGEUpperBound(
@@ -124,6 +127,8 @@ def setKmhV3Params(args, system):
 
             cpu.branchPred.mbtb.trainingStage = "Resolve"
             cpu.branchPred.tage.trainingStage = "Resolve"
+            cpu.branchPred.tage.useBankedIndex = True
+            cpu.branchPred.tage.enableBankConflict = True
             cpu.branchPred.ittage.trainingStage = "Resolve"
 
             cpu.branchPred.ubtb.enabled = True

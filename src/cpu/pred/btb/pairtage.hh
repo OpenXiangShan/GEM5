@@ -235,6 +235,26 @@ class PairTAGE : public TimedBaseBTBPredictor
 
     void putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBTBPrediction> &stagePreds) override;
 
+    SpeculativeCheckpoint saveSpeculativeState(ThreadID tid) override
+    {
+        auto tags = tagFoldedHist;
+        auto altTags = altTagFoldedHist;
+        auto indices = indexFoldedHist;
+        auto ahead = aheadIndexFoldedHist;
+        auto savedMeta = meta;
+        auto second = secondPredBlock;
+        auto phase = predictionPhase;
+        return [this, tags, altTags, indices, ahead, savedMeta, second, phase] {
+            tagFoldedHist = tags;
+            altTagFoldedHist = altTags;
+            indexFoldedHist = indices;
+            aheadIndexFoldedHist = ahead;
+            meta = savedMeta;
+            secondPredBlock = second;
+            predictionPhase = phase;
+        };
+    }
+
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
     void refreshPredictionMeta(Addr startAddr,
                                const boost::dynamic_bitset<> &history,

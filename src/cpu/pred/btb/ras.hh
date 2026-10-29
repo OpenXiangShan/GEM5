@@ -89,6 +89,20 @@ namespace btb_pred {
         void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
                           std::vector<FullBTBPrediction> &stagePreds) override;
         
+        void predictShadow(Addr pc, const boost::dynamic_bitset<> &history,
+                           FullBTBPrediction &pred) override
+        {
+            refreshPredictionMeta(pc, history, pred);
+            pred.returnTarget = threadStates[pred.tid].meta->target;
+        }
+
+        SpeculativeCheckpoint saveSpeculativeState(ThreadID tid) override
+        {
+            auto state = threadStates[tid];
+            return [this, tid, state] { threadStates[tid] = state; };
+        }
+        void setShadowAccess(bool shadow) { shadowAccess = shadow; }
+
         std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
         void refreshPredictionMeta(Addr startAddr,
                                    const boost::dynamic_bitset<> &history,
@@ -112,6 +126,7 @@ namespace btb_pred {
         Addr getTopAddrFromMetas(const FetchTarget &stream);
 
     private:
+        bool shadowAccess = false;
         struct ThreadRASState
         {
             int64_t TOSW = 0; // Logical next-write pointer

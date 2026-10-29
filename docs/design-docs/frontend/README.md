@@ -25,6 +25,7 @@
 - `ubtb_design.md`：最前级 taken-target predictor
 - `abtb_design.md`：ahead pipeline 下的较大容量早期 target predictor
 - `microtage_design.md`：放在 `S1` 的轻量方向预测器
+- [apf-configuration-switches.md](apf-configuration-switches.md)：TAGE 映射与 update 冲突拆分、H2P 结构及过滤参数
 
 当前暂未单独展开的模块包括：
 

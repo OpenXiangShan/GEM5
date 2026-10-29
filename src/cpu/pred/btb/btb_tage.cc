@@ -93,6 +93,7 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWaysPerTable,
       blockWidth(floorLog2(blockSize)),
       bankBaseShift(instShiftAmt),
       indexShift(bankBaseShift + ceilLog2(numBanks)),
+      useBankedIndex(false),
       enableBankConflict(false),
       lastPredBankId(0),
       predBankValid(false)
@@ -134,6 +135,7 @@ bankIdWidth(ceilLog2(p.numBanks)),
 blockWidth(floorLog2(blockSize)),
 bankBaseShift(instShiftAmt), // strip instruction alignment bits before indexing
 indexShift(bankBaseShift + ceilLog2(p.numBanks)),
+useBankedIndex(p.useBankedIndex),
 enableBankConflict(p.enableBankConflict),
 lastPredBankId(0),
 predBankValid(false),
@@ -144,6 +146,7 @@ tageStats(this, p.numPredictors, p.numBanks)
         warn("BTBTAGE: Bank simulation works better with updateOnRead=true");
     }
 #endif
+    resourceBankBusy.assign(numBanks, false);
     if (numWays.size() == 1 && numPredictors > 1) {
         numWays.resize(numPredictors, numWays.front());
     }
@@ -285,7 +288,43 @@ void
 BTBTAGE::tick() {}
 
 void
-BTBTAGE::tickStart() {}
+BTBTAGE::tickStart()
+{
+    beginResourceCycle();
+}
+
+void
+BTBTAGE::beginResourceCycle()
+{
+    resourceBankBusy.assign(numBanks, false);
+    resourceUpdateBank = pendingUpdateBank;
+    pendingUpdateBank.reset();
+    if (resourceUpdateBank)
+        resourceBankBusy[*resourceUpdateBank] = true;
+}
+
+bool
+BTBTAGE::tryReserveShadowBank(Addr startAddr)
+{
+    const unsigned bank = getBankId(startAddr);
+    ++tageStats.shadowQueries;
+    if (resourceBankBusy[bank]) {
+        ++tageStats.shadowBankConflicts;
+        if (resourceUpdateBank && bank == *resourceUpdateBank)
+            ++tageStats.shadowUpdateBankConflicts;
+        ++tageStats.shadowDeferredCycles;
+        tageStats.shadowBankConflictPerBank[bank]++;
+        return false;
+    }
+    resourceBankBusy[bank] = true;
+    return true;
+}
+
+void
+BTBTAGE::releaseShadowBank(Addr startAddr)
+{
+    resourceBankBusy[getBankId(startAddr)] = false;
+}
 
 /**
  * @brief Generate prediction for a single BTB entry by searching TAGE tables
@@ -447,6 +486,8 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
                                          (abs(pred.mainInfo.entry.counter*2 + 1) <= 1); // counter initialized, -1 or 0
             // main predict is different from alt predict/base predict
             tageInfoForMgscs[btb_entry.pc].tage_pred_alt_diff = pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
+            tageInfoForMgscs[btb_entry.pc].tage_final_provider_table =
+                pred.finalProviderTable;
         }
     }
 }
@@ -497,6 +538,7 @@ BTBTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPr
     // Record prediction bank for next tick's conflict detection
     lastPredBankId = getBankId(startPC);
     predBankValid = true;
+    resourceBankBusy[lastPredBankId] = true;
 
     // Record prediction access per bank
     tageStats.predAccessPerBank[lastPredBankId]++;
@@ -569,6 +611,7 @@ BTBTAGE::refreshPredictionMeta(Addr startPC,
             (abs(tage_pred.mainInfo.entry.counter * 2 + 1) <= 1);
         tage_info.tage_pred_alt_diff = tage_pred.mainInfo.found &&
             tage_pred.mainInfo.taken() != tage_pred.altPred;
+        tage_info.tage_final_provider_table = tage_pred.finalProviderTable;
     }
 }
 
@@ -880,6 +923,8 @@ void
 BTBTAGE::doResolveUpdate(
     const PredictionUpdateContext &stream, const PreparedUpdate &update)
 {
+    if (enableBankConflict)
+        pendingUpdateBank = getBankId(stream.getRealStartPC());
     if (enableBankConflict && predBankValid) {
         // Prediction consumed; clear bank tag for next cycle
         predBankValid = false;
@@ -1089,7 +1134,7 @@ BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist,
     // Create mask for tableTagBits[t] to limit result size
     Addr mask = (1ULL << tableTagBits[t]) - 1;
 
-    unsigned pcShift = enableBankConflict ? indexShift : bankBaseShift;
+    unsigned pcShift = useBankedIndex ? indexShift : bankBaseShift;
     pcShift += partitionIndexBits(tableIndexBits[t]) - 1;
     Addr pcBits = (pc >> pcShift) & mask;
 
@@ -1119,7 +1164,7 @@ BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist,
     const unsigned localIndexBits = partitionIndexBits(tableIndexBits[t]);
     Addr mask = (1ULL << localIndexBits) - 1;
 
-    const unsigned pcShift = enableBankConflict ? indexShift : bankBaseShift;
+    const unsigned pcShift = useBankedIndex ? indexShift : bankBaseShift;
     Addr pcBits = (pc >> pcShift) & mask;
     Addr foldedBits = foldedHist & mask;
 
@@ -1394,6 +1439,16 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateBankConflictPerBank, statistics::units::Count::get(), "bank conflicts per bank"),
     ADD_STAT(updateAccessPerBank, statistics::units::Count::get(), "update accesses per bank"),
     ADD_STAT(predAccessPerBank, statistics::units::Count::get(), "prediction accesses per bank"),
+    ADD_STAT(shadowQueries, statistics::units::Count::get(),
+        "APF shadow TAGE query attempts"),
+    ADD_STAT(shadowBankConflicts, statistics::units::Count::get(),
+        "APF shadow TAGE queries blocked by a bank conflict"),
+    ADD_STAT(shadowUpdateBankConflicts, statistics::units::Count::get(),
+        "APF shadow TAGE queries blocked by an accepted resolve update"),
+    ADD_STAT(shadowDeferredCycles, statistics::units::Cycle::get(),
+        "Cycles where APF shadow TAGE query was deferred"),
+    ADD_STAT(shadowBankConflictPerBank, statistics::units::Count::get(),
+        "APF shadow TAGE bank conflicts per bank"),
     ADD_STAT(resolveProviderTable, statistics::units::Count::get(),
         "resolved conditional branches grouped by provider table"),
     ADD_STAT(resolveAltTable, statistics::units::Count::get(),
@@ -1447,6 +1502,7 @@ BTBTAGE::TageStats::init(int predictors, int banks)
     updateBankConflictPerBank.init(numBanks);
     updateAccessPerBank.init(numBanks);
     predAccessPerBank.init(numBanks);
+    shadowBankConflictPerBank.init(numBanks);
 }
 
 // Update statistics based on TAGE prediction

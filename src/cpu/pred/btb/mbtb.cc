@@ -160,11 +160,50 @@ MBTB::MBTB(const Params &p)
 void
 MBTB::tickStart()
 {
-    // nothing to do
+    beginResourceCycle();
 }
 
 void
 MBTB::tick() {}
+
+void
+MBTB::beginResourceCycle()
+{
+    resourceBanksBusy = 0;
+}
+
+void
+MBTB::reservePrimaryAccess(Addr startAddr)
+{
+    const auto banks = lookupBankMask(startAddr);
+    resourceBanksBusy |= banks;
+    if (banks)
+        ++btbStats.primaryAccesses;
+}
+
+bool
+MBTB::tryReserveShadow(Addr startAddr)
+{
+    const auto banks = lookupBankMask(startAddr);
+    ++btbStats.shadowQueries;
+    if (banks & resourceBanksBusy) {
+        ++btbStats.shadowBankConflicts;
+        ++btbStats.shadowDeferredCycles;
+        for (unsigned bank = 0; bank < NumResourceBanks; ++bank) {
+            if (banks & resourceBanksBusy & (1u << bank))
+                btbStats.shadowBankConflictPerBank[bank]++;
+        }
+        return false;
+    }
+    resourceBanksBusy |= banks;
+    return true;
+}
+
+void
+MBTB::releaseShadow(Addr startAddr)
+{
+    resourceBanksBusy &= ~lookupBankMask(startAddr);
+}
 
 void
 MBTB::setTrace()
@@ -331,6 +370,7 @@ MBTB::putPCHistory(Addr startAddr,
                          const boost::dynamic_bitset<> &history,
                          std::vector<FullBTBPrediction> &stagePreds)
 {
+    reservePrimaryAccess(startAddr);
     const ThreadID tid = stagePreds.empty() ? 0 : stagePreds.front().tid;
     assert(tid < threadMeta.size());
     threadMeta[tid] = std::make_shared<BTBMeta>();
@@ -1017,7 +1057,17 @@ MBTB::BTBStats::BTBStats(statistics::Group* parent, int numWays) :
     ADD_STAT(returnHits, statistics::units::Count::get(), "returns committed that was predicted hit"),
     ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss"),
 
-    ADD_STAT(victimCacheHit, statistics::units::Count::get(), "victim cache hits")
+    ADD_STAT(victimCacheHit, statistics::units::Count::get(), "victim cache hits"),
+    ADD_STAT(primaryAccesses, statistics::units::Count::get(),
+        "primary MBTB accesses with a read-port reservation"),
+    ADD_STAT(shadowQueries, statistics::units::Count::get(),
+        "APF shadow MBTB query attempts"),
+    ADD_STAT(shadowBankConflicts, statistics::units::Count::get(),
+        "APF shadow MBTB queries blocked by a SRAM port conflict"),
+    ADD_STAT(shadowDeferredCycles, statistics::units::Cycle::get(),
+        "Cycles where APF shadow MBTB query was deferred"),
+    ADD_STAT(shadowBankConflictPerBank, statistics::units::Count::get(),
+        "APF shadow MBTB conflicts per SRAM")
 
 {
     init(numWays);
@@ -1028,6 +1078,7 @@ void
 MBTB::BTBStats::init(int numWays)
 {
     predHitCount.init(0, numWays * 2, 1);
+    shadowBankConflictPerBank.init(NumResourceBanks);
 }
 
 // Close conditional namespace wrapper for testing

@@ -87,8 +87,24 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       smtFTQThreshold(p.smtFTQThreshold),
       ftq(p.numThreads, p.ftq_size),
       resolveBlockThreshold(p.resolveBlockThreshold),
+      enableH2PTable(p.enable_h2p_table),
+      enableH2PWeakConfidence(p.enable_h2p_weak_confidence),
+      enableH2PProviderFilter(p.enable_h2p_provider_filter),
+      h2pMinProviderTable(p.h2p_min_provider_table),
+      enableAPFMTBResourceConflict(p.enable_apf_mbtb_resource_conflict),
+      enableAPFTAGEResourceConflict(p.enable_apf_tage_resource_conflict),
+      h2pTableEntries(p.h2p_table_entries),
+      h2pAgeInsts(p.h2p_age_insts),
+      h2pTable(p.h2p_table_entries, p.h2p_table_line_bytes, p.h2p_table_ways,
+               p.h2p_branches_per_entry, p.h2p_counter_bits,
+               p.h2p_counter_threshold),
+      h2pAgeRemaining(p.h2p_age_insts),
       dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum, p.numThreads)
 {
+    panic_if(h2pTableEntries == 0,
+             "H2P table entries must be non-zero");
+    panic_if(enableH2PTable && h2pAgeInsts == 0,
+             "H2P counter aging period must be non-zero when enabled");
     panic_if(numPredictingThreads == 0 ||
              numPredictingThreads > numThreads ||
              numPredictingThreads > 2,
@@ -275,7 +291,7 @@ bool
 DecoupledBPUWithBTB::canStartPrediction(ThreadID tid) const
 {
     const auto &thread = threads[tid];
-    return isThreadActive(tid) &&
+    return !alternateReplay && isThreadActive(tid) &&
            !thread.squashing &&
            !thread.redirectPending &&
            !thread.validprediction &&
@@ -323,6 +339,13 @@ void
 DecoupledBPUWithBTB::tick()
 {
     DPRINTF(Override, "DecoupledBPUWithBTB::tick()\n");
+
+    // The primary prediction request below has priority over the APF shadow
+    // query, which runs later in Fetch::tickAPF().
+    if (tage)
+        tage->beginResourceCycle();
+    if (mbtb)
+        mbtb->beginResourceCycle();
 
     for (int tid = 0; tid < numThreads; ++tid) {
         auto &thread = threads[tid];
@@ -374,7 +397,8 @@ DecoupledBPUWithBTB::tick()
     dbpBtbStats.predictionsStartedPerCycle.sample(predictionsStarted);
 
     for (int tid = 0; tid < numThreads; tid++) {
-        processNewPrediction(tid);
+        if (!alternateReplay)
+            processNewPrediction(tid);
 
         // Decrement override bubbles counter
         auto& numOverrideBubbles = threads[tid].numOverrideBubbles;
@@ -388,6 +412,8 @@ DecoupledBPUWithBTB::tick()
     for (int tid = 0; tid < numThreads; tid++) {
         auto &thread = threads[tid];
 
+        if (alternateReplay)
+            continue;
         prepareTwoTakenTraining(tid);
         processTwoTakenBlock(tid);
 
@@ -400,6 +426,27 @@ DecoupledBPUWithBTB::tick()
     }
 
     DPRINTF(Override, "Prediction cycle complete\n");
+}
+
+bool
+DecoupledBPUWithBTB::tryReserveAlternateResources(Addr pc)
+{
+    const bool tageEnabled = enableAPFTAGEResourceConflict &&
+                             tage && tage->isEnabled();
+    const bool mbtbEnabled = enableAPFMTBResourceConflict &&
+                             mbtb && mbtb->isEnabled();
+    const bool tageReserved = !tageEnabled || tage->tryReserveShadowBank(pc);
+    const bool mbtbReserved = !mbtbEnabled || mbtb->tryReserveShadow(pc);
+    if (tageReserved && mbtbReserved)
+        return true;
+
+    // Make the reservation transactional: a conflict in one predictor must
+    // not consume a port in another predictor for a query that did not run.
+    if (tageReserved && tageEnabled)
+        tage->releaseShadowBank(pc);
+    if (mbtbReserved && mbtbEnabled)
+        mbtb->releaseShadow(pc);
+    return false;
 }
 
 /**
@@ -1110,6 +1157,38 @@ DecoupledBPUWithBTB::commit(
         if (block_idx < committedBlocks.size() &&
             committedBlocks[block_idx].ftqId == committed_id) {
             const auto &block = committedBlocks[block_idx];
+
+            if (enableH2PTable) {
+                for (const auto &branch : block.branches) {
+                    if (!branch.isCond)
+                        continue;
+                    const bool tableMarked = std::find(
+                        target.h2pTableBranchPCs.begin(),
+                        target.h2pTableBranchPCs.end(), branch.pc) !=
+                        target.h2pTableBranchPCs.end();
+                    const bool marked = std::find(
+                        target.h2pBranchPCs.begin(), target.h2pBranchPCs.end(),
+                        branch.pc) != target.h2pBranchPCs.end();
+                    if (tableMarked && branch.mispredicted)
+                        dbpBtbStats.h2pTableTruePositive++;
+                    else if (tableMarked)
+                        dbpBtbStats.h2pTableFalsePositive++;
+                    else if (branch.mispredicted)
+                        dbpBtbStats.h2pTableFalseNegative++;
+                    else
+                        dbpBtbStats.h2pTableTrueNegative++;
+
+                    if (marked && branch.mispredicted)
+                        dbpBtbStats.h2pTruePositive++;
+                    else if (marked)
+                        dbpBtbStats.h2pFalsePositive++;
+                    else if (branch.mispredicted)
+                        dbpBtbStats.h2pFalseNegative++;
+                    else
+                        dbpBtbStats.h2pTrueNegative++;
+                }
+            }
+
             const PredictionUpdateContext context(target);
             const PreparedUpdate update(block.branches);
 
@@ -1285,6 +1364,64 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     entry.isHit = !pred.btbEntries.empty() || pairtageFallThroughHit;
     entry.falseHit = false;
     entry.setPredictedBranches(pred.btbEntries);
+    entry.h2pTableBranchPCs.clear();
+    entry.h2pBranchPCs.clear();
+    entry.h2pAllocateBranchPCs.clear();
+    if (enableH2PTable && !alternateQuery) {
+        // Entries after the first taken/unconditional branch are not fetched
+        // on this path and therefore cannot produce a later branch outcome.
+        // Do not select them as APF sources.
+        const auto takenEntry = pred.getTakenEntry();
+        for (const auto &branch : pred.btbEntries) {
+            if (!branch.valid)
+                continue;
+
+            // A 32-byte-aligned lookup may include a preceding branch from
+            // the same aligned block.  That branch is outside this fetch
+            // target and must not become an H2P candidate here.
+            if (branch.pc < startPC)
+                continue;
+
+            if (branch.isCond) {
+                const auto tageInfo = pred.tageInfoForMgscs.find(branch.pc);
+                if (!enableH2PProviderFilter ||
+                    (tageInfo != pred.tageInfoForMgscs.end() &&
+                     tageInfo->second.tage_final_provider_table >= 0 &&
+                     unsigned(tageInfo->second.tage_final_provider_table) >=
+                         h2pMinProviderTable)) {
+                    entry.h2pAllocateBranchPCs.push_back(branch.pc);
+                }
+
+                dbpBtbStats.h2pLookups++;
+                if (lookupH2P(branch.pc).h2p) {
+                    dbpBtbStats.h2pTableCandidates++;
+                    entry.h2pTableBranchPCs.push_back(branch.pc);
+
+                    bool accepted = true;
+                    if (enableH2PWeakConfidence) {
+                        if (tageInfo == pred.tageInfoForMgscs.end()) {
+                            dbpBtbStats.h2pConfidenceMissing++;
+                            dbpBtbStats.h2pConfidenceRejected++;
+                            accepted = false;
+                        } else if (!tageInfo->second.isLowConfidenceForAPF()) {
+                            dbpBtbStats.h2pConfidenceRejected++;
+                            accepted = false;
+                        }
+                    }
+
+                    if (accepted) {
+                        entry.h2pBranchPCs.push_back(branch.pc);
+                        if (alternateEnabled)
+                            entry.apfBranches.push_back(branch);
+                        dbpBtbStats.h2pCandidates++;
+                    }
+                }
+            }
+
+            if (takenEntry.valid && branch.pc == takenEntry.pc)
+                break;
+        }
+    }
     entry.predTaken = taken;
     entry.predEndPC = fallThroughAddr;
 
@@ -1313,6 +1450,35 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     }
 
     return entry;
+}
+
+H2PTable::LookupResult
+DecoupledBPUWithBTB::lookupH2P(Addr pc)
+{
+    return enableH2PTable ? h2pTable.lookup(pc) : H2PTable::LookupResult{};
+}
+
+void
+DecoupledBPUWithBTB::trainH2P(
+    const BranchOutcome &branch, const FetchTarget &target)
+{
+    if (!enableH2PTable || !branch.isCond || !branch.mispredicted)
+        return;
+
+    const bool allowAllocate = !enableH2PProviderFilter ||
+        std::find(target.h2pAllocateBranchPCs.begin(),
+                  target.h2pAllocateBranchPCs.end(), branch.pc) !=
+            target.h2pAllocateBranchPCs.end();
+    const auto result = h2pTable.trainMispred(branch.pc, allowAllocate);
+    if (result.allocationFiltered) {
+        dbpBtbStats.h2pTrainProviderRejected++;
+        return;
+    }
+
+    dbpBtbStats.h2pTrainMispredicts++;
+    dbpBtbStats.h2pAllocations += result.allocated;
+    dbpBtbStats.h2pReplacements += result.replaced;
+    dbpBtbStats.h2pAllocationDrops += result.dropped;
 }
 
 /**
@@ -1416,9 +1582,10 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry,
     histShiftIn(ghist_update.shamt, ghist_update.taken, s0History);
 
     // Update history manager and verify TAGE folded history
-    historyManagers[tid].addSpeculativeHist(
-        entry.startPC, entry.history, entry.phistory, ghist_update,
-        phist_update, entry.predBranchInfo, ftq.backId(tid) + 1);
+    if (!alternateQuery)
+        historyManagers[tid].addSpeculativeHist(
+            entry.startPC, entry.history, entry.phistory, ghist_update,
+            phist_update, entry.predBranchInfo, ftq.backId(tid) + 1);
 
     // Update global backward history
     histShiftIn(bwhist_update.shamt, bwhist_update.taken, s0BwHistory);
@@ -1525,17 +1692,16 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     advancePairPhase(threads[tid].s0PairPhase);
 
     // Update history manager with appropriate branch info
-    if (squashType == SQUASH_CTRL) {
-        historyManagers[tid].squash(targetId, ghistUpdate,
-                                    phistUpdate, recoveryBranch);
-    } else {
-        historyManagers[tid].squash(targetId, ghistUpdate,
-                                    phistUpdate, BranchInfo());
+    // Shadow work has no FTQ identity until promotion.
+    if (!alternateQuery) {
+        historyManagers[tid].squash(targetId, ghistUpdate, phistUpdate,
+            squashType == SQUASH_CTRL ? recoveryBranch : BranchInfo());
     }
 
     // Perform history consistency checks when not a fast build variant
 #ifndef NDEBUG
-    checkHistories(s0History, s0PHistory, tid);
+    if (!alternateQuery)
+        checkHistories(s0History, s0PHistory, tid);
     if (tage->isEnabled()) {
         tage->checkFoldedHist(
             tage->usesPathHistory() ? s0PHistory : s0History, tid,
@@ -1560,6 +1726,209 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
 #endif
 }
 
+
+AlternateCheckpoint
+DecoupledBPUWithBTB::checkpointAlternateState()
+{
+    const auto thread = threads[0];
+    std::vector<TimedBaseBTBPredictor::SpeculativeCheckpoint> states;
+    for (auto *component : components)
+        states.push_back(component->saveSpeculativeState(0));
+    return [this, thread, states] {
+        threads[0] = thread;
+        for (const auto &restore : states)
+            restore();
+    };
+}
+
+bool
+DecoupledBPUWithBTB::alternateSourceLive(
+    const AlternateCandidate &candidate) const
+{
+    return ftq.hasTarget(candidate.ftqId, 0);
+}
+
+void
+DecoupledBPUWithBTB::resolveAlternateCandidate(const BranchOutcome &branch)
+{
+    if (!alternateEnabled || !branch.isCond ||
+        !ftq.hasTarget(branch.ftqId, branch.tid))
+        return;
+    auto &resolved = ftq.get(branch.ftqId, branch.tid).apfResolvedPCs;
+    if (std::find(resolved.begin(), resolved.end(), branch.pc) == resolved.end())
+        resolved.push_back(branch.pc);
+}
+
+bool
+DecoupledBPUWithBTB::nextAlternateCandidate(AlternateCandidate &candidate)
+{
+    if (!alternateEnabled || ftq.empty(0))
+        return false;
+    for (auto id = ftq.frontId(0); id <= ftq.backId(0); ++id) {
+        auto &target = ftq.get(id, 0);
+        for (const auto &branch : target.apfBranches) {
+            if (target.predTaken && branch.pc > target.predBranchInfo.pc)
+                break;
+            const auto contains = [&](const auto &pcs) {
+                return std::find(pcs.begin(), pcs.end(), branch.pc) != pcs.end();
+            };
+            if (contains(target.apfAttemptedPCs) ||
+                contains(target.apfResolvedPCs))
+                continue;
+            target.apfAttemptedPCs.push_back(branch.pc);
+            candidate = {id, branch, target.predTaken &&
+                         target.predBranchInfo.pc == branch.pc};
+            return true;
+        }
+    }
+    return false;
+}
+
+AlternateCheckpoint
+DecoupledBPUWithBTB::startAlternate(const AlternateCandidate &candidate)
+{
+    if (!ftq.hasTarget(candidate.ftqId, 0))
+        return {};
+    auto restore = checkpointAlternateState();
+    alternateQuery = true;
+    ras->setShadowAccess(true);
+    const auto &target = ftq.get(candidate.ftqId, 0);
+    const auto &branch = candidate.branch;
+    const bool taken = !candidate.predictedTaken;
+    const Addr next = taken ? branch.target : branch.pc + branch.size;
+    PathHistoryUpdate phist;
+    phist.taken = taken;
+    phist.pc = branch.pc;
+    phist.target = next;
+    recoverHistoryForSquash(HistoryRecoveryContext(target), candidate.ftqId,
+        target.getGHistUpdateDuringSquash(branch.pc, true, taken),
+        target.getBwHistUpdateDuringSquash(branch.pc, true, taken, next),
+        phist, branch, taken, SQUASH_CTRL);
+    threads[0].s0PC = next;
+    auto shadow = checkpointAlternateState();
+    restore();
+    alternateQuery = false;
+    ras->setShadowAccess(false);
+    return shadow;
+}
+
+AlternatePrediction
+DecoupledBPUWithBTB::predictAlternate(const AlternateCheckpoint &state,
+                                      Addr pc)
+{
+    AlternatePrediction result;
+    if (!tryReserveAlternateResources(pc)) {
+        result.resourceBlocked = true;
+        return result;
+    }
+    auto restore = checkpointAlternateState();
+    state();
+    alternateQuery = true;
+    ras->setShadowAccess(true);
+    auto &pred = result.prediction;
+    pred.bbStart = pc;
+    pred.tid = 0;
+    pred.asidHash = getThreadAsidHash(0);
+    pred.predTick = curTick();
+    pred.predSource = numStages - 1;
+    // Ideal final-stage query: bypass early-stage timing/teacher updates.
+    if (mbtb->isEnabled())
+        mbtb->predictShadow(pc, threads[0].s0History, pred);
+    for (const auto &entry : pred.btbEntries)
+        if (entry.isCond)
+            pred.condTakens.emplace_back(entry.pc, entry.ctr >= 0);
+    for (auto *component : components) {
+        if (component != mbtb && component->isEnabled())
+            component->predictShadow(pc, threads[0].s0History, pred);
+    }
+    result.target = createFetchTargetEntry(0, pc, pred);
+    // Snapshot H2P marks without perturbing main-path replacement recency.
+    for (const auto &branch : pred.btbEntries) {
+        if (!enableH2PTable)
+            break;
+        if (!branch.valid || !branch.isCond || branch.pc < pc)
+            continue;
+        const auto info = pred.tageInfoForMgscs.find(branch.pc);
+        if (!enableH2PProviderFilter ||
+            (info != pred.tageInfoForMgscs.end() &&
+             info->second.tage_final_provider_table >= 0 &&
+             unsigned(info->second.tage_final_provider_table) >=
+                 h2pMinProviderTable))
+            result.target.h2pAllocateBranchPCs.push_back(branch.pc);
+        if (h2pTable.peek(branch.pc).h2p) {
+            result.target.h2pTableBranchPCs.push_back(branch.pc);
+            if (!enableH2PWeakConfidence ||
+                (info != pred.tageInfoForMgscs.end() &&
+                 info->second.isLowConfidenceForAPF())) {
+                result.target.h2pBranchPCs.push_back(branch.pc);
+                result.target.apfBranches.push_back(branch);
+            }
+        }
+    }
+    restore();
+    alternateQuery = false;
+    ras->setShadowAccess(false);
+    return result;
+}
+
+void
+DecoupledBPUWithBTB::advanceAlternate(AlternateCheckpoint &state,
+                                      AlternatePrediction &prediction,
+                                      Addr nextPC)
+{
+    auto restore = checkpointAlternateState();
+    state();
+    alternateQuery = true;
+    ras->setShadowAccess(true);
+    // RAS metadata contains logical ring positions: rebind it in this context.
+    if (ras->isEnabled()) {
+        ras->refreshPredictionMeta(prediction.target.startPC,
+                                   threads[0].s0History,
+                                   prediction.prediction);
+        prediction.target.predMetas[ras->getComponentIdx()] =
+            ras->getPredictionMeta(0);
+    }
+    updateHistoryForPrediction(prediction.target, prediction.prediction);
+    advancePairPhase(threads[0].s0PairPhase);
+    threads[0].s0PC = nextPC;
+    state = checkpointAlternateState();
+    restore();
+    alternateQuery = false;
+    ras->setShadowAccess(false);
+}
+
+bool
+DecoupledBPUWithBTB::canPromoteAlternate(unsigned targets) const
+{
+    return logicalFreeFTQEntries(0) >= targets;
+}
+
+FetchTargetId
+DecoupledBPUWithBTB::promoteAlternate(AlternatePrediction &prediction,
+                                      Addr nextPC)
+{
+    auto &target = prediction.target;
+    auto &pred = prediction.prediction;
+    panic_if(target.history != threads[0].s0History ||
+             target.phistory != threads[0].s0PHistory ||
+             target.bwhistory != threads[0].s0BwHistory ||
+             target.lhistory != threads[0].s0LHistory,
+             "APF promotion history differs from the saved path prefix");
+    if (ras->isEnabled()) {
+        ras->refreshPredictionMeta(target.startPC, threads[0].s0History, pred);
+        target.predMetas[ras->getComponentIdx()] = ras->getPredictionMeta(0);
+    }
+    const auto id = ftq.backId(0) + 1;
+    updateHistoryForPrediction(target, pred);
+    advancePairPhase(threads[0].s0PairPhase);
+    threads[0].s0PC = nextPC;
+    clearPreds(0);
+    threads[0].validprediction = false;
+    ftq.insert(FetchTarget(target));
+    ftq.finishTarget(0);
+    dbpBtbStats.fsqEntryEnqueued++;
+    return id;
+}
 
 }  // namespace btb_pred
 

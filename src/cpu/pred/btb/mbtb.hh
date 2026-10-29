@@ -93,6 +93,13 @@ class MBTB : public TimedBaseBTBPredictor
     MBTB(const Params& p);
 #endif
 
+    // Per-cycle dual-SRAM read-port model used by primary and APF shadow
+    // lookups. Each half-aligned lookup reserves the SRAMs it touches.
+    void beginResourceCycle();
+    void reservePrimaryAccess(Addr startAddr);
+    bool tryReserveShadow(Addr startAddr);
+    void releaseShadow(Addr startAddr);
+
     /*
      * BTB Entry with timestamp for MRU replacement
      * Inherits from BTBEntry which contains:
@@ -153,6 +160,20 @@ class MBTB : public TimedBaseBTBPredictor
     /** Get prediction BTBMeta
      *  @return Returns the prediction meta
      */
+    void predictShadow(Addr pc, const boost::dynamic_bitset<> &history,
+                       FullBTBPrediction &pred) override
+    {
+        pred.btbEntries = getPredictedEntriesNoSideEffect(
+            pc, pred.tid, pred.asidHash);
+        refreshPredictionMeta(pc, history, pred);
+    }
+
+    SpeculativeCheckpoint saveSpeculativeState(ThreadID tid) override
+    {
+        auto meta = threadMeta[tid];
+        return [this, tid, meta] { threadMeta[tid] = meta; };
+    }
+
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
     void refreshPredictionMeta(Addr startAddr,
                                const boost::dynamic_bitset<> &history,
@@ -400,14 +421,42 @@ class MBTB : public TimedBaseBTBPredictor
 
     /** BTB configuration parameters */
     unsigned numEntries;    // Total number of entries
-    unsigned numWays;       // Number of ways per SRAM (4 for dual-SRAM)
-    unsigned numSets;       // Number of sets per SRAM (numEntries/numWays/2)
-    
+    unsigned numWays;       // Number of ways per internal SRAM
+    unsigned numSets;       // Number of sets per internal SRAM
+
+    // Kunminghu-v3 uses two 32B align banks, each split into four internal
+    // SRAM banks.  Keep the resource model at physical-bank granularity so
+    // APF queries only conflict when they select the same RTL bank.
+    static constexpr unsigned NumAlignBanks = 2;
+    static constexpr unsigned NumInternalBanks = 4;
+    static constexpr unsigned NumResourceBanks =
+        NumAlignBanks * NumInternalBanks;
+
     /** SRAM selection helper function */
     inline int getSRAMId(Addr pc) const {
         // Use the bit after block offset to select SRAM
         // For 32B blocks: bit 5 selects SRAM (blockSize=32, log2(32)=5)
         return ((pc >> floorLog2(blockSize)) & 1);
+    }
+
+    inline unsigned getResourceBankId(Addr blockAddr) const {
+        const unsigned alignBank =
+            (blockAddr >> floorLog2(blockSize)) & (NumAlignBanks - 1);
+        const unsigned internalBank =
+            (blockAddr >> (floorLog2(blockSize) + 1)) &
+            (NumInternalBanks - 1);
+        return alignBank * NumInternalBanks + internalBank;
+    }
+
+    inline uint8_t lookupBankMask(Addr startAddr) const {
+        if (startAddr & 0x1)
+            return 0;
+        const Addr aligned = startAddr & ~(blockSize - 1);
+        uint8_t banks = 0;
+        for (unsigned i = 0; i < NumAlignBanks; ++i) {
+            banks |= uint8_t(1u << getResourceBankId(aligned + i * blockSize));
+        }
+        return banks;
     }
 
 #ifdef UNIT_TEST
@@ -430,6 +479,7 @@ class MBTB : public TimedBaseBTBPredictor
 
     using Scalar = test_stats::Scalar;
     using Distribution = test_stats::Distribution;
+    using Vector = test_stats::Vector;
 
 #ifdef UNIT_TEST
 public:
@@ -487,12 +537,23 @@ public:
         // Victim cache statistics
         Scalar victimCacheHit;
 
+        Scalar primaryAccesses;
+        Scalar shadowQueries;
+        Scalar shadowBankConflicts;
+        Scalar shadowDeferredCycles;
+        Vector shadowBankConflictPerBank;
+
         Distribution predHitCount;
 #ifndef UNIT_TEST
         BTBStats(statistics::Group* parent, int numWays);
 #endif
         void init(int numWays);
     } btbStats;
+
+    // Bit i is set when physical SRAM bank i has a read-port reservation this
+    // cycle.  The eight bits correspond to two align banks x four internal
+    // banks, as in the RTL MBTB.
+    uint8_t resourceBanksBusy = 0;
 
 };
 

@@ -15,12 +15,14 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/btb/abtb.hh"
+#include "cpu/pred/btb/alternate_path.hh"
 #include "cpu/pred/btb/btb_ittage.hh"
 #include "cpu/pred/btb/btb_mgsc.hh"
 #include "cpu/pred/btb/btb_tage.hh"
 #include "cpu/pred/btb/btb_ubtb.hh"
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/ftq.hh"
+#include "cpu/pred/btb/h2p_table.hh"
 #include "cpu/pred/btb/history_manager.hh"
 #include "cpu/pred/btb/mbtb.hh"
 #include "cpu/pred/btb/microtage.hh"
@@ -158,6 +160,20 @@ class DecoupledBPUWithBTB : public BPredUnit
     std::vector<HistoryManager> historyManagers;
     std::vector<unsigned> resolveDequeueFailCounters;
     const unsigned resolveBlockThreshold;
+    const bool enableH2PTable;
+    const bool enableH2PWeakConfidence;
+    const bool enableH2PProviderFilter;
+    const unsigned h2pMinProviderTable;
+    const bool enableAPFMTBResourceConflict;
+    const bool enableAPFTAGEResourceConflict;
+    const unsigned h2pTableEntries;
+    const uint64_t h2pAgeInsts;
+
+    H2PTable h2pTable;
+    uint64_t h2pAgeRemaining = 0;
+    bool alternateQuery = false;
+    bool alternateReplay = false;
+    bool alternateEnabled = false;
 
     bool sharedFTQMode() const;
     unsigned activeFTQThreads() const;
@@ -166,6 +182,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     unsigned logicalMaxFTQEntries(ThreadID tid) const;
     unsigned logicalFreeFTQEntries(ThreadID tid) const;
     bool ftqFull(ThreadID tid) const;
+    H2PTable::LookupResult lookupH2P(Addr pc);
+    void trainH2P(const BranchOutcome &branch, const FetchTarget &target);
 
     bool isThreadActive(ThreadID tid) const;
     bool canStartPrediction(ThreadID tid) const;
@@ -271,6 +289,33 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar returnMiss;   ///< Return mispredictions
         statistics::Scalar otherMiss;    ///< Other control mispredictions
 
+        statistics::Scalar h2pLookups;
+        statistics::Scalar h2pTableCandidates;
+        statistics::Scalar h2pCandidates;
+        statistics::Scalar h2pConfidenceRejected;
+        statistics::Scalar h2pConfidenceMissing;
+        statistics::Scalar h2pTableTruePositive;
+        statistics::Scalar h2pTableFalsePositive;
+        statistics::Scalar h2pTableFalseNegative;
+        statistics::Scalar h2pTableTrueNegative;
+        statistics::Formula h2pTableCoverage;
+        statistics::Formula h2pTablePrecision;
+        statistics::Formula h2pTableWastage;
+        statistics::Scalar h2pTruePositive;
+        statistics::Scalar h2pFalsePositive;
+        statistics::Scalar h2pFalseNegative;
+        statistics::Scalar h2pTrueNegative;
+        statistics::Formula h2pCoverage;
+        statistics::Formula h2pPrecision;
+        statistics::Formula h2pAccuracy;
+        statistics::Formula h2pFalsePositiveRate;
+        statistics::Scalar h2pTrainMispredicts;
+        statistics::Scalar h2pTrainProviderRejected;
+        statistics::Scalar h2pAllocations;
+        statistics::Scalar h2pCounterAges;
+        statistics::Scalar h2pReplacements;
+        statistics::Scalar h2pAllocationDrops;
+
         // Fine-grained branch classification statistics
         statistics::Vector branchClassCounts; ///< Classified branch occurrences
         statistics::Vector branchClassMisses; ///< Mispredictions per class
@@ -356,6 +401,23 @@ class DecoupledBPUWithBTB : public BPredUnit
      * - Statistics collection
      */
     void tick();
+
+    void enableAlternatePaths() { alternateEnabled = true; }
+    void holdForAlternateReplay(bool hold) { alternateReplay = hold; }
+    unsigned alternatePredictWidth() const { return predictWidth; }
+    bool alternateSourceLive(const AlternateCandidate &candidate) const;
+    void resolveAlternateCandidate(const BranchOutcome &branch);
+    bool nextAlternateCandidate(AlternateCandidate &candidate);
+    AlternateCheckpoint checkpointAlternateState();
+    AlternateCheckpoint startAlternate(const AlternateCandidate &candidate);
+    AlternatePrediction predictAlternate(const AlternateCheckpoint &state,
+                                          Addr pc);
+    bool tryReserveAlternateResources(Addr pc);
+    void advanceAlternate(AlternateCheckpoint &state,
+                          AlternatePrediction &prediction, Addr nextPC);
+    bool canPromoteAlternate(unsigned targets) const;
+    FetchTargetId promoteAlternate(AlternatePrediction &prediction,
+                                   Addr nextPC);
 
     void squash(const InstSeqNum &squashed_sn, ThreadID tid)
     {
@@ -458,7 +520,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     {
         return ftq.getTargetTid(eligible, ineligibleSkips);
     }
-    
+
     int getTargetTidByFetchQueueSize(const std::array<bool, MaxThreads> &eligible,
                                      unsigned *ineligibleSkips,
                                      const std::array<unsigned, MaxThreads> &fetchQueueSizes)

@@ -6,6 +6,7 @@
 #include <deque>
 #include <map>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -142,9 +143,42 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     void tickStart() override;
 
+    // Per-cycle query resource model used by APF shadow queries.  This is
+    // separate from enableBankConflict, which models prediction/update
+    // conflicts. useBankedIndex independently selects index/tag mapping.
+    void beginResourceCycle();
+    bool tryReserveShadowBank(Addr startAddr);
+    void releaseShadowBank(Addr startAddr);
+
     void tick() override;
     void dryRunCycle(Addr startAddr) override;
     // Make predictions for a stream of instructions and record in stage preds
+    void predictShadow(Addr pc, const boost::dynamic_bitset<> &history,
+                       FullBTBPrediction &pred) override
+    {
+        refreshPredictionMeta(pc, history, pred);
+        pred.condTakens.clear();
+        for (const auto &entry : pred.btbEntries) {
+            if (entry.valid && entry.isCond)
+                pred.condTakens.emplace_back(entry.pc,
+                    threadMeta[pred.tid]->preds.at(entry.pc).taken);
+        }
+    }
+
+    SpeculativeCheckpoint saveSpeculativeState(ThreadID tid) override
+    {
+        auto history = threadHistory[tid];
+        auto meta = threadMeta[tid];
+        auto bank = lastPredBankId;
+        auto valid = predBankValid;
+        return [this, tid, history, meta, bank, valid] {
+            threadHistory[tid] = history;
+            threadMeta[tid] = meta;
+            lastPredBankId = bank;
+            predBankValid = valid;
+        };
+    }
+
     void putPCHistory(Addr startAddr,
                       const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;
@@ -339,13 +373,14 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // ========== Bank Configuration ==========
     // Bank mechanism to simulate hardware bank conflicts
-    // When prediction and update access the same bank in one cycle, update is dropped
+    // A conflict with a registered prediction defers the resolved update.
     const unsigned numBanks;         // Number of banks (e.g., 4)
     const unsigned bankIdWidth;      // log2(numBanks), computed in constructor
     const unsigned blockWidth;       // floorLog2(blockSize), e.g., 5 for 32B blocks
     const unsigned bankBaseShift;    // Bits removed before bank selection (default: instShiftAmt)
     const unsigned indexShift;       // bankBaseShift + bankIdWidth when banking enabled
-    bool enableBankConflict;         // Enable/disable bank conflict simulation
+    bool useBankedIndex;             // Exclude bank bits from index/tag PC bits
+    bool enableBankConflict;         // Model prediction/update port conflicts
 
     // Track last prediction bank for conflict detection
     unsigned lastPredBankId;         // Bank ID of last prediction
@@ -407,6 +442,11 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Vector updateBankConflictPerBank;  // Conflicts per bank
         Vector updateAccessPerBank;        // Update accesses per bank
         Vector predAccessPerBank;          // Prediction accesses per bank
+        Scalar shadowQueries;
+        Scalar shadowBankConflicts;
+        Scalar shadowUpdateBankConflicts;
+        Scalar shadowDeferredCycles;
+        Vector shadowBankConflictPerBank;
 
         Vector resolveProviderTable;
         Vector resolveAltTable;
@@ -444,6 +484,13 @@ class BTBTAGE : public TimedBaseBTBPredictor
     } ;
 
     TageStats tageStats;
+
+    // Banks occupied by primary/shadow queries or an accepted resolve update.
+    std::vector<bool> resourceBankBusy;
+    // Fetch accepts resolve updates before the BPU starts its resource cycle.
+    // Carry that reservation into the cycle so APF cannot steal its port.
+    std::optional<unsigned> pendingUpdateBank;
+    std::optional<unsigned> resourceUpdateBank;
 
 #ifndef UNIT_TEST
     TraceManager *tageMissTrace;

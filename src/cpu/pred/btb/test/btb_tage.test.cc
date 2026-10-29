@@ -527,6 +527,45 @@ protected:
     std::vector<FullBTBPrediction> stagePreds;
 };
 
+TEST_F(BTBTAGETest, ShadowCheckpointRestoresHistoryAndMeta)
+{
+    auto entry = createBTBEntry(0x1000, true, true, 1, 0x2000);
+    predictTAGE(tage, entry.pc, {entry}, history, stagePreds);
+    auto mainMeta = tage->getPredictionMeta();
+    auto restore = tage->saveSpeculativeState(0);
+
+    FullBTBPrediction shadow = stagePreds[1];
+    shadow.tid = 0;
+    shadow.bbStart = entry.pc;
+    specUpdateSelectedHistory(tage, history, shadow);
+    auto shadowHistory = history;
+    applyPredictedHistory(tage, shadowHistory, shadow);
+    tage->predictShadow(entry.pc, shadowHistory, shadow);
+    EXPECT_NE(tage->getPredictionMeta(), mainMeta);
+    auto shadowMeta = tage->getPredictionMeta();
+    restore();
+    EXPECT_EQ(tage->getPredictionMeta(), mainMeta);
+    tage->checkFoldedHist(history, "APF restored main history");
+    EXPECT_NE(shadowMeta, mainMeta);
+    EXPECT_TRUE(predictTAGE(tage, entry.pc, {entry}, history, stagePreds));
+}
+
+TEST_F(BTBTAGETest, ShadowCheckpointDoesNotUndoTableTraining)
+{
+    auto entry = createBTBEntry(0x1000, true, true, 1, 0x2000);
+    predictTAGE(tage, entry.pc, {entry}, history, stagePreds);
+    auto restore = tage->saveSpeculativeState(0);
+    setupTageEntry(tage, entry.pc, 3, -4);
+    restore();
+    FullBTBPrediction prediction;
+    prediction.tid = 0;
+    prediction.bbStart = entry.pc;
+    prediction.btbEntries = {entry};
+    tage->predictShadow(entry.pc, history, prediction);
+    ASSERT_EQ(prediction.condTakens.size(), 1u);
+    EXPECT_FALSE(prediction.condTakens.front().second);
+}
+
 // Test basic prediction functionality
 TEST_F(BTBTAGETest, BasicPrediction) {
     // Create a conditional branch entry biased towards taken
@@ -537,6 +576,11 @@ TEST_F(BTBTAGETest, BasicPrediction) {
 
     // Should predict taken due to initial counter bias
     EXPECT_TRUE(taken) << "Initial prediction should be taken";
+    ASSERT_NE(stagePreds[1].tageInfoForMgscs.find(0x1000),
+              stagePreds[1].tageInfoForMgscs.end());
+    EXPECT_EQ(stagePreds[1].tageInfoForMgscs.at(0x1000)
+                  .tage_final_provider_table,
+              -1);
 
     // Update predictor with actual outcome Not taken
     predictUpdateCycle(tage, 0x1000, entry, false, history, stagePreds);
@@ -544,6 +588,108 @@ TEST_F(BTBTAGETest, BasicPrediction) {
     // Verify at least one table has an entry allocated
     int table = findTableWithEntry(tage, 0x1000, 0x1000);
     EXPECT_GE(table, 0) << "No TAGE table entry was allocated";
+}
+
+TEST_F(BTBTAGETest, ReportsLowConfidenceForWeakProvider)
+{
+    const Addr pc = 0x1000;
+    const auto entry = createBTBEntry(pc);
+
+    predictTAGE(tage, pc, {entry}, history, stagePreds);
+    ASSERT_NE(stagePreds[1].tageInfoForMgscs.find(pc),
+              stagePreds[1].tageInfoForMgscs.end());
+    EXPECT_TRUE(stagePreds[1].tageInfoForMgscs.at(pc).tage_pred_conf_low);
+
+    setupTageEntry(tage, pc, 3, 0);
+    predictTAGE(tage, pc, {entry}, history, stagePreds);
+    EXPECT_TRUE(stagePreds[1].tageInfoForMgscs.at(pc).tage_pred_conf_low);
+
+    setupTageEntry(tage, pc, 3, -1);
+    predictTAGE(tage, pc, {entry}, history, stagePreds);
+    EXPECT_TRUE(stagePreds[1].tageInfoForMgscs.at(pc).tage_pred_conf_low);
+}
+
+TEST_F(BTBTAGETest, DoesNotReportLowConfidenceForMidOrStrongProvider)
+{
+    const Addr pc = 0x1000;
+    const auto entry = createBTBEntry(pc);
+
+    setupTageEntry(tage, pc, 3, 1);
+    predictTAGE(tage, pc, {entry}, history, stagePreds);
+    EXPECT_TRUE(stagePreds[1].tageInfoForMgscs.at(pc).tage_pred_conf_mid);
+    EXPECT_FALSE(stagePreds[1].tageInfoForMgscs.at(pc).tage_pred_conf_low);
+
+    setupTageEntry(tage, pc, 3, 3);
+    predictTAGE(tage, pc, {entry}, history, stagePreds);
+    EXPECT_TRUE(stagePreds[1].tageInfoForMgscs.at(pc).tage_pred_conf_high);
+    EXPECT_FALSE(stagePreds[1].tageInfoForMgscs.at(pc).tage_pred_conf_low);
+    EXPECT_EQ(stagePreds[1].tageInfoForMgscs.at(pc)
+                  .tage_final_provider_table,
+              3);
+}
+
+TEST_F(BTBTAGETest, APFConfidenceIncludesMidWithoutChangingSCFlags)
+{
+    const Addr pc = 0x1000;
+    const auto entry = createBTBEntry(pc);
+
+    for (short counter = -4; counter <= 3; ++counter) {
+        SCOPED_TRACE(counter);
+        setupTageEntry(tage, pc, 3, counter);
+
+        const auto checkConfidence = [counter](const TageInfoForMGSC &info) {
+            EXPECT_EQ(info.isLowConfidenceForAPF(),
+                      counter > -4 && counter < 3);
+            EXPECT_EQ(info.tage_pred_conf_low,
+                      counter == -1 || counter == 0);
+            EXPECT_EQ(info.tage_pred_conf_mid,
+                      counter == -3 || counter == -2 ||
+                      counter == 1 || counter == 2);
+            EXPECT_EQ(info.tage_pred_conf_high,
+                      counter == -4 || counter == 3);
+        };
+
+        predictTAGE(tage, pc, {entry}, history, stagePreds);
+        ASSERT_NE(stagePreds[1].tageInfoForMgscs.find(pc),
+                  stagePreds[1].tageInfoForMgscs.end());
+        checkConfidence(stagePreds[1].tageInfoForMgscs.at(pc));
+
+        FullBTBPrediction shadow;
+        shadow.bbStart = pc;
+        shadow.btbEntries = {entry};
+        tage->predictShadow(pc, history, shadow);
+        ASSERT_NE(shadow.tageInfoForMgscs.find(pc),
+                  shadow.tageInfoForMgscs.end());
+        checkConfidence(shadow.tageInfoForMgscs.at(pc));
+    }
+}
+
+TEST_F(BTBTAGETest, APFConfidencePreservesMissingProviderPolicy)
+{
+    const Addr pc = 0x1000;
+    const auto entry = createBTBEntry(pc);
+
+    predictTAGE(tage, pc, {entry}, history, stagePreds);
+    ASSERT_NE(stagePreds[1].tageInfoForMgscs.find(pc),
+              stagePreds[1].tageInfoForMgscs.end());
+    const auto &info = stagePreds[1].tageInfoForMgscs.at(pc);
+    EXPECT_TRUE(info.tage_pred_conf_low);
+    EXPECT_TRUE(info.isLowConfidenceForAPF());
+
+    FullBTBPrediction shadow;
+    shadow.bbStart = pc;
+    shadow.btbEntries = {entry};
+    tage->predictShadow(pc, history, shadow);
+    ASSERT_NE(shadow.tageInfoForMgscs.find(pc),
+              shadow.tageInfoForMgscs.end());
+    EXPECT_TRUE(shadow.tageInfoForMgscs.at(pc).tage_pred_conf_low);
+    EXPECT_TRUE(shadow.tageInfoForMgscs.at(pc).isLowConfidenceForAPF());
+}
+
+TEST_F(BTBTAGETest, APFConfidenceRejectsUnknownMetadata)
+{
+    const TageInfoForMGSC info;
+    EXPECT_FALSE(info.isLowConfidenceForAPF());
 }
 
 // Test basic history update functionality (PHR semantics)
@@ -1381,6 +1527,124 @@ TEST_F(BTBTAGETest, BankConflict) {
         // No conflict even with same bank
         EXPECT_EQ(bankTage->tageStats.updateBankConflict, conflicts_before);
     }
+}
+
+TEST_F(BTBTAGETest, UpdateConflictDoesNotChangeIndexOrTag)
+{
+    for (bool banked : {false, true}) {
+        tage->useBankedIndex = banked;
+        tage->enableBankConflict = false;
+        const Addr index = tage->getTageIndex(0x1408, 0);
+        const Addr tag = tage->getTageTag(0x1408, 0);
+        tage->enableBankConflict = true;
+        EXPECT_EQ(tage->getTageIndex(0x1408, 0), index);
+        EXPECT_EQ(tage->getTageTag(0x1408, 0), tag);
+    }
+}
+
+TEST_F(BTBTAGETest, BankedMappingCanBeSelectedWithoutUpdateConflict)
+{
+    tage->enableBankConflict = false;
+    tage->useBankedIndex = false;
+    const Addr index = tage->getTageIndex(0x1408, 0);
+    const Addr tag = tage->getTageTag(0x1408, 0);
+    tage->useBankedIndex = true;
+    EXPECT_NE(tage->getTageIndex(0x1408, 0), index);
+    EXPECT_NE(tage->getTageTag(0x1408, 0), tag);
+}
+
+TEST_F(BTBTAGETest, ShadowQueryBankReservation)
+{
+    BTBTAGE *bankTage = new BTBTAGE(4, 2, 1024, 4);
+    bankTage->beginResourceCycle();
+
+    // 0x100 and 0x108 map to the same bank; 0x102 maps to the next bank.
+    EXPECT_TRUE(bankTage->tryReserveShadowBank(0x100));
+    EXPECT_FALSE(bankTage->tryReserveShadowBank(0x108));
+    EXPECT_TRUE(bankTage->tryReserveShadowBank(0x102));
+
+    bankTage->releaseShadowBank(0x100);
+    EXPECT_TRUE(bankTage->tryReserveShadowBank(0x108));
+}
+
+TEST_F(BTBTAGETest, AcceptedUpdateBlocksShadowQuery)
+{
+    BTBTAGE bankTage(4, 2, 1024, 4);
+    bankTage.enableBankConflict = true;
+    bankTage.setTrainingStage(PredictorTrainingStage::Resolve);
+    boost::dynamic_bitset<> testHistory(128);
+    std::vector<FullBTBPrediction> testStagePreds(5);
+    testStagePreds[1].btbEntries = {createBTBEntry(0x100)};
+    bankTage.putPCHistory(0x100, testHistory, testStagePreds);
+    auto restore = bankTage.saveSpeculativeState(0);
+
+    // The registered primary prediction uses bank 0; update uses bank 2.
+    const auto entry = createBTBEntry(0x104);
+    auto stream = createStream(0x104, entry, bankTage.getPredictionMeta());
+    auto update = createPreparedUpdate(stream, entry, true);
+    ASSERT_TRUE(bankTage.canResolveUpdate(
+        PredictionUpdateContext(stream), update));
+    bankTage.doResolveUpdate(PredictionUpdateContext(stream), update);
+
+    // Fetch applies the update before beginning the BPU resource cycle.
+    bankTage.beginResourceCycle();
+    bankTage.putPCHistory(0x100, testHistory, testStagePreds);
+    ASSERT_TRUE(bankTage.tryReserveShadowBank(0x102));
+    bankTage.releaseShadowBank(0x102);
+    restore();
+
+    // Restoring a path or releasing another bank cannot cancel a write port.
+    EXPECT_FALSE(bankTage.tryReserveShadowBank(0x104));
+    EXPECT_EQ(bankTage.tageStats.shadowUpdateBankConflicts, 1);
+    EXPECT_FALSE(bankTage.tryReserveShadowBank(0x100));
+    EXPECT_EQ(bankTage.tageStats.shadowUpdateBankConflicts, 1);
+
+    // Accepted updates hold their bank for exactly one resource cycle.
+    bankTage.beginResourceCycle();
+    EXPECT_TRUE(bankTage.tryReserveShadowBank(0x104));
+}
+
+TEST_F(BTBTAGETest, DeferredUpdateDoesNotReserveShadowBank)
+{
+    BTBTAGE bankTage(4, 2, 1024, 4);
+    bankTage.enableBankConflict = true;
+    bankTage.setTrainingStage(PredictorTrainingStage::Resolve);
+    boost::dynamic_bitset<> testHistory(128);
+    std::vector<FullBTBPrediction> testStagePreds(5);
+    testStagePreds[1].btbEntries = {createBTBEntry(0x100)};
+    bankTage.putPCHistory(0x100, testHistory, testStagePreds);
+
+    const auto entry = createBTBEntry(0x100);
+    auto stream = createStream(0x100, entry, bankTage.getPredictionMeta());
+    auto update = createPreparedUpdate(stream, entry, true);
+    ASSERT_FALSE(bankTage.canResolveUpdate(
+        PredictionUpdateContext(stream), update));
+
+    bankTage.beginResourceCycle();
+    EXPECT_TRUE(bankTage.tryReserveShadowBank(0x100));
+    EXPECT_EQ(bankTage.tageStats.shadowUpdateBankConflicts, 0);
+}
+
+TEST_F(BTBTAGETest, DisabledUpdateBankingDoesNotBlockShadowQuery)
+{
+    BTBTAGE bankTage(4, 2, 1024, 4);
+    bankTage.enableBankConflict = false;
+    bankTage.setTrainingStage(PredictorTrainingStage::Resolve);
+    boost::dynamic_bitset<> testHistory(128);
+    std::vector<FullBTBPrediction> testStagePreds(5);
+    testStagePreds[1].btbEntries = {createBTBEntry(0x100)};
+    bankTage.putPCHistory(0x100, testHistory, testStagePreds);
+
+    const auto entry = createBTBEntry(0x100);
+    auto stream = createStream(0x100, entry, bankTage.getPredictionMeta());
+    auto update = createPreparedUpdate(stream, entry, true);
+    ASSERT_TRUE(bankTage.canResolveUpdate(
+        PredictionUpdateContext(stream), update));
+    bankTage.doResolveUpdate(PredictionUpdateContext(stream), update);
+
+    bankTage.beginResourceCycle();
+    EXPECT_TRUE(bankTage.tryReserveShadowBank(0x100));
+    EXPECT_EQ(bankTage.tageStats.shadowUpdateBankConflicts, 0);
 }
 
 class BTBTAGEUpperBoundTest : public ::testing::Test

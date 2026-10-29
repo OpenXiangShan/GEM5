@@ -152,6 +152,12 @@ class AheadBTB : public TimedBaseBTBPredictor
     /** Get prediction BTBMeta
      *  @return Returns the prediction meta
      */
+    SpeculativeCheckpoint saveSpeculativeState(ThreadID tid) override
+    {
+        auto state = threadStates[tid];
+        return [this, tid, state] { threadStates[tid] = state; };
+    }
+
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
     void refreshPredictionMeta(Addr startAddr,
                                const boost::dynamic_bitset<> &history,

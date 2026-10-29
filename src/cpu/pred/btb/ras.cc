@@ -154,7 +154,8 @@ BTBRAS::specUpdateState(FullBTBPrediction &pred)
 
     if ((takenEntry.isCall || takenEntry.isReturn) &&
         inflightNearOverflow(state)) {
-        rasStats.SpecUpdatesBlockedNearOverflow++;
+        if (!shadowAccess)
+            rasStats.SpecUpdatesBlockedNearOverflow++;
         DPRINTF(RAS, "Block speculative RAS update near inflight overflow\n");
         return;
     }
@@ -207,7 +208,8 @@ BTBRAS::recoverState(const HistoryRecoveryContext &context,
     // write pointer back. This prevents a redirect on the current queue head
     // from consuming the final ring entry.
     if (inflightNearOverflow(state) && meta_ptr->TOSW >= state.TOSW) {
-        rasStats.RedirectsBlockedNearOverflow++;
+        if (!shadowAccess)
+            rasStats.RedirectsBlockedNearOverflow++;
         DPRINTF(RAS, "Block RAS redirect recovery near inflight overflow\n");
         return;
     }
@@ -307,7 +309,8 @@ void
 BTBRAS::push(ThreadID tid, Addr retAddr)
 {
     auto &state = threadStates[tid];
-    rasStats.Pushes++;
+    if (!shadowAccess)
+        rasStats.Pushes++;
     DPRINTF(RAS, "doing push ");
     // update ssp and sctr first
     // meta has recorded their old value
@@ -354,7 +357,8 @@ BTBRAS::pop(ThreadID tid)
 {
     auto &state = threadStates[tid];
     // DPRINTFR(RAS, "doing pop ndepth = %d", ndepth);
-    rasStats.Pops++;
+    if (!shadowAccess)
+        rasStats.Pops++;
     // pop may need to deal with committed stack
     if (inflightInRange(state, state.TOSR)) {
         const auto top_idx = inflightIndex(state.TOSR);
@@ -430,6 +434,8 @@ BTBRAS::inflightInRange(const ThreadRASState &state, int64_t ptr) const
 void
 BTBRAS::recordInflightDepth(const ThreadRASState &state)
 {
+    if (shadowAccess)
+        return;
     const auto depth = inflightOccupancy(state);
 #ifdef UNIT_TEST
     rasStats.MaxInflightDepth = std::max(rasStats.MaxInflightDepth, depth);

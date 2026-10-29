@@ -1847,7 +1847,13 @@ Commit::commitInsts()
 
                     // If this is an instruction that doesn't play nicely with
                     // others squash everything and restart fetch
-                    if (head_inst->isSquashAfter())
+                    // Discard APF bytes from before a fence or CSR update.
+                    // Only promoted APF state requires an additional redirect.
+                    const bool apfInvalidation =
+                        head_inst->isNonSpeculative() &&
+                        head_inst->isSerializeAfter() &&
+                        cpu->getFetch()->invalidateAPF();
+                    if (head_inst->isSquashAfter() || apfInvalidation)
                         squashAfter(tid, head_inst);
 
                     if (drainPending) {
@@ -2520,6 +2526,7 @@ Commit::markCompletedInsts()
 void
 Commit::updateComInstStats(const DynInstPtr &inst)
 {
+    cpu->getFetch()->commitAPFUop(inst);
     ThreadID tid = inst->threadNumber;
 
     if (!inst->isMicroop() || inst->isLastMicroop())
