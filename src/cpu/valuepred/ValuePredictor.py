@@ -171,5 +171,7 @@ class EgDiff(ValuePredictor):
         3, "Cycles from dispatch to an ordinary prediction")
     deferredPredictionLatency = Param.Unsigned(
         2, "Cycles from base availability to a deferred prediction")
+    enableDeferred = Param.Bool(True,
+        "Enable deferred predictions whose base is not ready at dispatch")
     lastMispWindow = Param.Unsigned(
         1024, "Committed instructions suppressed after a value misprediction")

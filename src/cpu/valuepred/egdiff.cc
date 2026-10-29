@@ -25,6 +25,9 @@ EgDiff::EgDiffStats::EgDiffStats(statistics::Group *parent)
                "Requests bound to an unavailable base"),
       ADD_STAT(deferredWakeups, statistics::units::Count::get(),
                "Deferred requests awakened by base availability"),
+      ADD_STAT(deferredDisabled, statistics::units::Count::get(),
+               "Requests that would have been deferred but deferred "
+               "prediction is disabled"),
       ADD_STAT(predictionsOffered, statistics::units::Count::get(),
                "Ready EgDiff predictions offered to arbitration"),
       ADD_STAT(predictionsApplied, statistics::units::Count::get(),
@@ -119,6 +122,7 @@ EgDiff::EgDiff(const Params &params)
       tickBits(params.tickBits),
       normalPredictionLatency(params.normalPredictionLatency),
       deferredPredictionLatency(params.deferredPredictionLatency),
+      enableDeferred(params.enableDeferred),
       lastMispWindow(params.lastMispWindow), states(params.numThreads),
       table(tableEntryCount), egdiffStats(this)
 {
@@ -135,7 +139,7 @@ EgDiff::EgDiff(const Params &params)
              "EgDiff TICK width must be in [1, 63]");
     fatal_if(normalPredictionLatency == 0,
              "EgDiff normal prediction latency must be non-zero");
-    fatal_if(deferredPredictionLatency == 0,
+    fatal_if(enableDeferred && deferredPredictionLatency == 0,
              "EgDiff deferred prediction latency must be non-zero");
     fatal_if(lastMispWindow == 0,
              "EgDiff last-misprediction window must be non-zero");
@@ -523,7 +527,7 @@ EgDiff::dispatch(const VPDispatchInfo &info, VPPredictionRecord *record)
                 target.predictionDistance,
                 static_cast<unsigned long long>(target.predictionDiff),
                 target.readyCycle);
-    } else {
+    } else if (enableDeferred) {
         target.requestPending = true;
         state.deferredWaiters[target.baseOrdinal].push_back(target.ordinal);
         egdiffStats.deferredBindings++;
@@ -533,6 +537,11 @@ EgDiff::dispatch(const VPDispatchInfo &info, VPPredictionRecord *record)
                 info.tid, info.seqNo, info.pc, ordinal, target.baseOrdinal,
                 target.predictionDistance,
                 static_cast<unsigned long long>(target.predictionDiff));
+    } else {
+        target.requestPending = false;
+        target.requestReady = false;
+        target.requestDelivered = true;
+        egdiffStats.deferredDisabled++;
     }
 }
 
