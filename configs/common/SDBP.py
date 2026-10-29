@@ -68,5 +68,7 @@ def configure_sdbp(args, system):
             for cpu, wrapper in zip(system.cpu, system.l2_wrappers):
                 for cache_slice in wrapper.slices:
                     configure(
-                        cache_slice.inner_cache, args.l2_replacement_policy, cpu
+                        cache_slice.inner_cache,
+                        args.l2_replacement_policy,
+                        cpu,
                     )

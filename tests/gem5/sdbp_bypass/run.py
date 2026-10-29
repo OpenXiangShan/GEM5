@@ -67,7 +67,9 @@ system.cpu.icache = cache("1KiB", 2, 1, is_read_only=True)
 system.cpu.dcache = cache("1KiB", 2, 1)
 system.l2bus = L2XBar()
 system.l2 = cache(
-    "4KiB", 4, 2,
+    "4KiB",
+    4,
+    2,
     replacement_policy=SDBPRP(
         num_sets=16,
         sampler_num=4,
@@ -94,7 +96,9 @@ system.cpu.createInterruptController()
 root = Root(full_system=False, system=system)
 m5.instantiate()
 event = m5.simulate(1000000000)
-assert event.getCause() == "exiting with last active thread context", event.getCause()
+assert (
+    event.getCause() == "exiting with last active thread context"
+), event.getCause()
 assert event.getCode() == 0, "Guest detected corrupted data"
 m5.stats.dump()
 
@@ -122,9 +126,13 @@ counts = {
     "l3_memory_writebacks": stats.get("system.l3.writebacks::total", 0),
 }
 if args.disable_bypass:
-    assert all(counts[key] == 0 for key in counts if key != "l3_memory_writebacks")
+    assert all(
+        counts[key] == 0 for key in counts if key != "l3_memory_writebacks"
+    )
 else:
-    assert all(counts[key] > 0 for key in counts if key != "l3_memory_writebacks")
+    assert all(
+        counts[key] > 0 for key in counts if key != "l3_memory_writebacks"
+    )
     assert counts["l2_forwards"] == counts["l3_receives"]
     assert stat("system.l2.tags.tagsInUse") == 0, "Dead refills allocated L2"
     assert counts["l3_memory_writebacks"] == 0, "Victims escaped the large L3"
