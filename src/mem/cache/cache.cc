@@ -229,7 +229,7 @@ Cache::doWritebacks(PacketList& writebacks, Tick forward_time)
             } else if (wbPkt->cmd == MemCmd::WritebackClean) {
                 // clean writeback, do not send since the block is
                 // still cached above
-                assert(writebackClean);
+                assert(writebackClean || wbPkt->sdbpBypassL2);
                 delete wbPkt;
             } else {
                 assert(wbPkt->cmd == MemCmd::WritebackDirty ||

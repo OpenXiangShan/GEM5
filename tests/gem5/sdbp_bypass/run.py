@@ -6,6 +6,8 @@
 Compile traffic.S using its header command, then run:
   build/RISCV/gem5.opt tests/gem5/sdbp_bypass/run.py /tmp/sdbp-traffic
 Repeat with --atomic and --disable-bypass to check both paths and the control.
+For clean-only traffic compile with -DSDBP_READ_ONLY, then pass --clean-only.
+Use --small-l3 to force L3 replacements and check real vs synthetic dirtiness.
 """
 
 import argparse
@@ -33,6 +35,9 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("binary")
 parser.add_argument("--atomic", action="store_true")
 parser.add_argument("--disable-bypass", action="store_true")
+parser.add_argument("--clean-only", action="store_true")
+parser.add_argument("--small-l3", action="store_true")
+parser.add_argument("--exclusive-l3", action="store_true")
 args = parser.parse_args()
 
 system = System()
@@ -79,7 +84,12 @@ system.l2 = cache(
     ),
 )
 system.l3bus = L2XBar()
-system.l3 = cache("128KiB", 8, 3, clusivity="mostly_incl")
+system.l3 = cache(
+    "8KiB" if args.small_l3 else "128KiB",
+    8,
+    3,
+    clusivity="mostly_excl" if args.exclusive_l3 else "mostly_incl",
+)
 system.membus = SystemXBar()
 system.memory = SimpleMemory(range=system.mem_ranges[0])
 system.cpu.icache_port = system.cpu.icache.cpu_side
@@ -135,5 +145,27 @@ else:
     )
     assert counts["l2_forwards"] == counts["l3_receives"]
     assert stat("system.l2.tags.tagsInUse") == 0, "Dead refills allocated L2"
-    assert counts["l3_memory_writebacks"] == 0, "Victims escaped the large L3"
+    clean_wbs = stats.get("system.l3.WritebackClean.accesses::writebacks", 0)
+    dirty_wbs = stats.get("system.l3.WritebackDirty.accesses::writebacks", 0)
+    counts["l3_clean_writebacks_received"] = clean_wbs
+    counts["l3_dirty_writebacks_received"] = dirty_wbs
+    assert clean_wbs > 0, "Clean bypass victims failed to reach L3"
+    if args.exclusive_l3 and args.clean_only:
+        # Exclusive L3 drops clean demand fills. Resident tags must therefore
+        # have been installed by returning clean writebacks. The writeback
+        # access path counts allocations as hits, so miss counters cannot
+        # distinguish allocating writebacks from overwriting writebacks.
+        resident_lines = stat("system.l3.tags.tagsInUse")
+        counts["l3_average_resident_lines"] = resident_lines
+        assert resident_lines > 0, "Clean bypass victims did not allocate L3"
+    if args.clean_only:
+        assert dirty_wbs == 0, "Read-only traffic created dirty writebacks"
+    else:
+        assert dirty_wbs > 0, "Modified data lost its dirty ownership"
+if args.small_l3 and not args.clean_only:
+    assert counts["l3_memory_writebacks"] > 0, "Dirty L3 victims were lost"
+else:
+    assert (
+        counts["l3_memory_writebacks"] == 0
+    ), "Unexpected L3 memory writeback"
 print("SDBP bypass regression passed:", json.dumps(counts, sort_keys=True))

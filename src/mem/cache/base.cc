@@ -2103,8 +2103,14 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
 
     if (cacheLevel == 2 && pkt->isWriteback() && pkt->sdbpBypassL2) {
         // A later refill may have installed a copy while the bypassed line
-        // lived in L1. Drop that copy before forwarding the newer data.
+        // lived in L1. Drop that copy before forwarding the current data.
         if (blk) {
+            // Preserve real dirty ownership held by L2 (e.g. a ReadClean
+            // response left the owner here). This is not synthetic dirtiness.
+            if (blk->isSet(CacheBlk::DirtyBit) &&
+                pkt->cmd == MemCmd::WritebackClean) {
+                pkt->cmd = MemCmd::WritebackDirty;
+            }
             invalidateBlock(blk);
             blk = nullptr;
         }
@@ -2445,12 +2451,9 @@ BaseCache::handleFill(
     if (cacheLevel == 1 && pkt->sdbpBypassL2) {
         if (!blk->sdbpBypassL2)
             ++stats.sdbpBypassFills;
+        // Routing is independent of whether the line was really modified.
+        // A clean bypassed line must remain clean throughout the hierarchy.
         blk->sdbpBypassL2 = true;
-        // Only exclusive data-cache lines may acquire dirty ownership.
-        // Read-only/shared lines retain their coherence state and carry
-        // their data in a forced writeback when they are evicted.
-        if (!isReadOnly && !pkt->hasSharers())
-            blk->setCoherenceBits(CacheBlk::DirtyBit);
     }
 
     DPRINTF(Cache, "Block addr %#llx (%s) moving from %s to %s\n",
@@ -2651,10 +2654,11 @@ BaseCache::writebackBlk(CacheBlk *blk)
     req->setXsMetadata(blk->getXsMetadata());
 
     PacketPtr pkt =
-        new Packet(req, (blk->isSet(CacheBlk::DirtyBit) || bypass_l2) ?
+        new Packet(req, blk->isSet(CacheBlk::DirtyBit) ?
                    MemCmd::WritebackDirty : MemCmd::WritebackClean);
-    // WritebackDirty is accepted/allocated by L3 even if writeback_clean is
-    // disabled. Shared/read-only L1 lines need not become dirty residents.
+    // The bypass bit selects the route, not the coherence state. Clean
+    // victims carry data to L3 without creating a dirty copy there; real
+    // dirty victims must still transfer responsibility for modified data.
     pkt->sdbpBypassL2 = bypass_l2;
 
     DPRINTF(Cache, "Create Writeback %s writable: %d, dirty: %d\n",
