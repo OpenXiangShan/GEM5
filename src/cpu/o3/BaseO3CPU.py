@@ -243,6 +243,9 @@ class BaseO3CPU(BaseCPU):
         True, "Release store buffer entries when a miss is accepted by L1D")
     SbufferEvictThreshold = Param.Unsigned(7, "store buffer eviction threshold")
     storeBufferInactiveThreshold = Param.Unsigned(800, "store buffer writeback timeout threshold")
+    MaxStoreBufferEntriesAcceptedFromSQPerCycle = Param.Unsigned(
+        2, "Total number of store buffer entries accepted from SQ per cycle "
+           "(shared among threads; SpMT gives each thread half)")
 
     StoreWbStage = Param.Unsigned(4, "Which PipeLine Stage store instruction writeback, 4 means S4")
 

@@ -2737,7 +2737,7 @@ LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas,
     DPRINTF(
         StoreBuffer,
         "insert %#x to entry[%#x] successed, sbuffer size: %d unsentsize: %d\n",
-        paddr, blockPaddr, storeBuffer.size(), storeBuffer.unsentSize());
+        paddr, blockPaddr, storeBuffer.size(lsqID), storeBuffer.unsentSize(lsqID));
     return true;
 }
 

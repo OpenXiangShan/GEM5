@@ -23,16 +23,19 @@ def setSharedLSQParams(args, system):
         # Keep FTQ partitioned by default so one thread cannot monopolize the
         # shared target queue and starve the other thread's frontend.
         cpu.StoreQueueMultiple = 1 # Do not support Virtual-SQ in SMT
-        cpu.smtLSQMode = 'Shared'
-        cpu.smtLSQPolicy = 'DynamicBorrowing'  # for LQ and SQ only
-        cpu.smtRARQPolicy = 'Dynamic'  # RARQ uses pure Dynamic policy
-        cpu.smtRAWQPolicy = 'Dynamic'  # RAWQ uses pure Dynamic policy
         if args.enable_spmt:
             cpu.smtROBPolicy = 'Partitioned'
             cpu.smtIQPolicy = 'Dynamic'  # SpMT: each IQ belongs to one thread
+            cpu.smtLSQMode = 'Independent'
+            cpu.smtLSQPolicy = 'Partitioned'
+            cpu.SbufferEvictThreshold = 3
         else:
             cpu.smtROBPolicy = 'DynamicBorrowing'
             cpu.smtIQPolicy = args.smt_iq_policy
+            cpu.smtLSQMode = 'Shared'
+            cpu.smtLSQPolicy = 'DynamicBorrowing'  # for LQ and SQ only
+            cpu.smtRARQPolicy = 'Dynamic'  # RARQ uses pure Dynamic policy
+            cpu.smtRAWQPolicy = 'Dynamic'  # RAWQ uses pure Dynamic policy
         for iq in cpu.scheduler.IQs:
             if args.enable_spmt:
                 iq.smtIQWatermark = 0
