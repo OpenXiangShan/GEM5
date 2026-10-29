@@ -24,6 +24,7 @@ class SDBPCore
         unsigned numSets = 2048;
         unsigned samplerNum = 32;
         unsigned samplerAssoc = 12;
+        bool samplerProtectYoungestTwo = false;
         unsigned predictorTables = 3;
         unsigned predictorEntries = 4096;
         unsigned counterBits = 2;
