@@ -40,7 +40,6 @@ class EgDiff : public VPUnit
         uint8_t usefulness = 0;
         unsigned distance = 0;
         RegVal diff = 0;
-        Addr basePc = 0;
         uint8_t fpc = 0;
         uint64_t randomState = 1;
     };
@@ -71,7 +70,6 @@ class EgDiff : public VPUnit
         bool requestReady = false;
         bool requestDelivered = false;
         uint64_t baseOrdinal = 0;
-        Addr expectedBasePc = 0;
         unsigned predictionDistance = 0;
         RegVal predictionDiff = 0;
         uint64_t readyCycle = 0;
@@ -174,8 +172,6 @@ class EgDiff : public VPUnit
         statistics::Scalar squashedSlots;
         statistics::Scalar cancelledRequests;
         statistics::Scalar staleValueCallbacks;
-        statistics::Scalar basePcMismatches;
-        statistics::Scalar basePcMismatchSuppressions;
         statistics::Scalar tableEntries;
         statistics::Scalar tableConflicts;
         statistics::Scalar tableReplacements;
