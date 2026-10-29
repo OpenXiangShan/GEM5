@@ -1162,8 +1162,9 @@ def xiangshan_system_init():
     )
 
     parser.add_argument(
-        "--smt-wfi-loop-test", action="store_true",
-        help="Measure T0 while T1 continuously executes a software WFI loop",
+        "--smt-wfi-test", "--smt-wfi-loop-test",
+        dest="smt_wfi_loop_test", action="store_true",
+        help="Measure T0 after T1 retires WFI and its pipeline drains",
     )
     parser.add_argument(
         "--smt-wfi-loop-restore-insts", type=int, default=1000000,

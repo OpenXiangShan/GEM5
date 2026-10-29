@@ -296,6 +296,8 @@ class Commit
     /** Ticks the commit stage, which tries to commit instructions. */
     void tick();
 
+    void resumeWfi(ThreadID tid);
+
     /** Handles any squashes that are sent from IEW, and adds instructions
      * to the ROB and tries to commit instructions.
      */

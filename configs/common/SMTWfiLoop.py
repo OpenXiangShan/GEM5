@@ -1,4 +1,4 @@
-"""Measure T0 while T1 runs a software WFI loop on the unmodified CPU."""
+"""Measure T0 while T1 waits after retiring a real WFI."""
 
 import hashlib
 import json
@@ -14,21 +14,21 @@ def run(options, system, maxtick):
     total = options.maxinsts
     minimum = options.smt_wfi_loop_restore_insts
     if warmup < 0 or minimum < 0 or not total or total <= max(warmup, minimum):
-        fatal("WFI loop needs 0 <= warmup/restore < --maxinsts (T0 totals)")
+        fatal("WFI measurement needs 0 <= warmup/restore < --maxinsts")
     restorer = Path(str(system.gcpt_restorer_file))
     manifest_path = options.smt_wfi_loop_manifest
     if not manifest_path:
         manifest_path = restorer.with_name("manifest.json")
     manifest = json.loads(Path(manifest_path).read_text())
     if manifest.get("experiment") != "wfi-loop":
-        fatal("Use the manifest produced by smt_wfi/build_restorer.py")
+        fatal("Use the restorer manifest produced by smt_wfi/build_restorer.py")
     binary = restorer.read_bytes()
     if hashlib.sha256(binary).hexdigest() != manifest["binary_sha256"]:
-        fatal("WFI loop restorer hash does not match its manifest")
+        fatal("WFI restorer hash does not match its manifest")
     offset = manifest["wfi_offset"]
-    if binary[offset:offset + 8] != bytes.fromhex("730050106ff0dfff"):
-        fatal("WFI loop must contain an uncompressed WFI and backward JAL")
-    report = {"experiment": "wfi-loop", "measured_tid": 0, "loop_tid": 1,
+    if binary[offset:offset + 4] != bytes.fromhex("73005010"):
+        fatal("Restorer symbol must point to a real WFI instruction")
+    report = {"experiment": "wfi-wait", "measured_tid": 0, "waiting_tid": 1,
               "num_threads": int(cpu.numThreads),
               "checkpoint": str(system.gcpt_file), "restorer": str(restorer),
               "restorer_sha256": manifest["binary_sha256"],
@@ -36,40 +36,60 @@ def run(options, system, maxtick):
               "warmup_total_insts": warmup, "stop_total_insts": total,
               "phases": []}
 
+    def simulate(cause, deadline):
+        event = m5.simulate(max(0, min(maxtick, deadline) - m5.curTick()))
+        if event.getCause() != cause or event.getCode() != 0:
+            fatal("WFI expected '%s', got '%s' (code %d)",
+                  cause, event.getCause(), event.getCode())
+        return event
+
     def simulate_to(target, cause):
         remaining = target - int(cpu.getCurrentInstCount(0))
         if remaining <= 0:
             return
         cpu.scheduleInstStop(0, remaining, cause)
-        event = m5.simulate(max(0, maxtick - m5.curTick()))
-        if event.getCause() != cause or event.getCode() != 0:
-            fatal("WFI loop expected '%s', got '%s' (code %d)",
-                  cause, event.getCause(), event.getCode())
-        return event
+        return simulate(cause, maxtick)
 
     def snapshot(phase):
+        if not cpu.isWfiWaiting(1) or cpu.numActiveThreads() != 2:
+            fatal("T1 must stay in WFI with two hardware allocation identities")
+        if cpu.numRunnableThreads() != 1:
+            fatal("Only T0 may be runnable during WFI measurement")
         point = {"phase": phase, "tick": int(m5.curTick()),
-                 "insts": [int(cpu.getCurrentInstCount(t)) for t in range(2)]}
+                 "insts": [int(cpu.getCurrentInstCount(t)) for t in range(2)],
+                 "pcs": [int(cpu.getThreadPC(t)) for t in range(2)],
+                 "allocation_threads": int(cpu.numActiveThreads()),
+                 "runnable_threads": int(cpu.numRunnableThreads()),
+                 "wfi_entries": int(cpu.getWfiEntries(1)),
+                 "wfi_wakeups": int(cpu.getWfiWakeups(1))}
         report["phases"].append(point)
-        print("SMT WFI loop: %s tick=%d T0=%d T1=%d" %
+        print("SMT WFI: %s tick=%d T0=%d T1=%d allocation=2 runnable=1" %
               (phase, point["tick"], *point["insts"]))
         return point
 
-    simulate_to(max(warmup, minimum), "SMT WFI loop warmup complete")
+    simulate("WFI waiting", m5.curTick() + 10000000000)
+    ready = snapshot("wfi_ready")
+    if int(cpu.getWfiPC(1)) != manifest["wfi_pc"]:
+        fatal("T1 did not retire the restorer WFI")
+    simulate_to(max(warmup, minimum), "SMT WFI warmup complete")
     start = snapshot("measurement_start")
-    if start["insts"][1] == 0:
-        fatal("T1 made no progress before WFI loop measurement")
     if start["insts"][0] >= total:
         fatal("T0 warmup consumed the measurement interval")
+    restorer_begin = 0x80000000
+    restorer_end = restorer_begin + int(system.gcpt_restorer_size_limit)
+    if restorer_begin <= start["pcs"][0] < restorer_end:
+        fatal("T0 is still inside the restorer at measurement start")
     m5.stats.dump()
     m5.stats.reset()
-    event = simulate_to(total, "SMT WFI loop measurement complete")
+    event = simulate_to(total, "SMT WFI measurement complete")
     end = snapshot("measurement_end")
+    if any(p["insts"][1] != ready["insts"][1] for p in (start, end)):
+        fatal("T1 committed instructions after entering WFI")
     report["measurement_insts"] = [
         end["insts"][t] - start["insts"][t] for t in range(2)]
     report["measurement_ticks"] = end["tick"] - start["tick"]
-    if min(report["measurement_insts"]) <= 0:
-        fatal("Both T0 and the software WFI loop must keep committing")
+    if report["measurement_insts"][0] <= 0:
+        fatal("T0 made no progress during WFI measurement")
     m5.stats.dump()
     path = Path(m5.options.outdir) / "smt-wfi-loop.json"
     path.write_text(json.dumps(report, indent=2) + "\n")

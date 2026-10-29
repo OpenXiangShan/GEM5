@@ -783,8 +783,10 @@ def run_vanilla(options, root, testsys, cpu_class):
     wfi_loop = getattr(options, "smt_wfi_loop_test", False)
     if wfi_loop and (np != 1 or int(testsys.cpu[0].numThreads) != 2 or cpu_class):
         fatal("--smt-wfi-loop-test needs one two-thread CPU without switching")
+    if wfi_loop:
+        testsys.cpu[0].wfiExitOnWait = True
 
-    # The loop can commit faster than SPEC. Only T0 may end warmup/run.
+    # Only T0 may end warmup/run while its SMT sibling waits in WFI.
     if options.maxinsts and not wfi_loop:
         for i in range(np):
             testsys.cpu[i].max_insts_any_thread = options.maxinsts

@@ -352,6 +352,12 @@ class Fetch
     /** Processes cache completion event. */
     void processCacheCompletion(PacketPtr pkt);
 
+    /** Verify/finalize frontend cleanup after the retiring WFI squash. */
+    void beginWfi(ThreadID tid);
+    bool isWfiReady(ThreadID tid) const;
+    void resumeWfi(ThreadID tid, const PCStateBase &pc);
+    void finishWfi(ThreadID tid);
+
     /** Resume after a drain. */
     void drainResume();
 
@@ -1082,6 +1088,8 @@ class Fetch
 
     /** The size of the fetch queue in micro-ops */
     unsigned fetchQueueSize;
+
+    std::array<bool, MaxThreads> wfiSquashSeen{};
 
     /** Queue of fetched instructions. Per-thread to prevent HoL blocking. */
     std::deque<DynInstPtr> fetchQueue[MaxThreads];

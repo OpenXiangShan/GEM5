@@ -110,6 +110,10 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         static std::vector<DynInstPtr> debug_insts;
 
         for (ThreadID tid = 0; tid < numThreads; tid++) {
+            // Waiting is intentional; cleanup and T0 retain watchdog coverage.
+            if (cpu->isWfiWaiting(tid)) {
+                continue;
+            }
             if (cpu->curCycle() - this->lastCommitCycle[tid] > 40000) {
                 if (traceMaybeExitOnPipelineDrainFromStuckCheck()) {
                     return;
@@ -970,6 +974,14 @@ Commit::hasExecutedYoungerInst(ThreadID tid, InstSeqNum seq_num) const
         }
     }
     return false;
+}
+
+void
+Commit::resumeWfi(ThreadID tid)
+{
+    // Waiting is excluded from the progress watchdog; start a fresh interval
+    // on wake rather than immediately blaming the intentional sleep time.
+    lastCommitCycle[tid] = cpu->curCycle();
 }
 
 void
@@ -1943,6 +1955,13 @@ Commit::commitInsts()
                         }
                             traceOnMacroCommit(tid);
                         }
+
+                    if (head_inst->isQuiesce() &&
+                        head_inst->staticInst->getName() == "wfi") {
+                        // Privilege checks, architectural retirement and
+                        // difftest have completed before entering this state.
+                        cpu->beginWfi(tid, head_inst->pcState().instAddr());
+                    }
 
                     // Check if an instruction just enabled interrupts and we've
                     // previously had an interrupt pending that was not handled

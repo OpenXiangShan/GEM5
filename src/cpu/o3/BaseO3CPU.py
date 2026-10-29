@@ -110,6 +110,15 @@ class BaseO3CPU(BaseCPU):
     cxx_header = 'cpu/o3/dyn_inst.hh'
     cxx_exports = [
         PyBindMethod("addHintDownStream"),
+        PyBindMethod("isWfiWaiting"),
+        PyBindMethod("getWfiPC"),
+        PyBindMethod("getThreadPC"),
+        PyBindMethod("getWfiEntries"),
+        PyBindMethod("getWfiWakeups"),
+        PyBindMethod("postInterrupt"),
+        PyBindMethod("clearInterrupt"),
+        PyBindMethod("numActiveThreads"),
+        PyBindMethod("numRunnableThreads"),
     ]
 
     def __init__(self, **kwargs):
@@ -141,6 +150,9 @@ class BaseO3CPU(BaseCPU):
     @classmethod
     def support_take_over(cls):
         return True
+
+    wfiExitOnWait = Param.Bool(
+        False, "Exit to the simulation driver once a retired WFI has drained")
 
     activity = Param.Unsigned(0, "Initial count")
 

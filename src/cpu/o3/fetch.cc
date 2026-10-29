@@ -1071,6 +1071,41 @@ Fetch::processCacheCompletion(PacketPtr pkt)
 }
 
 void
+Fetch::beginWfi(ThreadID tid)
+{
+    wfiSquashSeen[tid] = false;
+    setThreadStatus(tid, Idle);
+}
+
+void
+Fetch::resumeWfi(ThreadID tid, const PCStateBase &pc)
+{
+    wfiSquashSeen[tid] = false;
+    set(threads[tid].fetchpc, pc);
+    dbpbtb->resetPC(tid, pc.instAddr());
+    setThreadStatus(tid, Running);
+    switchToActive();
+}
+
+bool
+Fetch::isWfiReady(ThreadID tid) const
+{
+    return wfiSquashSeen[tid] && fetchQueue[tid].empty() &&
+        predecodeStage0[tid].size == 0 && predecodeStage1[tid].size == 0 &&
+        !hasPendingCacheRequests(tid) &&
+        !finishTranslationEvents[tid]->scheduled();
+}
+
+void
+Fetch::finishWfi(ThreadID tid)
+{
+    assert(isWfiReady(tid));
+    clearResolveQueue(tid);
+    dbpbtb->finishWfi(tid);
+    setThreadStatus(tid, Idle);
+}
+
+void
 Fetch::drainResume()
 {
 }
@@ -1754,6 +1789,9 @@ Fetch::initializeTickState()
         // for each thread.
         bool updated_status = checkSignalsAndUpdate(tid);
         status_change =  status_change || updated_status;
+        if (cpu->isWfiBlocked(tid)) {
+            setThreadStatus(tid, Idle);
+        }
         if (fromCommit->commitInfo[tid].emptyROB) {
             waitForVsetvl[tid] = false;
         }
@@ -1869,7 +1907,8 @@ Fetch::selectUnstalledThread()
         }
 
         // thread can not candidate has lowest priv, should not be chosen
-        if (stallSig->blockFetch[tid] || fetchQueue[tid].empty()) {
+        if (cpu->isWfiBlocked(tid) ||
+            stallSig->blockFetch[tid] || fetchQueue[tid].empty()) {
             smtBorrowThrottleCycles[tid] = 0;
             lsqCounter->setCounter(tid, UINT64_MAX);
             iqCounter->setCounter(tid, UINT64_MAX);
@@ -2063,7 +2102,8 @@ Fetch::sendInstructionsToDecode()
          tid < numThreads && selected_tids.size() < numPreDispatchThreads;
          ++tid) {
         bool block_policy_active = isThrottlePolicyActive();
-        if (tid != primary_tid && !stallSig->blockFetch[tid] &&
+        if (tid != primary_tid && !cpu->isWfiBlocked(tid) &&
+            !stallSig->blockFetch[tid] &&
             !fetchQueue[tid].empty() &&
             !(block_policy_active && (mlpAwareMode[tid] ? 
                 mlpThreadFetchThrottled[tid] : threadFetchThrottled[tid]))) {
@@ -2930,6 +2970,9 @@ Fetch::handleCommitSignals(ThreadID tid)
     squash(*fromCommit->commitInfo[tid].pc, squash_seq,
            squash_inst, tid);
 
+    if (cpu->isWfiBlocked(tid)) {
+        wfiSquashSeen[tid] = true;
+    }
     localSquashVer[tid].update(
         fromCommit->commitInfo[tid].squashVersion.getVersion());
     DPRINTF(Fetch, "Updating squash version to %u\n",
@@ -3257,7 +3300,8 @@ Fetch::getEligibleFetchTargetTid(
     std::array<bool, MaxThreads> eligible;
     eligible.fill(true);
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        eligible[tid] = !redirectPending[tid] && !excluded[tid];
+        eligible[tid] = !cpu->isWfiBlocked(tid) &&
+            !redirectPending[tid] && !excluded[tid];
         if (fetchStatus[tid] == Idle || fetchStatus[tid] == Blocked ||
             fetchStatus[tid] == TrapPending ||
             fetchStatus[tid] == WaitingCache) {

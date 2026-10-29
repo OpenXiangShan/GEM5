@@ -70,6 +70,7 @@
 #include "sim/cur_tick.hh"
 #include "sim/full_system.hh"
 #include "sim/process.hh"
+#include "sim/sim_exit.hh"
 #include "sim/stat_control.hh"
 #include "sim/system.hh"
 
@@ -83,6 +84,7 @@ namespace o3
 
 CPU::CPU(const BaseO3CPUParams &params)
     : BaseCPU(params),
+      wfiExitOnWait(params.wfiExitOnWait),
       mmu(params.mmu),
       tickEvent([this]{ tick(); }, "O3CPU tick",
                 false, Event::CPU_Tick_Pri),
@@ -656,6 +658,8 @@ CPU::tick()
         cleanUpRemovedInsts();
     }
 
+    updateWfi();
+
     if (!tickEvent.scheduled()) {
         if (_status == SwitchedOut) {
             DPRINTF(O3CPU, "Switched out!\n");
@@ -706,6 +710,11 @@ CPU::startup()
     iew.startupStage();
     rename.startupStage();
     commit.startupStage();
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        if (isWfiWaiting(tid)) {
+            fetch.beginWfi(tid);
+        }
+    }
     freeList.resetEntries();
 }
 
@@ -829,6 +838,111 @@ CPU::suspendContext(ThreadID tid)
     DPRINTF(Quiesce, "Suspending Context\n");
 
     BaseCPU::suspendContext(tid);
+}
+
+Addr
+CPU::getWfiPC(ThreadID tid) const
+{
+    fatal_if(tid >= numThreads, "Invalid SMT thread id %u", tid);
+    return wfiPC[tid];
+}
+
+unsigned
+CPU::numRunnableThreads() const
+{
+    unsigned count = 0;
+    for (ThreadID tid : activeThreads) {
+        count += !isWfiBlocked(tid);
+    }
+    return count;
+}
+
+bool
+CPU::wfiInterruptPending(ThreadID tid)
+{
+    using namespace RiscvISA;
+    // WFI wake eligibility is independent of the global mstatus.MIE bit.
+    return (isa[tid]->readMiscReg(MISCREG_IP) &
+            isa[tid]->readMiscReg(MISCREG_IE)) != 0 ||
+        (readMiscRegNoEffect(MISCREG_NMIP, tid) &&
+         readMiscRegNoEffect(MISCREG_NMIE, tid));
+}
+
+void
+CPU::beginWfi(ThreadID tid, Addr pc)
+{
+    assert(tid < numThreads && !isWfiBlocked(tid));
+    wfiPC[tid] = pc;
+    ++wfiEntries[tid];
+    wfiState[tid] = WfiState::Cleaning;
+    wfiQuietCycles[tid] = 0;
+    wfiWakePending[tid] = wfiInterruptPending(tid);
+    fetch.beginWfi(tid);
+    inform("WFI retired: tid=%u PC=%#lx committed=%llu", tid, pc,
+           thread[tid]->numInst);
+    activityThisCycle();
+}
+
+void
+CPU::resumeWfi(ThreadID tid)
+{
+    assert(isWfiWaiting(tid));
+    wfiState[tid] = WfiState::Running;
+    wfiWakePending[tid] = false;
+    ++wfiWakeups[tid];
+    // Keep the architectural PC advanced past WFI. Interrupt delivery uses
+    // the existing trap path; wake eligibility ignores the global MIE bit.
+    fetch.resumeWfi(tid, pcState(tid));
+    commit.resumeWfi(tid);
+    inform("WFI wake: tid=%u PC=%#lx", tid, pcState(tid).instAddr());
+    activityThisCycle();
+    wakeCPU();
+}
+
+void
+CPU::updateWfi()
+{
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        if (!isWfiBlocked(tid)) {
+            continue;
+        }
+        wfiWakePending[tid] = wfiWakePending[tid] ||
+            wfiInterruptPending(tid);
+        if (isWfiWaiting(tid)) {
+            if (wfiWakePending[tid]) {
+                resumeWfi(tid);
+            }
+            continue;
+        }
+        activityThisCycle();
+        const bool stores_done = iew.flushStores(tid);
+        const bool insts_left = std::any_of(
+            instList.begin(), instList.end(), [tid](const DynInstPtr &inst) {
+                return inst->threadNumber == tid;
+            });
+        if (insts_left || !rob.isEmpty(tid) ||
+            iew.ldstQueue.getCount(tid) != 0 || !stores_done ||
+            !fetch.isWfiReady(tid)) {
+            wfiQuietCycles[tid] = 0;
+            continue;
+        }
+        if (++wfiQuietCycles[tid] <=
+            static_cast<unsigned>(timeBuffer.getSize())) {
+            continue;
+        }
+        fetch.finishWfi(tid);
+        // Keep activeThreads, ThreadContext status and rename ownership.
+        wfiState[tid] = WfiState::Waiting;
+        if (wfiWakePending[tid]) {
+            resumeWfi(tid);
+            continue;
+        }
+        inform("WFI waiting: tid=%u allocationThreads=%u runnableThreads=%u",
+               tid, numActiveThreads(), numRunnableThreads());
+        if (wfiExitOnWait) {
+            exitSimLoop("WFI waiting");
+        }
+    }
 }
 
 void
@@ -985,12 +1099,26 @@ void
 CPU::serializeThread(CheckpointOut &cp, ThreadID tid) const
 {
     thread[tid]->serialize(cp);
+    // The checkpoint is drained, so an in-progress WFI cleanup is also safe
+    // to restore directly as waiting. Keep old checkpoints compatible.
+    paramOut(cp, "wfi_waiting", isWfiBlocked(tid));
+    paramOut(cp, "wfi_pc", wfiPC[tid]);
+    paramOut(cp, "wfi_wake_pending", wfiWakePending[tid]);
+    paramOut(cp, "wfi_entries", wfiEntries[tid]);
+    paramOut(cp, "wfi_wakeups", wfiWakeups[tid]);
 }
 
 void
 CPU::unserializeThread(CheckpointIn &cp, ThreadID tid)
 {
     thread[tid]->unserialize(cp);
+    bool waiting = false;
+    optParamIn(cp, "wfi_waiting", waiting, false);
+    optParamIn(cp, "wfi_pc", wfiPC[tid], false);
+    optParamIn(cp, "wfi_wake_pending", wfiWakePending[tid], false);
+    optParamIn(cp, "wfi_entries", wfiEntries[tid], false);
+    optParamIn(cp, "wfi_wakeups", wfiWakeups[tid], false);
+    wfiState[tid] = waiting ? WfiState::Waiting : WfiState::Running;
 }
 
 DrainState
@@ -1178,8 +1306,21 @@ CPU::takeOverFrom(BaseCPU *oldCPU)
     assert(!tickEvent.scheduled());
 
     auto *oldO3CPU = dynamic_cast<CPU *>(oldCPU);
-    if (oldO3CPU)
+    if (oldO3CPU) {
         globalSeqNum = oldO3CPU->globalSeqNum;
+        wfiPC = oldO3CPU->wfiPC;
+        wfiWakePending = oldO3CPU->wfiWakePending;
+        wfiEntries = oldO3CPU->wfiEntries;
+        wfiWakeups = oldO3CPU->wfiWakeups;
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            // CPU switching requires a drained source pipeline.
+            wfiState[tid] = oldO3CPU->isWfiBlocked(tid) ?
+                WfiState::Waiting : WfiState::Running;
+            if (isWfiWaiting(tid)) {
+                fetch.beginWfi(tid);
+            }
+        }
+    }
 
     lastRunningCycle = curCycle();
     _status = Idle;
@@ -1675,6 +1816,17 @@ CPU::wakeCPU()
 void
 CPU::wakeup(ThreadID tid)
 {
+    if (isWfiBlocked(tid)) {
+        // Masked device posts do not end WFI. Latch a valid wake even if
+        // the device deasserts it before the retiring squash has drained.
+        wfiWakePending[tid] = wfiWakePending[tid] ||
+            wfiInterruptPending(tid);
+        if (wfiWakePending[tid]) {
+            activityThisCycle();
+            wakeCPU();
+        }
+        return;
+    }
     if (thread[tid]->status() != gem5::ThreadContext::Suspended)
         return;
 

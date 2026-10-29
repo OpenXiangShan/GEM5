@@ -2592,8 +2592,10 @@ decode QUADRANT {
                                             "wfi in user mode or TW enabled",
                                             machInst);
                             }
-                            // don't do anything for now
-                        }}, No_OpClass);
+                            // O3 enters WFI after retirement and this privilege
+                            // check, then squashes younger instructions.
+                        }}, IsNonSpeculative, IsSerializeAfter, IsSquashAfter,
+                            IsQuiesce, No_OpClass);
                     }
                     0x9: sfence_vma({{
                         STATUS status = xc->readMiscReg(MISCREG_STATUS);

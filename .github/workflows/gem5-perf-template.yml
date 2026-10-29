@@ -331,8 +331,8 @@ jobs:
           else
             run_local_parallel
           fi
-      - name: Validate software WFI loop measurements
-        if: contains(inputs.extra_args, '--smt-wfi-loop-test')
+      - name: Validate WFI waiting measurements
+        if: contains(inputs.extra_args, '--smt-wfi-test') || contains(inputs.extra_args, '--smt-wfi-loop-test')
         env:
           PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
         run: |
@@ -360,7 +360,7 @@ jobs:
             CLUSTER_CONFIG="$GEM5_HOME/$CLUSTER_CONFIG"
           fi
           # 使用已有的数据spec_all生成测试报告
-          if [[ "$EXTRA_GEM5_ARGS_RAW" == *--smt-wfi-loop-test* ]]; then
+          if [[ "$EXTRA_GEM5_ARGS_RAW" == *--smt-wfi-test* || "$EXTRA_GEM5_ARGS_RAW" == *--smt-wfi-loop-test* ]]; then
             python3 "$GEM5_HOME/util/xs_scripts/smt_wfi/score_t0.py" \
               --archive "$PERF_ARCHIVE_DIR/spec_all" \
               --cluster "$CLUSTER_CONFIG" \

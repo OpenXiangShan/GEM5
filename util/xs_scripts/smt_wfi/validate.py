@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate raw statistics for SPEC plus a continuously executing WFI loop."""
+"""Validate a SPEC measurement with T1 waiting after a retired WFI."""
 
 import argparse
 import json
@@ -28,10 +28,10 @@ def read_stats(path):
 
 def validate(output):
     report = json.loads((output / "smt-wfi-loop.json").read_text())
-    if (report["experiment"], report["num_threads"]) != ("wfi-loop", 2):
-        raise ValueError("expected a two-thread software WFI loop experiment")
+    if (report["experiment"], report["num_threads"]) != ("wfi-wait", 2):
+        raise ValueError("expected a two-thread WFI wait experiment")
     phases = report["phases"]
-    if [p["phase"] for p in phases] != ["measurement_start", "measurement_end"]:
+    if [p["phase"] for p in phases] != ["wfi_ready", "measurement_start", "measurement_end"]:
         raise ValueError("incomplete measurement")
     blocks = read_stats(output / "stats.txt")
     if len(blocks) != 2:
@@ -39,16 +39,27 @@ def validate(output):
     stats = blocks[-1]
     counts = report["measurement_insts"]
     for tid in range(2):
-        if counts[tid] <= 0:
-            raise ValueError(f"T{tid} stopped committing")
+        if (tid == 0 and counts[tid] <= 0) or (tid == 1 and counts[tid] != 0):
+            raise ValueError(f"unexpected progress on T{tid}")
         if counts[tid] != stats[f"system.cpu.committedInsts::{tid}"]:
             raise ValueError(f"T{tid} instruction counts disagree")
-        if counts[tid] != phases[1]["insts"][tid] - phases[0]["insts"][tid]:
+        if counts[tid] != phases[2]["insts"][tid] - phases[1]["insts"][tid]:
             raise ValueError(f"T{tid} phase counts disagree")
+    if len({p["insts"][1] for p in phases}) != 1:
+        raise ValueError("T1 committed after entering WFI")
+    for phase in phases:
+        if (phase["allocation_threads"], phase["runnable_threads"]) != (2, 1):
+            raise ValueError("WFI resource identity changed")
+        if phase["wfi_entries"] != 1 or phase["wfi_wakeups"] != 0:
+            raise ValueError("unexpected WFI entry/wake during measurement")
+    for key in ("system.cpu.committedOps::1",
+                "system.cpu.branchPred.predictionsStartedByThread::1"):
+        if stats[key] != 0:
+            raise ValueError(f"T1 activity while waiting: {key}")
     cycles = stats["system.cpu.numCycles"]
     if cycles <= 0 or report["measurement_ticks"] <= 0:
         raise ValueError("empty measurement interval")
-    if phases[1]["insts"][0] < report["stop_total_insts"]:
+    if phases[2]["insts"][0] < report["stop_total_insts"]:
         raise ValueError("T0 stopped before the requested total instruction count")
     if sum(counts) != stats["system.cpu.committedInsts::total"]:
         raise ValueError("aggregate count disagrees")

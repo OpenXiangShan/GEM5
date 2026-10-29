@@ -43,6 +43,7 @@
 #ifndef __CPU_O3_CPU_HH__
 #define __CPU_O3_CPU_HH__
 
+#include <array>
 #include <iostream>
 #include <list>
 #include <queue>
@@ -125,6 +126,8 @@ class CPU : public BaseCPU
         SwitchedOut
     };
 
+    const bool wfiExitOnWait;
+
     BaseMMU *mmu;
     using LSQRequest = LSQ::LSQRequest;
 
@@ -135,6 +138,18 @@ class CPU : public BaseCPU
 
     bool dump_done = false;
     bool warmup_done = false;
+
+    // WFI blocks execution without changing hardware resource ownership.
+    enum class WfiState { Running, Cleaning, Waiting };
+    std::array<WfiState, MaxThreads> wfiState{};
+    std::array<Addr, MaxThreads> wfiPC{};
+    std::array<unsigned, MaxThreads> wfiQuietCycles{};
+    std::array<bool, MaxThreads> wfiWakePending{};
+    std::array<uint64_t, MaxThreads> wfiEntries{};
+    std::array<uint64_t, MaxThreads> wfiWakeups{};
+    void updateWfi();
+    void resumeWfi(ThreadID tid);
+    bool wfiInterruptPending(ThreadID tid);
 
 
     /** The tick event used for scheduling CPU ticks. */
@@ -253,6 +268,22 @@ class CPU : public BaseCPU
 
     /** Update The Order In Which We Process Threads. */
     void updateThreadPriority();
+
+    /** WFI run eligibility is independent of allocation identity. */
+    bool isWfiBlocked(ThreadID tid) const
+    {
+        return wfiState[tid] != WfiState::Running;
+    }
+    bool isWfiWaiting(ThreadID tid) const
+    {
+        return wfiState[tid] == WfiState::Waiting;
+    }
+    Addr getWfiPC(ThreadID tid) const;
+    Addr getThreadPC(ThreadID tid) { return pcState(tid).instAddr(); }
+    unsigned numRunnableThreads() const;
+    uint64_t getWfiEntries(ThreadID tid) const { return wfiEntries.at(tid); }
+    uint64_t getWfiWakeups(ThreadID tid) const { return wfiWakeups.at(tid); }
+    void beginWfi(ThreadID tid, Addr pc);
 
     /** Is the CPU draining? */
     bool isDraining() const { return drainState() == DrainState::Draining; }
