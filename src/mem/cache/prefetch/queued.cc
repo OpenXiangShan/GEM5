@@ -1559,6 +1559,7 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
     DeferredPacket dpp(this, new_pfi, 0, priority);
     dpp.pfahead = addr_prio.pfahead;
     dpp.pfahead_host = addr_prio.pfahead_host;
+    dpp.producer = addr_prio.producer;
     if (dpp.pfahead) {
         DPRINTF(HWPrefetchOther, "Create one pfahead request\n");
     }

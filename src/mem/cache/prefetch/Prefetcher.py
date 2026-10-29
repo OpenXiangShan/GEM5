@@ -472,6 +472,7 @@ class MLOPPrefetcher(WorkerPrefetcher):
                                   "Minimum score for L1 prefetches")
     l2_threshold = Param.Unsigned(200, "Minimum score for attached-cache prefetch")
     llc_threshold = Param.Unsigned(150, "Minimum score for LLC prefetch")
+    force_l2_target = Param.Bool(False, "Send all L1 MLOP candidates to L2")
 
 class StridePrefetcher(QueuedPrefetcher):
     type = 'StridePrefetcher'
@@ -1536,12 +1537,18 @@ class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
                                      "Large BOP used in composite prefetcher ")
     bop_small = Param.BOPPrefetcher(SmallBOPPrefetcher(is_sub_prefetcher=True),
                                      "Small BOP used in composite prefetcher ")
+    mlop = Param.MLOPPrefetcher(MLOPPrefetcher(is_sub_prefetcher=True,
+                                               use_pf_buffer=True,
+                                               use_virtual_addresses=True),
+                                "MLOP used in L2 composite")
     sandbox = Param.SandboxPrefetcher(
         SandboxPrefetcher(is_sub_prefetcher=True),
         "Sandbox prefetcher used in L2 composite")
     despacito_stream = Param.DespacitoStreamPrefetcher(DespacitoStreamPrefetcher(is_sub_prefetcher=True),
                                                        "DespacitoStream used in composite prefetcher")
     enable_bop = Param.Bool(False, "Enable BOP")
+    enable_small_bop = Param.Bool(False, "Enable small BOP independently")
+    enable_mlop = Param.Bool(False, "Enable L2 MLOP")
     enable_sandbox = Param.Bool(False, "Enable L2 Sandbox")
     enable_cdp = Param.Bool(False, "Enable CDP")
     enable_cmc = Param.Bool(False, "Enable CMC")
