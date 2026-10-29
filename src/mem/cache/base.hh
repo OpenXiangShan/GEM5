@@ -796,6 +796,9 @@ class BaseCache : public ClockedObject, public CacheAccessor
      */
     const bool writebackClean;
 
+    /** Request ownership before an L1D read can bypass the downstream L2. */
+    const bool sdbpBypassWritable;
+
     /**
      * Writebacks from the tempBlock, resulting on the response path
      * in atomic mode, must happen after the call to recvAtomic has

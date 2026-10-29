@@ -578,6 +578,17 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
 
     bool blkValid = blk && blk->isValid();
 
+    // The L2 bypass prediction is made at refill time. Ask for ownership
+    // up front so both L1 and L2 MSHRs order snoops before a dirty bypass
+    // response transfers responsibility to L1. Read-only and prefetch
+    // requests keep their existing protocol.
+    if (sdbpBypassWritable && !blkValid &&
+        cpu_pkt->cmd == MemCmd::ReadReq &&
+        !cpu_pkt->req->isUncacheable() &&
+        !cpu_pkt->req->isInstFetch() && !cpu_pkt->req->isPrefetch()) {
+        needsWritable = true;
+    }
+
     if (cpu_pkt->req->isUncacheable() ||
         (!blkValid && cpu_pkt->isUpgrade()) ||
         cpu_pkt->cmd == MemCmd::InvalidateReq || cpu_pkt->isClean()) {
@@ -1272,6 +1283,12 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
             // Copy over flags from the snoop response to make sure we
             // inform the final destination
             pkt->copyResponderFlags(&snoopPkt);
+            if (snoopPkt.cacheResponding()) {
+                // Ownership may have moved to an upstream MSHR while
+                // this deferred snoop waited for our fill. Let that
+                // MSHR provide the single response we promised below.
+                pkt->setCacheRespondingBy(snoopPkt.getCacheRespondingBy());
+            }
         } else {
             bool already_responded = pkt->cacheResponding();
             cpuSidePort.sendAtomicSnoop(pkt);
@@ -1345,11 +1362,11 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
                     (uint64_t)deferring_mshr);
         }
 
-        // If the packet is deferred and the deferring MSHR is not the one that promised to respond,
-        // then we should not respond.
-        // This situation happens when a packet is not setting pendingModifiedResp properly.
-        if (is_deferred && deferring_mshr && (uint64_t)deferring_mshr != pkt->getCacheRespondingBy()) {
-            assert(pkt->flags.noneSet(Packet::STATIC_DATA|Packet::DYNAMIC_DATA));
+        // An upstream owner takes over a deferred response after we pass
+        // it the fill. The original copy may already have allocated data
+        // before ownership moved; deleting it below releases that buffer.
+        if (is_deferred && deferring_mshr &&
+            (uint64_t)deferring_mshr != pkt->getCacheRespondingBy()) {
             respond = false;
         }
 

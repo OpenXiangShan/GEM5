@@ -69,7 +69,9 @@ def cache(size, assoc, level, **kwargs):
 
 
 system.cpu.icache = cache("1KiB", 2, 1, is_read_only=True)
-system.cpu.dcache = cache("1KiB", 2, 1)
+system.cpu.dcache = cache(
+    "1KiB", 2, 1, sdbp_bypass_writable=not args.disable_bypass
+)
 system.l2bus = L2XBar()
 system.l2 = cache(
     "4KiB",
@@ -144,7 +146,13 @@ else:
         counts[key] > 0 for key in counts if key != "l3_memory_writebacks"
     )
     assert counts["l2_forwards"] == counts["l3_receives"]
+    assert (
+        stats.get("system.l3.UpgradeReq.accesses::total", 0) == 0
+    ), "Bypassed data required a downstream permission upgrade"
     assert stat("system.l2.tags.tagsInUse") == 0, "Dead refills allocated L2"
+    assert (
+        stats.get("system.l2.writebacks::total", 0) == 0
+    ), "L2 temporary blocks retained dirty ownership"
     clean_wbs = stats.get("system.l3.WritebackClean.accesses::writebacks", 0)
     dirty_wbs = stats.get("system.l3.WritebackDirty.accesses::writebacks", 0)
     counts["l3_clean_writebacks_received"] = clean_wbs

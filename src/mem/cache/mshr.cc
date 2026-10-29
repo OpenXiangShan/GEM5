@@ -565,7 +565,8 @@ MSHR::handleSnoop(PacketPtr pkt, Counter _order)
                     "%#lx\n",
                     __func__, pkt->print(), (uint64_t)pkt, (uint64_t)this);
             pkt->setCacheResponding();
-            cp_pkt->setCacheRespondingBy((uint64_t) this);
+            pkt->setCacheRespondingBy((uint64_t)this);
+            cp_pkt->setCacheRespondingBy((uint64_t)this);
 
             // inform the cache hierarchy that this cache had the line
             // in the Modified state, even if the response is passed

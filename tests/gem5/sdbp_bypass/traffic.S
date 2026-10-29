@@ -41,6 +41,8 @@ _start:
     ld t2, 0(t0)
     add t3, t1, s0
     bne t2, t3, fail
+    /* A read of previously dirty data must already grant write permission. */
+    sd t2, 0(t0)
     addi t0, t0, 64
     addi t1, t1, -1
     bnez t1, 4b

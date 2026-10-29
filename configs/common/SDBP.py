@@ -37,6 +37,8 @@ def configure_sdbp(args, system):
         if policy == "lru":
             cache.replacement_policy = LRURP()
         elif policy == "sdbp":
+            # L1 must expect ownership before L2's refill-time prediction.
+            cpu.dcache.sdbp_bypass_writable = args.sdbp_enable_bypass
             # Query only the owning core's resident L1I/L1D tags.
             cache.sdbp_l1_caches = [cpu.icache, cpu.dcache]
             cache.replacement_policy = SDBPRP(

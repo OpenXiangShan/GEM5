@@ -142,6 +142,10 @@ class BaseCache(ClockedObject):
     # this should be set to True for anything but the last-level
     # cache.
     writeback_clean = Param.Bool(False, "Writeback clean lines")
+    sdbp_bypass_writable = Param.Bool(
+        False,
+        "Request ownership on L1D demand read misses for SDBP bypass",
+    )
 
     # Control whether this cache should be mostly inclusive or mostly
     # exclusive with respect to upstream caches. The behaviour on a

@@ -271,10 +271,15 @@ SDBP::getVictim(const ReplacementCandidates &candidates, const PacketPtr pkt) co
     ReplaceableEntry *lru = candidates.front();
     ReplaceableEntry *dead = nullptr;
     uint64_t oldest = std::static_pointer_cast<SDBPReplData>(lru->replacementData)->lastUse;
-    // Bypass only newly fetched data, never writebacks or upgrades. Dead
-    // fills bypass even when the set still contains invalid entries.
-    if (enableBypass && pkt && pkt->isResponse() && pkt->isRead() &&
-        predict(pkt)) {
+    // Data bypass requires an explicit ownership request from above. A
+    // shared read response cannot safely transfer dirty ownership during
+    // a deferred fill. Instruction fills remain clean and need no upgrade.
+    // Dead fills still bypass when the set contains invalid entries.
+    const bool bypass_response = pkt && pkt->req && pkt->isResponse() &&
+        ((pkt->cmd == MemCmd::ReadExResp && !pkt->hasSharers()) ||
+         (pkt->cmd == MemCmd::ReadResp && pkt->req->isInstFetch() &&
+          (pkt->hasSharers() || !pkt->cacheResponding())));
+    if (enableBypass && bypass_response && predict(pkt)) {
         ++stats.bypasses;
         pkt->sdbpBypassL2 = true;
         DPRINTF(SDBP, "bypass addr=%#x pc=%#x\n", pkt->getAddr(), pkt->req->getPC());
