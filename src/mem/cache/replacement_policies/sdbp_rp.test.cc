@@ -5,6 +5,9 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
+#include <vector>
+
 #include "mem/cache/replacement_policies/sdbp_rp.hh"
 #include "params/SDBPRP.hh"
 #include "sim/eventq.hh"
@@ -173,6 +176,122 @@ TEST_F(SDBPInterface, DeadVictimCanOverrideLru)
     EXPECT_EQ(snoop.replacementVictimClass, 0);
     EXPECT_FALSE(snoop.replacementProbe);
     EXPECT_EQ(snoop.replacementProbeMask, 0);
+}
+
+TEST_F(SDBPInterface, L1CopyGuardSkipsProtectedDeadAndAllowsUnprotectedMru)
+{
+    SDBP policy(testParams(false, 0));
+    std::array<ReplaceableEntry, 4> entries;
+    ReplacementCandidates candidates;
+    auto demand = packet();
+    for (auto &entry : entries) {
+        entry.replacementData = policy.instantiateEntry();
+        candidates.push_back(&entry);
+        policy.reset(entry.replacementData, demand.get());
+    }
+    std::vector<const ReplaceableEntry *> checked;
+    policy.setL1CopyProbe([&](const ReplaceableEntry *entry) {
+        checked.push_back(entry);
+        return entry != &entries[3];
+    });
+    // The MRU is eligible because only L1 presence determines protection.
+    EXPECT_EQ(policy.getVictim(candidates), &entries[3]);
+    EXPECT_EQ(checked.size(), 4);
+    EXPECT_EQ(stat(policy, "l1CopyProtectedDead"), 3);
+    EXPECT_EQ(stat(policy, "deadVictims"), 1);
+    EXPECT_EQ(stat(policy, "l1CopyLruFallbacks"), 0);
+    for (auto &entry : entries)
+        EXPECT_EQ(SDBP::victimClass(entry.replacementData), 2);
+}
+
+TEST_F(SDBPInterface, AllDeadProtectedFallsBackToLruIncludingProtectedLru)
+{
+    SDBP policy(testParams(false, 0));
+    std::array<ReplaceableEntry, 3> entries;
+    auto demand = packet();
+    for (auto &entry : entries) {
+        entry.replacementData = policy.instantiateEntry();
+        policy.reset(entry.replacementData, demand.get());
+    }
+    policy.setL1CopyProbe([](const ReplaceableEntry *) { return true; });
+    // Candidate order differs from recency; the fallback is still true LRU.
+    ReplacementCandidates candidates{&entries[2], &entries[0], &entries[1]};
+    EXPECT_EQ(policy.getVictim(candidates), &entries[0]);
+    EXPECT_EQ(stat(policy, "l1CopyChecks"), 3);
+    EXPECT_EQ(stat(policy, "l1CopyProtectedDead"), 3);
+    EXPECT_EQ(stat(policy, "l1CopyLruFallbacks"), 1);
+    EXPECT_EQ(stat(policy, "lruVictims"), 1);
+    EXPECT_EQ(stat(policy, "deadVictims"), 0);
+}
+
+TEST_F(SDBPInterface, L1CopyGuardKeepsFirstEligibleDeadOrder)
+{
+    SDBP policy(testParams(false, 0));
+    std::array<ReplaceableEntry, 4> entries;
+    auto demand = packet();
+    for (unsigned i = 0; i < entries.size(); ++i) {
+        entries[i].replacementData = policy.instantiateEntry();
+        if (i == 0)
+            policy.reset(entries[i].replacementData);
+        else
+            policy.reset(entries[i].replacementData, demand.get());
+    }
+    std::vector<const ReplaceableEntry *> checked;
+    policy.setL1CopyProbe([&](const ReplaceableEntry *entry) {
+        checked.push_back(entry);
+        return entry == &entries[1];
+    });
+    ReplacementCandidates candidates{&entries[1], &entries[0],
+                                     &entries[3], &entries[2]};
+    EXPECT_EQ(policy.getVictim(candidates), &entries[3]);
+    ASSERT_EQ(checked.size(), 2);
+    EXPECT_EQ(checked[0], &entries[1]);
+    EXPECT_EQ(checked[1], &entries[3]);
+    EXPECT_EQ(stat(policy, "nonLruDeadVictims"), 1);
+}
+
+TEST_F(SDBPInterface, L1CopyGuardUsesCurrentPresenceAndPreservesDeadBit)
+{
+    SDBP policy(testParams(false, 0));
+    ReplaceableEntry lru, dead;
+    lru.replacementData = policy.instantiateEntry();
+    dead.replacementData = policy.instantiateEntry();
+    policy.reset(lru.replacementData);
+    auto demand = packet();
+    policy.reset(dead.replacementData, demand.get());
+    bool present = true;
+    policy.setL1CopyProbe([&](const ReplaceableEntry *) { return present; });
+    ReplacementCandidates candidates{&dead, &lru};
+    EXPECT_EQ(policy.getVictim(candidates), &lru);
+    EXPECT_EQ(SDBP::victimClass(dead.replacementData), 2);
+    present = false;
+    EXPECT_EQ(policy.getVictim(candidates), &dead);
+    EXPECT_EQ(SDBP::victimClass(dead.replacementData), 2);
+}
+
+TEST_F(SDBPInterface, L1CopyGuardDoesNotProbeInvalidLiveOrBypassedSets)
+{
+    SDBP policy(testParams(true, 0));
+    ReplaceableEntry a, b;
+    a.replacementData = policy.instantiateEntry();
+    b.replacementData = policy.instantiateEntry();
+    unsigned queries = 0;
+    policy.setL1CopyProbe([&](const ReplaceableEntry *) {
+        ++queries;
+        return true;
+    });
+    auto demand = packet();
+    policy.reset(a.replacementData, demand.get());
+    ReplacementCandidates candidates{&a, &b};
+    EXPECT_EQ(policy.getVictim(candidates, demand.get()), &b);
+    EXPECT_EQ(queries, 0);
+    policy.reset(b.replacementData);
+    EXPECT_EQ(policy.getVictim(candidates, demand.get()), nullptr);
+    EXPECT_EQ(queries, 0);
+    policy.touch(a.replacementData);
+    EXPECT_EQ(policy.getVictim(candidates), &b);
+    EXPECT_EQ(queries, 0);
+    EXPECT_EQ(stat(policy, "l1CopyLruFallbacks"), 0);
 }
 
 TEST_F(SDBPInterface, BypassOnlyFullSetsWithEligiblePc)

@@ -6,6 +6,7 @@
 #include "mem/cache/replacement_policies/sdbp_rp.hh"
 
 #include <stdexcept>
+#include <utility>
 
 #include "base/logging.hh"
 #include "base/trace.hh"
@@ -62,6 +63,13 @@ SDBP::bindCache(unsigned num_sets)
     fatal_if(num_sets != core.numSets(), "%s: num_sets=%u does not match cache sets=%u", name(), core.numSets(),
              num_sets);
     bound = true;
+}
+
+void
+SDBP::setL1CopyProbe(L1CopyProbe probe)
+{
+    fatal_if(l1CopyProbe || !probe, "%s: invalid L1-copy probe binding", name());
+    l1CopyProbe = std::move(probe);
 }
 
 void
@@ -269,8 +277,6 @@ SDBP::getVictim(const ReplacementCandidates &candidates, const PacketPtr pkt) co
             ++stats.invalidVictims;
             return candidate;
         }
-        if (entry.dead && !dead)
-            dead = candidate;
         if (entry.lastUse < oldest) {
             oldest = entry.lastUse;
             lru = candidate;
@@ -281,6 +287,26 @@ SDBP::getVictim(const ReplacementCandidates &candidates, const PacketPtr pkt) co
         DPRINTF(SDBP, "bypass addr=%#x pc=%#x\n", pkt->getAddr(), pkt->req->getPC());
         return nullptr;
     }
+    bool protectedDead = false;
+    for (auto *candidate : candidates) {
+        const auto &entry = *std::static_pointer_cast<SDBPReplData>(
+            candidate->replacementData);
+        if (!entry.dead)
+            continue;
+        if (l1CopyProbe) {
+            ++stats.l1CopyChecks;
+            if (l1CopyProbe(candidate)) {
+                ++stats.l1CopyProtectedDead;
+                protectedDead = true;
+                continue;
+            }
+        }
+        dead = candidate;
+        break;
+    }
+    // The fallback is the original LRU, even when it has an L1 copy.
+    if (!dead && protectedDead)
+        ++stats.l1CopyLruFallbacks;
     if (dead)
         ++stats.deadVictims;
     else
@@ -321,7 +347,10 @@ SDBP::SDBPStats::SDBPStats(statistics::Group *parent)
       ADD_STAT(deadVictims, "Victim selections using a predicted-dead entry"),
       ADD_STAT(nonLruDeadVictims, "Dead victims different from the LRU victim"),
       ADD_STAT(lruVictims, "Victim selections falling back to LRU"),
-      ADD_STAT(bypasses, "Full-set allocation attempts bypassed by SDBP")
+      ADD_STAT(bypasses, "Full-set allocation attempts bypassed by SDBP"),
+      ADD_STAT(l1CopyChecks, "Dead candidates checked for resident L1 copies"),
+      ADD_STAT(l1CopyProtectedDead, "Dead candidates skipped due to resident L1 copies"),
+      ADD_STAT(l1CopyLruFallbacks, "Selections using LRU because every dead candidate has an L1 copy")
 {
 }
 

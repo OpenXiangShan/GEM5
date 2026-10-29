@@ -6,6 +6,8 @@
 #ifndef __MEM_CACHE_REPLACEMENT_POLICIES_SDBP_RP_HH__
 #define __MEM_CACHE_REPLACEMENT_POLICIES_SDBP_RP_HH__
 
+#include <functional>
+
 #include "base/statistics.hh"
 #include "mem/cache/replacement_policies/base.hh"
 #include "mem/cache/replacement_policies/sdbp_core.hh"
@@ -25,6 +27,8 @@ class SDBP : public Base
     explicit SDBP(const Params &p);
     void startup() override;
     void bindCache(unsigned num_sets);
+    using L1CopyProbe = std::function<bool(const ReplaceableEntry *)>;
+    void setL1CopyProbe(L1CopyProbe probe);
     void observe(const PacketPtr pkt, unsigned set, Addr tag, bool hit);
     void observeFill(const PacketPtr pkt, unsigned set, Addr tag);
 
@@ -60,6 +64,7 @@ class SDBP : public Base
     SDBPCore core;
     const bool enableBypass;
     bool bound = false;
+    L1CopyProbe l1CopyProbe;
     mutable uint64_t sequence = 0;
 
     struct SDBPStats : statistics::Group
@@ -86,6 +91,9 @@ class SDBP : public Base
         statistics::Scalar nonLruDeadVictims;
         statistics::Scalar lruVictims;
         statistics::Scalar bypasses;
+        statistics::Scalar l1CopyChecks;
+        statistics::Scalar l1CopyProtectedDead;
+        statistics::Scalar l1CopyLruFallbacks;
     };
     mutable SDBPStats stats;
 };

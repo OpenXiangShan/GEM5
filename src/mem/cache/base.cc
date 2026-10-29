@@ -205,6 +205,27 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
 
     tempBlock = new TempCacheBlk(blkSize);
     tags->tagsInit();
+    if (!p.sdbp_l1_caches.empty()) {
+        auto *sdbp = dynamic_cast<replacement_policy::SDBP *>(p.replacement_policy);
+        fatal_if(!sdbp || p.cache_level != 2,
+                 "%s: L1-copy protection requires an L2 SDBP cache", name());
+        for (const auto *l1 : p.sdbp_l1_caches) {
+            fatal_if(!l1 || l1 == this || l1->level() != 1,
+                     "%s: L1-copy probe targets must be L1 caches", name());
+        }
+        // Ideal resident-copy information: inspect tags without coherence
+        // traffic, metadata updates, or additional simulated lookup latency.
+        sdbp->setL1CopyProbe([this, l1_caches = p.sdbp_l1_caches](
+                                const ReplaceableEntry *candidate) {
+            const auto *blk = static_cast<const CacheBlk *>(candidate);
+            const Addr addr = tags->regenerateBlkAddr(blk);
+            for (const auto *l1 : l1_caches) {
+                if (l1->inCache(addr, blk->isSecure()))
+                    return true;
+            }
+            return false;
+        });
+    }
     for (int i = 0; i < size / assoc / blkSize; i++) {
         for (int j = 0; j < assoc; j++)
             wayPreTable[i].push_back(DEFAULTWAYPRE);

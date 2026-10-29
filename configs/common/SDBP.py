@@ -26,10 +26,12 @@ def add_sdbp_options(parser):
 
 
 def configure_sdbp(args, system):
-    def configure(cache, policy):
+    def configure(cache, policy, cpu):
         if policy == "lru":
             cache.replacement_policy = LRURP()
         elif policy == "sdbp":
+            # Query only the owning core's resident L1I/L1D tags.
+            cache.sdbp_l1_caches = [cpu.icache, cpu.dcache]
             cache.replacement_policy = SDBPRP(
                 num_sets=int(cache.size)
                 // (int(cache.assoc) * int(system.cache_line_size)),
@@ -44,13 +46,14 @@ def configure_sdbp(args, system):
     if args.l2_replacement_policy != "default":
         if not args.l2cache:
             raise ValueError("--l2-replacement-policy requires --l2cache")
+        if not args.caches and args.l2_replacement_policy == "sdbp":
+            raise ValueError("SDBP L1-copy protection requires --caches")
         if args.classic_l2:
-            caches = system.l2_caches
+            for cpu, cache in zip(system.cpu, system.l2_caches):
+                configure(cache, args.l2_replacement_policy, cpu)
         else:
-            caches = [
-                cache_slice.inner_cache
-                for wrapper in system.l2_wrappers
-                for cache_slice in wrapper.slices
-            ]
-        for cache in caches:
-            configure(cache, args.l2_replacement_policy)
+            for cpu, wrapper in zip(system.cpu, system.l2_wrappers):
+                for cache_slice in wrapper.slices:
+                    configure(
+                        cache_slice.inner_cache, args.l2_replacement_policy, cpu
+                    )
