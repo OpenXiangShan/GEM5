@@ -621,7 +621,7 @@ IEW::unregisterLatePrediction(const DynInstPtr &inst)
         }
         latePredictionCycles.erase(cycleIt);
     }
-    latePredictionReady.erase(key);
+    readyLatePredictions.erase(key);
     if (latePredictionByCycle.empty() && latePredictionEvent.scheduled()) {
         cpu->deschedule(latePredictionEvent);
     }
@@ -669,11 +669,11 @@ IEW::processLatePredictionEvent()
     auto it = latePredictionByCycle.begin();
     while (it != latePredictionByCycle.end() && it->first <= cycle) {
         for (const auto &key : it->second) {
-            latePredictionReady.insert(key);
+            readyLatePredictions.insert(key);
         }
         it = latePredictionByCycle.erase(it);
     }
-    if (!latePredictionReady.empty()) {
+    if (!readyLatePredictions.empty()) {
         wakeCPU();
         activateStage();
     }
@@ -686,9 +686,9 @@ IEW::processLatePredictionEvent()
 void
 IEW::processLatePredictions()
 {
-    const auto ready = latePredictionReady;
+    const auto ready = readyLatePredictions;
     for (const auto &key : ready) {
-        latePredictionReady.erase(key);
+        readyLatePredictions.erase(key);
 
         auto target = latePredictionTargets.find(key);
         if (target == latePredictionTargets.end()) {
@@ -707,7 +707,7 @@ IEW::processLatePredictions()
             continue;
         }
         if (!inst->issueQue || inst->isScheduled()) {
-            latePredictionReady.insert(key);
+            readyLatePredictions.insert(key);
             continue;
         }
         if (!tryLateValuePrediction(inst)) {
@@ -819,7 +819,7 @@ IEW::notifyValueMispredicted(const DynInstPtr &inst)
 bool
 IEW::isDrained() const
 {
-    if (!latePredictionReady.empty() || !latePredictionByCycle.empty() ||
+    if (!readyLatePredictions.empty() || !latePredictionByCycle.empty() ||
         !latePredictionTargets.empty()) {
         DPRINTF(Drain, "Late value prediction requests not drained.\n");
         return false;
@@ -870,7 +870,7 @@ IEW::takeOverFrom()
     latePredictionTargets.clear();
     latePredictionCycles.clear();
     latePredictionByCycle.clear();
-    latePredictionReady.clear();
+    readyLatePredictions.clear();
 
     instQueue.takeOverFrom();
     ldstQueue.takeOverFrom();
@@ -1389,7 +1389,7 @@ IEW::updateActivate()
     instQueue.iqIOStats.intInstQueueReads++;
     if (_status == Active && !instQueue.hasReadyInsts() &&
         !ldstQueue.willWB() && delayedVectorMemCompletionQ.empty() &&
-        latePredictionReady.empty() && latePredictionByCycle.empty() &&
+        readyLatePredictions.empty() && latePredictionByCycle.empty() &&
         !any_unblocking) {
         DPRINTF(IEW, "IEW switching to idle\n");
 
@@ -1399,7 +1399,7 @@ IEW::updateActivate()
     } else if (_status == Inactive && (instQueue.hasReadyInsts() ||
                                        ldstQueue.willWB() ||
                                        !delayedVectorMemCompletionQ.empty() ||
-                                       !latePredictionReady.empty() ||
+                                       !readyLatePredictions.empty() ||
                                        !latePredictionByCycle.empty() ||
                                        any_unblocking)) {
         // Otherwise there is internal activity.  Set to active.

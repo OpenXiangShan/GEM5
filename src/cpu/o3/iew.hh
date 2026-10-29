@@ -461,7 +461,7 @@ class IEW
     std::map<LatePredictionKey, DynInstPtr> latePredictionTargets;
     std::map<LatePredictionKey, uint64_t> latePredictionCycles;
     std::map<uint64_t, std::set<LatePredictionKey>> latePredictionByCycle;
-    std::set<LatePredictionKey> latePredictionReady;
+    std::set<LatePredictionKey> readyLatePredictions;
     EventFunctionWrapper latePredictionEvent;
 
     /** Enable selective VP flush path */
