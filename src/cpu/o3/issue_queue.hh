@@ -340,6 +340,7 @@ class Scheduler : public SimObject
     };
 
     CPU* cpu;
+    IEW* iew = nullptr;
     MemDepUnit* memDepUnit;
     LSQ* lsq;
     const int intel_fewops = 4;
@@ -433,7 +434,7 @@ class Scheduler : public SimObject
     Scheduler(const SchedulerParams& params);
     unsigned getLoadPipeCount() const { return loadPipeCount; }
     unsigned getStorePipeCount() const { return storePipeCount; }
-    void setCPU(CPU* cpu, LSQ* lsq);
+    void setCPU(CPU* cpu, LSQ* lsq, IEW* iew);
     void resetDepGraph(uint64_t numPhysRegs);
     void setAllScoreBoard(PhysRegIdPtr reg);
     void setMemDepUnit(MemDepUnit* memDepUnit) { this->memDepUnit = memDepUnit; }

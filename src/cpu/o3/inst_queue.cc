@@ -137,6 +137,7 @@ InstructionQueue::hasMdpAddrReplayInsts() const
     return false;
 }
 
+/** Initialize queue resources and connect the scheduler to the CPU, LSQ, and IEW. */
 InstructionQueue::InstructionQueue(CPU *cpu_ptr, IEW *iew_ptr,
         const BaseO3CPUParams &params)
     : cpu(cpu_ptr),
@@ -167,7 +168,7 @@ InstructionQueue::InstructionQueue(CPU *cpu_ptr, IEW *iew_ptr,
         memDepUnit[tid].setIQ(this);
     }
 
-    scheduler->setCPU(cpu_ptr, &iew_ptr->ldstQueue);
+    scheduler->setCPU(cpu_ptr, &iew_ptr->ldstQueue, iew_ptr);
     scheduler->resetDepGraph(numPhysRegs);
     scheduler->setMemDepUnit(memDepUnit);
 
