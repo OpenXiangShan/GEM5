@@ -80,7 +80,8 @@ system.l2 = cache(
     replacement_policy=SDBPRP(
         num_sets=16,
         sampler_num=4,
-        sampler_assoc=4,
+        sampler_assoc=6,
+        sampler_protect_youngest_two=True,
         dead_threshold=0,
         enable_bypass=not args.disable_bypass,
     ),

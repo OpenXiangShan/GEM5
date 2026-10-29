@@ -27,6 +27,7 @@ makeCore(const SDBPRPParams &p)
     cfg.numSets = p.num_sets;
     cfg.samplerNum = p.sampler_num;
     cfg.samplerAssoc = p.sampler_assoc;
+    cfg.samplerProtectYoungestTwo = p.sampler_protect_youngest_two;
     cfg.predictorTables = p.predictor_tables;
     cfg.predictorEntries = p.predictor_entries;
     cfg.counterBits = p.counter_bits;

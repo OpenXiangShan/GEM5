@@ -16,7 +16,13 @@ def add_sdbp_options(parser):
         help="Override L2 replacement after platform defaults",
     )
     parser.add_argument("--sdbp-sampler-num", type=int, default=128)
-    parser.add_argument("--sdbp-sampler-assoc", type=int, default=8)
+    parser.add_argument("--sdbp-sampler-assoc", type=int, default=6)
+    parser.add_argument(
+        "--sdbp-sampler-protect-youngest-two",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Protect sampler MRU and second MRU during dead selection (default: on)",
+    )
     parser.add_argument("--sdbp-dead-threshold", type=int, default=8)
     parser.add_argument(
         "--sdbp-enable-bypass",
@@ -46,6 +52,7 @@ def configure_sdbp(args, system):
                 // (int(cache.assoc) * int(system.cache_line_size)),
                 sampler_num=args.sdbp_sampler_num,
                 sampler_assoc=args.sdbp_sampler_assoc,
+                sampler_protect_youngest_two=args.sdbp_sampler_protect_youngest_two,
                 dead_threshold=args.sdbp_dead_threshold,
                 enable_bypass=args.sdbp_enable_bypass,
                 pc_hash_type=args.sdbp_pc_hash_type,

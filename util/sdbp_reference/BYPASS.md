@@ -178,3 +178,46 @@ Validation on October 30, 2026:
   (1 million warmup, 2 million measured) using SimpleMemory and the CI-pinned
   `normal-dedup` reference. Its measured 25,484 L1D writes all hit and no
   `UpgradeReq` reaches L3. This short check does not predict full CI performance.
+
+## Sampler recency protection with bypass
+
+The Kunminghu SDBP CLI now defaults to 128 sampled sets per L2 slice and a
+six-way independent sampler. The real L2 remains eight-way. With four slices,
+this uses 3,072 sampler entries instead of the previous 4,096. Predictor table
+sizes, threshold, L1-copy protection and bypass ownership handling are unchanged.
+
+`--sdbp-sampler-protect-youngest-two` is enabled by default in the Kunminghu
+configuration. On a full sampler set, exclude its MRU and second-MRU entries
+from the dead-first victim scan. Compute recency across both live and dead
+entries, and keep the original candidate order for remaining dead entries.
+Invalid entries still take priority; the fallback is global LRU, including
+protected positions. Skipping an entry does not clear its dead prediction.
+Prefetch hits retain their existing behavior and do not update recency.
+
+The algorithm and its targeted tests are adapted from commit `39a2db6f92`.
+The generic SDBPCore and SDBPRP parameter default remains false for compatibility;
+the Kunminghu configuration enables it explicitly. To reproduce the prior
+platform sampler, use both `--sdbp-sampler-assoc=8` and
+`--no-sdbp-sampler-protect-youngest-two`. Bypass stays independently configurable.
+
+The six-way protected sampler also replaces the four-way test sampler in the
+standalone SE bypass and coherence regressions. Core tests cover protected
+positions, original dead-candidate order, invalid priority, unchanged dead bits,
+prefetch-hit recency and global LRU fallback with one or two ways. A policy test
+checks parameter propagation. The full-system smoke check verifies that every
+L2 slice receives 128 sampled sets, six ways and enabled recency protection,
+while L1D continues to request ownership for bypass-compatible fills.
+
+This changes sampler residency and predictor training, so its effect on the
+bypass version must be measured independently of the source experiment, which
+had bypass disabled. No extra hardware lookup latency is modeled by the guard.
+
+Combined-version validation:
+
+- Optimized build and all 34 core/policy unit tests pass.
+- All 14 SE cases pass with protected six-way samplers: 11 timing/atomic bypass
+  cases plus the enabled, disabled and shared-reader two-core regressions.
+- libquantum/46670 passes the same 3M-instruction difftest smoke run with 1M
+  warmup and approximately 2M measured instructions. No upgrade reaches L3.
+- Its actual config.json confirms 128 sampled sets, six ways, recency protection
+  and bypass enabled in all four L2 slices, plus L1D ownership requests.

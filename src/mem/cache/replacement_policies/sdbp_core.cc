@@ -204,8 +204,22 @@ SDBPCore::access(unsigned set, uint64_t tag, RequestType type,
             }
         }
         if (!selected) {
+            const Entry *youngest = nullptr;
+            const Entry *secondYoungest = nullptr;
+            if (cfg.samplerProtectYoungestTwo) {
+                for (const auto &entry : entries) {
+                    if (!youngest || entry.lastUse > youngest->lastUse) {
+                        secondYoungest = youngest;
+                        youngest = &entry;
+                    } else if (!secondYoungest || entry.lastUse > secondYoungest->lastUse) {
+                        secondYoungest = &entry;
+                    }
+                }
+            }
+            // Protect recency positions only during dead-first selection.
+            // The fallback below remains global LRU, including these entries.
             for (auto &entry : entries) {
-                if (entry.dead) {
+                if (entry.dead && &entry != youngest && &entry != secondYoungest) {
                     selected = &entry;
                     break;
                 }

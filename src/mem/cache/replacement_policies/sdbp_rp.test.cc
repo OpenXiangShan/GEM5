@@ -28,6 +28,7 @@ testParams(bool bypass = false, unsigned threshold = 8)
     p.num_sets = 64;
     p.sampler_num = 8;
     p.sampler_assoc = 2;
+    p.sampler_protect_youngest_two = false;
     p.predictor_tables = 3;
     p.predictor_entries = 4096;
     p.counter_bits = 2;
@@ -82,6 +83,23 @@ TEST_F(SDBPInterface, ResetDoesNotTrainAndResponsePcPredicts)
     EXPECT_EQ(stat(policy, "deadPredictions"), 1);
     policy.touch(data, demand.get());
     EXPECT_EQ(stat(policy, "deadHits"), 1);
+}
+
+TEST_F(SDBPInterface, YoungestTwoParameterReachesSampler)
+{
+    auto params = testParams(false, 0);
+    params.sampler_assoc = 6;
+    params.sampler_protect_youngest_two = true;
+    SDBP policy(params);
+    auto demand = packet();
+    for (unsigned tag = 1; tag <= 6; ++tag)
+        policy.observeFill(demand.get(), 0, tag);
+    for (unsigned tag : {3U, 1U, 2U})
+        policy.observe(demand.get(), 0, tag, true);
+    policy.observeFill(demand.get(), 0, 7);
+    policy.observe(demand.get(), 0, 1, true);
+    policy.observe(demand.get(), 0, 2, true);
+    EXPECT_EQ(stat(policy, "samplerHits"), 5);
 }
 
 TEST_F(SDBPInterface, FiltersPrefetchRequestsWritebackEvictionAndMissingPc)
