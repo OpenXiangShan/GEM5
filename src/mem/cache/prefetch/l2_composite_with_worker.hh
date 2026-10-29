@@ -10,6 +10,7 @@
 #include "mem/cache/prefetch/composite_with_worker.hh"
 #include "mem/cache/prefetch/despacito_stream.hh"
 #include "mem/cache/prefetch/lldp.hh"
+#include "mem/cache/prefetch/mlop.hh"
 #include "mem/cache/prefetch/sandbox.hh"
 #include "params/L2CompositeWithWorkerPrefetcher.hh"
 
@@ -40,6 +41,7 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     {
         hintDownStream = down_stream;
         cdp->addHintDownStream(down_stream);
+        mlop->addHintDownStream(down_stream);
     }
     void rxHint(BaseMMU::Translation *dpp) override;
     void pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override;
@@ -60,17 +62,29 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     void recvCustomInfoFrmUpStream(CustomPfInfo& info) override;
 
     void notifyFill(const PacketPtr &pkt) override;
+    void notifyBlockInvalidated(Addr addr, bool is_secure) override;
     void notifyIns(int ins_num) override { cdp->notifyIns(ins_num); }
 
   private:
+    struct ArbitrationStats : public statistics::Group
+    {
+        explicit ArbitrationStats(statistics::Group *parent);
+        statistics::Scalar contendedCycles;
+        statistics::Scalar smallBOPWins;
+        statistics::Scalar mlopWins;
+    } arbitrationStats;
+
     CDP* cdp;
     BOP* largeBOP;
     BOP* smallBOP;
+    MLOPPrefetcher* mlop;
     SandboxPrefetcher* sandbox;
     CMCPrefetcher* cmc;
     DespacitoStreamPrefetcher* despacitoStream;
 
     const bool enableBOP;
+    const bool enableSmallBOP;
+    const bool enableMLOP;
     const bool enableSandbox;
     const bool enableCDP;
     const bool enableCMC;
@@ -78,6 +92,7 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     LLDPrefetcher *lldp;
     const bool enableLLDP;
     bool preferLLDP{false};
+    bool preferMLOPOnContention{false};
 
     bool offloadLowAccuracy = true;
     uint64_t activeBOPReplayAccessSeq = 0;
@@ -85,6 +100,8 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     void InsertPFRequestToBuffer(const AddrPriority &addr_prio) override{
       panic("SMS:InsertPFRequestToBuffer not implemented");
     };
+    void onPrefetchAccepted(const DeferredPacket &dpp) override;
+    void onPrefetchRemoved(const DeferredPacket &dpp) override;
   public:
     bool GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) override;
     bool hasPFRequestsInBuffer() override;

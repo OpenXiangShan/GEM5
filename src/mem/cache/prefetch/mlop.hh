@@ -109,6 +109,7 @@ class MLOPPrefetcher : public WorkerPrefetcher
 
     unsigned maxZones = DefaultAmtEntries;
     unsigned attachedLevel = 2;
+    const bool forceL2Target;
     unsigned updatesPerRound = 500;
     unsigned l1Threshold = 200;
     unsigned l2Threshold = 200;
@@ -129,6 +130,8 @@ class MLOPPrefetcher : public WorkerPrefetcher
     void finishRound();
     std::vector<std::pair<uint64_t, uint8_t>> candidates(uint64_t block, bool secure);
     void sampleSubmittedOffset(uint8_t level, int64_t offset);
+    void recordAccepted(Addr paddr, uint8_t level, bool secure);
+    void recordRemoved(Addr paddr, uint8_t level, bool secure);
 
   protected:
     void onPrefetchAccepted(const DeferredPacket &dpp) override;
@@ -141,6 +144,10 @@ class MLOPPrefetcher : public WorkerPrefetcher
     void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
     void notifyBlockInvalidated(Addr addr, bool is_secure) override;
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override;
+
+    /** Feedback from the parent composite's actual prefetch queue. */
+    void notifyChildPrefetchAccepted(Addr paddr, uint8_t level, bool secure);
+    void notifyChildPrefetchRemoved(Addr paddr, uint8_t level, bool secure);
 };
 
 }  // namespace prefetch

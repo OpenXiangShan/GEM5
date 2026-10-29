@@ -275,6 +275,9 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         help="enable CQF admission for L1D small BOP")
     parser.add_argument("--l2-mlop-enable", action="store_true", default=False,
                         help="enable the DPC-3 MLOP prefetcher at L2")
+    parser.add_argument("--l2-enable-small-bop", action="store_true",
+                        default=False,
+                        help="enable small BOP independently in the L2 composite")
     parser.add_argument("--l1-mlop-max-zones", type=int, default=0,
                         help="L1 MLOP AMT entries (0 uses the DPC-3 capacity formula)")
     parser.add_argument("--l2-mlop-max-zones", type=int, default=256,

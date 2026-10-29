@@ -289,12 +289,28 @@ def _configure_mlop_types(options):
     if options.l2_mlop_enable:
         if not options.l2cache:
             fatal("--l2-mlop-enable requires --l2cache")
+        if options.CHI and not options.enable_pf_buffer:
+            fatal("--l2-mlop-enable requires PFRequestBuffer")
         if options.classic_l2:
-            options.l2_hwp_type = 'MLOPPrefetcher'
+            options.l2_hwp_type = (
+                'L2CompositeWithWorkerPrefetcher' if options.CHI
+                else 'MLOPPrefetcher')
             options.l2_wrapper_hwp_type = None
         else:
             options.l2_hwp_type = 'PrefetcherForwarder'
-            options.l2_wrapper_hwp_type = 'MLOPPrefetcher'
+            options.l2_wrapper_hwp_type = (
+                'L2CompositeWithWorkerPrefetcher' if options.CHI
+                else 'MLOPPrefetcher')
+
+    if options.l2_enable_small_bop:
+        if not options.l2cache or not options.CHI or not options.enable_pf_buffer:
+            fatal("--l2-enable-small-bop requires --CHI, --l2cache and PFRequestBuffer")
+        if options.classic_l2:
+            options.l2_hwp_type = 'L2CompositeWithWorkerPrefetcher'
+            options.l2_wrapper_hwp_type = None
+        else:
+            options.l2_hwp_type = 'PrefetcherForwarder'
+            options.l2_wrapper_hwp_type = 'L2CompositeWithWorkerPrefetcher'
 
     # L1 MLOP has level-2 and level-3 candidates. Make the existing hint path
     # available automatically when an L2 exists; other L1 prefetchers keep the

@@ -595,6 +595,12 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
     prefetcher.enable_lldp = False
     if prefetcher_name == 'L2CompositeWithWorkerPrefetcher':
         prefetcher.enable_sandbox = getattr(options, 'l2_enable_sandbox', False)
+        prefetcher.enable_small_bop = getattr(options, 'l2_enable_small_bop', False)
+        prefetcher.enable_mlop = getattr(options, 'l2_mlop_enable', False)
+        if prefetcher.enable_mlop:
+            _configure_mlop(prefetcher.mlop, 'l2', options)
+            prefetcher.mlop.use_pf_buffer = True
+            prefetcher.mlop.use_virtual_addresses = True
 
 def _configure_l2_prefetcher(prefetcher, prefetcher_name, options,
                              pf_buffer_enabled):
@@ -645,6 +651,7 @@ def _configure_mlop(prefetcher, cache_level, options):
 
     is_l1 = cache_level == 'l1d'
     prefetcher.attached_level = 1 if is_l1 else 2
+    prefetcher.force_l2_target = is_l1 and options.l2_mlop_enable
     prefetcher.max_zones = _mlop_max_zones(options, cache_level)
     prefetcher.prefetch_train = False
     prefetcher.queue_filter = False

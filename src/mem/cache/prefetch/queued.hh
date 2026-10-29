@@ -76,6 +76,7 @@ class Queued : public Base
         int depth=0;
         PrefetchSourceType pfSource;
         PFTriggerInfo pf_trigger_info{};
+        Queued *producer{nullptr};
         PrefetchCmd(Addr a, int32_t p) : addr(a), priority(p), isVA(true), isBOP(false)
         {
             panic("PrefetchCmd: no source specified");
@@ -111,6 +112,8 @@ class Queued : public Base
         int32_t priority;
         bool pfahead;
         int pfahead_host;
+        /** Component that generated this request, when it came from a composite. */
+        Queued *producer;
         /** Request used when a translation is needed */
         RequestPtr translationRequest;
         ThreadContext *tc;
@@ -126,8 +129,8 @@ class Queued : public Base
          */
         DeferredPacket(Queued *o, PrefetchInfo const &pfi, Tick t,
             int32_t prio) : owner(o), pfInfo(pfi), tick(t), pkt(nullptr),
-            priority(prio), translationRequest(), tc(nullptr),
-            ongoingTranslation(false) {
+            priority(prio), pfahead(false), pfahead_host(0), producer(nullptr),
+            translationRequest(), tc(nullptr), ongoingTranslation(false) {
         }
 
         bool operator>(const DeferredPacket& that) const

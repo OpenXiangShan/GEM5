@@ -62,6 +62,7 @@ MLOPPrefetcher::MLOPPrefetcher(const MLOPPrefetcherParams &p)
       statsMLOP(this),
       maxZones(p.max_zones),
       attachedLevel(p.attached_level),
+      forceL2Target(p.force_l2_target),
       updatesPerRound(p.num_updates),
       l1Threshold(p.l1_threshold),
       l2Threshold(p.l2_threshold),
@@ -294,7 +295,7 @@ MLOPPrefetcher::finishRound()
         if (level == 0)
             continue;
 
-        prefetchLevel[depth] = level;
+        prefetchLevel[depth] = forceL2Target ? 2 : level;
         for (int offset = -static_cast<int>(BlocksInZone - 1); offset <= static_cast<int>(BlocksInZone - 1);
              ++offset) {
             if (offset == 0) {
@@ -384,7 +385,11 @@ MLOPPrefetcher::notifyBlockInvalidated(Addr addr, bool is_secure)
 void
 MLOPPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses)
 {
-    const auto block = pfi.getAddr() / blkSize;
+    if (pfi.isWrite() || pfi.isStore()) {
+        return;
+    }
+
+    const auto block = pfi.getPaddr() / blkSize;
     const auto secure = pfi.isSecure();
 
     const auto beforeTraining = trainingCount;
@@ -401,7 +406,7 @@ MLOPPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrior
     const auto generated = candidates(block, secure);
     for (const auto &candidate : generated) {
         const auto candidateBlock = candidate.first;
-        const auto level = candidate.second;
+        const auto level = forceL2Target ? 2 : candidate.second;
         const bool local = level == attachedLevel;
         if (!local && !hasHintDownStream()) {
             ++statsMLOP.downstreamUnavailable;
@@ -422,7 +427,13 @@ MLOPPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrior
                 panic("MLOP generated an invalid fill level");
         }
 
-        const Addr candidateAddr = candidateBlock * blkSize;
+        const Addr candidatePaddr = candidateBlock * blkSize;
+        // The L2 composite issues VAs, but MLOP always learns physical zones.
+        // Its candidates stay in the trigger's physical page.
+        const Addr candidateAddr = useVirtualAddresses
+            ? (pfi.getAddr() & ~(Addr(pageBytes) - 1)) |
+                  (candidatePaddr & (Addr(pageBytes) - 1))
+            : candidatePaddr;
         const auto offset = static_cast<int64_t>(candidateBlock) - static_cast<int64_t>(block);
         if (usePFBuffer) {
             const bool alreadyBuffered =
@@ -436,6 +447,7 @@ MLOPPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrior
         }
 
         AddrPriority address(candidateAddr, 0, PrefetchSourceType::MLOP);
+        address.producer = this;
         if (!local) {
             address.pfahead = true;
             address.pfahead_host = level;
@@ -458,12 +470,19 @@ MLOPPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrior
 void
 MLOPPrefetcher::onPrefetchAccepted(const DeferredPacket &dpp)
 {
-    if (dpp.owner != this || dpp.pfInfo.getXsMetadata().prefetchSource != PrefetchSourceType::MLOP) {
+    if (dpp.owner != this || dpp.producer != this) {
         return;
     }
 
     const uint8_t level = dpp.pfahead ? dpp.pfahead_host : attachedLevel;
-    mark(dpp.pfInfo.getAddr() / blkSize, State::Prefetch, level, dpp.pfInfo.isSecure());
+    recordAccepted(dpp.pkt ? dpp.pkt->getAddr() : dpp.pfInfo.getAddr(),
+                   level, dpp.pfInfo.isSecure());
+}
+
+void
+MLOPPrefetcher::recordAccepted(Addr paddr, uint8_t level, bool secure)
+{
+    mark(paddr / blkSize, State::Prefetch, level, secure);
     switch (level) {
         case 1:
             ++statsMLOP.l1Accepted;
@@ -482,12 +501,31 @@ MLOPPrefetcher::onPrefetchAccepted(const DeferredPacket &dpp)
 void
 MLOPPrefetcher::onPrefetchRemoved(const DeferredPacket &dpp)
 {
-    if (dpp.owner != this || dpp.pfInfo.getXsMetadata().prefetchSource != PrefetchSourceType::MLOP) {
+    if (dpp.owner != this || dpp.producer != this) {
         return;
     }
 
     const uint8_t level = dpp.pfahead ? dpp.pfahead_host : attachedLevel;
-    mark(dpp.pfInfo.getAddr() / blkSize, State::Init, level, dpp.pfInfo.isSecure());
+    recordRemoved(dpp.pkt ? dpp.pkt->getAddr() : dpp.pfInfo.getAddr(),
+                  level, dpp.pfInfo.isSecure());
+}
+
+void
+MLOPPrefetcher::recordRemoved(Addr paddr, uint8_t level, bool secure)
+{
+    mark(paddr / blkSize, State::Init, level, secure);
+}
+
+void
+MLOPPrefetcher::notifyChildPrefetchAccepted(Addr paddr, uint8_t level, bool secure)
+{
+    recordAccepted(paddr, level, secure);
+}
+
+void
+MLOPPrefetcher::notifyChildPrefetchRemoved(Addr paddr, uint8_t level, bool secure)
+{
+    recordRemoved(paddr, level, secure);
 }
 
 }  // namespace prefetch
