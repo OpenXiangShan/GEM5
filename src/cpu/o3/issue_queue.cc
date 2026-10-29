@@ -1719,6 +1719,7 @@ Scheduler::disp_policy::operator()(IssueQue* a, IssueQue* b) const
 Scheduler::Scheduler(const SchedulerParams& params)
     : SimObject(params),
       fpWakeEnabled(params.fpWakeupMode == enums::FpWakeupMode::kmhv3),
+      fpDivSqrtPipelined(params.fpDivSqrtPipelined),
       fpLoadM4Enabled(params.fpLoadM4Enabled),
       old_disp(params.useOldDisp),
       intRegfileBanks(params.intRegfileBanks), stats(this), issueQues(params.IQs)

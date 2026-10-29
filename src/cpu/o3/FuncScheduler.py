@@ -104,6 +104,9 @@ class Scheduler(SimObject):
     cxx_header = "cpu/o3/issue_queue.hh"
 
     fpWakeupMode = Param.FpWakeupMode("legacy", "Scalar FP wakeup timing profile")
+    fpDivSqrtPipelined = Param.Bool(
+        False, "Allow one scalar DIV/SQRT per issue entry per cycle in kmhv3 mode"
+    )
     fpLoadM4Enabled = Param.Bool(
         True, "Enable speculative load M4 wakeups in the kmhv3 FP timing profile"
     )

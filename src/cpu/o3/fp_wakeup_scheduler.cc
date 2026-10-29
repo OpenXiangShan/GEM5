@@ -338,6 +338,14 @@ Scheduler::prepareFp(const DynInstPtr& inst, bool replay, unsigned port)
         fpWakeups.emplace(token->m4Cycle,
                           FpWork{inst, state.attempt, fpw::Phase::M4});
     }
+    if (!token->load && !fpDivider(inst)) {
+        DPRINTF(FpWakeup,
+                "event=wb_reserve cycle=%llu tid=%u seq=%llu attempt=%llu "
+                "lane=%u port=%u wb_cycle=%llu fp_dest=%u op=%s\n",
+                now, inst->threadNumber, inst->seqNum, state.attempt,
+                token->outputLane, token->wbPort, token->wbCycle,
+                fpDestination(inst), enums::OpClassStrings[inst->opClass()]);
+    }
     DPRINTF(FpWakeup,
             "event=select cycle=%llu tid=%u seq=%llu attempt=%llu pc=%#lx iq=%s\n",
             selected, inst->threadNumber, inst->seqNum, state.attempt,
@@ -448,10 +456,20 @@ Scheduler::processFpWakeups()
                 token->cancelSafeCycle = token->readyCycle;
                 fpWakeups.emplace(now + 1, work);
                 DPRINTF(FpWakeup,
-                    "event=retime cycle=%llu tid=%u seq=%llu attempt=%llu ready_cycle=%llu\n",
+                    "event=retime cycle=%llu tid=%u seq=%llu attempt=%llu "
+                    "ready_cycle=%llu lane=%u port=%u\n",
                     now, work.inst->threadNumber, work.inst->seqNum, work.attempt,
-                    token->readyCycle);
+                    token->readyCycle, token->outputLane, token->wbPort);
                 continue;
+            }
+            if (fpDivider(work.inst)) {
+                DPRINTF(FpWakeup,
+                        "event=wb_reserve cycle=%llu tid=%u seq=%llu attempt=%llu "
+                        "lane=%u port=%u wb_cycle=%llu fp_dest=1 op=%s\n",
+                        now, work.inst->threadNumber, work.inst->seqNum,
+                        work.attempt, token->outputLane, token->wbPort,
+                        token->wbCycle,
+                        enums::OpClassStrings[work.inst->opClass()]);
             }
             token->confirm();
             DPRINTF(FpWakeup,
@@ -568,7 +586,12 @@ Scheduler::tryFpFuAdmission(const DynInstPtr& inst)
              "FP divider admission without a live IQ attempt for %llu\n",
              inst->seqNum);
     const auto now = fpCycle();
-    if (!fpExecution.acquire(inst->issueQue->getId(),
+    // Issue-port selection already limits each shared DIV/SQRT entry to
+    // one admission per cycle. Pipelined execution retains per-instruction
+    // completion/wakeup timing without owning the entry until writeback.
+    state.divResource = false;
+    if (!fpDivSqrtPipelined &&
+        !fpExecution.acquire(inst->issueQue->getId(),
                              state.output->producer)) {
         ++stats.fpDividerStalls;
         DPRINTF(FpWakeup,
@@ -582,7 +605,7 @@ Scheduler::tryFpFuAdmission(const DynInstPtr& inst)
         state.retrySelectCycle = std::max(state.retrySelectCycle, now + 1);
         return false;
     }
-    state.divResource = true;
+    state.divResource = !fpDivSqrtPipelined;
     DPRINTF(FpWakeup,
             "event=fu_admit cycle=%llu tid=%u seq=%llu attempt=%llu iq=%s\n",
             now, inst->threadNumber, inst->seqNum, state.attempt,
