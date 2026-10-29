@@ -1827,6 +1827,14 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
 
     DPRINTF(Cache, "satisfyRequest for %s\n", pkt->print());
 
+    // Golden memory follows successful writes, independently of the order
+    // in which their responses reach the CPU.
+    const bool update_golden =
+        pkt->isWrite() && system->multiContextDifftest() &&
+        system->params().golden_mem_at_write &&
+        system->getGoldenMemManager()->inPmem(
+            pkt->getAddr(), pkt->getSize());
+
     // Check RMW operations first since both isRead() and
     // isWrite() will be true for them
     if (pkt->cmd == MemCmd::SwapReq) {
@@ -1848,12 +1856,7 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
             // execute AMO operation
             (*(pkt->getAtomicOp()))(blk_data);
 
-            // Golden memory follows successful writes, independently of
-            // the order in which their responses reach the CPU.
-            if (system->multiContextDifftest() &&
-                system->params().golden_mem_at_write &&
-                system->getGoldenMemManager()->inPmem(
-                    pkt->getAddr(), pkt->getSize())) {
+            if (update_golden) {
                 system->getGoldenMemManager()->updateGoldenMem(
                     pkt->getAddr(), blk_data, ~0ULL, pkt->getSize());
             }
@@ -1885,10 +1888,7 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
         // Write or WriteLine at the first cache with block in writable state
         if (blk->checkWrite(pkt)) {
             updateBlockData(blk, pkt, true);
-            if (system->multiContextDifftest() &&
-                system->params().golden_mem_at_write &&
-                system->getGoldenMemManager()->inPmem(
-                    pkt->getAddr(), pkt->getSize())) {
+            if (update_golden) {
                 system->getGoldenMemManager()->updateGoldenMem(
                     pkt->getAddr(), blk->data + pkt->getOffset(blkSize),
                     pkt->req->getByteEnable(), pkt->getSize());

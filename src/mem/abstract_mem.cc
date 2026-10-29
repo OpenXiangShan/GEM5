@@ -399,15 +399,21 @@ AbstractMemory::access(PacketPtr pkt)
     DPRINTF(MemoryAccess, "guest addr %#lx -> host_addr %#lx\n", pkt->getAddr(),
             (uint64_t) host_addr);
 
+    // Writebacks only propagate an earlier cache write. They must not
+    // overwrite a newer golden-memory value.
+    const bool update_golden =
+        pmemAddr && pkt->isWrite() && !pkt->fromCache() &&
+        system()->multiContextDifftest() &&
+        system()->params().golden_mem_at_write &&
+        system()->getGoldenMemManager()->inPmem(
+            pkt->getAddr(), pkt->getSize());
+
     if (pkt->cmd == MemCmd::SwapReq) {
         if (pkt->isAtomicOp()) {
             if (pmemAddr) {
                 pkt->setData(host_addr);
                 (*(pkt->getAtomicOp()))(host_addr);
-                if (system()->multiContextDifftest() &&
-                    system()->params().golden_mem_at_write &&
-                    system()->getGoldenMemManager()->inPmem(
-                        pkt->getAddr(), pkt->getSize())) {
+                if (update_golden) {
                     system()->getGoldenMemManager()->updateGoldenMem(
                         pkt->getAddr(), host_addr, ~0ULL, pkt->getSize());
                 }
@@ -441,10 +447,7 @@ AbstractMemory::access(PacketPtr pkt)
 
             if (overwrite_mem) {
                 std::memcpy(host_addr, &overwrite_val[0], pkt->getSize());
-                if (system()->multiContextDifftest() &&
-                    system()->params().golden_mem_at_write &&
-                    system()->getGoldenMemManager()->inPmem(
-                        pkt->getAddr(), pkt->getSize())) {
+                if (update_golden) {
                     system()->getGoldenMemManager()->updateGoldenMem(
                         pkt->getAddr(), host_addr, ~0ULL, pkt->getSize());
                 }
@@ -480,12 +483,7 @@ AbstractMemory::access(PacketPtr pkt)
         if (writeOK(pkt)) {
             if (pmemAddr) {
                 pkt->writeData(host_addr);
-                // Writebacks only propagate an earlier cache write. They
-                // must not overwrite a newer golden-memory value.
-                if (!pkt->fromCache() && system()->multiContextDifftest() &&
-                    system()->params().golden_mem_at_write &&
-                    system()->getGoldenMemManager()->inPmem(
-                        pkt->getAddr(), pkt->getSize())) {
+                if (update_golden) {
                     system()->getGoldenMemManager()->updateGoldenMem(
                         pkt->getAddr(), host_addr,
                         pkt->req->getByteEnable(), pkt->getSize());
