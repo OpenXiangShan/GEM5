@@ -50,7 +50,12 @@ def add_sdbp_options(parser):
         help="Skip the N youngest sampler entries during dead-first selection",
     )
     parser.add_argument("--sdbp-dead-threshold", type=int, default=8)
-    parser.add_argument("--sdbp-enable-bypass", action="store_true")
+    parser.add_argument(
+        "--sdbp-enable-bypass",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Bypass dead L2 fills and return their L1 victims to L3 (default: on)",
+    )
     parser.add_argument(
         "--sdbp-pc-hash-type",
         choices=("xor_fold", "mixed", "low_bits"),
@@ -88,6 +93,12 @@ def configure_sdbp(args, system):
     if args.l2_replacement_policy != "default":
         if not args.l2cache:
             raise ValueError("--l2-replacement-policy requires --l2cache")
+        if (
+            args.l2_replacement_policy == "sdbp"
+            and args.sdbp_enable_bypass
+            and (not args.l3cache or args.no_l3cache)
+        ):
+            raise ValueError("SDBP L2 bypass requires --l3cache")
         if (
             not args.caches
             and args.l2_replacement_policy == "sdbp"

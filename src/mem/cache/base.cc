@@ -1995,6 +1995,11 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
 
     DPRINTF(Cache, "satisfyRequest for %s\n", pkt->print());
 
+    if (cacheLevel == 2 && blk == tempBlock && blk->sdbpBypassL2 &&
+        pkt->isRead() && pkt->fromCache()) {
+        pkt->sdbpBypassL2 = true;
+    }
+
     // Check RMW operations first since both isRead() and
     // isWrite() will be true for them
     if (pkt->cmd == MemCmd::SwapReq) {
@@ -2238,6 +2243,20 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
     if (pkt->isWrite()) {
         lat = calculateTagOnlyLatency(pkt->headerDelay, tag_latency);
     }
+
+    if (cacheLevel == 2 && pkt->isWriteback() && pkt->sdbpBypassL2) {
+        // A later refill may have installed a copy while the bypassed line
+        // lived in L1. Drop that copy before forwarding the newer data.
+        if (blk) {
+            invalidateBlock(blk);
+            blk = nullptr;
+        }
+        ++stats.sdbpBypassWritebacks;
+        incMissCount(pkt);
+        return false;
+    }
+    if (cacheLevel == 3 && pkt->isWriteback() && pkt->sdbpBypassL2)
+        ++stats.sdbpBypassWritebacks;
 
     // Writeback handling is special case.  We can write the block into
     // the cache without having a writeable copy (or any copy at all).
@@ -2512,6 +2531,8 @@ BaseCache::handleFill(
             // current request and then get rid of it
             blk = tempBlock;
             tempBlock->insert(addr, is_secure);
+            if (cacheLevel == 2 && pkt->sdbpBypassL2)
+                tempBlock->sdbpBypassL2 = true;
             DPRINTF(Cache, "using temp block for %#llx (%s)\n", addr,
                     is_secure ? "s" : "ns");
         } else if (wpu) {
@@ -2562,6 +2583,17 @@ BaseCache::handleFill(
                         "in read-only cache %s\n", name());
 
         }
+    }
+
+    if (cacheLevel == 1 && pkt->sdbpBypassL2) {
+        if (!blk->sdbpBypassL2)
+            ++stats.sdbpBypassFills;
+        blk->sdbpBypassL2 = true;
+        // Only exclusive data-cache lines may acquire dirty ownership.
+        // Read-only/shared lines retain their coherence state and carry
+        // their data in a forced writeback when they are evicted.
+        if (!isReadOnly && !pkt->hasSharers())
+            blk->setCoherenceBits(CacheBlk::DirtyBit);
     }
 
     DPRINTF(Cache, "Block addr %#llx (%s) moving from %s to %s\n",
@@ -2744,10 +2776,11 @@ BaseCache::evictBlock(CacheBlk *blk, PacketList &writebacks,
 PacketPtr
 BaseCache::writebackBlk(CacheBlk *blk)
 {
-    gem5_assert(!isReadOnly || writebackClean,
+    const bool bypass_l2 = cacheLevel == 1 && blk->sdbpBypassL2;
+    gem5_assert(!isReadOnly || writebackClean || bypass_l2,
                 "Writeback from read-only cache");
     assert(blk && blk->isValid() &&
-        (blk->isSet(CacheBlk::DirtyBit) || writebackClean));
+        (blk->isSet(CacheBlk::DirtyBit) || writebackClean || bypass_l2));
 
     stats.writebacks[Request::wbRequestorId]++;
 
@@ -2761,8 +2794,11 @@ BaseCache::writebackBlk(CacheBlk *blk)
     req->setXsMetadata(blk->getXsMetadata());
 
     PacketPtr pkt =
-        new Packet(req, blk->isSet(CacheBlk::DirtyBit) ?
+        new Packet(req, (blk->isSet(CacheBlk::DirtyBit) || bypass_l2) ?
                    MemCmd::WritebackDirty : MemCmd::WritebackClean);
+    // WritebackDirty is accepted/allocated by L3 even if writeback_clean is
+    // disabled. Shared/read-only L1 lines need not become dirty residents.
+    pkt->sdbpBypassL2 = bypass_l2;
 
     DPRINTF(Cache, "Create Writeback %s writable: %d, dirty: %d\n",
         pkt->print(), blk->isSet(CacheBlk::WritableBit),
@@ -3361,6 +3397,10 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "only when forwarding enabled"),
     ADD_STAT(writebacks, statistics::units::Count::get(),
              "number of writebacks"),
+    ADD_STAT(sdbpBypassFills, statistics::units::Count::get(),
+             "L1 fills bypassing L2 storage"),
+    ADD_STAT(sdbpBypassWritebacks, statistics::units::Count::get(),
+             "Bypass writebacks forwarded by L2 or received by L3"),
     ADD_STAT(demandMshrHits, statistics::units::Count::get(),
              "number of demand (read+write) MSHR hits"),
     ADD_STAT(overallMshrHits, statistics::units::Count::get(),
