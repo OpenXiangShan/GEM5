@@ -120,24 +120,60 @@ TEST(SDBPCore, UnsampledSetsDoNotTrain)
     EXPECT_EQ(core.confidence(core.signature(0x1000)), 0U);
 }
 
-TEST(SDBPCore, InvalidBeforeDeadThenLru)
+TEST(SDBPCore, InvalidBeforeLruRegardlessOfDeadPrediction)
+{
+    for (unsigned threshold : {0U, 8U}) {
+        SDBPCore::Config cfg;
+        cfg.samplerAssoc = 2;
+        cfg.deadThreshold = threshold;
+        SDBPCore core(cfg);
+        core.access(0, 1, 0x1000);
+        EXPECT_FALSE(core.access(0, 2, 0x2000).evicted);
+        // A demand hit refreshes recency, even if every entry predicts dead.
+        EXPECT_TRUE(core.access(0, 1, 0x1000).hit);
+        const auto evicted = core.access(0, 3, 0x3000);
+        EXPECT_TRUE(evicted.evicted);
+        EXPECT_EQ(evicted.previousSignature, core.signature(0x2000));
+        EXPECT_EQ(evicted.previousDead, threshold == 0);
+        EXPECT_TRUE(core.access(0, 1, 0x1000).hit);
+    }
+}
+
+TEST(SDBPCore, DeadMruDoesNotOverrideOlderLiveEntry)
 {
     SDBPCore::Config cfg;
     cfg.samplerAssoc = 2;
-    cfg.deadThreshold = 0;
     SDBPCore core(cfg);
     core.access(0, 1, 0x1000);
-    EXPECT_FALSE(core.access(0, 2, 0x2000).evicted);
-    // Both dead: choose first way even though it has just been touched.
-    core.access(0, 1, 0x1000);
-    EXPECT_EQ(core.access(0, 3, 0x3000).previousSignature, core.signature(0x1000));
+    const auto dead = core.signature(0x2000);
+    for (unsigned i = 0; i < 3; ++i)
+        core.train(dead, true);
+    ASSERT_TRUE(core.predict(dead));
+    core.access(0, 2, 0x2000);
+    // The older live entry is replaced; the younger dead entry survives.
+    const auto evicted = core.access(0, 3, 0x3000);
+    EXPECT_TRUE(evicted.evicted);
+    EXPECT_FALSE(evicted.previousDead);
+    EXPECT_EQ(evicted.previousSignature, core.signature(0x1000));
+    const auto reused = core.access(0, 2, 0x2000);
+    EXPECT_TRUE(reused.hit);
+    EXPECT_TRUE(reused.previousDead);
+    EXPECT_FALSE(core.predict(dead));
+}
 
-    cfg.deadThreshold = 8;
-    SDBPCore lru(cfg);
-    lru.access(0, 1, 0x1000);
-    lru.access(0, 2, 0x2000);
-    lru.access(0, 1, 0x1000);
-    EXPECT_EQ(lru.access(0, 3, 0x3000).previousSignature, lru.signature(0x2000));
+TEST(SDBPCore, PrefetchHitDoesNotRefreshSamplerLru)
+{
+    SDBPCore::Config cfg;
+    cfg.samplerAssoc = 2;
+    SDBPCore core(cfg);
+    core.access(0, 1, 0x1000);
+    core.access(0, 2, 0x2000);
+    const auto prefetch = core.access(
+        0, 1, SDBPCore::RequestType::Prefetch, false, 0);
+    EXPECT_TRUE(prefetch.hit);
+    const auto evicted = core.access(0, 3, 0x3000);
+    EXPECT_EQ(evicted.previousSignature, core.signature(0x1000));
+    EXPECT_TRUE(core.access(0, 2, 0x2000).hit);
 }
 
 TEST(SDBPCore, PartialTagsAlias)

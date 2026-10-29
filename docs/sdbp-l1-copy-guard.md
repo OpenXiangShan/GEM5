@@ -1,10 +1,10 @@
-# SDBP dead-victim selection with L1-copy protection
+# SDBP with L1-copy protection and a pure-LRU sampler
 
-This experiment starts from commit
-`16878a2bca0791bec7d49df58ec7c831286868cb`, the baseline of Actions run
-40486816390. It replaces the separate MRU-guard experiment with a resident-copy
-filter. Sampler and predictor behavior, cache geometry, and workload arguments
-remain unchanged.
+This experiment extends commit
+`952aece4a7e1d7f13e742395edbb64e7b57d765f`, tested by Actions run
+40811060728. It retains the L1-resident-copy filter and changes only sampler
+victim selection from dead-first to pure LRU. Sampler size, predictor and
+training rules, cache geometry, and workload arguments remain unchanged.
 
 ## Selection semantics
 
@@ -17,7 +17,12 @@ remain unchanged.
    block. Protection applies only to the dead-first selection stage.
 
 There is no MRU restriction and no clearing of stored dead predictions.
-The independent sampler still uses its original replacement and training rules.
+The independent sampler uses invalid entries first, then the least recently
+used valid entry, regardless of its stored dead prediction. Demand hits and
+insertions refresh recency; prefetch hits retain their existing behavior and
+do not refresh sampler metadata. Existing live/dead training rules are retained.
+This keeps prediction-driven eviction from shortening the observation window
+of a predicted-dead sampler entry.
 
 ## Residency model and scope
 
@@ -49,13 +54,12 @@ Each L2 SDBP policy reports:
 Targeted policy tests cover an unprotected MRU, first-eligible candidate order,
 all-dead-protected fallback including a protected LRU, changing residency,
 unchanged dead bits, invalid-way priority, bypass, and absence of live probes.
-A checkpoint smoke test additionally exercises real L1 references and the
-aligned L2 address reconstruction with difftest enabled. The 12 policy tests
-and 13 predictor-core tests pass. A two-million-instruction smoke run uses the
-normal threshold 8. A separate four-million-instruction integration diagnostic
-uses threshold 0 solely to force the query path: it checks 197 dead candidates
-and skips 83 resident L1 copies, with difftest passing. The remote performance
-run keeps threshold 8; the forced-dead diagnostic is not a performance result.
+The parent experiment passed checkpoint smoke tests for real L1 references.
+This follow-up adds sampler tests for LRU with all entries predicted dead,
+coexisting older-live and younger-dead entries, live training on reuse of a
+retained dead entry, and unchanged prefetch-hit recency semantics. The existing
+L1-copy policy tests are rerun with the modified sampler core. All 15
+sampler/predictor tests and all 12 replacement-policy tests pass.
 
 Remote performance evaluation uses the baseline `manual-perf.yml` inputs:
 `idealkmhv3.py`, all `spec06-rva23-novec-gcc16-1.0c`, distributed servers

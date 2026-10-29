@@ -203,14 +203,7 @@ SDBPCore::access(unsigned set, uint64_t tag, RequestType type,
                 break;
             }
         }
-        if (!selected) {
-            for (auto &entry : entries) {
-                if (entry.dead) {
-                    selected = &entry;
-                    break;
-                }
-            }
-        }
+        // Keep the sampler observation window independent of dead predictions.
         if (!selected) {
             selected = &*std::min_element(entries.begin(), entries.end(),
                                           [](const Entry &a, const Entry &b) { return a.lastUse < b.lastUse; });
