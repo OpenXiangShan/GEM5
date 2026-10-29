@@ -9,6 +9,26 @@ L2 tags, even if an invalid way is available. Requests without a PC, actual
 prefetches, upgrades, writebacks and cache maintenance do not bypass. A bypassed
 miss still updates the independent sampler, so the predictor can learn reuse.
 
+When bypass is enabled, `configure_sdbp` also enables
+`cpu.dcache.sdbp_bypass_writable`. L1D ordinary cacheable demand read misses
+request ownership with `ReadExReq` before the L2 refill-time prediction.
+The L1 MSHR records that outgoing ownership request even though the CPU target
+is a plain read, so it can order snoops while the response is in flight.
+This applies to all such L1D misses, including those ultimately predicted live;
+bypass-disabled and LRU configurations keep their original read requests.
+Read-only L1I, prefetches, uncacheable accesses and special read commands keep
+their existing request protocol.
+
+Data bypass is restricted to exclusive read responses without sharers. Shared
+responses use ordinary L2 allocation. Clean instruction responses can still
+bypass, including shared responses, because L1I never needs write permission.
+For a bypassed exclusive response, the standard `ReadExReq` handling transfers
+both write permission and any genuine dirty responsibility from the L2 temporary
+block to L1. The temporary block then has no dirty data to write back. L1 fills
+clean exclusive data as E and genuinely dirty data as M; later snoops can revoke
+permissions normally. Deferred snoops propagate the upstream MSHR responder
+identity so only the new owner answers a previously promised snoop response.
+
 The response marks the receiving L1 line with `sdbpBypassL2`, independently
 of its coherence dirty bit. A clean fill remains clean in L1. On replacement,
 a marked clean victim produces a data-bearing `WritebackClean`; a genuinely
@@ -104,3 +124,57 @@ Validation on October 29, 2026:
 
 The local checks cover single-core operation; multicore stress and the full SPEC
 performance result require separate runs. No performance improvement is assumed.
+
+## Ownership handoff regression
+
+The mixed guest now stores each verified value immediately after reading it,
+including values returned from dirty L3 lines. With threshold zero, the test
+checks that L2 remains empty, L2 temporary blocks emit no dirty writebacks, and
+no permission upgrades reach L3. Clean-only and small-L3 cases retain their
+checks for data-bearing clean returns and real dirty memory writebacks.
+
+A separate two-core test shares a physical page between two SE processes. It
+passes a sequence number and a turn flag across private L1/L2 hierarchies for
+256 handoffs in each direction, with long response latencies to exercise snoops
+of in-flight exclusive fills. Both guests verify the transferred data. Run it
+with and without bypass:
+
+```sh
+riscv64-linux-gnu-gcc -DROLE=0 -nostdlib -static \
+  -march=rv64im -mabi=lp64 -Wl,--build-id=none \
+  -o /tmp/sdbp-producer tests/gem5/sdbp_bypass/shared.S
+riscv64-linux-gnu-gcc -DROLE=1 -nostdlib -static \
+  -march=rv64im -mabi=lp64 -Wl,--build-id=none \
+  -o /tmp/sdbp-consumer tests/gem5/sdbp_bypass/shared.S
+build/RISCV/gem5.opt -d /tmp/sdbp-shared \
+  tests/gem5/sdbp_bypass/coherence.py /tmp/sdbp-producer /tmp/sdbp-consumer
+build/RISCV/gem5.opt -d /tmp/sdbp-shared-control \
+  tests/gem5/sdbp_bypass/coherence.py /tmp/sdbp-producer /tmp/sdbp-consumer \
+  --disable-bypass
+```
+
+This is a targeted coherence check, not exhaustive multicore verification.
+Performance must be evaluated with the requested full CI configuration; giving
+read misses exclusive ownership can increase invalidations under sharing.
+Add `--shared-reader` to let the consumer retain ordinary shared reads while
+the producer requests ownership. This also exercises deferred downgrading
+snoops and verifies that shared data falls back to ordinary L2 allocation.
+
+Validation on October 30, 2026:
+
+- Optimized simulator build and all 27 SDBP core/policy unit tests pass.
+- All 11 SE regression cases pass, now including immediate read-then-write
+  checks on previously dirty lines. Forced dead fills leave zero L2 occupancy,
+  zero L2-generated writebacks and zero L3 permission upgrades.
+- Clean-only cases still deliver 611 `WritebackClean` packets and generate no
+  dirty writebacks or memory writes. The modified mixed small-L3 guest preserves
+  its data across 3,968 genuine dirty memory writebacks.
+- The two-core shared-page test passes with bypass enabled, disabled and with
+  an ordinary shared consumer. The enabled run's MSHR trace exercises 1,537
+  pending-ownership snoops with deferred invalidations. The mixed-reader trace
+  includes 767 post-downgrade and 514 post-invalidation MSHR states, exercising
+  both kinds of ownership conflict and migration of the promised responder.
+- `idealkmhv3.py` libquantum/46670 passes difftest for 3 million instructions
+  (1 million warmup, 2 million measured) using SimpleMemory and the CI-pinned
+  `normal-dedup` reference. Its measured 25,484 L1D writes all hit and no
+  `UpgradeReq` reaches L3. This short check does not predict full CI performance.

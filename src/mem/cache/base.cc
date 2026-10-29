@@ -154,6 +154,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       prefetcher(p.prefetcher),
       writeAllocator(p.write_allocator),
       writebackClean(p.writeback_clean),
+      sdbpBypassWritable(p.sdbp_bypass_writable),
       tempBlockWriteback(nullptr),
       writebackTempBlockAtomicEvent([this]{ writebackTempBlockAtomic(); },
                                     name(), false,
@@ -207,6 +208,10 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
 
     tempBlock = new TempCacheBlk(blkSize);
     tags->tagsInit();
+    fatal_if(sdbpBypassWritable && (cacheLevel != 1 || isReadOnly),
+             "%s: SDBP bypass ownership requests require a writable L1",
+             name());
+
     if (!p.sdbp_l1_caches.empty()) {
         auto *sdbp = dynamic_cast<replacement_policy::SDBP *>(p.replacement_policy);
         fatal_if(!sdbp || p.cache_level != 2,
@@ -3029,6 +3034,9 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
         pkt->setSatisfied();
     }
 
+    // A hit below can turn pkt into a response during sendTimingReq().
+    const bool read_requests_ownership = sdbpBypassWritable &&
+        tgt_pkt->cmd == MemCmd::ReadReq && pkt->needsWritable();
     if (!memSidePort.sendTimingReq(pkt)) {
         // we are awaiting a retry, but we
         // delete the packet and will be creating a new packet
@@ -3049,8 +3057,11 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
         // so, we know it is dirty, and we can determine if it is
         // being passed as Modified, making our MSHR the ordering
         // point
-        bool pending_modified_resp = !pkt->hasSharers() &&
-            pkt->cacheResponding();
+        // An SDBP L1 read can request exclusive ownership even though its
+        // CPU target is a plain read. Track that promise before any later
+        // snoop arrives, just as for an ordinary write miss.
+        bool pending_modified_resp = read_requests_ownership ||
+            (!pkt->hasSharers() && pkt->cacheResponding());
         markInService(mshr, pending_modified_resp);
 
         if (pkt->isClean() && blk && blk->isSet(CacheBlk::DirtyBit)) {

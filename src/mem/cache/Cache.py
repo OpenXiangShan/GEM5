@@ -144,6 +144,10 @@ class BaseCache(ClockedObject):
     writeback_clean = Param.Bool(False, "Writeback clean lines")
     l2_evict_invalidate_l1 = Param.Bool(False,
         "Invalidate upper copies of L2 victims and wait for dirty snoop data")
+    sdbp_bypass_writable = Param.Bool(
+        False,
+        "Request ownership on L1D demand read misses for SDBP bypass",
+    )
 
     # Control whether this cache should be mostly inclusive or mostly
     # exclusive with respect to upstream caches. The behaviour on a
