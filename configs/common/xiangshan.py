@@ -889,6 +889,8 @@ def build_xiangshan_system(args):
     test_sys.num_cpus = np
     test_sys.xiangshan_system = True
     test_sys.enable_difftest = args.enable_difftest
+    # Ruby/CHI executes writes inside its protocol and retains the legacy path.
+    test_sys.golden_mem_at_write = not ruby
 
     if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
         args.difftest_ref_so = None

@@ -56,6 +56,7 @@
 #include "base/stats/group.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
+#include "cpu/golden_global_mem.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/lsq.hh"
 #include "debug/ArchDB.hh"
@@ -1487,6 +1488,13 @@ BaseCache::cmpAndSwap(CacheBlk *blk, PacketPtr pkt)
 
     if (overwrite_mem) {
         std::memcpy(blk_data, &overwrite_val, pkt->getSize());
+        if (system->multiContextDifftest() &&
+            system->params().golden_mem_at_write &&
+            system->getGoldenMemManager()->inPmem(
+                pkt->getAddr(), pkt->getSize())) {
+            system->getGoldenMemManager()->updateGoldenMem(
+                pkt->getAddr(), blk_data, ~0ULL, pkt->getSize());
+        }
         DPRINTF(CacheVerbose, "CAS instruction Write to addr %#x size %lu\n",
                 pkt->getAddr(), pkt->getSize());
         for (int i = 0; i < pkt->getSize(); i++) {
@@ -1840,6 +1848,16 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
             // execute AMO operation
             (*(pkt->getAtomicOp()))(blk_data);
 
+            // Golden memory follows successful writes, independently of
+            // the order in which their responses reach the CPU.
+            if (system->multiContextDifftest() &&
+                system->params().golden_mem_at_write &&
+                system->getGoldenMemManager()->inPmem(
+                    pkt->getAddr(), pkt->getSize())) {
+                system->getGoldenMemManager()->updateGoldenMem(
+                    pkt->getAddr(), blk_data, ~0ULL, pkt->getSize());
+            }
+
             DPRINTF(CacheVerbose, "Atomic instruction Write to addr %#x size %lu\n", pkt->getAddr(), pkt->getSize());
             for (int i = 0; i < pkt->getSize(); i++) {
                 DPRINTFR(CacheVerbose, "data[%d] = %02x, ", i, blk_data[i]);
@@ -1867,6 +1885,14 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
         // Write or WriteLine at the first cache with block in writable state
         if (blk->checkWrite(pkt)) {
             updateBlockData(blk, pkt, true);
+            if (system->multiContextDifftest() &&
+                system->params().golden_mem_at_write &&
+                system->getGoldenMemManager()->inPmem(
+                    pkt->getAddr(), pkt->getSize())) {
+                system->getGoldenMemManager()->updateGoldenMem(
+                    pkt->getAddr(), blk->data + pkt->getOffset(blkSize),
+                    pkt->req->getByteEnable(), pkt->getSize());
+            }
         }
         // Always mark the line as dirty (and thus transition to the
         // Modified state) even if we are a failed StoreCond so we
