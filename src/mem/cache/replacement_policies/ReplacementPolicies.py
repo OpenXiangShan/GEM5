@@ -98,7 +98,7 @@ class SDBPRP(BaseReplacementPolicy):
     index_hash_type = Param.String("mixed", "mixed or jwac")
     table_hash_seeds = VectorParam.UInt64([], "Distinct per-table hash seeds")
     crc_live_update = Param.Bool(True, "Halve odd tables on live training")
-    enable_bypass = Param.Bool(False, "Bypass predicted-dead fills to full sets")
+    enable_bypass = Param.Bool(False, "Bypass predicted-dead data refills (L2 only)")
 
 class LIPRP(BIPRP):
     btp = 0

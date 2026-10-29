@@ -1256,6 +1256,9 @@ class BaseCache : public ClockedObject, public CacheAccessor
         statistics::Vector replacementUpperSourceMask;
         /** Number of blocks written back per thread. */
         statistics::Vector writebacks;
+        /** SDBP bypass traffic: L1 fills, L2 forwards and L3 receives. */
+        statistics::Scalar sdbpBypassFills;
+        statistics::Scalar sdbpBypassWritebacks;
 
         /** Demand misses that hit in the MSHRs. */
         statistics::Formula demandMshrHits;

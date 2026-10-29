@@ -271,6 +271,15 @@ SDBP::getVictim(const ReplacementCandidates &candidates, const PacketPtr pkt) co
     ReplaceableEntry *lru = candidates.front();
     ReplaceableEntry *dead = nullptr;
     uint64_t oldest = std::static_pointer_cast<SDBPReplData>(lru->replacementData)->lastUse;
+    // Bypass only newly fetched data, never writebacks or upgrades. Dead
+    // fills bypass even when the set still contains invalid entries.
+    if (enableBypass && pkt && pkt->isResponse() && pkt->isRead() &&
+        predict(pkt)) {
+        ++stats.bypasses;
+        pkt->sdbpBypassL2 = true;
+        DPRINTF(SDBP, "bypass addr=%#x pc=%#x\n", pkt->getAddr(), pkt->req->getPC());
+        return nullptr;
+    }
     for (auto *candidate : candidates) {
         const auto &entry = *std::static_pointer_cast<SDBPReplData>(candidate->replacementData);
         if (!entry.valid) {
@@ -281,11 +290,6 @@ SDBP::getVictim(const ReplacementCandidates &candidates, const PacketPtr pkt) co
             oldest = entry.lastUse;
             lru = candidate;
         }
-    }
-    if (enableBypass && predict(pkt)) {
-        ++stats.bypasses;
-        DPRINTF(SDBP, "bypass addr=%#x pc=%#x\n", pkt->getAddr(), pkt->req->getPC());
-        return nullptr;
     }
     bool protectedDead = false;
     for (auto *candidate : candidates) {
@@ -347,7 +351,7 @@ SDBP::SDBPStats::SDBPStats(statistics::Group *parent)
       ADD_STAT(deadVictims, "Victim selections using a predicted-dead entry"),
       ADD_STAT(nonLruDeadVictims, "Dead victims different from the LRU victim"),
       ADD_STAT(lruVictims, "Victim selections falling back to LRU"),
-      ADD_STAT(bypasses, "Full-set allocation attempts bypassed by SDBP"),
+      ADD_STAT(bypasses, "Predicted-dead data refills bypassed by SDBP"),
       ADD_STAT(l1CopyChecks, "Dead candidates checked for resident L1 copies"),
       ADD_STAT(l1CopyProtectedDead, "Dead candidates skipped due to resident L1 copies"),
       ADD_STAT(l1CopyLruFallbacks, "Selections using LRU because every dead candidate has an L1 copy")

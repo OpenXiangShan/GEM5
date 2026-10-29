@@ -584,6 +584,9 @@ class Packet : public Printable
     // 0: untagged; 1: other policy; 2: SDBP live; 3: SDBP dead.
     uint8_t replacementVictimClass = 0;
     bool replacementProbe = false;
+    // L2-dead refill, or its L1 eviction: carry data past L2 to L3.
+    // Snoop copies deliberately do not inherit this local routing hint.
+    bool sdbpBypassL2 = false;
     // OR of observations on the existing snoop: resident=1, MSHR=2, WB=4.
     uint8_t replacementProbeMask = 0;
 

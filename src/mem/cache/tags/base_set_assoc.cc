@@ -103,8 +103,14 @@ BaseSetAssoc::findVictim(PacketPtr pkt, const bool is_secure,
 
     auto *victim = static_cast<CacheBlk *>(sdbpPolicy->getVictim(
         indexingPolicy->getPossibleEntries(pkt->getAddr()), pkt));
-    if (victim)
+    if (victim) {
         evict_blks.push_back(victim);
+    } else if (pkt->sdbpBypassL2) {
+        // Bypassing real tags must not remove the miss from the independent
+        // sampler, or a dead PC could never recover when it starts reusing.
+        sdbpPolicy->observeFill(pkt, indexingPolicy->extractSet(pkt->getAddr()),
+                                extractTag(pkt->getAddr()));
+    }
     return victim;
 }
 

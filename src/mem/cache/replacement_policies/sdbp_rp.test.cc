@@ -269,7 +269,7 @@ TEST_F(SDBPInterface, L1CopyGuardUsesCurrentPresenceAndPreservesDeadBit)
     EXPECT_EQ(SDBP::victimClass(dead.replacementData), 2);
 }
 
-TEST_F(SDBPInterface, L1CopyGuardDoesNotProbeInvalidLiveOrBypassedSets)
+TEST_F(SDBPInterface, L1CopyGuardDoesNotProbeInvalidOrBypassedSets)
 {
     SDBP policy(testParams(true, 0));
     ReplaceableEntry a, b;
@@ -286,7 +286,9 @@ TEST_F(SDBPInterface, L1CopyGuardDoesNotProbeInvalidLiveOrBypassedSets)
     EXPECT_EQ(policy.getVictim(candidates, demand.get()), &b);
     EXPECT_EQ(queries, 0);
     policy.reset(b.replacementData);
-    EXPECT_EQ(policy.getVictim(candidates, demand.get()), nullptr);
+    auto response = packet(MemCmd::ReadResp);
+    EXPECT_EQ(policy.getVictim(candidates, response.get()), nullptr);
+    EXPECT_TRUE(response->sdbpBypassL2);
     EXPECT_EQ(queries, 0);
     policy.touch(a.replacementData);
     EXPECT_EQ(policy.getVictim(candidates), &b);
@@ -294,29 +296,51 @@ TEST_F(SDBPInterface, L1CopyGuardDoesNotProbeInvalidLiveOrBypassedSets)
     EXPECT_EQ(stat(policy, "l1CopyLruFallbacks"), 0);
 }
 
-TEST_F(SDBPInterface, BypassOnlyFullSetsWithEligiblePc)
+TEST_F(SDBPInterface, BypassDeadRefillsEvenWithInvalidWays)
 {
-    auto params = testParams(true, 0);
-    SDBP policy(params);
+    SDBP policy(testParams(true, 0));
     ReplaceableEntry a, b;
     a.replacementData = policy.instantiateEntry();
     b.replacementData = policy.instantiateEntry();
     ReplacementCandidates candidates{&a, &b};
-    auto demand = packet();
-    policy.reset(a.replacementData);
-    EXPECT_EQ(policy.getVictim(candidates, demand.get()), &b);
-    policy.reset(b.replacementData);
-    EXPECT_EQ(policy.getVictim(candidates, demand.get()), nullptr);
     auto response = packet(MemCmd::ReadResp);
     EXPECT_EQ(policy.getVictim(candidates, response.get()), nullptr);
-    auto missing = packet(MemCmd::ReadReq, false);
+    EXPECT_TRUE(response->sdbpBypassL2);
+    policy.reset(a.replacementData);
+    policy.reset(b.replacementData);
+    auto full = packet(MemCmd::ReadResp);
+    EXPECT_EQ(policy.getVictim(candidates, full.get()), nullptr);
+    EXPECT_TRUE(full->sdbpBypassL2);
+    auto missing = packet(MemCmd::ReadResp, false);
     EXPECT_NE(policy.getVictim(candidates, missing.get()), nullptr);
+    EXPECT_FALSE(missing->sdbpBypassL2);
     auto prefetch = packet(MemCmd::HardPFResp);
     EXPECT_EQ(policy.getVictim(candidates, prefetch.get()), nullptr);
+    prefetch->sdbpBypassL2 = false;
     prefetch->req->setFlags(Request::PREFETCH);
     EXPECT_NE(policy.getVictim(candidates, prefetch.get()), nullptr);
+    EXPECT_FALSE(prefetch->sdbpBypassL2);
+    for (auto cmd : {MemCmd::ReadReq, MemCmd::UpgradeResp,
+                     MemCmd::InvalidateResp, MemCmd::WritebackDirty,
+                     MemCmd::WritebackClean, MemCmd::WriteClean,
+                     MemCmd::CleanEvict}) {
+        auto other = packet(cmd);
+        EXPECT_NE(policy.getVictim(candidates, other.get()), nullptr);
+        EXPECT_FALSE(other->sdbpBypassL2);
+    }
     EXPECT_NE(policy.getVictim(candidates), nullptr);
     EXPECT_EQ(stat(policy, "bypasses"), 3);
+}
+
+TEST_F(SDBPInterface, DisabledBypassStillAllocatesDeadRefills)
+{
+    SDBP policy(testParams(false, 0));
+    ReplaceableEntry entry;
+    entry.replacementData = policy.instantiateEntry();
+    auto response = packet(MemCmd::ReadResp);
+    EXPECT_EQ(policy.getVictim({&entry}, response.get()), &entry);
+    EXPECT_FALSE(response->sdbpBypassL2);
+    EXPECT_EQ(stat(policy, "bypasses"), 0);
 }
 
 TEST_F(SDBPInterface, InvalidationDoesNotForgetIndependentSampler)

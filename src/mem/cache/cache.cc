@@ -391,6 +391,13 @@ Cache::handleTimingReqMiss(PacketPtr pkt, CacheBlk *blk, Tick forward_time,
         return;
     }
 
+    // This writeback must stay ordered in the write buffer even if another
+    // L1 request has an outstanding L2 MSHR for the same address.
+    if (level() == 2 && pkt->isWriteback() && pkt->sdbpBypassL2) {
+        allocateWriteBuffer(pkt, forward_time);
+        return;
+    }
+
     Addr blk_addr = pkt->getBlockAddr(blkSize);
 
     MSHR *mshr = mshrQueue.findMatch(blk_addr, pkt->isSecure());
@@ -803,6 +810,9 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
     MSHR::TargetList targets = mshr->extractServiceableTargets(pkt);
     for (auto &target: targets) {
         Packet *tgt_pkt = target.pkt;
+        // Forward the local routing hint with the response delivered to L1.
+        if (level() == 2 && pkt->sdbpBypassL2)
+            tgt_pkt->sdbpBypassL2 = true;
         switch (target.source) {
           case MSHR::Target::FromCPU:
             from_core = true;
@@ -1105,7 +1115,8 @@ Cache::sendHintViaMSHRTargets(MSHR *mshr, const PacketPtr pkt)
 PacketPtr
 Cache::evictBlock(CacheBlk *blk)
 {
-    PacketPtr pkt = (blk->isSet(CacheBlk::DirtyBit) || writebackClean) ?
+    PacketPtr pkt = (blk->isSet(CacheBlk::DirtyBit) || writebackClean ||
+                     (level() == 1 && blk->sdbpBypassL2)) ?
         writebackBlk(blk) : cleanEvictBlk(blk);
 
     invalidateBlock(blk);
