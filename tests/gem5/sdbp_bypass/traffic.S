@@ -15,6 +15,11 @@ _start:
     addi t0, t0, 64
     addi t1, t1, -1
     bnez t1, 1b
+    /* Fetch enough instructions to evict clean L1I and L3 lines. */
+    .rept 2048
+    nop
+    .endr
+#ifndef SDBP_READ_ONLY
     /* Store a different value in each line, then evict it from L1. */
     li s0, 4
 2:
@@ -41,6 +46,7 @@ _start:
     bnez t1, 4b
     addi s0, s0, -1
     bnez s0, 2b
+#endif
     li a0, 0
     j done
 fail:
