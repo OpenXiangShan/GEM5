@@ -274,6 +274,8 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Number of insts commited each cycle"),
       ADD_STAT(instsCommitted, statistics::units::Count::get(),
                "Number of instructions committed"),
+      ADD_STAT(fastFetchCommittedInsts, statistics::units::Count::get(),
+               "Number of fast-fetch instructions committed"),
       ADD_STAT(pagefaulttimes, statistics::units::Count::get(),
                "Number of pagefaulttimes"),
       ADD_STAT(opsCommitted, statistics::units::Count::get(),
@@ -2776,6 +2778,10 @@ void
 Commit::updateComInstStats(const DynInstPtr &inst)
 {
     ThreadID tid = inst->threadNumber;
+
+    if (inst->isFastFetchAccepted()) {
+        ++stats.fastFetchCommittedInsts;
+    }
 
     if (!inst->isMicroop() || inst->isLastMicroop())
         stats.instsCommitted[tid]++;

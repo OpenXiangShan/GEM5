@@ -455,6 +455,13 @@ class DynInst : public ExecContext, public RefCounted
     // not re-run its frontend redirect checks for it.
     bool predecodeChecked = false;
 
+    /** This instruction was accepted by the post-recovery fast path. */
+    bool fastFetchAccepted = false;
+
+    /** Prediction block metadata retained for frontend fast-path modeling. */
+    Addr fetchBlockStartPC = 0;
+    Addr fetchBlockEndPC = 0;
+
     /** ftqId is used for squashing and committing */
     /** The fetch stream queue ID of the instruction. */
     unsigned ftqId;
@@ -776,6 +783,18 @@ class DynInst : public ExecContext, public RefCounted
     {
         return predecodeChecked;
     }
+
+    void setFastFetchAccepted() { fastFetchAccepted = true; }
+    bool isFastFetchAccepted() const { return fastFetchAccepted; }
+
+    void setFetchBlockRange(Addr start, Addr end)
+    {
+        fetchBlockStartPC = start;
+        fetchBlockEndPC = end;
+    }
+
+    Addr getFetchBlockStartPC() const { return fetchBlockStartPC; }
+    Addr getFetchBlockEndPC() const { return fetchBlockEndPC; }
 
     void
     setPredTaken(bool predicted_taken)

@@ -158,6 +158,9 @@ struct FetchStruct
     int size;
 
     DynInstPtr insts[MaxWidth];
+    int fastFetchSize;
+    ThreadID fastFetchTid;
+    DynInstPtr fastFetchInsts[MaxWidth];
     Fault fetchFault;
     InstSeqNum fetchFaultSN;
     bool clearFetchFault;

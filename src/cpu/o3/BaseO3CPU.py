@@ -164,6 +164,10 @@ class BaseO3CPU(BaseCPU):
                                     "per-thread")
     enablePredecode = Param.Bool(False,
         "Enable the RISC-V frontend predecode pipeline")
+    enableFastFetch = Param.Bool(False,
+        "Enable the post-recovery fast fetch bypass")
+    fastFetchBytes = Param.Unsigned(64,
+        "Maximum number of bytes read by post-recovery fast fetch")
 
     renameToDecodeDelay = Param.Cycles(1, "Rename to decode delay")
     iewToDecodeDelay = Param.Cycles(1, "Issue/Execute/Writeback to decode "

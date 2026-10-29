@@ -78,6 +78,7 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
       iewToDecodeDelay(params.iewToDecodeDelay),
       commitToDecodeDelay(params.commitToDecodeDelay),
       fetchToDecodeDelay(params.fetchToDecodeDelay),
+      enableFastFetch(params.enableFastFetch),
       decodeToFetchDelay(params.decodeToFetchDelay),
       decodeWidth(params.decodeWidth),
       numPreDispatchThreads(params.smtNumPreDispatchThreads),
@@ -355,6 +356,34 @@ Decode::setFetchQueue(TimeBuffer<FetchStruct> *fq_ptr)
 
     // Setup wire to read information from fetch queue.
     fromFetch = fetchQueue->getWire(-fetchToDecodeDelay);
+    fromFastFetch = fetchQueue->getWire(-(fetchToDecodeDelay - Cycles(1)));
+}
+
+void
+Decode::acceptFastFetch()
+{
+    if (!enableFastFetch || fromFastFetch->fastFetchSize <= 0) {
+        return;
+    }
+
+    const ThreadID tid = fromFastFetch->fastFetchTid;
+    const unsigned count = fromFastFetch->fastFetchSize;
+    if (tid >= numThreads || count > decodeWidth ||
+        stallSig->blockDecode[tid] || fromCommit->commitInfo[tid].squash ||
+        !stallBuffer[tid].empty() || !fixedbuffer[tid].empty() ||
+        eachstallSize[tid].full() ||
+        stallBuffer[tid].capacity() - stallBuffer[tid].size() < count) {
+        fetch_ptr->recordFastFetchDropped();
+        return;
+    }
+
+    eachstallSize[tid].push_back(count);
+    for (unsigned i = 0; i < count; ++i) {
+        const auto &instruction = fromFastFetch->fastFetchInsts[i];
+        instruction->setFastFetchAccepted();
+        stallBuffer[tid].push_back(instruction);
+    }
+    fetch_ptr->recordFastFetchAccepted(count);
 }
 
 void
@@ -661,9 +690,20 @@ Decode::moveInstsToBuffer()
     }
 
     int insts_from_fetch = fromFetch->size;
-    if (insts_from_fetch != 0) {
+    unsigned normal_insts_from_fetch = 0;
+    for (int i = 0; i < insts_from_fetch; ++i) {
+        if (!fromFetch->insts[i]->isFastFetchAccepted()) {
+            ++normal_insts_from_fetch;
+        }
+    }
+    fetch_ptr->recordFastFetchDedup(
+        insts_from_fetch - normal_insts_from_fetch);
+    if (normal_insts_from_fetch != 0) {
         std::array<unsigned, MaxThreads> thread_sizes{};
         for (int i = 0; i < insts_from_fetch; i++) {
+            if (fromFetch->insts[i]->isFastFetchAccepted()) {
+                continue;
+            }
             const ThreadID tid = fromFetch->insts[i]->threadNumber;
             assert(tid < numThreads);
             ++thread_sizes[tid];
@@ -683,6 +723,9 @@ Decode::moveInstsToBuffer()
             eachstallSize[tid].push_back(thread_sizes[tid]);
         }
         for (int i = 0; i < insts_from_fetch; ++i) {
+            if (fromFetch->insts[i]->isFastFetchAccepted()) {
+                continue;
+            }
             const ThreadID tid = fromFetch->insts[i]->threadNumber;
             stallBuffer[tid].push_back(fromFetch->insts[i]);
         }
@@ -758,6 +801,7 @@ Decode::tick()
     moveInstsToBuffer();
 
     checkSquash();
+    acceptFastFetch();
 
     // check threads stall & status
     ThreadID blocked_tid = InvalidThreadID;
@@ -1310,6 +1354,8 @@ Decode::decodeInsts(ThreadID tid, unsigned max_insts)
 StallReason
 Decode::processInstControl(const DynInstPtr &inst, ThreadID tid)
 {
+    const bool deferFrontendCheck = inst->isFastFetchAccepted();
+
     if (inst->staticInst->isVectorConfig()) {
         inst->setSerializeBefore();
         inst->setSerializeAfter();
@@ -1322,7 +1368,7 @@ Decode::processInstControl(const DynInstPtr &inst, ThreadID tid)
 
     // Ensure that if it was predicted as a branch, it really is a
     // branch.
-    if (inst->readPredTaken() && !inst->isControl() &&
+    if (!deferFrontendCheck && inst->readPredTaken() && !inst->isControl() &&
         !inst->isPredecodeChecked()) {
         // panic("Instruction predicted as a branch!");
 
@@ -1343,7 +1389,7 @@ Decode::processInstControl(const DynInstPtr &inst, ThreadID tid)
     //（hasTraceCtrlFlowChange），则交由 trap/wrong-path 逻辑处理，不在 decode
     // 再做一次基于静态分支目标的校验，避免把 cond->trap 误统计为普通分支
     // mispredict，或在这里产生“错误”的 redirect。
-    if (!inst->isPredecodeChecked() &&
+    if (!deferFrontendCheck && !inst->isPredecodeChecked() &&
         !(cpu->isTraceMode() && inst->hasTraceCtrlFlowChange()) &&
         inst->isDirectCtrl() &&
         (inst->isUncondCtrl() || inst->readPredTaken()))
@@ -1403,7 +1449,7 @@ Decode::processInstControl(const DynInstPtr &inst, ThreadID tid)
         }
     }
     // unpredicted return can make use of ras results to get earlier resteer
-    if (!inst->isPredecodeChecked() &&
+    if (!deferFrontendCheck && !inst->isPredecodeChecked() &&
         inst->isReturn() && !inst->isNonSpeculative() &&
         !inst->readPredTaken()) {
         std::unique_ptr<PCStateBase> target;

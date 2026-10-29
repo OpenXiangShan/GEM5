@@ -195,6 +195,7 @@ class Decode
      * sorted by thread.
      */
     void moveInstsToBuffer();
+    void acceptFastFetch();
 
     void checkSquash();
 
@@ -266,6 +267,9 @@ class Decode
     /** Wire to get fetch's output from fetch queue. */
     TimeBuffer<FetchStruct>::wire fromFetch;
 
+    /** One-cycle-earlier fast-fetch view of the fetch time buffer. */
+    TimeBuffer<FetchStruct>::wire fromFastFetch;
+
     /** Queue of all instructions coming from fetch this cycle. */
     boost::circular_buffer<DynInstPtr> fixedbuffer[MaxThreads];
 
@@ -294,6 +298,9 @@ class Decode
 
     /** Fetch to decode delay. */
     Cycles fetchToDecodeDelay;
+
+    /** Whether the post-recovery fast path is enabled. */
+    const bool enableFastFetch;
 
     /** Decode to fetch feedback delay for stage backpressure. */
     Cycles decodeToFetchDelay;
