@@ -830,6 +830,9 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
         inst->staticInst->advancePC(*toCommit->pc[tid]);
 
         toCommit->mispredictInst[tid] = inst;
+        // An older branch squash supersedes a pending value-prediction squash
+        // for the same cycle; do not leave the VP flag set on this signal.
+        toCommit->valuePredictionError[tid] = false;
         toCommit->includeSquashInst[tid] = false;
 
         wroteToTimeBuffer = true;
@@ -870,6 +873,12 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
         toCommit->squashedLoopIter[tid] = inst->getLoopIteration();
         set(toCommit->pc[tid], inst->pcState());
         toCommit->mispredictInst[tid] = NULL;
+
+        // This squash supersedes any pending value-prediction squash. Clear
+        // the flag so Commit does not misclassify it as a VP squash: the
+        // retained boundary is the instruction before the violator, not the
+        // predicted load, and Fetch would have no VP record to recover with.
+        toCommit->valuePredictionError[tid] = false;
 
         // Must include the memory violator in the squash.
         toCommit->includeSquashInst[tid] = true;
