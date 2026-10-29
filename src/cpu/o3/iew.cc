@@ -2381,7 +2381,12 @@ IEW::tick()
 
         bool lq_donor = false;
         bool sq_donor = false;
-        if (has_buffered_rename) {
+        if (!cpu->isRobLsqActive(tid)) {
+            // A Waiting thread lends all unused LQ/SQ capacity. Clear the
+            // stall hold timers so it regains ordinary reservations on wake.
+            lqBorrowingDonorCycles[tid] = 0;
+            sqBorrowingDonorCycles[tid] = 0;
+        } else if (has_buffered_rename) {
             // The thread still has rename instructions buffered and will
             // keep consuming LQ/SQ entries; drop any pending donor marking.
             lqBorrowingDonorCycles[tid] = 0;

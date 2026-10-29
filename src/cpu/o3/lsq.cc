@@ -2288,17 +2288,12 @@ LSQ::getCount()
 int
 LSQ::numLoads() const
 {
+    // Deactivation releases reservations, not outstanding physical entries.
+    // Count every configured thread until those entries really leave the queue.
     unsigned total = 0;
-
-    std::list<ThreadID>::iterator threads = activeThreads->begin();
-    std::list<ThreadID>::iterator end = activeThreads->end();
-
-    while (threads != end) {
-        ThreadID tid = *threads++;
-
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
         total += numLoads(tid);
     }
-
     return total;
 }
 
@@ -2322,17 +2317,12 @@ LSQ::numRAREntries() const
 int
 LSQ::numStores() const
 {
+    // Deactivation releases reservations, not outstanding physical entries.
+    // Count every configured thread until those entries really leave the queue.
     unsigned total = 0;
-
-    std::list<ThreadID>::iterator threads = activeThreads->begin();
-    std::list<ThreadID>::iterator end = activeThreads->end();
-
-    while (threads != end) {
-        ThreadID tid = *threads++;
-
-        total += thread[tid].numStores();
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        total += numStores(tid);
     }
-
     return total;
 }
 
@@ -2380,7 +2370,15 @@ enum class LSQQueueType
 unsigned
 LSQ::sharedLSQAllocation(unsigned entries, LSQQueueType queueType) const
 {
-    const unsigned active_threads = std::max(1U, activeLSQThreads());
+    // WFI Waiting relinquishes LQ/SQ quotas only. RARQ/RAWQ keep their
+    // existing policy and pipeline-active thread count.
+    const bool lq_sq = queueType == LSQQueueType::LQ ||
+        queueType == LSQQueueType::SQ;
+    const unsigned active_threads = lq_sq ? cpu->numRobLsqActiveThreads() :
+        activeLSQThreads();
+    if (active_threads == 0) {
+        return 0;
+    }
 
     // Select policy based on queue type
     SMTQueuePolicy policy;
@@ -2440,7 +2438,8 @@ LSQ::canBorrowSQ(ThreadID tid) const
 unsigned
 LSQ::borrowingLimitLQ(ThreadID tid) const
 {
-    if (tid >= numThreads) {
+    if (tid >= numThreads ||
+        (sharedLSQMode() && !cpu->isRobLsqActive(tid))) {
         return 0;
     }
 
@@ -2458,8 +2457,10 @@ LSQ::borrowingLimitLQ(ThreadID tid) const
             continue;
         }
 
-        const unsigned reserve =
-            lqBorrowingDonor[other] ? donor_resume_quota : base;
+        // Release only unused reservations. Outstanding entries of a
+        // non-active thread must still count against the shared capacity.
+        const unsigned reserve = !cpu->isRobLsqActive(other) ? 0 :
+            (lqBorrowingDonor[other] ? donor_resume_quota : base);
         const unsigned used = thread[other].numLoads();
         reserved += std::max(reserve, used);
     }
@@ -2474,7 +2475,8 @@ LSQ::borrowingLimitLQ(ThreadID tid) const
 unsigned
 LSQ::borrowingLimitSQ(ThreadID tid) const
 {
-    if (tid >= numThreads) {
+    if (tid >= numThreads ||
+        (sharedLSQMode() && !cpu->isRobLsqActive(tid))) {
         return 0;
     }
 
@@ -2492,8 +2494,10 @@ LSQ::borrowingLimitSQ(ThreadID tid) const
             continue;
         }
 
-        const unsigned reserve =
-            sqBorrowingDonor[other] ? donor_resume_quota : base;
+        // Release only unused reservations. Outstanding entries of a
+        // non-active thread must still count against the shared capacity.
+        const unsigned reserve = !cpu->isRobLsqActive(other) ? 0 :
+            (sqBorrowingDonor[other] ? donor_resume_quota : base);
         const unsigned used = thread[other].numStores();
         reserved += std::max(reserve, used);
     }
@@ -2571,12 +2575,18 @@ LSQ::addBorrowingStateHoldCycle()
 unsigned
 LSQ::logicalMaxLoadEntries(ThreadID tid) const
 {
+    if (sharedLSQMode() && !cpu->isRobLsqActive(tid)) {
+        return 0;
+    }
     return sharedLSQMode() ? sharedLSQAllocation(LQEntries, LSQQueueType::LQ) : LQEntries;
 }
 
 unsigned
 LSQ::logicalMaxStoreEntries(ThreadID tid) const
 {
+    if (sharedLSQMode() && !cpu->isRobLsqActive(tid)) {
+        return 0;
+    }
     return sharedLSQMode() ? sharedLSQAllocation(SQEntries, LSQQueueType::SQ) : SQEntries;
 }
 

@@ -8,6 +8,18 @@ import m5
 from m5.util import fatal
 
 
+def rob_lsq_state(cpu):
+    """Read actual admission limits/occupancy, without altering allocation."""
+    result = []
+    for tid in range(int(cpu.numThreads)):
+        rows = cpu.getRobLsqState(tid)
+        result.append({"active": cpu.isRobLsqActive(tid),
+                       "limits": [int(row[0]) for row in rows],
+                       "used": [int(row[1]) for row in rows],
+                       "free": [int(row[2]) for row in rows]})
+    return result
+
+
 def run(options, system, maxtick):
     cpu = system.cpu[0]
     warmup = options.warmup_insts_no_switch or 0
@@ -30,6 +42,8 @@ def run(options, system, maxtick):
         fatal("Restorer symbol must point to a real WFI instruction")
     report = {"experiment": "wfi-wait", "measured_tid": 0, "waiting_tid": 1,
               "num_threads": int(cpu.numThreads),
+              "rob_lsq_capacity": [int(cpu.numROBEntries), int(cpu.LQEntries),
+                                   int(cpu.SQEntries)],
               "checkpoint": str(system.gcpt_file), "restorer": str(restorer),
               "restorer_sha256": manifest["binary_sha256"],
               "wfi_pc": manifest["wfi_pc"],
@@ -60,8 +74,17 @@ def run(options, system, maxtick):
                  "pcs": [int(cpu.getThreadPC(t)) for t in range(2)],
                  "allocation_threads": int(cpu.numActiveThreads()),
                  "runnable_threads": int(cpu.numRunnableThreads()),
+                 "rob_lsq": rob_lsq_state(cpu),
                  "wfi_entries": int(cpu.getWfiEntries(1)),
                  "wfi_wakeups": int(cpu.getWfiWakeups(1))}
+        # Waiting preserves the hardware context, but releases all unused
+        # ROB/LQ/SQ reservations. Inspect the same limits used for admission.
+        resources = point["rob_lsq"]
+        if (not resources[0]["active"] or resources[1]["active"] or
+                resources[0]["limits"] != report["rob_lsq_capacity"] or
+                resources[1]["limits"] != [0, 0, 0] or
+                resources[1]["used"] != [0, 0, 0]):
+            fatal("WFI did not release its ROB/LQ/SQ reservations")
         report["phases"].append(point)
         print("SMT WFI: %s tick=%d T0=%d T1=%d allocation=2 runnable=1" %
               (phase, point["tick"], *point["insts"]))

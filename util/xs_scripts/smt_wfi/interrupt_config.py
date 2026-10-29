@@ -35,7 +35,28 @@ def run(options, system, maxtick):
             "wakeups": int(cpu.getWfiWakeups(1)),
             "allocated": int(cpu.numActiveThreads()),
             "runnable": int(cpu.numRunnableThreads()),
+            "rob_lsq": SMTWfiLoop.rob_lsq_state(cpu),
         }
+        capacity = [int(cpu.numROBEntries), int(cpu.LQEntries),
+                    int(cpu.SQEntries)]
+        resources = point["rob_lsq"]
+        for index, total in enumerate(capacity):
+            used = sum(r["used"][index] for r in resources)
+            if used > total:
+                raise RuntimeError("ROB/LQ/SQ physical capacity exceeded")
+            for resource in resources:
+                expected_free = min(
+                    max(0, resource["limits"][index] - resource["used"][index]),
+                    total - used)
+                if resource["free"][index] != expected_free:
+                    raise RuntimeError("incorrect resource credit after wake")
+        if point["waiting"]:
+            if (resources[0]["limits"] != capacity or
+                    resources[1]["active"] or
+                    resources[1]["limits"] != [0, 0, 0]):
+                raise RuntimeError("Waiting did not relinquish its quotas")
+        elif not all(r["active"] for r in resources):
+            raise RuntimeError("wake/cleanup must retain both resource identities")
         points.append(point)
         print("WFI interrupt test", json.dumps(point), flush=True)
         if point["allocated"] != 2:
@@ -71,6 +92,18 @@ def run(options, system, maxtick):
                 last["wakeups"] != 2 or
                 last["insts"][1] != first["insts"][1] + 4):
             raise RuntimeError("lost wake during WFI cleanup or bad resume PC")
+        # After the third wait, SPEC may occupy more than its restored quota.
+        # Wake once more and inspect every credit using the saturating formula
+        # above; existing work must remain intact and T1 must still progress.
+        cpu.postInterrupt(1, 3, 0)
+        simulate(1000, "simulate() limit reached")
+        snapshot("quota_reclaimed")
+        cpu.clearInterrupt(1, 3, 0)
+        event = simulate(100_000_000, "WFI waiting")
+        last = snapshot("fourth_wait")
+        if (last["entries"] != 4 or last["wakeups"] != 3 or
+                last["insts"][1] != first["insts"][1] + 6):
+            raise RuntimeError("wake stalled while reclaiming shared resources")
     else:
         event = simulate(30_000_000, "simulate() limit reached")
         last = snapshot("masked_still_waiting")

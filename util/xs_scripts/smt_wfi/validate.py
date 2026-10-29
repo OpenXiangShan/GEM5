@@ -52,6 +52,13 @@ def validate(output):
             raise ValueError("WFI resource identity changed")
         if phase["wfi_entries"] != 1 or phase["wfi_wakeups"] != 0:
             raise ValueError("unexpected WFI entry/wake during measurement")
+        running, waiting = phase["rob_lsq"]
+        if (not running["active"] or waiting["active"] or
+                running["limits"] != report["rob_lsq_capacity"] or
+                waiting["limits"] != [0, 0, 0] or
+                waiting["used"] != [0, 0, 0] or
+                waiting["free"] != [0, 0, 0]):
+            raise ValueError("incorrect WFI ROB/LQ/SQ allocation")
     for key in ("system.cpu.committedOps::1",
                 "system.cpu.branchPred.predictionsStartedByThread::1"):
         if stats[key] != 0:

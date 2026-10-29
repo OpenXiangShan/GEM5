@@ -278,30 +278,6 @@ ROB::takeOverFrom()
     resetState();
 }
 
-void
-ROB::resetEntries()
-{
-    if (robPolicy != SMTQueuePolicy::Dynamic || numThreads > 1) {
-        auto active_threads = activeThreads->size();
-
-        std::list<ThreadID>::iterator threads = activeThreads->begin();
-        std::list<ThreadID>::iterator end = activeThreads->end();
-
-        while (threads != end) {
-            ThreadID tid = *threads++;
-
-            if (robPolicy == SMTQueuePolicy::Partitioned) {
-                maxEntries[tid] = numEntries / active_threads;
-            } else if (robPolicy == SMTQueuePolicy::DynamicBorrowing) {
-                maxEntries[tid] = numEntries / active_threads;
-            } else if (robPolicy == SMTQueuePolicy::Threshold &&
-                       active_threads == 1) {
-                maxEntries[tid] = numEntries;
-            }
-        }
-    }
-}
-
 int
 ROB::entryAmount(ThreadID num_threads)
 {
@@ -315,12 +291,26 @@ ROB::entryAmount(ThreadID num_threads)
 }
 
 unsigned
-ROB::activeThreadCount() const
+ROB::getMaxEntries(ThreadID tid) const
 {
-    if (!activeThreads || activeThreads->empty()) {
-        return numThreads == 0 ? 1 : numThreads;
+    if (!cpu->isRobLsqActive(tid)) {
+        return 0;
     }
-    return activeThreads->size();
+    if (canBorrow(tid)) {
+        return borrowingLimit(tid);
+    }
+
+    // At least this thread is resource-active, so division is safe. Preserve
+    // the configured two-thread policy after wake; an older thread may still
+    // occupy more than its restored quota until normal retirement frees it.
+    const unsigned active = cpu->numRobLsqActiveThreads();
+    if (active == 1) {
+        return numEntries;
+    }
+    if (robPolicy == SMTQueuePolicy::Partitioned) {
+        return numEntries / active;
+    }
+    return maxEntries[tid];
 }
 
 unsigned
@@ -343,7 +333,7 @@ ROB::canBorrow(ThreadID tid) const
 unsigned
 ROB::borrowingLimit(ThreadID tid) const
 {
-    if (tid >= numThreads) {
+    if (!cpu->isRobLsqActive(tid)) {
         return 0;
     }
 
@@ -351,7 +341,6 @@ ROB::borrowingLimit(ThreadID tid) const
         return maxEntries[tid];
     }
 
-    const unsigned active_threads = std::max(1U, activeThreadCount());
     const unsigned base = borrowingBaseReserveEntries;
     const unsigned donor_resume_quota =
         std::min(base, borrowingDonorReserveEntries);
@@ -362,8 +351,10 @@ ROB::borrowingLimit(ThreadID tid) const
             continue;
         }
 
-        const unsigned reserve =
-            borrowingDonor[other] ? donor_resume_quota : base;
+        // A non-active thread has no restart reservation, but any real
+        // occupancy still consumes capacity until it retires or is squashed.
+        const unsigned reserve = !cpu->isRobLsqActive(other) ? 0 :
+            (borrowingDonor[other] ? donor_resume_quota : base);
         const unsigned used = getThreadEntries(other);
         reserved += std::max(reserve, used);
     }
@@ -408,19 +399,11 @@ ROB::canAllocate(ThreadID tid, unsigned entries) const
     }
 
     const unsigned used = getThreadEntries(tid);
-
-    if (isHybrid() && used + entries > numEntries) {
-        return false;
-    }
-
-    if (robPolicy == SMTQueuePolicy::DynamicBorrowing) {
-        if (totalEntries() + entries > numEntries) {
-            return false;
-        }
-        return used + entries <= borrowingLimit(tid);
-    }
-
-    return used + entries <= maxEntries[tid];
+    // Check actual occupancy as well as the policy quota. In particular, a
+    // newly reactivated sibling cannot reuse entries still held by a thread
+    // that filled the ROB while it was the sole resource-active thread.
+    return totalEntries() + entries <= numEntries &&
+        used + entries <= getMaxEntries(tid);
 }
 
 int
@@ -689,18 +672,15 @@ ROB::getHeadGroupLastDoneSeq(ThreadID tid)
 unsigned
 ROB::numFreeEntries(ThreadID tid)
 {
-    if (robPolicy == SMTQueuePolicy::DynamicBorrowing) {
-        const unsigned limit = borrowingLimit(tid);
-        const unsigned used = getThreadEntries(tid);
-        if (limit <= used) {
-            return 0;
-        }
-        return limit - used;
-    }
-
-    const unsigned limit = isHybrid() ?
-        std::min(maxEntries[tid], numEntries) : maxEntries[tid];
-    return limit - getThreadEntries(tid);
+    const unsigned limit = getMaxEntries(tid);
+    const unsigned used = getThreadEntries(tid);
+    // Wake can shrink a live thread's quota below its occupancy. Saturate
+    // instead of unsigned subtraction; keep existing entries and let them
+    // retire normally before admitting more work from that thread.
+    const unsigned local_free = limit > used ? limit - used : 0;
+    const unsigned total = totalEntries();
+    const unsigned shared_free = total < numEntries ? numEntries - total : 0;
+    return std::min(local_free, shared_free);
 }
 
 void

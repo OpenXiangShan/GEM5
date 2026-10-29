@@ -858,6 +858,37 @@ CPU::numRunnableThreads() const
 }
 
 bool
+CPU::isRobLsqActive(ThreadID tid) const
+{
+    return tid < numThreads && !isWfiWaiting(tid) &&
+        std::find(activeThreads.begin(), activeThreads.end(), tid) !=
+            activeThreads.end();
+}
+
+unsigned
+CPU::numRobLsqActiveThreads() const
+{
+    return std::count_if(activeThreads.begin(), activeThreads.end(),
+        [this](ThreadID tid) { return !isWfiWaiting(tid); });
+}
+
+std::vector<std::vector<unsigned>>
+CPU::getRobLsqState(ThreadID tid)
+{
+    fatal_if(tid >= numThreads, "Invalid SMT thread id %u", tid);
+    auto &lsq = iew.ldstQueue;
+    const bool borrowing = lsq.sharedLSQMode() && lsq.canBorrowLQ(tid);
+    return {
+        {rob.getMaxEntries(tid), rob.getThreadEntries(tid),
+         rob.numFreeEntries(tid)},
+        {borrowing ? lsq.borrowingLimitLQ(tid) : lsq.logicalMaxLoadEntries(tid),
+         static_cast<unsigned>(lsq.numLoads(tid)), lsq.logicalFreeLoadEntries(tid)},
+        {borrowing ? lsq.borrowingLimitSQ(tid) : lsq.logicalMaxStoreEntries(tid),
+         static_cast<unsigned>(lsq.numStores(tid)), lsq.logicalFreeStoreEntries(tid)}
+    };
+}
+
+bool
 CPU::wfiInterruptPending(ThreadID tid)
 {
     using namespace RiscvISA;
@@ -932,6 +963,8 @@ CPU::updateWfi()
         }
         fetch.finishWfi(tid);
         // Keep activeThreads, ThreadContext status and rename ownership.
+        // ROB/LQ/SQ queries see Waiting immediately and drop unused reserves;
+        // other SMT resources continue using their existing active identity.
         wfiState[tid] = WfiState::Waiting;
         if (wfiWakePending[tid]) {
             resumeWfi(tid);
@@ -1002,7 +1035,6 @@ CPU::insertThread(ThreadID tid)
     activateContext(tid);
 
     //Reset ROB/IQ/LSQ Entries
-    commit.rob->resetEntries();
     freeList.resetEntries();
 }
 
@@ -1052,7 +1084,6 @@ CPU::removeThread(ThreadID tid)
     // drained, call resetEntries(). - 10-09-06 ktlim
 /*
     if (activeThreads.size() >= 1) {
-        commit.rob->resetEntries();
         iew.resetEntries();
     }
 */

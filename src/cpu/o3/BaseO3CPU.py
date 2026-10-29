@@ -119,6 +119,8 @@ class BaseO3CPU(BaseCPU):
         PyBindMethod("clearInterrupt"),
         PyBindMethod("numActiveThreads"),
         PyBindMethod("numRunnableThreads"),
+        PyBindMethod("isRobLsqActive"),
+        PyBindMethod("getRobLsqState"),
     ]
 
     def __init__(self, **kwargs):

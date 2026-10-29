@@ -139,7 +139,7 @@ class CPU : public BaseCPU
     bool dump_done = false;
     bool warmup_done = false;
 
-    // WFI blocks execution without changing hardware resource ownership.
+    // WFI retains pipeline membership; ROB/LQ/SQ reservations end at Waiting.
     enum class WfiState { Running, Cleaning, Waiting };
     std::array<WfiState, MaxThreads> wfiState{};
     std::array<Addr, MaxThreads> wfiPC{};
@@ -284,6 +284,18 @@ class CPU : public BaseCPU
     uint64_t getWfiEntries(ThreadID tid) const { return wfiEntries.at(tid); }
     uint64_t getWfiWakeups(ThreadID tid) const { return wfiWakeups.at(tid); }
     void beginWfi(ThreadID tid, Addr pc);
+
+    /**
+     * ROB/LQ/SQ allocation eligibility, separate from pipeline membership.
+     * Keep Cleaning eligible so the existing squash/store cleanup can finish;
+     * only Waiting gives up the WFI thread's unused reservations. Do not use
+     * this predicate to stop ticking stages or to change other SMT resources.
+     */
+    bool isRobLsqActive(ThreadID tid) const;
+    unsigned numRobLsqActiveThreads() const;
+
+    /** Read-only diagnostics: ROB, LQ, SQ rows of {limit, used, free}. */
+    std::vector<std::vector<unsigned>> getRobLsqState(ThreadID tid);
 
     /** Is the CPU draining? */
     bool isDraining() const { return drainState() == DrainState::Draining; }

@@ -30,9 +30,20 @@ before retirement can still finish during cleanup.
 
 The thread remains in `activeThreads` with an Active ThreadContext. Its
 architectural registers, rename mappings and hardware allocation identity are
-retained. Existing SMT ROB/IQ/LSQ/FTQ policies are unchanged: two identities
-remain allocated even though only one thread is runnable. Dynamic borrowing
-continues to behave according to its existing policy.
+retained. ROB and shared LQ/SQ use a separate resource-active predicate:
+a thread must be in activeThreads and must not be WFI Waiting. Cleaning retains
+its quotas; Waiting releases all unused reservations. Therefore a sole running
+thread can use the full ROB/LQ/SQ capacities, while IQ/FTQ, predictor and physical
+register policies retain their existing behavior.
+
+DynamicBorrowing reserves the original base/donor minimum only for resource-active
+siblings. Real occupancy of any sibling still counts against capacity, even if
+that sibling is no longer active. Partitioned and Threshold also allow the full
+capacity when only one resource-active thread remains. When both threads resume,
+the configured policies apply again. Existing entries are not flushed to reclaim
+quotas: excess occupancy drains normally, with new allocations stalled and free
+credits clamped at zero. ROB quotas are computed live rather than cached across
+thread transitions. No new experiment switch is required.
 
 Only fully waiting threads are exempt from the commit-progress watchdog.
 Cleanup and the running sibling remain checked. Waking resets the waiting
@@ -104,7 +115,10 @@ The binary hash is checked against the sibling `manifest.json`; its location
 can be overridden with `--smt-wfi-loop-manifest`. Output retains two statistics
 blocks and the filename `smt-wfi-loop.json`. All three phase snapshots must show
 two allocated threads, one runnable thread, one T1 WFI entry, zero wakes and a
-constant T1 instruction count. During measurement T0 must commit instructions;
+constant T1 instruction count. Snapshots also record each thread's resource-active
+flag and ROB/LQ/SQ admission limits, occupancy and free credits. T0 must have the
+full configured capacities; T1 must have zero limits and occupancy. During
+measurement T0 must commit instructions;
 T1 commits and new predictions must both be zero.
 
 `score_t0.py` validates these conditions and uses T0 instructions divided by
@@ -142,8 +156,10 @@ Cases use a new output directory and multi-context difftest:
   beyond the usual watchdog interval.
 - `wake`: enable only local MSIP in an isolated restorer copy, wake T1 with
   global MIE clear, then inject a short interrupt during its next WFI cleanup.
-  Verify both wakes, the resume PC, and exactly two JAL/WFI pairs before the
-  third wait. The shared restorer is never modified.
+  Verify the resume PC, quota release/restoration, physical capacity and
+  saturating free credits. A further wake checks progress while reclaiming
+  shared resources: three JAL/WFI pairs precede the fourth wait. The shared
+  restorer is never modified.
 
 Standalone validation:
 

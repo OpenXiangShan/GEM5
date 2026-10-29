@@ -145,7 +145,6 @@ class ROB
     bool allocateGroup_MohBoE(const DynInstPtr inst, ThreadID tid);
     bool allocateGroup_kmhv3(const DynInstPtr inst, ThreadID tid);
 
-    unsigned activeThreadCount() const;
     unsigned borrowingLimit(ThreadID tid) const;
     unsigned totalEntries() const;
     bool canBorrow(ThreadID tid) const;
@@ -238,9 +237,6 @@ class ROB
 
     InstSeqNum getHeadGroupLastDoneSeq(ThreadID tid);
 
-    /** Re-adjust ROB partitioning. */
-    void resetEntries();
-
     /** Number of entries needed For 'num_threads' amount of threads. */
     int entryAmount(ThreadID num_threads);
 
@@ -248,13 +244,7 @@ class ROB
     unsigned numFreeEntries(ThreadID tid);
 
     /** Returns the maximum number of entries for a specific thread. */
-    unsigned getMaxEntries(ThreadID tid)
-    {
-        if (tid >= numThreads) {
-            return 0;
-        }
-        return canBorrow(tid) ? borrowingLimit(tid) : maxEntries[tid];
-    }
+    unsigned getMaxEntries(ThreadID tid) const;
 
     /** Returns whether the thread may borrow unused ROB capacity. */
     void setBorrowingDonor(ThreadID tid, bool donor, Commit* commit);

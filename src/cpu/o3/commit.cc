@@ -593,7 +593,6 @@ void
 Commit::startupStage()
 {
     rob->setActiveThreads(activeThreads);
-    rob->resetEntries();
 
     // Broadcast the number of free entries.
     for (ThreadID tid = 0; tid < numThreads; tid++) {
@@ -2485,7 +2484,11 @@ Commit::moveInstsToBuffer()
         bool has_buffered_rename = !fixedbuffer[i].empty();
         bool donor = false;
 
-        if (has_buffered_rename) {
+        // Waiting has no reservation; discard donor hysteresis so wake
+        // starts from the ordinary active-thread policy, not stale stalls.
+        if (!cpu->isRobLsqActive(i)) {
+            borrowingDonorCycles[i] = 0;
+        } else if (has_buffered_rename) {
             borrowingDonorCycles[i] = 0;
         } else {
             donor = smtHasBorrowThrottleStall(robInfoFromIEW->iewInfo[i]);
