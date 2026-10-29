@@ -104,7 +104,6 @@ class EgDiff : public VPUnit
     const unsigned tickBits;
     const uint64_t normalPredictionLatency;
     const uint64_t deferredPredictionLatency;
-    const bool enableDeferred;
     const uint64_t lastMispWindow;
     std::vector<ThreadState> states;
     std::vector<Entry> table;
@@ -150,7 +149,6 @@ class EgDiff : public VPUnit
         statistics::Scalar normalRequests;
         statistics::Scalar deferredBindings;
         statistics::Scalar deferredWakeups;
-        statistics::Scalar deferredDisabled;
         statistics::Scalar predictionsOffered;
         statistics::Scalar predictionsApplied;
         statistics::Scalar appliedCorrect;
