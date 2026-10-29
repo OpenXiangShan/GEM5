@@ -67,6 +67,10 @@ EgDiff::EgDiffStats::EgDiffStats(statistics::Group *parent)
                "Pending or ready requests removed by squash"),
       ADD_STAT(staleValueCallbacks, statistics::units::Count::get(),
                "Value callbacks discarded after removal or ordinal reuse"),
+      ADD_STAT(basePcMismatches, statistics::units::Count::get(),
+               "Predictions whose dynamic base PC differs from training"),
+      ADD_STAT(basePcMismatchSuppressions, statistics::units::Count::get(),
+               "Predictions suppressed because their base PC mismatched"),
       ADD_STAT(tableEntries, statistics::units::Count::get(),
                 "Valid finite prediction-table entries"),
       ADD_STAT(tableConflicts, statistics::units::Count::get(),
@@ -357,10 +361,10 @@ EgDiff::wakeDeferred(ThreadState &state, ThreadID tid,
         notifyReady(tid, target);
         DPRINTF(EgDiff,
                 "[EgDiff][deferred-wake] tid=%u seq=%llu pc=%#lx "
-                "ordinal=%llu baseSeq=%llu baseOrdinal=%llu "
+                "ordinal=%llu baseSeq=%llu basePc=%#lx baseOrdinal=%llu "
                 "readyCycle=%llu\n",
                 tid, target.seqNo, target.pc, target.ordinal, base.seqNo,
-                base.ordinal, target.readyCycle);
+                base.pc, base.ordinal, target.readyCycle);
     }
 }
 
@@ -487,8 +491,25 @@ EgDiff::dispatch(const VPDispatchInfo &info, VPPredictionRecord *record)
     target.predictionDistance = entry.distance;
     target.predictionDiff = entry.diff;
     target.baseOrdinal = ordinal - entry.distance;
+    target.expectedBasePc = entry.basePc;
     egdiffStats.predictionRequests++;
     const auto *base = findHistory(state, target.baseOrdinal);
+    if (base && base->pc != target.expectedBasePc) {
+        egdiffStats.basePcMismatches++;
+        egdiffStats.basePcMismatchSuppressions++;
+        DPRINTF(EgDiff,
+                "[EgDiff][base-pc-suppress] stage=dispatch tid=%u "
+                "seq=%llu targetPc=%#lx ordinal=%llu distance=%u "
+                "expectedBasePc=%#lx actualBasePc=%#lx baseValue=%#llx "
+                "baseValueValid=%d diff=%#llx suppressed=1\n",
+                info.tid, info.seqNo, info.pc, ordinal,
+                target.predictionDistance, target.expectedBasePc, base->pc,
+                static_cast<unsigned long long>(base->specValue),
+                base->specValueValid,
+                static_cast<unsigned long long>(target.predictionDiff));
+        target.requestDelivered = true;
+        return;
+    }
     if (base && base->specValueValid) {
         target.requestReady = true;
         target.readyCycle = info.cycle + normalPredictionLatency;
@@ -542,6 +563,23 @@ EgDiff::latePredict(const VPLatePredictRequest &request,
     if (!base || !base->specValueValid) {
         return candidate;
     }
+    if (base->pc != target->expectedBasePc) {
+        egdiffStats.basePcMismatches++;
+        egdiffStats.basePcMismatchSuppressions++;
+        DPRINTF(EgDiff,
+                "[EgDiff][base-pc-suppress] stage=late tid=%u seq=%llu "
+                "targetPc=%#lx ordinal=%llu distance=%u "
+                "expectedBasePc=%#lx actualBasePc=%#lx baseValue=%#llx "
+                "baseValueValid=%d diff=%#llx suppressed=1\n",
+                request.tid, request.seqNo, request.pc, target->ordinal,
+                target->predictionDistance, target->expectedBasePc, base->pc,
+                static_cast<unsigned long long>(base->specValue),
+                base->specValueValid,
+                static_cast<unsigned long long>(target->predictionDiff));
+        target->requestReady = false;
+        target->requestDelivered = true;
+        return candidate;
+    }
 
     const RegVal predicted = base->specValue + target->predictionDiff;
     candidate.result = {true, predicted};
@@ -558,11 +596,11 @@ EgDiff::latePredict(const VPLatePredictRequest &request,
     }
     DPRINTF(EgDiff,
             "[EgDiff][offer] cycle=%llu tid=%u seq=%llu pc=%#lx "
-            "ordinal=%llu baseSeq=%llu baseOrdinal=%llu "
+            "ordinal=%llu baseSeq=%llu basePc=%#lx baseOrdinal=%llu "
             "base=%#llx baseSource=%s distance=%u diff=%#llx "
             "predicted=%#llx\n",
             request.cycle, request.tid, request.seqNo, request.pc,
-            target->ordinal, base->seqNo,
+            target->ordinal, base->seqNo, base->pc, base->ordinal,
             static_cast<unsigned long long>(base->specValue),
             valueSourceName(base->valueSource),
             target->predictionDistance,
@@ -772,17 +810,18 @@ EgDiff::update(const VPUpdateInfo &info,
                     entry.tag = tag;
                     entry.distance = order;
                     entry.diff = diff;
+                    entry.basePc = base->pc;
                     entry.randomState =
                         initialRandomState(info.tid, info.pc);
                     egdiffStats.allocations++;
                     updateTableEntryStats();
                     DPRINTF(EgDiff,
                             "[EgDiff][allocate] tid=%u seq=%llu pc=%#lx "
-                            "index=%zu tag=%#llx distance=%u "
+                            "index=%zu tag=%#llx basePc=%#lx distance=%u "
                             "diff=%#llx fpc=0 useful=0 replacement=%d\n",
                             info.tid, info.seqNo, info.pc,
                             index,
-                            static_cast<unsigned long long>(tag),
+                            static_cast<unsigned long long>(tag), base->pc,
                             order, static_cast<unsigned long long>(diff),
                             conflict);
                 }
@@ -812,9 +851,9 @@ EgDiff::update(const VPUpdateInfo &info,
                     }
                     DPRINTF(EgDiff,
                             "[EgDiff][train-match] tid=%u seq=%llu pc=%#lx "
-                            "distance=%u diff=%#llx "
+                            "basePc=%#lx distance=%u diff=%#llx "
                             "fpc=%u->%u useful=%u->%u\n",
-                            info.tid, info.seqNo, info.pc,
+                            info.tid, info.seqNo, info.pc, base->pc,
                             entry.distance,
                             static_cast<unsigned long long>(entry.diff),
                             static_cast<unsigned>(old_fpc),
@@ -841,17 +880,18 @@ EgDiff::update(const VPUpdateInfo &info,
                     entry.usefulness = 0;
                     entry.distance = new_distance;
                     entry.diff = info.actualValue - new_base->actualValue;
+                    entry.basePc = new_base->pc;
                     egdiffStats.pollingDistanceChanges++;
                     DPRINTF(EgDiff,
                             "[EgDiff][train-mismatch] tid=%u seq=%llu pc=%#lx "
                             "oldDistance=%u oldDiff=%#llx actualDiff=%#llx "
-                            "newDistance=%u newDiff=%#llx "
+                            "newBasePc=%#lx newDistance=%u newDiff=%#llx "
                             "fpc=%u->0 useful=%u->0\n",
                             info.tid, info.seqNo, info.pc,
                             old_distance,
                             static_cast<unsigned long long>(old_diff),
                             static_cast<unsigned long long>(actual_diff),
-                            entry.distance,
+                            new_base->pc, entry.distance,
                             static_cast<unsigned long long>(entry.diff),
                             static_cast<unsigned>(old_fpc),
                             static_cast<unsigned>(old_usefulness));
