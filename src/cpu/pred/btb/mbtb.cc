@@ -65,12 +65,15 @@ namespace test {
 #ifdef UNIT_TEST
 // Test constructor for unit testing mode
 MBTB::MBTB(unsigned numEntries, unsigned tagBits, unsigned numWays,
-           unsigned numDelay, unsigned victimCacheSize, bool enableBankConflict)
+           unsigned numDelay, unsigned victimCacheSize, bool enableBankConflict,
+           bool enableWriteBuffer, unsigned writeBufferDepth)
     : TimedBaseBTBPredictor(),
       victimCacheSize(victimCacheSize),
       numEntries(numEntries),
       numWays(numWays),
       enableBankConflict(enableBankConflict),
+      enableWriteBuffer(enableWriteBuffer),
+      writeBufferDepth(writeBufferDepth),
       tagBits(tagBits)
 {
     setNumDelay(numDelay);
@@ -83,11 +86,28 @@ MBTB::MBTB(const Params &p)
     numEntries(p.numEntries),
     numWays(p.numWays),
     enableBankConflict(p.enableBankConflict),
+    enableWriteBuffer(p.enableWriteBuffer),
+    writeBufferDepth(p.writeBufferDepth),
     tagBits(p.tagBits),
     btbStats(this, p.numWays)
 {
     // MBTB doesn't support ahead-pipelined stages
 #endif
+    if (usesWriteBuffer()) {
+        if (writeBufferDepth == 0 || !isPowerOf2(writeBufferDepth)) {
+            fatal("MBTB writeBufferDepth must be a nonzero power of two");
+        }
+        for (auto &bank : writeBuffers) {
+            bank.rows.resize(numWays);
+            for (auto &row : bank.rows) {
+                row.slots.resize(writeBufferDepth);
+                row.plru.resize(writeBufferDepth - 1, false);
+            }
+        }
+    }
+    btbStats.entryBufferOccupancy.init(0, writeBufferDepth, 1);
+    btbStats.counterBufferOccupancy.init(0, writeBufferDepth, 1);
+
     // Calculate shift amounts for index calculation
     // MBTB is always half-aligned: | tag | idx | block offset | instShiftAmt
     idxShiftAmt = floorLog2(blockSize);
@@ -165,10 +185,91 @@ MBTB::tickStart()
     predictionBankMask = 0;
 }
 
-#ifndef UNIT_TEST
 void
-MBTB::tick() {}
+MBTB::tick()
+{
+    if (!usesWriteBuffer()) {
+        return;
+    }
 
+    // Prediction reads have priority. All SMT requests have been collected
+    // before this end-of-cycle drain, including cycles with no prediction.
+    const uint8_t conflicts = incomingWriteBankMask & predictionBankMask;
+    if (conflicts) {
+        btbStats.updateBankConflict++;
+    }
+    for (unsigned bankId = 0; bankId < NumResourceBanks; ++bankId) {
+        auto &bank = writeBuffers[bankId];
+        const bool readBusy = predictionBankMask & (1u << bankId);
+        if (conflicts & (1u << bankId)) {
+            btbStats.updateBankConflictPerBank[bankId]++;
+        }
+        bool pending = !bank.counters.empty();
+        for (auto &row : bank.rows) {
+            auto dirty = std::find_if(row.slots.begin(), row.slots.end(),
+                [](const EntryBufferSlot &slot) { return slot.dirty; });
+            pending |= dirty != row.slots.end();
+            if (!readBusy && dirty != row.slots.end()) {
+                writeEntryToSRAM(dirty->write);
+                dirty->dirty = false;
+                // Inputs below observe the old dirty state, so a write to
+                // the draining slot re-dirties it even for identical data.
+                dirty->drained = true;
+                btbStats.entryBufferDrains++;
+            }
+        }
+        if (readBusy && (pending || (incomingWriteBankMask & (1u << bankId)))) {
+            btbStats.bufferReadBlockedPerBank[bankId]++;
+        }
+    }
+
+    for (const auto &write : entryWritePipeline) {
+        enqueueEntryWrite(write);
+    }
+    entryWritePipeline = std::move(incomingEntryWrites);
+    incomingEntryWrites.clear();
+
+    for (unsigned bankId = 0; bankId < NumResourceBanks; ++bankId) {
+        auto &bank = writeBuffers[bankId];
+        const bool readBusy = predictionBankMask & (1u << bankId);
+        bool counterPortUsed = readBusy;
+        if (!readBusy && !bank.counters.empty()) {
+            writeCounterToSRAM(bank.counters.front());
+            bank.counters.pop_front();
+            counterPortUsed = true;
+        }
+        for (auto &write : incomingCounterWrites) {
+            if (write.bank != bankId) {
+                continue;
+            }
+            if (!counterPortUsed && bank.counters.empty()) {
+                // flow=true: a new request can bypass an empty FIFO.
+                writeCounterToSRAM(write);
+                counterPortUsed = true;
+            } else if (bank.counters.size() < writeBufferDepth) {
+                // pipe=true: an old dequeue frees capacity this cycle.
+                bank.counters.push_back(std::move(write));
+                btbStats.counterBufferEnqueues++;
+            } else {
+                btbStats.counterBufferDrops++;
+                btbStats.counterBufferDropsPerBank[bankId]++;
+            }
+        }
+        for (auto &row : bank.rows) {
+            unsigned occupancy = 0;
+            for (auto &slot : row.slots) {
+                occupancy += slot.dirty;
+                slot.drained = false;
+            }
+            btbStats.entryBufferOccupancy.sample(occupancy);
+        }
+        btbStats.counterBufferOccupancy.sample(bank.counters.size());
+    }
+    incomingCounterWrites.clear();
+    incomingWriteBankMask = 0;
+}
+
+#ifndef UNIT_TEST
 void
 MBTB::setTrace()
 {
@@ -572,8 +673,12 @@ MBTB::checkPredictionHit(
 void
 MBTB::updateBTBEntry(
     const BTBEntry &entry, bool actual_taken, Addr actual_target,
-    const PredictionUpdateContext &stream)
+    const PredictionUpdateContext &stream, bool buffered)
 {
+    if (buffered) {
+        bufferUpdateBTBEntry(entry, actual_taken, actual_target, stream);
+        return;
+    }
     btbStats.updateTotal++;
     // Select SRAM based on entry PC's 32B-aligned address
     Addr alignedPC = entry.pc & ~(blockSize - 1);
@@ -758,6 +863,235 @@ MBTB::getResourceBankId(Addr pc) const
     return alignBank * NumInternalBanks + internalBank;
 }
 
+bool
+MBTB::sameEntryData(const BTBEntry &a, const BTBEntry &b) const
+{
+    // Counter SRAM and replacement metadata are independent of entry SRAM.
+    return a.valid == b.valid && a.pc == b.pc && a.tag == b.tag &&
+           a.target == b.target && a.size == b.size &&
+           a.isCond == b.isCond && a.isIndirect == b.isIndirect &&
+           a.isDirect == b.isDirect && a.isCall == b.isCall &&
+           a.isReturn == b.isReturn;
+}
+
+void
+MBTB::touchBufferSlot(EntryBufferRow &row, unsigned slot)
+{
+    unsigned node = 0;
+    unsigned begin = 0;
+    unsigned size = writeBufferDepth;
+    while (size > 1) {
+        size /= 2;
+        const bool right = slot >= begin + size;
+        row.plru[node] = !right;
+        if (right) {
+            begin += size;
+        }
+        node = 2 * node + 1 + right;
+    }
+}
+
+unsigned
+MBTB::getBufferVictim(const EntryBufferRow &row) const
+{
+    unsigned node = 0;
+    unsigned slot = 0;
+    unsigned size = writeBufferDepth;
+    while (size > 1) {
+        size /= 2;
+        const bool right = row.plru[node];
+        slot += right ? size : 0;
+        node = 2 * node + 1 + right;
+    }
+    return slot;
+}
+
+void
+MBTB::enqueueEntryWrite(const EntryWrite &write)
+{
+    auto &bank = writeBuffers[write.bank];
+    // RTL matches set + tag/position across all way rows. Keep clean shadow
+    // entries after draining to suppress identical rewrites.
+    for (auto &row : bank.rows) {
+        for (unsigned i = 0; i < row.slots.size(); ++i) {
+            auto &slot = row.slots[i];
+            if (!slot.valid || slot.write.set != write.set ||
+                slot.write.entry.pc != write.entry.pc ||
+                slot.write.entry.tag != write.entry.tag) {
+                continue;
+            }
+            if (slot.dirty || slot.drained ||
+                !sameEntryData(slot.write.entry, write.entry)) {
+                const unsigned way = slot.write.way;
+                slot.write = write;
+                slot.write.way = way;
+                slot.dirty = true;
+                btbStats.entryBufferMerges++;
+            } else {
+                btbStats.entryBufferRedundant++;
+            }
+            touchBufferSlot(row, i);
+            return;
+        }
+    }
+
+    auto &row = bank.rows[write.way];
+    unsigned victim = getBufferVictim(row);
+    // Same-set replacement wins over a clean slot, then tree PLRU.
+    auto sameSet = std::find_if(row.slots.begin(), row.slots.end(),
+        [&write](const EntryBufferSlot &slot) {
+            return slot.valid && slot.write.set == write.set;
+        });
+    auto clean = std::find_if(row.slots.begin(), row.slots.end(),
+        [](const EntryBufferSlot &slot) {
+            return !slot.dirty && !slot.drained;
+        });
+    if (sameSet != row.slots.end()) {
+        victim = sameSet - row.slots.begin();
+    } else if (clean != row.slots.end()) {
+        victim = clean - row.slots.begin();
+    }
+    auto &slot = row.slots[victim];
+    if (slot.dirty || slot.drained) {
+        btbStats.entryBufferOverwrites++;
+        btbStats.entryBufferOverwritesPerBank[write.bank]++;
+    }
+    slot.valid = true;
+    slot.dirty = true;
+    slot.write = write;
+    touchBufferSlot(row, victim);
+    btbStats.entryBufferEnqueues++;
+}
+
+void
+MBTB::writeEntryToSRAM(const EntryWrite &write)
+{
+    auto &sram = write.bank / NumInternalBanks == 0 ? sram0 : sram1;
+    auto &way = sram[write.set][write.way];
+    if (way.valid && way.pc != write.entry.pc) {
+        btbStats.updateReplaceValidOne++;
+        insertVictimCache(way, write.tid);
+    }
+    // A counter write may have reached its separate SRAM before this entry.
+    const int counter = way.ctr;
+    const uint64_t touchTick = way.tick;
+    way = TickedBTBEntry(write.entry, touchTick);
+    way.ctr = counter;
+    eraseFromVictimCacheByPC(write.entry.pc, write.entry.tag, write.tid);
+#ifndef UNIT_TEST
+    if (enableDB) {
+        BTBTrace rec;
+        rec.set(way.pc, way.getType(), way.target, write.set, Mode::WRITE, 0);
+        btbTrace->write_record(rec);
+    }
+#endif
+}
+
+void
+MBTB::writeCounterToSRAM(const CounterWrite &write)
+{
+    auto &sram = write.bank / NumInternalBanks == 0 ? sram0 : sram1;
+    for (unsigned way = 0; way < numWays; ++way) {
+        if (write.wayMask[way]) {
+            // Counter SRAM has no tag check, just as in RTL.
+            sram[write.set][way].ctr = write.counters[way];
+        }
+    }
+    btbStats.counterBufferDrains++;
+}
+
+void
+MBTB::bufferUpdateBTBEntry(const BTBEntry &entry, bool taken, Addr target,
+                          const PredictionUpdateContext &context)
+{
+    btbStats.updateTotal++;
+    const unsigned bankId = getResourceBankId(entry.pc);
+    const Addr setIdx = getIndex(entry.pc, context.asidHash, context.tid);
+    auto &sram = getSRAMId(entry.pc) == 0 ? sram0 : sram1;
+    auto &heap = getSRAMId(entry.pc) == 0 ? mru0[setIdx] : mru1[setIdx];
+    auto &set = sram[setIdx];
+    auto hit = std::find_if(set.begin(), set.end(),
+        [&entry](const TickedBTBEntry &old) { return old.pc == entry.pc; });
+
+    if (hit == set.end()) {
+        auto &cache = victimCaches[context.tid];
+        auto vc = std::find_if(cache.begin(), cache.end(),
+            [&entry](const TickedBTBEntry &old) {
+                return old.valid && old.pc == entry.pc;
+            });
+        if (vc != cache.end()) {
+            auto updated = buildUpdatedEntry(entry, taken, target, &*vc, context);
+            commitToVictimCache(vc - cache.begin(),
+                               TickedBTBEntry(updated, curTick()), context.tid);
+            return;
+        }
+    }
+
+    auto updated = buildUpdatedEntry(entry, taken, target,
+                                    hit == set.end() ? nullptr : &*hit, context);
+    unsigned way = hit == set.end() ? heap.front() - set.begin() :
+                                    hit - set.begin();
+    // Pending allocations reserve their destination way for later training,
+    // without forwarding buffered data to prediction lookups.
+    if (hit == set.end()) {
+        auto matches = [&](const EntryWrite &write) {
+            return write.bank == bankId && write.set == setIdx &&
+                   write.entry.pc == entry.pc && write.entry.tag == updated.tag;
+        };
+        for (const auto &row : writeBuffers[bankId].rows) {
+            for (const auto &slot : row.slots) {
+                if (slot.valid && matches(slot.write)) {
+                    way = slot.write.way;
+                }
+            }
+        }
+        for (const auto &write : entryWritePipeline) {
+            if (matches(write)) {
+                way = write.way;
+            }
+        }
+        for (const auto &write : incomingEntryWrites) {
+            if (matches(write)) {
+                way = write.way;
+            }
+        }
+    }
+
+    const bool writeEntry = hit == set.end() || entry.isIndirect ||
+                            !sameEntryData(*hit, updated);
+    if (writeEntry) {
+        incomingEntryWrites.push_back(
+            EntryWrite{bankId, way, setIdx, updated, context.tid});
+    }
+    if (writeEntry || entry.isCond) {
+        auto counter = std::find_if(incomingCounterWrites.begin(),
+            incomingCounterWrites.end(), [&](const CounterWrite &write) {
+                return write.bank == bankId && write.set == setIdx;
+            });
+        if (counter == incomingCounterWrites.end()) {
+            incomingCounterWrites.push_back(CounterWrite{
+                bankId, setIdx, std::vector<bool>(numWays, false),
+                std::vector<int>(numWays, 0)});
+            counter = std::prev(incomingCounterWrites.end());
+        }
+        counter->wayMask[way] = true;
+        counter->counters[way] = updated.ctr;
+        incomingWriteBankMask |= 1u << bankId;
+    }
+    if (hit != set.end()) {
+        btbStats.updateExisting++;
+        if (hit->target != updated.target) {
+            btbStats.updateFixTarget++;
+        }
+    } else {
+        btbStats.updateReplace++;
+    }
+    // The replacer is touched when training is accepted, independently of
+    // delayed entry SRAM writes and subsequent buffer overwrites/drops.
+    set[way].tick = curTick();
+    std::make_heap(heap.begin(), heap.end(), older());
+}
+
 uint8_t
 MBTB::getPredictionBankMask(Addr startAddr) const
 {
@@ -818,7 +1152,7 @@ bool
 MBTB::canResolveUpdate(const PredictionUpdateContext &context,
                         const PreparedUpdate &update)
 {
-    if (!enableBankConflict) {
+    if (!enableBankConflict || usesWriteBuffer()) {
         return true;
     }
     const uint8_t banks = getUpdateBankMask(context, update);
@@ -846,7 +1180,14 @@ void
 MBTB::doResolveUpdate(const PredictionUpdateContext &context,
                        const PreparedUpdate &update)
 {
-    this->update(context, update);
+    applyUpdate(context, update, usesWriteBuffer());
+    if (usesWriteBuffer()) {
+        for (unsigned bank = 0; bank < NumResourceBanks; ++bank) {
+            if (incomingWriteBankMask & (1u << bank)) {
+                btbStats.updateAccessPerBank[bank]++;
+            }
+        }
+    }
 }
 
 /*
@@ -861,6 +1202,13 @@ MBTB::doResolveUpdate(const PredictionUpdateContext &context,
 void
 MBTB::update(
     const PredictionUpdateContext &stream, const PreparedUpdate &update)
+{
+    applyUpdate(stream, update, false);
+}
+
+void
+MBTB::applyUpdate(const PredictionUpdateContext &stream,
+                  const PreparedUpdate &update, bool buffered)
 {
     DPRINTF(BTB, "BTB: update called for pc %#lx\n", stream.startPC);
     auto meta = std::static_pointer_cast<BTBMeta>(
@@ -888,7 +1236,7 @@ MBTB::update(
                 btbStats.newEntryWithUncond++;
             }
         }
-        updateBTBEntry(entry, branch.taken, branch.target, stream);
+        updateBTBEntry(entry, branch.taken, branch.target, stream, buffered);
     }
 }
 
@@ -1150,7 +1498,7 @@ MBTB::BTBStats::BTBStats(statistics::Group* parent, int numWays) :
 
     ADD_STAT(victimCacheHit, statistics::units::Count::get(), "victim cache hits"),
     ADD_STAT(updateBankConflict, statistics::units::Count::get(),
-        "Resolve update packets deferred by a prediction read bank conflict"),
+        "Resolve update cycles with a prediction read bank conflict"),
     ADD_STAT(updateDeferredDueToConflict, statistics::units::Count::get(),
         "Resolve update attempts deferred for retry, including repeated attempts"),
     ADD_STAT(predAccessPerBank, statistics::units::Count::get(),
@@ -1158,7 +1506,33 @@ MBTB::BTBStats::BTBStats(statistics::Group* parent, int numWays) :
     ADD_STAT(updateAccessPerBank, statistics::units::Count::get(),
         "Resolve SRAM write attempts per physical bank, including retries"),
     ADD_STAT(updateBankConflictPerBank, statistics::units::Count::get(),
-        "Resolve update conflicts per physical bank")
+        "Resolve update conflicts per physical bank"),
+    ADD_STAT(entryBufferEnqueues, statistics::units::Count::get(),
+        "Entry buffer misses inserted into a way row"),
+    ADD_STAT(entryBufferMerges, statistics::units::Count::get(),
+        "Entry buffer hits merged into a dirty or changed shadow entry"),
+    ADD_STAT(entryBufferRedundant, statistics::units::Count::get(),
+        "Identical writes suppressed by a clean entry buffer shadow"),
+    ADD_STAT(entryBufferOverwrites, statistics::units::Count::get(),
+        "Dirty entry buffer slots overwritten on a miss"),
+    ADD_STAT(entryBufferDrains, statistics::units::Count::get(),
+        "Entry buffer writes completed to SRAM"),
+    ADD_STAT(counterBufferEnqueues, statistics::units::Count::get(),
+        "Counter requests queued instead of flowing directly to SRAM"),
+    ADD_STAT(counterBufferDrops, statistics::units::Count::get(),
+        "New counter writes dropped by a full FIFO"),
+    ADD_STAT(counterBufferDrains, statistics::units::Count::get(),
+        "Counter writes completed to SRAM, including FIFO bypass"),
+    ADD_STAT(bufferReadBlockedPerBank, statistics::units::Count::get(),
+        "Cycles prediction reads block pending writes per physical bank"),
+    ADD_STAT(entryBufferOverwritesPerBank, statistics::units::Count::get(),
+        "Dirty entry buffer overwrites per physical bank"),
+    ADD_STAT(counterBufferDropsPerBank, statistics::units::Count::get(),
+        "Counter FIFO drops per physical bank"),
+    ADD_STAT(entryBufferOccupancy, statistics::units::Count::get(),
+        "Dirty slots per entry buffer way row sampled at cycle end"),
+    ADD_STAT(counterBufferOccupancy, statistics::units::Count::get(),
+        "Counter FIFO occupancy per bank sampled at cycle end")
 
 {
     init(numWays);
@@ -1172,6 +1546,9 @@ MBTB::BTBStats::init(int numWays)
     predAccessPerBank.init(NumResourceBanks);
     updateAccessPerBank.init(NumResourceBanks);
     updateBankConflictPerBank.init(NumResourceBanks);
+    bufferReadBlockedPerBank.init(NumResourceBanks);
+    entryBufferOverwritesPerBank.init(NumResourceBanks);
+    counterBufferDropsPerBank.init(NumResourceBanks);
 }
 
 // Close conditional namespace wrapper for testing

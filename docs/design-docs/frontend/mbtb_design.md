@@ -241,7 +241,7 @@ flowchart LR
 - `src/cpu/pred/BranchPredictor.py`
 - `src/cpu/pred/btb/test/btb.test.cc`
 
-## 10. 8-bank 预测/Resolve 更新冲突轻量模型
+## 10. 8-bank 预测/Resolve 更新冲突与写缓冲
 
 ### 10.1 RTL 依据与资源映射
 
@@ -263,8 +263,16 @@ gem5 用 `bankId = alignBank * 4 + internalBank` 表示 8 个共享资源。
 
 ### 10.2 开关与使用
 
-`MBTB.enableBankConflict` 的组件默认值是 `False`；`kmhv3.py` 显式设为
-`True`。通过现有参数接口可以关闭或开启：
+组件默认 `enableBankConflict=False`、`enableWriteBuffer=False`，缓冲深度
+`writeBufferDepth=4`；`kmhv3.py` 显式开启前两个开关。三种模式如下：
+
+| `enableBankConflict` | `enableWriteBuffer` | 行为 |
+| --- | --- | --- |
+| False | 任意值 | 原来的直接更新，不模拟 bank 争用或写缓冲 |
+| True | False | 轻量 ResolveQueue 整包冲突重试模型 |
+| True | True | 独立 entry buffer + counter FIFO，读优先排空 |
+
+通过现有参数接口关闭整个争用模型：
 
 ```bash
 ./build/RISCV/gem5.opt configs/example/kmhv3.py \
@@ -272,18 +280,27 @@ gem5 用 `bankId = alignBank * 4 + internalBank` 表示 8 个共享资源。
     --param 'system.cpu[0].branchPred.mbtb.enableBankConflict=False'
 ```
 
-将参数值改为 `True` 即可开启。原始 bin 输入另加 `--raw-cpt`。
-开关只控制 Resolve 更新的预测读冲突；Commit 训练仍直接调用原更新路径。
+只关闭写缓冲、保留之前的整包重试模型：
 
-### 10.3 探测、重试和拍边界
+```bash
+--param 'system.cpu[0].branchPred.mbtb.enableWriteBuffer=False'
+```
 
-现有 Fetch 调用顺序是先处理 ResolveQueue，再执行 BPU tick。因此更新
-使用上一拍实际预测请求累积的 bank 掩码；BPU 每次 tick 开始调用
-`MBTB::tickStart()` 清空该掩码，包括本拍不发预测的情况。随后所有线程的
+原始 bin 输入另加 `--raw-cpt`。深度可通过
+`--param 'system.cpu[0].branchPred.mbtb.writeBufferDepth=8'` 调整；启用时
+要求为非零的 2 的幂，供 buffer 的 tree-PLRU 使用。Commit 训练仍直接
+调用原更新路径。
+
+### 10.3 两种模型的拍边界
+
+现有 Fetch 调用顺序是先处理 ResolveQueue，再执行 BPU tick。BPU 每次
+tick 开始调用 `MBTB::tickStart()` 清空预测掩码，包括本拍不发预测的情况。
+随后所有线程的
 `putPCHistory()` 请求以 OR 累积，共享同一组物理 bank。
 无副作用查询和 metadata 刷新不占用预测 bank。
 
-`canResolveUpdate()` 按待训练分支的实际 PC 生成写 bank 掩码：
+整包重试模式沿用上一拍的预测掩码。`canResolveUpdate()` 按待训练分支
+的实际 PC 生成写 bank 掩码：
 
 - 预测未命中且实际 not-taken 的分支不会训练，不计 SRAM 写入。
 - 当前仅命中本线程 victim cache、会在 VC 内就地更新的分支不计 SRAM 写入。
@@ -296,40 +313,96 @@ gem5 用 `bankId = alignBank * 4 + internalBank` 表示 8 个共享资源。
 机制：暂停拍清除旧读掩码，使后续重试可以前进。SMT 下暂停针对包所属
 线程，其他线程仍可产生共享 bank 竞争。
 
-### 10.4 统计口径
+写缓冲模式下，`canResolveUpdate()` 始终返回 true，且不修改缓冲；只有
+全部预测器通过两阶段探测后，`doResolveUpdate()` 才生成写请求。
+请求包含 set、way、数据和线程信息的副本，不保留 FTQ 或训练上下文引用。
+BPU tick 末尾调用 `MBTB::tick()`，用本拍所有实际预测读仲裁写端口：
+
+1. 未被读取的 bank，每个 way 排空一个旧 entry，每个 bank 排空一个旧
+   counter 请求；被读取的 bank 暂停写 SRAM。
+2. entry 请求经过一拍输入寄存器后进入 buffer，不能在入 buffer 当拍
+   穿透排空。训练发生在 N 拍时，最早在 N+2 拍末写入 entry SRAM。
+3. counter FIFO 具有 RTL `flow=true, pipe=true` 语义：空 FIFO 且端口空闲
+   时，新请求可直接写 SRAM；满 FIFO 同拍出队可释放一个入队位置。
+4. 即使 BPU 没有活跃线程，也执行 tick 末尾排空。SMT 请求共同限制同组
+   物理 bank 的写端口。预测只看已完成写回的 SRAM，不旁路 buffer 数据。
+
+### 10.4 Entry buffer 与 counter FIFO
+
+每个 bank 的 entry buffer 有 `numWays` 行，每行 `writeBufferDepth` 项。
+默认共 8 bank × 4 way × 4 项，counter FIFO 则每 bank 4 项。
+entry 的 shadow 在排空后保留，使用 valid 和 dirty 分开记录：
+
+- 以现有表的 set + tag + 完整 branch PC 匹配，各 way 行均参与命中查询。
+- 命中 dirty 项时合并为新数据；命中 clean shadow 且 entry 数据相同时
+  抑制重复写入，否则重新置 dirty。entry 比较不包含独立的 counter。
+- 未命中时，优先复用目标 way 行中相同 set 的项，再选 clean 项，最后
+  用 tree-PLRU 选择 victim。覆盖 dirty 项会丢失旧的待写 entry。
+- 每个 way 每拍从最低编号的 dirty slot 排空一项。排空与新写命中同一
+  slot 时，旧数据先写 SRAM，新数据继续保持 dirty，供后续写回。
+
+counter FIFO 保存 set、way mask 和 counter 数据。包内同 bank、同 set 的
+counter 更新合并为一个带 way mask 的请求；满且无同拍出队时丢弃新请求。
+entry 和 counter 独立排空：counter 可以先到 SRAM，entry 写回时保留
+该物理 way 已有的 counter，而不是用 entry 副本覆盖它。
+
+预测未命中且实际 not-taken 的分支仍不训练；VC-only 更新仍在本线程 VC
+内立即完成。SRAM 分配、属性或 target 变化生成 entry 写；条件分支生成
+counter 写，间接分支保留 target 训练。主表替换状态在训练接收时 touch，
+重复的 pending 分配复用其目标 way；实际 SRAM 替换发生时才向 VC 放入
+被替换项，并按原有 ASID/SMT 规则删除 VC 重复项。
+
+### 10.5 统计口径
 
 以下计数仅在开关开启时收集，8 项向量的下标即 `bankId`：
 
 | 统计 | 含义 |
 | --- | --- |
-| `updateBankConflict` | 因预测读冲突而拒绝的 Resolve 包尝试次数 |
-| `updateDeferredDueToConflict` | 因上述冲突延后重试的次数，包含同一包的重复失败 |
+| `updateBankConflict` | 重试模式的冲突包次数；缓冲模式的训练写与本拍预测 bank 重叠次数 |
+| `updateDeferredDueToConflict` | 重试模式的包拒绝次数；缓冲模式保持为 0 |
 | `predAccessPerBank` | 每次实际预测所访问的 bank，各 bank 每请求计一次 |
-| `updateAccessPerBank` | Resolve 探测需要写入的 bank，包含失败及重试 |
-| `updateBankConflictPerBank` | 每次失败中重叠的各个 bank |
+| `updateAccessPerBank` | 重试模式的写探测；缓冲模式已接受包生成写请求的 bank |
+| `updateBankConflictPerBank` | 上述训练写与预测重叠的各个 bank |
+| `entryBufferEnqueues` | entry buffer 未命中新插入的请求 |
+| `entryBufferMerges` / `entryBufferRedundant` | shadow 合并 / clean shadow 抑制的重复写 |
+| `entryBufferOverwrites` | 被覆盖的 dirty entry 请求 |
+| `entryBufferDrains` | 实际写入 entry SRAM 的次数 |
+| `counterBufferEnqueues` / `counterBufferDrops` | FIFO 入队 / 满时丢弃的新请求 |
+| `counterBufferDrains` | 完成的 counter SRAM 写，包括空 FIFO 穿透 |
+| `bufferReadBlockedPerBank` | 预测读阻止待写或新到达写的 bank-cycle 数 |
+| `entryBufferOverwritesPerBank` / `counterBufferDropsPerBank` | 各 bank 的覆盖 / 丢写 |
+| `entryBufferOccupancy` / `counterBufferOccupancy` | 每拍末每 way 行 dirty 数 / 每 bank FIFO 占用的分布 |
 
 单包内多个分支访问相同 bank 只记一次；多个 bank 同时冲突时，标量计
-一次，向量分别计数。这些是争用尝试计数，不等同于完成写入次数。
-额外工作量受包内分支数、每 set 的 way 数和 VC 容量限制，不扫描整张表。
+一次，向量分别计数。主表 `updateTotal` 等原有计数描述接受的训练，
+实际完成的 SRAM 写应查看 `*BufferDrains`；shadow 合并和丢写会使两者不同。
+额外工作量受包内分支数、每 set 的 way 数、VC 容量及 buffer 深度限制。
+每拍只扫描固定 8 bank 的 buffer，不扫描整张主表。
 
-### 10.5 近似边界与验证
+### 10.6 近似边界与验证
 
-本轮借用 ResolveQueue 保存延后的训练，不实现 RTL write buffer 的容量、
-合并、覆盖或丢写行为，也不移植 APF。RTL `trainReady` 恒为真，真实压力
-由 buffer 吸收或丢写；这里会把冲突变成训练队列背压。其结果用于评估
-轻量争用影响，不能当作 RTL buffer 性能的精确复现。同一 Resolve 包内的
-写入作为一次原子训练处理，不额外模拟包内写端口串行化。
+写缓冲模式模拟容量、延迟可见性、合并、clean shadow、覆盖和 counter
+丢写，也保留之前的轻量重试模式用于对照。二者均不移植 APF。
+保留现有 index/tag、ASID/SMT 分区、主表 MRU 和 VC。RTL 实际训练由
+mispredict/meta 驱动，而 gem5 继续训练其 PreparedUpdate 中符合条件的
+分支，counter 数据沿用 live SRAM 更新方式，不额外旁路 FIFO。包内多个
+entry 请求按顺序处理，未逐拍拆成 RTL 每 bank 单 entry 的训练输入协议；
+counter 按 bank/set 合并。因而本模型复现缓冲的竞争机制和丢写趋势，
+不宣称训练流水线和 SRAM 布局逐拍等价。
 
 此外，沿用的 Fetch ResolveQueue 本身有入队容量限制：接近满队列时，
-新到达的 resolved events 不入队，计入 `resolveEnqueueFailEvent`，不会
-无损阻塞执行端。因此，延后重试可能增加现有队列的训练事件丢弃；这与
-RTL write buffer 的丢写策略不同。评估时应同时检查
+新到达的 resolved events 不入队，计入 `resolveEnqueueFailEvent`。整包
+重试模式可能加重该问题。缓冲模式中 MBTB 自身不再延迟 Resolve 出队，
+但其他预测器和队列本身的限制仍然存在。评估时应同时检查
 `resolveQueueFullEvents`、`resolveEnqueueFailEvent` 和出队计数。
 
 `MBTBBankConflictTest` 覆盖两个 half-block、bank 边界进位、256B 周期、
 开关、整包延后、失败探测无训练副作用、空闲拍清除、SMT 掩码累积、
-无效训练和 VC-only 更新。系统验证使用 CoreMark 与 sjeng checkpoint，
-关闭开关对比未修改基线，开启后检查冲突计数、ResolveQueue 进展和 difftest。
+无效训练和 VC-only 更新。`MBTBWriteBufferTest` 另外覆盖延迟可见性、
+读优先、独立 bank 排空、dirty 合并、同拍排空/合并、满行 PLRU 覆盖、
+同 set 优先覆盖、counter FIFO 丢新写、flow/pipe、clean shadow、way mask
+聚合、SMT 共享及开关。系统验证使用 CoreMark 与 sjeng checkpoint，
+检查直接更新、整包重试和缓冲三种模式的统计、队列进展及 difftest。
 
 ## 11. 参考资料
 

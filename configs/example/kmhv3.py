@@ -189,6 +189,7 @@ def setKmhV3Params(args, system):
 
             cpu.branchPred.mbtb.trainingStage = "Resolve"
             cpu.branchPred.mbtb.enableBankConflict = True
+            cpu.branchPred.mbtb.enableWriteBuffer = True
             cpu.branchPred.tage.trainingStage = "Resolve"
             cpu.branchPred.ittage.trainingStage = "Resolve"
 

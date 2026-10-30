@@ -326,8 +326,8 @@ DecoupledBPUWithBTB::tick()
 {
     DPRINTF(Override, "DecoupledBPUWithBTB::tick()\n");
 
-    // Fetch has already probed resolve updates against the previous cycle's
-    // MBTB reads. Start fresh even when this cycle schedules no prediction.
+    // Legacy resolve probes use the previous cycle's MBTB reads. Buffered
+    // writes drain at tick end against this cycle's accumulated reads.
     mbtb->tickStart();
 
     for (int tid = 0; tid < numThreads; ++tid) {
@@ -348,6 +348,7 @@ DecoupledBPUWithBTB::tick()
         }
     }
     if (!anyActiveThread) {
+        mbtb->tick();
         return;
     }
 
@@ -405,6 +406,7 @@ DecoupledBPUWithBTB::tick()
         }
     }
 
+    mbtb->tick();
     DPRINTF(Override, "Prediction cycle complete\n");
 }
 

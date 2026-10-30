@@ -1327,6 +1327,318 @@ TEST_F(MBTBBankConflictTest, DirectCommitUpdateBypassesConflictGate)
     EXPECT_EQ(btb.btbStats.updateTotal, 1);
 }
 
+class MBTBWriteBufferTest : public ::testing::Test
+{
+  protected:
+    MBTB btb{1024, 20, 4, 1, 8, true, true, 4};
+
+    void SetUp() override { btb.testTick = 1; }
+
+    void predict(Addr pc, ThreadID tid = 0)
+    {
+        std::vector<FullBTBPrediction> preds(4);
+        for (auto &pred : preds) {
+            pred.tid = tid;
+        }
+        btb.putPCHistory(pc, boost::dynamic_bitset<>(8), preds);
+    }
+
+    void beginBusyCycle(Addr pc = 0x1000)
+    {
+        btb.tickStart();
+        predict(pc);
+    }
+
+    void idleCycle()
+    {
+        btb.tickStart();
+        btb.tick();
+    }
+
+    FetchTarget stream(Addr pc, ThreadID tid = 0)
+    {
+        FullBTBPrediction pred;
+        pred.tid = tid;
+        pred.asidHash = 0;
+        btb.refreshPredictionMeta(pc, boost::dynamic_bitset<>(8), pred);
+        return setupStream(pc, createBranchInfo(pc, 0x8000, true),
+                           true, btb.getPredictionMeta(tid), tid);
+    }
+
+    void resolve(Addr pc, Addr target = 0x8000, bool taken = true,
+                 ThreadID tid = 0, bool indirect = false)
+    {
+        auto context = stream(pc, tid);
+        auto branch = createBranchInfo(pc, target, !indirect, indirect);
+        const auto update = createPreparedUpdate(context, branch, taken);
+        ASSERT_TRUE(btb.canResolveUpdate(PredictionUpdateContext(context), update));
+        btb.doResolveUpdate(PredictionUpdateContext(context), update);
+    }
+
+    std::vector<BTBEntry> entries(Addr pc, ThreadID tid = 0)
+    {
+        return btb.getPredictedEntriesNoSideEffect(pc, tid, 0);
+    }
+
+    void seed(Addr pc = 0x1000)
+    {
+        auto context = stream(pc);
+        btb.update(PredictionUpdateContext(context),
+            createPreparedUpdate(context, createBranchInfo(pc, 0x8000, true),
+                                 true));
+    }
+};
+
+TEST_F(MBTBWriteBufferTest, ReadPriorityAcceptsTrainingWithoutForwarding)
+{
+    beginBusyCycle();
+    resolve(0x1000);
+    EXPECT_TRUE(entries(0x1000).empty());
+    btb.tick(); // Entry request is in its input register.
+    EXPECT_TRUE(entries(0x1000).empty());
+    beginBusyCycle();
+    btb.tick(); // Entry request reaches the write buffer.
+    beginBusyCycle();
+    btb.tick(); // Prediction still blocks SRAM writes.
+    EXPECT_TRUE(entries(0x1000).empty());
+    EXPECT_EQ(btb.btbStats.updateDeferredDueToConflict, 0);
+    EXPECT_EQ(btb.btbStats.entryBufferDrains, 0);
+    EXPECT_EQ(btb.btbStats.counterBufferDrains, 0);
+    idleCycle();
+    ASSERT_EQ(entries(0x1000).size(), 1);
+    EXPECT_EQ(btb.btbStats.entryBufferDrains, 1);
+    EXPECT_EQ(btb.btbStats.counterBufferDrains, 1);
+}
+
+TEST_F(MBTBWriteBufferTest, IndependentBankDrainsDuringOtherBankReads)
+{
+    beginBusyCycle(); // Banks 0 and 4, training writes bank 1.
+    resolve(0x1040);
+    btb.tick();
+    EXPECT_EQ(btb.btbStats.counterBufferDrains, 1);
+    EXPECT_EQ(btb.btbStats.counterBufferEnqueues, 0); // Empty FIFO flows.
+    beginBusyCycle();
+    btb.tick();
+    beginBusyCycle();
+    btb.tick();
+    EXPECT_EQ(entries(0x1040).size(), 1);
+    EXPECT_EQ(btb.btbStats.bufferReadBlockedPerBank[1], 0);
+}
+
+TEST_F(MBTBWriteBufferTest, DirtyHitMergesLatestEntry)
+{
+    beginBusyCycle();
+    resolve(0x1000, 0x8000);
+    btb.tick();
+    beginBusyCycle();
+    resolve(0x1000, 0x9000);
+    btb.tick();
+    beginBusyCycle();
+    btb.tick();
+    EXPECT_EQ(btb.btbStats.entryBufferEnqueues, 1);
+    EXPECT_EQ(btb.btbStats.entryBufferMerges, 1);
+    EXPECT_EQ(btb.btbStats.entryBufferOverwrites, 0);
+    idleCycle();
+    ASSERT_EQ(entries(0x1000).size(), 1);
+    EXPECT_EQ(entries(0x1000)[0].target, 0x9000);
+}
+
+TEST_F(MBTBWriteBufferTest, SimultaneousDrainAndMergeRetainsNewWrite)
+{
+    beginBusyCycle();
+    resolve(0x1000, 0x8000);
+    btb.tick();
+    beginBusyCycle();
+    resolve(0x1000, 0x9000);
+    btb.tick();
+    idleCycle(); // Drain old payload while the newer request merges.
+    ASSERT_EQ(entries(0x1000).size(), 1);
+    EXPECT_EQ(entries(0x1000)[0].target, 0x8000);
+    idleCycle();
+    EXPECT_EQ(entries(0x1000)[0].target, 0x9000);
+    EXPECT_EQ(btb.btbStats.entryBufferDrains, 2);
+}
+
+TEST_F(MBTBWriteBufferTest, FullRowOverwritesDirtyPLRUVictim)
+{
+    // All requests use bank 0 and the same way in five different sets.
+    for (unsigned i = 0; i < 5; ++i) {
+        beginBusyCycle();
+        resolve(0x1000 + i * 256);
+        btb.tick();
+    }
+    beginBusyCycle();
+    btb.tick(); // Deliver the fifth entry through its input register.
+    EXPECT_EQ(btb.btbStats.entryBufferEnqueues, 5);
+    EXPECT_EQ(btb.btbStats.entryBufferOverwrites, 1);
+    EXPECT_EQ(btb.btbStats.counterBufferDrops, 1);
+    for (unsigned i = 0; i < 4; ++i) {
+        idleCycle();
+    }
+    EXPECT_TRUE(entries(0x1000).empty());
+    for (unsigned i = 1; i < 5; ++i) {
+        EXPECT_EQ(entries(0x1000 + i * 256).size(), 1);
+    }
+    EXPECT_EQ(btb.btbStats.entryBufferDrains, 4);
+}
+
+TEST_F(MBTBWriteBufferTest, SameSetReplacementOverridesEvenWithCleanSlots)
+{
+    // Five allocations in one SRAM set rotate through four destination ways.
+    // The fifth must overwrite the same-set shadow in the first way row.
+    for (unsigned i = 0; i < 5; ++i) {
+        beginBusyCycle();
+        resolve(0x1000 + i * 4096);
+        btb.tick();
+    }
+    beginBusyCycle();
+    btb.tick();
+    EXPECT_EQ(btb.btbStats.entryBufferOverwrites, 1);
+    idleCycle(); // Every way row has its own drain port.
+    EXPECT_EQ(btb.btbStats.entryBufferDrains, 4);
+    EXPECT_TRUE(entries(0x1000).empty());
+    EXPECT_EQ(entries(0x5000).size(), 1);
+}
+
+TEST_F(MBTBWriteBufferTest, CounterFIFOFullDropsNewPayload)
+{
+    seed();
+    for (unsigned i = 0; i < 5; ++i) {
+        beginBusyCycle();
+        resolve(0x1000, 0x8000, i == 4);
+        btb.tick();
+        EXPECT_EQ(entries(0x1000)[0].ctr, 0);
+    }
+    EXPECT_EQ(btb.btbStats.entryBufferEnqueues, 0);
+    EXPECT_EQ(btb.btbStats.counterBufferEnqueues, 4);
+    EXPECT_EQ(btb.btbStats.counterBufferDrops, 1);
+    for (unsigned i = 0; i < 4; ++i) {
+        idleCycle();
+    }
+    // FIFO contains four -1 writes. The new +1 write was dropped. Counter
+    // payloads use live SRAM state at training; the FIFO does not forward.
+    EXPECT_EQ(entries(0x1000)[0].ctr, -1);
+    EXPECT_EQ(btb.btbStats.counterBufferDrains, 4);
+}
+
+TEST_F(MBTBWriteBufferTest, FullCounterFIFOAcceptsOnSameCycleDequeue)
+{
+    seed();
+    for (unsigned i = 0; i < 4; ++i) {
+        beginBusyCycle();
+        resolve(0x1000, 0x8000, false);
+        btb.tick();
+    }
+    btb.tickStart();
+    resolve(0x1000, 0x8000, true);
+    btb.tick(); // Old head dequeues and the new +1 request enqueues.
+    EXPECT_EQ(btb.btbStats.counterBufferDrops, 0);
+    for (unsigned i = 0; i < 4; ++i) {
+        idleCycle();
+    }
+    EXPECT_EQ(entries(0x1000)[0].ctr, 1);
+    EXPECT_EQ(btb.btbStats.counterBufferDrains, 5);
+}
+
+TEST_F(MBTBWriteBufferTest, CleanShadowSuppressesIdenticalIndirectWrite)
+{
+    btb.tickStart();
+    resolve(0x1000, 0x8000, true, 0, true);
+    btb.tick();
+    idleCycle();
+    idleCycle();
+    ASSERT_EQ(entries(0x1000).size(), 1);
+    btb.tickStart();
+    resolve(0x1000, 0x8000, true, 0, true);
+    btb.tick();
+    idleCycle();
+    EXPECT_EQ(btb.btbStats.entryBufferRedundant, 1);
+    EXPECT_EQ(btb.btbStats.entryBufferDrains, 1);
+}
+
+TEST_F(MBTBWriteBufferTest, CounterWritesInOneSetShareFIFOEntry)
+{
+    auto context = stream(0x1000);
+    std::vector<BranchOutcome> events;
+    for (unsigned i = 0; i < 5; ++i) {
+        events.push_back(createResolveEvent(0, 0, i + 1,
+            createBranchInfo(0x1000 + i * 4, 0x8000, true), true, false));
+    }
+    btb.update(PredictionUpdateContext(context), PreparedUpdate(events));
+    context = stream(0x1000);
+    for (auto &event : events) {
+        event.taken = false;
+    }
+    beginBusyCycle();
+    btb.doResolveUpdate(PredictionUpdateContext(context), PreparedUpdate(events));
+    btb.tick();
+    EXPECT_EQ(btb.btbStats.updateInVC, 1);
+    EXPECT_EQ(btb.btbStats.entryBufferEnqueues, 0);
+    EXPECT_EQ(btb.btbStats.counterBufferEnqueues, 1);
+    idleCycle();
+    EXPECT_EQ(btb.btbStats.counterBufferDrains, 1);
+}
+
+TEST_F(MBTBWriteBufferTest, BothThreadsBlockSharedBankDrains)
+{
+    btb.setSmtTidPartitioned(true);
+    beginBusyCycle(0x1040); // Thread 0 reads banks 1 and 5.
+    predict(0x1000, 1); // Thread 1 reads banks 0 and 4.
+    resolve(0x1000, 0x8000, true, 1);
+    btb.tick();
+    beginBusyCycle();
+    btb.tick();
+    beginBusyCycle();
+    btb.tick();
+    EXPECT_TRUE(entries(0x1000, 1).empty());
+    idleCycle();
+    EXPECT_EQ(entries(0x1000, 1).size(), 1);
+    EXPECT_TRUE(entries(0x1000, 0).empty());
+}
+
+TEST_F(MBTBWriteBufferTest, EmptyAndUnpredictedNotTakenDoNotEnterBuffers)
+{
+    beginBusyCycle();
+    resolve(0x1000, 0x8000, false);
+    auto context = stream(0x1000);
+    btb.doResolveUpdate(PredictionUpdateContext(context), PreparedUpdate({}));
+    btb.tick();
+    idleCycle();
+    idleCycle();
+    EXPECT_EQ(btb.btbStats.entryBufferEnqueues, 0);
+    EXPECT_EQ(btb.btbStats.counterBufferEnqueues, 0);
+    EXPECT_EQ(btb.btbStats.counterBufferDrains, 0);
+    EXPECT_EQ(btb.btbStats.updateBankConflict, 0);
+}
+
+TEST_F(MBTBWriteBufferTest, DisabledMasterSwitchKeepsDirectResolveUpdates)
+{
+    MBTB disabled(1024, 20, 4, 1, 8, false, true);
+    std::vector<FullBTBPrediction> preds(4);
+    for (auto &pred : preds) {
+        pred.tid = 0;
+    }
+    disabled.putPCHistory(0x1000, boost::dynamic_bitset<>(8), preds);
+    auto branch = createBranchInfo(0x1000, 0x8000, true);
+    auto context = setupStream(0x1000, branch, true, disabled.getPredictionMeta());
+    const auto update = createPreparedUpdate(context, branch, true);
+    EXPECT_TRUE(disabled.canResolveUpdate(PredictionUpdateContext(context), update));
+    disabled.doResolveUpdate(PredictionUpdateContext(context), update);
+    ASSERT_EQ(disabled.getPredictedEntriesNoSideEffect(0x1000, 0, 0).size(), 1);
+    disabled.tick();
+    EXPECT_EQ(disabled.btbStats.entryBufferEnqueues, 0);
+}
+
+TEST_F(MBTBWriteBufferTest, CommitTrainingRemainsImmediate)
+{
+    beginBusyCycle();
+    seed();
+    EXPECT_EQ(entries(0x1000).size(), 1);
+    btb.tick();
+    EXPECT_EQ(btb.btbStats.entryBufferEnqueues, 0);
+    EXPECT_EQ(btb.btbStats.counterBufferEnqueues, 0);
+}
+
 } // namespace test
 } // namespace btb_pred
 } // namespace branch_prediction
