@@ -19,7 +19,7 @@ jobs:
     with:
       config_path: configs/example/kmhv3.py
       benchmark_type: "custom-spec06"
-      checkpoint_path: "/nfs/home/share/checkpoints_profiles/spec06_xscc_rv64gcb_261013/checkpoint-0-0-0"
+      checkpoint_path: "/nfs/home/share/checkpoints_profiles/legacy/spec06_xscc_rva23_novec_260911"
 
   align_test_spec17:
     uses: ./.github/workflows/gem5-perf-template.yml
@@ -47,7 +47,7 @@ jobs:
     with:
       config_path: configs/example/idealkmhv3.py
       benchmark_type: "custom-spec06"
-      checkpoint_path: "/nfs/home/share/checkpoints_profiles/spec06_xscc_rv64gcb_261013/checkpoint-0-0-0"
+      checkpoint_path: "/nfs/home/share/checkpoints_profiles/legacy/spec06_xscc_rva23_novec_260911"
 
   perf_test_spec17:
     uses: ./.github/workflows/gem5-perf-template.yml
