@@ -93,6 +93,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
     DebugFlag('CommitTrace')
     DebugFlag('InstCommited')
     DebugFlag('FetchFault')
+    DebugFlag('FastFetch')
     DebugFlag('FetchVerbose')
     DebugFlag('Counters')
     DebugFlag('Schedule')

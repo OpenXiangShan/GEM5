@@ -77,6 +77,7 @@
 #include "debug/Drain.hh"
 #include "debug/ExecFaulting.hh"
 #include "debug/FTBStats.hh"
+#include "debug/FastFetch.hh"
 #include "debug/Faults.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/InstCommited.hh"
@@ -501,7 +502,7 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
     smtStateHoldCycle
         .init(2, 0, 100, 10)
         .flags(statistics::pdf);
-    
+
     smtStateHoldCycle.subname(0, "Base");
     smtStateHoldCycle.subname(1, "Donor");
 
@@ -1023,7 +1024,7 @@ Commit::tick()
             }
         }
     }
-    
+
     rob->addBorrowingStateHoldCycle();
 
     commit();
@@ -2778,6 +2779,13 @@ void
 Commit::updateComInstStats(const DynInstPtr &inst)
 {
     ThreadID tid = inst->threadNumber;
+    DPRINTF(FastFetch,
+            "commit tid=%u seq=%llu pc=%#lx ftq=%llu fast=%u "
+            "control=%u taken=%u predicted=%#lx mispred=%u\n",
+            tid, inst->seqNum, inst->pcState().instAddr(), inst->getFtqId(),
+            inst->isFastFetchAccepted(), inst->isControl(),
+            inst->readPredTaken(), inst->readPredTarg().instAddr(),
+            inst->isControl() && inst->mispredicted());
 
     if (inst->isFastFetchAccepted()) {
         ++stats.fastFetchCommittedInsts;

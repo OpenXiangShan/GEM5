@@ -154,7 +154,8 @@ class Decode
     /** Common control checks, performed only after consuming the instruction. */
     StallReason processInstControl(const DynInstPtr &inst, ThreadID tid);
     StaticInstPtr prepareFusion(const DynInstPtr &first,
-                                const DynInstPtr &second);
+                                const DynInstPtr &second,
+                                bool update_ignore_pc = true);
     DynInstPtr applyFusion(const DynInstPtr &first, const DynInstPtr &second,
                           const StaticInstPtr &fused_inst);
 
@@ -365,7 +366,7 @@ class Decode
         statistics::Scalar mispredictedByPC;
         /** stat for total number of instructions that mispredicted due to npc. */
         statistics::Scalar mispredictedByNPC;
-        
+
         // Decode bubbles statistics (analogous to fetchBubbles)
         /** Unutilized decode pipeline slots while there is no backend-stall */
         statistics::Scalar decodeBubbles;

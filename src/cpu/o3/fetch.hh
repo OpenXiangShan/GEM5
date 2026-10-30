@@ -1249,6 +1249,7 @@ class Fetch
         statistics::Scalar predecodeRedirects;
         statistics::Scalar fastFetchCandidateInsts;
         statistics::Scalar fastFetchPublishedInsts;
+        statistics::Scalar fastFetchAcceptedBundles;
         statistics::Scalar fastFetchAcceptedInsts;
         statistics::Scalar fastFetchDroppedBundles;
         statistics::Scalar fastFetchNormalDedupInsts;
