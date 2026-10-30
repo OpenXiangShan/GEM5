@@ -959,6 +959,49 @@ TEST(BTBMGSCTest, SpecUpdatePHistUsesReturnTargetOverride)
                            "return target override");
 }
 
+TEST(BTBMGSCTest, FlushStateRestoresColdStorageAndHistory)
+{
+    BTBMGSC mgsc;
+    auto &table = BTBMGSC::TestAccess::bwTable(mgsc);
+    table[0][0][0] = 7;
+    BTBMGSC::TestAccess::pUpdateThreshold(mgsc)[0] = 9;
+    BTBMGSC::TestAccess::updateThreshold(mgsc) = 1;
+    BTBMGSC::TestAccess::bwIndex(mgsc)[0] = 11;
+
+    mgsc.flushState();
+
+    EXPECT_EQ(table[0][0][0], 0);
+    EXPECT_EQ(BTBMGSC::TestAccess::pUpdateThreshold(mgsc)[0], 0);
+    EXPECT_EQ(BTBMGSC::TestAccess::updateThreshold(mgsc), 35 * 8);
+    EXPECT_EQ(BTBMGSC::TestAccess::bwIndex(mgsc)[0], 0);
+    mgsc.checkFoldedHist(boost::dynamic_bitset<>(64, 0),
+                         boost::dynamic_bitset<>(64, 0),
+                         std::vector<boost::dynamic_bitset<>>(
+                             mgsc.getNumEntriesFirstLocalHistories(),
+                             boost::dynamic_bitset<>(64, 0)),
+                         "after flush");
+}
+
+TEST(BTBMGSCTest, ResetSpeculativeStatePreservesLearnedTable)
+{
+    BTBMGSC mgsc;
+    auto &table = BTBMGSC::TestAccess::bwTable(mgsc);
+    table[0][0][0] = 7;
+    BTBMGSC::TestAccess::bwIndex(mgsc)[0] = 11;
+
+    mgsc.resetSpeculativeState();
+
+    EXPECT_EQ(table[0][0][0], 7);
+    EXPECT_EQ(BTBMGSC::TestAccess::bwIndex(mgsc)[0], 0);
+    mgsc.checkFoldedHist(
+        boost::dynamic_bitset<>(64, 0),
+        boost::dynamic_bitset<>(64, 0),
+        std::vector<boost::dynamic_bitset<>>(
+            mgsc.getNumEntriesFirstLocalHistories(),
+            boost::dynamic_bitset<>(64, 0)),
+        "after speculative reset");
+}
+
 }  // namespace test
 }  // namespace btb_pred
 }  // namespace branch_prediction

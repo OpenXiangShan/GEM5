@@ -205,6 +205,46 @@ BTBTAGE::~BTBTAGE()
 {
 }
 
+void
+BTBTAGE::flushState()
+{
+    for (auto &table : tageTable) {
+        for (auto &set : table) {
+            std::fill(set.begin(), set.end(), TageEntry());
+        }
+    }
+
+    std::fill(useAlt.begin(), useAlt.end(), 0);
+    usefulResetCnt = 0;
+    allocLFSR = LFSR64();
+    resetSpeculativeState();
+}
+
+void
+BTBTAGE::resetSpeculativeState()
+{
+    tageIndex.clear();
+    tageTag.clear();
+    lastPredBankId = 0;
+    predBankValid = false;
+    threadHistory.assign(MaxThreads, ThreadHistoryState());
+    for (unsigned i = 0; i < numPredictors; ++i) {
+        const auto historyType =
+            usePathHistory ? HistoryType::PATH : HistoryType::GLOBAL;
+        for (auto &state : threadHistory) {
+            state.tagFoldedHist.emplace_back(
+                histLengths[i], tableTagBits[i], 16, historyType);
+            state.altTagFoldedHist.emplace_back(
+                histLengths[i], tableTagBits[i] - 1, 16, historyType);
+            state.indexFoldedHist.emplace_back(
+                histLengths[i], tableIndexBits[i], 16, historyType);
+        }
+    }
+    for (auto &meta : threadMeta) {
+        meta = std::make_shared<TageMeta>();
+    }
+}
+
 ThreadID
 BTBTAGE::predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const
 {
@@ -416,7 +456,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
 /**
  * @brief Look up predictions in TAGE tables for a stream of instructions
- * 
+ *
  * @param startPC The starting PC address for the instruction stream
  * @param btbEntries Vector of BTB entries to make predictions for
  * @return Map of branch PC addresses to their predicted outcomes
@@ -479,12 +519,12 @@ BTBTAGE::dryRunCycle(Addr startPC) {
 
 /**
  * @brief Makes predictions for a stream of instructions using TAGE predictor
- * 
+ *
  * This function is called during the prediction stage and:
  * 1. Uses lookupHelper to get predictions for all BTB entries
  * 2. Stores predictions in the stage prediction structure
  * 3. Handles multiple prediction stages with different delays
- * 
+ *
  * @param startPC Starting PC of the instruction stream
  * @param history Current branch history
  * @param stagePreds Vector of predictions for different pipeline stages
@@ -574,7 +614,7 @@ BTBTAGE::refreshPredictionMeta(Addr startPC,
 
 /**
  * @brief Update predictor state for a single entry
- * 
+ *
  * @param entry The BTB entry being updated
  * @param actual_taken The actual outcome of the branch
  * @param pred The prediction made for this entry
@@ -735,7 +775,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 
 /**
  * @brief Handle allocation of new entries
- * 
+ *
  * @param startPC The starting PC address
  * @param entry The BTB entry being updated
  * @param actual_taken The actual outcome of the branch
@@ -889,7 +929,7 @@ BTBTAGE::doResolveUpdate(
 
 /**
  * @brief Updates the TAGE predictor state based on actual branch execution results
- * 
+ *
  * @param stream The fetch stream containing branch execution information
  */
 void
@@ -1183,12 +1223,12 @@ BTBTAGE::getBankId(Addr pc) const
 
 /**
  * @brief Updates branch history for speculative execution
- * 
+ *
  * This function updates three types of folded histories:
  * - Tag folded history: Used for tag computation
  * - Alternative tag folded history: Used for alternative tag computation
  * - Index folded history: Used for table index computation
- * 
+ *
  * @param history The current branch history
  * @param shamt The number of bits to shift
  * @param taken Whether the branch was taken
@@ -1276,12 +1316,12 @@ BTBTAGE::recoverFoldedHist(const HistoryRecoveryContext &context)
 
 /**
  * @brief Recovers branch history state after a misprediction
- * 
+ *
  * This function:
  * 1. Restores the folded histories from the saved metadata
  * 2. Updates the histories with the correct branch outcome
  * 3. Ensures predictor state is consistent after recovery
- * 
+ *
  * @param history The branch history to recover to
  * @param entry The fetch stream entry containing recovery information
  * @param shamt Number of bits to shift in history update

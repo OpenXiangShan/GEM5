@@ -136,6 +136,30 @@ AheadBTB::AheadBTB(const Params &p)
 #endif
 }
 
+void
+AheadBTB::flushState()
+{
+    for (unsigned i = 0; i < numSets; ++i) {
+        std::fill(btb[i].begin(), btb[i].end(), TickedBTBEntry());
+        mruList[i].clear();
+        for (auto it = btb[i].begin(); it != btb[i].end(); ++it) {
+            mruList[i].push_back(it);
+        }
+        std::make_heap(mruList[i].begin(), mruList[i].end(), older());
+    }
+    resetSpeculativeState();
+}
+
+void
+AheadBTB::resetSpeculativeState()
+{
+    for (auto &state : threadStates) {
+        state.meta.reset();
+        state.lastPredEntries.clear();
+        state.aheadReadBtbEntries = {};
+    }
+}
+
 ThreadID
 AheadBTB::predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const
 {
@@ -194,9 +218,9 @@ std::vector<AheadBTB::TickedBTBEntry>
 AheadBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startAddr)
 {
     auto processed_entries = entries;
-    
+
     // Sort by instruction order
-    std::sort(processed_entries.begin(), processed_entries.end(), 
+    std::sort(processed_entries.begin(), processed_entries.end(),
              [](const BTBEntry &a, const BTBEntry &b) {
                  return a.pc < b.pc;
              });
@@ -365,7 +389,7 @@ AheadBTB::putPCHistory(Addr startAddr,
 
     // Fill predictions for each pipeline stage
     fillStagePredictions(processed_entries, stagePreds);
-    
+
     // Update metadata for later stages
     updatePredictionMeta(processed_entries, stagePreds, tid, indexPhrHash);
 }
@@ -575,7 +599,7 @@ AheadBTB::processOldEntries(const std::vector<BTBEntry>& hit_entries,
     //dumpBTBEntries(old_entries);
 
     btbStats.updateHit += old_entries.size();
-    
+
     return old_entries;
 }
 

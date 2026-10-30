@@ -104,6 +104,8 @@ class UBTB : public TimedBaseBTBPredictor
 
     void tickStart() override{};
     void tick() override{};
+    void flushState() override;
+    void resetSpeculativeState() override;
 
     /*
      * Entry point for uBTB Prediction, called at S1

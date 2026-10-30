@@ -352,6 +352,8 @@ struct FetchTarget
     std::array<std::shared_ptr<void>, 9> predMetas; // each component has a meta, TODO
 
     Tick predTick;         // tick of the prediction
+    uint64_t contextEpoch; // predictor context that produced this target
+    bool predictionDuringFlush; // forced fall-through from a flush window
     boost::dynamic_bitset<> history; // record GHR/s0History
     boost::dynamic_bitset<> phistory; // record PATH/s0History
     boost::dynamic_bitset<> bwhistory; // record BWHR/s0History
@@ -377,6 +379,8 @@ struct FetchTarget
          predSource(0),
          pairPhase(PairPhase::Even),
          predTick(0),
+         contextEpoch(0),
+         predictionDuringFlush(false),
          history(),
          phistory(),
          bwhistory(),
@@ -492,6 +496,8 @@ struct PredictionUpdateContext
     uint8_t asidHash;
     Addr startPC;
     Tick predTick;
+    uint64_t contextEpoch;
+    bool predictionDuringFlush;
 
     const std::array<std::shared_ptr<void>, 9> &predMetas;
     const boost::dynamic_bitset<> &phistory;
@@ -502,6 +508,8 @@ struct PredictionUpdateContext
           asidHash(target.asidHash),
           startPC(target.startPC),
           predTick(target.predTick),
+          contextEpoch(target.contextEpoch),
+          predictionDuringFlush(target.predictionDuringFlush),
           predMetas(target.predMetas),
           phistory(target.phistory),
           previousPCs(target.previousPCs)

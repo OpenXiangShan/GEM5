@@ -506,6 +506,16 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     "number of distinct SMT thread predictions started in one cycle"),
     ADD_STAT(predictionsStartedByThread, statistics::units::Count::get(),
     "number of predictions started for each SMT thread"),
+    ADD_STAT(bpuFlushes, statistics::units::Count::get(),
+    "number of BPU context flushes caused by retired fence.i instructions"),
+    ADD_STAT(bpuComponentFlushes, statistics::units::Count::get(),
+    "number of top-level flush dispatches to each BPU component"),
+    ADD_STAT(bpuFlushUntakenPredictions, statistics::units::Count::get(),
+    "number of forced untaken predictions generated during BPU flush windows"),
+    ADD_STAT(bpuFlushStallCycles, statistics::units::Cycle::get(),
+    "configured BPU context flush stall cycles"),
+    ADD_STAT(bpuFlushBubbles, statistics::units::Cycle::get(),
+    "BPU cycles spent in a context flush window"),
     ADD_STAT(s1PredWrongFallthrough, statistics::units::Count::get(), "S1pred wrong full throughs"),
     ADD_STAT(s1PredWrongUbtb, statistics::units::Count::get(),"S1pred wrong using ubtb "),
     ADD_STAT(s1PredWrongAbtb, statistics::units::Count::get(), "S1pred wrong using abtb "),
@@ -528,6 +538,16 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     branchClassCounts.init(NumBranchClasses);
     predictionsStartedPerCycle.init(0, numThreads, 1);
     predictionsStartedByThread.init(numThreads);
+    bpuComponentFlushes.init(NumFlushComponents);
+    bpuComponentFlushes.subname(FlushUBTB, "ubtb");
+    bpuComponentFlushes.subname(FlushABTB, "abtb");
+    bpuComponentFlushes.subname(FlushMicroTAGE, "microtage");
+    bpuComponentFlushes.subname(FlushPairTAGE, "pairtage");
+    bpuComponentFlushes.subname(FlushMBTB, "mbtb");
+    bpuComponentFlushes.subname(FlushTAGE, "tage");
+    bpuComponentFlushes.subname(FlushRAS, "ras");
+    bpuComponentFlushes.subname(FlushITTAGE, "ittage");
+    bpuComponentFlushes.subname(FlushMGSC, "mgsc");
     branchClassMisses.init(NumBranchClasses);
     controlSquashByClass.init(NumBranchClasses);
     for (int i = 0; i < NumS1SourceBuckets; ++i) {
@@ -880,6 +900,13 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
         trackTakenBranch(branchAddr);
     }
 
+    if (enableContextFlush &&
+        (inFlushWindow(inst->threadNumber) ||
+         entry.predictionDuringFlush ||
+         entry.contextEpoch != contextEpoch[inst->threadNumber])) {
+        return;
+    }
+
     // ---------- Update predictor components ----------
     const PredictionUpdateContext context(entry);
     for (auto component : components) {
@@ -982,6 +1009,16 @@ DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
 
     // Update global committed instruction count
     numInstCommitted++;
+
+    // fence.i is already decoded as a non-speculative, serialize-after
+    // instruction by the ISA decoder.  This callback is reached only after
+    // successful retirement, so it is the BPU-local trigger for a real
+    // context flush; wrong-path or faulting fence.i instructions never reach
+    // this point.
+    if (enableContextFlush &&
+        inst->staticInst->getName() == "fence_i") {
+        flushBPU(inst->threadNumber);
+    }
 
     DPRINTF(Profiling, "notifyInstCommit, inst=%s, commitInstNum=%d\n",
             inst->staticInst->disassemble(inst->pcState().instAddr()),

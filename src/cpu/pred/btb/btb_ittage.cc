@@ -71,6 +71,40 @@ ittageStats(this, p.numPredictors)
     usefulResetCnt = 0;
 }
 
+void
+BTBITTAGE::flushState()
+{
+    for (auto &table : tageTable) {
+        std::fill(table.begin(), table.end(), TageEntry());
+    }
+    allocLFSR = LFSR64();
+    usefulResetCnt = 0;
+    numBr = 0;
+    resetSpeculativeState();
+}
+
+void
+BTBITTAGE::resetSpeculativeState()
+{
+    lookupEntries.clear();
+    lookupIndices.clear();
+    lookupTags.clear();
+    threadHistory.assign(MaxThreads, ThreadHistoryState());
+    for (unsigned i = 0; i < numPredictors; ++i) {
+        for (auto &state : threadHistory) {
+            state.tagFoldedHist.emplace_back(
+                histLengths[i], tableTagBits[i], 16);
+            state.altTagFoldedHist.emplace_back(
+                histLengths[i], tableTagBits[i] - 1, 16);
+            state.indexFoldedHist.emplace_back(
+                histLengths[i], tableIndexBits[i], 16);
+        }
+    }
+    for (auto &meta : threadMeta) {
+        meta = std::make_shared<TageMeta>();
+    }
+}
+
 ThreadID
 BTBITTAGE::predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const
 {
@@ -332,7 +366,7 @@ BTBITTAGE::update(
     auto updateTagFoldedHist = meta->tagFoldedHist;
     auto updateAltTagFoldedHist = meta->altTagFoldedHist;
     auto updateIndexFoldedHist = meta->indexFoldedHist;
-    
+
     // update each branch
     for (const auto &branch : update.branches) {
         if (!(branch.isIndirect && !branch.isReturn)) {

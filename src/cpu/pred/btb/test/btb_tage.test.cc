@@ -546,6 +546,50 @@ TEST_F(BTBTAGETest, BasicPrediction) {
     EXPECT_GE(table, 0) << "No TAGE table entry was allocated";
 }
 
+TEST_F(BTBTAGETest, FlushStateRestoresColdStorage) {
+    auto &entry = tage->tageTable[1][7][0];
+    entry = BTBTAGE::TageEntry(0x55, 3, 0x1000);
+    entry.useful = true;
+    entry.lruCounter = 9;
+    tage->useAlt[3] = 17;
+    tage->usefulResetCnt = 42;
+    tage->allocLFSR.next();
+    tage->tageIndex.push_back(7);
+    tage->tageTag.push_back(0x55);
+    tage->lastPredBankId = 3;
+    tage->predBankValid = true;
+
+    tage->flushState();
+
+    EXPECT_FALSE(entry.valid);
+    EXPECT_EQ(entry.tag, 0);
+    EXPECT_EQ(entry.counter, 0);
+    EXPECT_FALSE(entry.useful);
+    EXPECT_EQ(entry.pc, 0);
+    EXPECT_EQ(entry.lruCounter, 0);
+    EXPECT_EQ(tage->useAlt[3], 0);
+    EXPECT_EQ(tage->usefulResetCnt, 0);
+    EXPECT_EQ(tage->allocLFSR.lfsr, LFSR64().lfsr);
+    EXPECT_TRUE(tage->tageIndex.empty());
+    EXPECT_TRUE(tage->tageTag.empty());
+    EXPECT_EQ(tage->lastPredBankId, 0);
+    EXPECT_FALSE(tage->predBankValid);
+}
+
+TEST_F(BTBTAGETest, ResetSpeculativeStatePreservesLearnedTable) {
+    auto &entry = tage->tageTable[1][7][0];
+    entry = BTBTAGE::TageEntry(0x55, 3, 0x1000);
+    tage->threadHistory[0].tagFoldedHist[0].update(
+        history, 1, true, 0x1000, 0x2000);
+
+    tage->resetSpeculativeState();
+
+    EXPECT_TRUE(entry.valid);
+    EXPECT_EQ(entry.tag, 0x55);
+    EXPECT_EQ(entry.counter, 3);
+    tage->checkFoldedHist(history, "after speculative reset");
+}
+
 // Test basic history update functionality (PHR semantics)
 TEST_F(BTBTAGETest, HistoryUpdate) {
     // Use a fixed control PC to derive PHR bits

@@ -124,6 +124,27 @@ UBTB::UBTB(const Params &p)
     threadMeta.resize(o3::MaxThreads);
 }
 
+void
+UBTB::flushState()
+{
+    std::fill(ubtb.begin(), ubtb.end(), TickedUBTBEntry());
+    mruList.clear();
+    for (auto it = ubtb.begin(); it != ubtb.end(); ++it) {
+        mruList.push_back(it);
+    }
+    std::make_heap(mruList.begin(), mruList.end(), older());
+    resetSpeculativeState();
+}
+
+void
+UBTB::resetSpeculativeState()
+{
+    std::fill(lastPred.begin(), lastPred.end(), LastPred());
+    for (auto &entry : threadMeta) {
+        entry.reset();
+    }
+}
+
 
 void
 UBTB::setTrace()
