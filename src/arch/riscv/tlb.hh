@@ -69,6 +69,7 @@ class TLB : public BaseTLB
     bool isStage2;
     bool isTheSharedL2;
     bool enableL1DirectCompression;
+    const bool prefetchPressureJoinOnly;
     size_t size;
     size_t sizeBack;
     size_t l2TlbL3Size;
@@ -176,6 +177,10 @@ class TLB : public BaseTLB
         statistics::Scalar l1InitialLookupHits;
         statistics::Scalar l1InitialLookupMisses;
         statistics::Scalar l1InitialCompressedHits;
+        statistics::Scalar hwPrefetchPressureChecked;
+        statistics::Scalar hwPrefetchPressureBypassed;
+        statistics::Scalar hwPrefetchPressureJoined;
+        statistics::Scalar hwPrefetchPressureRejected;
 
         statistics::Vector l2tlbRemove;
         statistics::Vector l2tlbUsedRemove;
@@ -279,6 +284,11 @@ class TLB : public BaseTLB
     void sendPreHitOnHitRequest(TlbEntry *e_pre_1, TlbEntry *e_pre_2, const RequestPtr &req, Addr pre_block,
                                 uint16_t asid, bool forward, int check_level, STATUS status, PrivilegeMode pmode,
                                 BaseMMU::Mode mode, ThreadContext *tc, BaseMMU::Translation *translation);
+    bool handlePrefetchPressure(const RequestPtr &req, ThreadContext *tc,
+                                BaseMMU::Translation *translation,
+                                BaseMMU::Mode mode, Addr vaddr,
+                                bool from_l2tlb, Addr asid,
+                                Fault &fault, bool &delayed);
     std::pair<bool, Fault> L2TLBSendRequest(Fault fault, TlbEntry *e_l2tlb, const RequestPtr &req,
                                             ThreadContext *tc, BaseMMU::Translation *translation,
                                             BaseMMU::Mode mode, Addr vaddr, bool &delayed, int level,

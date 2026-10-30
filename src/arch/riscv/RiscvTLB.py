@@ -71,6 +71,8 @@ class RiscvTLB(BaseTLB):
     #size = Param.Int(256, "TLB size")
     is_dtlb = Param.Bool(False, "the tlb is dtlb")
     is_L1tlb = Param.Bool(True,"the tlb is l1tlb")
+    prefetch_pressure_join_only = Param.Bool(False,
+            "Under pending demand misses, allow HWP to join existing walks only")
     #the tlb has private l2tlb
     is_stage2 = Param.Bool(False,"the tlb is private l2tlb")
     #is_stage2 = Param.Bool(True,"the tlb is private l2tlb")

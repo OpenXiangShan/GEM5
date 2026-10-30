@@ -350,6 +350,11 @@ namespace RiscvISA
                                            Addr asid, bool from_forward_pre_req,
                                            bool from_back_pre_req);
 
+        std::pair<bool, Fault> tryCoalesceExisting(
+            ThreadContext *tc, BaseMMU::Translation *translation,
+            const RequestPtr &req, BaseMMU::Mode mode,
+            bool from_l2tlb, Addr asid);
+
         // Fault perm_check ();
 
         Fault startFunctional(RequestPtr req, ThreadContext * _tc, Addr &addr,

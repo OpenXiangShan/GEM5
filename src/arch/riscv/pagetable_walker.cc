@@ -359,6 +359,23 @@ Walker::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *translation,
     return std::make_pair(false, NoFault);
 }
 
+std::pair<bool, Fault>
+Walker::tryCoalesceExisting(ThreadContext *tc, BaseMMU::Translation *translation,
+                            const RequestPtr &req, BaseMMU::Mode mode,
+                            bool from_l2tlb, Addr asid)
+{
+    // Preserve the feedback performed by start() before its coalescing scan.
+    if (autoOpenNextLine) {
+        auto regulate = tlb->autoOpenNextline();
+        if (!regulate)
+            autoOpenNextLine = false;
+    }
+    if (currStates.empty())
+        return std::make_pair(false, NoFault);
+    return tryCoalesce(tc, translation, req, mode, from_l2tlb, asid,
+                       false, false);
+}
+
 Fault
 Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
               const RequestPtr &_req, BaseMMU::Mode _mode, bool from_forward_pre_req,

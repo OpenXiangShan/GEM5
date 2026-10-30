@@ -130,6 +130,7 @@ TLB::TLB(const Params &p) :
     BaseTLB(p), is_dtlb(p.is_dtlb),is_L1tlb(p.is_L1tlb),isStage2(p.is_stage2),
     isTheSharedL2(p.is_the_sharedL2),
     enableL1DirectCompression(p.enable_l1_direct_compression),
+    prefetchPressureJoinOnly(p.prefetch_pressure_join_only),
     size(p.size),sizeBack(32),
     l2TlbL3Size(p.l2tlb_l3_size),
     l2TlbL2Size(p.l2tlb_l2_size),l2TlbL1Size(p.l2tlb_l1_size),
@@ -1891,6 +1892,37 @@ TLB::sendPreHitOnHitRequest(TlbEntry *e_pre_1, TlbEntry *e_pre_2, const RequestP
                       e_pre->asid);
     }
 }
+bool
+TLB::handlePrefetchPressure(const RequestPtr &req, ThreadContext *tc,
+                            BaseMMU::Translation *translation,
+                            BaseMMU::Mode mode, Addr vaddr,
+                            bool from_l2tlb, Addr asid,
+                            Fault &fault, bool &delayed)
+{
+    if (!prefetchPressureJoinOnly || !is_dtlb || !is_L1tlb ||
+        !translation || !req->isPrefetchEx() || !req->hasXsMetadata())
+        return false;
+
+    ++stats.hwPrefetchPressureChecked;
+    if (!walker->hasPendingPtwMiss()) {
+        ++stats.hwPrefetchPressureBypassed;
+        return false;
+    }
+
+    auto [joined, join_fault] = walker->tryCoalesceExisting(
+        tc, translation, req, mode, from_l2tlb, asid);
+    if (joined) {
+        ++stats.hwPrefetchPressureJoined;
+        fault = join_fault;
+        delayed = true;
+    } else {
+        ++stats.hwPrefetchPressureRejected;
+        fault = createPagefault(vaddr, 0, mode, false);
+        delayed = false;
+    }
+    return true;
+}
+
 std::pair<bool, Fault>
 TLB::L2TLBSendRequest(Fault fault, TlbEntry *e_l2tlb, const RequestPtr &req,
                       ThreadContext *tc, BaseMMU::Translation *translation,
@@ -1910,6 +1942,9 @@ TLB::L2TLBSendRequest(Fault fault, TlbEntry *e_l2tlb, const RequestPtr &req,
             return std::make_pair(true, fault);
         }
     } else {    //hit l2l1/l2/l3,trigger PTW
+        if (handlePrefetchPressure(req, tc, translation, mode, vaddr,
+                                   true, e_l2tlb->asid, fault, delayed))
+            return std::make_pair(true, fault);
         if (translation != nullptr && !from_miss_queue && !is_prefetch &&
             walker->hasPendingPtwMiss()) {
             walker->enqueuePtwMiss(tc, translation, req, mode, false);
@@ -2685,6 +2720,9 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
 
             if (traceFlag)
                 DPRINTF(TLBtrace, "tlb miss vaddr %#x pc %#x\n", vaddr_trace, req->getPC());
+            if (handlePrefetchPressure(req, tc, translation, mode, vaddr,
+                                       false, 0, fault, delayed))
+                return fault;
             int walk_level = satp.mode == AddrXlateMode::SV48 ? 3 : 2;
             if (translation != nullptr && !from_miss_queue && !is_prefetch &&
                 walker->hasPendingPtwMiss()) {
@@ -3253,6 +3291,14 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
                "number of non-prefetch direct one-stage initial L1 lookup misses"),
       ADD_STAT(l1InitialCompressedHits, statistics::units::Count::get(),
                "number of non-prefetch direct one-stage initial L1 lookup hits served by compressed entries"),
+      ADD_STAT(hwPrefetchPressureChecked, statistics::units::Count::get(),
+               "eligible HWP direct walker-path calls with pressure policy enabled"),
+      ADD_STAT(hwPrefetchPressureBypassed, statistics::units::Count::get(),
+               "eligible HWP calls preserving baseline because no demand miss is pending"),
+      ADD_STAT(hwPrefetchPressureJoined, statistics::units::Count::get(),
+               "eligible HWP calls joining an existing walk while demand misses are pending"),
+      ADD_STAT(hwPrefetchPressureRejected, statistics::units::Count::get(),
+               "eligible HWP calls rejected after no existing walk matched under demand pressure"),
       ADD_STAT(l2tlbRemove, statistics::units::Count::get(),
                "l2tlb remove"),
       ADD_STAT(l2tlbUsedRemove, statistics::units::Count::get(),
