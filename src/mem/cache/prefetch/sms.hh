@@ -192,6 +192,8 @@ class XSCompositePrefetcher : public Queued
                               uint64_t candidate_id) override;
     void notifyPrefetchMerged(uint64_t candidate_id) override;
     void notifyPrefetchSent(const PacketPtr &pkt) override;
+    void notifyPrefetchRead(uint64_t id, bool hit, bool ready) override;
+    void notifyPrefetchResidencyEnd(uint64_t id) override;
     void notifyCandidateDemand(uint64_t candidate_id,
                                const PacketPtr &demand) override;
     void pfHitInCache(PrefetchSourceType source,

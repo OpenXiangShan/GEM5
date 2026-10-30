@@ -975,6 +975,20 @@ XSCompositePrefetcher::notifyPrefetchSent(const PacketPtr &pkt)
 }
 
 void
+XSCompositePrefetcher::notifyPrefetchRead(uint64_t id, bool hit, bool ready)
+{
+    if (enableTP)
+        tp->notifyPrefetchRead(id, hit, ready);
+}
+
+void
+XSCompositePrefetcher::notifyPrefetchResidencyEnd(uint64_t id)
+{
+    if (enableTP)
+        tp->notifyPrefetchResidencyEnd(id);
+}
+
+void
 XSCompositePrefetcher::notifyCandidateDemand(
     uint64_t candidate_id, const PacketPtr &demand)
 {

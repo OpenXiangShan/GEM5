@@ -241,6 +241,20 @@ PrefetcherForwarder::notifyPrefetchDemandHit(PrefetchSourceType source,
 }
 
 void
+PrefetcherForwarder::notifyPrefetchRead(uint64_t id, bool hit, bool ready)
+{
+    if (real_pf)
+        real_pf->notifyPrefetchRead(id, hit, ready);
+}
+
+void
+PrefetcherForwarder::notifyPrefetchResidencyEnd(uint64_t id)
+{
+    if (real_pf)
+        real_pf->notifyPrefetchResidencyEnd(id);
+}
+
+void
 PrefetcherForwarder::notifyCandidateDemand(
     uint64_t candidate_id, const PacketPtr &demand)
 {

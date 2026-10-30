@@ -13,6 +13,55 @@ enum class CandidatePhase : uint32_t
 };
 enum class FeedbackKind { Timely, Late, PermissionMiss, Unused };
 
+// Effect feedback has a separate lifetime from legacy first-use feedback.
+// A store can settle RecordRef while a subsequent load still uses the line.
+enum class OutcomeEvent { Sent, HitReady, HitDelayed, Late, Evicted };
+struct OutcomeState
+{
+    enum Credit : unsigned
+    { Send = 1, Useful = 2, Timely = 4, Late = 8, Unused = 16 };
+    uint16_t bits{0};
+
+    unsigned advance(OutcomeEvent event)
+    {
+        constexpr unsigned sent = 1, hit = 2, ready = 4, late = 8, closed = 16;
+        const unsigned before = bits & 31;
+        if (event == OutcomeEvent::Sent)
+            bits |= sent;
+        else if (!(before & closed)) {
+            if (event == OutcomeEvent::Evicted)
+                bits |= closed;
+            else if (event == OutcomeEvent::Late) {
+                if (!(before & hit))
+                    bits |= late;
+            } else if (!(before & hit)) {
+                bits |= hit;
+                if (event == OutcomeEvent::HitReady)
+                    bits |= ready;
+                else
+                    bits |= late;
+            }
+        }
+        unsigned credit = 0;
+        if (bits & sent) {
+            credit = Send;
+            if (bits & hit)
+                credit |= Useful;
+            if ((bits & ready) && !(bits & late))
+                credit |= Timely;
+            if (bits & late)
+                credit |= Late;
+            if ((bits & closed) && !(bits & hit))
+                credit |= Unused;
+        }
+        const unsigned fresh = credit & ~(bits >> 8);
+        bits |= credit << 8;
+        return fresh;
+    }
+    bool sent() const { return bits & 1; }
+    bool resolved() const { return bits & (2 | 16); }
+};
+
 // Up to 32768 Meta slots, a 15-bit generation, and two lifecycle bits.
 // The adapter invalidates owners before generation wrap. The slot field
 // covers all 24576 Meta entries in the compact/full pool implementation.

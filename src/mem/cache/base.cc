@@ -561,6 +561,12 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                     if (pkt->isDemand() && candidate_id) {
                         prefetcher->notifyCandidateDemand(candidate_id, pkt);
                         prefetcher->notifyPrefetchMerged(candidate_id);
+                        if (pkt->isRead() && !pkt->req->isInstFetch() &&
+                            !pkt->req->isUncacheable() &&
+                            !pkt->req->isCacheMaintenance() &&
+                            mshr->getPFSource() == PrefetchSourceType::TP)
+                            prefetcher->notifyPrefetchRead(
+                                candidate_id, false, false);
                     }
 
                     // Demand request merging into prefetch-only MSHR
@@ -805,6 +811,17 @@ BaseCache::recvTimingReq(PacketPtr pkt)
     // Resolve this packet's hint after the tag result, before allocating or
     // merging its MSHR target. No global pipeline-indexed hint state is used.
     pkt->lldpHint = prefetcher ? prefetcher->loadTrain(pkt, !satisfied) : lldp::Hint();
+
+    // Observe TP load use independently of wasPrefetched: an earlier store
+    // may have cleared that flag without consuming the prefetched load data.
+    if (prefetcher && blk && blk->isValid() && pkt->isDemand() &&
+        pkt->isRead() && !pkt->req->isInstFetch() &&
+        !pkt->req->isUncacheable() && !pkt->req->isCacheMaintenance() &&
+        blk->getXsMetadata().prefetchSource == PrefetchSourceType::TP) {
+        prefetcher->notifyPrefetchRead(
+            blk->getXsMetadata().prefetchCandidateId, satisfied,
+            satisfied && blk->getWhenReady() <= curTick());
+    }
 
     if (satisfied) {
         // notify before anything else as later handleTimingReqHit might turn
@@ -2512,6 +2529,10 @@ BaseCache::invalidateBlock(CacheBlk *blk)
             prefetcher->sendCustomInfoToDownStream();
         }
     }
+    if (prefetcher && blk->isValid() &&
+        blk->getXsMetadata().prefetchSource == PrefetchSourceType::TP)
+        prefetcher->notifyPrefetchResidencyEnd(
+            blk->getXsMetadata().prefetchCandidateId);
     // If block is still marked as prefetched, then it hasn't been used
     if (blk->wasPrefetched()) {
         const auto metadata = blk->getXsMetadata();

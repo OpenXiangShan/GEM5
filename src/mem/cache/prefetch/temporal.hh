@@ -31,6 +31,8 @@ class TemporalPrefetcher : public Queued
         temporal::RecordRef record;
         uint64_t window;
         uint8_t kindRole;
+        temporal::OutcomeState outcome;
+        bool dependent{false};
     };
     std::unordered_map<uint64_t, Owner> owners;
     std::deque<std::pair<ContextID, InstSeqNum>> observedLoads;
@@ -54,7 +56,7 @@ class TemporalPrefetcher : public Queued
     ProbeListenerPtr<DependenceListener> dependenceListener;
     struct TPStats : public statistics::Group
     {
-        TPStats(statistics::Group *parent, unsigned metaSets);
+        TPStats(statistics::Group *parent, unsigned metaSets, unsigned samplerSets);
         statistics::Scalar trains, filterHits, samplerHits, pairs, records,
             recorderReplacements, metaHits, metaBlocked, issueBlocked,
             issueProbes, metaProbes, candidates, queued, useful, late, dropped,
@@ -68,6 +70,7 @@ class TemporalPrefetcher : public Queued
         statistics::Vector compressionPotential;
         statistics::Vector compressionStorage;
         statistics::Vector onlineRoleKinds, replacementControl;
+        statistics::Vector policyControl, effectFeedback;
         statistics::Vector trainingKinds, lifecycleKinds, storageKinds;
     } stats;
     bool owns(uint64_t id) const;
@@ -75,6 +78,7 @@ class TemporalPrefetcher : public Queued
     void finish(uint64_t id, FeedbackEvent kind,
                 std::optional<temporal::FeedbackKind> reward = std::nullopt);
     void invalidateRecord(unsigned slot);
+    void outcome(uint64_t id, temporal::OutcomeEvent event);
     unsigned replay(const PacketPtr &pkt, Addr pc, ContextID context,
         Addr line, uint8_t kind, const temporal::Replay &record, bool miss);
 
@@ -105,6 +109,8 @@ class TemporalPrefetcher : public Queued
                         uint64_t id) override;
     void notifyPrefetchMerged(uint64_t id) override;
     void notifyPrefetchSent(const PacketPtr &pkt) override;
+    void notifyPrefetchRead(uint64_t id, bool hit, bool ready) override;
+    void notifyPrefetchResidencyEnd(uint64_t id) override;
     void notifyPrefetchDemandHit(PrefetchSourceType source, uint64_t id,
         const PacketPtr &demand, bool ready, bool miss) override;
     void rxHint(BaseMMU::Translation *) override {}

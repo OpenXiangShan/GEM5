@@ -6,7 +6,8 @@
 
 namespace gem5::prefetch
 {
-TemporalPrefetcher::TPStats::TPStats(statistics::Group *parent, unsigned metaSetsCount)
+TemporalPrefetcher::TPStats::TPStats(statistics::Group *parent,
+    unsigned metaSetsCount, unsigned samplerSetsCount)
     : statistics::Group(parent, "tp"),
       ADD_STAT(trains, statistics::units::Count::get(), "Demand load observations"),
       ADD_STAT(filterHits, statistics::units::Count::get(), "Filter PC hits"),
@@ -50,6 +51,10 @@ TemporalPrefetcher::TPStats::TPStats(statistics::Group *parent, unsigned metaSet
                "Role observations by integer/FP producer and consumer"),
       ADD_STAT(replacementControl, statistics::units::Count::get(),
                "RRIP aging and first-use promotion"),
+      ADD_STAT(policyControl, statistics::units::Count::get(),
+               "TP retention and feedback-guided training activity"),
+      ADD_STAT(effectFeedback, statistics::units::Count::get(),
+               "Actual sends and independent load/residency outcomes"),
       ADD_STAT(trainingKinds, statistics::units::Count::get(),
                "Training observations by scalar type and LLDP roles"),
       ADD_STAT(lifecycleKinds, statistics::units::Count::get(),
@@ -98,6 +103,20 @@ TemporalPrefetcher::TPStats::TPStats(statistics::Group *parent, unsigned metaSet
     replacementControl.subname(0, "roleProbe");
     replacementControl.subname(1, "rripAge");
     replacementControl.subname(2, "timelyPromotion");
+    const std::array<const char *, 2> policyNames = {
+        "qualityReads", "bypassPairs"};
+    policyControl.init(policyNames.size());
+    for (unsigned i = 0; i < policyNames.size(); ++i)
+        policyControl.subname(i, policyNames[i]);
+    const std::array<const char *, 5> effects = {
+        "sent", "loadHit", "timely", "late", "noLoadHit"};
+    effectFeedback.init(12);
+    for (unsigned group = 0; group < 2; ++group)
+        for (unsigned i = 0; i < effects.size(); ++i)
+            effectFeedback.subname(group * 5 + i,
+                std::string(group ? "dependent_" : "ordinary_") + effects[i]);
+    effectFeedback.subname(10, "unresolvedOwnerExpired");
+    effectFeedback.subname(11, "unownedEvent");
     const std::array<const char *, 3> kinds = {"integer", "fp", "unknown"};
     const std::array<const char *, 4> roles = {
         "ordinary", "producer", "consumer", "both"};
@@ -122,7 +141,8 @@ TemporalPrefetcher::TPStats::TPStats(statistics::Group *parent, unsigned metaSet
     const std::array<statistics::Vector *, 6> tables = {
         &roleSets, &filterSets, &samplerSets, &recorderSets,
         &metaSets, &confidenceSets};
-    const std::array<unsigned, 6> sets = {256, 32, 1024, 128, metaSetsCount, 64};
+    const std::array<unsigned, 6> sets = {
+        256, 32, samplerSetsCount, 128, metaSetsCount, 64};
     const std::array<const char *, 3> metrics = {
         "access", "eviction", "occupancy"};
     for (unsigned table = 0; table < tables.size(); ++table) {
@@ -144,7 +164,7 @@ TemporalPrefetcher::TPStats::TPStats(statistics::Group *parent, unsigned metaSet
 TemporalPrefetcher::TemporalPrefetcher(const TemporalPrefetcherParams &p)
     : Queued(p), engine(p.record_length),
       trainingCPU(p.training_cpu), throttleCycles(p.throttle_cycles),
-      stats(this, temporal::Engine::META_SETS)
+      stats(this, temporal::Engine::META_SETS, engine.samplerSets())
 {
     fatal_if(p.record_length < 9 || p.record_length > 16 || !throttleCycles,
              "TP requires record_length in [9,16] and a positive throttle");
@@ -232,7 +252,6 @@ void
 TemporalPrefetcher::DependenceListener::notify(const o3::XsDynInstMetaPtr &meta)
 {
     if (!meta || meta->squashed ||
-        !meta->lldpLoad ||
         !meta->lldpChain.valid ||
         meta->lldpContext == InvalidContextID)
         return;
@@ -308,7 +327,9 @@ TemporalPrefetcher::replay(const PacketPtr &pkt, Addr pc, ContextID context,
         if (!candidateId)
             ++candidateId;
         const uint64_t id = (uint64_t(requestorId) << 48) | candidateId;
-        auto metadata = Request::XsMetadata(PrefetchSourceType::TP, 0, pc, 0, id);
+        // Record.pc is already the trigger's 22-bit hash; never hash it twice.
+        auto metadata = Request::XsMetadata(
+            PrefetchSourceType::TP, 0, record.pc, 0, id);
         candidate.setXsMetadata(metadata);
         AddrPriority command(target * blkSize, 0, PrefetchSourceType::TP);
         command.isVA = false;
@@ -316,12 +337,15 @@ TemporalPrefetcher::replay(const PacketPtr &pkt, Addr pc, ContextID context,
         if (admitPfControlCandidate(PrefetchSourceType::TP) &&
             insert(pkt, candidate, command)) {
             owners[id] = {pc, context, record.reference, feedbackWindow,
-                          uint8_t(kind * 4 + record.roles)};
+                          uint8_t(kind * 4 + record.roles), {}, false};
             ownerOrder.push_back(id);
             event(FeedbackEvent::Queued, &owners.at(id));
             if (ownerOrder.size() > 4096) {
                 const auto old = owners.find(ownerOrder.front());
                 if (old != owners.end()) {
+                    if (old->second.outcome.sent() &&
+                        !old->second.outcome.resolved())
+                        stats.effectFeedback[10]++;
                     if (!old->second.record.settled()) {
                         stats.ownerExpired++;
                         event(FeedbackEvent::Expired, &old->second);
@@ -424,12 +448,57 @@ TemporalPrefetcher::notifyPrefetchSent(const PacketPtr &pkt)
         event(FeedbackEvent::UnownedSent);
         return;
     }
+    panic_if(!pkt->req->hasPC() ||
+        pkt->req->getPC() != temporal::hashPC(it->second.pc) ||
+        metadata.prefetchProducerPC != pkt->req->getPC() ||
+        !pkt->req->hasContextId() ||
+        pkt->req->contextId() != it->second.context,
+        "TP trigger hashPC/context changed before downstream send");
+    outcome(id, temporal::OutcomeEvent::Sent);
     auto &owner = it->second;
     if (owner.record.sent())
         return;
     event(FeedbackEvent::Sent, &owner);
     owner.record.markSent();
 }
+void
+TemporalPrefetcher::outcome(uint64_t id, temporal::OutcomeEvent event)
+{
+    if (!owns(id))
+        return;
+    const auto it = owners.find(id);
+    if (it == owners.end()) {
+        stats.effectFeedback[11]++;
+        return;
+    }
+    auto &owner = it->second;
+    const auto pc = temporal::hashPC(owner.pc);
+    if (event == temporal::OutcomeEvent::Sent && !owner.outcome.sent()) {
+        const auto c = engine.confidenceForHash(pc, owner.context);
+        owner.dependent = c && c->dependent;
+    }
+    const unsigned credit = owner.outcome.advance(event);
+    if (!credit)
+        return;
+    engine.outcome(pc, owner.context, credit);
+    for (unsigned i = 0; i < 5; ++i)
+        if (credit & (1U << i))
+            stats.effectFeedback[unsigned(owner.dependent) * 5 + i]++;
+}
+
+void
+TemporalPrefetcher::notifyPrefetchRead(uint64_t id, bool hit, bool ready)
+{
+    outcome(id, !hit ? temporal::OutcomeEvent::Late : ready ?
+        temporal::OutcomeEvent::HitReady : temporal::OutcomeEvent::HitDelayed);
+}
+
+void
+TemporalPrefetcher::notifyPrefetchResidencyEnd(uint64_t id)
+{
+    outcome(id, temporal::OutcomeEvent::Evicted);
+}
+
 void
 TemporalPrefetcher::pfHitInCache(PrefetchSourceType source, uint64_t id)
 {
@@ -547,6 +616,11 @@ TemporalPrefetcher::preDumpStats()
         stats.storageKinds[24 + i] +=
             c.probesByKind[i] - lastDumpCounters.probesByKind[i];
     }
+    const std::array<uint64_t, 2> policyDeltas = {
+        c.qualityReads - lastDumpCounters.qualityReads,
+        c.bypassPairs - lastDumpCounters.bypassPairs};
+    for (unsigned i = 0; i < policyDeltas.size(); ++i)
+        stats.policyControl[i] += policyDeltas[i];
     lastDumpCounters = c;
     const std::array<statistics::Vector *, 6> vectors = {
         &stats.roleSets, &stats.filterSets, &stats.samplerSets,

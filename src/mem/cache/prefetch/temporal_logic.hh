@@ -108,6 +108,8 @@ struct Replay : Record
 struct Confidence : PCEntry
 {
     uint8_t issue{32}, meta{32};
+    bool dependent{false};
+    uint8_t usefulness{32}, timeliness{32}, sentEvidence{0};
 };
 struct Counters
 {
@@ -120,19 +122,22 @@ struct Counters
     uint64_t crossLine{0}, crossLineTrained{0}, samplerWrites{0};
     uint64_t encodableRecords{0}, installedLines{0}, encodableLines{0};
     uint64_t rripAges{0}, replacementPromotions{0};
+    uint64_t qualityReads{0};
+    uint64_t bypassPairs{0};
     std::array<uint64_t, 12> installsByKind{}, evictionsByKind{}, probesByKind{};
 };
 
 class Engine
 {
   public:
+    static constexpr unsigned SAMPLER_SETS = 256;
     static constexpr unsigned META_ENTRIES = 24576;
     static constexpr unsigned META_SETS = META_ENTRIES / 16;
 
   private:
     Table<PCEntry, 256, 4> roleTable;
     Table<Filter, 32, 8> filter;
-    Table<Sample, 1024, 16> sampler;
+    Table<Sample, SAMPLER_SETS, 16> sampler;
     Table<Record, 128, 8> recorder;
     Table<Record, 0, 16> meta;
     Table<Confidence, 64, 8> confidence;
@@ -174,6 +179,9 @@ class Engine
             c.valid = true;
             c.pc = pc;
             c.context = context;
+            for (const auto &entry : roleTable.data[pc & 255])
+                if (entry.valid && entry.pc == pc && entry.context == context)
+                    c.dependent = entry.roles != 0;
         }
         return c;
     }
@@ -343,6 +351,7 @@ class Engine
     }
 
     const RecordPools &recordPools() const { return pools; }
+    unsigned samplerSets() const { return sampler.data.size(); }
 
     void setInvalidationHandler(std::function<void(unsigned)> handler)
     { invalidateSlot = std::move(handler); }
@@ -399,6 +408,8 @@ class Engine
             r.context = context;
         }
         r.roles |= roles;
+        if (roles)
+            conf(pc, context).dependent = true;
     }
     uint8_t roles(uint64_t actualPC, int context) const
     {
@@ -407,6 +418,35 @@ class Engine
             if (e.valid && e.pc == pc && e.context == context)
                 return e.roles;
         return 0;
+    }
+
+    // Read a hashed key, without changing replacement state or allocating.
+    std::optional<Confidence> confidenceForHash(uint64_t pc, int context,
+                                               bool countAccess = true)
+    {
+        const auto set = placementPC(pc) & 63;
+        if (countAccess)
+            ++confidence.setAccesses[set];
+        for (const auto &entry : confidence.data[set])
+            if (entry.valid && entry.pc == pc && entry.context == context)
+                return entry;
+        return std::nullopt;
+    }
+
+    // Scores are bounded evidence, not accuracy percentages. Charge actual
+    // sends; reward one load hit and, separately, first-load readiness.
+    void outcome(uint64_t pc, int context, unsigned credit)
+    {
+        auto &c = conf(pc, context);
+        if (credit & OutcomeState::Send) {
+            c.usefulness -= c.usefulness != 0;
+            c.timeliness -= c.timeliness != 0;
+            c.sentEvidence = std::min<unsigned>(15, c.sentEvidence + 1);
+        }
+        if (credit & OutcomeState::Useful)
+            c.usefulness = std::min<unsigned>(63, c.usefulness + 2);
+        if (credit & OutcomeState::Timely)
+            c.timeliness = std::min<unsigned>(63, c.timeliness + 2);
     }
 
     // Observation only: no PLRU, confidence, training or counter updates.
@@ -491,9 +531,19 @@ class Engine
             ++counters.sameLine;
         } else {
             ++counters.crossLine;
-            ++counters.crossLineTrained;
         }
-        auto &s = sampler.access(base & 1023,
+        if (base != line)
+            ++counters.crossLineTrained;
+        ++counters.qualityReads;
+        const auto hint = confidenceForHash(pc, context);
+        if (hint && hint->sentEvidence >= 12 && hint->usefulness >= 56 &&
+            hint->timeliness >= 40) {
+            ++counters.pairs;
+            ++counters.bypassPairs;
+            recordPair(pc, context, base, line, f.roles, f.kind);
+            return output;
+        }
+        auto &s = sampler.access(base & (SAMPLER_SETS - 1),
             [=](const auto &e) { return e.base == base && e.context == context; }, hit);
         const bool matches = hit && s.target == line && s.pc == pc;
         const bool record = hit && (matches || s.matches);

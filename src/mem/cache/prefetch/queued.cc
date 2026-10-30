@@ -145,7 +145,8 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID req
     metadata.instXsMetadata = nullptr;
     metadata.prefetchSource = safe_pf_src;
     metadata.prefetchDepth = prf_depth;
-    if (!metadata.prefetchProducerPC && pfInfo.hasPC())
+    if (!metadata.prefetchProducerPC && pfInfo.hasPC() &&
+        safe_pf_src != PrefetchSourceType::TP)
         metadata.prefetchProducerPC = pfInfo.getPC();
     if (!isLldpPrefetchSource(safe_pf_src)) {
         metadata.prefetchDataOffset = pfInfo.getPaddr() & (blk_size - 1);
@@ -175,8 +176,11 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID req
     if (pfInfo.hasPC()) {
         // Preserve the load PC which triggered this spatial prefetch.  LLDP
         // uses it as the producer lookup key even when tag_prefetch is off.
-        pkt->req->setPC(isLldpPrefetchSource(safe_pf_src) ?
-            metadata.prefetchConsumerPC : pfInfo.getPC());
+        if (safe_pf_src == PrefetchSourceType::TP)
+            pkt->req->setPC(metadata.prefetchProducerPC);
+        else
+            pkt->req->setPC(isLldpPrefetchSource(safe_pf_src) ?
+                metadata.prefetchConsumerPC : pfInfo.getPC());
     }
     tick = t;
 }
