@@ -2,6 +2,9 @@
 #define __CPU_PRED_BTB_TIMED_BASE_PRED_HH__
 
 
+#include <functional>
+#include <utility>
+
 #include <boost/dynamic_bitset.hpp>
 
 // Conditional includes based on build mode
@@ -139,15 +142,34 @@ class TimedBaseBTBPredictor: public SimObject
     // Check if this component is enabled
     bool isEnabled() const { return enabled; }
 
+    void setPartitionBorrowing(std::function<bool()> query)
+    {
+        partitionBorrowing = std::move(query);
+    }
+
+    bool borrowsPartitions() const
+    {
+        return smtTidPartitioned && partitionBorrowing && partitionBorrowing();
+    }
+
+    // Lookup may use the extra physical bank bit, selected by PC/ASID. Keep
+    // partitionIndexBits() unchanged for folded histories and tag encoding;
+    // no history resize, reset, or tag reinterpretation occurs on wake.
+    unsigned lookupIndexBits(unsigned fullIndexBits) const
+    {
+        return borrowsPartitions() ? fullIndexBits :
+            partitionIndexBits(fullIndexBits);
+    }
+
     /**
-     * Map an index into one of two equal per-thread storage partitions.
-     * The underlying vector keeps its original total size; only ownership and
-     * replacement domains change when partitioning is enabled.
+     * Map to a private half while both threads participate, or to the full
+     * table while the sole resource-active thread borrows the other half.
+     * Physical storage and tag/fold formats stay fixed across transitions.
      */
     unsigned partitionIndex(unsigned index, unsigned totalEntries,
                             ThreadID tid) const
     {
-        if (!smtTidPartitioned) {
+        if (!smtTidPartitioned || borrowsPartitions()) {
             return index % totalEntries;
         }
         assert(totalEntries >= 2 && totalEntries % 2 == 0);
@@ -164,7 +186,7 @@ class TimedBaseBTBPredictor: public SimObject
 
     unsigned partitionBegin(unsigned totalEntries, ThreadID tid) const
     {
-        if (!smtTidPartitioned) {
+        if (!smtTidPartitioned || borrowsPartitions()) {
             return 0;
         }
         assert(totalEntries >= 2 && totalEntries % 2 == 0);
@@ -174,7 +196,7 @@ class TimedBaseBTBPredictor: public SimObject
 
     unsigned partitionEnd(unsigned totalEntries, ThreadID tid) const
     {
-        return smtTidPartitioned ?
+        return smtTidPartitioned && !borrowsPartitions() ?
             partitionBegin(totalEntries, tid) + totalEntries / 2 :
             totalEntries;
     }
@@ -186,6 +208,9 @@ private:
     PredictorTrainingStage trainingStage;
     bool enabled;
     bool smtTidPartitioned;
+    // Live query avoids a second allocation cache and is bounded by the
+    // configured hardware thread count. An empty query keeps static behavior.
+    std::function<bool()> partitionBorrowing;
 };
 
 // Close conditional namespace wrapper for testing

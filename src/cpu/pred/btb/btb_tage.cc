@@ -1116,7 +1116,7 @@ Addr
 BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist,
                       uint8_t asidHash, ThreadID tid) const
 {
-    const unsigned localIndexBits = partitionIndexBits(tableIndexBits[t]);
+    const unsigned localIndexBits = lookupIndexBits(tableIndexBits[t]);
     Addr mask = (1ULL << localIndexBits) - 1;
 
     const unsigned pcShift = enableBankConflict ? indexShift : bankBaseShift;

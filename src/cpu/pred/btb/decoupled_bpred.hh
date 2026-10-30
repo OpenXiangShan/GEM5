@@ -77,7 +77,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     // FetchTargetId ftqId{1}; // next FSQ id to allocate (monotonic)
     // FetchTargetId fetchHeadFtqId{1}; // next FSQ id to be consumed by fetch
 
-    CPU *cpu;
+    CPU *cpu = nullptr;
     ThreadID nextPredictTid = 0;
     const unsigned numPredictingThreads;
     unsigned predictWidth;  // max predict width, default 64
@@ -167,6 +167,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     unsigned sharedFTQAllocation(unsigned entries) const;
     unsigned logicalMaxFTQEntries(ThreadID tid) const;
     unsigned logicalFreeFTQEntries(ThreadID tid) const;
+    bool canTrainTable(const TimedBaseBTBPredictor *component,
+                       const PredictionUpdateContext &context) const;
     bool ftqFull(ThreadID tid) const;
 
     bool isThreadActive(ThreadID tid) const;
@@ -332,6 +334,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar redirectPendingPredictionSkips;
         statistics::Distribution predictionsStartedPerCycle;
         statistics::Vector predictionsStartedByThread;
+        statistics::Scalar stalePartitionUpdatesSkipped;
 
         statistics::Scalar s1PredWrongFallthrough;
         statistics::Scalar s1PredWrongUbtb;
@@ -369,7 +372,10 @@ class DecoupledBPUWithBTB : public BPredUnit
         panic("Squashing decoupled BP with tightly coupled API\n");
     }
 
-    void setCpu(CPU *_cpu) { cpu = _cpu; }
+    void setCpu(CPU *_cpu);
+    // FTQ {limit, used, free}, then accessible half-table bank counts for
+    // uBTB/aBTB/microTAGE/mBTB/TAGE/ITTAGE/MGSC (0 inactive, 1 half, 2 full).
+    std::vector<unsigned> getSmtResourceState(ThreadID tid) const;
     uint8_t getThreadAsidHash(ThreadID tid) const;
 
     void consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid);

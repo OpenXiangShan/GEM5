@@ -731,6 +731,7 @@ CPU::activateThread(ThreadID tid)
         DPRINTF(O3CPU, "[tid:%i] Adding to active threads list\n", tid);
 
         activeThreads.push_back(tid);
+        ++smtResourceEpoch;
     }
 }
 
@@ -752,6 +753,7 @@ CPU::deactivateThread(ThreadID tid)
         DPRINTF(O3CPU,"[tid:%i] Removing from active threads list\n",
                 tid);
         activeThreads.erase(thread_it);
+        ++smtResourceEpoch;
     }
 
     fetch.deactivateThread(tid);
@@ -919,6 +921,7 @@ CPU::resumeWfi(ThreadID tid)
 {
     assert(isWfiWaiting(tid));
     wfiState[tid] = WfiState::Running;
+    ++smtResourceEpoch;
     wfiWakePending[tid] = false;
     ++wfiWakeups[tid];
     // Keep the architectural PC advanced past WFI. Interrupt delivery uses
@@ -963,9 +966,10 @@ CPU::updateWfi()
         }
         fetch.finishWfi(tid);
         // Keep activeThreads, ThreadContext status and rename ownership.
-        // ROB/LQ/SQ queries see Waiting immediately and drop unused reserves;
-        // other SMT resources continue using their existing active identity.
+        // Shared queue and predictor queries see Waiting immediately and
+        // release unused capacity; architectural/rename state remains private.
         wfiState[tid] = WfiState::Waiting;
+        ++smtResourceEpoch;
         if (wfiWakePending[tid]) {
             resumeWfi(tid);
             continue;

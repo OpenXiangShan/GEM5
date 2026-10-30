@@ -147,6 +147,9 @@ class CPU : public BaseCPU
     std::array<bool, MaxThreads> wfiWakePending{};
     std::array<uint64_t, MaxThreads> wfiEntries{};
     std::array<uint64_t, MaxThreads> wfiWakeups{};
+    // Metadata from a previous resource layout may still be in flight. The
+    // monotonically increasing version also distinguishes 2 -> 1 -> 2 (ABA).
+    uint64_t smtResourceEpoch = 0;
     void updateWfi();
     void resumeWfi(ThreadID tid);
     bool wfiInterruptPending(ThreadID tid);
@@ -289,10 +292,12 @@ class CPU : public BaseCPU
      * ROB/LQ/SQ allocation eligibility, separate from pipeline membership.
      * Keep Cleaning eligible so the existing squash/store cleanup can finish;
      * only Waiting gives up the WFI thread's unused reservations. Do not use
-     * this predicate to stop ticking stages or to change other SMT resources.
+     * this predicate to stop ticking stages. FTQ and predictor-table borrowing
+     * share the same eligibility rule; architectural state remains private.
      */
     bool isRobLsqActive(ThreadID tid) const;
     unsigned numRobLsqActiveThreads() const;
+    uint64_t getSmtResourceEpoch() const { return smtResourceEpoch; }
 
     /** Read-only diagnostics: ROB, LQ, SQ rows of {limit, used, free}. */
     std::vector<std::vector<unsigned>> getRobLsqState(ThreadID tid);

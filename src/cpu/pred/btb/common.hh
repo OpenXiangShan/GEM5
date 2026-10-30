@@ -350,6 +350,7 @@ struct FetchTarget
     // prediction metas
     // FIXME: use vec
     std::array<std::shared_ptr<void>, 9> predMetas; // each component has a meta, TODO
+    uint64_t resourceEpoch = 0; // ownership/layout at prediction time
 
     Tick predTick;         // tick of the prediction
     boost::dynamic_bitset<> history; // record GHR/s0History
@@ -492,6 +493,7 @@ struct PredictionUpdateContext
     uint8_t asidHash;
     Addr startPC;
     Tick predTick;
+    uint64_t resourceEpoch;
 
     const std::array<std::shared_ptr<void>, 9> &predMetas;
     const boost::dynamic_bitset<> &phistory;
@@ -502,6 +504,7 @@ struct PredictionUpdateContext
           asidHash(target.asidHash),
           startPC(target.startPC),
           predTick(target.predTick),
+          resourceEpoch(target.resourceEpoch),
           predMetas(target.predMetas),
           phistory(target.phistory),
           previousPCs(target.previousPCs)
@@ -608,6 +611,7 @@ struct FullBTBPrediction
     unsigned predSource;
     OverrideReason overrideReason;
     Tick predTick;
+    uint64_t resourceEpoch = 0;
 
     //only use for countering the source of the prediction
     int s1Source;

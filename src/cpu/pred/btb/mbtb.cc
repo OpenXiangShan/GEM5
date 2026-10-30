@@ -841,9 +841,10 @@ MBTB::eraseFromVictimCacheByPC(Addr pc, Addr tag, ThreadID tid)
     // Shared SRAM writes are visible to every thread, so invalidate matching
     // entries in all private VCs. Partitioned SRAM writes affect only this tid.
     // Match the ASID-derived tag too, preserving other address spaces' entries.
-    const unsigned firstTid = usesTidPartitionedStorage() ? tid : 0;
-    const unsigned endTid = usesTidPartitionedStorage() ?
-        tid + 1 : victimCaches.size();
+    const bool privatePartition = usesTidPartitionedStorage() &&
+        !borrowsPartitions();
+    const unsigned firstTid = privatePartition ? tid : 0;
+    const unsigned endTid = privatePartition ? tid + 1 : victimCaches.size();
     bool erased = false;
     for (unsigned cacheTid = firstTid; cacheTid < endTid; ++cacheTid) {
         for (auto &entry : victimCaches[cacheTid]) {

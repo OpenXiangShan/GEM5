@@ -1052,7 +1052,7 @@ Addr
 BTBMGSC::getHistIndex(Addr pc, unsigned tableIndexBits, uint64_t foldedHist,
                       uint8_t asidHash, ThreadID tid)
 {
-    const unsigned localIndexBits = partitionIndexBits(tableIndexBits);
+    const unsigned localIndexBits = lookupIndexBits(tableIndexBits);
     Addr mask = (1ULL << localIndexBits) - 1;
 
     // Extract lower bits of PC and XOR with folded history directly
@@ -1068,7 +1068,7 @@ Addr
 BTBMGSC::getBiasIndex(Addr pc, unsigned tableIndexBits, bool lowbit0,
                       bool lowbit1, uint8_t asidHash, ThreadID tid)
 {
-    const unsigned localIndexBits = partitionIndexBits(tableIndexBits);
+    const unsigned localIndexBits = lookupIndexBits(tableIndexBits);
     assert(localIndexBits >= 2);
     Addr mask = (1ULL << (localIndexBits - 2)) - 1;
 

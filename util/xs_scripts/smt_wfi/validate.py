@@ -59,6 +59,14 @@ def validate(output):
                 waiting["used"] != [0, 0, 0] or
                 waiting["free"] != [0, 0, 0]):
             raise ValueError("incorrect WFI ROB/LQ/SQ allocation")
+        running, waiting = phase["prediction"]
+        if (running[0] != report["ftq_capacity"] or
+                running[3:] != report["predictor_banks"] or any(waiting)):
+            raise ValueError("incorrect WFI FTQ/predictor allocation")
+        if not 0 <= running[1] <= report["ftq_capacity"]:
+            raise ValueError("FTQ physical capacity exceeded")
+        if running[2] != report["ftq_capacity"] - running[1]:
+            raise ValueError("incorrect FTQ free credits")
     for key in ("system.cpu.committedOps::1",
                 "system.cpu.branchPred.predictionsStartedByThread::1"):
         if stats[key] != 0:

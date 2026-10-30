@@ -25,7 +25,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from m5.SimObject import SimObject
+from m5.SimObject import SimObject, PyBindMethod
 from m5.params import *
 from m5.proxy import *
 
@@ -1214,6 +1214,7 @@ class DecoupledBPUWithBTB(BranchPredictor):
     type = 'DecoupledBPUWithBTB'
     cxx_class = 'gem5::branch_prediction::btb_pred::DecoupledBPUWithBTB'
     cxx_header = "cpu/pred/btb/decoupled_bpred.hh"
+    cxx_exports = [PyBindMethod("getSmtResourceState")]
 
     # n = 2
     ftq_size = Param.Unsigned(128, "Fetch target queue size")

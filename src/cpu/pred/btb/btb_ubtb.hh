@@ -277,14 +277,9 @@ class UBTB : public TimedBaseBTBPredictor
 
     std::pair<UBTBIter, UBTBIter> threadRange(ThreadID tid)
     {
-        if (!usesTidPartitionedStorage()) {
-            return {ubtb.begin(), ubtb.end()};
-        }
-        assert(numEntries >= 2 && numEntries % 2 == 0);
-        assert(tid < 2);
-        const auto entriesPerThread = numEntries / 2;
-        auto begin = ubtb.begin() + tid * entriesPerThread;
-        return {begin, begin + entriesPerThread};
+        // Lookup and victim selection must use the same effective range.
+        return {ubtb.begin() + partitionBegin(numEntries, tid),
+                ubtb.begin() + partitionEnd(numEntries, tid)};
     }
 
 

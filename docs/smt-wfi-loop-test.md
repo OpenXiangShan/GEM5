@@ -33,7 +33,8 @@ architectural registers, rename mappings and hardware allocation identity are
 retained. ROB and shared LQ/SQ use a separate resource-active predicate:
 a thread must be in activeThreads and must not be WFI Waiting. Cleaning retains
 its quotas; Waiting releases all unused reservations. Therefore a sole running
-thread can use the full ROB/LQ/SQ capacities, while IQ/FTQ, predictor and physical
+thread can use the full ROB/LQ/SQ and shared FTQ capacities. Tid-partitioned
+predictor tables also allow that thread to use both halves. IQ and physical
 register policies retain their existing behavior.
 
 DynamicBorrowing reserves the original base/donor minimum only for resource-active
@@ -48,6 +49,57 @@ thread transitions. No new experiment switch is required.
 Only fully waiting threads are exempt from the commit-progress watchdog.
 Cleanup and the running sibling remain checked. Waking resets the waiting
 thread's watchdog interval.
+
+## FTQ and predictor-table borrowing
+
+The same resource-active rule applies to FTQ and table borrowing: a thread must
+be in activeThreads and must not be WFI Waiting. Cleaning retains its identity.
+When only one thread remains eligible, shared Partitioned/Threshold FTQ quotas
+expand to the full physical capacity. Existing FTQ occupancy still counts
+against shared capacity. Wake restores ordinary quotas, clamping new credits
+at zero if a thread still holds more entries than its restored limit.
+
+For uBTB, aBTB, microTAGE, mBTB, TAGE, ITTAGE and MGSC, the configured physical
+storage is unchanged. With both threads eligible, each tid uses its original
+half. With one eligible thread, lookup, replacement and useful-bit reset may
+use the whole table. The extra lookup bank bit comes from PC/ASID indexing;
+folded-history widths and tags retain the configured SMT format. This avoids
+resizing speculative histories or reinterpreting saved recovery metadata.
+A sleeping thread's table entries can be replaced naturally by the borrower;
+its private history/RAS state is retained. No table-wide flush is performed.
+
+Resource eligibility transitions increment a monotonic CPU epoch. Predictions
+snapshot it when their metadata is generated and carry it into FTQ update
+contexts. Resolve/commit table writes with an old epoch are skipped, including
+across a 2 -> 1 -> 2 transition. History recovery, architectural execution,
+statistics and private RAS updates continue normally. The statistic
+`system.cpu.branchPred.stalePartitionUpdatesSkipped` counts skipped component
+writes. New predictions train with the current epoch.
+
+Measurement snapshots contain `prediction` rows for T0/T1: FTQ limit, occupancy,
+free credits, followed by accessible half-table bank counts for uBTB, aBTB,
+microTAGE, mBTB, TAGE, ITTAGE and MGSC. A count of two means full table capacity;
+one means the original half, and zero means disabled/inactive. Waiting must
+show full T0 capacity and zero T1 capacity. Wake/cleanup must restore each
+configured partition and respect total FTQ capacity.
+
+This is capacity borrowing within the SMT configuration, not an ST-equivalence
+mode. For example, this SMT configuration physically doubles uBTB to 64 entries,
+so a sole borrower can use 64 entries while the ST configuration has 32. The
+retained SMT folded-history format also differs from an unpartitioned predictor.
+Compare configurations carefully; larger capacity does not guarantee every
+slice improves.
+
+Targeted unit tests cover both tids, 2 -> 1 -> 2 mapping, unchanged tag/fold
+formats, and actual TAGE index coverage of both physical banks:
+
+```sh
+scons build/RISCV/cpu/pred/btb/test/smt_partition.test.opt \
+  build/RISCV/cpu/pred/btb/test/tage.test.opt --unit-test --gold-linker -j32
+build/RISCV/cpu/pred/btb/test/smt_partition.test.opt
+build/RISCV/cpu/pred/btb/test/tage.test.opt \
+  --gtest_filter=BTBTAGETest.BorrowedPartitionUsesBothPhysicalBanks
+```
 
 ## Interrupts and state lifetime
 

@@ -183,6 +183,35 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     });
 }
 
+void
+DecoupledBPUWithBTB::setCpu(CPU *_cpu)
+{
+    cpu = _cpu;
+    for (auto *component : components) {
+        component->setPartitionBorrowing([this] {
+            return cpu && cpu->numRobLsqActiveThreads() == 1;
+        });
+    }
+}
+
+std::vector<unsigned>
+DecoupledBPUWithBTB::getSmtResourceState(ThreadID tid) const
+{
+    fatal_if(tid >= numThreads, "Invalid SMT thread id %u", tid);
+    std::vector<unsigned> result{logicalMaxFTQEntries(tid),
+        static_cast<unsigned>(ftq.size(tid)), logicalFreeFTQEntries(tid)};
+    for (auto *component : std::vector<TimedBaseBTBPredictor *>{
+             ubtb, abtb, microtage, mbtb, tage, ittage, mgsc}) {
+        // Normalize to two physical half-table banks. This diagnostic uses
+        // the same range functions as replacement/useful-bit reset paths.
+        const unsigned banks = !component->isEnabled() ||
+            (cpu && !cpu->isRobLsqActive(tid)) ? 0 :
+            component->partitionEnd(2, tid) - component->partitionBegin(2, tid);
+        result.push_back(banks);
+    }
+    return result;
+}
+
 bool
 DecoupledBPUWithBTB::sharedFTQMode() const
 {
@@ -200,7 +229,7 @@ DecoupledBPUWithBTB::activeFTQThreads() const
         return std::max(1u, numThreads);
     }
 
-    return std::max(1, cpu->numActiveThreads());
+    return cpu->numRobLsqActiveThreads();
 }
 
 unsigned
@@ -217,6 +246,9 @@ unsigned
 DecoupledBPUWithBTB::sharedFTQAllocation(unsigned entries) const
 {
     const unsigned active_threads = activeFTQThreads();
+    if (active_threads == 0) {
+        return 0;
+    }
 
     switch (ftqPolicy) {
       case SMTFTQPolicy::Dynamic:
@@ -237,7 +269,10 @@ DecoupledBPUWithBTB::logicalMaxFTQEntries(ThreadID tid) const
         return ftqEntries;
     }
 
-    return sharedFTQAllocation(ftqEntries);
+    // Cleaning retains membership; only Waiting/non-active relinquishes
+    // reservations. Outstanding FTQ entries still count in totalFTQEntries().
+    return cpu && !cpu->isRobLsqActive(tid) ? 0 :
+        sharedFTQAllocation(ftqEntries);
 }
 
 unsigned
@@ -437,6 +472,7 @@ DecoupledBPUWithBTB::requestNewPrediction(ThreadID tid)
     clearPreds(tid);
     for (int i = 0; i < numStages; i++) {
         predsOfEachStage[i].tid = tid;
+        predsOfEachStage[i].resourceEpoch = cpu ? cpu->getSmtResourceEpoch() : 0;
         predsOfEachStage[i].asidHash = asid_hash;
         predsOfEachStage[i].bbStart = thread.s0PC;
         predsOfEachStage[i].predSource = i;
@@ -730,6 +766,7 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
     // Cast the second block prediction into a FullBTBPrediction for FTQ enqueue & refreshing metas
     FullBTBPrediction secondPred;
     secondPred.tid = tid;
+    secondPred.resourceEpoch = cpu ? cpu->getSmtResourceEpoch() : 0;
     secondPred.asidHash = thread.finalPred.asidHash;
     secondPred.bbStart = thread.s0PC;
     secondPred.predSource = pairtage->getComponentIdx();
@@ -1198,7 +1235,8 @@ DecoupledBPUWithBTB::resolveUpdate(const std::vector<BranchOutcome> &events)
 
     // Phase 1: probe all resolved-update components to ensure no blocker
     for (int i = 0; i < numComponents; ++i) {
-        if (components[i]->trainsAtResolve()) {
+        if (components[i]->trainsAtResolve() &&
+            canTrainTable(components[i], context)) {
             if (!components[i]->canResolveUpdate(context, update)) {
                 return false;
             }
@@ -1208,6 +1246,10 @@ DecoupledBPUWithBTB::resolveUpdate(const std::vector<BranchOutcome> &events)
     // Phase 2: all clear, perform updates once
     for (int i = 0; i < numComponents; ++i) {
         if (components[i]->trainsAtResolve()) {
+            if (!canTrainTable(components[i], context)) {
+                ++dbpBtbStats.stalePartitionUpdatesSkipped;
+                continue;
+            }
             components[i]->doResolveUpdate(context, update);
         }
     }
@@ -1244,12 +1286,30 @@ DecoupledBPUWithBTB::setRedirectPending(ThreadID tid, bool pending)
     threads[tid].redirectPending = pending;
 }
 
+bool
+DecoupledBPUWithBTB::canTrainTable(
+    const TimedBaseBTBPredictor *component,
+    const PredictionUpdateContext &context) const
+{
+    // Predictions can outlive a 2 -> 1 -> 2 ownership transition. Their saved
+    // provider indices belong to the old layout, so do not train those tables.
+    // Keep history recovery, statistics and private RAS updates on their
+    // existing paths; no architectural instruction is discarded here.
+    return !component->usesTidPartitionedStorage() || !cpu ||
+        (cpu->isRobLsqActive(context.tid) &&
+         context.resourceEpoch == cpu->getSmtResourceEpoch());
+}
+
 void
 DecoupledBPUWithBTB::updatePredictorComponents(
     const PredictionUpdateContext &context, const PreparedUpdate &update)
 {
     for (int i = 0; i < numComponents; ++i) {
         if (components[i]->trainsAtCommit()) {
+            if (!canTrainTable(components[i], context)) {
+                ++dbpBtbStats.stalePartitionUpdatesSkipped;
+                continue;
+            }
             components[i]->update(context, update);
         }
     }
@@ -1307,6 +1367,7 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     // Create a new fetch target entry
     FetchTarget entry;
     entry.tid = tid;
+    entry.resourceEpoch = pred.resourceEpoch;
     entry.asidHash = pred.asidHash;
     entry.startPC = startPC;
 

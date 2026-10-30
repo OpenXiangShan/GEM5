@@ -517,6 +517,8 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     "number of distinct SMT thread predictions started in one cycle"),
     ADD_STAT(predictionsStartedByThread, statistics::units::Count::get(),
     "number of predictions started for each SMT thread"),
+    ADD_STAT(stalePartitionUpdatesSkipped, statistics::units::Count::get(),
+    "component training skipped after a resource ownership/layout change"),
     ADD_STAT(s1PredWrongFallthrough, statistics::units::Count::get(), "S1pred wrong full throughs"),
     ADD_STAT(s1PredWrongUbtb, statistics::units::Count::get(),"S1pred wrong using ubtb "),
     ADD_STAT(s1PredWrongAbtb, statistics::units::Count::get(), "S1pred wrong using abtb "),

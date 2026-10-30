@@ -78,3 +78,6 @@ env.Append(UNITTESTS=['uras.test',
         'jump_ahead.test',
         'fetch_target_queue.test',
         'decoupled_bpred.test'])
+
+GTest('smt_partition.test', 'smt_partition.test.cc', '../timed_base_pred.cc')
+env.Append(UNITTESTS=['smt_partition.test'])

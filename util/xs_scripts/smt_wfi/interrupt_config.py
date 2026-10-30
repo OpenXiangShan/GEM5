@@ -36,6 +36,7 @@ def run(options, system, maxtick):
             "allocated": int(cpu.numActiveThreads()),
             "runnable": int(cpu.numRunnableThreads()),
             "rob_lsq": SMTWfiLoop.rob_lsq_state(cpu),
+            "prediction": SMTWfiLoop.prediction_state(cpu),
         }
         capacity = [int(cpu.numROBEntries), int(cpu.LQEntries),
                     int(cpu.SQEntries)]
@@ -57,6 +58,26 @@ def run(options, system, maxtick):
                 raise RuntimeError("Waiting did not relinquish its quotas")
         elif not all(r["active"] for r in resources):
             raise RuntimeError("wake/cleanup must retain both resource identities")
+        predicted = point["prediction"]
+        total = int(cpu.branchPred.ftq_size)
+        used = sum(state[1] for state in predicted)
+        if used > total:
+            raise RuntimeError("FTQ physical capacity exceeded")
+        active = sum(resource["active"] for resource in resources)
+        for resource, state in zip(resources, predicted):
+            limit = total // active if resource["active"] else 0
+            if (state[0] != limit or
+                    state[2] != min(max(0, limit - state[1]), total - used)):
+                raise RuntimeError("incorrect FTQ quota/credits after wake")
+            for name, banks in zip(("ubtb", "abtb", "microtage", "mbtb",
+                                    "tage", "ittage", "mgsc"), state[3:]):
+                component = getattr(cpu.branchPred, name)
+                expected = 0
+                if resource["active"] and bool(component.enabled):
+                    expected = 1 if (active == 2 and
+                                     bool(component.smtTidPartitioned)) else 2
+                if banks != expected:
+                    raise RuntimeError("incorrect predictor capacity: " + name)
         points.append(point)
         print("WFI interrupt test", json.dumps(point), flush=True)
         if point["allocated"] != 2:

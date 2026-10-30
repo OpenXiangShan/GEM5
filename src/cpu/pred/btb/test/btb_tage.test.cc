@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <set>
 #include <vector>
 
 #include "base/types.hh"
@@ -1585,6 +1586,29 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, RecoverPHistUsesTakenControlPath) {
     tage->checkFoldedHist(pathHistoryAfter, "recover taken control path");
 }
 
+
+TEST_F(BTBTAGETest, BorrowedPartitionUsesBothPhysicalBanks)
+{
+    tage->setSmtTidPartitioned(true);
+    bool single = false;
+    tage->setPartitionBorrowing([&single] { return single; });
+    const unsigned size = tage->tableSizes[0];
+    const Addr tag = tage->getTageTag(0x1234, 0, 0, 0, 0, 0);
+    for (bool borrow : {false, true, false}) {
+        single = borrow;
+        EXPECT_EQ(tage->getTageTag(0x1234, 0, 0, 0, 0, 0), tag);
+        for (ThreadID tid : {0, 1}) {
+            std::set<Addr> visited;
+            for (Addr pc = 0; pc < size * 256; pc += 2) {
+                visited.insert(tage->getTageIndex(pc, 0, uint64_t(0), 0, tid));
+            }
+            EXPECT_EQ(visited.size(), borrow ? size : size / 2);
+            EXPECT_EQ(*visited.begin(), borrow ? 0 : tid * (size / 2));
+            EXPECT_EQ(*visited.rbegin(), borrow ? size - 1 :
+                      (tid + 1) * (size / 2) - 1);
+        }
+    }
+}
 
 }  // namespace test
 

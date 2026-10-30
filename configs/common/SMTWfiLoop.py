@@ -20,6 +20,12 @@ def rob_lsq_state(cpu):
     return result
 
 
+def prediction_state(cpu):
+    """FTQ credits and accessible half-table bank counts, read-only."""
+    return [[int(value) for value in cpu.branchPred.getSmtResourceState(tid)]
+            for tid in range(int(cpu.numThreads))]
+
+
 def run(options, system, maxtick):
     cpu = system.cpu[0]
     warmup = options.warmup_insts_no_switch or 0
@@ -42,6 +48,11 @@ def run(options, system, maxtick):
         fatal("Restorer symbol must point to a real WFI instruction")
     report = {"experiment": "wfi-wait", "measured_tid": 0, "waiting_tid": 1,
               "num_threads": int(cpu.numThreads),
+              "ftq_capacity": int(cpu.branchPred.ftq_size),
+              "predictor_banks": [2 if bool(getattr(cpu.branchPred, name).enabled)
+                                  else 0 for name in (
+                                      "ubtb", "abtb", "microtage", "mbtb",
+                                      "tage", "ittage", "mgsc")],
               "rob_lsq_capacity": [int(cpu.numROBEntries), int(cpu.LQEntries),
                                    int(cpu.SQEntries)],
               "checkpoint": str(system.gcpt_file), "restorer": str(restorer),
@@ -75,6 +86,7 @@ def run(options, system, maxtick):
                  "allocation_threads": int(cpu.numActiveThreads()),
                  "runnable_threads": int(cpu.numRunnableThreads()),
                  "rob_lsq": rob_lsq_state(cpu),
+                 "prediction": prediction_state(cpu),
                  "wfi_entries": int(cpu.getWfiEntries(1)),
                  "wfi_wakeups": int(cpu.getWfiWakeups(1))}
         # Waiting preserves the hardware context, but releases all unused
@@ -85,6 +97,10 @@ def run(options, system, maxtick):
                 resources[1]["limits"] != [0, 0, 0] or
                 resources[1]["used"] != [0, 0, 0]):
             fatal("WFI did not release its ROB/LQ/SQ reservations")
+        running, waiting = point["prediction"]
+        if (running[0] != report["ftq_capacity"] or
+                running[3:] != report["predictor_banks"] or any(waiting)):
+            fatal("WFI did not release FTQ/predictor table capacity")
         report["phases"].append(point)
         print("SMT WFI: %s tick=%d T0=%d T1=%d allocation=2 runnable=1" %
               (phase, point["tick"], *point["insts"]))
