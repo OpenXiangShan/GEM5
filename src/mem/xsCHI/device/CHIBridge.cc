@@ -201,7 +201,17 @@ CHIBridge::BridgeStats::BridgeStats(CHIBridge *parent)
                     statistics::units::Count>::get(),
                "Average waiting cycles per COMPACK send"),
       ADD_STAT(wait_compack_pending_max, statistics::units::Count::get(),
-               "Maximum pending COMPACK queue depth")
+               "Maximum pending COMPACK queue depth"),
+      ADD_STAT(l3_hint_enqueued, statistics::units::Count::get(),
+               "L3 prefetch hints admitted to the RN queue"),
+      ADD_STAT(l3_hint_sent, statistics::units::Count::get(),
+               "L3 prefetch hints sent on the CHI REQ channel"),
+      ADD_STAT(l3_hint_duplicate, statistics::units::Count::get(),
+               "Duplicate L3 prefetch hints suppressed in the RN queue"),
+      ADD_STAT(l3_hint_dropped_full, statistics::units::Count::get(),
+               "L3 prefetch hints dropped by the full RN queue"),
+      ADD_STAT(l3_hint_send_blocked, statistics::units::Count::get(),
+               "L3 prefetch hint send attempts blocked by CHI")
 {
     using namespace statistics;
 
@@ -244,6 +254,8 @@ CHIBridge::BridgeStats::BridgeStats(CHIBridge *parent)
           TXN_Manager(1024),// default max outstanding transactions
           outstanding_requests(),
           stats(this),
+          l3HintSendEvent([this] { sendL3PrefetchHint(); },
+                          name() + ".l3_hint_send"),
           Req_tobesent(),
           req_handle_event([this] {
             DPRINTF(CHIBridge,"retry called ,Req_tobesent's number : %d reqOP:%s,addr:%lx\n",Req_tobesent.size(),
@@ -367,6 +379,68 @@ CHIBridge::BridgeStats::BridgeStats(CHIBridge *parent)
         }
         return success; // 返回是否成功发送请求
 
+    }
+
+    bool
+    CHIBridge::enqueueL3PrefetchHint(Addr paddr)
+    {
+        const Addr block = blockAddr(paddr);
+        if (l3HintPending.count(block)) {
+            stats.l3_hint_duplicate++;
+            return false;
+        }
+        if (l3HintQueue.size() == L3HintQueueCapacity) {
+            stats.l3_hint_dropped_full++;
+            return false;
+        }
+        l3HintQueue.push_back(block);
+        l3HintPending.insert(block);
+        stats.l3_hint_enqueued++;
+        scheduleL3PrefetchHint();
+        return true;
+    }
+
+    void
+    CHIBridge::scheduleL3PrefetchHint()
+    {
+        if (l3HintQueue.empty() || l3HintSendEvent.scheduled() ||
+            networkPort->isChannelBlockedByCredit(
+                Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ)) {
+            return;
+        }
+        schedule(l3HintSendEvent, curTick() + clockPeriod());
+    }
+
+    void
+    CHIBridge::sendL3PrefetchHint()
+    {
+        if (l3HintQueue.empty()) {
+            return;
+        }
+        // Ordinary requests keep priority on the shared REQ channel.
+        if (!Req_tobesent.empty()) {
+            scheduleReqRetry();
+            scheduleL3PrefetchHint();
+            return;
+        }
+        const Addr addr = l3HintQueue.front();
+        auto flit = std::make_unique<Flit>(
+            CHI_OP_TYPE::CHI_REQ_PREFETCHTGT, addr, 64);
+        flit->setSrcId(_NodeID);
+        flit->setTgtId(SAM->getTargetID(addr));
+        // PrefetchTgt has no response in this model. Do not allocate or hold
+        // a bridge transaction ID for it.
+        flit->setTxnId(0);
+        if (!networkPort->send(flit)) {
+            stats.l3_hint_send_blocked++;
+            scheduleL3PrefetchHint();
+            return;
+        }
+        recordProtocolTx(CHI_OP_TYPE::CHI_REQ_PREFETCHTGT);
+        stats.l3_hint_sent++;
+        l3HintPending.erase(addr);
+        l3HintQueue.pop_front();
+        scheduleL3PrefetchHint();
     }
     void CHIBridge::ReceiveSnoopResponse(ReqPtr req)
     {
@@ -679,6 +753,7 @@ CHIBridge::BridgeStats::BridgeStats(CHIBridge *parent)
             if (!Req_tobesent.empty()) {
                 scheduleReqRetry();
             }
+            scheduleL3PrefetchHint();
             return;
         }
 

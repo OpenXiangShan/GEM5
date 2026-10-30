@@ -4,14 +4,30 @@
 
 #include "base/trace.hh"
 #include "debug/L3CacheWrapper.hh"
+#include "mem/cache/prefetch/base.hh"
 #include "sim/system.hh"
 
 namespace gem5
 {
 
+L3CacheWrapper::ChiHintStats::ChiHintStats(L3CacheWrapper *parent)
+    : statistics::Group(parent, "chi_hint"),
+      ADD_STAT(accepted, statistics::units::Count::get(),
+               "CHI L3 hints admitted at this HN"),
+      ADD_STAT(duplicate, statistics::units::Count::get(),
+               "Duplicate CHI L3 hints suppressed"),
+      ADD_STAT(droppedFull, statistics::units::Count::get(),
+               "CHI L3 hints dropped by a full HN queue"),
+      ADD_STAT(sentToCache, statistics::units::Count::get(),
+               "CHI L3 hint packets accepted by the cache slice"),
+      ADD_STAT(cacheBlocked, statistics::units::Count::get(),
+               "CHI L3 hint packets blocked by the cache slice")
+{}
+
 L3CacheWrapper::L3CacheWrapper(const L3CacheWrapperParams &p)
     : ClockedObject(p),
       sendPrefetchEvent([this]{ processSendPrefetchEvent(); }, "SendPrefetchEvent"),
+      chiHintStats(this),
       cpu_side_port(p.name + ".cpu_side", *this),
       sliceMask(p.num_slices - 1),
       setMask((p.cache_size / (1 << p.block_bits) / p.cache_assoc / p.num_slices) - 1),
@@ -22,7 +38,8 @@ L3CacheWrapper::L3CacheWrapper(const L3CacheWrapperParams &p)
       dirSramBanks(p.dir_sram_banks),
       sliced_cache_accessor(this),
       prefetcher(p.prefetcher),
-      system(p.system)
+      system(p.system),
+      chiHintRequestorId(p.system->getRequestorId(this))
 {
     if (p.num_slices == 0 || (p.num_slices & (p.num_slices - 1)) != 0) {
         fatal("L3CacheWrapper: num_slices must be a power of 2.");
@@ -45,9 +62,31 @@ L3CacheWrapper::L3CacheWrapper(const L3CacheWrapperParams &p)
 }
 
 bool
+L3CacheWrapper::enqueueChiPrefetchHint(Addr paddr)
+{
+    const Addr block = paddr & ~((Addr(1) << block_bits) - 1);
+    if (chiHintPending.count(block) ||
+        (outstanding_prefetch && outstanding_prefetch->getAddr() == block)) {
+        chiHintStats.duplicate++;
+        return false;
+    }
+    if (chiHintQueue.size() == ChiHintQueueCapacity) {
+        chiHintStats.droppedFull++;
+        return false;
+    }
+    chiHintQueue.push_back(block);
+    chiHintPending.insert(block);
+    chiHintStats.accepted++;
+    scheduleSendPrefetch();
+    return true;
+}
+
+bool
 L3CacheWrapper::needPrefetch()
 {
-    return prefetcher && (prefetcher->hasPendingPacket() || outstanding_prefetch) && !prefetch_blocked;
+    return (outstanding_prefetch || !chiHintQueue.empty() ||
+            (prefetcher && prefetcher->hasPendingPacket())) &&
+           !prefetch_blocked;
 }
 
 void
@@ -71,6 +110,21 @@ L3CacheWrapper::processSendPrefetchEvent()
         outstanding_prefetch = prefetcher->getPacket();
     }
 
+    if (!outstanding_prefetch && !chiHintQueue.empty()) {
+        const Addr addr = chiHintQueue.front();
+        const unsigned size = 1U << block_bits;
+        auto req = std::make_shared<Request>(
+            addr, size, Request::PREFETCH, chiHintRequestorId);
+        req->setXsMetadata(Request::XsMetadata(
+            PrefetchSourceType::HWP_BOP, 0));
+        req->taskId(context_switch_task_id::Prefetcher);
+        outstanding_prefetch = new Packet(req, MemCmd::HardPFReq);
+        outstanding_prefetch->allocate();
+        outstanding_is_chi_hint = true;
+        chiHintQueue.pop_front();
+        chiHintPending.erase(addr);
+    }
+
     if (!outstanding_prefetch) {
         return;
     }
@@ -86,8 +140,15 @@ L3CacheWrapper::processSendPrefetchEvent()
 
     prefetch_blocked = !slice_cpuside_ports[slice_id].sendTimingReq(pkt);
     if (prefetch_blocked) {
+        if (outstanding_is_chi_hint) {
+            chiHintStats.cacheBlocked++;
+        }
         return;
     }
+    if (outstanding_is_chi_hint) {
+        chiHintStats.sentToCache++;
+    }
+    outstanding_is_chi_hint = false;
     outstanding_prefetch = nullptr;
     scheduleSendPrefetch();
 }

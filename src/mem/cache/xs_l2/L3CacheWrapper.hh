@@ -2,6 +2,7 @@
 #define __MEM_CACHE_XS_L2_L3_CACHE_WRAPPER_HH__
 
 #include <cstdint>
+#include <deque>
 #include <unordered_set>
 #include <vector>
 
@@ -60,12 +61,30 @@ class L3CacheWrapper : public ClockedObject
 
     bool prefetch_blocked = false;
     PacketPtr outstanding_prefetch = nullptr;
+    bool outstanding_is_chi_hint = false;
 
     void scheduleSendPrefetch();
     bool needPrefetch();
 
+    static constexpr size_t ChiHintQueueCapacity = 16;
+    std::deque<Addr> chiHintQueue;
+    std::unordered_set<Addr> chiHintPending;
+
+    struct ChiHintStats : public statistics::Group
+    {
+        explicit ChiHintStats(L3CacheWrapper *parent);
+        statistics::Scalar accepted;
+        statistics::Scalar duplicate;
+        statistics::Scalar droppedFull;
+        statistics::Scalar sentToCache;
+        statistics::Scalar cacheBlocked;
+    } chiHintStats;
+
   public:
     L3CacheWrapper(const L3CacheWrapperParams &p);
+
+    // The HN accepts a best-effort hint without creating a CHI response.
+    bool enqueueChiPrefetchHint(Addr paddr);
 
     Port &getPort(const std::string &if_name,
                   PortID idx = InvalidPortID) override;
@@ -156,6 +175,7 @@ class L3CacheWrapper : public ClockedObject
     prefetch::Base *prefetcher;
 
     System* system;
+    const RequestorID chiHintRequestorId;
 
     inline PortID getSliceId(Addr addr) const {
         return ((addr >> block_bits) & sliceMask);

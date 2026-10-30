@@ -13,6 +13,7 @@
 #include "base/types.hh"
 #include "debug/CHIL3.hh"
 #include "debug/CHIL3Txn.hh"
+#include "mem/cache/xs_l2/L3CacheWrapper.hh"
 #include "mem/packet.hh"
 #include "mem/xsCHI/base/request.hh"
 #include "sim/system.hh"
@@ -588,6 +589,12 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
       case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ: {
           CHI_OP_TYPE op = flit->getOpcode();
           switch (op) {
+            case CHI_OP_TYPE::CHI_REQ_PREFETCHTGT:
+                // This model treats PrefetchTgt as a best-effort,
+                // non-returning hint. The wrapper owns local queueing and
+                // the inner cache creates the actual prefetch MSHR.
+                cacheWrapper->enqueueChiPrefetchHint(flit->getAddr());
+                return true;
             case CHI_OP_TYPE::CHI_REQ_READUNIQUE:
             case CHI_OP_TYPE::CHI_REQ_READSHARED:
             case CHI_OP_TYPE::CHI_REQ_READCLEAN:{

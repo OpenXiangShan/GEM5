@@ -6,6 +6,7 @@
 #include <memory>
 #include <queue>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "mem/xsCHI/base/CHIPort.hh"
 #include "mem/xsCHI/base/Network/NodeID.hh"
@@ -51,6 +52,7 @@ class CHIBridge : public ClockedObject
         // Port<ReqPtr>* getStoragePort() const { return storagePort; }
         CHIPort* getNetworkPort()  { return networkPort; }
         bool ReceiveReq(ReqPtr req, bool isRetry);
+        bool enqueueL3PrefetchHint(Addr paddr);
         void ReceiveSnoopResponse(ReqPtr req);
         bool handleNetworkPortReceive(FlitPtr &flit);
 
@@ -94,6 +96,11 @@ class CHIBridge : public ClockedObject
             statistics::Scalar wait_compack_sent_total;
             statistics::Formula wait_compack_avg_cycles;
             statistics::Scalar wait_compack_pending_max;
+            statistics::Scalar l3_hint_enqueued;
+            statistics::Scalar l3_hint_sent;
+            statistics::Scalar l3_hint_duplicate;
+            statistics::Scalar l3_hint_dropped_full;
+            statistics::Scalar l3_hint_send_blocked;
         } stats;
 
         void saveOutstandingRequest(ReqPtr &req, uint32_t txn_id);
@@ -143,6 +150,13 @@ class CHIBridge : public ClockedObject
         void scheduleCompAckRetry();
 
         void TrySendReq();
+        void sendL3PrefetchHint();
+        void scheduleL3PrefetchHint();
+
+        static constexpr size_t L3HintQueueCapacity = 16;
+        std::deque<Addr> l3HintQueue;
+        std::unordered_set<Addr> l3HintPending;
+        EventFunctionWrapper l3HintSendEvent;
 
         std::queue<ReqPtr> Req_tobesent; // 用于存储待发送的请求Flit,无限长
         EventFunctionWrapper req_handle_event; // 用于处理请求发送的事件
