@@ -119,7 +119,7 @@ TEST(DirectQualityGate, BadEntryBlocksAndUsefulProbeReopens)
     EXPECT_EQ(gate.state(0x1000, 1), DirectQualityGate::State::Open);
 }
 
-TEST(DirectQualityGate, KindKeepsLargeAndSmallQualitySeparate)
+TEST(DirectQualityGate, OffsetKeepsQualitySeparateForSamePC)
 {
     TestGate test(smallConfig());
     auto &gate = *test.gate;
@@ -142,12 +142,12 @@ TEST(DirectQualityGate, DuplicateCandidateCoalescesFeedback)
     EXPECT_EQ(gate.feedbackCoalesced(), 1);
 }
 
-TEST(DirectQualityGate, TwoCandidatesShareQualityAndTrackSeparateFeedback)
+TEST(DirectQualityGate, TwoOffsetsTrackSeparateFeedbackAndQuality)
 {
     TestGate test(smallConfig());
     auto &gate = *test.gate;
     const auto first = gate.admit(0x1000, 2, 0x2000, 0x3000);
-    const auto second = gate.admit(0x1000, 2, 0x2000, 0x4000);
+    const auto second = gate.admit(0x1000, 4, 0x2000, 0x4000);
 
     ASSERT_TRUE(first.allowed);
     ASSERT_TRUE(second.allowed);
@@ -157,11 +157,42 @@ TEST(DirectQualityGate, TwoCandidatesShareQualityAndTrackSeparateFeedback)
     EXPECT_EQ(gate.sampled(), 2);
     EXPECT_EQ(gate.peakOutstanding(), 2);
 
-    gate.observeDemand(0x3000);
     gate.observeDemand(0x4000);
-    EXPECT_EQ(gate.useful(), 2);
-    EXPECT_EQ(gate.unused(), 0);
-    EXPECT_EQ(gate.state(0x1000, 2), DirectQualityGate::State::Open);
+    advancePastExpiry(gate);
+    EXPECT_EQ(gate.useful(), 1);
+    EXPECT_EQ(gate.unused(), 1);
+    EXPECT_EQ(gate.state(0x1000, 2), DirectQualityGate::State::Block);
+    EXPECT_EQ(gate.state(0x1000, 4), DirectQualityGate::State::Open);
+}
+
+TEST(DirectQualityGate, SignedOffsetsHaveSeparateQuality)
+{
+    auto config = smallConfig();
+    config.qualityTagBits = 1;
+    TestGate test(config);
+    auto &gate = *test.gate;
+    ASSERT_TRUE(gate.admit(0x1000, -1, 0x2000, 0x3000).feedbackInserted);
+    advancePastExpiry(gate);
+
+    EXPECT_EQ(gate.state(0x1000, -1), DirectQualityGate::State::Block);
+    EXPECT_EQ(gate.state(0x1000, 1), DirectQualityGate::State::Observe);
+}
+
+TEST(DirectQualityGate, SamplingDistinguishesOffsetsForSameTrigger)
+{
+    auto config = smallConfig();
+    config.observeSamplePeriod = 2;
+    TestGate test(config);
+    auto &gate = *test.gate;
+    unsigned sampled = 0;
+    for (int64_t offset = 1; offset <= 16; ++offset) {
+        const auto decision = gate.admit(
+            0x1000, offset, 0x2000, 0x3000 + offset * 64);
+        sampled += decision.sampled;
+    }
+
+    EXPECT_GT(sampled, 0);
+    EXPECT_LT(sampled, 16);
 }
 
 TEST(DirectQualityGate, FeedbackReplacementIsUnknownNotUnused)
@@ -195,6 +226,26 @@ TEST(DirectQualityGate, ReplacedOwnerMakesOutcomeUnknown)
     EXPECT_EQ(gate.unused(), 0);
     EXPECT_EQ(gate.orphanOutcomes(), 1);
     EXPECT_EQ(gate.unknownDrops(), 1);
+}
+
+TEST(DirectQualityGate, ReallocatedOwnerDoesNotClaimOldFeedback)
+{
+    auto config = smallConfig();
+    config.qualityEntries = 1;
+    config.qualityWays = 1;
+    TestGate test(config);
+    auto &gate = *test.gate;
+    ASSERT_TRUE(gate.admit(0x1000, 1, 0x2000, 0x3000).feedbackInserted);
+    ASSERT_TRUE(gate.admit(0x1000, 2, 0x2000, 0x4000).feedbackInserted);
+    ASSERT_TRUE(gate.admit(0x1000, 1, 0x2000, 0x5000).feedbackInserted);
+
+    gate.observeDemand(0x3000);
+    EXPECT_EQ(gate.useful(), 0);
+    EXPECT_EQ(gate.orphanOutcomes(), 1);
+    EXPECT_EQ(gate.state(0x1000, 1), DirectQualityGate::State::Observe);
+    gate.observeDemand(0x5000);
+    EXPECT_EQ(gate.useful(), 1);
+    EXPECT_EQ(gate.state(0x1000, 1), DirectQualityGate::State::Open);
 }
 
 TEST(DirectQualityGate, InvalidQualityWaysAreUsedBeforeReplacement)

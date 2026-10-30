@@ -96,7 +96,6 @@ class BOP : public Queued
         const int victimListSize;
         const int restoreCycle;
         const bool enableDirectQualityGate;
-        const unsigned directQualityKind;
         replacement_policy::Base *const directQualityReplacementPolicy;
         std::shared_ptr<DirectQualityGate> directQualityGate;
 

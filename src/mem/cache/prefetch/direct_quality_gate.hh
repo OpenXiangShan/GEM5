@@ -66,9 +66,9 @@ class DirectQualityGate
 
     DirectQualityGate(const Config &config, replacement_policy::Base *replacementPolicy);
 
-    Decision admit(Addr pc, uint8_t kind, Addr triggerLine, Addr candidateLine);
+    Decision admit(Addr pc, int64_t offset, Addr triggerLine, Addr candidateLine);
     void observeDemand(Addr demandLine);
-    State state(Addr pc, uint8_t kind) const;
+    State state(Addr pc, int64_t offset) const;
     bool configMatches(const DirectQualityGate &other) const;
 
     uint64_t candidates() const { return candidateCount; }
@@ -102,7 +102,8 @@ class DirectQualityGate
     {
         bool valid = false;
         uint64_t tag = 0;
-        uint8_t kind = 0;
+        int64_t offset = 0;
+        uint64_t generation = 0;
         State state = State::Observe;
         uint16_t useful = 0;
         uint16_t unused = 0;
@@ -113,9 +114,8 @@ class DirectQualityGate
     {
         bool valid = false;
         uint16_t tag = 0;
-        uint8_t qualitySet = 0;
-        uint16_t qualityTag = 0;
-        uint8_t qualityKind = 0;
+        uint8_t qualityIndex = 0;
+        uint64_t qualityGeneration = 0;
         uint8_t issueEpoch = 0;
     };
 
@@ -154,23 +154,23 @@ class DirectQualityGate
 
     static bool isPowerOf2(unsigned value);
     static unsigned log2Of(unsigned value);
-    uint64_t qualityHash(Addr pc, uint8_t kind) const;
+    uint64_t qualityHash(Addr pc, int64_t offset) const;
 
-    unsigned qualitySetFor(Addr pc, uint8_t kind) const;
-    uint64_t qualityTagFor(Addr pc, uint8_t kind) const;
+    unsigned qualitySetFor(Addr pc, int64_t offset) const;
+    uint64_t qualityTagFor(Addr pc, int64_t offset) const;
     static uint64_t feedbackKeyFor(uint64_t line, bool *needsFeedbackFolding = nullptr);
     unsigned feedbackSetFor(uint64_t key) const;
     uint64_t feedbackTagFor(uint64_t key) const;
 
-    unsigned findQuality(unsigned set, uint64_t tag, uint8_t kind) const;
-    unsigned allocateQuality(unsigned set, uint64_t tag, uint8_t kind);
+    unsigned findQuality(unsigned set, uint64_t tag, int64_t offset) const;
+    unsigned allocateQuality(unsigned set, uint64_t tag, int64_t offset);
     unsigned findFeedback(unsigned set, uint64_t tag) const;
     unsigned allocateFeedback(unsigned set);
     unsigned qualityVictim(unsigned set);
     unsigned feedbackVictim(unsigned set);
     void touchQuality(QualityEntry &entry);
 
-    bool sample(Addr pc, uint8_t kind, Addr triggerLine, unsigned period, uint64_t salt) const;
+    bool sample(Addr pc, int64_t offset, Addr triggerLine, unsigned period, uint64_t salt) const;
     unsigned blockPeriod(const QualityEntry &entry) const;
     bool shouldBlock(const QualityEntry &entry) const;
     bool shouldReopen(const QualityEntry &entry) const;

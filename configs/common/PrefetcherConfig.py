@@ -548,9 +548,7 @@ def _configure_l2_bop_cqf(prefetcher, options):
     if not getattr(options, 'enable_bop_cqf', False):
         return
     prefetcher.bop_large.enable_direct_quality_gate = True
-    prefetcher.bop_large.direct_quality_kind = 1
     prefetcher.bop_small.enable_direct_quality_gate = True
-    prefetcher.bop_small.direct_quality_kind = 2
 
 
 def _configure_l2_bop_student_cover(prefetcher, options):

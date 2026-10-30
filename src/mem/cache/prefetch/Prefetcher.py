@@ -902,8 +902,6 @@ class BOPPrefetcher(QueuedPrefetcher):
     enable_adaptoffset = Param.Bool(True, "enable adapt offset")
     enable_direct_quality_gate = Param.Bool(False,
         "Enable the CQF admission controller for raw BOP candidates")
-    direct_quality_kind = Param.Unsigned(0,
-        "CQF kind used to isolate Large and Small BOP quality state")
     direct_quality_entries = Param.Unsigned(256,
         "CQF quality-table entries")
     direct_quality_ways = Param.Unsigned(4,
@@ -955,7 +953,6 @@ class BOPPrefetcher(QueuedPrefetcher):
     restoreCycle = Param.Int(250000, "Cycles which Restore one offset from victimOffsetsList")
 
 class XSPhysicalSmallBOP(BOPPrefetcher):
-    direct_quality_kind = 2
     score_max = 31
     round_max = 50
     bad_score = 1
@@ -994,7 +991,6 @@ class XSL1SmallBOP(XSPhysicalSmallBOP):
     queue_filter = False
 
 class XSVirtualLargeBOP(BOPPrefetcher):
-    direct_quality_kind = 1
     score_max = 31
     round_max = 50
     bad_score = 2
@@ -1037,7 +1033,6 @@ class XSVirtualLargeBOP(BOPPrefetcher):
     ]
 
 class SmallBOPPrefetcher(BOPPrefetcher):
-    direct_quality_kind = 2
     score_max = 31
     round_max = 30
     bad_score = 8

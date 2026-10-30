@@ -80,7 +80,6 @@ BOP::BOP(const BOPPrefetcherParams &p)
       victimListSize(p.victimOffsetsListSize),
       restoreCycle(p.restoreCycle),
       enableDirectQualityGate(p.enable_direct_quality_gate),
-      directQualityKind(p.direct_quality_kind),
       directQualityReplacementPolicy(p.direct_quality_replacement_policy),
       directQualityGate(),
       enableStudentCover(p.enable_student_cover),
@@ -1108,8 +1107,7 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
             if (page_allowed && enableDirectQualityGate && directQualityGate &&
                 pfi.hasPC()) {
                 const auto decision = directQualityGate->admit(
-                    pfi.getPC(), static_cast<uint8_t>(directQualityKind),
-                    addr, blockAddress(prefetch_addr));
+                    pfi.getPC(), offset, addr, blockAddress(prefetch_addr));
                 cqf_allowed = decision.allowed;
                 updateDirectQualityStats();
             }
@@ -1354,8 +1352,6 @@ BOP::shareDirectQualityGateWith(BOP &other)
         return;
     if (!directQualityGate->configMatches(*other.directQualityGate))
         fatal("Large and Small BOP must use matching CQF parameters\n");
-    if (directQualityKind == other.directQualityKind)
-        fatal("Large and Small BOP must use different CQF kinds\n");
     other.directQualityGate = directQualityGate;
 }
 
