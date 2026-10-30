@@ -100,7 +100,9 @@ jobs:
             --output-dir "$GITHUB_WORKSPACE/.perf-inputs" \
             --github-output "$GITHUB_OUTPUT"
 
-          if [[ "$BENCHMARK_TYPE" == h-spec06-* ]]; then
+          if [[ "$BENCHMARK_TYPE" == trace-* ]]; then
+            : # Trace replay needs no checkpoint REF/restorer/mem-dedup setup.
+          elif [[ "$BENCHMARK_TYPE" == h-spec06-* ]]; then
             H_REF_SO="$(python3 util/nemu_ref/resolve.py h)"
             H_RESTORER="/nfs/home/share/gem5_ci/tools/gcpt.bin"
             H_DRAM_INI="$GITHUB_WORKSPACE/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
@@ -178,7 +180,10 @@ jobs:
 
           mkdir -p "$TARGET_DIR"
           cp "$CHECKPOINT_LIST_INPUT" "$TARGET_DIR/checkpoints.lst"
-          cp "$CLUSTER_CONFIG_INPUT" "$TARGET_DIR/cluster.json"
+          # Archive SPEC or Google trace weights with the run.
+          if [[ -n "$CLUSTER_CONFIG_INPUT" ]]; then
+            cp "$CLUSTER_CONFIG_INPUT" "$TARGET_DIR/cluster.json"
+          fi
 
           {
             echo "benchmark_dir=$BENCHMARK_DIR"
@@ -245,6 +250,8 @@ jobs:
           GCBH_REF_SO: ${{ steps.config.outputs.profile_ref_so }}
           GCBH_RESTORER: ${{ steps.config.outputs.profile_restorer }}
           PROFILE_EXTRA_ARGS: ${{ steps.config.outputs.profile_extra_args }}
+          # A nonempty trace format selects trace replay.
+          TRACE_FORMAT: ${{ steps.config.outputs.trace_format }}
         run: |
           mkdir -p "$PERF_ARCHIVE_DIR"
           cd "$PERF_ARCHIVE_DIR"
@@ -272,32 +279,44 @@ jobs:
           echo "Resolved extra gem5 args: $extra_args"
           printf 'resolved_extra_args: %s\n' "$extra_args" >> "$PERF_ARCHIVE_DIR/metadata.txt"
 
-          ref_so="${GCBV_MULTI_CORE_REF_SO:-${GCBH_REF_SO:-$GCBV_REF_SO}}"
-          test -r "$ref_so"
-          printf 'ref_so: %s\n' "$ref_so" >> "$PERF_ARCHIVE_DIR/metadata.txt"
-          sha256sum "$ref_so" >> "$PERF_ARCHIVE_DIR/metadata.txt"
-          if [[ -f "$(dirname "$ref_so")/manifest.json" ]]; then
-            cp "$(dirname "$ref_so")/manifest.json" "$PERF_ARCHIVE_DIR/ref-manifest.json"
-          fi
+          # Reuse checkpoint scheduling and fallback; trace needs no REF.
+          trace_args=()
+          if [[ -n "$TRACE_FORMAT" ]]; then
+            trace_args=("--trace-format=$TRACE_FORMAT")
+          else
+            ref_so="${GCBV_MULTI_CORE_REF_SO:-${GCBH_REF_SO:-$GCBV_REF_SO}}"
+            test -r "$ref_so"
+            printf 'ref_so: %s\n' "$ref_so" >> "$PERF_ARCHIVE_DIR/metadata.txt"
+            sha256sum "$ref_so" >> "$PERF_ARCHIVE_DIR/metadata.txt"
+            if [[ -f "$(dirname "$ref_so")/manifest.json" ]]; then
+              cp "$(dirname "$ref_so")/manifest.json" "$PERF_ARCHIVE_DIR/ref-manifest.json"
+            fi
 
-          if [ -n "$GCBH_REF_SO" ]; then
-            test -r "$GCBH_REF_SO"
-            test -r "$GCBH_RESTORER"
-            test -d "$CHECKPOINT_ROOT_NODE"
-            {
-              echo "profile_ref_so: $GCBH_REF_SO"
-              echo "profile_restorer: $GCBH_RESTORER"
-            } >> "$PERF_ARCHIVE_DIR/metadata.txt"
+            if [ -n "$GCBH_REF_SO" ]; then
+              test -r "$GCBH_REF_SO"
+              test -r "$GCBH_RESTORER"
+              test -d "$CHECKPOINT_ROOT_NODE"
+              {
+                echo "profile_ref_so: $GCBH_REF_SO"
+                echo "profile_restorer: $GCBH_RESTORER"
+              } >> "$PERF_ARCHIVE_DIR/metadata.txt"
+            fi
           fi
 
           run_local_parallel() {
-            echo "Using local parallel_sim.sh runner"
-            bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
-              "$CHECKPOINT_LIST" \
-              "$CHECKPOINT_ROOT_NODE" \
-              spec_all \
-              "$SPECIFIC_BENCHMARKS_INPUT" \
-              "$extra_args"
+            if [[ -n "$TRACE_FORMAT" ]]; then
+              bash "$GEM5_HOME/util/xs_scripts/trace/parallel_trace_sim.sh" \
+                "$CONFIG_PATH" "$CHECKPOINT_LIST" "$CHECKPOINT_ROOT_NODE" \
+                spec_all "$SPECIFIC_BENCHMARKS_INPUT" "$extra_args"
+            else
+              echo "Using local parallel_sim.sh runner"
+              bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
+                "$CHECKPOINT_LIST" \
+                "$CHECKPOINT_ROOT_NODE" \
+                spec_all \
+                "$SPECIFIC_BENCHMARKS_INPUT" \
+                "$extra_args"
+            fi
           }
 
           distributed_servers="$DISTRIBUTED_SERVERS"
@@ -316,6 +335,7 @@ jobs:
               --ssh-option UserKnownHostsFile="$PERF_ARCHIVE_DIR/known_hosts" \
               --ssh-option ConnectTimeout=10 \
               --build-type "$GEM5_BUILD_TYPE" \
+              "${trace_args[@]}" \
               "$(realpath "$CONFIG_PATH")" \
               "$CHECKPOINT_LIST" \
               "$CHECKPOINT_ROOT_NODE" \
@@ -332,12 +352,15 @@ jobs:
           else
             run_local_parallel
           fi
+      # SPEC scoring applies only to checkpoint suites.
       - name: Setup gem5_data_proc environment
+        if: ${{ steps.config.outputs.trace_format == '' }}
         run: |
           # 使用本地数据处理仓库，避免GitHub网络问题
           cd $GITHUB_WORKSPACE
           cp -r /nfs/home/share/gem5_ci/gem5_data_proc .
       - name: Check performance test result
+        if: ${{ steps.config.outputs.trace_format == '' }}
         env:
           PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
         run: |
@@ -383,6 +406,27 @@ jobs:
                 exit 1
               fi
           fi
+      # Trace reports reuse score.txt and the existing archive/upload steps.
+      - name: Check trace performance results
+        if: ${{ !cancelled() && steps.config.outputs.trace_format != '' && steps.archive.outputs.target_dir != '' }}
+        env:
+          BENCHMARK_TYPE: ${{ steps.config.outputs.benchmark_type }}
+          PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
+        run: |
+          status=0
+          python3 util/xs_scripts/perf_benchmarks.py "$BENCHMARK_TYPE" \
+            --output-dir "$PERF_ARCHIVE_DIR" \
+            --trace-results "$PERF_ARCHIVE_DIR/spec_all" \
+            > "$GITHUB_WORKSPACE/score.txt" || status=$?
+          cp "$GITHUB_WORKSPACE/score.txt" "$PERF_ARCHIVE_DIR/"
+          {
+            echo '### Trace performance test result'
+            echo '```'
+            cat "$GITHUB_WORKSPACE/score.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
       - name: Archive performance data
         if: ${{ always() && steps.archive.outputs.target_dir != '' }}
         run: |
