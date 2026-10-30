@@ -53,7 +53,11 @@ def template FloatExecute {{
         feclearexcept(FE_ALL_EXCEPT);
         %(code)s;
 
-        if (softfloat_exceptionFlags) {
+        // Match NEMU's fp_set_dirty even when no exception was raised.
+        // FFLAGS_EXE is deferred until commit by O3, so squashed operations
+        // cannot dirty architectural state. Pure FP reads are excluded by
+        // FPROp below, matching NEMU's fclass and fmv-to-integer helpers.
+        if (%(dirty_fs)s || softfloat_exceptionFlags) {
             xc->setMiscReg(MISCREG_FFLAGS_EXE, softfloat_exceptionFlags);
             softfloat_exceptionFlags = 0;
         }
@@ -65,7 +69,10 @@ def template FloatExecute {{
 }};
 
 def format FPROp(code, *opt_flags) {{
-    iop = InstObjParams(name, Name, 'RegOp', code, opt_flags)
+    read_only = name.startswith(('fclass_', 'fmv_x_'))
+    iop = InstObjParams(name, Name, 'RegOp',
+        {'code': code, 'dirty_fs': 'false' if read_only else 'true'},
+        opt_flags)
     header_output = BasicDeclare.subst(iop)
     decoder_output = BasicConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)

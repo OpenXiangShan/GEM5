@@ -485,8 +485,13 @@ def template CSRExecute {{
         if(csr == CSR_HIE){
             xc->setMiscReg(effectiveMiscReg, data);
         }
-        // NOTE: may has bug
-        if (data != olddata || csr == CSR_FCSR || (csr == CSR_FRM && write) || csr == CSR_VCSR) {
+        // NEMU dirties FS for an actual FP CSR write, even if its value
+        // is unchanged. Pure CSRRS/CSRRC reads must not write back FCSR.
+        // CSRRW/CSRRWI always write, including rs1=x0 or zimm=0;
+        // the shared decoder's write flag covers CSRRS/CSRRC suppression.
+        const bool fpCsrWrite = (write || bits(machInst, 13, 12) == 1) &&
+            (csr == CSR_FFLAGS || csr == CSR_FRM || csr == CSR_FCSR);
+        if (data != olddata || fpCsrWrite || csr == CSR_VCSR) {
             if (bits(csr, 11, 10) == 0x3) {
                 return std::make_shared<IllegalInstFault>(
                         csprintf("CSR %s is read-only\n", csrName), machInst);

@@ -1049,6 +1049,15 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 mstatus.sd = 1;
                 setMiscRegNoEffect(MISCREG_STATUS, mstatus);
 
+                // NEMU fp_set_dirty updates both host and guest FS when
+                // executing in virtual mode, including zero-flag operations.
+                if (readMiscRegNoEffect(MISCREG_VIRMODE)) {
+                    VSSTATUS vsstatus = readMiscRegNoEffect(MISCREG_VSSTATUS);
+                    vsstatus.fs = 3;
+                    vsstatus.sd = 1;
+                    setMiscRegNoEffect(MISCREG_VSSTATUS, vsstatus);
+                }
+
                 RegVal fflags = readMiscRegNoEffect(MISCREG_FFLAGS);
                 fflags |= (val & FFLAGS_MASK);
                 setMiscRegNoEffect(MISCREG_FFLAGS, fflags);
@@ -1062,6 +1071,13 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 mstatus.fs = 3;
                 mstatus.sd = 1;
                 setMiscRegNoEffect(MISCREG_STATUS, mstatus);
+                // Explicit FP CSR writes dirty guest FS just like NEMU.
+                if (readMiscRegNoEffect(MISCREG_VIRMODE)) {
+                    VSSTATUS vsstatus = readMiscRegNoEffect(MISCREG_VSSTATUS);
+                    vsstatus.fs = 3;
+                    vsstatus.sd = 1;
+                    setMiscRegNoEffect(MISCREG_VSSTATUS, vsstatus);
+                }
                 setMiscRegNoEffect(misc_reg, val);
             }
             break;
