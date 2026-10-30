@@ -3141,7 +3141,7 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
             request->mainReq()->getByteEnable());
     }
 
-    if (!from_sbuffer &&
+    if (!system->params().golden_mem_at_write && !from_sbuffer &&
         (!store_inst->isStoreConditional() || store_inst->lockedWriteSuccess()) &&
         cpu->goldenMemManager() &&
         has_paddr &&

@@ -145,3 +145,6 @@ class System(SimObject):
 
     num_cpus = Param.Unsigned(1, "Number of CPUs in the system")
     enable_difftest = Param.Bool(False, "Enable RISC-V difftest")
+    golden_mem_at_write = Param.Bool(
+        False, "Update golden memory at classic cache/memory writes"
+    )

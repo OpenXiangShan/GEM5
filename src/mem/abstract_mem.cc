@@ -44,6 +44,7 @@
 
 #include "base/loader/memory_image.hh"
 #include "base/loader/object_file.hh"
+#include "cpu/golden_global_mem.hh"
 #include "cpu/thread_context.hh"
 #include "debug/LLSC.hh"
 #include "debug/MemoryAccess.hh"
@@ -398,11 +399,24 @@ AbstractMemory::access(PacketPtr pkt)
     DPRINTF(MemoryAccess, "guest addr %#lx -> host_addr %#lx\n", pkt->getAddr(),
             (uint64_t) host_addr);
 
+    // Writebacks only propagate an earlier cache write. They must not
+    // overwrite a newer golden-memory value.
+    const bool update_golden =
+        pmemAddr && pkt->isWrite() && !pkt->fromCache() &&
+        system()->multiContextDifftest() &&
+        system()->params().golden_mem_at_write &&
+        system()->getGoldenMemManager()->inPmem(
+            pkt->getAddr(), pkt->getSize());
+
     if (pkt->cmd == MemCmd::SwapReq) {
         if (pkt->isAtomicOp()) {
             if (pmemAddr) {
                 pkt->setData(host_addr);
                 (*(pkt->getAtomicOp()))(host_addr);
+                if (update_golden) {
+                    system()->getGoldenMemManager()->updateGoldenMem(
+                        pkt->getAddr(), host_addr, ~0ULL, pkt->getSize());
+                }
             }
         } else {
             std::vector<uint8_t> overwrite_val(pkt->getSize());
@@ -431,8 +445,13 @@ AbstractMemory::access(PacketPtr pkt)
                     panic("Invalid size for conditional read/write\n");
             }
 
-            if (overwrite_mem)
+            if (overwrite_mem) {
                 std::memcpy(host_addr, &overwrite_val[0], pkt->getSize());
+                if (update_golden) {
+                    system()->getGoldenMemManager()->updateGoldenMem(
+                        pkt->getAddr(), host_addr, ~0ULL, pkt->getSize());
+                }
+            }
 
             assert(!pkt->req->isInstFetch());
             TRACE_PACKET("Read/Write");
@@ -464,6 +483,11 @@ AbstractMemory::access(PacketPtr pkt)
         if (writeOK(pkt)) {
             if (pmemAddr) {
                 pkt->writeData(host_addr);
+                if (update_golden) {
+                    system()->getGoldenMemManager()->updateGoldenMem(
+                        pkt->getAddr(), host_addr,
+                        pkt->req->getByteEnable(), pkt->getSize());
+                }
                 DPRINTF(MemoryAccess, "%s write due to %s\n",
                         __func__, pkt->print());
             }
