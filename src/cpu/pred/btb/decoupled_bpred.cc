@@ -326,6 +326,10 @@ DecoupledBPUWithBTB::tick()
 {
     DPRINTF(Override, "DecoupledBPUWithBTB::tick()\n");
 
+    // Fetch has already probed resolve updates against the previous cycle's
+    // MBTB reads. Start fresh even when this cycle schedules no prediction.
+    mbtb->tickStart();
+
     for (int tid = 0; tid < numThreads; ++tid) {
         auto &thread = threads[tid];
         thread.finalTrainPacket = PairTAGE::TrainPacket{};

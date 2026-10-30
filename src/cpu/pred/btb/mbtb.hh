@@ -86,7 +86,8 @@ class MBTB : public TimedBaseBTBPredictor
 #ifdef UNIT_TEST
     // Test constructor  
     MBTB(unsigned numEntries, unsigned tagBits, unsigned numWays,
-         unsigned numDelay, unsigned victimCacheSize = 8);
+         unsigned numDelay, unsigned victimCacheSize = 8,
+         bool enableBankConflict = false);
 #else
     // Production constructor
     typedef MBTBParams Params;
@@ -124,8 +125,6 @@ class MBTB : public TimedBaseBTBPredictor
     uint64_t curTick() { return tick++; }
 #else
     // Production methods
-    void tickStart() override;
-
     void tick() override;
 
     void commitBranch(const PredictionUpdateContext &context,
@@ -133,6 +132,10 @@ class MBTB : public TimedBaseBTBPredictor
     void setTrace() override;
     TraceManager *btbTrace;
 #endif
+
+    // Fetch probes resolve updates before the BPU starts its prediction
+    // cycle. Clear the previous cycle's read reservations only after probing.
+    void tickStart() override;
 
     /*
      * Main prediction function
@@ -167,6 +170,11 @@ class MBTB : public TimedBaseBTBPredictor
      */
     void update(const PredictionUpdateContext &context,
                 const PreparedUpdate &update) override;
+
+    bool canResolveUpdate(const PredictionUpdateContext &context,
+                          const PreparedUpdate &update) override;
+    void doResolveUpdate(const PredictionUpdateContext &context,
+                         const PreparedUpdate &update) override;
 
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
@@ -408,7 +416,21 @@ class MBTB : public TimedBaseBTBPredictor
     unsigned numEntries;    // Total number of entries
     unsigned numWays;       // Number of ways per SRAM (4 for dual-SRAM)
     unsigned numSets;       // Number of sets per SRAM (numEntries/numWays/2)
-    
+
+    // Resource banking is independent of the existing table index/tag layout.
+    static constexpr unsigned NumAlignBanks = 2;
+    static constexpr unsigned NumInternalBanks = 4;
+    static constexpr unsigned ResourceBlockSize = 32;
+    static constexpr unsigned NumResourceBanks =
+        NumAlignBanks * NumInternalBanks;
+    const bool enableBankConflict;
+    uint8_t predictionBankMask = 0;
+
+    unsigned getResourceBankId(Addr pc) const;
+    uint8_t getPredictionBankMask(Addr startAddr) const;
+    uint8_t getUpdateBankMask(const PredictionUpdateContext &context,
+                              const PreparedUpdate &update);
+
     /** SRAM selection helper function */
     inline int getSRAMId(Addr pc) const {
         // Use the bit after block offset to select SRAM
@@ -435,6 +457,7 @@ class MBTB : public TimedBaseBTBPredictor
     };
 
     using Scalar = test_stats::Scalar;
+    using Vector = test_stats::Vector;
     using Distribution = test_stats::Distribution;
 
 #ifdef UNIT_TEST
@@ -492,6 +515,14 @@ public:
 
         // Victim cache statistics
         Scalar victimCacheHit;
+
+        // Count one conflict per rejected packet, and one access/conflict per
+        // distinct physical bank touched by a prediction/update attempt.
+        Scalar updateBankConflict;
+        Scalar updateDeferredDueToConflict;
+        Vector predAccessPerBank;
+        Vector updateAccessPerBank;
+        Vector updateBankConflictPerBank;
 
         Distribution predHitCount;
 #ifndef UNIT_TEST

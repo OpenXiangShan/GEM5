@@ -997,6 +997,11 @@ class MBTB(TimedBaseBTBPredictor):
     # MBTB is always half-aligned - no parameter needed
     victimCacheSize = Param.Unsigned(
         32, "Number of entries in each thread's private victim cache")
+    enableBankConflict = Param.Bool(
+        False,
+        "Defer resolve updates conflicting with prediction reads in eight "
+        "physical banks, without changing index/tag mapping",
+    )
 
 class AheadBTB(TimedBaseBTBPredictor):
     type = 'AheadBTB'

@@ -1103,6 +1103,230 @@ TEST_F(BTBTest, UpdateFromVictimCachePath) {
 }
 
 
+class MBTBBankConflictTest : public ::testing::Test
+{
+  protected:
+    MBTB btb{64, 20, 4, 1, 8, true};
+
+    void predict(Addr pc, ThreadID tid = 0)
+    {
+        std::vector<FullBTBPrediction> preds(4);
+        for (auto &pred : preds) {
+            pred.tid = tid;
+        }
+        btb.putPCHistory(pc, boost::dynamic_bitset<>(8), preds);
+    }
+
+    FetchTarget stream(Addr pc = 0x1000, ThreadID tid = 0)
+    {
+        FullBTBPrediction pred;
+        pred.tid = tid;
+        pred.asidHash = 0;
+        btb.refreshPredictionMeta(pc, boost::dynamic_bitset<>(8), pred);
+        return setupStream(pc, createBranchInfo(pc, pc + 0x200, true),
+                           true, btb.getPredictionMeta(tid), tid);
+    }
+
+    PreparedUpdate packet(std::initializer_list<Addr> pcs, bool taken = true,
+                          ThreadID tid = 0)
+    {
+        std::vector<BranchOutcome> events;
+        for (const Addr pc : pcs) {
+            events.push_back(createResolveEvent(
+                tid, 0, events.size() + 1,
+                createBranchInfo(pc, pc + 0x200, true), taken, false));
+        }
+        return PreparedUpdate(events);
+    }
+
+    bool canUpdate(const FetchTarget &target, const PreparedUpdate &update)
+    {
+        return btb.canResolveUpdate(PredictionUpdateContext(target), update);
+    }
+};
+
+TEST_F(MBTBBankConflictTest, HalfBlocksCarryAndPeriodicMapping)
+{
+    // Explicit RTL bank order for successive 32B blocks, including PC[7]
+    // carry into PC[8]. Offset within a block must not affect reservation.
+    const unsigned bankIds[] = {0, 4, 1, 5, 2, 6, 3, 7};
+    auto target = stream();
+    unsigned expectedReads[8] = {};
+    for (unsigned block = 0; block < 8; ++block) {
+        SCOPED_TRACE(block);
+        btb.tickStart();
+        predict(0x1000 + block * 32 + 30);
+        const unsigned first = bankIds[block];
+        const unsigned second = bankIds[(block + 1) % 8];
+        ++expectedReads[first];
+        ++expectedReads[second];
+        for (unsigned candidate = 0; candidate < 8; ++candidate) {
+            // The +256 verifies periodic resource mapping despite a
+            // different storage index/tag.
+            const bool conflict = candidate == block ||
+                                  candidate == (block + 1) % 8;
+            EXPECT_EQ(canUpdate(target, packet({0x1100 + candidate * 32})),
+                      !conflict);
+            EXPECT_EQ(btb.btbStats.predAccessPerBank[candidate],
+                      expectedReads[candidate]);
+        }
+    }
+    EXPECT_EQ(btb.btbStats.updateBankConflict, 16);
+}
+
+TEST_F(MBTBBankConflictTest, ProbeDefersUntilIdleCycleWithoutTraining)
+{
+    auto target = stream();
+    const auto update = packet({0x1000});
+    predict(0x1000);
+    for (unsigned retry = 0; retry < 8; ++retry) {
+        EXPECT_FALSE(canUpdate(target, update));
+        EXPECT_TRUE(btb.getPredictedEntriesNoSideEffect(0x1000, 0, 0).empty());
+        EXPECT_EQ(btb.btbStats.updateTotal, 0);
+        EXPECT_EQ(btb.btbStats.newEntry, 0);
+        EXPECT_EQ(btb.btbStats.updateReplace, 0);
+    }
+    EXPECT_EQ(btb.btbStats.updateDeferredDueToConflict, 8);
+    EXPECT_EQ(btb.btbStats.updateBankConflictPerBank[0], 8);
+    EXPECT_EQ(btb.btbStats.predAccessPerBank[0], 1);
+    // An idle prediction cycle still clears the previous reservation.
+    btb.tickStart();
+    EXPECT_TRUE(canUpdate(target, update));
+    EXPECT_EQ(btb.btbStats.updateTotal, 0);
+    btb.doResolveUpdate(PredictionUpdateContext(target), update);
+    EXPECT_EQ(btb.btbStats.updateTotal, 1);
+    EXPECT_EQ(btb.btbStats.newEntry, 1);
+    ASSERT_EQ(btb.getPredictedEntriesNoSideEffect(0x1000, 0, 0).size(), 1);
+    EXPECT_EQ(btb.btbStats.updateAccessPerBank[0], 9);
+}
+
+TEST_F(MBTBBankConflictTest, DifferentBankAndDisabledModelAllowUpdates)
+{
+    auto target = stream();
+    predict(0x1000); // Banks 0 and 4.
+    EXPECT_TRUE(canUpdate(target, packet({0x1040}))); // Bank 1.
+    EXPECT_EQ(btb.btbStats.updateBankConflict, 0);
+
+    MBTB disabled(64, 20, 4, 1); // Default switch is off.
+    std::vector<FullBTBPrediction> preds(4);
+    for (auto &pred : preds) {
+        pred.tid = 0;
+    }
+    disabled.putPCHistory(0x1000, boost::dynamic_bitset<>(8), preds);
+    auto disabledTarget = setupStream(0x1000, createBranchInfo(0x1000, 0x1200),
+        true, disabled.getPredictionMeta());
+    EXPECT_TRUE(disabled.canResolveUpdate(
+        PredictionUpdateContext(disabledTarget), packet({0x1000})));
+    EXPECT_EQ(disabled.btbStats.predAccessPerBank[0], 0);
+    EXPECT_EQ(disabled.btbStats.updateAccessPerBank[0], 0);
+}
+
+TEST_F(MBTBBankConflictTest, EmptyAndUnpredictedNotTakenDoNotWriteSRAM)
+{
+    auto target = stream();
+    predict(0x1000);
+    EXPECT_TRUE(canUpdate(target, packet({})));
+    const auto notTaken = packet({0x1000}, false);
+    EXPECT_TRUE(canUpdate(target, notTaken));
+    btb.doResolveUpdate(PredictionUpdateContext(target), notTaken);
+    EXPECT_EQ(btb.btbStats.updateTotal, 0);
+    EXPECT_EQ(btb.btbStats.updateAccessPerBank[0], 0);
+    EXPECT_EQ(btb.btbStats.updateBankConflict, 0);
+}
+
+TEST_F(MBTBBankConflictTest, PredictedNotTakenStillWritesSRAM)
+{
+    auto initial = stream();
+    btb.update(PredictionUpdateContext(initial), packet({0x1000}));
+    auto trained = stream();
+    predict(0x1000);
+    EXPECT_FALSE(canUpdate(trained, packet({0x1000}, false)));
+    EXPECT_EQ(btb.btbStats.updateTotal, 1);
+}
+
+TEST_F(MBTBBankConflictTest, PartialConflictDefersWholePacket)
+{
+    auto target = stream();
+    const auto update = packet({0x1040, 0x1000, 0x1004, 0x1020});
+    predict(0x1000);
+    EXPECT_FALSE(canUpdate(target, update));
+    EXPECT_EQ(btb.btbStats.updateTotal, 0);
+    EXPECT_TRUE(btb.getPredictedEntriesNoSideEffect(0x1040, 0, 0).empty());
+    EXPECT_EQ(btb.btbStats.updateBankConflict, 1);
+    EXPECT_EQ(btb.btbStats.updateBankConflictPerBank[0], 1);
+    EXPECT_EQ(btb.btbStats.updateBankConflictPerBank[4], 1);
+    // Two branches in bank 0 count as one attempted bank access.
+    EXPECT_EQ(btb.btbStats.updateAccessPerBank[0], 1);
+    EXPECT_EQ(btb.btbStats.updateAccessPerBank[1], 1);
+    EXPECT_EQ(btb.btbStats.updateAccessPerBank[4], 1);
+    btb.tickStart();
+    EXPECT_TRUE(canUpdate(target, update));
+    btb.doResolveUpdate(PredictionUpdateContext(target), update);
+    EXPECT_EQ(btb.btbStats.updateTotal, 4);
+}
+
+TEST_F(MBTBBankConflictTest, VictimCacheOnlyUpdatesDoNotConflict)
+{
+    auto initial = stream();
+    btb.update(PredictionUpdateContext(initial),
+               packet({0x1000, 0x1004, 0x1008, 0x100c, 0x1010}));
+    auto target = stream();
+    predict(0x1000);
+    unsigned vcOnly = 0;
+    for (unsigned offset = 0; offset <= 16; offset += 4) {
+        const auto update = packet({0x1000 + offset}, false);
+        if (canUpdate(target, update)) {
+            ++vcOnly;
+            btb.doResolveUpdate(PredictionUpdateContext(target), update);
+        }
+    }
+    EXPECT_EQ(vcOnly, 1);
+    EXPECT_EQ(btb.btbStats.updateInVC, 1);
+    EXPECT_EQ(btb.btbStats.updateAccessPerBank[0], 4);
+}
+
+TEST_F(MBTBBankConflictTest, ThreadRequestsAccumulateSharedBanks)
+{
+    btb.setSmtTidPartitioned(true);
+    auto target0 = stream(0x1000, 0);
+    auto target1 = stream(0x1000, 1);
+    btb.tickStart();
+    predict(0x1000, 0); // Banks 0, 4.
+    predict(0x1040, 1); // Banks 1, 5.
+    EXPECT_FALSE(canUpdate(target0, packet({0x1040})));
+    EXPECT_FALSE(canUpdate(target1, packet({0x1000}, true, 1)));
+    EXPECT_TRUE(canUpdate(target0, packet({0x1080})));
+    for (unsigned bank : {0, 4, 1, 5}) {
+        EXPECT_EQ(btb.btbStats.predAccessPerBank[bank], 1);
+    }
+    btb.tickStart();
+    EXPECT_TRUE(canUpdate(target0, packet({0x1040})));
+    EXPECT_TRUE(canUpdate(target1, packet({0x1000}, true, 1)));
+}
+
+TEST_F(MBTBBankConflictTest, SideEffectFreeQueriesDoNotReserveBanks)
+{
+    auto target = stream();
+    btb.tickStart();
+    btb.getPredictedEntriesNoSideEffect(0x1000, 0, 0);
+    FullBTBPrediction pred;
+    pred.tid = 0;
+    pred.asidHash = 0;
+    btb.refreshPredictionMeta(0x1000, boost::dynamic_bitset<>(8), pred);
+    EXPECT_TRUE(canUpdate(target, packet({0x1000})));
+    EXPECT_EQ(btb.btbStats.predAccessPerBank[0], 0);
+}
+
+TEST_F(MBTBBankConflictTest, DirectCommitUpdateBypassesConflictGate)
+{
+    auto target = stream();
+    const auto update = packet({0x1000});
+    predict(0x1000);
+    EXPECT_FALSE(canUpdate(target, update));
+    btb.update(PredictionUpdateContext(target), update);
+    EXPECT_EQ(btb.btbStats.updateTotal, 1);
+}
+
 } // namespace test
 } // namespace btb_pred
 } // namespace branch_prediction

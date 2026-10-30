@@ -241,7 +241,97 @@ flowchart LR
 - `src/cpu/pred/BranchPredictor.py`
 - `src/cpu/pred/btb/test/btb.test.cc`
 
-## 10. 参考资料
+## 10. 8-bank 预测/Resolve 更新冲突轻量模型
+
+### 10.1 RTL 依据与资源映射
+
+依据本地 XiangShan `kunminghu-v3@1ac5c4d2fb` 的
+`src/main/scala/xiangshan/frontend/bpu/mbtb/`：
+
+- `Parameters.scala`：2 个 align bank，每个包含 4 个 internal bank。
+- `Helpers.scala`：32B 粒度下，`alignBank = PC[5]`，
+  `internalBank = PC[7:6]`。
+- `MainBtbInternalBank.scala`：单端口 entry/counter SRAM 的预测读优先，
+  写请求通过 write buffer 等待空闲端口。
+- `MainBtb.scala`：`trainReady` 恒为真，由内部 buffer 吸收更新压力。
+
+gem5 用 `bankId = alignBank * 4 + internalBank` 表示 8 个共享资源。
+连续 8 个 32B block 的 bank 编号为 `0, 4, 1, 5, 2, 6, 3, 7`，
+每 256B 重复；`half-aligned` 预测登记当前及下一个 32B block 的两个 bank。
+例如 `0x10e0` 的预测访问 bank 7 和 bank 0，包含跨 256B 边界的进位。
+该映射仅用于端口争用，不改变现有 SRAM 的 index/tag、容量或替换算法。
+
+### 10.2 开关与使用
+
+`MBTB.enableBankConflict` 的组件默认值是 `False`；`kmhv3.py` 显式设为
+`True`。通过现有参数接口可以关闭或开启：
+
+```bash
+./build/RISCV/gem5.opt configs/example/kmhv3.py \
+    --generic-rv-cpt=<checkpoint.zstd> \
+    --param 'system.cpu[0].branchPred.mbtb.enableBankConflict=False'
+```
+
+将参数值改为 `True` 即可开启。原始 bin 输入另加 `--raw-cpt`。
+开关只控制 Resolve 更新的预测读冲突；Commit 训练仍直接调用原更新路径。
+
+### 10.3 探测、重试和拍边界
+
+现有 Fetch 调用顺序是先处理 ResolveQueue，再执行 BPU tick。因此更新
+使用上一拍实际预测请求累积的 bank 掩码；BPU 每次 tick 开始调用
+`MBTB::tickStart()` 清空该掩码，包括本拍不发预测的情况。随后所有线程的
+`putPCHistory()` 请求以 OR 累积，共享同一组物理 bank。
+无副作用查询和 metadata 刷新不占用预测 bank。
+
+`canResolveUpdate()` 按待训练分支的实际 PC 生成写 bank 掩码：
+
+- 预测未命中且实际 not-taken 的分支不会训练，不计 SRAM 写入。
+- 当前仅命中本线程 victim cache、会在 VC 内就地更新的分支不计 SRAM 写入。
+- SRAM 命中、分配和替换都计入相应 bank。
+
+任意读写 bank 重叠时，整包拒绝，包括包内不冲突的分支。探测只更新争用
+统计，不修改表项、替换状态或预测访问掩码；所有组件探测通过后才由
+`doResolveUpdate()` 调用原更新逻辑一次。失败的包留在 ResolveQueue 中，
+下一拍重新探测。持续失败复用 `resolveBlockThreshold=8` 的暂停一次预测
+机制：暂停拍清除旧读掩码，使后续重试可以前进。SMT 下暂停针对包所属
+线程，其他线程仍可产生共享 bank 竞争。
+
+### 10.4 统计口径
+
+以下计数仅在开关开启时收集，8 项向量的下标即 `bankId`：
+
+| 统计 | 含义 |
+| --- | --- |
+| `updateBankConflict` | 因预测读冲突而拒绝的 Resolve 包尝试次数 |
+| `updateDeferredDueToConflict` | 因上述冲突延后重试的次数，包含同一包的重复失败 |
+| `predAccessPerBank` | 每次实际预测所访问的 bank，各 bank 每请求计一次 |
+| `updateAccessPerBank` | Resolve 探测需要写入的 bank，包含失败及重试 |
+| `updateBankConflictPerBank` | 每次失败中重叠的各个 bank |
+
+单包内多个分支访问相同 bank 只记一次；多个 bank 同时冲突时，标量计
+一次，向量分别计数。这些是争用尝试计数，不等同于完成写入次数。
+额外工作量受包内分支数、每 set 的 way 数和 VC 容量限制，不扫描整张表。
+
+### 10.5 近似边界与验证
+
+本轮借用 ResolveQueue 保存延后的训练，不实现 RTL write buffer 的容量、
+合并、覆盖或丢写行为，也不移植 APF。RTL `trainReady` 恒为真，真实压力
+由 buffer 吸收或丢写；这里会把冲突变成训练队列背压。其结果用于评估
+轻量争用影响，不能当作 RTL buffer 性能的精确复现。同一 Resolve 包内的
+写入作为一次原子训练处理，不额外模拟包内写端口串行化。
+
+此外，沿用的 Fetch ResolveQueue 本身有入队容量限制：接近满队列时，
+新到达的 resolved events 不入队，计入 `resolveEnqueueFailEvent`，不会
+无损阻塞执行端。因此，延后重试可能增加现有队列的训练事件丢弃；这与
+RTL write buffer 的丢写策略不同。评估时应同时检查
+`resolveQueueFullEvents`、`resolveEnqueueFailEvent` 和出队计数。
+
+`MBTBBankConflictTest` 覆盖两个 half-block、bank 边界进位、256B 周期、
+开关、整包延后、失败探测无训练副作用、空闲拍清除、SMT 掩码累积、
+无效训练和 VC-only 更新。系统验证使用 CoreMark 与 sjeng checkpoint，
+关闭开关对比未修改基线，开启后检查冲突计数、ResolveQueue 进展和 difftest。
+
+## 11. 参考资料
 
 - `docs/design-docs/frontend/bpu_top_level.md`
 - `OpenXiangShan/GEM5#826`

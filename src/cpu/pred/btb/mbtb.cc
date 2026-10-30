@@ -65,11 +65,12 @@ namespace test {
 #ifdef UNIT_TEST
 // Test constructor for unit testing mode
 MBTB::MBTB(unsigned numEntries, unsigned tagBits, unsigned numWays,
-           unsigned numDelay, unsigned victimCacheSize)
+           unsigned numDelay, unsigned victimCacheSize, bool enableBankConflict)
     : TimedBaseBTBPredictor(),
       victimCacheSize(victimCacheSize),
       numEntries(numEntries),
       numWays(numWays),
+      enableBankConflict(enableBankConflict),
       tagBits(tagBits)
 {
     setNumDelay(numDelay);
@@ -81,6 +82,7 @@ MBTB::MBTB(const Params &p)
     victimCacheSize(p.victimCacheSize),
     numEntries(p.numEntries),
     numWays(p.numWays),
+    enableBankConflict(p.enableBankConflict),
     tagBits(p.tagBits),
     btbStats(this, p.numWays)
 {
@@ -157,13 +159,13 @@ MBTB::MBTB(const Params &p)
 #endif
 }
 
-#ifndef UNIT_TEST
 void
 MBTB::tickStart()
 {
-    // nothing to do
+    predictionBankMask = 0;
 }
 
+#ifndef UNIT_TEST
 void
 MBTB::tick() {}
 
@@ -332,6 +334,15 @@ MBTB::putPCHistory(Addr startAddr,
                          const boost::dynamic_bitset<> &history,
                          std::vector<FullBTBPrediction> &stagePreds)
 {
+    if (enableBankConflict) {
+        const uint8_t banks = getPredictionBankMask(startAddr);
+        predictionBankMask |= banks;
+        for (unsigned bank = 0; bank < NumResourceBanks; ++bank) {
+            if (banks & (1u << bank)) {
+                btbStats.predAccessPerBank[bank]++;
+            }
+        }
+    }
     const ThreadID tid = stagePreds.empty() ? 0 : stagePreds.front().tid;
     assert(tid < threadMeta.size());
     threadMeta[tid] = std::make_shared<BTBMeta>();
@@ -738,6 +749,106 @@ MBTB::commitToVictimCache(int vc_idx, const TickedBTBEntry &ticked_entry,
     btbStats.updateInVC++;
 }
 
+unsigned
+MBTB::getResourceBankId(Addr pc) const
+{
+    // With 32B blocks: align bank = PC[5], internal bank = PC[7:6].
+    const unsigned alignBank = (pc >> 5) & (NumAlignBanks - 1);
+    const unsigned internalBank = (pc >> 6) & (NumInternalBanks - 1);
+    return alignBank * NumInternalBanks + internalBank;
+}
+
+uint8_t
+MBTB::getPredictionBankMask(Addr startAddr) const
+{
+    if (startAddr & 1) {
+        return 0;
+    }
+    const Addr alignedPC = startAddr & ~Addr(ResourceBlockSize - 1);
+    return (1u << getResourceBankId(alignedPC)) |
+           (1u << getResourceBankId(alignedPC + ResourceBlockSize));
+}
+
+uint8_t
+MBTB::getUpdateBankMask(const PredictionUpdateContext &context,
+                        const PreparedUpdate &update)
+{
+    const auto meta = std::static_pointer_cast<BTBMeta>(
+        context.predMetas[getComponentIdx()]);
+    uint8_t banks = 0;
+    for (const auto &branch : update.branches) {
+        // Match update(): a prediction miss that is not taken never trains.
+        const bool predicted = std::any_of(
+            meta->hit_entries.begin(), meta->hit_entries.end(),
+            [&branch](const BTBEntry &entry) {
+                return entry.pc == branch.pc;
+            });
+        if (!predicted && !branch.taken) {
+            continue;
+        }
+
+        const uint8_t bank = 1u << getResourceBankId(branch.pc);
+        if (banks & bank) {
+            continue;
+        }
+
+        // Match updateBTBEntry(): SRAM hits take precedence over private VC
+        // hits; a VC-only update never writes a physical SRAM bank.
+        const auto &sram = getSRAMId(branch.pc) == 0 ? sram0 : sram1;
+        const auto &set = sram[getIndex(
+            branch.pc, context.asidHash, context.tid)];
+        const bool inSRAM = std::any_of(
+            set.begin(), set.end(), [&branch](const TickedBTBEntry &entry) {
+                return entry.pc == branch.pc;
+            });
+        const auto &cache = victimCaches[context.tid];
+        const bool inVC = !inSRAM && std::any_of(
+            cache.begin(), cache.end(),
+            [&branch](const TickedBTBEntry &entry) {
+                return entry.valid && entry.pc == branch.pc;
+            });
+        if (!inVC) {
+            banks |= bank;
+        }
+    }
+    return banks;
+}
+
+bool
+MBTB::canResolveUpdate(const PredictionUpdateContext &context,
+                        const PreparedUpdate &update)
+{
+    if (!enableBankConflict) {
+        return true;
+    }
+    const uint8_t banks = getUpdateBankMask(context, update);
+    const uint8_t conflicts = banks & predictionBankMask;
+    for (unsigned bank = 0; bank < NumResourceBanks; ++bank) {
+        if (banks & (1u << bank)) {
+            btbStats.updateAccessPerBank[bank]++;
+        }
+        if (conflicts & (1u << bank)) {
+            btbStats.updateBankConflictPerBank[bank]++;
+        }
+    }
+    if (conflicts) {
+        btbStats.updateBankConflict++;
+        btbStats.updateDeferredDueToConflict++;
+        DPRINTF(BTB, "MBTB: defer resolve update for pc %#lx, "
+                "write banks %#x, prediction banks %#x, conflicts %#x\n",
+                context.startPC, banks, predictionBankMask, conflicts);
+        return false;
+    }
+    return true;
+}
+
+void
+MBTB::doResolveUpdate(const PredictionUpdateContext &context,
+                       const PreparedUpdate &update)
+{
+    this->update(context, update);
+}
+
 /*
  * Update BTB with execution results
  * Steps:
@@ -1037,7 +1148,17 @@ MBTB::BTBStats::BTBStats(statistics::Group* parent, int numWays) :
     ADD_STAT(returnHits, statistics::units::Count::get(), "returns committed that was predicted hit"),
     ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss"),
 
-    ADD_STAT(victimCacheHit, statistics::units::Count::get(), "victim cache hits")
+    ADD_STAT(victimCacheHit, statistics::units::Count::get(), "victim cache hits"),
+    ADD_STAT(updateBankConflict, statistics::units::Count::get(),
+        "Resolve update packets deferred by a prediction read bank conflict"),
+    ADD_STAT(updateDeferredDueToConflict, statistics::units::Count::get(),
+        "Resolve update attempts deferred for retry, including repeated attempts"),
+    ADD_STAT(predAccessPerBank, statistics::units::Count::get(),
+        "Prediction reads per physical bank when conflict modeling is enabled"),
+    ADD_STAT(updateAccessPerBank, statistics::units::Count::get(),
+        "Resolve SRAM write attempts per physical bank, including retries"),
+    ADD_STAT(updateBankConflictPerBank, statistics::units::Count::get(),
+        "Resolve update conflicts per physical bank")
 
 {
     init(numWays);
@@ -1048,6 +1169,9 @@ void
 MBTB::BTBStats::init(int numWays)
 {
     predHitCount.init(0, numWays * 2, 1);
+    predAccessPerBank.init(NumResourceBanks);
+    updateAccessPerBank.init(NumResourceBanks);
+    updateBankConflictPerBank.init(NumResourceBanks);
 }
 
 // Close conditional namespace wrapper for testing

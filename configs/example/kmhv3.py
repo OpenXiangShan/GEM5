@@ -188,6 +188,7 @@ def setKmhV3Params(args, system):
                     usePathHashHistory=True)
 
             cpu.branchPred.mbtb.trainingStage = "Resolve"
+            cpu.branchPred.mbtb.enableBankConflict = True
             cpu.branchPred.tage.trainingStage = "Resolve"
             cpu.branchPred.ittage.trainingStage = "Resolve"
 
