@@ -71,6 +71,13 @@ jobs:
     continue-on-error: false
     name: XS-GEM5 - Run performance test (${{ inputs.benchmark_type }})
     steps:
+      - name: Exclude node033 from performance runs
+        run: |
+          if [[ "$RUNNER_NAME" == *node033* || "$(hostname -s)" == node033 ]]; then
+            echo "::error::node033 is excluded from this performance run."
+            exit 1
+          fi
+
       - name: Reject untrusted PR head checkout
         if: |
           github.event_name == 'pull_request_target' &&
