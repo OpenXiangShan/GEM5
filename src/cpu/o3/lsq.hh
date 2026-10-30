@@ -1253,7 +1253,11 @@ class LSQ
     void resetStoreBufferInactiveCycles() { storeBufferWritebackInactive[0] = 0; }
     void resetStoreBufferInactiveCycles(ThreadID tid)
     {
-        storeBufferWritebackInactive[tid] = 0;
+        if (enableSpMT) {
+            storeBufferWritebackInactive[tid] = 0;
+        } else {
+            storeBufferWritebackInactive[0] = 0;
+        }
     }
     void incStoreBufferInactiveCycles() { ++storeBufferWritebackInactive[0]; }
     void incStoreBufferInactiveCycles(ThreadID tid)

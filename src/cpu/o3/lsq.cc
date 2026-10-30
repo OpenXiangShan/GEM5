@@ -695,10 +695,6 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     panic_if(enableSpMT && numThreads != 2,
              "SpMT requires exactly two hardware threads (got %u)\n",
              numThreads);
-    panic_if(enableSpMT && storeQueueMultiple != 1,
-             "SpMT requires StoreQueueMultiple==1 to disable VirtualSQ "
-             "(got %u)\n",
-             storeQueueMultiple);
     panic_if(enableSpMT && lsqMode != SMTLSQMode::Independent,
              "SpMT requires smtLSQMode=Independent for static partitioning\n");
     panic_if(enableSpMT &&
@@ -1792,25 +1788,15 @@ LSQ::storeBufferWriteback()
         }
 
         if (enableSpMT) {
-            // SpMT: eviction triggers are evaluated per thread so one thread's
-            // store-buffer pressure cannot evict the other thread's entries.
-            // Scan starts from nextStoreBufferEvictTid (round-robin) so a
-            // permanently-satisfied low-tid thread cannot starve the other.
-            std::vector<ThreadID> active_tids(activeThreads->begin(),
-                                              activeThreads->end());
+
             size_t start_idx = 0;
             if (nextStoreBufferEvictTid != InvalidThreadID) {
-                auto it = std::find(active_tids.begin(), active_tids.end(),
-                                    nextStoreBufferEvictTid);
-                if (it != active_tids.end()) {
-                    start_idx = std::distance(active_tids.begin(), it);
-                }
+                start_idx = nextStoreBufferEvictTid;
             }
             for (size_t scanned = 0;
-                 scanned < active_tids.size() && !entry && !cause;
+                 scanned < numThreads && !entry && !cause;
                  ++scanned) {
-                const ThreadID tid =
-                    active_tids[(start_idx + scanned) % active_tids.size()];
+                const ThreadID tid = (start_idx + scanned) % numThreads;
                 if (storeBuffer.unsentSize(tid) > getSbufferEvictThreshold()) {
                     cause = StoreBufferEvictCause::Full;
                     trigger_tid = tid;
@@ -1864,15 +1850,8 @@ LSQ::storeBufferWriteback()
             if (enableSpMT) {
                 // Advance the round-robin scan start so the next cycle starts
                 // from the thread after the one that just triggered.
-                auto it = std::find(activeThreads->begin(),
-                                    activeThreads->end(), trigger_tid);
-                if (it != activeThreads->end()) {
-                    ++it;
-                    if (it == activeThreads->end()) {
-                        it = activeThreads->begin();
-                    }
-                    nextStoreBufferEvictTid = *it;
-                }
+                nextStoreBufferEvictTid =
+                    (trigger_tid + 1) % numThreads;
             }
             auto &owner_unit = thread[entry->tid];
             recordStoreBufferEviction(*cause, entry->tid);
