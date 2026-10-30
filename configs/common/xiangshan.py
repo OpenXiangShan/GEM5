@@ -863,6 +863,7 @@ CREATE TABLE LoadLifeTimeCommitTrace(
             "ClockPeriodTicks INT NOT NULL," \
             "StudentCoverEnabled BOOL NOT NULL," \
             "StudentPoolSize INT NOT NULL," \
+            "StudentIssueTopN INT NOT NULL," \
             "StudentConfAlpha REAL NOT NULL," \
             "StudentCovThreshold REAL NOT NULL," \
             "StudentTeacherTopN INT NOT NULL," \
@@ -915,7 +916,9 @@ CREATE TABLE LoadLifeTimeCommitTrace(
             "StudentSelectedOffset INT NOT NULL," \
             "SelectedOffset INT NOT NULL," \
             "IssueEnabled BOOL NOT NULL," \
-            "CQFAllowed BOOL NOT NULL);"
+            "CQFAllowed BOOL NOT NULL," \
+            "CandidateRank INT NOT NULL," \
+            "PageAllowed BOOL NOT NULL);"
             ,
             "CREATE TABLE BOPReplayDelayAction(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \

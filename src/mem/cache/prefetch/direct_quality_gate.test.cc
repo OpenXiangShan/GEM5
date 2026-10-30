@@ -142,6 +142,28 @@ TEST(DirectQualityGate, DuplicateCandidateCoalescesFeedback)
     EXPECT_EQ(gate.feedbackCoalesced(), 1);
 }
 
+TEST(DirectQualityGate, TwoCandidatesShareQualityAndTrackSeparateFeedback)
+{
+    TestGate test(smallConfig());
+    auto &gate = *test.gate;
+    const auto first = gate.admit(0x1000, 2, 0x2000, 0x3000);
+    const auto second = gate.admit(0x1000, 2, 0x2000, 0x4000);
+
+    ASSERT_TRUE(first.allowed);
+    ASSERT_TRUE(second.allowed);
+    ASSERT_TRUE(first.feedbackInserted);
+    ASSERT_TRUE(second.feedbackInserted);
+    EXPECT_EQ(gate.candidates(), 2);
+    EXPECT_EQ(gate.sampled(), 2);
+    EXPECT_EQ(gate.peakOutstanding(), 2);
+
+    gate.observeDemand(0x3000);
+    gate.observeDemand(0x4000);
+    EXPECT_EQ(gate.useful(), 2);
+    EXPECT_EQ(gate.unused(), 0);
+    EXPECT_EQ(gate.state(0x1000, 2), DirectQualityGate::State::Open);
+}
+
 TEST(DirectQualityGate, FeedbackReplacementIsUnknownNotUnused)
 {
     auto config = smallConfig();

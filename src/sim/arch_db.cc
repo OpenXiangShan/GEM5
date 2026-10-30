@@ -165,7 +165,8 @@ ArchDBer::bopReplayMetaTraceWrite(
     bool adapt_offset, bool negative_offsets_enabled, bool auto_learning,
     unsigned int victim_offsets_list_size, unsigned int restore_cycle,
     Tick clock_period_ticks, bool student_cover_enabled,
-    unsigned int student_pool_size, double student_conf_alpha,
+    unsigned int student_pool_size, unsigned int student_issue_top_n,
+    double student_conf_alpha,
     double student_cov_threshold, unsigned int student_teacher_top_n,
     unsigned int student_filter_entries, const std::string &student_hash_mode,
     unsigned int student_hash_count, bool student_large_offset_priority,
@@ -182,20 +183,21 @@ ArchDBer::bopReplayMetaTraceWrite(
         "RREntries,TagBits,DelayQueueEnabled,DelayQueueSize,DelayTicks,"
         "CrossPage,AdaptOffset,NegativeOffsetsEnabled,AutoLearning,"
         "VictimOffsetsListSize,RestoreCycle,ClockPeriodTicks,"
-        "StudentCoverEnabled,StudentPoolSize,StudentConfAlpha,"
+        "StudentCoverEnabled,StudentPoolSize,StudentIssueTopN,StudentConfAlpha,"
         "StudentCovThreshold,StudentTeacherTopN,StudentFilterEntries,"
         "StudentHashMode,StudentHashCount,StudentLargeOffsetPriority,"
         "StudentLargeOffsetPriorityCoeff,StudentDelayQueueEnabled,"
         "StudentDelayQueueSize,StudentDelayTicks,Offsets) VALUES("
-        "6,%Q,%u,%u,%u,%u,%u,%u,%d,%u,%lld,%d,%d,%d,%d,%u,%u,%lld,"
-        "%d,%u,%f,%f,%u,%u,%Q,%u,%d,%f,%d,%u,%lld,%Q);";
+        "7,%Q,%u,%u,%u,%u,%u,%u,%d,%u,%lld,%d,%d,%d,%d,%u,%u,%lld,"
+        "%d,%u,%u,%f,%f,%u,%u,%Q,%u,%d,%f,%d,%u,%lld,%Q);";
     char *sql = sqlite3_mprintf(
         sql_format, bop_name, block_size, score_max, round_max, bad_score,
         rr_entries, tag_bits, delay_queue_enabled, delay_queue_size,
         sqliteSignedInt(delay_ticks), cross_page, adapt_offset,
         negative_offsets_enabled, auto_learning, victim_offsets_list_size,
         restore_cycle, sqliteSignedInt(clock_period_ticks),
-        student_cover_enabled, student_pool_size, student_conf_alpha,
+        student_cover_enabled, student_pool_size, student_issue_top_n,
+        student_conf_alpha,
         student_cov_threshold, student_teacher_top_n, student_filter_entries,
         student_hash_mode.c_str(), student_hash_count,
         student_large_offset_priority, student_large_offset_priority_coeff,
@@ -255,7 +257,8 @@ ArchDBer::bopReplayEventTraceWrite(
     bool teacher_issue_enabled, bool student_issue_enabled,
     bool student_selected_valid, bool student_selected_enable,
     int64_t student_selected_offset, int64_t selected_offset,
-    bool issue_enabled, bool cqf_allowed)
+    bool issue_enabled, bool cqf_allowed, unsigned int candidate_rank,
+    bool page_allowed)
 {
     if (!(dumpGlobal && dumpBopReplayTrace) || access_seq == 0)
         return;
@@ -265,8 +268,9 @@ ArchDBer::bopReplayEventTraceWrite(
         "PhaseId,Tick,TriggerAddr,TriggerPC,TriggerHasPC,Late,"
         "TeacherOffset,TeacherIssueEnabled,StudentIssueEnabled,"
         "StudentSelectedValid,StudentSelectedEnable,StudentSelectedOffset,"
-        "SelectedOffset,IssueEnabled,CQFAllowed) VALUES(%lld,%Q,%Q,%lld,"
-        "%lld,%lld,%lld,%lld,%d,%d,%lld,%d,%d,%d,%d,%lld,%lld,%d,%d);",
+        "SelectedOffset,IssueEnabled,CQFAllowed,CandidateRank,PageAllowed) "
+        "VALUES(%lld,%Q,%Q,%lld,"
+        "%lld,%lld,%lld,%lld,%d,%d,%lld,%d,%d,%d,%d,%lld,%lld,%d,%d,%u,%d);",
         sqliteSignedInt(access_seq), bop_name, bop_kind,
         sqliteSignedInt(replay_order), sqliteSignedInt(bopReplayPhaseId),
         sqliteSignedInt(tick), sqliteSignedInt(trigger_addr),
@@ -276,7 +280,7 @@ ArchDBer::bopReplayEventTraceWrite(
         student_selected_enable,
         sqliteSignedInt(static_cast<uint64_t>(student_selected_offset)),
         sqliteSignedInt(static_cast<uint64_t>(selected_offset)), issue_enabled,
-        cqf_allowed);
+        cqf_allowed, candidate_rank, page_allowed);
     rc = sqlite3_exec(mem_db, sql, callback, nullptr, &zErrMsg);
     sqlite3_free(sql);
     fatal_if(rc != SQLITE_OK, "SQL error writing BOPReplayEvent: %s\n", zErrMsg);

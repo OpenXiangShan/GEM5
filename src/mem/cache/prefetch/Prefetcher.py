@@ -870,6 +870,8 @@ class BOPPrefetcher(QueuedPrefetcher):
         "Number of teacher offsets admitted to the student pool")
     student_pool_size = Param.Unsigned(4,
         "Number of candidate offsets retained by the student")
+    student_issue_top_n = Param.Unsigned(1,
+        "Maximum number of student offsets issued per access")
     student_conf_alpha = Param.Float(0.0,
         "EMA weight for student offset confidence")
     student_cov_threshold = Param.Float(0.0,

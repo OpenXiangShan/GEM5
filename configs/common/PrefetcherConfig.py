@@ -558,6 +558,7 @@ def _configure_l2_bop_student_cover(prefetcher, options):
         return
     for bop in (prefetcher.bop_large, prefetcher.bop_small):
         bop.enable_student_cover = True
+    prefetcher.bop_small.student_issue_top_n = 2
     if getattr(options, 'disable_bop_pc_control', False):
         for bop in (prefetcher.bop_large, prefetcher.bop_small):
             for attr in (

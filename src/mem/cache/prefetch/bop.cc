@@ -85,6 +85,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
       directQualityGate(),
       enableStudentCover(p.enable_student_cover),
       studentPoolSize(p.student_pool_size),
+      studentIssueTopN(p.student_issue_top_n),
       studentConfAlpha(p.student_conf_alpha),
       studentCovThreshold(p.student_cov_threshold),
       studentTeacherTopN(p.student_teacher_top_n),
@@ -151,6 +152,8 @@ BOP::BOP(const BOPPrefetcherParams &p)
     fatal_if(enableStudentCover && studentPoolSize > 64,
              "%s: student_pool_size=%u exceeds the 64-bit coverage mask",
              name(), studentPoolSize);
+    fatal_if(studentIssueTopN < 1 || studentIssueTopN > 2,
+             "%s: student_issue_top_n must be 1 or 2", name());
     fatal_if(enableStudentCover && !isPowerOf2(studentFilterEntries),
              "%s: student_filter_entries must be a power of two", name());
     fatal_if(enableStudentCover && studentHashCount == 0,
@@ -692,6 +695,31 @@ BOP::studentPickBestIndex() const
 }
 
 size_t
+BOP::studentPickSecondIndex(size_t best_idx) const
+{
+    assert(studentPool.size() >= 2);
+    size_t second = best_idx == 0 ? 1 : 0;
+    auto second_key = std::make_tuple(studentPool[second].curPhaseCov,
+                                      studentPool[second].conf,
+                                      -std::llabs(studentPool[second].offset),
+                                      -studentPool[second].offset);
+    for (size_t index = 0; index < studentPool.size(); ++index) {
+        if (index == best_idx) {
+            continue;
+        }
+        const auto key = std::make_tuple(studentPool[index].curPhaseCov,
+                                         studentPool[index].conf,
+                                         -std::llabs(studentPool[index].offset),
+                                         -studentPool[index].offset);
+        if (key > second_key) {
+            second = index;
+            second_key = key;
+        }
+    }
+    return second;
+}
+
+size_t
 BOP::studentPickWorstIndex() const
 {
     assert(!studentPool.empty());
@@ -813,6 +841,8 @@ BOP::studentOnTeacherPhaseEnd(int64_t teacher_best_offset)
     }
     stats.studentPhaseCount++;
     stats.studentPoolOccupancyDist.sample(studentPool.size());
+    studentSecondValid = false;
+    studentSecondEnable = false;
     if (!studentPool.empty()) {
         const size_t best = studentPickBestIndex();
         const size_t worst = studentPickWorstIndex();
@@ -832,6 +862,23 @@ BOP::studentOnTeacherPhaseEnd(int64_t teacher_best_offset)
         studentSelectedOffset = studentPool[selected].offset;
         studentSelectedValid = true;
         studentSelectedEnable = coverage >= studentCovThreshold;
+        if (studentIssueTopN == 2 && studentPool.size() >= 2 &&
+            !prefer_large) {
+            const size_t second = studentPickSecondIndex(best);
+            const double second_coverage = studentPhaseTrainCount == 0 ? 0.0 :
+                static_cast<double>(studentPool[second].curPhaseCov) /
+                studentPhaseTrainCount;
+            studentSecondOffset = studentPool[second].offset;
+            studentSecondValid = true;
+            studentSecondEnable = studentSelectedEnable &&
+                                  second_coverage >= studentCovThreshold;
+            stats.studentSecondCovRatioPctDist.sample(
+                static_cast<uint64_t>(std::round(second_coverage * 100.0)));
+            if (studentSecondEnable) {
+                stats.studentSecondIssueCount++;
+                stats.studentSecondOffsetDist.sample(studentSecondOffset);
+            }
+        }
         stats.studentCovRatioPctDist.sample(
             static_cast<uint64_t>(std::round(coverage * 100.0)));
         stats.studentWorstCovRatioPctDist.sample(
@@ -985,7 +1032,7 @@ BOP::writeBOPReplayMeta()
         floorLog2(tagMask + 1), delayQueueEnabled, delayQueueSize, delayTicks,
         crossPage, enableAdaptOffset, negativeOffsetsEnabled, autoLearning,
         victimListSize, restoreCycle, clockPeriod(), enableStudentCover,
-        studentPoolSize, studentConfAlpha, studentCovThreshold,
+        studentPoolSize, studentIssueTopN, studentConfAlpha, studentCovThreshold,
         studentTeacherTopN, studentFilterEntries, studentHashMode,
         studentHashCount, studentLargeOffsetPriorityEnable,
         studentLargeOffsetPriorityCoeff, studentDelayQueueEnabled,
@@ -1047,46 +1094,62 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     const bool algorithm_issue = (teacher_issue || student_issue) &&
         selected_offset != 0;
 
-    // This prefetcher is a degree 1 prefetch, so it will only generate one
-    // prefetch at most per access.
-    bool cqf_allowed = true;
-    if (algorithm_issue) {
-        Addr prefetch_addr = addr + (selected_offset * (1ULL << lBlkSize));
-        // A standalone L1 candidate that crosses a page is never issued.
-        // Do not add it to the CQF feedback ledger.
-        if ((!standaloneL1 || crossPage ||
-             samePage(pfi.getAddr(), prefetch_addr)) &&
-            enableDirectQualityGate && directQualityGate && pfi.hasPC()) {
-            const auto decision = directQualityGate->admit(
-                pfi.getPC(), static_cast<uint8_t>(directQualityKind), addr,
-                blockAddress(prefetch_addr));
-            cqf_allowed = decision.allowed;
-            updateDirectQualityStats();
+    const bool second_issue = studentSecondValid && studentSecondEnable &&
+                              studentSecondOffset != 0;
+    const auto issue_candidate = [&](int64_t offset, unsigned rank,
+                                     bool enabled, bool candidate_student_issue,
+                                     bool candidate_teacher_issue) {
+        bool cqf_allowed = true;
+        bool page_allowed = true;
+        if (enabled) {
+            const Addr prefetch_addr = addr + (offset * (1ULL << lBlkSize));
+            page_allowed = crossPage || samePage(pfi.getAddr(), prefetch_addr);
+            // A candidate filtered by the page rule has no CQF outcome.
+            if (page_allowed && enableDirectQualityGate && directQualityGate &&
+                pfi.hasPC()) {
+                const auto decision = directQualityGate->admit(
+                    pfi.getPC(), static_cast<uint8_t>(directQualityKind),
+                    addr, blockAddress(prefetch_addr));
+                cqf_allowed = decision.allowed;
+                updateDirectQualityStats();
+            }
+            if (cqf_allowed) {
+                stats.issuedOffsetDist.sample(offset);
+                const bool generated = sendPFWithFilter(
+                    pfi, prefetch_addr, addresses, 32,
+                    PrefetchSourceType::HWP_BOP);
+                if (rank == 2 && page_allowed &&
+                    (!standaloneL1 || generated)) {
+                    stats.studentSecondEnqueued++;
+                }
+                DPRINTF(BOPPrefetcher,
+                        "Generated prefetch %#lx offset: %lld rank %u\n",
+                        prefetch_addr, static_cast<long long>(offset), rank);
+            }
         }
-        if (cqf_allowed) {
-            stats.issuedOffsetDist.sample(selected_offset);
-            sendPFWithFilter(pfi, prefetch_addr, addresses, 32,
-                             PrefetchSourceType::HWP_BOP);
-            DPRINTF(BOPPrefetcher,
-                    "Generated prefetch %#lx offset: %lld teacher %d student %d\n",
-                    prefetch_addr, static_cast<long long>(selected_offset),
-                    teacher_issue, student_issue);
+        if (replay_tracing) {
+            const std::string bop_name = name();
+            const char *bop_kind = bop_name.find("large") != std::string::npos
+                ? "large" : "small";
+            archDBer->bopReplayEventTraceWrite(
+                replay_access_seq, curTick(), bop_name.c_str(), bop_kind,
+                addr, pfi.hasPC() ? pfi.getPC() : 0, pfi.hasPC(), late,
+                bestOffset, candidate_teacher_issue, candidate_student_issue,
+                rank == 1 ? studentSelectedValid : studentSecondValid,
+                rank == 1 ? studentSelectedEnable : studentSecondEnable,
+                rank == 1 ? studentSelectedOffset : studentSecondOffset,
+                offset, enabled, cqf_allowed, rank, page_allowed);
         }
-    } else {
+    };
+    issue_candidate(selected_offset, 1, algorithm_issue, student_issue,
+                    teacher_issue);
+    if (studentIssueTopN == 2 && studentSecondValid) {
+        issue_candidate(studentSecondOffset, 2, second_issue,
+                        second_issue, false);
+    }
+    if (!algorithm_issue) {
         stats.throttledCount++;
         DPRINTF(BOPPrefetcher, "Issue prefetch is false, can't issue\n");
-    }
-
-    if (replay_tracing) {
-        const std::string bop_name = name();
-        const char *bop_kind = bop_name.find("large") != std::string::npos
-            ? "large" : "small";
-        archDBer->bopReplayEventTraceWrite(
-            replay_access_seq, curTick(), bop_name.c_str(), bop_kind, addr,
-            pfi.hasPC() ? pfi.getPC() : 0, pfi.hasPC(), late, bestOffset,
-            teacher_issue, student_issue, studentSelectedValid,
-            studentSelectedEnable, studentSelectedOffset, selected_offset,
-            algorithm_issue, cqf_allowed);
     }
 
     if (!victimRestoreScheduled && victimOffsetsList.size() > 0) {
@@ -1124,12 +1187,18 @@ BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriori
         }
         // The standalone L1 path has one producer and one PFRequestBuffer.
         // Do not also enqueue the same candidate via the direct queue path.
+        if (PFRequestBuffer.size() >= max_pf_buffer_size) {
+            stats.bufferOverwriteCount++;
+        }
         InsertPFRequestToBuffer(
             AddrPriority(addr, prio, src, pfi.trigger_info));
         return true;
     }
     if (archDBer && cache->level() == 1) {
         archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getAddr(), addr, src);
+    }
+    if (PFRequestBuffer.size() >= max_pf_buffer_size) {
+        stats.bufferOverwriteCount++;
     }
     InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
     Addr filter_key = sharedFilterKey(pfi, addr);
@@ -1161,6 +1230,10 @@ BOP::BopStats::BopStats(statistics::Group *parent,
                "Teacher offsets admitted to the student pool"),
       ADD_STAT(studentSelectedOffsetDist, statistics::units::Count::get(),
                "Student-selected offsets that pass the coverage threshold"),
+      ADD_STAT(studentSecondOffsetDist, statistics::units::Count::get(),
+               "Second-ranked student offsets passing coverage threshold"),
+      ADD_STAT(studentSecondCovRatioPctDist, statistics::units::Ratio::get(),
+               "Second-ranked student coverage percentage at phase end"),
       ADD_STAT(studentPoolOccupancyDist, statistics::units::Count::get(),
                "Student pool occupancy at teacher phase end"),
       ADD_STAT(studentCovRatioPctDist, statistics::units::Ratio::get(),
@@ -1176,6 +1249,12 @@ BOP::BopStats::BopStats(statistics::Group *parent,
                "Teacher-aligned student coverage phases"),
       ADD_STAT(studentIssueCount, statistics::units::Count::get(),
                "Student phases passing the independent issue threshold"),
+      ADD_STAT(studentSecondIssueCount, statistics::units::Count::get(),
+               "Student phases with a second offset passing coverage threshold"),
+      ADD_STAT(studentSecondEnqueued, statistics::units::Count::get(),
+               "Second-ranked candidates added to the BOP request buffer"),
+      ADD_STAT(bufferOverwriteCount, statistics::units::Count::get(),
+               "BOP request buffer entries overwritten when full"),
       ADD_STAT(studentFallbackCount, statistics::units::Count::get(),
                "Student phases falling back to teacher output"),
       ADD_STAT(studentLargeOffsetPriorityCount, statistics::units::Count::get(),
@@ -1227,6 +1306,10 @@ BOP::BopStats::BopStats(statistics::Group *parent,
         teacherInjectedOffsetDist);
     studentSelectedOffsetDist.init(-256, 257, 1).prereq(
         studentSelectedOffsetDist);
+    studentSecondOffsetDist.init(-256, 257, 1).prereq(
+        studentSecondOffsetDist);
+    studentSecondCovRatioPctDist.init(0, 101, 1).prereq(
+        studentSecondCovRatioPctDist);
     studentPoolOccupancyDist.init(0, student_pool_size + 1, 1).prereq(
         studentPoolOccupancyDist);
     studentCovRatioPctDist.init(0, 101, 1).prereq(studentCovRatioPctDist);

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 @dataclass(frozen=True)
@@ -31,6 +31,7 @@ class BOPConfig:
     tag_bits: int
     student_cover_enabled: bool
     student_pool_size: int
+    student_issue_top_n: int
     student_conf_alpha: float
     student_cov_threshold: float
     student_teacher_top_n: int
@@ -63,6 +64,7 @@ class BOPConfig:
             tag_bits=int(row["TagBits"]),
             student_cover_enabled=bool(value("StudentCoverEnabled", False)),
             student_pool_size=int(value("StudentPoolSize", 0)),
+            student_issue_top_n=int(value("StudentIssueTopN", 1)),
             student_conf_alpha=float(value("StudentConfAlpha", 0.0)),
             student_cov_threshold=float(value("StudentCovThreshold", 0.0)),
             student_teacher_top_n=int(value("StudentTeacherTopN", 1)),
@@ -104,9 +106,14 @@ class ReplayEvent:
     selected_offset: int
     issue_enabled: bool
     cqf_allowed: bool
+    candidate_rank: int = 1
+    page_allowed: bool = True
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "ReplayEvent":
+        def value(name: str, default: Any) -> Any:
+            return row[name] if name in row.keys() else default
+
         return cls(
             access_seq=int(row["AccessSeq"]),
             replay_order=int(row["ReplayOrder"]),
@@ -126,6 +133,8 @@ class ReplayEvent:
             selected_offset=int(row["SelectedOffset"]),
             issue_enabled=bool(row["IssueEnabled"]),
             cqf_allowed=bool(row["CQFAllowed"]),
+            candidate_rank=int(value("CandidateRank", 1)),
+            page_allowed=bool(value("PageAllowed", True)),
         )
 
 
@@ -154,7 +163,7 @@ def load_trace(path: str | Path) -> tuple[dict[str, BOPConfig], list[ReplayEvent
             )
         }
         versions = {config.schema_version for config in metadata.values()}
-        if versions and versions != {SCHEMA_VERSION}:
+        if versions and not versions.issubset({6, SCHEMA_VERSION}):
             raise ValueError(
                 f"unsupported replay schema version(s): {sorted(versions)}"
             )
@@ -180,12 +189,16 @@ def replay_student_decisions(events: list[ReplayEvent]) -> list[dict[str, Any]]:
             and event.student_selected_valid
             and event.student_selected_enable
         )
-        expected_offset = (
-            event.student_selected_offset if student_issue else event.teacher_offset
-        )
-        expected_issue = (event.teacher_issue_enabled or student_issue) and (
-            expected_offset != 0
-        )
+        if event.candidate_rank == 2:
+            expected_offset = event.student_selected_offset
+            expected_issue = student_issue and expected_offset != 0
+        else:
+            expected_offset = (
+                event.student_selected_offset if student_issue else event.teacher_offset
+            )
+            expected_issue = (event.teacher_issue_enabled or student_issue) and (
+                expected_offset != 0
+            )
         if (
             expected_offset != event.selected_offset
             or expected_issue != event.issue_enabled
@@ -195,6 +208,7 @@ def replay_student_decisions(events: list[ReplayEvent]) -> list[dict[str, Any]]:
                     "access_seq": event.access_seq,
                     "replay_order": event.replay_order,
                     "bop_name": event.bop_name,
+                    "candidate_rank": event.candidate_rank,
                     "expected_offset": expected_offset,
                     "recorded_offset": event.selected_offset,
                     "expected_issue": expected_issue,

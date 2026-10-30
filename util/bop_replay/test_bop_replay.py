@@ -38,6 +38,31 @@ class StudentDecisionTest(unittest.TestCase):
         self.assertEqual(len(mismatch), 1)
         self.assertEqual(mismatch[0]["expected_offset"], 2)
 
+    def test_second_rank_uses_own_student_qualification(self):
+        second = self._event(
+            replay_order=2, candidate_rank=2, teacher_issue_enabled=False,
+            student_selected_offset=4, selected_offset=4,
+        )
+        self.assertEqual(replay_student_decisions([self._event(), second]), [])
+        self.assertEqual(replay_student_decisions([
+            self._event(), self._event(
+                replay_order=2, candidate_rank=2,
+                student_selected_offset=4, selected_offset=4,
+                student_issue_enabled=False, student_selected_enable=False,
+                issue_enabled=False,
+            )
+        ]), [])
+
+    def test_teacher_cannot_enable_unqualified_second_rank(self):
+        second = self._event(
+            candidate_rank=2, teacher_issue_enabled=True,
+            student_issue_enabled=False, student_selected_enable=False,
+            student_selected_offset=4, selected_offset=4, issue_enabled=True,
+        )
+        mismatch = replay_student_decisions([second])
+        self.assertEqual(len(mismatch), 1)
+        self.assertFalse(mismatch[0]["expected_issue"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

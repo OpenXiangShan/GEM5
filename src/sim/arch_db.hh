@@ -118,7 +118,8 @@ class ArchDBer : public SimObject
       bool negative_offsets_enabled, bool auto_learning,
       unsigned int victim_offsets_list_size, unsigned int restore_cycle,
       Tick clock_period_ticks, bool student_cover_enabled,
-      unsigned int student_pool_size, double student_conf_alpha,
+      unsigned int student_pool_size, unsigned int student_issue_top_n,
+      double student_conf_alpha,
       double student_cov_threshold, unsigned int student_teacher_top_n,
       unsigned int student_filter_entries, const std::string &student_hash_mode,
       unsigned int student_hash_count, bool student_large_offset_priority,
@@ -137,7 +138,8 @@ class ArchDBer : public SimObject
       bool teacher_issue_enabled, bool student_issue_enabled,
       bool student_selected_valid, bool student_selected_enable,
       int64_t student_selected_offset, int64_t selected_offset,
-      bool issue_enabled, bool cqf_allowed);
+      bool issue_enabled, bool cqf_allowed, unsigned int candidate_rank,
+      bool page_allowed);
     void bopReplayDelayActionTraceWrite(
       const char *bop_name, const char *action, Tick tick, Addr addr,
       Tick process_tick, unsigned int queue_size_after);

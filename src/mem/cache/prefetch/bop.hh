@@ -192,6 +192,7 @@ class BOP : public Queued
 
         const bool enableStudentCover;
         const unsigned int studentPoolSize;
+        const unsigned int studentIssueTopN;
         const double studentConfAlpha;
         const double studentCovThreshold;
         const unsigned int studentTeacherTopN;
@@ -210,6 +211,9 @@ class BOP : public Queued
         int64_t studentSelectedOffset = 1;
         bool studentSelectedValid = false;
         bool studentSelectedEnable = false;
+        int64_t studentSecondOffset = 0;
+        bool studentSecondValid = false;
+        bool studentSecondEnable = false;
         uint32_t studentPhaseTrainCount = 0;
         bool replayMetaWritten = false;
         uint64_t replayEventOrder = 0;
@@ -293,6 +297,7 @@ class BOP : public Queued
         void studentEnqueuePrediction(Addr train_addr, size_t bit_idx,
                                       int64_t offset);
         size_t studentPickBestIndex() const;
+        size_t studentPickSecondIndex(size_t best_idx) const;
         size_t studentPickWorstIndex() const;
         size_t studentPickEvictIndex() const;
         void studentObserveTrainAddr(Addr addr);
@@ -317,6 +322,8 @@ class BOP : public Queued
             statistics::Distribution issuedOffsetDist;
             statistics::Distribution teacherInjectedOffsetDist;
             statistics::Distribution studentSelectedOffsetDist;
+            statistics::Distribution studentSecondOffsetDist;
+            statistics::Distribution studentSecondCovRatioPctDist;
             statistics::Distribution studentPoolOccupancyDist;
             statistics::Distribution studentCovRatioPctDist;
             statistics::Distribution studentWorstCovRatioPctDist;
@@ -325,6 +332,9 @@ class BOP : public Queued
             statistics::Scalar teacherInjectedCount;
             statistics::Scalar studentPhaseCount;
             statistics::Scalar studentIssueCount;
+            statistics::Scalar studentSecondIssueCount;
+            statistics::Scalar studentSecondEnqueued;
+            statistics::Scalar bufferOverwriteCount;
             statistics::Scalar studentFallbackCount;
             statistics::Scalar studentLargeOffsetPriorityCount;
             statistics::Scalar studentDelayQueueInsertCount;
