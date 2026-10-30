@@ -93,6 +93,8 @@ class BOP : public Queued
         const int victimListSize;
         const int restoreCycle;
         const bool enableDirectQualityGate;
+        const bool enableChiL3Pair;
+        const unsigned chiL3PairDistanceMultiplier;
         const unsigned directQualityKind;
         replacement_policy::Base *const directQualityReplacementPolicy;
         std::shared_ptr<DirectQualityGate> directQualityGate;
@@ -305,6 +307,9 @@ class BOP : public Queued
         bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                               PrefetchSourceType src);
 
+        static constexpr size_t L3PairBufferCapacity = 8;
+        std::deque<AddrPriority> l3PairBuffer;
+
         void updateDirectQualityStats();
 
         struct BopStats : public statistics::Group
@@ -328,6 +333,10 @@ class BOP : public Queued
             statistics::Scalar studentDelayQueueDrainCount;
             statistics::Scalar studentDelayQueueFullDropCount;
             statistics::Scalar throttledCount;
+            statistics::Scalar l3PairCandidates;
+            statistics::Scalar l3PairInvalidAddress;
+            statistics::Scalar l3PairCrossPage;
+            statistics::Scalar l3PairDroppedFull;
             statistics::Scalar directQualityCandidates;
             statistics::Scalar directQualityAllowed;
             statistics::Scalar directQualitySuppressed;
@@ -371,6 +380,9 @@ class BOP : public Queued
         void shareDirectQualityGateWith(BOP &other);
         /** Feed one L2 demand into the CQF ledger. */
         void notifyDirectQualityDemand(Addr paddr);
+
+        bool hasL3PairCandidate() const { return !l3PairBuffer.empty(); }
+        bool popL3PairCandidate(AddrPriority &candidate);
 
         bool tryAddOffset(int64_t offset, bool late = false);
 };

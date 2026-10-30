@@ -897,6 +897,10 @@ class BOPPrefetcher(QueuedPrefetcher):
     enable_adaptoffset = Param.Bool(True, "enable adapt offset")
     enable_direct_quality_gate = Param.Bool(False,
         "Enable the CQF admission controller for raw BOP candidates")
+    enable_chi_l3_pair = Param.Bool(False,
+        "Generate a paired L3 candidate after CQF admission")
+    chi_l3_pair_distance_multiplier = Param.Unsigned(2,
+        "L3 candidate distance in multiples of the selected BOP offset")
     direct_quality_kind = Param.Unsigned(0,
         "CQF kind used to isolate Large and Small BOP quality state")
     direct_quality_entries = Param.Unsigned(256,
@@ -1500,6 +1504,8 @@ class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     type = 'L2CompositeWithWorkerPrefetcher'
     cxx_class = 'gem5::prefetch::L2CompositeWithWorkerPrefetcher'
     cxx_header = "mem/cache/prefetch/l2_composite_with_worker.hh"
+    chi_l3_hint_bridge = Param.CHIBridge(NULL,
+        "CHI RN bridge used by optional paired small-BOP L3 hints")
 
     cdp = Param.CDP(CDP(is_sub_prefetcher=True), "")
     cmc = Param.CMCPrefetcher(CMCPrefetcher(is_sub_prefetcher=True), "")

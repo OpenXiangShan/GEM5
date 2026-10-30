@@ -451,6 +451,24 @@ def config_aligned_l2(options, system, l2_cache_class):
 def config_cache(options, system):
     _configure_mlop_types(options)
 
+    if not 1 <= options.chi_bop_l3_distance_multiplier <= 0xffffffff:
+        raise ValueError(
+            '--chi-bop-l3-distance-multiplier must be between 1 and 4294967295')
+
+    chi_l3_pair = getattr(options, 'enable_chi_bop_l3_prefetch', False)
+    if chi_l3_pair:
+        if not (options.CHI and options.caches and options.l2cache and
+                options.l3cache and not options.classic_l2 and
+                not options.no_pf and is_pf_buffer_enabled(options) and
+                options.enable_bop_cqf and options.enable_bop_student_cover and
+                options.l2_wrapper_hwp_type == 'L2CompositeWithWorkerPrefetcher' and
+                options.l3_hwp_type == 'WorkerPrefetcher' and
+                options.cacheline_size == 64):
+            raise ValueError(
+                '--enable-chi-bop-l3-prefetch requires 64-byte CHI L3, '
+                'aligned L2 small BOP with PF buffer, CQF and student, '
+                'and the default L3 WorkerPrefetcher')
+
     if options.external_memory_system and (options.caches or options.l2cache):
         print("External caches and internal caches are exclusive options.\n")
         sys.exit(1)
@@ -1083,6 +1101,8 @@ def config_cache(options, system):
                         hn_cache_slice = L2CacheSlice(clk_domain=system.cpu_clk_domain)
                         hn_cache_opts = _get_cache_opts(system.cpu[0], 'l3', options)
                         hn_cache_opts['size'] = per_hn_l3_size_str
+                        if chi_l3_pair:
+                            hn_cache_opts['prefetcher'] = PrefetcherForwarder()
                         hn_cache = L3Cache(
                             clk_domain=system.cpu_clk_domain,
                             **hn_cache_opts
@@ -1099,6 +1119,9 @@ def config_cache(options, system):
                         hn_cache_wrapper.addCacheAccessor(hn_cache)
                         hn_cache_wrapper.addSliceAccessor(hn_cache_slice)
                         hn_cache_slice.setCacheAccessor(hn_cache)
+                        if chi_l3_pair:
+                            hn_cache.prefetcher.setRealPrefetcher(
+                                hn_cache_wrapper.prefetcher)
                         hn_cache.do_fast_writeline = not options.kmh_align
                         hn_cache.mshrs = per_hn_l3_mshrs
                         if options.ideal_cache:
@@ -1449,6 +1472,8 @@ def config_cache(options, system):
                         clk_domain=system.cpu_clk_domain,
                         **_get_cache_opts(system.cpu[0], 'l3', options)
                     )
+                    if chi_l3_pair:
+                        l3_inner_cache.prefetcher = PrefetcherForwarder()
                     l3_inner_cache_wrapper.slices = [l3_cache_slice]
                     l3_cache_slice.inner_cache = l3_inner_cache
 
@@ -1463,6 +1488,9 @@ def config_cache(options, system):
                     l3_inner_cache_wrapper.addCacheAccessor(l3_inner_cache)
                     l3_inner_cache_wrapper.addSliceAccessor(l3_cache_slice)
                     l3_cache_slice.setCacheAccessor(l3_inner_cache)
+                    if chi_l3_pair:
+                        l3_inner_cache.prefetcher.setRealPrefetcher(
+                            l3_inner_cache_wrapper.prefetcher)
 
                     l3_inner_cache.do_fast_writeline = not options.kmh_align
                     l3_inner_cache.mshrs = total_l3_mshrs
@@ -1578,6 +1606,9 @@ def config_cache(options, system):
 
         for i in range(options.num_cpus):
             if options.l3cache:
+                if chi_l3_pair:
+                    system.l2_wrappers[i].prefetcher.chi_l3_hint_bridge = (
+                        system.CHIsys.L2Wrapper.RNBridge)
                 # l2 -> tol3bus -> l3
                 if options.classic_l2:
                     if options.CHI:

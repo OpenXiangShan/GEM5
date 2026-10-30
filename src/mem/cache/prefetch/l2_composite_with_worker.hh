@@ -12,6 +12,8 @@
 #include "mem/cache/prefetch/lldp.hh"
 #include "params/L2CompositeWithWorkerPrefetcher.hh"
 
+namespace gem5::xsCHI { class CHIBridge; }
+
 namespace gem5
 {
 
@@ -77,6 +79,7 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     bool preferLLDP{false};
 
     bool offloadLowAccuracy = true;
+    xsCHI::CHIBridge *const l3HintBridge;
     uint64_t activeBOPReplayAccessSeq = 0;
     protected:
     void InsertPFRequestToBuffer(const AddrPriority &addr_prio) override{

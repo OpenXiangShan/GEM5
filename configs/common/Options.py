@@ -302,6 +302,12 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         action="store_true",
                         default=False,
                         help="enable the teacher/student BOP coverage learner")
+    parser.add_argument("--enable-chi-bop-l3-prefetch",
+                        action="store_true", default=False,
+                        help="send a paired small-BOP hint to CHI L3")
+    parser.add_argument("--chi-bop-l3-distance-multiplier", type=int,
+                        default=2, metavar="N",
+                        help="L3 hint distance as N times the selected BOP offset (default: 2)")
     parser.add_argument("--disable-bop-pc-control",
                         action="store_true",
                         default=False,

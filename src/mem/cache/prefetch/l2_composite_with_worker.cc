@@ -7,6 +7,7 @@
 #include "debug/HWPrefetch.hh"
 #include "mem/cache/prefetch/composite_with_worker.hh"
 #include "mem/cache/prefetch/lldp.hh"
+#include "mem/xsCHI/device/CHIBridge.hh"
 
 namespace gem5
 {
@@ -26,7 +27,8 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
       enableCMC(p.enable_cmc),
       enableDespacitoStream(p.enable_despacito_stream),
       lldp(dynamic_cast<LLDPrefetcher *>(p.lldp)),
-      enableLLDP(p.enable_lldp)
+      enableLLDP(p.enable_lldp),
+      l3HintBridge(p.chi_l3_hint_bridge)
 {
     setSharedFilterContextQualified(true);
     cdp->setSharedFilterContextQualified(true);
@@ -56,6 +58,12 @@ L2CompositeWithWorkerPrefetcher::prefetchUnused(Addr paddr, PrefetchSourceType p
 void
 L2CompositeWithWorkerPrefetcher::addToQueue(std::list<DeferredPacket> &queue, DeferredPacket &dpp)
 {
+    if (&queue == &pfq && dpp.pfahead && dpp.pfahead_host == 3) {
+        fatal_if(!l3HintBridge, "L3 BOP hint has no CHI RN bridge");
+        l3HintBridge->enqueueL3PrefetchHint(dpp.pkt->getAddr());
+        delete dpp.pkt;
+        return;
+    }
     if (&queue == &pfq) {
         // Check whether the cdp prefetch request needs to be filtered out
         if (dpp.pkt->req->getXsMetadata().prefetchSource == PrefetchSourceType::CDP) {
@@ -256,6 +264,16 @@ L2CompositeWithWorkerPrefetcher::notifyFill(const PacketPtr &pkt)
 bool 
 L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) 
 {
+    // Process one paired L3 candidate independently of the L2 PFQ budget.
+    if (smallBOP->hasL3PairCandidate()) {
+        AddrPriority l3(0, 1, PrefetchSourceType::HWP_BOP);
+        if (smallBOP->popL3PairCandidate(l3)) {
+            PacketPtr trigger = l3.pf_trigger_info.pkt;
+            PrefetchInfo pfi(*l3.pf_trigger_info.pfi_old);
+            PrefetchInfo target(pfi, blockAddress(l3.addr));
+            insert(trigger, target, l3);
+        }
+    }
     //here we decide which to send for this cycle
     //L1 Streamstride>berti>SMS>CMC
     //L2 Streamstride>SMS>vBOP>pbop>TP
@@ -285,7 +303,8 @@ L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriorit
     return L2PFsent;
 }
 bool L2CompositeWithWorkerPrefetcher::hasPFRequestsInBuffer() {
-    return  smallBOP->hasPFRequestsInBuffer() ||
+    return  smallBOP->hasL3PairCandidate() ||
+            smallBOP->hasPFRequestsInBuffer() ||
             cmc->hasPFRequestsInBuffer() ||
             cdp->hasPFRequestsInBuffer() ||
             despacitoStream->hasPFRequestsInBuffer();

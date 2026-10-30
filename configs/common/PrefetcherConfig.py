@@ -567,6 +567,13 @@ def _configure_l2_bop_student_cover(prefetcher, options):
                     setattr(bop, attr, False)
 
 
+def _configure_chi_bop_l3_pair(prefetcher, options):
+    if getattr(options, 'enable_chi_bop_l3_prefetch', False):
+        prefetcher.bop_small.enable_chi_l3_pair = True
+        prefetcher.bop_small.chi_l3_pair_distance_multiplier = (
+            options.chi_bop_l3_distance_multiplier)
+
+
 def _configure_l2_composite(prefetcher, prefetcher_name, options):
     if options.kmh_align:
         if prefetcher_name == 'L2CompositeWithWorkerPrefetcher':
@@ -580,12 +587,14 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
     if prefetcher_name == 'L2CompositeWithWorkerPrefetcher':
         _configure_l2_bop_cqf(prefetcher, options)
         _configure_l2_bop_student_cover(prefetcher, options)
+        _configure_chi_bop_l3_pair(prefetcher, options)
 
     if hasattr(options, 'l2_enable_lldp') and hasattr(prefetcher, 'enable_lldp'):
         prefetcher.enable_lldp = options.l2_enable_lldp
 
-    # Disable all L2 composite components for the no-BOP experiment.
-    prefetcher.enable_bop = False
+    # The L2 composite runs only small BOP in this experiment.
+    prefetcher.enable_bop = (
+        prefetcher_name == 'L2CompositeWithWorkerPrefetcher')
     prefetcher.enable_cdp = False
     prefetcher.enable_cmc = False
     prefetcher.enable_despacito_stream = False
