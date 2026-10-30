@@ -935,14 +935,17 @@ LSQ::tick()
 
     usedLoadPorts = 0;
     usedStorePorts = 0;
+
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        stats.lqAvgEntryNum[tid] = thread[tid].numLoads();
+        stats.sqAvgEntryNum[tid] = thread[tid].numStores();
+        stats.sbufferAvgEntryNum[tid] = storeBuffer.size(tid);
+    }
     // tick lsq_unit
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
     while (threads != end) {
         ThreadID tid = *threads++;
-        stats.lqAvgEntryNum[tid] = thread[tid].numLoads();
-        stats.sqAvgEntryNum[tid] = thread[tid].numStores();
-        stats.sbufferAvgEntryNum[tid] = storeBuffer.size(tid);
         const bool thread_lq_full =
             logicalFreeLoadEntries(tid) < enqueueWidth;
         const bool thread_sq_full =
@@ -1797,6 +1800,9 @@ LSQ::storeBufferWriteback()
                  scanned < numThreads && !entry && !cause;
                  ++scanned) {
                 const ThreadID tid = (start_idx + scanned) % numThreads;
+                if (storeBuffer.unsentSize(tid) == 0) {
+                    continue;
+                }
                 if (storeBuffer.unsentSize(tid) > getSbufferEvictThreshold()) {
                     cause = StoreBufferEvictCause::Full;
                     trigger_tid = tid;
@@ -1813,7 +1819,7 @@ LSQ::storeBufferWriteback()
                     trigger_tid = tid;
                     DPRINTF(StoreBuffer, "[tid:%u] sbuffer has reached timeout\n",
                             tid);
-                } else if (storeBuffer.unsentSize(tid) != 0) {
+                } else {
                     incStoreBufferInactiveCycles(tid);
                 }
             }
