@@ -148,6 +148,8 @@ class VectorMacroInst : public RiscvMacroInst
     {
         this->flags[IsVector] = true;
     }
+
+    void finalizeMicroops(bool is_segment = false);
 };
 
 class VectorMicroInst : public RiscvMicroInst
@@ -180,10 +182,19 @@ protected:
 
 class VectorNopMicroInst : public RiscvMicroInst
 {
+  private:
+    const StaticInstPtr paddedTail;
+
 public:
-    VectorNopMicroInst(ExtMachInst _machInst)
-        : RiscvMicroInst("vnop", _machInst, No_OpClass)
-    {}
+    VectorNopMicroInst(ExtMachInst _machInst, StaticInstPtr _paddedTail)
+        : RiscvMicroInst("vnop", _machInst, No_OpClass),
+          paddedTail(_paddedTail)
+    {
+        this->flags[IsNop] = true;
+        this->flags[IsVector] = true;
+    }
+
+    const StaticInstPtr &paddedTailInst() const { return paddedTail; }
 
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData)
         const override
@@ -382,11 +393,11 @@ class VleffMicroInst : public VectorMemMicroInst
 class VleffEndMicroInst : public VectorMicroInst
 {
 private:
-    RegId srcRegIdxArr[8];   // vle tmp target, used to keep RAW sequence
-    RegId destRegIdxArr[1];  // vstart
+    RegId srcRegIdxArr[11];  // vle tmp target + rs1 + vl + vd group anchor
+    RegId destRegIdxArr[1];  // vl
     uint8_t numSrcs;
 public:
-    VleffEndMicroInst(ExtMachInst extMachInst, uint8_t _numSrcs);
+    VleffEndMicroInst(ExtMachInst extMachInst, uint8_t _numSrcs, uint8_t _vd);
 
     Fault execute(ExecContext* xc, Trace::InstRecord* traceData) const override;
 
