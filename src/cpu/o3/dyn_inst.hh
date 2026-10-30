@@ -65,6 +65,7 @@
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/dyn_inst_xsmeta.hh"
+#include "cpu/o3/fp_wakeup.hh"
 #include "cpu/o3/lsq_unit.hh"
 #include "cpu/o3/replay_events.hh"
 #include "cpu/op_class.hh"
@@ -97,6 +98,8 @@ class DynInst : public ExecContext, public RefCounted
             InstSeqNum seq_num, CPU *cpu);
 
   public:
+    fpw::InstState fpWake;
+
     // The list of instructions iterator type.
     typedef typename std::list<DynInstPtr>::iterator ListIt;
 
@@ -1184,6 +1187,7 @@ class DynInst : public ExecContext, public RefCounted
     void setScheduled() { status.set(Scheduled); }
 
     void clearScheduled() { status.reset(Scheduled); }
+    void clearIssued() { status.reset(Issued); }
 
     bool isScheduled() const { return status[Scheduled]; }
 

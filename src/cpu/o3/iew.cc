@@ -2128,7 +2128,15 @@ IEW::executeInsts()
 
         DPRINTF(IEW, "Execute: Executing instructions from IQ.\n");
 
-        DynInstPtr inst = instQueue.getInstToExecute();
+        uint64_t attempt;
+        DynInstPtr inst = instQueue.getInstToExecute(attempt);
+        if (!inst) {
+            continue;
+        }
+        if (scheduler->fpWakeupEnabled() && inst->fpWake.managed &&
+            !scheduler->fpCanExecute(inst, attempt)) {
+            continue;
+        }
 
         // Notify potential listeners that this instruction has started
         // executing
@@ -2447,6 +2455,8 @@ IEW::tick()
         instQueue.scheduleReadyInsts();
 
         executeInsts();
+        instQueue.finalizeFpFus();
+        scheduler->validateFpSources();
 
         processDelayedVectorMemCompletions();
 

@@ -117,6 +117,10 @@ class InstructionQueue
         /** Executing instruction. */
         DynInstPtr inst;
 
+        /** Attempt that acquired the FU; replay invalidates this event. */
+        const uint64_t attempt;
+        uint64_t readyCycle;
+
         /** Index of the FU used for executing. */
         int fuIdx;
 
@@ -185,10 +189,13 @@ class InstructionQueue
      */
     void insertBarrier(const DynInstPtr &barr_inst);
 
-    /** Returns the oldest scheduled instruction, and removes it from
-     * the list of instructions waiting to execute.
+    /** Removes one scheduled execution entry and returns its attempt.
+     * Returns null if the entry belongs to an invalidated FP attempt.
      */
-    DynInstPtr getInstToExecute();
+    DynInstPtr getInstToExecute(uint64_t &attempt);
+
+    /** Latch dynamic FP latency after same-cycle operand materialization. */
+    void finalizeFpFus();
 
     /** Gets a memory instruction that was referred due to a delayed DTB
      *  translation if it is now ready to execute.  NULL if none available.
@@ -236,7 +243,8 @@ class InstructionQueue
     void recordAddrOrDataReady(const DynInstPtr &inst);
 
     /** Process FU completion event. */
-    void processFUCompletion(const DynInstPtr &inst, int fu_idx);
+    void processFUCompletion(const DynInstPtr &inst, int fu_idx,
+                             uint64_t attempt);
 
     bool execLatencyCheck(const DynInstPtr& inst, uint32_t& op_latency);
 
@@ -344,8 +352,18 @@ class InstructionQueue
 
     Scheduler* scheduler;
 
+    /** An execution entry retains the attempt that acquired its FU. */
+    struct AttemptInst
+    {
+        DynInstPtr inst;
+        uint64_t attempt;
+
+        AttemptInst(const DynInstPtr &inst);
+    };
+
     /** List of instructions that are ready to be executed. */
-    std::list<DynInstPtr> instsToExecute;
+    std::list<AttemptInst> instsToExecute;
+    std::vector<AttemptInst> pendingFpFus;
 
     /** List of instructions waiting for their DTB translation to
      *  complete (hw page table walk in progress).
