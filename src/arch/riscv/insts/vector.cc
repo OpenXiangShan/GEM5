@@ -78,7 +78,13 @@ VectorMacroInst::finalizeMicroops(bool is_segment)
     const StaticInstPtr padded_tail = microops.back();
     while (microops.size() < padded_size) {
         StaticInstPtr nop = new VectorNopMicroInst(machInst, padded_tail);
-        nop->setDelayedCommit();
+        // Keep intermediate padding inside the macro-op, but preserve the
+        // original tail's interrupt boundary on the final padding NOP.
+        // In particular, VleffEndMicroInst is not delayed-commit.
+        if (microops.size() + 1 < padded_size ||
+            padded_tail->isDelayedCommit()) {
+            nop->setDelayedCommit();
+        }
         microops.push_back(nop);
     }
 

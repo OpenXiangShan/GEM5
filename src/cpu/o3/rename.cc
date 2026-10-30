@@ -600,6 +600,14 @@ Rename::tick()
 
     stats.threadsRenamedPerCycle.sample(threads_renamed);
     stats.instsRenamedPerCycle.sample(renamed_this_cycle);
+    // Eligibility describes the input state sampled before this cycle's
+    // rename work; measure full width using the total across selected threads.
+    if (eligible) {
+        ++stats.eligibleCycles;
+        if (renamed_this_cycle == aggregateRenameWidth) {
+            ++stats.eligibleFullWidthCycles;
+        }
+    }
 
     toIEW->renameStallReason = renameStalls;
 
