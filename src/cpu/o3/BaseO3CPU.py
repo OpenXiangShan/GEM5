@@ -359,8 +359,10 @@ class BaseO3CPU(BaseCPU):
         75, "SMT borrowing LSQ high-water threshold as a percentage of LQ+SQ")
     smtBorrowDonorHoldCycles = Param.Unsigned(
         8, "Cycles to keep an SMT thread marked as a ROB borrowing donor")
+    smtBorrowBaseReserveEntries = Param.Unsigned(
+        72, "Minimum ROB entries reserved for a borrowing base to resume")
     smtBorrowDonorReserveEntries = Param.Unsigned(
-        8, "Minimum ROB entries reserved for a borrowing donor to resume")
+        64, "Minimum ROB entries reserved for a borrowing donor to resume")
 
     smtDecodePolicy = Param.SMTDecodePolicy('MultiPriority',
         "SMT decode select policy: ICount, DelayedICount, MultiPriority, RoundRobin")
@@ -405,22 +407,20 @@ class BaseO3CPU(BaseCPU):
     smtPregBackendBackpressureDonorHoldCycles = Param.Unsigned(
         8, "Cycles to keep a backend-backpressure-triggered Preg donor "
            "marking held after the triggering condition clears")
-    smtBorrowBaseReserveEntries = Param.Unsigned(
-        80, "Minimum ROB entries reserved for a borrowing base to resume")
     smtLQBorrowBaseReserveEntries = Param.Unsigned(
-        60, "Minimum LQ entries reserved for a borrowing base thread to resume")
+        54, "Minimum LQ entries reserved for a borrowing base thread to resume")
     smtLQBorrowDonorReserveEntries = Param.Unsigned(
-        60, "Minimum LQ entries reserved for a borrowing donor thread to resume")
+        48, "Minimum LQ entries reserved for a borrowing donor thread to resume")
     smtSQBorrowBaseReserveEntries = Param.Unsigned(
-        32, "Minimum SQ entries reserved for a borrowing base thread to resume")
+        29, "Minimum SQ entries reserved for a borrowing base thread to resume")
     smtSQBorrowDonorReserveEntries = Param.Unsigned(
-        32, "Minimum SQ entries reserved for a borrowing donor thread to resume")
+        26, "Minimum SQ entries reserved for a borrowing donor thread to resume")
     smtLQBorrowDonorHoldCycles = Param.Unsigned(
         1, "Cycles to keep an SMT thread marked as an LQ borrowing donor")
     smtSQBorrowDonorHoldCycles = Param.Unsigned(
-        1, "Cycles to keep an SMT thread marked as an SQ borrowing donor")
+        8, "Cycles to keep an SMT thread marked as an SQ borrowing donor")
     lsqBorrowDonorSkipRenameGate = Param.Bool(
-        False, "Force has_buffered_rename to false in LSQ borrowing donor "
+        True, "Force has_buffered_rename to false in LSQ borrowing donor "
         "gating, i.e. disable the rename-buffer gate (evaluation only)")
 
     branchPred = Param.BranchPredictor(DecoupledBPUWithBTB(),
