@@ -623,8 +623,8 @@ class Fetch
     bool isTraceInstruction(InstSeqNum seqNum) const;
     void cleanupTraceMetadataOnCommit(InstSeqNum seqNum);
 
-    void recordFastFetchAccepted(unsigned count);
-    void recordFastFetchDropped();
+    void recordFastFetchAccepted(unsigned count, bool continuation);
+    void recordFastFetchDropped(const DynInstPtr &instruction);
     void recordFastFetchDedup(unsigned count);
     uint64_t findTraceIndexForSeqNum(InstSeqNum seqNum) const;
     bool lookupTraceIndexForSeqNum(InstSeqNum seqNum, uint64_t &index) const;
@@ -1174,9 +1174,10 @@ class Fetch
     // Used to explicitly notify the BPU when an entry is consumed (Phase5 prep).
     unsigned ftqEntryFetchedInsts[MaxThreads]{};
 
-    /** One-shot fast-fetch state after a backend recovery. */
+    /** Fast-fetch state after a backend recovery. */
     bool fastFetchPending[MaxThreads]{};
     bool fastFetchReady[MaxThreads]{};
+    bool fastFetchContinuing[MaxThreads]{};
     unsigned fastFetchTargetId[MaxThreads]{};
     std::deque<DynInstPtr> fastFetchCandidates[MaxThreads];
 
@@ -1253,6 +1254,7 @@ class Fetch
         statistics::Scalar fastFetchCandidateInsts;
         statistics::Scalar fastFetchPublishedInsts;
         statistics::Scalar fastFetchAcceptedBundles;
+        statistics::Scalar fastFetchContinuedBundles;
         statistics::Scalar fastFetchAcceptedInsts;
         statistics::Scalar fastFetchDroppedBundles;
         statistics::Scalar fastFetchNormalDedupInsts;

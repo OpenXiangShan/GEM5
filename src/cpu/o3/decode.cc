@@ -166,6 +166,7 @@ Decode::startupStage()
 void
 Decode::clearStates(ThreadID tid)
 {
+    fastFetchContinuing[tid] = false;
     decodedBranchHistory[tid].clear();
     if (compactionEnabled) {
         assert(tid == 0);
@@ -178,6 +179,9 @@ void
 Decode::resetStage()
 {
     _status = Inactive;
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        fastFetchContinuing[tid] = false;
+    }
     if (compactionEnabled) {
         compactionBuffer.clear();
         nextCompactionBundle = 0;
@@ -369,19 +373,28 @@ Decode::acceptFastFetch()
 
     const ThreadID tid = fromFastFetch->fastFetchTid;
     unsigned count = fromFastFetch->fastFetchSize;
+    const bool continuation = fromFastFetch->fastFetchContinuation;
+    const bool can_continue = tid < numThreads && fastFetchContinuing[tid];
+    if (tid < numThreads) {
+        fastFetchContinuing[tid] = false;
+    }
     if (tid >= numThreads || count > decodeWidth ||
         count > fromFastFetch->size ||
         fromCommit->commitInfo[tid].squash ||
+        (continuation &&
+         (stallSig->blockDecode[tid] || !can_continue)) ||
         !stallBuffer[tid].empty() || !fixedbuffer[tid].empty()) {
         DPRINTF(FastFetch,
                 "drop tid=%u count=%u normal=%u reason=unavailable "
-                "blocked=%u squash=%u stall=%u fixed=%u\n",
+                "blocked=%u squash=%u stall=%u fixed=%u "
+                "continuation=%u active=%u\n",
                 tid, count, fromFastFetch->size,
                 tid < numThreads && stallSig->blockDecode[tid],
                 tid < numThreads && fromCommit->commitInfo[tid].squash,
                 tid < numThreads ? stallBuffer[tid].size() : 0,
-                tid < numThreads ? fixedbuffer[tid].size() : 0);
-        fetch_ptr->recordFastFetchDropped();
+                tid < numThreads ? fixedbuffer[tid].size() : 0,
+                continuation, can_continue);
+        fetch_ptr->recordFastFetchDropped(fromFastFetch->fastFetchInsts[0]);
         return;
     }
 
@@ -397,7 +410,8 @@ Decode::acceptFastFetch()
                     instruction == fromFastFetch->insts[i],
                     instruction->isSquashed(), instruction->getVersion(),
                     localSquashVer[tid].getVersion());
-            fetch_ptr->recordFastFetchDropped();
+            fetch_ptr->recordFastFetchDropped(
+                fromFastFetch->fastFetchInsts[0]);
             return;
         }
     }
@@ -414,7 +428,7 @@ Decode::acceptFastFetch()
     }
     if (count == 0) {
         DPRINTF(FastFetch, "drop tid=%u reason=fusion-empty\n", tid);
-        fetch_ptr->recordFastFetchDropped();
+        fetch_ptr->recordFastFetchDropped(fromFastFetch->fastFetchInsts[0]);
         return;
     }
 
@@ -423,18 +437,19 @@ Decode::acceptFastFetch()
         instruction->setFastFetchAccepted();
         fixedbuffer[tid].push_back(instruction);
     }
+    fastFetchContinuing[tid] = !stallSig->blockDecode[tid];
     DPRINTF(Decode,
             "[tid:%i] Fast fetch accepted %u instructions, first seq=%llu\n",
             tid, count, fromFastFetch->fastFetchInsts[0]->seqNum);
-    fetch_ptr->recordFastFetchAccepted(count);
+    fetch_ptr->recordFastFetchAccepted(count, continuation);
     DPRINTF(FastFetch,
             "accept tid=%u count=%u offered=%u first=%llu last=%llu "
-            "ftq=%llu blocked=%u\n",
+            "ftq=%llu blocked=%u continuation=%u\n",
             tid, count, fromFastFetch->fastFetchSize,
             fromFastFetch->fastFetchInsts[0]->seqNum,
             fromFastFetch->fastFetchInsts[count - 1]->seqNum,
             fromFastFetch->fastFetchInsts[0]->getFtqId(),
-            stallSig->blockDecode[tid]);
+            stallSig->blockDecode[tid], continuation);
 }
 
 void
@@ -498,6 +513,7 @@ Decode::squashBranchHistory(ThreadID tid, InstSeqNum squash_seq_num,
 void
 Decode::selfSquash(const DynInstPtr &inst, ThreadID tid)
 {
+    fastFetchContinuing[tid] = false;
     DPRINTF(Decode, "[tid:%i] [sn:%llu] Squashing due to incorrect branch "
             "prediction detected at decode.\n", tid, inst->seqNum);
 
@@ -575,6 +591,7 @@ Decode::selfSquash(const DynInstPtr &inst, ThreadID tid)
 unsigned
 Decode::squash(ThreadID tid)
 {
+    fastFetchContinuing[tid] = false;
     DPRINTF(Decode, "[tid:%i] Squashing.\n",tid);
 
     if (compactionEnabled) {
@@ -858,6 +875,12 @@ Decode::tick()
     moveInstsToBuffer();
 
     checkSquash();
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        if (stallSig->blockDecode[tid] || !fastFetchBufferEmpty(tid) ||
+            fromCommit->commitInfo[tid].squash) {
+            fastFetchContinuing[tid] = false;
+        }
+    }
     acceptFastFetch();
 
     // check threads stall & status

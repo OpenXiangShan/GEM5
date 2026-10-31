@@ -314,16 +314,21 @@ Fetch::getTraceReaderIndex() const
 std::string Fetch::name() const { return cpu->name() + ".fetch"; }
 
 void
-Fetch::recordFastFetchAccepted(unsigned count)
+Fetch::recordFastFetchAccepted(unsigned count, bool continuation)
 {
     ++fetchStats.fastFetchAcceptedBundles;
+    fetchStats.fastFetchContinuedBundles += continuation;
     fetchStats.fastFetchAcceptedInsts += count;
 }
 
 void
-Fetch::recordFastFetchDropped()
+Fetch::recordFastFetchDropped(const DynInstPtr &instruction)
 {
     ++fetchStats.fastFetchDroppedBundles;
+    const ThreadID tid = instruction->threadNumber;
+    if (localSquashVer[tid].getVersion() == instruction->getVersion()) {
+        clearFastFetchState(tid);
+    }
 }
 
 void
@@ -359,6 +364,8 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Instructions published on the fast fetch channel"),
     ADD_STAT(fastFetchAcceptedBundles, statistics::units::Count::get(),
              "Fast fetch bundles successfully accepted by Decode"),
+    ADD_STAT(fastFetchContinuedBundles, statistics::units::Count::get(),
+             "Fast fetch bundles accepted after the first recovery bundle"),
     ADD_STAT(fastFetchAcceptedInsts, statistics::units::Count::get(),
              "Instructions accepted from the fast fetch channel"),
     ADD_STAT(fastFetchDroppedBundles, statistics::units::Count::get(),
@@ -800,6 +807,7 @@ Fetch::startupStage()
 void
 Fetch::clearStates(ThreadID tid)
 {
+    clearFastFetchState(tid);
     clearResolveQueue(tid);
     setThreadStatus(tid, Running);
     set(threads[tid].fetchpc, cpu->pcState(tid));
@@ -851,6 +859,7 @@ Fetch::resetStage()
 
     // Setup PC and nextPC with initial state.
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        clearFastFetchState(tid);
         clearResolveQueue(tid);
         setThreadStatus(tid, Running);
         set(threads[tid].fetchpc, cpu->pcState(tid));
@@ -2030,12 +2039,23 @@ Fetch::sendInstructionsToDecode()
 
     toDecode->fastFetchSize = 0;
     toDecode->fastFetchTid = InvalidThreadID;
+    toDecode->fastFetchContinuation = false;
 
     // Reset the number of instructions we've fetched
     numInst = 0;
 
     bool any_thread_active = false;
     for (int i = 0; i < numThreads; i++) {
+        if (fastFetchContinuing[i] &&
+            (stallSig->blockFetch[i] || stallSig->blockDecode[i] ||
+             !cpu->getDecode()->fastFetchBufferEmpty(i))) {
+            DPRINTF(FastFetch,
+                    "stop tid=%u reason=continuation-unavailable "
+                    "fetch_blocked=%u decode_blocked=%u empty=%u\n",
+                    i, stallSig->blockFetch[i], stallSig->blockDecode[i],
+                    cpu->getDecode()->fastFetchBufferEmpty(i));
+            clearFastFetchState(i);
+        }
         if (!stallSig->blockFetch[i]) {
             any_thread_active = true;
             //break;
@@ -2114,6 +2134,36 @@ Fetch::sendInstructionsToDecode()
     }
 
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        if (fastFetchContinuing[tid]) {
+            if (fetchQueue[tid].empty()) {
+                continue;
+            }
+            if (fastFetchCandidates[tid].empty()) {
+                if (fetchQueue[tid].front()->getFtqId() ==
+                    fastFetchTargetId[tid]) {
+                    DPRINTF(FastFetch,
+                            "stop tid=%u reason=block-prefix-ended ftq=%llu\n",
+                            tid, fastFetchTargetId[tid]);
+                    clearFastFetchState(tid);
+                    continue;
+                }
+                fastFetchReady[tid] = false;
+                for (const auto &instruction : fetchQueue[tid]) {
+                    collectFastFetchCandidate(instruction);
+                    if (fastFetchReady[tid]) {
+                        break;
+                    }
+                }
+            }
+            if (!fastFetchReady[tid] || fastFetchCandidates[tid].empty() ||
+                fastFetchCandidates[tid].front() != fetchQueue[tid].front()) {
+                DPRINTF(FastFetch,
+                        "stop tid=%u reason=continuation-prefix ftq=%llu\n",
+                        tid, fastFetchTargetId[tid]);
+                clearFastFetchState(tid);
+                continue;
+            }
+        }
         if (!fastFetchReady[tid] || stallSig->blockFetch[tid]) {
             continue;
         }
@@ -2124,12 +2174,22 @@ Fetch::sendInstructionsToDecode()
         }
         toDecode->fastFetchSize = count;
         toDecode->fastFetchTid = tid;
+        toDecode->fastFetchContinuation = fastFetchContinuing[tid];
         fetchStats.fastFetchPublishedInsts += count;
         DPRINTF(FastFetch,
-                "publish tid=%u ftq=%llu candidates=%u count=%u first=%llu\n",
+                "publish tid=%u ftq=%llu candidates=%u count=%u first=%llu "
+                "continuation=%u\n",
                 tid, fastFetchTargetId[tid], fastFetchCandidates[tid].size(),
-                count, count ? fastFetchCandidates[tid].front()->seqNum : 0);
-        clearFastFetchState(tid);
+                count, count ? fastFetchCandidates[tid].front()->seqNum : 0,
+                fastFetchContinuing[tid]);
+        if (count == 0) {
+            clearFastFetchState(tid);
+        } else {
+            fastFetchCandidates[tid].erase(
+                fastFetchCandidates[tid].begin(),
+                fastFetchCandidates[tid].begin() + count);
+            fastFetchContinuing[tid] = true;
+        }
         break;
     }
 
@@ -3240,6 +3300,7 @@ Fetch::clearFastFetchState(ThreadID tid)
     }
     fastFetchPending[tid] = false;
     fastFetchReady[tid] = false;
+    fastFetchContinuing[tid] = false;
     fastFetchTargetId[tid] = 0;
     fastFetchCandidates[tid].clear();
 }
@@ -3751,7 +3812,9 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
         instruction, *next_pc, allow_two_fetch, continued_to_next_target,
         false_hit);
 
-    collectFastFetchCandidate(instruction);
+    if (!fastFetchContinuing[tid]) {
+        collectFastFetchCandidate(instruction);
+    }
 
     if (predictedBranch) {
         DPRINTF(Fetch, "[tid:%i] Branch detected with PC = %s, target = %s\n",

@@ -114,6 +114,11 @@ class Decode
     /** Sets pointer to time buffer coming from fetch. */
     void setFetchQueue(TimeBuffer<FetchStruct> *fq_ptr);
 
+    bool fastFetchBufferEmpty(ThreadID tid) const
+    {
+        return fixedbuffer[tid].empty() && stallBuffer[tid].empty();
+    }
+
     /** Sets pointer to list of active threads. */
     void setActiveThreads(std::list<ThreadID> *at_ptr);
 
@@ -270,6 +275,7 @@ class Decode
 
     /** One-cycle-earlier fast-fetch view of the fetch time buffer. */
     TimeBuffer<FetchStruct>::wire fromFastFetch;
+    bool fastFetchContinuing[MaxThreads]{};
 
     /** Queue of all instructions coming from fetch this cycle. */
     boost::circular_buffer<DynInstPtr> fixedbuffer[MaxThreads];
