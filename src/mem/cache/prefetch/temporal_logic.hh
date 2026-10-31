@@ -123,24 +123,31 @@ struct Counters
     uint64_t encodableRecords{0}, installedLines{0}, encodableLines{0};
     uint64_t rripAges{0}, replacementPromotions{0};
     uint64_t qualityReads{0};
-    uint64_t bypassPairs{0};
+    uint64_t bypassPairs{0}, samplerWriteSkips{0};
     std::array<uint64_t, 12> installsByKind{}, evictionsByKind{}, probesByKind{};
 };
 
 class Engine
 {
   public:
-    static constexpr unsigned SAMPLER_SETS = 256;
+    static constexpr unsigned FILTER_SETS = 32;
+    static constexpr unsigned FILTER_WAYS = 8;
+    static constexpr unsigned SAMPLER_SETS = 128;
+    static constexpr unsigned SAMPLER_WAYS = 16;
+    static constexpr unsigned RECORDER_SETS = 128;
+    static constexpr unsigned RECORDER_WAYS = 2;
+    static constexpr unsigned CONF_SETS = 64;
+    static constexpr unsigned CONF_WAYS = 8;
     static constexpr unsigned META_ENTRIES = 24576;
     static constexpr unsigned META_SETS = META_ENTRIES / 16;
 
   private:
     Table<PCEntry, 256, 4> roleTable;
-    Table<Filter, 32, 8> filter;
-    Table<Sample, SAMPLER_SETS, 16> sampler;
-    Table<Record, 128, 8> recorder;
+    Table<Filter, FILTER_SETS, FILTER_WAYS> filter;
+    Table<Sample, SAMPLER_SETS, SAMPLER_WAYS> sampler;
+    Table<Record, RECORDER_SETS, RECORDER_WAYS> recorder;
     Table<Record, 0, 16> meta;
-    Table<Confidence, 64, 8> confidence;
+    Table<Confidence, CONF_SETS, CONF_WAYS> confidence;
     unsigned issueProbe{0}, metaProbe{0};
     const unsigned maxLength;
     RecordPools pools;
@@ -172,7 +179,7 @@ class Engine
     Confidence &conf(uint64_t pc, int context)
     {
         bool hit;
-        auto &c = confidence.access(placementPC(pc) & 63,
+        auto &c = confidence.access(placementPC(pc) & (CONF_SETS - 1),
             [=](const auto &e) { return e.pc == pc && e.context == context; }, hit);
         if (!hit) {
             c = {};
@@ -302,7 +309,7 @@ class Engine
                     uint8_t roles, uint8_t kind)
     {
         bool hit;
-        auto &r = recorder.access(pc & 127,
+        auto &r = recorder.access(pc & (RECORDER_SETS - 1),
             [=](const auto &e) { return e.pc == pc && e.context == context; }, hit);
         if (!hit) {
             if (r.valid && r.lines.size() > 8) {
@@ -424,7 +431,7 @@ class Engine
     std::optional<Confidence> confidenceForHash(uint64_t pc, int context,
                                                bool countAccess = true)
     {
-        const auto set = placementPC(pc) & 63;
+        const auto set = placementPC(pc) & (CONF_SETS - 1);
         if (countAccess)
             ++confidence.setAccesses[set];
         for (const auto &entry : confidence.data[set])
@@ -505,7 +512,7 @@ class Engine
         ++counters.trains;
         auto output = query(actualPC, context, line);
         bool hit;
-        auto &f = filter.access(placementPC(pc) & 31,
+        auto &f = filter.access(placementPC(pc) & (FILTER_SETS - 1),
             [=](const auto &e) { return e.pc == pc && e.context == context; }, hit);
         const uint8_t epoch = (counters.trains / 32768) & 15;
         if (!hit) {
@@ -554,6 +561,12 @@ class Engine
             recordPair(pc, context, base, line, f.roles, f.kind);
         }
         if (!hit || record || count >= 31) {
+            // Keep the lookup, replacement touch and Recorder input. Only
+            // suppress a write when every Sample field would stay unchanged.
+            if (matches && s.matches == 7 && s.roles == f.roles && s.kind == 2) {
+                ++counters.samplerWriteSkips;
+                return output;
+            }
             ++counters.samplerWrites;
             const uint8_t matchCount = !hit ? 0 : matches ?
                 std::min<unsigned>(7, s.matches + 1) :

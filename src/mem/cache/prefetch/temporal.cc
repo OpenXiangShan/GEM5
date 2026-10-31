@@ -103,8 +103,8 @@ TemporalPrefetcher::TPStats::TPStats(statistics::Group *parent,
     replacementControl.subname(0, "roleProbe");
     replacementControl.subname(1, "rripAge");
     replacementControl.subname(2, "timelyPromotion");
-    const std::array<const char *, 2> policyNames = {
-        "qualityReads", "bypassPairs"};
+    const std::array<const char *, 3> policyNames = {
+        "qualityReads", "bypassPairs", "samplerWriteSkips"};
     policyControl.init(policyNames.size());
     for (unsigned i = 0; i < policyNames.size(); ++i)
         policyControl.subname(i, policyNames[i]);
@@ -142,7 +142,9 @@ TemporalPrefetcher::TPStats::TPStats(statistics::Group *parent,
         &roleSets, &filterSets, &samplerSets, &recorderSets,
         &metaSets, &confidenceSets};
     const std::array<unsigned, 6> sets = {
-        256, 32, samplerSetsCount, 128, metaSetsCount, 64};
+        256, temporal::Engine::FILTER_SETS, samplerSetsCount,
+        temporal::Engine::RECORDER_SETS, metaSetsCount,
+        temporal::Engine::CONF_SETS};
     const std::array<const char *, 3> metrics = {
         "access", "eviction", "occupancy"};
     for (unsigned table = 0; table < tables.size(); ++table) {
@@ -616,9 +618,10 @@ TemporalPrefetcher::preDumpStats()
         stats.storageKinds[24 + i] +=
             c.probesByKind[i] - lastDumpCounters.probesByKind[i];
     }
-    const std::array<uint64_t, 2> policyDeltas = {
+    const std::array<uint64_t, 3> policyDeltas = {
         c.qualityReads - lastDumpCounters.qualityReads,
-        c.bypassPairs - lastDumpCounters.bypassPairs};
+        c.bypassPairs - lastDumpCounters.bypassPairs,
+        c.samplerWriteSkips - lastDumpCounters.samplerWriteSkips};
     for (unsigned i = 0; i < policyDeltas.size(); ++i)
         stats.policyControl[i] += policyDeltas[i];
     lastDumpCounters = c;
