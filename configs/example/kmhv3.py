@@ -74,7 +74,7 @@ def setKmhV3Params(args, system):
         cpu.enablePredecode = predecode_enabled
         cpu.enableFastFetch = predecode_enabled and not args.smt
         cpu.fastFetchAllowBlockedDecode = True
-        cpu.enableFastFetchContinuation = cpu.enableFastFetch
+        cpu.enableFastFetchContinuation = False
         cpu.fastFetchBytes = 64
 
         # decode
