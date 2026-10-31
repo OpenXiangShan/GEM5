@@ -90,7 +90,7 @@ def setKmhV3IdealParams(args, system):
         cpu.smtSQBorrowBaseReserveEntries = args.smt_sq_base_entry
         cpu.smtLQBorrowDonorHoldCycles = args.smt_lq_donor_hold_cycles
         cpu.smtSQBorrowDonorHoldCycles = args.smt_sq_donor_hold_cycles
-        cpu.lsqBorrowDonorSkipRenameGate = args.lsq_borrow_donor_enable_rename_gate
+        cpu.lsqBorrowDonorSkipRenameGate = not args.lsq_borrow_donor_enable_rename_gate
 
         # value predictor
         cpu.valuePred = CompositeValuePredictor(

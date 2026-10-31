@@ -1043,8 +1043,8 @@ def xiangshan_system_init():
     )
     parser.add_argument(
         "--lsq-borrow-donor-enable-rename-gate",
-        action="store_false",
-        default=True,
+        action="store_true",
+        default=False,
         help="Force has_buffered_rename to false in LSQ borrowing donor gating (evaluation only)",
     )
     parser.add_argument(
