@@ -371,7 +371,7 @@ Decode::acceptFastFetch()
     unsigned count = fromFastFetch->fastFetchSize;
     if (tid >= numThreads || count > decodeWidth ||
         count > fromFastFetch->size ||
-        stallSig->blockDecode[tid] || fromCommit->commitInfo[tid].squash ||
+        fromCommit->commitInfo[tid].squash ||
         !stallBuffer[tid].empty() || !fixedbuffer[tid].empty()) {
         DPRINTF(FastFetch,
                 "drop tid=%u count=%u normal=%u reason=unavailable "
@@ -428,11 +428,13 @@ Decode::acceptFastFetch()
             tid, count, fromFastFetch->fastFetchInsts[0]->seqNum);
     fetch_ptr->recordFastFetchAccepted(count);
     DPRINTF(FastFetch,
-            "accept tid=%u count=%u offered=%u first=%llu last=%llu ftq=%llu\n",
+            "accept tid=%u count=%u offered=%u first=%llu last=%llu "
+            "ftq=%llu blocked=%u\n",
             tid, count, fromFastFetch->fastFetchSize,
             fromFastFetch->fastFetchInsts[0]->seqNum,
             fromFastFetch->fastFetchInsts[count - 1]->seqNum,
-            fromFastFetch->fastFetchInsts[0]->getFtqId());
+            fromFastFetch->fastFetchInsts[0]->getFtqId(),
+            stallSig->blockDecode[tid]);
 }
 
 void
