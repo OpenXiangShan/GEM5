@@ -304,6 +304,7 @@ void
 LSQUnit::processReplayQueues()
 {
     std::vector<DynInstPtr> instsToReplay;
+    instsToReplay.swap(replayScratch);
 
     // Collect remaining RAR instructions that can be completed immediately
     auto RARReplayIt = RARReplayQueue.begin();
@@ -380,6 +381,11 @@ LSQUnit::processReplayQueues()
         inst->clearNeedReplay();
         inst->issueQue->retryMem(inst);
     }
+
+    // Match the old local batch's end-of-call reference release, retaining
+    // only empty storage. A nested call can use its own independent batch.
+    instsToReplay.clear();
+    instsToReplay.swap(replayScratch);
 }
 
 } // namespace o3

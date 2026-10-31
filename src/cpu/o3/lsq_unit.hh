@@ -844,6 +844,11 @@ class LSQUnit
     /** RAWReplayQueue for instructions waiting due to RAW dependency */
     std::list<DynInstPtr> RAWReplayQueue;
 
+    /** Empty reusable storage for a local replay batch. Keeping the active
+     * batch local preserves callback/reentrant iterator and reference
+     * lifetimes; this member never retains instructions between calls. */
+    std::vector<DynInstPtr> replayScratch;
+
     /** Process instructions in RARReplayQueue and RAWReplayQueue */
     void processReplayQueues();
 
