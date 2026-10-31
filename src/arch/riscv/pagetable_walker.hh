@@ -317,6 +317,7 @@ namespace RiscvISA
 
             statistics::Scalar ptwMemCount;
             statistics::Scalar ptwMemCycle;
+            statistics::Scalar ptwMissQueueHeadRotations;
             statistics::Formula ptwAvgMemLatency;
         } stats;
 
@@ -372,6 +373,7 @@ namespace RiscvISA
         bool openNextLine;
         bool autoOpenNextLine;
         bool enablePtwLevelLimit;
+        bool rotateBlockedMissHead;
         std::array<unsigned, 4> ptwLevelLimit;
         std::array<unsigned, 4> ptwLevelActive;
         unsigned ptwMissQueueSize;
@@ -461,6 +463,7 @@ namespace RiscvISA
             openNextLine(params.open_nextline),
             autoOpenNextLine(true),
             enablePtwLevelLimit(params.enable_ptw_level_limit),
+            rotateBlockedMissHead(params.ptw_rotate_blocked_miss_head),
             ptwLevelLimit({{
                 params.ptw_level0_limit,
                 params.ptw_level1_limit,

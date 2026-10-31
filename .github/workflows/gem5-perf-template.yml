@@ -71,6 +71,13 @@ jobs:
     continue-on-error: false
     name: XS-GEM5 - Run performance test (${{ inputs.benchmark_type }})
     steps:
+      - name: Exclude node033 from performance runs
+        run: |
+          if [[ "$RUNNER_NAME" == *node033* || "$(hostname -s)" == node033 ]]; then
+            echo "::error::node033 is excluded from this performance run."
+            exit 1
+          fi
+
       - name: Reject untrusted PR head checkout
         if: |
           github.event_name == 'pull_request_target' &&
@@ -168,7 +175,7 @@ jobs:
           CONFIG_NAME=$(printf '%s' "$CONFIG_NAME" | tr -c 'A-Za-z0-9._-' '_')
           CONFIG_NAME=${CONFIG_NAME:-config}
           TARGET_DIR="${BENCHMARK_DIR}/${TIMESTAMP}_${COMMIT_SHORT}_${CONFIG_NAME}_run${RUN_NUMBER}"
-          DEFAULT_DISTRIBUTED_SERVERS="node003-node008,node020-node029,node033-node034,node036-node039"
+          DEFAULT_DISTRIBUTED_SERVERS="node003-node008,node020-node029,node034,node037-node039"
           DISTRIBUTED_SERVERS_INPUT="$DISTRIBUTED_SERVERS_RAW"
           DISTRIBUTED_SERVERS=$(echo "$DISTRIBUTED_SERVERS_INPUT" | xargs)
           if [ "$DISTRIBUTED_SERVERS" = "default" ]; then
@@ -212,7 +219,7 @@ jobs:
           echo "distributed_require_idle_cpus: $DISTRIBUTED_REQUIRE_IDLE_CPUS" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_idle_probe_mode: $DISTRIBUTED_IDLE_PROBE_MODE" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_idle_cpu_threshold: 30" >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_ssh_config: " >> "$TARGET_DIR/metadata.txt"
+          echo "distributed_ssh_config: $TARGET_DIR/distributed_ssh_config" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_ssh_user: " >> "$TARGET_DIR/metadata.txt"
           echo "distributed_launch_retries: 3" >> "$TARGET_DIR/metadata.txt"
           echo "distributed_launch_retry_delay: 30" >> "$TARGET_DIR/metadata.txt"
@@ -304,8 +311,15 @@ jobs:
           distributed_servers="$DISTRIBUTED_SERVERS"
           if [ -n "$distributed_servers" ]; then
             echo "Using distributed gem5 runner on servers: $distributed_servers"
+            PYTHONPATH="$GEM5_HOME/util/xs_scripts" python3 - <<'PY' > "$PERF_ARCHIVE_DIR/distributed_ssh_config"
+          import os
+          from distributed_sim import parse_server_list
+          for node in parse_server_list(os.environ["DISTRIBUTED_SERVERS"]):
+              print(f"Host {node}\n  HostName 172.19.20.{int(node[4:])}")
+          PY
             distributed_status=0
-            python3 "$GEM5_HOME/util/xs_scripts/distributed_sim.py" \
+            proxychains -q -f /nfs/home/wujiabin/work/tea-spec06-int24-20261022/low-resource-20261026-cluster-proxychains.conf \
+              python3 "$GEM5_HOME/util/xs_scripts/distributed_sim.py" \
               --servers "$distributed_servers" \
               --jobs-per-server "$DISTRIBUTED_JOBS_PER_SERVER" \
               --require-idle-cpus "$DISTRIBUTED_REQUIRE_IDLE_CPUS" \
@@ -316,6 +330,8 @@ jobs:
               --ssh-option StrictHostKeyChecking=accept-new \
               --ssh-option UserKnownHostsFile="$PERF_ARCHIVE_DIR/known_hosts" \
               --ssh-option ConnectTimeout=10 \
+              --ssh-option ProxyCommand=none \
+              --ssh-config "$PERF_ARCHIVE_DIR/distributed_ssh_config" \
               --build-type "$GEM5_BUILD_TYPE" \
               "$(realpath "$CONFIG_PATH")" \
               "$CHECKPOINT_LIST" \

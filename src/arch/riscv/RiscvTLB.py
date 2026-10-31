@@ -60,6 +60,8 @@ class RiscvPagetableWalker(ClockedObject):
     ptw_level3_limit = Param.Unsigned(1, "PTW level-3 parallelism limit")
     ptw_miss_queue_size = Param.Unsigned(40,
             "Number of pending one-stage direct PTW misses")
+    ptw_rotate_blocked_miss_head = Param.Bool(False,
+            "Rotate a blocked ordinary PTW miss retry to the queue tail")
 
 class RiscvTLB(BaseTLB):
     type = 'RiscvTLB'

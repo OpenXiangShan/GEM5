@@ -84,6 +84,8 @@ Walker::WalkerStats::WalkerStats(statistics::Group *parent)
                "Number of PTW memory requests sent"),
       ADD_STAT(ptwMemCycle, statistics::units::Cycle::get(),
                "Cycles with at least one PTW memory request in flight"),
+      ADD_STAT(ptwMissQueueHeadRotations, statistics::units::Count::get(),
+               "Blocked ordinary PTW miss heads reinserted behind another queued entry"),
       ADD_STAT(ptwAvgMemLatency,
                statistics::units::Rate<
                    statistics::units::Cycle,
@@ -269,7 +271,13 @@ Walker::enqueuePtwMiss(ThreadContext *tc, BaseMMU::Translation *translation,
     }
 
     if (front) {
-        ptwMissQueue.push_front(entry);
+        if (rotateBlockedMissHead && retryingPtwMissQueue &&
+            !ptwMissQueue.empty()) {
+            ptwMissQueue.push_back(entry);
+            stats.ptwMissQueueHeadRotations++;
+        } else {
+            ptwMissQueue.push_front(entry);
+        }
         ptwMissQueueHeadRequeued = true;
     } else {
         ptwMissQueue.push_back(entry);
