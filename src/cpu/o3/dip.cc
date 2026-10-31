@@ -250,6 +250,12 @@ Dip::commit(const DynInstPtr &inst)
 void
 Dip::tick()
 {
+    // New-path input blocked at rename ends refill just as an IEW blocker
+    // does. Advance this pipeline state even between sampling boundaries.
+    if ((blocker && !oldPath(blocker)) ||
+        (renameBlocker && renameCause && !oldPath(renameBlocker))) {
+        recovering = false;
+    }
     if (!due) {
         return;
     }
@@ -258,9 +264,6 @@ Dip::tick()
     const unsigned empty = width - dispatched;
     if (!empty) {
         return;
-    }
-    if (blocker && !oldPath(blocker)) {
-        recovering = false;
     }
     if (recovering) {
         misspeculate(empty);

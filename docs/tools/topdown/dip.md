@@ -34,7 +34,10 @@ These targets remain tentative until retirement establishes the correct path.
 An accepted squash transfers younger targets and waiting frontend slots to its
 cause as Misspeculation. The last redirect remains active during pipeline
 refill. Instruction squash versions distinguish late old-path admission from
-new-path instructions. Self-including replays and nested redirects keep the
+new-path instructions. New-path input blocked by an observed upstream rename
+gate ends refill as well: its empty slots are Stall. Recovery state advances
+every tick, including ticks between sampling boundaries.
+Self-including replays and nested redirects keep the
 cause tentative until in-order retirement passes its sequence number.
 
 A fused uop consumes one slot and is represented by its first architectural
