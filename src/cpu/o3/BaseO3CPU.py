@@ -166,6 +166,13 @@ class BaseO3CPU(BaseCPU):
         "Enable the RISC-V frontend predecode pipeline")
     enableFastFetch = Param.Bool(False,
         "Enable the post-recovery fast fetch bypass")
+    fastFetchAllowBlockedDecode = Param.Bool(
+        False,
+        "Allow the first fast bundle into empty Decode buffers while blocked",
+    )
+    enableFastFetchContinuation = Param.Bool(
+        False, "Continue fast fetch beyond the first post-recovery bundle"
+    )
     fastFetchBytes = Param.Unsigned(64,
         "Maximum number of bytes read by post-recovery fast fetch")
 

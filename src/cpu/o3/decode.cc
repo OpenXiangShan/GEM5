@@ -80,6 +80,8 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
       commitToDecodeDelay(params.commitToDecodeDelay),
       fetchToDecodeDelay(params.fetchToDecodeDelay),
       enableFastFetch(params.enableFastFetch),
+      fastFetchAllowBlockedDecode(params.fastFetchAllowBlockedDecode),
+      enableFastFetchContinuation(params.enableFastFetchContinuation),
       decodeToFetchDelay(params.decodeToFetchDelay),
       decodeWidth(params.decodeWidth),
       numPreDispatchThreads(params.smtNumPreDispatchThreads),
@@ -381,6 +383,7 @@ Decode::acceptFastFetch()
     if (tid >= numThreads || count > decodeWidth ||
         count > fromFastFetch->size ||
         fromCommit->commitInfo[tid].squash ||
+        (!fastFetchAllowBlockedDecode && stallSig->blockDecode[tid]) ||
         (continuation &&
          (stallSig->blockDecode[tid] || !can_continue)) ||
         !stallBuffer[tid].empty() || !fixedbuffer[tid].empty()) {
@@ -437,7 +440,8 @@ Decode::acceptFastFetch()
         instruction->setFastFetchAccepted();
         fixedbuffer[tid].push_back(instruction);
     }
-    fastFetchContinuing[tid] = !stallSig->blockDecode[tid];
+    fastFetchContinuing[tid] =
+        enableFastFetchContinuation && !stallSig->blockDecode[tid];
     DPRINTF(Decode,
             "[tid:%i] Fast fetch accepted %u instructions, first seq=%llu\n",
             tid, count, fromFastFetch->fastFetchInsts[0]->seqNum);

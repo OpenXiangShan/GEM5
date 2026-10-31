@@ -835,6 +835,7 @@ class Fetch
 
     /** Enable the idealized post-recovery fast fetch path. */
     const bool enableFastFetch;
+    const bool enableFastFetchContinuation;
 
     /** Maximum number of bytes covered by one fast-fetch candidate block. */
     const unsigned fastFetchBytes;

@@ -112,6 +112,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       twoFetchMaxBytes(params.twoFetchMaxBytes),
       decodeWidth(params.decodeWidth),
       enableFastFetch(params.enableFastFetch),
+      enableFastFetchContinuation(params.enableFastFetchContinuation),
       fastFetchBytes(params.fastFetchBytes),
       retryPkt(),
       cacheBlkSize(cpu->cacheLineSize()),
@@ -2182,7 +2183,7 @@ Fetch::sendInstructionsToDecode()
                 tid, fastFetchTargetId[tid], fastFetchCandidates[tid].size(),
                 count, count ? fastFetchCandidates[tid].front()->seqNum : 0,
                 fastFetchContinuing[tid]);
-        if (count == 0) {
+        if (count == 0 || !enableFastFetchContinuation) {
             clearFastFetchState(tid);
         } else {
             fastFetchCandidates[tid].erase(

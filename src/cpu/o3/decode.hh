@@ -308,6 +308,8 @@ class Decode
 
     /** Whether the post-recovery fast path is enabled. */
     const bool enableFastFetch;
+    const bool fastFetchAllowBlockedDecode;
+    const bool enableFastFetchContinuation;
 
     /** Decode to fetch feedback delay for stage backpressure. */
     Cycles decodeToFetchDelay;
