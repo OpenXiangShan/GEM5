@@ -124,7 +124,10 @@ def main():
         }
         manifest["working_tree_is_binary_source"] = False
     else:
-        manifest["working_tree_is_binary_source"] = True
+        # Hashing the executable and source tree separately does not prove that
+        # one was built from the other. Require --source-manifest to make that
+        # attribution; otherwise preserve the source as unverified evidence.
+        manifest["working_tree_is_binary_source"] = None
     if a.fixed_workloads:
         manifest["fixed_workloads"] = {
             "path": str(a.fixed_workloads.resolve()),
@@ -133,13 +136,22 @@ def main():
     h.write_json(out / "manifest.json", manifest)
     (out / "source.diff").write_text(
         subprocess.check_output(
-            ["git", "diff", "--", "src", "configs"], cwd=repo, text=True
+            ["git", "diff", "HEAD", "--", "src", "configs"],
+            cwd=repo,
+            text=True,
         )
     )
-    (out / "worktree-status.txt").write_text(
-        subprocess.check_output(
-            ["git", "status", "--short"], cwd=repo, text=True
-        )
+    status = subprocess.check_output(
+        ["git", "status", "--short"], cwd=repo, text=True
+    )
+    (out / "worktree-status.txt").write_text(status)
+    untracked = subprocess.check_output(
+        ["git", "ls-files", "--others", "--exclude-standard", "--", "src", "configs"],
+        cwd=repo,
+        text=True,
+    ).splitlines()
+    (out / "untracked-files.txt").write_text(
+        "".join(f"{h.sha(repo / path)}  {path}\n" for path in untracked)
     )
 
     def run(name):

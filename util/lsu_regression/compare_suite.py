@@ -94,6 +94,39 @@ def main():
     results = []
     for name in names[0]:
         ds = [v / name for v in (base, cand)]
+        required = [
+            "result.json",
+            "run.log",
+            "m5out/config.ini",
+            "m5out/stats.txt",
+            "m5out/trace.debug",
+        ]
+        missing = [
+            str(d / rel)
+            for d in ds
+            for rel in required
+            if not (d / rel).is_file()
+        ]
+        if missing:
+            results.append(
+                {
+                    "case": name,
+                    "passed": False,
+                    "functional_success": False,
+                    "image_equal": False,
+                    "exit_equal": False,
+                    "outputs_equal": False,
+                    "config_equal": False,
+                    "stats_sections": [],
+                    "stat_values": 0,
+                    "stats_diff_count": None,
+                    "stats_diffs": [],
+                    "trace_equal": False,
+                    "config_error": "missing required artifacts",
+                    "missing_artifacts": missing,
+                }
+            )
+            continue
         records = [json.loads((d / "result.json").read_text()) for d in ds]
         values = [stats(d / "m5out/stats.txt") for d in ds]
         diffs = []

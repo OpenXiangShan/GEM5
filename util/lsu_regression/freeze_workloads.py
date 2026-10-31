@@ -7,13 +7,15 @@ from pathlib import Path
 import subprocess
 from run_suite import DEFAULT_CASES
 
+FROZEN_CASES = [*DEFAULT_CASES, "fs10_deep"]
+
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument("--output", type=Path, required=True)
 a = p.parse_args()
 out = a.output.resolve()
 out.mkdir(parents=True, exist_ok=False)
 here = Path(__file__).resolve().parent
-for name in DEFAULT_CASES:
+for name in FROZEN_CASES:
     d = out / name
     d.mkdir()
     cmd = ["riscv64-linux-gnu-gcc", "-static", "-Wl,--build-id=none"]
@@ -60,9 +62,16 @@ for name in DEFAULT_CASES:
                 str(here / "ordinary_store.S"),
             ]
         else:
+            case_id = (
+                "10"
+                if name == "fs10_deep"
+                else name[2:]
+                if name.startswith("fs")
+                else "0"
+            )
             cmd += [
                 "-march=rv64gc",
-                "-DCASE=" + (name[2:] if name.startswith("fs") else "0"),
+                "-DCASE=" + case_id,
                 "-DEXPECT_BAD=" + str(int(name == "negative")),
                 "-Wl,-T," + str(here / "ordinary_store.ld"),
                 str(here / "paths.S"),
@@ -85,4 +94,4 @@ manifest = {
     if p.is_file()
 }
 (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-print("Frozen", len(DEFAULT_CASES), "cases in", out)
+print("Frozen", len(FROZEN_CASES), "cases in", out)

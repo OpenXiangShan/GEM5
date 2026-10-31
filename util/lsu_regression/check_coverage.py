@@ -24,18 +24,31 @@ def main():
     for case in cases:
         name = case["case"]
         d = root / name
-        trace = (d / "m5out/trace.debug").read_text()
-        ss = stats(d / "m5out/stats.txt")
+        trace_path = d / "m5out/trace.debug"
+        stats_path = d / "m5out/stats.txt"
+        ss = stats(stats_path) if stats_path.is_file() else []
+        if not trace_path.is_file() or not ss:
+            result.append(
+                {
+                    "case": name,
+                    "checks": {"artifacts_present": False},
+                    "passed": False,
+                    "detail": {"functional_result": case.get("check_passed", False)},
+                }
+            )
+            continue
+        trace = trace_path.read_text()
         v = ss[-1]
 
         def value(k):
             return float(v.get(k, "0"))
 
-        checks = {"functional_result": case["check_passed"]}
+        checks = {"functional_result": case.get("check_passed", False)}
         detail = {}
         if name == "negative":
             checks["positive_checker_rejects_bad_expected"] = (
-                not case["success"] and case["negative_rejected_as_positive"]
+                not case.get("success", False)
+                and case.get("negative_rejected_as_positive", False)
             )
         elif name == "fs0":
             checks["byte_merge"] = value("system.cpu.lsq0.sbufferMerge") >= 3
