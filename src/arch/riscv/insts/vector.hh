@@ -285,6 +285,12 @@ class VectorMemMicroInst : public VectorMicroInst
     uint32_t eew;
     Request::Flags memAccessFlags;
 
+    /// Set when this micro-op's destination vector register index is out of
+    /// range. Such a micro-op carries no destination register, so every
+    /// register-accessing path (execute/initiateAcc/completeAcc) must bail
+    /// out with an IllegalInstFault rather than touch the register file.
+    bool illegalOperands = false;
+
     VectorMemMicroInst(const char* mnem, ExtMachInst _machInst,
                        OpClass __opClass, uint8_t _microIdx)
         : VectorMicroInst(mnem, _machInst, __opClass, _microIdx),

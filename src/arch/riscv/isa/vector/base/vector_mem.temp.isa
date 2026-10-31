@@ -200,6 +200,10 @@ Fault
 #if %(is_vecIndex)s
     using vu = std::make_unsigned_t<ElemType>;
 #endif
+    if (illegalOperands)
+        return std::make_shared<IllegalInstFault>(
+            "vector register operand out of range", machInst);
+
     %(op_src_decl)s;
     %(op_rd)s;
 
@@ -260,6 +264,10 @@ Fault
 #if %(is_vecIndex)s
     using vu = std::make_unsigned_t<ElemType>;
 #endif
+
+    if (illegalOperands)
+        return std::make_shared<IllegalInstFault>(
+            "vector register operand out of range", machInst);
 
     %(op_decl)s;
     %(op_rd)s;
@@ -571,7 +579,6 @@ private:
     // rs1, rs2, vd, vm
     RegId srcRegIdxArr[8];
     RegId destRegIdxArr[1];
-    bool illegalOperands = false;
 public:
     %(class_name)s(ExtMachInst _machInst, uint8_t _microIdx, VectorMicroInfo& _vmi)
     : %(base_class)s("%(mnemonic)s", _machInst, %(op_class)s, _microIdx)
