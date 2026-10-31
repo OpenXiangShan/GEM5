@@ -91,6 +91,9 @@ jobs:
           ref: ${{ inputs.pr_sha || github.sha }}
           persist-credentials: false
 
+      - name: Use runner temporary directory for compilation
+        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+
       - name: Set benchmark configuration
         id: config
         env:
