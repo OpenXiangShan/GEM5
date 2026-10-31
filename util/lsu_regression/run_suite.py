@@ -4,6 +4,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -121,6 +122,7 @@ def main():
             "manifest": str(a.source_manifest.resolve()),
             "sha256": h.sha(a.source_manifest),
             "build": build_source,
+            "verified": False,
         }
         manifest["working_tree_is_binary_source"] = False
     else:
@@ -128,10 +130,13 @@ def main():
         # one was built from the other. Require --source-manifest to make that
         # attribution; otherwise preserve the source as unverified evidence.
         manifest["working_tree_is_binary_source"] = None
+    fixed_manifest = None
     if a.fixed_workloads:
+        fixed_manifest_path = a.fixed_workloads.resolve() / "manifest.json"
+        fixed_manifest = json.loads(fixed_manifest_path.read_text())
         manifest["fixed_workloads"] = {
             "path": str(a.fixed_workloads.resolve()),
-            "manifest_sha256": h.sha(a.fixed_workloads / "manifest.json"),
+            "manifest_sha256": h.sha(fixed_manifest_path),
         }
     h.write_json(out / "manifest.json", manifest)
     (out / "source.diff").write_text(
@@ -146,12 +151,24 @@ def main():
     )
     (out / "worktree-status.txt").write_text(status)
     untracked = subprocess.check_output(
-        ["git", "ls-files", "--others", "--exclude-standard", "--", "src", "configs"],
+        [
+            "git",
+            "ls-files",
+            "-z",
+            "--others",
+            "--exclude-standard",
+            "--",
+            "src",
+            "configs",
+        ],
         cwd=repo,
-        text=True,
-    ).splitlines()
+    )
     (out / "untracked-files.txt").write_text(
-        "".join(f"{h.sha(repo / path)}  {path}\n" for path in untracked)
+        "".join(
+            f"{h.sha(repo / os.fsdecode(raw))}  {os.fsdecode(raw)}\n"
+            for raw in untracked.split(b"\0")
+            if raw
+        )
     )
 
     def run(name):
@@ -243,6 +260,18 @@ def main():
         if a.fixed_workloads:
             workload_elf = a.fixed_workloads.resolve() / name / "test.elf"
             workload_image = a.fixed_workloads.resolve() / name / "test.bin"
+            for rel, path in (
+                (f"{name}/test.elf", workload_elf),
+                (f"{name}/test.bin", workload_image),
+            ):
+                expected = fixed_manifest.get(rel)
+                if expected is None or h.sha(path) != expected:
+                    raise RuntimeError(
+                        f"Fixed workload does not match its frozen manifest: {rel}"
+                    )
+            # GCC embeds a random temporary object name in se_smt's symbol
+            # table. The frozen ELF is integrity-checked above; its executable
+            # payload must also match the freshly assembled image.
             if (
                 h.sha(workload_image) != h.sha(image)
                 or kind == "se"

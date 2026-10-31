@@ -23,16 +23,20 @@ def sha_text(t):
 
 def stats(path):
     sections = []
+    section_open = False
     for line in path.read_text().splitlines():
         if "Begin Simulation Statistics" in line:
             sections.append({})
-        elif sections and line and not line.startswith(("#", "-")):
+            section_open = True
+        elif "End Simulation Statistics" in line:
+            section_open = False
+        elif section_open and line and not line.startswith(("#", "-")):
             fields = line.split("#", 1)[0].split()
             if len(fields) > 1 and fields[0] not in HOST_STATS:
                 if fields[0] in sections[-1]:
                     raise ValueError(f"Duplicate stats {path} {fields[0]}")
                 sections[-1][fields[0]] = " ".join(fields[1:])
-    return sections
+    return [] if section_open else sections
 
 
 # These exact logs sample memData before SQ/SB forward packets are assembled.
