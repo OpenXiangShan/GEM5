@@ -7,8 +7,11 @@ Decode's output and stall buffers are empty and Fetch and Decode are unblocked.
 This extends the RTL's single recovery-block fast attempt.
 
 Each block keeps its own `fastFetchBytes` window and instruction restrictions.
-Candidate collection stops at control instructions, faults, vector instructions,
-or the window boundary. A bundle contains a prefix of one block, limited to
+Candidate collection continues past conditional branches predicted not taken.
+It stops at unconditional control instructions, predicted-taken control
+instructions, faults, vector instructions, or the window boundary.
+Predicted-taken four-byte instructions remain excluded from the candidate.
+A bundle contains a prefix of one block, limited to
 `decodeWidth`; remaining candidates can be offered in following cycles. A later
 block must already have a complete candidate prefix available in the fetch queue.
 

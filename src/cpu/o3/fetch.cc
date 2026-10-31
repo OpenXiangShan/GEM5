@@ -3358,7 +3358,8 @@ Fetch::collectFastFetchCandidate(const DynInstPtr &instruction)
     if (!stop) {
         fastFetchCandidates[tid].push_back(instruction);
         ++fetchStats.fastFetchCandidateInsts;
-        if (instruction->isDirectCtrl() || instruction->isIndirectCtrl()) {
+        if ((instruction->isDirectCtrl() || instruction->isIndirectCtrl()) &&
+            (!instruction->isCondCtrl() || instruction->readPredTaken())) {
             stop = true;
             stop_reason = "control";
         }
