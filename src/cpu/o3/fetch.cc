@@ -944,7 +944,7 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
         return false;
     }
 
-    if (cpu->getTea() && pkt->cacheAccessDepth > 0) {
+    if ((cpu->getTea() || cpu->getDip()) && pkt->cacheAccessDepth > 0) {
         auto &request = threads[tid].cacheReq;
         request.teaPsv[request.findRequestIndex(pkt->req)] |=
             TeaEvent::bit(TeaEvent::DR_L1);
@@ -1519,7 +1519,7 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req,
         return;
     }
 
-    if (cpu->getTea() && delayed) {
+    if ((cpu->getTea() || cpu->getDip()) && delayed) {
         auto &request = threads[tid].cacheReq;
         request.teaPsv[request.findRequestIndex(mem_req)] |=
             TeaEvent::bit(TeaEvent::DR_TLB);

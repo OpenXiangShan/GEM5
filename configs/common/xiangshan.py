@@ -474,6 +474,8 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
         cpu.mlpMissPatternTableSize = args.mlp_miss_pattern_table_size
         cpu.mlpDistanceTableSize = args.mlp_distance_table_size
         cpu.mlpLongLatencyCacheDepth = args.mlp_long_latency_cache_depth
+        cpu.enableDip = args.enable_dip
+        cpu.dipSamplePeriod = args.dip_sample_period
         cpu.enableTea = args.enable_tea
         cpu.teaSamplePeriod = args.tea_sample_period
         cpu.mmu.pma_checker = PMAChecker(
@@ -1041,6 +1043,10 @@ def xiangshan_system_init():
         default=False,
         help="Disable direction TAGE sources in kmhv3 and force MGSC standalone SC prediction",
     )
+    parser.add_argument("--enable-dip", action="store_true",
+                        help="Enable DIP dispatch per-instruction cycle stacks")
+    parser.add_argument("--dip-sample-period", type=int, default=1,
+                        help="DIP sample period in CPU cycles (0 or 1: all cycles)")
     parser.add_argument(
         "--enable-tea",
         action="store_true",

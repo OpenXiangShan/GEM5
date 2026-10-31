@@ -59,6 +59,7 @@
 #include "cpu/o3/commit.hh"
 #include "cpu/o3/cpu_def.hh"
 #include "cpu/o3/decode.hh"
+#include "cpu/o3/dip.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/fetch.hh"
 #include "cpu/o3/free_list.hh"
@@ -450,6 +451,7 @@ class CPU : public BaseCPU
     IEW *getIEW() { return &iew; }
     Commit *getCommit() { return &commit; }
     Tea *getTea() const { return tea.get(); }
+    Dip *getDip() const { return dip.get(); }
 
     /**
      * Return the oldest in-flight instruction sequence number.
@@ -517,6 +519,7 @@ class CPU : public BaseCPU
 
     /** Optional Timing Event Attribution companion to the ROB. */
     std::unique_ptr<Tea> tea;
+    std::unique_ptr<Dip> dip;
 
     /** Active Threads List */
     std::list<ThreadID> activeThreads;

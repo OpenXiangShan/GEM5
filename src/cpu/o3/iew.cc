@@ -1268,6 +1268,16 @@ IEW::canInsertLDSTQue(ThreadID tid)
         freeSQEntries < renameWidth + lastClockSQPopEntries) {
         cpu->getRename()->markTeaStoreQueueStall(tid);
     }
+    if (auto *dip = cpu->getDip()) {
+        uint16_t cause = 0;
+        if (freeLQEntries < renameWidth + lastClockLQPopEntries) {
+            cause |= Dip::LDQ;
+        }
+        if (freeSQEntries < renameWidth + lastClockSQPopEntries) {
+            cause |= Dip::STQ;
+        }
+        dip->upstreamStall(cause);
+    }
     if (freeLQEntries >= renameWidth + lastClockLQPopEntries &&
         freeSQEntries >= renameWidth + lastClockSQPopEntries) {
         return true;
@@ -1496,6 +1506,9 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
         }
 
         if (checkSerialize(inst)) {
+            if (auto *dip = cpu->getDip()) {
+                dip->block(inst, Dip::SER);
+            }
             DPRINTF(IEW, "[tid:%i] [sn:%llu] Dispatch: Serialize instruction encountered.\n", tid, inst->seqNum);
             dispatch_stalls.push(checkDispatchStall(tid, NumDQ, inst, disp_seq));
             breakDispatch = dispatch_stalls.back();
@@ -1506,6 +1519,9 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
         // Check LSQ if inst is LD/ST
         if ((inst->isAtomic() && ldstQueue.sqFull(tid)) || (inst->isLoad() && ldstQueue.lqFull(tid)) ||
             (inst->isStore() && ldstQueue.sqFull(tid))) {
+            if (auto *dip = cpu->getDip()) {
+                dip->block(inst, inst->isLoad() ? Dip::LDQ : Dip::STQ);
+            }
             // gem5 allocates the ROB before Dispatch. A blocked head store
             // has no older ROB work, matching the pre-enqueue DR_SQ case.
             if (cpu->getTea() && (inst->isStore() || inst->isAtomic()) &&
@@ -1525,6 +1541,9 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
         }
 
         if (!scheduler->ready(inst, disp_seq)) {
+            if (auto *dip = cpu->getDip()) {
+                dip->block(inst, Dip::ISB);
+            }
             DPRINTF(IEW, "[tid:%i] Dispatch: IQ is full or bwFull.\n", tid);
             iewStats.stallEvents[IQFull]++;
             iewStats.smtStallEvents[IQFull].sample(tid);
@@ -1625,6 +1644,9 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
             instQueue.insert(inst, disp_seq);
         }
         ppDispatch->notify(inst);
+        if (auto *dip = cpu->getDip()) {
+            dip->dispatch(inst);
+        }
 
         ++iewStats.dispatchedInsts[tid];
         if (!inst->isNop() && !inst->isInstPrefetch()) {
@@ -1704,6 +1726,9 @@ IEW::classifyInstToDispQue(ThreadID tid, unsigned max_insts,
             }
 
             if (checkSerialize(inst)) {
+                if (auto *dip = cpu->getDip()) {
+                    dip->block(inst, Dip::SER);
+                }
                 DPRINTF(IEW, "[tid:%i] [sn:%llu] Dispatch: Serialize instruction encountered.\n", tid, inst->seqNum);
                 break;
             }
@@ -1738,6 +1763,9 @@ IEW::classifyInstToDispQue(ThreadID tid, unsigned max_insts,
                 ++iewStats.dispatchedOps[tid];
             }
             dispQue[id].push_back(inst);
+            if (auto *dip = cpu->getDip()) {
+                dip->dispatch(inst);
+            }
 
             if (!inst->isNop() && !inst->isEliminated()) {
                 scheduler->addProducer(inst);
@@ -1753,6 +1781,9 @@ IEW::classifyInstToDispQue(ThreadID tid, unsigned max_insts,
             insts_to_dispatch.pop_front();
             dispatched++;
         } else {
+            if (auto *dip = cpu->getDip()) {
+                dip->block(inst, Dip::ISB);
+            }
             dispatch_stalls.push(checkDispatchStall(tid, id, inst, -1));
             breakDispatch = dispatch_stalls.back();
             blockReason = breakDispatch;
