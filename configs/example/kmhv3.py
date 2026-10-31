@@ -73,8 +73,8 @@ def setKmhV3Params(args, system):
         predecode_enabled = not getattr(args, "enable_trace_mode", False)
         cpu.enablePredecode = predecode_enabled
         cpu.enableFastFetch = predecode_enabled and not args.smt
-        cpu.fastFetchAllowBlockedDecode = True
-        cpu.enableFastFetchContinuation = cpu.enableFastFetch
+        cpu.fastFetchAllowBlockedDecode = False
+        cpu.enableFastFetchContinuation = False
         cpu.fastFetchBytes = 64
 
         # decode
