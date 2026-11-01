@@ -12,6 +12,11 @@ on:
         type: string
         default: ""
         description: "Extra arguments for gem5 (e.g., --disable-mgsc). Only works with .py config files."
+      control_extra_args:
+        required: false
+        type: string
+        default: ""
+        description: "Optional control args; run control and candidate with this single PGO build."
       benchmark_type:
         required: true
         type: string
@@ -247,6 +252,7 @@ jobs:
           BENCHMARK_TYPE_INPUT: ${{ steps.config.outputs.benchmark_type }}
           SPECIFIC_BENCHMARKS_INPUT: ${{ inputs.specific_benchmarks }}
           EXTRA_GEM5_ARGS_RAW: ${{ inputs.extra_args }}
+          CONTROL_GEM5_ARGS_RAW: ${{ inputs.control_extra_args }}
           CHECKPOINT_LIST: ${{ steps.archive.outputs.target_dir }}/checkpoints.lst
           CHECKPOINT_ROOT_NODE: ${{ steps.config.outputs.checkpoint_root_node }}
           DISTRIBUTED_SERVERS: ${{ steps.archive.outputs.distributed_servers }}
@@ -257,6 +263,28 @@ jobs:
           GCBH_RESTORER: ${{ steps.config.outputs.profile_restorer }}
           PROFILE_EXTRA_ARGS: ${{ steps.config.outputs.profile_extra_args }}
         run: |
+          archive_root="$PERF_ARCHIVE_DIR"
+          candidate_extra_args="$EXTRA_GEM5_ARGS_RAW"
+          checkpoint_list="$CHECKPOINT_LIST"
+          ref_so="${GCBV_MULTI_CORE_REF_SO:-${GCBH_REF_SO:-$GCBV_REF_SO}}"
+          sha256sum "$GEM5_HOME/build/RISCV/gem5.fast" \
+            "$GEM5_HOME/llvm-pgo/gem5_single.profdata" \
+            "$GEM5_HOME/$CONFIG_PATH_INPUT" "$ref_so" \
+            "$checkpoint_list" "$archive_root/cluster.json" \
+            > "$archive_root/paired-runtime.sha256"
+
+          run_arm() {
+            export PERF_ARCHIVE_DIR="$1"
+            EXTRA_GEM5_ARGS_RAW="$2"
+            export CHECKPOINT_LIST="$PERF_ARCHIVE_DIR/checkpoints.lst"
+            mkdir -p "$PERF_ARCHIVE_DIR"
+            if [[ "$PERF_ARCHIVE_DIR" != "$archive_root" ]]; then
+              cp "$checkpoint_list" "$CHECKPOINT_LIST"
+              cp "$archive_root/cluster.json" "$PERF_ARCHIVE_DIR/cluster.json"
+              sed '/^extra_args:/d' "$archive_root/metadata.txt" > "$PERF_ARCHIVE_DIR/metadata.txt"
+              printf 'extra_args: %s\n' "$EXTRA_GEM5_ARGS_RAW" >> "$PERF_ARCHIVE_DIR/metadata.txt"
+            fi
+            sha256sum --check "$archive_root/paired-runtime.sha256"
           mkdir -p "$PERF_ARCHIVE_DIR"
           cd "$PERF_ARCHIVE_DIR"
 
@@ -352,6 +380,13 @@ jobs:
           else
             run_local_parallel
           fi
+            sha256sum --check "$archive_root/paired-runtime.sha256"
+          }
+
+          if [[ -n "$CONTROL_GEM5_ARGS_RAW" ]]; then
+            run_arm "$archive_root/control" "$CONTROL_GEM5_ARGS_RAW"
+          fi
+          run_arm "$archive_root" "$candidate_extra_args"
       - name: Setup gem5_data_proc environment
         run: |
           # 使用本地数据处理仓库，避免GitHub网络问题
@@ -360,7 +395,18 @@ jobs:
       - name: Check performance test result
         env:
           PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
+          CONTROL_GEM5_ARGS_RAW: ${{ inputs.control_extra_args }}
         run: |
+          archive_root="$PERF_ARCHIVE_DIR"
+          archives=("$archive_root")
+          if [[ -n "$CONTROL_GEM5_ARGS_RAW" ]]; then
+            archives=("$archive_root/control" "$archive_root")
+          fi
+          for PERF_ARCHIVE_DIR in "${archives[@]}"; do
+            score_file="$GITHUB_WORKSPACE/score.txt"
+            if [[ "$PERF_ARCHIVE_DIR" == "$archive_root/control" ]]; then
+              score_file="$GITHUB_WORKSPACE/score-control.txt"
+            fi
           # 添加yanyue的 Python 包路径, 包含pandas等
           export PYTHONPATH=$GITHUB_WORKSPACE/gem5_data_proc:/nfs/home/yanyue/.local/lib/python3.12/site-packages:$PYTHONPATH
           # 每次run 会进入新的shell, 需要重新设置GEM5_HOME
@@ -375,15 +421,15 @@ jobs:
           bash example-scripts/${{ steps.config.outputs.score_script }} \
             "$PERF_ARCHIVE_DIR/spec_all" \
             "$CLUSTER_CONFIG" \
-            > $GITHUB_WORKSPACE/score.txt
-          cp "$GITHUB_WORKSPACE/score.txt" "$PERF_ARCHIVE_DIR/"
+            > "$score_file"
+          cp "$score_file" "$PERF_ARCHIVE_DIR/score.txt"
           # 提取最后42行score信息
           echo "### performance test result :rocket:" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          tail -n 42 $GITHUB_WORKSPACE/score.txt >> $GITHUB_STEP_SUMMARY
+          tail -n 42 "$score_file" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           # 提取关键指标
-          FINAL_SCORE=$(grep "Estimated Int score per GHz:" $GITHUB_WORKSPACE/score.txt | awk '{print $NF}')
+          FINAL_SCORE=$(grep "Estimated Int score per GHz:" "$score_file" | awk '{print $NF}')
           echo "### Key indicators" >> $GITHUB_STEP_SUMMARY
           echo "- Final Int score per GHz: **${FINAL_SCORE}**" >> $GITHUB_STEP_SUMMARY
 
@@ -403,6 +449,7 @@ jobs:
                 exit 1
               fi
           fi
+          done
       - name: Archive performance data
         if: ${{ always() && steps.archive.outputs.target_dir != '' }}
         run: |
@@ -414,19 +461,6 @@ jobs:
           # Also save score.txt for quick reference
           if [ -f "$GITHUB_WORKSPACE/score.txt" ]; then
             cp "$GITHUB_WORKSPACE/score.txt" "$TARGET_DIR/"
-          fi
-          
-          # Auto cleanup: keep only last 200 runs for this benchmark type
-          if [ -d "$BENCHMARK_DIR" ] && [ $(ls -1 "$BENCHMARK_DIR" 2>/dev/null | wc -l) -gt 200 ]; then
-            echo "Cleaning up old performance data, keeping last 200 runs"
-            # Use absolute paths to avoid accidental deletion if cd fails
-            ls -1t "$BENCHMARK_DIR" | tail -n +201 | while read -r old_run; do
-              if [ -n "$old_run" ] && [ -d "$BENCHMARK_DIR/$old_run" ]; then
-                rm -rf "$BENCHMARK_DIR/$old_run"
-                echo "Deleted: $BENCHMARK_DIR/$old_run"
-              fi
-            done
-            echo "Cleanup completed"
           fi
           
           echo "Performance data archived successfully"
@@ -443,6 +477,8 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.config.outputs.artifact_name }}
-          path: score.txt
+          path: |
+            score.txt
+            score-control.txt
           if-no-files-found: warn
           retention-days: 30

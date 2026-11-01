@@ -129,6 +129,7 @@ useAltOnNaWidth(p.useAltOnNaWidth),
 numTablesToAlloc(p.numTablesToAlloc),
 enableSC(p.enableSC),
 updateOnRead(p.updateOnRead),
+trainAltOnDisagreementOnly(p.trainAltOnDisagreementOnly),
 numBanks(p.numBanks),
 bankIdWidth(ceilLog2(p.numBanks)),
 blockWidth(floorLog2(blockSize)),
@@ -619,8 +620,9 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     // Update use_alt_on_na when provider is weak (0 or -1)
     if (main_info.found) {
         bool main_weak = (main_info.entry.counter == 0 || main_info.entry.counter == -1);
-        if (main_weak) {
-            tageStats.updateProviderNa++;
+        tageStats.updateProviderNa += main_weak;
+        if (main_weak && (!trainAltOnDisagreementOnly ||
+                         main_info.taken() != alt_taken)) {
             Addr uidx = getUseAltIdx(entry.pc);
             bool alt_correct = (alt_taken == actual_taken);
             updateCounter(alt_correct, useAltOnNaWidth, useAlt[uidx]);

@@ -336,6 +336,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // Whether to update on read
     bool updateOnRead;
+    bool trainAltOnDisagreementOnly = false;
 
     // ========== Bank Configuration ==========
     // Bank mechanism to simulate hardware bank conflicts
