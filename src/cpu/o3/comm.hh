@@ -170,6 +170,8 @@ struct FetchStruct
     bool fastFetchContinuation;
     DynInstPtr fastFetchInsts[MaxWidth];
     std::bitset<MaxWidth> fastFetchMask;
+    std::bitset<MaxWidth> normalFetchMask;
+    bool fastFetchRouted;
     uint64_t fastFetchEpoch;
     Cycles normalReadyCycle;
     FastFetchStopReason fastFetchStopReason;

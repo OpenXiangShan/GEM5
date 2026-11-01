@@ -82,8 +82,7 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
       enableFastFetch(params.enableFastFetch),
       fastFetchAllowBlockedDecode(params.fastFetchAllowBlockedDecode),
       enableFastFetchContinuation(params.enableFastFetchContinuation),
-      enableFastFetchMaskRouting(params.enableFastFetchMaskRouting &&
-                                 params.enableFastFetch),
+      enableFastFetchMaskRouting(params.enableFastFetchMaskRouting),
       decodeToFetchDelay(params.decodeToFetchDelay),
       decodeWidth(params.decodeWidth),
       numPreDispatchThreads(params.smtNumPreDispatchThreads),
@@ -146,7 +145,7 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
     for (int i=0; i<numThreads; i++) {
         stallBuffer[i] = boost::circular_buffer<DynInstPtr>(
         decodeWidth * stallGroupDepth);
-        eachstallSize[i] = boost::circular_buffer<NormalGroup>(stallGroupDepth);
+        eachstallSize[i] = boost::circular_buffer<int>(stallGroupDepth);
     }
 
 
@@ -201,7 +200,6 @@ Decode::resetStage()
             fastFetchNormalOnly[tid] = false;
             fastFetchBlockInsts[tid] = 0;
             fastFetchBlockComplete[tid] = false;
-            hasSquashBoundary[tid] = false;
         }
     }
     if (compactionEnabled) {
@@ -606,7 +604,7 @@ Decode::selfSquash(const DynInstPtr &inst, ThreadID tid)
     // Clear per-thread stallBuffer for the squashed thread
     auto delIt = stallBuffer[tid].begin();
     for (auto it0 = eachstallSize[tid].begin(); it0 != eachstallSize[tid].end();) {
-        int size = it0->size;
+        int size = *it0;
         auto start_it = delIt;
         auto end_it = start_it + size;
         if ((*start_it)->threadNumber == tid) {
@@ -649,19 +647,16 @@ Decode::squash(ThreadID tid)
     }
 
     if (enableFastFetchMaskRouting) {
-        const auto &info = fromCommit->commitInfo[tid];
         fastFetchClosedEpoch[tid] = fetch_ptr->getFastFetchEpoch(tid);
         fastFetchNormalOnly[tid] = true;
         fetch_ptr->stopFastFetchEpoch(tid, fastFetchClosedEpoch[tid]);
-        lastSquashBoundary[tid] = info.doneSeqNum;
-        hasSquashBoundary[tid] = true;
         for (auto &instruction : fixedbuffer[tid]) {
-            if (instruction->seqNum <= info.doneSeqNum &&
-                !instruction->isSquashed()) {
-                instruction->setVersion(info.squashVersion);
+            if (instruction->seqNum <= fromCommit->commitInfo[tid].doneSeqNum &&
+                !instruction->isSquashed() &&
+                instruction->isFastFetchAccepted()) {
+                instruction->setVersion(fromCommit->commitInfo[tid].squashVersion);
             }
         }
-        squashNormalGroups(tid, info.doneSeqNum, &info.squashVersion);
     }
 
     // Selectively remove only instructions younger than squash boundary
@@ -678,12 +673,9 @@ Decode::squash(ThreadID tid)
     squashBranchHistory(tid, fromCommit->commitInfo[tid].doneSeqNum, false);
 
     // Clear per-thread stallBuffer for the squashed thread
-    if (enableFastFetchMaskRouting) {
-        return 0;
-    }
     auto delIt = stallBuffer[tid].begin();
     for (auto it0 = eachstallSize[tid].begin(); it0 != eachstallSize[tid].end();) {
-        int size = it0->size;
+        int size = *it0;
         auto start_it = delIt;
         auto end_it = start_it + size;
         if ((*start_it)->threadNumber == tid) {
@@ -773,73 +765,17 @@ Decode::updateActivate()
 }
 
 void
-Decode::squashNormalGroups(ThreadID tid, InstSeqNum boundary,
-                           const SquashVersion *version)
-{
-    const auto groups = eachstallSize[tid].size();
-    for (size_t group_index = 0; group_index < groups; ++group_index) {
-        auto group = eachstallSize[tid].front();
-        eachstallSize[tid].pop_front();
-        unsigned survivors = 0;
-        for (unsigned index = 0; index < group.size; ++index) {
-            auto instruction = stallBuffer[tid].front();
-            stallBuffer[tid].pop_front();
-            if (instruction->seqNum > boundary || instruction->isSquashed()) {
-                instruction->setSquashed();
-                continue;
-            }
-            if (version) {
-                instruction->setVersion(*version);
-            }
-            stallBuffer[tid].push_back(instruction);
-            ++survivors;
-        }
-        if (survivors) {
-            group.size = survivors;
-            eachstallSize[tid].push_back(group);
-        }
-    }
-}
-
-bool
-Decode::moveNormalGroup(ThreadID tid)
-{
-    if (stallBuffer[tid].empty() || !fixedbuffer[tid].empty() ||
-        eachstallSize[tid].front().readyCycle > cpu->curCycle()) {
-        return false;
-    }
-    const auto group = eachstallSize[tid].front();
-    eachstallSize[tid].pop_front();
-    assert(group.size <= decodeWidth);
-    for (unsigned index = 0; index < group.size; ++index) {
-        const auto instruction = stallBuffer[tid].front();
-        stallBuffer[tid].pop_front();
-        if (localSquashVer[tid].largerThan(instruction->getVersion())) {
-            instruction->setSquashed();
-        }
-        fixedbuffer[tid].push_back(instruction);
-        DPRINTF(FastFetch,
-                "normal-ready tid=%u seq=%llu ready=%llu cycle=%llu\n",
-                tid, instruction->seqNum,
-                static_cast<uint64_t>(group.readyCycle),
-                static_cast<uint64_t>(cpu->curCycle()));
-    }
-    return true;
-}
-
-void
 Decode::routeFastFetchPacket()
 {
-    for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        moveNormalGroup(tid);
-    }
-    const auto &packet = *fromFastFetch;
+    auto &packet = *fromFastFetch;
     if (!packet.size) {
         return;
     }
     const ThreadID tid = packet.fastFetchTid;
     panic_if(tid >= numThreads || packet.size > decodeWidth,
              "Invalid mask-routing packet: tid=%u size=%u", tid, packet.size);
+    panic_if(packet.fastFetchRouted, "Fetch packet routed twice");
+    packet.fastFetchRouted = true;
     const uint64_t epoch = packet.fastFetchEpoch;
     if (epoch > fastFetchEpoch[tid]) {
         fastFetchEpoch[tid] = epoch;
@@ -853,18 +789,11 @@ Decode::routeFastFetchPacket()
     std::bitset<MaxWidth> valid_mask;
     for (int index = 0; index < packet.size; ++index) {
         const auto &instruction = packet.insts[index];
-        if (!instruction->isSquashed() && hasSquashBoundary[tid] &&
-            instruction->seqNum <= lastSquashBoundary[tid] &&
-            localSquashVer[tid].largerThan(instruction->getVersion())) {
-            instruction->setVersion(localSquashVer[tid]);
-        }
         if (!instruction->isSquashed() &&
             !localSquashVer[tid].largerThan(instruction->getVersion()) &&
             (!fromCommit->commitInfo[tid].squash ||
              instruction->seqNum <= fromCommit->commitInfo[tid].doneSeqNum)) {
             valid_mask.set(index);
-        } else {
-            instruction->setSquashed();
         }
     }
 
@@ -876,7 +805,7 @@ Decode::routeFastFetchPacket()
     }
     auto reason = packet.fastFetchStopReason;
     const bool continuation = fastFetchContinuing[tid];
-    if (!current_epoch || fastFetchNormalOnly[tid] ||
+    if (!enableFastFetch || !current_epoch || fastFetchNormalOnly[tid] ||
         (packet.fastFetchMask & ~valid_mask).any()) {
         count = 0;
         reason = FastFetchStopReason::Stale;
@@ -925,20 +854,9 @@ Decode::routeFastFetchPacket()
         fetch_ptr->recordFastFetchDropped(packet.insts[0]);
     }
 
-    const auto normal_mask = valid_mask & ~fast_mask;
+    packet.normalFetchMask &= ~fast_mask;
+    const auto normal_mask = packet.normalFetchMask;
     const unsigned normal = normal_mask.count();
-    if (normal) {
-        panic_if(eachstallSize[tid].full() ||
-                 stallBuffer[tid].capacity() - stallBuffer[tid].size() < normal,
-                 "Mask-routing normal buffer overflow: groups=%u insts=%u",
-                 eachstallSize[tid].size(), stallBuffer[tid].size());
-        eachstallSize[tid].push_back({normal, packet.normalReadyCycle});
-        for (int index = 0; index < packet.size; ++index) {
-            if (normal_mask.test(index)) {
-                stallBuffer[tid].push_back(packet.insts[index]);
-            }
-        }
-    }
     FastFetchStopReason stop_reason = FastFetchStopReason::None;
     if (current_epoch && !fastFetchNormalOnly[tid] &&
         (normal || valid_mask.count() != static_cast<unsigned>(packet.size) ||
@@ -978,12 +896,19 @@ Decode::routeFastFetchPacket()
                 packet.insts[index]->getFetchBlockStartPC(),
                 packet.insts[index]->getFetchBlockEndPC());
     }
-    moveNormalGroup(tid);
 }
 
 void
 Decode::moveInstsToBuffer()
 {
+    auto normal_lane = [this](int index) {
+        return enableFastFetchMaskRouting ?
+            fromFetch->normalFetchMask.test(index) :
+            !fromFetch->insts[index]->isFastFetchAccepted();
+    };
+    panic_if(enableFastFetchMaskRouting && fromFetch->size &&
+             !fromFetch->fastFetchRouted,
+             "Normal packet arrived before its routing decision");
     // Helper lambda: try to move head group from a specific thread's stallBuffer
     auto tryMoveHeadGroupFromThread = [&](ThreadID tid) -> bool {
         if (stallBuffer[tid].empty()) {
@@ -995,10 +920,10 @@ Decode::moveInstsToBuffer()
             return false;
         }
 
-        int insts_from_stall = eachstallSize[tid].front().size;
+        int insts_from_stall = eachstallSize[tid].front();
         eachstallSize[tid].pop_front();
         for (int i = 0; i < insts_from_stall; ++i) {
-            const DynInstPtr &inst = stallBuffer[tid].front();
+            const DynInstPtr inst = stallBuffer[tid].front();
             assert(tid == inst->threadNumber);
             if (localSquashVer[tid].largerThan(inst->getVersion())) {
                 inst->setSquashed();
@@ -1006,6 +931,12 @@ Decode::moveInstsToBuffer()
             assert(!fixedbuffer[inst->threadNumber].full());
             fixedbuffer[inst->threadNumber].push_back(inst);
             stallBuffer[tid].pop_front();
+            if (enableFastFetchMaskRouting) {
+                DPRINTF(FastFetch,
+                        "normal-ready tid=%u seq=%llu cycle=%llu\n",
+                        tid, inst->seqNum,
+                        static_cast<uint64_t>(cpu->curCycle()));
+            }
         }
 
         return true;
@@ -1024,9 +955,9 @@ Decode::moveInstsToBuffer()
     int insts_from_fetch = fromFetch->size;
     unsigned normal_insts_from_fetch = 0;
     for (int i = 0; i < insts_from_fetch; ++i) {
-        if (!fromFetch->insts[i]->isFastFetchAccepted()) {
+        if (normal_lane(i)) {
             ++normal_insts_from_fetch;
-        } else {
+        } else if (!enableFastFetchMaskRouting) {
             DPRINTF(FastFetch, "dedup tid=%u seq=%llu pc=%#lx ftq=%llu\n",
                     fromFetch->insts[i]->threadNumber,
                     fromFetch->insts[i]->seqNum,
@@ -1034,12 +965,14 @@ Decode::moveInstsToBuffer()
                     fromFetch->insts[i]->getFtqId());
         }
     }
-    fetch_ptr->recordFastFetchDedup(
-        insts_from_fetch - normal_insts_from_fetch);
+    if (!enableFastFetchMaskRouting) {
+        fetch_ptr->recordFastFetchDedup(
+            insts_from_fetch - normal_insts_from_fetch);
+    }
     if (normal_insts_from_fetch != 0) {
         std::array<unsigned, MaxThreads> thread_sizes{};
         for (int i = 0; i < insts_from_fetch; i++) {
-            if (fromFetch->insts[i]->isFastFetchAccepted()) {
+            if (!normal_lane(i)) {
                 continue;
             }
             const ThreadID tid = fromFetch->insts[i]->threadNumber;
@@ -1058,14 +991,23 @@ Decode::moveInstsToBuffer()
                      "Decode stallbuffer[%d] lacks room for %u instructions\n",
                      tid, thread_sizes[tid]);
             assert(thread_sizes[tid] <= decodeWidth);
-            eachstallSize[tid].push_back({thread_sizes[tid], Cycles(0)});
+            eachstallSize[tid].push_back(thread_sizes[tid]);
         }
         for (int i = 0; i < insts_from_fetch; ++i) {
-            if (fromFetch->insts[i]->isFastFetchAccepted()) {
+            if (!normal_lane(i)) {
                 continue;
             }
             const ThreadID tid = fromFetch->insts[i]->threadNumber;
             stallBuffer[tid].push_back(fromFetch->insts[i]);
+            if (enableFastFetchMaskRouting) {
+                panic_if(fromFetch->normalReadyCycle > cpu->curCycle(),
+                         "Normal packet enqueued before its original stage");
+                DPRINTF(FastFetch,
+                        "normal-enqueue tid=%u seq=%llu ready=%llu cycle=%llu\n",
+                        tid, fromFetch->insts[i]->seqNum,
+                        static_cast<uint64_t>(fromFetch->normalReadyCycle),
+                        static_cast<uint64_t>(cpu->curCycle()));
+            }
         }
     }
 
@@ -1136,12 +1078,11 @@ Decode::tick()
         decodeStalls[tid].assign(decodeWidth, StallReason::NoStall);
     }
 
+    moveInstsToBuffer();
+    checkSquash();
     if (enableFastFetchMaskRouting) {
-        checkSquash();
         routeFastFetchPacket();
     } else {
-        moveInstsToBuffer();
-        checkSquash();
         for (ThreadID tid = 0; tid < numThreads; ++tid) {
             if (stallSig->blockDecode[tid] || !fastFetchBufferEmpty(tid) ||
                 fromCommit->commitInfo[tid].squash) {
@@ -1162,10 +1103,7 @@ Decode::tick()
         toFetch->decodeInfo[tid].blockReason =
             stallSig->fetchBlockReason[tid];
     };
-    const auto fetchFeedbackReserve = enableFastFetchMaskRouting ?
-        std::max(decodeToFetchDelay + Cycles(1),
-                 fetchToDecodeDelay - Cycles(1)) :
-        decodeToFetchDelay + Cycles(1);
+    const auto fetchFeedbackReserve = decodeToFetchDelay + Cycles(1);
 
     // Per-thread FIFO backpressure judgment
     // Each thread's stallBuffer is independent, so we check per-thread

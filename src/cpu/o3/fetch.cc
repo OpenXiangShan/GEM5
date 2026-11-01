@@ -113,8 +113,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       decodeWidth(params.decodeWidth),
       enableFastFetch(params.enableFastFetch),
       enableFastFetchContinuation(params.enableFastFetchContinuation),
-      enableFastFetchMaskRouting(params.enableFastFetchMaskRouting &&
-                                 params.enableFastFetch),
+      enableFastFetchMaskRouting(params.enableFastFetchMaskRouting),
       normalDeliveryDelay(params.fetchToDecodeDelay),
       fastFetchBytes(params.fastFetchBytes),
       retryPkt(),
@@ -165,9 +164,11 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
                  "fast fetch requires fetchToDecodeDelay >= 2");
     }
     panic_if(enableFastFetchMaskRouting &&
-             (params.enableTraceMode || params.enableDecodeFusionCompaction ||
+             (!enablePredecode || numThreads != 1 || params.enableTraceMode ||
+              params.enableDecodeFusionCompaction ||
               normalDeliveryDelay < Cycles(3)),
-             "mask routing requires non-trace predecode without compaction "
+             "mask routing requires single-thread non-trace predecode "
+             "without compaction "
              "and fetchToDecodeDelay >= 3");
     panic_if(numFetchTargetThreads == 0 ||
              numFetchTargetThreads > numThreads ||
@@ -417,7 +418,7 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
     ADD_STAT(fastFetchNormalInsts, statistics::units::Count::get(),
              "Instructions routed once into the normal buffer"),
     ADD_STAT(fastFetchInvalidInsts, statistics::units::Count::get(),
-             "Invalid instructions discarded at the mask-routing input"),
+             "Invalid slots retained for normal-path resource accounting"),
     ADD_STAT(fastFetchStopReasons, statistics::units::Count::get(),
              "Reasons mask routing permanently switches an epoch to normal"),
     ADD_STAT(cycles, statistics::units::Cycle::get(),
@@ -2096,6 +2097,8 @@ Fetch::sendInstructionsToDecode()
     toDecode->fastFetchTid = InvalidThreadID;
     toDecode->fastFetchContinuation = false;
     toDecode->fastFetchMask.reset();
+    toDecode->normalFetchMask.reset();
+    toDecode->fastFetchRouted = false;
     toDecode->fastFetchEpoch = 0;
     toDecode->normalReadyCycle = cpu->curCycle() + normalDeliveryDelay;
     toDecode->fastFetchStopReason = FastFetchStopReason::None;
@@ -2319,8 +2322,9 @@ Fetch::sendInstructionsToDecode()
             }
         }
 
-        const bool split_block = enableFastFetchMaskRouting &&
-                                 fastFetchPending[tid] && !insts.empty();
+        const bool first_fast = enableFastFetchMaskRouting && !insts.empty() &&
+                                prepareFastFetchMask(insts.front());
+        const bool split_block = first_fast;
         const auto packet_block = insts.empty() ? 0 : insts.front()->getFtqId();
         if (enableFastFetchMaskRouting) {
             toDecode->fastFetchEpoch = fastFetchEpoch[tid];
@@ -2331,11 +2335,13 @@ Fetch::sendInstructionsToDecode()
                (!split_block || insts.front()->getFtqId() == packet_block)) {
             assert(toDecode->size < MaxWidth);
             const auto &inst = insts.front();
-            if (enableFastFetchMaskRouting && prepareFastFetchMask(inst)) {
+            if (enableFastFetchMaskRouting &&
+                (thread_insts == 0 ? first_fast : prepareFastFetchMask(inst))) {
                 toDecode->fastFetchMask.set(toDecode->size);
                 ++toDecode->fastFetchSize;
                 ++fetchStats.fastFetchPublishedInsts;
             }
+            toDecode->normalFetchMask.set(toDecode->size);
             toDecode->insts[toDecode->size++] = inst;
             DPRINTF(FastFetch,
                     "send tid=%u seq=%llu pc=%#lx ftq=%llu\n",

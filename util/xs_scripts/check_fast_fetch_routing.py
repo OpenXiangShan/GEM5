@@ -32,7 +32,8 @@ def check_trace(path, width=8, byte_budget=64):
             fast = int(fields["fast"], 0)
             normal = int(fields["normal"], 0)
             assert not fast & normal
-            assert fast | normal == valid
+            assert fast | normal == (1 << int(fields["size"])) - 1
+            assert not fast & ~valid
             assert not fast & ~offered
             assert fast & (fast + 1) == 0, (path, fields, "not a prefix")
             assert int(fields["ready"]) == int(fields["cycle"]) + 1
@@ -47,9 +48,8 @@ def check_trace(path, width=8, byte_budget=64):
         elif kind == "routed":
             sequence = int(fields["seq"])
             assert sequence not in routed, (path, sequence, "double routing")
-            assert int(fields["fast"]) + int(fields["normal"]) == int(
-                fields["valid"]
-            )
+            assert int(fields["fast"]) + int(fields["normal"]) == 1
+            assert fields["fast"] != "1" or fields["valid"] == "1"
             routed[sequence] = fields
             for label in ("fast", "normal", "valid"):
                 totals[label] += int(fields[label])
@@ -62,10 +62,14 @@ def check_trace(path, width=8, byte_budget=64):
                 assert start <= int(fields["pc"], 0) < end
                 assert end <= int(fields["block_end"], 0)
                 assert end - start <= byte_budget, (path, fields)
-        elif kind == "normal-ready":
-            assert int(fields["cycle"]) >= int(fields["ready"])
+        elif kind in ("normal-enqueue", "normal-ready"):
             sequence = int(fields["seq"])
             assert routed[sequence]["normal"] == "1", (path, sequence)
+            ready = int(routed[sequence]["ready"])
+            assert int(fields["cycle"]) >= ready
+            if kind == "normal-enqueue":
+                assert int(fields["cycle"]) == ready
+                totals["normal_enqueued"] += 1
         elif kind == "decode":
             sequence = int(fields["seq"])
             assert sequence > last_decode, (path, sequence, "decode order")
