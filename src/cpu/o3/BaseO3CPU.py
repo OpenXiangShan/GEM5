@@ -173,6 +173,9 @@ class BaseO3CPU(BaseCPU):
     enableFastFetchContinuation = Param.Bool(
         False, "Continue fast fetch beyond the first post-recovery bundle"
     )
+    enableFastFetchMaskRouting = Param.Bool(
+        False, "Route each fetch packet once between fast and normal paths"
+    )
     fastFetchBytes = Param.Unsigned(64,
         "Maximum number of bytes read by post-recovery fast fetch")
 

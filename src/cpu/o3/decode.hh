@@ -201,6 +201,10 @@ class Decode
      * sorted by thread.
      */
     void moveInstsToBuffer();
+    bool moveNormalGroup(ThreadID tid);
+    void routeFastFetchPacket();
+    void squashNormalGroups(ThreadID tid, InstSeqNum boundary,
+                            const SquashVersion *version);
     void acceptFastFetch();
 
     void checkSquash();
@@ -276,6 +280,14 @@ class Decode
     /** One-cycle-earlier fast-fetch view of the fetch time buffer. */
     TimeBuffer<FetchStruct>::wire fromFastFetch;
     bool fastFetchContinuing[MaxThreads]{};
+    uint64_t fastFetchEpoch[MaxThreads]{};
+    uint64_t fastFetchClosedEpoch[MaxThreads]{};
+    bool fastFetchNormalOnly[MaxThreads]{};
+    uint64_t fastFetchBlockId[MaxThreads]{};
+    unsigned fastFetchBlockInsts[MaxThreads]{};
+    bool fastFetchBlockComplete[MaxThreads]{};
+    InstSeqNum lastSquashBoundary[MaxThreads]{};
+    bool hasSquashBoundary[MaxThreads]{};
 
     /** Queue of all instructions coming from fetch this cycle. */
     boost::circular_buffer<DynInstPtr> fixedbuffer[MaxThreads];
@@ -287,7 +299,12 @@ class Decode
      * Each thread has its own FIFO queue for backpressure isolation.
      */
     boost::circular_buffer<DynInstPtr> stallBuffer[MaxThreads];
-    boost::circular_buffer<int> eachstallSize[MaxThreads];
+    struct NormalGroup
+    {
+        unsigned size;
+        Cycles readyCycle;
+    };
+    boost::circular_buffer<NormalGroup> eachstallSize[MaxThreads];
 
     /** Variable that tracks if decode has written to the time buffer this
      * cycle. Used to tell CPU if there is activity this cycle.
@@ -310,6 +327,7 @@ class Decode
     const bool enableFastFetch;
     const bool fastFetchAllowBlockedDecode;
     const bool enableFastFetchContinuation;
+    const bool enableFastFetchMaskRouting;
 
     /** Decode to fetch feedback delay for stage backpressure. */
     Cycles decodeToFetchDelay;

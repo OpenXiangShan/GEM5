@@ -113,6 +113,9 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       decodeWidth(params.decodeWidth),
       enableFastFetch(params.enableFastFetch),
       enableFastFetchContinuation(params.enableFastFetchContinuation),
+      enableFastFetchMaskRouting(params.enableFastFetchMaskRouting &&
+                                 params.enableFastFetch),
+      normalDeliveryDelay(params.fetchToDecodeDelay),
       fastFetchBytes(params.fastFetchBytes),
       retryPkt(),
       cacheBlkSize(cpu->cacheLineSize()),
@@ -161,6 +164,11 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         panic_if(params.fetchToDecodeDelay < Cycles(2),
                  "fast fetch requires fetchToDecodeDelay >= 2");
     }
+    panic_if(enableFastFetchMaskRouting &&
+             (params.enableTraceMode || params.enableDecodeFusionCompaction ||
+              normalDeliveryDelay < Cycles(3)),
+             "mask routing requires non-trace predecode without compaction "
+             "and fetchToDecodeDelay >= 3");
     panic_if(numFetchTargetThreads == 0 ||
              numFetchTargetThreads > numThreads ||
              numFetchTargetThreads > 2,
@@ -326,6 +334,9 @@ void
 Fetch::recordFastFetchDropped(const DynInstPtr &instruction)
 {
     ++fetchStats.fastFetchDroppedBundles;
+    if (enableFastFetchMaskRouting) {
+        return;
+    }
     const ThreadID tid = instruction->threadNumber;
     if (localSquashVer[tid].getVersion() == instruction->getVersion()) {
         clearFastFetchState(tid);
@@ -336,6 +347,28 @@ void
 Fetch::recordFastFetchDedup(unsigned count)
 {
     fetchStats.fastFetchNormalDedupInsts += count;
+}
+
+void
+Fetch::stopFastFetchEpoch(ThreadID tid, uint64_t epoch)
+{
+    if (epoch == fastFetchEpoch[tid]) {
+        fastFetchPending[tid] = false;
+    }
+}
+
+void
+Fetch::recordFastFetchRouting(unsigned normal, unsigned invalid,
+                             bool complete, bool next_block,
+                             FastFetchStopReason reason)
+{
+    fetchStats.fastFetchNormalInsts += normal;
+    fetchStats.fastFetchInvalidInsts += invalid;
+    fetchStats.fastFetchCompleteBlocks += complete;
+    fetchStats.fastFetchNextBlocks += next_block;
+    if (reason != FastFetchStopReason::None) {
+        ++fetchStats.fastFetchStopReasons[static_cast<unsigned>(reason)];
+    }
 }
 
 void
@@ -377,6 +410,16 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Fast instructions checked by the normal predecode path"),
     ADD_STAT(fastFetchPredecodeRedirects, statistics::units::Count::get(),
              "Fast instructions covered by a predecode redirect"),
+    ADD_STAT(fastFetchCompleteBlocks, statistics::units::Count::get(),
+             "Fetch blocks completely accepted through mask routing"),
+    ADD_STAT(fastFetchNextBlocks, statistics::units::Count::get(),
+             "Later fetch blocks accepted in the same fast recovery epoch"),
+    ADD_STAT(fastFetchNormalInsts, statistics::units::Count::get(),
+             "Instructions routed once into the normal buffer"),
+    ADD_STAT(fastFetchInvalidInsts, statistics::units::Count::get(),
+             "Invalid instructions discarded at the mask-routing input"),
+    ADD_STAT(fastFetchStopReasons, statistics::units::Count::get(),
+             "Reasons mask routing permanently switches an epoch to normal"),
     ADD_STAT(cycles, statistics::units::Cycle::get(),
              "Number of cycles fetch has run and was not squashing or "
              "blocked"),
@@ -575,6 +618,17 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
               /* last value */ fetch->fetchWidth,
               /* bucket size */ 1)
             .flags(statistics::pdf);
+        fastFetchStopReasons
+            .init(static_cast<unsigned>(FastFetchStopReason::NumReasons))
+            .subname(0, "None")
+            .subname(1, "InstructionLimit")
+            .subname(2, "ByteLimit")
+            .subname(3, "Safety")
+            .subname(4, "Fusion")
+            .subname(5, "Blocked")
+            .subname(6, "OlderNormal")
+            .subname(7, "Stale")
+            .subname(8, "SingleBundle");
         loadFeedbackDist
             .init(0, 4, 1)
             .flags(statistics::pdf);
@@ -2041,13 +2095,18 @@ Fetch::sendInstructionsToDecode()
     toDecode->fastFetchSize = 0;
     toDecode->fastFetchTid = InvalidThreadID;
     toDecode->fastFetchContinuation = false;
+    toDecode->fastFetchMask.reset();
+    toDecode->fastFetchEpoch = 0;
+    toDecode->normalReadyCycle = cpu->curCycle() + normalDeliveryDelay;
+    toDecode->fastFetchStopReason = FastFetchStopReason::None;
+    toDecode->fastFetchBlockComplete = false;
 
     // Reset the number of instructions we've fetched
     numInst = 0;
 
     bool any_thread_active = false;
     for (int i = 0; i < numThreads; i++) {
-        if (fastFetchContinuing[i] &&
+        if (!enableFastFetchMaskRouting && fastFetchContinuing[i] &&
             (stallSig->blockFetch[i] || stallSig->blockDecode[i] ||
              !cpu->getDecode()->fastFetchBufferEmpty(i))) {
             DPRINTF(FastFetch,
@@ -2134,7 +2193,8 @@ Fetch::sendInstructionsToDecode()
         return;
     }
 
-    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+    for (ThreadID tid = 0; !enableFastFetchMaskRouting && tid < numThreads;
+         ++tid) {
         if (fastFetchContinuing[tid]) {
             if (fetchQueue[tid].empty()) {
                 continue;
@@ -2259,9 +2319,23 @@ Fetch::sendInstructionsToDecode()
             }
         }
 
-        while (!insts.empty() && thread_insts < decodeWidth) {
+        const bool split_block = enableFastFetchMaskRouting &&
+                                 fastFetchPending[tid] && !insts.empty();
+        const auto packet_block = insts.empty() ? 0 : insts.front()->getFtqId();
+        if (enableFastFetchMaskRouting) {
+            toDecode->fastFetchEpoch = fastFetchEpoch[tid];
+            toDecode->fastFetchTid = tid;
+            toDecode->fastFetchContinuation = fastFetchContinuing[tid];
+        }
+        while (!insts.empty() && thread_insts < decodeWidth &&
+               (!split_block || insts.front()->getFtqId() == packet_block)) {
             assert(toDecode->size < MaxWidth);
             const auto &inst = insts.front();
+            if (enableFastFetchMaskRouting && prepareFastFetchMask(inst)) {
+                toDecode->fastFetchMask.set(toDecode->size);
+                ++toDecode->fastFetchSize;
+                ++fetchStats.fastFetchPublishedInsts;
+            }
             toDecode->insts[toDecode->size++] = inst;
             DPRINTF(FastFetch,
                     "send tid=%u seq=%llu pc=%#lx ftq=%llu\n",
@@ -2275,6 +2349,28 @@ Fetch::sendInstructionsToDecode()
             wroteToTimeBuffer = true;
             insts.pop_front();
             ++thread_insts;
+        }
+        if (enableFastFetchMaskRouting && thread_insts) {
+            const auto &last = toDecode->insts[toDecode->size - 1];
+            toDecode->fastFetchBlockComplete =
+                last->pcState().getFallThruPC() >= last->getFetchBlockEndPC() ||
+                (last->isControl() && last->readPredTaken()) ||
+                (!insts.empty() && insts.front()->getFtqId() != packet_block);
+            DPRINTF(FastFetch,
+                    "packet tid=%u epoch=%llu ftq=%llu size=%u mask=%#llx "
+                    "ready=%llu complete=%u reason=%u continuation=%u\n",
+                    tid, toDecode->fastFetchEpoch, packet_block, thread_insts,
+                    toDecode->fastFetchMask.to_ullong(),
+                    static_cast<uint64_t>(toDecode->normalReadyCycle),
+                    toDecode->fastFetchBlockComplete,
+                    static_cast<unsigned>(toDecode->fastFetchStopReason),
+                    toDecode->fastFetchContinuation);
+            if (toDecode->fastFetchSize) {
+                fastFetchContinuing[tid] = true;
+                if (!enableFastFetchContinuation) {
+                    fastFetchPending[tid] = false;
+                }
+            }
         }
 
         total_insts_to_decode += thread_insts;
@@ -3304,21 +3400,29 @@ Fetch::clearFastFetchState(ThreadID tid)
     fastFetchContinuing[tid] = false;
     fastFetchTargetId[tid] = 0;
     fastFetchCandidates[tid].clear();
+    fastFetchBlockInsts[tid] = 0;
+    fastFetchBlockValid[tid] = false;
+    fastFetchBlockStopped[tid] = false;
 }
 
 void
 Fetch::armFastFetch(ThreadID tid)
 {
     clearFastFetchState(tid);
+    if (enableFastFetchMaskRouting) {
+        ++fastFetchEpoch[tid];
+        panic_if(fastFetchEpoch[tid] == 0, "Fast fetch epoch overflow");
+    }
     fastFetchPending[tid] = enableFastFetch;
-    DPRINTF(FastFetch, "arm tid=%u enabled=%u bytes=%u\n",
-            tid, fastFetchPending[tid], fastFetchBytes);
+    DPRINTF(FastFetch, "arm tid=%u enabled=%u bytes=%u epoch=%llu\n",
+            tid, fastFetchPending[tid], fastFetchBytes, fastFetchEpoch[tid]);
 }
 
 void
 Fetch::collectFastFetchCandidate(const DynInstPtr &instruction)
 {
-    if (!enableFastFetch || !fastFetchPending[instruction->threadNumber] ||
+    if (enableFastFetchMaskRouting || !enableFastFetch ||
+        !fastFetchPending[instruction->threadNumber] ||
         fastFetchReady[instruction->threadNumber]) {
         return;
     }
@@ -3377,6 +3481,50 @@ Fetch::collectFastFetchCandidate(const DynInstPtr &instruction)
             tid, instruction->seqNum, inst_start, inst_end, ftq_id,
             block_start, block_end, read_end, instruction->readPredTaken(),
             fastFetchCandidates[tid].size(), fastFetchReady[tid], stop_reason);
+}
+
+bool
+Fetch::prepareFastFetchMask(const DynInstPtr &instruction)
+{
+    const ThreadID tid = instruction->threadNumber;
+    if (!fastFetchPending[tid]) {
+        return false;
+    }
+    if (!fastFetchBlockValid[tid] ||
+        fastFetchMaskBlockId[tid] != instruction->getFtqId()) {
+        fastFetchBlockValid[tid] = true;
+        fastFetchMaskBlockId[tid] = instruction->getFtqId();
+        fastFetchBlockInsts[tid] = 0;
+        fastFetchBlockStopped[tid] = false;
+    }
+    const Addr start = instruction->pcState().instAddr();
+    const Addr end = instruction->pcState().getFallThruPC();
+    const Addr block_start = instruction->getFetchBlockStartPC();
+    const Addr block_end = instruction->getFetchBlockEndPC();
+    FastFetchStopReason reason = FastFetchStopReason::None;
+    if (fastFetchBlockInsts[tid] >= decodeWidth) {
+        reason = FastFetchStopReason::InstructionLimit;
+    } else if (start < block_start || end > block_end ||
+               end <= start || end - block_start > fastFetchBytes) {
+        reason = FastFetchStopReason::ByteLimit;
+    } else if (fastFetchBlockStopped[tid] || instruction->faulted() ||
+               instruction->isVector() ||
+               instruction->staticInst->isVectorConfig() ||
+               (instruction->readPredTaken() &&
+                (!instruction->isControl() || end - start == 4))) {
+        reason = FastFetchStopReason::Safety;
+    }
+    if (reason != FastFetchStopReason::None) {
+        fastFetchPending[tid] = false;
+        toDecode->fastFetchStopReason = reason;
+        return false;
+    }
+    ++fastFetchBlockInsts[tid];
+    ++fetchStats.fastFetchCandidateInsts;
+    fastFetchBlockStopped[tid] =
+        (instruction->isDirectCtrl() || instruction->isIndirectCtrl()) &&
+        (!instruction->isCondCtrl() || instruction->readPredTaken());
+    return true;
 }
 
 bool

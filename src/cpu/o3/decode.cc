@@ -82,6 +82,8 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
       enableFastFetch(params.enableFastFetch),
       fastFetchAllowBlockedDecode(params.fastFetchAllowBlockedDecode),
       enableFastFetchContinuation(params.enableFastFetchContinuation),
+      enableFastFetchMaskRouting(params.enableFastFetchMaskRouting &&
+                                 params.enableFastFetch),
       decodeToFetchDelay(params.decodeToFetchDelay),
       decodeWidth(params.decodeWidth),
       numPreDispatchThreads(params.smtNumPreDispatchThreads),
@@ -144,7 +146,7 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
     for (int i=0; i<numThreads; i++) {
         stallBuffer[i] = boost::circular_buffer<DynInstPtr>(
         decodeWidth * stallGroupDepth);
-        eachstallSize[i] = boost::circular_buffer<int>(stallGroupDepth);
+        eachstallSize[i] = boost::circular_buffer<NormalGroup>(stallGroupDepth);
     }
 
 
@@ -169,6 +171,13 @@ void
 Decode::clearStates(ThreadID tid)
 {
     fastFetchContinuing[tid] = false;
+    if (enableFastFetchMaskRouting) {
+        fastFetchClosedEpoch[tid] = fetch_ptr->getFastFetchEpoch(tid);
+        fastFetchNormalOnly[tid] = true;
+        fixedbuffer[tid].clear();
+        stallBuffer[tid].clear();
+        eachstallSize[tid].clear();
+    }
     decodedBranchHistory[tid].clear();
     if (compactionEnabled) {
         assert(tid == 0);
@@ -183,6 +192,17 @@ Decode::resetStage()
     _status = Inactive;
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         fastFetchContinuing[tid] = false;
+        if (enableFastFetchMaskRouting) {
+            fixedbuffer[tid].clear();
+            stallBuffer[tid].clear();
+            eachstallSize[tid].clear();
+            fastFetchEpoch[tid] = 0;
+            fastFetchClosedEpoch[tid] = 0;
+            fastFetchNormalOnly[tid] = false;
+            fastFetchBlockInsts[tid] = 0;
+            fastFetchBlockComplete[tid] = false;
+            hasSquashBoundary[tid] = false;
+        }
     }
     if (compactionEnabled) {
         compactionBuffer.clear();
@@ -470,6 +490,10 @@ Decode::drainSanityCheck() const
     }
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         assert(fixedbuffer[tid].empty());
+        if (enableFastFetchMaskRouting) {
+            assert(stallBuffer[tid].empty());
+            assert(eachstallSize[tid].empty());
+        }
     }
 }
 
@@ -481,6 +505,8 @@ Decode::isDrained() const
     }
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         if (!fixedbuffer[tid].empty())
+            return false;
+        if (enableFastFetchMaskRouting && !stallBuffer[tid].empty())
             return false;
     }
     return true;
@@ -518,6 +544,11 @@ void
 Decode::selfSquash(const DynInstPtr &inst, ThreadID tid)
 {
     fastFetchContinuing[tid] = false;
+    if (enableFastFetchMaskRouting) {
+        fastFetchClosedEpoch[tid] = fetch_ptr->getFastFetchEpoch(tid);
+        fastFetchNormalOnly[tid] = true;
+        fetch_ptr->stopFastFetchEpoch(tid, fastFetchClosedEpoch[tid]);
+    }
     DPRINTF(Decode, "[tid:%i] [sn:%llu] Squashing due to incorrect branch "
             "prediction detected at decode.\n", tid, inst->seqNum);
 
@@ -575,7 +606,7 @@ Decode::selfSquash(const DynInstPtr &inst, ThreadID tid)
     // Clear per-thread stallBuffer for the squashed thread
     auto delIt = stallBuffer[tid].begin();
     for (auto it0 = eachstallSize[tid].begin(); it0 != eachstallSize[tid].end();) {
-        int size = *it0;
+        int size = it0->size;
         auto start_it = delIt;
         auto end_it = start_it + size;
         if ((*start_it)->threadNumber == tid) {
@@ -617,6 +648,22 @@ Decode::squash(ThreadID tid)
         return 0;
     }
 
+    if (enableFastFetchMaskRouting) {
+        const auto &info = fromCommit->commitInfo[tid];
+        fastFetchClosedEpoch[tid] = fetch_ptr->getFastFetchEpoch(tid);
+        fastFetchNormalOnly[tid] = true;
+        fetch_ptr->stopFastFetchEpoch(tid, fastFetchClosedEpoch[tid]);
+        lastSquashBoundary[tid] = info.doneSeqNum;
+        hasSquashBoundary[tid] = true;
+        for (auto &instruction : fixedbuffer[tid]) {
+            if (instruction->seqNum <= info.doneSeqNum &&
+                !instruction->isSquashed()) {
+                instruction->setVersion(info.squashVersion);
+            }
+        }
+        squashNormalGroups(tid, info.doneSeqNum, &info.squashVersion);
+    }
+
     // Selectively remove only instructions younger than squash boundary
     {
         InstSeqNum squash_seq = fromCommit->commitInfo[tid].doneSeqNum;
@@ -631,9 +678,12 @@ Decode::squash(ThreadID tid)
     squashBranchHistory(tid, fromCommit->commitInfo[tid].doneSeqNum, false);
 
     // Clear per-thread stallBuffer for the squashed thread
+    if (enableFastFetchMaskRouting) {
+        return 0;
+    }
     auto delIt = stallBuffer[tid].begin();
     for (auto it0 = eachstallSize[tid].begin(); it0 != eachstallSize[tid].end();) {
-        int size = *it0;
+        int size = it0->size;
         auto start_it = delIt;
         auto end_it = start_it + size;
         if ((*start_it)->threadNumber == tid) {
@@ -694,7 +744,8 @@ Decode::updateActivate()
     while (threads != end) {
         ThreadID tid = *threads++;
 
-        if (!stallSig->blockDecode[tid]) {
+        if (!stallSig->blockDecode[tid] ||
+            (enableFastFetchMaskRouting && !stallBuffer[tid].empty())) {
             any_unblocking = true;
             break;
         }
@@ -722,6 +773,215 @@ Decode::updateActivate()
 }
 
 void
+Decode::squashNormalGroups(ThreadID tid, InstSeqNum boundary,
+                           const SquashVersion *version)
+{
+    const auto groups = eachstallSize[tid].size();
+    for (size_t group_index = 0; group_index < groups; ++group_index) {
+        auto group = eachstallSize[tid].front();
+        eachstallSize[tid].pop_front();
+        unsigned survivors = 0;
+        for (unsigned index = 0; index < group.size; ++index) {
+            auto instruction = stallBuffer[tid].front();
+            stallBuffer[tid].pop_front();
+            if (instruction->seqNum > boundary || instruction->isSquashed()) {
+                instruction->setSquashed();
+                continue;
+            }
+            if (version) {
+                instruction->setVersion(*version);
+            }
+            stallBuffer[tid].push_back(instruction);
+            ++survivors;
+        }
+        if (survivors) {
+            group.size = survivors;
+            eachstallSize[tid].push_back(group);
+        }
+    }
+}
+
+bool
+Decode::moveNormalGroup(ThreadID tid)
+{
+    if (stallBuffer[tid].empty() || !fixedbuffer[tid].empty() ||
+        eachstallSize[tid].front().readyCycle > cpu->curCycle()) {
+        return false;
+    }
+    const auto group = eachstallSize[tid].front();
+    eachstallSize[tid].pop_front();
+    assert(group.size <= decodeWidth);
+    for (unsigned index = 0; index < group.size; ++index) {
+        const auto instruction = stallBuffer[tid].front();
+        stallBuffer[tid].pop_front();
+        if (localSquashVer[tid].largerThan(instruction->getVersion())) {
+            instruction->setSquashed();
+        }
+        fixedbuffer[tid].push_back(instruction);
+        DPRINTF(FastFetch,
+                "normal-ready tid=%u seq=%llu ready=%llu cycle=%llu\n",
+                tid, instruction->seqNum,
+                static_cast<uint64_t>(group.readyCycle),
+                static_cast<uint64_t>(cpu->curCycle()));
+    }
+    return true;
+}
+
+void
+Decode::routeFastFetchPacket()
+{
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        moveNormalGroup(tid);
+    }
+    const auto &packet = *fromFastFetch;
+    if (!packet.size) {
+        return;
+    }
+    const ThreadID tid = packet.fastFetchTid;
+    panic_if(tid >= numThreads || packet.size > decodeWidth,
+             "Invalid mask-routing packet: tid=%u size=%u", tid, packet.size);
+    const uint64_t epoch = packet.fastFetchEpoch;
+    if (epoch > fastFetchEpoch[tid]) {
+        fastFetchEpoch[tid] = epoch;
+        fastFetchNormalOnly[tid] = epoch <= fastFetchClosedEpoch[tid];
+        fastFetchContinuing[tid] = false;
+        fastFetchBlockInsts[tid] = 0;
+        fastFetchBlockComplete[tid] = false;
+    }
+    const bool current_epoch = epoch && epoch == fastFetchEpoch[tid] &&
+                               epoch > fastFetchClosedEpoch[tid];
+    std::bitset<MaxWidth> valid_mask;
+    for (int index = 0; index < packet.size; ++index) {
+        const auto &instruction = packet.insts[index];
+        if (!instruction->isSquashed() && hasSquashBoundary[tid] &&
+            instruction->seqNum <= lastSquashBoundary[tid] &&
+            localSquashVer[tid].largerThan(instruction->getVersion())) {
+            instruction->setVersion(localSquashVer[tid]);
+        }
+        if (!instruction->isSquashed() &&
+            !localSquashVer[tid].largerThan(instruction->getVersion()) &&
+            (!fromCommit->commitInfo[tid].squash ||
+             instruction->seqNum <= fromCommit->commitInfo[tid].doneSeqNum)) {
+            valid_mask.set(index);
+        } else {
+            instruction->setSquashed();
+        }
+    }
+
+    const unsigned offered = packet.fastFetchMask.count();
+    unsigned count = 0;
+    while (count < static_cast<unsigned>(packet.size) &&
+           packet.fastFetchMask.test(count) && valid_mask.test(count)) {
+        ++count;
+    }
+    auto reason = packet.fastFetchStopReason;
+    const bool continuation = fastFetchContinuing[tid];
+    if (!current_epoch || fastFetchNormalOnly[tid] ||
+        (packet.fastFetchMask & ~valid_mask).any()) {
+        count = 0;
+        reason = FastFetchStopReason::Stale;
+    } else if (!fastFetchBufferEmpty(tid)) {
+        count = 0;
+        reason = FastFetchStopReason::OlderNormal;
+    } else if (stallSig->blockDecode[tid] &&
+               (continuation || !fastFetchAllowBlockedDecode)) {
+        count = 0;
+        reason = FastFetchStopReason::Blocked;
+    }
+    while (count && count < static_cast<unsigned>(packet.size) &&
+           valid_mask.test(count) &&
+           prepareFusion(packet.insts[count - 1], packet.insts[count], false)) {
+        --count;
+        reason = FastFetchStopReason::Fusion;
+    }
+    std::bitset<MaxWidth> fast_mask;
+    bool next_block = false;
+    bool complete = false;
+    if (count) {
+        const auto block = packet.insts[0]->getFtqId();
+        if (fastFetchBlockInsts[tid] && block != fastFetchBlockId[tid]) {
+            next_block = true;
+            if (!fastFetchBlockComplete[tid]) {
+                fetch_ptr->recordFastFetchRouting(0, 0, true, false,
+                                                 FastFetchStopReason::None);
+            }
+            fastFetchBlockInsts[tid] = 0;
+        }
+        fastFetchBlockId[tid] = block;
+        fastFetchBlockInsts[tid] += count;
+        panic_if(fastFetchBlockInsts[tid] > decodeWidth,
+                 "Fast fetch exceeded its per-block instruction budget");
+        for (unsigned index = 0; index < count; ++index) {
+            fast_mask.set(index);
+            packet.insts[index]->setFastFetchAccepted();
+            fixedbuffer[tid].push_back(packet.insts[index]);
+        }
+        complete = packet.fastFetchBlockComplete &&
+                   count == static_cast<unsigned>(packet.size);
+        fastFetchBlockComplete[tid] = complete;
+        fastFetchContinuing[tid] = true;
+        fetch_ptr->recordFastFetchAccepted(count, continuation);
+    } else if (offered) {
+        fetch_ptr->recordFastFetchDropped(packet.insts[0]);
+    }
+
+    const auto normal_mask = valid_mask & ~fast_mask;
+    const unsigned normal = normal_mask.count();
+    if (normal) {
+        panic_if(eachstallSize[tid].full() ||
+                 stallBuffer[tid].capacity() - stallBuffer[tid].size() < normal,
+                 "Mask-routing normal buffer overflow: groups=%u insts=%u",
+                 eachstallSize[tid].size(), stallBuffer[tid].size());
+        eachstallSize[tid].push_back({normal, packet.normalReadyCycle});
+        for (int index = 0; index < packet.size; ++index) {
+            if (normal_mask.test(index)) {
+                stallBuffer[tid].push_back(packet.insts[index]);
+            }
+        }
+    }
+    FastFetchStopReason stop_reason = FastFetchStopReason::None;
+    if (current_epoch && !fastFetchNormalOnly[tid] &&
+        (normal || valid_mask.count() != static_cast<unsigned>(packet.size) ||
+         (count && (!enableFastFetchContinuation ||
+                    stallSig->blockDecode[tid])))) {
+        fastFetchNormalOnly[tid] = true;
+        fastFetchContinuing[tid] = false;
+        stop_reason = reason != FastFetchStopReason::None ? reason :
+            (stallSig->blockDecode[tid] ? FastFetchStopReason::Blocked :
+             (!enableFastFetchContinuation ? FastFetchStopReason::SingleBundle :
+              FastFetchStopReason::Safety));
+        fetch_ptr->stopFastFetchEpoch(tid, epoch);
+    }
+    fetch_ptr->recordFastFetchRouting(normal, packet.size - valid_mask.count(),
+                                     complete, next_block, stop_reason);
+    DPRINTF(FastFetch,
+            "route tid=%u epoch=%llu size=%u offered=%#llx valid=%#llx "
+            "fast=%#llx normal=%#llx ready=%llu cycle=%llu "
+            "normal_only=%u reason=%u\n",
+            tid, epoch, packet.size, packet.fastFetchMask.to_ullong(),
+            valid_mask.to_ullong(), fast_mask.to_ullong(),
+            normal_mask.to_ullong(),
+            static_cast<uint64_t>(packet.normalReadyCycle),
+            static_cast<uint64_t>(cpu->curCycle()), fastFetchNormalOnly[tid],
+            static_cast<unsigned>(stop_reason));
+    for (int index = 0; index < packet.size; ++index) {
+        DPRINTF(FastFetch,
+                "routed tid=%u epoch=%llu seq=%llu ftq=%llu fast=%u "
+                "normal=%u valid=%u ready=%llu pc=%#lx end=%#lx "
+                "block_start=%#lx block_end=%#lx\n",
+                tid, epoch, packet.insts[index]->seqNum,
+                packet.insts[index]->getFtqId(), fast_mask.test(index),
+                normal_mask.test(index), valid_mask.test(index),
+                static_cast<uint64_t>(packet.normalReadyCycle),
+                packet.insts[index]->pcState().instAddr(),
+                packet.insts[index]->pcState().getFallThruPC(),
+                packet.insts[index]->getFetchBlockStartPC(),
+                packet.insts[index]->getFetchBlockEndPC());
+    }
+    moveNormalGroup(tid);
+}
+
+void
 Decode::moveInstsToBuffer()
 {
     // Helper lambda: try to move head group from a specific thread's stallBuffer
@@ -735,7 +995,7 @@ Decode::moveInstsToBuffer()
             return false;
         }
 
-        int insts_from_stall = eachstallSize[tid].front();
+        int insts_from_stall = eachstallSize[tid].front().size;
         eachstallSize[tid].pop_front();
         for (int i = 0; i < insts_from_stall; ++i) {
             const DynInstPtr &inst = stallBuffer[tid].front();
@@ -798,7 +1058,7 @@ Decode::moveInstsToBuffer()
                      "Decode stallbuffer[%d] lacks room for %u instructions\n",
                      tid, thread_sizes[tid]);
             assert(thread_sizes[tid] <= decodeWidth);
-            eachstallSize[tid].push_back(thread_sizes[tid]);
+            eachstallSize[tid].push_back({thread_sizes[tid], Cycles(0)});
         }
         for (int i = 0; i < insts_from_fetch; ++i) {
             if (fromFetch->insts[i]->isFastFetchAccepted()) {
@@ -876,16 +1136,20 @@ Decode::tick()
         decodeStalls[tid].assign(decodeWidth, StallReason::NoStall);
     }
 
-    moveInstsToBuffer();
-
-    checkSquash();
-    for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        if (stallSig->blockDecode[tid] || !fastFetchBufferEmpty(tid) ||
-            fromCommit->commitInfo[tid].squash) {
-            fastFetchContinuing[tid] = false;
+    if (enableFastFetchMaskRouting) {
+        checkSquash();
+        routeFastFetchPacket();
+    } else {
+        moveInstsToBuffer();
+        checkSquash();
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            if (stallSig->blockDecode[tid] || !fastFetchBufferEmpty(tid) ||
+                fromCommit->commitInfo[tid].squash) {
+                fastFetchContinuing[tid] = false;
+            }
         }
+        acceptFastFetch();
     }
-    acceptFastFetch();
 
     // check threads stall & status
     ThreadID blocked_tid = InvalidThreadID;
@@ -898,8 +1162,10 @@ Decode::tick()
         toFetch->decodeInfo[tid].blockReason =
             stallSig->fetchBlockReason[tid];
     };
-    const auto fetchFeedbackReserve =
-        numThreads > 1 ? decodeToFetchDelay + 1 : decodeToFetchDelay + 1;
+    const auto fetchFeedbackReserve = enableFastFetchMaskRouting ?
+        std::max(decodeToFetchDelay + Cycles(1),
+                 fetchToDecodeDelay - Cycles(1)) :
+        decodeToFetchDelay + Cycles(1);
 
     // Per-thread FIFO backpressure judgment
     // Each thread's stallBuffer is independent, so we check per-thread

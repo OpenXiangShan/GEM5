@@ -43,6 +43,7 @@
 #define __CPU_O3_COMM_HH__
 
 #include <array>
+#include <bitset>
 #include <cstdint>
 #include <vector>
 
@@ -153,6 +154,12 @@ squashCauseToStallReason(SquashCause cause)
 }
 
 /** Struct that defines the information passed from fetch to decode. */
+enum class FastFetchStopReason
+{
+    None, InstructionLimit, ByteLimit, Safety, Fusion, Blocked,
+    OlderNormal, Stale, SingleBundle, NumReasons
+};
+
 struct FetchStruct
 {
     int size;
@@ -162,6 +169,11 @@ struct FetchStruct
     ThreadID fastFetchTid;
     bool fastFetchContinuation;
     DynInstPtr fastFetchInsts[MaxWidth];
+    std::bitset<MaxWidth> fastFetchMask;
+    uint64_t fastFetchEpoch;
+    Cycles normalReadyCycle;
+    FastFetchStopReason fastFetchStopReason;
+    bool fastFetchBlockComplete;
     Fault fetchFault;
     InstSeqNum fetchFaultSN;
     bool clearFetchFault;

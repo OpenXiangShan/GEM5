@@ -435,6 +435,7 @@ class Fetch
     void clearFastFetchState(ThreadID tid);
     void armFastFetch(ThreadID tid);
     void collectFastFetchCandidate(const DynInstPtr &instruction);
+    bool prepareFastFetchMask(const DynInstPtr &instruction);
 
     /**
      * update stall reasons based on fetch status
@@ -626,6 +627,12 @@ class Fetch
     void recordFastFetchAccepted(unsigned count, bool continuation);
     void recordFastFetchDropped(const DynInstPtr &instruction);
     void recordFastFetchDedup(unsigned count);
+    uint64_t getFastFetchEpoch(ThreadID tid) const
+    { return fastFetchEpoch[tid]; }
+    void stopFastFetchEpoch(ThreadID tid, uint64_t epoch);
+    void recordFastFetchRouting(unsigned normal, unsigned invalid,
+                               bool complete, bool next_block,
+                               FastFetchStopReason reason);
     uint64_t findTraceIndexForSeqNum(InstSeqNum seqNum) const;
     bool lookupTraceIndexForSeqNum(InstSeqNum seqNum, uint64_t &index) const;
     Addr getTracePCByIndex(uint64_t index);
@@ -836,6 +843,8 @@ class Fetch
     /** Enable the idealized post-recovery fast fetch path. */
     const bool enableFastFetch;
     const bool enableFastFetchContinuation;
+    const bool enableFastFetchMaskRouting;
+    const Cycles normalDeliveryDelay;
 
     /** Maximum number of bytes covered by one fast-fetch candidate block. */
     const unsigned fastFetchBytes;
@@ -1181,6 +1190,11 @@ class Fetch
     bool fastFetchContinuing[MaxThreads]{};
     unsigned fastFetchTargetId[MaxThreads]{};
     std::deque<DynInstPtr> fastFetchCandidates[MaxThreads];
+    uint64_t fastFetchEpoch[MaxThreads]{};
+    unsigned fastFetchBlockInsts[MaxThreads]{};
+    bool fastFetchBlockValid[MaxThreads]{};
+    bool fastFetchBlockStopped[MaxThreads]{};
+    uint64_t fastFetchMaskBlockId[MaxThreads]{};
 
     /** fetch stall reasons */
     std::array<std::vector<StallReason>, MaxThreads> stallReason;
@@ -1261,6 +1275,11 @@ class Fetch
         statistics::Scalar fastFetchNormalDedupInsts;
         statistics::Scalar fastFetchPredecodeChecked;
         statistics::Scalar fastFetchPredecodeRedirects;
+        statistics::Scalar fastFetchCompleteBlocks;
+        statistics::Scalar fastFetchNextBlocks;
+        statistics::Scalar fastFetchNormalInsts;
+        statistics::Scalar fastFetchInvalidInsts;
+        statistics::Vector fastFetchStopReasons;
         /** Stat for total number of cycles spent fetching. */
         statistics::Scalar cycles;
         /** Stat for total number of cycles spent squashing. */
