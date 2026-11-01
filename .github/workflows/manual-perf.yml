@@ -62,6 +62,11 @@ on:
         required: false
         type: string
         default: ''
+      control_extra_args:
+        description: 'Optional control args; both arms share the same PGO binary and official profile'
+        required: false
+        type: string
+        default: ''
       gcbv_ref_so:
         description: 'Custom single-core REF (empty: pinned REF with memdedup; custom dedup REF also needs --enable-mem-dedup in extra_args)'
         required: false
@@ -114,6 +119,7 @@ jobs:
       json_path: ${{ github.event.inputs.json_path }}
       specific_benchmarks: ${{ github.event.inputs.specific_benchmarks }}
       extra_args: ${{ github.event.inputs.extra_args }}
+      control_extra_args: ${{ github.event.inputs.control_extra_args }}
       gcbv_ref_so: ${{ github.event.inputs.gcbv_ref_so }}
       distributed_servers: ${{ github.event.inputs.distributed_servers }}
       distributed_jobs_per_server: ${{ fromJSON(github.event.inputs.distributed_jobs_per_server || '32') }}

@@ -296,6 +296,8 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Distribution fsqEntryDist;
         statistics::Scalar fsqEntryEnqueued;
         statistics::Scalar fsqEntryCommitted;
+        statistics::Scalar resolveContextMissingGroups;
+        statistics::Scalar resolveAppliedGroups;
         // statistics::Distribution ftqEntryDist;
         statistics::Scalar controlSquashFromDecode;
         statistics::Scalar controlSquashFromCommit;

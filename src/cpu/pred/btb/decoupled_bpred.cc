@@ -1171,6 +1171,7 @@ DecoupledBPUWithBTB::resolveUpdate(const std::vector<BranchOutcome> &events)
     }
 
     if (!ftq.hasTarget(target_id, tid)) {
+        dbpBtbStats.resolveContextMissingGroups++;
         DPRINTF(DecoupleBP,
                 "Drop resolve update for tid %u FTQ %llu because its "
                 "prediction context is no longer available\n",
@@ -1198,6 +1199,7 @@ DecoupledBPUWithBTB::resolveUpdate(const std::vector<BranchOutcome> &events)
         }
     }
 
+    dbpBtbStats.resolveAppliedGroups++;
     return true;
 }
 

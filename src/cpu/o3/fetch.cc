@@ -102,6 +102,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       branchPred(nullptr),
       dbpbtb(nullptr),
       resolveQueueSize(params.resolveQueueSize),
+      resolveBeforeCommitOnCleanTick(params.resolveBeforeCommitOnCleanTick),
       decodeToFetchDelay(params.decodeToFetchDelay),
       renameToFetchDelay(params.renameToFetchDelay),
       iewToFetchDelay(params.iewToFetchDelay),
@@ -1759,6 +1760,12 @@ Fetch::initializeTickState()
         }
     }
 
+    const bool early_resolve = resolveBeforeCommitOnCleanTick &&
+        numThreads == 1 && !fromCommit->commitInfo[0].squash &&
+        !fromDecode->decodeInfo[0].squash;
+    if (early_resolve)
+        handleIEWSignals();
+
     // Check signal updates for all active threads
     while (threads != end) {
         ThreadID tid = *threads++;
@@ -1772,7 +1779,8 @@ Fetch::initializeTickState()
         }
     }
 
-    handleIEWSignals();
+    if (!early_resolve)
+        handleIEWSignals();
 
     DPRINTF(Fetch, "Running stage.\n");
     return status_change;

@@ -759,6 +759,7 @@ class Fetch
 
     /** Maximum number of resolve entries buffered in fetch before training. */
     const unsigned resolveQueueSize;
+    const bool resolveBeforeCommitOnCleanTick;
 
     /** FIFO storing resolve entries waiting for BPU training. */
     std::deque<ResolveQueueEntry> resolveQueue;
