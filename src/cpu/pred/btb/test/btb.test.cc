@@ -1352,7 +1352,7 @@ class MBTBWriteBufferTest : public ::testing::Test
     void idleCycle()
     {
         btb.tickStart();
-        btb.tick();
+        btb.finishPredictionCycle();
     }
 
     FetchTarget stream(Addr pc, ThreadID tid = 0)
@@ -1394,12 +1394,12 @@ TEST_F(MBTBWriteBufferTest, ReadPriorityAcceptsTrainingWithoutForwarding)
     beginBusyCycle();
     resolve(0x1000);
     EXPECT_TRUE(entries(0x1000).empty());
-    btb.tick(); // Entry request is in its input register.
+    btb.finishPredictionCycle(); // Entry request is in its input register.
     EXPECT_TRUE(entries(0x1000).empty());
     beginBusyCycle();
-    btb.tick(); // Entry request reaches the write buffer.
+    btb.finishPredictionCycle(); // Entry request reaches the write buffer.
     beginBusyCycle();
-    btb.tick(); // Prediction still blocks SRAM writes.
+    btb.finishPredictionCycle(); // Prediction still blocks SRAM writes.
     EXPECT_TRUE(entries(0x1000).empty());
     EXPECT_EQ(btb.btbStats.updateDeferredDueToConflict, 0);
     EXPECT_EQ(btb.btbStats.entryBufferDrains, 0);
@@ -1414,13 +1414,13 @@ TEST_F(MBTBWriteBufferTest, IndependentBankDrainsDuringOtherBankReads)
 {
     beginBusyCycle(); // Banks 0 and 4, training writes bank 1.
     resolve(0x1040);
-    btb.tick();
+    btb.finishPredictionCycle();
     EXPECT_EQ(btb.btbStats.counterBufferDrains, 1);
     EXPECT_EQ(btb.btbStats.counterBufferEnqueues, 0); // Empty FIFO flows.
     beginBusyCycle();
-    btb.tick();
+    btb.finishPredictionCycle();
     beginBusyCycle();
-    btb.tick();
+    btb.finishPredictionCycle();
     EXPECT_EQ(entries(0x1040).size(), 1);
     EXPECT_EQ(btb.btbStats.bufferReadBlockedPerBank[1], 0);
 }
@@ -1429,12 +1429,12 @@ TEST_F(MBTBWriteBufferTest, DirtyHitMergesLatestEntry)
 {
     beginBusyCycle();
     resolve(0x1000, 0x8000);
-    btb.tick();
+    btb.finishPredictionCycle();
     beginBusyCycle();
     resolve(0x1000, 0x9000);
-    btb.tick();
+    btb.finishPredictionCycle();
     beginBusyCycle();
-    btb.tick();
+    btb.finishPredictionCycle();
     EXPECT_EQ(btb.btbStats.entryBufferEnqueues, 1);
     EXPECT_EQ(btb.btbStats.entryBufferMerges, 1);
     EXPECT_EQ(btb.btbStats.entryBufferOverwrites, 0);
@@ -1447,10 +1447,10 @@ TEST_F(MBTBWriteBufferTest, SimultaneousDrainAndMergeRetainsNewWrite)
 {
     beginBusyCycle();
     resolve(0x1000, 0x8000);
-    btb.tick();
+    btb.finishPredictionCycle();
     beginBusyCycle();
     resolve(0x1000, 0x9000);
-    btb.tick();
+    btb.finishPredictionCycle();
     idleCycle(); // Drain old payload while the newer request merges.
     ASSERT_EQ(entries(0x1000).size(), 1);
     EXPECT_EQ(entries(0x1000)[0].target, 0x8000);
@@ -1465,10 +1465,10 @@ TEST_F(MBTBWriteBufferTest, FullRowOverwritesDirtyPLRUVictim)
     for (unsigned i = 0; i < 5; ++i) {
         beginBusyCycle();
         resolve(0x1000 + i * 256);
-        btb.tick();
+        btb.finishPredictionCycle();
     }
     beginBusyCycle();
-    btb.tick(); // Deliver the fifth entry through its input register.
+    btb.finishPredictionCycle(); // Deliver the fifth entry through its input register.
     EXPECT_EQ(btb.btbStats.entryBufferEnqueues, 5);
     EXPECT_EQ(btb.btbStats.entryBufferOverwrites, 1);
     EXPECT_EQ(btb.btbStats.counterBufferDrops, 1);
@@ -1489,10 +1489,10 @@ TEST_F(MBTBWriteBufferTest, SameSetReplacementOverridesEvenWithCleanSlots)
     for (unsigned i = 0; i < 5; ++i) {
         beginBusyCycle();
         resolve(0x1000 + i * 4096);
-        btb.tick();
+        btb.finishPredictionCycle();
     }
     beginBusyCycle();
-    btb.tick();
+    btb.finishPredictionCycle();
     EXPECT_EQ(btb.btbStats.entryBufferOverwrites, 1);
     idleCycle(); // Every way row has its own drain port.
     EXPECT_EQ(btb.btbStats.entryBufferDrains, 4);
@@ -1506,7 +1506,7 @@ TEST_F(MBTBWriteBufferTest, CounterFIFOFullDropsNewPayload)
     for (unsigned i = 0; i < 5; ++i) {
         beginBusyCycle();
         resolve(0x1000, 0x8000, i == 4);
-        btb.tick();
+        btb.finishPredictionCycle();
         EXPECT_EQ(entries(0x1000)[0].ctr, 0);
     }
     EXPECT_EQ(btb.btbStats.entryBufferEnqueues, 0);
@@ -1527,11 +1527,12 @@ TEST_F(MBTBWriteBufferTest, FullCounterFIFOAcceptsOnSameCycleDequeue)
     for (unsigned i = 0; i < 4; ++i) {
         beginBusyCycle();
         resolve(0x1000, 0x8000, false);
-        btb.tick();
+        btb.finishPredictionCycle();
     }
     btb.tickStart();
     resolve(0x1000, 0x8000, true);
-    btb.tick(); // Old head dequeues and the new +1 request enqueues.
+    // Old head dequeues and the new +1 request enqueues.
+    btb.finishPredictionCycle();
     EXPECT_EQ(btb.btbStats.counterBufferDrops, 0);
     for (unsigned i = 0; i < 4; ++i) {
         idleCycle();
@@ -1544,13 +1545,13 @@ TEST_F(MBTBWriteBufferTest, CleanShadowSuppressesIdenticalIndirectWrite)
 {
     btb.tickStart();
     resolve(0x1000, 0x8000, true, 0, true);
-    btb.tick();
+    btb.finishPredictionCycle();
     idleCycle();
     idleCycle();
     ASSERT_EQ(entries(0x1000).size(), 1);
     btb.tickStart();
     resolve(0x1000, 0x8000, true, 0, true);
-    btb.tick();
+    btb.finishPredictionCycle();
     idleCycle();
     EXPECT_EQ(btb.btbStats.entryBufferRedundant, 1);
     EXPECT_EQ(btb.btbStats.entryBufferDrains, 1);
@@ -1571,7 +1572,7 @@ TEST_F(MBTBWriteBufferTest, CounterWritesInOneSetShareFIFOEntry)
     }
     beginBusyCycle();
     btb.doResolveUpdate(PredictionUpdateContext(context), PreparedUpdate(events));
-    btb.tick();
+    btb.finishPredictionCycle();
     EXPECT_EQ(btb.btbStats.updateInVC, 1);
     EXPECT_EQ(btb.btbStats.entryBufferEnqueues, 0);
     EXPECT_EQ(btb.btbStats.counterBufferEnqueues, 1);
@@ -1585,11 +1586,11 @@ TEST_F(MBTBWriteBufferTest, BothThreadsBlockSharedBankDrains)
     beginBusyCycle(0x1040); // Thread 0 reads banks 1 and 5.
     predict(0x1000, 1); // Thread 1 reads banks 0 and 4.
     resolve(0x1000, 0x8000, true, 1);
-    btb.tick();
+    btb.finishPredictionCycle();
     beginBusyCycle();
-    btb.tick();
+    btb.finishPredictionCycle();
     beginBusyCycle();
-    btb.tick();
+    btb.finishPredictionCycle();
     EXPECT_TRUE(entries(0x1000, 1).empty());
     idleCycle();
     EXPECT_EQ(entries(0x1000, 1).size(), 1);
@@ -1602,7 +1603,7 @@ TEST_F(MBTBWriteBufferTest, EmptyAndUnpredictedNotTakenDoNotEnterBuffers)
     resolve(0x1000, 0x8000, false);
     auto context = stream(0x1000);
     btb.doResolveUpdate(PredictionUpdateContext(context), PreparedUpdate({}));
-    btb.tick();
+    btb.finishPredictionCycle();
     idleCycle();
     idleCycle();
     EXPECT_EQ(btb.btbStats.entryBufferEnqueues, 0);
@@ -1625,7 +1626,7 @@ TEST_F(MBTBWriteBufferTest, DisabledMasterSwitchKeepsDirectResolveUpdates)
     EXPECT_TRUE(disabled.canResolveUpdate(PredictionUpdateContext(context), update));
     disabled.doResolveUpdate(PredictionUpdateContext(context), update);
     ASSERT_EQ(disabled.getPredictedEntriesNoSideEffect(0x1000, 0, 0).size(), 1);
-    disabled.tick();
+    disabled.finishPredictionCycle();
     EXPECT_EQ(disabled.btbStats.entryBufferEnqueues, 0);
 }
 
@@ -1634,7 +1635,7 @@ TEST_F(MBTBWriteBufferTest, CommitTrainingRemainsImmediate)
     beginBusyCycle();
     seed();
     EXPECT_EQ(entries(0x1000).size(), 1);
-    btb.tick();
+    btb.finishPredictionCycle();
     EXPECT_EQ(btb.btbStats.entryBufferEnqueues, 0);
     EXPECT_EQ(btb.btbStats.counterBufferEnqueues, 0);
 }

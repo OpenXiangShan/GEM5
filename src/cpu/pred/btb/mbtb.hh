@@ -137,7 +137,8 @@ class MBTB : public TimedBaseBTBPredictor
     // Fetch probes resolve updates before the BPU starts its prediction
     // cycle. Clear the previous cycle's read reservations only after probing.
     void tickStart() override;
-    void tick() override;
+    // Advance buffered writes after all prediction reads, including idle cycles.
+    void finishPredictionCycle();
 
     /*
      * Main prediction function
@@ -483,8 +484,10 @@ class MBTB : public TimedBaseBTBPredictor
     {
         return enableBankConflict && enableWriteBuffer;
     }
-    void bufferUpdateBTBEntry(const BTBEntry &entry, bool taken, Addr target,
-                             const PredictionUpdateContext &context);
+    void bufferBTBEntry(const BTBEntry &entry, Addr setIdx, BTBSetIter hit,
+                        const PredictionUpdateContext &context);
+    void advanceEntryWrites();
+    void advanceCounterWrites();
     void enqueueEntryWrite(const EntryWrite &write);
     void writeEntryToSRAM(const EntryWrite &write);
     void writeCounterToSRAM(const CounterWrite &write);

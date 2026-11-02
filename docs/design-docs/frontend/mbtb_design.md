@@ -316,7 +316,10 @@ tick 开始调用 `MBTB::tickStart()` 清空预测掩码，包括本拍不发预
 写缓冲模式下，`canResolveUpdate()` 始终返回 true，且不修改缓冲；只有
 全部预测器通过两阶段探测后，`doResolveUpdate()` 才生成写请求。
 请求包含 set、way、数据和线程信息的副本，不保留 FTQ 或训练上下文引用。
-BPU tick 末尾调用 `MBTB::tick()`，用本拍所有实际预测读仲裁写端口：
+BPU 在预测结束后调用专用的 `finishPredictionCycle()`，用本拍所有实际
+预测读仲裁写端口。MBTB 不覆盖通用 `tick()`；entry 输入流水与排空、
+counter FIFO 推进各自封装，直接更新和缓冲更新共用 SRAM/VC 查找与
+训练数据生成逻辑：
 
 1. 未被读取的 bank，每个 way 排空一个旧 entry，每个 bank 排空一个旧
    counter 请求；被读取的 bank 暂停写 SRAM。

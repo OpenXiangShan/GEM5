@@ -348,7 +348,7 @@ DecoupledBPUWithBTB::tick()
         }
     }
     if (!anyActiveThread) {
-        mbtb->tick();
+        mbtb->finishPredictionCycle();
         return;
     }
 
@@ -406,7 +406,7 @@ DecoupledBPUWithBTB::tick()
         }
     }
 
-    mbtb->tick();
+    mbtb->finishPredictionCycle();
     DPRINTF(Override, "Prediction cycle complete\n");
 }
 

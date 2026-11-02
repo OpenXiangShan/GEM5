@@ -186,7 +186,7 @@ MBTB::tickStart()
 }
 
 void
-MBTB::tick()
+MBTB::finishPredictionCycle()
 {
     if (!usesWriteBuffer()) {
         return;
@@ -198,12 +198,33 @@ MBTB::tick()
     if (conflicts) {
         btbStats.updateBankConflict++;
     }
+    advanceEntryWrites();
+    advanceCounterWrites();
+
     for (unsigned bankId = 0; bankId < NumResourceBanks; ++bankId) {
         auto &bank = writeBuffers[bankId];
-        const bool readBusy = predictionBankMask & (1u << bankId);
         if (conflicts & (1u << bankId)) {
             btbStats.updateBankConflictPerBank[bankId]++;
         }
+        for (auto &row : bank.rows) {
+            unsigned occupancy = 0;
+            for (auto &slot : row.slots) {
+                occupancy += slot.dirty;
+                slot.drained = false;
+            }
+            btbStats.entryBufferOccupancy.sample(occupancy);
+        }
+        btbStats.counterBufferOccupancy.sample(bank.counters.size());
+    }
+    incomingWriteBankMask = 0;
+}
+
+void
+MBTB::advanceEntryWrites()
+{
+    for (unsigned bankId = 0; bankId < NumResourceBanks; ++bankId) {
+        auto &bank = writeBuffers[bankId];
+        const bool readBusy = predictionBankMask & (1u << bankId);
         bool pending = !bank.counters.empty();
         for (auto &row : bank.rows) {
             auto dirty = std::find_if(row.slots.begin(), row.slots.end(),
@@ -228,7 +249,11 @@ MBTB::tick()
     }
     entryWritePipeline = std::move(incomingEntryWrites);
     incomingEntryWrites.clear();
+}
 
+void
+MBTB::advanceCounterWrites()
+{
     for (unsigned bankId = 0; bankId < NumResourceBanks; ++bankId) {
         auto &bank = writeBuffers[bankId];
         const bool readBusy = predictionBankMask & (1u << bankId);
@@ -255,18 +280,8 @@ MBTB::tick()
                 btbStats.counterBufferDropsPerBank[bankId]++;
             }
         }
-        for (auto &row : bank.rows) {
-            unsigned occupancy = 0;
-            for (auto &slot : row.slots) {
-                occupancy += slot.dirty;
-                slot.drained = false;
-            }
-            btbStats.entryBufferOccupancy.sample(occupancy);
-        }
-        btbStats.counterBufferOccupancy.sample(bank.counters.size());
     }
     incomingCounterWrites.clear();
-    incomingWriteBankMask = 0;
 }
 
 #ifndef UNIT_TEST
@@ -675,65 +690,40 @@ MBTB::updateBTBEntry(
     const BTBEntry &entry, bool actual_taken, Addr actual_target,
     const PredictionUpdateContext &stream, bool buffered)
 {
-    if (buffered) {
-        bufferUpdateBTBEntry(entry, actual_taken, actual_target, stream);
-        return;
-    }
     btbStats.updateTotal++;
-    // Select SRAM based on entry PC's 32B-aligned address
-    Addr alignedPC = entry.pc & ~(blockSize - 1);
-    int sram_id = getSRAMId(alignedPC);
-    auto& target_sram = (sram_id == 0) ? sram0 : sram1;
-    auto& target_mru = (sram_id == 0) ? mru0 : mru1;
-    
-    // Calculate index and tag for this entry
-    Addr btb_idx = getIndex(entry.pc, stream.asidHash, stream.tid);
-
-    // Look for matching entry in the target SRAM
-    bool found = false;
-    auto it = target_sram[btb_idx].begin();
-    for (; it != target_sram[btb_idx].end(); it++) {
-        if (*it == entry) {
-            found = true;
-            break;
-        }
-    }
-    // Look for matching entry in victim cache
-    bool found_in_vc = false;
-    int vc_idx = -1;
+    const int sram_id = getSRAMId(entry.pc);
+    const Addr btb_idx = getIndex(entry.pc, stream.asidHash, stream.tid);
+    auto &set = (sram_id == 0 ? sram0 : sram1)[btb_idx];
+    auto &heap = (sram_id == 0 ? mru0 : mru1)[btb_idx];
+    auto hit = std::find(set.begin(), set.end(), entry);
     auto &victimCache = victimCaches[stream.tid];
-    for (unsigned i = 0; i < victimCache.size(); ++i) {
-        auto &vc_entry = victimCache[i];
-        if (vc_entry.valid && vc_entry.pc == entry.pc) {
-            found_in_vc = true;
-            vc_idx = i;
-            break;
-        }
-    }
-    // Build updated entry using existing state (MBTB hit or VC hit) when applicable
-    const BTBEntry* existing_ptr = nullptr;
-    if (found) {
-        existing_ptr = static_cast<const BTBEntry*>(&(*it));
-    } else if (found_in_vc) {
-        existing_ptr = static_cast<const BTBEntry*>(&victimCache[vc_idx]);
-    }
+    // SRAM hits take precedence over VC hits in both update modes.
+    auto vc = hit != set.end() ? victimCache.end() : std::find_if(
+        victimCache.begin(), victimCache.end(),
+        [&entry](const TickedBTBEntry &old) {
+            return old.valid && old.pc == entry.pc;
+        });
+    const BTBEntry *existing = hit != set.end() ? &*hit :
+                              vc != victimCache.end() ? &*vc : nullptr;
 
     auto entry_to_write = buildUpdatedEntry(
-        entry, actual_taken, actual_target, existing_ptr, stream);
-    auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
-
-    if (found) {
-        // Update in-place in SRAM set
-        updateExistingInSRAMSet(
-            btb_idx, target_mru[btb_idx], it, ticked_entry, stream.tid);
-    } else if (found_in_vc) {
-        // In-place update in victim cache to avoid ping-ponging between MBTB and VC
-        commitToVictimCache(vc_idx, ticked_entry, stream.tid);
+        entry, actual_taken, actual_target, existing, stream);
+    if (vc != victimCache.end()) {
+        commitToVictimCache(vc - victimCache.begin(),
+            TickedBTBEntry(entry_to_write, curTick()), stream.tid);
         return;
+    }
+    if (buffered) {
+        bufferBTBEntry(entry_to_write, btb_idx, hit, stream);
+        return;
+    }
+    auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
+    if (hit != set.end()) {
+        updateExistingInSRAMSet(
+            btb_idx, heap, hit, ticked_entry, stream.tid);
     } else {
-        // Not found anywhere, replace oldest in SRAM set
         replaceOldestInSRAMSet(
-            sram_id, btb_idx, target_mru[btb_idx], ticked_entry, stream.tid);
+            sram_id, btb_idx, heap, ticked_entry, stream.tid);
     }
 }
 
@@ -1001,34 +991,13 @@ MBTB::writeCounterToSRAM(const CounterWrite &write)
 }
 
 void
-MBTB::bufferUpdateBTBEntry(const BTBEntry &entry, bool taken, Addr target,
-                          const PredictionUpdateContext &context)
+MBTB::bufferBTBEntry(const BTBEntry &entry, Addr setIdx, BTBSetIter hit,
+                     const PredictionUpdateContext &context)
 {
-    btbStats.updateTotal++;
     const unsigned bankId = getResourceBankId(entry.pc);
-    const Addr setIdx = getIndex(entry.pc, context.asidHash, context.tid);
     auto &sram = getSRAMId(entry.pc) == 0 ? sram0 : sram1;
     auto &heap = getSRAMId(entry.pc) == 0 ? mru0[setIdx] : mru1[setIdx];
     auto &set = sram[setIdx];
-    auto hit = std::find_if(set.begin(), set.end(),
-        [&entry](const TickedBTBEntry &old) { return old.pc == entry.pc; });
-
-    if (hit == set.end()) {
-        auto &cache = victimCaches[context.tid];
-        auto vc = std::find_if(cache.begin(), cache.end(),
-            [&entry](const TickedBTBEntry &old) {
-                return old.valid && old.pc == entry.pc;
-            });
-        if (vc != cache.end()) {
-            auto updated = buildUpdatedEntry(entry, taken, target, &*vc, context);
-            commitToVictimCache(vc - cache.begin(),
-                               TickedBTBEntry(updated, curTick()), context.tid);
-            return;
-        }
-    }
-
-    auto updated = buildUpdatedEntry(entry, taken, target,
-                                    hit == set.end() ? nullptr : &*hit, context);
     unsigned way = hit == set.end() ? heap.front() - set.begin() :
                                     hit - set.begin();
     // Pending allocations reserve their destination way for later training,
@@ -1036,7 +1005,7 @@ MBTB::bufferUpdateBTBEntry(const BTBEntry &entry, bool taken, Addr target,
     if (hit == set.end()) {
         auto matches = [&](const EntryWrite &write) {
             return write.bank == bankId && write.set == setIdx &&
-                   write.entry.pc == entry.pc && write.entry.tag == updated.tag;
+                   write.entry.pc == entry.pc && write.entry.tag == entry.tag;
         };
         for (const auto &row : writeBuffers[bankId].rows) {
             for (const auto &slot : row.slots) {
@@ -1058,10 +1027,10 @@ MBTB::bufferUpdateBTBEntry(const BTBEntry &entry, bool taken, Addr target,
     }
 
     const bool writeEntry = hit == set.end() || entry.isIndirect ||
-                            !sameEntryData(*hit, updated);
+                            !sameEntryData(*hit, entry);
     if (writeEntry) {
         incomingEntryWrites.push_back(
-            EntryWrite{bankId, way, setIdx, updated, context.tid});
+            EntryWrite{bankId, way, setIdx, entry, context.tid});
     }
     if (writeEntry || entry.isCond) {
         auto counter = std::find_if(incomingCounterWrites.begin(),
@@ -1075,12 +1044,12 @@ MBTB::bufferUpdateBTBEntry(const BTBEntry &entry, bool taken, Addr target,
             counter = std::prev(incomingCounterWrites.end());
         }
         counter->wayMask[way] = true;
-        counter->counters[way] = updated.ctr;
+        counter->counters[way] = entry.ctr;
         incomingWriteBankMask |= 1u << bankId;
     }
     if (hit != set.end()) {
         btbStats.updateExisting++;
-        if (hit->target != updated.target) {
+        if (hit->target != entry.target) {
             btbStats.updateFixTarget++;
         }
     } else {
