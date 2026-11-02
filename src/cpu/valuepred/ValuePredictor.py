@@ -163,7 +163,7 @@ class EgDiff(ValuePredictor):
     tagBits = Param.Unsigned(14, "Prediction-table PC tag width")
     usefulBits = Param.Unsigned(2, "Prediction-table usefulness width")
     allocationProbabilityDenominator = Param.Unsigned(
-        16, "Allocate a missing entry with probability 1/N")
+        1, "Allocate a missing entry with probability 1/N")
     tickBits = Param.Unsigned(10, "Global usefulness-aging TICK width")
     # Fixed delays only; table/GVQ/writeback ports, banks, bandwidth, and
     # contention are not modeled.
