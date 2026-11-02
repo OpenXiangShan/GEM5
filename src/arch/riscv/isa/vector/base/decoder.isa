@@ -1384,6 +1384,12 @@ decode QUADRANT {
                             vxsatptr);
                     }}, OPIVI, VectorIntegerArithOp);
                 }
+                format VectorIntWideningShiftFormat {
+                    0x35: vwsll_vi({{
+                        Vd_vwu[i] = vwu(Vs2_vu[i + offset])
+                                << (SIMM5 & (2 * sew - 1));
+                    }}, OPIVI, VectorIntegerArithOp);
+                }
                 format VectorIntFormat {
                     0x25: vsll_vi({{
                         Vd_vu[i] = Vs2_vu[i] << ((vu)SIMM5 & (sew - 1) & 0x1f);

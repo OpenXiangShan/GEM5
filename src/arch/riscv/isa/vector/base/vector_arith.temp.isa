@@ -412,6 +412,87 @@ Fault
 
 }};
 
+def template VectorIntWideningShiftMicroDeclare {{
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s
+{
+private:
+    RegId srcRegIdxArr[8];
+    RegId destRegIdxArr[1];
+public:
+    %(class_name)s(ExtMachInst _machInst, uint8_t _microIdx);
+    Fault execute(ExecContext* xc, Trace::InstRecord* traceData)const override;
+    std::string generateDisassembly(Addr pc,
+        const loader::SymbolTable *symtab) const override
+    {
+        std::stringstream ss;
+        ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
+            << registerName(srcRegIdx(0)) << ", " << machInst.vecimm;
+        if (machInst.vm == 0) ss << ", v0.t";
+        return ss.str();
+    }
+};
+
+}};
+
+def template VectorIntWideningShiftMacroDeclare {{
+
+template<typename ElemType>
+class %(class_name)s : public %(base_class)s {
+private:
+    %(reg_idx_arr_decl)s;
+public:
+    %(class_name)s(ExtMachInst _machInst);
+    std::string generateDisassembly(Addr pc,
+        const loader::SymbolTable *symtab) const override
+    {
+        std::stringstream ss;
+        ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
+            << registerName(srcRegIdx(0)) << ", " << machInst.vecimm;
+        if (machInst.vm == 0) ss << ", v0.t";
+        return ss.str();
+    }
+};
+
+}};
+
+def template VectorIntWideningShiftMicroExecute {{
+
+template <typename ElemType>
+Fault
+%(class_name)s<ElemType>::execute(ExecContext* xc,
+                                  Trace::InstRecord* traceData) const
+{
+    using vu [[maybe_unused]] = std::make_unsigned_t<ElemType>;
+    using vi [[maybe_unused]] = std::make_signed_t<ElemType>;
+    using vwu [[maybe_unused]] = typename double_width<vu>::type;
+    using vwi [[maybe_unused]] = typename double_width<vi>::type;
+
+    if (machInst.vill) {
+        return std::make_shared<IllegalInstFault>("VILL is set", machInst);
+    }
+
+    // Each widening micro-op writes one physical destination vector register.
+    // The destination element width is 2 * SEW, so the number of destination
+    // elements handled by one micro-op is independent of LMUL; LMUL is
+    // represented by the number of generated micro-ops.
+    const int32_t micro_vlmax = VLEN / (2 * sew);
+    [[maybe_unused]] const size_t offset =
+        (this->microIdx % 2 == 0) ? 0 : micro_vlmax;
+    uint32_t elem_num_per_vreg = micro_vlmax;
+
+    %(op_decl)s;
+    %(op_rd)s;
+    %(vm_decl_rd)s;
+    COPY_OLD_VD();
+    %(code)s;
+    %(op_wb)s;
+    return NoFault;
+}
+
+}};
+
 def template VectorIntWideningDecodeBlock {{
 
 switch(machInst.vtype8.vsew) {

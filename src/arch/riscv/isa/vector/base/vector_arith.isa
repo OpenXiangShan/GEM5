@@ -444,6 +444,50 @@ def format VectorIntWideningFormat(code, category, *flags) {{
     decode_block = VectorIntWideningDecodeBlock.subst(iop)
 }};
 
+def format VectorIntWideningShiftFormat(code, category, *flags) {{
+    # vwsll.vi: OPIVI widening shift-left. No vs1 and no third vector operand;
+    # the shift amount is the instruction immediate.
+    iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
+                        flags)
+
+    old_vd_idx = 1
+    dest_reg_id = "RegId(VecRegClass, _machInst.vd + _microIdx)"
+    src2_reg_id = "RegId(VecRegClass, _machInst.vs2 + _microIdx / 2)"
+
+    set_dest_reg_idx = setDestWrapper(dest_reg_id)
+
+    set_src_reg_idx = ""
+    set_src_reg_idx += setSrcWrapper(src2_reg_id)
+    set_src_reg_idx += setOldDestWrapper(dest_reg_id)
+    set_src_reg_idx += setSrcVL()
+    set_src_reg_idx += setSrcVm()
+
+    code = wideningAgnosticWrapper(code)
+    code = eiDeclarePrefix(code, widening=True)
+    code = loopWrapper(code)
+
+    vm_decl_rd = vmDeclAndReadData()
+
+    microiop = InstObjParams(name + "_micro",
+        Name + "Micro",
+        'VectorArithMicroInst',
+        {'code': code,
+         'set_dest_reg_idx': set_dest_reg_idx,
+         'set_src_reg_idx': set_src_reg_idx,
+         'vm_decl_rd': vm_decl_rd,
+         'copy_old_vd': copyOldVd(old_vd_idx)},
+        flags)
+
+    header_output = \
+        VectorIntWideningShiftMicroDeclare.subst(microiop) + \
+        VectorFloatMicroConstructor.subst(microiop) + \
+        VectorIntWideningShiftMicroExecute.subst(microiop) + \
+        VectorIntWideningShiftMacroDeclare.subst(iop) + \
+        VectorIntWideningMacroConstructor.subst(iop)
+
+    decode_block = VectorIntWideningDecodeBlock.subst(iop)
+}};
+
 def format VectorIntNarrowingFormat(code, category, *flags) {{
     iop = InstObjParams(name, Name, 'VectorArithMacroInst', {'code': code},
                         flags)
@@ -1469,6 +1513,12 @@ def VectorSlideBase(name, Name, category, code, flags, macro_construtor,
     dest_reg_id = "RegId(VecRegClass, vmi.microVd)"
     src2_reg_id = "RegId(VecRegClass, vmi.microVs2)"
     src3_reg_id = "RegId(VecRegClass, vmi.microVs2 + 1)"
+    if inst_name in ["vslide1up", "vfslide1up"]:
+        # microVs2 names the previous source register for the front segment.
+        # The first micro-op has no previous register, so its back segment
+        # starts at the architectural vs2 instead of microVs2 + 1.
+        src3_reg_id = "RegId(VecRegClass, " \
+            "vmi.rs == 0 ? _machInst.vs2 : vmi.microVs2 + 1)"
 
     src1_ireg_id = "RegId(IntRegClass, _machInst.rs1)"
     src1_freg_id = "RegId(FloatRegClass, _machInst.rs1)"
