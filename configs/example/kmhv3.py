@@ -76,6 +76,7 @@ def setKmhV3Params(args, system):
         cpu.fastFetchAllowBlockedDecode = True
         cpu.enableFastFetchContinuation = cpu.enableFastFetch
         cpu.enableFastFetchMaskRouting = cpu.enableFastFetch
+        cpu.enableFastFetchOnEmpty = cpu.enableFastFetch
         cpu.fastFetchBytes = 64
 
         # decode

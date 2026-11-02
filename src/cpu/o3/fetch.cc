@@ -114,6 +114,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       enableFastFetch(params.enableFastFetch),
       enableFastFetchContinuation(params.enableFastFetchContinuation),
       enableFastFetchMaskRouting(params.enableFastFetchMaskRouting),
+      enableFastFetchOnEmpty(params.enableFastFetchOnEmpty),
       normalDeliveryDelay(params.fetchToDecodeDelay),
       fastFetchBytes(params.fastFetchBytes),
       retryPkt(),
@@ -324,11 +325,15 @@ Fetch::getTraceReaderIndex() const
 std::string Fetch::name() const { return cpu->name() + ".fetch"; }
 
 void
-Fetch::recordFastFetchAccepted(unsigned count, bool continuation)
+Fetch::recordFastFetchAccepted(ThreadID tid, unsigned count, bool continuation)
 {
     ++fetchStats.fastFetchAcceptedBundles;
     fetchStats.fastFetchContinuedBundles += continuation;
     fetchStats.fastFetchAcceptedInsts += count;
+    if (fastFetchEmptyEpoch[tid]) {
+        ++fetchStats.fastFetchEmptyAcceptedBundles;
+        fetchStats.fastFetchEmptyAcceptedInsts += count;
+    }
 }
 
 void
@@ -403,6 +408,12 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Fast fetch bundles accepted after the first recovery bundle"),
     ADD_STAT(fastFetchAcceptedInsts, statistics::units::Count::get(),
              "Instructions accepted from the fast fetch channel"),
+    ADD_STAT(fastFetchEmptyRearms, statistics::units::Count::get(),
+             "Fast fetch opportunities rearmed after IBuffer drains"),
+    ADD_STAT(fastFetchEmptyAcceptedBundles, statistics::units::Count::get(),
+             "Fast bundles accepted in IBuffer-empty opportunities"),
+    ADD_STAT(fastFetchEmptyAcceptedInsts, statistics::units::Count::get(),
+             "Instructions accepted in IBuffer-empty fast opportunities"),
     ADD_STAT(fastFetchDroppedBundles, statistics::units::Count::get(),
              "Fast fetch bundles dropped by Decode"),
     ADD_STAT(fastFetchNormalDedupInsts, statistics::units::Count::get(),
@@ -2322,6 +2333,12 @@ Fetch::sendInstructionsToDecode()
             }
         }
 
+        if (enableFastFetch && enableFastFetchMaskRouting &&
+            enableFastFetchOnEmpty && !fastFetchPending[tid] && !insts.empty() &&
+            fetchStatus[tid] == Running && !redirectPending[tid] &&
+            !cpu->isDraining() && cpu->getDecode()->canStartEmptyFastFetch(tid)) {
+            armFastFetch(tid, true);
+        }
         const bool first_fast = enableFastFetchMaskRouting && !insts.empty() &&
                                 prepareFastFetchMask(insts.front());
         const bool split_block = first_fast;
@@ -3402,6 +3419,7 @@ Fetch::clearFastFetchState(ThreadID tid)
                 fastFetchCandidates[tid].size());
     }
     fastFetchPending[tid] = false;
+    fastFetchEmptyEpoch[tid] = false;
     fastFetchReady[tid] = false;
     fastFetchContinuing[tid] = false;
     fastFetchTargetId[tid] = 0;
@@ -3412,16 +3430,31 @@ Fetch::clearFastFetchState(ThreadID tid)
 }
 
 void
-Fetch::armFastFetch(ThreadID tid)
+Fetch::armFastFetch(ThreadID tid, bool on_empty)
 {
-    clearFastFetchState(tid);
+    if (on_empty) {
+        fastFetchContinuing[tid] = false;
+    } else {
+        clearFastFetchState(tid);
+    }
     if (enableFastFetchMaskRouting) {
         ++fastFetchEpoch[tid];
         panic_if(fastFetchEpoch[tid] == 0, "Fast fetch epoch overflow");
     }
     fastFetchPending[tid] = enableFastFetch;
-    DPRINTF(FastFetch, "arm tid=%u enabled=%u bytes=%u epoch=%llu\n",
-            tid, fastFetchPending[tid], fastFetchBytes, fastFetchEpoch[tid]);
+    fastFetchEmptyEpoch[tid] = on_empty;
+    if (on_empty) {
+        ++fetchStats.fastFetchEmptyRearms;
+        DPRINTF(FastFetch,
+                "rearm-empty tid=%u epoch=%llu block=%llu block_valid=%u "
+                "block_insts=%u stopped=%u\n",
+                tid, fastFetchEpoch[tid], fastFetchMaskBlockId[tid],
+                fastFetchBlockValid[tid], fastFetchBlockInsts[tid],
+                fastFetchBlockStopped[tid]);
+    } else {
+        DPRINTF(FastFetch, "arm tid=%u enabled=%u bytes=%u epoch=%llu\n",
+                tid, fastFetchPending[tid], fastFetchBytes, fastFetchEpoch[tid]);
+    }
 }
 
 void

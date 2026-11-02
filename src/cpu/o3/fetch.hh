@@ -433,7 +433,7 @@ class Fetch
     void sendInstructionsToDecode();
 
     void clearFastFetchState(ThreadID tid);
-    void armFastFetch(ThreadID tid);
+    void armFastFetch(ThreadID tid, bool on_empty = false);
     void collectFastFetchCandidate(const DynInstPtr &instruction);
     bool prepareFastFetchMask(const DynInstPtr &instruction);
 
@@ -624,7 +624,7 @@ class Fetch
     bool isTraceInstruction(InstSeqNum seqNum) const;
     void cleanupTraceMetadataOnCommit(InstSeqNum seqNum);
 
-    void recordFastFetchAccepted(unsigned count, bool continuation);
+    void recordFastFetchAccepted(ThreadID tid, unsigned count, bool continuation);
     void recordFastFetchDropped(const DynInstPtr &instruction);
     void recordFastFetchDedup(unsigned count);
     uint64_t getFastFetchEpoch(ThreadID tid) const
@@ -844,6 +844,7 @@ class Fetch
     const bool enableFastFetch;
     const bool enableFastFetchContinuation;
     const bool enableFastFetchMaskRouting;
+    const bool enableFastFetchOnEmpty;
     const Cycles normalDeliveryDelay;
 
     /** Maximum number of bytes covered by one fast-fetch candidate block. */
@@ -1186,6 +1187,7 @@ class Fetch
 
     /** Fast-fetch state after a backend recovery. */
     bool fastFetchPending[MaxThreads]{};
+    bool fastFetchEmptyEpoch[MaxThreads]{};
     bool fastFetchReady[MaxThreads]{};
     bool fastFetchContinuing[MaxThreads]{};
     unsigned fastFetchTargetId[MaxThreads]{};
@@ -1271,6 +1273,9 @@ class Fetch
         statistics::Scalar fastFetchAcceptedBundles;
         statistics::Scalar fastFetchContinuedBundles;
         statistics::Scalar fastFetchAcceptedInsts;
+        statistics::Scalar fastFetchEmptyRearms;
+        statistics::Scalar fastFetchEmptyAcceptedBundles;
+        statistics::Scalar fastFetchEmptyAcceptedInsts;
         statistics::Scalar fastFetchDroppedBundles;
         statistics::Scalar fastFetchNormalDedupInsts;
         statistics::Scalar fastFetchPredecodeChecked;

@@ -119,6 +119,8 @@ class Decode
         return fixedbuffer[tid].empty() && stallBuffer[tid].empty();
     }
 
+    bool canStartEmptyFastFetch(ThreadID tid) const;
+
     /** Sets pointer to list of active threads. */
     void setActiveThreads(std::list<ThreadID> *at_ptr);
 

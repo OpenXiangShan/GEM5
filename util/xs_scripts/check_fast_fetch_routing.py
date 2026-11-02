@@ -8,6 +8,8 @@ import re
 def check_trace(path, width=8, byte_budget=64):
     routed = {}
     block_counts = Counter()
+    carried_block_counts = Counter()
+    pending_normal_packets = {}
     closed_epochs = set()
     commits = []
     fusion_pcs = {}
@@ -21,16 +23,34 @@ def check_trace(path, width=8, byte_budget=64):
             continue
         tick, kind, detail = match.groups()
         fields = dict(re.findall(r"(\w+)=([^ ]+)", detail))
-        if kind == "send":
+        if kind == "rearm-empty":
+            assert not any(pending_normal_packets.values()), (
+                path,
+                fields,
+                "rearm overtakes an in-flight normal packet",
+            )
+            if fields["block_valid"] == "1":
+                block = (fields["epoch"], fields["block"])
+                carried_block_counts[block] = int(fields["block_insts"])
+            totals["empty_rearms"] += 1
+        elif kind == "send":
             sends_per_tick[tick] += 1
             assert sends_per_tick[tick] <= width, (path, tick, "send width")
         elif kind == "packet":
             assert int(fields["size"]) <= width
+            pending_normal_packets[int(fields["ready"])] = int(fields["size"])
         elif kind == "route":
             offered = int(fields["offered"], 0)
             valid = int(fields["valid"], 0)
             fast = int(fields["fast"], 0)
             normal = int(fields["normal"], 0)
+            cycle = int(fields["cycle"])
+            pending_normal_packets = {
+                ready: size
+                for ready, size in pending_normal_packets.items()
+                if ready > cycle
+            }
+            pending_normal_packets[int(fields["ready"])] = normal
             assert not fast & normal
             assert fast | normal == (1 << int(fields["size"])) - 1
             assert not fast & ~valid
@@ -56,7 +76,9 @@ def check_trace(path, width=8, byte_budget=64):
             if fields["fast"] == "1":
                 block = (fields["epoch"], fields["ftq"])
                 block_counts[block] += 1
-                assert block_counts[block] <= width, (path, block)
+                assert (
+                    block_counts[block] + carried_block_counts[block] <= width
+                ), (path, block, "per-block budget reset on empty")
                 start = int(fields["block_start"], 0)
                 end = int(fields["end"], 0)
                 assert start <= int(fields["pc"], 0) < end
@@ -69,6 +91,7 @@ def check_trace(path, width=8, byte_budget=64):
             assert int(fields["cycle"]) >= ready
             if kind == "normal-enqueue":
                 assert int(fields["cycle"]) == ready
+                pending_normal_packets.pop(ready, None)
                 totals["normal_enqueued"] += 1
         elif kind == "decode":
             sequence = int(fields["seq"])

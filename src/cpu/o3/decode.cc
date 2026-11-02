@@ -463,7 +463,7 @@ Decode::acceptFastFetch()
     DPRINTF(Decode,
             "[tid:%i] Fast fetch accepted %u instructions, first seq=%llu\n",
             tid, count, fromFastFetch->fastFetchInsts[0]->seqNum);
-    fetch_ptr->recordFastFetchAccepted(count, continuation);
+    fetch_ptr->recordFastFetchAccepted(tid, count, continuation);
     DPRINTF(FastFetch,
             "accept tid=%u count=%u offered=%u first=%llu last=%llu "
             "ftq=%llu blocked=%u continuation=%u\n",
@@ -849,7 +849,7 @@ Decode::routeFastFetchPacket()
                    count == static_cast<unsigned>(packet.size);
         fastFetchBlockComplete[tid] = complete;
         fastFetchContinuing[tid] = true;
-        fetch_ptr->recordFastFetchAccepted(count, continuation);
+        fetch_ptr->recordFastFetchAccepted(tid, count, continuation);
     } else if (offered) {
         fetch_ptr->recordFastFetchDropped(packet.insts[0]);
     }
@@ -896,6 +896,23 @@ Decode::routeFastFetchPacket()
                 packet.insts[index]->getFetchBlockStartPC(),
                 packet.insts[index]->getFetchBlockEndPC());
     }
+}
+
+bool
+Decode::canStartEmptyFastFetch(ThreadID tid) const
+{
+    if (!fastFetchBufferEmpty(tid) || stallSig->blockDecode[tid] ||
+        fromCommit->commitInfo[tid].squash ||
+        fromCommit->commitInfo[tid].robSquashing) {
+        return false;
+    }
+    for (int offset = 1; offset < static_cast<int>(fetchToDecodeDelay); ++offset) {
+        const auto &packet = *fetchQueue->getWire(-offset);
+        if (packet.size && packet.normalFetchMask.any()) {
+            return false;
+        }
+    }
+    return true;
 }
 
 void

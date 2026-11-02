@@ -26,6 +26,23 @@ stays normal, including already in-flight fast offers. A twelve-instruction
 block therefore sends eight fast instructions and four normal instructions on
 separate cycles; it does not drain the remaining four through fast.
 
+`enableFastFetchOnEmpty` optionally permits a new opportunity without a redirect.
+It defaults to false in `BaseO3CPU` and is enabled in KMHV3. Fetch can rearm before
+sending its next packet when both Decode buffers are empty, Decode is unblocked,
+no commit squash or ROB squash is active, and no older normal packet remains in
+the forward link. Unrouted packets conservatively count as normal. A routed fast
+packet with no normal lanes does not occupy that link for this check. The current
+normal input has already been consumed by Decode before Fetch performs the check.
+Pending redirects, trap/idle states and CPU drain prevent empty-buffer rearming.
+
+An empty-buffer opportunity receives a new monotonically increasing epoch, so
+stale stop feedback cannot close it. It preserves the Fetch-side instruction
+budget and control cutoff for the current FTQ block: emptying the buffer cannot
+make the ninth instruction of that block fast. Byte offsets still refer to the
+original block start. Normal instructions retain the original delivery delay,
+buffer capacity and scan accounting. Set `enableFastFetchOnEmpty=False` to
+reproduce recovery-only continuation.
+
 Predicted-not-taken conditional branches do not truncate the prefix. Existing
 fault, vector, predicted-taken, block-boundary and control restrictions remain.
 Packet-local fusion boundaries can shorten the fast prefix. No cross-packet
@@ -61,7 +78,8 @@ when `fastFetchAllowBlockedDecode` is true; further fast packets are disabled.
 Each eligible recovery receives a monotonically increasing 64-bit epoch.
 Packets and stop feedback are checked against that epoch. Decode invalidates
 old opportunities on squash; only Fetch's later eligible backend recovery can
-arm a new one. Rejected old packets cannot disable a newer epoch.
+arm a new one, unless the optional empty-buffer checks above permit rearming.
+Rejected old packets cannot disable a newer epoch.
 
 Normal instructions retain the original squash processing and Decode scan
 bandwidth, including instructions already marked invalid in flight. An invalid
@@ -90,6 +108,12 @@ As a negative control, `fastFetchBytes=1` permits no RISC-V instruction into
 fast. It must reproduce the original normal CPU counters, as must mask routing
 with `enableFastFetch=False`. An unavailable first candidate does not split a
 normal packet at an FTQ boundary.
+
+`fastFetchEmptyRearms`, `fastFetchEmptyAcceptedBundles`, and
+`fastFetchEmptyAcceptedInsts` separate empty-buffer opportunities from backend
+recovery opportunities. `rearm-empty` trace events record the new epoch and its
+inherited per-block budget; the routing checker verifies that this budget is not
+reset by rearming.
 
 Whole-CPU drain remains limited by the existing empty `Fetch::drainStall()` and
 `Fetch::drainResume()` implementations. A mid-execution drain probe does not
