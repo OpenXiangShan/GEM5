@@ -74,6 +74,7 @@ def setKmhV3IdealParams(args, system):
         cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
         cpu.smtBorrowDonorReserveEntries = args.smt_rob_donor_entry
         cpu.smtBorrowBaseReserveEntries = args.smt_rob_base_entry
+        cpu.smtBorrowDonorHoldCycles = args.smt_rob_donor_hold_cycles
         cpu.robWalkPolicy = 'NaiveCpt' # ideal core recovers via RAT checkpoints
 
         # lsu
@@ -89,7 +90,7 @@ def setKmhV3IdealParams(args, system):
         cpu.smtSQBorrowBaseReserveEntries = args.smt_sq_base_entry
         cpu.smtLQBorrowDonorHoldCycles = args.smt_lq_donor_hold_cycles
         cpu.smtSQBorrowDonorHoldCycles = args.smt_sq_donor_hold_cycles
-        cpu.lsqBorrowDonorSkipRenameGate = args.lsq_borrow_donor_skip_rename_gate
+        cpu.lsqBorrowDonorSkipRenameGate = not args.lsq_borrow_donor_enable_rename_gate
 
         # value predictor
         cpu.valuePred = CompositeValuePredictor(
@@ -102,8 +103,8 @@ def setKmhV3IdealParams(args, system):
                         )
 
         # lsq
-        cpu.LQEntries = 120
-        cpu.SQEntries = 64
+        cpu.LQEntries = args.lq_total_entry
+        cpu.SQEntries = args.sq_total_entry
         cpu.StoreQueueMultiple = 2
         cpu.RARQEntries = 96
         cpu.RAWQEntries = 56
