@@ -46,6 +46,7 @@
 #include <cstring>
 #include <deque>
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include "arch/generic/decoder.hh"
@@ -763,7 +764,7 @@ class Fetch
     /** FIFO storing resolve entries waiting for BPU training. */
     std::deque<ResolveQueueEntry> resolveQueue;
 
-    std::array<InstSeqNum, MaxThreads> resolveSquashCutoff;
+    std::array<std::optional<InstSeqNum>, MaxThreads> resolveSquashCutoff{};
 
     /** Trace-mode implementation owner (optional, enabled by params). */
     std::unique_ptr<TraceFetch> traceFetch;
