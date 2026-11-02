@@ -66,7 +66,7 @@ _instantiated = False # Has m5.instantiate() been called?
 
 # The final call to instantiate the SimObject graph and initialize the
 # system.
-def instantiate(ckpt_dir=None):
+def instantiate(pmem_file_path,mem_trace_file,ckpt_dir=None):
     global _instantiated
     from m5 import options
 
@@ -89,7 +89,6 @@ def instantiate(ckpt_dir=None):
 
     # Unproxy in sorted order for determinism
     for obj in root.descendants(): obj.unproxyParams()
-
     if options.dump_config:
         ini_file = open(os.path.join(options.outdir, options.dump_config), 'w')
         # Print ini sections in sorted order for easier diffing
@@ -148,6 +147,9 @@ def instantiate(ckpt_dir=None):
         for obj in root.descendants(): obj.loadState(ckpt)
     else:
         for obj in root.descendants(): obj.initState()
+        for obj in root.descendants():
+            if str(obj) == "system.l3.tags" and pmem_file_path is not None and mem_trace_file is not None:
+                obj.warmupState(pmem_file_path,mem_trace_file)
 
     # Check to see if any of the stat events are in the past after resuming from
     # a checkpoint, If so, this call will shift them to be at a valid time.
