@@ -123,17 +123,22 @@ def template VConfExecute {{
         tc->setMiscReg(MISCREG_VSTART, 0);
 
         uint32_t vlen = xc->readMiscReg(MISCREG_VLENB) * 8;
-        uint32_t vlmax = getVlmax(requested_vtype, vlen);
 
+        // RVV reserves SEW encodings 100..111 (vsew > 3). They must set
+        // vill instead of reaching getSew(), which asserts vsew <= 3.
+        // Check the raw encoding before anything calls getVlmax()/getSew(),
+        // and treat every reserved bit above bit 7 as reserved too.
         VTYPE new_vtype = requested_vtype;
+        const bool reserved_vtype =
+            new_vtype.vsew > 3 || (requested_vtype >> 8) != 0;
+        uint32_t vlmax = reserved_vtype ?
+            0 : getVlmax(requested_vtype, vlen);
         {
-            vlmax = getVlmax(new_vtype, vlen);
             float vflmul = getVflmul(new_vtype.vlmul);
-            uint32_t sew = getSew(new_vtype.vsew);
             uint32_t new_vill =
+                reserved_vtype ||
                 !(vflmul >= 0.125 && vflmul <= 8) ||
-                sew > std::min(vflmul, 1.0f) * ELEN ||
-                (requested_vtype >> 8) != 0;
+                getSew(new_vtype.vsew) > std::min(vflmul, 1.0f) * ELEN;
 
             if (new_vill) {
                 vlmax = 0;

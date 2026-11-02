@@ -1389,14 +1389,29 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     }
 
     // restore vtype
-    uint8_t restored_vtype = cpu->readMiscReg(RiscvISA::MISCREG_VTYPE, tid);
+    // Keep the full 64-bit VTYPE: reading it into a uint8_t dropped vill
+    // (bit 63), so a squash could resurrect a vill-cleared vtype whose
+    // vtype8 still carried a reserved SEW. Vector instructions decoded after
+    // the squash then reached getSew() with vsew > 3 and asserted.
+    RiscvISA::VTYPE restored_vtype =
+        cpu->readMiscReg(RiscvISA::MISCREG_VTYPE, tid);
     for (auto& it : cpu->instList) {
         if (!it->isSquashed() &&
             it->seqNum <= seqNum &&
             it->staticInst->isVectorConfig()) {
             auto vset = static_cast<RiscvISA::VConfOp*>(it->staticInst.get());
             if (vset->vtypeIsImm) {
+                // earlyVtype only carries vtype8. Re-derive vill from it
+                // rather than inheriting the previous architectural vill:
+                // a vsetvli with a reserved SEW must restore as vill=1 with
+                // vtype8 cleared, otherwise the following vector
+                // instructions decode with vsew > 3 and getSew() asserts.
+                restored_vtype = 0;
                 restored_vtype = vset->earlyVtype;
+                if (restored_vtype.vsew > 3) {
+                    restored_vtype = 0;
+                    restored_vtype.vill = 1;
+                }
             }
         }
     }

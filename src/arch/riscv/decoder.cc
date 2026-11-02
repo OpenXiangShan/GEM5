@@ -46,6 +46,12 @@ void Decoder::reset()
     emi = 0;
     instDone = false;
     outOfBytes = true;
+    // Vector instructions decode against machVtype, so it must start in a
+    // well-defined state: vill set and vtype8 cleared, matching the
+    // architectural reset value of vtype.
+    machVtype = 0;
+    machVtype.vill = 1;
+    vtypeReady = true;
 }
 
 void
@@ -137,6 +143,18 @@ Decoder::setPCStateWithInstDesc(const bool &compressed, PCStateBase &_next_pc)
 void
 Decoder::setVtype(VTYPE vtype) {
     vtypeReady = true;
+    // The decoder feeds vtype8 into every following vector instruction, and
+    // the macro-op constructors call getSew() on it unconditionally. A
+    // vsetvli immediate may encode a reserved SEW (vsew > 3); storing that
+    // raw value would make getSew() assert before the instruction ever
+    // reaches its own vill check. Normalize to the architectural vill form
+    // here: vill set, vtype8 cleared.
+    if (vtype.vsew > 3) {
+        VTYPE vill_vtype = 0;
+        vill_vtype.vill = 1;
+        this->machVtype = vill_vtype;
+        return;
+    }
     this->machVtype = vtype;
 }
 
