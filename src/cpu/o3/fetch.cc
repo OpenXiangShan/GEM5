@@ -122,6 +122,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       finishTranslationEvents(), fetchStats(_cpu, this),
       valuePred(params.valuePred)
 {
+    resolveSquashCutoff.fill(UINT64_MAX);
+
     // Validate public CPU parameters here as well as in the XiangShan CLI.
     // The predictor pointer is wired later by CPU, so check its enable parameter
     // rather than the still-null pointer. These checks must survive NDEBUG.
@@ -1744,7 +1746,7 @@ Fetch::tick()
 bool
 Fetch::initializeTickState()
 {
-    resolveSquashCutoff.fill(std::nullopt);
+    resolveSquashCutoff.fill(UINT64_MAX);
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
     bool status_change = false;
@@ -2806,8 +2808,7 @@ Fetch::processResolveUpdates()
             squashResolveQueue(tid, iewInfo.redirectLastValidSeqNum);
         }
         for (const auto &resolved : iewInfo.resolvedCFIs) {
-            if (!resolveSquashCutoff[tid] ||
-                resolved.seqNum <= *resolveSquashCutoff[tid]) {
+            if (resolved.seqNum <= resolveSquashCutoff[tid]) {
                 enqueueSize++;
             } else {
                 fetchStats.resolveSquashedEvents++;
@@ -2815,7 +2816,7 @@ Fetch::processResolveUpdates()
                         "[tid:%i] Dropping resolved branch seq=%llu PC=%#lx "
                         "past squash cutoff=%llu\n",
                         tid, resolved.seqNum, resolved.pc,
-                        *resolveSquashCutoff[tid]);
+                        resolveSquashCutoff[tid]);
             }
         }
     }
@@ -2830,8 +2831,7 @@ Fetch::processResolveUpdates()
             for (const auto &resolved : incoming) {
                 panic_if(resolved.tid != tid,
                          "Resolve event arrived on the wrong thread wire");
-                if (resolveSquashCutoff[tid] &&
-                    resolved.seqNum > *resolveSquashCutoff[tid]) {
+                if (resolved.seqNum > resolveSquashCutoff[tid]) {
                     continue;
                 }
                 bool merged = false;
@@ -2881,10 +2881,8 @@ void
 Fetch::squashResolveQueue(ThreadID tid, InstSeqNum squashSeqNum)
 {
     auto &cutoff = resolveSquashCutoff[tid];
-    if (cutoff) {
-        squashSeqNum = std::min(squashSeqNum, *cutoff);
-    }
-    cutoff = squashSeqNum;
+    cutoff = std::min(cutoff, squashSeqNum);
+    squashSeqNum = cutoff;
     DPRINTF(Fetch, "[tid:%i] Resolve queue squash cutoff=%llu\n",
             tid, squashSeqNum);
     for (auto entry = resolveQueue.begin(); entry != resolveQueue.end();) {
