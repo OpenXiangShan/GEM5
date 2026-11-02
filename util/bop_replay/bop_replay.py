@@ -189,7 +189,7 @@ def replay_student_decisions(events: list[ReplayEvent]) -> list[dict[str, Any]]:
             and event.student_selected_valid
             and event.student_selected_enable
         )
-        if event.candidate_rank == 2:
+        if event.candidate_rank >= 2:
             expected_offset = event.student_selected_offset
             expected_issue = student_issue and expected_offset != 0
         else:

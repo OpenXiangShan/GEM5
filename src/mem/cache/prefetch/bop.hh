@@ -205,14 +205,17 @@ class BOP : public Queued
         const Tick studentDelayTicks;
 
         std::vector<StudentOffsetEntry> studentPool;
+        struct StudentIssueCandidate
+        {
+            int64_t offset;
+            bool enabled;
+        };
+        std::vector<StudentIssueCandidate> studentAdditionalCandidates;
         std::vector<uint64_t> studentFilterBits;
         std::deque<StudentDelayQueueEntry> studentDelayQueue;
         int64_t studentSelectedOffset = 1;
         bool studentSelectedValid = false;
         bool studentSelectedEnable = false;
-        int64_t studentSecondOffset = 0;
-        bool studentSecondValid = false;
-        bool studentSecondEnable = false;
         uint32_t studentPhaseTrainCount = 0;
         bool replayMetaWritten = false;
         uint64_t replayEventOrder = 0;
@@ -296,7 +299,6 @@ class BOP : public Queued
         void studentEnqueuePrediction(Addr train_addr, size_t bit_idx,
                                       int64_t offset);
         size_t studentPickBestIndex() const;
-        size_t studentPickSecondIndex(size_t best_idx) const;
         size_t studentPickWorstIndex() const;
         size_t studentPickEvictIndex() const;
         void studentObserveTrainAddr(Addr addr);
@@ -323,6 +325,8 @@ class BOP : public Queued
             statistics::Distribution studentSelectedOffsetDist;
             statistics::Distribution studentSecondOffsetDist;
             statistics::Distribution studentSecondCovRatioPctDist;
+            statistics::Distribution studentQualifiedRankDist;
+            statistics::Distribution studentEnqueuedRankDist;
             statistics::Distribution studentPoolOccupancyDist;
             statistics::Distribution studentCovRatioPctDist;
             statistics::Distribution studentWorstCovRatioPctDist;

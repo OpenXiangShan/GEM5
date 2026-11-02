@@ -317,6 +317,10 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         action="store_true",
                         default=False,
                         help="enable the teacher/student BOP coverage learner")
+    parser.add_argument("--bop-student-issue-top-n", type=int, default=2,
+                        help="maximum L2 small BOP student offsets per access")
+    parser.add_argument("--bop-student-pool-size", type=int, default=8,
+                        help="L2 small BOP student candidate pool size")
     parser.add_argument("--disable-bop-pc-control",
                         action="store_true",
                         default=False,

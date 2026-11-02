@@ -554,9 +554,14 @@ def _configure_l2_bop_cqf(prefetcher, options):
 def _configure_l2_bop_student_cover(prefetcher, options):
     if not getattr(options, 'enable_bop_student_cover', False):
         return
+    if not 1 <= options.bop_student_pool_size <= 64:
+        fatal('BOP student pool size must be in [1, 64]')
+    if not 1 <= options.bop_student_issue_top_n <= options.bop_student_pool_size:
+        fatal('BOP student issue top N must be in [1, student pool size]')
     for bop in (prefetcher.bop_large, prefetcher.bop_small):
         bop.enable_student_cover = True
-    prefetcher.bop_small.student_issue_top_n = 2
+    prefetcher.bop_small.student_pool_size = options.bop_student_pool_size
+    prefetcher.bop_small.student_issue_top_n = options.bop_student_issue_top_n
     if getattr(options, 'disable_bop_pc_control', False):
         for bop in (prefetcher.bop_large, prefetcher.bop_small):
             for attr in (

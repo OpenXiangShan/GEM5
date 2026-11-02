@@ -151,8 +151,10 @@ BOP::BOP(const BOPPrefetcherParams &p)
     fatal_if(enableStudentCover && studentPoolSize > 64,
              "%s: student_pool_size=%u exceeds the 64-bit coverage mask",
              name(), studentPoolSize);
-    fatal_if(studentIssueTopN < 1 || studentIssueTopN > 2,
-             "%s: student_issue_top_n must be 1 or 2", name());
+    fatal_if(enableStudentCover &&
+                 (studentIssueTopN < 1 || studentIssueTopN > studentPoolSize),
+             "%s: student_issue_top_n must be in [1, student_pool_size]",
+             name());
     fatal_if(enableStudentCover && !isPowerOf2(studentFilterEntries),
              "%s: student_filter_entries must be a power of two", name());
     fatal_if(enableStudentCover && studentHashCount == 0,
@@ -179,6 +181,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
     rrRight.resize(rrEntries);
     if (enableStudentCover) {
         studentPool.reserve(studentPoolSize);
+        studentAdditionalCandidates.reserve(studentIssueTopN - 1);
         studentFilterBits.assign(studentFilterEntries, 0);
     }
 
@@ -694,31 +697,6 @@ BOP::studentPickBestIndex() const
 }
 
 size_t
-BOP::studentPickSecondIndex(size_t best_idx) const
-{
-    assert(studentPool.size() >= 2);
-    size_t second = best_idx == 0 ? 1 : 0;
-    auto second_key = std::make_tuple(studentPool[second].curPhaseCov,
-                                      studentPool[second].conf,
-                                      -std::llabs(studentPool[second].offset),
-                                      -studentPool[second].offset);
-    for (size_t index = 0; index < studentPool.size(); ++index) {
-        if (index == best_idx) {
-            continue;
-        }
-        const auto key = std::make_tuple(studentPool[index].curPhaseCov,
-                                         studentPool[index].conf,
-                                         -std::llabs(studentPool[index].offset),
-                                         -studentPool[index].offset);
-        if (key > second_key) {
-            second = index;
-            second_key = key;
-        }
-    }
-    return second;
-}
-
-size_t
 BOP::studentPickWorstIndex() const
 {
     assert(!studentPool.empty());
@@ -840,8 +818,7 @@ BOP::studentOnTeacherPhaseEnd(int64_t teacher_best_offset)
     }
     stats.studentPhaseCount++;
     stats.studentPoolOccupancyDist.sample(studentPool.size());
-    studentSecondValid = false;
-    studentSecondEnable = false;
+    studentAdditionalCandidates.clear();
     if (!studentPool.empty()) {
         const size_t best = studentPickBestIndex();
         const size_t worst = studentPickWorstIndex();
@@ -861,21 +838,43 @@ BOP::studentOnTeacherPhaseEnd(int64_t teacher_best_offset)
         studentSelectedOffset = studentPool[selected].offset;
         studentSelectedValid = true;
         studentSelectedEnable = coverage >= studentCovThreshold;
-        if (studentIssueTopN == 2 && studentPool.size() >= 2 &&
-            !prefer_large) {
-            const size_t second = studentPickSecondIndex(best);
-            const double second_coverage = studentPhaseTrainCount == 0 ? 0.0 :
-                static_cast<double>(studentPool[second].curPhaseCov) /
-                studentPhaseTrainCount;
-            studentSecondOffset = studentPool[second].offset;
-            studentSecondValid = true;
-            studentSecondEnable = studentSelectedEnable &&
-                                  second_coverage >= studentCovThreshold;
-            stats.studentSecondCovRatioPctDist.sample(
-                static_cast<uint64_t>(std::round(second_coverage * 100.0)));
-            if (studentSecondEnable) {
-                stats.studentSecondIssueCount++;
-                stats.studentSecondOffsetDist.sample(studentSecondOffset);
+        if (studentIssueTopN > 1 && !prefer_large) {
+            std::vector<size_t> ranked;
+            ranked.reserve(studentPool.size() - 1);
+            for (size_t index = 0; index < studentPool.size(); ++index) {
+                if (index != selected) {
+                    ranked.push_back(index);
+                }
+            }
+            const auto rank_key = [this](size_t index) {
+                const auto &entry = studentPool[index];
+                return std::make_tuple(entry.curPhaseCov, entry.conf,
+                                       -std::llabs(entry.offset), -entry.offset);
+            };
+            std::stable_sort(ranked.begin(), ranked.end(),
+                [&](size_t lhs, size_t rhs) {
+                    return rank_key(lhs) > rank_key(rhs);
+                });
+            for (size_t rank = 0;
+                 rank < ranked.size() && rank + 1 < studentIssueTopN; ++rank) {
+                const auto &entry = studentPool[ranked[rank]];
+                const double candidate_coverage = studentPhaseTrainCount == 0
+                    ? 0.0 : static_cast<double>(entry.curPhaseCov) /
+                        studentPhaseTrainCount;
+                const bool enabled = studentSelectedEnable &&
+                    candidate_coverage >= studentCovThreshold;
+                studentAdditionalCandidates.push_back({entry.offset, enabled});
+                if (rank == 0) {
+                    stats.studentSecondCovRatioPctDist.sample(
+                        static_cast<uint64_t>(std::round(candidate_coverage * 100.0)));
+                    if (enabled) {
+                        stats.studentSecondIssueCount++;
+                        stats.studentSecondOffsetDist.sample(entry.offset);
+                    }
+                }
+                if (enabled) {
+                    stats.studentQualifiedRankDist.sample(rank + 2);
+                }
             }
         }
         stats.studentCovRatioPctDist.sample(
@@ -885,6 +884,7 @@ BOP::studentOnTeacherPhaseEnd(int64_t teacher_best_offset)
         if (studentSelectedEnable) {
             stats.studentIssueCount++;
             stats.studentSelectedOffsetDist.sample(studentSelectedOffset);
+            stats.studentQualifiedRankDist.sample(1);
         } else {
             stats.studentFallbackCount++;
         }
@@ -1093,8 +1093,6 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     const bool algorithm_issue = (teacher_issue || student_issue) &&
         selected_offset != 0;
 
-    const bool second_issue = studentSecondValid && studentSecondEnable &&
-                              studentSecondOffset != 0;
     const auto issue_candidate = [&](int64_t offset, unsigned rank,
                                      bool enabled, bool candidate_student_issue,
                                      bool candidate_teacher_issue) {
@@ -1116,9 +1114,12 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
                 const bool generated = sendPFWithFilter(
                     pfi, prefetch_addr, addresses, 32,
                     PrefetchSourceType::HWP_BOP);
-                if (rank == 2 && page_allowed &&
+                if (candidate_student_issue && page_allowed &&
                     (!standaloneL1 || generated)) {
-                    stats.studentSecondEnqueued++;
+                    stats.studentEnqueuedRankDist.sample(rank);
+                    if (rank == 2) {
+                        stats.studentSecondEnqueued++;
+                    }
                 }
                 DPRINTF(BOPPrefetcher,
                         "Generated prefetch %#lx offset: %lld rank %u\n",
@@ -1133,17 +1134,18 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
                 replay_access_seq, curTick(), bop_name.c_str(), bop_kind,
                 addr, pfi.hasPC() ? pfi.getPC() : 0, pfi.hasPC(), late,
                 bestOffset, candidate_teacher_issue, candidate_student_issue,
-                rank == 1 ? studentSelectedValid : studentSecondValid,
-                rank == 1 ? studentSelectedEnable : studentSecondEnable,
-                rank == 1 ? studentSelectedOffset : studentSecondOffset,
+                rank == 1 ? studentSelectedValid : true,
+                rank == 1 ? studentSelectedEnable : enabled,
+                rank == 1 ? studentSelectedOffset : offset,
                 offset, enabled, cqf_allowed, rank, page_allowed);
         }
     };
     issue_candidate(selected_offset, 1, algorithm_issue, student_issue,
                     teacher_issue);
-    if (studentIssueTopN == 2 && studentSecondValid) {
-        issue_candidate(studentSecondOffset, 2, second_issue,
-                        second_issue, false);
+    for (size_t index = 0; index < studentAdditionalCandidates.size(); ++index) {
+        const auto &candidate = studentAdditionalCandidates[index];
+        const bool enabled = candidate.enabled && candidate.offset != 0;
+        issue_candidate(candidate.offset, index + 2, enabled, enabled, false);
     }
     if (!algorithm_issue) {
         stats.throttledCount++;
@@ -1232,6 +1234,10 @@ BOP::BopStats::BopStats(statistics::Group *parent,
                "Second-ranked student offsets passing coverage threshold"),
       ADD_STAT(studentSecondCovRatioPctDist, statistics::units::Ratio::get(),
                "Second-ranked student coverage percentage at phase end"),
+      ADD_STAT(studentQualifiedRankDist, statistics::units::Count::get(),
+               "Student offsets passing coverage threshold by rank"),
+      ADD_STAT(studentEnqueuedRankDist, statistics::units::Count::get(),
+               "Student offsets added to the BOP request buffer by rank"),
       ADD_STAT(studentPoolOccupancyDist, statistics::units::Count::get(),
                "Student pool occupancy at teacher phase end"),
       ADD_STAT(studentCovRatioPctDist, statistics::units::Ratio::get(),
@@ -1308,6 +1314,10 @@ BOP::BopStats::BopStats(statistics::Group *parent,
         studentSecondOffsetDist);
     studentSecondCovRatioPctDist.init(0, 101, 1).prereq(
         studentSecondCovRatioPctDist);
+    studentQualifiedRankDist.init(1, student_pool_size + 1, 1).prereq(
+        studentQualifiedRankDist);
+    studentEnqueuedRankDist.init(1, student_pool_size + 1, 1).prereq(
+        studentEnqueuedRankDist);
     studentPoolOccupancyDist.init(0, student_pool_size + 1, 1).prereq(
         studentPoolOccupancyDist);
     studentCovRatioPctDist.init(0, 101, 1).prereq(studentCovRatioPctDist);
