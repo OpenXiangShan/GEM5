@@ -304,6 +304,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
         statistics::Scalar ftqNotValid;
         statistics::Scalar ftqFullCannotEnq;
+        statistics::Distribution commitFtqInstBytes;
         statistics::Distribution commitFtqEntryHasInsts;
         // Write back once an FTQ entry finishes fetch.
         statistics::Distribution commitFtqEntryFetchedInsts;
@@ -335,7 +336,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar s3PredWrongRas;
 
         DBPBTBStats(statistics::Group* parent, unsigned numStages,
-                    unsigned ftqSize, unsigned maxInstsNum,
+                    unsigned ftqSize, unsigned predictWidth, unsigned maxInstsNum,
                     unsigned numThreads);
     } dbpBtbStats;
 

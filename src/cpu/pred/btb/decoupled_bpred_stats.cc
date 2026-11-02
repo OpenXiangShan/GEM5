@@ -452,7 +452,7 @@ classifyBranchImpl(const InstPtr &inst)
 
 DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     statistics::Group* parent, unsigned numStages, unsigned ftqSize,
-    unsigned maxInstsNum, unsigned numThreads):
+    unsigned predictWidth, unsigned maxInstsNum, unsigned numThreads):
     statistics::Group(parent),
     ADD_STAT(condNum, statistics::units::Count::get(), "the number of cond branches"),
     ADD_STAT(uncondNum, statistics::units::Count::get(), "the number of uncond branches"),
@@ -498,6 +498,8 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(trapSquash, statistics::units::Count::get(), "the number of trap squashes in bpu"),
     ADD_STAT(ftqNotValid, statistics::units::Count::get(), "fetch needs ftq req but ftq not valid"),
     ADD_STAT(ftqFullCannotEnq, statistics::units::Count::get(), "bpu has req but ftq full cannot enqueue"),
+    ADD_STAT(commitFtqInstBytes, statistics::units::Byte::get(),
+             "size of commit ftq entries"),
     ADD_STAT(commitFtqEntryHasInsts, statistics::units::Count::get(),
              "number of insts that commit ftq entries have"),
     ADD_STAT(commitFtqEntryFetchedInsts, statistics::units::Count::get(),
@@ -537,6 +539,7 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     commitOverrideBubbleNum = commitPredsFromEachStage[1] + 2 * commitPredsFromEachStage[2] ;
     commitOverrideCount = commitPredsFromEachStage[1] + commitPredsFromEachStage[2];
     ftqEntryDist.init(0, ftqSize, 20).flags(statistics::total);
+    commitFtqInstBytes.init(0, predictWidth, 1);
     commitFtqEntryHasInsts.init(0, maxInstsNum >> 1, 1);
     commitFtqEntryFetchedInsts.init(0, maxInstsNum >> 1, 1);
     s1PredWrongBySourceAndReason.init(NumS1SourceBuckets, NumOverrideReasonBuckets);
@@ -809,7 +812,8 @@ DecoupledBPUWithBTB::updateStatistics(
     overrideStats(target.overrideReason);
 
     // --- Instruction Statistics ---
-    // Track committed instruction counts
+    // Track committed fetch block size and instruction counts
+    dbpBtbStats.commitFtqInstBytes.sample(target.commitInstBytes);
     dbpBtbStats.commitFtqEntryHasInsts.sample(target.commitInstNum, 1);
     if (target.commitInstNum >= 0 && target.commitInstNum <= maxInstsNum) {
         commitFtqEntryHasInstsVector[target.commitInstNum]++;
@@ -1001,8 +1005,9 @@ DecoupledBPUWithBTB::commitPredWrongSource(
 void
 DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
 {
-    // Update committed instruction count for target
+    // Update committed instruction count & bytes count for target
     ftq.get(inst->ftqId, inst->threadNumber).commitInstNum++;
+    ftq.get(inst->ftqId, inst->threadNumber).commitInstBytes += inst->getInstBytes();
 
     // Update global committed instruction count
     numInstCommitted++;
