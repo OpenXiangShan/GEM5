@@ -87,8 +87,6 @@ Scheduler::fpAttemptCurrent(const DynInstPtr& inst, uint64_t attempt) const
 uint32_t
 Scheduler::getOutputDistance(const DynInstPtr& inst)
 {
-    if (enableFmaRtlAlignment && fpProducer(inst))
-        return inst->opClass() == FloatMultOp ? 3 : 4;
     return getCorrectedOpLat(inst);
 }
 
@@ -97,6 +95,7 @@ Scheduler::fpSelected(const DynInstPtr& inst, unsigned port)
 {
     if (!enableFmaRtlAlignment)
         return;
+    const unsigned atFuDistance = inst->issueQue->getIssueStages() + 1;
     auto existing = fpRecords.find(inst->seqNum);
     if (existing != fpRecords.end())
         existing->second.canceled = false;
@@ -104,7 +103,8 @@ Scheduler::fpSelected(const DynInstPtr& inst, unsigned port)
     if (it != fpRecords.end()) {
         for (auto& binding : it->second.sources) {
             if (binding) {
-                fpWakeState.select(binding, cpu->clockEdge(Cycles(3)),
+                fpWakeState.select(binding,
+                                   cpu->clockEdge(Cycles(atFuDistance)),
                                    2 * cpu->clockPeriod());
             }
         }
@@ -120,11 +120,13 @@ Scheduler::fpSelected(const DynInstPtr& inst, unsigned port)
     }
     panic_if(record.output, "FP instruction selected twice without cancellation");
     const bool mul = inst->opClass() == FloatMultOp;
+    const unsigned dataDistance = atFuDistance + getOpLatency(inst) - 1;
     const unsigned endpoint = inst->issueQue->getId() * 8 + port;
     record.output = fpWakeState.prepare(fpIdentity(inst),
         mul ? FpProducerKind::Fmul : FpProducerKind::Fma,
-        endpoint, endpoint, cpu->clockEdge(Cycles(mul ? 3 : 4)),
-        cpu->clockEdge(Cycles(mul ? 1 : 2)), cpu->clockEdge(Cycles(6)));
+        endpoint, endpoint, cpu->clockEdge(Cycles(dataDistance - 2)),
+        cpu->clockEdge(Cycles(dataDistance - 4)),
+        cpu->clockEdge(Cycles(dataDistance)));
     for (const auto& binding : record.sources)
         if (binding)
             fpWakeState.addInput(fpIdentity(inst), binding);

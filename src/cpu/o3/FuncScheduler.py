@@ -104,7 +104,8 @@ class Scheduler(SimObject):
     useOldDisp = Param.Bool(False, "Use old dispatch algorithm")
     enableMainRdpOpt = Param.Bool(False, "Enable TX dynamic read port optimization")
     enableFmaRtlAlignment = Param.Bool(
-        False, "Align supported scalar FMUL/FMA dependency timing with KMHV3 RTL"
+        False, "Align scalar FMUL/FMA timing with KMHV3 RTL, including "
+        "three-cycle FMUL execution"
     )
 
     intRegfileBanks = Param.Int(1, "number of integer register file banks")

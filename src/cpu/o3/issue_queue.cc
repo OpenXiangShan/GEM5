@@ -1929,7 +1929,8 @@ Scheduler::setCPU(CPU* cpu, LSQ* lsq)
                  (opExecTimeTable[FloatMultOp] != 4 ||
                   opExecTimeTable[FloatMultAccOp] != 4 ||
                   !opPipelined[FloatMultOp] || !opPipelined[FloatMultAccOp]),
-             "FMA RTL alignment requires native four-cycle pipelined FMUL/FMA");
+             "FMA RTL alignment requires a four-cycle pipelined FMUL/FMA "
+             "baseline configuration");
     for (auto it : issueQues) {
         panic_if(enableFmaRtlAlignment && it->getIssueStages() != 2 &&
                      (it->readyQclassify[FloatMultOp] || it->readyQclassify[FloatMultAccOp] ||
@@ -2557,6 +2558,10 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
 uint32_t
 Scheduler::getOpLatency(const DynInstPtr& inst)
 {
+    if (enableFmaRtlAlignment && !inst->isVector() &&
+        inst->opClass() == FloatMultOp) {
+        return 3;
+    }
     if (inst->opClass() == FloatDivOp) [[unlikely]] {
         const auto* format = fdivFormat(inst->staticInst->operWid());
         if (format) {
