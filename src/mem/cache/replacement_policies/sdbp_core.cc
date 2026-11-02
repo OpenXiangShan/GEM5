@@ -203,26 +203,24 @@ SDBPCore::access(unsigned set, uint64_t tag, RequestType type,
                 break;
             }
         }
-        if (!selected) {
-            const Entry *youngest = nullptr;
-            const Entry *secondYoungest = nullptr;
-            if (cfg.samplerProtectYoungestTwo) {
-                for (const auto &entry : entries) {
-                    if (!youngest || entry.lastUse > youngest->lastUse) {
-                        secondYoungest = youngest;
-                        youngest = &entry;
-                    } else if (!secondYoungest || entry.lastUse > secondYoungest->lastUse) {
-                        secondYoungest = &entry;
-                    }
-                }
-            }
-            // Protect recency positions only during dead-first selection.
-            // The fallback below remains global LRU, including these entries.
+        if (!selected && cfg.samplerDeadFirst) {
+            // Protect the N youngest positions across all entries, preserving
+            // original way order among eligible dead candidates. Global LRU
+            // remains the fallback, even when every position is protected.
             for (auto &entry : entries) {
-                if (entry.dead && &entry != youngest && &entry != secondYoungest) {
-                    selected = &entry;
-                    break;
+                if (!entry.dead)
+                    continue;
+                if (cfg.samplerProtectYoungest) {
+                    const auto younger = std::count_if(
+                        entries.begin(), entries.end(),
+                        [&entry](const Entry &other) {
+                            return other.lastUse > entry.lastUse;
+                        });
+                    if (younger < cfg.samplerProtectYoungest)
+                        continue;
                 }
+                selected = &entry;
+                break;
             }
         }
         if (!selected) {

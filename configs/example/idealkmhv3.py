@@ -169,9 +169,6 @@ if __name__ == '__m5_main__':
 
     args = xiangshan_system_init()
 
-    # Disable prefetchers before building any cache or L2 wrapper.
-    args.no_pf = True
-
     assert not args.external_memory_system
 
     # Set default bp_type based on ideal_kmhv3 flag

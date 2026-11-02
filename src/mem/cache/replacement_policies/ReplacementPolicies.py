@@ -86,8 +86,10 @@ class SDBPRP(BaseReplacementPolicy):
     num_sets = Param.Unsigned("Number of sets in the attached cache")
     sampler_num = Param.Unsigned(32, "Number of sampled sets (power of two)")
     sampler_assoc = Param.Unsigned(12, "Associativity of the independent sampler")
-    sampler_protect_youngest_two = Param.Bool(
-        False, "Skip MRU and second-MRU entries during sampler dead selection"
+    l1_copy_protection = Param.Bool(True, "Skip L1-resident dead L2 victims")
+    sampler_dead_first = Param.Bool(True, "Prefer dead sampler entries over LRU")
+    sampler_protect_youngest = Param.Unsigned(
+        0, "Number of youngest sampler entries skipped during dead selection"
     )
     predictor_tables = Param.Unsigned(3, "Number of skewed prediction tables")
     predictor_entries = Param.Unsigned(4096, "Counters per prediction table")

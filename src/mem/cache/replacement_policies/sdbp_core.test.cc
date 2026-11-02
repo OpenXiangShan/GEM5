@@ -145,7 +145,7 @@ TEST(SDBPCore, YoungestTwoGuardPreservesDeadCandidateOrder)
     for (unsigned ways : {6U, 7U, 8U}) {
         SDBPCore::Config cfg;
         cfg.samplerAssoc = ways;
-        cfg.samplerProtectYoungestTwo = true;
+        cfg.samplerProtectYoungest = 2;
         cfg.deadThreshold = 0;
         SDBPCore core(cfg);
         for (unsigned way = 0; way < ways; ++way)
@@ -174,7 +174,7 @@ TEST(SDBPCore, YoungestTwoGuardSkipsEitherProtectedDeadPosition)
             for (bool protect : {false, true}) {
                 SDBPCore::Config cfg;
                 cfg.samplerAssoc = ways;
-                cfg.samplerProtectYoungestTwo = protect;
+                cfg.samplerProtectYoungest = protect ? 2 : 0;
                 SDBPCore core(cfg);
                 const auto deadSignature = core.signature(0x8000);
                 for (unsigned i = 0; i < 3; ++i)
@@ -198,7 +198,7 @@ TEST(SDBPCore, YoungestTwoGuardFallsBackWhenBothDeadEntriesAreProtected)
     for (unsigned ways : {6U, 7U, 8U}) {
         SDBPCore::Config cfg;
         cfg.samplerAssoc = ways;
-        cfg.samplerProtectYoungestTwo = true;
+        cfg.samplerProtectYoungest = 2;
         SDBPCore core(cfg);
         const auto deadSignature = core.signature(0x8000);
         for (unsigned i = 0; i < 3; ++i)
@@ -220,7 +220,7 @@ TEST(SDBPCore, YoungestTwoGuardKeepsInvalidPriority)
 {
     SDBPCore::Config cfg;
     cfg.samplerAssoc = 6;
-    cfg.samplerProtectYoungestTwo = true;
+    cfg.samplerProtectYoungest = 2;
     cfg.deadThreshold = 0;
     SDBPCore core(cfg);
     for (unsigned tag = 1; tag <= cfg.samplerAssoc; ++tag)
@@ -231,7 +231,7 @@ TEST(SDBPCore, YoungestTwoGuardIgnoresPrefetchHitRecency)
 {
     SDBPCore::Config cfg;
     cfg.samplerAssoc = 6;
-    cfg.samplerProtectYoungestTwo = true;
+    cfg.samplerProtectYoungest = 2;
     cfg.deadThreshold = 0;
     SDBPCore core(cfg);
     for (unsigned way = 0; way < cfg.samplerAssoc; ++way)
@@ -249,12 +249,38 @@ TEST(SDBPCore, YoungestTwoGuardAllowsGlobalLruFallbackInSmallSamplers)
     for (unsigned ways : {1U, 2U}) {
         SDBPCore::Config cfg;
         cfg.samplerAssoc = ways;
-        cfg.samplerProtectYoungestTwo = true;
+        cfg.samplerProtectYoungest = 2;
         cfg.deadThreshold = 0;
         SDBPCore core(cfg);
         for (unsigned way = 0; way < ways; ++way)
             core.access(0, way + 1, 0x1000 + way * 0x100);
         EXPECT_EQ(core.access(0, ways + 1, 0x8000).previousSignature, core.signature(0x1000));
+    }
+}
+
+TEST(SDBPCore, NumericYoungestGuardAndPureLru)
+{
+    for (bool deadFirst : {false, true}) {
+        for (unsigned guard : {0U, 1U, 2U, 3U, 6U, 8U}) {
+            SDBPCore::Config cfg;
+            cfg.samplerAssoc = 6;
+            cfg.deadThreshold = 0;
+            cfg.samplerDeadFirst = deadFirst;
+            cfg.samplerProtectYoungest = guard;
+            SDBPCore core(cfg);
+            for (unsigned tag = 1; tag <= 6; ++tag)
+                EXPECT_FALSE(core.access(0, tag, tag * 0x100).evicted);
+            // Way order is the reverse of recency: tag 1 is youngest.
+            for (unsigned tag = 6; tag >= 1; --tag)
+                EXPECT_TRUE(core.access(0, tag, tag * 0x100).hit);
+            const unsigned victim = deadFirst && guard < 6 ? guard + 1 : 6;
+            const auto result = core.access(0, 7, 0x700);
+            EXPECT_TRUE(result.evicted);
+            EXPECT_EQ(result.previousSignature,
+                      core.signature(victim * 0x100));
+            // Choosing LRU must still train the evicted signature dead.
+            EXPECT_EQ(core.confidence(result.previousSignature), 3);
+        }
     }
 }
 

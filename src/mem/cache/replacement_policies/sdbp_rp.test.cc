@@ -28,7 +28,9 @@ testParams(bool bypass = false, unsigned threshold = 8)
     p.num_sets = 64;
     p.sampler_num = 8;
     p.sampler_assoc = 2;
-    p.sampler_protect_youngest_two = false;
+    p.sampler_protect_youngest = 0;
+    p.sampler_dead_first = true;
+    p.l1_copy_protection = true;
     p.predictor_tables = 3;
     p.predictor_entries = 4096;
     p.counter_bits = 2;
@@ -89,7 +91,7 @@ TEST_F(SDBPInterface, YoungestTwoParameterReachesSampler)
 {
     auto params = testParams(false, 0);
     params.sampler_assoc = 6;
-    params.sampler_protect_youngest_two = true;
+    params.sampler_protect_youngest = 2;
     SDBP policy(params);
     auto demand = packet();
     for (unsigned tag = 1; tag <= 6; ++tag)
@@ -194,6 +196,47 @@ TEST_F(SDBPInterface, DeadVictimCanOverrideLru)
     EXPECT_EQ(snoop.replacementVictimClass, 0);
     EXPECT_FALSE(snoop.replacementProbe);
     EXPECT_EQ(snoop.replacementProbeMask, 0);
+}
+
+TEST_F(SDBPInterface, DisabledL1GuardRetainsL2DeadFirst)
+{
+    auto params = testParams(false, 0);
+    params.l1_copy_protection = false;
+    params.sampler_dead_first = false;
+    params.sampler_protect_youngest = 2;
+    SDBP policy(params);
+    ReplaceableEntry lru, dead;
+    lru.replacementData = policy.instantiateEntry();
+    dead.replacementData = policy.instantiateEntry();
+    policy.reset(lru.replacementData);
+    auto demand = packet();
+    policy.reset(dead.replacementData, demand.get());
+    unsigned queries = 0;
+    policy.setL1CopyProbe([&](const ReplaceableEntry *) {
+        ++queries;
+        return true;
+    });
+    // Sampler policy and disabled L1 protection cannot disable L2 dead-first.
+    EXPECT_EQ(policy.getVictim(ReplacementCandidates{&lru, &dead}), &dead);
+    EXPECT_EQ(queries, 0);
+    EXPECT_EQ(stat(policy, "deadVictims"), 1);
+    EXPECT_EQ(stat(policy, "l1CopyChecks"), 0);
+}
+
+TEST_F(SDBPInterface, PureLruParameterReachesSampler)
+{
+    auto params = testParams(false, 0);
+    params.sampler_assoc = 3;
+    params.sampler_dead_first = false;
+    SDBP policy(params);
+    auto demand = packet();
+    for (unsigned tag = 1; tag <= 3; ++tag)
+        policy.observeFill(demand.get(), 0, tag);
+    policy.observe(demand.get(), 0, 1, true);
+    policy.observeFill(demand.get(), 0, 4);
+    // Dead-first would evict way 0 (tag 1); pure LRU evicts tag 2.
+    policy.observe(demand.get(), 0, 1, true);
+    EXPECT_EQ(stat(policy, "samplerHits"), 2);
 }
 
 TEST_F(SDBPInterface, L1CopyGuardSkipsProtectedDeadAndAllowsUnprotectedMru)

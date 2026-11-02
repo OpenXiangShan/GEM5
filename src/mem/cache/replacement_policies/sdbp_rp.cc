@@ -27,7 +27,8 @@ makeCore(const SDBPRPParams &p)
     cfg.numSets = p.num_sets;
     cfg.samplerNum = p.sampler_num;
     cfg.samplerAssoc = p.sampler_assoc;
-    cfg.samplerProtectYoungestTwo = p.sampler_protect_youngest_two;
+    cfg.samplerDeadFirst = p.sampler_dead_first;
+    cfg.samplerProtectYoungest = p.sampler_protect_youngest;
     cfg.predictorTables = p.predictor_tables;
     cfg.predictorEntries = p.predictor_entries;
     cfg.counterBits = p.counter_bits;
@@ -49,12 +50,17 @@ makeCore(const SDBPRPParams &p)
 
 }  // anonymous namespace
 
-SDBP::SDBP(const Params &p) : Base(p), core(makeCore(p)), enableBypass(p.enable_bypass), stats(this)
+SDBP::SDBP(const Params &p)
+    : Base(p), core(makeCore(p)), enableBypass(p.enable_bypass),
+      l1CopyProtection(p.l1_copy_protection), stats(this)
 {
     inform(
         "%s: SDBP num_sets=%u sampler_sets=%u half_set_bits=%u "
-        "sampler_assoc=%u bypass=%d",
-        name(), core.numSets(), core.samplerSets(), core.halfBits(), p.sampler_assoc, enableBypass);
+        "sampler_assoc=%u sampler_dead_first=%d sampler_protect_youngest=%u "
+        "l1_copy_protection=%d bypass=%d",
+        name(), core.numSets(), core.samplerSets(), core.halfBits(),
+        p.sampler_assoc, p.sampler_dead_first, p.sampler_protect_youngest,
+        l1CopyProtection, enableBypass);
 }
 
 void
@@ -294,7 +300,7 @@ SDBP::getVictim(const ReplacementCandidates &candidates, const PacketPtr pkt) co
             candidate->replacementData);
         if (!entry.dead)
             continue;
-        if (l1CopyProbe) {
+        if (l1CopyProtection && l1CopyProbe) {
             ++stats.l1CopyChecks;
             if (l1CopyProbe(candidate)) {
                 ++stats.l1CopyProtectedDead;

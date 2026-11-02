@@ -63,6 +63,7 @@ class SDBP : public Base
     bool predict(const PacketPtr pkt) const;
     SDBPCore core;
     const bool enableBypass;
+    const bool l1CopyProtection;
     bool bound = false;
     L1CopyProbe l1CopyProbe;
     mutable uint64_t sequence = 0;

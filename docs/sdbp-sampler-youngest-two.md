@@ -12,7 +12,7 @@ workloads. No performance improvement is assumed before measurement.
 
 ## Optional protection
 
-Enable `--sdbp-sampler-protect-youngest-two` to exclude the most recently used
+Enable `--sdbp-sampler-protect-youngest=2` to exclude the most recently used
 and second-most recently used sampler entries from the dead-first scan.
 Recency positions are computed across the entire sampler set, including live
 entries. This does not select the two youngest entries among only dead entries.
@@ -25,7 +25,7 @@ entries. This does not select the two youngest entries among only dead entries.
 4. If no dead entry qualifies, select global LRU. This fallback includes
    protected entries, which matters for one-way and two-way samplers.
 
-The flag defaults to false and preserves the previously measured dead-first
+The protection count defaults to zero and preserves the previously measured dead-first
 sampler. Demand hits continue to update recency and train the previous stored
 signature live. Evictions retain their existing dead-training rules. Prefetch
 hits continue to leave sampler metadata and recency unchanged. The guard adds
@@ -43,9 +43,9 @@ jobs per server. Common gem5 arguments are:
 
 | Sampler ways | Protection disabled | Youngest-two protected |
 |---|---|---|
-| 6 | `--sdbp-sampler-assoc=6` | Add `--sdbp-sampler-protect-youngest-two` |
-| 7 | `--sdbp-sampler-assoc=7` | Add `--sdbp-sampler-protect-youngest-two` |
-| 8 | Reuse run 40811060728 | Add `--sdbp-sampler-protect-youngest-two` |
+| 6 | `--sdbp-sampler-assoc=6` | Add `--sdbp-sampler-protect-youngest=2` |
+| 7 | `--sdbp-sampler-assoc=7` | Add `--sdbp-sampler-protect-youngest=2` |
+| 8 | Reuse run 40811060728 | Add `--sdbp-sampler-protect-youngest=2` |
 
 The real L2 remains 1 MiB in four 256 KiB, eight-way slices. L3 remains
 32 MiB, mostly inclusive. The predictor parameters, threshold 8, bypass off,

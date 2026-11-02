@@ -33,7 +33,9 @@ send coherence requests, consume simulated tag ports, modify LRU, train the
 sampler, or copy data. This is an ideal residency-information experiment: the
 latency and area of a hardware directory or probe network are not modeled.
 
-The configuration rejects missing L1 caches. Nonempty probe targets are only
+Protection defaults to enabled. Use `--no-sdbp-l1-copy-protection` to
+disable it. The configuration rejects missing L1 caches when protection is
+enabled. Nonempty probe targets are only
 accepted on an L2 using SDBP and must have cache level 1. Standalone SDBP unit
 fixtures without a callback retain the original selection behavior.
 
