@@ -24,6 +24,7 @@
 #include "cpu/pred/btb/history_manager.hh"
 #include "cpu/pred/btb/mbtb.hh"
 #include "cpu/pred/btb/microtage.hh"
+#include "cpu/pred/btb/pairtage.hh"
 #include "cpu/pred/btb/ras.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
 #include "cpu/pred/general_arch_db.hh"
@@ -88,6 +89,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     AheadBTB *abtb{};
     MBTB *mbtb{};
     MicroTAGE *microtage{};
+    PairTAGE *pairtage{};
     BTBTAGE *tage{};
     BTBITTAGE *ittage{};
     BTBMGSC *mgsc{};
