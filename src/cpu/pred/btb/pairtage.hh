@@ -8,6 +8,7 @@
 
 #include "base/statistics.hh"
 #include "base/types.hh"
+#include "cpu/o3/limits.hh"
 #include "cpu/pred/btb/folded_hist.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
 #include "params/PairTAGE.hh"
@@ -24,6 +25,7 @@ namespace btb_pred
 class PairTAGE : public TimedBaseBTBPredictor
 {
     using bitset = boost::dynamic_bitset<>;
+    static constexpr unsigned MaxThreads = o3::MaxThreads;
 
   public:
     typedef PairTAGEParams Params;
@@ -78,6 +80,10 @@ class PairTAGE : public TimedBaseBTBPredictor
     // Fast training hook, driven by the final-stage prediction of every
     // predicted block, like the other s1 predictors.
     void updateUsingS3Pred(FullBTBPrediction &s3Pred);
+
+    // Check the folded histories of thread tid against its full history
+    void checkFoldedHist(const bitset &history, ThreadID tid,
+                         const char *when);
 
   private:
     // Number of PairTAGE tables
@@ -149,6 +155,35 @@ class PairTAGE : public TimedBaseBTBPredictor
     // Overwrite one way of set index of table t
     void writeEntry(unsigned t, Addr index, unsigned way,
                     const PTAGEEntry &entry);
+
+    // ========== History ==========
+    // Path folded histories of every table, kept per thread. Each table
+    // folds its own history length to the width of its set index and tag.
+    struct ThreadHistoryState
+    {
+        std::vector<PathFoldedHist> indexFoldedHist;
+        std::vector<PathFoldedHist> tagFoldedHist;
+        std::vector<PathFoldedHist> altTagFoldedHist;
+    };
+
+    std::vector<ThreadHistoryState> threadHistory;
+
+    ThreadHistoryState &historyState(ThreadID tid);
+    const ThreadHistoryState &historyState(ThreadID tid) const;
+
+    // Advance the folded histories of thread tid by one block
+    void doUpdateHist(const bitset &history, const PathHistoryUpdate &update,
+                      ThreadID tid);
+
+    // ========== Prediction Meta ==========
+    // Recorded in the FTQ entry of every predicted block
+    struct PairTAGEMeta
+    {
+        // Folded histories the block was predicted with, restored on squash
+        ThreadHistoryState history;
+    };
+
+    std::vector<std::shared_ptr<PairTAGEMeta>> threadMeta;
 
     struct PairTAGEStats : public statistics::Group
     {
