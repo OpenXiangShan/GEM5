@@ -87,6 +87,8 @@ class IssueQue(SimObject):
     deferNewEnqueueSelection = Param.Bool(
         False, "Delay selection of newly enqueued instructions until the next cycle"
     )
+    prioritizeReadyBranches = Param.Bool(
+        False, "Select ready control instructions before other ready work")
     vectorSplitUnits = Param.Unsigned(
         2, "Number of independent vector load/store split units per direction")
     oports = VectorParam.IssuePort("")

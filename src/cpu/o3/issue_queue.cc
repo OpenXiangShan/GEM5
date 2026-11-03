@@ -17,9 +17,10 @@
 #include "base/types.hh"
 #include "cpu/func_unit.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/cpu.hh"
+#include "cpu/o3/dip.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
-#include "cpu/o3/cpu.hh"
 #include "cpu/o3/inst_queue.hh"
 #include "cpu/reg_class.hh"
 #include "debug/Counters.hh"
@@ -45,7 +46,7 @@
     do {                                                                                  \
         (x)->setInReadyQ();                                                               \
         auto& readyQ = readyQclassify[(x)->opClass()];                                    \
-        auto it = std::lower_bound(readyQ->begin(), readyQ->end(), (x), select_policy()); \
+        auto it = std::lower_bound(readyQ->begin(), readyQ->end(), (x), select_policy{prioritizeReadyBranches}); \
         readyQ->insert(it, (x));                                                          \
     } while (0)
 
@@ -285,6 +286,9 @@ PAgeSelector::select(ReadyQue::iterator begin, int portid)
 bool
 IssueQue::select_policy::operator()(const DynInstPtr& a, const DynInstPtr& b) const
 {
+    if (prioritizeBranches && a->isControl() != b->isControl()) {
+        return a->isControl();
+    }
     if (a->ageCtr != b->ageCtr) {
         return a->ageCtr < b->ageCtr;
     }
@@ -341,6 +345,7 @@ IssueQue::IssueQue(const IssueQueParams& params)
       iqsize(params.size),
       scheduleToExecDelay(params.scheduleToExecDelay),
       deferNewEnqueueSelection(params.deferNewEnqueueSelection),
+      prioritizeReadyBranches(params.prioritizeReadyBranches),
       iqname(params.name),
       vectorSplitUnits(params.vectorSplitUnits),
       nextVectorLoadSplitUnit(0),
@@ -1269,6 +1274,22 @@ IssueQue::selectInst()
             it++;
         }
     }
+    if (auto *dip = cpu->getDip()) {
+        for (auto it = readyQs.begin(); it != readyQs.end(); ++it) {
+            if (std::find(readyQs.begin(), it, *it) != it) {
+                continue;
+            }
+            for (const auto& inst : **it) {
+                if (inst->isControl() && !inst->canceled() &&
+                    !inst->isSquashed() &&
+                    !(deferNewEnqueueSelection &&
+                      std::find(enqueuedThisCycle.begin(), enqueuedThisCycle.end(),
+                                inst->seqNum) != enqueuedThisCycle.end())) {
+                    dip->readyBranchWaiting();
+                }
+            }
+        }
+    }
 }
 
 void
@@ -2034,6 +2055,32 @@ Scheduler::ready(const DynInstPtr& inst, int disp_seq)
 
     DPRINTF(Schedule, "IQ not ready, opclass: %s\n", enums::OpClassStrings[inst->opClass()]);
     return false;
+}
+
+std::pair<int, uint8_t>
+Scheduler::dispatchBlock(const DynInstPtr& inst, int disp_seq)
+{
+    const ThreadID tid = inst->threadNumber;
+    const OpClass op = inst->isSplitStoreAddr() &&
+        !ready(StoreDataOp, tid, disp_seq) ? StoreDataOp : inst->opClass();
+    const auto& iqs = dispTable[tid][op];
+    IssueQue* selected = old_disp ? nullptr : iqs[dispSeqVec.at(disp_seq)];
+    uint8_t flags = 0;
+    for (auto iq : iqs) {
+        if (selected && iq != selected) {
+            if (iq->ready(tid)) {
+                flags |= Dip::IQReadyPeer;
+            }
+            continue;
+        }
+        uint8_t gates = 0;
+        if (iq->instNumInsert >= iq->inports) gates |= Dip::IQInports;
+        if (iq->instNum >= iq->iqsize) gates |= Dip::IQEntries;
+        if (iq->replayQ.size() > iq->replayQsize) gates |= Dip::IQReplay;
+        if (!gates && !iq->ready(tid)) gates |= Dip::IQQuota;
+        flags |= gates;
+    }
+    return {selected ? selected->getId() : -1, flags};
 }
 
 bool

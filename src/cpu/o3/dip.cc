@@ -37,6 +37,12 @@ Dip::DipStats::DipStats(CPU *cpu, Dip &dip)
                "Resolved DIP slots whose redirect cause PC is unknown"),
       ADD_STAT(pendingSlots, statistics::units::Count::get(),
                "DIP slots awaiting dispatch or architectural path resolution"),
+      ADD_STAT(decodeStrandedSlots, statistics::units::Count::get(),
+               "Sampled unused Decode lanes with input left in its stall FIFO; "
+               "separate stage context, not additional dispatch budget"),
+      ADD_STAT(readyBranchWaits, statistics::units::Count::get(),
+               "Sampled ready branch entries left after IQ selection; "
+               "separate stage context, including tentative paths"),
       ADD_STAT(slotsByState, statistics::units::Count::get(),
                "Resolved DIP slots by mutually exclusive final state"),
       ADD_STAT(slotsByCause, statistics::units::Count::get(),
@@ -56,13 +62,15 @@ void
 Dip::DipStats::preDumpStats()
 {
     statistics::Group::preDumpStats();
-    uint64_t pending = owner.frontendSlots;
+    uint64_t pending = 0;
     auto handle = simout.create(owner.outputName, false, true);
     auto &out = *handle->stream();
-    out << "thread,pc,state,cause,slot_weight,cycle_weight,resolution\n"
+    out << "thread,pc,state,cause,slot_weight,cycle_weight,resolution,"
+           "iq,iq_flags,frontend_reason\n"
         << std::setprecision(17);
     auto row = [&](Addr pc, State state, uint16_t cause, uint64_t slots,
-                   const char *resolution) {
+                   const char *resolution, int iq, uint8_t iq_flags,
+                   StallReason frontend) {
         if (!slots) {
             return;
         }
@@ -72,20 +80,26 @@ Dip::DipStats::preDumpStats()
         }
         out << ',' << stateNames[static_cast<unsigned>(state)] << ','
             << cause << ',' << slots << ',' << double(slots) / owner.width
-            << ',' << resolution << '\n';
+            << ',' << resolution << ',' << iq << ',' << unsigned(iq_flags)
+            << ',' << unsigned(frontend) << '\n';
     };
     for (const auto &[key, slots] : owner.weights) {
-        const auto &[pc, state, cause] = key;
-        row(pc, state, cause, slots, pc ? "resolved" : "unresolved");
+        const auto &[pc, state, cause, iq, iq_flags, frontend] = key;
+        row(pc, state, cause, slots, pc ? "resolved" : "unresolved",
+            iq, iq_flags, frontend);
     }
     for (const auto &[seq, target] : owner.targets) {
         for (const auto &[signature, slots] : target.slots) {
             pending += slots;
+            const auto &[state, cause, iq, iq_flags, frontend] = signature;
             row(target.inst->teaFirstMember()->pcState().instAddr(),
-                signature.first, signature.second, slots, "pending");
+                state, cause, slots, "pending", iq, iq_flags, frontend);
         }
     }
-    row(0, State::FrontEnd, 0, owner.frontendSlots, "pending");
+    for (const auto &[reason, slots] : owner.frontendSlots) {
+        pending += slots;
+        row(0, State::FrontEnd, 0, slots, "pending", -1, 0, reason);
+    }
     pendingSlots = pending;
     simout.close(handle);
 }
@@ -96,7 +110,7 @@ Dip::DipStats::resetStats()
     statistics::Group::resetStats();
     owner.weights.clear();
     owner.targets.clear();
-    owner.frontendSlots = 0;
+    owner.frontendSlots.clear();
     // The live redirect/version is pipeline state, not measurement history.
 }
 
@@ -117,6 +131,8 @@ Dip::beginCycle()
     blocker = nullptr;
     renameBlocker = nullptr;
     blockCause = upstreamCause = renameCause = 0;
+    blockedIQ = -1;
+    blockedIQFlags = 0;
 }
 
 bool
@@ -128,25 +144,26 @@ Dip::oldPath(const DynInstPtr &inst) const
 
 void
 Dip::record(const DynInstPtr &inst, State state, uint16_t cause,
-            uint64_t slots)
+            uint64_t slots, int iq, uint8_t iq_flags, StallReason frontend)
 {
     if (!slots) {
         return;
     }
     if (!inst || inst->seqNum <= committedSeq) {
         resolve(inst ? inst->teaFirstMember()->pcState().instAddr() : 0,
-                state, cause, slots);
+                state, cause, slots, iq, iq_flags, frontend);
         return;
     }
     auto &target = targets[inst->seqNum];
     target.inst = inst;
-    target.slots[{state, cause}] += slots;
+    target.slots[{state, cause, iq, iq_flags, frontend}] += slots;
 }
 
 void
-Dip::resolve(Addr pc, State state, uint16_t cause, uint64_t slots)
+Dip::resolve(Addr pc, State state, uint16_t cause, uint64_t slots,
+             int iq, uint8_t iq_flags, StallReason frontend)
 {
-    weights[{pc, state, cause}] += slots;
+    weights[{pc, state, cause, iq, iq_flags, frontend}] += slots;
     if (pc) {
         stats.attributedSlots += slots;
     } else {
@@ -183,18 +200,46 @@ Dip::dispatch(const DynInstPtr &inst)
     const uint16_t events = inst->teaPSV();
     const uint16_t cause = events & (TeaEvent::bit(TeaEvent::DR_L1) |
         TeaEvent::bit(TeaEvent::DR_TLB)) ? CacheTlb : Bubble;
-    record(inst, State::FrontEnd, cause, frontendSlots);
-    frontendSlots = 0;
+    for (const auto &[reason, slots] : frontendSlots) {
+        record(inst, State::FrontEnd, cause, slots, -1, 0, reason);
+    }
+    frontendSlots.clear();
     if (due) {
         record(inst, State::Base, 0, 1);
     }
 }
 
 void
-Dip::block(const DynInstPtr &inst, uint16_t cause)
+Dip::block(const DynInstPtr &inst, uint16_t cause, int iq, uint8_t iq_flags)
 {
     blocker = inst;
     blockCause = cause;
+    blockedIQ = iq;
+    blockedIQFlags = iq_flags;
+}
+
+void
+Dip::setFrontendReasons(const std::vector<StallReason> &reasons)
+{
+    if (due) {
+        frontendReasons = reasons;
+    }
+}
+
+void
+Dip::decodeStranded(unsigned slots)
+{
+    if (due) {
+        stats.decodeStrandedSlots += slots;
+    }
+}
+
+void
+Dip::readyBranchWaiting()
+{
+    if (due) {
+        ++stats.readyBranchWaits;
+    }
 }
 
 void
@@ -219,8 +264,11 @@ Dip::squash(InstSeqNum boundary, const SquashVersion &version)
     recovering = true;
     awaitingSquash = false;
     recoveryVersion = version;
-    uint64_t slots = frontendSlots;
-    frontendSlots = 0;
+    uint64_t slots = 0;
+    for (const auto &[reason, count] : frontendSlots) {
+        slots += count;
+    }
+    frontendSlots.clear();
     for (auto it = targets.upper_bound(boundary); it != targets.end();) {
         for (const auto &[signature, count] : it->second.slots) {
             slots += count;
@@ -241,7 +289,8 @@ Dip::commit(const DynInstPtr &inst)
          it->first <= committedSeq;) {
         const Addr pc = it->second.inst->teaFirstMember()->pcState().instAddr();
         for (const auto &[signature, slots] : it->second.slots) {
-            resolve(pc, signature.first, signature.second, slots);
+            const auto &[state, cause, iq, iq_flags, frontend] = signature;
+            resolve(pc, state, cause, slots, iq, iq_flags, frontend);
         }
         it = targets.erase(it);
     }
@@ -268,11 +317,16 @@ Dip::tick()
     if (recovering) {
         misspeculate(empty);
     } else if (blocker) {
-        record(blocker, State::Stall, blockCause, empty);
+        record(blocker, State::Stall, blockCause, empty,
+               blockedIQ, blockedIQFlags);
     } else if (renameBlocker && renameCause) {
         record(renameBlocker, State::Stall, renameCause, empty);
     } else {
-        frontendSlots += empty;
+        for (unsigned lane = dispatched; lane < width; ++lane) {
+            const auto reason = lane < frontendReasons.size() ?
+                frontendReasons[lane] : NoStall;
+            ++frontendSlots[reason];
+        }
     }
 }
 

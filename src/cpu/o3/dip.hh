@@ -10,6 +10,7 @@
 #include <map>
 #include <string>
 #include <tuple>
+#include <vector>
 
 #include "base/statistics.hh"
 #include "cpu/o3/comm.hh"
@@ -44,10 +45,20 @@ class Dip
         NumCauses = 11
     };
 
+    enum IQGate : uint8_t
+    {
+        IQInports = 1, IQEntries = 2, IQReplay = 4, IQQuota = 8,
+        IQReadyPeer = 16
+    };
+
     Dip(CPU *cpu, const BaseO3CPUParams &params);
     void beginCycle();
     void dispatch(const DynInstPtr &inst);
-    void block(const DynInstPtr &inst, uint16_t cause);
+    void block(const DynInstPtr &inst, uint16_t cause, int iq = -1,
+               uint8_t iq_flags = 0);
+    void setFrontendReasons(const std::vector<StallReason> &reasons);
+    void decodeStranded(unsigned slots);
+    void readyBranchWaiting();
     void upstreamStall(uint16_t cause) { upstreamCause |= cause; }
     void renameBlock(const DynInstPtr &inst, bool registers);
     void setFlushCause(const DynInstPtr &inst, uint16_t cause);
@@ -56,7 +67,7 @@ class Dip
     void tick();
 
   private:
-    using Signature = std::pair<State, uint16_t>;
+    using Signature = std::tuple<State, uint16_t, int, uint8_t, StallReason>;
     using Slots = std::map<Signature, uint64_t>;
     struct Target
     {
@@ -74,6 +85,8 @@ class Dip
         statistics::Scalar attributedSlots;
         statistics::Scalar unresolvedSlots;
         statistics::Scalar pendingSlots;
+        statistics::Scalar decodeStrandedSlots;
+        statistics::Scalar readyBranchWaits;
         statistics::Vector slotsByState;
         statistics::Vector slotsByCause;
     } stats;
@@ -86,12 +99,16 @@ class Dip
     unsigned dispatched = 0;
     DynInstPtr blocker;
     uint16_t blockCause = 0;
+    int blockedIQ = -1;
+    uint8_t blockedIQFlags = 0;
+    std::vector<StallReason> frontendReasons;
     DynInstPtr renameBlocker;
     uint16_t upstreamCause = 0;
     uint16_t renameCause = 0;
     std::map<InstSeqNum, Target> targets;
-    uint64_t frontendSlots = 0;
-    std::map<std::tuple<Addr, State, uint16_t>, uint64_t> weights;
+    std::map<StallReason, uint64_t> frontendSlots;
+    std::map<std::tuple<Addr, State, uint16_t, int, uint8_t, StallReason>,
+             uint64_t> weights;
     DynInstPtr flushInst;
     uint16_t flushCause = UnknownFlush;
     bool recovering = false;
@@ -100,8 +117,11 @@ class Dip
     InstSeqNum committedSeq = 0;
 
     void record(const DynInstPtr &inst, State state, uint16_t cause,
-                uint64_t slots);
-    void resolve(Addr pc, State state, uint16_t cause, uint64_t slots);
+                uint64_t slots, int iq = -1, uint8_t iq_flags = 0,
+                StallReason frontend = NoStall);
+    void resolve(Addr pc, State state, uint16_t cause, uint64_t slots,
+                 int iq = -1, uint8_t iq_flags = 0,
+                 StallReason frontend = NoStall);
     void misspeculate(uint64_t slots);
     bool oldPath(const DynInstPtr &inst) const;
 };

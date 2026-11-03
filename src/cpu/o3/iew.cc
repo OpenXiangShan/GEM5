@@ -1542,7 +1542,8 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
 
         if (!scheduler->ready(inst, disp_seq)) {
             if (auto *dip = cpu->getDip()) {
-                dip->block(inst, Dip::ISB);
+                const auto [iq, flags] = scheduler->dispatchBlock(inst, disp_seq);
+                dip->block(inst, Dip::ISB, iq, flags);
             }
             DPRINTF(IEW, "[tid:%i] Dispatch: IQ is full or bwFull.\n", tid);
             iewStats.stallEvents[IQFull]++;
@@ -2378,6 +2379,9 @@ void
 IEW::tick()
 {
     blockReason = StallReason::NoStall;
+    if (auto *dip = cpu->getDip()) {
+        dip->setFrontendReasons(fromRename->renameStallReason[0]);
+    }
     for (const ThreadID tid : *activeThreads) {
         for (const auto reason : fromRename->fetchStallReason[tid]) {
             iewStats.fetchStallReason[reason]++;

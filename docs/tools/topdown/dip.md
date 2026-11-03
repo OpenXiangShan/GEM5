@@ -96,3 +96,44 @@ Stall masks describe the gates that the simulator actually evaluates. Upstream
 ROB/LSQ/register causes may overlap; at direct admission, earlier failing gates
 can mask later predicates. They are not an exhaustive test of all hypothetical
 resource constraints, and cause counts must not be summed as disjoint cycles.
+
+
+## Admission context
+
+CSV rows additionally retain `iq`, `iq_flags`, and `frontend_reason`.
+Summing over these columns recovers the original PC/state/cause/resolution
+budget. Pending weights retain their context; squashed weights follow the
+original Misspeculation transfer and discard the failed-path gate identity.
+
+For a surviving S_ISB stall, `iq` is the selected scheduler IQ ID. Flags
+are a bit set: 1 = enqueue ports exhausted, 2 = IQ entries exhausted,
+4 = replay queue above its admission limit, 8 = thread quota, and
+16 = another compatible IQ is ready for this same checked opclass.
+The flags are observations, not additive cycle costs. For split stores,
+the store-data group is checked before the address group, matching admission.
+The legacy search policy has no selected IQ (`iq=-1`) and reports the union
+of gates across the searched group; it cannot have a ready peer on failure.
+These queries do not allocate, reroute, or alter scheduling state.
+
+`frontend_reason` is the numeric `StallReason` propagated through Rename
+for the sampled empty lane, captured before the pipeline time buffers advance.
+It is preserved until the next admitted instruction supplies the existing
+F_BUB/F_CTM classification. Zero means no propagated explanation. This is
+pipeline context, not a causal claim: bundle buffering can separate the lane
+from the originating Fetch event, and F_CTM remains a next-uop event tag.
+
+
+`decodeStrandedSlots` is auxiliary stage context: on sampled cycles with
+Decode unblocked, its fixed input buffer drained, and fewer than decodeWidth
+instructions decoded, it counts up to the unused lanes still backed by raw
+instructions in the existing stall FIFO. It includes tentative-path entries
+and does not prove those instructions would decode or retire. It is separate
+from the dispatch budget and must not be added to any DIP state or cause.
+
+
+`readyBranchWaits` counts selectable, non-cancelled control entries remaining
+after all ports in an IQ have selected. Shared ready lists are visited once;
+new entries behind an enabled enqueue boundary are excluded. Counts are per
+sampled cycle and include tentative paths. This is auxiliary stage context,
+not part of the dispatch budget. A selected instruction may still lose later
+register-port arbitration, which this counter does not count.
