@@ -59,6 +59,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       abtb(p.abtb),
       mbtb(p.mbtb),
       microtage(p.microtage),
+      pairtage(p.pairtage),
       tage(p.tage),
       ittage(p.ittage),
       mgsc(p.mgsc),
@@ -94,6 +95,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     if (ubtb->isEnabled()) components.push_back(ubtb);
     if (abtb->isEnabled()) components.push_back(abtb);
     if (microtage->isEnabled()) components.push_back(microtage);
+    if (pairtage->isEnabled()) components.push_back(pairtage);
     if (mbtb->isEnabled()) components.push_back(mbtb);
     if (tage->isEnabled()) components.push_back(tage);
     if (ras->isEnabled()) components.push_back(ras);
@@ -499,6 +501,9 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     }
     if (microtage->isEnabled()) {
         microtage->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
+    }
+    if (pairtage->isEnabled()) {
+        pairtage->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
     }
 
     // 4. Record override bubbles and update statistics
