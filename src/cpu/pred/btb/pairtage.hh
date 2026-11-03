@@ -111,7 +111,7 @@ class PairTAGE : public TimedBaseBTBPredictor
     const unsigned numBanks;         // Number of banks (e.g., 4)
     const unsigned bankIdWidth;      // log2(numBanks), computed in constructor
 
-    // The PairTAGE prediction tables (table x index x way)
+    // The PairTAGE prediction tables (table x index x way).
     std::vector<std::vector<std::vector<PTAGEEntry>>> table;
 
     // ========== Index and Tag ==========
@@ -137,25 +137,6 @@ class PairTAGE : public TimedBaseBTBPredictor
     Addr getTag(Addr pc, unsigned t, uint64_t foldedHist,
                 uint64_t altFoldedHist) const;
 
-    // ========== Table Access ==========
-    // Plain reads and writes of one set. Which table, set and way to use,
-    // and what to write, is left to the caller.
-
-    // Result of reading one set of a table
-    struct LookupResult
-    {
-        bool hit{false};    // a valid entry in the set matches the tag
-        unsigned way{0};    // way of the matching entry, valid on hit
-        PTAGEEntry entry;   // copy of the matching entry, valid on hit
-    };
-
-    // Read set index of table t and match its ways against tag
-    LookupResult lookup(unsigned t, Addr index, Addr tag) const;
-
-    // Overwrite one way of set index of table t
-    void writeEntry(unsigned t, Addr index, unsigned way,
-                    const PTAGEEntry &entry);
-
     // ========== History ==========
     // Path folded histories of every table, kept per thread. Each table
     // folds its own history length to the width of its set index and tag.
@@ -175,12 +156,41 @@ class PairTAGE : public TimedBaseBTBPredictor
     void doUpdateHist(const bitset &history, const PathHistoryUpdate &update,
                       ThreadID tid);
 
+    // ========== Table Access ==========
+    // Where a block maps to in one table
+    struct TableIndex
+    {
+        Addr index{0};
+        Addr tag{0};
+    };
+
+    // Result of looking up every table for one block. Tables are ordered
+    // by history length, so the provider is the highest-numbered table
+    // that hits.
+    struct LookupResult
+    {
+        std::vector<TableIndex> tableIndexes;
+        int provider{-1};
+        unsigned providerWay{0};
+        PTAGEEntry entry;
+    };
+
+    // Look up every table with the PC and folded histories of a block
+    LookupResult lookup(Addr pc, const ThreadHistoryState &history) const;
+
+    // Overwrite one way of set index of table t
+    void writeEntry(unsigned t, Addr index, unsigned way,
+                    const PTAGEEntry &entry);
+
     // ========== Prediction Meta ==========
     // Recorded in the FTQ entry of every predicted block
     struct PairTAGEMeta
     {
         // Folded histories the block was predicted with, restored on squash
         ThreadHistoryState history;
+
+        // Lookup the block was predicted with, used by training
+        LookupResult lookup;
     };
 
     std::vector<std::shared_ptr<PairTAGEMeta>> threadMeta;
@@ -188,9 +198,10 @@ class PairTAGE : public TimedBaseBTBPredictor
     struct PairTAGEStats : public statistics::Group
     {
         statistics::Scalar lookups;
+        statistics::Vector providerTable;
         statistics::Scalar s3TrainEvents;
 
-        PairTAGEStats(statistics::Group *parent);
+        PairTAGEStats(statistics::Group *parent, unsigned numPredictors);
     } pairTageStats;
 };
 
