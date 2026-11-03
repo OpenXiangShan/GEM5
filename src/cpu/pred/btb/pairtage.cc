@@ -53,6 +53,7 @@ PairTAGE::PairTAGE(const Params &p)
     tableIndexBits.resize(numPredictors);
     threadHistory.resize(MaxThreads);
     threadMeta.resize(MaxThreads);
+    threadAhead.resize(MaxThreads);
 
     for (unsigned int i = 0; i < numPredictors; ++i) {
         // Every bank of a table holds the same number of sets, and both are
@@ -84,6 +85,8 @@ PairTAGE::PairTAGEStats::PairTAGEStats(statistics::Group *parent,
     : statistics::Group(parent),
       ADD_STAT(lookups, statistics::units::Count::get(),
                "prediction lookups issued to PairTAGE"),
+      ADD_STAT(lookupNoAnchor, statistics::units::Count::get(),
+               "lookups skipped because no ahead key exists after a squash"),
       ADD_STAT(providerTable, statistics::units::Count::get(),
                "lookups provided by each table"),
       ADD_STAT(s3TrainEvents, statistics::units::Count::get(),
@@ -106,17 +109,27 @@ void
 PairTAGE::putPCHistory(Addr startAddr, const bitset &history,
                        std::vector<FullBTBPrediction> &stagePreds)
 {
+    // Use ahead key with `specUpdatePHist` to update the folded histories, so the
+    // arguments are not used here.
+    (void)startAddr;
     (void)history;
+
     assert(!stagePreds.empty());
     const ThreadID tid = stagePreds.front().tid;
+    const auto &ahead = threadAhead[tid];
 
     auto meta = std::make_shared<PairTAGEMeta>();
     meta->history = historyState(tid);
-    meta->lookup = lookup(startAddr, meta->history);
+    meta->noAnchor = !ahead.valid;
+    if (!meta->noAnchor) {
+        meta->lookup = lookup(ahead.pc, ahead.history);
+    }
     threadMeta[tid] = meta;
 
     pairTageStats.lookups++;
-    if (meta->lookup.provider >= 0) {
+    if (meta->noAnchor) {
+        pairTageStats.lookupNoAnchor++;
+    } else if (meta->lookup.provider >= 0) {
         pairTageStats.providerTable[meta->lookup.provider]++;
     }
 }
@@ -134,6 +147,12 @@ void
 PairTAGE::specUpdatePHist(const bitset &history, FullBTBPrediction &pred,
                           const PathHistoryUpdate &update)
 {
+    // The block entering the FTQ becomes the key of the block after it
+    auto &ahead = threadAhead[pred.tid];
+    ahead.valid = true;
+    ahead.pc = pred.bbStart;
+    ahead.history = historyState(pred.tid);
+
     doUpdateHist(history, update, pred.tid);
 }
 
@@ -142,6 +161,9 @@ PairTAGE::recoverPHist(const bitset &history,
                        const HistoryRecoveryContext &context,
                        const PathHistoryUpdate &update)
 {
+    // The block after a squash starts without a key
+    threadAhead[context.tid].valid = false;
+
     auto predMeta = std::static_pointer_cast<PairTAGEMeta>(
         context.predMetas[getComponentIdx()]);
     if (!predMeta) {
@@ -166,6 +188,10 @@ PairTAGE::updateUsingS3Pred(FullBTBPrediction &s3Pred)
 
     const auto &meta = threadMeta[s3Pred.tid];
     assert(meta);
+    if (meta->noAnchor) {
+        return;
+    }
+
     const auto &lookup = meta->lookup;
 
     // The final prediction information
