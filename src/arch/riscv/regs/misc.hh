@@ -862,6 +862,8 @@ BitUnion32(VSSTATUS32)
     Bitfield<0> pad0;
 EndBitUnion(VSSTATUS32)
 
+const RegVal VMID_MASK = mask(14);
+
 BitUnion64(HGATP)
     Bitfield<63,60> mode;
     Bitfield<59,58> pad0;
