@@ -37,13 +37,37 @@ class PairTAGE : public TimedBaseBTBPredictor
         PTAGEEntryModelInfo() : dummy(0) {}
     };
 
+    // Prediction Block Information
     struct PTAGEBlockInfo
     {
-        Addr directionCounter;
+        // Width of the signed direction counter
+        static constexpr unsigned CounterWidth = 2;
+
+        short directionCounter;
         Addr branchPC;
         Addr targetPC;
 
         PTAGEBlockInfo(): directionCounter(0), branchPC(0), targetPC(0) {}
+
+        // Saturating update of the direction counter towards taken
+        void
+        updateCounter(bool taken)
+        {
+            const short max = (1 << (CounterWidth - 1)) - 1;
+            const short min = -(1 << (CounterWidth - 1));
+            if (taken && directionCounter < max) {
+                ++directionCounter;
+            } else if (!taken && directionCounter > min) {
+                --directionCounter;
+            }
+        }
+
+        // Whether the direction counter is at one of its two weakest values
+        bool
+        isWeak() const
+        {
+            return directionCounter == 0 || directionCounter == -1;
+        }
     };
 
     struct PTAGEEntry
@@ -59,6 +83,15 @@ class PairTAGE : public TimedBaseBTBPredictor
         PTAGEEntryModelInfo modelInfo;
 
         PTAGEEntry() : valid(false), b2Valid(false), tag(0), useful(false) {}
+
+        // A freshly installed entry holding one block, weak in its direction
+        PTAGEEntry(Addr tag, Addr branchPC, Addr targetPC, bool taken)
+            : valid(true), b2Valid(false), tag(tag), useful(false)
+        {
+            block.directionCounter = taken ? 0 : -1;
+            block.branchPC = branchPC;
+            block.targetPC = targetPC;
+        }
     };
 
     PairTAGE(const Params &p);
@@ -101,7 +134,7 @@ class PairTAGE : public TimedBaseBTBPredictor
     // History lengths for each table
     std::vector<unsigned> histLengths;
 
-    // Number of ways per set; the RTL tables are direct mapped
+    // Number of ways per set;
     const unsigned numWays;
 
     // ========== Bank Configuration ==========
@@ -157,11 +190,12 @@ class PairTAGE : public TimedBaseBTBPredictor
                       ThreadID tid);
 
     // ========== Table Access ==========
-    // Where a block maps to in one table
+    // Entry index in one table, including useful bit for training.
     struct TableIndex
     {
         Addr index{0};
         Addr tag{0};
+        bool useful{false};
     };
 
     // Result of looking up every table for one block. Tables are ordered
@@ -195,11 +229,23 @@ class PairTAGE : public TimedBaseBTBPredictor
 
     std::vector<std::shared_ptr<PairTAGEMeta>> threadMeta;
 
+    // ========== Training ==========
+    // Allocations refused because every candidate entry is useful. Once the
+    // count saturates, the next allocation may evict a useful entry, so
+    // entries that stopped being used do not hold their tables forever.
+    static constexpr unsigned AllocRefusalWidth = 5;
+    unsigned allocRefusals{0};
+
     struct PairTAGEStats : public statistics::Group
     {
         statistics::Scalar lookups;
         statistics::Vector providerTable;
         statistics::Scalar s3TrainEvents;
+        statistics::Scalar trainStrengthen;
+        statistics::Scalar trainCorrect;
+        statistics::Scalar trainAllocate;
+        statistics::Scalar trainAllocateEvicted;
+        statistics::Scalar trainNoTableFree;
 
         PairTAGEStats(statistics::Group *parent, unsigned numPredictors);
     } pairTageStats;
