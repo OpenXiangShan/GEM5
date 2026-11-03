@@ -149,8 +149,8 @@ PairTAGE::recordTwoTakenBlockEnqueued()
     pairTageStats.twoTakenBlocksEnqueued++;
 }
 
-void
-PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBTBPrediction> &stagePreds)
+PairTAGE::PairBlockInfo
+PairTAGE::predictBlock(Addr startAddr, const bitset &history)
 {
     (void)history;
     secondPredBlock.clear();
@@ -165,13 +165,13 @@ PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBT
     }
 
     if (!phaseEnabled(predictionPhase)) {
-        return;
+        return {};
     }
 
     pairTageStats.firstBlockLookups++;
     auto tableInfo = lookupEntry(startAddr);
     if (!tableInfo.found) {
-        return;
+        return {};
     }
 
     meta->predictedFirstBlock = tableInfo.entry.firstBlock();
@@ -179,7 +179,7 @@ PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBT
     secondPredBlock = tableInfo.entry.secondBlock();
 
     if (!tableInfo.entry.firstBlock().valid) {
-        return;
+        return {};
     }
 
     pairTageStats.firstBlockHits++;
@@ -187,9 +187,7 @@ PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBT
         pairTageStats.secondBlockProduced++;
     }
 
-    for (int s = getDelay(); s < stagePreds.size(); ++s) {
-        fillStagePrediction(tableInfo.entry.firstBlock(), stagePreds[s]);
-    }
+    return tableInfo.entry.firstBlock();
 }
 
 std::shared_ptr<void>
@@ -676,26 +674,7 @@ PairTAGE::lookupEntry(Addr startPC) const
     return lookupProviders(startPC).main;
 }
 
-void
-PairTAGE::fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pred) const
-{
-    pred.btbEntries.clear();
-    pred.hit = block.valid;
-    pred.tageInfoForMgscs.clear();
-    pred.predTick = curTick();
 
-    if (!block.valid) {
-        return;
-    }
-
-    if (block.isBranchlessFallthrough()) {
-        return;
-    }
-
-    auto entry = block.buildBTBEntry(componentIdx);
-    pred.btbEntries.push_back(entry);
-
-}
 
 void
 PairTAGE::recordTrainingTypes(statistics::Vector &typeStats,

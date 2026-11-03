@@ -144,7 +144,7 @@ class PairTAGE : public TimedBaseBTBPredictor
 
     PairTAGE(const Params &p);
 
-    void putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBTBPrediction> &stagePreds) override;
+    PairBlockInfo predictBlock(Addr startAddr, const bitset &history);
 
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
     void refreshPredictionMeta(Addr startAddr,
@@ -216,7 +216,6 @@ class PairTAGE : public TimedBaseBTBPredictor
     ProviderInfo lookupProviders(Addr startPC) const;
     ProviderInfo lookupProviders(Addr startPC, const TageMeta &predMeta) const;
     TageTableInfo lookupEntry(Addr startPC) const;
-    void fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pred) const;
     void recordTrainingTypes(statistics::Vector &typeStats,
                              const PairBlockInfo &block);
     bool blocksMatch(const PairBlockInfo &lhs, const PairBlockInfo &rhs) const;

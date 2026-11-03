@@ -262,11 +262,10 @@ BTBTAGEUpperBound::lookupExactPrediction(
 
 void
 BTBTAGEUpperBound::notePredictionResult(
-    BranchPrediction &btbEntry,
+    const BranchPrediction &btbEntry,
     const TagePrediction &pred,
     std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs) const
 {
-    btbEntry.taken = pred.taken;
     tageInfoForMgscs[btbEntry.pc].tage_pred_taken = pred.taken;
     tageInfoForMgscs[btbEntry.pc].tage_main_taken =
         pred.mainInfo.found ? pred.mainInfo.taken() : false;
@@ -284,9 +283,10 @@ BTBTAGEUpperBound::notePredictionResult(
 }
 
 void
-BTBTAGEUpperBound::putPCHistory(Addr startAddr, const bitset &history,
-                                std::vector<FullBTBPrediction> &stagePreds)
+BTBTAGEUpperBound::beginPrediction(Addr startAddr, const bitset &history,
+                                    ThreadID tid)
 {
+    (void)tid;
     lastPredBankId = getBankId(startAddr);
     predBankValid = true;
 
@@ -299,24 +299,36 @@ BTBTAGEUpperBound::putPCHistory(Addr startAddr, const bitset &history,
     ubMeta->history = selectedHistory;
     captureHistoryWords(selectedHistory, ubMeta->historyWords);
 
-    for (int s = getDelay(); s < stagePreds.size(); ++s) {
-        auto &stagePred = stagePreds[s];
-        stagePred.tageInfoForMgscs.clear();
+}
 
-        for (auto &btbEntry : stagePred.btbEntries) {
-            if (!(btbEntry.isCond && btbEntry.valid)) {
-                continue;
-            }
+std::vector<DirectionPrediction>
+BTBTAGEUpperBound::predictDirections(
+    const Addr &startAddr, const std::vector<BranchPrediction> &btbEntries,
+    std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
+    ThreadID tid, uint8_t asidHash)
+{
+    (void)startAddr;
+    (void)tid;
+    (void)asidHash;
+    std::vector<DirectionPrediction> results(btbEntries.size());
+    tageInfoForMgscs.clear();
 
-            BranchPredictionMeta branchMeta;
-            auto pred = lookupExactPrediction(
-                btbEntry, btbEntry.baseTaken, ubMeta->historyWords, &branchMeta);
-            ubMeta->preds[btbEntry.pc] = pred;
-            ubMeta->branchMeta[btbEntry.pc] = branchMeta;
-            tageStats.updateStatsWithTagePrediction(pred, true);
-            notePredictionResult(btbEntry, pred, stagePred.tageInfoForMgscs);
+    for (size_t i = 0; i < btbEntries.size(); ++i) {
+        const auto &btbEntry = btbEntries[i];
+        if (!(btbEntry.isCond && btbEntry.valid)) {
+            continue;
         }
+
+        BranchPredictionMeta branchMeta;
+        auto pred = lookupExactPrediction(
+            btbEntry, btbEntry.baseTaken, ubMeta->historyWords, &branchMeta);
+        ubMeta->preds[btbEntry.pc] = pred;
+        ubMeta->branchMeta[btbEntry.pc] = branchMeta;
+        tageStats.updateStatsWithTagePrediction(pred, true);
+        results[i] = {pred.finalProviderTable >= 0, pred.taken};
+        notePredictionResult(btbEntry, pred, tageInfoForMgscs);
     }
+    return results;
 }
 
 std::shared_ptr<void>

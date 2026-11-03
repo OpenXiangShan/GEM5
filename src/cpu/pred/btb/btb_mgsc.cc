@@ -540,7 +540,7 @@ BTBMGSC::generateSinglePrediction(const BranchPrediction &btb_entry, const Addr 
  *
  * @param startPC The starting PC address for the instruction stream
  * @param btbEntries Vector of BTB entries to make predictions for
- * @return Map of branch PC addresses to their predicted outcomes
+ * @return Provider validity and direction for each input candidate
  */
 std::vector<DirectionPrediction>
 BTBMGSC::predictDirections(
@@ -574,18 +574,7 @@ BTBMGSC::predictDirections(
     return results;
 }
 
-/**
- * @brief Makes predictions for a stream of instructions using TAGE predictor
- *
- * This function is called during the prediction stage and:
- * 1. Uses lookupHelper to get predictions for all BTB entries
- * 2. Stores predictions in the stage prediction structure
- * 3. Handles multiple prediction stages with different delays
- *
- * @param stream_start Starting PC of the instruction stream
- * @param history Current branch history
- * @param stagePreds Vector of predictions for different pipeline stages
- */
+
 void
 BTBMGSC::beginPrediction(Addr stream_start, const boost::dynamic_bitset<> &history,
                         ThreadID tid)

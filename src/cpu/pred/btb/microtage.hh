@@ -121,11 +121,16 @@ class MicroTAGE : public TimedBaseBTBPredictor
 
     void tick() override;
     void dryRunCycle(Addr startAddr) override;
-    // Make predictions for a stream of instructions and record in stage preds
-    void putPCHistory(Addr startAddr,
-                      const boost::dynamic_bitset<> &history,
-                      std::vector<FullBTBPrediction> &stagePreds) override;
+    // Snapshot lookup state once, then predict each stage's candidate set.
+    void beginPrediction(Addr startPC,
+                          const boost::dynamic_bitset<> &history,
+                          const std::vector<BranchPrediction> &firstCandidates,
+                          ThreadID tid);
+    std::vector<DirectionPrediction> predictDirections(
+        const Addr &startPC, const std::vector<BranchPrediction> &btbEntries,
+        ThreadID tid, uint8_t asidHash);
 
+    bool isAbtbEntry(const BranchPrediction &entry) const;
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
     void refreshPredictionMeta(Addr startAddr,
                                const boost::dynamic_bitset<> &history,
@@ -168,7 +173,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
 #endif
 
     // Look up predictions in TAGE tables for a stream of instructions
-    void lookupHelper(const Addr &startPC, std::vector<BranchPrediction> &btbEntries, ThreadID tid, uint8_t asidHash);
+
 
     // Calculate TAGE index for a given PC and table
     Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0,
@@ -419,7 +424,6 @@ public:
         FullBTBPrediction &s3Pred);
     std::vector<BranchPrediction> getAbtbConditionalEntries(
         const std::vector<BranchPrediction> &btbEntries) const;
-    bool isAbtbEntry(const BranchPrediction &entry) const;
 
     // Helper method to update predictor state for a single entry
     bool updatePredictorStateAndCheckAllocation(const BranchPrediction &entry,
@@ -446,7 +450,6 @@ public:
 
     int abtbComponentIdx{-1};
     std::vector<std::shared_ptr<TageMeta>> threadMeta;
-    ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;
     ThreadHistoryState &historyState(ThreadID tid);
     const ThreadHistoryState &historyState(ThreadID tid) const;
 };

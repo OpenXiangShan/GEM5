@@ -9,6 +9,7 @@
 #include "base/types.hh"
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/ras.hh"
+#include "cpu/pred/btb/test/prediction_helpers.hh"
 
 namespace gem5 {
 namespace branch_prediction {
@@ -79,7 +80,7 @@ protected:
         for (auto &stage : stagePreds) {
             stage.btbEntries.push_back(ret);
         }
-        ras->putPCHistory(startAddr, history, stagePreds);
+        predictForTest(ras, startAddr, history, stagePreds);
         EXPECT_EQ(stagePreds[0].btbEntries.front().predictedTarget, expectedTarget);
     }
 

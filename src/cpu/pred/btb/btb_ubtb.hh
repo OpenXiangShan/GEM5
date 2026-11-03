@@ -116,8 +116,8 @@ class UBTB : public TimedBaseBTBPredictor
      * 2. Updates prediction statistics
      * 3. Fills predictions for each pipeline stage
      */
-    void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
-                      std::vector<FullBTBPrediction> &stagePreds) override;
+    std::vector<BranchPrediction> predictCandidates(
+        Addr startAddr, ThreadID tid, uint8_t asidHash);
 
     /** Updates the uBTB predictions based on S3 prediction results.
      * This function is called from decoupled_bpred during S3 prediction
@@ -186,7 +186,7 @@ class UBTB : public TimedBaseBTBPredictor
   private:
 
     /** this struct holds the lastest prediction made by uBTB,
-     * it's set in putPCHistory, and used in updateUsingS3Pred
+     * it's set in predictCandidates, and used in updateUsingS3Pred
      */
     struct LastPred
     {
@@ -201,7 +201,7 @@ class UBTB : public TimedBaseBTBPredictor
     /** this struct holds the metadata for uBTB,
      * note that unlike other predictors, the ubtb meta serves only statistical purpose
      * and has no functional significance,
-     * it's set in putPCHistory, and passed to a fetch stream, to be later used in update.
+     * it's set in predictCandidates, and passed to a fetch stream, to be later used in update.
      */
     struct UBTBMeta
     {
@@ -241,7 +241,7 @@ class UBTB : public TimedBaseBTBPredictor
         if (!inc && ctr > 0) {ctr--;}
     }
 
-    /** helper method called by putPCHistory: Searches for a entry in the uBTB.
+    /** helper method called by predictCandidates: Searches for a entry in the uBTB.
      * @param startAddr The FB start address to look up
      * @return Iterator to the matching entry if found, or ubtb.end() if not found
      */
@@ -249,18 +249,13 @@ class UBTB : public TimedBaseBTBPredictor
     TickedUBTBEntry lookupNoSideEffect(Addr startAddr, ThreadID tid,
                                        uint8_t asidHash) const;
 
-    /** helper method called by putPCHistory: Check uBTB entry pc range and update statistics
+    /** helper method called by predictCandidates: Check uBTB entry pc range and update statistics
      * @param entry The uBTB entry to check
      * @param startAddr The start address of the fetch block
      */
     void PredStatistics(const TickedUBTBEntry entry, Addr startAddr);
 
-    /** helper method called by putPCHistory: Fill predictions for each pipeline stage based on uBTB entries
-     *  @param entry The BTB entry containing branch info
-     *  @param stagePreds Predictions for each pipeline stage
-     */
-    void fillStagePredictions(const TickedUBTBEntry& entry,
-                              std::vector<FullBTBPrediction>& stagePreds);
+
 
     /** helper method called in updateUsingS3Pred: This function replaces an existing uBTB entry with new prediction
      *

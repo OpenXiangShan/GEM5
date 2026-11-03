@@ -145,8 +145,8 @@ class MBTB : public TimedBaseBTBPredictor
      * 2. Updates prediction statistics
      * 3. Fills predictions for each pipeline stage
      */
-    void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
-                      std::vector<FullBTBPrediction> &stagePreds) override;
+    std::vector<BranchPrediction> predictCandidates(
+        Addr startAddr, ThreadID tid, uint8_t asidHash);
 
     std::vector<BranchPrediction> getPredictedEntriesNoSideEffect(
         Addr startAddr, ThreadID tid, uint8_t asidHash) const;
@@ -271,18 +271,11 @@ class MBTB : public TimedBaseBTBPredictor
     std::vector<TickedBTBEntry> processEntriesNoSideEffect(
         const std::vector<TickedBTBEntry>& entries, Addr startAddr) const;
 
-    /** Fill predictions for pipeline stages
-     *  @param entries Processed BTB entries
-     *  @param stagePreds Vector of predictions for each stage
-     */
-    void fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
-                             std::vector<FullBTBPrediction>& stagePreds);
+
 
     /** Update prediction metadata
      *  @param entries Processed BTB entries
      */
-    void updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
-                               std::vector<FullBTBPrediction>& stagePreds);
 
     /** Check branch prediction hit status
      *  @param stream Fetch stream containing execution results

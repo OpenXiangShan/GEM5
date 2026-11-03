@@ -146,8 +146,10 @@ class AheadBTB : public TimedBaseBTBPredictor
      * 2. Updates prediction statistics
      * 3. Fills predictions for each pipeline stage
      */
-    void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
-                      std::vector<FullBTBPrediction> &stagePreds) override;
+    std::vector<BranchPrediction> predictCandidates(
+        Addr startAddr, const boost::dynamic_bitset<> &history,
+        ThreadID tid, uint8_t asidHash);
+    void recordPredictionSelection(bool abtbHit, bool ubtbHit);
 
     /** Get prediction BTBMeta
      *  @return Returns the prediction meta
@@ -310,7 +312,7 @@ class AheadBTB : public TimedBaseBTBPredictor
     */
     struct ThreadState
     {
-        // metadata for BTB, set in putPCHistory, used in update
+        // metadata for BTB, set in predictCandidates, used in update
         std::shared_ptr<BTBMeta> meta;
 
         /**
@@ -329,7 +331,6 @@ class AheadBTB : public TimedBaseBTBPredictor
         std::queue<std::tuple<Addr, Addr, BTBSet>> aheadReadBtbEntries;
     };
 
-    ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;
     ThreadState &threadState(ThreadID tid);
     const ThreadState &threadState(ThreadID tid) const;
 
@@ -343,18 +344,12 @@ class AheadBTB : public TimedBaseBTBPredictor
     std::vector<TickedBTBEntry> processEntriesNoSideEffect(
         const std::vector<TickedBTBEntry>& entries, Addr startAddr) const;
 
-    /** Fill predictions for pipeline stages
-     *  @param entries Processed BTB entries
-     *  @param stagePreds Vector of predictions for each stage
-     */
-    void fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
-                             std::vector<FullBTBPrediction>& stagePreds);
+
 
     /** Update prediction metadata
      *  @param entries Processed BTB entries
      */
     void updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
-                               std::vector<FullBTBPrediction>& stagePreds,
                                ThreadID tid,
                                Addr indexPhrHash);
 

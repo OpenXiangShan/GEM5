@@ -130,6 +130,18 @@ struct BTBEntry : BranchInfo
     }
 };
 
+struct DirectionPrediction
+{
+    bool valid = false;
+    bool taken = false;
+};
+
+struct TargetPrediction
+{
+    bool valid = false;
+    Addr target = 0;
+};
+
 /** A branch candidate, independent of BTB storage and replacement state. */
 struct BranchPrediction : BranchInfo
 {
@@ -214,8 +226,6 @@ enum class PairPhase : uint8_t
     Even = 0,
     Odd = 1
 };
-
-#define FillStageLoop(x) for (int x = getDelay(); x < stagePreds.size(); ++x)
 
 struct DirectionHistoryUpdate
 {

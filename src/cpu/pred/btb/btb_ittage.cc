@@ -71,12 +71,7 @@ ittageStats(this, p.numPredictors)
     usefulResetCnt = 0;
 }
 
-ThreadID
-BTBITTAGE::predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const
-{
-    assert(!stagePreds.empty());
-    return stagePreds.front().tid;
-}
+
 
 BTBITTAGE::ThreadHistoryState &
 BTBITTAGE::historyState(ThreadID tid)
@@ -100,13 +95,16 @@ BTBITTAGE::tickStart()
 void
 BTBITTAGE::tick() {}
 
-void
-BTBITTAGE::lookupHelper(Addr startAddr, std::vector<BranchPrediction> &btbEntries, ThreadID tid, uint8_t asidHash)
+std::vector<TargetPrediction>
+BTBITTAGE::predictTargets(
+    Addr startAddr, const std::vector<BranchPrediction> &btbEntries,
+    ThreadID tid, uint8_t asidHash)
 {
     (void)asidHash;
     DPRINTF(ITTAGE, "lookupHelper startAddr: %#lx\n", startAddr);
-    std::vector<TagePrediction> preds;
-    for (auto &btb_entry : btbEntries) {
+    std::vector<TargetPrediction> results(btbEntries.size());
+    for (size_t slot = 0; slot < btbEntries.size(); ++slot) {
+        const auto &btb_entry = btbEntries[slot];
         if (btb_entry.isIndirect && !btb_entry.isReturn && btb_entry.valid) {
             DPRINTF(ITTAGE, "lookupHelper btbEntry: %#lx\n", btb_entry.pc);
             bool provided = false;
@@ -162,7 +160,7 @@ BTBITTAGE::lookupHelper(Addr startAddr, std::vector<BranchPrediction> &btbEntrie
                 target = base_target;
                 warn("no target found\n");
             }
-            btb_entry.predictedTarget = taken ? target : btb_entry.target;
+            results[slot] = {taken && !use_base, target};
             DPRINTF(ITTAGE, "tage predict %#lx target %#lx\n", btb_entry.pc, target);
 
             // Update prediction statistics
@@ -180,6 +178,7 @@ BTBITTAGE::lookupHelper(Addr startAddr, std::vector<BranchPrediction> &btbEntrie
             threadMeta[tid]->preds[btb_entry.pc] = pred;
         }
     }
+    return results;
 }
 
 void
@@ -188,13 +187,9 @@ BTBITTAGE::dryRunCycle(Addr startPC) {
 }
 
 void
-BTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<FullBTBPrediction> &stagePreds) {
-    const ThreadID tid = predictorTid(stagePreds);
-    const uint8_t asidHash = stagePreds.empty() ? 0 : stagePreds.front().asidHash;
+BTBITTAGE::beginPrediction(Addr stream_start, ThreadID tid, uint8_t asidHash)
+{
     const auto &state = historyState(tid);
-    if (debugPC == stream_start) {
-        debugFlag = true;
-    }
     DPRINTF(ITTAGE, "putPCHistory startAddr: %#lx\n", stream_start);
 
     // clear old metas
@@ -225,13 +220,6 @@ BTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
     }
     threadMeta[tid]->usefulMask = std::move(useful_mask);
 
-    for (int s = getDelay(); s < stagePreds.size(); s++) {
-        auto &stage_pred = stagePreds[s];
-        lookupHelper(stream_start, stage_pred.btbEntries,
-                     tid, asidHash);
-    }
-    DPRINTF(ITTAGE, "putPCHistory end\n");
-    debugFlag = false;
 }
 
 std::shared_ptr<void>

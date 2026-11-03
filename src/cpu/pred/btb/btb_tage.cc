@@ -205,12 +205,7 @@ BTBTAGE::~BTBTAGE()
 {
 }
 
-ThreadID
-BTBTAGE::predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const
-{
-    assert(!stagePreds.empty());
-    return stagePreds.front().tid;
-}
+
 
 BTBTAGE::ThreadHistoryState &
 BTBTAGE::historyState(ThreadID tid)
@@ -418,22 +413,26 @@ BTBTAGE::generateSinglePrediction(const BranchInfo &btb_entry,
  * 
  * @param startPC The starting PC address for the instruction stream
  * @param btbEntries Vector of BTB entries to make predictions for
- * @return Map of branch PC addresses to their predicted outcomes
+ * @return Provider validity and direction for each input candidate
  */
-void
-BTBTAGE::lookupHelper(const Addr &startPC, std::vector<BranchPrediction> &btbEntries,
-                      std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, ThreadID tid, uint8_t asidHash)
+std::vector<DirectionPrediction>
+BTBTAGE::predictDirections(
+    const Addr &startPC, const std::vector<BranchPrediction> &btbEntries,
+    std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
+    ThreadID tid, uint8_t asidHash)
 {
     DPRINTF(TAGE, "lookupHelper startAddr: %#lx\n", startPC);
 
     // Process each BTB entry to make predictions
-    for (auto &btb_entry : btbEntries) {
+    std::vector<DirectionPrediction> results(btbEntries.size());
+    for (size_t i = 0; i < btbEntries.size(); ++i) {
+        const auto &btb_entry = btbEntries[i];
         // Only predict for valid conditional branches
         if (btb_entry.isCond && btb_entry.valid) {
             auto pred = generateSinglePrediction(btb_entry, startPC, btb_entry.baseTaken, nullptr, tid, asidHash);
             threadMeta[tid]->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
-            btb_entry.taken = pred.taken;
+            results[i] = {pred.finalProviderTable >= 0, pred.taken};
             tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;
             tageInfoForMgscs[btb_entry.pc].tage_main_taken = pred.mainInfo.found ? pred.mainInfo.taken() : false;
             tageInfoForMgscs[btb_entry.pc].tage_pred_conf_high = pred.mainInfo.found &&
@@ -447,21 +446,25 @@ BTBTAGE::lookupHelper(const Addr &startPC, std::vector<BranchPrediction> &btbEnt
             tageInfoForMgscs[btb_entry.pc].tage_pred_alt_diff = pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
         }
     }
+    return results;
 }
 
-void
-BTBTAGE::lookupNoSideEffect(const Addr &startPC,
-                            std::vector<BranchPrediction> &btbEntries,
+std::vector<DirectionPrediction>
+BTBTAGE::lookupDirectionsNoSideEffect(const Addr &startPC,
+                            const std::vector<BranchPrediction> &btbEntries,
                             ThreadID tid,
                             uint8_t asidHash) const
 {
-    for (auto &btb_entry : btbEntries) {
+    std::vector<DirectionPrediction> results(btbEntries.size());
+    for (size_t i = 0; i < btbEntries.size(); ++i) {
+        const auto &btb_entry = btbEntries[i];
         if (btb_entry.isCond && btb_entry.valid) {
             auto pred = generateSinglePrediction(
                 btb_entry, startPC, btb_entry.baseTaken, nullptr, tid, asidHash);
-            btb_entry.taken = pred.taken;
+            results[i] = {pred.finalProviderTable >= 0, pred.taken};
         }
     }
+    return results;
 }
 
 void
@@ -474,22 +477,10 @@ BTBTAGE::dryRunCycle(Addr startPC) {
     return;
 }
 
-/**
- * @brief Makes predictions for a stream of instructions using TAGE predictor
- * 
- * This function is called during the prediction stage and:
- * 1. Uses lookupHelper to get predictions for all BTB entries
- * 2. Stores predictions in the stage prediction structure
- * 3. Handles multiple prediction stages with different delays
- * 
- * @param startPC Starting PC of the instruction stream
- * @param history Current branch history
- * @param stagePreds Vector of predictions for different pipeline stages
- */
+
 void
-BTBTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPrediction> &stagePreds) {
-    const ThreadID tid = predictorTid(stagePreds);
-    const uint8_t asidHash = stagePreds.empty() ? 0 : stagePreds.front().asidHash;
+BTBTAGE::beginPrediction(Addr startPC, const bitset &history, ThreadID tid)
+{
     const auto &state = historyState(tid);
     // Record prediction bank for next tick's conflict detection
     lastPredBankId = getBankId(startPC);
@@ -501,23 +492,12 @@ BTBTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPr
     DPRINTF(TAGE, "putPCHistory startAddr: %#lx, bank: %u\n",
             startPC, lastPredBankId);
 
-    // IMPORTANT: when this function is called,
-    // btb entries should already be in stagePreds
-    // get prediction and save it
-
     // Clear old prediction metadata and save current history state
     threadMeta[tid] = std::make_shared<TageMeta>();
     threadMeta[tid]->tagFoldedHist = state.tagFoldedHist;
     threadMeta[tid]->altTagFoldedHist = state.altTagFoldedHist;
     threadMeta[tid]->indexFoldedHist = state.indexFoldedHist;
     threadMeta[tid]->history = history;
-
-    for (int s = getDelay(); s < stagePreds.size(); s++) {
-        // TODO: only lookup once for one btb entry in different stages
-        auto &stage_pred = stagePreds[s];
-        lookupHelper(startPC, stage_pred.btbEntries, stage_pred.tageInfoForMgscs,
-                     tid, asidHash);
-    }
 
 }
 

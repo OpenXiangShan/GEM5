@@ -86,9 +86,8 @@ namespace btb_pred {
             // RASInflightEntry inflight; // inflight top of stack
         }RASMeta;
 
-        void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
-                          std::vector<FullBTBPrediction> &stagePreds) override;
-        
+        Addr predictReturnTarget(Addr startAddr, ThreadID tid);
+
         std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
         void refreshPredictionMeta(Addr startAddr,
                                    const boost::dynamic_bitset<> &history,

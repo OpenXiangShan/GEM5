@@ -261,72 +261,21 @@ MBTB::processEntriesNoSideEffect(const std::vector<TickedBTBEntry>& entries,
     return processed_entries;
 }
 
-/**
- * Fill predictions for each pipeline stage:
- * 1. Copy BTB entries
- * 2. Set conditional branch predictions
- * 3. Set indirect branch targets
- */
-void
-MBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
-                                    std::vector<FullBTBPrediction>& stagePreds)
+/** Look up base candidates and snapshot native storage for training. */
+std::vector<BranchPrediction>
+MBTB::predictCandidates(Addr startAddr, ThreadID tid, uint8_t asidHash)
 {
-
-    FillStageLoop(s) {
-        DPRINTF(BTB, "BTB: assigning prediction for stage %d\n", s);
-        // Copy BTB entries to stage prediction
-        stagePreds[s].btbEntries.clear();
-        stagePreds[s].hit = !entries.empty();
-        for (auto e : entries) {
-            stagePreds[s].btbEntries.push_back(BTBEntry(e));
-        }
-        checkAscending(stagePreds[s].btbEntries);
-        if (s == getDelay()) dumpBTBEntries(stagePreds[s].btbEntries);
-
-        stagePreds[s].predTick = curTick();
-    }
-
-
-}
-
-/**
- * Update metadata for later stages:
- * 1. Clear old metadata
- * 2. Save current BTB entries
- */
-void
-MBTB::updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
-                                   std::vector<FullBTBPrediction>& stagePreds)
-{
-    const ThreadID tid = stagePreds.empty() ? 0 : stagePreds.front().tid;
-    assert(tid < threadMeta.size());
-
-    // Save current BTB entries
-    for (auto e: entries) {
-        threadMeta[tid]->hit_entries.push_back(BTBEntry(e));
-    }
-}
-
-void
-MBTB::putPCHistory(Addr startAddr,
-                         const boost::dynamic_bitset<> &history,
-                         std::vector<FullBTBPrediction> &stagePreds)
-{
-    const ThreadID tid = stagePreds.empty() ? 0 : stagePreds.front().tid;
     assert(tid < threadMeta.size());
     threadMeta[tid] = std::make_shared<BTBMeta>();
-    const uint8_t asidHash = stagePreds.empty() ? 0 : stagePreds.front().asidHash;
-    // Lookup all matching entries in BTB
-    auto find_entries = lookup(startAddr, tid, asidHash, threadMeta[tid]);
-
-    // Process BTB entries
-    auto processed_entries = processEntries(find_entries, startAddr);
-    
-    // Fill predictions for each pipeline stage
-    fillStagePredictions(processed_entries, stagePreds);
-    
-    // Update metadata for later stages
-    updatePredictionMeta(processed_entries, stagePreds);
+    auto found = lookup(startAddr, tid, asidHash, threadMeta[tid]);
+    auto processed = processEntries(found, startAddr);
+    std::vector<BranchPrediction> candidates(processed.begin(), processed.end());
+    checkAscending(candidates);
+    dumpBTBEntries(candidates);
+    for (const auto &entry : processed) {
+        threadMeta[tid]->hit_entries.push_back(BTBEntry(entry));
+    }
+    return candidates;
 }
 
 std::vector<BranchPrediction>

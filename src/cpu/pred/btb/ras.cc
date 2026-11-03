@@ -97,30 +97,14 @@ BTBRAS::checkCorrectness(ThreadID tid) {
     }*/
 }
 
-void
-BTBRAS::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
-                  std::vector<FullBTBPrediction> &stagePreds)
+Addr
+BTBRAS::predictReturnTarget(Addr startAddr, ThreadID tid)
 {
-    assert(getDelay() < stagePreds.size());
-    const ThreadID tid = stagePreds.back().tid;
     assert(tid < numThreads);
     auto &state = threadStates[tid];
     state.meta = std::make_shared<RASMeta>();
     DPRINTFR(RAS, "putPC startAddr %lx", startAddr);
-    // checkCorrectness(tid);
-    auto top = getTop_meta(tid);
-    for (int i = getDelay(); i < stagePreds.size(); i++) {
-        for (auto &entry : stagePreds[i].btbEntries) {
-            if (entry.isIndirect && entry.isReturn) {
-                entry.predictedTarget = top.retAddr;
-            }
-        }
-    }
-    /*
-    if (stagePreds.back().btbEntry.slots[0].isCall || stagePreds.back().btbEntry.slots[0].isReturn || stagePreds.back().btbEntry.slots[1].isCall || stagePreds.back().btbEntry.slots[1].isReturn) {
-        printStack("putPCHistory", tid);
-    }
-    */
+    return getTop_meta(tid).retAddr;
 }
 
 std::shared_ptr<void>

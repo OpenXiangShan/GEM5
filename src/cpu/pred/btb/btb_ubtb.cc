@@ -153,43 +153,25 @@ UBTB::PredStatistics(const TickedUBTBEntry entry, Addr startAddr)
     return;
 }
 
-void
-UBTB::fillStagePredictions(const TickedUBTBEntry &entry, std::vector<FullBTBPrediction> &stagePreds)
+
+
+std::vector<BranchPrediction>
+UBTB::predictCandidates(Addr startAddr, ThreadID tid, uint8_t asidHash)
 {
-    FillStageLoop(s) {
-        DPRINTF(UBTB, "UBTB: assigning prediction for stage %d\n", s);
-
-        // Copy uBTB entries to stage prediction
-        stagePreds[s].btbEntries.clear();
-        stagePreds[s].hit = entry.valid;
-        // Set predictions for each branch
-        stagePreds[s].predTick = curTick();
-    }
-
-    if (entry.valid) {
-        FillStageLoop(s) stagePreds[s].btbEntries.push_back(BTBEntry(entry));
-        FillStageLoop(s) stagePreds[s].btbEntries.back().taken = true;
-    }
-}
-
-void
-UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history, std::vector<FullBTBPrediction> &stagePreds)
-{
-    const ThreadID tid = stagePreds.empty() ? 0 : stagePreds.front().tid;
     assert(tid < threadMeta.size());
     threadMeta[tid] = std::make_shared<UBTBMeta>();
-    const uint8_t asidHash = stagePreds.empty() ? 0 : stagePreds.front().asidHash;
     auto it = lookup(startAddr, tid, asidHash);
-    auto& entry = threadMeta[tid]->hit_entry;
+    auto &entry = threadMeta[tid]->hit_entry;
     entry = (it != ubtb.end()) ? *it : TickedUBTBEntry();
-
     PredStatistics(entry, startAddr);
-
-    // Fill predictions for each pipeline stage
-    fillStagePredictions(entry, stagePreds);
-
-    // Update metadata for later stages
     lastPred[tid].hit_entry = it;
+
+    if (!entry.valid) {
+        return {};
+    }
+    BranchPrediction candidate(entry);
+    candidate.taken = true;
+    return {candidate};
 }
 
 void

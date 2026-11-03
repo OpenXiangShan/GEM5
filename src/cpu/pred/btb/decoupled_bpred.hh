@@ -187,6 +187,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     // Tick helper functions
     void requestNewPrediction(ThreadID tid);
+    void predictComponents(ThreadID tid);
 
     // TODO: compare phr and ghr
     void histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history);

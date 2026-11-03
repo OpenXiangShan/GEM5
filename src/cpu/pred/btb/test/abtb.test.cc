@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "cpu/pred/btb/abtb.hh"
+#include "cpu/pred/btb/test/prediction_helpers.hh"
 
 namespace gem5
 {
@@ -55,7 +56,7 @@ FullBTBPrediction makePrediction(Addr startPC, AheadBTB *abtb,
         stagePreds[i].predSource = i;
     }
     boost::dynamic_bitset<> history(8, 0); // history does not matter for BTB
-    abtb->putPCHistory(startPC, history, stagePreds);
+    predictForTest(abtb, startPC, history, stagePreds);
     return stagePreds[1];
 }
 

@@ -6,6 +6,7 @@
 #include <boost/dynamic_bitset.hpp>
 
 #include "cpu/pred/btb/btb_mgsc.hh"
+#include "cpu/pred/btb/test/prediction_helpers.hh"
 
 namespace gem5
 {
@@ -257,7 +258,7 @@ struct MgscHarness
         boost::dynamic_bitset<> bwhr_before = bwhr;
         auto lhr_before = lhr;
 
-        mgsc.putPCHistory(start_pc, ghr, stage_preds);
+        predictForTest(&mgsc, start_pc, ghr, stage_preds);
         auto meta = mgsc.getPredictionMeta();
 
         auto [found, pred_taken] = findCondTaken(stage_preds[1].btbEntries, entry.pc);
@@ -367,7 +368,7 @@ TEST(BTBMGSCTest, CanConstructAndCreateMetaOnEmptyInput)
         pred.bbStart = start_pc;
     }
 
-    mgsc.putPCHistory(start_pc, history, stage_preds);
+    predictForTest(&mgsc, start_pc, history, stage_preds);
 
     auto meta = mgsc.getPredictionMeta();
     EXPECT_NE(meta, nullptr);
@@ -401,7 +402,7 @@ TEST(BTBMGSCTest, GateHighConfUsesSCWhenStrong)
     setAllTableCountersForPc(mgsc, start_pc, branch_pc, tage_info,
                              /*bw=*/4, /*l=*/4, /*i=*/0, /*g=*/0, /*p=*/-1, /*bias=*/-1);
 
-    mgsc.putPCHistory(start_pc, history, stage_preds);
+    predictForTest(&mgsc, start_pc, history, stage_preds);
 
     auto [found, taken] = findCondTaken(stage_preds[1].btbEntries, branch_pc);
     ASSERT_TRUE(found);
@@ -439,7 +440,7 @@ TEST(BTBMGSCTest, GateHighConfBypassWhenWeak)
     setAllTableCountersForPc(mgsc, start_pc, branch_pc, tage_info,
                              /*bw=*/4, /*l=*/4, /*i=*/0, /*g=*/0, /*p=*/-1, /*bias=*/-2);
 
-    mgsc.putPCHistory(start_pc, history, stage_preds);
+    predictForTest(&mgsc, start_pc, history, stage_preds);
 
     auto [found, taken] = findCondTaken(stage_preds[1].btbEntries, branch_pc);
     ASSERT_TRUE(found);
@@ -479,7 +480,7 @@ TEST(BTBMGSCTest, ForceUseSCOverridesTage)
     setAllTableCountersForPc(mgsc, start_pc, branch_pc, tage_info,
                              /*bw=*/0, /*l=*/0, /*i=*/0, /*g=*/0, /*p=*/-2, /*bias=*/-2);
 
-    mgsc.putPCHistory(start_pc, history, stage_preds);
+    predictForTest(&mgsc, start_pc, history, stage_preds);
 
     auto [found, taken] = findCondTaken(stage_preds[1].btbEntries, branch_pc);
     ASSERT_TRUE(found);
@@ -518,7 +519,7 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
                              /*bw=*/31, /*l=*/31, /*i=*/0, /*g=*/0, /*p=*/0, /*bias=*/0);
 
     // Prediction
-    mgsc.putPCHistory(start_pc, history, stage_preds);
+    predictForTest(&mgsc, start_pc, history, stage_preds);
     auto meta = mgsc.getPredictionMeta();
 
     const auto [bw_i1, bw_i2] =
@@ -772,7 +773,7 @@ TEST(BTBMGSCTest, MissingTageInfoUsesDefaultFallbackContext)
         pred.tageInfoForMgscs.clear();
     }
 
-    h.mgsc.putPCHistory(start_pc, history, stage_preds);
+    predictForTest(&h.mgsc, start_pc, history, stage_preds);
 
     auto [found, taken] = findCondTaken(stage_preds[1].btbEntries, branch_pc);
     ASSERT_TRUE(found);

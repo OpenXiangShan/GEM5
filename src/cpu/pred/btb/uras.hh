@@ -40,9 +40,8 @@ class BTBuRAS : public TimedBaseBTBPredictor
             uRASEntry tos; // top of stack
         }uRASMeta;
 
-        void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
-                          std::vector<FullBTBPrediction> &stagePreds) override;
-        
+        void preparePrediction();
+
         std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
         void specUpdateState(FullBTBPrediction &pred);

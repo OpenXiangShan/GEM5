@@ -144,12 +144,16 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     void tick() override;
     void dryRunCycle(Addr startAddr) override;
-    // Make predictions for a stream of instructions and record in stage preds
-    void putPCHistory(Addr startAddr,
-                      const boost::dynamic_bitset<> &history,
-                      std::vector<FullBTBPrediction> &stagePreds) override;
-    void lookupNoSideEffect(const Addr &startPC,
-                            std::vector<BranchPrediction> &btbEntries,
+    // Snapshot lookup state once, then predict each stage's candidate set.
+    virtual void beginPrediction(Addr startPC,
+                          const boost::dynamic_bitset<> &history,
+                          ThreadID tid);
+    virtual std::vector<DirectionPrediction> predictDirections(
+        const Addr &startPC, const std::vector<BranchPrediction> &btbEntries,
+        std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
+        ThreadID tid, uint8_t asidHash);
+    std::vector<DirectionPrediction> lookupDirectionsNoSideEffect(const Addr &startPC,
+                            const std::vector<BranchPrediction> &btbEntries,
                             ThreadID tid = 0,
                             uint8_t asidHash = 0) const;
 
@@ -198,8 +202,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
 #endif
 
     // Look up predictions in TAGE tables for a stream of instructions
-    void lookupHelper(const Addr &startPC, std::vector<BranchPrediction> &btbEntries,
-                    std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, ThreadID tid, uint8_t asidHash);
+
 
     // Calculate TAGE index for a given PC and table
     Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0,
@@ -517,7 +520,6 @@ private:
 
     std::vector<std::shared_ptr<TageMeta>> threadMeta;
 
-    ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;
     ThreadHistoryState &historyState(ThreadID tid);
     const ThreadHistoryState &historyState(ThreadID tid) const;
 };

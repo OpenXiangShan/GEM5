@@ -70,18 +70,11 @@ BTBuRAS::setTrace()
 }
 
 void
-BTBuRAS::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
-                  std::vector<FullBTBPrediction> &stagePreds)
+BTBuRAS::preparePrediction()
 {
-    auto &stack = specStack;
-    auto &sp = specSp;
-    assert(getDelay() < stagePreds.size());
-    for (int i = getDelay(); i < stagePreds.size(); i++) {
-
-    }
-    meta.sp = sp;
-    meta.tos = stack[sp];
-    printStack("putPCHistory", stack, sp);
+    meta.sp = specSp;
+    meta.tos = specStack[specSp];
+    printStack("preparePrediction", specStack, specSp);
 }
 
 std::shared_ptr<void>

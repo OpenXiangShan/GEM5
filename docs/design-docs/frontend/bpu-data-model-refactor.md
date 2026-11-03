@@ -146,3 +146,12 @@ scons build/RISCV/cpu/pred/btb/test/tage.test.debug \
 - 新增条件前缀历史、原始/最终目标分离、目标 override，以及 branchless/miss 的定向测试。production 构建通过；TAGE 32、BTB 36、ABTB 6、MicroTAGE 7、MGSC 14、RAS pop/push 4、uRAS 13，共 112 项通过。
 - `candidates/` 8 组对照 baseline 的已有非 host stats 全部一致；日志前缀 `candidates-`。style 检查通过。
 - 此步尚未收窄组件 `putPCHistory()` 接口；下一步把预测输出与顶层选择分开，完成阶段 3。
+
+### 顶层显式合成（阶段 3b）
+
+- 删除基类及组件的全阶段 `putPCHistory()` 接口与阶段填充 helper。BTB 提供候选，TAGE/MicroTAGE/MGSC 提供逐候选方向有效性，ITTAGE 提供逐候选目标有效性，RAS 提供返回目标，PairTAGE 提供 block。
+- `DecoupledBPUWithBTB::predictComponents()` 按原组件顺序和各自 `numDelay` 显式组合。方向/目标组件每次请求先保存自己的 lookup metadata，再按阶段升序处理该阶段候选，不对候选去重或跨阶段广播方向结果。
+- TAGE 无高级 provider 或选中 base 时由顶层取 `baseTaken`；MGSC 不采用修正时取预测时 TAGE 结果。MicroTAGE 只处理 ABTB 候选，miss 时显式恢复 base，保留 uBTB 候选的既有方向。
+- 单元测试的阶段组装放入测试专用 `prediction_helpers.hh`，生产组件不保留旧接口适配。
+- production 构建通过；TAGE 34、BTB 36、ABTB 6、MicroTAGE 8、MGSC 14、RAS pop/push 4、uRAS 13，共 115 项通过。新增 provider 有效性、不同阶段候选/metadata 覆盖顺序和 MicroTAGE native miss fallback 测试。
+- `composition/` 8 组对照 baseline 的已有非 host stats 全部一致；日志前缀 `composition-`。style 检查通过。独立审查、补充 delay/SMT 对照和最终 SPEC06 CI 尚待完成。

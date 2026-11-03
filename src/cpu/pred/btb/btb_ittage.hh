@@ -98,10 +98,11 @@ class BTBITTAGE : public TimedBaseBTBPredictor
 
     void tick() override;
     void dryRunCycle(Addr startAddr) override;
-    // make predictions, record in stage preds
-    void putPCHistory(Addr startAddr,
-                      const boost::dynamic_bitset<> &history,
-                      std::vector<FullBTBPrediction> &stagePreds) override;
+    // Read the component tables once, then predict each candidate set.
+    void beginPrediction(Addr startPC, ThreadID tid, uint8_t asidHash);
+    std::vector<TargetPrediction> predictTargets(
+        Addr startPC, const std::vector<BranchPrediction> &btbEntries,
+        ThreadID tid, uint8_t asidHash);
 
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
     void refreshPredictionMeta(Addr startAddr,
@@ -131,7 +132,7 @@ class BTBITTAGE : public TimedBaseBTBPredictor
   private:
 
     // return provided
-    void lookupHelper(Addr stream_start, std::vector<BranchPrediction> &btbEntries, ThreadID tid, uint8_t asidHash);
+
 
     // use blockPC
     Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0,
@@ -283,7 +284,6 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     } TageMeta;
 
     std::vector<std::shared_ptr<TageMeta>> threadMeta;
-    ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;
     ThreadHistoryState &historyState(ThreadID tid);
     const ThreadHistoryState &historyState(ThreadID tid) const;
 

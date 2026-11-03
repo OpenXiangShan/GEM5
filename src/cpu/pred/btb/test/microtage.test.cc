@@ -4,6 +4,7 @@
 
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/microtage.hh"
+#include "cpu/pred/btb/test/prediction_helpers.hh"
 
 namespace gem5
 {
@@ -87,7 +88,7 @@ class MicroTAGES3UpdateTest : public ::testing::Test
         auto copied = seed;
         std::vector<FullBTBPrediction> stage_preds(1);
         stage_preds[0] = copied;
-        tage->putPCHistory(seed.bbStart, boost::dynamic_bitset<>(64), stage_preds);
+        predictForTest(tage, seed.bbStart, boost::dynamic_bitset<>(64), stage_preds);
     }
 
     bool
@@ -97,12 +98,29 @@ class MicroTAGES3UpdateTest : public ::testing::Test
         stage_preds[0].tid = 0;
         stage_preds[0].bbStart = start_pc;
         stage_preds[0].btbEntries = {entry};
-        predictor->putPCHistory(start_pc, boost::dynamic_bitset<>(64), stage_preds);
+        predictForTest(predictor, start_pc, boost::dynamic_bitset<>(64), stage_preds);
         return stage_preds[0].btbEntries.front().taken;
     }
 
     std::unique_ptr<MicroTAGE> tage;
 };
+
+TEST_F(MicroTAGES3UpdateTest, NativeMissUsesBaseAndPreservesUbtbDirection)
+{
+    tage->setAbtbComponentIdx(1);
+    auto native = makeCondEntry(0x1000, -1);
+    native.source = 1;
+    auto ubtb = makeCondEntry(0x1004, -1);
+    ubtb.source = 0;
+    std::vector<FullBTBPrediction> stages(1);
+    stages[0].btbEntries = {native, ubtb};
+    for (auto &entry : stages[0].btbEntries) {
+        entry.taken = true;
+    }
+    predictForTest(tage, 0x1000, boost::dynamic_bitset<>(64), stages);
+    EXPECT_FALSE(stages[0].btbEntries[0].taken);
+    EXPECT_TRUE(stages[0].btbEntries[1].taken);
+}
 
 TEST_F(MicroTAGES3UpdateTest, FunctionalUpdateBypassedWhenUsingS3Pred)
 {

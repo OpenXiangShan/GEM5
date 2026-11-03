@@ -432,16 +432,142 @@ DecoupledBPUWithBTB::requestNewPrediction(ThreadID tid)
         pairtage->setPredictionPhase(thread.s0PairPhase);
     }
 
-    // Query each predictor component with current PC and history
-    for (int i = 0; i < numComponents; i++) {
-        components[i]->putPCHistory(thread.s0PC, thread.s0History, predsOfEachStage);  //s0History not used
-    }
+    predictComponents(tid);
 
     generateFinalPredAndCreateBubbles(tid);
 
     DPRINTF(Override, "Generating final prediction for PC %#lx\n", thread.s0PC);
 
     threads[tid].validprediction = true;
+}
+
+void
+DecoupledBPUWithBTB::predictComponents(ThreadID tid)
+{
+    auto &thread = threads[tid];
+    auto &stages = thread.predsOfEachStage;
+    const Addr pc = thread.s0PC;
+    const auto &history = thread.s0History;
+    const uint8_t asidHash = stages.front().asidHash;
+
+    auto fillCandidates = [&](TimedBaseBTBPredictor *component,
+                              const std::vector<BranchPrediction> &candidates) {
+        for (unsigned s = component->getDelay(); s < stages.size(); ++s) {
+            stages[s].btbEntries = candidates;
+            stages[s].hit = !candidates.empty();
+            stages[s].predTick = curTick();
+        }
+    };
+
+    if (ubtb->isEnabled()) {
+        fillCandidates(ubtb, ubtb->predictCandidates(pc, tid, asidHash));
+    }
+    if (abtb->isEnabled()) {
+        auto candidates = abtb->predictCandidates(pc, history, tid, asidHash);
+        const bool nativeHit = !candidates.empty();
+        const bool ubtbHit = !stages.front().btbEntries.empty();
+        abtb->recordPredictionSelection(nativeHit, ubtbHit);
+        // A native ABTB hit owns the candidate set even if all branches
+        // subsequently predict not-taken. Only an ABTB miss uses uBTB.
+        if (!nativeHit && ubtbHit) {
+            candidates.push_back(stages.front().btbEntries.front());
+        }
+        fillCandidates(abtb, candidates);
+    }
+    if (microtage->isEnabled()) {
+        const std::vector<BranchPrediction> empty;
+        const auto &first = microtage->getDelay() < stages.size() ?
+            stages[microtage->getDelay()].btbEntries : empty;
+        microtage->beginPrediction(pc, history, first, tid);
+        for (unsigned s = microtage->getDelay(); s < stages.size(); ++s) {
+            auto &entries = stages[s].btbEntries;
+            const auto directions = microtage->predictDirections(
+                pc, entries, tid, asidHash);
+            for (size_t i = 0; i < entries.size(); ++i) {
+                if (entries[i].valid && entries[i].isCond &&
+                    microtage->isAbtbEntry(entries[i])) {
+                    entries[i].taken = directions[i].valid ?
+                        directions[i].taken : entries[i].baseTaken;
+                }
+            }
+        }
+    }
+    if (pairtage->isEnabled()) {
+        const auto block = pairtage->predictBlock(pc, history);
+        if (block.valid) {
+            for (unsigned s = pairtage->getDelay(); s < stages.size(); ++s) {
+                auto &pred = stages[s];
+                pred.btbEntries.clear();
+                pred.hit = true;
+                pred.tageInfoForMgscs.clear();
+                pred.predTick = curTick();
+                if (block.hasBranch) {
+                    pred.btbEntries.push_back(
+                        block.buildBTBEntry(pairtage->getComponentIdx()));
+                }
+            }
+        }
+    }
+    if (mbtb->isEnabled()) {
+        fillCandidates(mbtb, mbtb->predictCandidates(pc, tid, asidHash));
+    }
+    if (tage->isEnabled()) {
+        tage->beginPrediction(pc, history, tid);
+        for (unsigned s = tage->getDelay(); s < stages.size(); ++s) {
+            auto &pred = stages[s];
+            const auto directions = tage->predictDirections(
+                pc, pred.btbEntries, pred.tageInfoForMgscs, tid, asidHash);
+            for (size_t i = 0; i < pred.btbEntries.size(); ++i) {
+                auto &entry = pred.btbEntries[i];
+                if (entry.valid && entry.isCond) {
+                    entry.taken = directions[i].valid ?
+                        directions[i].taken : entry.baseTaken;
+                }
+            }
+        }
+    }
+    if (ras->isEnabled()) {
+        assert(ras->getDelay() < stages.size());
+        const Addr target = ras->predictReturnTarget(pc, tid);
+        for (unsigned s = ras->getDelay(); s < stages.size(); ++s) {
+            for (auto &entry : stages[s].btbEntries) {
+                if (entry.isIndirect && entry.isReturn) {
+                    entry.predictedTarget = target;
+                }
+            }
+        }
+    }
+    if (ittage->isEnabled()) {
+        ittage->beginPrediction(pc, tid, asidHash);
+        for (unsigned s = ittage->getDelay(); s < stages.size(); ++s) {
+            auto &entries = stages[s].btbEntries;
+            const auto targets = ittage->predictTargets(pc, entries, tid, asidHash);
+            for (size_t i = 0; i < entries.size(); ++i) {
+                auto &entry = entries[i];
+                if (entry.valid && entry.isIndirect && !entry.isReturn) {
+                    entry.predictedTarget = targets[i].valid ?
+                        targets[i].target : entry.target;
+                }
+            }
+        }
+    }
+    if (mgsc->isEnabled()) {
+        mgsc->beginPrediction(pc, history, tid);
+        for (unsigned s = mgsc->getDelay(); s < stages.size(); ++s) {
+            auto &pred = stages[s];
+            const auto directions = mgsc->predictDirections(
+                pc, pred.btbEntries, pred.tageInfoForMgscs, tid, asidHash);
+            for (size_t i = 0; i < pred.btbEntries.size(); ++i) {
+                auto &entry = pred.btbEntries[i];
+                if (entry.valid && entry.isCond) {
+                    const auto info = pred.tageInfoForMgscs.find(entry.pc);
+                    const bool fallback = info != pred.tageInfoForMgscs.end() &&
+                        info->second.tage_pred_taken;
+                    entry.taken = directions[i].valid ? directions[i].taken : fallback;
+                }
+            }
+        }
+    }
 }
 
 // this function collects predictions from all stages and generate bubbles
@@ -822,7 +948,15 @@ DecoupledBPUWithBTB::prepareTwoTakenTraining(ThreadID tid)
         startPC, tid, asidHash);
 
     if (tage && tage->isEnabled()) {
-        tage->lookupNoSideEffect(startPC, btbEntries, tid, asidHash);
+        const auto directions = tage->lookupDirectionsNoSideEffect(
+            startPC, btbEntries, tid, asidHash);
+        for (size_t i = 0; i < btbEntries.size(); ++i) {
+            auto &entry = btbEntries[i];
+            if (entry.valid && entry.isCond) {
+                entry.taken = directions[i].valid ?
+                    directions[i].taken : entry.baseTaken;
+            }
+        }
     }
 
     thread.twoTakenTrainPacket =
