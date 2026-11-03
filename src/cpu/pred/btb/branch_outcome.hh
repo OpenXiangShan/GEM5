@@ -6,6 +6,7 @@
 
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/pred/btb/branch_info.hh"
 
 namespace gem5
 {
@@ -18,26 +19,26 @@ namespace btb_pred
 
 using FetchTargetId = uint64_t;
 
-/** Actual execution facts for one dynamic control-flow instruction. */
-struct BranchOutcome
+/**
+ * Actual execution facts for one dynamic control-flow instruction.
+ * Inherited target is the branch destination even when a conditional falls
+ * through; it is not necessarily the selected next PC.
+ */
+struct BranchOutcome : BranchInfo
 {
     ThreadID tid = 0;
     FetchTargetId ftqId = 0;
     InstSeqNum seqNum = 0;
-    Addr pc = 0;
-    /**
-     * The control-flow destination, including for a not-taken conditional
-     * branch. This is not necessarily the selected next PC.
-     */
-    Addr target = 0;
     bool taken = false;
     bool mispredicted = false;
-    bool isCond = false;
-    bool isIndirect = false;
-    bool isDirect = false;
-    bool isCall = false;
-    bool isReturn = false;
-    uint8_t size = 0;
+
+    BranchOutcome() = default;
+    BranchOutcome(ThreadID tid, FetchTargetId ftqId, InstSeqNum seqNum,
+                  const BranchInfo &branch, bool taken, bool mispredicted)
+        : BranchInfo(branch), tid(tid), ftqId(ftqId), seqNum(seqNum),
+          taken(taken), mispredicted(mispredicted)
+    {}
+
 };
 
 /** Actual committed contents of one complete FetchTarget. */

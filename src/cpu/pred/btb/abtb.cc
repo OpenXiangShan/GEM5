@@ -808,7 +808,7 @@ AheadBTB::update(
             continue;
         }
 
-        BTBEntry entry(makeBranchInfo(branch));
+        BTBEntry entry(branch);
         entry.source = getComponentIdx();
         updateBTBEntry(btb_idx, btb_tag, entry, branch.taken, branch.target);
     }

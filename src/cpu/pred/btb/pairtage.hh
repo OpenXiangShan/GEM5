@@ -29,62 +29,28 @@ class PairTAGE : public TimedBaseBTBPredictor
 
     typedef PairTAGEParams Params;
 
-    struct PairBlockInfo
+    struct PairBlockInfo : BranchInfo
     {
-        bool valid;
-        bool hasBranch;
-        bool taken;
-        Addr branchPC;
-        Addr targetPC;
-        bool isCond;
-        bool isDirect;
-        bool isIndirect;
-        bool isCall;
-        bool isReturn;
-        uint8_t size;
+        bool valid = false;
+        bool hasBranch = false;
+        bool taken = false;
 
-        PairBlockInfo()
-            : valid(false), hasBranch(false), taken(false),
-              branchPC(0), targetPC(0),
-              isCond(false), isDirect(false), isIndirect(false),
-              isCall(false), isReturn(false), size(0)
-        {
-        }
+        PairBlockInfo() = default;
+        PairBlockInfo(const BranchInfo &branch, bool taken)
+            : BranchInfo(branch), valid(true), hasBranch(true), taken(taken)
+        {}
 
         static PairBlockInfo
-        makeBranchless(Addr startPC, Addr targetPC)
+        makeBranchless(Addr startPC, Addr target)
         {
             PairBlockInfo block;
             block.valid = true;
-            block.branchPC = startPC;
-            block.targetPC = targetPC;
+            block.pc = startPC;
+            block.target = target;
             return block;
         }
 
-        PairBlockInfo(bool taken, Addr branchPC, Addr targetPC,
-                      bool isCond, bool isDirect, bool isIndirect,
-                      bool isCall, bool isReturn, uint8_t size)
-            : valid(true), hasBranch(true), taken(taken),
-              branchPC(branchPC), targetPC(targetPC),
-              isCond(isCond), isDirect(isDirect), isIndirect(isIndirect),
-              isCall(isCall), isReturn(isReturn), size(size)
-        {
-        }
-
-        void clear()
-        {
-            valid = false;
-            hasBranch = false;
-            taken = false;
-            branchPC = 0;
-            targetPC = 0;
-            isCond = false;
-            isDirect = false;
-            isIndirect = false;
-            isCall = false;
-            isReturn = false;
-            size = 0;
-        }
+        void clear() { *this = PairBlockInfo{}; }
 
         bool hasConsistentState() const
         {
@@ -93,23 +59,16 @@ class PairTAGE : public TimedBaseBTBPredictor
 
         bool isBranchlessFallthrough() const { return valid && !hasBranch; }
 
-        BranchPrediction buildBTBEntry(int componentIdx) const {
-            BranchPrediction entry;
+        BranchPrediction buildBTBEntry(int componentIdx) const
+        {
+            BranchPrediction entry(*this);
             entry.valid = valid && hasBranch;
-            entry.pc = branchPC;
-            entry.target = targetPC;
             entry.size = hasBranch ? size : 0;
-            entry.isCond = isCond;
-            entry.isDirect = isDirect;
-            entry.isIndirect = isIndirect;
-            entry.isCall = isCall;
-            entry.isReturn = isReturn;
             entry.taken = taken;
             entry.baseTaken = taken;
             entry.source = componentIdx;
-
             return entry;
-        };
+        }
     };
 
     struct PairTAGEEntry
@@ -153,60 +112,11 @@ class PairTAGE : public TimedBaseBTBPredictor
         PairBlockInfo predictedSecondBlock;
     };
 
-    struct TrainPacket
+    struct TrainPacket : PairBlockInfo
     {
-        enum class BranchFlag : uint8_t
-        {
-            Conditional = 1U << 0,
-            Direct = 1U << 1,
-            Indirect = 1U << 2,
-            Call = 1U << 3,
-            Return = 1U << 4
-        };
-
         Addr startPC{0};
         PairPhase phase{PairPhase::Even};
         std::shared_ptr<const TageMeta> meta;
-        bool valid{false};
-        bool hasBranch{false};
-        bool taken{false};
-        Addr branchPC{0};
-        Addr targetPC{0};
-        uint8_t branchFlags{0};
-        uint8_t size{0};
-
-        static constexpr uint8_t branchFlag(BranchFlag flag) { return static_cast<uint8_t>(flag); }
-
-        bool hasBranchFlag(BranchFlag flag) const { return branchFlags & branchFlag(flag); }
-
-        bool hasConsistentState() const
-        {
-            return (!hasBranch || valid) && (!taken || hasBranch);
-        }
-
-        bool isBranchlessFallthrough() const { return valid && !hasBranch; }
-
-        void setBranchFlags(const BranchInfo &branch)
-        {
-            uint8_t flags = 0;
-            if (branch.isCond) {
-                flags |= PairTAGE::TrainPacket::branchFlag(BranchFlag::Conditional);
-            }
-            if (branch.isDirect) {
-                flags |= PairTAGE::TrainPacket::branchFlag(BranchFlag::Direct);
-            }
-            if (branch.isIndirect) {
-                flags |= PairTAGE::TrainPacket::branchFlag(BranchFlag::Indirect);
-            }
-            if (branch.isCall) {
-                flags |= PairTAGE::TrainPacket::branchFlag(BranchFlag::Call);
-            }
-            if (branch.isReturn) {
-                flags |= PairTAGE::TrainPacket::branchFlag(BranchFlag::Return);
-            }
-
-            branchFlags = flags;
-        }
     };
 
     struct TageTableInfo
@@ -308,7 +218,6 @@ class PairTAGE : public TimedBaseBTBPredictor
     ProviderInfo lookupProviders(Addr startPC, const TageMeta &predMeta) const;
     TageTableInfo lookupEntry(Addr startPC) const;
     void fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pred) const;
-    PairBlockInfo buildTrainingBlock(const TrainPacket &packet) const;
     void recordTrainingTypes(statistics::Vector &typeStats,
                              const PairBlockInfo &block);
     bool blocksMatch(const PairBlockInfo &lhs, const PairBlockInfo &rhs) const;

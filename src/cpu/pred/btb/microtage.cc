@@ -1045,7 +1045,7 @@ MicroTAGE::trainResolvedEntries(
         if (!branch.isCond) {
             continue;
         }
-        auto entry = BranchPrediction(makeBranchInfo(branch));
+        auto entry = BranchPrediction(branch);
         auto pred = predMeta->preds.find(entry.pc);
         if (pred == predMeta->preds.end()) {
             continue;

@@ -706,10 +706,10 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
                 "pairtage(valid=%d pc=%#lx target=%#lx taken=%d) vs "
                 "teacher(valid=%d pc=%#lx target=%#lx taken=%d)\n",
                 tid,
-                secondBlock.valid, secondBlock.branchPC,
-                secondBlock.targetPC, secondBlock.taken,
-                teacherValid, teacherPacket.branchPC,
-                teacherPacket.targetPC, teacherPacket.taken);
+                secondBlock.valid, secondBlock.pc,
+                secondBlock.target, secondBlock.taken,
+                teacherValid, teacherPacket.pc,
+                teacherPacket.target, teacherPacket.taken);
         return;
     }
 
@@ -744,10 +744,10 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
             if (!teacherEntry.valid || !teacherEntry.isCond) {
                 continue;
             }
-            if (teacherEntry.pc < secondPred.bbStart || teacherEntry.pc >= secondBlock.branchPC) {
+            if (teacherEntry.pc < secondPred.bbStart || teacherEntry.pc >= secondBlock.pc) {
                 continue;
             }
-            if (teacherEntry.pc == secondBlock.branchPC) {
+            if (teacherEntry.pc == secondBlock.pc) {
                 continue;
             }
 
@@ -771,8 +771,8 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
 
     DPRINTF(DecoupleBP,
             "Inserted PairTAGE second block %lu for thread %u: startPC %#lx, branchPC %#lx, target %#lx, taken %d\n",
-            ftq.backId(tid), tid, ftq.back(tid).startPC, secondBlock.branchPC,
-            secondBlock.targetPC, secondBlock.taken);
+            ftq.backId(tid), tid, ftq.back(tid).startPC, secondBlock.pc,
+            secondBlock.target, secondBlock.taken);
 
     printTarget(ftq.back(tid));
     dbpBtbStats.fsqEntryEnqueued++;
@@ -883,9 +883,9 @@ DecoupledBPUWithBTB::pairtageFirstBlockNotOverriden(ThreadID tid) const
     }
 
     const auto &pairFirstBlock = packet.meta->predictedFirstBlock;
-    return pairFirstBlock.branchPC == packet.branchPC &&
+    return pairFirstBlock.pc == packet.pc &&
            pairFirstBlock.taken == packet.taken &&
-           pairFirstBlock.targetPC == packet.targetPC;
+           pairFirstBlock.target == packet.target;
 }
 
 /**

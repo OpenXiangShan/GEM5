@@ -912,7 +912,7 @@ BTBTAGE::update(
         if (!branch.isCond) {
             continue;
         }
-        auto btb_entry = makeBranchInfo(branch);
+        auto btb_entry = BranchInfo(branch);
         const bool actual_taken = branch.taken;
         auto orig_it = predMeta->preds.find(btb_entry.pc);
         if (orig_it == predMeta->preds.end()) {

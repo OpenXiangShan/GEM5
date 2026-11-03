@@ -338,7 +338,7 @@ BTBITTAGE::update(
         if (!(branch.isIndirect && !branch.isReturn)) {
             continue;
         }
-        const auto btb_entry = BranchPrediction(makeBranchInfo(branch));
+        const auto btb_entry = BranchPrediction(branch);
         auto pred_it = preds.find(btb_entry.pc);
         TagePrediction pred;
         if (pred_it != preds.end()) {

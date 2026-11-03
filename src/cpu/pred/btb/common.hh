@@ -83,18 +83,6 @@ enum SquashType
     SQUASH_OTHER
 };
 
-enum BranchType
-{
-    BR_COND=0,
-    BR_DIRECT_NORMAL=1,
-    BR_DIRECT_CALL=2,
-    BR_INDIRECT_NORMAL=3,
-    BR_INDIRECT_RET=4,
-    BR_INDIRECT_CALL=5,
-    BR_INDIRECT_CALL_RET=6,
-    BR_DIRECT_RET=7
-};
-
 enum class OverrideReason
 {
     NO_OVERRIDE,
@@ -110,96 +98,6 @@ enum class HistoryType
     LOCAL,
     IMLI,
     PATH
-};
-
-
-/**
- * @brief Branch information structure containing branch properties and targets
- *
- * Stores essential information about a branch instruction including:
- * - PC and target address
- * - Branch type (conditional, indirect, call, return)
- * - Instruction size
- */
-struct BranchInfo
-{
-    Addr pc;
-    Addr target;
-    bool isCond;
-    bool isIndirect;
-    bool isDirect;
-    bool isCall;
-    bool isReturn;
-    uint8_t size;
-    bool isUncond() const { return !this->isCond; }
-    Addr getEnd() { return this->pc + this->size; }
-    BranchInfo()
-        : pc(0), target(0), isCond(false), isIndirect(false), isDirect(false),
-          isCall(false), isReturn(false), size(0)
-    {
-    }
-    // BranchInfo(const Addr &pc, const Addr &target_pc, bool is_cond) :
-    // pc(pc), target(target_pc), isCond(is_cond), isIndirect(false), isCall(false), isReturn(false), size(0) {}
-    BranchInfo(const Addr &control_pc, const Addr &target_pc, const StaticInstPtr &static_inst, unsigned size)
-        : pc(control_pc),
-          target(target_pc),
-          isCond(static_inst->isCondCtrl()),
-          isIndirect(static_inst->isIndirectCtrl()),
-          isDirect(static_inst->isDirectCtrl()),
-          isCall(static_inst->isCall()),
-          isReturn(static_inst->isReturn() && !static_inst->isNonSpeculative() && !static_inst->isDirectCtrl()),
-          size(size)
-    {
-    }
-    int getType() const {
-        if (isCond) {
-            return BR_COND;
-        } else if (!isIndirect) { // uncond direct
-            if (isReturn) {
-                fatal("jal return detected!\n");
-                return BR_DIRECT_RET;
-            }
-            if (!isCall) {
-                return BR_DIRECT_NORMAL;
-            } else {
-                return BR_DIRECT_CALL;
-            }
-        } else {  // uncond indirect
-            if (!isCall) {
-                if (!isReturn) {
-                    return BR_INDIRECT_NORMAL; // normal indirect
-                } else {
-                    return BR_INDIRECT_RET; // indirect return
-                }
-            } else {
-                if (!isReturn) { // indirect call
-                    return BR_INDIRECT_CALL;
-                } else { // call & return
-                    return BR_INDIRECT_CALL_RET;
-                }
-            }
-        }
-    }
-
-    bool operator < (const BranchInfo &other) const
-    {
-        return this->pc < other.pc;
-    }
-
-    bool operator == (const BranchInfo &other) const
-    {
-        return this->pc == other.pc;
-    }
-
-    bool operator > (const BranchInfo &other) const
-    {
-        return this->pc > other.pc;
-    }
-
-    bool operator != (const BranchInfo &other) const
-    {
-        return this->pc != other.pc;
-    }
 };
 
 
@@ -548,21 +446,6 @@ struct ControlFlowOutcome
     bool valid = false;
 };
 
-inline BranchInfo
-makeBranchInfo(const BranchOutcome &event)
-{
-    BranchInfo branch;
-    branch.pc = event.pc;
-    branch.target = event.target;
-    branch.isCond = event.isCond;
-    branch.isIndirect = event.isIndirect;
-    branch.isDirect = event.isDirect;
-    branch.isCall = event.isCall;
-    branch.isReturn = event.isReturn;
-    branch.size = event.size;
-    return branch;
-}
-
 struct PreparedUpdate
 {
     std::vector<BranchOutcome> branches;
@@ -603,7 +486,7 @@ struct PreparedUpdate
         const auto &primary = selected != sortedBranches.end() ?
             *selected : sortedBranches.back();
         return ControlFlowOutcome{
-            makeBranchInfo(primary), primary.taken, primary.mispredicted, true
+            primary, primary.taken, primary.mispredicted, true
         };
     }
 };

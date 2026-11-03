@@ -767,7 +767,7 @@ MBTB::update(
             continue;
         }
 
-        BTBEntry entry(makeBranchInfo(branch));
+        BTBEntry entry(branch);
         entry.source = getComponentIdx();
         if (hit == meta->hit_entries.end()) {
             btbStats.newEntry++;

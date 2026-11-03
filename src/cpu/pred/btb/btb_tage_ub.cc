@@ -512,7 +512,7 @@ BTBTAGEUpperBound::update(
         if (!branch.isCond) {
             continue;
         }
-        auto btbEntry = makeBranchInfo(branch);
+        auto btbEntry = BranchInfo(branch);
         auto predIt = predMeta->preds.find(btbEntry.pc);
         auto metaIt = predMeta->branchMeta.find(btbEntry.pc);
         if (predIt == predMeta->preds.end() ||
