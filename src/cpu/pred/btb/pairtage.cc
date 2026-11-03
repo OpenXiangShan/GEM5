@@ -1,5 +1,7 @@
 #include "cpu/pred/btb/pairtage.hh"
 
+#include <cassert>
+
 #include "base/bitfield.hh"
 #include "base/intmath.hh"
 #include "base/logging.hh"
@@ -136,6 +138,33 @@ PairTAGE::getTag(Addr pc, unsigned t, uint64_t foldedHist,
     const Addr pcBits = pc >> (instShiftAmt + tableIndexBits[t]);
     return (pcBits ^ foldedHist ^ (altFoldedHist << 1)) &
            mask(tableTagBits[t]);
+}
+
+PairTAGE::LookupResult
+PairTAGE::lookup(unsigned t, Addr index, Addr tag) const
+{
+    assert(t < numPredictors && index < table[t].size());
+
+    LookupResult result;
+    const auto &set = table[t][index];
+    for (unsigned way = 0; way < numWays; ++way) {
+        if (set[way].valid && set[way].tag == tag) {
+            result.hit = true;
+            result.way = way;
+            result.entry = set[way];
+            break;
+        }
+    }
+    return result;
+}
+
+void
+PairTAGE::writeEntry(unsigned t, Addr index, unsigned way,
+                     const PTAGEEntry &entry)
+{
+    assert(t < numPredictors && index < table[t].size() && way < numWays);
+
+    table[t][index][way] = entry;
 }
 
 }  // namespace btb_pred
