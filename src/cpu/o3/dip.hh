@@ -61,13 +61,15 @@ class Dip
     void readyBranchWaiting();
     void upstreamStall(uint16_t cause) { upstreamCause |= cause; }
     void renameBlock(const DynInstPtr &inst, bool registers);
-    void setFlushCause(const DynInstPtr &inst, uint16_t cause);
+    void setFlushCause(const DynInstPtr &inst, uint16_t cause,
+                       SquashCause reason = SquashCause::None);
     void squash(InstSeqNum boundary, const SquashVersion &version);
     void commit(const DynInstPtr &inst);
     void tick();
 
   private:
-    using Signature = std::tuple<State, uint16_t, int, uint8_t, StallReason>;
+    using Signature =
+        std::tuple<State, uint16_t, int, uint8_t, StallReason, SquashCause>;
     using Slots = std::map<Signature, uint64_t>;
     struct Target
     {
@@ -107,10 +109,12 @@ class Dip
     uint16_t renameCause = 0;
     std::map<InstSeqNum, Target> targets;
     std::map<StallReason, uint64_t> frontendSlots;
-    std::map<std::tuple<Addr, State, uint16_t, int, uint8_t, StallReason>,
+    std::map<std::tuple<Addr, State, uint16_t, int, uint8_t, StallReason,
+                        SquashCause>,
              uint64_t> weights;
     DynInstPtr flushInst;
     uint16_t flushCause = UnknownFlush;
+    SquashCause flushReason = SquashCause::None;
     bool recovering = false;
     bool awaitingSquash = false;
     SquashVersion recoveryVersion;
@@ -118,10 +122,12 @@ class Dip
 
     void record(const DynInstPtr &inst, State state, uint16_t cause,
                 uint64_t slots, int iq = -1, uint8_t iq_flags = 0,
-                StallReason frontend = NoStall);
+                StallReason frontend = NoStall,
+                 SquashCause reason = SquashCause::None);
     void resolve(Addr pc, State state, uint16_t cause, uint64_t slots,
                  int iq = -1, uint8_t iq_flags = 0,
-                 StallReason frontend = NoStall);
+                 StallReason frontend = NoStall,
+                 SquashCause reason = SquashCause::None);
     void misspeculate(uint64_t slots);
     bool oldPath(const DynInstPtr &inst) const;
 };

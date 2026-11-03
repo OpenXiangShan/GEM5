@@ -66,11 +66,11 @@ Dip::DipStats::preDumpStats()
     auto handle = simout.create(owner.outputName, false, true);
     auto &out = *handle->stream();
     out << "thread,pc,state,cause,slot_weight,cycle_weight,resolution,"
-           "iq,iq_flags,frontend_reason\n"
+           "iq,iq_flags,frontend_reason,flush_reason\n"
         << std::setprecision(17);
     auto row = [&](Addr pc, State state, uint16_t cause, uint64_t slots,
                    const char *resolution, int iq, uint8_t iq_flags,
-                   StallReason frontend) {
+                   StallReason frontend, SquashCause reason) {
         if (!slots) {
             return;
         }
@@ -81,24 +81,26 @@ Dip::DipStats::preDumpStats()
         out << ',' << stateNames[static_cast<unsigned>(state)] << ','
             << cause << ',' << slots << ',' << double(slots) / owner.width
             << ',' << resolution << ',' << iq << ',' << unsigned(iq_flags)
-            << ',' << unsigned(frontend) << '\n';
+            << ',' << unsigned(frontend) << ',' << unsigned(reason) << '\n';
     };
     for (const auto &[key, slots] : owner.weights) {
-        const auto &[pc, state, cause, iq, iq_flags, frontend] = key;
+        const auto &[pc, state, cause, iq, iq_flags, frontend, reason] = key;
         row(pc, state, cause, slots, pc ? "resolved" : "unresolved",
-            iq, iq_flags, frontend);
+            iq, iq_flags, frontend, reason);
     }
     for (const auto &[seq, target] : owner.targets) {
         for (const auto &[signature, slots] : target.slots) {
             pending += slots;
-            const auto &[state, cause, iq, iq_flags, frontend] = signature;
+            const auto &[state, cause, iq, iq_flags, frontend, reason] =
+                signature;
             row(target.inst->teaFirstMember()->pcState().instAddr(),
-                state, cause, slots, "pending", iq, iq_flags, frontend);
+                state, cause, slots, "pending", iq, iq_flags, frontend, reason);
         }
     }
     for (const auto &[reason, slots] : owner.frontendSlots) {
         pending += slots;
-        row(0, State::FrontEnd, 0, slots, "pending", -1, 0, reason);
+        row(0, State::FrontEnd, 0, slots, "pending", -1, 0, reason,
+            SquashCause::None);
     }
     pendingSlots = pending;
     simout.close(handle);
@@ -144,26 +146,27 @@ Dip::oldPath(const DynInstPtr &inst) const
 
 void
 Dip::record(const DynInstPtr &inst, State state, uint16_t cause,
-            uint64_t slots, int iq, uint8_t iq_flags, StallReason frontend)
+            uint64_t slots, int iq, uint8_t iq_flags, StallReason frontend,
+            SquashCause reason)
 {
     if (!slots) {
         return;
     }
     if (!inst || inst->seqNum <= committedSeq) {
         resolve(inst ? inst->teaFirstMember()->pcState().instAddr() : 0,
-                state, cause, slots, iq, iq_flags, frontend);
+                state, cause, slots, iq, iq_flags, frontend, reason);
         return;
     }
     auto &target = targets[inst->seqNum];
     target.inst = inst;
-    target.slots[{state, cause, iq, iq_flags, frontend}] += slots;
+    target.slots[{state, cause, iq, iq_flags, frontend, reason}] += slots;
 }
 
 void
 Dip::resolve(Addr pc, State state, uint16_t cause, uint64_t slots,
-             int iq, uint8_t iq_flags, StallReason frontend)
+             int iq, uint8_t iq_flags, StallReason frontend, SquashCause reason)
 {
-    weights[{pc, state, cause, iq, iq_flags, frontend}] += slots;
+    weights[{pc, state, cause, iq, iq_flags, frontend, reason}] += slots;
     if (pc) {
         stats.attributedSlots += slots;
     } else {
@@ -180,7 +183,8 @@ Dip::resolve(Addr pc, State state, uint16_t cause, uint64_t slots,
 void
 Dip::misspeculate(uint64_t slots)
 {
-    record(flushInst, State::Misspeculation, flushCause, slots);
+    record(flushInst, State::Misspeculation, flushCause, slots, -1, 0,
+           NoStall, flushReason);
 }
 
 void
@@ -250,10 +254,11 @@ Dip::renameBlock(const DynInstPtr &inst, bool registers)
 }
 
 void
-Dip::setFlushCause(const DynInstPtr &inst, uint16_t cause)
+Dip::setFlushCause(const DynInstPtr &inst, uint16_t cause, SquashCause reason)
 {
     flushInst = inst;
     flushCause = cause;
+    flushReason = reason;
     recovering = true;
     awaitingSquash = true;
 }
@@ -289,8 +294,9 @@ Dip::commit(const DynInstPtr &inst)
          it->first <= committedSeq;) {
         const Addr pc = it->second.inst->teaFirstMember()->pcState().instAddr();
         for (const auto &[signature, slots] : it->second.slots) {
-            const auto &[state, cause, iq, iq_flags, frontend] = signature;
-            resolve(pc, state, cause, slots, iq, iq_flags, frontend);
+            const auto &[state, cause, iq, iq_flags, frontend, reason] =
+                signature;
+            resolve(pc, state, cause, slots, iq, iq_flags, frontend, reason);
         }
         it = targets.erase(it);
     }

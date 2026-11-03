@@ -821,7 +821,8 @@ Commit::squashAll(ThreadID tid)
     if (auto *dip = cpu->getDip();
         dip && curSquashCause[tid] != SquashCause::Trap) {
         dip->setFlushCause(squashAfterInst[tid],
-            squashAfterInst[tid] ? Dip::Flush : Dip::UnknownFlush);
+            squashAfterInst[tid] ? Dip::Flush : Dip::UnknownFlush,
+            curSquashCause[tid]);
     }
     if (auto *tea = cpu->getTea();
         tea && curSquashCause[tid] != SquashCause::Trap) {
@@ -1128,7 +1129,7 @@ Commit::handleInterrupt()
             tea->setFlush(0, 0, 0, false);
         }
         if (auto *dip = cpu->getDip()) {
-            dip->setFlushCause(nullptr, Dip::UnknownFlush);
+            dip->setFlushCause(nullptr, Dip::UnknownFlush, SquashCause::Trap);
         }
         generateTrapEvent(0, interrupt);
 
@@ -1288,7 +1289,7 @@ Commit::commit()
                 if (!cause) {
                     cause = rob->findInst(tid, fromIEW->squashedSeqNum[tid]);
                 }
-                dip->setFlushCause(cause, Dip::Flush);
+                dip->setFlushCause(cause, Dip::Flush, curSquashCause[tid]);
             }
 
             DPRINTF(Commit, "[tid:%i] Redirecting to PC %#x\n",
@@ -1536,7 +1537,8 @@ Commit::handleMdpViolation(const DynInstPtr &head_inst, ThreadID tid)
                       cause_inst->teaPSV());
     }
     if (auto *dip = cpu->getDip()) {
-        dip->setFlushCause(head_inst, Dip::Flush);
+        dip->setFlushCause(head_inst, Dip::Flush,
+                           SquashCause::MemOrderViolation);
     }
     if (rob->isHybrid()) {
         squashed_inst = rob->squashHybrid(head_inst, true, tid);
@@ -2339,7 +2341,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num,
         if (auto *dip = cpu->getDip()) {
             dip->setFlushCause(head_inst,
                 dynamic_cast<ReExec *>(inst_fault.get()) == nullptr ?
-                    Dip::SoftwareException : Dip::Flush);
+                    Dip::SoftwareException : Dip::Flush, SquashCause::Trap);
         }
         generateTrapEvent(tid, inst_fault);
         return false;
