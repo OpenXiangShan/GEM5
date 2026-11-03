@@ -56,8 +56,10 @@
 #include "base/stats/group.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
+#include "cpu/base.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/lsq.hh"
+#include "cpu/thread_context.hh"
 #include "debug/ArchDB.hh"
 #include "debug/Cache.hh"
 #include "debug/CacheComp.hh"
@@ -344,6 +346,68 @@ BaseCache::init()
 }
 
 void
+BaseCache::startup()
+{
+    ClockedObject::startup();
+    if (cacheLevel == 2) {
+        cpuDataRequestors.assign(system->maxRequestors(), false);
+        for (auto *tc : system->threads) {
+            const auto id = tc->getCpuPtr()->dataRequestorId();
+            assert(id < cpuDataRequestors.size());
+            cpuDataRequestors[id] = true;
+        }
+    }
+}
+
+BaseCache::L2RequestClass
+BaseCache::classifyL2Request(const PacketPtr pkt, bool local_prefetch) const
+{
+    if (cacheLevel != 2 || !pkt || !pkt->req || !pkt->isRequest() ||
+        pkt->isEviction() || pkt->cmd == MemCmd::WriteClean ||
+        pkt->isStorePFTrain() || pkt->req->isUncacheable() ||
+        pkt->req->isCacheMaintenance()) {
+        return IgnoreL2Request;
+    }
+    // A local prefetch is checked in getNextQueueEntry(), not access().
+    if (local_prefetch)
+        return L2Prefetch;
+    if (pkt->req->isPrefetch())
+        return L1Prefetch;
+    if (pkt->cmd.isPrefetch())
+        return Other;
+    if (pkt->req->isInstFetch())
+        return Instruction;
+    const auto id = pkt->requestorId();
+    if (id < cpuDataRequestors.size() && cpuDataRequestors[id] &&
+        !pkt->req->isPTWalk() &&
+        (pkt->isRead() || pkt->isWrite() || pkt->isUpgrade() ||
+         pkt->isInvalidate())) {
+        return L1Demand;
+    }
+    return Other;
+}
+
+void
+BaseCache::recordL2Request(L2RequestClass source, const PacketPtr pkt,
+                          bool tag_hit, bool hit, bool prefetched)
+{
+    if (source == IgnoreL2Request)
+        return;
+    ++stats.l2RequestAccesses[source];
+    if (tag_hit)
+        ++stats.l2RequestTagHits[source];
+    if (hit) {
+        ++stats.l2RequestHits[source];
+        if (prefetched)
+            ++stats.l2RequestHitsOnPrefetchedBlocks[source];
+    } else {
+        ++stats.l2RequestMisses[source];
+    }
+    if (!pkt->req->hasPC())
+        ++stats.l2RequestNoPc[source];
+}
+
+void
 BaseCache::resetStats()
 {
     ClockedObject::resetStats();
@@ -602,6 +666,9 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 // buffer and to schedule an event to the queued
                 // port and also takes into account the additional
                 // delay of the xbar.
+                const auto request_source = classifyL2Request(pkt);
+                if (request_source != IgnoreL2Request)
+                    ++stats.l2RequestMshrHits[request_source];
                 mshr->allocateTarget(pkt, forward_time, order++,
                                      allocOnFill(pkt->cmd));
                 if (mshr->getNumTargets() >= numTarget) {
@@ -657,6 +724,9 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
             // Here we are using forward_time, modelling the latency of
             // a miss (outbound) just as forwardLatency, neglecting the
             // lookupLatency component.
+            const auto request_source = classifyL2Request(pkt);
+            if (request_source != IgnoreL2Request)
+                ++stats.l2RequestMshrMisses[request_source];
             allocateMissBuffer(pkt, forward_time);
 
         }
@@ -732,6 +802,8 @@ BaseCache::recvTimingReq(PacketPtr pkt)
 
     if (pkt->cmd == MemCmd::HardPFReq) {
         if (prefetcher) {
+            if (cacheLevel == 2)
+                ++stats.l2PrefetchReceived;
             prefetcher->recvPrefetchFromCache(pkt);
             // schedule a prefetch
             Tick next_pf_time = std::max(prefetcher->nextPrefetchReadyTime(),
@@ -742,6 +814,10 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         }
         return;
     }
+
+    const auto request_source = classifyL2Request(pkt);
+    if (request_source != IgnoreL2Request)
+        ++stats.l2RequestLookups[request_source];
 
     // anything that is merely forwarded pays for the forward latency and
     // the delay provided by the crossbar
@@ -843,6 +919,8 @@ BaseCache::recvTimingReq(PacketPtr pkt)
     pkt->lldpHint = prefetcher ? prefetcher->loadTrain(pkt, !satisfied) : lldp::Hint();
 
     if (satisfied) {
+        recordL2Request(request_source, pkt, blk != nullptr, true,
+                        blk && blk->wasPrefetched());
         // notify before anything else as later handleTimingReqHit might turn
         // the packet in a response
         if (blk && !pkt->isWrite()) {
@@ -933,7 +1011,15 @@ BaseCache::recvTimingReq(PacketPtr pkt)
             }
         }
 
+        const bool request_tag_hit = blk != nullptr;
         handleTimingReqMiss(pkt, blk, forward_time, request_time);
+        if (request_source != IgnoreL2Request) {
+            if (pkt->mshrArbFailed()) {
+                ++stats.l2RequestArbRetries[request_source];
+            } else {
+                recordL2Request(request_source, pkt, request_tag_hit, false);
+            }
+        }
 
         ppMiss->notify(pkt);
     }
@@ -1599,7 +1685,13 @@ BaseCache::getNextQueueEntry()
         if (pkt) {
             Addr pf_addr = pkt->getBlockAddr(blkSize);
             PrefetchSourceType pf_type = pkt->req->getXsMetadata().prefetchSource;
-            if (tags->findBlock(pf_addr, pkt->isSecure())) {
+            const auto request_source = classifyL2Request(pkt, true);
+            if (request_source != IgnoreL2Request)
+                ++stats.l2RequestLookups[request_source];
+            const auto *pf_blk = tags->findBlock(pf_addr, pkt->isSecure());
+            if (pf_blk) {
+                recordL2Request(request_source, pkt, true, true,
+                                pf_blk->wasPrefetched());
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in cache, "
                         "dropped.\n", pf_addr);
                 prefetcher->pfHitInCache(pf_type);
@@ -1610,6 +1702,9 @@ BaseCache::getNextQueueEntry()
             } else if (mshrQueue.findMatch(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in a MSHR, "
                         "dropped.\n", pf_addr);
+                recordL2Request(request_source, pkt, false, false);
+                if (request_source != IgnoreL2Request)
+                    ++stats.l2RequestMshrHits[request_source];
                 prefetcher->pfHitInMSHR(pf_type);
                 if (pf_type == PrefetchSourceType::SStream)
                     prefetcher->streamPflate();
@@ -1618,6 +1713,9 @@ BaseCache::getNextQueueEntry()
             } else if (writeBuffer.findMatch(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in the "
                         "Write Buffer, dropped.\n", pf_addr);
+                recordL2Request(request_source, pkt, false, false);
+                if (request_source != IgnoreL2Request)
+                    ++stats.l2RequestWriteBufferHits[request_source];
                 prefetcher->pfHitInWB(pf_type);
                 if (pf_type == PrefetchSourceType::SStream)
                     prefetcher->streamPflate();
@@ -1633,6 +1731,9 @@ BaseCache::getNextQueueEntry()
                 // that we send the packet straight away, so do not
                 // schedule the send
                 DPRINTF(HWPrefetch, "Allocating MSHR for prefetching addr %#x\n", pf_addr);
+                recordL2Request(request_source, pkt, false, false);
+                if (request_source != IgnoreL2Request)
+                    ++stats.l2RequestMshrMisses[request_source];
                 auto buf = allocateMissBuffer(pkt, curTick(), false);
                 return buf;
             }
@@ -3129,6 +3230,30 @@ BaseCache::CacheCmdStats::regStatsFromParent()
 BaseCache::CacheStats::CacheStats(BaseCache &c)
     : statistics::Group(&c), cache(c),
 
+    ADD_STAT(l2RequestLookups, statistics::units::Count::get(),
+             "L2 lookup attempts by origin, including MSHR arbitration retries"),
+    ADD_STAT(l2RequestAccesses, statistics::units::Count::get(),
+             "Accepted L2 lookups by origin, excluding arbitration retries"),
+    ADD_STAT(l2RequestTagHits, statistics::units::Count::get(),
+             "Accepted L2 lookups finding a resident tag, irrespective of permissions"),
+    ADD_STAT(l2RequestHits, statistics::units::Count::get(),
+             "L2 service hits; local prefetch hits are resident-tag drops"),
+    ADD_STAT(l2RequestMisses, statistics::units::Count::get(),
+             "Accepted L2 service misses, including permission misses"),
+    ADD_STAT(l2RequestMshrHits, statistics::units::Count::get(),
+             "L2 misses merging into an MSHR or local prefetches dropped on an MSHR"),
+    ADD_STAT(l2RequestMshrMisses, statistics::units::Count::get(),
+             "L2 requests allocating a new MSHR by origin"),
+    ADD_STAT(l2RequestWriteBufferHits, statistics::units::Count::get(),
+             "Local L2 prefetches dropped on a write-buffer match"),
+    ADD_STAT(l2RequestArbRetries, statistics::units::Count::get(),
+             "L2 lookup attempts rejected by MSHR arbitration"),
+    ADD_STAT(l2RequestNoPc, statistics::units::Count::get(),
+             "Accepted L2 requests without PC metadata by origin"),
+    ADD_STAT(l2RequestHitsOnPrefetchedBlocks, statistics::units::Count::get(),
+             "L2 hits on blocks still marked prefetched, by request origin"),
+    ADD_STAT(l2PrefetchReceived, statistics::units::Count::get(),
+             "HardPFReq packets received by the L2 prefetch queue"),
     ADD_STAT(demandHits, statistics::units::Count::get(),
              "number of demand (read+write) hits"),
     ADD_STAT(overallHits, statistics::units::Count::get(),
@@ -3294,6 +3419,19 @@ BaseCache::CacheStats::regStats()
 
     System *system = cache.system;
     const auto max_requestors = system->maxRequestors();
+
+    const char *request_names[] = {
+        "l1Demand", "l1Prefetch", "l2Prefetch", "instruction", "other"
+    };
+    for (auto *stat : {&l2RequestLookups, &l2RequestAccesses,
+                      &l2RequestTagHits, &l2RequestHits, &l2RequestMisses,
+                      &l2RequestMshrHits, &l2RequestMshrMisses,
+                      &l2RequestWriteBufferHits, &l2RequestArbRetries,
+                      &l2RequestNoPc, &l2RequestHitsOnPrefetchedBlocks}) {
+        stat->init(NumL2RequestClasses).flags(total);
+        for (unsigned i = 0; i < NumL2RequestClasses; ++i)
+            stat->subname(i, request_names[i]);
+    }
 
     reqArriveInterval.resize(cache.getActualSliceNum());
     for (int i = 0; i < reqArriveInterval.size(); i++) {
