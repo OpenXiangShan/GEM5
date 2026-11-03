@@ -1108,11 +1108,14 @@ class PairTAGE(TimedBaseBTBPredictor):
     cxx_class = 'gem5::branch_prediction::btb_pred::PairTAGE'
     cxx_header = "cpu/pred/btb/pairtage.hh"
 
-    # Defaults follow the RTL pTAGE: 3 tables of 4 banks x 256 sets each.
+    # Defaults follow the RTL pTAGE: 3 direct-mapped tables of
+    # 4 banks x 256 sets each.
     numPredictors = Param.Unsigned(3, "Number of PairTAGE tables")
-    tableSizes = VectorParam.Unsigned([1024] * 3, "the T0~Tn entry count")
+    tableSizes = VectorParam.Unsigned([1024] * 3, "the T0~Tn entry count, summed over all banks")
     TTagBitSizes = VectorParam.Unsigned([8] * 3, "the T0~Tn tag bit size")
     histLengths = VectorParam.Unsigned([8, 20, 40], "the T0~Tn path history length")
+    numWays = Param.Unsigned(1, "Number of ways per set")
+    numBanks = Param.Unsigned(4, "Number of banks per table")
     numDelay = 0
     enabled = False
 

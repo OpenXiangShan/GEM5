@@ -1,5 +1,6 @@
 #include "cpu/pred/btb/pairtage.hh"
 
+#include "base/intmath.hh"
 #include "base/logging.hh"
 
 namespace gem5
@@ -17,6 +18,9 @@ PairTAGE::PairTAGE(const Params &p)
       tableSizes(p.tableSizes),
       tableTagBits(p.TTagBitSizes),
       histLengths(p.histLengths),
+      numWays(p.numWays),
+      numBanks(p.numBanks),
+      bankIdWidth(ceilLog2(p.numBanks)),
       pairTageStats(this)
 {
     fatal_if(tableSizes.size() < numPredictors,
@@ -28,6 +32,27 @@ PairTAGE::PairTAGE(const Params &p)
     fatal_if(histLengths.size() < numPredictors,
              "PairTAGE: histLengths has %zu entries, need %u",
              histLengths.size(), numPredictors);
+    fatal_if(numWays == 0, "PairTAGE: numWays must be > 0");
+    fatal_if(!isPowerOf2(numBanks),
+             "PairTAGE: numBanks (%u) must be a power of two", numBanks);
+
+    table.resize(numPredictors);
+    tableIndexBits.resize(numPredictors);
+
+    for (unsigned int i = 0; i < numPredictors; ++i) {
+        // Every bank of a table holds the same number of sets, and both are
+        // selected by bit fields, so the size has to split evenly.
+        fatal_if(!isPowerOf2(tableSizes[i]) || tableSizes[i] < numBanks,
+                 "PairTAGE: tableSizes[%u] (%u) must be a power of two and "
+                 "at least numBanks (%u)", i, tableSizes[i], numBanks);
+
+        table[i].resize(tableSizes[i]);
+        for (unsigned int j = 0; j < tableSizes[i]; ++j) {
+            table[i][j].resize(numWays);
+        }
+
+        tableIndexBits[i] = ceilLog2(tableSizes[i]);
+    }
 }
 
 PairTAGE::PairTAGEStats::PairTAGEStats(statistics::Group *parent)
