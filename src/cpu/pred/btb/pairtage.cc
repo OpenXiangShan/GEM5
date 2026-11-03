@@ -41,7 +41,11 @@ PairTAGE::PairTAGE(const Params &p)
                  "histLengths[%u] (%u) <= histLengths[%u] (%u)",
                  i, histLengths[i], i - 1, histLengths[i - 1]);
     }
-    fatal_if(numWays == 0, "PairTAGE: numWays must be > 0");
+    // Follows the RTL, which has direct-mapped tables.
+    // TODO: Maybe support set-associative tables in the future with a
+    // more complex replacement & allocation policy.
+    fatal_if(numWays != 1, "PairTAGE: only direct-mapped tables (numWays "
+             "= 1) are supported, got %u", numWays);
     fatal_if(!isPowerOf2(numBanks),
              "PairTAGE: numBanks (%u) must be a power of two", numBanks);
 
@@ -83,7 +87,17 @@ PairTAGE::PairTAGEStats::PairTAGEStats(statistics::Group *parent,
       ADD_STAT(providerTable, statistics::units::Count::get(),
                "lookups provided by each table"),
       ADD_STAT(s3TrainEvents, statistics::units::Count::get(),
-               "final-stage predictions delivered to PairTAGE for training")
+               "final-stage predictions delivered to PairTAGE for training"),
+      ADD_STAT(trainStrengthen, statistics::units::Count::get(),
+               "trainings that strengthened a provider naming the right exit"),
+      ADD_STAT(trainCorrect, statistics::units::Count::get(),
+               "trainings that rewrote a wrong provider in place"),
+      ADD_STAT(trainAllocate, statistics::units::Count::get(),
+               "trainings that allocated an entry in a longer history"),
+      ADD_STAT(trainAllocateEvicted, statistics::units::Count::get(),
+               "allocations made while useful entries could be evicted"),
+      ADD_STAT(trainNoTableFree, statistics::units::Count::get(),
+               "trainings that found no table to allocate in")
 {
     providerTable.init(numPredictors);
 }
@@ -148,8 +162,71 @@ PairTAGE::recoverPHist(const bitset &history,
 void
 PairTAGE::updateUsingS3Pred(FullBTBPrediction &s3Pred)
 {
-    (void)s3Pred;
     pairTageStats.s3TrainEvents++;
+
+    const auto &meta = threadMeta[s3Pred.tid];
+    assert(meta);
+    const auto &lookup = meta->lookup;
+
+    // The final prediction information
+    const bool taken = s3Pred.isTaken();
+    const Addr branchPC = taken ? s3Pred.getTakenEntry().pc : 0;
+    const Addr targetPC = s3Pred.getTarget(predictWidth);
+
+    // Hit & Pred Correct: Update counters and targetPC
+    // TODO: Maybe the target PC incorrect also counts as a misprediction.
+    const bool hit = lookup.provider >= 0;
+    if (hit && lookup.entry.block.branchPC == branchPC) {
+        PTAGEEntry entry = lookup.entry;
+        entry.block.updateCounter(taken);
+        entry.block.targetPC = targetPC;
+        entry.useful = true;
+        writeEntry(lookup.provider,
+                   lookup.tableIndexes[lookup.provider].index,
+                   lookup.providerWay, entry);
+        pairTageStats.trainStrengthen++;
+        return;
+    }
+
+    // Miss or Mispred: Find alloc unused entry or force allocate when refusals saturate.
+    // TODO: Does global refusal count cause frequent evictions of useful entries?
+    const bool mayEvict = allocRefusals == mask(AllocRefusalWidth);
+    int allocTable = -1;
+    for (int t = lookup.provider + 1; t < (int)numPredictors; ++t) {
+        if (!lookup.tableIndexes[t].useful || mayEvict) {
+            allocTable = t;
+            break;
+        }
+    }
+
+    // Mispred but hit entry weak: rewrite the entry with correct information.
+    // Mispred but hit entry not weak:
+    //   - Try to find a free entry
+    //   - Force alloc when refusals saturate, which may evict a useful entry
+    if (hit && (lookup.entry.block.isWeak() ||
+                allocTable < 0)) {
+        const auto &ti = lookup.tableIndexes[lookup.provider];
+        writeEntry(lookup.provider, ti.index, lookup.providerWay,
+                   PTAGEEntry(ti.tag, branchPC, targetPC, taken));
+        pairTageStats.trainCorrect++;
+    } else if (allocTable >= 0) {
+        const auto &ti = lookup.tableIndexes[allocTable];
+        writeEntry(allocTable, ti.index, 0,
+                   PTAGEEntry(ti.tag, branchPC, targetPC, taken));
+        pairTageStats.trainAllocate++;
+        if (mayEvict) {
+            allocRefusals = 0;
+            pairTageStats.trainAllocateEvicted++;
+        }
+    }
+
+    // Count refusals until one eviction is allowed. Successes **do not** clear
+    // the count: they interleave with refusals.
+    // TODO: Does this strategy only work with frequent alloc failure case / blocks?
+    if (allocTable < 0) {
+        allocRefusals = (allocRefusals + 1) & mask(AllocRefusalWidth);
+        pairTageStats.trainNoTableFree++;
+    }
 }
 
 unsigned
@@ -197,7 +274,10 @@ PairTAGE::lookup(Addr pc, const ThreadHistoryState &history) const
         ti.tag = getTag(pc, t, history.tagFoldedHist[t].get(),
                         history.altTagFoldedHist[t].get());
 
+        // Direct mapped: the one entry of the set is what an allocation
+        // into this table would replace
         const auto &ways = table[t][ti.index];
+        ti.useful = ways[0].valid && ways[0].useful;
         for (unsigned way = 0; way < numWays; ++way) {
             if (ways[way].valid && ways[way].tag == ti.tag) {
                 // A later, longer-history table overrides an earlier one
