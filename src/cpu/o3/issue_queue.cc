@@ -2631,8 +2631,18 @@ Scheduler::isDrained()
             return false;
         }
     }
-    return !enableFmaRtlAlignment ||
-        (fpRecords.empty() && fpWakeDue.empty() && fpDataDue.empty());
+    if (!enableFmaRtlAlignment) {
+        return true;
+    }
+    if (!fpRecords.empty()) {
+        return false;
+    }
+
+    // Every live wake or data check has a producer or consumer record.
+    // With no records left, queued entries are stale and need not delay drain.
+    fpWakeDue.clear();
+    fpDataDue.clear();
+    return true;
 }
 
 void
