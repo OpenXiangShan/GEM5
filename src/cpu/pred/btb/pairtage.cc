@@ -24,7 +24,7 @@ PairTAGE::PairTAGE(const Params &p)
       numWays(p.numWays),
       numBanks(p.numBanks),
       bankIdWidth(ceilLog2(p.numBanks)),
-      pairTageStats(this)
+      pairTageStats(this, p.numPredictors)
 {
     fatal_if(tableSizes.size() < numPredictors,
              "PairTAGE: tableSizes has %zu entries, need %u",
@@ -35,6 +35,12 @@ PairTAGE::PairTAGE(const Params &p)
     fatal_if(histLengths.size() < numPredictors,
              "PairTAGE: histLengths has %zu entries, need %u",
              histLengths.size(), numPredictors);
+    for (unsigned i = 1; i < numPredictors; ++i) {
+        fatal_if(histLengths[i] <= histLengths[i - 1],
+                 "PairTAGE: histLengths must be strictly increasing, "
+                 "histLengths[%u] (%u) <= histLengths[%u] (%u)",
+                 i, histLengths[i], i - 1, histLengths[i - 1]);
+    }
     fatal_if(numWays == 0, "PairTAGE: numWays must be > 0");
     fatal_if(!isPowerOf2(numBanks),
              "PairTAGE: numBanks (%u) must be a power of two", numBanks);
@@ -69,28 +75,36 @@ PairTAGE::PairTAGE(const Params &p)
     }
 }
 
-PairTAGE::PairTAGEStats::PairTAGEStats(statistics::Group *parent)
+PairTAGE::PairTAGEStats::PairTAGEStats(statistics::Group *parent,
+                                       unsigned numPredictors)
     : statistics::Group(parent),
       ADD_STAT(lookups, statistics::units::Count::get(),
                "prediction lookups issued to PairTAGE"),
+      ADD_STAT(providerTable, statistics::units::Count::get(),
+               "lookups provided by each table"),
       ADD_STAT(s3TrainEvents, statistics::units::Count::get(),
                "final-stage predictions delivered to PairTAGE for training")
 {
+    providerTable.init(numPredictors);
 }
 
 void
 PairTAGE::putPCHistory(Addr startAddr, const bitset &history,
                        std::vector<FullBTBPrediction> &stagePreds)
 {
-    (void)startAddr;
     (void)history;
     assert(!stagePreds.empty());
     const ThreadID tid = stagePreds.front().tid;
 
-    threadMeta[tid] = std::make_shared<PairTAGEMeta>();
-    threadMeta[tid]->history = historyState(tid);
+    auto meta = std::make_shared<PairTAGEMeta>();
+    meta->history = historyState(tid);
+    meta->lookup = lookup(startAddr, meta->history);
+    threadMeta[tid] = meta;
 
     pairTageStats.lookups++;
+    if (meta->lookup.provider >= 0) {
+        pairTageStats.providerTable[meta->lookup.provider]++;
+    }
 }
 
 std::shared_ptr<void>
@@ -169,18 +183,29 @@ PairTAGE::getTag(Addr pc, unsigned t, uint64_t foldedHist,
 }
 
 PairTAGE::LookupResult
-PairTAGE::lookup(unsigned t, Addr index, Addr tag) const
+PairTAGE::lookup(Addr pc, const ThreadHistoryState &history) const
 {
-    assert(t < numPredictors && index < table[t].size());
-
     LookupResult result;
-    const auto &set = table[t][index];
-    for (unsigned way = 0; way < numWays; ++way) {
-        if (set[way].valid && set[way].tag == tag) {
-            result.hit = true;
-            result.way = way;
-            result.entry = set[way];
-            break;
+    result.tableIndexes.resize(numPredictors);
+
+    const unsigned bank = getBankId(pc);
+    for (unsigned t = 0; t < numPredictors; ++t) {
+        auto &ti = result.tableIndexes[t];
+        const Addr set =
+            getSetIndex(pc, t, history.indexFoldedHist[t].get());
+        ti.index = getIndex(t, bank, set);
+        ti.tag = getTag(pc, t, history.tagFoldedHist[t].get(),
+                        history.altTagFoldedHist[t].get());
+
+        const auto &ways = table[t][ti.index];
+        for (unsigned way = 0; way < numWays; ++way) {
+            if (ways[way].valid && ways[way].tag == ti.tag) {
+                // A later, longer-history table overrides an earlier one
+                result.provider = t;
+                result.providerWay = way;
+                result.entry = ways[way];
+                break;
+            }
         }
     }
     return result;
