@@ -149,7 +149,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
                       const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;
     void lookupNoSideEffect(const Addr &startPC,
-                            const std::vector<BTBEntry> &btbEntries,
+                            const std::vector<BranchPrediction> &btbEntries,
                             CondTakens &results,
                             ThreadID tid = 0,
                             uint8_t asidHash = 0) const;
@@ -199,7 +199,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
 #endif
 
     // Look up predictions in TAGE tables for a stream of instructions
-    void lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
+    void lookupHelper(const Addr &startPC, const std::vector<BranchPrediction> &btbEntries,
                     std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
                     CondTakens& results, ThreadID tid, uint8_t asidHash);
 

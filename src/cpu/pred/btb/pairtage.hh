@@ -93,8 +93,8 @@ class PairTAGE : public TimedBaseBTBPredictor
 
         bool isBranchlessFallthrough() const { return valid && !hasBranch; }
 
-        BTBEntry buildBTBEntry(int componentIdx) const {
-            BTBEntry entry;
+        BranchPrediction buildBTBEntry(int componentIdx) const {
+            BranchPrediction entry;
             entry.valid = valid && hasBranch;
             entry.pc = branchPC;
             entry.target = targetPC;
@@ -104,7 +104,8 @@ class PairTAGE : public TimedBaseBTBPredictor
             entry.isIndirect = isIndirect;
             entry.isCall = isCall;
             entry.isReturn = isReturn;
-            entry.ctr = taken ? 0 : -1;
+            entry.taken = taken;
+            entry.baseTaken = taken;
             entry.source = componentIdx;
 
             return entry;
@@ -249,8 +250,10 @@ class PairTAGE : public TimedBaseBTBPredictor
     bool secondBlockMatches(const TrainPacket &packet) const;
     void setPredictionPhase(PairPhase phase);
     TrainPacket buildTrainPacketFromPredForFirstBlock(FullBTBPrediction &finalPred) const;
-    TrainPacket buildTwoTakenTrainPacket(Addr startPC, PairPhase phase, const std::vector<BTBEntry> &btbEntries,
-                                         const CondTakens &condTakens) const;
+    TrainPacket buildTwoTakenTrainPacket(
+        Addr startPC, PairPhase phase,
+        const std::vector<BranchPrediction> &btbEntries,
+        const CondTakens &condTakens) const;
     void trainFromS3Pred(
         const TrainPacket &finalTrainPacket,
         const TrainPacket *twoTakenTrainPacket = nullptr);

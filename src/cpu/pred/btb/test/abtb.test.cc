@@ -168,7 +168,7 @@ TEST_F(ABTBTest, ActualBranchAttributesReplaceExistingEntry)
     EXPECT_FALSE(entries[0].isIndirect);
     EXPECT_FALSE(entries[0].isCall);
     EXPECT_FALSE(entries[0].isReturn);
-    EXPECT_EQ(entries[0].ctr, -1);
+    EXPECT_EQ(entries[0].baseTaken, false);
 }
 
 TEST_F(ABTBTest, ActualBranchUpdatePreservesLiveCounter)
@@ -185,7 +185,7 @@ TEST_F(ABTBTest, ActualBranchUpdatePreservesLiveCounter)
     makePrediction(previous_pc, abtb);
     auto old_pred = makePrediction(start_pc, abtb);
     ASSERT_EQ(old_pred.btbEntries.size(), 1);
-    EXPECT_EQ(old_pred.btbEntries[0].ctr, 0);
+    EXPECT_EQ(old_pred.btbEntries[0].baseTaken, true);
     auto stream = createStream(start_pc, old_pred, abtb);
     stream.previousPCs.push(previous_pc);
 
@@ -202,7 +202,7 @@ TEST_F(ABTBTest, ActualBranchUpdatePreservesLiveCounter)
     const auto prediction = makePrediction(start_pc, abtb);
     const auto &entries = prediction.btbEntries;
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].ctr, 0);
+    EXPECT_EQ(entries[0].baseTaken, true);
     EXPECT_EQ(entries[0].target, actual_branch.target);
     EXPECT_EQ(entries[0].size, actual_branch.size);
 }
@@ -322,8 +322,8 @@ TEST_F(ABTBTest, ResolveUpdateOnlyTrainsExplicitBranch)
     makePrediction(previous_pc, abtb);
     auto updated_pred = makePrediction(start_pc, abtb);
     ASSERT_EQ(updated_pred.btbEntries.size(), 2);
-    EXPECT_EQ(updated_pred.btbEntries[0].ctr, -1);
-    EXPECT_EQ(updated_pred.btbEntries[1].ctr, 0);
+    EXPECT_EQ(updated_pred.btbEntries[0].baseTaken, false);
+    EXPECT_EQ(updated_pred.btbEntries[1].baseTaken, true);
 }
 
 } // namespace test

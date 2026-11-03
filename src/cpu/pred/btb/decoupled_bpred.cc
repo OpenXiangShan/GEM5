@@ -480,7 +480,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
 
     if (predsOfEachStage[0].btbEntries.size() != 0) {
         for (auto entry : predsOfEachStage[0].btbEntries){
-            if (entry.isIndirect || entry.isDirect || entry.ctr >= 0) {
+            if (entry.isIndirect || entry.isDirect || entry.baseTaken) {
                 finalPred.s1Source = entry.source;
                 break;
             }
@@ -490,8 +490,8 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     bool found_s3_taken = false;
     bool na_s3_taken_but_have_cond = false;
 
-    for (BTBEntry entry : predsOfEachStage[2].btbEntries) {
-        if (entry.isDirect || entry.isIndirect || entry.ctr >= 0) {
+    for (BranchPrediction entry : predsOfEachStage[2].btbEntries) {
+        if (entry.isDirect || entry.isIndirect || entry.baseTaken) {
             found_s3_taken = true;
         }else if (entry.isCond){
             //only use when there's no taken prediction in s3
@@ -724,7 +724,7 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
     secondPred.s1Source = pairtage->getComponentIdx();
     secondPred.s3Source = pairtage->getComponentIdx();
 
-    BTBEntry secondEntry = secondBlock.buildBTBEntry(pairtage->getComponentIdx());
+    BranchPrediction secondEntry = secondBlock.buildBTBEntry(pairtage->getComponentIdx());
     secondPred.btbEntries.push_back(secondEntry);
     if (secondEntry.valid && secondEntry.isCond) {
         secondPred.condTakens.push_back({secondEntry.pc, secondBlock.taken});
@@ -756,7 +756,7 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
         }
 
         std::sort(secondPred.btbEntries.begin(), secondPred.btbEntries.end(),
-                  [](const BTBEntry &lhs, const BTBEntry &rhs) { return lhs.pc < rhs.pc; });
+                  [](const BranchPrediction &lhs, const BranchPrediction &rhs) { return lhs.pc < rhs.pc; });
     }
 
     refreshTwoTakenPredictionMetas(tid, secondPred);
@@ -841,7 +841,7 @@ DecoupledBPUWithBTB::prepareTwoTakenTraining(ThreadID tid)
         for (const auto &entry : btbEntries) {
             if (entry.valid && entry.isCond) {
                 condTakens.push_back(
-                    {entry.pc, entry.ctr >= 0});
+                    {entry.pc, entry.baseTaken});
             }
         }
     }

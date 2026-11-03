@@ -257,14 +257,14 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
                                     std::vector<FullBTBPrediction>& stagePreds)
 {    // S0 prediction source statistic is tracked by AheadBTB
     // AheadBTB always has aheadPipelinedStages > 0
-    std::vector<TickedBTBEntry> selected_entries;
+    std::vector<BranchPrediction> selected_entries;
     bool selected_abtb_entries = false;
 
     if (!entries.empty()) {
         // RTL S1 arbitration gives ABTB exclusive priority once ABTB is valid.
         // If these entries later predict not-taken, S1 falls through instead of
         // falling back to an earlier uBTB taken prediction.
-        selected_entries = entries;
+        selected_entries.assign(entries.begin(), entries.end());
         selected_abtb_entries = true;
         btbStats.S0PredUseABTB++;
     } else if (stagePreds[0].btbEntries.size() > 0) {
@@ -272,7 +272,7 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         btbStats.S0PredUseUBTB++;
         const auto &ubtb_pred_entry = stagePreds[0].btbEntries[0];
         assert(ubtb_pred_entry.valid);
-        selected_entries.push_back(TickedBTBEntry(ubtb_pred_entry, curTick()));
+        selected_entries.push_back(ubtb_pred_entry);
     } else {
         btbStats.S0Predmiss++;
     }
@@ -282,7 +282,7 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         // Copy BTB entries to stage prediction
         stagePreds[s].btbEntries.clear();
         for (auto e : selected_entries) {
-            auto pred_entry = BTBEntry(e);
+            auto pred_entry = e;
             if (selected_abtb_entries) {
                 pred_entry.source = getComponentIdx();
             }
@@ -300,7 +300,7 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
     for (auto &e : selected_entries) {
         assert(e.valid);
         if (e.isCond) {
-            FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.ctr >= 0});
+            FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.baseTaken});
         } else if (e.isIndirect) {
             // Set predicted target for indirect branches
             DPRINTF(ABTB, "setting indirect target for pc %#lx to %#lx\n", e.pc, e.target);
@@ -749,7 +749,7 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
         }
     }
     if (!pred_branch_hit&& s3Pred.isTaken()) {
-        new_entry = s3Pred.getTakenEntry();
+        new_entry = BTBEntry(s3Pred.getTakenEntry().getBranchInfo());
         new_entry.valid = true;
 
         if (new_entry.isCond) {

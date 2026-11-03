@@ -212,7 +212,7 @@ MicroTAGE::tickStart() {}
  * @return TagePrediction containing main and alternative predictions
  */
 MicroTAGE::TagePrediction
-MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
+MicroTAGE::generateSinglePrediction(const BranchPrediction &btb_entry,
                                  const Addr &startPC,
                                  std::shared_ptr<TageMeta> predMeta,
                                  ThreadID tid,
@@ -275,7 +275,7 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
     // Generate final prediction
     bool main_taken = main_info.taken();
-    bool base_pred = btb_entry.ctr >= 0;
+    bool base_pred = btb_entry.baseTaken;
 
     bool taken = provided ? main_taken : base_pred;
 
@@ -294,7 +294,7 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
  * @return Map of branch PC addresses to their predicted outcomes
  */
 void
-MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
+MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BranchPrediction> &btbEntries,
                         CondTakens& results, ThreadID tid, uint8_t asidHash)
 {
     DPRINTF(UTAGE, "lookupHelper startAddr: %#lx\n", startPC);
@@ -432,7 +432,7 @@ MicroTAGE::refreshPredictionMeta(Addr startPC,
 }
 
 bool
-MicroTAGE::isAbtbEntry(const BTBEntry &entry) const
+MicroTAGE::isAbtbEntry(const BranchPrediction &entry) const
 {
 #ifdef UNIT_TEST
     if (abtbComponentIdx < 0) {
@@ -442,10 +442,10 @@ MicroTAGE::isAbtbEntry(const BTBEntry &entry) const
     return abtbComponentIdx >= 0 && entry.source == abtbComponentIdx;
 }
 
-std::vector<BTBEntry>
-MicroTAGE::getAbtbConditionalEntries(const std::vector<BTBEntry> &btbEntries) const
+std::vector<BranchPrediction>
+MicroTAGE::getAbtbConditionalEntries(const std::vector<BranchPrediction> &btbEntries) const
 {
-    std::vector<BTBEntry> entries;
+    std::vector<BranchPrediction> entries;
     for (const auto &entry : btbEntries) {
         if (entry.valid && entry.isCond && isAbtbEntry(entry)) {
             entries.push_back(entry);
@@ -454,13 +454,13 @@ MicroTAGE::getAbtbConditionalEntries(const std::vector<BTBEntry> &btbEntries) co
     return entries;
 }
 
-std::vector<BTBEntry>
+std::vector<BranchPrediction>
 MicroTAGE::prepareS3UpdateEntriesFromAbtbMeta(
-    const std::vector<BTBEntry> &abtbEntries,
+    const std::vector<BranchPrediction> &abtbEntries,
     FullBTBPrediction &s3Pred,
     CondTakens &teacherCondTakens)
 {
-    std::vector<BTBEntry> entries;
+    std::vector<BranchPrediction> entries;
     auto taken_entry = s3Pred.getTakenEntry();
 
     for (const auto &entry : abtbEntries) {
@@ -496,7 +496,7 @@ MicroTAGE::prepareS3UpdateEntriesFromAbtbMeta(
  * @return true if need to allocate new entry
  */
 bool
-MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
+MicroTAGE::updatePredictorStateAndCheckAllocation(const BranchPrediction &entry,
                              bool actual_taken,
                              const TagePrediction &pred,
                              bool control_mispred) {
@@ -505,7 +505,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     auto &main_info = pred.mainInfo;
     bool used_base = !pred.mainprovided;
     // Use base table instead of entry.ctr for fallback prediction
-    bool base_taken = entry.ctr >= 0;
+    bool base_taken = entry.baseTaken;
 
     // Update use_alt_on_na when provider is weak (0 or -1)
     if (main_info.found) {
@@ -537,7 +537,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         bool main_is_correct = main_info.taken() == actual_taken;
         bool base_is_correct_and_strong =
                                      (base_taken == actual_taken) &&
-                                     (abs(2 * entry.ctr + 1) == 5);
+                                     (entry.baseStrong);
 
         // a. Special reset (humility mechanism)
         if (base_is_correct_and_strong && main_is_correct) {
@@ -592,7 +592,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 }
 
 bool
-MicroTAGE::updatePredictorStateAndCheckAllocationS3(const BTBEntry &entry,
+MicroTAGE::updatePredictorStateAndCheckAllocationS3(const BranchPrediction &entry,
                              bool actual_taken,
                              const TagePrediction &pred) {
     // Mirror the normal update path, but interpret mismatch against the S3 teacher
@@ -605,7 +605,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocationS3(const BTBEntry &entry,
     if (!main_info.found || used_base) {
         tageStats.s3UpdateUseAlt++;
     }
-    bool base_taken = entry.ctr >= 0;
+    bool base_taken = entry.baseTaken;
 
     if (main_info.found) {
         bool main_weak = (main_info.entry.counter == 0 || main_info.entry.counter == -1);
@@ -631,7 +631,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocationS3(const BTBEntry &entry,
         bool main_is_correct = main_info.taken() == actual_taken;
         bool base_is_correct_and_strong =
                                      (base_taken == actual_taken) &&
-                                     (abs(2 * entry.ctr + 1) == 5);
+                                     (entry.baseStrong);
 
         if (base_is_correct_and_strong && main_is_correct) {
             way.useful = 0;
@@ -691,7 +691,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocationS3(const BTBEntry &entry,
  */
 bool
 MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
-                                 const BTBEntry &entry,
+                                 const BranchPrediction &entry,
                                  bool actual_taken,
                                  unsigned start_table,
                                  std::shared_ptr<TageMeta> meta,
@@ -943,7 +943,7 @@ MicroTAGE::trainEntries(const std::vector<TrainingEntry> &entries_to_update,
     bool utage_hit = false;
     const char *context = isS3Update ? "S3 teacher-update" : "update";
     auto get_prediction_for_training =
-        [&](const BTBEntry &btb_entry) -> TagePrediction {
+        [&](const BranchPrediction &btb_entry) -> TagePrediction {
             if (updateOnRead) {
                 return generateSinglePrediction(
                     btb_entry, startPC, predMeta, tid, asidHash);
@@ -1045,12 +1045,13 @@ MicroTAGE::trainResolvedEntries(
         if (!branch.isCond) {
             continue;
         }
-        auto entry = BTBEntry(makeBranchInfo(branch));
+        auto entry = BranchPrediction(makeBranchInfo(branch));
         auto pred = predMeta->preds.find(entry.pc);
         if (pred == predMeta->preds.end()) {
             continue;
         }
-        entry.ctr = pred->second.basePred ? 0 : -1;
+        entry.baseTaken = pred->second.basePred;
+        entry.baseStrong = false;
         entries.push_back(TrainingEntry{
             entry, branch.taken, branch.mispredicted});
     }

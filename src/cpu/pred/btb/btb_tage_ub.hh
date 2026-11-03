@@ -173,7 +173,7 @@ class BTBTAGEUpperBound : public BTBTAGE
                             const std::array<uint64_t, MaxHistoryWords> &historyWords,
                             uint64_t &allocatedTable);
     void refreshContextStats(unsigned table);
-    void notePredictionResult(const BTBEntry &btbEntry,
+    void notePredictionResult(const BranchPrediction &btbEntry,
                               const TagePrediction &pred,
                               std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
                               CondTakens &results) const;

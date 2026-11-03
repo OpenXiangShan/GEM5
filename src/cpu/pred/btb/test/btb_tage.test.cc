@@ -355,7 +355,7 @@ bool predictTAGE(BTBTAGE* tage, Addr startPC,
                 boost::dynamic_bitset<>& history,
                 std::vector<FullBTBPrediction>& stagePreds) {
     // Setup stage predictions with BTB entries
-    stagePreds[1].btbEntries = entries;
+    stagePreds[1].btbEntries.assign(entries.begin(), entries.end());
 
     // Make prediction
     tage->putPCHistory(startPC, history, stagePreds);

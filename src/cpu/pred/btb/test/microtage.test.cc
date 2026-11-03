@@ -58,7 +58,7 @@ makeStagePred(Addr start_pc, const std::vector<BTBEntry> &entries,
     pred.tid = 0;
     pred.asidHash = 0;
     pred.bbStart = start_pc;
-    pred.btbEntries = entries;
+    pred.btbEntries.assign(entries.begin(), entries.end());
     pred.condTakens = cond_takens;
     return pred;
 }

@@ -421,7 +421,7 @@ BTBTAGE::generateSinglePrediction(const BranchInfo &btb_entry,
  * @return Map of branch PC addresses to their predicted outcomes
  */
 void
-BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
+BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BranchPrediction> &btbEntries,
                       std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
                       CondTakens& results, ThreadID tid, uint8_t asidHash)
 {
@@ -431,7 +431,7 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
     for (auto &btb_entry : btbEntries) {
         // Only predict for valid conditional branches
         if (btb_entry.isCond && btb_entry.valid) {
-            auto pred = generateSinglePrediction(btb_entry, startPC, btb_entry.ctr >= 0, nullptr, tid, asidHash);
+            auto pred = generateSinglePrediction(btb_entry, startPC, btb_entry.baseTaken, nullptr, tid, asidHash);
             threadMeta[tid]->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
             results.push_back({btb_entry.pc, pred.taken});
@@ -452,7 +452,7 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
 
 void
 BTBTAGE::lookupNoSideEffect(const Addr &startPC,
-                            const std::vector<BTBEntry> &btbEntries,
+                            const std::vector<BranchPrediction> &btbEntries,
                             CondTakens &results,
                             ThreadID tid,
                             uint8_t asidHash) const
@@ -460,7 +460,7 @@ BTBTAGE::lookupNoSideEffect(const Addr &startPC,
     for (const auto &btb_entry : btbEntries) {
         if (btb_entry.isCond && btb_entry.valid) {
             auto pred = generateSinglePrediction(
-                btb_entry, startPC, btb_entry.ctr >= 0, nullptr, tid, asidHash);
+                btb_entry, startPC, btb_entry.baseTaken, nullptr, tid, asidHash);
             results.push_back({btb_entry.pc, pred.taken});
         }
     }
@@ -552,7 +552,7 @@ BTBTAGE::refreshPredictionMeta(Addr startPC,
         }
 
         auto tage_pred = generateSinglePrediction(
-            btb_entry, startPC, btb_entry.ctr >= 0, nullptr, pred.tid, pred.asidHash);
+            btb_entry, startPC, btb_entry.baseTaken, nullptr, pred.tid, pred.asidHash);
         meta->preds[btb_entry.pc] = tage_pred;
 
         auto &tage_info = pred.tageInfoForMgscs[btb_entry.pc];

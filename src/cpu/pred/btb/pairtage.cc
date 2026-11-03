@@ -251,7 +251,7 @@ PairTAGE::buildTrainPacketFromPredForFirstBlock(FullBTBPrediction &finalPred) co
 }
 
 PairTAGE::TrainPacket
-PairTAGE::buildTwoTakenTrainPacket(Addr startPC, PairPhase phase, const std::vector<BTBEntry> &btbEntries,
+PairTAGE::buildTwoTakenTrainPacket(Addr startPC, PairPhase phase, const std::vector<BranchPrediction> &btbEntries,
                                    const CondTakens &condTakens) const
 {
     using BranchFlag = TrainPacket::BranchFlag;
@@ -260,7 +260,7 @@ PairTAGE::buildTwoTakenTrainPacket(Addr startPC, PairPhase phase, const std::vec
     packet.startPC = startPC;
     packet.phase = phase;
 
-    const BTBEntry *trainEntry = nullptr;
+    const BranchPrediction *trainEntry = nullptr;
     bool taken = false;
     for (const auto &entry : btbEntries) {
         if (!entry.valid) {

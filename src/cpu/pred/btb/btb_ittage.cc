@@ -101,7 +101,7 @@ void
 BTBITTAGE::tick() {}
 
 void
-BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
+BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BranchPrediction> &btbEntries,
                         IndirectTargets& results, ThreadID tid, uint8_t asidHash)
 {
     (void)asidHash;
@@ -338,7 +338,7 @@ BTBITTAGE::update(
         if (!(branch.isIndirect && !branch.isReturn)) {
             continue;
         }
-        const auto btb_entry = BTBEntry(makeBranchInfo(branch));
+        const auto btb_entry = BranchPrediction(makeBranchInfo(branch));
         auto pred_it = preds.find(btb_entry.pc);
         TagePrediction pred;
         if (pred_it != preds.end()) {

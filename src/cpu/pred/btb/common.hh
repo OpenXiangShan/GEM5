@@ -2,6 +2,7 @@
 #define __CPU_PRED_BTB_STREAM_STRUCT_HH__
 
 #include <algorithm>
+#include <cstdlib>
 #include <queue>
 #include <string>
 
@@ -231,6 +232,30 @@ struct BTBEntry : BranchInfo
     }
 };
 
+/** A branch candidate, independent of BTB storage and replacement state. */
+struct BranchPrediction : BranchInfo
+{
+    bool valid{false};
+    bool taken{false};
+    bool baseTaken{false};
+    bool baseStrong{false};
+    int source{-1};
+
+    BranchPrediction() = default;
+    BranchPrediction(const BranchInfo &branch)
+        : BranchInfo(branch), valid(true)
+    {}
+    BranchPrediction(const BTBEntry &entry)
+        : BranchInfo(entry), valid(entry.valid),
+          taken(!entry.isCond || entry.ctr >= 0),
+          baseTaken(entry.ctr >= 0),
+          baseStrong(std::abs(2 * entry.ctr + 1) == 5),
+          source(entry.source)
+    {}
+
+    BranchInfo getBranchInfo() const { return *this; }
+};
+
 /**
  * @brief Tage prediction info for MGSC
  */
@@ -389,7 +414,8 @@ struct FetchTarget
        predMetas.fill(nullptr);
    }
 
-    void setPredictedBranches(const std::vector<BTBEntry> &entries)
+    template<class Entry = BranchPrediction>
+    void setPredictedBranches(const std::vector<Entry> &entries)
     {
         predictedBranchPCs.clear();
         predictedBranchPCs.reserve(entries.size());
@@ -595,7 +621,7 @@ struct FullBTBPrediction
     ThreadID tid;
     uint8_t asidHash;
     Addr bbStart;
-    std::vector<BTBEntry> btbEntries; // for BTB, only assigned when hit, sorted by inst order
+    std::vector<BranchPrediction> btbEntries; // for BTB, only assigned when hit, sorted by inst order
     // for conditional branch predictors, mapped with lowest bits of branches
     CondTakens condTakens;
 
@@ -627,7 +653,7 @@ struct FullBTBPrediction
         s1Source(-1),
         s3Source(-1) {}
 
-    BTBEntry getTakenEntry() {
+    BranchPrediction getTakenEntry() {
         // IMPORTANT: assume entries are sorted
         for (auto &entry : this->btbEntries) {
             // hit
@@ -648,7 +674,7 @@ struct FullBTBPrediction
                 }
             }
         }
-        return BTBEntry(); // not found, return empty entry
+        return BranchPrediction(); // not found, return empty entry
     }
 
     bool isTaken() {
@@ -660,7 +686,7 @@ struct FullBTBPrediction
         return (bbStart + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
     }
 
-    Addr getEntryTarget(const BTBEntry &entry) {
+    Addr getEntryTarget(const BranchPrediction &entry) {
         Addr target = entry.target;
         // indirect target should come from ipred or ras,
         // or btb itself when ipred miss

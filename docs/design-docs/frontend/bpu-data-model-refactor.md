@@ -27,3 +27,9 @@
 ## 证据记录
 
 本地过程输出存放 `/tmp/bpu-data-refactor/`。阶段结果与 CI run 在完成后补充。
+
+### 阶段 1 / 2
+
+- 阶段 1：TAGE 内部 lookup 显式接收 base 方向；训练读取预测 metadata，删除 bool→counter→bool 转换。30 项 TAGE 测试通过。
+- 阶段 2：`BranchPrediction` 分离 BTB 存储。counter/tag 不进入阶段候选；base 方向、MicroTAGE 所需的 base 强度和来源显式保存。93 项相关单元测试通过。
+- 两阶段均运行 8 组 baseline 对照（CoreMark 300k 窗口，alternating/return/indirect 完整运行；PairTAGE 开/关），所有非 host 模拟统计逐项一致。

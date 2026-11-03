@@ -269,7 +269,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     void updateGlobalThreshold(Addr pc, bool update_direction);
 
     // Look up predictions in MGSC tables for a stream of instructions
-    void lookupHelper(const Addr &stream_start, const std::vector<BTBEntry> &btbEntries,
+    void lookupHelper(const Addr &stream_start, const std::vector<BranchPrediction> &btbEntries,
                       const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
                       CondTakens &results, ThreadID tid, uint8_t asidHash);
 
@@ -302,7 +302,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     }
 
     // Helper method to generate prediction for a single BTB entry
-    MgscPrediction generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC,
+    MgscPrediction generateSinglePrediction(const BranchPrediction &btb_entry, const Addr &startPC,
                                             const TageInfoForMGSC &tage_info,
                                             ThreadID tid, uint8_t asidHash);
 
