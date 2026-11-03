@@ -56,6 +56,7 @@ instruction has an empty PC and remains explicitly unresolved.
 | `slot_weight` | Integer number of sampled slots |
 | `cycle_weight` | `slot_weight / renameWidth` |
 | `resolution` | resolved, unresolved, or pending |
+| `flush_reason` | Numeric `SquashCause` of the redirect owning Misspeculation slots |
 
 Pending rows are provisional: their target may still be squashed, or the next
 frontend target has not arrived. They must not be treated as final per-PC
@@ -104,6 +105,15 @@ CSV rows additionally retain `iq`, `iq_flags`, and `frontend_reason`.
 Summing over these columns recovers the original PC/state/cause/resolution
 budget. Pending weights retain their context; squashed weights follow the
 original Misspeculation transfer and discard the failed-path gate identity.
+
+`flush_reason` further partitions Misspeculation using the existing
+`SquashCause` enum: 0 = None/unspecified, 1 = BranchMispredict,
+2 = MemOrderViolation, 3 = ValuePrediction, 4 = Trap, 5 = ThreadContext,
+6 = SquashAfter, and 7 = LongLatencyFlush. Other states use zero.
+It describes the redirect source, including a Trap whose instruction fault
+may request re-execution. It does not change the original cause mask.
+Pending slots retain the reason; an older redirect transfers younger slots
+to its own reason. Summing over this column recovers the previous CSV budget.
 
 For a surviving S_ISB stall, `iq` is the selected scheduler IQ ID. Flags
 are a bit set: 1 = enqueue ports exhausted, 2 = IQ entries exhausted,
