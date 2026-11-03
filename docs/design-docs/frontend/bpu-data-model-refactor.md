@@ -200,17 +200,18 @@ Astra 在新上下文中对 base `75569f588baa5ccd9be051cfc57408482f214494`、he
 共同配置与归属：
 
 - workflow ref 为 `refactor/bpu-prediction-data`，两次 workflow 版本均为 `e64d0a47c2`。Actions 的 `headSha` 表示 workflow 版本；base 实际测试源码以 checkout 和归档 `metadata.txt` 中的 base SHA 为准。
-- `configs/example/kmhv3.py`；完整 `spec06-rva23-novec-gcc16-0.3c`；无 benchmark subset，extra args 为空。两侧全部 145 对 `config.ini` 的 CPU/BPU 参数一致。
+- `configs/example/kmhv3.py`；完整 `spec06-rva23-novec-gcc16-0.3c`；无 benchmark subset，extra args 为空。两侧全部 145 对 `config.ini` 的 CPU/BPU 参数一致。 CI 为单线程、PairTAGE 关闭；PairTAGE 开启与 SMT 的对照证据来自前述本地回归。
 - 固定 REF：`/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal/riscv64-nemu-interpreter-so`；SHA256 为 `93dc5fc89d620e83cf1670d912921ed0edf2910baf77f4b8ec4eedfb5fbb0d86`。
 - 归档根目录：`/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/`。归档路径已从成功 job 日志重新解析，并核对 metadata 的 workflow run ID/source SHA。
 - `checkpoints.lst`、`cluster.json` 和 `ref-manifest.json` 双边逐字一致。selected points 为 145；权重来自 `checkpoints_cov0.3.json`，重新评分时显式传入各归档的 `cluster.json`，没有使用处理脚本默认 full-profile 权重。
 
 结果：
 
-- 全部 145 对切片的预热和测量两个统计段共 290 段；逐段比较双向 key 并集，3,394,820 项统计键值完全一致。只排除 `host* / simFreq* / simSeconds*`，保留 cycles、committedInsts、IPC、simTicks、finalTick、全部导出的 BPU/history/override 等统计。
+- 全部 145 对切片每侧各有预热和测量两个统计段，共每侧 290 段；按 290 对统计段比较双向 key 并集，3,394,820 项统计键值完全一致。只排除 `host* / simFreq* / simSeconds*`，保留 cycles、committedInsts、IPC、simTicks、finalTick、全部导出的 BPU/history/override 等统计。
 - 29 个 benchmark 的 score、time、coverage 全部一致，Int/FP/Overall 分数变化均为 0%。145/145 是所选切片完成率，SimPoint 的权重覆盖率仍以各 benchmark 的 coverage 为准。
 - 用本地 `gem5_data_proc` 提交 `80316cedb2f17b05a692b729e4af2e340c01b986` 重新生成 score/weighted CSV，与 CI 归档 `score.txt` 的三个汇总分数一致。
 - 机器可读结果：`/tmp/bpu-data-refactor/ci-final-comparison.json`、`ci-stats-comparison.json`、`ci-stats-comparison.csv`、`ci-score-comparison.csv`。中文汇总：`ci-final-report.md`；完整命令：`ci-processing-provenance.json`；终态与归档核验：`ci-{base,head}-live.json`、`ci-{base,head}-archive-info.txt`。
+- Astra 另做受提示的最终 CI 证据复核：独立由 145 行 point CSV 和归档权重重算 29 个 benchmark 的 time/coverage/score，并抽查 4 点原始双段 stats，结果一致，未发现新增实质问题。该次复核没有独立重解析全部 145 点原始 stats；报告为 `/tmp/bpu-data-refactor/review-astra-ci-followup.md`，与首轮盲审记录分开保存。
 
 复算与统计比较：
 
