@@ -41,6 +41,8 @@ PairTAGE::PairTAGE(const Params &p)
 
     table.resize(numPredictors);
     tableIndexBits.resize(numPredictors);
+    threadHistory.resize(MaxThreads);
+    threadMeta.resize(MaxThreads);
 
     for (unsigned int i = 0; i < numPredictors; ++i) {
         // Every bank of a table holds the same number of sets, and both are
@@ -55,6 +57,15 @@ PairTAGE::PairTAGE(const Params &p)
         }
 
         tableIndexBits[i] = ceilLog2(tableSizes[i]);
+
+        const int setBits = tableIndexBits[i] - bankIdWidth;
+        for (auto &state : threadHistory) {
+            state.indexFoldedHist.emplace_back(histLengths[i], setBits, 16);
+            state.tagFoldedHist.emplace_back(
+                histLengths[i], tableTagBits[i], 16);
+            state.altTagFoldedHist.emplace_back(
+                histLengths[i], tableTagBits[i] - 1, 16);
+        }
     }
 }
 
@@ -73,24 +84,29 @@ PairTAGE::putPCHistory(Addr startAddr, const bitset &history,
 {
     (void)startAddr;
     (void)history;
-    (void)stagePreds;
+    assert(!stagePreds.empty());
+    const ThreadID tid = stagePreds.front().tid;
+
+    threadMeta[tid] = std::make_shared<PairTAGEMeta>();
+    threadMeta[tid]->history = historyState(tid);
+
     pairTageStats.lookups++;
 }
 
 std::shared_ptr<void>
 PairTAGE::getPredictionMeta(ThreadID tid)
 {
-    (void)tid;
-    return nullptr;
+    if (tid >= threadMeta.size()) {
+        return nullptr;
+    }
+    return threadMeta[tid];
 }
 
 void
 PairTAGE::specUpdatePHist(const bitset &history, FullBTBPrediction &pred,
                           const PathHistoryUpdate &update)
 {
-    (void)history;
-    (void)pred;
-    (void)update;
+    doUpdateHist(history, update, pred.tid);
 }
 
 void
@@ -98,9 +114,21 @@ PairTAGE::recoverPHist(const bitset &history,
                        const HistoryRecoveryContext &context,
                        const PathHistoryUpdate &update)
 {
-    (void)history;
-    (void)context;
-    (void)update;
+    auto predMeta = std::static_pointer_cast<PairTAGEMeta>(
+        context.predMetas[getComponentIdx()]);
+    if (!predMeta) {
+        return;
+    }
+
+    // Restore the prediction-time state, then apply the actual outcome
+    auto &state = historyState(context.tid);
+    const auto &saved = predMeta->history;
+    for (unsigned t = 0; t < numPredictors; ++t) {
+        state.indexFoldedHist[t].recover(saved.indexFoldedHist[t]);
+        state.tagFoldedHist[t].recover(saved.tagFoldedHist[t]);
+        state.altTagFoldedHist[t].recover(saved.altTagFoldedHist[t]);
+    }
+    doUpdateHist(history, update, context.tid);
 }
 
 void
@@ -165,6 +193,48 @@ PairTAGE::writeEntry(unsigned t, Addr index, unsigned way,
     assert(t < numPredictors && index < table[t].size() && way < numWays);
 
     table[t][index][way] = entry;
+}
+
+PairTAGE::ThreadHistoryState &
+PairTAGE::historyState(ThreadID tid)
+{
+    assert(tid < threadHistory.size());
+    return threadHistory[tid];
+}
+
+const PairTAGE::ThreadHistoryState &
+PairTAGE::historyState(ThreadID tid) const
+{
+    assert(tid < threadHistory.size());
+    return threadHistory[tid];
+}
+
+void
+PairTAGE::doUpdateHist(const bitset &history, const PathHistoryUpdate &update,
+                       ThreadID tid)
+{
+    auto &state = historyState(tid);
+    for (unsigned t = 0; t < numPredictors; ++t) {
+        state.indexFoldedHist[t].update(history, update.shamt, update.taken,
+                                        update.pc, update.target);
+        state.tagFoldedHist[t].update(history, update.shamt, update.taken,
+                                      update.pc, update.target);
+        state.altTagFoldedHist[t].update(history, update.shamt, update.taken,
+                                         update.pc, update.target);
+    }
+}
+
+void
+PairTAGE::checkFoldedHist(const bitset &history, ThreadID tid,
+                          const char *when)
+{
+    (void)when;
+    const auto &state = historyState(tid);
+    for (unsigned t = 0; t < numPredictors; ++t) {
+        state.indexFoldedHist[t].check(history);
+        state.tagFoldedHist[t].check(history);
+        state.altTagFoldedHist[t].check(history);
+    }
 }
 
 }  // namespace btb_pred
