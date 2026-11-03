@@ -99,14 +99,37 @@ class PairTAGE : public TimedBaseBTBPredictor
     const unsigned numWays;
 
     // ========== Bank Configuration ==========
-    // Each table is split into banks selected by low PC bits, like the RTL
-    // SRAM banks. A bank owns a contiguous range of indices, so an index is
-    // laid out as {bank, set}.
+    // Each table is split into banks selected by low PC bits, A bank
+    // owns a contiguous range of indices, so an index is laid out
+    // as {bank, set}.
     const unsigned numBanks;         // Number of banks (e.g., 4)
     const unsigned bankIdWidth;      // log2(numBanks), computed in constructor
 
     // The PairTAGE prediction tables (table x index x way)
     std::vector<std::vector<std::vector<PTAGEEntry>>> table;
+
+    // ========== Index and Tag ==========
+    // PC fields from high to low bits: {tag, set, bank, instOffset}
+    // The tag takes the PC bits right above the index, so it carries
+    // information the index does not already have.
+
+    // Instruction alignment bits stripped before any PC field
+    const unsigned instShiftAmt{1};
+
+    // Bank selected by the PC bits right above the instruction offset
+    unsigned getBankId(Addr pc) const;
+
+    // Set within a bank: the PC bits above the bank XORed with the folded
+    // history of table t
+    Addr getSetIndex(Addr pc, unsigned t, uint64_t foldedHist) const;
+
+    // Index into table[t], laid out as {bank, set}
+    Addr getIndex(unsigned t, unsigned bank, Addr set) const;
+
+    // Tag: the PC bits above the index XORed with two folds of different
+    // widths, so the tag does not simply repeat the history the index uses
+    Addr getTag(Addr pc, unsigned t, uint64_t foldedHist,
+                uint64_t altFoldedHist) const;
 
     struct PairTAGEStats : public statistics::Group
     {
