@@ -131,6 +131,25 @@ class PairTAGE : public TimedBaseBTBPredictor
     Addr getTag(Addr pc, unsigned t, uint64_t foldedHist,
                 uint64_t altFoldedHist) const;
 
+    // ========== Table Access ==========
+    // Plain reads and writes of one set. Which table, set and way to use,
+    // and what to write, is left to the caller.
+
+    // Result of reading one set of a table
+    struct LookupResult
+    {
+        bool hit{false};    // a valid entry in the set matches the tag
+        unsigned way{0};    // way of the matching entry, valid on hit
+        PTAGEEntry entry;   // copy of the matching entry, valid on hit
+    };
+
+    // Read set index of table t and match its ways against tag
+    LookupResult lookup(unsigned t, Addr index, Addr tag) const;
+
+    // Overwrite one way of set index of table t
+    void writeEntry(unsigned t, Addr index, unsigned way,
+                    const PTAGEEntry &entry);
+
     struct PairTAGEStats : public statistics::Group
     {
         statistics::Scalar lookups;
