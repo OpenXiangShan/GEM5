@@ -61,21 +61,21 @@ def setKmhV3Params(args, system):
         setPtwLevelLimitParams(args, cpu.mmu.itb)
         setPtwLevelLimitParams(args, cpu.mmu.dtb)
         cpu.fetchWidth = 32
-        cpu.iewToFetchDelay = 2
-        cpu.commitToFetchDelay = 2
+        cpu.iewToFetchDelay = 4 # for resolved update, should train branch after squash
+        cpu.commitToFetchDelay = 4
         cpu.fetchQueueSize = 64
         predecode_enabled = not getattr(args, "enable_trace_mode", False)
         cpu.enablePredecode = predecode_enabled
 
         # decode
         cpu.fetchToDecodeDelay = 3
-        cpu.decodeWidth = 10
+        cpu.decodeWidth = 8
         cpu.enable_loadFusion = False
-        cpu.enableConstantFolding = True
+        cpu.enableConstantFolding = False
         cpu.enableDecodeFusionCompaction = False
 
         # rename
-        cpu.renameWidth = 10
+        cpu.renameWidth = 8
         cpu.numPhysIntRegs = 224
         cpu.numPhysFloatRegs = 256
         cpu.enable_storeSet_train = True
@@ -92,12 +92,9 @@ def setKmhV3Params(args, system):
         else:
             cpu.scheduler = KMHV3Scheduler()
         
-        for iq in cpu.scheduler.IQs[:13]:
-            iq.scheduleToExecDelay = 1
-
         cpu.scheduler.disableAllRegArb()
-        for iq_index, iq in enumerate(cpu.scheduler.IQs):
-            iq.deferNewEnqueueSelection = iq_index >= 13 and not args.smt
+        for iq in cpu.scheduler.IQs:
+            iq.deferNewEnqueueSelection = not args.smt
         cpu.scheduler.enableMainRdpOpt = False
         cpu.scheduler.intRegfileBanks = 1
         if args.enable_spmt:
@@ -130,9 +127,9 @@ def setKmhV3Params(args, system):
             cpu.scheduler.IQs[2].oports[1].rp = [IntRD(4, 1), IntRD(5, 1)]
 
         # rob
-        cpu.commitWidth = 10
+        cpu.commitWidth = 8
         cpu.squashWidth = 8
-        cpu.phyregReleaseWidth = 10
+        cpu.phyregReleaseWidth = 8
         cpu.RobCompressPolicy = 'none'
         cpu.numROBEntries = 352
         cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
@@ -152,10 +149,6 @@ def setKmhV3Params(args, system):
             cpu.CROB_instPerGroup = 8
             cpu.renameWidth = 8
             cpu.commitWidth = 8
-
-        if not hybrid:
-            cpu.valuePred = ConstantLVP(
-                numPredictionPorts=3, numUpdatePorts=2, resetConfidence=True)
 
         if args.enable_value_prediction:
             cpu.valuePred = CompositeValuePredictor(
@@ -196,7 +189,6 @@ def setKmhV3Params(args, system):
 
             cpu.branchPred.mbtb.trainingStage = "Resolve"
             cpu.branchPred.tage.trainingStage = "Resolve"
-            cpu.branchPred.tage.tableSizes = [8192] * 8
             cpu.branchPred.ittage.trainingStage = "Resolve"
 
             cpu.branchPred.ubtb.enabled = True
@@ -225,9 +217,6 @@ def setKmhV3Params(args, system):
             cpu.dcache.do_fast_writeline = True
             cpu.dcache.simulate_dcache_refill = True
             cpu.dcache.prefetch_can_offload = False
-            if isinstance(cpu.dcache.prefetcher, XSCompositePrefetcher):
-                cpu.dcache.prefetcher.enable_lldp = True
-                cpu.dcache.prefetcher.lldp.training_cpu = cpu
             set_lsq_bank_conflict_cache_params(cpu, system)
 
     # l2 caches
@@ -239,8 +228,8 @@ def setKmhV3Params(args, system):
                 system.l2_caches[i].do_fast_writeline = True
                 system.l2_caches[i].prefetch_can_offload = False
                 # Configure XSDRRIP replacement policy (DRRIP mode)
-                # L2: 8MiB, 8-way, 64B line → 16384 sets
-                system.l2_caches[i].replacement_policy = XSDRRIPRP(mode=2, num_sets=16384)
+                # L2: 2MB, 8-way, 64B line → 4096 sets
+                system.l2_caches[i].replacement_policy = XSDRRIPRP(mode=2, num_sets=4096)
             else:
                 l2_wrapper = system.l2_wrappers[i]
                 l2_wrapper.data_sram_banks = 1
@@ -248,13 +237,12 @@ def setKmhV3Params(args, system):
                 l2_wrapper.pipe_dir_write_stage = 3
                 l2_wrapper.dir_read_bypass = False
                 for j in range(args.l2_slices):
-                    l2_wrapper.slices[j].inner_cache.size = '2MiB'
                     l2_wrapper.slices[j].inner_cache.wpu = NULL
                     l2_wrapper.slices[j].inner_cache.do_fast_writeline = True
                     l2_wrapper.slices[j].inner_cache.prefetch_can_offload = False
                     # Configure XSDRRIP replacement policy (DRRIP mode)
-                    # Each slice: 8MiB/4 = 2MiB, 8-way, 64B line → 4096 sets
-                    l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=4096)
+                    # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
+                    l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
             system.tol2bus_list[i].forward_latency = 0
             system.tol2bus_list[i].response_latency = 1
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1
@@ -284,7 +272,7 @@ if __name__ == '__m5_main__':
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3
     args.bp_type = 'DecoupledBPUWithBTB'
-    args.l2_size = '8MiB'
+    args.l2_size = '2MB'
     args.l3_size = '32MB'
     args.kmh_align = True   # align prefetcher in RTL, spec06 decrease 1 score
     args.cdp_use_dynamic_degree = False
