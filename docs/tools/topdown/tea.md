@@ -105,13 +105,13 @@ single-core object name `system.cpu`:
 - `system.cpu.tea.*` in `m5out/tea/stats.txt` contains state, event, and
   attribution quality statistics.
 - `m5out/tea/system.cpu.tea.csv` contains sample weights grouped by thread,
-  PC, and PSV.
+  PC, PSV, and sampled pipeline state.
 
 The file prefix follows the CPU object name. Each CPU produces its own output
 in a multi-CPU configuration. The CSV header is:
 
 ```text
-thread,pc,psv,sample_weight
+thread,pc,psv,sample_weight,state
 ```
 
 | Column | Meaning |
@@ -120,12 +120,15 @@ thread,pc,psv,sample_weight
 | `pc` | Instruction address in hexadecimal; empty when no target address is known |
 | `psv` | Event bitmask in decimal; negative values indicate special attribution states |
 | `sample_weight` | Sample weight, possibly fractional; a cycle with multiple architectural commits splits its weight equally among them |
+| `state` | Computing, Stalled, Flushed, or Drained at the sampling boundary, including cancelled, pending, and unresolved weights |
 
 Each dump overwrites the CSV with a snapshot of the current statistics window.
 A statistics reset clears accumulated weights and pending samples. For runs
 with warmup and reset, pair the final CSV with the last statistics block in
-`stats.txt`; do not add warmup statistics to it. The CSV has no separate
-pipeline state column for each PC.
+`stats.txt`; do not add warmup statistics to it. The CSV preserves sampling
+state to avoid pipeline state ambiguity: summing weights by `state` reproduces
+`samplesByState::*`; marginalizing `state` retains the PC/PSV totals. Deferred
+Stalled or Drained samples retain the state in which they were sampled.
 
 ## States and Events
 

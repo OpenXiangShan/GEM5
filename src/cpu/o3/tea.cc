@@ -19,6 +19,10 @@ namespace gem5
 namespace o3
 {
 
+constexpr const char *stateNames[] = {
+    "Computing", "Stalled", "Flushed", "Drained"
+};
+
 Tea::TeaStats::TeaStats(CPU *cpu, Tea &tea)
     : statistics::Group(cpu, "tea"), owner(tea),
       ADD_STAT(samples, statistics::units::Count::get(),
@@ -38,12 +42,11 @@ Tea::TeaStats::TeaStats(CPU *cpu, Tea &tea)
       ADD_STAT(pendingSamples, statistics::units::Count::get(),
                "Sample weight awaiting target retirement or a drained successor")
 {
-    const char *states[] = {"Computing", "Stalled", "Flushed", "Drained"};
     const char *events[] = {"DR_L1", "DR_TLB", "DR_SQ", "FL_MB",
                             "FL_EX", "FL_MO", "ST_L1", "ST_TLB", "ST_LLC"};
     samplesByState.init(static_cast<unsigned>(TeaState::NumStates));
     for (unsigned i = 0; i < static_cast<unsigned>(TeaState::NumStates); ++i) {
-        samplesByState.subname(i, states[i]);
+        samplesByState.subname(i, stateNames[i]);
     }
     samplesByEvent.init(static_cast<unsigned>(TeaEvent::NumEvents)).precision(12);
     for (unsigned i = 0; i < TeaEvent::NumEvents; ++i) {
@@ -62,28 +65,29 @@ Tea::TeaStats::preDumpStats()
     for (ThreadID tid = 0; tid < owner.threads.size(); ++tid) {
         const auto &state = owner.threads[tid];
         pending += state.drainSamples;
-        snapshot[{tid, 0, -2}] += state.drainSamples;
+        snapshot[{tid, 0, -2, TeaState::Drained}] += state.drainSamples;
         for (const auto &[seq, target] : state.targets) {
             pending += target.samples;
-            snapshot[{tid, target.inst->teaFirstMember()->pcState().instAddr(), -2}] +=
-                target.samples;
+            const Addr pc = target.inst->teaFirstMember()->pcState().instAddr();
+            snapshot[{tid, pc, -2, TeaState::Stalled}] += target.samples;
         }
     }
     pendingSamples = pending;
 
     auto handle = simout.create(owner.outputName, false, true);
     auto &out = *handle->stream();
-    out << "thread,pc,psv,sample_weight\n" << std::setprecision(17);
+    out << "thread,pc,psv,sample_weight,state\n" << std::setprecision(17);
     for (const auto &[key, weight] : snapshot) {
         if (weight == 0) {
             continue;
         }
-        const auto &[tid, pc, psv] = key;
+        const auto &[tid, pc, psv, sample_state] = key;
         out << tid << ',';
         if (pc != 0) {
             out << "0x" << std::hex << pc << std::dec;
         }
-        out << ',' << psv << ',' << weight << '\n';
+        out << ',' << psv << ',' << weight << ','
+            << stateNames[static_cast<unsigned>(sample_state)] << '\n';
     }
     simout.close(handle);
 }
@@ -123,10 +127,11 @@ Tea::active(ThreadID tid) const
 }
 
 void
-Tea::attribute(ThreadID tid, TeaMember member, double weight)
+Tea::attribute(ThreadID tid, TeaMember member, TeaState sample_state,
+               double weight)
 {
     stats.attributedSamples += weight;
-    weights[{tid, member.pc, member.psv}] += weight;
+    weights[{tid, member.pc, member.psv, sample_state}] += weight;
     for (unsigned event = 0; event < TeaEvent::NumEvents; ++event) {
         if (member.psv & (1u << event)) {
             stats.samplesByEvent[event] += weight;
@@ -154,9 +159,10 @@ Tea::finishTarget(const DynInstPtr &inst, bool cancelled)
     const auto samples = target->second.samples;
     if (cancelled) {
         stats.cancelledTargets += samples;
-        weights[{tid, member->pcState().instAddr(), -1}] += samples;
+        weights[{tid, member->pcState().instAddr(), -1, TeaState::Stalled}] += samples;
     } else {
-        attribute(tid, {member->pcState().instAddr(), member->teaPSV()}, samples);
+        attribute(tid, {member->pcState().instAddr(), member->teaPSV()},
+                  TeaState::Stalled, samples);
     }
     targets.erase(target);
 }
@@ -208,7 +214,8 @@ Tea::commit(const DynInstPtr &inst)
     stats.committedByThread[tid] += state.committed.size() - first;
 
     if (state.drainSamples) {
-        attribute(tid, state.committed[first], state.drainSamples);
+        attribute(tid, state.committed[first], TeaState::Drained,
+                  state.drainSamples);
         state.drainSamples = 0;
     }
 }
@@ -254,7 +261,7 @@ Tea::tick()
               case TeaState::Computing: {
                 const double weight = 1.0 / state.committed.size();
                 for (const auto &member : state.committed) {
-                    attribute(tid, member, weight);
+                    attribute(tid, member, TeaState::Computing, weight);
                 }
                 break;
               }
@@ -274,16 +281,16 @@ Tea::tick()
                     ++target.samples;
                 } else {
                     ++stats.unresolvedTargets;
-                    ++weights[{tid, 0, -3}];
+                    ++weights[{tid, 0, -3, sample_state}];
                 }
                 break;
               }
               case TeaState::Flushed:
                 if (state.flushValid) {
-                    attribute(tid, {state.flushPC, state.flushPSV});
+                    attribute(tid, {state.flushPC, state.flushPSV}, TeaState::Flushed);
                 } else {
                     ++stats.unresolvedTargets;
-                    ++weights[{tid, 0, -3}];
+                    ++weights[{tid, 0, -3, sample_state}];
                 }
                 break;
               case TeaState::Drained:
