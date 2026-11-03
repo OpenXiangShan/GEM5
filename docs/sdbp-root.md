@@ -1,7 +1,7 @@
 # SDBP experiment options
 
 `SDBP-ROOT` starts from `39a2db6f92`, the youngest-two sampler experiment.
-It exposes the following controls without changing demand/prefetch training.
+It exposes controls for replacement, bypass, and sampler training eligibility.
 Defaults preserve that commit's unguarded, L1-copy-protected behavior.
 
 | CLI option | Default | Effect |
@@ -10,6 +10,7 @@ Defaults preserve that commit's unguarded, L1-copy-protected behavior.
 | `--sdbp-l1-copy-protection` / `--no-sdbp-l1-copy-protection` | Enabled | Filter L1-resident blocks from the real-L2 dead scan |
 | `--sdbp-sampler-dead-first` / `--no-sdbp-sampler-dead-first` | Enabled | Select dead-first or pure LRU replacement in the independent sampler |
 | `--sdbp-sampler-protect-youngest=N` | `0` | Exclude the N youngest sampler entries from the dead-first scan |
+| `--sdbp-sampler-demand-pc-only` / `--no-sdbp-sampler-demand-pc-only` | Disabled | Only let L2 demand requests with a PC access, allocate, and train the sampler |
 | `--sdbp-enable-bypass` | Disabled | Enable the existing basic full-set bypass path |
 
 There is no separate real-L2 dead-first switch: it is part of SDBP. Disabling
@@ -23,8 +24,18 @@ The sampler guard counts recency positions across all entries, including live
 entries. It accepts any nonnegative integer: zero disables protection, two
 reproduces the previous youngest-two mode, and N >= sampler associativity
 protects every entry from the dead scan, so selection falls back to LRU.
-With sampler dead-first disabled, the guard has no effect. Demand/prefetch
-training remains active for the sampler in either replacement mode.
+With sampler dead-first disabled, the guard has no effect. By default,
+demand/prefetch sampling remains active in either replacement mode.
+
+Enabling `--sdbp-sampler-demand-pc-only` filters out all prefetch requests
+and all requests without PC metadata before the sampler lookup, on both
+real-L2 hits and fills. Filtered requests cannot allocate or evict sampler
+entries, train old signatures live or dead, or change sampler metadata and
+LRU order, even if their tag already exists. PC presence uses `hasPC()`,
+so a valid PC of zero is accepted. A prefetch fill marked as a sampler
+demand after merging a demand follows the existing demand classification
+and still requires PC metadata. Lookup/eligible/no-PC counters retain their
+existing meanings; sampler and training counters exclude filtered events.
 
 L1-copy protection uses an ideal, read-only lookup of the owning CPU's L1I/L1D
 resident tags, with no modeled latency or area. Disabling it removes the probe
@@ -38,6 +49,9 @@ Examples appended to an existing KMHV3 checkpoint command:
 
 # Enable two-entry protection in the dead-first sampler.
 --l2-replacement-policy=sdbp --sdbp-sampler-protect-youngest=2
+
+# Only sample and train L2 demand requests with PC metadata.
+--l2-replacement-policy=sdbp --sdbp-sampler-demand-pc-only
 
 # Pure LRU sampler, unfiltered real-L2 dead-first, optional bypass enabled.
 --l2-replacement-policy=sdbp --no-sdbp-sampler-dead-first \
@@ -78,3 +92,13 @@ Validated locally on 2026-10-30:
 - Modified-region gem5 style checks and `git diff --check` pass. The CLI and
   new Python test pass Black; the existing replacement-policy definitions
   retain their surrounding format.
+
+Validated locally on 2026-11-03 for demand/PC filtering:
+
+- `gem5.opt` and both SDBP unit-test targets build successfully.
+- All 24 core tests and 17 policy tests pass. New cases cover rejected hits
+  and misses, unchanged training/metadata/LRU, valid PC zero, retained demand
+  training, merged-demand responses, and legacy behavior with the switch off.
+- Both Python configuration tests pass with the new binary, including 160
+  combinations of classic/sliced L2 and experiment options across two cores.
+- Modified-region gem5 style checks and `git diff --check` pass.

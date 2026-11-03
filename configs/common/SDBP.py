@@ -37,6 +37,12 @@ def add_sdbp_options(parser):
         help="Prefer dead sampler entries; disable for pure LRU sampling",
     )
     parser.add_argument(
+        "--sdbp-sampler-demand-pc-only",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Only allocate and train the sampler for L2 demand requests with a PC",
+    )
+    parser.add_argument(
         "--sdbp-sampler-protect-youngest",
         type=nonnegative_int,
         default=0,
@@ -71,6 +77,7 @@ def configure_sdbp(args, system):
                 sampler_assoc=args.sdbp_sampler_assoc,
                 l1_copy_protection=args.sdbp_l1_copy_protection,
                 sampler_dead_first=args.sdbp_sampler_dead_first,
+                sampler_demand_pc_only=args.sdbp_sampler_demand_pc_only,
                 sampler_protect_youngest=args.sdbp_sampler_protect_youngest,
                 dead_threshold=args.sdbp_dead_threshold,
                 enable_bypass=args.sdbp_enable_bypass,

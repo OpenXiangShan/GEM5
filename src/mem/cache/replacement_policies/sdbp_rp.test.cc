@@ -30,6 +30,7 @@ testParams(bool bypass = false, unsigned threshold = 8)
     p.sampler_assoc = 2;
     p.sampler_protect_youngest = 0;
     p.sampler_dead_first = true;
+    p.sampler_demand_pc_only = false;
     p.l1_copy_protection = true;
     p.predictor_tables = 3;
     p.predictor_entries = 4096;
@@ -144,6 +145,77 @@ TEST_F(SDBPInterface, TrainsAndPredictsForwardedPrefetchMisses)
     EXPECT_EQ(stat(policy, "predictionQueries"), 0);
     EXPECT_EQ(stat(policy, "deadPredictions"), 0);
     EXPECT_EQ(stat(policy, "excludedAccesses"), 0);
+}
+
+TEST_F(SDBPInterface, DemandPcOnlyFiltersHitAndFillEvents)
+{
+    auto params = testParams();
+    params.sampler_demand_pc_only = true;
+    params.sampler_assoc = 1;
+    SDBP policy(params);
+    auto demand = packet();
+    policy.observeFill(demand.get(), 0, 1);
+    for (auto cmd : {MemCmd::ReadReq, MemCmd::WriteReq,
+                     MemCmd::ReadResp, MemCmd::WriteResp}) {
+        auto missing = packet(cmd, false);
+        policy.observe(missing.get(), 0, 1, true);
+        policy.observeFill(missing.get(), 0, 2);
+    }
+    for (auto flag : {Request::PREFETCH, Request::PF_EXCLUSIVE}) {
+        for (auto cmd : {MemCmd::HardPFReq, MemCmd::SoftPFReq,
+                         MemCmd::HardPFResp, MemCmd::ReadReq,
+                         MemCmd::ReadSharedReq, MemCmd::ReadCleanReq,
+                         MemCmd::ReadExReq, MemCmd::ReadResp}) {
+            for (bool hasPc : {false, true}) {
+                auto prefetch = packet(cmd, hasPc);
+                prefetch->req->setFlags(flag);
+                policy.observe(prefetch.get(), 0, 1, true);
+                policy.observeFill(prefetch.get(), 0, 2);
+            }
+        }
+    }
+    EXPECT_EQ(stat(policy, "samplerAccesses"), 1);
+    EXPECT_EQ(stat(policy, "samplerHits"), 0);
+    EXPECT_EQ(stat(policy, "samplerEvictions"), 0);
+    EXPECT_EQ(stat(policy, "liveTraining"), 0);
+    EXPECT_EQ(stat(policy, "deadTraining"), 0);
+    EXPECT_EQ(stat(policy, "noPcAccesses"), 8);
+
+    policy.observe(demand.get(), 0, 1, true);
+    policy.observeFill(demand.get(), 0, 2);
+    EXPECT_EQ(stat(policy, "samplerAccesses"), 3);
+    EXPECT_EQ(stat(policy, "samplerHits"), 1);
+    EXPECT_EQ(stat(policy, "samplerEvictions"), 1);
+    EXPECT_EQ(stat(policy, "liveTraining"), 1);
+    EXPECT_EQ(stat(policy, "deadTraining"), 1);
+}
+
+TEST_F(SDBPInterface, DemandPcOnlyAcceptsResponsesAndMergedDemandsWithPc)
+{
+    auto params = testParams();
+    params.sampler_demand_pc_only = true;
+    params.sampler_assoc = 1;
+    SDBP policy(params);
+    auto response = packet(MemCmd::ReadResp);
+    response->req->setPC(0);
+    policy.observeFill(response.get(), 0, 1);
+    auto merged = packet(MemCmd::HardPFResp);
+    merged->req->setFlags(Request::PREFETCH);
+    merged->setSamplerDemand();
+    policy.observeFill(merged.get(), 0, 1);
+    policy.observeFill(merged.get(), 0, 2);
+    auto missing = packet(MemCmd::HardPFResp, false);
+    missing->req->setFlags(Request::PREFETCH);
+    missing->setSamplerDemand();
+    policy.observeFill(missing.get(), 0, 3);
+    auto writeResponse = packet(MemCmd::WriteResp);
+    policy.observeFill(writeResponse.get(), 0, 3);
+    EXPECT_EQ(stat(policy, "samplerAccesses"), 4);
+    EXPECT_EQ(stat(policy, "samplerHits"), 1);
+    EXPECT_EQ(stat(policy, "samplerEvictions"), 2);
+    EXPECT_EQ(stat(policy, "liveTraining"), 1);
+    EXPECT_EQ(stat(policy, "deadTraining"), 2);
+    EXPECT_EQ(stat(policy, "noPcAccesses"), 1);
 }
 
 TEST_F(SDBPInterface, InvalidThenDeadThenLruAndPacketlessFallback)

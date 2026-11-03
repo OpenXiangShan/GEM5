@@ -182,6 +182,11 @@ SDBPCore::access(unsigned set, uint64_t tag, RequestType type,
                  bool has_pc, uint64_t pc)
 {
     AccessResult result;
+    // Filter before lookup so rejected requests cannot train or alter LRU.
+    if (cfg.samplerDemandPcOnly &&
+        (type != RequestType::Demand || !has_pc)) {
+        return result;
+    }
     const int sample = sampleIndex(set);
     if (sample < 0)
         return result;

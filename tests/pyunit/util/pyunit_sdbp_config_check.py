@@ -30,6 +30,14 @@ class SDBPConfigTest(unittest.TestCase):
         args = self.parser().parse_args([])
         self.assertTrue(args.sdbp_l1_copy_protection)
         self.assertTrue(args.sdbp_sampler_dead_first)
+        self.assertFalse(args.sdbp_sampler_demand_pc_only)
+        args = self.parser().parse_args(
+            [
+                "--sdbp-sampler-demand-pc-only",
+                "--no-sdbp-sampler-demand-pc-only",
+            ]
+        )
+        self.assertFalse(args.sdbp_sampler_demand_pc_only)
         self.assertEqual(args.sdbp_sampler_protect_youngest, 0)
         self.assertFalse(args.sdbp_enable_bypass)
         with contextlib.redirect_stderr(io.StringIO()):
@@ -40,8 +48,8 @@ class SDBPConfigTest(unittest.TestCase):
                     )
 
     def test_options_reach_all_cores_and_slices(self):
-        for classic, l1, dead, bypass in itertools.product(
-            (False, True), repeat=4
+        for classic, l1, dead, bypass, demand_pc_only in itertools.product(
+            (False, True), repeat=5
         ):
             for guard in (0, 1, 2, 3, 8):
                 with self.subTest(
@@ -49,6 +57,7 @@ class SDBPConfigTest(unittest.TestCase):
                     l1=l1,
                     dead=dead,
                     bypass=bypass,
+                    demand_pc_only=demand_pc_only,
                     guard=guard,
                 ):
                     flags = [
@@ -61,6 +70,8 @@ class SDBPConfigTest(unittest.TestCase):
                         flags.append("--no-sdbp-sampler-dead-first")
                     if bypass:
                         flags.append("--sdbp-enable-bypass")
+                    if demand_pc_only:
+                        flags.append("--sdbp-sampler-demand-pc-only")
                     args = self.parser().parse_args(flags)
                     args.l2cache = args.caches = True
                     args.classic_l2 = classic
@@ -100,6 +111,10 @@ class SDBPConfigTest(unittest.TestCase):
                             )
                             self.assertEqual(
                                 bool(policy.sampler_dead_first), dead
+                            )
+                            self.assertEqual(
+                                bool(policy.sampler_demand_pc_only),
+                                demand_pc_only,
                             )
                             self.assertEqual(
                                 int(policy.sampler_protect_youngest), guard

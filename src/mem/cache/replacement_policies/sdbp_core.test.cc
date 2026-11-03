@@ -120,6 +120,125 @@ TEST(SDBPCore, UnsampledSetsDoNotTrain)
     EXPECT_EQ(core.confidence(core.signature(0x1000)), 0U);
 }
 
+TEST(SDBPCore, DemandPcOnlyAllocatesDemandWithPcIncludingZero)
+{
+    SDBPCore::Config cfg;
+    cfg.samplerDemandPcOnly = true;
+    cfg.samplerAssoc = 1;
+    SDBPCore core(cfg);
+    for (auto type : {SDBPCore::RequestType::Demand,
+                      SDBPCore::RequestType::Prefetch}) {
+        for (bool hasPc : {false, true}) {
+            if (type == SDBPCore::RequestType::Demand && hasPc)
+                continue;
+            const auto rejected = core.access(0, 1, type, hasPc, 0x1000);
+            EXPECT_FALSE(rejected.sampled);
+            EXPECT_FALSE(rejected.hit);
+            EXPECT_FALSE(rejected.evicted);
+        }
+    }
+    const auto inserted = core.access(0, 1, 0);
+    EXPECT_TRUE(inserted.sampled);
+    EXPECT_FALSE(inserted.hit);
+    EXPECT_FALSE(inserted.evicted);
+    const auto evicted = core.access(0, 2, 0x2000);
+    EXPECT_TRUE(evicted.evicted);
+    EXPECT_TRUE(evicted.previousSignatureValid);
+    EXPECT_EQ(evicted.previousSignature, core.signature(0));
+    EXPECT_EQ(core.confidence(core.signature(0)), 3U);
+}
+
+TEST(SDBPCore, DemandPcOnlyPreservesTrainingMetadataAndRecency)
+{
+    for (auto type : {SDBPCore::RequestType::Demand,
+                      SDBPCore::RequestType::Prefetch}) {
+        for (bool hasPc : {false, true}) {
+            if (type == SDBPCore::RequestType::Demand && hasPc)
+                continue;
+            SDBPCore::Config cfg;
+            cfg.samplerDemandPcOnly = true;
+            cfg.samplerDeadFirst = false;
+            cfg.samplerAssoc = 2;
+            cfg.deadThreshold = 3;
+            SDBPCore core(cfg);
+            const auto first = core.signature(0x1000);
+            const auto second = core.signature(0x2000);
+            core.train(first, true);
+            core.access(0, 1, 0x1000);
+            core.access(0, 2, 0x2000);
+            const auto firstConfidence = core.confidence(first);
+            const auto secondConfidence = core.confidence(second);
+            // A rejected hit cannot train live or refresh LRU. A rejected
+            // miss cannot train dead, allocate, or replace an old signature.
+            for (unsigned tag : {1U, 3U}) {
+                const auto rejected = core.access(0, tag, type, hasPc, 0x3000);
+                EXPECT_FALSE(rejected.sampled);
+                EXPECT_FALSE(rejected.hit);
+                EXPECT_FALSE(rejected.evicted);
+                EXPECT_EQ(core.confidence(first), firstConfidence);
+                EXPECT_EQ(core.confidence(second), secondConfidence);
+            }
+            const auto victim = core.access(0, 3, 0x3000);
+            EXPECT_TRUE(victim.evicted);
+            EXPECT_TRUE(victim.previousDead);
+            EXPECT_TRUE(victim.previousSignatureValid);
+            EXPECT_EQ(victim.previousSignature, first);
+            EXPECT_EQ(core.confidence(first), firstConfidence + 3);
+        }
+    }
+}
+
+TEST(SDBPCore, DemandPcOnlyRetainsLiveAndDeadTrainingOfOldSignatures)
+{
+    SDBPCore::Config cfg;
+    cfg.samplerDemandPcOnly = true;
+    cfg.samplerAssoc = 1;
+    cfg.crcLiveUpdate = false;
+    SDBPCore core(cfg);
+    const auto first = core.signature(0x1000);
+    const auto second = core.signature(0x2000);
+    core.train(first, true);
+    core.access(0, 1, 0x1000);
+    const auto hit = core.access(0, 1, 0x2000);
+    EXPECT_TRUE(hit.hit);
+    EXPECT_TRUE(hit.previousSignatureValid);
+    EXPECT_EQ(hit.previousSignature, first);
+    EXPECT_EQ(core.confidence(first), 0U);
+    const auto evicted = core.access(0, 2, 0x3000);
+    EXPECT_TRUE(evicted.evicted);
+    EXPECT_TRUE(evicted.previousSignatureValid);
+    EXPECT_EQ(evicted.previousSignature, second);
+    EXPECT_EQ(core.confidence(second), 3U);
+}
+
+TEST(SDBPCore, DefaultSamplerAdmitsPrefetchAndMissingPcAndTrainsVictims)
+{
+    for (auto type : {SDBPCore::RequestType::Demand,
+                      SDBPCore::RequestType::Prefetch}) {
+        for (bool hasPc : {false, true}) {
+            if (type == SDBPCore::RequestType::Demand && hasPc)
+                continue;
+            SDBPCore::Config cfg;
+            cfg.samplerAssoc = 1;
+            EXPECT_FALSE(cfg.samplerDemandPcOnly);
+            SDBPCore core(cfg);
+            const auto signature = core.signature(0x1000);
+            core.access(0, 1, 0x1000);
+            const auto admitted = core.access(0, 2, type, hasPc, 0x2000);
+            EXPECT_TRUE(admitted.sampled);
+            EXPECT_TRUE(admitted.evicted);
+            EXPECT_TRUE(admitted.previousSignatureValid);
+            EXPECT_EQ(admitted.previousSignature, signature);
+            EXPECT_EQ(core.confidence(signature), 3U);
+            // Legacy prefetch/no-PC entries have no trainable signature.
+            const auto evicted = core.access(0, 3, 0x3000);
+            EXPECT_TRUE(evicted.evicted);
+            EXPECT_FALSE(evicted.previousSignatureValid);
+            EXPECT_EQ(core.confidence(signature), 3U);
+        }
+    }
+}
+
 TEST(SDBPCore, InvalidBeforeDeadThenLru)
 {
     SDBPCore::Config cfg;

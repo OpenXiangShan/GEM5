@@ -88,6 +88,9 @@ class SDBPRP(BaseReplacementPolicy):
     sampler_assoc = Param.Unsigned(12, "Associativity of the independent sampler")
     l1_copy_protection = Param.Bool(True, "Skip L1-resident dead L2 victims")
     sampler_dead_first = Param.Bool(True, "Prefer dead sampler entries over LRU")
+    sampler_demand_pc_only = Param.Bool(
+        False, "Only allocate and train the sampler for demand requests with a PC"
+    )
     sampler_protect_youngest = Param.Unsigned(
         0, "Number of youngest sampler entries skipped during dead selection"
     )

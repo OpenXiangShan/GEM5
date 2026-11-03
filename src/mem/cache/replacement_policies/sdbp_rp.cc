@@ -28,6 +28,7 @@ makeCore(const SDBPRPParams &p)
     cfg.samplerNum = p.sampler_num;
     cfg.samplerAssoc = p.sampler_assoc;
     cfg.samplerDeadFirst = p.sampler_dead_first;
+    cfg.samplerDemandPcOnly = p.sampler_demand_pc_only;
     cfg.samplerProtectYoungest = p.sampler_protect_youngest;
     cfg.predictorTables = p.predictor_tables;
     cfg.predictorEntries = p.predictor_entries;
@@ -57,10 +58,11 @@ SDBP::SDBP(const Params &p)
     inform(
         "%s: SDBP num_sets=%u sampler_sets=%u half_set_bits=%u "
         "sampler_assoc=%u sampler_dead_first=%d sampler_protect_youngest=%u "
+        "sampler_demand_pc_only=%d "
         "l1_copy_protection=%d bypass=%d",
         name(), core.numSets(), core.samplerSets(), core.halfBits(),
         p.sampler_assoc, p.sampler_dead_first, p.sampler_protect_youngest,
-        l1CopyProtection, enableBypass);
+        p.sampler_demand_pc_only, l1CopyProtection, enableBypass);
 }
 
 void

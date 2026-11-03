@@ -25,6 +25,7 @@ class SDBPCore
         unsigned samplerNum = 32;
         unsigned samplerAssoc = 12;
         bool samplerDeadFirst = true;
+        bool samplerDemandPcOnly = false;
         unsigned samplerProtectYoungest = 0;
         unsigned predictorTables = 3;
         unsigned predictorEntries = 4096;
