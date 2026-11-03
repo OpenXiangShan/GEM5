@@ -216,12 +216,30 @@ class PairTAGE : public TimedBaseBTBPredictor
     void writeEntry(unsigned t, Addr index, unsigned way,
                     const PTAGEEntry &entry);
 
+    // ========== Ahead Pipeline ==========
+    // The table read for a block is issued one block ahead.
+    //
+    // The term "Anchor" means that ahead pipeline start to output result.
+    struct AheadKey
+    {
+        // False untill a block enters the FTQ or squash occurs
+        bool valid{false};
+        Addr pc{0};
+        ThreadHistoryState history;
+    };
+
+    std::vector<AheadKey> threadAhead;
+
     // ========== Prediction Meta ==========
     // Recorded in the FTQ entry of every predicted block
     struct PairTAGEMeta
     {
         // Folded histories the block was predicted with, restored on squash
         ThreadHistoryState history;
+
+        // Mark this block has no anchor so there is no meta for training
+        // And the training will be skipped for this block.
+        bool noAnchor{false};
 
         // Lookup the block was predicted with, used by training
         LookupResult lookup;
@@ -239,6 +257,7 @@ class PairTAGE : public TimedBaseBTBPredictor
     struct PairTAGEStats : public statistics::Group
     {
         statistics::Scalar lookups;
+        statistics::Scalar lookupNoAnchor;
         statistics::Vector providerTable;
         statistics::Scalar s3TrainEvents;
         statistics::Scalar trainStrengthen;
