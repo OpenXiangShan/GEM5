@@ -171,6 +171,55 @@ class DynInst : public ExecContext, public RefCounted
     bool lldpCounted{false};
     void selectLldpChain();
 
+    /** VP roots whose predicted values contributed to this instruction. */
+    std::vector<DynInstPtr> vpPendingRoots;
+    bool iqRetainedForVP{false};
+    bool iqEntryAllocated{false};
+    bool vpCommitPending{false};
+    uint64_t vpAttemptGeneration{0};
+    bool vpAttemptWroteBack{false};
+    bool vpRootResolved{false};
+    bool vpBranchCheckPending{false};
+    std::unique_ptr<PCStateBase> vpInitialPC;
+
+    bool hasVPPending() const { return !vpPendingRoots.empty(); }
+
+    bool hasVPPendingRoot(const DynInstPtr &root) const
+    {
+        return std::find(vpPendingRoots.begin(), vpPendingRoots.end(), root) !=
+               vpPendingRoots.end();
+    }
+
+    void addVPPendingRoot(const DynInstPtr &root)
+    {
+        if (root && !hasVPPendingRoot(root)) {
+            vpPendingRoots.push_back(root);
+        }
+    }
+
+    void clearVPPendingRoot(const DynInstPtr &root)
+    {
+        vpPendingRoots.erase(
+            std::remove(vpPendingRoots.begin(), vpPendingRoots.end(), root),
+            vpPendingRoots.end());
+    }
+
+    void clearVPPendingRoots() { vpPendingRoots.clear(); }
+
+    void saveVPInitialPC()
+    {
+        if (!vpInitialPC) {
+            vpInitialPC.reset(pcState().clone());
+        }
+    }
+
+    void restoreVPInitialPC()
+    {
+        if (vpInitialPC) {
+            pcState(*vpInitialPC);
+        }
+    }
+
 
     /** Pointer to the Impl's CPU object. */
     CPU *cpu = nullptr;
@@ -1139,12 +1188,14 @@ class DynInst : public ExecContext, public RefCounted
 
     /** Sets this instruction as completed. */
     void setCompleted() { status.set(Completed); }
+    void clearCompleted() { status.reset(Completed); }
 
     /** Returns whether or not this instruction is completed. */
     bool isCompleted() const { return status[Completed]; }
 
     /** Marks the result as ready. */
     void setResultReady() { status.set(ResultReady); }
+    void clearResultReady() { status.reset(ResultReady); }
 
     /** Returns whether or not the result is ready. */
     bool isResultReady() const { return status[ResultReady]; }
@@ -1163,7 +1214,13 @@ class DynInst : public ExecContext, public RefCounted
 
     bool memDepSolved() const { return status[MemDepSolved]; }
 
-    void setWriteback() { issueQue = nullptr; issueportid = -1; }
+    void setWriteback()
+    {
+        if (!iqRetainedForVP) {
+            issueQue = nullptr;
+        }
+        issueportid = -1;
+    }
 
     /** Scheduler state begin */
 
@@ -1196,6 +1253,7 @@ class DynInst : public ExecContext, public RefCounted
 
     /** leave issueStage and goto FuncUnits */
     void setIssued() { status.set(Issued); }
+    void clearIssued() { status.reset(Issued); }
 
     bool isIssued() const { return status[Issued]; }
 
@@ -1354,6 +1412,32 @@ class DynInst : public ExecContext, public RefCounted
     bool needRAWReplay() const { return getReplayType() == LdStReplayType::RAWReplay; }
 
     void clearNeedReplay() { status.reset(NeedReplay); }
+
+    void resetForVPReplay()
+    {
+        ++vpAttemptGeneration;
+        vpAttemptWroteBack = false;
+        clearIssued();
+        clearExecuted();
+        clearCompleted();
+        clearResultReady();
+        clearCanCommit();
+        vpCommitPending = false;
+        clearCanIssue();
+        clearInReadyQ();
+        clearCancel();
+        clearScheduled();
+        clearArbFailed();
+        resetNumSrcRegReady(0);
+        readyTick = -1;
+        if (isControl()) {
+            restoreVPInitialPC();
+        }
+        vpBranchCheckPending = false;
+        while (!instResult.empty()) {
+            instResult.pop();
+        }
+    }
     void setMshrAliasFailReplay() { setReplay(LdStReplayType::MshrAliasFailReplay); }
     bool needMshrAliasFailReplay() const { return getReplayType() == LdStReplayType::MshrAliasFailReplay; }
 
@@ -1388,6 +1472,7 @@ class DynInst : public ExecContext, public RefCounted
 
     /** Sets this instruction as executed. */
     void setExecuted() { status.set(Executed); }
+    void clearExecuted() { status.reset(Executed); }
 
     /** Returns whether or not this instruction has executed. */
     bool isExecuted() const { return status[Executed]; }

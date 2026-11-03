@@ -75,16 +75,17 @@ namespace o3
 {
 
 InstructionQueue::FUCompletion::FUCompletion(const DynInstPtr &_inst,
-    int fu_idx, InstructionQueue *iq_ptr)
+    int fu_idx, InstructionQueue *iq_ptr, uint64_t attempt)
     : Event(Stat_Event_Pri, AutoDelete),
-      inst(_inst), fuIdx(fu_idx), iqPtr(iq_ptr), freeFU(false)
+      inst(_inst), attempt(attempt), fuIdx(fu_idx), iqPtr(iq_ptr),
+      freeFU(false)
 {
 }
 
 void
 InstructionQueue::FUCompletion::process()
 {
-    iqPtr->processFUCompletion(inst, -1);
+    iqPtr->processFUCompletion(inst, -1, attempt);
     inst = NULL;
 }
 
@@ -532,15 +533,15 @@ InstructionQueue::insertBarrier(const DynInstPtr &barr_inst)
     insertNonSpec(barr_inst);
 }
 
-DynInstPtr
+std::pair<DynInstPtr, uint64_t>
 InstructionQueue::getInstToExecute()
 {
     assert(!instsToExecute.empty());
-    DynInstPtr inst = std::move(instsToExecute.front());
+    auto inst = std::move(instsToExecute.front());
     instsToExecute.pop_front();
-    if (inst->isFloating()) {
+    if (inst.first->isFloating()) {
         iqIOStats.fpInstQueueReads++;
-    } else if (inst->isVector()) {
+    } else if (inst.first->isVector()) {
         iqIOStats.vecInstQueueReads++;
     } else {
         iqIOStats.intInstQueueReads++;
@@ -549,20 +550,25 @@ InstructionQueue::getInstToExecute()
 }
 
 void
-InstructionQueue::processFUCompletion(const DynInstPtr &inst, int fu_idx)
+InstructionQueue::processFUCompletion(const DynInstPtr &inst, int fu_idx,
+                                      uint64_t attempt)
 {
     DPRINTF(IQ, "Processing FU completion [sn:%llu]\n", inst->seqNum);
     assert(!cpu->switchedOut());
     // The CPU could have been sleeping until this op completed (*extremely*
     // long latency op).  Wake it if it was.  This may be overkill.
-   --wbOutstanding;
+
+    --wbOutstanding;
+    if (attempt != inst->vpAttemptGeneration) {
+        return;
+    }
     iewStage->wakeCPU();
 
     // @todo: Ensure that these FU Completions happen at the beginning
     // of a cycle, otherwise they could add too many instructions to
     // the queue.
     issueToExecuteQueue->access(0)->size++;
-    instsToExecute.push_back(inst);
+    instsToExecute.push_back({inst, attempt});
 }
 
 bool
@@ -660,7 +666,16 @@ InstructionQueue::scheduleReadyInsts()
     // FUs that handle it.
     int total_issued = 0;
     DynInstPtr issued_inst;
-    while ((issued_inst = scheduler->getInstToFU())) {
+    while (true) {
+        auto issued_attempt = scheduler->getInstToFU();
+        issued_inst = issued_attempt.first;
+        if (!issued_inst) {
+            break;
+        }
+        const auto attempt = issued_attempt.second;
+        if (attempt != issued_inst->vpAttemptGeneration) {
+            continue;
+        }
 
         if (issued_inst->isFloating()) {
             iqIOStats.fpInstQueueReads++;
@@ -689,11 +704,12 @@ InstructionQueue::scheduleReadyInsts()
         cpu->perfCCT->updateInstPos(issued_inst->seqNum, PerfRecord::AtFU);
         if (op_latency <= 1 || issued_inst->isLoad() || issued_inst->isStore()) {
             i2e_info->size++;
-            instsToExecute.push_back(issued_inst);
+            instsToExecute.push_back({issued_inst, attempt});
         }
         else {
             ++wbOutstanding;
-            FUCompletion *execution = new FUCompletion(issued_inst, 0, this);
+            FUCompletion *execution = new FUCompletion(
+                issued_inst, 0, this, attempt);
             cpu->schedule(execution, cpu->clockEdge(Cycles(op_latency - 1))-1);
         }
         ++total_issued;
@@ -799,7 +815,8 @@ InstructionQueue::scheduleNonSpec(const InstSeqNum &inst)
     (*inst_it).second->setAtCommit();
     (*inst_it).second->setCanIssue();
 
-    scheduler->addToFU((*inst_it).second);
+    scheduler->addToFU((*inst_it).second,
+                       (*inst_it).second->vpAttemptGeneration);
 
     (*inst_it).second = NULL;
 
@@ -868,7 +885,8 @@ InstructionQueue::wakeDependents(const DynInstPtr &completed_inst)
 
         // Avoid waking up dependents if the register is pinned
         dest_reg->decrNumPinnedWritesToComplete();
-        if (dest_reg->isPinned())
+        if (dest_reg->isPinned() &&
+            !completed_inst->isPinnedRegsWritten())
             completed_inst->setPinnedRegsWritten();
 
         if (dest_reg->getNumPinnedWritesToComplete() != 0) {

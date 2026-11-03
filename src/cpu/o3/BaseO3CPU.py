@@ -439,6 +439,8 @@ class BaseO3CPU(BaseCPU):
     enableSelectiveVPFlush = Param.Bool(False,
         "Enable selective rollback for value prediction misprediction")
 
+    enableVPReplay = Param.Bool(False,
+        "Retain and replay scalar consumers of speculative load values")
     enable_loadFusion = Param.Bool(False, "Enable load fusion")
 
     enableMoveElimination = Param.Bool(True, "Enable register move elimination")

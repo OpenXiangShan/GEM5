@@ -372,6 +372,9 @@ class IEW
     /** Removes delayed vector memory completions squashed for one thread. */
     void squashDelayedVectorMemCompletions(ThreadID tid);
 
+    /** Resolves branches whose VP-dependent execution was already checked. */
+    void processPendingVPBranchChecks();
+
     bool checkSerialize(const DynInstPtr& inst);
 
     /** Processes inputs and changes state accordingly. */
@@ -456,6 +459,7 @@ class IEW
 
     /** Enable selective VP flush path */
     bool enableSelectiveVPFlush;
+    bool enableVPReplay;
 
   private:
     /** CPU pointer. */
@@ -490,6 +494,9 @@ class IEW
   private:
     /** Records if there is a fetch redirect on this cycle for each thread. */
     bool fetchRedirect[MaxThreads];
+
+    /** Branch checks deferred from asynchronous VP validation to IEW tick. */
+    std::vector<DynInstPtr> pendingVPBranchChecks;
 
     /** Per-thread work observed during the current IEW tick. */
     std::array<bool, MaxThreads> cycleThreadWork{};

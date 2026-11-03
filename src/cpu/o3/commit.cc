@@ -2753,6 +2753,10 @@ Commit::markCompletedInsts()
     // instructions completed within the ROB.
     for (int inst_num = 0; inst_num < fromIEW->size; ++inst_num) {
         assert(fromIEW->insts[inst_num]);
+        if (fromIEW->attempts[inst_num] !=
+            fromIEW->insts[inst_num]->vpAttemptGeneration) {
+            continue;
+        }
         if (!fromIEW->insts[inst_num]->isSquashed()) {
             DPRINTF(Commit,
                     "[tid:%i] Marking PC %s, [sn:%llu] ready "
@@ -2760,9 +2764,12 @@ Commit::markCompletedInsts()
                     fromIEW->insts[inst_num]->threadNumber, fromIEW->insts[inst_num]->pcState(),
                     fromIEW->insts[inst_num]->seqNum);
 
-            // Mark the instruction as ready to commit.
-            fromIEW->insts[inst_num]->setCanCommit();
             auto &inst = fromIEW->insts[inst_num];
+            if (inst->hasVPPending() || inst->vpBranchCheckPending) {
+                inst->vpCommitPending = true;
+            } else {
+                inst->setCanCommit();
+            }
 
             panic_if(!inst->isInROB(),
                      "[tid:%i] [sn:%llu] Committed instruction not found in ROB",

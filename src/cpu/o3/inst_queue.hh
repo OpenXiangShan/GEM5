@@ -47,6 +47,7 @@
 #include <map>
 #include <queue>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "base/statistics.hh"
@@ -116,6 +117,7 @@ class InstructionQueue
       private:
         /** Executing instruction. */
         DynInstPtr inst;
+        uint64_t attempt;
 
         /** Index of the FU used for executing. */
         int fuIdx;
@@ -131,7 +133,7 @@ class InstructionQueue
       public:
         /** Construct a FU completion event. */
         FUCompletion(const DynInstPtr &_inst, int fu_idx,
-                     InstructionQueue *iq_ptr);
+                     InstructionQueue *iq_ptr, uint64_t attempt);
 
         virtual void process();
         virtual const char *description() const;
@@ -188,7 +190,7 @@ class InstructionQueue
     /** Returns the oldest scheduled instruction, and removes it from
      * the list of instructions waiting to execute.
      */
-    DynInstPtr getInstToExecute();
+    std::pair<DynInstPtr, uint64_t> getInstToExecute();
 
     /** Gets a memory instruction that was referred due to a delayed DTB
      *  translation if it is now ready to execute.  NULL if none available.
@@ -236,7 +238,8 @@ class InstructionQueue
     void recordAddrOrDataReady(const DynInstPtr &inst);
 
     /** Process FU completion event. */
-    void processFUCompletion(const DynInstPtr &inst, int fu_idx);
+    void processFUCompletion(const DynInstPtr &inst, int fu_idx,
+                             uint64_t attempt);
 
     bool execLatencyCheck(const DynInstPtr& inst, uint32_t& op_latency);
 
@@ -345,7 +348,7 @@ class InstructionQueue
     Scheduler* scheduler;
 
     /** List of instructions that are ready to be executed. */
-    std::list<DynInstPtr> instsToExecute;
+    std::list<std::pair<DynInstPtr, uint64_t>> instsToExecute;
 
     /** List of instructions waiting for their DTB translation to
      *  complete (hw page table walk in progress).

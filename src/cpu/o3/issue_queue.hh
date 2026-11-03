@@ -5,8 +5,10 @@
 #include <list>
 #include <queue>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <boost/compute/detail/lru_cache.hpp>
@@ -42,11 +44,20 @@ namespace o3
 class FUPool;
 class CPU;
 class IEW;
+class Scoreboard;
 class Scheduler;
 class MemDepUnit;
 
 using ReadyQue = std::list<DynInstPtr>;
-using SelectQue = std::vector<std::pair<uint32_t, DynInstPtr>>;
+
+struct SelectEntry
+{
+    uint32_t port;
+    DynInstPtr inst;
+    uint64_t attempt;
+};
+
+using SelectQue = std::vector<SelectEntry>;
 
 /**
  *          insert into queue
@@ -146,8 +157,9 @@ class IssueQue : public SimObject
     {
         int size;
         DynInstPtr insts[8];
-        void push(const DynInstPtr& inst);
-        DynInstPtr pop();
+        uint64_t attempts[8];
+        void push(const DynInstPtr& inst, uint64_t attempt);
+        std::pair<DynInstPtr, uint64_t> pop();
     };
 
     std::vector<DynInstPtr> skidBuffer;
@@ -239,7 +251,7 @@ class IssueQue : public SimObject
     }* iqstats = nullptr;
 
     void replay(const DynInstPtr& inst);
-    void addToFu(const DynInstPtr& inst);
+    void addToFu(const DynInstPtr& inst, uint64_t attempt);
     bool checkScoreboard(const DynInstPtr& inst);
     bool isVectorNonContinuousMemInst(const DynInstPtr& inst) const;
     VectorSplitKind vectorSplitKind(const DynInstPtr& inst) const;
@@ -267,6 +279,10 @@ class IssueQue : public SimObject
     void cancel(const DynInstPtr& inst);
     void processVectorReadyQ();
     bool issueHasOlderInsts(const DynInstPtr& replay_inst) const;
+    void releaseVPEntry(const DynInstPtr& inst);
+    void removeVPReplayDependencies(const DynInstPtr& inst);
+    void invalidateVPReplayInst(const DynInstPtr& inst);
+    void rebuildVPReplayInst(const DynInstPtr& inst);
 
   public:
     inline void clearBusy(uint32_t pi) { portBusy.at(pi) = 0; }
@@ -331,6 +347,7 @@ class Scheduler : public SimObject
     {
       public:
         DynInstPtr inst;
+        uint64_t attempt;
         PendingWakeEventsType* owner;
         IssueQue* to_issue_queue = nullptr;
 
@@ -365,6 +382,11 @@ class Scheduler : public SimObject
         statistics::Scalar lldpDualSrcRegisterArithmetic;
         statistics::Distribution lldpChainLengths;
         statistics::Vector lldpArithmeticTypes;
+        statistics::Scalar vpReplayRoots;
+        statistics::Scalar vpReplayInsts;
+        statistics::Scalar vpRetainedInsts;
+        statistics::Scalar vpDelayedBranches;
+        statistics::Scalar vpReplayFallbacks;
     } stats;
 
     struct disp_policy
@@ -385,11 +407,21 @@ class Scheduler : public SimObject
     std::vector<uint8_t> totalDispCounter;
     std::vector<std::vector<uint8_t*>> dispOpdist;
 
-    std::vector<DynInstPtr> instsToFu;
+    std::vector<std::pair<DynInstPtr, uint64_t>> instsToFu;
 
     std::vector<bool> earlyScoreboard;
     std::vector<bool> bypassScoreboard;
     std::vector<bool> scoreboard;
+    std::vector<std::vector<DynInstPtr>> vpRegRoots;
+    struct VPReplayRootState
+    {
+        DynInstPtr root;
+        std::unordered_map<InstSeqNum, DynInstPtr> consumers;
+        std::unordered_set<RegIndex> regs;
+    };
+    std::unordered_map<InstSeqNum, VPReplayRootState> vpReplayRootStates;
+    bool enableVPReplay = false;
+    Scoreboard* renameScoreboard = nullptr;
 
     // typePortId : [inst : priority]
     using OccupancyType = std::vector<std::pair<DynInstPtr, int>>;
@@ -425,6 +457,12 @@ class Scheduler : public SimObject
 
     // should call at issue first/last cycle,
     void specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_queue);
+    VPReplayRootState& getVPReplayRootState(const DynInstPtr& root);
+    void clearVPConsumerRoots(const DynInstPtr& inst);
+    void clearVPRegRoots(RegIndex flat_idx);
+    void setVPRegRoots(RegIndex flat_idx,
+                       const std::vector<DynInstPtr>& roots);
+    void eraseVPReplayRootState(const DynInstPtr& root);
     bool ready(OpClass op, ThreadID tid, int disp_seq);
 
   public:
@@ -450,8 +488,8 @@ class Scheduler : public SimObject
     // return true if insert successful
     void insert(const DynInstPtr& inst, int disp_seq);
     void insertNonSpec(const DynInstPtr& inst);
-    void addToFU(const DynInstPtr& inst);
-    DynInstPtr getInstToFU();
+    void addToFU(const DynInstPtr& inst, uint64_t attempt);
+    std::pair<DynInstPtr, uint64_t> getInstToFU();
 
     void useRfRdPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int typePortId, int pri);
     void useRfWrPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int typePortId, int pri);
@@ -459,6 +497,18 @@ class Scheduler : public SimObject
     void specWakeUpFromVP(const DynInstPtr& inst);
     void specWakeUpFromLoadPipe(const DynInstPtr& inst);
     bool loadCancel(const DynInstPtr& inst);
+    void setVPReplayEnabled(bool enable) { enableVPReplay = enable; }
+    void setRenameScoreboard(Scoreboard* scoreboard)
+    {
+        renameScoreboard = scoreboard;
+    }
+    void addVPSourceDependencies(const DynInstPtr& inst, PhysRegIdPtr src);
+    bool canReplayVPRoot(const DynInstPtr& root) const;
+    std::vector<DynInstPtr> resolveVPRoot(const DynInstPtr& root,
+                                          bool mispredicted);
+    void discardVPRoot(const DynInstPtr& root);
+    bool isVPReplaySupported(const DynInstPtr& inst) const;
+    void markVPValueReady(const DynInstPtr& root);
 
     void writebackWakeup(const DynInstPtr& inst);
     void bypassWriteback(const DynInstPtr& inst);

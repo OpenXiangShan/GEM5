@@ -21,6 +21,7 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/inst_queue.hh"
+#include "cpu/o3/scoreboard.hh"
 #include "cpu/reg_class.hh"
 #include "debug/Counters.hh"
 #include "debug/Dispatch.hh"
@@ -268,7 +269,8 @@ PAgeSelector::select(ReadyQue::iterator begin, int portid)
             bool no_group_conflict = true;
             for (auto sit = iqselectQ->begin(); sit != iqselectQ->end(); sit++) {
                 // check group conflict
-                if ((inst->iqtag % numInstperGroup) == (sit->second->iqtag % numInstperGroup)) {
+                if ((inst->iqtag % numInstperGroup) ==
+                    (sit->inst->iqtag % numInstperGroup)) {
                     no_group_conflict = false;
                     break;
                 }
@@ -292,17 +294,20 @@ IssueQue::select_policy::operator()(const DynInstPtr& a, const DynInstPtr& b) co
 }
 
 void
-IssueQue::IssueStream::push(const DynInstPtr& inst)
+IssueQue::IssueStream::push(const DynInstPtr& inst, uint64_t attempt)
 {
     assert(size < 8);
-    insts[size++] = inst;
+    insts[size] = inst;
+    attempts[size] = attempt;
+    ++size;
 }
 
-DynInstPtr
+std::pair<DynInstPtr, uint64_t>
 IssueQue::IssueStream::pop()
 {
     assert(size > 0);
-    return insts[--size];
+    --size;
+    return {insts[size], attempts[size]};
 }
 
 IssueQue::IssueQueStats::IssueQueStats(statistics::Group* parent, IssueQue* que, std::string name)
@@ -539,17 +544,30 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
 }
 
 void
-IssueQue::addToFu(const DynInstPtr& inst)
+IssueQue::addToFu(const DynInstPtr& inst, uint64_t attempt)
 {
     if (inst->isIssued()) [[unlikely]] {
         panic("%s [sn:%llu] has alreayd been issued\n", enums::OpClassStrings[inst->opClass()], inst->seqNum);
     }
     inst->setIssued();
-    POPINST(inst);
-    if (hasInstsCounter()) {
-        decInIQInstsCounter(inst->threadNumber);
+    const bool retain = scheduler->enableVPReplay && inst->hasVPPending() &&
+        scheduler->isVPReplaySupported(inst);
+    if (retain) {
+        if (!inst->iqRetainedForVP) {
+            scheduler->stats.vpRetainedInsts++;
+        }
+        inst->iqRetainedForVP = true;
+    } else {
+        inst->iqRetainedForVP = false;
+        if (inst->iqEntryAllocated) {
+            POPINST(inst);
+            inst->iqEntryAllocated = false;
+            if (hasInstsCounter()) {
+                decInIQInstsCounter(inst->threadNumber);
+            }
+        }
     }
-    scheduler->addToFU(inst);
+    scheduler->addToFU(inst, attempt);
 }
 
 bool
@@ -917,15 +935,20 @@ IssueQue::issueToFu()
             issuedStore++;
         }
 
-        scheduler->addToFU(inst);
+        scheduler->addToFU(inst, inst->vpAttemptGeneration);
         DPRINTF(Schedule, "[sn:%llu] replayed to FU\n", inst->seqNum);
         replayQ.pop();
         issued++;
     }
 
     for (int i = 0; i < size; i++) {
-        auto inst = toFu->pop();
+        auto [inst, attempt] = toFu->pop();
         if (!inst) {
+            continue;
+        }
+        if (attempt != inst->vpAttemptGeneration) {
+            DPRINTF(Schedule, "[sn:%llu] discard stale issue attempt %llu\n",
+                    inst->seqNum, attempt);
             continue;
         }
         // Loads selected here enter loadpipe S0 next cycle, so block on
@@ -958,7 +981,7 @@ IssueQue::issueToFu()
         if (inst->isStore()) {
             issuedStore++;
         }
-        addToFu(inst);
+        addToFu(inst, attempt);
         cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueReadReg);
         issued++;
     }
@@ -1258,7 +1281,9 @@ IssueQue::selectInst()
                     }
                 }
 
-                selectQ.push_back(std::make_pair(pi, inst));
+                selectQ.push_back(
+                    {static_cast<uint32_t>(pi), inst,
+                     inst->vpAttemptGeneration});
                 inst->clearInReadyQ();
                 readyQ->erase(it);
                 break;
@@ -1276,9 +1301,13 @@ IssueQue::scheduleInst()
 {
     // here is issueStage 0
     for (auto& info : selectQ) {
-        auto& pi = info.first;  // issue port id
-        auto& inst = info.second;
-        if (inst->canceled()) {
+        auto& pi = info.port;  // issue port id
+        auto& inst = info.inst;
+        if (info.attempt != inst->vpAttemptGeneration) {
+            DPRINTF(Schedule,
+                    "[sn:%llu] discard stale selected attempt %llu\n",
+                    inst->seqNum, info.attempt);
+        } else if (inst->canceled()) {
             DPRINTF(Schedule, "[sn:%llu] was canceled\n", inst->seqNum);
         } else if (inst->arbFailed()) {
             DPRINTF(Schedule, "[sn:%llu] arbitration failed, retry\n", inst->seqNum);
@@ -1290,7 +1319,7 @@ IssueQue::scheduleInst()
             DPRINTF(Schedule, "[sn:%llu] no conflict, scheduled\n", inst->seqNum);
             iqstats->portissued[pi]++;
             inst->setScheduled();
-            toIssue->push(inst);
+            toIssue->push(inst, info.attempt);
             inst->issueportid = pi;
 
             if (!opPipelined[inst->opClass()]) {
@@ -1374,6 +1403,7 @@ IssueQue::insert(const DynInstPtr& inst)
     DPRINTF(Schedule, "[tid:%u] [sn:%llu] %s insert into %s\n", inst->threadNumber, inst->seqNum, enums::OpClassStrings[inst->opClass()], iqname);
     selector->allocate(inst);
     inst->issueQue = this;
+    inst->iqEntryAllocated = true;
     instList.emplace_back(inst);
     if (hasInstsCounter()) {
         incInIQInstsCounter(inst->threadNumber);
@@ -1381,14 +1411,26 @@ IssueQue::insert(const DynInstPtr& inst)
     bool addToDepGraph = false;
     for (int i = 0; i < inst->numSrcRegs(); i++) {
         auto src = inst->renamedSrcIdx(i);
-        if (!inst->readySrcIdx(i) && !src->isFixedMapping()) {
+        if (src->isFixedMapping()) {
+            continue;
+        }
+
+        // A replay can invalidate a value after rename marked the source
+        // ready. Reconcile dispatch state with the scheduler scoreboard.
+        if (scheduler->enableVPReplay && inst->readySrcIdx(i) &&
+            !scheduler->scoreboard[src->flatIndex()]) {
+            inst->clearSrcRegReady(i);
+        }
+
+        if (!inst->readySrcIdx(i)) {
             if (scheduler->scoreboard[src->flatIndex()]) {
                 inst->markSrcRegReady(i);
             } else {
                 if (scheduler->earlyScoreboard[src->flatIndex()]) {
                     inst->markSrcRegReady(i);
                 }
-                DPRINTF(Schedule, "[sn:%llu] src p%d add to depGraph\n", inst->seqNum, src->flatIndex());
+                DPRINTF(Schedule, "[sn:%llu] src p%d add to depGraph\n",
+                        inst->seqNum, src->flatIndex());
                 subDepGraph[src->flatIndex()].push_back({i, inst});
                 addToDepGraph = true;
             }
@@ -1452,12 +1494,134 @@ IssueQue::popReadyVectorInst()
 }
 
 void
+IssueQue::releaseVPEntry(const DynInstPtr& inst)
+{
+    inst->iqRetainedForVP = false;
+    if (inst->isIssued() && inst->iqEntryAllocated) {
+        POPINST(inst);
+        inst->iqEntryAllocated = false;
+        if (hasInstsCounter()) {
+            decInIQInstsCounter(inst->threadNumber);
+        }
+    }
+}
+
+void
+IssueQue::removeVPReplayDependencies(const DynInstPtr& inst)
+{
+    assert(inst && inst->issueQue == this);
+    for (int i = 0; i < inst->numSrcRegs(); ++i) {
+        const auto src = inst->renamedSrcIdx(i);
+        if (src->isFixedMapping()) {
+            continue;
+        }
+        auto& deps = subDepGraph[src->flatIndex()];
+        deps.erase(std::remove_if(deps.begin(), deps.end(),
+            [&inst](const auto& dep) { return dep.second == inst; }),
+            deps.end());
+    }
+}
+
+void
+IssueQue::invalidateVPReplayInst(const DynInstPtr& inst)
+{
+    assert(inst->issueQue == this);
+    assert(inst->iqEntryAllocated);
+
+    auto& ready_q = *readyQclassify[inst->opClass()];
+    ready_q.remove(inst);
+    inst->clearInReadyQ();
+
+    selectQ.erase(std::remove_if(selectQ.begin(), selectQ.end(),
+        [&inst](const auto& entry) { return entry.inst == inst; }),
+        selectQ.end());
+
+    if (inst->isScheduled() && inst->issueportid >= 0 &&
+        !opPipelined[inst->opClass()]) {
+        portBusy[inst->issueportid] = 0;
+    }
+    inst->issueportid = -1;
+
+    for (int stage = 0; stage <= getIssueStages(); ++stage) {
+        auto& stream = inflightIssues[-stage];
+        for (int slot = 0; slot < stream.size; ++slot) {
+            if (stream.insts[slot] == inst) {
+                stream.insts[slot] = nullptr;
+            }
+        }
+    }
+
+    auto wake_it = scheduler->specWakeEvents.find(inst->seqNum);
+    if (wake_it != scheduler->specWakeEvents.end()) {
+        for (auto* event : wake_it->second) {
+            cpu->deschedule(*event);
+        }
+        scheduler->specWakeEvents.erase(wake_it);
+    }
+
+    if (inst->vpAttemptWroteBack) {
+        for (int i = 0; i < inst->numDestRegs(); ++i) {
+            const auto dst = inst->renamedDestIdx(i);
+            if (!dst->isFixedMapping()) {
+                dst->incrNumPinnedWritesToComplete();
+            }
+        }
+    }
+
+    scheduler->clearVPConsumerRoots(inst);
+    inst->resetForVPReplay();
+    inst->iqRetainedForVP = false;
+}
+
+void
+IssueQue::rebuildVPReplayInst(const DynInstPtr& inst)
+{
+    assert(inst->issueQue == this);
+    assert(inst->iqEntryAllocated);
+
+    for (int i = 0; i < inst->numSrcRegs(); ++i) {
+        const auto src = inst->renamedSrcIdx(i);
+        if (src->isFixedMapping()) {
+            inst->markSrcRegReady(i);
+            continue;
+        }
+
+        scheduler->addVPSourceDependencies(inst, src);
+        if (scheduler->scoreboard[src->flatIndex()] ||
+            scheduler->earlyScoreboard[src->flatIndex()]) {
+            inst->markSrcRegReady(i);
+        }
+        if (!scheduler->scoreboard[src->flatIndex()]) {
+            subDepGraph[src->flatIndex()].push_back({i, inst});
+        }
+    }
+
+    for (int i = 0; i < inst->numDestRegs(); ++i) {
+        const auto dst = inst->renamedDestIdx(i);
+        if (!dst->isFixedMapping()) {
+            scheduler->setVPRegRoots(dst->flatIndex(), inst->vpPendingRoots);
+        }
+    }
+
+    addIfReady(inst);
+    scheduler->stats.vpReplayInsts++;
+}
+
+void
 IssueQue::doCommit(const InstSeqNum seqNum, ThreadID tid)
 {
     for (auto it = instList.begin(); it != instList.end();) {
         const auto &inst = *it;
         if (inst->threadNumber == tid && inst->seqNum <= seqNum) {
             assert(inst->isIssued());
+            if (inst->iqEntryAllocated) {
+                POPINST(inst);
+                inst->iqEntryAllocated = false;
+                if (hasInstsCounter()) {
+                    decInIQInstsCounter(inst->threadNumber);
+                }
+            }
+            inst->iqRetainedForVP = false;
             vectorReadyQSeqs.erase(inst->seqNum);
             eraseVectorSplitBlocker(inst->seqNum);
             it = instList.erase(it);
@@ -1465,39 +1629,41 @@ IssueQue::doCommit(const InstSeqNum seqNum, ThreadID tid)
             ++it;
         }
     }
-    // while (!instList.empty() && instList.front()->seqNum <= seqNum) {
-    //     assert(instList.front()->isIssued());
-    //     vectorReadyQSeqs.erase(instList.front()->seqNum);
-    //     instList.pop_front();
-    // }
 }
 
 void
 IssueQue::doSquash(SquashInfo squashInfo)
 {
     for (auto it = instList.begin(); it != instList.end();) {
-        if (((*it)->seqNum > squashInfo.squashSn) && ((*it)->threadNumber == squashInfo.squashTid)) {
-            if (!(*it)->isIssued()) {
+        auto& inst = *it;
+        if (inst->seqNum > squashInfo.squashSn &&
+            inst->threadNumber == squashInfo.squashTid) {
+            if (inst->iqEntryAllocated) {
+                POPINST(inst);
+                inst->iqEntryAllocated = false;
                 if (hasInstsCounter()) {
-                    decInIQInstsCounter((*it)->threadNumber);
+                    decInIQInstsCounter(inst->threadNumber);
                 }
-                POPINST((*it));
-                (*it)->setIssued();
             }
-            if ((*it)->isScheduled() && (*it)->issueportid >= 0 && !opPipelined[(*it)->opClass()]) {
-                portBusy.at((*it)->issueportid) = 0;
+            if (!inst->isIssued()) {
+                inst->setIssued();
+            }
+            inst->iqRetainedForVP = false;
+            if (inst->isScheduled() && inst->issueportid >= 0 &&
+                !opPipelined[inst->opClass()]) {
+                portBusy.at(inst->issueportid) = 0;
             }
 
-            (*it)->setSquashedInIQ();
-            (*it)->setCanCommit();
-            (*it)->clearScheduled();
-            (*it)->setCancel();
-            vectorReadyQSeqs.erase((*it)->seqNum);
-            eraseVectorSplitBlocker((*it)->seqNum);
+            inst->setSquashedInIQ();
+            inst->setCanCommit();
+            inst->clearScheduled();
+            inst->setCancel();
+            vectorReadyQSeqs.erase(inst->seqNum);
+            eraseVectorSplitBlocker(inst->seqNum);
             it = instList.erase(it);
             assert(instList.size() >= instNum);
         } else {
-            it++;
+            ++it;
         }
     }
 
@@ -1548,15 +1714,25 @@ IssueQue::decInIQInstsCounter(ThreadID tid)
 
 Scheduler::SpecWakeupCompletion::SpecWakeupCompletion(const DynInstPtr& inst, IssueQue* to,
                                                       PendingWakeEventsType* owner)
-    : Event(Stat_Event_Pri, AutoDelete), inst(inst), owner(owner), to_issue_queue(to)
+    : Event(Stat_Event_Pri, AutoDelete), inst(inst),
+      attempt(inst->vpAttemptGeneration), owner(owner), to_issue_queue(to)
 {
 }
 
 void
 Scheduler::SpecWakeupCompletion::process()
 {
+    auto owner_it = owner->find(inst->seqNum);
+    if (owner_it != owner->end()) {
+        owner_it->second.erase(this);
+        if (owner_it->second.empty()) {
+            owner->erase(owner_it);
+        }
+    }
+    if (attempt != inst->vpAttemptGeneration) {
+        return;
+    }
     to_issue_queue->wakeUpDependents(inst, true);
-    (*owner)[inst->seqNum].erase(this);
 }
 
 const char*
@@ -1590,7 +1766,17 @@ Scheduler::SchedulerStats::SchedulerStats(statistics::Group* parent)
       ADD_STAT(lldpChainLengths, statistics::units::Count::get(),
                "Complete LLDP chains by length"),
       ADD_STAT(lldpArithmeticTypes, statistics::units::Count::get(),
-               "Arithmetic operation classes in LLDP chains")
+               "Arithmetic operation classes in LLDP chains"),
+      ADD_STAT(vpReplayRoots, statistics::units::Count::get(),
+               "Load value prediction roots handled by replay"),
+      ADD_STAT(vpReplayInsts, statistics::units::Count::get(),
+               "Consumer attempts replayed after value misprediction"),
+      ADD_STAT(vpRetainedInsts, statistics::units::Count::get(),
+               "Consumers retained in IQ pending value validation"),
+      ADD_STAT(vpDelayedBranches, statistics::units::Count::get(),
+               "Branches whose redirect waited for value validation"),
+      ADD_STAT(vpReplayFallbacks, statistics::units::Count::get(),
+               "Value mispredictions that fell back to pipeline squash")
 {
     lldpChainLengths.init(1, 64, 1).flags(statistics::nozero);
     lldpArithmeticTypes.init(5).flags(statistics::nozero);
@@ -1860,6 +2046,7 @@ Scheduler::setCPU(CPU* cpu, LSQ* lsq)
     const auto& cpuParams =
         dynamic_cast<const BaseO3CPUParams&>(cpu->params());
     smtIQPolicy = cpuParams.smtIQPolicy;
+    setVPReplayEnabled(cpuParams.enableVPReplay);
     enableSpMT = cpuParams.enableSpMT;
     if (enableSpMT) {
         panic_if(cpuParams.numThreads != 2,
@@ -1886,6 +2073,9 @@ Scheduler::resetDepGraph(uint64_t numPhysRegs)
     scoreboard.resize(numPhysRegs, true);
     bypassScoreboard.resize(numPhysRegs, true);
     earlyScoreboard.resize(numPhysRegs, true);
+    vpRegRoots.clear();
+    vpRegRoots.resize(numPhysRegs);
+    vpReplayRootStates.clear();
     for (auto it : issueQues) {
         it->resetDepGraph(numPhysRegs);
     }
@@ -1899,7 +2089,7 @@ Scheduler::setAllScoreBoard(PhysRegIdPtr reg) {
 }
 
 void
-Scheduler::addToFU(const DynInstPtr& inst)
+Scheduler::addToFU(const DynInstPtr& inst, uint64_t attempt)
 {
 #if TRACING_ON
     inst->issueTick = curTick() - inst->fetchTick;
@@ -1927,7 +2117,7 @@ Scheduler::addToFU(const DynInstPtr& inst)
         if (meta.lldpChain.valid)
             cpu->ppLldpDependenceTrain->notify(inst->xsMeta);
     }
-    instsToFu.push_back(inst);
+    instsToFu.push_back({inst, attempt});
 }
 
 void
@@ -2078,6 +2268,11 @@ void
 Scheduler::addProducer(const DynInstPtr& inst)
 {
     DPRINTF(Schedule, "[sn:%llu] addProdecer\n", inst->seqNum);
+    if (enableVPReplay) {
+        for (int i = 0; i < inst->numSrcRegs(); ++i) {
+            addVPSourceDependencies(inst, inst->renamedSrcIdx(i));
+        }
+    }
     for (int i = 0; i < inst->numDestRegs(); i++) {
         auto dst = inst->renamedDestIdx(i);
         if (dst->isFixedMapping()) {
@@ -2086,6 +2281,9 @@ Scheduler::addProducer(const DynInstPtr& inst)
         scoreboard[dst->flatIndex()] = false;
         bypassScoreboard[dst->flatIndex()] = false;
         earlyScoreboard[dst->flatIndex()] = false;
+        if (enableVPReplay) {
+            setVPRegRoots(dst->flatIndex(), inst->vpPendingRoots);
+        }
         DPRINTF(Schedule, "mark scoreboard p%lu not ready\n", dst->flatIndex());
     }
 }
@@ -2185,6 +2383,9 @@ void
 Scheduler::specWakeUpFromVP(const DynInstPtr& inst)
 {
     DPRINTF(Schedule, "[sn:%llu] VP speculative wakeup dependents\n", inst->seqNum);
+    if (enableVPReplay) {
+        markVPValueReady(inst);
+    }
     // Wake consumers already in IQ via speculative wakeup (preserves subDepGraph)
     for (auto to : issueQues) {
         to->wakeUpDependents(inst, true);  // speculative=true -> depgraph preserved
@@ -2228,11 +2429,11 @@ Scheduler::specWakeUpFromLoadPipe(const DynInstPtr& inst)
     }
 }
 
-DynInstPtr
+std::pair<DynInstPtr, uint64_t>
 Scheduler::getInstToFU()
 {
     if (instsToFu.empty()) {
-        return DynInstPtr(nullptr);
+        return {DynInstPtr(nullptr), 0};
     }
     auto ret = instsToFu.back();
     instsToFu.pop_back();
@@ -2338,6 +2539,276 @@ Scheduler::useRfWrPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int ty
     t_inst = inst;
     t_pri = pri;
     t_lat = lat;
+}
+
+bool
+Scheduler::isVPReplaySupported(const DynInstPtr& inst) const
+{
+    if (!inst || inst->isMemRef() || inst->isFloating() || inst->isVector() ||
+        inst->isAtomic() || inst->isReadBarrier() || inst->isWriteBarrier() ||
+        inst->isNonSpeculative() || inst->isSerializeBefore() ||
+        inst->isSerializeAfter() || inst->numDestRegs() > 1) {
+        return false;
+    }
+
+    // Control instructions are replayed from their saved input PC. Their
+    // redirect remains suppressed until all value predictions are resolved.
+    return inst->isControl() || inst->opClass() == IntAluOp;
+}
+
+Scheduler::VPReplayRootState&
+Scheduler::getVPReplayRootState(const DynInstPtr& root)
+{
+    assert(root);
+    auto [it, inserted] = vpReplayRootStates.try_emplace(root->seqNum);
+    if (inserted) {
+        it->second.root = root;
+    } else {
+        assert(it->second.root == root);
+    }
+    return it->second;
+}
+
+void
+Scheduler::clearVPConsumerRoots(const DynInstPtr& inst)
+{
+    if (!inst) {
+        return;
+    }
+    for (const auto& root : inst->vpPendingRoots) {
+        if (!root) {
+            continue;
+        }
+        auto state_it = vpReplayRootStates.find(root->seqNum);
+        if (state_it != vpReplayRootStates.end()) {
+            state_it->second.consumers.erase(inst->seqNum);
+        }
+    }
+    inst->clearVPPendingRoots();
+}
+
+void
+Scheduler::clearVPRegRoots(RegIndex flat_idx)
+{
+    assert(flat_idx < vpRegRoots.size());
+    auto& roots = vpRegRoots[flat_idx];
+    for (const auto& root : roots) {
+        if (!root) {
+            continue;
+        }
+        auto state_it = vpReplayRootStates.find(root->seqNum);
+        if (state_it != vpReplayRootStates.end()) {
+            state_it->second.regs.erase(flat_idx);
+        }
+    }
+    roots.clear();
+}
+
+void
+Scheduler::setVPRegRoots(
+    RegIndex flat_idx, const std::vector<DynInstPtr>& roots)
+{
+    clearVPRegRoots(flat_idx);
+    auto& reg_roots = vpRegRoots[flat_idx];
+    for (const auto& root : roots) {
+        if (!root || root->vpRootResolved || root->isSquashed()) {
+            continue;
+        }
+        reg_roots.push_back(root);
+        getVPReplayRootState(root).regs.insert(flat_idx);
+    }
+}
+
+void
+Scheduler::eraseVPReplayRootState(const DynInstPtr& root)
+{
+    if (!root) {
+        return;
+    }
+    auto state_it = vpReplayRootStates.find(root->seqNum);
+    if (state_it == vpReplayRootStates.end()) {
+        return;
+    }
+
+    for (const auto flat_idx : state_it->second.regs) {
+        auto& roots = vpRegRoots[flat_idx];
+        roots.erase(std::remove(roots.begin(), roots.end(), root),
+                    roots.end());
+    }
+    vpReplayRootStates.erase(state_it);
+}
+
+void
+Scheduler::addVPSourceDependencies(const DynInstPtr& inst, PhysRegIdPtr src)
+{
+    if (!enableVPReplay || !src || src->isFixedMapping()) {
+        return;
+    }
+    for (const auto& root : vpRegRoots[src->flatIndex()]) {
+        if (root && !root->vpRootResolved && !root->isSquashed() &&
+            !inst->hasVPPendingRoot(root)) {
+            inst->addVPPendingRoot(root);
+            getVPReplayRootState(root).consumers.emplace(inst->seqNum, inst);
+        }
+    }
+}
+
+bool
+Scheduler::canReplayVPRoot(const DynInstPtr& root) const
+{
+    if (!root || root->vpRootResolved || root->isSquashed()) {
+        return false;
+    }
+
+    auto state_it = vpReplayRootStates.find(root->seqNum);
+    if (state_it == vpReplayRootStates.end()) {
+        return true;
+    }
+    for (const auto& entry : state_it->second.consumers) {
+        const auto& inst = entry.second;
+        if (inst->isSquashed() || !inst->hasVPPendingRoot(root)) {
+            continue;
+        }
+
+        // With the optional dispatch stage, producer provenance is recorded
+        // before the instruction enters an IQ. Such consumers have not used
+        // the predicted value yet and need no IQ replay state.
+        if (!inst->issueQue && !inst->iqEntryAllocated) {
+            if (inst->isIssued() || inst->isExecuted() ||
+                inst->isCompleted()) {
+                return false;
+            }
+            continue;
+        }
+
+        if (!isVPReplaySupported(inst) || !inst->issueQue ||
+            !inst->iqEntryAllocated ||
+            (inst->isIssued() && !inst->iqRetainedForVP)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::vector<DynInstPtr>
+Scheduler::resolveVPRoot(const DynInstPtr& root, bool mispredicted)
+{
+    std::vector<DynInstPtr> resolved;
+    if (!root || root->vpRootResolved ||
+        (mispredicted && !canReplayVPRoot(root))) {
+        return resolved;
+    }
+
+    auto state_it = vpReplayRootStates.find(root->seqNum);
+    if (state_it != vpReplayRootStates.end()) {
+        for (const auto& entry : state_it->second.consumers) {
+            const auto& inst = entry.second;
+            if (!inst->isSquashed() && inst->hasVPPendingRoot(root)) {
+                resolved.push_back(inst);
+            }
+        }
+    }
+    std::sort(resolved.begin(), resolved.end(),
+        [](const DynInstPtr& a, const DynInstPtr& b) {
+            return a->seqNum < b->seqNum;
+        });
+
+    eraseVPReplayRootState(root);
+
+    if (mispredicted) {
+        std::vector<DynInstPtr> replay_consumers;
+        replay_consumers.reserve(resolved.size());
+        for (const auto& inst : resolved) {
+            if (!inst->issueQue && !inst->iqEntryAllocated) {
+                inst->clearVPPendingRoot(root);
+            } else {
+                replay_consumers.push_back(inst);
+            }
+        }
+
+        // Phase one invalidates every old attempt and every destination before
+        // any queue rebuilds dependencies. This preserves cross-IQ ordering.
+        for (const auto& inst : replay_consumers) {
+            inst->issueQue->removeVPReplayDependencies(inst);
+        }
+        for (const auto& inst : replay_consumers) {
+            for (int i = 0; i < inst->numDestRegs(); ++i) {
+                const auto dst = inst->renamedDestIdx(i);
+                if (dst->isFixedMapping()) {
+                    continue;
+                }
+                scoreboard[dst->flatIndex()] = false;
+                bypassScoreboard[dst->flatIndex()] = false;
+                earlyScoreboard[dst->flatIndex()] = false;
+                clearVPRegRoots(dst->flatIndex());
+                if (renameScoreboard) {
+                    renameScoreboard->unsetReg(dst);
+                }
+            }
+            inst->issueQue->invalidateVPReplayInst(inst);
+        }
+
+        // The validating load has already written the real value into its
+        // physical destination when this path runs.
+        for (int i = 0; i < root->numDestRegs(); ++i) {
+            const auto dst = root->renamedDestIdx(i);
+            if (dst->isFixedMapping()) {
+                continue;
+            }
+            scoreboard[dst->flatIndex()] = true;
+            bypassScoreboard[dst->flatIndex()] = true;
+            earlyScoreboard[dst->flatIndex()] = true;
+            if (renameScoreboard) {
+                renameScoreboard->setReg(dst);
+            }
+        }
+
+        // Phase two walks program order so producer provenance and dependency
+        // edges are rebuilt before younger consumers are considered ready.
+        for (const auto& inst : replay_consumers) {
+            inst->issueQue->rebuildVPReplayInst(inst);
+        }
+        stats.vpReplayRoots++;
+    } else {
+        for (const auto& inst : resolved) {
+            inst->clearVPPendingRoot(root);
+            if (!inst->hasVPPending()) {
+                if (inst->iqRetainedForVP && inst->issueQue) {
+                    inst->issueQue->releaseVPEntry(inst);
+                }
+                if (inst->vpCommitPending &&
+                    !inst->vpBranchCheckPending) {
+                    inst->vpCommitPending = false;
+                    inst->setCanCommit();
+                }
+            }
+        }
+    }
+
+    root->vpRootResolved = true;
+    return resolved;
+}
+
+void
+Scheduler::discardVPRoot(const DynInstPtr& root)
+{
+    if (!root || root->vpRootResolved) {
+        return;
+    }
+    eraseVPReplayRootState(root);
+    root->vpRootResolved = true;
+}
+
+void
+Scheduler::markVPValueReady(const DynInstPtr& root)
+{
+    for (int i = 0; i < root->numDestRegs(); ++i) {
+        const auto dst = root->renamedDestIdx(i);
+        if (dst->isFixedMapping()) {
+            continue;
+        }
+        setVPRegRoots(dst->flatIndex(), std::vector<DynInstPtr>{root});
+    }
 }
 
 bool
@@ -2552,8 +3023,25 @@ Scheduler::isDrained()
 void
 Scheduler::doCommit(const InstSeqNum seqNum, ThreadID tid)
 {
-    for (auto it : issueQues) {
-        it->doCommit(seqNum, tid);
+    for (auto* iq : issueQues) {
+        iq->doCommit(seqNum, tid);
+    }
+
+    std::vector<DynInstPtr> committed_roots;
+    for (auto it = vpReplayRootStates.begin();
+         it != vpReplayRootStates.end();) {
+        const auto& root = it->second.root;
+        if (!root) {
+            it = vpReplayRootStates.erase(it);
+            continue;
+        }
+        if (root->threadNumber == tid && root->seqNum <= seqNum) {
+            committed_roots.push_back(root);
+        }
+        ++it;
+    }
+    for (const auto& root : committed_roots) {
+        eraseVPReplayRootState(root);
     }
 }
 
@@ -2561,8 +3049,54 @@ void
 Scheduler::doSquash(SquashInfo squashInfo)
 {
     DPRINTF(Schedule, "doSquash until seqNum %lu\n", squashInfo.squashSn);
-    for (auto it : issueQues) {
-        it->doSquash(squashInfo);
+    for (auto* iq : issueQues) {
+        iq->doSquash(squashInfo);
+    }
+
+    const auto is_squashed = [&squashInfo](const DynInstPtr& inst) {
+        return !inst || (inst->threadNumber == squashInfo.squashTid &&
+                         inst->seqNum > squashInfo.squashSn);
+    };
+    instsToFu.erase(std::remove_if(instsToFu.begin(), instsToFu.end(),
+        [&is_squashed](const auto& entry) {
+            return is_squashed(entry.first);
+        }), instsToFu.end());
+
+    std::vector<DynInstPtr> squashed_roots;
+    for (auto& entry : vpReplayRootStates) {
+        auto& state = entry.second;
+        if (is_squashed(state.root)) {
+            if (state.root) {
+                squashed_roots.push_back(state.root);
+            }
+            continue;
+        }
+        for (auto it = state.consumers.begin();
+             it != state.consumers.end();) {
+            if (is_squashed(it->second)) {
+                it = state.consumers.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+    for (const auto& root : squashed_roots) {
+        eraseVPReplayRootState(root);
+    }
+
+    for (auto it = specWakeEvents.begin(); it != specWakeEvents.end();) {
+        bool remove = false;
+        for (auto* event : it->second) {
+            if (is_squashed(event->inst)) {
+                cpu->deschedule(*event);
+                remove = true;
+            }
+        }
+        if (remove) {
+            it = specWakeEvents.erase(it);
+        } else {
+            ++it;
+        }
     }
 }
 

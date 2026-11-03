@@ -197,6 +197,7 @@ struct IEWStruct
     int size;
 
     DynInstPtr insts[MaxWidth];
+    uint64_t attempts[MaxWidth];
     DynInstPtr mispredictInst[MaxThreads];
     Addr mispredPC[MaxThreads];
     InstSeqNum squashedSeqNum[MaxThreads];

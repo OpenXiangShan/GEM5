@@ -84,6 +84,7 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
       issueToExecQueue(params.backComSize, params.forwardComSize),
       valuePred(params.valuePred),
       enableSelectiveVPFlush(params.enableSelectiveVPFlush),
+      enableVPReplay(params.enableVPReplay),
       cpu(_cpu),
       scheduler(params.scheduler),
       instQueue(_cpu, this, params),
@@ -486,6 +487,18 @@ IEW::startupStage()
 void
 IEW::clearStates(ThreadID tid)
 {
+    pendingVPBranchChecks.erase(
+        std::remove_if(
+            pendingVPBranchChecks.begin(), pendingVPBranchChecks.end(),
+            [tid](const DynInstPtr &inst) {
+                if (inst && inst->threadNumber == tid) {
+                    inst->vpBranchCheckPending = false;
+                    return true;
+                }
+                return false;
+            }),
+        pendingVPBranchChecks.end());
+
     for (auto it = delayedVectorMemCompletionQ.begin();
          it != delayedVectorMemCompletionQ.end();) {
         const auto &inst = it->inst;
@@ -558,12 +571,13 @@ void
 IEW::setScoreboard(Scoreboard *sb_ptr)
 {
     scoreboard = sb_ptr;
+    scheduler->setRenameScoreboard(sb_ptr);
 }
 
 void
 IEW::lvpWakeDependents(const DynInstPtr &inst) {
     assert(inst->numDestRegs() == 1);
-    if (enableSelectiveVPFlush) {
+    if (enableSelectiveVPFlush || enableVPReplay) {
         scheduler->specWakeUpFromVP(inst);
         DPRINTF(IEW,"[sn:%llu] vp specWakeUp dependents\n", inst->seqNum);
     } else {
@@ -589,6 +603,11 @@ IEW::isDrained() const
 
     if (!delayedVectorMemCompletionQ.empty()) {
         DPRINTF(Drain, "Vector memory completion delay queue not drained.\n");
+        return false;
+    }
+
+    if (!pendingVPBranchChecks.empty()) {
+        DPRINTF(Drain, "Pending VP branch checks not drained.\n");
         return false;
     }
 
@@ -622,6 +641,7 @@ IEW::takeOverFrom()
 
     instQueue.takeOverFrom();
     ldstQueue.takeOverFrom();
+    pendingVPBranchChecks.clear();
     delayedVectorMemCompletionQ.clear();
     delayedVectorMemCompletionCount.fill(0);
 
@@ -658,6 +678,20 @@ IEW::squash(ThreadID tid)
 
     // Tell the IQ to start squashing.
     instQueue.squash(tid);
+
+    const InstSeqNum squash_seq = fromCommit->commitInfo[tid].doneSeqNum;
+    pendingVPBranchChecks.erase(
+        std::remove_if(
+            pendingVPBranchChecks.begin(), pendingVPBranchChecks.end(),
+            [tid, squash_seq](const DynInstPtr &inst) {
+                if (inst && inst->threadNumber == tid &&
+                    inst->seqNum > squash_seq) {
+                    inst->vpBranchCheckPending = false;
+                    return true;
+                }
+                return false;
+            }),
+        pendingVPBranchChecks.end());
 
     // Tell the LDSTQ to start squashing.
     ldstQueue.squash(fromCommit->commitInfo[tid].doneSeqNum, tid);
@@ -1062,7 +1096,36 @@ IEW::enqueueWritebackNow(const DynInstPtr& inst)
     inst->completionTick = curTick();
 
     ThreadID tid = inst->threadNumber;
-    if (inst->vpMisprediction) {
+    if (enableVPReplay && inst->vpApplied && !inst->vpRootResolved &&
+        inst->getFault() == NoFault) {
+        if (inst->vpMisprediction) {
+            if (scheduler->canReplayVPRoot(inst)) {
+                DPRINTF(IEW, "[sn:%llu] VP mismatch replaying retained consumers\n",
+                        inst->seqNum);
+                scheduler->resolveVPRoot(inst, true);
+            } else {
+                DPRINTF(IEW, "[sn:%llu] VP replay unsupported; full squash\n",
+                        inst->seqNum);
+                scheduler->discardVPRoot(inst);
+                scheduler->getStats().vpReplayFallbacks++;
+                if (!fetchRedirect[tid] || !toCommit->squash[tid] ||
+                    toCommit->squashedSeqNum[tid] > inst->seqNum) {
+                    fetchRedirect[tid] = true;
+                    squashDueToValuePrediction(inst, tid);
+                }
+            }
+        } else {
+            auto resolved = scheduler->resolveVPRoot(inst, false);
+            for (const auto& dependent : resolved) {
+                if (dependent->vpBranchCheckPending &&
+                    !dependent->hasVPPending() && !dependent->isSquashed()) {
+                    pendingVPBranchChecks.push_back(dependent);
+                    DPRINTF(IEW, "[sn:%llu] queue deferred branch check "
+                            "after VP validation\n", dependent->seqNum);
+                }
+            }
+        }
+    } else if (inst->vpMisprediction && !enableVPReplay) {
         if (!enableSelectiveVPFlush) {
             if (!fetchRedirect[tid] || !toCommit->squash[tid] ||
                 toCommit->squashedSeqNum[tid] > inst->seqNum) {
@@ -1094,6 +1157,7 @@ IEW::enqueueWritebackNow(const DynInstPtr& inst)
             wbCycle, wbWidth, wbNumInst, wbCycle * wbWidth + wbNumInst);
     // Add finished instruction to queue to commit.
     (*iewQueue)[wbCycle].insts[wbNumInst] = inst;
+    (*iewQueue)[wbCycle].attempts[wbNumInst] = inst->vpAttemptGeneration;
     (*iewQueue)[wbCycle].size++;
 }
 
@@ -1132,6 +1196,7 @@ IEW::updateActivate()
     instQueue.iqIOStats.intInstQueueReads++;
     if (_status == Active && !instQueue.hasReadyInsts() &&
         !ldstQueue.willWB() && delayedVectorMemCompletionQ.empty() &&
+        pendingVPBranchChecks.empty() &&
         !any_unblocking) {
         DPRINTF(IEW, "IEW switching to idle\n");
 
@@ -1141,6 +1206,7 @@ IEW::updateActivate()
     } else if (_status == Inactive && (instQueue.hasReadyInsts() ||
                                        ldstQueue.willWB() ||
                                        !delayedVectorMemCompletionQ.empty() ||
+                                       !pendingVPBranchChecks.empty() ||
                                        any_unblocking)) {
         // Otherwise there is internal activity.  Set to active.
         DPRINTF(IEW, "IEW switching to active\n");
@@ -1297,6 +1363,12 @@ IEW::threadHasStageWork(ThreadID tid)
         ldstQueue.getCount(tid) != 0 ||
         delayedVectorMemCompletionCount[tid] != 0) {
         return true;
+    }
+
+    for (const auto &inst : pendingVPBranchChecks) {
+        if (inst && inst->threadNumber == tid) {
+            return true;
+        }
     }
 
     for (const auto &queue : dispQue) {
@@ -1973,6 +2045,15 @@ void
 IEW::SquashCheckAfterExe(DynInstPtr inst)
 {
     ThreadID tid = inst->threadNumber;
+    if (enableVPReplay && inst->isControl() && inst->hasVPPending()) {
+        if (!inst->vpBranchCheckPending) {
+            inst->vpBranchCheckPending = true;
+            scheduler->getStats().vpDelayedBranches++;
+        }
+        DPRINTF(IEW, "[sn:%llu] defer branch redirect pending VP validation\n",
+                inst->seqNum);
+        return;
+    }
 
     if (!fetchRedirect[tid] ||
         !toCommit->squash[tid] ||
@@ -2098,6 +2179,48 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
 }
 
 void
+IEW::processPendingVPBranchChecks()
+{
+    if (pendingVPBranchChecks.empty()) {
+        return;
+    }
+
+    std::vector<DynInstPtr> pending;
+    pending.swap(pendingVPBranchChecks);
+    std::sort(pending.begin(), pending.end(),
+        [](const DynInstPtr &a, const DynInstPtr &b) {
+            return a->seqNum < b->seqNum;
+        });
+
+    for (const auto &inst : pending) {
+        if (!inst || !inst->vpBranchCheckPending) {
+            continue;
+        }
+        if (inst->isSquashed()) {
+            inst->vpBranchCheckPending = false;
+            continue;
+        }
+        if (inst->hasVPPending()) {
+            pendingVPBranchChecks.push_back(inst);
+            continue;
+        }
+
+        recordThreadWork(inst->threadNumber);
+        wroteToTimeBuffer = true;
+        updatedQueues = true;
+        inst->vpBranchCheckPending = false;
+        DPRINTF(IEW, "[sn:%llu] process deferred branch check\n",
+                inst->seqNum);
+        SquashCheckAfterExe(inst);
+
+        if (inst->vpCommitPending) {
+            inst->vpCommitPending = false;
+            inst->setCanCommit();
+        }
+    }
+}
+
+void
 IEW::executeInsts()
 {
     wbNumInst = 0;
@@ -2115,6 +2238,8 @@ IEW::executeInsts()
         iew_info.iqCount = scheduler->getIQInsts(tid);
     }
 
+    processPendingVPBranchChecks();
+
     // Uncomment this if you want to see all available instructions.
     // @todo This doesn't actually work anymore, we should fix it.
 //    printAvailableInsts();
@@ -2128,7 +2253,15 @@ IEW::executeInsts()
 
         DPRINTF(IEW, "Execute: Executing instructions from IQ.\n");
 
-        DynInstPtr inst = instQueue.getInstToExecute();
+        auto [inst, attempt] = instQueue.getInstToExecute();
+        if (!inst) {
+            continue;
+        }
+        if (attempt != inst->vpAttemptGeneration) {
+            DPRINTF(IEW, "[sn:%llu] drop stale execute attempt %llu\n",
+                    inst->seqNum, attempt);
+            continue;
+        }
 
         // Notify potential listeners that this instruction has started
         // executing
@@ -2204,6 +2337,10 @@ IEW::executeInsts()
             // If we execute the instruction (even if it's a nop) the fault
             // will be replaced and we will lose it.
             if (inst->getFault() == NoFault) {
+                if (enableVPReplay && inst->isControl() &&
+                    inst->hasVPPending()) {
+                    inst->saveVPInitialPC();
+                }
                 inst->execute();
                 if (!inst->readPredicate())
                     inst->forwardOldRegs();
@@ -2241,6 +2378,15 @@ IEW::executeInsts()
 
     ldstQueue.executePipeSx();
 
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        auto &resolved_cfis = toFetch->iewInfo[tid].resolvedCFIs;
+        std::stable_sort(
+            resolved_cfis.begin(), resolved_cfis.end(),
+            [](const auto &a, const auto &b) {
+                return a.seqNum < b.seqNum;
+            });
+    }
+
     // Update and record activity if we processed any instructions.
     if (inst_num) {
         if (exeStatus == Idle) {
@@ -2271,6 +2417,11 @@ IEW::writebackInsts()
     for (int inst_num = 0; inst_num < wbWidth &&
              toCommit->insts[inst_num]; inst_num++) {
         DynInstPtr inst = toCommit->insts[inst_num];
+        if (toCommit->attempts[inst_num] != inst->vpAttemptGeneration) {
+            DPRINTF(IEW, "[sn:%llu] drop stale writeback attempt %llu\n",
+                    inst->seqNum, toCommit->attempts[inst_num]);
+            continue;
+        }
         ThreadID tid = inst->threadNumber;
 
         if (inst->isLoad()) {
@@ -2322,6 +2473,7 @@ IEW::writebackInsts()
 
             scheduler->writebackWakeup(inst);
             int dependents = instQueue.wakeDependents(inst);
+            inst->vpAttemptWroteBack = true;
 
             for (int i = 0; i < inst->numDestRegs(); i++) {
                 // Mark register as ready if not pinned

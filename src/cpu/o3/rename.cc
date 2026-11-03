@@ -78,7 +78,8 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
           params.smtPregBackendBackpressureDonorHoldCycles),
       stats(_cpu, this),
       valuePred(params.valuePred),
-      enableSelectiveVPFlush(params.enableSelectiveVPFlush)
+      enableSelectiveVPFlush(params.enableSelectiveVPFlush),
+      enableVPReplay(params.enableVPReplay)
 {
     panic_if(numPreDispatchThreads == 0 ||
              numPreDispatchThreads > numThreads ||
@@ -1287,7 +1288,7 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
             inst->vpSupported = true;
             if (inst->vpResult.speculative) {
                 inst->vpApplied = true;
-                if (!enableSelectiveVPFlush) {
+                if (!enableSelectiveVPFlush && !enableVPReplay) {
                     // old behavior: let back-to-back rename consumers see ready
                     scoreboard->setReg(rename_result.first.PhyReg());
                 }

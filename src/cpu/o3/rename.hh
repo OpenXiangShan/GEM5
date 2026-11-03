@@ -549,6 +549,7 @@ class Rename
 
     /** Enable selective VP flush path */
     bool enableSelectiveVPFlush;
+    bool enableVPReplay;
 };
 
 } // namespace o3
