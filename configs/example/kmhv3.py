@@ -189,6 +189,7 @@ def setKmhV3Params(args, system):
 
             cpu.branchPred.mbtb.trainingStage = "Resolve"
             cpu.branchPred.tage.trainingStage = "Resolve"
+            cpu.branchPred.tage.tableSizes = [4096] * 8
             cpu.branchPred.ittage.trainingStage = "Resolve"
 
             cpu.branchPred.ubtb.enabled = True
