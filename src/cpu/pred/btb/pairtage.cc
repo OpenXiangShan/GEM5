@@ -1,5 +1,6 @@
 #include "cpu/pred/btb/pairtage.hh"
 
+#include "base/bitfield.hh"
 #include "base/intmath.hh"
 #include "base/logging.hh"
 
@@ -105,6 +106,36 @@ PairTAGE::updateUsingS3Pred(FullBTBPrediction &s3Pred)
 {
     (void)s3Pred;
     pairTageStats.s3TrainEvents++;
+}
+
+unsigned
+PairTAGE::getBankId(Addr pc) const
+{
+    return (pc >> instShiftAmt) & mask(bankIdWidth);
+}
+
+Addr
+PairTAGE::getSetIndex(Addr pc, unsigned t, uint64_t foldedHist) const
+{
+    const unsigned setBits = tableIndexBits[t] - bankIdWidth;
+    const Addr pcBits = pc >> (instShiftAmt + bankIdWidth);
+    return (pcBits ^ foldedHist) & mask(setBits);
+}
+
+Addr
+PairTAGE::getIndex(unsigned t, unsigned bank, Addr set) const
+{
+    const unsigned setBits = tableIndexBits[t] - bankIdWidth;
+    return (static_cast<Addr>(bank) << setBits) | set;
+}
+
+Addr
+PairTAGE::getTag(Addr pc, unsigned t, uint64_t foldedHist,
+                 uint64_t altFoldedHist) const
+{
+    const Addr pcBits = pc >> (instShiftAmt + tableIndexBits[t]);
+    return (pcBits ^ foldedHist ^ (altFoldedHist << 1)) &
+           mask(tableTagBits[t]);
 }
 
 }  // namespace btb_pred
