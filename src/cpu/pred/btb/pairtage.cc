@@ -236,7 +236,7 @@ PairTAGE::buildTrainPacketFromPredForFirstBlock(FullBTBPrediction &finalPred) co
     packet.hasBranch = true;
     packet.taken = taken;
     packet.pc = trainEntry.pc;
-    packet.target = taken ? finalPred.getEntryTarget(trainEntry) : trainEntry.target;
+    packet.target = taken ? trainEntry.predictedTarget : trainEntry.target;
     if (taken) {
         packet.size = trainEntry.size;
         static_cast<BranchAttribute &>(packet) = trainEntry;
@@ -249,8 +249,9 @@ PairTAGE::buildTrainPacketFromPredForFirstBlock(FullBTBPrediction &finalPred) co
 }
 
 PairTAGE::TrainPacket
-PairTAGE::buildTwoTakenTrainPacket(Addr startPC, PairPhase phase, const std::vector<BranchPrediction> &btbEntries,
-                                   const CondTakens &condTakens) const
+PairTAGE::buildTwoTakenTrainPacket(
+    Addr startPC, PairPhase phase,
+    const std::vector<BranchPrediction> &btbEntries) const
 {
     TrainPacket packet;
     packet.startPC = startPC;
@@ -264,9 +265,7 @@ PairTAGE::buildTwoTakenTrainPacket(Addr startPC, PairPhase phase, const std::vec
         }
 
         if (entry.isCond) {
-            const Addr branchPC = entry.pc;
-            auto direction = CondTakens_find(condTakens, branchPC);
-            if (direction != condTakens.end() && direction->second) {
+            if (entry.taken) {
                 trainEntry = &entry;
                 taken = true;
                 break;
@@ -681,10 +680,8 @@ void
 PairTAGE::fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pred) const
 {
     pred.btbEntries.clear();
-    pred.condTakens.clear();
-    pred.indirectTargets.clear();
+    pred.hit = block.valid;
     pred.tageInfoForMgscs.clear();
-    pred.returnTarget = 0;
     pred.predTick = curTick();
 
     if (!block.valid) {
@@ -697,16 +694,7 @@ PairTAGE::fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pre
 
     auto entry = block.buildBTBEntry(componentIdx);
     pred.btbEntries.push_back(entry);
-    if (entry.isCond) {
-        pred.condTakens.push_back({entry.pc, block.taken});
-    }
-    if (entry.isIndirect) {
-        if (entry.isReturn) {
-            pred.returnTarget = block.target;
-        } else {
-            pred.indirectTargets.push_back({entry.pc, block.target});
-        }
-    }
+
 }
 
 void

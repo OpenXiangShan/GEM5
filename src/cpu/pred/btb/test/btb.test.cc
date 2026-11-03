@@ -87,31 +87,37 @@ createPreparedUpdate(const FetchTarget &stream, const BranchInfo &branch,
 /**
  * @brief Helper function to find conditional taken prediction for a given PC
  *
- * @param condTakens Vector of conditional predictions
+ * @param entries Ordered branch candidates
  * @param pc Branch PC to search for
  * @return Pair of (found, prediction) where found indicates if PC was found
  */
-std::pair<bool, bool> findCondTaken(const CondTakens& condTakens, Addr pc) {
-    auto it = CondTakens_find(condTakens, pc);
-    if (it != condTakens.end()) {
-        return {true, it->second};
-    }
-    return {false, false};
+std::pair<bool, bool>
+findCondTaken(const std::vector<BranchPrediction> &entries, Addr pc)
+{
+    const auto it = std::find_if(entries.begin(), entries.end(),
+        [pc](const auto &entry) {
+            return entry.valid && entry.isCond && entry.pc == pc;
+        });
+    return it == entries.end() ? std::make_pair(false, false) :
+                               std::make_pair(true, it->taken);
 }
 
 /**
  * @brief Helper function to find indirect target for a given PC
  *
- * @param indirectTargets Vector of indirect targets
+ * @param entries Ordered branch candidates
  * @param pc Branch PC to search for
  * @return Pair of (found, target) where found indicates if PC was found
  */
-std::pair<bool, Addr> findIndirectTarget(const IndirectTargets& indirectTargets, Addr pc) {
-    auto it = IndirectTakens_find(indirectTargets, pc);
-    if (it != indirectTargets.end()) {
-        return {true, it->second};
-    }
-    return {false, 0};
+std::pair<bool, Addr>
+findIndirectTarget(const std::vector<BranchPrediction> &entries, Addr pc)
+{
+    const auto it = std::find_if(entries.begin(), entries.end(),
+        [pc](const auto &entry) {
+            return entry.valid && entry.isIndirect && entry.pc == pc;
+        });
+    return it == entries.end() ? std::make_pair(false, Addr(0)) :
+                               std::make_pair(true, it->predictedTarget);
 }
 
 /**
@@ -576,7 +582,7 @@ TEST_F(BTBTest, IndirectBranchPrediction) {
     // Verify indirect target
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
-        auto [found1, target1] = findIndirectTarget(stagePreds[i].indirectTargets, 0x1000);
+        auto [found1, target1] = findIndirectTarget(stagePreds[i].btbEntries, 0x1000);
         ASSERT_TRUE(found1);
         EXPECT_EQ(target1, 0x2000);
     }
@@ -587,7 +593,7 @@ TEST_F(BTBTest, IndirectBranchPrediction) {
 
     // Verify new indirect target
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
-        auto [found2, target2] = findIndirectTarget(stagePreds[i].indirectTargets, 0x1000);
+        auto [found2, target2] = findIndirectTarget(stagePreds[i].btbEntries, 0x1000);
         ASSERT_TRUE(found2);
         EXPECT_EQ(target2, 0x3000);
     }

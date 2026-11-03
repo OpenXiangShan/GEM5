@@ -137,3 +137,12 @@ scons build/RISCV/cpu/pred/btb/test/tage.test.debug \
 - 恢复 MBTB counter 的 `0 -> 1 -> 0 -> -1` 精确断言、正负饱和断言，以及 ABTB live-counter 和定向训练精确断言；只从 UNIT_TEST 接口读取预测 metadata 的存储快照。
 - production 构建通过；TAGE 30、BTB 36、ABTB 6、MicroTAGE 7、MGSC 14，共 93 项通过。
 - `shared-types/` 8 组对照 baseline 的已有非 host stats 全部一致。日志前缀 `shared-types-`；style 检查通过。
+
+### 阶段候选统一（阶段 3a）
+
+- `BranchPrediction.taken` 成为阶段方向的唯一来源；`predictedTarget` 保存最终预测目标，继承的 `BranchInfo.target` 保留原始 BTB 输入，供已有 fast-train 和训练 fallback 使用。
+- 删除 `CondTakens` / `IndirectTargets` 类型、查找宏以及 `FullBTBPrediction` 的三套方向/目标映射；MicroTAGE S3 teacher 和 PairTAGE two-taken teacher 同步使用候选自身的方向。
+- `FullBTBPrediction.hit` 显式区分 miss 和有效 branchless fallthrough；保留既有非空候选选级和 PairTAGE fallthrough 命中统计策略。
+- 新增条件前缀历史、原始/最终目标分离、目标 override，以及 branchless/miss 的定向测试。production 构建通过；TAGE 32、BTB 36、ABTB 6、MicroTAGE 7、MGSC 14、RAS pop/push 4、uRAS 13，共 112 项通过。
+- `candidates/` 8 组对照 baseline 的已有非 host stats 全部一致；日志前缀 `candidates-`。style 检查通过。
+- 此步尚未收窄组件 `putPCHistory()` 接口；下一步把预测输出与顶层选择分开，完成阶段 3。

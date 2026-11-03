@@ -276,6 +276,7 @@ MBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         DPRINTF(BTB, "BTB: assigning prediction for stage %d\n", s);
         // Copy BTB entries to stage prediction
         stagePreds[s].btbEntries.clear();
+        stagePreds[s].hit = !entries.empty();
         for (auto e : entries) {
             stagePreds[s].btbEntries.push_back(BTBEntry(e));
         }
@@ -283,30 +284,9 @@ MBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         if (s == getDelay()) dumpBTBEntries(stagePreds[s].btbEntries);
 
         stagePreds[s].predTick = curTick();
-        stagePreds[s].condTakens.clear();
-        stagePreds[s].indirectTargets.clear();
     }
 
-    // Set predictions for each branch
-    for (auto &e : entries) {
-        assert(e.valid);
-        if (e.isCond) {
-            // TODO: a performance bug here, mbtb should not update condTakens!
 
-            FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.ctr >= 0});
-
-        } else if (e.isIndirect) {
-            // Set predicted target for indirect branches
-            DPRINTF(BTB, "setting indirect target for pc %#lx to %#lx\n", e.pc, e.target);
-
-            FillStageLoop(s) stagePreds[s].indirectTargets.push_back({e.pc, e.target});
-
-            if (e.isReturn) {
-                FillStageLoop(s) stagePreds[s].returnTarget = e.target;
-            }
-            break;
-        }
-    }
 }
 
 /**

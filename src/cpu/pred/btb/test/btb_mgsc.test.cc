@@ -103,13 +103,14 @@ setAllTableCountersForPc(BTBMGSC &mgsc, Addr start_pc, Addr branch_pc, const Tag
 }
 
 std::pair<bool, bool>
-findCondTaken(const CondTakens &condTakens, Addr pc)
+findCondTaken(const std::vector<BranchPrediction> &entries, Addr pc)
 {
-    auto it = CondTakens_find(condTakens, pc);
-    if (it == condTakens.end()) {
-        return {false, false};
-    }
-    return {true, it->second};
+    const auto it = std::find_if(entries.begin(), entries.end(),
+        [pc](const auto &entry) {
+            return entry.valid && entry.isCond && entry.pc == pc;
+        });
+    return it == entries.end() ? std::make_pair(false, false) :
+                               std::make_pair(true, it->taken);
 }
 
 void
@@ -259,7 +260,7 @@ struct MgscHarness
         mgsc.putPCHistory(start_pc, ghr, stage_preds);
         auto meta = mgsc.getPredictionMeta();
 
-        auto [found, pred_taken] = findCondTaken(stage_preds[1].condTakens, entry.pc);
+        auto [found, pred_taken] = findCondTaken(stage_preds[1].btbEntries, entry.pc);
         EXPECT_TRUE(found);
 
         // Snapshot per-branch MGSC prediction info (indexes/percsums/thresholds).
@@ -370,8 +371,8 @@ TEST(BTBMGSCTest, CanConstructAndCreateMetaOnEmptyInput)
 
     auto meta = mgsc.getPredictionMeta();
     EXPECT_NE(meta, nullptr);
-    EXPECT_TRUE(stage_preds[0].condTakens.empty());
-    EXPECT_TRUE(stage_preds[1].condTakens.empty());
+    EXPECT_TRUE(stage_preds[0].btbEntries.empty());
+    EXPECT_TRUE(stage_preds[1].btbEntries.empty());
 }
 
 TEST(BTBMGSCTest, GateHighConfUsesSCWhenStrong)
@@ -402,7 +403,7 @@ TEST(BTBMGSCTest, GateHighConfUsesSCWhenStrong)
 
     mgsc.putPCHistory(start_pc, history, stage_preds);
 
-    auto [found, taken] = findCondTaken(stage_preds[1].condTakens, branch_pc);
+    auto [found, taken] = findCondTaken(stage_preds[1].btbEntries, branch_pc);
     ASSERT_TRUE(found);
     EXPECT_TRUE(taken); // overridden by SC
 
@@ -440,7 +441,7 @@ TEST(BTBMGSCTest, GateHighConfBypassWhenWeak)
 
     mgsc.putPCHistory(start_pc, history, stage_preds);
 
-    auto [found, taken] = findCondTaken(stage_preds[1].condTakens, branch_pc);
+    auto [found, taken] = findCondTaken(stage_preds[1].btbEntries, branch_pc);
     ASSERT_TRUE(found);
     EXPECT_FALSE(taken); // fall back to tage_pred_taken
 
@@ -480,7 +481,7 @@ TEST(BTBMGSCTest, ForceUseSCOverridesTage)
 
     mgsc.putPCHistory(start_pc, history, stage_preds);
 
-    auto [found, taken] = findCondTaken(stage_preds[1].condTakens, branch_pc);
+    auto [found, taken] = findCondTaken(stage_preds[1].btbEntries, branch_pc);
     ASSERT_TRUE(found);
     EXPECT_FALSE(taken);
 
@@ -773,7 +774,7 @@ TEST(BTBMGSCTest, MissingTageInfoUsesDefaultFallbackContext)
 
     h.mgsc.putPCHistory(start_pc, history, stage_preds);
 
-    auto [found, taken] = findCondTaken(stage_preds[1].condTakens, branch_pc);
+    auto [found, taken] = findCondTaken(stage_preds[1].btbEntries, branch_pc);
     ASSERT_TRUE(found);
     EXPECT_TRUE(taken);
 
@@ -923,8 +924,8 @@ TEST(BTBMGSCTest, SpecUpdatePHistUsesIndirectTargetOverride)
 
     FullBTBPrediction pred;
     pred.btbEntries = {entry};
-    pred.condTakens.push_back({entry.pc, true});
-    pred.indirectTargets.push_back({entry.pc, indirectTarget});
+    pred.btbEntries.back().taken = true;
+    pred.btbEntries.back().predictedTarget = indirectTarget;
 
     boost::dynamic_bitset<> expected_phr = h.phr;
     pHistShiftIn(2, true, expected_phr, entry.pc, indirectTarget);
@@ -948,8 +949,8 @@ TEST(BTBMGSCTest, SpecUpdatePHistUsesReturnTargetOverride)
 
     FullBTBPrediction pred;
     pred.btbEntries = {entry};
-    pred.condTakens.push_back({entry.pc, true});
-    pred.returnTarget = returnTarget;
+    pred.btbEntries.back().taken = true;
+    pred.btbEntries.back().predictedTarget = returnTarget;
 
     boost::dynamic_bitset<> expected_phr = h.phr;
     pHistShiftIn(2, true, expected_phr, entry.pc, returnTarget);

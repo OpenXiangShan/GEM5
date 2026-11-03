@@ -718,6 +718,7 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
     secondPred.tid = tid;
     secondPred.asidHash = thread.finalPred.asidHash;
     secondPred.bbStart = thread.s0PC;
+    secondPred.hit = secondBlock.valid;
     secondPred.predSource = pairtage->getComponentIdx();
     secondPred.overrideReason = OverrideReason::NO_OVERRIDE;
     secondPred.predTick = thread.finalPred.predTick;
@@ -726,17 +727,6 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
 
     BranchPrediction secondEntry = secondBlock.buildBTBEntry(pairtage->getComponentIdx());
     secondPred.btbEntries.push_back(secondEntry);
-    if (secondEntry.valid && secondEntry.isCond) {
-        secondPred.condTakens.push_back({secondEntry.pc, secondBlock.taken});
-    }
-    if (secondEntry.valid && secondEntry.isIndirect) {
-        if (secondEntry.isReturn) {
-            secondPred.returnTarget = secondEntry.target;
-        } else {
-            secondPred.indirectTargets.push_back({secondEntry.pc, secondEntry.target});
-        }
-    }
-
     // Merge the second block teacher's additional conditional candidates into
     // this prediction; component-local metadata records the training view.
     if (thread.twoTakenTrainReady && secondBlock.valid && !secondBlock.isBranchlessFallthrough()) {
@@ -752,7 +742,7 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
             }
 
             secondPred.btbEntries.push_back(teacherEntry);
-            secondPred.condTakens.push_back({teacherEntry.pc, false});
+            secondPred.btbEntries.back().taken = false;
         }
 
         std::sort(secondPred.btbEntries.begin(), secondPred.btbEntries.end(),
@@ -831,29 +821,18 @@ DecoupledBPUWithBTB::prepareTwoTakenTraining(ThreadID tid)
     btbEntries = mbtb->getPredictedEntriesNoSideEffect(
         startPC, tid, asidHash);
 
-    CondTakens condTakens;
-    condTakens.reserve(btbEntries.size());
-
     if (tage && tage->isEnabled()) {
-        tage->lookupNoSideEffect(startPC, btbEntries, condTakens, tid,
-                                 asidHash);
-    } else {
-        for (const auto &entry : btbEntries) {
-            if (entry.valid && entry.isCond) {
-                condTakens.push_back(
-                    {entry.pc, entry.baseTaken});
-            }
-        }
+        tage->lookupNoSideEffect(startPC, btbEntries, tid, asidHash);
     }
 
     thread.twoTakenTrainPacket =
-        pairtage->buildTwoTakenTrainPacket(startPC, thread.s0PairPhase, btbEntries, condTakens);
+        pairtage->buildTwoTakenTrainPacket(startPC, thread.s0PairPhase, btbEntries);
     thread.twoTakenTrainReady = true;
 
     DPRINTF(DecoupleBP,
             "Prepared PairTAGE second-block training prediction for thread %u: startPC %#lx, %zu BTB entries, %zu "
-            "cond takens\n",
-            tid, startPC, btbEntries.size(), condTakens.size());
+            "candidates\n",
+            tid, startPC, btbEntries.size(), btbEntries.size());
 }
 
 bool
@@ -1307,7 +1286,7 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
         pairMeta->predictedFirstBlock.valid &&
         pairMeta->predictedFirstBlock.isBranchlessFallthrough();
 
-    entry.isHit = !pred.btbEntries.empty() || pairtageFallThroughHit;
+    entry.isHit = pred.hit || pairtageFallThroughHit;
     entry.falseHit = false;
     entry.setPredictedBranches(pred.btbEntries);
     entry.predTaken = taken;

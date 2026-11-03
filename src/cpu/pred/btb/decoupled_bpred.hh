@@ -227,7 +227,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         DPRINTF(BTB,
             "Branch candidate: pc:%#lx, size:%d, "
             "target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
-            e.pc, e.size, e.target, e.isCond, e.isIndirect,
+            e.pc, e.size, e.predictedTarget, e.isCond, e.isIndirect,
             e.isCall, e.isReturn);
     }
 
@@ -237,16 +237,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         for (auto &e: pred.btbEntries) {
             printBTBEntry(e);
         }
-        DPRINTF(DecoupleBP, "condTakens: ");
-        for (auto pair : pred.condTakens) {
-            DPRINTFR(DecoupleBP, "%#lx %d ,", pair.first, pair.second);
-        }
-        DPRINTFR(DecoupleBP, "\n");
-        for (auto pair : pred.indirectTargets) {
-            DPRINTF(DecoupleBP, "indirectTarget of %#lx: %#lx\n",
-            pair.first, pair.second);
-        }
-        DPRINTF(DecoupleBP, "returnTarget %#lx\n", pred.returnTarget);
+
     }
 
     /**

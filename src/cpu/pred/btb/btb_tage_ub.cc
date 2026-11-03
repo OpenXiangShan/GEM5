@@ -262,12 +262,11 @@ BTBTAGEUpperBound::lookupExactPrediction(
 
 void
 BTBTAGEUpperBound::notePredictionResult(
-    const BranchPrediction &btbEntry,
+    BranchPrediction &btbEntry,
     const TagePrediction &pred,
-    std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
-    CondTakens &results) const
+    std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs) const
 {
-    results.push_back({btbEntry.pc, pred.taken});
+    btbEntry.taken = pred.taken;
     tageInfoForMgscs[btbEntry.pc].tage_pred_taken = pred.taken;
     tageInfoForMgscs[btbEntry.pc].tage_main_taken =
         pred.mainInfo.found ? pred.mainInfo.taken() : false;
@@ -302,7 +301,6 @@ BTBTAGEUpperBound::putPCHistory(Addr startAddr, const bitset &history,
 
     for (int s = getDelay(); s < stagePreds.size(); ++s) {
         auto &stagePred = stagePreds[s];
-        stagePred.condTakens.clear();
         stagePred.tageInfoForMgscs.clear();
 
         for (auto &btbEntry : stagePred.btbEntries) {
@@ -316,8 +314,7 @@ BTBTAGEUpperBound::putPCHistory(Addr startAddr, const bitset &history,
             ubMeta->preds[btbEntry.pc] = pred;
             ubMeta->branchMeta[btbEntry.pc] = branchMeta;
             tageStats.updateStatsWithTagePrediction(pred, true);
-            notePredictionResult(btbEntry, pred, stagePred.tageInfoForMgscs,
-                                 stagePred.condTakens);
+            notePredictionResult(btbEntry, pred, stagePred.tageInfoForMgscs);
         }
     }
 }

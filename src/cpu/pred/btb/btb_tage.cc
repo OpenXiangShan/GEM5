@@ -421,9 +421,8 @@ BTBTAGE::generateSinglePrediction(const BranchInfo &btb_entry,
  * @return Map of branch PC addresses to their predicted outcomes
  */
 void
-BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BranchPrediction> &btbEntries,
-                      std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
-                      CondTakens& results, ThreadID tid, uint8_t asidHash)
+BTBTAGE::lookupHelper(const Addr &startPC, std::vector<BranchPrediction> &btbEntries,
+                      std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, ThreadID tid, uint8_t asidHash)
 {
     DPRINTF(TAGE, "lookupHelper startAddr: %#lx\n", startPC);
 
@@ -434,7 +433,7 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BranchPrediction> &
             auto pred = generateSinglePrediction(btb_entry, startPC, btb_entry.baseTaken, nullptr, tid, asidHash);
             threadMeta[tid]->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
-            results.push_back({btb_entry.pc, pred.taken});
+            btb_entry.taken = pred.taken;
             tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;
             tageInfoForMgscs[btb_entry.pc].tage_main_taken = pred.mainInfo.found ? pred.mainInfo.taken() : false;
             tageInfoForMgscs[btb_entry.pc].tage_pred_conf_high = pred.mainInfo.found &&
@@ -452,16 +451,15 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BranchPrediction> &
 
 void
 BTBTAGE::lookupNoSideEffect(const Addr &startPC,
-                            const std::vector<BranchPrediction> &btbEntries,
-                            CondTakens &results,
+                            std::vector<BranchPrediction> &btbEntries,
                             ThreadID tid,
                             uint8_t asidHash) const
 {
-    for (const auto &btb_entry : btbEntries) {
+    for (auto &btb_entry : btbEntries) {
         if (btb_entry.isCond && btb_entry.valid) {
             auto pred = generateSinglePrediction(
                 btb_entry, startPC, btb_entry.baseTaken, nullptr, tid, asidHash);
-            results.push_back({btb_entry.pc, pred.taken});
+            btb_entry.taken = pred.taken;
         }
     }
 }
@@ -517,9 +515,8 @@ BTBTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPr
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
         auto &stage_pred = stagePreds[s];
-        stage_pred.condTakens.clear();
         lookupHelper(startPC, stage_pred.btbEntries, stage_pred.tageInfoForMgscs,
-                     stage_pred.condTakens, tid, asidHash);
+                     tid, asidHash);
     }
 
 }

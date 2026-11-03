@@ -162,8 +162,7 @@ class PairTAGE : public TimedBaseBTBPredictor
     TrainPacket buildTrainPacketFromPredForFirstBlock(FullBTBPrediction &finalPred) const;
     TrainPacket buildTwoTakenTrainPacket(
         Addr startPC, PairPhase phase,
-        const std::vector<BranchPrediction> &btbEntries,
-        const CondTakens &condTakens) const;
+        const std::vector<BranchPrediction> &btbEntries) const;
     void trainFromS3Pred(
         const TrainPacket &finalTrainPacket,
         const TrainPacket *twoTakenTrainPacket = nullptr);
