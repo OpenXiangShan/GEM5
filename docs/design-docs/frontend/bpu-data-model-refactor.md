@@ -6,6 +6,8 @@
 保留 `numDelay`、组件优先级、气泡消耗顺序、训练时点、历史更新和 FTQ 行为。
 当前任务不重做真实逐级流水，也不改变 PairTAGE 的算法或 two-taken 策略。
 
+当前状态（2026-11-03）：四阶段实现、本地回归、独立 Review 和同配置 SPEC06 0.3c base/head CI 均已完成。被测代码 head 为 `e64d0a47c2`；随后提交仅补充本记录。
+
 ## 分阶段执行
 
 1. TAGE 显式使用预测时的基础方向，删除对 BTB counter 的读取及训练时 bool/counter 转换。
@@ -26,7 +28,7 @@
 
 ## 证据记录
 
-本地过程输出存放 `/tmp/bpu-data-refactor/`。阶段结果与 CI run 在完成后补充。
+本地过程输出存放 `/tmp/bpu-data-refactor/`。原暂停交接保留为历史记录，恢复后的实现和验证见文末。
 
 ### 阶段 1 / 2
 
@@ -155,3 +157,68 @@ scons build/RISCV/cpu/pred/btb/test/tage.test.debug \
 - 单元测试的阶段组装放入测试专用 `prediction_helpers.hh`，生产组件不保留旧接口适配。
 - production 构建通过；TAGE 34、BTB 36、ABTB 6、MicroTAGE 8、MGSC 14、RAS pop/push 4、uRAS 13，共 115 项通过。新增 provider 有效性、不同阶段候选/metadata 覆盖顺序和 MicroTAGE native miss fallback 测试。
 - `composition/` 8 组对照 baseline 的已有非 host stats 全部一致；日志前缀 `composition-`。style 检查通过。独立审查、补充 delay/SMT 对照和最终 SPEC06 CI 尚待完成。
+
+### 收敛范围与补充本地验证
+
+本次按 RTL 的职责划分收敛到三类数据：公共 `BranchInfo`、组件私有存储/metadata、阶段 `BranchPrediction`。
+组件只返回其负责的候选、方向或目标；BPU 顶层保留固定的组合顺序。
+生产源码相对 base 新增 750 行、删除 1118 行，净减少 368 行；这不是复杂度的完整度量，但没有引入通用 request/result 框架或新流水调度层。
+
+保留的几个区分均有既有行为依据：`valid` 与 `taken` 分开表示 provider 是否可用及方向；原始 `target` 与 `predictedTarget` 分开满足 BTB fast-train 与 FTQ/history 的不同消费者；空候选的 `hit` 区分 miss 与有效 branchless。
+本次不顺带修复已有的 branchless 最终选级和 raw-target fast-train 行为，避免重构混入算法变化。
+
+- `delay-base/` / `delay-head/`：3 种 delay 组合 × 4 个 workload × PairTAGE 开/关，共 24 对，导出的非 host stats 双向键比较全部一致。变体为 late-mbtb、no-late-directions、early-tage-late-mbtb；具体参数和命令见 `run_extra_regression.py`。
+- `smt-base/` / `smt-head/`：双线程 mcf checkpoint、`smt_idealkmhv3.py`、16GB、分线程预测器存储、Shared FTQ、PairTAGE 关闭。两个线程分别提交 300002 / 274353 条指令，numCycles=363249；18136 个 cycle 同时启动两线程预测。difftest 通过，全部导出非 host stats 一致。不是两线程各执行 300k 的结果，也没有验证 shared predictor storage 模式。
+- 最终代码提交 `e64d0a47c2f24d139d80b0811554c0a42bf05103`：`final-local-provenance.json` 记录 clean HEAD、source tree 和 production binary SHA256；SCons 确认 up to date 后，`final-head/` 再跑 8 组，执行前后源码和 binary hash 未变，全部非 host stats 与 baseline 一致。
+- 旧 composition/delay/SMT 产物没有在运行前封存完整源码与 binary hash，不能仅凭时间戳追溯证明其准确 Git SHA。最终 8 组已补归属证据；SPEC CI 双边以 checkout 日志、归档 metadata 和固定 source SHA 单独核验。
+- 本地使用 `/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so`；SPEC CI 使用下文固定 release 的 normal REF，两者不是同一 hash，不混称为同一 REF 实验。
+
+### 独立 Review
+
+Astra 在新上下文中对 base `75569f588baa5ccd9be051cfc57408482f214494`、head `e64d0a47c2f24d139d80b0811554c0a42bf05103` 做独立源码 review；首轮没有提供主模型或 Terra 的结论。
+原始报告保存在 `/tmp/bpu-data-refactor/review-astra.md`，后续证据复核单独保存在 `review-astra-evidence-followup.md`，原报告未改写。
+
+- 未发现可确认的新增正确性回归；核查了组件顺序/numDelay、provider fallback、raw/final target、history、metadata 覆盖、训练恢复、PairTAGE/two-taken 和线程上下文。
+- 首轮指出组件单测通过 helper 合成，不能直接覆盖生产 `predictComponents()`；随后自行重解析整机 8+24+1 组及最终 `final-head/` 8 组，双向 stats key 比较一致，确认生产路径有实际执行证据。
+- PairTAGE CoreMark 有 43272 次二块入 FTQ；fallthrough 训练桶不能单独证明 branchless provider 最终胜出。ITTAGE 20 个 lookup 命中样本不能直接解释为 20 次最终采用高级 target。
+- 结论限于已审查路径和运行配置/窗口；不宣称逐拍或全部内部状态等价，也没有穷尽 ITTAGE main/weak/alt/base 的 trace 级路径。
+
+
+### 最终 SPEC06 0.3c CI（2026-11-03）
+
+两次 Actions 均为 `completed / success`，各 145/145 个切片有 completed marker，零 running/abort；日志均为启用 difftest 后正常达到指令上限。
+
+| 项目 | base | head |
+|---|---|---|
+| 被测 source SHA | `75569f588baa5ccd9be051cfc57408482f214494` | `e64d0a47c2f24d139d80b0811554c0a42bf05103` |
+| Actions run | [41578763448](https://github.com/OpenXiangShan/GEM5/actions/runs/41578763448) | [41579288087](https://github.com/OpenXiangShan/GEM5/actions/runs/41579288087) |
+| 归档目录名 | `20261103_123947_75569f588b_kmhv3_run1879` | `20261103_124441_e64d0a47c2_kmhv3_run1880` |
+| Int score/GHz | 21.697356613156902 | 21.697356613156902 |
+| FP score/GHz | 23.02439630837667 | 23.02439630837667 |
+| Overall score/GHz | 22.465706257886122 | 22.465706257886122 |
+
+共同配置与归属：
+
+- workflow ref 为 `refactor/bpu-prediction-data`，两次 workflow 版本均为 `e64d0a47c2`。Actions 的 `headSha` 表示 workflow 版本；base 实际测试源码以 checkout 和归档 `metadata.txt` 中的 base SHA 为准。
+- `configs/example/kmhv3.py`；完整 `spec06-rva23-novec-gcc16-0.3c`；无 benchmark subset，extra args 为空。两侧全部 145 对 `config.ini` 的 CPU/BPU 参数一致。
+- 固定 REF：`/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal/riscv64-nemu-interpreter-so`；SHA256 为 `93dc5fc89d620e83cf1670d912921ed0edf2910baf77f4b8ec4eedfb5fbb0d86`。
+- 归档根目录：`/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/`。归档路径已从成功 job 日志重新解析，并核对 metadata 的 workflow run ID/source SHA。
+- `checkpoints.lst`、`cluster.json` 和 `ref-manifest.json` 双边逐字一致。selected points 为 145；权重来自 `checkpoints_cov0.3.json`，重新评分时显式传入各归档的 `cluster.json`，没有使用处理脚本默认 full-profile 权重。
+
+结果：
+
+- 全部 145 对切片的预热和测量两个统计段共 290 段；逐段比较双向 key 并集，3,394,820 项统计键值完全一致。只排除 `host* / simFreq* / simSeconds*`，保留 cycles、committedInsts、IPC、simTicks、finalTick、全部导出的 BPU/history/override 等统计。
+- 29 个 benchmark 的 score、time、coverage 全部一致，Int/FP/Overall 分数变化均为 0%。145/145 是所选切片完成率，SimPoint 的权重覆盖率仍以各 benchmark 的 coverage 为准。
+- 用本地 `gem5_data_proc` 提交 `80316cedb2f17b05a692b729e4af2e340c01b986` 重新生成 score/weighted CSV，与 CI 归档 `score.txt` 的三个汇总分数一致。
+- 机器可读结果：`/tmp/bpu-data-refactor/ci-final-comparison.json`、`ci-stats-comparison.json`、`ci-stats-comparison.csv`、`ci-score-comparison.csv`。中文汇总：`ci-final-report.md`；完整命令：`ci-processing-provenance.json`；终态与归档核验：`ci-{base,head}-live.json`、`ci-{base,head}-archive-info.txt`。
+
+复算与统计比较：
+
+```bash
+python3 /nfs/home/yanyue/workspace/gem5_data_proc/run.py <archive> \
+  -j <archive>/cluster.json --out-dir <output> --tag <base-or-head>
+python3 /tmp/bpu-data-refactor/compare_ci.py --require-complete
+python3 /tmp/bpu-data-refactor/summarize_ci_scores.py
+```
+
+本次 CI 对照证明所选同配置/窗口的导出统计与评分一致；不把统计一致扩展为逐拍等价或所有配置已覆盖。最终源码自 `e64d0a47c2` 起未再修改，后续文档提交不改变被测代码归属。
