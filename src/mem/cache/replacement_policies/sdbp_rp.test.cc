@@ -596,6 +596,29 @@ TEST_F(SDBPInterface, MergedDemandUsesDemandPcAndRejectsMissingDemandPc)
     EXPECT_EQ(stat(policy, "samplerAccesses"), 8);
 }
 
+TEST_F(SDBPInterface, MemoryInstructionUpgradesAndAtomicsUseDemandBank)
+{
+    SDBP policy(testParams(false, 0));
+    unsigned tag = 0;
+    for (auto command : {MemCmd::UpgradeReq, MemCmd::SCUpgradeReq,
+                         MemCmd::UpgradeResp, MemCmd::LoadLockedReq,
+                         MemCmd::StoreCondReq, MemCmd::LockedRMWReadReq,
+                         MemCmd::LockedRMWWriteReq}) {
+        auto demand = sourcedPacket(Request::L2RequestSource::L1Demand,
+                                     0x1000);
+        demand->cmd = command;
+        policy.observeFill(demand.get(), 0, ++tag);
+        auto data = policy.instantiateEntry();
+        policy.reset(data, demand.get());
+        EXPECT_EQ(SDBP::victimClass(data), 2);
+    }
+    EXPECT_EQ(stat(policy, "samplerAccesses"), tag);
+    EXPECT_EQ(sourceStat(policy, "samplerAccessesBySource", 0), tag);
+    EXPECT_EQ(sourceStat(policy, "predictionQueriesBySource", 0), tag);
+    EXPECT_EQ(sourceStat(policy, "predictionQueriesBySource", 1), 0);
+    EXPECT_EQ(sourceStat(policy, "predictionQueriesBySource", 2), 0);
+}
+
 TEST_F(SDBPInterface, ExplicitOtherInstructionAndPtwNeverTrain)
 {
     SDBP policy(testParams(false, 0));

@@ -4,7 +4,8 @@ The L2 sampler is shared by three request classes: L1 demand, L1-targeted
 prefetch traffic forwarded by L1, and L2-targeted prefetch traffic issued at
 L2. A prefetch ahead/hint issued by the L2 worker belongs to the L2 class,
 even when L1 originally generated its address. Memory instructions use the
-demand class. The classification follows the existing L2 request counters
+demand class, including coherence upgrades and atomic operations whose
+commands are outside `MemCmd::isDemand()`. The classification follows the existing L2 request counters
 and survives coherence-command changes, request copies, and refills.
 Instruction fetches, page-table walks, writebacks, maintenance operations,
 and software prefetches do not train this sampler.

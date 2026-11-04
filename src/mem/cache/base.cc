@@ -1208,7 +1208,10 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     if (!pure_prefetch_fill) {
         PacketPtr sampler_target = mshr->samplerTarget();
         if (sampler_target && sampler_target->req &&
-            !sampler_target->req->isPrefetch() && sampler_target->isDemand()) {
+            !sampler_target->req->isPrefetch() &&
+            (sampler_target->isDemand() || sampler_target->isUpgrade() ||
+             sampler_target->req->l2RequestSource() ==
+                 Request::L2RequestSource::L1Demand)) {
             pkt->setSamplerDemand();
             pkt->req->clearFlags(Request::PREFETCH | Request::PF_EXCLUSIVE);
             if (sampler_target->req->hasPC())

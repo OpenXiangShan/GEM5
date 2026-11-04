@@ -91,7 +91,9 @@ MSHR::samplerTarget() const
             if (!fallback)
                 fallback = candidate;
             if (candidate->req && !candidate->req->isPrefetch() &&
-                candidate->isDemand()) {
+                (candidate->isDemand() || candidate->isUpgrade() ||
+                 candidate->req->l2RequestSource() ==
+                     Request::L2RequestSource::L1Demand)) {
                 if (candidate->req->hasPC())
                     return candidate;
                 if (!demandWithoutPc)

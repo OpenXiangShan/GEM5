@@ -120,8 +120,10 @@ SDBP::isDemand(const PacketPtr pkt)
 {
     return pkt && pkt->req && !pkt->isEviction() &&
            pkt->cmd != MemCmd::WriteClean && !isPrefetch(pkt) &&
-           (pkt->isDemand() ||
-            (pkt->isResponse() && (pkt->isRead() || pkt->isWrite())));
+           (pkt->req->l2RequestSource() ==
+                Request::L2RequestSource::L1Demand ||
+            pkt->isDemand() || pkt->isRead() || pkt->isWrite() ||
+            pkt->isUpgrade());
 }
 
 SDBPCore::RequestType
