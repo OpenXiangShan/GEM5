@@ -382,6 +382,29 @@ PairTAGE::trainSecondBlock(const PendingTrainPair &pending, const BTBEntry &exit
     writeEntry(pending.table, pending.index, pending.way, entry);
 }
 
+bool
+PairTAGE::getSecondBlock(ThreadID tid, FullBTBPrediction &pred)
+{
+    // No second block is emitted yet
+    (void)tid;
+    (void)pred;
+    return false;
+}
+
+void
+PairTAGE::refreshPredictionMeta(Addr startAddr, const bitset &history,
+                                FullBTBPrediction &pred)
+{
+    // A second block enqueued with its first block has no lookup of its
+    // own, so only its history is recorded, for squash recovery
+    (void)startAddr;
+    (void)history;
+    auto meta = std::make_shared<PairTAGEMeta>();
+    meta->history = historyState(pred.tid);
+    meta->phase = threadPhase[pred.tid];
+    threadMeta[pred.tid] = meta;
+}
+
 unsigned
 PairTAGE::getBankId(Addr pc) const
 {
