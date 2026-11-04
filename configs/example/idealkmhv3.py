@@ -129,7 +129,7 @@ def setKmhV3IdealParams(args, system):
         for i in range(args.num_cpus):
             if args.classic_l2:
                 system.l2_caches[i].wpu = NULL
-                system.l2_caches[i].slice_num = 0 # 4 -> 0, no slice
+                system.l2_caches[i].num_slices = 0 # 4 -> 0, no slice
             else:
                 l2_wrapper = system.l2_wrappers[i]
                 l2_wrapper.data_sram_banks = 2
