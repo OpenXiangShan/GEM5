@@ -47,6 +47,7 @@
 #include "base/trace.hh"
 #include "config/the_isa.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/dip.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/trace/TraceRecoveryRules.hh"
@@ -870,6 +871,10 @@ Decode::tick()
         decoded_this_cycle += decoded;
         decoded_threads_this_cycle += decoded != 0;
         measureDecodeBubbles(decoded, tid);
+        if (auto *dip = cpu->getDip(); dip && fixedbuffer[tid].empty()) {
+            dip->decodeStranded(std::min<unsigned>(
+                decodeWidth - decoded, stallBuffer[tid].size()));
+        }
 
         // Populate unused decode lanes with the per-lane fetch stall
         // reasons so frontend/fragment stalls propagate to rename and
