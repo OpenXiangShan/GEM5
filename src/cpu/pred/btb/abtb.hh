@@ -139,12 +139,14 @@ class AheadBTB : public TimedBaseBTBPredictor
      * Main prediction function
      * @param startAddr: start address of the fetch block
      * @param history: branch history register
-     * @param stagePreds: predictions for each pipeline stage
-     * 
+     * @param tid: thread owning the lookup and prediction metadata
+     * @param asidHash: address-space hash used for indexing and tags
+     *
      * This function:
      * 1. Looks up BTB entries for the fetch block
      * 2. Updates prediction statistics
-     * 3. Fills predictions for each pipeline stage
+     * 3. Snapshots native storage and returns ordered candidates; the BPU
+     *    handles uBTB fallback and stage composition.
      */
     std::vector<BranchPrediction> predictCandidates(
         Addr startAddr, const boost::dynamic_bitset<> &history,

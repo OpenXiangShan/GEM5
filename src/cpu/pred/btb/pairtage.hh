@@ -36,20 +36,6 @@ class PairTAGE : public TimedBaseBTBPredictor
         bool taken = false;
 
         PairBlockInfo() = default;
-        PairBlockInfo(const BranchInfo &branch, bool taken)
-            : BranchInfo(branch), valid(true), hasBranch(true), taken(taken)
-        {}
-
-        static PairBlockInfo
-        makeBranchless(Addr startPC, Addr target)
-        {
-            PairBlockInfo block;
-            block.valid = true;
-            block.pc = startPC;
-            block.target = target;
-            return block;
-        }
-
         void clear() { *this = PairBlockInfo{}; }
 
         bool hasConsistentState() const

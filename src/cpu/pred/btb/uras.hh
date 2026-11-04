@@ -40,8 +40,6 @@ class BTBuRAS : public TimedBaseBTBPredictor
             uRASEntry tos; // top of stack
         }uRASMeta;
 
-        void preparePrediction();
-
         std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
         void specUpdateState(FullBTBPrediction &pred);

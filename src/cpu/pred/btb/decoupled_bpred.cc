@@ -470,6 +470,8 @@ DecoupledBPUWithBTB::predictComponents(ThreadID tid)
         // A native ABTB hit owns the candidate set even if all branches
         // subsequently predict not-taken. Only an ABTB miss uses uBTB.
         if (!nativeHit && ubtbHit) {
+            // uBTB insertion resets ctr to zero, so its forced taken direction
+            // is equivalent to the old ABTB fallback's ctr >= 0 test.
             candidates.push_back(stages.front().btbEntries.front());
         }
         fillCandidates(abtb, candidates);

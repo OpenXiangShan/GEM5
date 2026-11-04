@@ -1,207 +1,69 @@
-# Branch Prediction Test Suite
+# Branch Prediction Tests
 
-This document describes the test suite for branch prediction components in gem5, including μRAS, TAGE, and BTB predictors.
+Build these targets with `--unit-test`. Component tests use the production
+component sources with unit-test support, except `uras.test`, which tests a
+standalone `MockuRAS` and does not compile production `uras.cc`.
 
-## Overview
+| Target | Tests | Scope |
+|---|---:|---|
+| `tage.test.debug` | 34 | TAGE, exact-history upper bound, prediction/history helpers |
+| `btb.test.debug` | 36 | MBTB storage, prediction, training and victim cache |
+| `abtb.test.debug` | 6 | AheadBTB prediction, training and thread isolation |
+| `microtage.test.debug` | 8 | MicroTAGE prediction and teacher/resolved updates |
+| `mgsc.test.debug` | 14 | MGSC selection, training and history |
+| `ras_pop_push.test.debug` | 4 | Production RAS push/pop and recovery |
+| `uras.test.debug` | 13 | MockuRAS stack, prediction and recovery |
 
-The test suite verifies the functionality of different branch prediction components:
-- μRAS (Micro Return Address Stack)
-- TAGE (Tagged Geometric Length) Predictor
-- BTB (Branch Target Buffer)
+## Prediction and Training
 
-## Test Components
+`prediction_helpers.hh` provides `predictForTest()` overloads that compose
+component results into stages. These helpers are test code; they do not directly
+execute production `DecoupledBPUWithBTB::predictComponents()`.
 
-### 1. μRAS Test Suite
+For an initialized TAGE test fixture:
 
-The test suite verifies the functionality of the Return Address Stack (RAS) predictor used in the branch prediction system. It uses Google Test framework and implements a mock version of the RAS to facilitate testing.
-
-#### Mock Implementation
-
-##### Key Classes
-
-###### `MockuRAS`
-A simplified version of `BTBuRAS` that implements core RAS functionality:
-- Maintains a speculative stack (`specStack`) and stack pointer (`specSp`)
-- Implements push/pop operations with counter management
-- Provides prediction and recovery mechanisms
-- Omits gem5-specific features like debugging and tracing
-
-###### `uRASEntry`
-Represents a single entry in the RAS:
-- `retAddr`: Return address
-- `ctr`: Counter for multiple returns to the same address
-
-###### `uRASMeta`
-Stores metadata for prediction recovery:
-- `sp`: Stack pointer
-- `tos`: Top of stack entry
-
-##### Relationship with BTBuRAS
-
-The mock implementation mirrors the core functionality of `BTBuRAS` while:
-- Removing gem5-specific dependencies
-- Simplifying the interface for testing
-- Maintaining the same behavioral characteristics
-
-### 2. TAGE Predictor Test Suite
-
-#### Key Classes
-
-##### `BTBTAGE`
-A simplified version of TAGE predictor that implements:
-- Multiple prediction tables with different history lengths
-- Tag-based prediction mechanism
-- Useful bit management
-- Alternative prediction selection
-
-##### `TageMeta`
-Stores metadata for prediction:
-- `preds`: Map of predictions for each PC
-- `usefulMask`: Mask for useful bits
-- `tagFoldedHist/altTagFoldedHist/indexFoldedHist`: Folded history states
-
-#### Test Flow Pattern
-
-TAGE predictor follows a specific prediction-update pattern:
-
-1. Prediction Phase:
 ```cpp
-// Setup BTB entries and history
-std::vector<BTBEntry> btbEntries;
+#include "cpu/pred/btb/test/prediction_helpers.hh"
+
+std::vector<FullBTBPrediction> stagePreds(4);
 boost::dynamic_bitset<> history(64, 0);
-
-// Make prediction to generate meta data
-tage->putPCHistory(startPC, history, stagePreds);
-
-// update folded histories for tage
-tage->specUpdateGHist(s0History, finalPred, finalPred.getGHistUpdate());
-tage->getPredictionMeta();
-
-// shift history
-histShiftIn(shamt, taken, s0History);
-//     history <<= shamt;
-//     history[0] = taken;
-tage->checkFoldedHist(s0History, "speculative update");
-
+stagePreds[tage->getDelay()].btbEntries = {entry};
+predictForTest(tage, startPC, history, stagePreds);
+auto meta = tage->getPredictionMeta(0);
 ```
 
-2. Update Phase:
+BTB component tests use the same helper:
+
 ```cpp
-// Setup update stream
-FetchTarget stream;
-stream.startPC = pc;
-stream.exeBranchInfo = entry;
-stream.exeTaken = taken;
-stream.predMetas[0] = meta;  // Must set meta from prediction phase
-
-// Update predictor
-tage->update(stream);
+predictForTest(mbtb, startPC, history, stagePreds);
+auto meta = mbtb->getPredictionMeta(0);
 ```
 
-3. control squash/Recovery Phase:
-```cpp
-// set up recover stream
-FetchTarget recoverStream;
-recoverStream.startPC = pc;
-recoverStream.exeBranchInfo = entry;
-recoverStream.exeTaken = taken;
-recoverStream.predMetas[0] = meta;
+Keep the prediction metadata in the FetchTarget's component slot, then train
+with `PredictionUpdateContext` and `PreparedUpdate`. See `predictUpdateCycle()`
+in `btb.test.cc` and `btb_tage.test.cc` for complete examples. History recovery
+uses `HistoryRecoveryContext`; it does not use the old stream-based interface.
 
-tage.recoverHist(s0History, recoverStream, shamt, taken);
-// update real history
-histShiftIn(shamt, taken, s0History);
-tage.checkFoldedHist(s0History, "recover");
-```
+Candidates expose `taken`, `baseTaken` and `predictedTarget`. Exact BTB counter
+assertions should read the storage snapshot through `predictionStorageEntries()`;
+checking direction alone cannot verify counter strength or unchanged entries.
 
-Note: if branch predict is correct, then goto Update Phase, otherwise goto Recovery Phase
-
-#### Key Test Cases
-
-1. `BasicPrediction`: Tests basic prediction functionality
-2. `BasicHistoryUpdate`: Verifies history update mechanism
-3. `TestTableLookup`: Tests TAGE table allocation and lookup
-4. `TestMainAltPrediction`: Verifies main/alternative prediction selection
-5. `TestUsefulBitMechanism`: Tests useful bit management
-
-### 3. BTB Test Suite
-
-#### Key Classes
-
-##### `BTBBase`
-Base class for BTB implementations with core functionality:
-- Entry storage and lookup
-- Prediction generation
-- Update mechanism
-
-#### Test Flow Pattern
-
-BTB follows a similar prediction-update pattern:
-
-1. Prediction Phase:
-```cpp
-// Make prediction
-btb->putPCHistory(startPC, history, stagePreds);
-
-// Get prediction metadata
-auto meta = btb->getPredictionMeta();
-```
-
-2. Update Phase:
-```cpp
-// Setup update stream
-FetchTarget stream;
-stream.startPC = pc;
-stream.predMetas[0] = meta;
-
-// Optional: Get and set new BTB entry (only for L1 BTB)
-if (isL1BTB) {
-    btb->getAndSetNewBTBEntry(stream);
-}
-
-// Update BTB
-btb->update(stream);
-```
-
-#### Important Notes
-
-1. Meta Data Handling:
-- Always generate meta through prediction before update
-- Never manually create meta data
-- Always pass meta from prediction to update phase
-
-2. Test Case Structure:
-- Setup: Create history and BTB entries
-- Predict: Generate predictions and meta
-- Update: Apply updates with actual outcomes
-- Verify: Check predictor state and predictions
-
-3. Common Pitfalls:
-- Missing meta data in update phase
-- Incorrect order of prediction/update calls
-- Not maintaining history consistency
-
-## Running Tests
+## Build and Run
 
 ```bash
-# Build all branch prediction tests
-scons build/RISCV/cpu/pred/btb/test/uras.test.debug
-scons build/RISCV/cpu/pred/btb/test/tage.test.debug
-scons build/RISCV/cpu/pred/btb/test/btb.test.debug
+scons build/RISCV/cpu/pred/btb/test/tage.test.debug \
+  build/RISCV/cpu/pred/btb/test/btb.test.debug \
+  build/RISCV/cpu/pred/btb/test/abtb.test.debug \
+  build/RISCV/cpu/pred/btb/test/microtage.test.debug \
+  build/RISCV/cpu/pred/btb/test/mgsc.test.debug \
+  build/RISCV/cpu/pred/btb/test/ras_pop_push.test.debug \
+  build/RISCV/cpu/pred/btb/test/uras.test.debug --unit-test -j24
 
-# Run all tests (with debug output)
-./build/RISCV/cpu/pred/btb/test/tage.test.debug
-
-# First build debug version
-scons build/RISCV/cpu/pred/btb/test/tage.test.debug
-# Then run with filter
-./build/RISCV/cpu/pred/btb/test/tage.test.debug --gtest_filter=BTBTAGETest.BasicPrediction
+for test in tage btb abtb microtage mgsc ras_pop_push uras; do
+  ./build/RISCV/cpu/pred/btb/test/$test.test.debug
+done
 ```
 
-## Adding New Tests
-
-When adding new tests:
-1. Create a new test class inheriting from ::testing::Test
-2. Follow the prediction-update pattern
-3. Add test to SConscript
-4. Document test purpose and patterns
-5. Ensure proper meta data handling
+Do not run unit-test and production SCons builds concurrently in the same build
+directory. A focused test can be selected with, for example,
+`--gtest_filter=BTBTAGETest.BasicPrediction`.

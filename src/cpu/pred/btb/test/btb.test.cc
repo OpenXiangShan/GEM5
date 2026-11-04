@@ -484,6 +484,8 @@ TEST_F(BTBTest, ActualBranchAttributesReplaceExistingEntry)
     EXPECT_FALSE(entries[0].isCall);
     EXPECT_FALSE(entries[0].isReturn);
     EXPECT_EQ(entries[0].baseTaken, false);
+    ASSERT_EQ(mbtb->predictionStorageEntries().size(), 1);
+    EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, -1);
 }
 
 TEST_F(BTBTest, ActualBranchUpdatePreservesLiveCounter)
@@ -509,6 +511,8 @@ TEST_F(BTBTest, ActualBranchUpdatePreservesLiveCounter)
     const auto &entries = predictions[mbtb->getDelay()].btbEntries;
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].baseTaken, true);
+    ASSERT_EQ(mbtb->predictionStorageEntries().size(), 1);
+    EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, 0);
     EXPECT_EQ(entries[0].target, actual_branch.target);
     EXPECT_EQ(entries[0].size, actual_branch.size);
 }
@@ -523,10 +527,12 @@ TEST_F(BTBTest, CounterSaturation) {
         predictUpdateCycle(mbtb, 0x1000, branch, true);
 
     // Check the weakly-taken allocation state.
+    ASSERT_EQ(mbtb->predictionStorageEntries().size(), 1);
+    EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, 0);
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
-        EXPECT_EQ(entries[0].baseTaken, true);  // Counter should be at 0
+        EXPECT_EQ(entries[0].baseTaken, true);
     }
     
     for (int i = 0; i < 4; ++i) {
@@ -545,7 +551,7 @@ TEST_F(BTBTest, CounterSaturation) {
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
-        EXPECT_EQ(entries[0].baseTaken, false);  // Counter should saturate at -2
+        EXPECT_EQ(entries[0].baseTaken, false);
     }
 }
 
@@ -829,6 +835,9 @@ TEST_F(BTBTest, ResolvedUpdateOnlyAppliesMarkedBranch)
     ASSERT_EQ(entries.size(), 2);
     EXPECT_EQ(entries[0].baseTaken, false);
     EXPECT_EQ(entries[1].baseTaken, true);
+    ASSERT_EQ(mbtb->predictionStorageEntries().size(), 2);
+    EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, -1);
+    EXPECT_EQ(mbtb->predictionStorageEntries()[1].ctr, 0);
 }
 
 TEST_F(BTBTest, UnpredictedNotTakenBranchDoesNotAllocate)

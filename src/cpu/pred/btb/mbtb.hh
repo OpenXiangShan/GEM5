@@ -134,16 +134,11 @@ class MBTB : public TimedBaseBTBPredictor
     TraceManager *btbTrace;
 #endif
 
-    /*
-     * Main prediction function
-     * @param startAddr: start address of the fetch block
-     * @param history: branch history register
-     * @param stagePreds: predictions for each pipeline stage
-     * 
-     * This function:
-     * 1. Looks up BTB entries for the fetch block
-     * 2. Updates prediction statistics
-     * 3. Fills predictions for each pipeline stage
+    /** Look up ordered branch candidates and snapshot storage for training.
+     *  @param startAddr Start address of the fetch block.
+     *  @param tid Thread owning the lookup and prediction metadata.
+     *  @param asidHash Address-space hash used for indexing and tags.
+     *  The BPU composes the returned candidates into stages using numDelay.
      */
     std::vector<BranchPrediction> predictCandidates(
         Addr startAddr, ThreadID tid, uint8_t asidHash);
@@ -272,10 +267,6 @@ class MBTB : public TimedBaseBTBPredictor
         const std::vector<TickedBTBEntry>& entries, Addr startAddr) const;
 
 
-
-    /** Update prediction metadata
-     *  @param entries Processed BTB entries
-     */
 
     /** Check branch prediction hit status
      *  @param stream Fetch stream containing execution results

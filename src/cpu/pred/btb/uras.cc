@@ -69,14 +69,6 @@ BTBuRAS::setTrace()
     }
 }
 
-void
-BTBuRAS::preparePrediction()
-{
-    meta.sp = specSp;
-    meta.tos = specStack[specSp];
-    printStack("preparePrediction", specStack, specSp);
-}
-
 std::shared_ptr<void>
 BTBuRAS::getPredictionMeta(ThreadID tid)
 {

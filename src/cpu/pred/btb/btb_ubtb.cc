@@ -170,6 +170,8 @@ UBTB::predictCandidates(Addr startAddr, ThreadID tid, uint8_t asidHash)
         return {};
     }
     BranchPrediction candidate(entry);
+    // replaceOldEntry() resets the stored ctr to zero on insertion. Thus
+    // forcing taken also preserves the old ABTB fallback test (ctr >= 0).
     candidate.taken = true;
     return {candidate};
 }

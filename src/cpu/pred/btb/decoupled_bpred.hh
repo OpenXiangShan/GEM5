@@ -226,10 +226,10 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void printBTBEntry(const BranchPrediction &e) {
         DPRINTF(BTB,
-            "Branch candidate: pc:%#lx, size:%d, "
+            "Branch candidate: pc:%#lx, size:%d, taken:%d, baseTaken:%d, "
             "target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
-            e.pc, e.size, e.predictedTarget, e.isCond, e.isIndirect,
-            e.isCall, e.isReturn);
+            e.pc, e.size, e.taken, e.baseTaken, e.predictedTarget,
+            e.isCond, e.isIndirect, e.isCall, e.isReturn);
     }
 
     void printFullBTBPrediction(const FullBTBPrediction &pred) {

@@ -108,13 +108,13 @@ class UBTB : public TimedBaseBTBPredictor
     /*
      * Entry point for uBTB Prediction, called at S1
      * @param startAddr: start address of the fetch block
-     * @param history: branch history register (not used)
-     * @param stagePreds: predictions for each pipeline stage
+     * @param tid: thread owning the lookup and prediction metadata
+     * @param asidHash: address-space hash used for tags
      *
      * This function:
      * 1. Looks up BTB entries for the fetch block
      * 2. Updates prediction statistics
-     * 3. Fills predictions for each pipeline stage
+     * 3. Returns a taken candidate on a hit; the BPU fills pipeline stages.
      */
     std::vector<BranchPrediction> predictCandidates(
         Addr startAddr, ThreadID tid, uint8_t asidHash);

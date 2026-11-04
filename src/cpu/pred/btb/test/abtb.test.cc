@@ -170,6 +170,8 @@ TEST_F(ABTBTest, ActualBranchAttributesReplaceExistingEntry)
     EXPECT_FALSE(entries[0].isCall);
     EXPECT_FALSE(entries[0].isReturn);
     EXPECT_EQ(entries[0].baseTaken, false);
+    ASSERT_EQ(abtb->predictionStorageEntries().size(), 1);
+    EXPECT_EQ(abtb->predictionStorageEntries()[0].ctr, -1);
 }
 
 TEST_F(ABTBTest, ActualBranchUpdatePreservesLiveCounter)
