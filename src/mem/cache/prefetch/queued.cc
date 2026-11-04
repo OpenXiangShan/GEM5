@@ -189,7 +189,9 @@ Queued::Queued(const QueuedPrefetcherParams &p)
       missingTranslationQueueSize(
         p.max_prefetch_requests_with_pending_translation),
       latency(p.latency), queueSquash(p.queue_squash),
-      queueFilter(p.queue_filter), cacheSnoop(p.cache_snoop),
+      queueFilter(p.queue_filter),
+      preserveBufferedPriority(p.preserve_buffered_priority),
+      cacheSnoop(p.cache_snoop),
       tagPrefetch(p.tag_prefetch),
       throttleControlPct(p.throttle_control_percentage),
       pfControl(p.pf_control),
@@ -1065,8 +1067,9 @@ Queued::PFSendEventWrapper()
             
         PacketPtr pkt = addr_prio.pf_trigger_info.pkt;
         PrefetchInfo pfi = PrefetchInfo(*addr_prio.pf_trigger_info.pfi_old);
-        //override address's prio to 1 
-        addr_prio.priority = 1;
+        if (!preserveBufferedPriority) {
+            addr_prio.priority = 1;
+        }
         // Block align prefetch address
         addr_prio.addr = blockAddress(addr_prio.addr);
 

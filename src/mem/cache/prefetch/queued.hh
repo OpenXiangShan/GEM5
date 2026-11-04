@@ -207,6 +207,8 @@ class Queued : public Base
     /** Filter prefetches if already queued */
     const bool queueFilter;
 
+    const bool preserveBufferedPriority;
+
     /** Snoop the cache before generating prefetch (cheating basically) */
     const bool cacheSnoop;
 
