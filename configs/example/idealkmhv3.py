@@ -50,6 +50,9 @@ def setKmhV3IdealParams(args, system):
 
         # rename
         cpu.renameWidth = 8
+        # Retain the single-core RAT port budget when SMT frontend widths
+        # are subsequently overridden. Each hardware thread owns one bank.
+        cpu.sratWidth = 8
         cpu.numPhysIntRegs = 224
         cpu.numPhysFloatRegs = 256
         cpu.EnablePHASTMDP = True
@@ -67,6 +70,7 @@ def setKmhV3IdealParams(args, system):
 
         # rob
         cpu.commitWidth = 8
+        cpu.aratWidth = 8
         cpu.squashWidth = 8
         cpu.phyregReleaseWidth = 8
         cpu.RobCompressPolicy = 'kmhv3'

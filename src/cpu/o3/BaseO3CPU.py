@@ -183,6 +183,9 @@ class BaseO3CPU(BaseCPU):
     commitToRenameDelay = Param.Cycles(1, "Commit to rename delay")
     decodeToRenameDelay = Param.Cycles(1, "Decode to rename delay")
     renameWidth = Param.Unsigned(6, "Rename width")
+    sratWidth = Param.Unsigned(Self.renameWidth,
+        "Whole-core SRAT read/write access width in instruction lanes; "
+        "statically divided among configured SMT threads")
 
     commitToIEWDelay = Param.Cycles(1, "Commit to "
                "Issue/Execute/Writeback delay")
@@ -201,6 +204,9 @@ class BaseO3CPU(BaseCPU):
                "delay")
     renameToROBDelay = Param.Cycles(1, "Rename to reorder buffer delay")
     commitWidth = Param.Unsigned(8, "Physical entry commit width for Hybrid; group window otherwise")
+    aratWidth = Param.Unsigned(Self.commitWidth,
+        "Whole-core ARAT access width in instruction lanes; statically "
+        "divided among configured SMT threads (single-thread commit unchanged)")
 
     enableTea = Param.Bool(True,
         "Enable Timing Event Attribution sampling")
@@ -213,7 +219,7 @@ class BaseO3CPU(BaseCPU):
     ConstSquashCycle = Param.Unsigned(1, "Squash width with redo rob walk")
     robWalkPolicy = Param.ROBWalkPolicy('Replay', "Squash with a specific policy")
     numMaxRatSnapshot = Param.Unsigned(4,
-        "Number of rename-map (RAT) checkpoints per thread for NaiveCpt recovery")
+        "Whole-core RAT checkpoints for NaiveCpt; statically divided among configured threads")
     ratSnapshotDistance = Param.Unsigned(32,
         "Minimum instructions between successive RAT checkpoints")
     robWalkByDestRegs = Param.Bool(True,

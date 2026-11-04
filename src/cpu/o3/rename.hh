@@ -310,12 +310,13 @@ class Rename
     /** True when the active recovery policy consumes RAT checkpoints
      *  (NaiveCpt). Derived from robWalkPolicy at construction. */
     bool ratSnapshotActive;
-    /** Maximum number of live checkpoints per thread. */
-    int numMaxRatSnapshot;
+    /** Whole-core live-checkpoint budget and each thread's fixed share. */
+    unsigned numMaxRatSnapshot;
+    unsigned ratSnapshotQuota;
     /** Minimum instructions between successive checkpoints. */
     unsigned ratSnapshotDistance;
     /** Live checkpoints owned by each thread. */
-    int numRatSnapshotInUse[MaxThreads] = {};
+    unsigned numRatSnapshotInUse[MaxThreads] = {};
     /** Per-thread instructions renamed since the last checkpoint was taken. */
     unsigned lastRatSnapshotDistance[MaxThreads] = {};
 
@@ -324,7 +325,7 @@ class Rename
     /** Whether tid has a free checkpoint slot. */
     bool ratSnapshotAvailable(ThreadID tid) {
         assert(numRatSnapshotInUse[tid] == countRatSnapshots(tid));
-        return numRatSnapshotInUse[tid] < numMaxRatSnapshot;
+        return numRatSnapshotInUse[tid] < ratSnapshotQuota;
     }
     /** Record a checkpoint on this instruction. */
     void takeSnapshot(const DynInstPtr &inst, ThreadID tid);
@@ -405,6 +406,9 @@ class Rename
 
     /** Rename width, in instructions. */
     unsigned renameWidth;
+    /** Fixed tid-owned SRAT bank: one lane handles an instruction's source
+     * reads and destination-map read/write bundle. No idle-bank borrowing. */
+    const unsigned sratBankWidth;
     /** Distinct SMT threads allowed to rename in one cycle. */
     unsigned numPreDispatchThreads;
     /** Aggregate Rename->backend link capacity. */
@@ -523,6 +527,11 @@ class Rename
         statistics::Vector pregDonorCycles;
         /** Per-thread cycles where ROB-full backpressure triggered donor. */
         statistics::Vector pregBackendDonorCycles;
+        statistics::VectorDistribution sratBankInstsPerCycle;
+        statistics::Vector sratBankLimitCycles;
+        statistics::Vector assignedRatSnapshotByThread;
+        statistics::VectorDistribution ratSnapshotsInUseByThread;
+        statistics::Distribution ratSnapshotsInUse;
         statistics::Scalar assignedRatSnapshot;
         statistics::Scalar committedRatSnapshot;
         statistics::Scalar squashedRatSnapshot;

@@ -529,6 +529,8 @@ class Commit
 
     /** Physical entry width for Hybrid; expanded group window otherwise. */
     const unsigned commitWidth;
+    /** Fixed tid-owned ARAT access lanes; independent of ROB compression. */
+    const unsigned aratBankWidth;
 
     /** Number of Active Threads */
     const ThreadID numThreads;
@@ -641,6 +643,8 @@ class Commit
         statistics::Vector branchMispredicts;
         /** Distribution of the number of committed instructions each cycle. */
         statistics::Distribution numCommittedDist;
+        statistics::VectorDistribution aratBankInstsPerCycle;
+        statistics::Vector aratBankLimitCycles;
 
         /** Total number of instructions committed. */
         statistics::Vector instsCommitted;

@@ -61,6 +61,10 @@ def setDualFrontendProbeParams(system):
         # widths from the command line.
         cpu.decodeWidth = 5
         cpu.renameWidth = 5
+        # Two fixed RAT banks, each with five instruction access lanes.
+        # Override only this SMT configuration; retain single-thread budgets.
+        cpu.sratWidth = 10
+        cpu.aratWidth = 10
         cpu.icache.tag_load_read_ports = 4
         # Serve clean read hits while icache is blocked (MSHR-exhausted /
         # downstream backpressure); misses still NAK+retry. Lets B-thread

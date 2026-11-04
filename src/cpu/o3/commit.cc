@@ -153,6 +153,8 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
       numPreDispatchThreads(params.smtNumPreDispatchThreads),
       aggregateRenameWidth(renameWidth * numPreDispatchThreads),
       commitWidth(params.commitWidth),
+      aratBankWidth(params.aratWidth /
+                    std::max<unsigned>(1, params.numThreads)),
       numThreads(params.numThreads),
       smtBorrowDonorHoldCycles(params.smtBorrowDonorHoldCycles),
       mlpLongLatencyCacheDepth(params.mlpLongLatencyCacheDepth),
@@ -165,6 +167,13 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
       archDBer(params.arch_db),
       mlpPredictor(nullptr)
 {
+    const bool invalid_arat_width = numThreads == 0 ||
+        params.aratWidth == 0 || params.aratWidth % numThreads != 0;
+    fatal_if(invalid_arat_width,
+             "aratWidth (%u) must be positive and divisible by numThreads (%u)",
+             params.aratWidth, numThreads);
+    inform("%s: ARAT %u lanes/core, %u lanes/thread", name(),
+           params.aratWidth, aratBankWidth);
     if (commitWidth > MaxWidth)
         fatal("commitWidth (%d) is larger than compiled limit (%d),\n"
              "\tincrease MaxWidth in src/cpu/o3/limits.hh\n",
@@ -272,6 +281,10 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "The number of times a branch was mispredicted"),
       ADD_STAT(numCommittedDist, statistics::units::Count::get(),
                "Number of insts commited each cycle"),
+      ADD_STAT(aratBankInstsPerCycle, statistics::units::Count::get(),
+               "Instructions accessing each SMT thread's ARAT bank per commit cycle"),
+      ADD_STAT(aratBankLimitCycles, statistics::units::Cycle::get(),
+               "SMT cycles with ROB work after reaching the fixed ARAT bank width"),
       ADD_STAT(instsCommitted, statistics::units::Count::get(),
                "Number of instructions committed"),
       ADD_STAT(pagefaulttimes, statistics::units::Count::get(),
@@ -373,6 +386,11 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
               (params.RobCompressPolicy == ROBCompressPolicy::hybrid ?
                params.CROB_instPerGroup : 8), 1)
         .flags(statistics::pdf).flags(statistics::nozero);
+
+    aratBankInstsPerCycle
+        .init(cpu->numThreads, 0, commit->aratBankWidth, 1)
+        .flags(statistics::pdf);
+    aratBankLimitCycles.init(cpu->numThreads).flags(statistics::total);
 
     segUnitStrideNF
         .init(0, 8, 1)
@@ -1598,6 +1616,13 @@ Commit::commitInsts()
     for (ThreadID tid : *activeThreads) {
         commit_width_per_thread[tid] = rob->isHybrid() ? 0 :
             rob->countInstsOfGroups(tid, commitWidth);
+        // Compression may make a ROB group contain multiple instructions.
+        // Its bookkeeping window must not multiply the bank's port budget.
+        // Keep the existing single-thread/Hybrid retirement behavior.
+        if (numThreads > 1) {
+            commit_width_per_thread[tid] = std::min(
+                commit_width_per_thread[tid], aratBankWidth);
+        }
         commit_width += commit_width_per_thread[tid];
     }
 
@@ -2037,6 +2062,18 @@ Commit::commitInsts()
                             head_inst->pcState(), tid ,head_inst->seqNum);
                     break;
                 }
+            }
+        }
+    }
+
+    if (numThreads > 1) {
+        for (ThreadID tid : *activeThreads) {
+            assert(num_committed_per_thread[tid] <= aratBankWidth);
+            stats.aratBankInstsPerCycle[tid].sample(
+                num_committed_per_thread[tid]);
+            if (num_committed_per_thread[tid] == aratBankWidth &&
+                !rob->isEmpty(tid)) {
+                ++stats.aratBankLimitCycles[tid];
             }
         }
     }

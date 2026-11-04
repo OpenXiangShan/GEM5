@@ -62,12 +62,16 @@ namespace o3
 Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
     : ratSnapshotActive(params.robWalkPolicy == ROBWalkPolicy::NaiveCpt),
       numMaxRatSnapshot(params.numMaxRatSnapshot),
+      ratSnapshotQuota(params.numMaxRatSnapshot /
+                       std::max<unsigned>(1, params.numThreads)),
       ratSnapshotDistance(params.ratSnapshotDistance),
       cpu(_cpu),
       iewToRenameDelay(params.iewToRenameDelay),
       decodeToRenameDelay(params.decodeToRenameDelay),
       commitToRenameDelay(params.commitToRenameDelay),
       renameWidth(params.renameWidth),
+      sratBankWidth(params.sratWidth /
+                    std::max<unsigned>(1, params.numThreads)),
       numPreDispatchThreads(params.smtNumPreDispatchThreads),
       aggregateRenameWidth(renameWidth * numPreDispatchThreads),
       releaseWidth(params.phyregReleaseWidth),
@@ -80,6 +84,20 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
       valuePred(params.valuePred),
       enableSelectiveVPFlush(params.enableSelectiveVPFlush)
 {
+    const bool invalid_srat_width = numThreads == 0 ||
+        params.sratWidth == 0 || params.sratWidth % numThreads != 0;
+    fatal_if(invalid_srat_width,
+             "sratWidth (%u) must be positive and divisible by numThreads (%u)",
+             params.sratWidth, numThreads);
+    const bool invalid_snapshot_budget = ratSnapshotActive &&
+        numMaxRatSnapshot % numThreads != 0;
+    fatal_if(invalid_snapshot_budget,
+             "numMaxRatSnapshot (%u) must be divisible by numThreads (%u)",
+             numMaxRatSnapshot, numThreads);
+    inform("%s: SRAT %u lanes/core, %u lanes/thread; RAT checkpoints "
+           "%u/core, %u/thread, active=%d", name(), params.sratWidth,
+           sratBankWidth, numMaxRatSnapshot, ratSnapshotQuota,
+           ratSnapshotActive);
     panic_if(numPreDispatchThreads == 0 ||
              numPreDispatchThreads > numThreads ||
              numPreDispatchThreads > 2,
@@ -178,6 +196,16 @@ Rename::RenameStats::RenameStats(CPU *cpu, Rename *rename)
                "Per-thread cycles as a Preg borrowing donor"),
       ADD_STAT(pregBackendDonorCycles, statistics::units::Cycle::get(),
                "Per-thread cycles as a Preg donor due to ROB-full backpressure"),
+      ADD_STAT(sratBankInstsPerCycle, statistics::units::Count::get(),
+               "Instructions accessing each thread's SRAT bank per rename visit"),
+      ADD_STAT(sratBankLimitCycles, statistics::units::Cycle::get(),
+               "Cycles with buffered rename work after reaching the fixed SRAT bank width"),
+      ADD_STAT(assignedRatSnapshotByThread, statistics::units::Count::get(),
+               "RAT checkpoints taken by each thread"),
+      ADD_STAT(ratSnapshotsInUseByThread, statistics::units::Count::get(),
+               "Per-thread live checkpoints sampled after allocating a checkpoint"),
+      ADD_STAT(ratSnapshotsInUse, statistics::units::Count::get(),
+               "Whole-core live checkpoints sampled after allocating a checkpoint"),
       ADD_STAT(assignedRatSnapshot, statistics::units::Count::get(),
                "Number of RAT checkpoints taken"),
       ADD_STAT(committedRatSnapshot, statistics::units::Count::get(),
@@ -221,6 +249,17 @@ Rename::RenameStats::RenameStats(CPU *cpu, Rename *rename)
     skidInsts.flags(statistics::total);
     moveEliminated.flags(statistics::total);
     constantFolded.flags(statistics::total);
+
+    sratBankInstsPerCycle
+        .init(cpu->numThreads, 0, rename->sratBankWidth, 1)
+        .flags(statistics::pdf);
+    sratBankLimitCycles.init(cpu->numThreads).flags(statistics::total);
+    assignedRatSnapshotByThread.init(cpu->numThreads).flags(statistics::total);
+    ratSnapshotsInUseByThread
+        .init(cpu->numThreads, 0, rename->ratSnapshotQuota, 1)
+        .flags(statistics::pdf);
+    ratSnapshotsInUse.init(0, rename->numMaxRatSnapshot, 1)
+        .flags(statistics::pdf);
 
     renamedInsts.init(cpu->numThreads).flags(statistics::total);
     fullRegistersEvents.init(cpu->numThreads).flags(statistics::total);
@@ -467,7 +506,8 @@ Rename::tick()
                 // (global free list has regs but thread hit its limit)
                 for (int rc = 0; rc <= RMiscRegClass; rc++) {
                     if (freeList->isPerThreadExhausted(
-                            (RegClassType)rc, i, renameWidth)) {
+                            (RegClassType)rc, i,
+                            std::min(renameWidth, sratBankWidth))) {
                         ++stats.perThreadPregFullEvents[i];
                         break;
                     }
@@ -564,7 +604,13 @@ Rename::tick()
         }
 
         DPRINTF(Rename, "Processing [tid:%i]\n", tid);
-        const unsigned renamed = renameInsts(tid, renameWidth);
+        const unsigned bank_width = std::min(renameWidth, sratBankWidth);
+        const unsigned renamed = renameInsts(tid, bank_width);
+        assert(renamed <= sratBankWidth);
+        stats.sratBankInstsPerCycle[tid].sample(renamed);
+        if (renamed == bank_width && !fixedbuffer[tid].empty()) {
+            ++stats.sratBankLimitCycles[tid];
+        }
         renamed_this_cycle += renamed;
         threads_renamed += renamed != 0;
 
@@ -644,7 +690,8 @@ Rename::canRename(ThreadID tid)
 {
     std::vector<int> demand_phy_regs(RMiscRegClass + 1, 0);
     auto& insts_to_rename = fixedbuffer[tid];
-    int num_insts = std::min<unsigned>(insts_to_rename.size(), renameWidth);
+    const unsigned bank_width = std::min(renameWidth, sratBankWidth);
+    int num_insts = std::min<unsigned>(insts_to_rename.size(), bank_width);
 
     // calculate physical registers needed by these `num_insts` instructions
     for (int i = 0; i < num_insts; i++) {
@@ -658,8 +705,8 @@ Rename::canRename(ThreadID tid)
         }
     }
 
-    // if total demand registers are less than renameWidth,
-    // then set it to renameWidth.
+    // Reserve only the instructions this bank can actually rename.
+    // If demand is smaller than the bank width, round up to bank width.
     // In actual hardware, due to timing constraints,
     // we can only evaluate whether rename can be down in the worst-case scenario.
     for (int i = 0; i < RMiscRegClass + 1; i++) {
@@ -668,7 +715,7 @@ Rename::canRename(ThreadID tid)
             case FloatRegClass:
             case VecRegClass:
             case RMiscRegClass:
-                demand_phy_regs[i] = std::max(demand_phy_regs[i], (int)renameWidth);
+                demand_phy_regs[i] = std::max(demand_phy_regs[i], (int)bank_width);
                 break;
             default:
                 break;
@@ -824,7 +871,8 @@ Rename::renameInsts(ThreadID tid, unsigned max_insts)
                 }
                 for (int rc = 0; rc <= RMiscRegClass; rc++) {
                     if (freeList->isPerThreadExhausted(
-                            (RegClassType)rc, tid, renameWidth)) {
+                            (RegClassType)rc, tid,
+                            std::min(renameWidth, sratBankWidth))) {
                         ++stats.perThreadPregFullEvents[tid];
                         break;
                     }
@@ -1020,9 +1068,17 @@ Rename::takeSnapshot(const DynInstPtr &inst, ThreadID tid)
     inst->setRatSnapshotted();
     numRatSnapshotInUse[tid]++;
     ratSnapshotBuffer[tid].push_front(inst->seqNum);
-    assert(numRatSnapshotInUse[tid] <= numMaxRatSnapshot);
+    assert(numRatSnapshotInUse[tid] <= ratSnapshotQuota);
+    unsigned total = 0;
+    for (ThreadID t = 0; t < numThreads; ++t) {
+        total += numRatSnapshotInUse[t];
+    }
+    assert(total <= numMaxRatSnapshot);
 
     stats.assignedRatSnapshot++;
+    stats.assignedRatSnapshotByThread[tid]++;
+    stats.ratSnapshotsInUseByThread[tid].sample(numRatSnapshotInUse[tid]);
+    stats.ratSnapshotsInUse.sample(total);
     stats.distanceRatSnapshot.sample(lastRatSnapshotDistance[tid]);
     lastRatSnapshotDistance[tid] = 0;
 
