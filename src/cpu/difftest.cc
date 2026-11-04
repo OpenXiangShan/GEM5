@@ -155,6 +155,9 @@ NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bo
 
     raise_intr = (void (*)(uint64_t))dlsym(handle, "difftest_raise_intr");
     assert(raise_intr);
+    // Optional: older NEMU references and Spike do not expose this API.
+    interrupt_delegate = (void (*)(void *))dlsym(
+        handle, "difftest_interrupt_delegate");
 
     isa_reg_display = (void (*)(void))dlsym(handle, "isa_reg_display");
     assert(isa_reg_display);
