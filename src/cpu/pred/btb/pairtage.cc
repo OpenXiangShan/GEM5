@@ -57,7 +57,8 @@ PairTAGE::PairTAGE(const Params &p)
     threadMeta.resize(MaxThreads);
     threadAhead.resize(MaxThreads);
     threadPhase.resize(MaxThreads, StatePhase::First);
-    threadPending.resize(MaxThreads);
+    predLiveEntryInfo.resize(MaxThreads);
+    trainLiveEntryInfo.resize(MaxThreads);
 
     for (unsigned int i = 0; i < numPredictors; ++i) {
         // Every bank of a table holds the same number of sets, and both are
@@ -116,8 +117,8 @@ PairTAGE::PairTAGEStats::PairTAGEStats(statistics::Group *parent,
       ADD_STAT(trainSecondReplace, statistics::units::Count::get(),
                "trainings that replaced or installed a second block"),
       ADD_STAT(trainSecondBroken, statistics::units::Count::get(),
-               "pending pairs dropped because the next block did not "
-               "continue them"),
+               "trained first blocks dropped because the next block did "
+               "not continue them"),
       ADD_STAT(providerConfidence, statistics::units::Count::get(),
                "first block phase hits by provider confidence"),
       ADD_STAT(twoTakenCandidates, statistics::units::Count::get(),
@@ -145,15 +146,15 @@ PairTAGE::putPCHistory(Addr startAddr, const bitset &history,
     threadMeta[tid] = meta;
 
     if (meta->phase == StatePhase::Second) {
-        // No lookup: predict the second block of the pending pair, as long
-        // as this block starts where its first block went
+        // No lookup: predict the second block of the entry the first block
+        // was predicted from, as long as this block starts where the first
+        // block was predicted to go
         pairTageStats.secondPhasePreds++;
-        const auto &pending = threadPending[tid];
-        if (pending.valid && pending.nextPC == startAddr &&
-            pending.entry.b2Valid) {
+        const auto &live = predLiveEntryInfo[tid];
+        if (live.valid && live.nextPC == startAddr && live.entry.b2Valid) {
             pairTageStats.secondPhaseProvided++;
-            fillStagePredictions(pending.entry.block2,
-                                 pending.entry.modelInfo.block2BranchSize,
+            fillStagePredictions(live.entry.block2,
+                                 live.entry.modelInfo.block2BranchSize,
                                  stagePreds);
         }
         return;
@@ -165,11 +166,21 @@ PairTAGE::putPCHistory(Addr startAddr, const bitset &history,
         meta->lookup = lookup(ahead.pc, ahead.history);
     }
 
+    auto &live = predLiveEntryInfo[tid];
+    live = LiveEntryInfo();
+
     pairTageStats.lookups++;
     if (meta->noAnchor) {
         pairTageStats.lookupNoAnchor++;
     } else if (meta->lookup.provider >= 0) {
         const auto &entry = meta->lookup.entry;
+        live.valid = true;
+        live.table = meta->lookup.provider;
+        live.index = meta->lookup.tableIndexes[live.table].index;
+        live.way = meta->lookup.providerWay;
+        live.entry = entry;
+        live.nextPC = entry.block.targetPC;
+
         pairTageStats.providerTable[meta->lookup.provider]++;
         pairTageStats.providerConfidence[entry.confidence]++;
         if (entry.b2Valid && entry.confidence == confidenceSaturate) {
@@ -208,7 +219,7 @@ PairTAGE::specUpdatePHist(const bitset &history, FullBTBPrediction &pred,
         // from S3, so its first block stops waiting for it
         const auto &meta = threadMeta[pred.tid];
         if (meta && meta->twoTaken) {
-            threadPending[pred.tid].valid = false;
+            trainLiveEntryInfo[pred.tid].valid = false;
         }
         phase = StatePhase::First;
     }
@@ -224,7 +235,8 @@ PairTAGE::recoverPHist(const bitset &history,
     // The block after a squash starts a new pair without a key
     threadAhead[context.tid].valid = false;
     threadPhase[context.tid] = StatePhase::First;
-    threadPending[context.tid].valid = false;
+    predLiveEntryInfo[context.tid].valid = false;
+    trainLiveEntryInfo[context.tid].valid = false;
 
     auto predMeta = std::static_pointer_cast<PairTAGEMeta>(
         context.predMetas[getComponentIdx()]);
@@ -260,27 +272,27 @@ PairTAGE::updateUsingS3Pred(FullBTBPrediction &s3Pred)
     // The block right after a trained first block is its second block,
     // whatever phase it was predicted in, as long as it continues it.
     // Otherwise a first block phase block trains its own first block.
-    auto &pending = threadPending[s3Pred.tid];
-    if (pending.valid) {
-        if (s3Pred.bbStart == pending.nextPC) {
-            trainSecondBlock(pending, exit, targetPC);
+    auto &live = trainLiveEntryInfo[s3Pred.tid];
+    if (live.valid) {
+        if (s3Pred.bbStart == live.nextPC) {
+            trainSecondBlock(live, exit, targetPC);
         } else {
             pairTageStats.trainSecondBroken++;
         }
-        pending.valid = false;
+        live.valid = false;
     } else if (meta->phase == StatePhase::First && !meta->noAnchor) {
-        pending = trainFirstBlock(meta->lookup, exit, targetPC);
+        live = trainFirstBlock(meta->lookup, exit, targetPC);
     }
 }
 
-PairTAGE::PendingTrainPair
+PairTAGE::LiveEntryInfo
 PairTAGE::trainFirstBlock(const LookupResult &lookup, const BTBEntry &exit,
                           Addr targetPC)
 {
     const bool taken = exit.valid;
     const Addr branchPC = exit.valid ? exit.pc : 0;
-    PendingTrainPair pending;
-    pending.nextPC = targetPC;
+    LiveEntryInfo live;
+    live.nextPC = targetPC;
 
     // Hit & Pred Correct: Update counters and targetPC
     // TODO: Maybe the target PC incorrect also counts as a misprediction.
@@ -298,13 +310,13 @@ PairTAGE::trainFirstBlock(const LookupResult &lookup, const BTBEntry &exit,
         const auto &ti = lookup.tableIndexes[lookup.provider];
         writeEntry(lookup.provider, ti.index, lookup.providerWay, entry);
         pairTageStats.trainStrengthen++;
-        pending.valid = true;
-        pending.firstCorrect = true;
-        pending.table = lookup.provider;
-        pending.index = ti.index;
-        pending.way = lookup.providerWay;
-        pending.entry = entry;
-        return pending;
+        live.valid = true;
+        live.firstCorrect = true;
+        live.table = lookup.provider;
+        live.index = ti.index;
+        live.way = lookup.providerWay;
+        live.entry = entry;
+        return live;
     }
 
     // Miss or Mispred: Find alloc unused entry or force allocate when refusals saturate.
@@ -325,21 +337,21 @@ PairTAGE::trainFirstBlock(const LookupResult &lookup, const BTBEntry &exit,
     if (hit && (lookup.entry.block.isWeak() ||
                 allocTable < 0)) {
         const auto &ti = lookup.tableIndexes[lookup.provider];
-        pending.valid = true;
-        pending.table = lookup.provider;
-        pending.index = ti.index;
-        pending.way = lookup.providerWay;
-        pending.entry = PTAGEEntry(ti.tag, exit, targetPC);
-        writeEntry(pending.table, pending.index, pending.way, pending.entry);
+        live.valid = true;
+        live.table = lookup.provider;
+        live.index = ti.index;
+        live.way = lookup.providerWay;
+        live.entry = PTAGEEntry(ti.tag, exit, targetPC);
+        writeEntry(live.table, live.index, live.way, live.entry);
         pairTageStats.trainCorrect++;
     } else if (allocTable >= 0) {
         const auto &ti = lookup.tableIndexes[allocTable];
-        pending.valid = true;
-        pending.table = allocTable;
-        pending.index = ti.index;
-        pending.way = 0;
-        pending.entry = PTAGEEntry(ti.tag, exit, targetPC);
-        writeEntry(pending.table, pending.index, pending.way, pending.entry);
+        live.valid = true;
+        live.table = allocTable;
+        live.index = ti.index;
+        live.way = 0;
+        live.entry = PTAGEEntry(ti.tag, exit, targetPC);
+        writeEntry(live.table, live.index, live.way, live.entry);
         pairTageStats.trainAllocate++;
         if (mayEvict) {
             allocRefusals = 0;
@@ -355,22 +367,22 @@ PairTAGE::trainFirstBlock(const LookupResult &lookup, const BTBEntry &exit,
         pairTageStats.trainNoTableFree++;
     }
 
-    return pending;
+    return live;
 }
 
 void
-PairTAGE::trainSecondBlock(const PendingTrainPair &pending, const BTBEntry &exit,
+PairTAGE::trainSecondBlock(const LiveEntryInfo &live, const BTBEntry &exit,
                            Addr targetPC)
 {
     const Addr branchPC = exit.valid ? exit.pc : 0;
-    PTAGEEntry entry = pending.entry;
+    PTAGEEntry entry = live.entry;
 
     // A second block naming the right exit is strengthened; anything else
     // is replaced by the block that actually followed the first one
     if (entry.b2Valid && entry.block2.branchPC == branchPC) {
         entry.block2.updateCounter(exit.valid);
         entry.block2.targetPC = targetPC;
-        if (pending.firstCorrect && entry.confidence < confidenceSaturate) {
+        if (live.firstCorrect && entry.confidence < confidenceSaturate) {
             entry.confidence++;
         }
         pairTageStats.trainSecondStrengthen++;
@@ -386,18 +398,20 @@ PairTAGE::trainSecondBlock(const PendingTrainPair &pending, const BTBEntry &exit
         pairTageStats.trainSecondReplace++;
     }
 
-    writeEntry(pending.table, pending.index, pending.way, entry);
+    writeEntry(live.table, live.index, live.way, entry);
 }
 
 bool
 PairTAGE::getSecondBlock(ThreadID tid, FullBTBPrediction &pred)
 {
-    // A first block just strengthened from a saturated entry also emits
-    // the entry's second block, which starts where the first block went
-    const auto &pending = threadPending[tid];
-    const auto &entry = pending.entry;
-    if (!enableTwoTaken || !pending.valid || !pending.firstCorrect ||
-        pending.nextPC != pred.bbStart || !entry.b2Valid ||
+    // A first block predicted from a saturated entry also emits the
+    // entry's second block, as long as the final prediction follows the
+    // first block to where the second block starts
+    const auto &meta = threadMeta[tid];
+    const auto &live = predLiveEntryInfo[tid];
+    const auto &entry = live.entry;
+    if (!enableTwoTaken || meta->phase != StatePhase::First || !live.valid ||
+        live.nextPC != pred.bbStart || !entry.b2Valid ||
         entry.confidence != confidenceSaturate) {
         return false;
     }
