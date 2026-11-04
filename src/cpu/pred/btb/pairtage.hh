@@ -255,6 +255,10 @@ class PairTAGE : public TimedBaseBTBPredictor
     // Look up every table with the PC and folded histories of a block
     LookupResult lookup(Addr pc, const ThreadHistoryState &history) const;
 
+    // Replace a prediction with one block
+    void fillPrediction(const PTAGEBlockInfo &block, uint8_t branchSize,
+                        FullBTBPrediction &pred);
+
     // Replace the stage predictions with one block
     void fillStagePredictions(const PTAGEBlockInfo &block, uint8_t branchSize,
                               std::vector<FullBTBPrediction> &stagePreds);
@@ -305,6 +309,9 @@ class PairTAGE : public TimedBaseBTBPredictor
 
         // First block phase: lookup the block was predicted with
         LookupResult lookup;
+
+        // Enqueued as the second block of a two-taken prediction
+        bool twoTaken{false};
     };
 
     std::vector<std::shared_ptr<PairTAGEMeta>> threadMeta;
@@ -319,8 +326,9 @@ class PairTAGE : public TimedBaseBTBPredictor
     // Entry confidence rises when a strengthened first block is followed
     // by a strengthened second block, and falls when a valid second block
     // is wrong. An entry whose confidence saturates at confidenceSaturate
-    // is ready to emit both blocks in one cycle.
+    // is ready to emit both blocks in one cycle, when enableTwoTaken.
     const unsigned confidenceSaturate;
+    const bool enableTwoTaken;
 
     // A trained first block, held until the next block arrives so that
     // block can be trained as its second block.
