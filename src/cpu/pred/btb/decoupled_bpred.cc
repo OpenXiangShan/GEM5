@@ -804,6 +804,9 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
         return;
     }
     auto &target = ftq.get(target_id, tid);
+    if (pairtage->isEnabled()) {
+        pairtage->handleControlSquash(target);
+    }
     // Get target address
     Addr real_target = corr_target.instAddr();
     if (!fromCommit && squashBranchInfo.isReturn &&
