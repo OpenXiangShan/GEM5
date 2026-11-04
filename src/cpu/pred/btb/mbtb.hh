@@ -551,6 +551,11 @@ public:
         Scalar updateTotal;
         Scalar updateFixTarget;
 
+        // Resolve-only counters matching RTL MBTB training metadata checks.
+        Scalar trainHasMispredict;
+        Scalar trainHitMispredict;
+        Scalar trainMispredictCondMbtbMiss;
+
         // per branch statistics
         Scalar allBranchHits;
         Scalar allBranchHitTakens;

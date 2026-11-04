@@ -1103,6 +1103,87 @@ TEST_F(BTBTest, UpdateFromVictimCachePath) {
 }
 
 
+TEST(MBTBResolveStatsTest, MatchMispredictedBranchRegardlessOfTakenOrType)
+{
+    struct Case
+    {
+        bool mispredicted;
+        bool taken;
+        bool conditional;
+        bool hit;
+    };
+    const Case cases[] = {
+        {false, true, true, false},
+        {false, false, true, false},
+        {true, true, true, false},
+        {true, false, true, false},
+        {true, true, false, false},
+        {true, true, true, true},
+        {true, false, true, true},
+        {true, true, false, true},
+    };
+    for (const bool buffered : {false, true}) {
+        for (unsigned i = 0; i < std::size(cases); ++i) {
+            SCOPED_TRACE(buffered);
+            SCOPED_TRACE(i);
+            const auto &c = cases[i];
+            MBTB btb(64, 20, 4, 1, 8, true, buffered);
+            if (c.hit) {
+                // Target and attributes do not participate in RTL hit().
+                predictUpdateCycle(&btb, 0x1000,
+                    createBranchInfo(0x1004, 0x9000, !c.conditional), true);
+            }
+            FullBTBPrediction pred;
+            btb.refreshPredictionMeta(0x1000, boost::dynamic_bitset<>(8), pred);
+            const auto branch = createBranchInfo(
+                0x1004, 0x8000, c.conditional);
+            auto target = setupStream(
+                0x1000, branch, c.taken, btb.getPredictionMeta());
+            const auto update = createPreparedUpdate(
+                target, branch, c.taken, c.mispredicted);
+            btb.doResolveUpdate(PredictionUpdateContext(target), update);
+            EXPECT_EQ(btb.btbStats.trainHasMispredict, c.mispredicted);
+            EXPECT_EQ(btb.btbStats.trainHitMispredict,
+                      c.mispredicted && c.hit);
+            EXPECT_EQ(btb.btbStats.trainMispredictCondMbtbMiss,
+                      c.mispredicted && c.conditional && !c.hit);
+        }
+    }
+}
+
+TEST(MBTBResolveStatsTest, SelectMispredictionInsteadOfRepresentativeOutcome)
+{
+    MBTB btb(64, 20, 4, 1);
+    const auto first = createBranchInfo(0x1004, 0x8000, true);
+    const auto mispred = createBranchInfo(0x1008, 0x9000, true);
+    predictUpdateCycle(&btb, 0x1000, first, true);
+    auto target = setupStream(0x1000, first, true, btb.getPredictionMeta());
+    const PreparedUpdate update({
+        createResolveEvent(0, 0, 2, mispred, false, true),
+        createResolveEvent(0, 0, 1, first, true, false),
+    });
+    ASSERT_EQ(update.outcome.branch.pc, first.pc);
+    btb.doResolveUpdate(PredictionUpdateContext(target), update);
+    EXPECT_EQ(btb.btbStats.trainHasMispredict, 1);
+    EXPECT_EQ(btb.btbStats.trainHitMispredict, 0);
+    EXPECT_EQ(btb.btbStats.trainMispredictCondMbtbMiss, 1);
+}
+
+TEST(MBTBResolveStatsTest, EmptyResolveAndCommitDoNotCountMispredictions)
+{
+    MBTB btb(64, 20, 4, 1);
+    FullBTBPrediction pred;
+    btb.refreshPredictionMeta(0x1000, boost::dynamic_bitset<>(8), pred);
+    const auto branch = createBranchInfo(0x1004, 0x8000, true);
+    auto target = setupStream(0x1000, branch, true, btb.getPredictionMeta());
+    const PredictionUpdateContext context(target);
+    btb.doResolveUpdate(context, PreparedUpdate({}));
+    btb.update(context, createPreparedUpdate(target, branch, true, true));
+    EXPECT_EQ(btb.btbStats.trainHasMispredict, 0);
+    EXPECT_EQ(btb.btbStats.trainHitMispredict, 0);
+    EXPECT_EQ(btb.btbStats.trainMispredictCondMbtbMiss, 0);
+}
+
 class MBTBBankConflictTest : public ::testing::Test
 {
   protected:
@@ -1198,6 +1279,26 @@ TEST_F(MBTBBankConflictTest, ProbeDefersUntilIdleCycleWithoutTraining)
     EXPECT_EQ(btb.btbStats.newEntry, 1);
     ASSERT_EQ(btb.getPredictedEntriesNoSideEffect(0x1000, 0, 0).size(), 1);
     EXPECT_EQ(btb.btbStats.updateAccessPerBank[0], 9);
+}
+
+TEST_F(MBTBBankConflictTest, MispredictStatsCountOnlyAcceptedResolvePackets)
+{
+    auto target = stream();
+    const auto branch = createBranchInfo(0x1000, 0x8000, true);
+    const auto update = createPreparedUpdate(target, branch, true, true);
+    predict(0x1000);
+    for (unsigned retry = 0; retry < 8; ++retry) {
+        EXPECT_FALSE(canUpdate(target, update));
+    }
+    EXPECT_EQ(btb.btbStats.trainHasMispredict, 0);
+    EXPECT_EQ(btb.btbStats.trainHitMispredict, 0);
+    EXPECT_EQ(btb.btbStats.trainMispredictCondMbtbMiss, 0);
+    btb.tickStart();
+    ASSERT_TRUE(canUpdate(target, update));
+    btb.doResolveUpdate(PredictionUpdateContext(target), update);
+    EXPECT_EQ(btb.btbStats.trainHasMispredict, 1);
+    EXPECT_EQ(btb.btbStats.trainHitMispredict, 0);
+    EXPECT_EQ(btb.btbStats.trainMispredictCondMbtbMiss, 1);
 }
 
 TEST_F(MBTBBankConflictTest, DifferentBankAndDisabledModelAllowUpdates)

@@ -1149,6 +1149,29 @@ void
 MBTB::doResolveUpdate(const PredictionUpdateContext &context,
                        const PreparedUpdate &update)
 {
+    // RTL selects the first mispredicted branch, not the representative
+    // outcome (which may be an earlier, correctly predicted taken branch).
+    const auto mispred = std::find_if(
+        update.branches.begin(), update.branches.end(),
+        [](const BranchOutcome &branch) { return branch.mispredicted; });
+    if (mispred != update.branches.end()) {
+        const auto meta = std::static_pointer_cast<BTBMeta>(
+            context.predMetas[getComponentIdx()]);
+        // Match prediction-time metadata by position/PC, irrespective of
+        // direction, target or attributes, as MainBtbMetaEntry.hit() does.
+        const bool hit = std::any_of(
+            meta->hit_entries.begin(), meta->hit_entries.end(),
+            [&mispred](const BTBEntry &entry) {
+                return entry.pc == mispred->pc;
+            });
+        btbStats.trainHasMispredict++;
+        if (hit) {
+            btbStats.trainHitMispredict++;
+        } else if (mispred->isCond) {
+            btbStats.trainMispredictCondMbtbMiss++;
+        }
+    }
+
     applyUpdate(context, update, usesWriteBuffer());
     if (usesWriteBuffer()) {
         for (unsigned bank = 0; bank < NumResourceBanks; ++bank) {
@@ -1439,6 +1462,17 @@ MBTB::BTBStats::BTBStats(statistics::Group* parent, int numWays) :
     ADD_STAT(updateInVC, statistics::units::Count::get(), "entries updated in victim cache"),
     ADD_STAT(updateTotal, statistics::units::Count::get(), "total number of entries updated"),
     ADD_STAT(updateFixTarget, statistics::units::Count::get(), "the number of fix entries target when update"),
+
+    ADD_STAT(trainHasMispredict, statistics::units::Count::get(),
+             "accepted resolve packets containing a mispredicted branch "
+             "(RTL train_has_mispredict)"),
+    ADD_STAT(trainHitMispredict, statistics::units::Count::get(),
+             "accepted resolve packets whose mispredicted branch hit "
+             "prediction-time MBTB metadata (RTL train_hit_mispredict)"),
+    ADD_STAT(trainMispredictCondMbtbMiss, statistics::units::Count::get(),
+             "accepted resolve packets with a mispredicted conditional "
+             "branch missing from MBTB metadata "
+             "(RTL train_mispredict_conditional_because_mbtb_miss)"),
 
     ADD_STAT(allBranchHits, statistics::units::Count::get(), "all types of branches committed that was predicted hit"),
     ADD_STAT(allBranchHitTakens, statistics::units::Count::get(), "all types of taken branches committed was that predicted hit"),

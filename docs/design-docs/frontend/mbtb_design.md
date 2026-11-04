@@ -382,7 +382,29 @@ counter 写，间接分支保留 target 训练。主表替换状态在训练接�
 额外工作量受包内分支数、每 set 的 way 数、VC 容量及 buffer 深度限制。
 每拍只扫描固定 8 bank 的 buffer，不扫描整张主表。
 
-### 10.6 近似边界与验证
+### 10.6 Resolve 误预测计数与 RTL 对照
+
+以下计数不依赖 bank/writebuffer 开关，仅在 `doResolveUpdate()` 接受训练时
+记录一次；探测失败、buffer 后续排空和 Commit 直接训练不重复计数。
+
+| gem5 MBTB 计数 | RTL 对应计数 | 条件 |
+| --- | --- | --- |
+| `trainHasMispredict` | `mbtb.train_has_mispredict` | 训练包中存在误预测分支 |
+| `trainHitMispredict` | `mbtb.train_hit_mispredict` | 该误预测分支在预测时保存的 MBTB 元数据中命中 |
+| `trainMispredictCondMbtbMiss` | `bpu.train_mispredict_conditional_because_mbtb_miss` | 该误预测分支为条件分支，且预测元数据未命中 |
+
+用 `trainHasMispredict - trainHitMispredict` 对照 RTL 同名计数的差值，
+得到所有分支类型的 Resolve 误预测且 MBTB 元数据未命中数。命中只比较
+分支 PC（RTL 为 `rawHit && position == cfiPosition`），不检查 target、
+attribute 或 taken。统计选取包内按执行顺序排列的第一个 `mispredicted`
+分支，不使用可能指向其他 taken 分支的 `PreparedUpdate.outcome`。
+
+这与原 `updateMiss` 不同：原计数要求代表分支实际 taken 且预测元数据
+未命中，不要求整体误预测；原计数及训练行为保持不变。新计数对齐事件
+条件，但包的形成、错误路径训练、预测范围过滤及 VC 元数据实现仍可能
+造成 gem5/RTL 数值差异，不能据此保证逐分支等价。
+
+### 10.7 近似边界与验证
 
 写缓冲模式模拟容量、延迟可见性、合并、clean shadow、覆盖和 counter
 丢写，也保留之前的轻量重试模式用于对照。二者均不移植 APF。
