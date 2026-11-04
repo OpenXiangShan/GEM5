@@ -131,6 +131,7 @@ PairTAGE::putPCHistory(Addr startAddr, const bitset &history,
         pairTageStats.lookupNoAnchor++;
     } else if (meta->lookup.provider >= 0) {
         pairTageStats.providerTable[meta->lookup.provider]++;
+        fillStagePredictions(meta->lookup.entry, stagePreds);
     }
 }
 
@@ -195,8 +196,10 @@ PairTAGE::updateUsingS3Pred(FullBTBPrediction &s3Pred)
     const auto &lookup = meta->lookup;
 
     // The final prediction information
+    // TODO: Recogonize fallthrough with attibutes rather than mark branch PC to zero.
     const bool taken = s3Pred.isTaken();
-    const Addr branchPC = taken ? s3Pred.getTakenEntry().pc : 0;
+    const BTBEntry exit = taken ? s3Pred.getTakenEntry() : BTBEntry();
+    const Addr branchPC = exit.valid ? exit.pc : 0;
     const Addr targetPC = s3Pred.getTarget(predictWidth);
 
     // Hit & Pred Correct: Update counters and targetPC
@@ -233,12 +236,12 @@ PairTAGE::updateUsingS3Pred(FullBTBPrediction &s3Pred)
                 allocTable < 0)) {
         const auto &ti = lookup.tableIndexes[lookup.provider];
         writeEntry(lookup.provider, ti.index, lookup.providerWay,
-                   PTAGEEntry(ti.tag, branchPC, targetPC, taken));
+                   PTAGEEntry(ti.tag, exit, targetPC));
         pairTageStats.trainCorrect++;
     } else if (allocTable >= 0) {
         const auto &ti = lookup.tableIndexes[allocTable];
         writeEntry(allocTable, ti.index, 0,
-                   PTAGEEntry(ti.tag, branchPC, targetPC, taken));
+                   PTAGEEntry(ti.tag, exit, targetPC));
         pairTageStats.trainAllocate++;
         if (mayEvict) {
             allocRefusals = 0;
@@ -315,6 +318,50 @@ PairTAGE::lookup(Addr pc, const ThreadHistoryState &history) const
         }
     }
     return result;
+}
+
+void
+PairTAGE::fillStagePredictions(const PTAGEEntry &entry,
+                               std::vector<FullBTBPrediction> &stagePreds)
+{
+    FillStageLoop(s) {
+        stagePreds[s].btbEntries.clear();
+        stagePreds[s].condTakens.clear();
+        stagePreds[s].indirectTargets.clear();
+        stagePreds[s].returnTarget = 0;
+        stagePreds[s].predTick = curTick();
+    }
+
+    // A block that falls through has no branch to predict
+    const auto &block = entry.block;
+    if (!block.taken()) {
+        return;
+    }
+
+    BTBEntry btbEntry;
+    btbEntry.valid = true;
+    btbEntry.pc = block.branchPC;
+    btbEntry.target = block.targetPC;
+    btbEntry.isCond = block.isCond;
+    btbEntry.isDirect = block.isDirect;
+    btbEntry.isIndirect = block.isIndirect;
+    btbEntry.isCall = block.isCall;
+    btbEntry.isReturn = block.isReturn;
+    btbEntry.size = entry.modelInfo.branchSize;
+    btbEntry.ctr = block.directionCounter;
+    btbEntry.source = getComponentIdx();
+
+    FillStageLoop(s) stagePreds[s].btbEntries.push_back(btbEntry);
+    if (block.isCond) {
+        FillStageLoop(s) stagePreds[s].condTakens.push_back(
+            {block.branchPC, true});
+    } else if (block.isIndirect) {
+        FillStageLoop(s) stagePreds[s].indirectTargets.push_back(
+            {block.branchPC, block.targetPC});
+        if (block.isReturn) {
+            FillStageLoop(s) stagePreds[s].returnTarget = block.targetPC;
+        }
+    }
 }
 
 void
