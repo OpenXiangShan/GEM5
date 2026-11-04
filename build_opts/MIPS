@@ -1,2 +1,0 @@
-TARGET_ISA = 'mips'
-PROTOCOL = 'MI_example'

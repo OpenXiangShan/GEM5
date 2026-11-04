@@ -1,2 +1,0 @@
-TARGET_ISA = 'power'
-PROTOCOL = 'MI_example'

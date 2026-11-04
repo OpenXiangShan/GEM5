@@ -1,1 +1,0 @@
-../../../src/cpu/o3/fetch.md

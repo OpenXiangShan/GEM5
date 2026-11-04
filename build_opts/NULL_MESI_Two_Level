@@ -1,2 +1,0 @@
-TARGET_ISA = 'null'
-PROTOCOL = 'MESI_Two_Level'

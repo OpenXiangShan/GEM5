@@ -1,6 +1,0 @@
-fast_constructors/main.cpp
-fast_constructors/array.cpp
-fast_constructors/assign.cpp
-fast_constructors/assign_constructor.cpp
-fast_constructors/default_assign.cpp
-fast_constructors/default_constructor.cpp

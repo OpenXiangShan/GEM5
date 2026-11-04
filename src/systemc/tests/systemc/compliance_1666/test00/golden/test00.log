@@ -1,9 +1,0 @@
-SystemC Simulation
-Caught rpt Info: msg_type: msg
-Prim::Proc spawned and resumed
-Th::i=1
-Th::i=2
-
-Info: /OSCI/SystemC: Simulation stopped by user.
-
-Success

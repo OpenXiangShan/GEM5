@@ -1,3 +1,0 @@
-datawidth_int_file/datawidth.cpp
-datawidth_int_file/stimgen.cpp
-datawidth_int_file/main.cpp

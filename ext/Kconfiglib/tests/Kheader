@@ -1,5 +1,0 @@
-# Used to test headers in .config and header files
-
-config FOO
-	bool "foo"
-	default y

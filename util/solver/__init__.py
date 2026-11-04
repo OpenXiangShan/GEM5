@@ -1,1 +1,0 @@
-"""CI solver prototype package."""

@@ -1,2 +1,0 @@
-TARGET_ISA = 'x86'
-PROTOCOL = 'MI_example'
