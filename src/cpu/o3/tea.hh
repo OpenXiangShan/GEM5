@@ -125,10 +125,11 @@ class Tea
     const unsigned lastLevelCache;
     const std::string outputName;
     // Negative PSV values identify cancelled, pending and unknown targets.
-    std::map<std::tuple<ThreadID, Addr, int>, double> weights;
+    std::map<std::tuple<ThreadID, Addr, int, TeaState>, double> weights;
 
     bool active(ThreadID tid) const;
-    void attribute(ThreadID tid, TeaMember member, double weight = 1.0);
+    void attribute(ThreadID tid, TeaMember member, TeaState sample_state,
+                   double weight = 1.0);
     void recordSample(TeaState state);
     void finishTarget(const DynInstPtr &inst, bool cancelled);
 
