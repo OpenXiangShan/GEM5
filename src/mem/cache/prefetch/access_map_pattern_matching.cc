@@ -224,7 +224,8 @@ AccessMapPatternMatching::calculatePrefetch(const Base::PrefetchInfo &pfi,
                 pf_addr = am_addr * hotZoneSize + blk * blkSize;
                 setEntryState(*am_entry_curr, blk, AM_PREFETCH);
             }
-            addresses.push_back(Queued::AddrPriority(pf_addr, 0));
+            addresses.push_back(Queued::AddrPriority(
+                pf_addr, 0, PrefetchSourceType::PF_NONE));
             if (addresses.size() == degree) {
                 break;
             }
@@ -248,7 +249,8 @@ AccessMapPatternMatching::calculatePrefetch(const Base::PrefetchInfo &pfi,
                 pf_addr = am_addr * hotZoneSize + blk * blkSize;
                 setEntryState(*am_entry_curr, blk, AM_PREFETCH);
             }
-            addresses.push_back(Queued::AddrPriority(pf_addr, 0));
+            addresses.push_back(Queued::AddrPriority(
+                pf_addr, 0, PrefetchSourceType::PF_NONE));
             if (addresses.size() == degree) {
                 break;
             }

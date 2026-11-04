@@ -63,6 +63,7 @@ DebugFlag('DespacitoStreamPrefetcher')
 DebugFlag('LLDPrefetcher')
 
 GTest('context_key.test', 'context_key.test.cc')
+GTest('trigger_pc.test', 'trigger_pc.test.cc', '../../../sim/cur_tick.cc')
 GTest('lldp_logic.test', 'lldp_logic.test.cc')
 
 Source('access_map_pattern_matching.cc')

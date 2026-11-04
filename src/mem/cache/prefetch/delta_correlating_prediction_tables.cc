@@ -116,7 +116,8 @@ DeltaCorrelatingPredictionTables::DCPTEntry::getCandidates(
             while (it != deltas.end()) {
                 const int pf_delta = *(it++);
                 addr += pf_delta;
-                pfs.push_back(Queued::AddrPriority(addr, 0));
+                pfs.push_back(Queued::AddrPriority(
+                    addr, 0, PrefetchSourceType::PF_NONE));
             }
             break;
         }
