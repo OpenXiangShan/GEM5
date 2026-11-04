@@ -8,20 +8,20 @@ on:
     # Allow manual triggering of the workflow
     inputs:
       jobs:
-        description: "Only run jobs whose id contains this string (e.g. xscc); empty = all"
+        description: "Comma-separated job ids to run, no spaces (e.g. perf_test_spec06_xscc,smt_test_spec17); empty = all"
         required: false
         default: ""
 
 jobs:
   align_test_spec06:
-    if: ${{ !inputs.jobs || contains('align_test_spec06', inputs.jobs) }}
+    if: ${{ !inputs.jobs || contains(format(',{0},', inputs.jobs), ',align_test_spec06,') }}
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/kmhv3.py
       benchmark_type: "spec06-rva23-novec-gcc16-1.0c"
 
   align_test_spec06_xscc:
-    if: ${{ !inputs.jobs || contains('align_test_spec06_xscc', inputs.jobs) }}
+    if: ${{ !inputs.jobs || contains(format(',{0},', inputs.jobs), ',align_test_spec06_xscc,') }}
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/kmhv3.py
@@ -29,14 +29,14 @@ jobs:
       checkpoint_path: "/nfs/home/share/checkpoints_profiles/spec06_xscc_rv64gcb_261013/checkpoint-0-0-0"
 
   align_test_spec17:
-    if: ${{ !inputs.jobs || contains('align_test_spec17', inputs.jobs) }}
+    if: ${{ !inputs.jobs || contains(format(',{0},', inputs.jobs), ',align_test_spec17,') }}
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/kmhv3.py
       benchmark_type: "spec17-1.0c"
 
   align_test_spec26:
-    if: ${{ !inputs.jobs || contains('align_test_spec26', inputs.jobs) }}
+    if: ${{ !inputs.jobs || contains(format(',{0},', inputs.jobs), ',align_test_spec26,') }}
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/kmhv3.py
@@ -46,14 +46,14 @@ jobs:
       timeout_minutes: 720
 
   perf_test_spec06:
-    if: ${{ !inputs.jobs || contains('perf_test_spec06', inputs.jobs) }}
+    if: ${{ !inputs.jobs || contains(format(',{0},', inputs.jobs), ',perf_test_spec06,') }}
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/idealkmhv3.py
       benchmark_type: "spec06-rva23-novec-gcc16-1.0c"
 
   perf_test_spec06_xscc:
-    if: ${{ !inputs.jobs || contains('perf_test_spec06_xscc', inputs.jobs) }}
+    if: ${{ !inputs.jobs || contains(format(',{0},', inputs.jobs), ',perf_test_spec06_xscc,') }}
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/idealkmhv3.py
@@ -61,14 +61,14 @@ jobs:
       checkpoint_path: "/nfs/home/share/checkpoints_profiles/spec06_xscc_rv64gcb_261013/checkpoint-0-0-0"
 
   perf_test_spec17:
-    if: ${{ !inputs.jobs || contains('perf_test_spec17', inputs.jobs) }}
+    if: ${{ !inputs.jobs || contains(format(',{0},', inputs.jobs), ',perf_test_spec17,') }}
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/idealkmhv3.py
       benchmark_type: "spec17-1.0c"
 
   perf_test_spec26:
-    if: ${{ !inputs.jobs || contains('perf_test_spec26', inputs.jobs) }}
+    if: ${{ !inputs.jobs || contains(format(',{0},', inputs.jobs), ',perf_test_spec26,') }}
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/idealkmhv3.py
@@ -78,7 +78,7 @@ jobs:
       timeout_minutes: 720
 
   smt_test_spec06:
-    if: ${{ !inputs.jobs || contains('smt_test_spec06', inputs.jobs) }}
+    if: ${{ !inputs.jobs || contains(format(',{0},', inputs.jobs), ',smt_test_spec06,') }}
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/smt_idealkmhv3.py
@@ -89,7 +89,7 @@ jobs:
       timeout_minutes: 720
 
   smt_test_spec17:
-    if: ${{ !inputs.jobs || contains('smt_test_spec17', inputs.jobs) }}
+    if: ${{ !inputs.jobs || contains(format(',{0},', inputs.jobs), ',smt_test_spec17,') }}
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/smt_idealkmhv3.py
@@ -101,7 +101,7 @@ jobs:
       timeout_minutes: 720
 
   perf_test_spec06_gcc12_dynpf:
-    if: ${{ !inputs.jobs || contains('perf_test_spec06_gcc12_dynpf', inputs.jobs) }}
+    if: ${{ !inputs.jobs || contains(format(',{0},', inputs.jobs), ',perf_test_spec06_gcc12_dynpf,') }}
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/idealkmhv3.py
