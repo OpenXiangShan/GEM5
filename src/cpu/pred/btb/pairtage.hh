@@ -30,11 +30,13 @@ class PairTAGE : public TimedBaseBTBPredictor
   public:
     typedef PairTAGEParams Params;
 
+    // Fields the model needs only and should not appear in real units.
     struct PTAGEEntryModelInfo
     {
-        bool dummy;
+        // instruction size of the first block's exit
+        uint8_t branchSize;
 
-        PTAGEEntryModelInfo() : dummy(0) {}
+        PTAGEEntryModelInfo() : branchSize(0) {}
     };
 
     // Prediction Block Information
@@ -47,7 +49,20 @@ class PairTAGE : public TimedBaseBTBPredictor
         Addr branchPC;
         Addr targetPC;
 
-        PTAGEBlockInfo(): directionCounter(0), branchPC(0), targetPC(0) {}
+        // Type of the exit branch, as the RTL branch attribute
+        bool isCond;
+        bool isDirect;
+        bool isIndirect;
+        bool isCall;
+        bool isReturn;
+
+        PTAGEBlockInfo()
+            : directionCounter(0), branchPC(0), targetPC(0), isCond(false),
+              isDirect(false), isIndirect(false), isCall(false),
+              isReturn(false)
+        {}
+
+        bool taken() const { return directionCounter >= 0; }
 
         // Saturating update of the direction counter towards taken
         void
@@ -84,20 +99,29 @@ class PairTAGE : public TimedBaseBTBPredictor
 
         PTAGEEntry() : valid(false), b2Valid(false), tag(0), useful(false) {}
 
-        // A freshly installed entry holding one block, weak in its direction
-        PTAGEEntry(Addr tag, Addr branchPC, Addr targetPC, bool taken)
+        // A new allocate entry holding one block, weak in its direction.
+        // The block leaves at exit when it is valid, and falls through to
+        // targetPC otherwise.
+        PTAGEEntry(Addr tag, const BTBEntry &exit, Addr targetPC)
             : valid(true), b2Valid(false), tag(tag), useful(false)
         {
-            block.directionCounter = taken ? 0 : -1;
-            block.branchPC = branchPC;
+            block.directionCounter = exit.valid ? 0 : -1;
+            block.branchPC = exit.valid ? exit.pc : 0;
             block.targetPC = targetPC;
+            block.isCond = exit.valid && exit.isCond;
+            block.isDirect = exit.valid && exit.isDirect;
+            block.isIndirect = exit.valid && exit.isIndirect;
+            block.isCall = exit.valid && exit.isCall;
+            block.isReturn = exit.valid && exit.isReturn;
+            modelInfo.branchSize = exit.valid ? exit.size : 0;
         }
     };
 
     PairTAGE(const Params &p);
 
-    // The predictor is wired into the BPU but does not predict yet: it
-    // leaves every stage prediction untouched.
+    // Predict the first block of the providing entry at s1. A hit takes
+    // priority over uBTB and aBTB, and one that falls through overrides
+    // their taken predictions as well.
     void putPCHistory(Addr startAddr, const bitset &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;
 
@@ -211,6 +235,10 @@ class PairTAGE : public TimedBaseBTBPredictor
 
     // Look up every table with the PC and folded histories of a block
     LookupResult lookup(Addr pc, const ThreadHistoryState &history) const;
+
+    // Replace the stage predictions with the first block of entry
+    void fillStagePredictions(const PTAGEEntry &entry,
+                              std::vector<FullBTBPrediction> &stagePreds);
 
     // Overwrite one way of set index of table t
     void writeEntry(unsigned t, Addr index, unsigned way,

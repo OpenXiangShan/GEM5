@@ -21,13 +21,14 @@ namespace btb_pred
 namespace
 {
 
-constexpr int NumS1SourceBuckets = 3;
+constexpr int NumS1SourceBuckets = 4;
 constexpr int NumOverrideReasonBuckets = 4;
 
 constexpr const char *S1SourceLabels[NumS1SourceBuckets] = {
     "fallthrough",
     "ubtb",
-    "abtb"
+    "abtb",
+    "pairtage"
 };
 
 constexpr const char *OverrideReasonLabels[NumOverrideReasonBuckets] = {
@@ -526,6 +527,7 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(s1PredWrongFallthrough, statistics::units::Count::get(), "S1pred wrong full throughs"),
     ADD_STAT(s1PredWrongUbtb, statistics::units::Count::get(),"S1pred wrong using ubtb "),
     ADD_STAT(s1PredWrongAbtb, statistics::units::Count::get(), "S1pred wrong using abtb "),
+    ADD_STAT(s1PredWrongPairtage, statistics::units::Count::get(), "S1pred wrong using pairtage "),
     ADD_STAT(s1PredWrongBySourceAndReason, statistics::units::Count::get(),
              "committed S1 mispredictions bucketed by S1 source and override reason"),
     ADD_STAT(s3PredWrongMbtb, statistics::units::Count::get(), "S3pred wrong blame mbtb "),
@@ -928,6 +930,7 @@ DecoupledBPUWithBTB::commitPredWrongSource(
 {
     int ubtbid = ubtb->getComponentIdx();
     int abtbid = abtb->getComponentIdx();
+    int pairtageid = pairtage->getComponentIdx();
     int mbtbid = mbtb->getComponentIdx();
     int tageid = tage->getComponentIdx();
     int ittageid = ittage->getComponentIdx();
@@ -946,7 +949,10 @@ DecoupledBPUWithBTB::commitPredWrongSource(
     } else if (s1PredSource == abtbid) {
         dbpBtbStats.s1PredWrongAbtb++;
         s1SourceBucket = 2;
-    }else {
+    } else if (s1PredSource == pairtageid) {
+        dbpBtbStats.s1PredWrongPairtage++;
+        s1SourceBucket = 3;
+    } else {
         dbpBtbStats.s1PredWrongFallthrough++;
     }
 
