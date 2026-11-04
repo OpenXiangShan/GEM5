@@ -157,6 +157,11 @@ class PairTAGE : public TimedBaseBTBPredictor
     void refreshPredictionMeta(Addr startAddr, const bitset &history,
                                FullBTBPrediction &pred) override;
 
+    // A control squash on a second block enqueued with its first block
+    // means the second block was wrong, so its entry loses the confidence
+    // to emit both blocks again
+    void handleControlSquash(const FetchTarget &target);
+
     // Check the folded histories of thread tid against its full history
     void checkFoldedHist(const bitset &history, ThreadID tid,
                          const char *when);
@@ -267,6 +272,9 @@ class PairTAGE : public TimedBaseBTBPredictor
     void writeEntry(unsigned t, Addr index, unsigned way,
                     const PTAGEEntry &entry);
 
+    // Clear the confidence of one way of set index of table t
+    void resetConfidence(unsigned t, Addr index, unsigned way);
+
     // ========== Ahead Pipeline ==========
     // The table read for a block is issued one block ahead.
     //
@@ -330,8 +338,10 @@ class PairTAGE : public TimedBaseBTBPredictor
         // First block phase: lookup the block was predicted with
         LookupResult lookup;
 
-        // Enqueued as the second block of a two-taken prediction
+        // Enqueued as the second block of a two-taken prediction, from the
+        // entry twoTakenEntry
         bool twoTaken{false};
+        LiveEntryInfo twoTakenEntry;
     };
 
     std::vector<std::shared_ptr<PairTAGEMeta>> threadMeta;
@@ -377,6 +387,7 @@ class PairTAGE : public TimedBaseBTBPredictor
         statistics::Scalar trainSecondBroken;
         statistics::Vector providerConfidence;
         statistics::Scalar twoTakenCandidates;
+        statistics::Scalar twoTakenSquashes;
 
         PairTAGEStats(statistics::Group *parent, unsigned numPredictors,
                       unsigned confidenceSaturate);
