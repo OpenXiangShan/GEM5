@@ -49,6 +49,13 @@ def add_sdbp_options(parser):
         metavar="N",
         help="Skip the N youngest sampler entries during dead-first selection",
     )
+    parser.add_argument(
+        "--sdbp-cache-protect-youngest",
+        type=nonnegative_int,
+        default=0,
+        metavar="N",
+        help="Skip the N youngest real-cache entries during dead selection",
+    )
     parser.add_argument("--sdbp-dead-threshold", type=int, default=8)
     parser.add_argument("--sdbp-enable-bypass", action="store_true")
     parser.add_argument(
@@ -76,6 +83,7 @@ def configure_sdbp(args, system):
                 sampler_num=args.sdbp_sampler_num,
                 sampler_assoc=args.sdbp_sampler_assoc,
                 l1_copy_protection=args.sdbp_l1_copy_protection,
+                cache_protect_youngest=args.sdbp_cache_protect_youngest,
                 sampler_dead_first=args.sdbp_sampler_dead_first,
                 sampler_demand_pc_only=args.sdbp_sampler_demand_pc_only,
                 sampler_protect_youngest=args.sdbp_sampler_protect_youngest,

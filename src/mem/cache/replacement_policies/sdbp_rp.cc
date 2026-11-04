@@ -53,16 +53,18 @@ makeCore(const SDBPRPParams &p)
 
 SDBP::SDBP(const Params &p)
     : Base(p), core(makeCore(p)), enableBypass(p.enable_bypass),
-      l1CopyProtection(p.l1_copy_protection), stats(this)
+      l1CopyProtection(p.l1_copy_protection),
+      cacheProtectYoungest(p.cache_protect_youngest), stats(this)
 {
     inform(
         "%s: SDBP num_sets=%u sampler_sets=%u half_set_bits=%u "
         "sampler_assoc=%u sampler_dead_first=%d sampler_protect_youngest=%u "
         "sampler_demand_pc_only=%d "
-        "l1_copy_protection=%d bypass=%d",
+        "l1_copy_protection=%d cache_protect_youngest=%u bypass=%d",
         name(), core.numSets(), core.samplerSets(), core.halfBits(),
         p.sampler_assoc, p.sampler_dead_first, p.sampler_protect_youngest,
-        p.sampler_demand_pc_only, l1CopyProtection, enableBypass);
+        p.sampler_demand_pc_only, l1CopyProtection, cacheProtectYoungest,
+        enableBypass);
 }
 
 void
@@ -331,6 +333,20 @@ SDBP::getVictim(const ReplacementCandidates &candidates, const PacketPtr pkt) co
             candidate->replacementData);
         if (!entry.dead)
             continue;
+        if (cacheProtectYoungest) {
+            unsigned younger = 0;
+            for (const auto *other : candidates) {
+                const auto &other_entry =
+                    *std::static_pointer_cast<SDBPReplData>(
+                        other->replacementData);
+                if (other_entry.lastUse > entry.lastUse)
+                    ++younger;
+            }
+            if (younger < cacheProtectYoungest) {
+                ++stats.skippedYoungDead;
+                continue;
+            }
+        }
         if (l1CopyProtection && l1CopyProbe) {
             ++stats.l1CopyChecks;
             if (l1CopyProbe(candidate)) {
@@ -385,6 +401,8 @@ SDBP::SDBPStats::SDBPStats(statistics::Group *parent)
       ADD_STAT(deadVictims, "Victim selections using a predicted-dead entry"),
       ADD_STAT(nonLruDeadVictims, "Dead victims different from the LRU victim"),
       ADD_STAT(lruVictims, "Victim selections falling back to LRU"),
+      ADD_STAT(skippedYoungDead,
+               "Dead real-cache candidates skipped by recency protection"),
       ADD_STAT(bypasses, "Full-set allocation attempts bypassed by SDBP"),
       ADD_STAT(l1CopyChecks, "Dead candidates checked for resident L1 copies"),
       ADD_STAT(l1CopyProtectedDead, "Dead candidates skipped due to resident L1 copies"),

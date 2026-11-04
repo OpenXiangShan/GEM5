@@ -32,6 +32,7 @@ testParams(bool bypass = false, unsigned threshold = 8)
     p.sampler_dead_first = true;
     p.sampler_demand_pc_only = false;
     p.l1_copy_protection = true;
+    p.cache_protect_youngest = 0;
     p.predictor_tables = 3;
     p.predictor_entries = 4096;
     p.counter_bits = 2;
@@ -91,6 +92,84 @@ class SDBPInterface : public ::testing::Test
   protected:
     void SetUp() override { curEventQueue(getEventQueue(0)); }
 };
+
+TEST_F(SDBPInterface, RecentPositionGuardRetainsDeadPredictionsAcrossWriteback)
+{
+    for (unsigned guard : {2U, 4U, 6U}) {
+        auto params = testParams(false, 0);
+        params.cache_protect_youngest = guard;
+        SDBP policy(params);
+        std::array<ReplaceableEntry, 8> entries;
+        ReplacementCandidates candidates;
+        auto demand = packet();
+        for (auto &entry : entries) {
+            entry.replacementData = policy.instantiateEntry();
+            policy.reset(entry.replacementData, demand.get());
+            candidates.push_back(&entry);
+        }
+        // The first eligible dead is younger than the global LRU candidate.
+        policy.touch(entries[guard].replacementData, demand.get());
+        for (unsigned i = 0; i < guard; ++i)
+            policy.touch(entries[i].replacementData, demand.get());
+        EXPECT_EQ(policy.getVictim(candidates), &entries[guard]);
+        EXPECT_EQ(stat(policy, "skippedYoungDead"), guard);
+        EXPECT_EQ(stat(policy, "nonLruDeadVictims"), 1);
+        for (const auto &entry : entries)
+            EXPECT_EQ(SDBP::victimClass(entry.replacementData), 2);
+        auto wb = packet(MemCmd::WritebackDirty, false);
+        policy.touch(entries[guard].replacementData, wb.get());
+        EXPECT_EQ(SDBP::victimClass(entries[guard].replacementData), 2);
+        EXPECT_EQ(policy.getVictim(candidates), &entries[0]);
+    }
+}
+
+TEST_F(SDBPInterface, RecentPositionGuardCountsLiveEntriesAndKeepsL1Protection)
+{
+    auto params = testParams(false, 0);
+    params.cache_protect_youngest = 2;
+    SDBP policy(params);
+    std::array<ReplaceableEntry, 4> entries;
+    auto demand = packet();
+    for (unsigned i = 0; i < entries.size(); ++i) {
+        entries[i].replacementData = policy.instantiateEntry();
+        if (i < 2)
+            policy.reset(entries[i].replacementData, demand.get());
+        else
+            policy.reset(entries[i].replacementData);
+    }
+    bool present = true;
+    policy.setL1CopyProbe([&](const ReplaceableEntry *entry) {
+        return present && entry == &entries[1];
+    });
+    ReplacementCandidates candidates{&entries[1], &entries[3],
+                                     &entries[0], &entries[2]};
+    EXPECT_EQ(policy.getVictim(candidates), &entries[0]);
+    present = false;
+    EXPECT_EQ(policy.getVictim(candidates), &entries[1]);
+    EXPECT_EQ(stat(policy, "nonLruDeadVictims"), 1);
+    EXPECT_EQ(stat(policy, "l1CopyProtectedDead"), 1);
+    EXPECT_EQ(stat(policy, "skippedYoungDead"), 0);
+}
+
+TEST_F(SDBPInterface, RecentPositionGuardKeepsLruFallbackAndInvalidPriority)
+{
+    auto params = testParams(false, 0);
+    params.cache_protect_youngest = 8;
+    SDBP policy(params);
+    ReplaceableEntry a, b;
+    a.replacementData = policy.instantiateEntry();
+    b.replacementData = policy.instantiateEntry();
+    auto demand = packet();
+    policy.reset(a.replacementData, demand.get());
+    ReplacementCandidates candidates{&a, &b};
+    EXPECT_EQ(policy.getVictim(candidates), &b);
+    policy.reset(b.replacementData, demand.get());
+    EXPECT_EQ(policy.getVictim(candidates), &a);
+    EXPECT_EQ(stat(policy, "skippedYoungDead"), 2);
+    EXPECT_EQ(stat(policy, "deadVictims"), 0);
+    EXPECT_EQ(stat(policy, "lruVictims"), 1);
+    EXPECT_EQ(stat(policy, "invalidVictims"), 1);
+}
 
 TEST_F(SDBPInterface, ResetDoesNotTrainAndResponsePcPredicts)
 {

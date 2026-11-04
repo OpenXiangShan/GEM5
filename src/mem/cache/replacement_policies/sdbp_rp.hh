@@ -67,6 +67,7 @@ class SDBP : public Base
     SDBPCore core;
     const bool enableBypass;
     const bool l1CopyProtection;
+    const unsigned cacheProtectYoungest;
     bool bound = false;
     L1CopyProbe l1CopyProbe;
     mutable uint64_t sequence = 0;
@@ -94,6 +95,7 @@ class SDBP : public Base
         statistics::Scalar deadVictims;
         statistics::Scalar nonLruDeadVictims;
         statistics::Scalar lruVictims;
+        statistics::Scalar skippedYoungDead;
         statistics::Scalar bypasses;
         statistics::Scalar l1CopyChecks;
         statistics::Scalar l1CopyProtectedDead;
