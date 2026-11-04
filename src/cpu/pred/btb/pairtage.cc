@@ -123,7 +123,10 @@ PairTAGE::PairTAGEStats::PairTAGEStats(statistics::Group *parent,
                "first block phase hits by provider confidence"),
       ADD_STAT(twoTakenCandidates, statistics::units::Count::get(),
                "first block phase hits whose provider could emit both "
-               "blocks in one cycle")
+               "blocks in one cycle"),
+      ADD_STAT(twoTakenSquashes, statistics::units::Count::get(),
+               "control squashes on second blocks enqueued with their "
+               "first block")
 {
     providerTable.init(numPredictors);
     providerConfidence.init(confidenceSaturate + 1);
@@ -432,7 +435,22 @@ PairTAGE::refreshPredictionMeta(Addr startAddr, const bitset &history,
     meta->history = historyState(pred.tid);
     meta->phase = threadPhase[pred.tid];
     meta->twoTaken = true;
+    meta->twoTakenEntry = predLiveEntryInfo[pred.tid];
     threadMeta[pred.tid] = meta;
+}
+
+void
+PairTAGE::handleControlSquash(const FetchTarget &target)
+{
+    auto meta = std::static_pointer_cast<PairTAGEMeta>(
+        target.predMetas[getComponentIdx()]);
+    if (!meta || !meta->twoTaken) {
+        return;
+    }
+
+    const auto &live = meta->twoTakenEntry;
+    resetConfidence(live.table, live.index, live.way);
+    pairTageStats.twoTakenSquashes++;
 }
 
 unsigned
@@ -550,6 +568,14 @@ PairTAGE::writeEntry(unsigned t, Addr index, unsigned way,
     assert(t < numPredictors && index < table[t].size() && way < numWays);
 
     table[t][index][way] = entry;
+}
+
+void
+PairTAGE::resetConfidence(unsigned t, Addr index, unsigned way)
+{
+    assert(t < numPredictors && index < table[t].size() && way < numWays);
+
+    table[t][index][way].confidence = 0;
 }
 
 PairTAGE::ThreadHistoryState &
