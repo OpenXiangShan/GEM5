@@ -285,13 +285,33 @@ class PairTAGE : public TimedBaseBTBPredictor
     // ========== Block Phase ==========
     // Predictions alternate between the two blocks of an entry. The first
     // block phase looks up an entry and predicts its first block. The
-    // second block phase predicts the second block of the pending pair,
+    // second block phase predicts the second block of the same entry,
     // without a lookup. Where an entry holds a whole group, only the first
     // block of a group becomes the key of the next one. A squash restarts
     // at the first block phase.
     enum class StatePhase { First, Second };
 
     std::vector<StatePhase> threadPhase;
+
+    // ========== Live Entry ==========
+    // The entry a pair is working with, and where it is. Prediction keeps
+    // the entry its first block was predicted from, so the second block
+    // comes from the same read. Training keeps the entry its first block
+    // was trained into, until the next block arrives and is trained as
+    // its second block.
+    struct LiveEntryInfo
+    {
+        bool valid{false};
+        unsigned table{0};
+        Addr index{0};
+        unsigned way{0};
+        PTAGEEntry entry;
+        Addr nextPC{0};             // where the second block has to start
+        bool firstCorrect{false};   // training: the first block was right
+    };
+
+    std::vector<LiveEntryInfo> predLiveEntryInfo;
+    std::vector<LiveEntryInfo> trainLiveEntryInfo;
 
     // ========== Prediction Meta ==========
     // Recorded in the FTQ entry of every predicted block
@@ -330,29 +350,13 @@ class PairTAGE : public TimedBaseBTBPredictor
     const unsigned confidenceSaturate;
     const bool enableTwoTaken;
 
-    // A trained first block, held until the next block arrives so that
-    // block can be trained as its second block.
-    // The next block should start at the `nextPC`.
-    struct PendingTrainPair
-    {
-        bool valid{false};
-        unsigned table{0};
-        Addr index{0};
-        unsigned way{0};
-        PTAGEEntry entry;
-        Addr nextPC{0};
-        bool firstCorrect{false};   // the first block was strengthened
-    };
+    // Train the first block of the looked-up entry, and return the entry
+    // it was trained into, invalid when it is not written
+    LiveEntryInfo trainFirstBlock(const LookupResult &lookup,
+                                  const BTBEntry &exit, Addr targetPC);
 
-    std::vector<PendingTrainPair> threadPending;
-
-    // Train the first block of the looked-up entry, and return it as a
-    // pending pair, invalid when it is not written
-    PendingTrainPair trainFirstBlock(const LookupResult &lookup,
-                                const BTBEntry &exit, Addr targetPC);
-
-    // Train the second block of a pending pair
-    void trainSecondBlock(const PendingTrainPair &pending, const BTBEntry &exit,
+    // Train the second block of the entry its first block was trained into
+    void trainSecondBlock(const LiveEntryInfo &live, const BTBEntry &exit,
                           Addr targetPC);
 
     struct PairTAGEStats : public statistics::Group
