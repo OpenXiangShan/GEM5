@@ -100,7 +100,10 @@ SDBPCore::SDBPCore(const Config &config) : cfg(config)
     for (unsigned sets = cfg.samplerNum; sets > 1; sets >>= 1)
         ++halfSetBits;
     matchBits = set_bits - halfSetBits;
-    tables.assign(cfg.predictorTables, std::vector<uint8_t>(cfg.predictorEntries, 0));
+    for (auto &bank : tables) {
+        bank.assign(cfg.predictorTables,
+                    std::vector<uint8_t>(cfg.predictorEntries, 0));
+    }
     sampler.assign(samplerSets(), std::vector<Entry>(cfg.samplerAssoc));
 }
 
@@ -147,25 +150,29 @@ SDBPCore::index(uint64_t signature, unsigned table) const
 }
 
 unsigned
-SDBPCore::confidence(uint64_t signature) const
+SDBPCore::confidence(uint64_t signature, RequestType type) const
 {
+    const auto source = static_cast<unsigned>(type);
+    assert(source < NumRequestTypes);
     unsigned sum = 0;
     for (unsigned t = 0; t < cfg.predictorTables; ++t)
-        sum += tables[t][index(signature, t)];
+        sum += tables[source][t][index(signature, t)];
     return sum;
 }
 
 bool
-SDBPCore::predict(uint64_t signature) const
+SDBPCore::predict(uint64_t signature, RequestType type) const
 {
-    return confidence(signature) >= cfg.deadThreshold;
+    return confidence(signature, type) >= cfg.deadThreshold;
 }
 
 void
-SDBPCore::train(uint64_t signature, bool dead)
+SDBPCore::train(uint64_t signature, bool dead, RequestType type)
 {
+    const auto source = static_cast<unsigned>(type);
+    assert(source < NumRequestTypes);
     for (unsigned t = 0; t < cfg.predictorTables; ++t) {
-        auto &counter = tables[t][index(signature, t)];
+        auto &counter = tables[source][t][index(signature, t)];
         if (dead) {
             if (counter < counterMax)
                 ++counter;
@@ -183,8 +190,8 @@ SDBPCore::access(unsigned set, uint64_t tag, RequestType type,
 {
     AccessResult result;
     // Filter before lookup so rejected requests cannot train or alter LRU.
-    if (cfg.samplerDemandPcOnly &&
-        (type != RequestType::Demand || !has_pc)) {
+    if (!has_pc ||
+        (cfg.samplerDemandPcOnly && type != RequestType::Demand)) {
         return result;
     }
     const int sample = sampleIndex(set);
@@ -239,24 +246,18 @@ SDBPCore::access(unsigned set, uint64_t tag, RequestType type,
         result.previousDead = selected->dead;
         result.previousSignatureValid = selected->signatureValid;
         result.previousSignature = selected->signature;
-        if (selected->signatureValid) {
-            if (result.hit && type == RequestType::Demand)
-                train(selected->signature, false);
-            else if (!result.hit)
-                train(selected->signature, true);
-        }
+        result.previousType = selected->type;
+        if (selected->signatureValid)
+            train(selected->signature, !result.hit, selected->type);
     }
-
-    // A prefetch hit is deliberately invisible to sampler metadata and LRU.
-    if (result.hit && type == RequestType::Prefetch)
-        return result;
 
     selected->valid = true;
     selected->tag = tag;
-    selected->signatureValid = type == RequestType::Demand && has_pc;
+    selected->type = type;
+    selected->signatureValid = has_pc;
     if (selected->signatureValid) {
         selected->signature = signature(pc);
-        selected->dead = predict(selected->signature);
+        selected->dead = predict(selected->signature, type);
     } else {
         selected->dead = false;
     }

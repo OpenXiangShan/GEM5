@@ -1147,6 +1147,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
     L2RequestClass classifyL2Request(const PacketPtr pkt,
                                    bool local_prefetch = false) const;
+    void annotateL2RequestSource(const PacketPtr pkt,
+                                 L2RequestClass source) const;
     void recordL2Request(L2RequestClass source, const PacketPtr pkt,
                          bool tag_hit, bool hit, bool prefetched = false);
     std::vector<bool> cpuDataRequestors;

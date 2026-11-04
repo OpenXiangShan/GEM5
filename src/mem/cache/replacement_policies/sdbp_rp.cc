@@ -94,18 +94,25 @@ SDBP::startup()
 bool
 SDBP::eligible(const PacketPtr pkt)
 {
-    return isDemand(pkt) || isPrefetch(pkt);
+    return pkt && pkt->req &&
+           pkt->req->l2RequestSource() != Request::L2RequestSource::Other &&
+           !pkt->req->isInstFetch() && !pkt->req->isPTWalk() &&
+           !pkt->req->isUncacheable() && !pkt->req->isCacheMaintenance() &&
+           !pkt->isStorePFTrain() && !pkt->cmd.isSWPrefetch() &&
+           (isDemand(pkt) || isPrefetch(pkt));
 }
 
 bool
 SDBP::isPrefetch(const PacketPtr pkt)
 {
-    if (pkt && pkt->isSamplerDemand())
+    if (!pkt || !pkt->req || pkt->isSamplerDemand() || pkt->isEviction() ||
+        pkt->cmd == MemCmd::WriteClean) {
         return false;
-    return pkt && pkt->req && !pkt->isEviction() &&
-           pkt->cmd != MemCmd::WriteClean &&
-           (pkt->req->isPrefetch() ||
-            (pkt->cmd.isPrefetch() && !pkt->isResponse()));
+    }
+    const auto source = pkt->req->l2RequestSource();
+    return source == Request::L2RequestSource::L1Prefetch ||
+           source == Request::L2RequestSource::L2Prefetch ||
+           pkt->req->isPrefetch() || pkt->cmd.isHWPrefetch();
 }
 
 bool
@@ -117,10 +124,72 @@ SDBP::isDemand(const PacketPtr pkt)
             (pkt->isResponse() && (pkt->isRead() || pkt->isWrite())));
 }
 
+SDBPCore::RequestType
+SDBP::requestType(const PacketPtr pkt)
+{
+    if (!isPrefetch(pkt))
+        return SDBPCore::RequestType::Demand;
+    const auto source = pkt->req->l2RequestSource();
+    if (source == Request::L2RequestSource::L2Prefetch ||
+        (source == Request::L2RequestSource::Unclassified &&
+         pkt->cmd.isHWPrefetch())) {
+        return SDBPCore::RequestType::L2Prefetch;
+    }
+    return SDBPCore::RequestType::L1Prefetch;
+}
+
 bool
 SDBP::hasPc(const PacketPtr pkt)
 {
-    return pkt && pkt->req && pkt->req->hasPC();
+    return pkt && pkt->req &&
+           ((isPrefetch(pkt) && pkt->req->hasPrefetchTriggerPC()) ||
+            pkt->req->hasPC());
+}
+
+Addr
+SDBP::requestPc(const PacketPtr pkt)
+{
+    assert(hasPc(pkt));
+    return isPrefetch(pkt) && pkt->req->hasPrefetchTriggerPC() ?
+        pkt->req->getPrefetchTriggerPC() : pkt->req->getPC();
+}
+
+void
+SDBP::sample(const PacketPtr pkt, unsigned set, Addr tag)
+{
+    const auto type = requestType(pkt);
+    const auto result = core.access(set, tag, type, true, requestPc(pkt));
+    if (!result.sampled)
+        return;
+    ++stats.samplerAccesses;
+    ++stats.samplerAccessesBySource[static_cast<unsigned>(type)];
+    if (result.hit) {
+        ++stats.samplerHits;
+        ++stats.samplerHitsBySource[static_cast<unsigned>(type)];
+        if (result.previousSignatureValid) {
+            ++stats.liveTraining;
+            ++stats.liveTrainingBySource[
+                static_cast<unsigned>(result.previousType)];
+        }
+        if (result.previousDead)
+            ++stats.samplerDeadHits;
+    } else if (result.evicted) {
+        ++stats.samplerEvictions;
+        if (result.previousSignatureValid) {
+            ++stats.deadTraining;
+            ++stats.deadTrainingBySource[
+                static_cast<unsigned>(result.previousType)];
+        }
+        if (result.previousDead)
+            ++stats.samplerDeadEvictions;
+    }
+    DPRINTF(SDBP,
+            "sample addr=%#x pc=%#x source=%u set=%u tag=%#x "
+            "sampler_hit=%d evicted=%d old_sig=%#x old_source=%u "
+            "old_dead=%d\n",
+            pkt->getAddr(), requestPc(pkt), unsigned(type), set, tag,
+            result.hit, result.evicted, result.previousSignature,
+            unsigned(result.previousType), result.previousDead);
 }
 
 void
@@ -128,41 +197,19 @@ SDBP::observe(const PacketPtr pkt, unsigned set, Addr tag, bool hit)
 {
     ++stats.lookups;
     if (!eligible(pkt)) {
-        if (isDemand(pkt) && !hasPc(pkt))
-            ++stats.noPcAccesses;
-        else
-            ++stats.excludedAccesses;
+        ++stats.excludedAccesses;
+        return;
+    }
+    if (!hasPc(pkt)) {
+        ++stats.noPcAccesses;
         return;
     }
     ++stats.eligibleAccesses;
-    if (isDemand(pkt) && !hasPc(pkt))
-        ++stats.noPcAccesses;
     if (!hit) {
         ++stats.eligibleMisses;
         return;
     }
-
-    const auto result = core.access(
-        set, tag, isPrefetch(pkt) ? SDBPCore::RequestType::Prefetch :
-                                    SDBPCore::RequestType::Demand,
-        hasPc(pkt), hasPc(pkt) ? pkt->req->getPC() : 0);
-    if (!result.sampled)
-        return;
-    ++stats.samplerAccesses;
-    if (result.hit) {
-        ++stats.samplerHits;
-        if (result.previousSignatureValid && isDemand(pkt)) {
-            ++stats.liveTraining;
-        }
-        if (result.previousDead)
-            ++stats.samplerDeadHits;
-    }
-    DPRINTF(SDBP,
-            "sample addr=%#x pc=%#x set=%u tag=%#x cache_hit=1 "
-            "sampler_hit=%d evicted=%d old_sig=%#x old_dead=%d\n",
-            pkt->getAddr(), hasPc(pkt) ? pkt->req->getPC() : 0, set, tag,
-            result.hit, result.evicted, result.previousSignature,
-            result.previousDead);
+    sample(pkt, set, tag);
 }
 
 void
@@ -170,58 +217,38 @@ SDBP::observeFill(const PacketPtr pkt, unsigned set, Addr tag)
 {
     ++stats.lookups;
     if (!eligible(pkt)) {
-        if (isDemand(pkt) && !hasPc(pkt))
-            ++stats.noPcAccesses;
-        else
-            ++stats.excludedAccesses;
+        ++stats.excludedAccesses;
+        return;
+    }
+    if (!hasPc(pkt)) {
+        ++stats.noPcAccesses;
         return;
     }
     ++stats.eligibleAccesses;
-    if (isDemand(pkt) && !hasPc(pkt))
-        ++stats.noPcAccesses;
     ++stats.eligibleMisses;
-    const auto result = core.access(
-        set, tag, isPrefetch(pkt) ? SDBPCore::RequestType::Prefetch :
-                                    SDBPCore::RequestType::Demand,
-        hasPc(pkt), hasPc(pkt) ? pkt->req->getPC() : 0);
-    if (!result.sampled)
-        return;
-    ++stats.samplerAccesses;
-    if (result.hit) {
-        ++stats.samplerHits;
-        if (result.previousSignatureValid && isDemand(pkt))
-            ++stats.liveTraining;
-        if (result.previousDead)
-            ++stats.samplerDeadHits;
-    } else if (result.evicted) {
-        ++stats.samplerEvictions;
-        ++stats.deadTraining;
-        if (result.previousDead)
-            ++stats.samplerDeadEvictions;
-    }
-    DPRINTF(SDBP,
-            "sample addr=%#x pc=%#x set=%u tag=%#x cache_hit=%d "
-            "sample fill addr=%#x pc=%#x set=%u tag=%#x "
-            "sampler_hit=%d evicted=%d old_sig=%#x old_dead=%d\n",
-            pkt->getAddr(), hasPc(pkt) ? pkt->req->getPC() : 0, set, tag,
-            result.hit, result.evicted, result.previousSignature,
-            result.previousDead);
+    sample(pkt, set, tag);
 }
 
 bool
 SDBP::predict(const PacketPtr pkt) const
 {
-    if (!isDemand(pkt) || !hasPc(pkt))
+    if (!eligible(pkt) || !hasPc(pkt))
         return false;
+    const auto type = requestType(pkt);
+    const auto source = static_cast<unsigned>(type);
     ++stats.predictionQueries;
-    const auto signature = core.signature(pkt->req->getPC());
-    const bool dead = core.predict(signature);
-    if (dead)
+    ++stats.predictionQueriesBySource[source];
+    const auto signature = core.signature(requestPc(pkt));
+    const bool dead = core.predict(signature, type);
+    if (dead) {
         ++stats.deadPredictions;
+        ++stats.deadPredictionsBySource[source];
+    }
     DPRINTF(SDBP,
-            "predict addr=%#x pc=%#x signature=%#x confidence=%u "
-            "dead=%d\n",
-            pkt->getAddr(), pkt->req->getPC(), signature, core.confidence(signature), dead);
+            "predict addr=%#x pc=%#x source=%u signature=%#x "
+            "confidence=%u dead=%d\n",
+            pkt->getAddr(), requestPc(pkt), source, signature,
+            core.confidence(signature, type), dead);
     return dead;
 }
 
@@ -239,7 +266,7 @@ SDBP::touch(const std::shared_ptr<ReplacementData> &data, const PacketPtr pkt)
     if (entry.dead && isDemand(pkt) && hasPc(pkt))
         ++stats.deadHits;
     entry.lastUse = ++sequence;
-    if (isDemand(pkt))
+    if (eligible(pkt) && (isDemand(pkt) || hasPc(pkt)))
         entry.dead = predict(pkt);
 }
 
@@ -256,7 +283,7 @@ SDBP::reset(const std::shared_ptr<ReplacementData> &data, const PacketPtr pkt)
 {
     reset(data);
     std::static_pointer_cast<SDBPReplData>(data)->dead =
-        isDemand(pkt) ? predict(pkt) : false;
+        predict(pkt);
     ++stats.fills;
 }
 
@@ -293,7 +320,7 @@ SDBP::getVictim(const ReplacementCandidates &candidates, const PacketPtr pkt) co
     }
     if (enableBypass && predict(pkt)) {
         ++stats.bypasses;
-        DPRINTF(SDBP, "bypass addr=%#x pc=%#x\n", pkt->getAddr(), pkt->req->getPC());
+        DPRINTF(SDBP, "bypass addr=%#x pc=%#x\n", pkt->getAddr(), requestPc(pkt));
         return nullptr;
     }
     bool protectedDead = false;
@@ -337,9 +364,9 @@ SDBP::instantiateEntry()
 SDBP::SDBPStats::SDBPStats(statistics::Group *parent)
     : statistics::Group(parent),
       ADD_STAT(lookups, "Tag lookups observed by SDBP"),
-      ADD_STAT(eligibleAccesses, "Demand lookups carrying a PC"),
+      ADD_STAT(eligibleAccesses, "Eligible lookups carrying a PC"),
       ADD_STAT(excludedAccesses, "Lookups excluded by request type"),
-      ADD_STAT(noPcAccesses, "Demand lookups without a PC"),
+      ADD_STAT(noPcAccesses, "Demand or prefetch lookups without a PC"),
       ADD_STAT(eligibleMisses, "Eligible lookups that miss the real cache"),
       ADD_STAT(samplerAccesses, "Eligible lookups to sampled sets"),
       ADD_STAT(samplerHits, "Partial-tag hits in the sampler"),
@@ -359,8 +386,30 @@ SDBP::SDBPStats::SDBPStats(statistics::Group *parent)
       ADD_STAT(bypasses, "Full-set allocation attempts bypassed by SDBP"),
       ADD_STAT(l1CopyChecks, "Dead candidates checked for resident L1 copies"),
       ADD_STAT(l1CopyProtectedDead, "Dead candidates skipped due to resident L1 copies"),
-      ADD_STAT(l1CopyLruFallbacks, "Selections using LRU because every dead candidate has an L1 copy")
+      ADD_STAT(l1CopyLruFallbacks, "Selections using LRU because every dead candidate has an L1 copy"),
+      ADD_STAT(samplerAccessesBySource, statistics::units::Count::get(),
+               "Sampled accesses by incoming request source"),
+      ADD_STAT(samplerHitsBySource, statistics::units::Count::get(),
+               "Sampler hits by incoming request source"),
+      ADD_STAT(liveTrainingBySource, statistics::units::Count::get(),
+               "Live training by the old sampler signature source"),
+      ADD_STAT(deadTrainingBySource, statistics::units::Count::get(),
+               "Dead training by the old sampler signature source"),
+      ADD_STAT(predictionQueriesBySource, statistics::units::Count::get(),
+               "Real-cache predictor queries by request source"),
+      ADD_STAT(deadPredictionsBySource, statistics::units::Count::get(),
+               "Real-cache dead predictions by request source")
 {
+    for (auto *vector : {&samplerAccessesBySource, &samplerHitsBySource,
+                         &liveTrainingBySource, &deadTrainingBySource,
+                         &predictionQueriesBySource,
+                         &deadPredictionsBySource}) {
+        vector->init(SDBPCore::NumRequestTypes);
+        vector->flags(statistics::total | statistics::nozero);
+        vector->subname(0, "l1Demand");
+        vector->subname(1, "l1Prefetch");
+        vector->subname(2, "l2Prefetch");
+    }
 }
 
 }  // namespace replacement_policy

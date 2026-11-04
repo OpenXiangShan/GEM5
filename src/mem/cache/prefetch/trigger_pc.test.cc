@@ -112,5 +112,26 @@ TEST(PrefetchTriggerPC, IndependentOfPrefetchSourceAndXsMetadata)
     }
 }
 
+TEST(PrefetchTriggerPC, CopiesAndResetsL2RequestSource)
+{
+    Request request(0x2000, 64, Request::PREFETCH, 1, 0x1234, 0);
+    request.setPrefetchTriggerPC(0x5678);
+    request.setL2RequestSource(Request::L2RequestSource::L2Prefetch);
+    Request copy(request);
+    EXPECT_EQ(copy.l2RequestSource(), Request::L2RequestSource::L2Prefetch);
+    copy.setVirt(0x3000, 8, 0, 0, 0x9abc);
+    EXPECT_EQ(copy.l2RequestSource(), Request::L2RequestSource::Unclassified);
+}
+
+TEST(PrefetchTriggerPC, MissingMergedDemandPcDoesNotErasePrefetchOrigin)
+{
+    Request request(0x2000, 64, Request::PREFETCH, 1, 0x1234, 0);
+    request.setPrefetchTriggerPC(0x5678);
+    request.clearPC();
+    EXPECT_FALSE(request.hasPC());
+    EXPECT_TRUE(request.hasPrefetchTriggerPC());
+    EXPECT_EQ(request.getPrefetchTriggerPC(), 0x5678);
+}
+
 } // namespace prefetch
 } // namespace gem5

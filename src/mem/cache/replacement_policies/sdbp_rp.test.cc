@@ -64,6 +64,28 @@ stat(const SDBP &policy, const std::string &name)
     return info ? info->value() : -1;
 }
 
+double
+sourceStat(const SDBP &policy, const std::string &name, unsigned source)
+{
+    const auto *info = dynamic_cast<const statistics::VectorInfo *>(
+        policy.resolveStat(name));
+    EXPECT_NE(info, nullptr);
+    return info ? info->result().at(source) : -1;
+}
+
+std::unique_ptr<Packet>
+sourcedPacket(Request::L2RequestSource source, Addr pc)
+{
+    auto pkt = packet(MemCmd::ReadSharedReq);
+    pkt->req->setL2RequestSource(source);
+    pkt->req->setPC(pc);
+    if (source != Request::L2RequestSource::L1Demand) {
+        pkt->req->setFlags(Request::PREFETCH);
+        pkt->req->setPrefetchTriggerPC(pc);
+    }
+    return pkt;
+}
+
 class SDBPInterface : public ::testing::Test
 {
   protected:
@@ -105,13 +127,13 @@ TEST_F(SDBPInterface, YoungestTwoParameterReachesSampler)
     EXPECT_EQ(stat(policy, "samplerHits"), 5);
 }
 
-TEST_F(SDBPInterface, FiltersPrefetchRequestsWritebackEvictionAndMissingPc)
+TEST_F(SDBPInterface, FiltersSoftwarePrefetchWritebackAndMissingPc)
 {
-    auto params = testParams(true, 0);
-    SDBP policy(params);
+    SDBP policy(testParams(true, 0));
     auto data = policy.instantiateEntry();
-    for (auto cmd : {MemCmd::HardPFReq, MemCmd::SoftPFReq, MemCmd::HardPFResp, MemCmd::WritebackDirty,
-                     MemCmd::WritebackClean, MemCmd::CleanEvict, MemCmd::WriteClean}) {
+    for (auto cmd : {MemCmd::SoftPFReq, MemCmd::WritebackDirty,
+                     MemCmd::WritebackClean, MemCmd::CleanEvict,
+                     MemCmd::WriteClean}) {
         auto excluded = packet(cmd);
         policy.observe(excluded.get(), 0, 1, true);
         policy.reset(data, excluded.get());
@@ -119,10 +141,9 @@ TEST_F(SDBPInterface, FiltersPrefetchRequestsWritebackEvictionAndMissingPc)
     auto missing = packet(MemCmd::ReadReq, false);
     policy.observeFill(missing.get(), 0, 2);
     policy.reset(data, missing.get());
-    EXPECT_EQ(stat(policy, "samplerAccesses"), 4);
-    // An unflagged HardPFResp is treated as a demand response by isDemand.
-    EXPECT_EQ(stat(policy, "predictionQueries"), 1);
-    EXPECT_EQ(stat(policy, "excludedAccesses"), 4);
+    EXPECT_EQ(stat(policy, "samplerAccesses"), 0);
+    EXPECT_EQ(stat(policy, "predictionQueries"), 0);
+    EXPECT_EQ(stat(policy, "excludedAccesses"), 5);
     EXPECT_EQ(stat(policy, "noPcAccesses"), 1);
 }
 
@@ -142,8 +163,8 @@ TEST_F(SDBPInterface, TrainsAndPredictsForwardedPrefetchMisses)
     }
     EXPECT_EQ(stat(policy, "samplerAccesses"), 10);
     EXPECT_EQ(stat(policy, "deadTraining"), 8);
-    EXPECT_EQ(stat(policy, "predictionQueries"), 0);
-    EXPECT_EQ(stat(policy, "deadPredictions"), 0);
+    EXPECT_EQ(stat(policy, "predictionQueries"), 10);
+    EXPECT_EQ(stat(policy, "deadPredictions"), 10);
     EXPECT_EQ(stat(policy, "excludedAccesses"), 0);
 }
 
@@ -179,7 +200,7 @@ TEST_F(SDBPInterface, DemandPcOnlyFiltersHitAndFillEvents)
     EXPECT_EQ(stat(policy, "samplerEvictions"), 0);
     EXPECT_EQ(stat(policy, "liveTraining"), 0);
     EXPECT_EQ(stat(policy, "deadTraining"), 0);
-    EXPECT_EQ(stat(policy, "noPcAccesses"), 8);
+    EXPECT_EQ(stat(policy, "noPcAccesses"), 36);
 
     policy.observe(demand.get(), 0, 1, true);
     policy.observeFill(demand.get(), 0, 2);
@@ -447,9 +468,9 @@ TEST_F(SDBPInterface, BypassOnlyFullSetsWithEligiblePc)
     auto prefetch = packet(MemCmd::HardPFResp);
     EXPECT_EQ(policy.getVictim(candidates, prefetch.get()), nullptr);
     prefetch->req->setFlags(Request::PREFETCH);
-    EXPECT_NE(policy.getVictim(candidates, prefetch.get()), nullptr);
+    EXPECT_EQ(policy.getVictim(candidates, prefetch.get()), nullptr);
     EXPECT_NE(policy.getVictim(candidates), nullptr);
-    EXPECT_EQ(stat(policy, "bypasses"), 3);
+    EXPECT_EQ(stat(policy, "bypasses"), 4);
 }
 
 TEST_F(SDBPInterface, InvalidationDoesNotForgetIndependentSampler)
@@ -465,6 +486,129 @@ TEST_F(SDBPInterface, InvalidationDoesNotForgetIndependentSampler)
     EXPECT_EQ(stat(policy, "samplerHits"), 1);
     EXPECT_EQ(stat(policy, "liveTraining"), 1);
     EXPECT_EQ(stat(policy, "deadTraining"), 0);
+}
+
+TEST_F(SDBPInterface, CrossSourceHitsTrainOldBankAndReplaceItsSignature)
+{
+    auto params = testParams();
+    params.sampler_assoc = 1;
+    SDBP policy(params);
+    using Source = Request::L2RequestSource;
+    auto demand = sourcedPacket(Source::L1Demand, 0x1000);
+    auto l1 = sourcedPacket(Source::L1Prefetch, 0x2000);
+    auto l2 = sourcedPacket(Source::L2Prefetch, 0x3000);
+    policy.observeFill(demand.get(), 0, 1);
+    policy.observe(l1.get(), 0, 1, true);
+    policy.observe(l2.get(), 0, 1, true);
+    policy.observeFill(demand.get(), 0, 2);
+    EXPECT_EQ(sourceStat(policy, "liveTrainingBySource", 0), 1);
+    EXPECT_EQ(sourceStat(policy, "liveTrainingBySource", 1), 1);
+    EXPECT_EQ(sourceStat(policy, "liveTrainingBySource", 2), 0);
+    EXPECT_EQ(sourceStat(policy, "deadTrainingBySource", 0), 0);
+    EXPECT_EQ(sourceStat(policy, "deadTrainingBySource", 1), 0);
+    EXPECT_EQ(sourceStat(policy, "deadTrainingBySource", 2), 1);
+    EXPECT_EQ(sourceStat(policy, "samplerAccessesBySource", 0), 2);
+    EXPECT_EQ(sourceStat(policy, "samplerAccessesBySource", 1), 1);
+    EXPECT_EQ(sourceStat(policy, "samplerAccessesBySource", 2), 1);
+}
+
+TEST_F(SDBPInterface, PrefetchUsesTriggerPcAndOnlyItsOwnPredictor)
+{
+    auto params = testParams();
+    params.sampler_assoc = 1;
+    SDBP policy(params);
+    using Source = Request::L2RequestSource;
+    auto l1 = sourcedPacket(Source::L1Prefetch, 0x1000);
+    auto l2 = sourcedPacket(Source::L2Prefetch, 0x1000);
+    auto demand = sourcedPacket(Source::L1Demand, 0x1000);
+    for (unsigned tag = 1; tag <= 8; ++tag)
+        policy.observeFill(l1.get(), 0, tag);
+    // The ordinary PC can change without changing PF attribution.
+    l1->req->setPC(0x2000);
+    auto data = policy.instantiateEntry();
+    policy.reset(data, l1.get());
+    EXPECT_EQ(SDBP::victimClass(data), 2);
+    policy.reset(data, demand.get());
+    EXPECT_EQ(SDBP::victimClass(data), 1);
+    policy.reset(data, l2.get());
+    EXPECT_EQ(SDBP::victimClass(data), 1);
+    EXPECT_EQ(sourceStat(policy, "deadPredictionsBySource", 1), 1);
+    EXPECT_EQ(sourceStat(policy, "deadPredictionsBySource", 0), 0);
+    EXPECT_EQ(sourceStat(policy, "deadPredictionsBySource", 2), 0);
+    for (unsigned tag = 9; tag <= 16; ++tag)
+        policy.observeFill(l2.get(), 0, tag);
+    policy.reset(data, l2.get());
+    EXPECT_EQ(SDBP::victimClass(data), 2);
+}
+
+TEST_F(SDBPInterface, LocalPrefetchCacheHitTrainsSamplerVictimDead)
+{
+    auto params = testParams();
+    params.sampler_assoc = 1;
+    SDBP policy(params);
+    using Source = Request::L2RequestSource;
+    auto demand = sourcedPacket(Source::L1Demand, 0x1000);
+    auto local = sourcedPacket(Source::L2Prefetch, 0x2000);
+    policy.observeFill(demand.get(), 0, 1);
+    policy.observe(local.get(), 0, 2, true);
+    EXPECT_EQ(stat(policy, "samplerEvictions"), 1);
+    EXPECT_EQ(stat(policy, "deadTraining"), 1);
+    EXPECT_EQ(sourceStat(policy, "deadTrainingBySource", 0), 1);
+    EXPECT_EQ(sourceStat(policy, "deadTrainingBySource", 2), 0);
+    policy.observe(demand.get(), 0, 2, true);
+    EXPECT_EQ(sourceStat(policy, "liveTrainingBySource", 2), 1);
+}
+
+TEST_F(SDBPInterface, TriggerOnlyPrefetchPcIsValidIncludingZero)
+{
+    SDBP policy(testParams(false, 0));
+    auto local = packet(MemCmd::ReadResp, false);
+    local->req->setFlags(Request::PREFETCH);
+    local->req->setL2RequestSource(Request::L2RequestSource::L2Prefetch);
+    local->req->setPrefetchTriggerPC(0);
+    policy.observeFill(local.get(), 0, 1);
+    EXPECT_EQ(sourceStat(policy, "samplerAccessesBySource", 2), 1);
+    auto data = policy.instantiateEntry();
+    policy.reset(data, local.get());
+    EXPECT_EQ(SDBP::victimClass(data), 2);
+}
+
+TEST_F(SDBPInterface, MergedDemandUsesDemandPcAndRejectsMissingDemandPc)
+{
+    auto params = testParams();
+    params.sampler_assoc = 1;
+    SDBP policy(params);
+    using Source = Request::L2RequestSource;
+    auto demand = sourcedPacket(Source::L1Demand, 0x2000);
+    for (unsigned tag = 1; tag <= 8; ++tag)
+        policy.observeFill(demand.get(), 0, tag);
+    auto merged = sourcedPacket(Source::L2Prefetch, 0x1000);
+    merged->setSamplerDemand();
+    merged->req->setPC(0x2000);
+    auto data = policy.instantiateEntry();
+    policy.reset(data, merged.get());
+    EXPECT_EQ(SDBP::victimClass(data), 2);
+    EXPECT_EQ(sourceStat(policy, "predictionQueriesBySource", 0), 1);
+    EXPECT_EQ(sourceStat(policy, "predictionQueriesBySource", 2), 0);
+    merged->req->clearPC();
+    policy.observeFill(merged.get(), 0, 9);
+    EXPECT_EQ(stat(policy, "noPcAccesses"), 1);
+    EXPECT_EQ(stat(policy, "samplerAccesses"), 8);
+}
+
+TEST_F(SDBPInterface, ExplicitOtherInstructionAndPtwNeverTrain)
+{
+    SDBP policy(testParams(false, 0));
+    auto other = sourcedPacket(Request::L2RequestSource::Other, 0x1000);
+    policy.observeFill(other.get(), 0, 1);
+    auto instruction = packet();
+    instruction->req->setFlags(Request::INST_FETCH);
+    policy.observeFill(instruction.get(), 0, 2);
+    auto ptw = packet();
+    ptw->req->setFlags(Request::PT_WALK);
+    policy.observeFill(ptw.get(), 0, 3);
+    EXPECT_EQ(stat(policy, "samplerAccesses"), 0);
+    EXPECT_EQ(stat(policy, "excludedAccesses"), 3);
 }
 
 }  // anonymous namespace

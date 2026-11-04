@@ -94,8 +94,10 @@ class SDBPRP(BaseReplacementPolicy):
     sampler_protect_youngest = Param.Unsigned(
         0, "Number of youngest sampler entries skipped during dead selection"
     )
-    predictor_tables = Param.Unsigned(3, "Number of skewed prediction tables")
-    predictor_entries = Param.Unsigned(4096, "Counters per prediction table")
+    predictor_tables = Param.Unsigned(
+        3, "Skewed prediction tables per demand/L1-prefetch/L2-prefetch bank"
+    )
+    predictor_entries = Param.Unsigned(4096, "Counters per table in each bank")
     counter_bits = Param.Unsigned(2, "Saturating counter width")
     dead_threshold = Param.Unsigned(8, "Minimum confidence sum predicting dead")
     partial_tag_bits = Param.Unsigned(15, "Sampler partial tag width")

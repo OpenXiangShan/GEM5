@@ -133,6 +133,15 @@ class BaseSetAssoc : public BaseTags
      * @param lat The latency of the tag lookup.
      * @return Pointer to the cache block if found.
      */
+    /** Local PF checks bypass accessBlock, but still train the sampler. */
+    void observeLocalPrefetch(const PacketPtr pkt, bool hit)
+    {
+        if (sdbpPolicy) {
+            sdbpPolicy->observe(pkt, indexingPolicy->extractSet(pkt->getAddr()),
+                                extractTag(pkt->getAddr()), hit);
+        }
+    }
+
     CacheBlk* accessBlock(const PacketPtr pkt, Cycles &lat) override
     {
         CacheBlk *blk = findBlock(pkt->getAddr(), pkt->isSecure());

@@ -127,7 +127,8 @@ TEST(SDBPCore, DemandPcOnlyAllocatesDemandWithPcIncludingZero)
     cfg.samplerAssoc = 1;
     SDBPCore core(cfg);
     for (auto type : {SDBPCore::RequestType::Demand,
-                      SDBPCore::RequestType::Prefetch}) {
+                      SDBPCore::RequestType::L1Prefetch,
+                      SDBPCore::RequestType::L2Prefetch}) {
         for (bool hasPc : {false, true}) {
             if (type == SDBPCore::RequestType::Demand && hasPc)
                 continue;
@@ -151,7 +152,8 @@ TEST(SDBPCore, DemandPcOnlyAllocatesDemandWithPcIncludingZero)
 TEST(SDBPCore, DemandPcOnlyPreservesTrainingMetadataAndRecency)
 {
     for (auto type : {SDBPCore::RequestType::Demand,
-                      SDBPCore::RequestType::Prefetch}) {
+                      SDBPCore::RequestType::L1Prefetch,
+                      SDBPCore::RequestType::L2Prefetch}) {
         for (bool hasPc : {false, true}) {
             if (type == SDBPCore::RequestType::Demand && hasPc)
                 continue;
@@ -211,30 +213,148 @@ TEST(SDBPCore, DemandPcOnlyRetainsLiveAndDeadTrainingOfOldSignatures)
     EXPECT_EQ(core.confidence(second), 3U);
 }
 
-TEST(SDBPCore, DefaultSamplerAdmitsPrefetchAndMissingPcAndTrainsVictims)
+TEST(SDBPCore, DefaultSamplerAdmitsEveryPcSourceAndTrainsItsVictims)
 {
     for (auto type : {SDBPCore::RequestType::Demand,
-                      SDBPCore::RequestType::Prefetch}) {
-        for (bool hasPc : {false, true}) {
-            if (type == SDBPCore::RequestType::Demand && hasPc)
-                continue;
+                      SDBPCore::RequestType::L1Prefetch,
+                      SDBPCore::RequestType::L2Prefetch}) {
+        SDBPCore::Config cfg;
+        cfg.samplerAssoc = 1;
+        SDBPCore core(cfg);
+        const auto first = core.signature(0x1000);
+        const auto second = core.signature(0x2000);
+        core.access(0, 1, 0x1000);
+        const auto admitted = core.access(0, 2, type, true, 0x2000);
+        EXPECT_TRUE(admitted.sampled);
+        EXPECT_TRUE(admitted.evicted);
+        EXPECT_EQ(admitted.previousSignature, first);
+        EXPECT_EQ(core.confidence(first), 3U);
+        const auto evicted = core.access(0, 3, 0x3000);
+        EXPECT_TRUE(evicted.previousSignatureValid);
+        EXPECT_EQ(evicted.previousSignature, second);
+        EXPECT_EQ(evicted.previousType, type);
+        EXPECT_EQ(core.confidence(second, type), 3U);
+    }
+}
+
+TEST(SDBPCore, MissingPcCannotTrainReplaceOrRefreshAnySource)
+{
+    for (auto type : {SDBPCore::RequestType::Demand,
+                      SDBPCore::RequestType::L1Prefetch,
+                      SDBPCore::RequestType::L2Prefetch}) {
+        SDBPCore::Config cfg;
+        cfg.samplerAssoc = 2;
+        cfg.samplerDeadFirst = false;
+        SDBPCore core(cfg);
+        core.access(0, 1, 0x1000);
+        core.access(0, 2, 0x2000);
+        for (unsigned tag : {1U, 3U}) {
+            const auto rejected = core.access(0, tag, type, false, 0);
+            EXPECT_FALSE(rejected.sampled);
+        }
+        const auto victim = core.access(0, 3, 0x3000);
+        EXPECT_EQ(victim.previousSignature, core.signature(0x1000));
+        EXPECT_EQ(core.confidence(core.signature(0x1000)), 3U);
+    }
+}
+
+TEST(SDBPCore, PredictorBanksAreIndependentWithIdenticalOrganizations)
+{
+    for (auto source : {SDBPCore::RequestType::Demand,
+                        SDBPCore::RequestType::L1Prefetch,
+                        SDBPCore::RequestType::L2Prefetch}) {
+        SDBPCore core{SDBPCore::Config()};
+        const auto signature = core.signature(0x1000);
+        for (unsigned update = 0; update < 10; ++update)
+            core.train(signature, true, source);
+        for (auto other : {SDBPCore::RequestType::Demand,
+                           SDBPCore::RequestType::L1Prefetch,
+                           SDBPCore::RequestType::L2Prefetch}) {
+            EXPECT_EQ(core.confidence(signature, other),
+                      other == source ? 9U : 0U);
+            EXPECT_EQ(core.predict(signature, other), other == source);
+        }
+        core.train(signature, false, source);
+        EXPECT_EQ(core.confidence(signature, source), 5U);
+    }
+}
+
+TEST(SDBPCore, EverySourceTransitionTrainsOldHitThenStoresNewSignature)
+{
+    for (auto old : {SDBPCore::RequestType::Demand,
+                     SDBPCore::RequestType::L1Prefetch,
+                     SDBPCore::RequestType::L2Prefetch}) {
+        for (auto current : {SDBPCore::RequestType::Demand,
+                             SDBPCore::RequestType::L1Prefetch,
+                             SDBPCore::RequestType::L2Prefetch}) {
             SDBPCore::Config cfg;
             cfg.samplerAssoc = 1;
-            EXPECT_FALSE(cfg.samplerDemandPcOnly);
+            cfg.crcLiveUpdate = false;
+            SDBPCore core(cfg);
+            const auto first = core.signature(0x1000);
+            const auto second = core.signature(0x2000);
+            core.train(first, true, old);
+            core.train(first, true, old);
+            core.access(0, 1, old, true, 0x1000);
+            const auto hit = core.access(0, 1, current, true, 0x2000);
+            EXPECT_TRUE(hit.hit);
+            EXPECT_EQ(hit.previousType, old);
+            EXPECT_EQ(hit.previousSignature, first);
+            EXPECT_EQ(core.confidence(first, old), 3U);
+            const auto evicted = core.access(0, 2, 0x3000);
+            EXPECT_TRUE(evicted.evicted);
+            EXPECT_EQ(evicted.previousType, current);
+            EXPECT_EQ(evicted.previousSignature, second);
+            EXPECT_EQ(core.confidence(second, current), 3U);
+        }
+    }
+}
+
+TEST(SDBPCore, NewSamplerSignatureUsesItsOwnSourcePrediction)
+{
+    for (auto source : {SDBPCore::RequestType::Demand,
+                        SDBPCore::RequestType::L1Prefetch,
+                        SDBPCore::RequestType::L2Prefetch}) {
+        SDBPCore::Config cfg;
+        cfg.samplerAssoc = 1;
+        SDBPCore core(cfg);
+        const auto old = source == SDBPCore::RequestType::Demand ?
+            SDBPCore::RequestType::L1Prefetch : SDBPCore::RequestType::Demand;
+        const auto signature = core.signature(0x1000);
+        for (unsigned update = 0; update < 3; ++update)
+            core.train(signature, true, source);
+        core.access(0, 1, old, true, 0x1000);
+        const auto hit = core.access(0, 1, source, true, 0x1000);
+        EXPECT_FALSE(hit.previousDead);
+        const auto victim = core.access(0, 2, 0x2000);
+        EXPECT_TRUE(victim.previousDead);
+        EXPECT_EQ(victim.previousType, source);
+    }
+}
+
+TEST(SDBPCore, EverySourceReplacementTrainsOnlyTheVictimBank)
+{
+    for (auto old : {SDBPCore::RequestType::Demand,
+                     SDBPCore::RequestType::L1Prefetch,
+                     SDBPCore::RequestType::L2Prefetch}) {
+        for (auto current : {SDBPCore::RequestType::Demand,
+                             SDBPCore::RequestType::L1Prefetch,
+                             SDBPCore::RequestType::L2Prefetch}) {
+            SDBPCore::Config cfg;
+            cfg.samplerAssoc = 1;
             SDBPCore core(cfg);
             const auto signature = core.signature(0x1000);
-            core.access(0, 1, 0x1000);
-            const auto admitted = core.access(0, 2, type, hasPc, 0x2000);
-            EXPECT_TRUE(admitted.sampled);
-            EXPECT_TRUE(admitted.evicted);
-            EXPECT_TRUE(admitted.previousSignatureValid);
-            EXPECT_EQ(admitted.previousSignature, signature);
-            EXPECT_EQ(core.confidence(signature), 3U);
-            // Legacy prefetch/no-PC entries have no trainable signature.
-            const auto evicted = core.access(0, 3, 0x3000);
+            core.access(0, 1, old, true, 0x1000);
+            const auto evicted = core.access(0, 2, current, true, 0x2000);
             EXPECT_TRUE(evicted.evicted);
-            EXPECT_FALSE(evicted.previousSignatureValid);
-            EXPECT_EQ(core.confidence(signature), 3U);
+            EXPECT_EQ(evicted.previousType, old);
+            EXPECT_EQ(evicted.previousSignature, signature);
+            for (auto bank : {SDBPCore::RequestType::Demand,
+                              SDBPCore::RequestType::L1Prefetch,
+                              SDBPCore::RequestType::L2Prefetch}) {
+                EXPECT_EQ(core.confidence(signature, bank),
+                          bank == old ? 3U : 0U);
+            }
         }
     }
 }
@@ -346,7 +466,7 @@ TEST(SDBPCore, YoungestTwoGuardKeepsInvalidPriority)
         EXPECT_FALSE(core.access(0, tag, 0x1000).evicted);
 }
 
-TEST(SDBPCore, YoungestTwoGuardIgnoresPrefetchHitRecency)
+TEST(SDBPCore, YoungestTwoGuardRefreshesPrefetchHitRecency)
 {
     SDBPCore::Config cfg;
     cfg.samplerAssoc = 6;
@@ -358,9 +478,13 @@ TEST(SDBPCore, YoungestTwoGuardIgnoresPrefetchHitRecency)
     core.access(0, 3, 0x1200);
     core.access(0, 1, 0x1000);
     core.access(0, 2, 0x1100);
-    EXPECT_TRUE(core.access(0, 3, SDBPCore::RequestType::Prefetch, true, 0x9000).hit);
+    EXPECT_TRUE(core.access(0, 3, SDBPCore::RequestType::L1Prefetch, true, 0x9000).hit);
     const auto victim = core.access(0, 7, 0xa000);
-    EXPECT_EQ(victim.previousSignature, core.signature(0x1200));
+    EXPECT_EQ(victim.previousSignature, core.signature(0x1000));
+    const auto hit = core.access(0, 3, 0xa000);
+    EXPECT_TRUE(hit.hit);
+    EXPECT_EQ(hit.previousSignature, core.signature(0x9000));
+    EXPECT_EQ(hit.previousType, SDBPCore::RequestType::L1Prefetch);
 }
 
 TEST(SDBPCore, YoungestTwoGuardAllowsGlobalLruFallbackInSmallSamplers)

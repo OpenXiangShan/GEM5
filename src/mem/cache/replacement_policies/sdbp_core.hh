@@ -6,6 +6,7 @@
 #ifndef __MEM_CACHE_REPLACEMENT_POLICIES_SDBP_CORE_HH__
 #define __MEM_CACHE_REPLACEMENT_POLICIES_SDBP_CORE_HH__
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -41,6 +42,14 @@ class SDBPCore
         bool crcLiveUpdate = true;
     };
 
+    enum class RequestType : uint8_t
+    {
+        Demand,
+        L1Prefetch,
+        L2Prefetch
+    };
+    static constexpr unsigned NumRequestTypes = 3;
+
     struct AccessResult
     {
         bool sampled = false;
@@ -49,12 +58,7 @@ class SDBPCore
         bool previousDead = false;
         bool previousSignatureValid = false;
         uint64_t previousSignature = 0;
-    };
-
-    enum class RequestType
-    {
-        Demand,
-        Prefetch
+        RequestType previousType = RequestType::Demand;
     };
 
     explicit SDBPCore(const Config &config);
@@ -65,9 +69,12 @@ class SDBPCore
     int sampleIndex(unsigned set) const;
     uint64_t signature(uint64_t pc) const;
     unsigned index(uint64_t signature, unsigned table) const;
-    unsigned confidence(uint64_t signature) const;
-    bool predict(uint64_t signature) const;
-    void train(uint64_t signature, bool dead);
+    unsigned confidence(uint64_t signature,
+                        RequestType type = RequestType::Demand) const;
+    bool predict(uint64_t signature,
+                 RequestType type = RequestType::Demand) const;
+    void train(uint64_t signature, bool dead,
+               RequestType type = RequestType::Demand);
     AccessResult access(unsigned set, uint64_t tag, RequestType type,
                         bool has_pc, uint64_t pc);
     AccessResult access(unsigned set, uint64_t tag, uint64_t pc)
@@ -81,6 +88,7 @@ class SDBPCore
         uint64_t tag = 0;
         uint64_t signature = 0;
         uint64_t lastUse = 0;
+        RequestType type = RequestType::Demand;
         bool valid = false;
         bool signatureValid = false;
         bool dead = false;
@@ -91,7 +99,7 @@ class SDBPCore
     unsigned matchBits = 0;
     unsigned counterMax = 0;
     uint64_t sequence = 0;
-    std::vector<std::vector<uint8_t>> tables;
+    std::array<std::vector<std::vector<uint8_t>>, NumRequestTypes> tables;
     std::vector<std::vector<Entry>> sampler;
 };
 

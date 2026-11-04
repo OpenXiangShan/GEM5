@@ -388,6 +388,30 @@ BaseCache::classifyL2Request(const PacketPtr pkt, bool local_prefetch) const
 }
 
 void
+BaseCache::annotateL2RequestSource(const PacketPtr pkt,
+                                   L2RequestClass source) const
+{
+    if (cacheLevel != 2 || !pkt || !pkt->req)
+        return;
+    using Origin = Request::L2RequestSource;
+    Origin origin = Origin::Other;
+    switch (source) {
+      case L1Demand:
+        origin = Origin::L1Demand;
+        break;
+      case L1Prefetch:
+        origin = Origin::L1Prefetch;
+        break;
+      case L2Prefetch:
+        origin = Origin::L2Prefetch;
+        break;
+      default:
+        break;
+    }
+    pkt->req->setL2RequestSource(origin);
+}
+
+void
 BaseCache::recordL2Request(L2RequestClass source, const PacketPtr pkt,
                           bool tag_hit, bool hit, bool prefetched)
 {
@@ -1189,6 +1213,10 @@ BaseCache::recvTimingResp(PacketPtr pkt)
             pkt->req->clearFlags(Request::PREFETCH | Request::PF_EXCLUSIVE);
             if (sampler_target->req->hasPC())
                 pkt->req->setPC(sampler_target->req->getPC());
+            else
+                pkt->req->clearPC();
+            pkt->req->setL2RequestSource(
+                sampler_target->req->l2RequestSource());
         }
     }
     if (pure_prefetch_fill) {
@@ -1686,9 +1714,13 @@ BaseCache::getNextQueueEntry()
             Addr pf_addr = pkt->getBlockAddr(blkSize);
             PrefetchSourceType pf_type = pkt->req->getXsMetadata().prefetchSource;
             const auto request_source = classifyL2Request(pkt, true);
+            annotateL2RequestSource(pkt, request_source);
             if (request_source != IgnoreL2Request)
                 ++stats.l2RequestLookups[request_source];
             const auto *pf_blk = tags->findBlock(pf_addr, pkt->isSecure());
+            if (auto *set_assoc = dynamic_cast<BaseSetAssoc *>(tags)) {
+                set_assoc->observeLocalPrefetch(pkt, pf_blk != nullptr);
+            }
             if (pf_blk) {
                 recordL2Request(request_source, pkt, true, true,
                                 pf_blk->wasPrefetched());
@@ -2127,6 +2159,9 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
     gem5_assert(!(isReadOnly && pkt->isWrite()),
                 "Should never see a write in a read-only cache %s\n",
                 name());
+
+    // Preserve the L2 origin across coherence commands and refill packets.
+    annotateL2RequestSource(pkt, classifyL2Request(pkt));
 
     // Access block in the tags
     Cycles tag_latency(0);

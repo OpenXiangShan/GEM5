@@ -60,6 +60,9 @@ class SDBP : public Base
     static bool isPrefetch(const PacketPtr pkt);
     static bool isDemand(const PacketPtr pkt);
     static bool hasPc(const PacketPtr pkt);
+    static Addr requestPc(const PacketPtr pkt);
+    static SDBPCore::RequestType requestType(const PacketPtr pkt);
+    void sample(const PacketPtr pkt, unsigned set, Addr tag);
     bool predict(const PacketPtr pkt) const;
     SDBPCore core;
     const bool enableBypass;
@@ -95,6 +98,12 @@ class SDBP : public Base
         statistics::Scalar l1CopyChecks;
         statistics::Scalar l1CopyProtectedDead;
         statistics::Scalar l1CopyLruFallbacks;
+        statistics::Vector samplerAccessesBySource;
+        statistics::Vector samplerHitsBySource;
+        statistics::Vector liveTrainingBySource;
+        statistics::Vector deadTrainingBySource;
+        statistics::Vector predictionQueriesBySource;
+        statistics::Vector deadPredictionsBySource;
     };
     mutable SDBPStats stats;
 };
