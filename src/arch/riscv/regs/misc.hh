@@ -528,6 +528,18 @@ enum CSRIndex
     // VSTIMECMPH rv32 only
     CSR_MTINST      = 0x34A,
     CSR_MTVAL2      = 0x34B,
+    // Addresses used by XiangShan's CSRR ordering lists; not all are modeled.
+    CSR_MVIP        = 0x309,
+    CSR_MIREG       = 0x351,
+    CSR_SIREG       = 0x151,
+    CSR_VSIREG      = 0x251,
+    CSR_MTOPI       = 0xFB0,
+    CSR_STOPI       = 0xDB0,
+    CSR_VSTOPI      = 0xEB0,
+    CSR_MTOPEI      = 0x35C,
+    CSR_STOPEI      = 0x15C,
+    CSR_VSTOPEI     = 0x25C,
+    CSR_MNSTATUS    = 0x744,
 };
 
 struct CSRMetadata

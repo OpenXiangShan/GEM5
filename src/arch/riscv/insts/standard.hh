@@ -101,6 +101,42 @@ class SystemOp : public RiscvStaticInst
         Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
+enum class CSRAccessClass { Write, BlockBackward, WaitForward, OutOfOrder };
+
+inline CSRAccessClass
+classifyCSRAccess(ExtMachInst machInst)
+{
+    switch (machInst.funct3) {
+      case 0x2: case 0x3: // CSRRS/CSRRC
+        if (machInst.rs1 != 0)
+            return CSRAccessClass::Write;
+        break;
+      case 0x6: case 0x7: // CSRRSI/CSRRCI
+        if (machInst.csrimm != 0)
+            return CSRAccessClass::Write;
+        break;
+      default: // CSRRW/CSRRWI always write, even with a zero source.
+        return CSRAccessClass::Write;
+    }
+
+    switch (machInst.funct12) {
+      case CSR_MIREG: case CSR_SIREG: case CSR_VSIREG:
+      case CSR_MTOPI: case CSR_STOPI: case CSR_VSTOPI:
+      case CSR_MTOPEI: case CSR_STOPEI: case CSR_VSTOPEI:
+      case CSR_MIP: case CSR_SIP: case CSR_VSIP:
+      case CSR_HIP: case CSR_HVIP: case CSR_MVIP:
+        return CSRAccessClass::BlockBackward;
+      case CSR_FFLAGS: case CSR_FCSR:
+      case CSR_VXSAT: case CSR_VCSR: case CSR_VSTART:
+      case CSR_SSTATUS: case CSR_VSSTATUS: case CSR_MSTATUS:
+      case CSR_HSTATUS: case CSR_MNSTATUS: case CSR_DCSR:
+      case CSR_VTYPE:
+        return CSRAccessClass::WaitForward;
+      default:
+        return CSRAccessClass::OutOfOrder;
+    }
+}
+
 /**
  * Base class for CSR operations
  */
@@ -133,10 +169,6 @@ class CSROp : public RiscvStaticInst
             else {
                 maskVal = mask_it->second;
             }
-        }
-
-        if (csr == CSR_SATP) {
-            flags[IsSquashAfter] = true;
         }
     }
 
