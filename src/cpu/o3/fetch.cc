@@ -1744,6 +1744,7 @@ Fetch::tick()
 bool
 Fetch::initializeTickState()
 {
+    resolveSquashCutoff.fill(std::nullopt);
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
     bool status_change = false;
@@ -2805,11 +2806,16 @@ Fetch::processResolveUpdates()
             squashResolveQueue(tid, iewInfo.redirectLastValidSeqNum);
         }
         for (const auto &resolved : iewInfo.resolvedCFIs) {
-            if (!iewInfo.redirectPending ||
-                resolved.seqNum <= iewInfo.redirectLastValidSeqNum) {
+            if (!resolveSquashCutoff[tid] ||
+                resolved.seqNum <= *resolveSquashCutoff[tid]) {
                 enqueueSize++;
             } else {
                 fetchStats.resolveSquashedEvents++;
+                DPRINTF(Fetch,
+                        "[tid:%i] Dropping resolved branch seq=%llu PC=%#lx "
+                        "past squash cutoff=%llu\n",
+                        tid, resolved.seqNum, resolved.pc,
+                        *resolveSquashCutoff[tid]);
             }
         }
     }
@@ -2824,8 +2830,8 @@ Fetch::processResolveUpdates()
             for (const auto &resolved : incoming) {
                 panic_if(resolved.tid != tid,
                          "Resolve event arrived on the wrong thread wire");
-                if (iewInfo.redirectPending &&
-                    resolved.seqNum > iewInfo.redirectLastValidSeqNum) {
+                if (resolveSquashCutoff[tid] &&
+                    resolved.seqNum > *resolveSquashCutoff[tid]) {
                     continue;
                 }
                 bool merged = false;
@@ -2874,6 +2880,13 @@ Fetch::processResolveUpdates()
 void
 Fetch::squashResolveQueue(ThreadID tid, InstSeqNum squashSeqNum)
 {
+    auto &cutoff = resolveSquashCutoff[tid];
+    if (cutoff) {
+        squashSeqNum = std::min(squashSeqNum, *cutoff);
+    }
+    cutoff = squashSeqNum;
+    DPRINTF(Fetch, "[tid:%i] Resolve queue squash cutoff=%llu\n",
+            tid, squashSeqNum);
     for (auto entry = resolveQueue.begin(); entry != resolveQueue.end();) {
         if (entry->tid != tid) {
             ++entry;
