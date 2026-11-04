@@ -25,6 +25,7 @@ PairTAGE::PairTAGE(const Params &p)
       numBanks(p.numBanks),
       bankIdWidth(ceilLog2(p.numBanks)),
       confidenceSaturate(p.confidenceSaturate),
+      enableTwoTaken(p.enableTwoTaken),
       pairTageStats(this, p.numPredictors, confidenceSaturate)
 {
     fatal_if(tableSizes.size() < numPredictors,
@@ -203,6 +204,12 @@ PairTAGE::specUpdatePHist(const bitset &history, FullBTBPrediction &pred,
         ahead.history = historyState(pred.tid);
         phase = StatePhase::Second;
     } else {
+        // A second block enqueued with its first block is never trained
+        // from S3, so its first block stops waiting for it
+        const auto &meta = threadMeta[pred.tid];
+        if (meta && meta->twoTaken) {
+            threadPending[pred.tid].valid = false;
+        }
         phase = StatePhase::First;
     }
 
@@ -385,10 +392,18 @@ PairTAGE::trainSecondBlock(const PendingTrainPair &pending, const BTBEntry &exit
 bool
 PairTAGE::getSecondBlock(ThreadID tid, FullBTBPrediction &pred)
 {
-    // No second block is emitted yet
-    (void)tid;
-    (void)pred;
-    return false;
+    // A first block just strengthened from a saturated entry also emits
+    // the entry's second block, which starts where the first block went
+    const auto &pending = threadPending[tid];
+    const auto &entry = pending.entry;
+    if (!enableTwoTaken || !pending.valid || !pending.firstCorrect ||
+        pending.nextPC != pred.bbStart || !entry.b2Valid ||
+        entry.confidence != confidenceSaturate) {
+        return false;
+    }
+
+    fillPrediction(entry.block2, entry.modelInfo.block2BranchSize, pred);
+    return true;
 }
 
 void
@@ -402,6 +417,7 @@ PairTAGE::refreshPredictionMeta(Addr startAddr, const bitset &history,
     auto meta = std::make_shared<PairTAGEMeta>();
     meta->history = historyState(pred.tid);
     meta->phase = threadPhase[pred.tid];
+    meta->twoTaken = true;
     threadMeta[pred.tid] = meta;
 }
 
@@ -468,16 +484,14 @@ PairTAGE::lookup(Addr pc, const ThreadHistoryState &history) const
 }
 
 void
-PairTAGE::fillStagePredictions(const PTAGEBlockInfo &block, uint8_t branchSize,
-                               std::vector<FullBTBPrediction> &stagePreds)
+PairTAGE::fillPrediction(const PTAGEBlockInfo &block, uint8_t branchSize,
+                         FullBTBPrediction &pred)
 {
-    FillStageLoop(s) {
-        stagePreds[s].btbEntries.clear();
-        stagePreds[s].condTakens.clear();
-        stagePreds[s].indirectTargets.clear();
-        stagePreds[s].returnTarget = 0;
-        stagePreds[s].predTick = curTick();
-    }
+    pred.btbEntries.clear();
+    pred.condTakens.clear();
+    pred.indirectTargets.clear();
+    pred.returnTarget = 0;
+    pred.predTick = curTick();
 
     // A block that falls through has no branch to predict
     if (!block.taken()) {
@@ -497,17 +511,22 @@ PairTAGE::fillStagePredictions(const PTAGEBlockInfo &block, uint8_t branchSize,
     btbEntry.ctr = block.directionCounter;
     btbEntry.source = getComponentIdx();
 
-    FillStageLoop(s) stagePreds[s].btbEntries.push_back(btbEntry);
+    pred.btbEntries.push_back(btbEntry);
     if (block.isCond) {
-        FillStageLoop(s) stagePreds[s].condTakens.push_back(
-            {block.branchPC, true});
+        pred.condTakens.push_back({block.branchPC, true});
     } else if (block.isIndirect) {
-        FillStageLoop(s) stagePreds[s].indirectTargets.push_back(
-            {block.branchPC, block.targetPC});
+        pred.indirectTargets.push_back({block.branchPC, block.targetPC});
         if (block.isReturn) {
-            FillStageLoop(s) stagePreds[s].returnTarget = block.targetPC;
+            pred.returnTarget = block.targetPC;
         }
     }
+}
+
+void
+PairTAGE::fillStagePredictions(const PTAGEBlockInfo &block, uint8_t branchSize,
+                               std::vector<FullBTBPrediction> &stagePreds)
+{
+    FillStageLoop(s) fillPrediction(block, branchSize, stagePreds[s]);
 }
 
 void

@@ -1117,6 +1117,7 @@ class PairTAGE(TimedBaseBTBPredictor):
     numWays = Param.Unsigned(1, "Number of ways per set")
     numBanks = Param.Unsigned(4, "Number of banks per table")
     confidenceSaturate = Param.Unsigned(5, "Entry confidence at which both blocks may be emitted in one cycle")
+    enableTwoTaken = Param.Bool(False, "Emit both blocks of a saturated entry in one cycle")
     numDelay = 0
     enabled = False
 
