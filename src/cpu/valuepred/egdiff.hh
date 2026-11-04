@@ -105,6 +105,7 @@ class EgDiff : public VPUnit
     const uint64_t normalPredictionLatency;
     const uint64_t deferredPredictionLatency;
     const uint64_t lastMispWindow;
+    const bool suppressZeroDiff;
     std::vector<ThreadState> states;
     std::vector<Entry> table;
     std::vector<LastMispActivation> lastMispActivations;
@@ -158,6 +159,9 @@ class EgDiff : public VPUnit
         statistics::Scalar predictedBaseUses;
         statistics::Scalar confidenceSuppressions;
         statistics::Scalar lastMispSuppressions;
+        statistics::Scalar zeroDiffSuppressions;
+        statistics::Scalar zeroDiffAllocationSkips;
+        statistics::Scalar zeroDiffInvalidations;
         statistics::Scalar noEntry;
         statistics::Scalar historyTooShort;
         statistics::Scalar targetCompletedDrops;
