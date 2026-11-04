@@ -482,11 +482,14 @@ def template CSRExecute {{
         %(code)s;
 
         data &= visibleMask;
-        if(csr == CSR_HIE){
+        const bool readOnlyCsr =
+            classifyCSRAccess(machInst) != CSRAccessClass::Write;
+        if (!readOnlyCsr && csr == CSR_HIE) {
             xc->setMiscReg(effectiveMiscReg, data);
         }
         // NOTE: may has bug
-        if (data != olddata || csr == CSR_FCSR || (csr == CSR_FRM && write) || csr == CSR_VCSR) {
+        if (!readOnlyCsr && (data != olddata || csr == CSR_FCSR ||
+                             (csr == CSR_FRM && write) || csr == CSR_VCSR)) {
             if (bits(csr, 11, 10) == 0x3) {
                 return std::make_shared<IllegalInstFault>(
                         csprintf("CSR %s is read-only\n", csrName), machInst);
@@ -525,6 +528,26 @@ def template CSRExecute {{
         }
         %(op_wb)s;
         return NoFault;
+    }
+}};
+
+def template CSRConstructor {{
+    %(class_name)s::%(class_name)s(ExtMachInst machInst)
+        : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s)
+    {
+        %(set_reg_idx_arr)s;
+        %(constructor)s;
+        const auto access = classifyCSRAccess(machInst);
+        if (csr == CSR_SATP && access == CSRAccessClass::Write)
+            flags[IsSquashAfter] = true;
+        if (access == CSRAccessClass::WaitForward) {
+            flags[IsSerializeBefore] = true;
+            flags[IsSerializeAfter] = false;
+            flags[IsNonSpeculative] = false;
+        } else if (access == CSRAccessClass::OutOfOrder) {
+            flags[IsSerializeAfter] = false;
+            flags[IsNonSpeculative] = false;
+        }
     }
 }};
 
@@ -637,7 +660,7 @@ def format SystemOp(code, *opt_flags) {{
 def format CSROp(code, *opt_flags) {{
     iop = InstObjParams(name, Name, 'CSROp', code, opt_flags)
     header_output = BasicDeclare.subst(iop)
-    decoder_output = BasicConstructor.subst(iop)
+    decoder_output = CSRConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)
     exec_output = CSRExecute.subst(iop)
 }};
