@@ -105,17 +105,23 @@ class PairTAGE : public TimedBaseBTBPredictor
         Addr tag;
         bool useful;
 
+        // Confidence that both blocks are predicted right
+        uint8_t confidence;
+
         PTAGEBlockInfo block;
         PTAGEBlockInfo block2;
 
         PTAGEEntryModelInfo modelInfo;
 
-        PTAGEEntry() : valid(false), b2Valid(false), tag(0), useful(false) {}
+        PTAGEEntry()
+            : valid(false), b2Valid(false), tag(0), useful(false),
+              confidence(0)
+        {}
 
         // A new allocate entry holding one block, weak in its direction
         PTAGEEntry(Addr tag, const BTBEntry &exit, Addr targetPC)
             : valid(true), b2Valid(false), tag(tag), useful(false),
-              block(exit, targetPC)
+              confidence(0), block(exit, targetPC)
         {
             modelInfo.branchSize = exit.valid ? exit.size : 0;
         }
@@ -302,6 +308,12 @@ class PairTAGE : public TimedBaseBTBPredictor
     static constexpr unsigned AllocRefusalWidth = 5;
     unsigned allocRefusals{0};
 
+    // Entry confidence rises when a strengthened first block is followed
+    // by a strengthened second block, and falls when a valid second block
+    // is wrong. An entry whose confidence saturates at confidenceSaturate
+    // is ready to emit both blocks in one cycle.
+    const unsigned confidenceSaturate;
+
     // A trained first block, held until the next block arrives so that
     // block can be trained as its second block.
     // The next block should start at the `nextPC`.
@@ -313,6 +325,7 @@ class PairTAGE : public TimedBaseBTBPredictor
         unsigned way{0};
         PTAGEEntry entry;
         Addr nextPC{0};
+        bool firstCorrect{false};   // the first block was strengthened
     };
 
     std::vector<PendingTrainPair> threadPending;
@@ -342,8 +355,11 @@ class PairTAGE : public TimedBaseBTBPredictor
         statistics::Scalar trainSecondStrengthen;
         statistics::Scalar trainSecondReplace;
         statistics::Scalar trainSecondBroken;
+        statistics::Vector providerConfidence;
+        statistics::Scalar twoTakenCandidates;
 
-        PairTAGEStats(statistics::Group *parent, unsigned numPredictors);
+        PairTAGEStats(statistics::Group *parent, unsigned numPredictors,
+                      unsigned confidenceSaturate);
     } pairTageStats;
 };
 

@@ -24,7 +24,8 @@ PairTAGE::PairTAGE(const Params &p)
       numWays(p.numWays),
       numBanks(p.numBanks),
       bankIdWidth(ceilLog2(p.numBanks)),
-      pairTageStats(this, p.numPredictors)
+      confidenceSaturate(p.confidenceSaturate),
+      pairTageStats(this, p.numPredictors, confidenceSaturate)
 {
     fatal_if(tableSizes.size() < numPredictors,
              "PairTAGE: tableSizes has %zu entries, need %u",
@@ -83,7 +84,8 @@ PairTAGE::PairTAGE(const Params &p)
 }
 
 PairTAGE::PairTAGEStats::PairTAGEStats(statistics::Group *parent,
-                                       unsigned numPredictors)
+                                       unsigned numPredictors,
+                                       unsigned confidenceSaturate)
     : statistics::Group(parent),
       ADD_STAT(lookups, statistics::units::Count::get(),
                "first block phase lookups issued to PairTAGE"),
@@ -114,9 +116,15 @@ PairTAGE::PairTAGEStats::PairTAGEStats(statistics::Group *parent,
                "trainings that replaced or installed a second block"),
       ADD_STAT(trainSecondBroken, statistics::units::Count::get(),
                "pending pairs dropped because the next block did not "
-               "continue them")
+               "continue them"),
+      ADD_STAT(providerConfidence, statistics::units::Count::get(),
+               "first block phase hits by provider confidence"),
+      ADD_STAT(twoTakenCandidates, statistics::units::Count::get(),
+               "first block phase hits whose provider could emit both "
+               "blocks in one cycle")
 {
     providerTable.init(numPredictors);
+    providerConfidence.init(confidenceSaturate + 1);
 }
 
 void
@@ -160,7 +168,12 @@ PairTAGE::putPCHistory(Addr startAddr, const bitset &history,
     if (meta->noAnchor) {
         pairTageStats.lookupNoAnchor++;
     } else if (meta->lookup.provider >= 0) {
+        const auto &entry = meta->lookup.entry;
         pairTageStats.providerTable[meta->lookup.provider]++;
+        pairTageStats.providerConfidence[entry.confidence]++;
+        if (entry.b2Valid && entry.confidence == confidenceSaturate) {
+            pairTageStats.twoTakenCandidates++;
+        }
         fillStagePredictions(meta->lookup.entry.block,
                              meta->lookup.entry.modelInfo.branchSize,
                              stagePreds);
@@ -279,6 +292,7 @@ PairTAGE::trainFirstBlock(const LookupResult &lookup, const BTBEntry &exit,
         writeEntry(lookup.provider, ti.index, lookup.providerWay, entry);
         pairTageStats.trainStrengthen++;
         pending.valid = true;
+        pending.firstCorrect = true;
         pending.table = lookup.provider;
         pending.index = ti.index;
         pending.way = lookup.providerWay;
@@ -349,8 +363,16 @@ PairTAGE::trainSecondBlock(const PendingTrainPair &pending, const BTBEntry &exit
     if (entry.b2Valid && entry.block2.branchPC == branchPC) {
         entry.block2.updateCounter(exit.valid);
         entry.block2.targetPC = targetPC;
+        if (pending.firstCorrect && entry.confidence < confidenceSaturate) {
+            entry.confidence++;
+        }
         pairTageStats.trainSecondStrengthen++;
     } else {
+        // A wrong second block costs confidence; installing a missing one
+        // does not, since it was never predicted
+        if (entry.b2Valid && entry.confidence > 0) {
+            entry.confidence--;
+        }
         entry.b2Valid = true;
         entry.block2 = PTAGEBlockInfo(exit, targetPC);
         entry.modelInfo.block2BranchSize = exit.valid ? exit.size : 0;
