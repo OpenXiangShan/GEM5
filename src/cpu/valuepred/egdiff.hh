@@ -150,6 +150,7 @@ class EgDiff : public VPUnit
         statistics::Scalar deferredBindings;
         statistics::Scalar deferredWakeups;
         statistics::Scalar predictionsOffered;
+        statistics::Scalar predictionsOfferedZeroDiff;
         statistics::Scalar predictionsApplied;
         statistics::Scalar appliedCorrect;
         statistics::Scalar appliedIncorrect;

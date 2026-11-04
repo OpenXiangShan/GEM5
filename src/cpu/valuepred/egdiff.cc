@@ -27,6 +27,8 @@ EgDiff::EgDiffStats::EgDiffStats(statistics::Group *parent)
                "Deferred requests awakened by base availability"),
       ADD_STAT(predictionsOffered, statistics::units::Count::get(),
                "Ready EgDiff predictions offered to arbitration"),
+      ADD_STAT(predictionsOfferedZeroDiff, statistics::units::Count::get(),
+               "Offered predictions whose stored difference was zero"),
       ADD_STAT(predictionsApplied, statistics::units::Count::get(),
                "EgDiff predictions selected and applied"),
       ADD_STAT(appliedCorrect, statistics::units::Count::get(),
@@ -551,6 +553,9 @@ EgDiff::latePredict(const VPLatePredictRequest &request,
     egdiff_record->offeredPrediction = true;
     egdiff_record->predictedValue = predicted;
     egdiffStats.predictionsOffered++;
+    if (target->predictionDiff == 0) {
+        egdiffStats.predictionsOfferedZeroDiff++;
+    }
     if (base->valueSource == ValueSource::Predicted) {
         egdiffStats.predictedBaseUses++;
     } else {
