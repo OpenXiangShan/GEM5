@@ -1270,7 +1270,7 @@ IssueQue::selectInst()
             it++;
         }
     }
-    if (auto *dip = cpu->getDip()) {
+    if (auto *dip = cpu->getDip(); dip && dip->samplingDue()) {
         for (auto it = readyQs.begin(); it != readyQs.end(); ++it) {
             if (std::find(readyQs.begin(), it, *it) != it) {
                 continue;

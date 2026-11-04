@@ -1457,7 +1457,7 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
 
     // Translation faulted, icache request won't be sent.
     const PCStateBase &fetch_pc = *threads[tid].fetchpc;
-    const auto tea_psv = cpu->getTea() ?
+    const auto tea_psv = (cpu->getTea() || cpu->getDip()) ?
         threads[tid].cacheReq.takeTeaEvents(
             fetch_pc.instAddr(), fetch_pc.getFallThruPC() - fetch_pc.instAddr()) :
         0;
@@ -1471,7 +1471,7 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
     // We will use a nop in order to carry the fault.
     DynInstPtr instruction = buildInst(tid, nopStaticInstPtr, nullptr,
             fetch_pc, fetch_pc, false);
-    if (cpu->getTea()) {
+    if (cpu->getTea() || cpu->getDip()) {
         instruction->teaPsv = tea_psv;
     }
     instruction->setVersion(localSquashVer[tid]);
@@ -3056,7 +3056,7 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
 
     // Attribute each line's events to the first architectural instruction
     // using its bytes, including instructions that span both lines.
-    if (cpu->getTea() &&
+    if ((cpu->getTea() || cpu->getDip()) &&
         (!instruction->isMicroop() || instruction->isFirstMicroop())) {
         instruction->teaPsv = threads[tid].cacheReq.takeTeaEvents(
             instruction->getPC(), instruction->getInstBytes());

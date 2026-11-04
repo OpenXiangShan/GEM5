@@ -160,6 +160,8 @@ First supply a successful raw correctness audit JSON with `passed`, `points`,
 and `receipts`. Each receipt contains `point` and a `hashes` mapping whose keys
 are the audited absolute paths, including `m5out/stats.txt`. The audit selects
 the exact completed window; official CI success is established separately.
+Both analyzers verify every recorded file hash and require receipts for the
+configuration, statistics, and DIP/TEA CSV inputs before analyzing measurements.
 
 ```sh
 python3 util/dip/analyze_ci_profile.py ARCHIVE --width 10 \

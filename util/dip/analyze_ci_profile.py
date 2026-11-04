@@ -69,6 +69,34 @@ def table(path, rows):
         writer.writerows(rows)
 
 
+def audited_folders(audit):
+    """Verify each receipt and return its measured m5out directory."""
+    assert audit["passed"] and audit["points"] == len(audit["receipts"])
+    folders = {}
+    for receipt in audit["receipts"]:
+        hashes = {Path(path): value for path, value in receipt["hashes"].items()}
+        stats_path = next(
+            (
+                path for path in hashes
+                if path.name == "stats.txt" and path.parent.name == "m5out"
+            ),
+            None,
+        )
+        if stats_path is None:
+            raise ValueError(f"Receipt missing stats.txt: {receipt['point']}")
+        out = stats_path.parent
+        for name in ["config.ini", "stats.txt", "system.cpu.dip.csv", "system.cpu.tea.csv"]:
+            if out / name not in hashes:
+                raise ValueError(f"Receipt missing required input: {out / name}")
+        for path, expected in hashes.items():
+            with path.open("rb") as stream:
+                actual = hashlib.file_digest(stream, "sha256").hexdigest()
+            if actual != expected:
+                raise ValueError(f"Receipt hash mismatch: {path}")
+        folders[receipt["point"]] = out
+    return folders
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("archive", type=Path)
@@ -79,15 +107,7 @@ def main():
     archive = args.archive
     output = args.output
     receipt_audit = json.loads(args.receipts.read_text())
-    assert receipt_audit["passed"] and receipt_audit["points"] == len(
-        receipt_audit["receipts"]
-    )
-    folders = {
-        r["point"]: Path(
-            next(p for p in r["hashes"] if p.endswith("/m5out/stats.txt"))
-        ).parent.parent
-        for r in receipt_audit["receipts"]
-    }
+    folders = audited_folders(receipt_audit)
     output.mkdir(exist_ok=False, parents=True)
     metadata = dict(
         line.split(": ", 1)
@@ -127,8 +147,7 @@ def main():
         tea_pcs = collections.defaultdict(lambda: collections.defaultdict(float))
         for point, weight in weights.items():
             weight /= mass
-            folder = folders[f"{workload}_{point}"]
-            out = folder / "m5out"
+            out = folders[f"{workload}_{point}"]
             # Correctness and native/recovered completion are established by the
             # passed raw audit. Its exact per-point receipt chooses this folder;
             # recovered runs have different log and completion marker layouts.

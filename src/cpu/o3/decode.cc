@@ -1568,7 +1568,7 @@ Decode::applyFusion(const DynInstPtr &first_inst,
     DynInstPtr instruction = new (arrays) DynInst(
             arrays, fused_inst, fused_inst, thispc, predPC, inst_pair[0]->seqNum, cpu);
 
-    if (cpu->getTea()) {
+    if (cpu->getTea() || cpu->getDip()) {
         instruction->teaPsv = inst_pair[0]->teaPSV() | inst_pair[1]->teaPSV();
     }
 

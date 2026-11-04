@@ -7,7 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from analyze_ci_profile import stats
+from analyze_ci_profile import audited_folders, stats
 
 parser = argparse.ArgumentParser()
 parser.add_argument("archive", type=Path)
@@ -21,16 +21,13 @@ profile = json.loads((args.archive / "cluster.json").read_text())
 proof = json.loads((args.analysis / "audit.json").read_text())
 assert (
     proof["passed"]
+    and proof["raw_audit_sha256"]
+    == hashlib.sha256(args.raw_audit.read_bytes()).hexdigest()
     and proof["cluster_sha256"]
     == hashlib.sha256((args.archive / "cluster.json").read_bytes()).hexdigest()
 )
 width = proof["configuration"]["width"]
-folders = {
-    row["point"]: Path(
-        next(path for path in row["hashes"] if path.endswith("/m5out/stats.txt"))
-    ).parent
-    for row in audit["receipts"]
-}
+folders = audited_folders(audit)
 with (args.analysis / "benchmarks.csv").open() as stream:
     reference = {row["benchmark"]: row for row in csv.DictReader(stream)}
 weighted = collections.defaultdict(collections.Counter)

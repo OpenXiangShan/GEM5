@@ -53,6 +53,7 @@ class Dip
 
     Dip(CPU *cpu, const BaseO3CPUParams &params);
     void beginCycle();
+    bool samplingDue() const { return due; }
     void dispatch(const DynInstPtr &inst);
     void block(const DynInstPtr &inst, uint16_t cause, int iq = -1,
                uint8_t iq_flags = 0);
