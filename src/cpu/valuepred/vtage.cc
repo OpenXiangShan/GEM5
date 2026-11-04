@@ -53,14 +53,12 @@ VTAGE::VTAGE(const Params &params)
       l1HitMaxCycles(params.l1HitMaxCycles),
       l2HitMaxCycles(params.l2HitMaxCycles),
       llcHitMaxCycles(params.llcHitMaxCycles),
-      fastInstCycles(params.fastInstCycles),
       mfastInstCycles(params.mfastInstCycles),
       enableStochasticTraining(params.enableStochasticTraining),
       rngSeed(params.rngSeed),
       allocProbLoadL1Hit(params.allocProbLoadL1Hit),
       allocProbLoadMiss(params.allocProbLoadMiss),
       confIncProbLowValue(params.confIncProbLowValue),
-      confIncProbFastLoad(params.confIncProbFastLoad),
       uIncProbFastLoad(params.uIncProbFastLoad),
       valueArrayUpgradeProb(params.valueArrayUpgradeProb),
       shortHistoryAllocBias(params.shortHistoryAllocBias),
@@ -88,8 +86,6 @@ VTAGE::VTAGE(const Params &params)
             "VTAGE predictConfThreshold exceeds the confidence range");
     gem5_assert(hashOnlyUpgradeThreshold <= maxConf(),
             "VTAGE hashOnlyUpgradeThreshold exceeds the confidence range");
-    gem5_assert(fastInstCycles <= mfastInstCycles,
-            "VTAGE fastInstCycles must not exceed mfastInstCycles");
     gem5_assert(l1HitMaxCycles <= l2HitMaxCycles,
             "VTAGE l1HitMaxCycles must not exceed l2HitMaxCycles");
     gem5_assert(l2HitMaxCycles <= llcHitMaxCycles,
@@ -159,13 +155,6 @@ VTAGE::chance(double probability)
         return true;
     }
     return rng.random<double>() < probability;
-}
-
-bool
-VTAGE::isFastLoad(const TrainInfo &train_info) const
-{
-    return train_info.latencyValid &&
-        train_info.observedLatencyCycles <= fastInstCycles;
 }
 
 bool
@@ -305,9 +294,6 @@ VTAGE::shouldIncreaseConfidence(const TrainInfo &train_info, RegVal actual_value
         probability = 0.5;
         if (isLowValue(actual_value)) {
             probability = std::max(probability, confIncProbLowValue);
-        }
-        if (isFastLoad(train_info)) {
-            probability = std::max(probability, confIncProbFastLoad);
         }
         if (train_info.criticalLoad) {
             probability = 1.0;

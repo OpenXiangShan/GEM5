@@ -100,8 +100,6 @@ class VTAGE(ValuePredictor):
         "Observed latency upper bound for L2-like loads")
     llcHitMaxCycles = Param.Unsigned(50,
         "Observed latency upper bound for LLC-like loads")
-    fastInstCycles = Param.Unsigned(1,
-        "Observed latency upper bound for fast loads")
     mfastInstCycles = Param.Unsigned(14,
         "Observed latency upper bound for medium-fast loads")
 
@@ -115,8 +113,6 @@ class VTAGE(ValuePredictor):
         1.0, "Allocation probability for slower loads")
     confIncProbLowValue = Param.Float(
         1.0, "Confidence increment probability when the actual value is small or sign-extended")
-    confIncProbFastLoad = Param.Float(
-        1.0, "Confidence increment probability for fast loads")
     uIncProbFastLoad = Param.Float(
         0.5, "Usefulness increment probability for medium-fast loads")
     valueArrayUpgradeProb = Param.Float(

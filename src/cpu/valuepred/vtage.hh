@@ -114,14 +114,12 @@ class VTAGE : public VPUnit
     const uint32_t l1HitMaxCycles;
     const uint32_t l2HitMaxCycles;
     const uint32_t llcHitMaxCycles;
-    const uint32_t fastInstCycles;
     const uint32_t mfastInstCycles;
     const bool enableStochasticTraining;
     const uint32_t rngSeed;
     const double allocProbLoadL1Hit;
     const double allocProbLoadMiss;
     const double confIncProbLowValue;
-    const double confIncProbFastLoad;
     const double uIncProbFastLoad;
     const double valueArrayUpgradeProb;
     const double shortHistoryAllocBias;
@@ -189,7 +187,6 @@ class VTAGE : public VPUnit
     uint32_t maxUseful() const;
     uint64_t mix64(uint64_t value) const;
     bool chance(double probability);
-    bool isFastLoad(const TrainInfo &train_info) const;
     bool isMFastLoad(const TrainInfo &train_info) const;
     bool isLowValue(RegVal value) const;
     uint32_t foldHistory(const boost::dynamic_bitset<> &history,
