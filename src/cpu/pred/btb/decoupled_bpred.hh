@@ -166,6 +166,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     std::vector<ThreadID> scheduleThreads();
 
     void processNewPrediction(ThreadID tid);
+    void enqueueSecondBlock(ThreadID tid);
 
     FetchTarget createFetchTargetEntry(ThreadID tid);
     FetchTarget createFetchTargetEntry(ThreadID tid, Addr startPC, FullBTBPrediction &pred);
@@ -284,6 +285,8 @@ class DecoupledBPUWithBTB : public BPredUnit
 
         statistics::Distribution ftqEntryDist;
         statistics::Scalar ftqEntryEnqueued;
+        statistics::Scalar secondBlockEnqueued;
+        statistics::Scalar secondBlockFtqFull;
         statistics::Scalar ftqEntryCommitted;
         statistics::Scalar controlSquashFromDecode;
         statistics::Scalar controlSquashFromCommit;

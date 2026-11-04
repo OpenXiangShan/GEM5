@@ -149,6 +149,14 @@ class PairTAGE : public TimedBaseBTBPredictor
     // predicted block, like the other s1 predictors.
     void updateUsingS3Pred(FullBTBPrediction &s3Pred);
 
+    // Fill pred with the second block to enqueue in the same cycle as the
+    // first block just predicted, and return whether there is one
+    bool getSecondBlock(ThreadID tid, FullBTBPrediction &pred);
+
+    // Record the meta of a second block enqueued with its first block
+    void refreshPredictionMeta(Addr startAddr, const bitset &history,
+                               FullBTBPrediction &pred) override;
+
     // Check the folded histories of thread tid against its full history
     void checkFoldedHist(const bitset &history, ThreadID tid,
                          const char *when);
