@@ -370,9 +370,3 @@ micro-ops are not counted as Computing; some split memory accesses may miss
 ST_L1 marking; and macroPSV from a partially retired RVV instruction may carry
 into the exception handler. Cross-check these cases with existing Topdown
 counters and instruction traces.
-
-## State-preserving Raw Analysis
-
-See [TEA State Preservation and Audited Analysis](tea-analysis.md) for the
-producer change, raw TEA/DIP budget checks, weighted PC selection, executable
-ELF validation, exact configuration pairing, and targeted regression command.
