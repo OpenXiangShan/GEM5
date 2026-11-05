@@ -664,7 +664,7 @@ def build_ssh_command(
     ssh_options: list[str],
     fixed_options: list[str],
 ) -> list[str]:
-    ssh_cmd = ["ssh"]
+    ssh_cmd = ["proxychains", "-q", "ssh", "-o", "ProxyCommand=none"]
     if ssh_config:
         ssh_cmd.extend(["-F", ssh_config])
     for option in fixed_options:
