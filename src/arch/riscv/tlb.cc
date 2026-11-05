@@ -3062,6 +3062,17 @@ TLB::translateFunctional(const RequestPtr &req, ThreadContext *tc,
             Walker *walker = mmu->getDataWalker();
             unsigned logBytes;
             configFunctional(req, tc, mode);
+            // Functional instruction supply must reject non-canonical virtual
+            // addresses before the walker discards their high VPN bits.
+            const unsigned xlate_mode = req->get_two_stage_state() ?
+                static_cast<unsigned>(vsatp.mode) :
+                static_cast<unsigned>(satp.mode);
+            if (mode == BaseMMU::Execute &&
+                (xlate_mode == AddrXlateMode::SV39 ||
+                 xlate_mode == AddrXlateMode::SV48) &&
+                VADDR_SEXT(xlate_mode, vaddr) != vaddr) {
+                return createPagefault(vaddr, 0, mode, false);
+            }
             Fault fault = walker->startFunctional(
                     req, tc, paddr, logBytes, mode);
             if (fault != NoFault)
