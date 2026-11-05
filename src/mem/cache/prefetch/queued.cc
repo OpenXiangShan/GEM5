@@ -189,7 +189,9 @@ Queued::Queued(const QueuedPrefetcherParams &p)
       missingTranslationQueueSize(
         p.max_prefetch_requests_with_pending_translation),
       latency(p.latency), queueSquash(p.queue_squash),
-      queueFilter(p.queue_filter), cacheSnoop(p.cache_snoop),
+      queueFilter(p.queue_filter),
+      deprioritizeBufferedNeighbors(p.deprioritize_buffered_neighbors),
+      cacheSnoop(p.cache_snoop),
       tagPrefetch(p.tag_prefetch),
       throttleControlPct(p.throttle_control_percentage),
       pfControl(p.pf_control),
@@ -1065,8 +1067,13 @@ Queued::PFSendEventWrapper()
             
         PacketPtr pkt = addr_prio.pf_trigger_info.pkt;
         PrefetchInfo pfi = PrefetchInfo(*addr_prio.pf_trigger_info.pfi_old);
-        //override address's prio to 1 
-        addr_prio.priority = 1;
+        const bool neighbor = deprioritizeBufferedNeighbors &&
+            addr_prio.pfSource == PrefetchSourceType::CDP &&
+            addr_prio.priority == 1;
+        addr_prio.priority = neighbor ? 0 : 1;
+        if (neighbor) {
+            statsQueued.pfBufferedNeighborsDeprioritized++;
+        }
         // Block align prefetch address
         addr_prio.addr = blockAddress(addr_prio.addr);
 
@@ -1160,6 +1167,9 @@ Queued::QueuedStats::QueuedStats(statistics::Group *parent)
              "number of prefetch candidates identified"),
     ADD_STAT(pfBufferHit, statistics::units::Count::get(),
              "number of redundant prefetches already in prefetch queue"),
+    ADD_STAT(pfBufferedNeighborsDeprioritized,
+             statistics::units::Count::get(),
+             "buffered CDP degree-extension requests deprioritized"),
     ADD_STAT(pfInCache, statistics::units::Count::get(),
              "number of redundant prefetches already in cache/mshr dropped"),
     ADD_STAT(pfRemovedDemand, statistics::units::Count::get(),
