@@ -244,12 +244,7 @@ BTBMGSC::BTBMGSC(const Params &p)
 #endif
 BTBMGSC::~BTBMGSC() {}
 
-ThreadID
-BTBMGSC::predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const
-{
-    assert(!stagePreds.empty());
-    return stagePreds.front().tid;
-}
+
 
 BTBMGSC::ThreadHistoryState &
 BTBMGSC::historyState(ThreadID tid)
@@ -412,7 +407,7 @@ BTBMGSC::calculateWeightScaleDiff(int total_sum, int scale_percsum, int percsum)
  * @return TagePrediction containing main and alternative predictions
  */
 BTBMGSC::MgscPrediction
-BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC,
+BTBMGSC::generateSinglePrediction(const BranchPrediction &btb_entry, const Addr &startPC,
                                   const TageInfoForMGSC &tage_info,
                                   ThreadID tid, uint8_t asidHash)
 {
@@ -545,17 +540,20 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
  *
  * @param startPC The starting PC address for the instruction stream
  * @param btbEntries Vector of BTB entries to make predictions for
- * @return Map of branch PC addresses to their predicted outcomes
+ * @return Provider validity and direction for each input candidate
  */
-void
-BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
-                      const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
-                      CondTakens &results, ThreadID tid, uint8_t asidHash)
+std::vector<DirectionPrediction>
+BTBMGSC::predictDirections(
+    const Addr &startPC, const std::vector<BranchPrediction> &btbEntries,
+    const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
+    ThreadID tid, uint8_t asidHash)
 {
     DPRINTF(MGSC, "lookupHelper startAddr: %#lx\n", startPC);
 
     // Process each BTB entry to make predictions
-    for (auto &btb_entry : btbEntries) {
+    std::vector<DirectionPrediction> results(btbEntries.size());
+    for (size_t i = 0; i < btbEntries.size(); ++i) {
+        const auto &btb_entry = btbEntries[i];
         // Only predict for valid conditional branches
         if (btb_entry.isCond && btb_entry.valid) {
             auto tage_info = tageInfoForMgscs.find(btb_entry.pc);
@@ -570,35 +568,19 @@ BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
                 tage_info != tageInfoForMgscs.end() ? tage_info->second : missing_tage_info;
             auto pred = generateSinglePrediction(btb_entry, startPC, info, tid, asidHash);
             threadMeta[tid]->preds[btb_entry.pc] = pred;
-            results.push_back({btb_entry.pc, pred.taken});
+            results[i] = {pred.use_mgsc, pred.taken};
         }
     }
+    return results;
 }
 
-/**
- * @brief Makes predictions for a stream of instructions using TAGE predictor
- *
- * This function is called during the prediction stage and:
- * 1. Uses lookupHelper to get predictions for all BTB entries
- * 2. Stores predictions in the stage prediction structure
- * 3. Handles multiple prediction stages with different delays
- *
- * @param stream_start Starting PC of the instruction stream
- * @param history Current branch history
- * @param stagePreds Vector of predictions for different pipeline stages
- */
-void
-BTBMGSC::putPCHistory(Addr stream_start, const boost::dynamic_bitset<> &history,
-                      std::vector<FullBTBPrediction> &stagePreds)
-{
-    const ThreadID tid = predictorTid(stagePreds);
-    const auto &state = historyState(tid);
-    const uint8_t asidHash = stagePreds.empty() ? 0 : stagePreds.front().asidHash;
-    DPRINTF(MGSC, "putPCHistory startAddr: %#lx\n", stream_start);
 
-    // IMPORTANT: when this function is called,
-    // btb entries should already be in stagePreds
-    // get prediction and save it
+void
+BTBMGSC::beginPrediction(Addr stream_start, const boost::dynamic_bitset<> &history,
+                        ThreadID tid)
+{
+    const auto &state = historyState(tid);
+    DPRINTF(MGSC, "putPCHistory startAddr: %#lx\n", stream_start);
 
     if (!isEnabled()) {
         return;  // Just return if MGSC is disabled
@@ -612,14 +594,6 @@ BTBMGSC::putPCHistory(Addr stream_start, const boost::dynamic_bitset<> &history,
     threadMeta[tid]->indexGFoldedHist = state.indexGFoldedHist;
     threadMeta[tid]->indexPFoldedHist = state.indexPFoldedHist;
 
-    for (int s = getDelay(); s < stagePreds.size(); s++) {
-        // TODO: only lookup once for one btb entry in different stages
-        auto &stage_pred = stagePreds[s];
-        stage_pred.condTakens.clear();
-        lookupHelper(stream_start, stage_pred.btbEntries,
-                     stage_pred.tageInfoForMgscs, stage_pred.condTakens, tid,
-                     asidHash);
-    }
 }
 
 std::shared_ptr<void>

@@ -121,11 +121,16 @@ class MicroTAGE : public TimedBaseBTBPredictor
 
     void tick() override;
     void dryRunCycle(Addr startAddr) override;
-    // Make predictions for a stream of instructions and record in stage preds
-    void putPCHistory(Addr startAddr,
-                      const boost::dynamic_bitset<> &history,
-                      std::vector<FullBTBPrediction> &stagePreds) override;
+    // Snapshot lookup state once, then predict each stage's candidate set.
+    void beginPrediction(Addr startPC,
+                          const boost::dynamic_bitset<> &history,
+                          const std::vector<BranchPrediction> &firstCandidates,
+                          ThreadID tid);
+    std::vector<DirectionPrediction> predictDirections(
+        const Addr &startPC, const std::vector<BranchPrediction> &btbEntries,
+        ThreadID tid, uint8_t asidHash);
 
+    bool isAbtbEntry(const BranchPrediction &entry) const;
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
     void refreshPredictionMeta(Addr startAddr,
                                const boost::dynamic_bitset<> &history,
@@ -168,8 +173,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
 #endif
 
     // Look up predictions in TAGE tables for a stream of instructions
-    void lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
-                      CondTakens& results, ThreadID tid, uint8_t asidHash);
+
 
     // Calculate TAGE index for a given PC and table
     Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0,
@@ -368,7 +372,7 @@ public:
         std::vector<PathFoldedHist> tagFoldedHist;
         std::vector<PathFoldedHist> indexFoldedHist;
         std::vector<PathFoldedHist> altTagFoldedHist;
-        std::vector<BTBEntry> abtbEntries;
+        std::vector<BranchPrediction> abtbEntries;
         bool aheadIndexFoldedHistValid;
         std::vector<PathFoldedHist> aheadIndexFoldedHist;
         bitset history;     // for viewing
@@ -383,7 +387,7 @@ public:
 
     struct TrainingEntry
     {
-        BTBEntry entry;
+        BranchPrediction entry;
         bool actualTaken;
         bool controlMispred;
     };
@@ -408,34 +412,32 @@ public:
     // Helper method to generate prediction for a single BTB entry
     // If predMeta is provided, use snapshot folded history for index/tag calculation (update path)
     // If predMeta is nullptr, use current folded history (prediction path)
-    TagePrediction generateSinglePrediction(const BTBEntry &btb_entry,
+    TagePrediction generateSinglePrediction(const BranchPrediction &btb_entry,
                                            const Addr &startPC,
                                            const std::shared_ptr<TageMeta> predMeta = nullptr,
                                            ThreadID tid = 0,
                                            uint8_t asidHash = 0);
 
     // Build the reachable conditional prefix for S3 teacher update.
-    std::vector<BTBEntry> prepareS3UpdateEntriesFromAbtbMeta(
-        const std::vector<BTBEntry> &abtbEntries,
-        FullBTBPrediction &s3Pred,
-        CondTakens &teacherCondTakens);
-    std::vector<BTBEntry> getAbtbConditionalEntries(
-        const std::vector<BTBEntry> &btbEntries) const;
-    bool isAbtbEntry(const BTBEntry &entry) const;
+    std::vector<BranchPrediction> prepareS3UpdateEntriesFromAbtbMeta(
+        const std::vector<BranchPrediction> &abtbEntries,
+        FullBTBPrediction &s3Pred);
+    std::vector<BranchPrediction> getAbtbConditionalEntries(
+        const std::vector<BranchPrediction> &btbEntries) const;
 
     // Helper method to update predictor state for a single entry
-    bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
+    bool updatePredictorStateAndCheckAllocation(const BranchPrediction &entry,
                                  bool actual_taken,
                                  const TagePrediction &pred,
                                  bool control_mispred);
     // Reuse the provider/allocation policy under an S3-teacher mismatch definition.
-    bool updatePredictorStateAndCheckAllocationS3(const BTBEntry &entry,
+    bool updatePredictorStateAndCheckAllocationS3(const BranchPrediction &entry,
                                  bool actual_taken,
                                  const TagePrediction &pred);
 
     // Helper method to handle new entry allocation
     bool handleNewEntryAllocation(const Addr &startPC,
-                                 const BTBEntry &entry,
+                                 const BranchPrediction &entry,
                                  bool actual_taken,
                                  unsigned main_table,
                                  std::shared_ptr<TageMeta> meta,
@@ -448,7 +450,6 @@ public:
 
     int abtbComponentIdx{-1};
     std::vector<std::shared_ptr<TageMeta>> threadMeta;
-    ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;
     ThreadHistoryState &historyState(ThreadID tid);
     const ThreadHistoryState &historyState(ThreadID tid) const;
 };

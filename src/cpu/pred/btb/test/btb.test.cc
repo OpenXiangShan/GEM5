@@ -3,6 +3,7 @@
 
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/mbtb.hh"
+#include "cpu/pred/btb/test/prediction_helpers.hh"
 
 namespace gem5
 {
@@ -49,19 +50,7 @@ createResolveEvent(ThreadID tid, FetchTargetId ftqId, InstSeqNum seqNum,
                    const BranchInfo &branch, bool taken, bool mispredicted)
 {
     return BranchOutcome{
-        tid,
-        ftqId,
-        seqNum,
-        branch.pc,
-        branch.target,
-        taken,
-        mispredicted,
-        branch.isCond,
-        branch.isIndirect,
-        branch.isDirect,
-        branch.isCall,
-        branch.isReturn,
-        branch.size
+        tid, ftqId, seqNum, branch, taken, mispredicted
     };
 }
 
@@ -99,31 +88,37 @@ createPreparedUpdate(const FetchTarget &stream, const BranchInfo &branch,
 /**
  * @brief Helper function to find conditional taken prediction for a given PC
  *
- * @param condTakens Vector of conditional predictions
+ * @param entries Ordered branch candidates
  * @param pc Branch PC to search for
  * @return Pair of (found, prediction) where found indicates if PC was found
  */
-std::pair<bool, bool> findCondTaken(const CondTakens& condTakens, Addr pc) {
-    auto it = CondTakens_find(condTakens, pc);
-    if (it != condTakens.end()) {
-        return {true, it->second};
-    }
-    return {false, false};
+std::pair<bool, bool>
+findCondTaken(const std::vector<BranchPrediction> &entries, Addr pc)
+{
+    const auto it = std::find_if(entries.begin(), entries.end(),
+        [pc](const auto &entry) {
+            return entry.valid && entry.isCond && entry.pc == pc;
+        });
+    return it == entries.end() ? std::make_pair(false, false) :
+                               std::make_pair(true, it->taken);
 }
 
 /**
  * @brief Helper function to find indirect target for a given PC
  *
- * @param indirectTargets Vector of indirect targets
+ * @param entries Ordered branch candidates
  * @param pc Branch PC to search for
  * @return Pair of (found, target) where found indicates if PC was found
  */
-std::pair<bool, Addr> findIndirectTarget(const IndirectTargets& indirectTargets, Addr pc) {
-    auto it = IndirectTakens_find(indirectTargets, pc);
-    if (it != indirectTargets.end()) {
-        return {true, it->second};
-    }
-    return {false, 0};
+std::pair<bool, Addr>
+findIndirectTarget(const std::vector<BranchPrediction> &entries, Addr pc)
+{
+    const auto it = std::find_if(entries.begin(), entries.end(),
+        [pc](const auto &entry) {
+            return entry.valid && entry.isIndirect && entry.pc == pc;
+        });
+    return it == entries.end() ? std::make_pair(false, Addr(0)) :
+                               std::make_pair(true, it->predictedTarget);
 }
 
 /**
@@ -148,7 +143,7 @@ predictUpdateCycle(MBTB* btb,
     for (auto &pred : stagePreds) {
         pred.tid = tid;
     }
-    btb->putPCHistory(startPC, history, stagePreds);
+    predictForTest(btb, startPC, history, stagePreds);
     auto meta = btb->getPredictionMeta(tid);
 
     // Update phase
@@ -169,7 +164,7 @@ predictUpdateCycle(MBTB* btb,
     for (auto &pred : stagePreds) {
         pred.tid = tid;
     }
-    btb->putPCHistory(startPC, history, stagePreds);
+    predictForTest(btb, startPC, history, stagePreds);
 
     return stagePreds;
 }
@@ -222,8 +217,8 @@ TEST_F(BTBTest, EmptyPrediction) {
     boost::dynamic_bitset<> history(8, 0);  // 8-bit history, all zeros
     std::vector<FullBTBPrediction> stagePreds(4);  // 4 stages
     
-    mbtb->putPCHistory(startAddr, history, stagePreds);
-    
+    predictForTest(mbtb, startAddr, history, stagePreds);
+
     // Check predictions for all stages
     for (int i = 0; i < stagePreds.size(); i++) {
         EXPECT_TRUE(stagePreds[i].btbEntries.empty());
@@ -245,11 +240,11 @@ TEST_F(BTBTest, PredictionMetadataIsPerThread) {
         pred.tid = 1;
     }
 
-    mbtb->putPCHistory(0x1000, history, thread0Preds);
+    predictForTest(mbtb, 0x1000, history, thread0Preds);
     auto thread0Meta = mbtb->getPredictionMeta(0);
     ASSERT_NE(thread0Meta, nullptr);
 
-    mbtb->putPCHistory(0x2000, history, thread1Preds);
+    predictForTest(mbtb, 0x2000, history, thread1Preds);
     auto thread1Meta = mbtb->getPredictionMeta(1);
     ASSERT_NE(thread1Meta, nullptr);
 
@@ -279,7 +274,7 @@ TEST_F(BTBTest, TidPartitionKeepsSamePcEntriesIndependent) {
         for (auto &pred : predictions) {
             pred.tid = tid;
         }
-        partitionedBtb.putPCHistory(
+        predictForTest(&partitionedBtb,
             startPC, boost::dynamic_bitset<>(8, 0), predictions);
 
         ASSERT_EQ(predictions[partitionedBtb.getDelay()].btbEntries.size(), 1);
@@ -322,7 +317,7 @@ TEST_F(BTBTest, PrivateVictimCachesKeepSamePcTargetsIndependent)
         for (auto &prediction : predictions) {
             prediction.tid = tid;
         }
-        btb.putPCHistory(startPC, boost::dynamic_bitset<>(8, 0), predictions);
+        predictForTest(&btb, startPC, boost::dynamic_bitset<>(8, 0), predictions);
         ASSERT_EQ(entries.size(), 5);
         const auto &predictedEntries = predictions[btb.getDelay()].btbEntries;
         ASSERT_EQ(predictedEntries.size(), entries.size());
@@ -432,32 +427,37 @@ TEST_F(BTBTest, ConditionalCounter) {
     std::vector<FullBTBPrediction> stagePreds =
         predictUpdateCycle(mbtb, 0x1000, branch, true);
 
+    EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, 0);
+
     // A newly allocated entry starts weakly taken, matching RTL.
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
-        EXPECT_EQ(entries[0].ctr, 0);
+        EXPECT_EQ(entries[0].baseTaken, true);
     }
     
     // A second taken update makes the entry strongly taken.
     stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, true);
+    EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, 1);
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
-        EXPECT_EQ(stagePreds[i].btbEntries[0].ctr, 1);
+        EXPECT_EQ(stagePreds[i].btbEntries[0].baseTaken, true);
     }
 
     // The first not-taken update preserves a taken prediction.
     stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, false);
+    EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, 0);
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
-        EXPECT_EQ(stagePreds[i].btbEntries[0].ctr, 0);
+        EXPECT_EQ(stagePreds[i].btbEntries[0].baseTaken, true);
     }
 
     // A second not-taken update changes the prediction direction.
     stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, false);
+    EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, -1);
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
-        EXPECT_EQ(stagePreds[i].btbEntries[0].ctr, -1);
+        EXPECT_EQ(stagePreds[i].btbEntries[0].baseTaken, false);
     }
 }
 
@@ -483,7 +483,9 @@ TEST_F(BTBTest, ActualBranchAttributesReplaceExistingEntry)
     EXPECT_FALSE(entries[0].isIndirect);
     EXPECT_FALSE(entries[0].isCall);
     EXPECT_FALSE(entries[0].isReturn);
-    EXPECT_EQ(entries[0].ctr, -1);
+    EXPECT_EQ(entries[0].baseTaken, false);
+    ASSERT_EQ(mbtb->predictionStorageEntries().size(), 1);
+    EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, -1);
 }
 
 TEST_F(BTBTest, ActualBranchUpdatePreservesLiveCounter)
@@ -505,10 +507,12 @@ TEST_F(BTBTest, ActualBranchUpdatePreservesLiveCounter)
                  createPreparedUpdate(stream, actual_branch, false));
 
     std::vector<FullBTBPrediction> predictions(4);
-    mbtb->putPCHistory(start_pc, boost::dynamic_bitset<>(8, 0), predictions);
+    predictForTest(mbtb, start_pc, boost::dynamic_bitset<>(8, 0), predictions);
     const auto &entries = predictions[mbtb->getDelay()].btbEntries;
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].ctr, 0);
+    EXPECT_EQ(entries[0].baseTaken, true);
+    ASSERT_EQ(mbtb->predictionStorageEntries().size(), 1);
+    EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, 0);
     EXPECT_EQ(entries[0].target, actual_branch.target);
     EXPECT_EQ(entries[0].size, actual_branch.size);
 }
@@ -523,22 +527,31 @@ TEST_F(BTBTest, CounterSaturation) {
         predictUpdateCycle(mbtb, 0x1000, branch, true);
 
     // Check the weakly-taken allocation state.
+    ASSERT_EQ(mbtb->predictionStorageEntries().size(), 1);
+    EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, 0);
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
-        EXPECT_EQ(entries[0].ctr, 0);  // Counter should be at 0
+        EXPECT_EQ(entries[0].baseTaken, true);
     }
     
+    for (int i = 0; i < 4; ++i) {
+        stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, true);
+        EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, 1);
+    }
+
     // Update multiple times with not taken to test negative saturation
     for (int i = 0; i < 3; i++) {  // 3 times should reach saturation
         stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, false);
     }
     
+    EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, -2);
+
     // Check counter is saturated at -2
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
-        EXPECT_EQ(entries[0].ctr, -2);  // Counter should saturate at -2
+        EXPECT_EQ(entries[0].baseTaken, false);
     }
 }
 
@@ -558,7 +571,7 @@ TEST_F(BTBTest, CounterSaturation) {
 //     // Check by trying to find it
 //     std::vector<FullBTBPrediction> stagePreds(4);
 //     boost::dynamic_bitset<> history(8, 0);
-//     mbtb_small->putPCHistory(0x1000, history, stagePreds);
+//     predictForTest(mbtb_small, 0x1000, history, stagePreds);
 
 //     // 0x1000 should be evicted, so no entry should be found
 //     EXPECT_TRUE(stagePreds[mbtb_small->getDelay()].btbEntries.empty());
@@ -576,7 +589,7 @@ TEST_F(BTBTest, IndirectBranchPrediction) {
     // Verify indirect target
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
-        auto [found1, target1] = findIndirectTarget(stagePreds[i].indirectTargets, 0x1000);
+        auto [found1, target1] = findIndirectTarget(stagePreds[i].btbEntries, 0x1000);
         ASSERT_TRUE(found1);
         EXPECT_EQ(target1, 0x2000);
     }
@@ -587,7 +600,7 @@ TEST_F(BTBTest, IndirectBranchPrediction) {
 
     // Verify new indirect target
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
-        auto [found2, target2] = findIndirectTarget(stagePreds[i].indirectTargets, 0x1000);
+        auto [found2, target2] = findIndirectTarget(stagePreds[i].btbEntries, 0x1000);
         ASSERT_TRUE(found2);
         EXPECT_EQ(target2, 0x3000);
     }
@@ -608,7 +621,7 @@ TEST_F(BTBTest, MultipleBranchPrediction) {
     // Add second branch
     boost::dynamic_bitset<> history(8, 0);
     std::vector<FullBTBPrediction> tempPreds(4);
-    mbtb->putPCHistory(0x1000, history, tempPreds);
+    predictForTest(mbtb, 0x1000, history, tempPreds);
     auto meta = mbtb->getPredictionMeta();
 
     FetchTarget stream = setupStream(0x1000, branch2, true, meta);
@@ -618,8 +631,8 @@ TEST_F(BTBTest, MultipleBranchPrediction) {
     // Check final predictions
     stagePreds.clear();
     stagePreds.resize(4);
-    mbtb->putPCHistory(0x1000, history, stagePreds);
-    
+    predictForTest(mbtb, 0x1000, history, stagePreds);
+
     // Verify both branches are predicted
     std::vector<BranchInfo> expectedBranches = {branch1, branch2};
     verifyPrediction(stagePreds, mbtb->getDelay(), expectedBranches);
@@ -767,7 +780,7 @@ TEST_F(BTBTest, UnpredictedTakenBranchAllocates)
     auto actual_branch = createBranchInfo(0x1004, 0x3000, true);
     boost::dynamic_bitset<> history(8, 0);
     std::vector<FullBTBPrediction> stage_preds(4);
-    mbtb->putPCHistory(start_pc, history, stage_preds);
+    predictForTest(mbtb, start_pc, history, stage_preds);
 
     FetchTarget target;
     target.tid = 0;
@@ -780,7 +793,7 @@ TEST_F(BTBTest, UnpredictedTakenBranchAllocates)
     mbtb->update(PredictionUpdateContext(target), update);
 
     stage_preds.assign(4, FullBTBPrediction());
-    mbtb->putPCHistory(start_pc, history, stage_preds);
+    predictForTest(mbtb, start_pc, history, stage_preds);
     ASSERT_EQ(stage_preds[mbtb->getDelay()].btbEntries.size(), 1);
     EXPECT_EQ(stage_preds[mbtb->getDelay()].btbEntries.front().pc,
               actual_branch.pc);
@@ -794,7 +807,7 @@ TEST_F(BTBTest, ResolvedUpdateOnlyAppliesMarkedBranch)
 
     boost::dynamic_bitset<> history(8, 0);
     std::vector<FullBTBPrediction> predictions(4);
-    mbtb->putPCHistory(0x1000, history, predictions);
+    predictForTest(mbtb, 0x1000, history, predictions);
     auto meta = mbtb->getPredictionMeta();
     auto insert_b = setupStream(0x1000, branch_b, true, meta);
     auto insert_update = createPreparedUpdate(
@@ -802,7 +815,7 @@ TEST_F(BTBTest, ResolvedUpdateOnlyAppliesMarkedBranch)
     mbtb->update(PredictionUpdateContext(insert_b), insert_update);
 
     predictions.assign(4, FullBTBPrediction());
-    mbtb->putPCHistory(0x1000, history, predictions);
+    predictForTest(mbtb, 0x1000, history, predictions);
     ASSERT_EQ(predictions[mbtb->getDelay()].btbEntries.size(), 2);
     meta = mbtb->getPredictionMeta();
 
@@ -817,11 +830,14 @@ TEST_F(BTBTest, ResolvedUpdateOnlyAppliesMarkedBranch)
     mbtb->update(PredictionUpdateContext(resolve_a), resolve_update);
 
     predictions.assign(4, FullBTBPrediction());
-    mbtb->putPCHistory(0x1000, history, predictions);
+    predictForTest(mbtb, 0x1000, history, predictions);
     const auto &entries = predictions[mbtb->getDelay()].btbEntries;
     ASSERT_EQ(entries.size(), 2);
-    EXPECT_EQ(entries[0].ctr, -1);
-    EXPECT_EQ(entries[1].ctr, 0);
+    EXPECT_EQ(entries[0].baseTaken, false);
+    EXPECT_EQ(entries[1].baseTaken, true);
+    ASSERT_EQ(mbtb->predictionStorageEntries().size(), 2);
+    EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, -1);
+    EXPECT_EQ(mbtb->predictionStorageEntries()[1].ctr, 0);
 }
 
 TEST_F(BTBTest, UnpredictedNotTakenBranchDoesNotAllocate)
@@ -830,7 +846,7 @@ TEST_F(BTBTest, UnpredictedNotTakenBranchDoesNotAllocate)
     auto branch = createBranchInfo(0x1004, 0x2000, true);
     boost::dynamic_bitset<> history(8, 0);
     std::vector<FullBTBPrediction> stage_preds(4);
-    mbtb->putPCHistory(start_pc, history, stage_preds);
+    predictForTest(mbtb, start_pc, history, stage_preds);
     auto meta = mbtb->getPredictionMeta();
 
     auto target = setupStream(start_pc, branch, false, meta);
@@ -838,7 +854,7 @@ TEST_F(BTBTest, UnpredictedNotTakenBranchDoesNotAllocate)
     mbtb->update(PredictionUpdateContext(target), update);
 
     stage_preds.assign(4, FullBTBPrediction());
-    mbtb->putPCHistory(start_pc, history, stage_preds);
+    predictForTest(mbtb, start_pc, history, stage_preds);
     EXPECT_TRUE(stage_preds[mbtb->getDelay()].btbEntries.empty());
 }
 
@@ -859,7 +875,7 @@ TEST_F(BTBTest, MispredictionRecovery) {
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
-        EXPECT_LT(entries[0].ctr, 0);
+        EXPECT_FALSE(entries[0].baseTaken);
     }
 }
 
@@ -925,7 +941,7 @@ TEST_F(BTBTest, HalfAlignedUpdateSecondBlock) {
     // Also verify prediction from second block
     stagePreds.clear();
     stagePreds.resize(2);
-    mbtb->putPCHistory(0x120, boost::dynamic_bitset<>(64, 0), stagePreds);
+    predictForTest(mbtb, 0x120, boost::dynamic_bitset<>(64, 0), stagePreds);
 
     // Should still find the branch
     std::vector<BranchInfo> expectedBranches = {branch};

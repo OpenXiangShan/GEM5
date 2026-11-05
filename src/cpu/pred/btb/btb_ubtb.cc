@@ -153,54 +153,27 @@ UBTB::PredStatistics(const TickedUBTBEntry entry, Addr startAddr)
     return;
 }
 
-void
-UBTB::fillStagePredictions(const TickedUBTBEntry &entry, std::vector<FullBTBPrediction> &stagePreds)
+
+
+std::vector<BranchPrediction>
+UBTB::predictCandidates(Addr startAddr, ThreadID tid, uint8_t asidHash)
 {
-    FillStageLoop(s) {
-        DPRINTF(UBTB, "UBTB: assigning prediction for stage %d\n", s);
-
-        // Copy uBTB entries to stage prediction
-        stagePreds[s].btbEntries.clear();
-        stagePreds[s].condTakens.clear();  // TODO: consider moving this to another place -- the uBTB shouldn't need to
-                                           // take care of this
-        // Set predictions for each branch
-        stagePreds[s].predTick = curTick();
-    }
-
-    if (entry.valid) {
-        FillStageLoop(s) stagePreds[s].btbEntries.push_back(BTBEntry(entry));
-        if (entry.isCond) {
-            // uBTB always predicts present conditional entries as taken.
-            FillStageLoop(s) stagePreds[s].condTakens.push_back({entry.pc, true});
-        } else if (entry.isIndirect) {
-            // Set predicted target for indirect branches
-            DPRINTF(UBTB, "setting indirect target for pc %#lx to %#lx\n", entry.pc, entry.target);
-            FillStageLoop(s) stagePreds[s].indirectTargets.push_back({entry.pc, entry.target});
-            if (entry.isReturn) {
-                FillStageLoop(s) stagePreds[s].returnTarget = entry.target;
-            }
-        }
-    }
-}
-
-void
-UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history, std::vector<FullBTBPrediction> &stagePreds)
-{
-    const ThreadID tid = stagePreds.empty() ? 0 : stagePreds.front().tid;
     assert(tid < threadMeta.size());
     threadMeta[tid] = std::make_shared<UBTBMeta>();
-    const uint8_t asidHash = stagePreds.empty() ? 0 : stagePreds.front().asidHash;
     auto it = lookup(startAddr, tid, asidHash);
-    auto& entry = threadMeta[tid]->hit_entry;
+    auto &entry = threadMeta[tid]->hit_entry;
     entry = (it != ubtb.end()) ? *it : TickedUBTBEntry();
-
     PredStatistics(entry, startAddr);
-
-    // Fill predictions for each pipeline stage
-    fillStagePredictions(entry, stagePreds);
-
-    // Update metadata for later stages
     lastPred[tid].hit_entry = it;
+
+    if (!entry.valid) {
+        return {};
+    }
+    BranchPrediction candidate(entry);
+    // replaceOldEntry() resets the stored ctr to zero on insertion. Thus
+    // forcing taken also preserves the old ABTB fallback test (ctr >= 0).
+    candidate.taken = true;
+    return {candidate};
 }
 
 void
@@ -302,7 +275,9 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
         return;
     }
 
-    auto takenEntry = s3Pred.getTakenEntry();
+    auto prediction = s3Pred.getTakenEntry();
+    BTBEntry takenEntry(prediction.getBranchInfo());
+    takenEntry.valid = prediction.valid;
     if (takenEntry.valid) {
         ubtbStats.s3UpdateHits++;
     }else {

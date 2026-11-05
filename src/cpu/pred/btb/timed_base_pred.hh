@@ -66,11 +66,6 @@ class TimedBaseBTBPredictor: public SimObject
     virtual void tickStart() {}
     virtual void tick() {}
     virtual void dryRunCycle(Addr startAddr) {};
-    // make predictions, record in stage preds
-    virtual void putPCHistory(Addr startAddr,
-                              const boost::dynamic_bitset<> &history,
-                              std::vector<FullBTBPrediction> &stagePreds) {}
-
     virtual std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0)
     {
         return nullptr;

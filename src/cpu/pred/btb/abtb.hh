@@ -139,20 +139,30 @@ class AheadBTB : public TimedBaseBTBPredictor
      * Main prediction function
      * @param startAddr: start address of the fetch block
      * @param history: branch history register
-     * @param stagePreds: predictions for each pipeline stage
-     * 
+     * @param tid: thread owning the lookup and prediction metadata
+     * @param asidHash: address-space hash used for indexing and tags
+     *
      * This function:
      * 1. Looks up BTB entries for the fetch block
      * 2. Updates prediction statistics
-     * 3. Fills predictions for each pipeline stage
+     * 3. Snapshots native storage and returns ordered candidates; the BPU
+     *    handles uBTB fallback and stage composition.
      */
-    void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
-                      std::vector<FullBTBPrediction> &stagePreds) override;
+    std::vector<BranchPrediction> predictCandidates(
+        Addr startAddr, const boost::dynamic_bitset<> &history,
+        ThreadID tid, uint8_t asidHash);
+    void recordPredictionSelection(bool abtbHit, bool ubtbHit);
 
     /** Get prediction BTBMeta
      *  @return Returns the prediction meta
      */
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
+#ifdef UNIT_TEST
+    const std::vector<BTBEntry> &predictionStorageEntries(ThreadID tid = 0) const
+    {
+        return threadState(tid).meta->hit_entries;
+    }
+#endif
     void refreshPredictionMeta(Addr startAddr,
                                const boost::dynamic_bitset<> &history,
                                FullBTBPrediction &pred) override;
@@ -187,10 +197,10 @@ class AheadBTB : public TimedBaseBTBPredictor
 
 
 
-    void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
-        DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
+    void printBTBEntry(const BranchInfo &e, uint64_t tick = 0) {
+        DPRINTF(BTB, "Branch candidate: pc:%#lx, size:%d, target:%#lx, \
             cond:%d, indirect:%d, call:%d, return:%d, tick:%lu\n",
-            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect,
+            e.pc, e.size, e.target, e.isCond, e.isIndirect,
             e.isCall, e.isReturn, tick);
     }
 
@@ -202,7 +212,8 @@ class AheadBTB : public TimedBaseBTBPredictor
         printBTBEntry(e, e.tick);
     }
 
-    void dumpBTBEntries(const std::vector<BTBEntry> &es) {
+    template<class Entry>
+    void dumpBTBEntries(const std::vector<Entry> &es) {
         DPRINTF(BTB, "BTB entries:\n");
         for (const auto &entry : es) {
             printBTBEntry(entry);
@@ -303,7 +314,7 @@ class AheadBTB : public TimedBaseBTBPredictor
     */
     struct ThreadState
     {
-        // metadata for BTB, set in putPCHistory, used in update
+        // metadata for BTB, set in predictCandidates, used in update
         std::shared_ptr<BTBMeta> meta;
 
         /**
@@ -322,7 +333,6 @@ class AheadBTB : public TimedBaseBTBPredictor
         std::queue<std::tuple<Addr, Addr, BTBSet>> aheadReadBtbEntries;
     };
 
-    ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;
     ThreadState &threadState(ThreadID tid);
     const ThreadState &threadState(ThreadID tid) const;
 
@@ -336,18 +346,12 @@ class AheadBTB : public TimedBaseBTBPredictor
     std::vector<TickedBTBEntry> processEntriesNoSideEffect(
         const std::vector<TickedBTBEntry>& entries, Addr startAddr) const;
 
-    /** Fill predictions for pipeline stages
-     *  @param entries Processed BTB entries
-     *  @param stagePreds Vector of predictions for each stage
-     */
-    void fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
-                             std::vector<FullBTBPrediction>& stagePreds);
+
 
     /** Update prediction metadata
      *  @param entries Processed BTB entries
      */
     void updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
-                               std::vector<FullBTBPrediction>& stagePreds,
                                ThreadID tid,
                                Addr indexPhrHash);
 
@@ -402,7 +406,8 @@ class AheadBTB : public TimedBaseBTBPredictor
      * 
      * @param es 
      */
-    void checkAscending(std::vector<BTBEntry> &es) {
+    template<class Entry>
+    void checkAscending(std::vector<Entry> &es) {
         Addr last = 0;
         bool misorder = false;
         for (auto &entry : es) {

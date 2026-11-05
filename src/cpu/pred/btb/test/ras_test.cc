@@ -9,6 +9,7 @@
 #include "base/types.hh"
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/ras.hh"
+#include "cpu/pred/btb/test/prediction_helpers.hh"
 
 namespace gem5 {
 namespace branch_prediction {
@@ -72,8 +73,15 @@ protected:
     void checkReturnTarget(Addr startAddr, Addr expectedTarget) {
         boost::dynamic_bitset<> history(8, 0);
         std::vector<FullBTBPrediction> stagePreds(4);
-        ras->putPCHistory(startAddr, history, stagePreds);
-        EXPECT_EQ(stagePreds[0].returnTarget, expectedTarget);
+        BTBEntry ret;
+        ret.valid = true;
+        ret.isIndirect = true;
+        ret.isReturn = true;
+        for (auto &stage : stagePreds) {
+            stage.btbEntries.push_back(ret);
+        }
+        predictForTest(ras, startAddr, history, stagePreds);
+        EXPECT_EQ(stagePreds[0].btbEntries.front().predictedTarget, expectedTarget);
     }
 
     // Helper function to create the FTQ-owned prediction context.

@@ -9,6 +9,7 @@
 #include "cpu/pred/btb/btb_tage_ub.hh"
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/folded_hist.hh"
+#include "cpu/pred/btb/test/prediction_helpers.hh"
 
 namespace gem5
 {
@@ -68,19 +69,7 @@ BranchOutcome
 createBranchOutcome(const BTBEntry &entry, bool taken, bool mispredicted)
 {
     return BranchOutcome{
-        0,
-        0,
-        1,
-        entry.pc,
-        entry.target,
-        taken,
-        mispredicted,
-        entry.isCond,
-        entry.isIndirect,
-        entry.isDirect,
-        entry.isCall,
-        entry.isReturn,
-        entry.size
+        0, 0, 1, entry, taken, mispredicted
     };
 }
 
@@ -325,19 +314,63 @@ TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
     }
 }
 
+TEST(FullBTBPredictionTest, KeepsConditionalPrefixAndSeparatesTargets)
+{
+    FullBTBPrediction pred;
+    pred.bbStart = 0x1000;
+    pred.btbEntries = {
+        createBTBEntry(0x1000, true, true, -1, 0x2000),
+        createBTBEntry(0x1004, true, true, -1, 0x2004),
+        createBTBEntry(0x1008, true, true, 0, 0x0800),
+        createBTBEntry(0x100c, true, true, 0, 0x200c)
+    };
+    pred.btbEntries[2].predictedTarget = 0x4000;
+
+    EXPECT_EQ(pred.getGHistUpdate().shamt, 3);
+    EXPECT_TRUE(pred.getGHistUpdate().taken);
+    EXPECT_EQ(pred.getBwHistUpdate().shamt, 3);
+    EXPECT_TRUE(pred.getBwHistUpdate().taken);
+    EXPECT_EQ(pred.getTakenEntry().pc, 0x1008);
+    EXPECT_EQ(pred.getTakenEntry().getBranchInfo().target, 0x0800);
+    EXPECT_EQ(pred.getTarget(64), 0x4000);
+    EXPECT_EQ(pred.getPHistUpdate().target, 0x4000);
+
+    auto later = pred;
+    later.btbEntries[2].predictedTarget = 0x5000;
+    EXPECT_EQ(pred.match(later, 64).second, OverrideReason::TARGET);
+    later.btbEntries[2].taken = false;
+    EXPECT_EQ(pred.match(later, 64).second, OverrideReason::CONTROL_ADDR);
+}
+
+TEST(FullBTBPredictionTest, DistinguishesMissFromBranchlessHit)
+{
+    FullBTBPrediction miss;
+    miss.bbStart = 0x1000;
+    auto branchless = miss;
+    branchless.hit = true;
+    EXPECT_FALSE(miss.hit);
+    EXPECT_TRUE(branchless.hit);
+    EXPECT_FALSE(branchless.isTaken());
+    EXPECT_EQ(branchless.getTarget(64), miss.getTarget(64));
+    EXPECT_EQ(branchless.getGHistUpdate().shamt, 0);
+}
+
 /**
  * @brief Helper function to find conditional taken prediction for a given PC
  *
- * @param condTakens Vector of conditional predictions
+ * @param entries Ordered branch candidates
  * @param pc Branch PC to search for
  * @return Pair of (found, prediction) where found indicates if PC was found
  */
-std::pair<bool, bool> findCondTaken(const gem5::branch_prediction::btb_pred::CondTakens& condTakens, Addr pc) {
-    auto it = CondTakens_find(condTakens, pc);
-    if (it != condTakens.end()) {
-        return {true, it->second};
-    }
-    return {false, false};
+std::pair<bool, bool>
+findCondTaken(const std::vector<BranchPrediction> &entries, Addr pc)
+{
+    const auto it = std::find_if(entries.begin(), entries.end(),
+        [pc](const auto &entry) {
+            return entry.valid && entry.isCond && entry.pc == pc;
+        });
+    return it == entries.end() ? std::make_pair(false, false) :
+                               std::make_pair(true, it->taken);
 }
 
 /**
@@ -355,14 +388,14 @@ bool predictTAGE(BTBTAGE* tage, Addr startPC,
                 boost::dynamic_bitset<>& history,
                 std::vector<FullBTBPrediction>& stagePreds) {
     // Setup stage predictions with BTB entries
-    stagePreds[1].btbEntries = entries;
+    stagePreds[1].btbEntries.assign(entries.begin(), entries.end());
 
     // Make prediction
-    tage->putPCHistory(startPC, history, stagePreds);
+    predictForTest(tage, startPC, history, stagePreds);
 
     // Return prediction for first entry if exists
     if (!entries.empty()) {
-        auto result = findCondTaken(stagePreds[1].condTakens, entries[0].pc);
+        auto result = findCondTaken(stagePreds[1].btbEntries, entries[0].pc);
         bool found = result.first;
         bool taken = result.second;
         if (found) {
@@ -389,13 +422,10 @@ bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
                       std::vector<FullBTBPrediction>& stagePreds) {
     // 1. Make prediction
     stagePreds[1].btbEntries = {entry};
-    tage->putPCHistory(startPC, history, stagePreds);
+    predictForTest(tage, startPC, history, stagePreds);
 
     // 2. Get predicted result
-    Addr branch_pc = entry.pc;
-    auto it = CondTakens_find(stagePreds[1].condTakens, branch_pc);
-    // ASSERT_TRUE(it != stagePreds[1].condTakens.end()) << "Prediction not found for PC " << std::hex << entry.pc;
-    bool predicted_taken = it->second;
+    bool predicted_taken = stagePreds[1].btbEntries.front().taken;
 
     // 3. Speculatively update folded history
     specUpdateSelectedHistory(tage, history, stagePreds[1]);
@@ -528,6 +558,56 @@ protected:
 };
 
 // Test basic prediction functionality
+TEST_F(BTBTAGETest, ReportsProviderValiditySeparatelyFromBase)
+{
+    const Addr pc = 0x1000;
+    std::vector<BranchPrediction> entries = {
+        createBTBEntry(pc, true, true, -1, 0x2000)
+    };
+    std::unordered_map<Addr, TageInfoForMGSC> confidence;
+    tage->beginPrediction(pc, history, 0);
+    auto directions = tage->predictDirections(pc, entries, confidence, 0, 0);
+    ASSERT_EQ(directions.size(), 1);
+    EXPECT_FALSE(directions[0].valid);
+    EXPECT_FALSE(entries[0].baseTaken);
+
+    setupTageEntry(tage, pc, 3, 2);
+    tage->beginPrediction(pc, history, 0);
+    directions = tage->predictDirections(pc, entries, confidence, 0, 0);
+    EXPECT_TRUE(directions[0].valid);
+    EXPECT_TRUE(directions[0].taken);
+    EXPECT_FALSE(entries[0].taken);
+
+    // A weak main provider may select base without an alternate provider.
+    setupTageEntry(tage, pc, 3, 0);
+    tage->beginPrediction(pc, history, 0);
+    directions = tage->predictDirections(pc, entries, confidence, 0, 0);
+    EXPECT_FALSE(directions[0].valid);
+}
+
+TEST_F(BTBTAGETest, StagesKeepTheirCandidatesAndMetadataOrder)
+{
+    tage->setNumDelay(1);
+    auto first = BranchPrediction(createBTBEntry(0x1000, true, true, -1));
+    auto later = BranchPrediction(createBTBEntry(0x1004, true, true, 0));
+    std::vector<FullBTBPrediction> stages(3);
+    stages[0].btbEntries = {later};
+    stages[0].btbEntries[0].taken = false;
+    stages[1].btbEntries = {first};
+    first.baseTaken = true;
+    stages[2].btbEntries = {first, later};
+    predictForTest(tage, 0x1000, history, stages);
+    EXPECT_FALSE(stages[0].btbEntries[0].taken);
+    EXPECT_FALSE(stages[1].btbEntries[0].taken);
+    EXPECT_TRUE(stages[2].btbEntries[0].taken);
+    EXPECT_TRUE(stages[2].btbEntries[1].taken);
+    const auto meta = std::static_pointer_cast<BTBTAGE::TageMeta>(
+        tage->getPredictionMeta());
+    ASSERT_EQ(meta->preds.size(), 2);
+    EXPECT_TRUE(meta->preds.at(0x1000).basePred);
+    EXPECT_TRUE(meta->preds.at(0x1004).basePred);
+}
+
 TEST_F(BTBTAGETest, BasicPrediction) {
     // Create a conditional branch entry biased towards taken
     BTBEntry entry = createBTBEntry(0x1000, true, true, 1);
@@ -726,7 +806,7 @@ TEST_F(BTBTAGETest, EntryAllocationAndReplacement) {
     predictTAGE(tage, 0x1000, {entry1}, history, stagePreds);
     auto meta = tage->getPredictionMeta();
     bool predicted = false;
-    auto result_pred = findCondTaken(stagePreds[1].condTakens, 0x1000);
+    auto result_pred = findCondTaken(stagePreds[1].btbEntries, 0x1000);
     bool found_pred = result_pred.first;
     bool pred_result = result_pred.second;
     if (found_pred) {
@@ -825,11 +905,11 @@ TEST_F(BTBTAGETest, MultipleBranchSequence) {
 
     // Get predictions for both branches
     bool first_pred = false, second_pred = false;
-    auto result1 = findCondTaken(stagePreds[1].condTakens, 0x1000);
+    auto result1 = findCondTaken(stagePreds[1].btbEntries, 0x1000);
     if (result1.first) {
         first_pred = result1.second;
     }
-    auto result2 = findCondTaken(stagePreds[1].condTakens, 0x1004);
+    auto result2 = findCondTaken(stagePreds[1].btbEntries, 0x1004);
     if (result2.first) {
         second_pred = result2.second;
     }
@@ -1055,11 +1135,11 @@ TEST_F(BTBTAGETest, SetAssociativeConflictHandling) {
     stagePreds.clear();
     stagePreds.resize(2);
     stagePreds[1].btbEntries = {entry1};
-    tage->putPCHistory(startPC, history, stagePreds);
+    predictForTest(tage, startPC, history, stagePreds);
 
     // Get prediction for entry1
     bool pred1 = false;
-    auto result_entry1 = findCondTaken(stagePreds[1].condTakens, entry1.pc);
+    auto result_entry1 = findCondTaken(stagePreds[1].btbEntries, entry1.pc);
     if (result_entry1.first) {
         pred1 = result_entry1.second;
     }
@@ -1073,11 +1153,11 @@ TEST_F(BTBTAGETest, SetAssociativeConflictHandling) {
     stagePreds.clear();
     stagePreds.resize(2);
     stagePreds[1].btbEntries = {entry2};
-    tage->putPCHistory(startPC, history, stagePreds);
+    predictForTest(tage, startPC, history, stagePreds);
 
     // Get prediction for entry2
     bool pred2 = false;
-    auto result_entry2 = findCondTaken(stagePreds[1].condTakens, entry2.pc);
+    auto result_entry2 = findCondTaken(stagePreds[1].btbEntries, entry2.pc);
     if (result_entry2.first) {
         pred2 = result_entry2.second;
     }
@@ -1223,7 +1303,7 @@ TEST_F(BTBTAGETest, AllocationReplacesStrongNotUsefulEntry) {
 
 TEST_F(BTBTAGETest, MissingPredictionMetaDoesNotTrain) {
     stagePreds[1].btbEntries.clear();
-    tage->putPCHistory(0x1000, history, stagePreds);
+    predictForTest(tage, 0x1000, history, stagePreds);
     auto meta = tage->getPredictionMeta();
 
     BTBEntry newEntry = createBTBEntry(0x1010, true, true, -1);
@@ -1242,7 +1322,7 @@ TEST_F(BTBTAGETest, MissingPredictionMetaDoesNotTrain) {
 TEST_F(BTBTAGETest, FinalPredictionWithoutTageMetaDoesNotTrain)
 {
     stagePreds[1].btbEntries.clear();
-    tage->putPCHistory(0x1000, history, stagePreds);
+    predictForTest(tage, 0x1000, history, stagePreds);
     auto meta = tage->getPredictionMeta();
 
     BTBEntry finalEntry =
@@ -1301,7 +1381,7 @@ TEST_F(BTBTAGETest, BankConflict) {
         // Predict and update the same branch in bank 1.
         setupTageEntry(bankTage, 0xa0, 0, 1, false);
         testStagePreds[1].btbEntries = {createBTBEntry(0xa0)};
-        bankTage->putPCHistory(0xa0, testHistory, testStagePreds);
+        predictForTest(bankTage, 0xa0, testHistory, testStagePreds);
         EXPECT_TRUE(bankTage->predBankValid);
 
         auto meta = bankTage->getPredictionMeta();
@@ -1342,7 +1422,7 @@ TEST_F(BTBTAGETest, BankConflict) {
     {
         // Predict on bank 0 (0x100), update on bank 2 (0x104)
         testStagePreds[1].btbEntries = {createBTBEntry(0x100)};
-        bankTage->putPCHistory(0x100, testHistory, testStagePreds);
+        predictForTest(bankTage, 0x100, testHistory, testStagePreds);
 
         auto meta = bankTage->getPredictionMeta();
         const auto entry = createBTBEntry(0x104);
@@ -1364,7 +1444,7 @@ TEST_F(BTBTAGETest, BankConflict) {
     {
         // Same bank (0x20 and 0xa0), but conflict disabled
         testStagePreds[1].btbEntries = {createBTBEntry(0x20)};
-        bankTage->putPCHistory(0x20, testHistory, testStagePreds);
+        predictForTest(bankTage, 0x20, testHistory, testStagePreds);
 
         auto meta = bankTage->getPredictionMeta();
         const auto entry = createBTBEntry(0xa0);
@@ -1472,7 +1552,7 @@ TEST_F(BTBTAGEUpperBoundTest, AllocationUsesPredictionTimeHistory) {
 TEST_F(BTBTAGEUpperBoundTest, MissingPredictionMetaDoesNotTrain) {
     boost::dynamic_bitset<> historyA(128, 0);
     stagePreds[1].btbEntries.clear();
-    tage->putPCHistory(0x1000, historyA, stagePreds);
+    predictForTest(tage, 0x1000, historyA, stagePreds);
     auto meta = tage->getPredictionMeta();
 
     BTBEntry newEntry = createBTBEntry(0x1010, true, true, -1);
@@ -1497,7 +1577,7 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesPathHashHistorySnapshot) {
 
     FullBTBPrediction pred;
     pred.btbEntries.push_back(entry);
-    pred.condTakens.push_back({entry.pc, true});
+    pred.btbEntries.back().taken = true;
     tage->specUpdatePHist(pathHistoryA, pred, pred.getPHistUpdate());
 
     bool predicted = predictTAGE(tage, 0x1000, {entry}, outcomeHistory, stagePreds);
@@ -1520,8 +1600,8 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesIndirectOverridePathHashSnap
 
     FullBTBPrediction pred;
     pred.btbEntries.push_back(entry);
-    pred.condTakens.push_back({entry.pc, true});
-    pred.indirectTargets.push_back({entry.pc, indirectTarget});
+    pred.btbEntries.back().taken = true;
+    pred.btbEntries.back().predictedTarget = indirectTarget;
 
     tage->specUpdatePHist(pathHistoryA, pred, pred.getPHistUpdate());
     tage->checkFoldedHist(pathHistoryB, "indirect target override");
@@ -1547,8 +1627,8 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesReturnOverridePathHashSnapsh
 
     FullBTBPrediction pred;
     pred.btbEntries.push_back(entry);
-    pred.condTakens.push_back({entry.pc, true});
-    pred.returnTarget = returnTarget;
+    pred.btbEntries.back().taken = true;
+    pred.btbEntries.back().predictedTarget = returnTarget;
 
     tage->specUpdatePHist(pathHistoryA, pred, pred.getPHistUpdate());
     tage->checkFoldedHist(pathHistoryB, "return target override");
@@ -1566,7 +1646,7 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, RecoverPHistUsesTakenControlPath) {
 
     FullBTBPrediction pred;
     pred.btbEntries.push_back(entry);
-    tage->putPCHistory(0x1000, pathHistoryBefore, stagePreds);
+    predictForTest(tage, 0x1000, pathHistoryBefore, stagePreds);
     auto meta = tage->getPredictionMeta();
 
     FetchTarget stream = createStream(0x1000, entry, meta);

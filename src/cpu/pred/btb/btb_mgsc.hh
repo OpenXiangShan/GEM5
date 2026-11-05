@@ -155,9 +155,14 @@ class BTBMGSC : public TimedBaseBTBPredictor
     void tickStart() override;
 
     void tick() override;
-    // Make predictions for a stream of instructions and record in stage preds
-    void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
-                      std::vector<FullBTBPrediction> &stagePreds) override;
+    // Snapshot lookup state once, then predict each stage's candidate set.
+    void beginPrediction(Addr startPC,
+                          const boost::dynamic_bitset<> &history,
+                          ThreadID tid);
+    std::vector<DirectionPrediction> predictDirections(
+        const Addr &startPC, const std::vector<BranchPrediction> &btbEntries,
+        const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
+        ThreadID tid, uint8_t asidHash);
 
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
     void refreshPredictionMeta(Addr startAddr,
@@ -269,9 +274,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     void updateGlobalThreshold(Addr pc, bool update_direction);
 
     // Look up predictions in MGSC tables for a stream of instructions
-    void lookupHelper(const Addr &stream_start, const std::vector<BTBEntry> &btbEntries,
-                      const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
-                      CondTakens &results, ThreadID tid, uint8_t asidHash);
+
 
     // Calculate MGSC history index with folded history
     Addr getHistIndex(Addr pc, unsigned tableIndexBits, uint64_t foldedHist,
@@ -302,7 +305,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     }
 
     // Helper method to generate prediction for a single BTB entry
-    MgscPrediction generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC,
+    MgscPrediction generateSinglePrediction(const BranchPrediction &btb_entry, const Addr &startPC,
                                             const TageInfoForMGSC &tage_info,
                                             ThreadID tid, uint8_t asidHash);
 
@@ -628,7 +631,6 @@ class BTBMGSC : public TimedBaseBTBPredictor
     } MgscMeta;
 
     std::vector<std::shared_ptr<MgscMeta>> threadMeta;
-    ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;
     ThreadHistoryState &historyState(ThreadID tid);
     const ThreadHistoryState &historyState(ThreadID tid) const;
 };

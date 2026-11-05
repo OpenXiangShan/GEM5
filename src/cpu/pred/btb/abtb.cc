@@ -136,12 +136,7 @@ AheadBTB::AheadBTB(const Params &p)
 #endif
 }
 
-ThreadID
-AheadBTB::predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const
-{
-    assert(!stagePreds.empty());
-    return stagePreds.front().tid;
-}
+
 
 AheadBTB::ThreadState &
 AheadBTB::threadState(ThreadID tid)
@@ -246,74 +241,16 @@ AheadBTB::processEntriesNoSideEffect(const std::vector<TickedBTBEntry>& entries,
     return processed_entries;
 }
 
-/**
- * Fill predictions for each pipeline stage:
- * 1. Copy BTB entries
- * 2. Set conditional branch predictions
- * 3. Set indirect branch targets
- */
 void
-AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
-                                    std::vector<FullBTBPrediction>& stagePreds)
-{    // S0 prediction source statistic is tracked by AheadBTB
-    // AheadBTB always has aheadPipelinedStages > 0
-    std::vector<TickedBTBEntry> selected_entries;
-    bool selected_abtb_entries = false;
-
-    if (!entries.empty()) {
-        // RTL S1 arbitration gives ABTB exclusive priority once ABTB is valid.
-        // If these entries later predict not-taken, S1 falls through instead of
-        // falling back to an earlier uBTB taken prediction.
-        selected_entries = entries;
-        selected_abtb_entries = true;
+AheadBTB::recordPredictionSelection(bool abtbHit, bool ubtbHit)
+{
+    if (abtbHit) {
         btbStats.S0PredUseABTB++;
-    } else if (stagePreds[0].btbEntries.size() > 0) {
-        DPRINTF(ABTB, "AheadBTB: ABTB miss, keeping uBTB prediction\n");
+    } else if (ubtbHit) {
         btbStats.S0PredUseUBTB++;
-        const auto &ubtb_pred_entry = stagePreds[0].btbEntries[0];
-        assert(ubtb_pred_entry.valid);
-        selected_entries.push_back(TickedBTBEntry(ubtb_pred_entry, curTick()));
     } else {
         btbStats.S0Predmiss++;
     }
-
-    FillStageLoop(s) {
-        DPRINTF(ABTB, "BTB: assigning prediction for stage %d\n", s);
-        // Copy BTB entries to stage prediction
-        stagePreds[s].btbEntries.clear();
-        for (auto e : selected_entries) {
-            auto pred_entry = BTBEntry(e);
-            if (selected_abtb_entries) {
-                pred_entry.source = getComponentIdx();
-            }
-            stagePreds[s].btbEntries.push_back(pred_entry);
-        }
-        checkAscending(stagePreds[s].btbEntries);
-        dumpBTBEntries(stagePreds[s].btbEntries);
-
-        stagePreds[s].predTick = curTick();
-        stagePreds[s].condTakens.clear();
-        stagePreds[s].indirectTargets.clear();
-    }
-
-    // Set predictions for each branch
-    for (auto &e : selected_entries) {
-        assert(e.valid);
-        if (e.isCond) {
-            FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.ctr >= 0});
-        } else if (e.isIndirect) {
-            // Set predicted target for indirect branches
-            DPRINTF(ABTB, "setting indirect target for pc %#lx to %#lx\n", e.pc, e.target);
-
-            FillStageLoop(s) stagePreds[s].indirectTargets.push_back({e.pc, e.target});
-
-            if (e.isReturn) {
-                FillStageLoop(s) stagePreds[s].returnTarget = e.target;
-            }
-            break;
-        }
-    }
-
 }
 
 /**
@@ -323,7 +260,6 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
  */
 void
 AheadBTB::updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
-                                   std::vector<FullBTBPrediction>& stagePreds,
                                    ThreadID tid,
                                    Addr indexPhrHash)
 {
@@ -347,27 +283,24 @@ AheadBTB::updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
     state.lastPredLookupIndexValid = state.meta->lookupIndexValid;
 }
 
-void
-AheadBTB::putPCHistory(Addr startAddr,
-                         const boost::dynamic_bitset<> &history,
-                         std::vector<FullBTBPrediction> &stagePreds)
+std::vector<BranchPrediction>
+AheadBTB::predictCandidates(Addr startAddr,
+                             const boost::dynamic_bitset<> &history,
+                             ThreadID tid, uint8_t asidHash)
 {
-    const ThreadID tid = predictorTid(stagePreds);
     auto &state = threadState(tid);
     state.meta = std::make_shared<BTBMeta>();
-    const uint8_t asidHash = stagePreds.empty() ? 0 : stagePreds.front().asidHash;
     const Addr indexPhrHash = foldAbtbPhrHash(history);
-    // Lookup all matching entries in BTB
-    auto find_entries = lookup(startAddr, tid, asidHash, indexPhrHash);
-
-    // Process BTB entries
-    auto processed_entries = processEntries(find_entries, startAddr);
-
-    // Fill predictions for each pipeline stage
-    fillStagePredictions(processed_entries, stagePreds);
-    
-    // Update metadata for later stages
-    updatePredictionMeta(processed_entries, stagePreds, tid, indexPhrHash);
+    auto found = lookup(startAddr, tid, asidHash, indexPhrHash);
+    auto processed = processEntries(found, startAddr);
+    updatePredictionMeta(processed, tid, indexPhrHash);
+    std::vector<BranchPrediction> candidates(processed.begin(), processed.end());
+    for (auto &entry : candidates) {
+        entry.source = getComponentIdx();
+    }
+    checkAscending(candidates);
+    dumpBTBEntries(candidates);
+    return candidates;
 }
 
 std::shared_ptr<void>
@@ -749,7 +682,7 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
         }
     }
     if (!pred_branch_hit&& s3Pred.isTaken()) {
-        new_entry = s3Pred.getTakenEntry();
+        new_entry = BTBEntry(s3Pred.getTakenEntry().getBranchInfo());
         new_entry.valid = true;
 
         if (new_entry.isCond) {
@@ -808,7 +741,7 @@ AheadBTB::update(
             continue;
         }
 
-        BTBEntry entry(makeBranchInfo(branch));
+        BTBEntry entry(branch);
         entry.source = getComponentIdx();
         updateBTBEntry(btb_idx, btb_tag, entry, branch.taken, branch.target);
     }

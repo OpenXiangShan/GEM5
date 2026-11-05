@@ -149,8 +149,8 @@ PairTAGE::recordTwoTakenBlockEnqueued()
     pairTageStats.twoTakenBlocksEnqueued++;
 }
 
-void
-PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBTBPrediction> &stagePreds)
+PairTAGE::PairBlockInfo
+PairTAGE::predictBlock(Addr startAddr, const bitset &history)
 {
     (void)history;
     secondPredBlock.clear();
@@ -165,13 +165,13 @@ PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBT
     }
 
     if (!phaseEnabled(predictionPhase)) {
-        return;
+        return {};
     }
 
     pairTageStats.firstBlockLookups++;
     auto tableInfo = lookupEntry(startAddr);
     if (!tableInfo.found) {
-        return;
+        return {};
     }
 
     meta->predictedFirstBlock = tableInfo.entry.firstBlock();
@@ -179,7 +179,7 @@ PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBT
     secondPredBlock = tableInfo.entry.secondBlock();
 
     if (!tableInfo.entry.firstBlock().valid) {
-        return;
+        return {};
     }
 
     pairTageStats.firstBlockHits++;
@@ -187,9 +187,7 @@ PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBT
         pairTageStats.secondBlockProduced++;
     }
 
-    for (int s = getDelay(); s < stagePreds.size(); ++s) {
-        fillStagePrediction(tableInfo.entry.firstBlock(), stagePreds[s]);
-    }
+    return tableInfo.entry.firstBlock();
 }
 
 std::shared_ptr<void>
@@ -202,8 +200,6 @@ PairTAGE::getPredictionMeta(ThreadID tid)
 PairTAGE::TrainPacket
 PairTAGE::buildTrainPacketFromPredForFirstBlock(FullBTBPrediction &finalPred) const
 {
-    using BranchFlag = TrainPacket::BranchFlag;
-
     TrainPacket packet;
     packet.startPC = finalPred.bbStart;
     packet.phase = predictionPhase;
@@ -228,8 +224,8 @@ PairTAGE::buildTrainPacketFromPredForFirstBlock(FullBTBPrediction &finalPred) co
     if (!trainEntry.valid) {
         if (!hasValidEntry) {
             packet.valid = true;
-            packet.branchPC = finalPred.bbStart;
-            packet.targetPC = getFallThrough(finalPred.bbStart);
+            packet.pc = finalPred.bbStart;
+            packet.target = getFallThrough(finalPred.bbStart);
         }
         return packet;
     }
@@ -237,30 +233,29 @@ PairTAGE::buildTrainPacketFromPredForFirstBlock(FullBTBPrediction &finalPred) co
     packet.valid = true;
     packet.hasBranch = true;
     packet.taken = taken;
-    packet.branchPC = trainEntry.pc;
-    packet.targetPC = taken ? finalPred.getEntryTarget(trainEntry) : trainEntry.target;
+    packet.pc = trainEntry.pc;
+    packet.target = taken ? trainEntry.predictedTarget : trainEntry.target;
     if (taken) {
         packet.size = trainEntry.size;
-        packet.setBranchFlags(trainEntry);
+        static_cast<BranchAttribute &>(packet) = trainEntry;
     } else {
-        packet.branchFlags =
-            TrainPacket::branchFlag(BranchFlag::Conditional) | TrainPacket::branchFlag(BranchFlag::Direct);
+        packet.isCond = true;
+        packet.isDirect = true;
         packet.size = 4;
     }
     return packet;
 }
 
 PairTAGE::TrainPacket
-PairTAGE::buildTwoTakenTrainPacket(Addr startPC, PairPhase phase, const std::vector<BTBEntry> &btbEntries,
-                                   const CondTakens &condTakens) const
+PairTAGE::buildTwoTakenTrainPacket(
+    Addr startPC, PairPhase phase,
+    const std::vector<BranchPrediction> &btbEntries) const
 {
-    using BranchFlag = TrainPacket::BranchFlag;
-
     TrainPacket packet;
     packet.startPC = startPC;
     packet.phase = phase;
 
-    const BTBEntry *trainEntry = nullptr;
+    const BranchPrediction *trainEntry = nullptr;
     bool taken = false;
     for (const auto &entry : btbEntries) {
         if (!entry.valid) {
@@ -268,9 +263,7 @@ PairTAGE::buildTwoTakenTrainPacket(Addr startPC, PairPhase phase, const std::vec
         }
 
         if (entry.isCond) {
-            const Addr branchPC = entry.pc;
-            auto direction = CondTakens_find(condTakens, branchPC);
-            if (direction != condTakens.end() && direction->second) {
+            if (entry.taken) {
                 trainEntry = &entry;
                 taken = true;
                 break;
@@ -298,11 +291,11 @@ PairTAGE::buildTwoTakenTrainPacket(Addr startPC, PairPhase phase, const std::vec
 
     packet.valid = true;
     packet.hasBranch = true;
-    packet.branchPC = trainEntry->pc;
-    packet.targetPC = trainEntry->target;
+    packet.pc = trainEntry->pc;
+    packet.target = trainEntry->target;
     packet.taken = taken;
-    packet.branchFlags =
-        TrainPacket::branchFlag(BranchFlag::Conditional) | TrainPacket::branchFlag(BranchFlag::Direct);
+    packet.isCond = true;
+    packet.isDirect = true;
     packet.size = 4;
     return packet;
 }
@@ -345,7 +338,8 @@ PairTAGE::getSecondPredBlock() const
 bool
 PairTAGE::secondBlockMatches(const TrainPacket &packet) const
 {
-    return blocksMatch(secondPredBlock, buildTrainingBlock(packet));
+    assert(packet.hasConsistentState());
+    return blocksMatch(secondPredBlock, packet);
 }
 
 void
@@ -631,7 +625,7 @@ PairTAGE::lookupProviders(Addr startPC, const TageMeta &predMeta) const
             // aliasing, the entry should be override by higher predictors and should
             // not in final stage pred.
             const auto &firstBlock = entry.firstBlock();
-            if (!isBranchInFirstBlock(firstBlock.branchPC, startPC)) {
+            if (!isBranchInFirstBlock(firstBlock.pc, startPC)) {
                 continue;
             }
 
@@ -680,60 +674,7 @@ PairTAGE::lookupEntry(Addr startPC) const
     return lookupProviders(startPC).main;
 }
 
-void
-PairTAGE::fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pred) const
-{
-    pred.btbEntries.clear();
-    pred.condTakens.clear();
-    pred.indirectTargets.clear();
-    pred.tageInfoForMgscs.clear();
-    pred.returnTarget = 0;
-    pred.predTick = curTick();
 
-    if (!block.valid) {
-        return;
-    }
-
-    if (block.isBranchlessFallthrough()) {
-        return;
-    }
-
-    auto entry = block.buildBTBEntry(componentIdx);
-    pred.btbEntries.push_back(entry);
-    if (entry.isCond) {
-        pred.condTakens.push_back({entry.pc, block.taken});
-    }
-    if (entry.isIndirect) {
-        if (entry.isReturn) {
-            pred.returnTarget = block.targetPC;
-        } else {
-            pred.indirectTargets.push_back({entry.pc, block.targetPC});
-        }
-    }
-}
-
-PairTAGE::PairBlockInfo
-PairTAGE::buildTrainingBlock(const TrainPacket &packet) const
-{
-    assert(packet.hasConsistentState());
-
-    if (!packet.valid) {
-        return PairBlockInfo{};
-    }
-
-    if (!packet.hasBranch) {
-        return PairBlockInfo::makeBranchless(
-            packet.branchPC, packet.targetPC);
-    }
-
-    return PairBlockInfo(
-        packet.taken, packet.branchPC, packet.targetPC,
-        packet.hasBranchFlag(TrainPacket::BranchFlag::Conditional),
-        packet.hasBranchFlag(TrainPacket::BranchFlag::Direct),
-        packet.hasBranchFlag(TrainPacket::BranchFlag::Indirect),
-        packet.hasBranchFlag(TrainPacket::BranchFlag::Call),
-        packet.hasBranchFlag(TrainPacket::BranchFlag::Return), packet.size);
-}
 
 void
 PairTAGE::recordTrainingTypes(statistics::Vector &typeStats,
@@ -776,9 +717,9 @@ PairTAGE::blocksMatch(const PairBlockInfo &lhs, const PairBlockInfo &rhs) const
     if (!lhs.valid) {
         return true;
     }
-    return lhs.taken == rhs.taken && lhs.branchPC == rhs.branchPC &&
+    return lhs.taken == rhs.taken && lhs.pc == rhs.pc &&
            lhs.hasBranch == rhs.hasBranch &&
-           lhs.targetPC == rhs.targetPC &&
+           lhs.target == rhs.target &&
            lhs.isCond == rhs.isCond &&
            lhs.isDirect == rhs.isDirect &&
            lhs.isIndirect == rhs.isIndirect &&
@@ -798,7 +739,7 @@ PairTAGE::blockIdentityMatches(const PairBlockInfo &lhs,
         return true;
     }
     return lhs.hasBranch == rhs.hasBranch &&
-           lhs.branchPC == rhs.branchPC &&
+           lhs.pc == rhs.pc &&
            lhs.isCond == rhs.isCond &&
            lhs.isDirect == rhs.isDirect &&
            lhs.isIndirect == rhs.isIndirect &&
@@ -840,18 +781,20 @@ PairTAGE::trainFromS3Pred(
     auto provider = providers.main;
     auto altProvider = providers.alt;
 
-    auto trainedFirstBlock = buildTrainingBlock(finalTrainPacket);
+    assert(finalTrainPacket.hasConsistentState());
+    assert(!twoTakenTrainPacket || twoTakenTrainPacket->hasConsistentState());
+    const PairBlockInfo &trainedFirstBlock = finalTrainPacket;
 
     auto secondBlockTrainInfo =
         (enableSecondBlock && twoTakenTrainPacket) ?
-            buildTrainingBlock(*twoTakenTrainPacket) : PairBlockInfo{};
+            static_cast<const PairBlockInfo &>(*twoTakenTrainPacket) : PairBlockInfo{};
 
     if (predMeta->predictedFirstBlock.valid) {
         pairTageStats.firstBlockAccuracySamples++;
         const auto &predictedFirstBlock = predMeta->predictedFirstBlock;
-        if (finalTrainPacket.valid && predictedFirstBlock.branchPC == finalTrainPacket.branchPC &&
+        if (finalTrainPacket.valid && predictedFirstBlock.pc == finalTrainPacket.pc &&
             predictedFirstBlock.taken == finalTrainPacket.taken &&
-            predictedFirstBlock.targetPC == finalTrainPacket.targetPC) {
+            predictedFirstBlock.target == finalTrainPacket.target) {
             pairTageStats.firstBlockCorrect++;
         }
     }

@@ -144,7 +144,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         FullBTBPrediction finalPred;      ///< Final prediction
         PairTAGE::TrainPacket finalTrainPacket;
         PairTAGE::TrainPacket twoTakenTrainPacket;
-        std::vector<BTBEntry> twoTakenBTBEntries;
+        std::vector<BranchPrediction> twoTakenBTBEntries;
         unsigned numOverrideBubbles{0};
         bool validprediction{false};
         bool squashing{false};
@@ -187,6 +187,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     // Tick helper functions
     void requestNewPrediction(ThreadID tid);
+    void predictComponents(ThreadID tid);
 
     // TODO: compare phr and ghr
     void histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history);
@@ -223,12 +224,12 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     // const bool dumpLoopPred;
 
-    void printBTBEntry(const BTBEntry &e) {
+    void printBTBEntry(const BranchPrediction &e) {
         DPRINTF(BTB,
-            "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, "
+            "Branch candidate: pc:%#lx, size:%d, taken:%d, baseTaken:%d, "
             "target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
-            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect,
-            e.isCall, e.isReturn);
+            e.pc, e.size, e.taken, e.baseTaken, e.predictedTarget,
+            e.isCond, e.isIndirect, e.isCall, e.isReturn);
     }
 
     void printFullBTBPrediction(const FullBTBPrediction &pred) {
@@ -237,16 +238,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         for (auto &e: pred.btbEntries) {
             printBTBEntry(e);
         }
-        DPRINTF(DecoupleBP, "condTakens: ");
-        for (auto pair : pred.condTakens) {
-            DPRINTFR(DecoupleBP, "%#lx %d ,", pair.first, pair.second);
-        }
-        DPRINTFR(DecoupleBP, "\n");
-        for (auto pair : pred.indirectTargets) {
-            DPRINTF(DecoupleBP, "indirectTarget of %#lx: %#lx\n",
-            pair.first, pair.second);
-        }
-        DPRINTF(DecoupleBP, "returnTarget %#lx\n", pred.returnTarget);
+
     }
 
     /**

@@ -69,21 +69,6 @@ BTBuRAS::setTrace()
     }
 }
 
-void
-BTBuRAS::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
-                  std::vector<FullBTBPrediction> &stagePreds)
-{
-    auto &stack = specStack;
-    auto &sp = specSp;
-    assert(getDelay() < stagePreds.size());
-    for (int i = getDelay(); i < stagePreds.size(); i++) {
-        //stagePreds[i].returnTarget = stack[sp].retAddr;
-    }
-    meta.sp = sp;
-    meta.tos = stack[sp];
-    printStack("putPCHistory", stack, sp);
-}
-
 std::shared_ptr<void>
 BTBuRAS::getPredictionMeta(ThreadID tid)
 {
@@ -98,7 +83,11 @@ BTBuRAS::specUpdateState(FullBTBPrediction &pred)
     auto &stack = specStack;
     auto &sp = specSp;
     // do push & pops on prediction
-    pred.returnTarget = stack[sp].retAddr;
+    for (auto &entry : pred.btbEntries) {
+        if (entry.isIndirect && entry.isReturn) {
+            entry.predictedTarget = stack[sp].retAddr;
+        }
+    }
     auto takenSlot = pred.getTakenEntry();
     // RISC-V JALR PopAndPush has both flags set; pop first to retain the new return address.
     if (takenSlot.isReturn) {

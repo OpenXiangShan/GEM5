@@ -190,7 +190,8 @@ BTBTAGEUpperBound::makeTableInfo(bool found, const TageEntry *entry,
 
 BTBTAGE::TagePrediction
 BTBTAGEUpperBound::lookupExactPrediction(
-    const BTBEntry &btbEntry,
+    const BranchInfo &btbEntry,
+    bool baseTaken,
     const std::array<uint64_t, MaxHistoryWords> &historyWords,
     BranchPredictionMeta *metaOut) const
 {
@@ -228,7 +229,6 @@ BTBTAGEUpperBound::lookupExactPrediction(
 
     const bool mainTaken = mainInfo.taken();
     const bool altTaken = altInfo.taken();
-    const bool baseTaken = btbEntry.ctr >= 0;
     const bool altPred = altProvided ? altTaken : baseTaken;
     Addr useAltIdx = getUseAltIdx(btbEntry.pc);
     short useAltCtr = useAlt[useAltIdx];
@@ -262,12 +262,10 @@ BTBTAGEUpperBound::lookupExactPrediction(
 
 void
 BTBTAGEUpperBound::notePredictionResult(
-    const BTBEntry &btbEntry,
+    const BranchPrediction &btbEntry,
     const TagePrediction &pred,
-    std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
-    CondTakens &results) const
+    std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs) const
 {
-    results.push_back({btbEntry.pc, pred.taken});
     tageInfoForMgscs[btbEntry.pc].tage_pred_taken = pred.taken;
     tageInfoForMgscs[btbEntry.pc].tage_main_taken =
         pred.mainInfo.found ? pred.mainInfo.taken() : false;
@@ -285,9 +283,10 @@ BTBTAGEUpperBound::notePredictionResult(
 }
 
 void
-BTBTAGEUpperBound::putPCHistory(Addr startAddr, const bitset &history,
-                                std::vector<FullBTBPrediction> &stagePreds)
+BTBTAGEUpperBound::beginPrediction(Addr startAddr, const bitset &history,
+                                    ThreadID tid)
 {
+    (void)tid;
     lastPredBankId = getBankId(startAddr);
     predBankValid = true;
 
@@ -300,26 +299,36 @@ BTBTAGEUpperBound::putPCHistory(Addr startAddr, const bitset &history,
     ubMeta->history = selectedHistory;
     captureHistoryWords(selectedHistory, ubMeta->historyWords);
 
-    for (int s = getDelay(); s < stagePreds.size(); ++s) {
-        auto &stagePred = stagePreds[s];
-        stagePred.condTakens.clear();
-        stagePred.tageInfoForMgscs.clear();
+}
 
-        for (auto &btbEntry : stagePred.btbEntries) {
-            if (!(btbEntry.isCond && btbEntry.valid)) {
-                continue;
-            }
+std::vector<DirectionPrediction>
+BTBTAGEUpperBound::predictDirections(
+    const Addr &startAddr, const std::vector<BranchPrediction> &btbEntries,
+    std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
+    ThreadID tid, uint8_t asidHash)
+{
+    (void)startAddr;
+    (void)tid;
+    (void)asidHash;
+    std::vector<DirectionPrediction> results(btbEntries.size());
+    tageInfoForMgscs.clear();
 
-            BranchPredictionMeta branchMeta;
-            auto pred = lookupExactPrediction(
-                btbEntry, ubMeta->historyWords, &branchMeta);
-            ubMeta->preds[btbEntry.pc] = pred;
-            ubMeta->branchMeta[btbEntry.pc] = branchMeta;
-            tageStats.updateStatsWithTagePrediction(pred, true);
-            notePredictionResult(btbEntry, pred, stagePred.tageInfoForMgscs,
-                                 stagePred.condTakens);
+    for (size_t i = 0; i < btbEntries.size(); ++i) {
+        const auto &btbEntry = btbEntries[i];
+        if (!(btbEntry.isCond && btbEntry.valid)) {
+            continue;
         }
+
+        BranchPredictionMeta branchMeta;
+        auto pred = lookupExactPrediction(
+            btbEntry, btbEntry.baseTaken, ubMeta->historyWords, &branchMeta);
+        ubMeta->preds[btbEntry.pc] = pred;
+        ubMeta->branchMeta[btbEntry.pc] = branchMeta;
+        tageStats.updateStatsWithTagePrediction(pred, true);
+        results[i] = {pred.finalProviderTable >= 0, pred.taken};
+        notePredictionResult(btbEntry, pred, tageInfoForMgscs);
     }
+    return results;
 }
 
 std::shared_ptr<void>
@@ -373,7 +382,7 @@ BTBTAGEUpperBound::recoverPHist(const boost::dynamic_bitset<> &history,
 
 bool
 BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
-    const BTBEntry &entry, bool actualTaken, const TagePrediction &pred,
+    const BranchInfo &entry, bool actualTaken, const TagePrediction &pred,
     const BranchPredictionMeta &meta, bool controlMispred)
 {
     tageStats.updateStatsWithTagePrediction(pred, false);
@@ -381,7 +390,7 @@ BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
     const auto &mainInfo = pred.mainInfo;
     const auto &altInfo = pred.altInfo;
     const bool usedAlt = pred.useAlt;
-    const bool baseTaken = entry.ctr >= 0;
+    const bool baseTaken = pred.basePred;
     const bool altTaken = altInfo.found ? altInfo.taken() : baseTaken;
 
     if (mainInfo.found) {
@@ -467,7 +476,7 @@ BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
 
 bool
 BTBTAGEUpperBound::allocateExactEntry(
-    const BTBEntry &entry, bool actualTaken, unsigned startTable,
+    const BranchInfo &entry, bool actualTaken, unsigned startTable,
     const std::array<uint64_t, MaxHistoryWords> &historyWords,
     uint64_t &allocatedTable)
 {
@@ -512,7 +521,7 @@ BTBTAGEUpperBound::update(
         if (!branch.isCond) {
             continue;
         }
-        auto btbEntry = BTBEntry(makeBranchInfo(branch));
+        auto btbEntry = BranchInfo(branch);
         auto predIt = predMeta->preds.find(btbEntry.pc);
         auto metaIt = predMeta->branchMeta.find(btbEntry.pc);
         if (predIt == predMeta->preds.end() ||
@@ -522,7 +531,6 @@ BTBTAGEUpperBound::update(
         const bool actualTaken = branch.taken;
         const auto &storedPred = predIt->second;
         const auto &storedMeta = metaIt->second;
-        btbEntry.ctr = storedPred.basePred ? 0 : -1;
 
         if (storedPred.taken != actualTaken) {
             hasStoredVsActualDiff = true;
