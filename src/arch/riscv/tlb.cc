@@ -2108,7 +2108,8 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
     STATUS status = tc->readMiscReg(MISCREG_STATUS);
     STATUS vstatus = tc->readMiscReg(MISCREG_VSSTATUS);
     Fault fault = NoFault;
-    PrivilegeMode pmode = getMemPriv(tc, mode);
+    PrivilegeMode pmode =
+        (PrivilegeMode)(RegVal)req->get_twoStageTranslateMode();
     bool continuePtw = false;
     const bool is_prefetch = req->isPrefetch();
 
@@ -2158,7 +2159,8 @@ TLB::prepareTwoStageL2(const RequestPtr &req, ThreadContext *tc, BaseMMU::Transl
     STATUS status = tc->readMiscReg(MISCREG_STATUS);
     STATUS vstatus = tc->readMiscReg(MISCREG_VSSTATUS);
     Fault fault = NoFault;
-    PrivilegeMode pmode = getMemPriv(tc, mode);
+    PrivilegeMode pmode =
+        (PrivilegeMode)(RegVal)req->get_twoStageTranslateMode();
     bool continuePtw = false;
     hitInSp = false;
 
@@ -2192,14 +2194,14 @@ TLB::prepareTwoStageL2(const RequestPtr &req, ThreadContext *tc, BaseMMU::Transl
         StageLeaf vs_leaf(e_vs->pte, e_vs->level);
         Addr gpa = stageTranslate(vaddr, vs_leaf);
         req->setgPaddr(gpa);
+        if ((gpa & ~H_VADDR_MASK(hgatp.mode)) != 0) {
+            return std::make_pair(false,
+                                  createPagefault(vaddr, gpa, mode, true));
+        }
 
         TlbEntry *e_g = lookupSingleStageL2(l2tlb, gpa, hgatp.vmid, mode, gstage,
                                           hgatp.mode);
         if (!e_g) {
-            if ((gpa & ~H_VADDR_MASK(vsatp.mode)) != 0) {
-                fault = createPagefault(vaddr, gpa, mode, false);
-                return std::make_pair(false, fault);
-            }
             req->setTwoPtwWalk(true, vs_leaf.level, PTW_TOP_LEVEL(hgatp.mode), 0,
                                true);
             return std::make_pair(false, NoFault);
@@ -2236,14 +2238,14 @@ TLB::prepareTwoStageL2(const RequestPtr &req, ThreadContext *tc, BaseMMU::Transl
     // Byte address of the next VS PTE to read (idx_f * PTESIZE).
     Addr pte_gpa = (e_vs->pte.ppn << PageShift) + (idx_f * PTESIZE);
     req->setgPaddr(pte_gpa);
+    if ((pte_gpa & ~H_VADDR_MASK(hgatp.mode)) != 0) {
+        return std::make_pair(false,
+                              createPagefault(vaddr, pte_gpa, mode, true));
+    }
 
     TlbEntry *e_g = lookupSingleStageL2(l2tlb, pte_gpa, hgatp.vmid, mode, gstage,
                                       hgatp.mode);
     if (!e_g) {
-        if ((pte_gpa & ~H_VADDR_MASK(vsatp.mode)) != 0) {
-            fault = createPagefault(vaddr, pte_gpa, mode, false);
-            return std::make_pair(false, fault);
-        }
         req->setTwoPtwWalk(true, vs_next_level, PTW_TOP_LEVEL(hgatp.mode), 0,
                            false);
         return std::make_pair(false, NoFault);
@@ -2333,15 +2335,7 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
                 gpaddr_check = vaddr;
             }
             if ((gpaddr_check & ~H_VADDR_MASK(hgatp.mode)) != 0) {
-                ExceptionCode code;
-                if (mode == BaseMMU::Read) {
-                    code = ExceptionCode::LOAD_ACCESS;
-                } else if (mode == BaseMMU::Write) {
-                    code = ExceptionCode::STORE_ACCESS;
-                } else {
-                    code = ExceptionCode::INST_ACCESS;
-                }
-                return std::make_shared<AddressFault>(req->getVaddr(), 0, code);
+                return createPagefault(vaddr, gpaddr_check, mode, true);
             }
         }
         if (translation != nullptr && !from_miss_queue && !is_prefetch &&

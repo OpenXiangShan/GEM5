@@ -1326,8 +1326,9 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                                 }
                             }
                         }
-                        if ((gPaddr & ~H_VADDR_MASK(vsatp.mode)) != 0) {
-                            // this is a excep
+                        mainReq->setgPaddr(gPaddr);
+                        if ((gPaddr & ~H_VADDR_MASK(hgatp.mode)) != 0) {
+                            GstageFault = true;
                             fault = pageFault(true, true);
                             endWalk();
                             return fault;
@@ -1335,7 +1336,6 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                         DPRINTF(PageTableWalkerTwoStage, "twoStageStepWalk gpaddr %lx vaddr %lx\n", gPaddr,
                                 entry.vaddr);
                         gpaddrMode =3;
-                        mainReq->setgPaddr(gPaddr);
                         nextState = Translate;
                         inGstage = true;
                         twoStageLevel = PTW_TOP_LEVEL(hgatp.mode);
@@ -1416,15 +1416,15 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                         }
                     }
 
-                    if ((gPaddr & ~H_VADDR_MASK(vsatp.mode)) != 0) {
-                        // this is a excep
-                        fault = pageFault(true, false);
+                    mainReq->setgPaddr(gPaddr);
+                    if ((gPaddr & ~H_VADDR_MASK(hgatp.mode)) != 0) {
+                        GstageFault = true;
+                        fault = pageFault(true, true);
                         endWalk();
                         return fault;
                     }
                     DPRINTF(PageTableWalkerTwoStage, "twoStageStepWalk gpaddr %lx vaddr %lx\n", gPaddr, entry.vaddr);
                     gpaddrMode =2;
-                    mainReq->setgPaddr(gPaddr);
                     nextState = Translate;
                     inGstage = true;
                     twoStageLevel = PTW_TOP_LEVEL(hgatp.mode);
