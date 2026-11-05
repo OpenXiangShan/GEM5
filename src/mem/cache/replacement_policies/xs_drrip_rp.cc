@@ -23,6 +23,7 @@ namespace replacement_policy
 XSDRRIP::XSDRRIP(const Params &p)
   : Base(p),
     mode(static_cast<Mode>(p.mode)),
+    ignorePrefetchTouches(p.ignore_prefetch_touches),
     numSets(p.num_sets),
     numWays(p.num_ways),
     pselCounter(PSEL_WIDTH, PSEL_THRESHOLD),
@@ -144,6 +145,15 @@ XSDRRIP::touch(const std::shared_ptr<ReplacementData>& replacement_data,
 {
     std::shared_ptr<XSDRRIPReplData> casted_replacement_data =
         std::static_pointer_cast<XSDRRIPReplData>(replacement_data);
+
+    if (ignorePrefetchTouches && pkt && pkt->req->isPrefetch()) {
+        duelingStats.prefetchTouchesIgnored++;
+        if (casted_replacement_data->originBit &&
+            casted_replacement_data->rrpv < 2) {
+            duelingStats.prefetchHotDemotionsAvoided++;
+        }
+        return;
+    }
 
     // Decide which logic to use based on mode and pre-computed set type
     bool use_brrip = useBRRIP(replacement_data);
@@ -301,7 +311,11 @@ XSDRRIP::XSDRRIPStats::XSDRRIPStats(statistics::Group* parent)
     ADD_STAT(brripMisses, "Number of misses in BRRIP leader sets"),
     ADD_STAT(followerUseSrrip, "Number of times follower sets used SRRIP"),
     ADD_STAT(followerUseBrrip, "Number of times follower sets used BRRIP"),
-    ADD_STAT(pselValue, "Current PSEL counter value")
+    ADD_STAT(pselValue, "Current PSEL counter value"),
+    ADD_STAT(prefetchTouchesIgnored,
+        "Prefetch touches that keep existing replacement state"),
+    ADD_STAT(prefetchHotDemotionsAvoided,
+        "Prefetch touches that would demote reused RRPV 0 or 1")
 {
 }
 
