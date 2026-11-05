@@ -17,6 +17,37 @@ struct PoolRef
     bool valid() const { return slot != Invalid; }
 };
 
+// Only completed Meta records use this encoding. Recorder and the generic
+// pools still support their original unfinished/short record lengths.
+class MetaPoolRef
+{
+    uint32_t bits{Invalid};
+
+  public:
+    static constexpr unsigned Invalid = 0x7fff;
+    MetaPoolRef() = default;
+    explicit MetaPoolRef(PoolRef reference)
+    {
+        if (!reference.valid())
+            return;
+        if (reference.slot >= Invalid || reference.length < 9 ||
+            reference.length > 16)
+            throw std::invalid_argument("Invalid TP Meta pool reference");
+        bits = reference.slot | (uint32_t(reference.length - 9) << 15) |
+            (uint32_t(reference.compact) << 18);
+    }
+    bool valid() const { return (bits & Invalid) != Invalid; }
+    PoolRef reference() const
+    {
+        if (!valid())
+            return {};
+        return {bits & Invalid, uint8_t(((bits >> 15) & 7) + 9),
+                bool(bits & (1U << 18))};
+    }
+};
+
+static_assert(sizeof(MetaPoolRef) == 4);
+
 // Fixed-size slots in two bounded pools. Free links occupy the first payload
 // word of a free slot, rather than a second per-slot allocation structure.
 class RecordPools

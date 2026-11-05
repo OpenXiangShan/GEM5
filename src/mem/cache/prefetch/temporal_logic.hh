@@ -31,6 +31,70 @@ hashPC(uint64_t pc)
 inline uint64_t placementPC(uint64_t identity)
 { return identity ^ (identity >> 7) ^ (identity >> 13); }
 
+constexpr unsigned
+indexBits(unsigned sets)
+{
+    return sets <= 1 ? 0 : 1 + indexBits(sets / 2);
+}
+
+template <unsigned Sets> constexpr uint64_t
+indexTag(uint64_t key)
+{
+    static_assert(Sets && !(Sets & (Sets - 1)),
+                  "Indexed keys require power-of-two sets");
+    return key >> indexBits(Sets);
+}
+
+template <unsigned Sets> constexpr uint64_t
+restoreIndexTag(uint64_t tag, unsigned set)
+{
+    static_assert(Sets && !(Sets & (Sets - 1)),
+                  "Indexed keys require power-of-two sets");
+    return (tag << indexBits(Sets)) | set;
+}
+
+template <unsigned Sets> inline uint64_t
+restorePlacementTag(uint64_t tag, unsigned set)
+{
+    // For at most seven index bits, both folded terms use only stored bits.
+    static_assert(indexBits(Sets) <= 7,
+                  "Folded key recovery needs a new proof for more sets");
+    const auto high = restoreIndexTag<Sets>(tag, 0);
+    return high | ((set ^ placementPC(high)) & (Sets - 1));
+}
+
+inline uint64_t
+metaHash(uint64_t pc, uint64_t trigger)
+{
+    const uint64_t rotated = ((pc << 5) | (pc >> 37)) & ((1ULL << 42) - 1);
+    return trigger ^ (trigger >> 10) ^ (trigger >> 20) ^
+        (trigger >> 30) ^ rotated ^ (pc >> 6);
+}
+
+constexpr unsigned
+implicitMetaBits(unsigned sets)
+{
+    return sets && !(sets & 1) ? 1 + implicitMetaBits(sets / 2) : 0;
+}
+
+template <unsigned Sets> constexpr uint64_t
+metaTriggerTag(uint64_t trigger)
+{
+    static_assert(Sets && implicitMetaBits(Sets) <= 10,
+                  "Meta key recovery requires at most ten implicit bits");
+    return trigger >> implicitMetaBits(Sets);
+}
+
+template <unsigned Sets> inline uint64_t
+restoreMetaTrigger(uint64_t tag, uint64_t pc, unsigned set)
+{
+    static_assert(Sets && implicitMetaBits(Sets) <= 10,
+                  "Meta key recovery requires at most ten implicit bits");
+    const auto high = tag << implicitMetaBits(Sets);
+    const uint64_t mask = (1ULL << implicitMetaBits(Sets)) - 1;
+    return high | ((set ^ metaHash(pc, high)) & mask);
+}
+
 // Fixed-capacity set-associative tables with tree PLRU. Context is additional
 // gem5 state: RTL instantiates the tables per hart. Meta manages RRIP
 // separately from this generic table's PLRU state.
@@ -86,15 +150,30 @@ struct PCEntry
     uint8_t roles{0}; // 1: LLDP producer, 2: LLDP consumer
     uint8_t kind{2}; // Diagnostic only: 0 integer, 1 FP, 2 unclassified.
 };
-struct Filter : PCEntry
+// The low PC bits are implicit in the containing set. Sample and Meta retain
+// full PC identities; their placement uses another key.
+struct IndexedPCEntry
+{
+    bool valid{false};
+    uint32_t pcTag{0};
+    int context{-1};
+    uint8_t roles{0};
+    uint8_t kind{2};
+};
+struct Filter : IndexedPCEntry
 {
     uint64_t last{0};
     uint8_t count{0}, epoch{0};
 };
 struct Sample : PCEntry
 {
-    uint64_t base{0}, target{0};
+    uint64_t baseTag{0}, target{0};
     uint8_t matches{0};
+};
+struct Recorder : IndexedPCEntry
+{
+    uint64_t trigger{0};
+    std::vector<uint64_t> lines;
 };
 struct Record : PCEntry
 {
@@ -105,8 +184,41 @@ struct Replay : Record
 {
     RecordRef reference;
 };
-struct Confidence : PCEntry
+
+struct MetaEntry
 {
+    uint64_t triggerTag{0};
+    uint32_t pc{0};
+    int context{-1};
+    MetaPoolRef payload;
+    RecordState recordState;
+    uint8_t roles{0}, kind{2}, rrpv{0};
+};
+
+template <class Entry> bool entryValid(const Entry &entry)
+{ return entry.valid; }
+
+inline bool entryValid(const MetaEntry &entry)
+{ return entry.payload.valid(); }
+
+// Meta has its own RRIP in each entry, without a second PLRU array or an
+// unused per-entry vector. Observation counters remain gem5-only state.
+template <unsigned Ways> struct MetaTable
+{
+    std::vector<std::array<MetaEntry, Ways>> data;
+    std::vector<uint64_t> setAccesses, setEvictions;
+    std::vector<uint64_t> reportedAccesses, reportedEvictions;
+    explicit MetaTable(unsigned sets)
+        : data(sets), setAccesses(sets), setEvictions(sets),
+          reportedAccesses(sets), reportedEvictions(sets)
+    {}
+};
+
+struct Confidence
+{
+    bool valid{false};
+    uint32_t pcTag{0};
+    int context{-1};
     uint8_t issue{32}, meta{32};
     bool dependent{false};
     uint8_t usefulness{32}, timeliness{32}, sentEvidence{0};
@@ -136,86 +248,98 @@ class Engine
     static constexpr unsigned SAMPLER_WAYS = 16;
     static constexpr unsigned RECORDER_SETS = 128;
     static constexpr unsigned RECORDER_WAYS = 2;
+    static constexpr unsigned ROLE_SETS = 256;
+    static constexpr unsigned ROLE_WAYS = 1;
     static constexpr unsigned CONF_SETS = 64;
     static constexpr unsigned CONF_WAYS = 8;
-    static constexpr unsigned META_ENTRIES = 24576;
-    static constexpr unsigned META_SETS = META_ENTRIES / 16;
+    static constexpr unsigned META_WAYS = 16;
+    static constexpr unsigned META_SETS = 1536;
+    static constexpr unsigned META_ENTRIES = META_SETS * META_WAYS;
+    static constexpr unsigned COMPACT_SLOTS = 18432;
+    static constexpr unsigned FULL_SLOTS = 4608;
 
   private:
-    Table<PCEntry, 256, 4> roleTable;
+    Table<IndexedPCEntry, ROLE_SETS, ROLE_WAYS> roleTable;
     Table<Filter, FILTER_SETS, FILTER_WAYS> filter;
     Table<Sample, SAMPLER_SETS, SAMPLER_WAYS> sampler;
-    Table<Record, RECORDER_SETS, RECORDER_WAYS> recorder;
-    Table<Record, 0, 16> meta;
+    Table<Recorder, RECORDER_SETS, RECORDER_WAYS> recorder;
+    MetaTable<META_WAYS> meta;
     Table<Confidence, CONF_SETS, CONF_WAYS> confidence;
     unsigned issueProbe{0}, metaProbe{0};
     const unsigned maxLength;
     RecordPools pools;
-    std::vector<PoolRef> poolReferences;
-    std::vector<RecordState> recordStates;
-    std::vector<uint8_t> rrpv;
     std::function<void(unsigned)> invalidateSlot;
 
-    unsigned recordClass(const Record &record) const
+    template <class Entry> unsigned recordClass(const Entry &record) const
     { return unsigned(record.kind) * 4 + record.roles; }
 
-    unsigned slot(unsigned set, const Record &entry) const
-    { return set * 16 + (&entry - meta.data[set].data()); }
+    unsigned slot(unsigned set, const MetaEntry &entry) const
+    { return set * META_WAYS + (&entry - meta.data[set].data()); }
 
     RecordState *state(RecordRef reference)
     {
         if (reference.bits == 0xffffffff)
             return nullptr;
         const auto index = reference.slot();
-        if (index >= recordStates.size())
+        if (index >= META_ENTRIES)
             return nullptr;
-        auto &s = recordStates[index];
-        if (!meta.data[index / 16][index % 16].valid ||
-            s.generation() != reference.generation())
+        auto &entry = meta.data[index / META_WAYS][index % META_WAYS];
+        if (!entryValid(entry) ||
+            entry.recordState.generation() != reference.generation())
             return nullptr;
-        return &s;
+        return &entry.recordState;
     }
 
     Confidence &conf(uint64_t pc, int context)
     {
         bool hit;
+        const auto tag = indexTag<CONF_SETS>(pc);
         auto &c = confidence.access(placementPC(pc) & (CONF_SETS - 1),
-            [=](const auto &e) { return e.pc == pc && e.context == context; }, hit);
+            [=](const auto &e) {
+                return e.pcTag == tag && e.context == context;
+            }, hit);
         if (!hit) {
             c = {};
             c.valid = true;
-            c.pc = pc;
+            c.pcTag = tag;
             c.context = context;
-            for (const auto &entry : roleTable.data[pc & 255])
-                if (entry.valid && entry.pc == pc && entry.context == context)
+            for (const auto &entry : roleTable.data[pc & (ROLE_SETS - 1)])
+                if (entry.valid && entry.pcTag == indexTag<ROLE_SETS>(pc) &&
+                    entry.context == context)
                     c.dependent = entry.roles != 0;
         }
         return c;
     }
     unsigned metaSet(uint64_t pc, uint64_t trigger) const
     {
-        // RTL mixes a 42-bit PA line and a rotated 22-bit PC hash.
-        const uint64_t rotated = ((pc << 5) | (pc >> 37)) & ((1ULL << 42) - 1);
-        return (trigger ^ (trigger >> 10) ^ (trigger >> 20) ^
-                (trigger >> 30) ^ rotated ^ (pc >> 6)) % meta.data.size();
+        return metaHash(pc, trigger) % meta.data.size();
     }
 
-    std::vector<uint64_t> lines(unsigned set, const Record &entry) const
+    Record completedRecord(const MetaEntry &entry, uint64_t trigger) const
     {
-        return pools.load(poolReferences[slot(set, entry)], entry.trigger);
+        Record result;
+        result.valid = entryValid(entry);
+        result.pc = entry.pc;
+        result.context = entry.context;
+        result.roles = entry.roles;
+        result.kind = entry.kind;
+        result.trigger = trigger;
+        result.lines = pools.load(entry.payload.reference(), trigger);
+        return result;
     }
-    Record &accessMeta(uint64_t pc, int context, uint64_t trigger,
+    MetaEntry &accessMeta(uint64_t pc, int context, uint64_t trigger,
                        bool &hit, bool allocate)
     {
         const auto set = metaSet(pc, trigger);
         auto match = [=](const auto &e) {
-            return e.pc == pc && e.context == context && e.trigger == trigger;
+            return e.pc == pc && e.context == context &&
+                e.triggerTag == metaTriggerTag<META_SETS>(trigger);
         };
         ++meta.setAccesses[set];
         unsigned way = 0;
         hit = false;
-        for (; way < 16; ++way) {
-            if (meta.data[set][way].valid && match(meta.data[set][way])) {
+        for (; way < META_WAYS; ++way) {
+            if (entryValid(meta.data[set][way]) && match(meta.data[set][way])) {
                 hit = true;
                 break;
             }
@@ -223,8 +347,8 @@ class Engine
         if (!hit) {
             way = 0;
             bool invalid = false;
-            for (unsigned w = 0; w < 16; ++w) {
-                if (!meta.data[set][w].valid) {
+            for (unsigned w = 0; w < META_WAYS; ++w) {
+                if (!entryValid(meta.data[set][w])) {
                     way = w;
                     invalid = true;
                     break;
@@ -232,17 +356,17 @@ class Engine
             }
             if (!invalid && allocate) {
                 for (;;) {
-                    for (way = 0; way < 16; ++way)
-                        if (rrpv[set * 16 + way] == 3)
+                    for (way = 0; way < META_WAYS; ++way)
+                        if (meta.data[set][way].rrpv == 3)
                             break;
-                    if (way != 16)
+                    if (way != META_WAYS)
                         break;
-                    for (unsigned w = 0; w < 16; ++w)
-                        ++rrpv[set * 16 + w];
+                    for (auto &entry : meta.data[set])
+                        ++entry.rrpv;
                     ++counters.rripAges;
                 }
             }
-            if (allocate && meta.data[set][way].valid) {
+            if (allocate && entryValid(meta.data[set][way])) {
                 ++meta.setEvictions[set];
                 ++counters.evictionsByKind[recordClass(meta.data[set][way])];
             }
@@ -265,17 +389,20 @@ class Engine
                                hit, true);
         const auto set = metaSet(record.pc, record.trigger);
         const auto index = slot(set, dst);
-        const bool same = hit && lines(set, dst) == record.lines;
-        if (!pools.store(poolReferences[index], record.trigger, record.lines)) {
+        auto reference = dst.payload.reference();
+        const bool same = hit &&
+            pools.load(reference, record.trigger) == record.lines;
+        if (!pools.store(reference, record.trigger, record.lines)) {
             // Pool exhaustion retains the victim. Keep RRIP aging from the
             // attempted lookup, but do not count an actual eviction.
-            if (!hit && dst.valid) {
+            if (!hit && entryValid(dst)) {
                 --meta.setEvictions[set];
                 --counters.evictionsByKind[recordClass(dst)];
             }
             return;
         }
-        auto &s = recordStates[index];
+        dst.payload = MetaPoolRef(reference);
+        auto &s = dst.recordState;
         if (same) {
             ++counters.recordRefreshes;
         } else {
@@ -287,10 +414,13 @@ class Engine
                 invalidateSlot(index);
             }
             s.renew();
-            rrpv[index] = 2;
+            dst.rrpv = 2;
         }
-        static_cast<PCEntry &>(dst) = record;
-        dst.trigger = record.trigger;
+        dst.pc = record.pc;
+        dst.context = record.context;
+        dst.roles = record.roles;
+        dst.kind = record.kind;
+        dst.triggerTag = metaTriggerTag<META_SETS>(record.trigger);
         ++counters.records;
         ++counters.installsByKind[recordClass(record)];
         counters.installedLines += record.lines.size();
@@ -309,16 +439,30 @@ class Engine
                     uint8_t roles, uint8_t kind)
     {
         bool hit;
-        auto &r = recorder.access(pc & (RECORDER_SETS - 1),
-            [=](const auto &e) { return e.pc == pc && e.context == context; }, hit);
+        const unsigned set = pc & (RECORDER_SETS - 1);
+        const auto tag = indexTag<RECORDER_SETS>(pc);
+        auto &r = recorder.access(set, [=](const auto &e) {
+            return e.pcTag == tag && e.context == context;
+        }, hit);
+        const auto completed = [&] {
+            Record result;
+            result.valid = r.valid;
+            result.pc = restoreIndexTag<RECORDER_SETS>(r.pcTag, set);
+            result.context = r.context;
+            result.roles = r.roles;
+            result.kind = r.kind;
+            result.trigger = r.trigger;
+            result.lines = r.lines;
+            return result;
+        };
         if (!hit) {
             if (r.valid && r.lines.size() > 8) {
-                install(r);
+                install(completed());
                 ++counters.replacements;
             }
             r = {};
             r.valid = true;
-            r.pc = pc;
+            r.pcTag = tag;
             r.context = context;
             r.roles = roles;
             r.kind = kind;
@@ -335,7 +479,7 @@ class Engine
         if (addTarget && r.lines.size() < maxLength)
             r.lines.push_back(target);
         if (r.lines.size() == maxLength) {
-            install(r);
+            install(completed());
             if (chainFull) {
                 r.trigger = base;
                 r.lines = {target};
@@ -349,10 +493,10 @@ class Engine
     Counters counters;
     explicit Engine(unsigned length = 12)
         : meta(META_SETS), maxLength(length),
-          pools(length, META_ENTRIES * 3 / 4, META_ENTRIES / 4),
-          poolReferences(META_ENTRIES), recordStates(META_ENTRIES),
-          rrpv(META_ENTRIES)
+          pools(length, COMPACT_SLOTS, FULL_SLOTS)
     {
+        static_assert(COMPACT_SLOTS < MetaPoolRef::Invalid &&
+                      FULL_SLOTS < MetaPoolRef::Invalid);
         if (length < 9 || length > 16)
             throw std::invalid_argument("Invalid TP record length");
     }
@@ -373,7 +517,8 @@ class Engine
     {
         if (!state(reference))
             return std::nullopt;
-        return rrpv[reference.slot()];
+        const auto index = reference.slot();
+        return meta.data[index / META_WAYS][index % META_WAYS].rrpv;
     }
 
     bool feedback(RecordRef reference, FeedbackKind kind)
@@ -384,7 +529,8 @@ class Engine
             return false;
         }
         const auto index = reference.slot();
-        rrpv[index] = kind == FeedbackKind::Timely ? 0 :
+        meta.data[index / META_WAYS][index % META_WAYS].rrpv =
+            kind == FeedbackKind::Timely ? 0 :
             kind == FeedbackKind::Unused ? 3 : 1;
         if (kind == FeedbackKind::Timely)
             ++counters.replacementPromotions;
@@ -405,13 +551,16 @@ class Engine
     void mark(uint64_t actualPC, int context, uint8_t roles)
     {
         const auto pc = hashPC(actualPC);
+        const auto tag = indexTag<ROLE_SETS>(pc);
         bool hit;
-        auto &r = roleTable.access(pc & 255,
-            [=](const auto &e) { return e.pc == pc && e.context == context; }, hit);
+        auto &r = roleTable.access(pc & (ROLE_SETS - 1),
+            [=](const auto &e) {
+                return e.pcTag == tag && e.context == context;
+            }, hit);
         if (!hit) {
             r = {};
             r.valid = true;
-            r.pc = pc;
+            r.pcTag = tag;
             r.context = context;
         }
         r.roles |= roles;
@@ -421,8 +570,9 @@ class Engine
     uint8_t roles(uint64_t actualPC, int context) const
     {
         const auto pc = hashPC(actualPC);
-        for (const auto &e : roleTable.data[pc & 255])
-            if (e.valid && e.pc == pc && e.context == context)
+        for (const auto &e : roleTable.data[pc & (ROLE_SETS - 1)])
+            if (e.valid && e.pcTag == indexTag<ROLE_SETS>(pc) &&
+                e.context == context)
                 return e.roles;
         return 0;
     }
@@ -435,7 +585,8 @@ class Engine
         if (countAccess)
             ++confidence.setAccesses[set];
         for (const auto &entry : confidence.data[set])
-            if (entry.valid && entry.pc == pc && entry.context == context)
+            if (entry.valid && entry.pcTag == indexTag<CONF_SETS>(pc) &&
+                entry.context == context)
                 return entry;
         return std::nullopt;
     }
@@ -461,12 +612,10 @@ class Engine
     {
         const auto pc = hashPC(actualPC);
         for (const auto &entry : meta.data[metaSet(pc, line)])
-            if (entry.valid && entry.pc == pc && entry.context == context &&
-                entry.trigger == line)
+            if (entryValid(entry) && entry.pc == pc && entry.context == context &&
+                entry.triggerTag == metaTriggerTag<META_SETS>(line))
             {
-                Record result = entry;
-                result.lines = lines(metaSet(pc, line), entry);
-                return result;
+                return completedRecord(entry, line);
             }
         return std::nullopt;
     }
@@ -485,13 +634,12 @@ class Engine
             ++counters.metaHits;
             auto &c = conf(pc, context);
             const auto index = slot(metaSet(pc, line), m);
-            const auto &s = recordStates[index];
+            const auto &s = m.recordState;
             const bool low = c.issue < 32;
             const bool probe = low && !(++issueProbe & 63);
             if (!low || probe) {
                 output.emplace();
-                static_cast<Record &>(*output) = m;
-                output->lines = lines(metaSet(pc, line), m);
+                static_cast<Record &>(*output) = completedRecord(m, line);
                 output->reference = RecordRef(index, s.generation());
                 output->roles |= role;
                 if (low)
@@ -512,13 +660,16 @@ class Engine
         ++counters.trains;
         auto output = query(actualPC, context, line);
         bool hit;
+        const auto tag = indexTag<FILTER_SETS>(pc);
         auto &f = filter.access(placementPC(pc) & (FILTER_SETS - 1),
-            [=](const auto &e) { return e.pc == pc && e.context == context; }, hit);
+            [=](const auto &e) {
+                return e.pcTag == tag && e.context == context;
+            }, hit);
         const uint8_t epoch = (counters.trains / 32768) & 15;
         if (!hit) {
             f = {};
             f.valid = true;
-            f.pc = pc;
+            f.pcTag = tag;
             f.context = context;
             f.last = line;
             f.epoch = epoch;
@@ -550,8 +701,11 @@ class Engine
             recordPair(pc, context, base, line, f.roles, f.kind);
             return output;
         }
+        const auto baseTag = indexTag<SAMPLER_SETS>(base);
         auto &s = sampler.access(base & (SAMPLER_SETS - 1),
-            [=](const auto &e) { return e.base == base && e.context == context; }, hit);
+            [=](const auto &e) {
+                return e.baseTag == baseTag && e.context == context;
+            }, hit);
         const bool matches = hit && s.target == line && s.pc == pc;
         const bool record = hit && (matches || s.matches);
         if (hit)
@@ -573,7 +727,7 @@ class Engine
                 s.target != line && s.matches ? s.matches - 1 : s.matches;
             s = {};
             s.valid = true;
-            s.base = base;
+            s.baseTag = baseTag;
             s.target = line;
             s.pc = pc;
             s.context = context;

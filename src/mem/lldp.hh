@@ -12,7 +12,51 @@ namespace gem5
 {
 namespace lldp
 {
+// Exact byte-address keys for the LLDP address tables. The low index bits
+// are recovered through the existing XOR fold, without changing placement.
+constexpr unsigned
+addressIndexBits(unsigned sets)
+{
+    return sets <= 1 ? 0 : 1 + addressIndexBits(sets / 2);
+}
+
+template <unsigned Sets> constexpr uint64_t
+addressTag(uint64_t address)
+{
+    static_assert(Sets && !(Sets & (Sets - 1)),
+                  "LLDP address tables require power-of-two sets");
+    return address >> addressIndexBits(Sets);
+}
+
+template <unsigned Sets> constexpr unsigned
+addressSet(uint64_t address)
+{
+    static_assert(Sets && !(Sets & (Sets - 1)),
+                  "LLDP address tables require power-of-two sets");
+    return (address ^ (address >> 6)) & (Sets - 1);
+}
+
+template <unsigned Sets> constexpr uint64_t
+restoreAddressTag(uint64_t tag, unsigned set, uint64_t salt = 0)
+{
+    static_assert(Sets && !(Sets & (Sets - 1)) &&
+                  addressIndexBits(Sets) <= 12,
+                  "Address recovery needs a new proof for more index bits");
+    const auto high = tag << addressIndexBits(Sets);
+    const auto folded = set ^ addressSet<Sets>(high ^ salt);
+    // For up to twelve index bits, (I + shift6)^-1 = I + shift6.
+    return high | (folded ^ (folded >> 6));
+}
+
 enum class SourceForm : uint8_t { SingleImmediate, DualRegister, Other };
+
+// Scans run after every 4096 load events. Round a training event up to its
+// next scan batch before adding the original eight-batch inactivity limit.
+inline uint8_t
+metaAgeDeadline(uint32_t epoch)
+{
+    return ((epoch >> 12) + bool(epoch & 4095) + 8) & 15;
+}
 
 struct LoadInfo
 {
@@ -213,6 +257,76 @@ struct Chain
             length >= 1 && length <= 3;
     }
 };
+
+
+// Functional persistent immediate; the complete observation stays separate.
+struct ReplayOperation
+{
+    Op op{Op::Other};
+    int16_t imm{0}; // Signed 12-bit payload in a host carrier.
+    bool word{false};
+    bool replayable{false};
+
+    static bool fits(int64_t value)
+    { return value >= -2048 && value <= 2047; }
+
+    ReplayOperation() = default;
+    explicit ReplayOperation(const Operation &source)
+        : op(source.op), imm(fits(source.imm) ? source.imm : 0),
+          word(source.word), replayable(source.replayable)
+    {}
+};
+
+inline bool apply(const ReplayOperation &op, uint64_t &value)
+{
+    return apply(Operation{op.op, op.imm, op.word, op.replayable}, value);
+}
+
+// Persistent replay state excludes IQ propagation and address snapshots.
+// Exact length remains an observer; only replayLength controls value replay.
+struct ReplayDescriptor
+{
+    std::array<ReplayOperation, 2> ops{};
+    // Statistics only: never read by eligibility or value replay.
+    std::array<int64_t, 2> observedImmediates{};
+    uint32_t observedLength{0};
+    uint8_t replayLength{0}; // 0: dependency only; 1..3: loaded value + ops.
+    bool producerFloating{false};
+
+    static bool canEncode(const Chain &chain)
+    {
+        if (chain.trainable()) {
+            for (unsigned i = 0; i + 1 < chain.length; ++i) {
+                if (!ReplayOperation::fits(chain.ops[i].imm))
+                    return false;
+            }
+        }
+        return true;
+    }
+
+    ReplayDescriptor() = default;
+    explicit ReplayDescriptor(const Chain &chain)
+        : ops{ReplayOperation(chain.ops[0]), ReplayOperation(chain.ops[1])},
+          observedImmediates{chain.ops[0].imm, chain.ops[1].imm},
+          observedLength(chain.length),
+          replayLength(chain.trainable() && canEncode(chain) ? chain.length : 0),
+          producerFloating(chain.producerFloating)
+    {}
+
+    bool trainable() const { return replayLength != 0; }
+};
+
+
+// Floor division without overflowing when the immediate is INT64_MIN.
+inline int64_t immediateLine(int64_t immediate)
+{
+    return immediate / 64 - (immediate < 0 && (uint64_t(immediate) & 63));
+}
+
+inline uint8_t immediateOffset(int64_t immediate)
+{
+    return uint8_t(uint64_t(immediate) & 63);
+}
 
 struct Hint
 {

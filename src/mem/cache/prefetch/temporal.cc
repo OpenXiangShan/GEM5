@@ -142,7 +142,7 @@ TemporalPrefetcher::TPStats::TPStats(statistics::Group *parent,
         &roleSets, &filterSets, &samplerSets, &recorderSets,
         &metaSets, &confidenceSets};
     const std::array<unsigned, 6> sets = {
-        256, temporal::Engine::FILTER_SETS, samplerSetsCount,
+        temporal::Engine::ROLE_SETS, temporal::Engine::FILTER_SETS, samplerSetsCount,
         temporal::Engine::RECORDER_SETS, metaSetsCount,
         temporal::Engine::CONF_SETS};
     const std::array<const char *, 3> metrics = {
@@ -289,7 +289,7 @@ TemporalPrefetcher::loadTrain(const PacketPtr &pkt, bool miss)
             if (std::find(observedLoads.begin(), observedLoads.end(), identity) != observedLoads.end())
                 return {};
             observedLoads.push_back(identity);
-            if (observedLoads.size() > 1024)
+            if (observedLoads.size() > 256)
                 observedLoads.pop_front();
         }
     }
@@ -342,7 +342,7 @@ TemporalPrefetcher::replay(const PacketPtr &pkt, Addr pc, ContextID context,
                           uint8_t(kind * 4 + record.roles), {}, false};
             ownerOrder.push_back(id);
             event(FeedbackEvent::Queued, &owners.at(id));
-            if (ownerOrder.size() > 4096) {
+            if (ownerOrder.size() > 1024) {
                 const auto old = owners.find(ownerOrder.front());
                 if (old != owners.end()) {
                     if (old->second.outcome.sent() &&
@@ -637,7 +637,7 @@ TemporalPrefetcher::preDumpStats()
                 table.setEvictions[set] - table.reportedEvictions[set];
             vector[2 * sets + set] = std::count_if(
                 table.data[set].begin(), table.data[set].end(),
-                [](const auto &entry) { return entry.valid; });
+                [](const auto &entry) { return temporal::entryValid(entry); });
             table.reportedAccesses[set] = table.setAccesses[set];
             table.reportedEvictions[set] = table.setEvictions[set];
         }

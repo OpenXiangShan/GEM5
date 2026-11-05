@@ -22,24 +22,24 @@ class LLDPrefetcher : public Queued
 {
   private:
     static constexpr unsigned TableEntries = 64;
-    static constexpr unsigned SubEntries = 4;
+    static constexpr unsigned SubEntries = 1;
+    struct LoadObserver
+    {
+        uint8_t lineConf{0};
+        uint8_t offsetConf{0};
+    };
     struct SubEntry
     {
         bool valid{false};
         Addr consumerPC{0};
-        lldp::Chain chain;
-        int64_t loadImm{0};
-        int64_t immLine{0};
-        int64_t loadLine{0};
-        uint8_t immOffset{0};
-        uint8_t loadSize{0};
+        lldp::ReplayDescriptor chain;
+        int16_t loadImm{0}; // Signed 12-bit direct-load displacement.
+        uint8_t loadSizeLog2{0}; // 2 functional bits.
         bool loadSigned{false};
         bool loadReplayable{true};
         uint64_t aliasGeneration{0};
-        bool loadAddressValid{false};
+        LoadObserver observer;
         uint8_t immConf{0};
-        uint8_t lineConf{0};
-        uint8_t offsetConf{0};
         uint8_t cConf{0};
         uint64_t updateCount{0};
         uint64_t replacementCount{0};
@@ -75,40 +75,41 @@ class LLDPrefetcher : public Queued
     struct Training
     {
         o3::XsDynInstMetaPtr owner;
-        lldp::Chain chain;
+        lldp::ReplayDescriptor chain;
+        Addr producerPC;
         Addr consumerPC;
         ContextID context;
-        int64_t loadImm;
+        int16_t loadImm; // Signed 12-bit direct-load displacement.
         uint8_t loadSize{0};
-        int64_t loadLine{0};
-        uint8_t loadOffset{0};
-        bool loadAddressValid{false};
         bool loadSigned{false};
         bool loadReplayable{true};
+    };
+    struct LookupTraining : Training
+    {
         int producer{-1};
         int consumer{-1};
         uint64_t version{0};
     };
     struct Update
     {
-        Training training;
+        LookupTraining training;
         unsigned row;
         Entry entry;
     };
     std::array<Entry, TableEntries> table{};
     lldp::PLRU<TableEntries> replacement;
 
-    static constexpr unsigned AddressTableWays = 4;
-    static constexpr unsigned SamplerEntries = 1024;
-    static constexpr unsigned SamplerSets =
-        SamplerEntries / AddressTableWays;
-    static constexpr unsigned MetaEntries = 1024;
-    static constexpr unsigned MetaSets = MetaEntries / AddressTableWays;
+    static constexpr unsigned SamplerWays = 2;
+    static constexpr unsigned SamplerSets = 256;
+    static constexpr unsigned SamplerEntries = SamplerSets * SamplerWays;
+    static constexpr unsigned MetaWays = 1;
+    static constexpr unsigned MetaSets = 256;
+    static constexpr unsigned MetaEntries = MetaSets * MetaWays;
     static constexpr uint8_t SamplerThreshold = 2;
     struct SamplerEntry
     {
         bool valid{false};
-        Addr addrP{0};
+        uint64_t addrPTag{0};
         Addr producerPC{0};
         Addr consumerPC{0};
         ContextID context{InvalidContextID};
@@ -116,17 +117,14 @@ class LLDPrefetcher : public Queued
         uint8_t alias{0};
         uint64_t dependencyGeneration{0};
         uint8_t stableCount{0};
-        uint8_t mismatchCount{0};
         uint8_t rrpv{3};
         uint8_t matchesSincePromotion{0};
-        uint32_t lastSeenEpoch{0};
-        uint32_t promotionVersion{0};
         bool fpDirect{false};
     };
     struct MetaEntry
     {
         bool valid{false};
-        Addr addrP{0};
+        uint64_t addrPTag{0};
         Addr addrC{0};
         Addr producerPC{0};
         Addr consumerPC{0};
@@ -134,21 +132,16 @@ class LLDPrefetcher : public Queued
         uint32_t generation{0};
         uint8_t trainConf{0};
         uint8_t qualityConf{0};
-        uint8_t timelyConf{0};
         uint8_t tokens{0};
-        uint8_t outstanding{0};
+        bool busy{false};
         uint8_t rrpv{3};
-        uint32_t lastTrainEpoch{0};
-        uint32_t lastUsefulEpoch{0};
+        uint8_t ageDeadline{0};
         bool fpDirect{false};
     };
-    std::array<std::array<SamplerEntry, AddressTableWays>, SamplerSets>
+    std::array<std::array<SamplerEntry, SamplerWays>, SamplerSets>
         samplerTable{};
-    std::array<lldp::PLRU<AddressTableWays>, SamplerSets>
-        samplerReplacement{};
-    std::array<std::array<MetaEntry, AddressTableWays>, MetaSets>
+    std::array<std::array<MetaEntry, MetaWays>, MetaSets>
         metaTable{};
-    std::array<lldp::PLRU<AddressTableWays>, MetaSets> metaReplacement{};
     uint64_t generation{0};
     uint64_t candidateId{0};
     uint64_t version{0};
@@ -156,7 +149,8 @@ class LLDPrefetcher : public Queued
     struct AddressTraining
     {
         o3::XsDynInstMetaPtr owner;
-        lldp::Chain chain;
+        Addr producerPC;
+        Addr producerAddress;
         Addr consumerAddress;
         Addr consumerPC;
         ContextID context;
@@ -181,12 +175,17 @@ class LLDPrefetcher : public Queued
         unsigned metaWay{0};
         uint32_t metaGeneration{0};
         bool fpDirect{false};
+        uint64_t consumerGeneration{0}; // Observation identity only.
     };
+    Entry *feedbackProducer(const CandidateOwner &owner);
+    SubEntry *feedbackConsumer(const CandidateOwner &owner, Entry &entry);
     std::unordered_map<uint64_t, CandidateOwner> candidateOwners;
-    std::optional<Training> s0;
+    std::optional<LookupTraining> s0;
     std::optional<Update> s1;
     EventFunctionWrapper learningEvent;
-    const unsigned trainingQueueSize;
+    const unsigned dependenceQueueSize;
+    const unsigned addressQueueSize;
+    const unsigned addressRetryLimit;
     const uint8_t maxConf;
     const uint8_t initialConf;
     const uint8_t producerInitialConf;
@@ -249,6 +248,9 @@ class LLDPrefetcher : public Queued
         statistics::Scalar candidateGenerated, candidateQueued, candidateIssued,
             candidateDropped, candidateMerged, candidateUseful, candidateUnused,
             candidateLate;
+        statistics::Scalar staleConsumerFeedback;
+        statistics::Scalar dependenceQueueCapacity, addressQueueCapacity,
+            addressRetryBudget;
         statistics::Scalar candidateCacheHit, candidateMshrHit, candidateWbHit;
         statistics::Vector childrenAtReplacement, childrenAtDump;
         statistics::Vector pcpActiveHistogram;
@@ -282,7 +284,7 @@ class LLDPrefetcher : public Queued
     static bool hasFpDependency(const Entry &entry);
     bool isFpMetaCandidate(uint64_t id) const;
     void learningTick();
-    Update makeUpdate(Training training);
+    Update makeUpdate(LookupTraining training);
     void commitUpdate(const Update &update);
     unsigned validChildren(const Entry &entry) const;
     lldp::Hint pfHint(const PacketPtr &pkt);
@@ -296,7 +298,7 @@ class LLDPrefetcher : public Queued
                           Addr consumer_pc, ContextID context,
                           unsigned alias, uint64_t dependency_generation,
                           bool fp_direct);
-    void updateMetaTable(const SamplerEntry &sample);
+    void updateMetaTable(const SamplerEntry &sample, Addr addr_p);
     struct MetaHit
     {
         Addr addrC{0};

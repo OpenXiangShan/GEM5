@@ -266,7 +266,10 @@ class LLDPrefetcher(QueuedPrefetcher):
     enable_fp_direct = Param.Bool(
         True, "Allow scalar FP loads to train and trigger exact-address Meta"
     )
-    training_queue_size = Param.Unsigned(64, "Dependency training FIFO entries")
+    training_queue_size = Param.Unsigned(
+        64, "Address training FIFO entries Q; dependency FIFO uses max(1, Q // 4) "
+        "entries, and address requests may be requeued Q + 4 times"
+    )
     confidence_bits = Param.Unsigned(3, "Width of saturating LLDT confidence counters")
     initial_confidence = Param.Unsigned(1, "Initial consumer and immediate confidence")
     producer_initial_confidence = Param.Unsigned(2, "Initial producer confidence")
