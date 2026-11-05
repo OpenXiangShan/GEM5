@@ -2659,6 +2659,47 @@ decode QUADRANT {
                             }
                         }}, IsNonSpeculative, IsSerializeAfter, No_OpClass);
                     }
+                    0x11: decode RD {
+                        0x0: hfence_vvma({{
+                            if (!(xc->readMiscReg(MISCREG_ISA) & ISA_EXT_H_MASK)) {
+                                return std::make_shared<IllegalInstFault>(
+                                    "hfence_vvma requires H", machInst);
+                            }
+                            int v = xc->readMiscReg(MISCREG_VIRMODE);
+                            auto pm = (PrivilegeMode)xc->readMiscReg(MISCREG_PRV);
+                            if (v) {
+                                return std::make_shared<HVFault>(machInst);
+                            }
+                            if (pm != PRV_M && pm != PRV_S) {
+                                return std::make_shared<IllegalInstFault>(
+                                    "hfence_vvma requires M or HS", machInst);
+                            }
+                            // Conservative implementation: ignore GVA, ASID, and current VMID.
+                            // RTL：ignore GVA in L1 TLB，but don't ignore ASID, and current VMID
+                            xc->tcBase()->getMMUPtr()->demapPage(Rs1, Rs2);
+                        }}, IsNonSpeculative, IsSerializeBefore, IsSerializeAfter,
+                            IsReadBarrier, IsWriteBarrier, No_OpClass);
+                    }
+                    0x13: decode RD {
+                        0x0: hinval_vvma({{
+                            if (!(xc->readMiscReg(MISCREG_ISA) & ISA_EXT_H_MASK)) {
+                                return std::make_shared<IllegalInstFault>(
+                                    "hinval_vvma requires H", machInst);
+                            }
+                            int v = xc->readMiscReg(MISCREG_VIRMODE);
+                            auto pm = (PrivilegeMode)xc->readMiscReg(MISCREG_PRV);
+                            if (v) {
+                                return std::make_shared<HVFault>(machInst);
+                            }
+                            if (pm != PRV_M && pm != PRV_S) {
+                                return std::make_shared<IllegalInstFault>(
+                                    "hinval_vvma requires M or HS", machInst);
+                            }
+                            // Strong HINVAL: perform the corresponding complete HFENCE.
+                            xc->tcBase()->getMMUPtr()->demapPage(Rs1, Rs2);
+                        }}, IsNonSpeculative, IsSerializeBefore, IsSerializeAfter,
+                            IsReadBarrier, IsWriteBarrier, No_OpClass);
+                    }
                     0x18: mret({{
                         if (xc->readMiscReg(MISCREG_PRV) != PRV_M) {
                             return std::make_shared<IllegalInstFault>(
@@ -2683,29 +2724,50 @@ decode QUADRANT {
                         }
                     }}, IsSerializeAfter, IsNonSpeculative, IsReturn,
                         IsSquashAfter);
-                    0x31: priv({{
-                        auto pm = (PrivilegeMode)xc->readMiscReg(
-                                MISCREG_PRV);
-                        auto vir = (PrivilegeMode)xc->readMiscReg(
-                                MISCREG_VIRMODE);
-                        STATUS status = xc->readMiscReg(MISCREG_STATUS);
-                        xc->tcBase()->getMMUPtr()->demapPage(Rs1, Rs2);
-
-                        if(vir){
-                            panic("add priv vir code\n");
-
-                        }
-                        if(pm == PRV_U){
-                            return std::make_shared<IllegalInstFault>(
-                                        "h-priv pm == prv_u", machInst);
-
-                        }
-                        if(!(pm == PRV_M ||(pm == PRV_S && !vir && status.tvm ==0))){
-                            return std::make_shared<IllegalInstFault>(
-                                        "h-priv pm == prv_u", machInst);
-
-                        }
-                    }},IsNonSpeculative, IsSerializeAfter, No_OpClass);
+                    0x31: decode RD {
+                        0x0: hfence_gvma({{
+                            if (!(xc->readMiscReg(MISCREG_ISA) & ISA_EXT_H_MASK)) {
+                                return std::make_shared<IllegalInstFault>(
+                                    "hfence_gvma requires H", machInst);
+                            }
+                            STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                            HSTATUS hstatus = xc->readMiscReg(MISCREG_HSTATUS);
+                            int v = xc->readMiscReg(MISCREG_VIRMODE);
+                            auto pm = (PrivilegeMode)xc->readMiscReg(MISCREG_PRV);
+                            if(!v &&
+                                pm != PRV_M && (pm != PRV_S || status.tvm)) {
+                                    return std::make_shared<IllegalInstFault>(
+                                        "hfence_gvma requires M or HS with TVM clear", machInst);
+                            }
+                            if(v) {
+                                return std::make_shared<HVFault>(machInst);
+                            }
+                            xc->tcBase()->getMMUPtr()->demapPage( Rs1 << 2, Rs2 & VMID_MASK);
+                        }}, IsNonSpeculative, IsSerializeBefore, IsSerializeAfter,
+                            IsReadBarrier, IsWriteBarrier, No_OpClass);
+                    }
+                    0x33: decode RD {
+                        0x0: hinval_gvma({{
+                            if (!(xc->readMiscReg(MISCREG_ISA) & ISA_EXT_H_MASK)) {
+                                return std::make_shared<IllegalInstFault>(
+                                    "hinval_gvma requires H", machInst);
+                            }
+                            int v = xc->readMiscReg(MISCREG_VIRMODE);
+                            auto pm = static_cast<PrivilegeMode>(
+                                xc->readMiscReg(MISCREG_PRV));
+                            STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                            if (v) {
+                                return std::make_shared<HVFault>(machInst);
+                            }
+                            if (pm != PRV_M && (pm != PRV_S || status.tvm)) {
+                                return std::make_shared<IllegalInstFault>(
+                                    "hinval_gvma requires M or HS with TVM clear", machInst);
+                            }
+                            // Strong HINVAL: perform the corresponding complete HFENCE.
+                            xc->tcBase()->getMMUPtr()->demapPage( Rs1 << 2, Rs2 & VMID_MASK);
+                        }}, IsNonSpeculative, IsSerializeBefore, IsSerializeAfter,
+                            IsReadBarrier, IsWriteBarrier, No_OpClass);
+                    }
                 }
             }
             format CSROp {
