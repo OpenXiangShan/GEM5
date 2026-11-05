@@ -137,6 +137,21 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     # DRAMsim3 option
     parser.add_argument("--dramsim3-ini", type=str, default=None,
                         help = "dramsim3 config file")
+    parser.add_argument(
+        "--simple-memory-latency",
+        default=None,
+        help="Fixed request-to-response latency for --mem-type=SimpleMemory",
+    )
+    parser.add_argument(
+        "--simple-memory-latency-var",
+        default=None,
+        help="Latency variance for --mem-type=SimpleMemory",
+    )
+    parser.add_argument(
+        "--simple-memory-bandwidth",
+        default=None,
+        help="Combined read/write bandwidth for --mem-type=SimpleMemory",
+    )
     parser.add_argument("--ramulator2-ini", type=str, default=None,
                         help = "ramulator2 config file")
 

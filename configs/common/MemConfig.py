@@ -146,6 +146,9 @@ def config_mem(options, system):
 
     opt_dramsim3_ini = getattr(options, 'dramsim3_ini', None)
     opt_ramulator2_ini = getattr(options, 'ramulator2_ini', None)
+    opt_simple_latency = getattr(options, 'simple_memory_latency', None)
+    opt_simple_latency_var = getattr(options, 'simple_memory_latency_var', None)
+    opt_simple_bandwidth = getattr(options, 'simple_memory_bandwidth', None)
 
     if opt_mem_type == "HMC_2500_1x32":
         HMChost = HMC.config_hmc_host_ctrl(options, system)
@@ -186,6 +189,14 @@ def config_mem(options, system):
     if opt_nvm_type:
         n_intf = ObjectList.mem_list.get(opt_nvm_type)
 
+    simple_memory_opts = (
+        opt_simple_latency,
+        opt_simple_latency_var,
+        opt_simple_bandwidth,
+    )
+    if any(simple_memory_opts) and not issubclass(intf, m5.objects.SimpleMemory):
+        fatal("SimpleMemory parameters require --mem-type=SimpleMemory")
+
     nvm_intfs = []
     mem_ctrls = []
 
@@ -223,6 +234,14 @@ def config_mem(options, system):
                 # Enable low-power DRAM states if option is set
                 if issubclass(intf, m5.objects.DRAMInterface):
                     dram_intf.enable_dram_powerdown = opt_dram_powerdown
+
+                if issubclass(intf, m5.objects.SimpleMemory):
+                    if opt_simple_latency is not None:
+                        dram_intf.latency = opt_simple_latency
+                    if opt_simple_latency_var is not None:
+                        dram_intf.latency_var = opt_simple_latency_var
+                    if opt_simple_bandwidth is not None:
+                        dram_intf.bandwidth = opt_simple_bandwidth
 
                 if opt_elastic_trace_en:
                     dram_intf.latency = '1ns'
