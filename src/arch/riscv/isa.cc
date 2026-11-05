@@ -816,8 +816,7 @@ ISA::setMiscReg(int misc_reg, RegVal val)
         STATUS write_val = ((vsstatus & ~(NEMU_SSTATUS_WMASK)) | (val & NEMU_SSTATUS_WMASK));
         bool fs_dirty = (write_val.fs == 0x3);
         bool vs_dirty = (write_val.vs == 0x3);
-        uint64_t write_val2 = ((uint64_t)(fs_dirty || vs_dirty) << 63);
-        write_val = write_val | write_val2;
+        write_val.sd = fs_dirty || vs_dirty;
         setMiscRegNoEffect(MISCREG_VSSTATUS, write_val);
     } else if ((v == 1) && (misc_reg == MISCREG_VSSTATUS)) {
         auto vsstatus = readMiscRegNoEffect(MISCREG_VSSTATUS);
@@ -825,8 +824,7 @@ ISA::setMiscReg(int misc_reg, RegVal val)
         // if enable h
         bool fs_dirty = (write_val.fs == 0x3);
         bool vs_dirty = (write_val.vs == 0x3);
-        uint64_t write_val2 = ((uint64_t)(fs_dirty || vs_dirty) << 63);
-        write_val = write_val | write_val2;
+        write_val.sd = fs_dirty || vs_dirty;
         setMiscRegNoEffect(MISCREG_VSSTATUS, write_val);
     } else if ((v == 1) && ((misc_reg == MISCREG_SATP))) {
         auto satp_mode = (val & SATP_MODE_MASK) >> NEMU_SATP_RIGHT_OFFSET;
@@ -852,8 +850,7 @@ ISA::setMiscReg(int misc_reg, RegVal val)
         // if enable h
         bool fs_dirty = (write_val.fs == 0x3);
         bool vs_dirty = (write_val.vs == 0x3);
-        uint64_t write_val2 = ((uint64_t)(fs_dirty || vs_dirty) << 63);
-        write_val = write_val | write_val2;
+        write_val.sd = fs_dirty || vs_dirty;
         setMiscRegNoEffect(MISCREG_VSSTATUS, write_val);
     } else {
         switch (misc_reg) {
