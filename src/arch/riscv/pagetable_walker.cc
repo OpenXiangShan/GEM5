@@ -2351,10 +2351,14 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
     if ((inflight == 0 && read == NULL && writes.size() == 0) && (translateMode == twoStageMode)) {
         state = Ready;
         nextState = Waiting;
-        if (resultStale || !walker->tlb->translationContextValid(
-                                walkContext, requestors.front().tc, mainReq, mode)) {
-            resultStale = true;
+        if (resultStale)
             return true;
+        for (const auto &r : requestors) {
+            if (!walker->tlb->translationContextValid(
+                    walkContext, r.tc, r.req, mode)) {
+                resultStale = true;
+                return true;
+            }
         }
         finishing = true;
         bool refilled = false;

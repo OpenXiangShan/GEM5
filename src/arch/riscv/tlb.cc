@@ -2083,7 +2083,7 @@ lookupSingleStageL2(TLB *l2tlb, Addr addr, uint16_t id, BaseMMU::Mode mode,
                   uint8_t stage, uint8_t xlate_mode)
 {
     TlbEntry *best = nullptr;
-    int best_level = PTW_TOP_LEVEL(xlate_mode);
+    int best_level = PTW_TOP_LEVEL(xlate_mode) + 1;
     for (int i_e = 1; i_e < L_L2SUM; i_e++) {
         if ((xlate_mode == AddrXlateMode::SV39) &&
             (i_e == L_L2L3 || i_e == L_L2sp3))
