@@ -420,6 +420,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
      * the Python SimObject parameter mshr_alloc_per_cycle.
      */
     const int mshrAllocPerCycle;
+    const bool demandReadsBeforeEvictions;
 
     /** Compression method being used. */
     compression::Base* compressor;
@@ -1250,6 +1251,9 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
         /** Number of blocks written back per thread. */
         statistics::Vector writebacks;
+        statistics::Scalar demandReadEvictEligible;
+        statistics::Scalar demandReadEvictSelected;
+        statistics::Scalar demandReadEvictConflict;
 
         /** Demand misses that hit in the MSHRs. */
         statistics::Formula demandMshrHits;
