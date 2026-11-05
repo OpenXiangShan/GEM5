@@ -376,7 +376,7 @@ struct TimeStruct
         bool robSquashing; // *F, D, R, I
 
         /// Re-published on every `robSquashing` cycle, so IEW needs no copy.
-        SquashCause squashCause; // *I
+        SquashCause squashCause; // *F, I
 
         SquashVersion squashVersion; // *F, D, R, I
 

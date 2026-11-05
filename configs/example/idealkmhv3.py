@@ -41,10 +41,9 @@ def make_value_predictor(vp_type):
         # source default (0.25 * 2^5 = 8). Every parameter that can differ
         # from the source defaults is passed explicitly because SimObject
         # params are embedded into gem5.opt at build time, so an edited source
-        # default only takes effect after a rebuild. EStride is listed in the
-        # fixed-priority arbiter's table (after IdealConstantLVP, before
-        # EgDiff), so the default --vp-arb=fixed-priority already applies its
-        # predictions.
+        # default only takes effect after a rebuild. EStride sits second in the
+        # fixed-priority arbiter's table (after IdealConstantLVP), so the
+        # default --vp-arb=fixed-priority already applies its predictions.
         return EStride(
             ways=3,
             strideWidth=20,
@@ -147,6 +146,7 @@ def setKmhV3IdealParams(args, system):
                 predictor_types = [
                     "ideal-constant",
                     "estride",
+                    "vtage",
                     "egdiff",
                 ]
             else:

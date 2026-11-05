@@ -88,6 +88,9 @@ class VTAGE : public VPUnit
         bool pointerHit = false;
         bool hashOnlyHit = false;
         bool backoffBlocked = false;
+        bool appliedByVTAGE = false;
+        bool mispredictionReported = false;
+        bool recoveryReported = false;
     };
 
     const unsigned numHistories;
@@ -111,14 +114,12 @@ class VTAGE : public VPUnit
     const uint32_t l1HitMaxCycles;
     const uint32_t l2HitMaxCycles;
     const uint32_t llcHitMaxCycles;
-    const uint32_t fastInstCycles;
     const uint32_t mfastInstCycles;
     const bool enableStochasticTraining;
     const uint32_t rngSeed;
     const double allocProbLoadL1Hit;
     const double allocProbLoadMiss;
     const double confIncProbLowValue;
-    const double confIncProbFastLoad;
     const double uIncProbFastLoad;
     const double valueArrayUpgradeProb;
     const double shortHistoryAllocBias;
@@ -129,8 +130,8 @@ class VTAGE : public VPUnit
     std::vector<std::vector<std::vector<VTAGEEntry>>> tables;
     std::vector<std::vector<ValueEntry>> valueArrays;
     std::vector<unsigned> agingTicks;
-    std::vector<uint64_t> lastSelectedMispredictSeq;
-    std::vector<bool> hasSelectedMispredictSeq;
+    std::vector<uint64_t> fetchedInstructions;
+    std::vector<uint64_t> backoffThrough;
 
     struct VTAGEStats : public statistics::Group
     {
@@ -186,7 +187,6 @@ class VTAGE : public VPUnit
     uint32_t maxUseful() const;
     uint64_t mix64(uint64_t value) const;
     bool chance(double probability);
-    bool isFastLoad(const TrainInfo &train_info) const;
     bool isMFastLoad(const TrainInfo &train_info) const;
     bool isLowValue(RegVal value) const;
     uint32_t foldHistory(const boost::dynamic_bitset<> &history,
@@ -210,7 +210,8 @@ class VTAGE : public VPUnit
             RegVal actual_value, const TrainInfo &train_info);
     void ageEntries(ThreadID tid);
     void advanceAging(ThreadID tid, unsigned delta);
-    bool backoffActive(ThreadID tid, uint64_t seq_no) const;
+    bool backoffActive(ThreadID tid) const;
+    void armBackoff(ThreadID tid, uint64_t seq_no, const char *source);
 
   public:
     explicit VTAGE(const Params &params);
@@ -218,6 +219,17 @@ class VTAGE : public VPUnit
     std::string name() const override { return "VTAGE"; }
 
     VPPredictionCandidate predict(const VPPredictRequest &request) override;
+
+    void predictionApplied(const VPPredictionAppliedInfo &appliedInfo,
+            VPPredictionRecord *record) override;
+
+    void valueMispredicted(const VPMispredictionInfo &mispInfo,
+            VPPredictionRecord *record) override;
+
+    void fetchInstruction(const VPFetchInfo &fetchInfo) override;
+
+    void recoveryApplied(const VPRecoveryInfo &recoveryInfo,
+            VPPredictionRecord *record) override;
 
     void update(const VPUpdateInfo &update_info,
             const VPPredictionRecord *record,

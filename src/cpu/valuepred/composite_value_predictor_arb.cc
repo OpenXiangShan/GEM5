@@ -16,9 +16,12 @@ CompositeValuePredictorFixedPriorityArb::choose(
 {
     // Only the listed types may win: a predictor whose type is absent from
     // this table is never selected, even when it is the only candidate.
+    // The order is the exploration policy under test: LVP, EStride, VTAGE,
+    // then EgDiff.
     constexpr ValuePredType priority[] = {
         ValuePredType::IdealConstantLVP,
         ValuePredType::EStride,
+        ValuePredType::VTAGE,
         ValuePredType::EgDiff,
     };
 
