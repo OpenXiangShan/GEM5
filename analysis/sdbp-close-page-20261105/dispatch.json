@@ -1,0 +1,30 @@
+{
+  "sha": "867213de6fb8fa00b004a6260dd2811565971948",
+  "base_sha": "de1df30a09b46efd7948d75de46fcedd085abb54",
+  "workflow_ref": "codex/sdbp-close-page",
+  "configuration": "idealkmhv3.py",
+  "benchmark_type": "spec06-rva23-novec-gcc16-1.0c",
+  "dramsim3_ini": "ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch_close_page.ini",
+  "variants": {
+    "nopf_lru": {
+      "run_id": 41989493742,
+      "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/41989493742",
+      "extra_args": "--dramsim3-ini=$GEM5_HOME/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch_close_page.ini --l2-replacement-policy=lru --no-pf"
+    },
+    "nopf_sdbp": {
+      "run_id": 41989496943,
+      "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/41989496943",
+      "extra_args": "--dramsim3-ini=$GEM5_HOME/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch_close_page.ini --l2-replacement-policy=sdbp --sdbp-sampler-num=128 --sdbp-sampler-assoc=6 --no-pf"
+    },
+    "pf_lru": {
+      "run_id": 41989499034,
+      "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/41989499034",
+      "extra_args": "--dramsim3-ini=$GEM5_HOME/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch_close_page.ini --l2-replacement-policy=lru"
+    },
+    "pf_sdbp": {
+      "run_id": 41989501587,
+      "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/41989501587",
+      "extra_args": "--dramsim3-ini=$GEM5_HOME/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch_close_page.ini --l2-replacement-policy=sdbp --sdbp-sampler-num=128 --sdbp-sampler-assoc=6"
+    }
+  }
+}
