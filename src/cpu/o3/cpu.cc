@@ -111,6 +111,7 @@ CPU::CPU(const BaseO3CPUParams &params)
       rob(this, params),
 
       tea(params.enableTea ? std::make_unique<Tea>(this, params) : nullptr),
+      dip(params.enableDip ? std::make_unique<Dip>(this, params) : nullptr),
 
       scoreboard(name() + ".scoreboard", regFile.totalNumPhysRegs()),
 
@@ -642,6 +643,10 @@ CPU::tick()
 
 //    activity = false;
 
+    if (dip) {
+        dip->beginCycle();
+    }
+
     //Tick each of the stages
 
     commit.tick();
@@ -664,6 +669,9 @@ CPU::tick()
 
     if (tea) {
         tea->tick();
+    }
+    if (dip) {
+        dip->tick();
     }
 
     if (!tickEvent.scheduled()) {
