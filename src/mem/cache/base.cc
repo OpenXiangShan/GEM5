@@ -147,6 +147,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       lastTagAccessCheckCycle(0),
       lastMSHRAllocCycle(0),
       mshrAllocPerCycle(p.mshr_alloc_per_cycle),
+      demandReadsBeforeEvictions(p.demand_reads_before_evictions),
       compressor(p.compressor),
       prefetcher(p.prefetcher),
       writeAllocator(p.write_allocator),
@@ -1518,6 +1519,24 @@ BaseCache::getNextQueueEntry()
     // simply be that it is not ready
     MSHR *miss_mshr  = mshrQueue.getNext();
     WriteQueueEntry *wq_entry = writeBuffer.getNext();
+
+    const bool read_before_eviction = miss_mshr && wq_entry &&
+        !writeBuffer.isFull() && miss_mshr->hasFromCPU() &&
+        miss_mshr->getTarget()->pkt->isRead() &&
+        !miss_mshr->needsWritable() &&
+        !miss_mshr->getTarget()->pkt->req->isUncacheable() &&
+        wq_entry->getTarget()->pkt->isEviction();
+    stats.demandReadEvictEligible += read_before_eviction;
+    if (demandReadsBeforeEvictions && read_before_eviction) {
+        // Replace the write-side lookup below with the existing read-side
+        // dependency lookup; pending same-line writebacks retain priority.
+        if (auto *conflict = writeBuffer.findPending(miss_mshr)) {
+            stats.demandReadEvictConflict++;
+            return conflict;
+        }
+        stats.demandReadEvictSelected++;
+        return miss_mshr;
+    }
 
     // In order to align with the Tilelink protocol,
     // we will adjust the priority of the write-back to the highest.
@@ -3132,6 +3151,12 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "average number of cycles each access was blocked"),
     ADD_STAT(writebacks, statistics::units::Count::get(),
              "number of writebacks"),
+    ADD_STAT(demandReadEvictEligible, statistics::units::Count::get(),
+             "Arbiter calls with demand read, ordinary eviction and WB room"),
+    ADD_STAT(demandReadEvictSelected, statistics::units::Count::get(),
+             "Arbiter calls selecting that read before the eviction"),
+    ADD_STAT(demandReadEvictConflict, statistics::units::Count::get(),
+             "Arbiter calls preserving a pending same-line WB dependency"),
     ADD_STAT(demandMshrHits, statistics::units::Count::get(),
              "number of demand (read+write) MSHR hits"),
     ADD_STAT(overallMshrHits, statistics::units::Count::get(),
