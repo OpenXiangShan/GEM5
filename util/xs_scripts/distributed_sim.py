@@ -382,7 +382,22 @@ def apply_benchmark_filter(
     return selected
 
 
-def find_checkpoint(cpt_dir: Path, checkpoint_key: str) -> Path:
+def find_checkpoint(
+    cpt_dir: Path, checkpoint_key: str, trace_format: str = ""
+) -> Path:
+    if trace_format:
+        # Trace keys name files, not checkpoint directories. Never fuzzy-match.
+        candidate = cpt_dir / checkpoint_key
+        if candidate.is_file():
+            return candidate.resolve()
+        for suffix in ("gz", "zstd", "xz", "champsimtrace"):
+            trace = Path(f"{candidate}.{suffix}")
+            if trace.is_file():
+                return trace.resolve()
+        raise FileNotFoundError(
+            f"trace {checkpoint_key!r} not found under {cpt_dir}"
+        )
+
     direct_dir = cpt_dir / checkpoint_key
     if direct_dir.is_dir():
         for suffix in CHECKPOINT_SUFFIXES:
@@ -474,6 +489,8 @@ def build_gem5_command(
     trace_format: str = "",
 ) -> list[str]:
     if config_or_script.suffix == ".sh":
+        if trace_format:
+            raise ValueError("--trace-format requires a .py config, not a .sh wrapper")
         return ["bash", str(config_or_script), str(checkpoint)]
     if config_or_script.suffix != ".py":
         raise ValueError(
@@ -1091,7 +1108,7 @@ def run_scheduler(
             continue
         try:
             checkpoint_by_workload[workload] = find_checkpoint(
-                cpt_dir, workload.checkpoint_key
+                cpt_dir, workload.checkpoint_key, trace_format=trace_format
             )
         except FileNotFoundError as exc:
             clear_stale_markers(work_dir, force=force)
@@ -1299,7 +1316,9 @@ def main(argv: list[str]) -> int:
 
     if args.dry_run:
         for index, workload in enumerate(workloads, start=1):
-            checkpoint = find_checkpoint(cpt_dir, workload.checkpoint_key)
+            checkpoint = find_checkpoint(
+                cpt_dir, workload.checkpoint_key, trace_format=args.trace_format
+            )
             command = build_gem5_command(
                 gem5,
                 config_or_script,

@@ -433,26 +433,32 @@ def summarize_trace_results(
         weights_path = (
             archived if archived.is_file() else config.cluster_config
         )
-    # Match checkpoint CI: scan existing stats and count abort markers.
     aborted = sorted(root.rglob("abort"))
     failed = len(aborted)
     results = {}
-    incomplete = False
     print(f"{benchmark_type}: measurement after warmup")
     print(f"{'Trace':<32} {'Status':<8} {'IPC':>12} {'Branch MPKI':>12}")
     for marker in aborted:
         print(f"{marker.parent.name:<32} failed: run aborted")
-    stats_files = sorted(root.glob("*/stats.txt"))
-    if not stats_files:
-        print("No stats.txt files found")
+    # Inspect task directories even if a worker never wrote stats.txt.
+    # Ignore the convenience self-link created by parallel_trace_sim.sh.
+    directories = sorted(
+        p for p in root.glob("*") if p.is_dir() and not p.is_symlink()
+    )
+    if not directories:
+        print("No trace task directories found")
         return 1
-    for stats_file in stats_files:
-        directory = stats_file.parent
+    for directory in directories:
         name = directory.name
-        if not (directory / "completed").is_file():
-            incomplete = True
+        if (directory / "abort").exists():
             continue
         try:
+            if (
+                not (directory / "completed").is_file()
+                or (directory / "running").exists()
+            ):
+                raise ValueError("run did not complete")
+            stats_file = directory / "stats.txt"
             # The final complete dump contains post-warmup measurements.
             blocks, current = [], None
             for entry in stats_file.read_text().splitlines():
@@ -491,7 +497,7 @@ def summarize_trace_results(
         except (OSError, ValueError, KeyError, IndexError) as error:
             failed += 1
             print(f"{name:<32} failed: {error}")
-    if not failed and not incomplete and results:
+    if not failed and results:
         try:
             groups = [dict.fromkeys(results, 1.0)]
             if weights_path:
