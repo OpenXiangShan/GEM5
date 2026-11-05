@@ -112,13 +112,7 @@ enum l2TLBPage
 enum HTLBHitState
 {
     H_L1miss = 0,
-    h_l1AllstageHit,
-    h_l1VSstageHit,
-    h_l1GstageHit,
-    h_l2VSstageHitEnd,
-    h_l2VSstageHitContinue,
-    h_l2GstageHitEnd,
-    h_l2GstageHitContinue
+    h_l1AllstageHit
 };
 
 enum TlbTranslateMode { direct = 0, vsstage, gstage, allstage };
@@ -270,6 +264,28 @@ struct TlbEntry : public Serializable
     void serialize(CheckpointOut &cp) const override;
     void unserialize(CheckpointIn &cp) override;
 };
+
+struct StageLeaf
+{
+    PTE pte;
+    int level;
+    bool valid;
+
+    StageLeaf() : pte(0), level(0), valid(false) {}
+    StageLeaf(const PTE &p, int leaf_level) : pte(p), level(leaf_level), valid(true) {}
+
+};
+
+inline Addr
+stageTranslate(Addr addr, const StageLeaf &leaf)
+{
+    Addr pa = leaf.pte.ppn << PGSHFT;
+    if (leaf.level > 0) {
+        const Addr pg_mask = (1ULL << (PGSHFT + leaf.level * LEVEL_BITS)) - 1;
+        pa = (pa & ~pg_mask) | (addr & pg_mask & ~PGMASK);
+    }
+    return pa | (addr & PGMASK);
+}
 
 inline Addr VADDR_SEXT(uint8_t addrXlateMode, Addr vaddr) {
     switch(addrXlateMode){
