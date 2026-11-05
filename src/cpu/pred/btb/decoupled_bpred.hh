@@ -78,6 +78,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     CPU *cpu;
     ThreadID nextPredictTid = 0;
     const unsigned numPredictingThreads;
+    const unsigned idealPredictionsPerCycle;
+    const bool idealNoOverrideBubbles;
     unsigned predictWidth;  // max predict width, default 64
     unsigned maxInstsNum;
 
@@ -330,6 +332,9 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar redirectPendingPredictionSkips;
         statistics::Distribution predictionsStartedPerCycle;
         statistics::Vector predictionsStartedByThread;
+        statistics::Scalar idealSecondPredictionRequests;
+        statistics::Scalar idealSecondPredictionEnqueues;
+        statistics::Scalar idealOverrideBubblesSaved;
 
         statistics::Scalar s1PredWrongFallthrough;
         statistics::Scalar s1PredWrongUbtb;
