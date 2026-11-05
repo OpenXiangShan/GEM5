@@ -206,6 +206,7 @@ class Queued : public Base
 
     /** Filter prefetches if already queued */
     const bool queueFilter;
+    const bool offloadBufferedNeighborsToL3;
 
     /** Snoop the cache before generating prefetch (cheating basically) */
     const bool cacheSnoop;
@@ -331,6 +332,11 @@ class Queued : public Base
         // STATS
         statistics::Scalar pfIdentified;
         statistics::Scalar pfBufferHit;
+        statistics::Scalar pfBufferedNeighborsL3Marked;
+        statistics::Scalar pfCdpL3Offloaded;
+        statistics::Scalar pfCdpL3ReceiverBusy;
+        statistics::Scalar pfCdpL3FellBack;
+        statistics::Scalar pfCdpL3OffloadedToBusy;
         statistics::Scalar pfInCache;
         statistics::Scalar pfRemovedDemand;
         statistics::Scalar pfRemovedFull;
