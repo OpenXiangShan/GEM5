@@ -64,6 +64,30 @@ vsInterruptCause(ExceptionCode code)
     }
 }
 
+uint64_t
+RiscvFault::interruptCause() const
+{
+    assert(isInterrupt() || isNonMaskableInterrupt());
+    return isNonMaskableInterrupt() ? ~uint64_t{0}
+        : _code | (uint64_t{1} << 63);
+}
+
+InterruptTarget
+RiscvFault::interruptTarget(ThreadContext *tc) const
+{
+    assert(isInterrupt() || isNonMaskableInterrupt());
+    if (isNonMaskableInterrupt() ||
+        tc->readMiscReg(MISCREG_PRV) == PRV_M ||
+        !bits(tc->readMiscReg(MISCREG_MIDELEG), _code)) {
+        return InterruptTarget::Machine;
+    }
+    if (tc->readMiscReg(MISCREG_VIRMODE) == 1 &&
+        bits(tc->readMiscReg(MISCREG_HIDELEG), _code)) {
+        return InterruptTarget::VirtualSupervisor;
+    }
+    return InterruptTarget::Supervisor;
+}
+
 void
 RiscvFault::invokeSE(ThreadContext *tc, const StaticInstPtr &inst)
 {
@@ -87,7 +111,7 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         VSSTATUS vsstatus = tc->readMiscReg(MISCREG_VSSTATUS);
         auto vmode = tc->readMiscReg(MISCREG_VIRMODE);
         bool hs_mode_pc = false;
-        if ((_code == ECALL_SUPER)  && vmode){
+        if (!isInterrupt() && _code == ECALL_SUPER && vmode) {
             _code = ECALL_VS;
         }
 
@@ -99,26 +123,23 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
                 "NMI overwriting M-mode trap handler state");
 
         // Set fault handler privilege mode
-        if (isNonMaskableInterrupt()) {
-            prv = PRV_M;
-        } else if (isInterrupt()) {
-            if (pp != PRV_M &&
-                bits(tc->readMiscReg(MISCREG_MIDELEG), _code) != 0) {
+        if (isInterrupt() || isNonMaskableInterrupt()) {
+            switch (interruptTarget(tc)) {
+              case InterruptTarget::Machine:
+                break;
+              case InterruptTarget::Supervisor:
                 prv = PRV_S;
+                break;
+              case InterruptTarget::VirtualSupervisor:
+                prv = PRV_S;
+                prvh = PRV_HS;
+                break;
             }
         } else {
             if (pp != PRV_M &&
                 bits(tc->readMiscReg(MISCREG_MEDELEG), _code) != 0) {
                 prv = PRV_S;
             }
-        }
-
-        if (isInterrupt()) {
-            if (pp != PRV_M && (tc->readMiscReg(MISCREG_VIRMODE) == 1) &&
-                bits(tc->readMiscReg(MISCREG_HIDELEG), _code) != 0) {
-                prvh = PRV_HS;
-            }
-        } else {
             if (pp != PRV_M && (tc->readMiscReg(MISCREG_VIRMODE) == 1) &&
                 bits(tc->readMiscReg(MISCREG_HEDELEG), _code) != 0) {
                 prvh = PRV_HS;
