@@ -53,6 +53,6 @@ done
 
 历史 28.72509 来自源码 `36584adaf6` 的另一套配置。这里复用了不同的 LVP 并保留主线 issue/folding/leaf TLB 默认，因此不继承旧分数或旧逐点性能结果。下一轮应在同一新版本上重新测量默认与 ideal 的完整 profile。
 
-2026-11-05：精简配置通过 RISCV `gem5.opt` 构建、CoreMark 默认/ideal/参数覆盖三次短程运行、gcc_expr/1687、mcf/6753、perlbench_checkspam/5886 三对 200k 预热加 800k ROI difftest，以及 Sv39/Sv48 两次权限与取指边界回归。INI 确认使用主线 CompositeValuePredictor/IdealConstantLVP、scalar issue=2、folding=False、shared leaf=128；mcf 与 perlbench 中观测到实际值预测。
+2026-11-05：精简配置通过 RISCV `gem5.opt` 构建、CoreMark 默认/ideal/参数覆盖三次短程运行、gcc_expr/1687、mcf/6753、perlbench_checkspam/5886 三对 200k 预热加 800k ROI difftest，以及本地临时 Sv39/Sv48 权限与取指边界检查（测试程序不随 PR 提交）。INI 确认使用主线 CompositeValuePredictor/IdealConstantLVP、scalar issue=2、folding=False、shared leaf=128；mcf 与 perlbench 中观测到实际值预测。
 
 默认入口在 CoreMark 300k 检查中的 5213 个既有 INI 字段、300001 条指令和 207449 周期与 base 一致。上述仅为配置和正确性 smoke，不是新配置的完整加权性能结果。
