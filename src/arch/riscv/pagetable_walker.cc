@@ -2127,7 +2127,7 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tl
         nextline = false;
         topAddr = (vsatp.ppn << PageShift) + (idx * sizeof(PTE));
         gPaddr = (vsatp.ppn << PageShift) + (idx_f * sizeof(PTE));
-        if ((mainReq->get_level() != top_level) && (mainReq->getgPaddr() != 0)) {
+        if (mainReq->get_finish_gva() || mainReq->get_level() != top_level) {
             gPaddr = mainReq->getgPaddr();
         }
         if (isVsatp0Mode) {
@@ -2181,7 +2181,8 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tl
             inl2Entry.pteVS = mainReq->get_pte();
             vsLeaf = StageLeaf(PTE(mainReq->get_pte()), mainReq->get_level());
         }
-        if ((!isVsatp0Mode) && inGstage && (twoStageLevel != top_level)) {
+        if ((!isVsatp0Mode) && inGstage &&
+            (twoStageLevel != PTW_TOP_LEVEL(hgatp.mode))) {
             fault = startTwoStageWalkFromTLBInG(mainReq->get_ppn(), vaddr);
         } else if ((!isVsatp0Mode) && (!inGstage) && (level != top_level)) {
             fault = startTwoStageWalkFromTLBNotInG(mainReq->get_ppn(), vaddr);

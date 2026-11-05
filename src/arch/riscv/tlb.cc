@@ -2222,6 +2222,11 @@ TLB::prepareTwoStageL2(const RequestPtr &req, ThreadContext *tc, BaseMMU::Transl
             return std::make_pair(false, NoFault);
         }
 
+        if ((e_g->pte.ppn & mask(e_g->level * LEVEL_BITS)) != 0) {
+            return std::make_pair(false,
+                                  createPagefault(vaddr, gpa, mode, true));
+        }
+
         StageLeaf g_leaf(e_g->pte, e_g->level);
         Addr hpa = stageTranslate(gpa, g_leaf);
         TlbEntry final_entry =
@@ -2264,6 +2269,11 @@ TLB::prepareTwoStageL2(const RequestPtr &req, ThreadContext *tc, BaseMMU::Transl
         req->setTwoPtwWalk(true, vs_next_level, e_g->level - 1, e_g->pte.ppn,
                            false);
         return std::make_pair(false, NoFault);
+    }
+
+    if ((e_g->pte.ppn & mask(e_g->level * LEVEL_BITS)) != 0) {
+        return std::make_pair(false,
+                              createPagefault(vaddr, pte_gpa, mode, true));
     }
 
     req->setTwoPtwWalk(false, vs_next_level, e_g->level, e_g->pte.ppn, false);
@@ -2328,7 +2338,8 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
             Addr shift = PageShift + LEVEL_BITS * req->get_level();
             Addr idx_f = (vaddr >> shift) & LEVEL_MASK;
             Addr gpaddr_check = (vsatp.ppn << PageShift) + (idx_f * sizeof(PTE));
-            if ((req->get_level() != PTW_TOP_LEVEL(hgatp.mode)) && (req->getgPaddr() != 0)) {
+            if (req->get_finish_gva() ||
+                req->get_level() != PTW_TOP_LEVEL(vsatp.mode)) {
                 gpaddr_check = req->getgPaddr();
             }
             if (req->get_vsatp_0_mode()) {
