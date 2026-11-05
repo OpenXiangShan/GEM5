@@ -361,6 +361,7 @@ struct FetchTarget
     // for profiling
     int fetchInstNum;
     int commitInstNum;
+    int commitInstBytes;
 
     int s1Source; // which stage the prediction comes from
     int s3Source; // which stage the prediction comes from
@@ -383,6 +384,7 @@ struct FetchTarget
          lhistory(),
          fetchInstNum(0),
          commitInstNum(0),
+         commitInstBytes(0),
          s1Source(-1),
          s3Source(-1)
    {
