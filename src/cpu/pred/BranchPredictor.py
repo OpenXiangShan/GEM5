@@ -1116,7 +1116,7 @@ class PairTAGE(TimedBaseBTBPredictor):
     histLengths = VectorParam.Unsigned([8, 20, 40], "the T0~Tn path history length")
     numWays = Param.Unsigned(1, "Number of ways per set")
     numBanks = Param.Unsigned(4, "Number of banks per table")
-    confidenceSaturate = Param.Unsigned(5, "Entry confidence at which both blocks may be emitted in one cycle")
+    confidenceSaturate = Param.Unsigned(10, "Entry confidence at which both blocks may be emitted in one cycle")
     enableTwoTaken = Param.Bool(False, "Emit both blocks of a saturated entry in one cycle")
     numDelay = 0
     enabled = False
