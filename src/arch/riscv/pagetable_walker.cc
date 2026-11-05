@@ -1067,9 +1067,7 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
                 if (((pte.ppn << 12) & pg_mask) != 0) {
                     // missaligned superpage
                     warn("missaligned superpage vaddr %lx\n",entry.vaddr);
-                    fault = pageFault(true, false);
-                    endWalk();
-                    return fault;
+                    return endGstageWalk();
                 }
                 PgBase = (PgBase & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
             }
@@ -1164,7 +1162,7 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
                 Addr hpa = stageTranslate(entry.vaddr, gLeaf);
                 entry.pte = pte;
                 entry.paddr = (hpa & ~mask(entry.logBytes)) >> PageShift;
-                entry.gpaddr = entry.vaddr;
+                entry.gpaddr = entry.vaddr & ~mask(entry.logBytes);
                 endWalk();
                 return NoFault;
             }
