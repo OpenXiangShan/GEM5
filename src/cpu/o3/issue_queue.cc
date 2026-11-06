@@ -18,6 +18,7 @@
 #include "cpu/func_unit.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/cpu.hh"
+#include "cpu/o3/dip.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/iew.hh"
@@ -1271,6 +1272,22 @@ IssueQue::selectInst()
             it++;
         }
     }
+    if (auto *dip = cpu->getDip(); dip && dip->samplingDue()) {
+        for (auto it = readyQs.begin(); it != readyQs.end(); ++it) {
+            if (std::find(readyQs.begin(), it, *it) != it) {
+                continue;
+            }
+            for (const auto& inst : **it) {
+                if (inst->isControl() && !inst->canceled() &&
+                    !inst->isSquashed() &&
+                    !(deferNewEnqueueSelection &&
+                      std::find(enqueuedThisCycle.begin(), enqueuedThisCycle.end(),
+                                inst->seqNum) != enqueuedThisCycle.end())) {
+                    dip->readyBranchWaiting();
+                }
+            }
+        }
+    }
 }
 
 void
@@ -2034,6 +2051,32 @@ Scheduler::ready(const DynInstPtr& inst, int disp_seq)
 
     DPRINTF(Schedule, "IQ not ready, opclass: %s\n", enums::OpClassStrings[inst->opClass()]);
     return false;
+}
+
+std::pair<int, uint8_t>
+Scheduler::dispatchBlock(const DynInstPtr& inst, int disp_seq)
+{
+    const ThreadID tid = inst->threadNumber;
+    const OpClass op = inst->isSplitStoreAddr() &&
+        !ready(StoreDataOp, tid, disp_seq) ? StoreDataOp : inst->opClass();
+    const auto& iqs = dispTable[tid][op];
+    IssueQue* selected = old_disp ? nullptr : iqs[dispSeqVec.at(disp_seq)];
+    uint8_t flags = 0;
+    for (auto iq : iqs) {
+        if (selected && iq != selected) {
+            if (iq->ready(tid)) {
+                flags |= Dip::IQReadyPeer;
+            }
+            continue;
+        }
+        uint8_t gates = 0;
+        if (iq->instNumInsert >= iq->inports) gates |= Dip::IQInports;
+        if (iq->instNum >= iq->iqsize) gates |= Dip::IQEntries;
+        if (iq->replayQ.size() > iq->replayQsize) gates |= Dip::IQReplay;
+        if (!gates && !iq->ready(tid)) gates |= Dip::IQQuota;
+        flags |= gates;
+    }
+    return {selected ? selected->getId() : -1, flags};
 }
 
 bool

@@ -496,6 +496,9 @@ Rename::tick()
             stallSig->blockDecode[i] ? block_reason : StallReason::NoStall;
         toDecode->renameInfo[i].blockReason = stallSig->decodeBlockReason[i];
         if (block && !fixedbuffer[i].empty()) {
+            if (auto *dip = cpu->getDip()) {
+                dip->renameBlock(fixedbuffer[i].front(), !can_rename);
+            }
             setAllStalls(i, block_reason);
         }
         if (active) {

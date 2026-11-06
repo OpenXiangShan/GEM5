@@ -444,6 +444,7 @@ class Scheduler : public SimObject
     void issueAndSelect();
     void lookahead(std::deque<DynInstPtr>& insts);
     bool ready(const DynInstPtr& inst, int disp_seq);
+    std::pair<int, uint8_t> dispatchBlock(const DynInstPtr& inst, int disp_seq);
     DynInstPtr getInstByDstReg(RegIndex flatIdx, ThreadID tid,
                                InstSeqNum consumerSeqNum);
 
