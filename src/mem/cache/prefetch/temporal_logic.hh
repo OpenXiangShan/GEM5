@@ -244,14 +244,14 @@ class Engine
   public:
     static constexpr unsigned FILTER_SETS = 32;
     static constexpr unsigned FILTER_WAYS = 8;
-    static constexpr unsigned SAMPLER_SETS = 128;
-    static constexpr unsigned SAMPLER_WAYS = 16;
-    static constexpr unsigned RECORDER_SETS = 128;
+    static constexpr unsigned SAMPLER_SETS = 32;
+    static constexpr unsigned SAMPLER_WAYS = 8;
+    static constexpr unsigned RECORDER_SETS = 16;
     static constexpr unsigned RECORDER_WAYS = 2;
     static constexpr unsigned ROLE_SETS = 256;
     static constexpr unsigned ROLE_WAYS = 1;
     static constexpr unsigned CONF_SETS = 64;
-    static constexpr unsigned CONF_WAYS = 8;
+    static constexpr unsigned CONF_WAYS = 4;
     static constexpr unsigned META_WAYS = 16;
     static constexpr unsigned META_SETS = 1536;
     static constexpr unsigned META_ENTRIES = META_SETS * META_WAYS;
