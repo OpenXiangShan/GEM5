@@ -52,6 +52,7 @@
 #include <string_view>
 
 #include "arch/generic/tlb.hh"
+#include "arch/riscv/faults.hh"
 #include "arch/riscv/insts/fusion.hh"
 #include "arch/riscv/insts/static_inst.hh"
 #include "arch/riscv/regs/misc.hh"
@@ -2234,11 +2235,24 @@ BaseCPU::displayGem5Regs(ThreadID tid)
 }
 
 void
-BaseCPU::difftestRaiseIntr(uint64_t no, ThreadID tid)
+BaseCPU::difftestRaiseIntr(const Fault &interrupt, ThreadID tid)
 {
+    const auto riscv_interrupt =
+        std::dynamic_pointer_cast<RiscvISA::RiscvFault>(interrupt);
+    assert(riscv_interrupt);
+
+    const auto target = riscv_interrupt->interruptTarget(getContext(tid));
+    const uint64_t cause = riscv_interrupt->interruptCause();
     auto diffAllStates = this->diffAllStates[tid];
     diffAllStates->diff.will_handle_intr = true;
-    diffAllStates->proxy->raise_intr(no);
+    if (diffAllStates->proxy->interrupt_delegate) {
+        InterruptDelegate delegation{
+            target == RiscvISA::InterruptTarget::Supervisor,
+            target == RiscvISA::InterruptTarget::VirtualSupervisor
+        };
+        diffAllStates->proxy->interrupt_delegate(&delegation);
+    }
+    diffAllStates->proxy->raise_intr(cause);
 }
 
 void

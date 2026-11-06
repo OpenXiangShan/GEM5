@@ -109,6 +109,13 @@ enum class FaultType
     OTHERS,
 };
 
+enum class InterruptTarget
+{
+    Machine,
+    Supervisor,
+    VirtualSupervisor
+};
+
 class RiscvFault : public FaultBase
 {
   protected:
@@ -132,6 +139,10 @@ class RiscvFault : public FaultBase
 
     virtual void invokeSE(ThreadContext *tc, const StaticInstPtr &inst);
     void invoke(ThreadContext *tc, const StaticInstPtr &inst) override;
+
+  public:
+    InterruptTarget interruptTarget(ThreadContext *tc) const;
+    uint64_t interruptCause() const;
 };
 
 class Reset : public FaultBase

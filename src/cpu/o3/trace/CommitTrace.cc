@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <memory>
 
+#include "arch/riscv/faults.hh"
 #include "arch/riscv/insts/static_inst.hh"
 #include "arch/riscv/pcstate.hh"
 #include "arch/riscv/regs/misc.hh"
@@ -235,10 +236,13 @@ Commit::traceOnMacroCommit(ThreadID tid)
 }
 
 void
-Commit::traceLogHandleInterrupt()
+Commit::traceLogHandleInterrupt(const Fault &interrupt)
 {
+    const auto riscv_interrupt =
+        std::dynamic_pointer_cast<RiscvISA::RiscvFault>(interrupt);
+    assert(riscv_interrupt);
     DPRINTF(CommitTrace, "Handle interrupt No.%lx\n",
-            cpu->getInterruptsNO() | (1ULL << 63));
+            riscv_interrupt->interruptCause());
 }
 
 void

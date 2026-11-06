@@ -65,6 +65,7 @@
 #include "mem/port_proxy.hh"
 #include "sim/clocked_object.hh"
 #include "sim/eventq.hh"
+#include "sim/faults.hh"
 #include "sim/full_system.hh"
 #include "sim/insttracer.hh"
 #include "sim/probe/pmu.hh"
@@ -810,7 +811,7 @@ class BaseCPU : public ClockedObject
 
     void displayGem5Regs(ThreadID tid);
 
-    void difftestRaiseIntr(uint64_t no, ThreadID tid = 0);
+    void difftestRaiseIntr(const Fault &interrupt, ThreadID tid = 0);
 
     void setSCSuccess(bool success, paddr_t addr, ThreadID tid);
 

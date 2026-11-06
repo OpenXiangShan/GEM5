@@ -734,7 +734,7 @@ class Commit
     bool traceMaybeExitOnLastTraceInst(const DynInstPtr &head_inst);
     void traceOnCommit(ThreadID tid, const DynInstPtr &head_inst);
     void traceOnMacroCommit(ThreadID tid);
-    void traceLogHandleInterrupt();
+    void traceLogHandleInterrupt(const Fault &interrupt);
     void traceLogInstFault(const DynInstPtr &head_inst, const Fault &inst_fault);
     void traceLogPrivReturn(const DynInstPtr &head_inst, ThreadID tid);
     void traceLogCommitBlockedCycles(
