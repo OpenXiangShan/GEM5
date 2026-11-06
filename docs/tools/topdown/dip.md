@@ -12,6 +12,13 @@ build/RISCV/gem5.opt configs/example/kmhv3.py --enable-dip \
     --generic-rv-cpt=<checkpoint.zstd>
 ```
 
+Difftest is enabled by default. Configure its reference model with
+`--difftest-ref-so=<reference.so>` or `GCBV_REF_SO`; use `--disable-difftest`
+when running without a reference model.
+
+DIP requires the classic memory system. `--enable-dip --ruby` is rejected
+because Ruby does not supply the cache-depth metadata used for frontend events.
+
 The default is off. `--dip-sample-period=N` samples every N active CPU ticks;
 zero and one enumerate every tick. TEA and DIP can run together. DIP also
 preserves fetch cache-line miss metadata when TEA is disabled.
@@ -114,14 +121,18 @@ may request re-execution. It does not change the original cause mask.
 Pending slots retain the reason; an older redirect transfers younger slots
 to its own reason. Summing over this column recovers the previous CSV budget.
 
-For a surviving S_ISB stall, `iq` is the selected scheduler IQ ID. Flags
-are a bit set: 1 = enqueue ports exhausted, 2 = IQ entries exhausted,
+For a surviving S_ISB stall at direct scheduler admission, `iq` is the
+selected scheduler IQ ID. Flags are a bit set: 1 = enqueue ports exhausted,
+2 = IQ entries exhausted,
 4 = replay queue above its admission limit, 8 = thread quota, and
 16 = another compatible IQ is ready for this same checked opclass.
 The flags are observations, not additive cycle costs. For split stores,
 the store-data group is checked before the address group, matching admission.
 The legacy search policy has no selected IQ (`iq=-1`) and reports the union
 of gates across the searched group; it cannot have a ready peer on failure.
+With `enableDispatchStage=True`, a full dispatch queue reports `iq=-1` and
+`iq_flags=0`, regardless of the IQ search policy. This describes dispatch-queue
+backpressure without an IQ selection.
 These queries do not allocate, reroute, or alter scheduling state.
 
 `frontend_reason` is the numeric `StallReason` propagated through Rename
@@ -138,6 +149,9 @@ instructions decoded, it counts up to the unused lanes still backed by raw
 instructions in the existing stall FIFO. It includes tentative-path entries
 and does not prove those instructions would decode or retire. It is separate
 from the dispatch budget and must not be added to any DIP state or cause.
+Compacting Decode (`enableDecodeFusionCompaction=True`) does not collect this
+counter: its `tickCompaction()` path bypasses `decodeStranded()`. A zero value
+in that mode does not show that the compaction buffer has no stranded work.
 
 `readyBranchWaits` counts selectable, non-cancelled control entries remaining
 after all ports in an IQ have selected. Shared ready lists are visited once;

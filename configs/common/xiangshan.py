@@ -1219,6 +1219,11 @@ def xiangshan_system_init():
                      "required for TEA cache event attribution; "
                      "use --disable-tea with --ruby.")
 
+    if args.enable_dip and args.ruby:
+        parser.error("--enable-dip is not supported with --ruby. "
+                     "Ruby memory system does not populate cacheAccessDepth "
+                     "required for DIP cache event attribution.")
+
     # Validate MLP-aware policy combinations before CPU construction:
     # MlpAwarePolicy needs its predictor and a non-BaseLine fetch block
     # policy; otherwise Fetch::checkLongLatencyLoads() aborts on
