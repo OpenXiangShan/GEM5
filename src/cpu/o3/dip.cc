@@ -62,6 +62,9 @@ void
 Dip::DipStats::preDumpStats()
 {
     statistics::Group::preDumpStats();
+    if (!owner.collecting) {
+        return;
+    }
     uint64_t pending = 0;
     auto handle = simout.create(owner.outputName, false, true);
     auto &out = *handle->stream();
@@ -113,12 +116,14 @@ Dip::DipStats::resetStats()
     owner.weights.clear();
     owner.targets.clear();
     owner.frontendSlots.clear();
+    owner.collecting = owner.cpu->totalInsts() >= owner.warmupInstCount;
     // The live redirect/version is pipeline state, not measurement history.
 }
 
 Dip::Dip(CPU *cpu, const BaseO3CPUParams &params)
-    : stats(cpu, *this), width(params.renameWidth),
-      period(params.dipSamplePeriod), outputName(cpu->name() + ".dip.csv")
+    : stats(cpu, *this), cpu(cpu), width(params.renameWidth),
+      period(params.dipSamplePeriod), warmupInstCount(params.warmupInstCount),
+      outputName(cpu->name() + ".dip.csv"), collecting(!warmupInstCount)
 {
     fatal_if(params.numThreads != 1 || params.smtNumPreDispatchThreads != 1,
              "DIP currently requires a single-thread dispatch window");
@@ -127,8 +132,10 @@ Dip::Dip(CPU *cpu, const BaseO3CPUParams &params)
 void
 Dip::beginCycle()
 {
-    due = countdown == 0;
-    countdown = due ? (period ? period - 1 : 0) : countdown - 1;
+    due = collecting && countdown == 0;
+    if (collecting) {
+        countdown = due ? (period ? period - 1 : 0) : countdown - 1;
+    }
     dispatched = 0;
     blocker = nullptr;
     renameBlocker = nullptr;

@@ -94,9 +94,12 @@ class Dip
         statistics::Vector slotsByCause;
     } stats;
 
+    CPU *const cpu;
     const unsigned width;
     const uint64_t period;
+    const uint64_t warmupInstCount;
     const std::string outputName;
+    bool collecting;
     uint64_t countdown = 0;
     bool due = true;
     unsigned dispatched = 0;

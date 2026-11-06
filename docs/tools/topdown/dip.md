@@ -69,7 +69,17 @@ Pending rows are provisional: their target may still be squashed, or the next
 frontend target has not arrived. They must not be treated as final per-PC
 attribution. A stats reset drops the old window's weights and targets while
 retaining live redirect state. Dumping stats does not resolve or consume them.
-The CSV is a snapshot of the current stats window, as with TEA.
+With `--warmup-insts-no-switch=N`, DIP does not accumulate sampled slots or
+write a CSV during warmup. Collection starts after the warmup-ending stats
+reset, while live redirect/path tracking continues across the boundary. Without
+a configured warmup, collection starts immediately. The sampling period starts
+at the first measured CPU tick.
+
+Each new-tick stats dump overwrites the CSV with the current stats-window
+snapshot. After warmup and measurement, pair the final CSV with the latest
+block in `stats.txt`; that file also retains the other components' warmup
+statistics, with zero DIP samples. A later dump replaces the previous CSV,
+so save a copy first if an earlier measurement snapshot is needed.
 
 `system.cpu.dip.sampledSlots` equals samples times dispatch width. At every dump,
 `attributedSlots + unresolvedSlots + pendingSlots` equals `sampledSlots`.
