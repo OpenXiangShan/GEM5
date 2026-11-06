@@ -997,6 +997,19 @@ class MBTB(TimedBaseBTBPredictor):
     # MBTB is always half-aligned - no parameter needed
     victimCacheSize = Param.Unsigned(
         32, "Number of entries in each thread's private victim cache")
+    enableBankConflict = Param.Bool(
+        False,
+        "Defer resolve updates conflicting with prediction reads in eight "
+        "physical banks, without changing index/tag mapping",
+    )
+    enableWriteBuffer = Param.Bool(
+        False,
+        "Absorb resolve SRAM writes in entry and counter buffers when bank "
+        "conflict modeling is enabled",
+    )
+    writeBufferDepth = Param.Unsigned(
+        4, "Entries per way in each bank's entry buffer and per counter FIFO"
+    )
 
 class AheadBTB(TimedBaseBTBPredictor):
     type = 'AheadBTB'

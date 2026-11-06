@@ -40,6 +40,8 @@
 #ifndef __CPU_PRED_BTB_MBTB_HH__
 #define __CPU_PRED_BTB_MBTB_HH__
 
+#include <array>
+#include <deque>
 #include <queue>
 #include <vector>
 
@@ -86,7 +88,9 @@ class MBTB : public TimedBaseBTBPredictor
 #ifdef UNIT_TEST
     // Test constructor  
     MBTB(unsigned numEntries, unsigned tagBits, unsigned numWays,
-         unsigned numDelay, unsigned victimCacheSize = 8);
+         unsigned numDelay, unsigned victimCacheSize = 8,
+         bool enableBankConflict = false, bool enableWriteBuffer = false,
+         unsigned writeBufferDepth = 4);
 #else
     // Production constructor
     typedef MBTBParams Params;
@@ -119,20 +123,22 @@ class MBTB : public TimedBaseBTBPredictor
     using BTBHeap = std::vector<BTBSetIter>;
 
 #ifdef UNIT_TEST
-    unsigned tick{0};
+    unsigned testTick{0};
     unsigned getComponentIdx() { return 0; }
-    uint64_t curTick() { return tick++; }
+    uint64_t curTick() { return testTick++; }
 #else
     // Production methods
-    void tickStart() override;
-
-    void tick() override;
-
     void commitBranch(const PredictionUpdateContext &context,
                       const BranchOutcome &outcome) override;
     void setTrace() override;
     TraceManager *btbTrace;
 #endif
+
+    // Fetch probes resolve updates before the BPU starts its prediction
+    // cycle. Clear the previous cycle's read reservations only after probing.
+    void tickStart() override;
+    // Advance buffered writes after all prediction reads, including idle cycles.
+    void finishPredictionCycle();
 
     /*
      * Main prediction function
@@ -167,6 +173,11 @@ class MBTB : public TimedBaseBTBPredictor
      */
     void update(const PredictionUpdateContext &context,
                 const PreparedUpdate &update) override;
+
+    bool canResolveUpdate(const PredictionUpdateContext &context,
+                          const PreparedUpdate &update) override;
+    void doResolveUpdate(const PredictionUpdateContext &context,
+                         const PreparedUpdate &update) override;
 
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
@@ -293,7 +304,10 @@ class MBTB : public TimedBaseBTBPredictor
         const BTBEntry &entry,
         bool actual_taken,
         Addr actual_target,
-        const PredictionUpdateContext &context);
+        const PredictionUpdateContext &context, bool buffered = false);
+
+    void applyUpdate(const PredictionUpdateContext &context,
+                     const PreparedUpdate &update, bool buffered);
 
     // Helper: build updated entry (counter/indirect target/tag)
     BTBEntry buildUpdatedEntry(const BTBEntry &entry,
@@ -408,7 +422,84 @@ class MBTB : public TimedBaseBTBPredictor
     unsigned numEntries;    // Total number of entries
     unsigned numWays;       // Number of ways per SRAM (4 for dual-SRAM)
     unsigned numSets;       // Number of sets per SRAM (numEntries/numWays/2)
-    
+
+    // Resource banking is independent of the existing table index/tag layout.
+    static constexpr unsigned NumAlignBanks = 2;
+    static constexpr unsigned NumInternalBanks = 4;
+    static constexpr unsigned ResourceBlockSize = 32;
+    static constexpr unsigned NumResourceBanks =
+        NumAlignBanks * NumInternalBanks;
+    const bool enableBankConflict;
+    const bool enableWriteBuffer;
+    const unsigned writeBufferDepth;
+    uint8_t predictionBankMask = 0;
+
+    struct EntryWrite
+    {
+        unsigned bank;
+        unsigned way;
+        Addr set;
+        BTBEntry entry;
+        ThreadID tid;
+    };
+
+    struct EntryBufferSlot
+    {
+        bool valid = false;
+        bool dirty = false;
+        bool drained = false;
+        EntryWrite write{};
+    };
+
+    struct EntryBufferRow
+    {
+        std::vector<EntryBufferSlot> slots;
+        // Binary-tree PLRU bits, independent of the main table's replacer.
+        std::vector<bool> plru;
+    };
+
+    struct CounterWrite
+    {
+        unsigned bank;
+        Addr set;
+        std::vector<bool> wayMask;
+        std::vector<int> counters;
+    };
+
+    struct BankWriteBuffer
+    {
+        std::vector<EntryBufferRow> rows;
+        std::deque<CounterWrite> counters;
+    };
+
+    std::array<BankWriteBuffer, NumResourceBanks> writeBuffers;
+    // Entry requests have a register before the buffer in RTL. Counter
+    // requests can flow directly to SRAM when their FIFO and bank are idle.
+    std::vector<EntryWrite> incomingEntryWrites;
+    std::vector<EntryWrite> entryWritePipeline;
+    std::vector<CounterWrite> incomingCounterWrites;
+    uint8_t incomingWriteBankMask = 0;
+
+    bool usesWriteBuffer() const
+    {
+        return enableBankConflict && enableWriteBuffer;
+    }
+    void bufferBTBEntry(const BTBEntry &entry, Addr setIdx, BTBSetIter hit,
+                        const PredictionUpdateContext &context);
+    void advanceEntryWrites();
+    void advanceCounterWrites();
+    void enqueueEntryWrite(const EntryWrite &write);
+    void writeEntryToSRAM(const EntryWrite &write);
+    void writeCounterToSRAM(const CounterWrite &write);
+    bool sameEntryData(const BTBEntry &a, const BTBEntry &b) const;
+    void touchBufferSlot(EntryBufferRow &row, unsigned slot);
+    unsigned getBufferVictim(const EntryBufferRow &row) const;
+
+    unsigned getResourceBankId(Addr pc) const;
+    uint8_t getPredictionBankMask(Addr startAddr) const;
+    uint8_t getUpdateBankMask(const PredictionUpdateContext &context,
+                              const PreparedUpdate &update);
+
     /** SRAM selection helper function */
     inline int getSRAMId(Addr pc) const {
         // Use the bit after block offset to select SRAM
@@ -435,6 +526,7 @@ class MBTB : public TimedBaseBTBPredictor
     };
 
     using Scalar = test_stats::Scalar;
+    using Vector = test_stats::Vector;
     using Distribution = test_stats::Distribution;
 
 #ifdef UNIT_TEST
@@ -458,6 +550,11 @@ public:
         Scalar updateInVC;
         Scalar updateTotal;
         Scalar updateFixTarget;
+
+        // Resolve-only counters matching RTL MBTB training metadata checks.
+        Scalar trainHasMispredict;
+        Scalar trainHitMispredict;
+        Scalar trainMispredictCondMbtbMiss;
 
         // per branch statistics
         Scalar allBranchHits;
@@ -492,6 +589,28 @@ public:
 
         // Victim cache statistics
         Scalar victimCacheHit;
+
+        // Count one conflict per rejected packet, and one access/conflict per
+        // distinct physical bank touched by a prediction/update attempt.
+        Scalar updateBankConflict;
+        Scalar updateDeferredDueToConflict;
+        Vector predAccessPerBank;
+        Vector updateAccessPerBank;
+        Vector updateBankConflictPerBank;
+
+        Scalar entryBufferEnqueues;
+        Scalar entryBufferMerges;
+        Scalar entryBufferRedundant;
+        Scalar entryBufferOverwrites;
+        Scalar entryBufferDrains;
+        Scalar counterBufferEnqueues;
+        Scalar counterBufferDrops;
+        Scalar counterBufferDrains;
+        Vector bufferReadBlockedPerBank;
+        Vector entryBufferOverwritesPerBank;
+        Vector counterBufferDropsPerBank;
+        Distribution entryBufferOccupancy;
+        Distribution counterBufferOccupancy;
 
         Distribution predHitCount;
 #ifndef UNIT_TEST

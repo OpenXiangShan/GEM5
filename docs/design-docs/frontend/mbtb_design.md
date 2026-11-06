@@ -241,7 +241,195 @@ flowchart LR
 - `src/cpu/pred/BranchPredictor.py`
 - `src/cpu/pred/btb/test/btb.test.cc`
 
-## 10. 参考资料
+## 10. 8-bank 预测/Resolve 更新冲突与写缓冲
+
+### 10.1 RTL 依据与资源映射
+
+依据本地 XiangShan `kunminghu-v3@1ac5c4d2fb` 的
+`src/main/scala/xiangshan/frontend/bpu/mbtb/`：
+
+- `Parameters.scala`：2 个 align bank，每个包含 4 个 internal bank。
+- `Helpers.scala`：32B 粒度下，`alignBank = PC[5]`，
+  `internalBank = PC[7:6]`。
+- `MainBtbInternalBank.scala`：单端口 entry/counter SRAM 的预测读优先，
+  写请求通过 write buffer 等待空闲端口。
+- `MainBtb.scala`：`trainReady` 恒为真，由内部 buffer 吸收更新压力。
+
+gem5 用 `bankId = alignBank * 4 + internalBank` 表示 8 个共享资源。
+连续 8 个 32B block 的 bank 编号为 `0, 4, 1, 5, 2, 6, 3, 7`，
+每 256B 重复；`half-aligned` 预测登记当前及下一个 32B block 的两个 bank。
+例如 `0x10e0` 的预测访问 bank 7 和 bank 0，包含跨 256B 边界的进位。
+该映射仅用于端口争用，不改变现有 SRAM 的 index/tag、容量或替换算法。
+
+### 10.2 开关与使用
+
+组件默认 `enableBankConflict=False`、`enableWriteBuffer=False`，缓冲深度
+`writeBufferDepth=4`；`kmhv3.py` 显式开启前两个开关。三种模式如下：
+
+| `enableBankConflict` | `enableWriteBuffer` | 行为 |
+| --- | --- | --- |
+| False | 任意值 | 原来的直接更新，不模拟 bank 争用或写缓冲 |
+| True | False | 轻量 ResolveQueue 整包冲突重试模型 |
+| True | True | 独立 entry buffer + counter FIFO，读优先排空 |
+
+通过现有参数接口关闭整个争用模型：
+
+```bash
+./build/RISCV/gem5.opt configs/example/kmhv3.py \
+    --generic-rv-cpt=<checkpoint.zstd> \
+    --param 'system.cpu[0].branchPred.mbtb.enableBankConflict=False'
+```
+
+只关闭写缓冲、保留之前的整包重试模型：
+
+```bash
+--param 'system.cpu[0].branchPred.mbtb.enableWriteBuffer=False'
+```
+
+原始 bin 输入另加 `--raw-cpt`。深度可通过
+`--param 'system.cpu[0].branchPred.mbtb.writeBufferDepth=8'` 调整；启用时
+要求为非零的 2 的幂，供 buffer 的 tree-PLRU 使用。Commit 训练仍直接
+调用原更新路径。
+
+### 10.3 两种模型的拍边界
+
+现有 Fetch 调用顺序是先处理 ResolveQueue，再执行 BPU tick。BPU 每次
+tick 开始调用 `MBTB::tickStart()` 清空预测掩码，包括本拍不发预测的情况。
+随后所有线程的
+`putPCHistory()` 请求以 OR 累积，共享同一组物理 bank。
+无副作用查询和 metadata 刷新不占用预测 bank。
+
+整包重试模式沿用上一拍的预测掩码。`canResolveUpdate()` 按待训练分支
+的实际 PC 生成写 bank 掩码：
+
+- 预测未命中且实际 not-taken 的分支不会训练，不计 SRAM 写入。
+- 当前仅命中本线程 victim cache、会在 VC 内就地更新的分支不计 SRAM 写入。
+- SRAM 命中、分配和替换都计入相应 bank。
+
+任意读写 bank 重叠时，整包拒绝，包括包内不冲突的分支。探测只更新争用
+统计，不修改表项、替换状态或预测访问掩码；所有组件探测通过后才由
+`doResolveUpdate()` 调用原更新逻辑一次。失败的包留在 ResolveQueue 中，
+下一拍重新探测。持续失败复用 `resolveBlockThreshold=8` 的暂停一次预测
+机制：暂停拍清除旧读掩码，使后续重试可以前进。SMT 下暂停针对包所属
+线程，其他线程仍可产生共享 bank 竞争。
+
+写缓冲模式下，`canResolveUpdate()` 始终返回 true，且不修改缓冲；只有
+全部预测器通过两阶段探测后，`doResolveUpdate()` 才生成写请求。
+请求包含 set、way、数据和线程信息的副本，不保留 FTQ 或训练上下文引用。
+BPU 在预测结束后调用专用的 `finishPredictionCycle()`，用本拍所有实际
+预测读仲裁写端口。MBTB 不覆盖通用 `tick()`；entry 输入流水与排空、
+counter FIFO 推进各自封装，直接更新和缓冲更新共用 SRAM/VC 查找与
+训练数据生成逻辑：
+
+1. 未被读取的 bank，每个 way 排空一个旧 entry，每个 bank 排空一个旧
+   counter 请求；被读取的 bank 暂停写 SRAM。
+2. entry 请求经过一拍输入寄存器后进入 buffer，不能在入 buffer 当拍
+   穿透排空。训练发生在 N 拍时，最早在 N+2 拍末写入 entry SRAM。
+3. counter FIFO 具有 RTL `flow=true, pipe=true` 语义：空 FIFO 且端口空闲
+   时，新请求可直接写 SRAM；满 FIFO 同拍出队可释放一个入队位置。
+4. 即使 BPU 没有活跃线程，也执行 tick 末尾排空。SMT 请求共同限制同组
+   物理 bank 的写端口。预测只看已完成写回的 SRAM，不旁路 buffer 数据。
+
+### 10.4 Entry buffer 与 counter FIFO
+
+每个 bank 的 entry buffer 有 `numWays` 行，每行 `writeBufferDepth` 项。
+默认共 8 bank × 4 way × 4 项，counter FIFO 则每 bank 4 项。
+entry 的 shadow 在排空后保留，使用 valid 和 dirty 分开记录：
+
+- 以现有表的 set + tag + 完整 branch PC 匹配，各 way 行均参与命中查询。
+- 命中 dirty 项时合并为新数据；命中 clean shadow 且 entry 数据相同时
+  抑制重复写入，否则重新置 dirty。entry 比较不包含独立的 counter。
+- 未命中时，优先复用目标 way 行中相同 set 的项，再选 clean 项，最后
+  用 tree-PLRU 选择 victim。覆盖 dirty 项会丢失旧的待写 entry。
+- 每个 way 每拍从最低编号的 dirty slot 排空一项。排空与新写命中同一
+  slot 时，旧数据先写 SRAM，新数据继续保持 dirty，供后续写回。
+
+counter FIFO 保存 set、way mask 和 counter 数据。包内同 bank、同 set 的
+counter 更新合并为一个带 way mask 的请求；满且无同拍出队时丢弃新请求。
+entry 和 counter 独立排空：counter 可以先到 SRAM，entry 写回时保留
+该物理 way 已有的 counter，而不是用 entry 副本覆盖它。
+
+预测未命中且实际 not-taken 的分支仍不训练；VC-only 更新仍在本线程 VC
+内立即完成。SRAM 分配、属性或 target 变化生成 entry 写；条件分支生成
+counter 写，间接分支保留 target 训练。主表替换状态在训练接收时 touch，
+重复的 pending 分配复用其目标 way；实际 SRAM 替换发生时才向 VC 放入
+被替换项，并按原有 ASID/SMT 规则删除 VC 重复项。
+
+### 10.5 统计口径
+
+以下计数仅在开关开启时收集，8 项向量的下标即 `bankId`：
+
+| 统计 | 含义 |
+| --- | --- |
+| `updateBankConflict` | 重试模式的冲突包次数；缓冲模式的训练写与本拍预测 bank 重叠次数 |
+| `updateDeferredDueToConflict` | 重试模式的包拒绝次数；缓冲模式保持为 0 |
+| `predAccessPerBank` | 每次实际预测所访问的 bank，各 bank 每请求计一次 |
+| `updateAccessPerBank` | 重试模式的写探测；缓冲模式已接受包生成写请求的 bank |
+| `updateBankConflictPerBank` | 上述训练写与预测重叠的各个 bank |
+| `entryBufferEnqueues` | entry buffer 未命中新插入的请求 |
+| `entryBufferMerges` / `entryBufferRedundant` | shadow 合并 / clean shadow 抑制的重复写 |
+| `entryBufferOverwrites` | 被覆盖的 dirty entry 请求 |
+| `entryBufferDrains` | 实际写入 entry SRAM 的次数 |
+| `counterBufferEnqueues` / `counterBufferDrops` | FIFO 入队 / 满时丢弃的新请求 |
+| `counterBufferDrains` | 完成的 counter SRAM 写，包括空 FIFO 穿透 |
+| `bufferReadBlockedPerBank` | 预测读阻止待写或新到达写的 bank-cycle 数 |
+| `entryBufferOverwritesPerBank` / `counterBufferDropsPerBank` | 各 bank 的覆盖 / 丢写 |
+| `entryBufferOccupancy` / `counterBufferOccupancy` | 每拍末每 way 行 dirty 数 / 每 bank FIFO 占用的分布 |
+
+单包内多个分支访问相同 bank 只记一次；多个 bank 同时冲突时，标量计
+一次，向量分别计数。主表 `updateTotal` 等原有计数描述接受的训练，
+实际完成的 SRAM 写应查看 `*BufferDrains`；shadow 合并和丢写会使两者不同。
+额外工作量受包内分支数、每 set 的 way 数、VC 容量及 buffer 深度限制。
+每拍只扫描固定 8 bank 的 buffer，不扫描整张主表。
+
+### 10.6 Resolve 误预测计数与 RTL 对照
+
+以下计数不依赖 bank/writebuffer 开关，仅在 `doResolveUpdate()` 接受训练时
+记录一次；探测失败、buffer 后续排空和 Commit 直接训练不重复计数。
+
+| gem5 MBTB 计数 | RTL 对应计数 | 条件 |
+| --- | --- | --- |
+| `trainHasMispredict` | `mbtb.train_has_mispredict` | 训练包中存在误预测分支 |
+| `trainHitMispredict` | `mbtb.train_hit_mispredict` | 该误预测分支在预测时保存的 MBTB 元数据中命中 |
+| `trainMispredictCondMbtbMiss` | `bpu.train_mispredict_conditional_because_mbtb_miss` | 该误预测分支为条件分支，且预测元数据未命中 |
+
+用 `trainHasMispredict - trainHitMispredict` 对照 RTL 同名计数的差值，
+得到所有分支类型的 Resolve 误预测且 MBTB 元数据未命中数。命中只比较
+分支 PC（RTL 为 `rawHit && position == cfiPosition`），不检查 target、
+attribute 或 taken。统计选取包内按执行顺序排列的第一个 `mispredicted`
+分支，不使用可能指向其他 taken 分支的 `PreparedUpdate.outcome`。
+
+这与原 `updateMiss` 不同：原计数要求代表分支实际 taken 且预测元数据
+未命中，不要求整体误预测；原计数及训练行为保持不变。新计数对齐事件
+条件，但包的形成、错误路径训练、预测范围过滤及 VC 元数据实现仍可能
+造成 gem5/RTL 数值差异，不能据此保证逐分支等价。
+
+### 10.7 近似边界与验证
+
+写缓冲模式模拟容量、延迟可见性、合并、clean shadow、覆盖和 counter
+丢写，也保留之前的轻量重试模式用于对照。二者均不移植 APF。
+保留现有 index/tag、ASID/SMT 分区、主表 MRU 和 VC。RTL 实际训练由
+mispredict/meta 驱动，而 gem5 继续训练其 PreparedUpdate 中符合条件的
+分支，counter 数据沿用 live SRAM 更新方式，不额外旁路 FIFO。包内多个
+entry 请求按顺序处理，未逐拍拆成 RTL 每 bank 单 entry 的训练输入协议；
+counter 按 bank/set 合并。因而本模型复现缓冲的竞争机制和丢写趋势，
+不宣称训练流水线和 SRAM 布局逐拍等价。
+
+此外，沿用的 Fetch ResolveQueue 本身有入队容量限制：接近满队列时，
+新到达的 resolved events 不入队，计入 `resolveEnqueueFailEvent`。整包
+重试模式可能加重该问题。缓冲模式中 MBTB 自身不再延迟 Resolve 出队，
+但其他预测器和队列本身的限制仍然存在。评估时应同时检查
+`resolveQueueFullEvents`、`resolveEnqueueFailEvent` 和出队计数。
+
+`MBTBBankConflictTest` 覆盖两个 half-block、bank 边界进位、256B 周期、
+开关、整包延后、失败探测无训练副作用、空闲拍清除、SMT 掩码累积、
+无效训练和 VC-only 更新。`MBTBWriteBufferTest` 另外覆盖延迟可见性、
+读优先、独立 bank 排空、dirty 合并、同拍排空/合并、满行 PLRU 覆盖、
+同 set 优先覆盖、counter FIFO 丢新写、flow/pipe、clean shadow、way mask
+聚合、SMT 共享及开关。系统验证使用 CoreMark 与 sjeng checkpoint，
+检查直接更新、整包重试和缓冲三种模式的统计、队列进展及 difftest。
+
+## 11. 参考资料
 
 - `docs/design-docs/frontend/bpu_top_level.md`
 - `OpenXiangShan/GEM5#826`

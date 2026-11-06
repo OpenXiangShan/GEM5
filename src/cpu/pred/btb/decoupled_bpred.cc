@@ -326,6 +326,10 @@ DecoupledBPUWithBTB::tick()
 {
     DPRINTF(Override, "DecoupledBPUWithBTB::tick()\n");
 
+    // Legacy resolve probes use the previous cycle's MBTB reads. Buffered
+    // writes drain at tick end against this cycle's accumulated reads.
+    mbtb->tickStart();
+
     for (int tid = 0; tid < numThreads; ++tid) {
         auto &thread = threads[tid];
         thread.finalTrainPacket = PairTAGE::TrainPacket{};
@@ -344,6 +348,7 @@ DecoupledBPUWithBTB::tick()
         }
     }
     if (!anyActiveThread) {
+        mbtb->finishPredictionCycle();
         return;
     }
 
@@ -401,6 +406,7 @@ DecoupledBPUWithBTB::tick()
         }
     }
 
+    mbtb->finishPredictionCycle();
     DPRINTF(Override, "Prediction cycle complete\n");
 }
 
