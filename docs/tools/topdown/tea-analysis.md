@@ -193,3 +193,25 @@ Overlapping cause/event bits cannot be added as recoverable CPI. Matching
 PCs do not establish a dynamic dependency edge. SHA values establish input
 identity, not correctness by themselves. The scripts audit existing files
 and recorded CI state; they never submit CI or restart a timed-out observer.
+
+
+## Partial four-corner comparisons
+
+Summarize completed audited points with full input-instruction and SimPoint
+weights, retaining pending and unknown points:
+
+```sh
+python3 util/tea/summarize_four_corner_subset.py \
+  --profile cluster.json --baseline-audit baseline-raw-audit.json \
+  --experiment-audit four-corner-audit.json \
+  --corners control best compute combined --output contributions.json
+```
+
+The experiment audit supplies `rows[].measured[corner]` cycle and retired
+instruction counts plus completed/pending coverage. The baseline audit must
+cover the exact full profile; every measured control must match its baseline
+window. Output includes signs and measured time contributions normalized to the
+complete original baseline benchmark time. Negative time contributions are
+beneficial. Unknown candidate points remain unknown; partial contributions are
+neither complete benchmark gains nor suite scores. This summarizes prior audit
+results; it does not re-audit simulator correctness or resource budgets.
