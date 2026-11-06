@@ -24,7 +24,9 @@ PairTAGE::PairTAGE(const Params &p)
       numWays(p.numWays),
       numBanks(p.numBanks),
       bankIdWidth(ceilLog2(p.numBanks)),
-      pairTageStats(this, p.numPredictors)
+      confidenceSaturate(p.confidenceSaturate),
+      enableTwoTaken(p.enableTwoTaken),
+      pairTageStats(this, p.numPredictors, confidenceSaturate)
 {
     fatal_if(tableSizes.size() < numPredictors,
              "PairTAGE: tableSizes has %zu entries, need %u",
@@ -54,6 +56,9 @@ PairTAGE::PairTAGE(const Params &p)
     threadHistory.resize(MaxThreads);
     threadMeta.resize(MaxThreads);
     threadAhead.resize(MaxThreads);
+    threadPhase.resize(MaxThreads, StatePhase::First);
+    predLiveEntryInfo.resize(MaxThreads);
+    trainLiveEntryInfo.resize(MaxThreads);
 
     for (unsigned int i = 0; i < numPredictors; ++i) {
         // Every bank of a table holds the same number of sets, and both are
@@ -81,10 +86,11 @@ PairTAGE::PairTAGE(const Params &p)
 }
 
 PairTAGE::PairTAGEStats::PairTAGEStats(statistics::Group *parent,
-                                       unsigned numPredictors)
+                                       unsigned numPredictors,
+                                       unsigned confidenceSaturate)
     : statistics::Group(parent),
       ADD_STAT(lookups, statistics::units::Count::get(),
-               "prediction lookups issued to PairTAGE"),
+               "first block phase lookups issued to PairTAGE"),
       ADD_STAT(lookupNoAnchor, statistics::units::Count::get(),
                "lookups skipped because no ahead key exists after a squash"),
       ADD_STAT(providerTable, statistics::units::Count::get(),
@@ -100,38 +106,92 @@ PairTAGE::PairTAGEStats::PairTAGEStats(statistics::Group *parent,
       ADD_STAT(trainAllocateEvicted, statistics::units::Count::get(),
                "allocations made while useful entries could be evicted"),
       ADD_STAT(trainNoTableFree, statistics::units::Count::get(),
-               "trainings that found no table to allocate in")
+               "trainings that found no table to allocate in"),
+      ADD_STAT(secondPhasePreds, statistics::units::Count::get(),
+               "predictions made in the second block phase"),
+      ADD_STAT(secondPhaseProvided, statistics::units::Count::get(),
+               "second block phase predictions given by a valid second block"),
+      ADD_STAT(trainSecondStrengthen, statistics::units::Count::get(),
+               "trainings that strengthened a second block naming the right "
+               "exit"),
+      ADD_STAT(trainSecondReplace, statistics::units::Count::get(),
+               "trainings that replaced or installed a second block"),
+      ADD_STAT(trainSecondBroken, statistics::units::Count::get(),
+               "trained first blocks dropped because the next block did "
+               "not continue them"),
+      ADD_STAT(providerConfidence, statistics::units::Count::get(),
+               "first block phase hits by provider confidence"),
+      ADD_STAT(twoTakenCandidates, statistics::units::Count::get(),
+               "first block phase hits whose provider could emit both "
+               "blocks in one cycle"),
+      ADD_STAT(twoTakenSquashes, statistics::units::Count::get(),
+               "control squashes on second blocks enqueued with their "
+               "first block")
 {
     providerTable.init(numPredictors);
+    providerConfidence.init(confidenceSaturate + 1);
 }
 
 void
 PairTAGE::putPCHistory(Addr startAddr, const bitset &history,
                        std::vector<FullBTBPrediction> &stagePreds)
 {
-    // Use ahead key with `specUpdatePHist` to update the folded histories, so the
-    // arguments are not used here.
-    (void)startAddr;
+    // Lookups use the ahead key maintained by `specUpdatePHist`, so the
+    // history argument is not used here.
     (void)history;
 
     assert(!stagePreds.empty());
     const ThreadID tid = stagePreds.front().tid;
-    const auto &ahead = threadAhead[tid];
 
     auto meta = std::make_shared<PairTAGEMeta>();
     meta->history = historyState(tid);
+    meta->phase = threadPhase[tid];
+    threadMeta[tid] = meta;
+
+    if (meta->phase == StatePhase::Second) {
+        // No lookup: predict the second block of the entry the first block
+        // was predicted from, as long as this block starts where the first
+        // block was predicted to go
+        pairTageStats.secondPhasePreds++;
+        const auto &live = predLiveEntryInfo[tid];
+        if (live.valid && live.nextPC == startAddr && live.entry.b2Valid) {
+            pairTageStats.secondPhaseProvided++;
+            fillStagePredictions(live.entry.block2,
+                                 live.entry.modelInfo.block2BranchSize,
+                                 stagePreds);
+        }
+        return;
+    }
+
+    const auto &ahead = threadAhead[tid];
     meta->noAnchor = !ahead.valid;
     if (!meta->noAnchor) {
         meta->lookup = lookup(ahead.pc, ahead.history);
     }
-    threadMeta[tid] = meta;
+
+    auto &live = predLiveEntryInfo[tid];
+    live = LiveEntryInfo();
 
     pairTageStats.lookups++;
     if (meta->noAnchor) {
         pairTageStats.lookupNoAnchor++;
     } else if (meta->lookup.provider >= 0) {
+        const auto &entry = meta->lookup.entry;
+        live.valid = true;
+        live.table = meta->lookup.provider;
+        live.index = meta->lookup.tableIndexes[live.table].index;
+        live.way = meta->lookup.providerWay;
+        live.entry = entry;
+        live.nextPC = entry.block.targetPC;
+
         pairTageStats.providerTable[meta->lookup.provider]++;
-        fillStagePredictions(meta->lookup.entry, stagePreds);
+        pairTageStats.providerConfidence[entry.confidence]++;
+        if (entry.b2Valid && entry.confidence == confidenceSaturate) {
+            pairTageStats.twoTakenCandidates++;
+        }
+        fillStagePredictions(meta->lookup.entry.block,
+                             meta->lookup.entry.modelInfo.branchSize,
+                             stagePreds);
     }
 }
 
@@ -148,11 +208,24 @@ void
 PairTAGE::specUpdatePHist(const bitset &history, FullBTBPrediction &pred,
                           const PathHistoryUpdate &update)
 {
-    // The block entering the FTQ becomes the key of the block after it
-    auto &ahead = threadAhead[pred.tid];
-    ahead.valid = true;
-    ahead.pc = pred.bbStart;
-    ahead.history = historyState(pred.tid);
+    // A first block entering the FTQ becomes the key of the next pair,
+    // and the phase moves on to its second block
+    auto &phase = threadPhase[pred.tid];
+    if (phase == StatePhase::First) {
+        auto &ahead = threadAhead[pred.tid];
+        ahead.valid = true;
+        ahead.pc = pred.bbStart;
+        ahead.history = historyState(pred.tid);
+        phase = StatePhase::Second;
+    } else {
+        // A second block enqueued with its first block is never trained
+        // from S3, so its first block stops waiting for it
+        const auto &meta = threadMeta[pred.tid];
+        if (meta && meta->twoTaken) {
+            trainLiveEntryInfo[pred.tid].valid = false;
+        }
+        phase = StatePhase::First;
+    }
 
     doUpdateHist(history, update, pred.tid);
 }
@@ -162,8 +235,11 @@ PairTAGE::recoverPHist(const bitset &history,
                        const HistoryRecoveryContext &context,
                        const PathHistoryUpdate &update)
 {
-    // The block after a squash starts without a key
+    // The block after a squash starts a new pair without a key
     threadAhead[context.tid].valid = false;
+    threadPhase[context.tid] = StatePhase::First;
+    predLiveEntryInfo[context.tid].valid = false;
+    trainLiveEntryInfo[context.tid].valid = false;
 
     auto predMeta = std::static_pointer_cast<PairTAGEMeta>(
         context.predMetas[getComponentIdx()]);
@@ -189,18 +265,37 @@ PairTAGE::updateUsingS3Pred(FullBTBPrediction &s3Pred)
 
     const auto &meta = threadMeta[s3Pred.tid];
     assert(meta);
-    if (meta->noAnchor) {
-        return;
-    }
-
-    const auto &lookup = meta->lookup;
 
     // The final prediction information
     // TODO: Recogonize fallthrough with attibutes rather than mark branch PC to zero.
     const bool taken = s3Pred.isTaken();
     const BTBEntry exit = taken ? s3Pred.getTakenEntry() : BTBEntry();
-    const Addr branchPC = exit.valid ? exit.pc : 0;
     const Addr targetPC = s3Pred.getTarget(predictWidth);
+
+    // The block right after a trained first block is its second block,
+    // whatever phase it was predicted in, as long as it continues it.
+    // Otherwise a first block phase block trains its own first block.
+    auto &live = trainLiveEntryInfo[s3Pred.tid];
+    if (live.valid) {
+        if (s3Pred.bbStart == live.nextPC) {
+            trainSecondBlock(live, exit, targetPC);
+        } else {
+            pairTageStats.trainSecondBroken++;
+        }
+        live.valid = false;
+    } else if (meta->phase == StatePhase::First && !meta->noAnchor) {
+        live = trainFirstBlock(meta->lookup, exit, targetPC);
+    }
+}
+
+PairTAGE::LiveEntryInfo
+PairTAGE::trainFirstBlock(const LookupResult &lookup, const BTBEntry &exit,
+                          Addr targetPC)
+{
+    const bool taken = exit.valid;
+    const Addr branchPC = exit.valid ? exit.pc : 0;
+    LiveEntryInfo live;
+    live.nextPC = targetPC;
 
     // Hit & Pred Correct: Update counters and targetPC
     // TODO: Maybe the target PC incorrect also counts as a misprediction.
@@ -208,13 +303,23 @@ PairTAGE::updateUsingS3Pred(FullBTBPrediction &s3Pred)
     if (hit && lookup.entry.block.branchPC == branchPC) {
         PTAGEEntry entry = lookup.entry;
         entry.block.updateCounter(taken);
+        // The second block starts at the first block's target, so it no
+        // longer holds once that target moves
+        if (entry.block.targetPC != targetPC) {
+            entry.b2Valid = false;
+        }
         entry.block.targetPC = targetPC;
         entry.useful = true;
-        writeEntry(lookup.provider,
-                   lookup.tableIndexes[lookup.provider].index,
-                   lookup.providerWay, entry);
+        const auto &ti = lookup.tableIndexes[lookup.provider];
+        writeEntry(lookup.provider, ti.index, lookup.providerWay, entry);
         pairTageStats.trainStrengthen++;
-        return;
+        live.valid = true;
+        live.firstCorrect = true;
+        live.table = lookup.provider;
+        live.index = ti.index;
+        live.way = lookup.providerWay;
+        live.entry = entry;
+        return live;
     }
 
     // Miss or Mispred: Find alloc unused entry or force allocate when refusals saturate.
@@ -235,13 +340,21 @@ PairTAGE::updateUsingS3Pred(FullBTBPrediction &s3Pred)
     if (hit && (lookup.entry.block.isWeak() ||
                 allocTable < 0)) {
         const auto &ti = lookup.tableIndexes[lookup.provider];
-        writeEntry(lookup.provider, ti.index, lookup.providerWay,
-                   PTAGEEntry(ti.tag, exit, targetPC));
+        live.valid = true;
+        live.table = lookup.provider;
+        live.index = ti.index;
+        live.way = lookup.providerWay;
+        live.entry = PTAGEEntry(ti.tag, exit, targetPC);
+        writeEntry(live.table, live.index, live.way, live.entry);
         pairTageStats.trainCorrect++;
     } else if (allocTable >= 0) {
         const auto &ti = lookup.tableIndexes[allocTable];
-        writeEntry(allocTable, ti.index, 0,
-                   PTAGEEntry(ti.tag, exit, targetPC));
+        live.valid = true;
+        live.table = allocTable;
+        live.index = ti.index;
+        live.way = 0;
+        live.entry = PTAGEEntry(ti.tag, exit, targetPC);
+        writeEntry(live.table, live.index, live.way, live.entry);
         pairTageStats.trainAllocate++;
         if (mayEvict) {
             allocRefusals = 0;
@@ -256,6 +369,88 @@ PairTAGE::updateUsingS3Pred(FullBTBPrediction &s3Pred)
         allocRefusals = (allocRefusals + 1) & mask(AllocRefusalWidth);
         pairTageStats.trainNoTableFree++;
     }
+
+    return live;
+}
+
+void
+PairTAGE::trainSecondBlock(const LiveEntryInfo &live, const BTBEntry &exit,
+                           Addr targetPC)
+{
+    const Addr branchPC = exit.valid ? exit.pc : 0;
+    PTAGEEntry entry = live.entry;
+
+    // A second block naming the right exit is strengthened; anything else
+    // is replaced by the block that actually followed the first one
+    if (entry.b2Valid && entry.block2.branchPC == branchPC) {
+        entry.block2.updateCounter(exit.valid);
+        entry.block2.targetPC = targetPC;
+        if (live.firstCorrect && entry.confidence < confidenceSaturate) {
+            entry.confidence++;
+        }
+        pairTageStats.trainSecondStrengthen++;
+    } else {
+        // A wrong second block costs confidence; installing a missing one
+        // does not, since it was never predicted
+        if (entry.b2Valid && entry.confidence > 0) {
+            entry.confidence--;
+        }
+        entry.b2Valid = true;
+        entry.block2 = PTAGEBlockInfo(exit, targetPC);
+        entry.modelInfo.block2BranchSize = exit.valid ? exit.size : 0;
+        pairTageStats.trainSecondReplace++;
+    }
+
+    writeEntry(live.table, live.index, live.way, entry);
+}
+
+bool
+PairTAGE::getSecondBlock(ThreadID tid, FullBTBPrediction &pred)
+{
+    // A first block predicted from a saturated entry also emits the
+    // entry's second block, as long as the final prediction follows the
+    // first block to where the second block starts
+    const auto &meta = threadMeta[tid];
+    const auto &live = predLiveEntryInfo[tid];
+    const auto &entry = live.entry;
+    if (!enableTwoTaken || meta->phase != StatePhase::First || !live.valid ||
+        live.nextPC != pred.bbStart || !entry.b2Valid ||
+        entry.confidence != confidenceSaturate) {
+        return false;
+    }
+
+    fillPrediction(entry.block2, entry.modelInfo.block2BranchSize, pred);
+    return true;
+}
+
+void
+PairTAGE::refreshPredictionMeta(Addr startAddr, const bitset &history,
+                                FullBTBPrediction &pred)
+{
+    // A second block enqueued with its first block has no lookup of its
+    // own, so only its history is recorded, for squash recovery
+    (void)startAddr;
+    (void)history;
+    auto meta = std::make_shared<PairTAGEMeta>();
+    meta->history = historyState(pred.tid);
+    meta->phase = threadPhase[pred.tid];
+    meta->twoTaken = true;
+    meta->twoTakenEntry = predLiveEntryInfo[pred.tid];
+    threadMeta[pred.tid] = meta;
+}
+
+void
+PairTAGE::handleControlSquash(const FetchTarget &target)
+{
+    auto meta = std::static_pointer_cast<PairTAGEMeta>(
+        target.predMetas[getComponentIdx()]);
+    if (!meta || !meta->twoTaken) {
+        return;
+    }
+
+    const auto &live = meta->twoTakenEntry;
+    resetConfidence(live.table, live.index, live.way);
+    pairTageStats.twoTakenSquashes++;
 }
 
 unsigned
@@ -321,19 +516,16 @@ PairTAGE::lookup(Addr pc, const ThreadHistoryState &history) const
 }
 
 void
-PairTAGE::fillStagePredictions(const PTAGEEntry &entry,
-                               std::vector<FullBTBPrediction> &stagePreds)
+PairTAGE::fillPrediction(const PTAGEBlockInfo &block, uint8_t branchSize,
+                         FullBTBPrediction &pred)
 {
-    FillStageLoop(s) {
-        stagePreds[s].btbEntries.clear();
-        stagePreds[s].condTakens.clear();
-        stagePreds[s].indirectTargets.clear();
-        stagePreds[s].returnTarget = 0;
-        stagePreds[s].predTick = curTick();
-    }
+    pred.btbEntries.clear();
+    pred.condTakens.clear();
+    pred.indirectTargets.clear();
+    pred.returnTarget = 0;
+    pred.predTick = curTick();
 
     // A block that falls through has no branch to predict
-    const auto &block = entry.block;
     if (!block.taken()) {
         return;
     }
@@ -347,21 +539,26 @@ PairTAGE::fillStagePredictions(const PTAGEEntry &entry,
     btbEntry.isIndirect = block.isIndirect;
     btbEntry.isCall = block.isCall;
     btbEntry.isReturn = block.isReturn;
-    btbEntry.size = entry.modelInfo.branchSize;
+    btbEntry.size = branchSize;
     btbEntry.ctr = block.directionCounter;
     btbEntry.source = getComponentIdx();
 
-    FillStageLoop(s) stagePreds[s].btbEntries.push_back(btbEntry);
+    pred.btbEntries.push_back(btbEntry);
     if (block.isCond) {
-        FillStageLoop(s) stagePreds[s].condTakens.push_back(
-            {block.branchPC, true});
+        pred.condTakens.push_back({block.branchPC, true});
     } else if (block.isIndirect) {
-        FillStageLoop(s) stagePreds[s].indirectTargets.push_back(
-            {block.branchPC, block.targetPC});
+        pred.indirectTargets.push_back({block.branchPC, block.targetPC});
         if (block.isReturn) {
-            FillStageLoop(s) stagePreds[s].returnTarget = block.targetPC;
+            pred.returnTarget = block.targetPC;
         }
     }
+}
+
+void
+PairTAGE::fillStagePredictions(const PTAGEBlockInfo &block, uint8_t branchSize,
+                               std::vector<FullBTBPrediction> &stagePreds)
+{
+    FillStageLoop(s) fillPrediction(block, branchSize, stagePreds[s]);
 }
 
 void
@@ -371,6 +568,14 @@ PairTAGE::writeEntry(unsigned t, Addr index, unsigned way,
     assert(t < numPredictors && index < table[t].size() && way < numWays);
 
     table[t][index][way] = entry;
+}
+
+void
+PairTAGE::resetConfidence(unsigned t, Addr index, unsigned way)
+{
+    assert(t < numPredictors && index < table[t].size() && way < numWays);
+
+    table[t][index][way].confidence = 0;
 }
 
 PairTAGE::ThreadHistoryState &

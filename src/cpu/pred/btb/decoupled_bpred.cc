@@ -81,6 +81,9 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
              "smtNumPredictingThreads (%u) must be in [1, min(2, "
              "numThreads (%u))]",
              numPredictingThreads, numThreads);
+    panic_if(numPredictingThreads > 1 && pairtage->isEnabled(),
+             "PairTAGE does not support concurrent SMT predictions yet; "
+             "disable PairTAGE or set smtNumPredictingThreads to one");
     panic_if(ftqMode == SMTFTQMode::Shared &&
              ftqPolicy == SMTFTQPolicy::Threshold &&
              smtFTQThreshold > ftqEntries,
@@ -597,6 +600,61 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
     printTarget(ftq.back(tid));
     dbpBtbStats.ftqEntryEnqueued++;
 
+    // 8. A second block may follow the first in the same cycle
+    enqueueSecondBlock(tid);
+}
+
+void
+DecoupledBPUWithBTB::enqueueSecondBlock(ThreadID tid)
+{
+    auto &thread = threads[tid];
+
+    // Only a first block the final prediction agrees with may carry a
+    // second block: an overridden one drops it, as the RTL flushes both
+    if (!pairtage->isEnabled() || thread.finalPred.predSource != 0) {
+        return;
+    }
+
+    FullBTBPrediction secondPred;
+    secondPred.tid = tid;
+    secondPred.asidHash = thread.finalPred.asidHash;
+    secondPred.bbStart = thread.s0PC;
+    secondPred.predTick = thread.finalPred.predTick;
+    secondPred.predSource = 0;
+    secondPred.overrideReason = OverrideReason::NO_OVERRIDE;
+    secondPred.s1Source = pairtage->getComponentIdx();
+    secondPred.s3Source = pairtage->getComponentIdx();
+    if (!pairtage->getSecondBlock(tid, secondPred)) {
+        return;
+    }
+
+    // Without room for both, the second block waits for the next cycle
+    if (ftqFull(tid)) {
+        dbpBtbStats.secondBlockFtqFull++;
+        return;
+    }
+
+    // Every component records the meta the second block recovers from
+    for (int i = 0; i < numComponents; ++i) {
+        components[i]->refreshPredictionMeta(thread.s0PC, thread.s0History,
+                                             secondPred);
+    }
+
+    FetchTarget entry = createFetchTargetEntry(tid, thread.s0PC, secondPred);
+    thread.s0PC = secondPred.getTarget(predictWidth);
+    updateHistoryForPrediction(entry, secondPred);
+    fillAheadPipeline(entry);
+
+    if (enablePredFSQTrace) {
+        predTraceManager->write_record(PredictionTrace(ftq.backId(tid), entry));
+    }
+
+    ftq.insert(std::move(entry));
+    DPRINTF(DecoupleBP, "Inserted second block %lu starting at PC %#lx\n",
+            ftq.backId(tid), ftq.back(tid).startPC);
+    printTarget(ftq.back(tid));
+    dbpBtbStats.ftqEntryEnqueued++;
+    dbpBtbStats.secondBlockEnqueued++;
 }
 
 /**
@@ -746,6 +804,9 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
         return;
     }
     auto &target = ftq.get(target_id, tid);
+    if (pairtage->isEnabled()) {
+        pairtage->handleControlSquash(target);
+    }
     // Get target address
     Addr real_target = corr_target.instAddr();
     if (!fromCommit && squashBranchInfo.isReturn &&

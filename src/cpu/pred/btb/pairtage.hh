@@ -33,10 +33,11 @@ class PairTAGE : public TimedBaseBTBPredictor
     // Fields the model needs only and should not appear in real units.
     struct PTAGEEntryModelInfo
     {
-        // instruction size of the first block's exit
+        // instruction size of the first and second block's exit
         uint8_t branchSize;
+        uint8_t block2BranchSize;
 
-        PTAGEEntryModelInfo() : branchSize(0) {}
+        PTAGEEntryModelInfo() : branchSize(0), block2BranchSize(0) {}
     };
 
     // Prediction Block Information
@@ -60,6 +61,18 @@ class PairTAGE : public TimedBaseBTBPredictor
             : directionCounter(0), branchPC(0), targetPC(0), isCond(false),
               isDirect(false), isIndirect(false), isCall(false),
               isReturn(false)
+        {}
+
+        // A new block, weak in its direction. It leaves at exit when exit
+        // is valid, and falls through to targetPC otherwise.
+        PTAGEBlockInfo(const BTBEntry &exit, Addr targetPC)
+            : directionCounter(exit.valid ? 0 : -1),
+              branchPC(exit.valid ? exit.pc : 0), targetPC(targetPC),
+              isCond(exit.valid && exit.isCond),
+              isDirect(exit.valid && exit.isDirect),
+              isIndirect(exit.valid && exit.isIndirect),
+              isCall(exit.valid && exit.isCall),
+              isReturn(exit.valid && exit.isReturn)
         {}
 
         bool taken() const { return directionCounter >= 0; }
@@ -92,34 +105,32 @@ class PairTAGE : public TimedBaseBTBPredictor
         Addr tag;
         bool useful;
 
+        // Confidence that both blocks are predicted right
+        uint8_t confidence;
+
         PTAGEBlockInfo block;
         PTAGEBlockInfo block2;
 
         PTAGEEntryModelInfo modelInfo;
 
-        PTAGEEntry() : valid(false), b2Valid(false), tag(0), useful(false) {}
+        PTAGEEntry()
+            : valid(false), b2Valid(false), tag(0), useful(false),
+              confidence(0)
+        {}
 
-        // A new allocate entry holding one block, weak in its direction.
-        // The block leaves at exit when it is valid, and falls through to
-        // targetPC otherwise.
+        // A new allocate entry holding one block, weak in its direction
         PTAGEEntry(Addr tag, const BTBEntry &exit, Addr targetPC)
-            : valid(true), b2Valid(false), tag(tag), useful(false)
+            : valid(true), b2Valid(false), tag(tag), useful(false),
+              confidence(0), block(exit, targetPC)
         {
-            block.directionCounter = exit.valid ? 0 : -1;
-            block.branchPC = exit.valid ? exit.pc : 0;
-            block.targetPC = targetPC;
-            block.isCond = exit.valid && exit.isCond;
-            block.isDirect = exit.valid && exit.isDirect;
-            block.isIndirect = exit.valid && exit.isIndirect;
-            block.isCall = exit.valid && exit.isCall;
-            block.isReturn = exit.valid && exit.isReturn;
             modelInfo.branchSize = exit.valid ? exit.size : 0;
         }
     };
 
     PairTAGE(const Params &p);
 
-    // Predict the first block of the providing entry at s1. A hit takes
+    // Predict at s1, alternating between the first block of a looked-up
+    // entry and the second block of the same entry. A prediction takes
     // priority over uBTB and aBTB, and one that falls through overrides
     // their taken predictions as well.
     void putPCHistory(Addr startAddr, const bitset &history,
@@ -137,6 +148,19 @@ class PairTAGE : public TimedBaseBTBPredictor
     // Fast training hook, driven by the final-stage prediction of every
     // predicted block, like the other s1 predictors.
     void updateUsingS3Pred(FullBTBPrediction &s3Pred);
+
+    // Fill pred with the second block to enqueue in the same cycle as the
+    // first block just predicted, and return whether there is one
+    bool getSecondBlock(ThreadID tid, FullBTBPrediction &pred);
+
+    // Record the meta of a second block enqueued with its first block
+    void refreshPredictionMeta(Addr startAddr, const bitset &history,
+                               FullBTBPrediction &pred) override;
+
+    // A control squash on a second block enqueued with its first block
+    // means the second block was wrong, so its entry loses the confidence
+    // to emit both blocks again
+    void handleControlSquash(const FetchTarget &target);
 
     // Check the folded histories of thread tid against its full history
     void checkFoldedHist(const bitset &history, ThreadID tid,
@@ -236,13 +260,20 @@ class PairTAGE : public TimedBaseBTBPredictor
     // Look up every table with the PC and folded histories of a block
     LookupResult lookup(Addr pc, const ThreadHistoryState &history) const;
 
-    // Replace the stage predictions with the first block of entry
-    void fillStagePredictions(const PTAGEEntry &entry,
+    // Replace a prediction with one block
+    void fillPrediction(const PTAGEBlockInfo &block, uint8_t branchSize,
+                        FullBTBPrediction &pred);
+
+    // Replace the stage predictions with one block
+    void fillStagePredictions(const PTAGEBlockInfo &block, uint8_t branchSize,
                               std::vector<FullBTBPrediction> &stagePreds);
 
     // Overwrite one way of set index of table t
     void writeEntry(unsigned t, Addr index, unsigned way,
                     const PTAGEEntry &entry);
+
+    // Clear the confidence of one way of set index of table t
+    void resetConfidence(unsigned t, Addr index, unsigned way);
 
     // ========== Ahead Pipeline ==========
     // The table read for a block is issued one block ahead.
@@ -250,13 +281,45 @@ class PairTAGE : public TimedBaseBTBPredictor
     // The term "Anchor" means that ahead pipeline start to output result.
     struct AheadKey
     {
-        // False untill a block enters the FTQ or squash occurs
+        // False at start and after a squash, until a first block enters
+        // the FTQ
         bool valid{false};
         Addr pc{0};
         ThreadHistoryState history;
     };
 
     std::vector<AheadKey> threadAhead;
+
+    // ========== Block Phase ==========
+    // Predictions alternate between the two blocks of an entry. The first
+    // block phase looks up an entry and predicts its first block. The
+    // second block phase predicts the second block of the same entry,
+    // without a lookup. Where an entry holds a whole group, only the first
+    // block of a group becomes the key of the next one. A squash restarts
+    // at the first block phase.
+    enum class StatePhase { First, Second };
+
+    std::vector<StatePhase> threadPhase;
+
+    // ========== Live Entry ==========
+    // The entry a pair is working with, and where it is. Prediction keeps
+    // the entry its first block was predicted from, so the second block
+    // comes from the same read. Training keeps the entry its first block
+    // was trained into, until the next block arrives and is trained as
+    // its second block.
+    struct LiveEntryInfo
+    {
+        bool valid{false};
+        unsigned table{0};
+        Addr index{0};
+        unsigned way{0};
+        PTAGEEntry entry;
+        Addr nextPC{0};             // where the second block has to start
+        bool firstCorrect{false};   // training: the first block was right
+    };
+
+    std::vector<LiveEntryInfo> predLiveEntryInfo;
+    std::vector<LiveEntryInfo> trainLiveEntryInfo;
 
     // ========== Prediction Meta ==========
     // Recorded in the FTQ entry of every predicted block
@@ -269,8 +332,16 @@ class PairTAGE : public TimedBaseBTBPredictor
         // And the training will be skipped for this block.
         bool noAnchor{false};
 
-        // Lookup the block was predicted with, used by training
+        // Phase the block was predicted in
+        StatePhase phase{StatePhase::First};
+
+        // First block phase: lookup the block was predicted with
         LookupResult lookup;
+
+        // Enqueued as the second block of a two-taken prediction, from the
+        // entry twoTakenEntry
+        bool twoTaken{false};
+        LiveEntryInfo twoTakenEntry;
     };
 
     std::vector<std::shared_ptr<PairTAGEMeta>> threadMeta;
@@ -281,6 +352,22 @@ class PairTAGE : public TimedBaseBTBPredictor
     // entries that stopped being used do not hold their tables forever.
     static constexpr unsigned AllocRefusalWidth = 5;
     unsigned allocRefusals{0};
+
+    // Entry confidence rises when a strengthened first block is followed
+    // by a strengthened second block, and falls when a valid second block
+    // is wrong. An entry whose confidence saturates at confidenceSaturate
+    // is ready to emit both blocks in one cycle, when enableTwoTaken.
+    const unsigned confidenceSaturate;
+    const bool enableTwoTaken;
+
+    // Train the first block of the looked-up entry, and return the entry
+    // it was trained into, invalid when it is not written
+    LiveEntryInfo trainFirstBlock(const LookupResult &lookup,
+                                  const BTBEntry &exit, Addr targetPC);
+
+    // Train the second block of the entry its first block was trained into
+    void trainSecondBlock(const LiveEntryInfo &live, const BTBEntry &exit,
+                          Addr targetPC);
 
     struct PairTAGEStats : public statistics::Group
     {
@@ -293,8 +380,17 @@ class PairTAGE : public TimedBaseBTBPredictor
         statistics::Scalar trainAllocate;
         statistics::Scalar trainAllocateEvicted;
         statistics::Scalar trainNoTableFree;
+        statistics::Scalar secondPhasePreds;
+        statistics::Scalar secondPhaseProvided;
+        statistics::Scalar trainSecondStrengthen;
+        statistics::Scalar trainSecondReplace;
+        statistics::Scalar trainSecondBroken;
+        statistics::Vector providerConfidence;
+        statistics::Scalar twoTakenCandidates;
+        statistics::Scalar twoTakenSquashes;
 
-        PairTAGEStats(statistics::Group *parent, unsigned numPredictors);
+        PairTAGEStats(statistics::Group *parent, unsigned numPredictors,
+                      unsigned confidenceSaturate);
     } pairTageStats;
 };
 
