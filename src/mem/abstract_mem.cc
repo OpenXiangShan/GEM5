@@ -403,6 +403,7 @@ AbstractMemory::access(PacketPtr pkt)
             if (pmemAddr) {
                 pkt->setData(host_addr);
                 (*(pkt->getAtomicOp()))(host_addr);
+                pkt->req->notifyMemWrite(host_addr);
             }
         } else {
             std::vector<uint8_t> overwrite_val(pkt->getSize());
@@ -464,6 +465,7 @@ AbstractMemory::access(PacketPtr pkt)
         if (writeOK(pkt)) {
             if (pmemAddr) {
                 pkt->writeData(host_addr);
+                pkt->req->notifyMemWrite(host_addr);
                 DPRINTF(MemoryAccess, "%s write due to %s\n",
                         __func__, pkt->print());
             }
