@@ -54,6 +54,7 @@
 #include "arch/generic/tlb.hh"
 #include "arch/riscv/insts/fusion.hh"
 #include "arch/riscv/insts/static_inst.hh"
+#include "arch/riscv/insts/vector.hh"
 #include "arch/riscv/regs/misc.hh"
 #include "arch/riscv/utility.hh"
 #include "base/cprintf.hh"
@@ -1315,8 +1316,14 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
     if (enableRVV) {
         if (diffInfo.inst->isVector()) {
             readGem5Regs(tid);
+            const StaticInst *agnostic_inst = diffInfo.inst.get();
+            if (const auto *padding_nop =
+                    dynamic_cast<const RiscvISA::VectorNopMicroInst *>(
+                        diffInfo.inst.get())) {
+                agnostic_inst = padding_nop->paddedTailInst().get();
+            }
             const auto agnostic_bits = getVectorAgnosticBits(
-                *diffInfo.inst, diffAllStates->gem5RegFile,
+                *agnostic_inst, diffAllStates->gem5RegFile,
                 diffAllStates->referenceRegFile.vtype,
                 diffAllStates->referenceRegFile.vl);
             bool reference_updated = false;
