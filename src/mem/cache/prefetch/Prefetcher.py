@@ -172,6 +172,8 @@ class QueuedPrefetcher(BasePrefetcher):
         "Maximum number of queued prefetches that have a missing translation")
     queue_squash = Param.Bool(True, "Squash queued prefetch on demand access")
     queue_filter = Param.Bool(True, "Don't queue redundant prefetches")
+    offload_distant_bop_to_l3 = Param.Bool(
+        False, "Target buffered BOP offsets beyond 32 lines at idle L3")
     cache_snoop = Param.Bool(True, "Snoop cache to eliminate redundant request")
 
     tag_prefetch = Param.Bool(True, "Tag prefetch with PC of generating access")

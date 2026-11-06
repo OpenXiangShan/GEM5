@@ -208,6 +208,7 @@ class Queued : public Base
     const bool queueFilter;
 
     /** Snoop the cache before generating prefetch (cheating basically) */
+    const bool offloadDistantBopToL3;
     const bool cacheSnoop;
 
     /** Tag prefetch with PC of generating access? */
@@ -331,6 +332,10 @@ class Queued : public Base
         // STATS
         statistics::Scalar pfIdentified;
         statistics::Scalar pfBufferHit;
+        statistics::Scalar pfBopL3ReceiverBusy;
+        statistics::Scalar pfBopL3FellBack;
+        statistics::Scalar pfBopL3Offloaded;
+        statistics::Scalar pfBopL3OffloadedToBusy;
         statistics::Scalar pfInCache;
         statistics::Scalar pfRemovedDemand;
         statistics::Scalar pfRemovedFull;

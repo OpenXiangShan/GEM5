@@ -499,7 +499,16 @@ BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriori
     if (archDBer && cache->level() == 1) {
         archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getAddr(), addr, src);
     }
-    InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
+    AddrPriority request(addr, prio, src, pfi.trigger_info);
+    // Preserve the near-offset range covered by the existing small BOP.
+    const bool distant = bestOffset < -32 || bestOffset > 32;
+    stats.distantL3Eligible += distant;
+    if (offloadDistantBopToL3 && distant) {
+        request.pfahead = true;
+        request.pfahead_host = 3;
+        stats.distantL3Marked++;
+    }
+    InsertPFRequestToBuffer(request);
     Addr filter_key = sharedFilterKey(pfi, addr);
     if (filter->contains(filter_key)) {
         DPRINTF(BOPPrefetcher, "Skip recently prefetched: %lx\n", addr);
@@ -524,7 +533,11 @@ BOP::BopStats::BopStats(statistics::Group *parent)
     : statistics::Group(parent),
       ADD_STAT(issuedOffsetDist, statistics::units::Count::get(), "Distribution of issued offsets"),
       ADD_STAT(learnOffsetCount, statistics::units::Count::get(), "Number of learning offsets"),
-      ADD_STAT(throttledCount, statistics::units::Count::get(), "Number of throttled prefetches")
+      ADD_STAT(throttledCount, statistics::units::Count::get(), "Number of throttled prefetches"),
+      ADD_STAT(distantL3Eligible, statistics::units::Count::get(),
+               "Buffered BOP requests beyond 32 cache lines"),
+      ADD_STAT(distantL3Marked, statistics::units::Count::get(),
+               "Distant buffered BOP requests targeted at L3")
 {
     issuedOffsetDist.init(-64, 256, 1).prereq(issuedOffsetDist);
 }

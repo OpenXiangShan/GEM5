@@ -221,6 +221,8 @@ class BOP : public Queued
             statistics::Distribution issuedOffsetDist;
             statistics::Scalar learnOffsetCount;
             statistics::Scalar throttledCount;
+            statistics::Scalar distantL3Eligible;
+            statistics::Scalar distantL3Marked;
         } stats;
 
     public:

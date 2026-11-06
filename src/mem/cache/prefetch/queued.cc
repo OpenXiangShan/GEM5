@@ -189,7 +189,9 @@ Queued::Queued(const QueuedPrefetcherParams &p)
       missingTranslationQueueSize(
         p.max_prefetch_requests_with_pending_translation),
       latency(p.latency), queueSquash(p.queue_squash),
-      queueFilter(p.queue_filter), cacheSnoop(p.cache_snoop),
+      queueFilter(p.queue_filter),
+      offloadDistantBopToL3(p.offload_distant_bop_to_l3),
+      cacheSnoop(p.cache_snoop),
       tagPrefetch(p.tag_prefetch),
       throttleControlPct(p.throttle_control_percentage),
       pfControl(p.pf_control),
@@ -1160,6 +1162,14 @@ Queued::QueuedStats::QueuedStats(statistics::Group *parent)
              "number of prefetch candidates identified"),
     ADD_STAT(pfBufferHit, statistics::units::Count::get(),
              "number of redundant prefetches already in prefetch queue"),
+    ADD_STAT(pfBopL3ReceiverBusy, statistics::units::Count::get(),
+             "L3-targeted BOP deliveries finding a busy receiver"),
+    ADD_STAT(pfBopL3FellBack, statistics::units::Count::get(),
+             "L3-targeted BOP requests retained in the existing L2 PFQ"),
+    ADD_STAT(pfBopL3Offloaded, statistics::units::Count::get(),
+             "BOP requests transferred to an idle L3 receiver"),
+    ADD_STAT(pfBopL3OffloadedToBusy, statistics::units::Count::get(),
+             "BOP requests transferred to a busy L3 receiver"),
     ADD_STAT(pfInCache, statistics::units::Count::get(),
              "number of redundant prefetches already in cache/mshr dropped"),
     ADD_STAT(pfRemovedDemand, statistics::units::Count::get(),
@@ -1589,11 +1599,26 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
     unsigned queue_size;
     const char *queue_name;
     if (&queue == &pfq) {
+        const bool bop_l3 = offloadDistantBopToL3 &&
+            hasHintDownStream() && dpp.pfahead &&
+            dpp.pfahead_host == 3 &&
+            dpp.pfInfo.getXsMetadata().prefetchSource ==
+                PrefetchSourceType::HWP_BOP;
+        const bool bop_busy = bop_l3 && hintDownStream->hasHintsWaiting();
+        statsQueued.pfBopL3ReceiverBusy += bop_busy;
+        if (bop_busy) {
+            dpp.pfahead = false;
+            statsQueued.pfBopL3FellBack++;
+        }
         // if found the dpp is pfahead marked
         // send it to next level pfq
         if (hasHintDownStream() && dpp.pfahead && (dpp.pfahead_host > cache->level())) {
             hintDownStream->rxHint(&dpp);
             prefetchStats.pfaheadOffloaded++;
+            if (bop_l3) {
+                statsQueued.pfBopL3Offloaded++;
+                statsQueued.pfBopL3OffloadedToBusy += bop_busy;
+            }
             DPRINTF(HWPrefetchOther,
                     "Prefetch ahead host: %d, will send to cache l%s\n",dpp.pfahead_host, cache->level() + 1);
             return;
