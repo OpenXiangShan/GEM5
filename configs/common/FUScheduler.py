@@ -291,6 +291,15 @@ class KMHV3Scheduler(Scheduler):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # Global scalar FP write ports: I2F shares FEX0, loads own ports 4..6.
+        for iq in self.IQs:
+            if str(iq.name).startswith("fpIQ"):
+                iq.fpWbPort = int(str(iq.name)[4:])
+            elif str(iq.name).startswith("ld"):
+                iq.fpWbPort = 4 + int(str(iq.name)[2:])
+            elif str(iq.name) == "intIQ2":
+                iq.fpWbPort = 0
+
         # self.disableAllRegArb()
 
     def disableAllRegArb(self):
