@@ -557,8 +557,10 @@ def _configure_l2_wrapper_prefetcher(prefetcher, prefetcher_name, options,
     if not options.classic_l2:
         _configure_l2_composite(prefetcher, prefetcher_name, options)
         _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled)
+        if hasattr(prefetcher, 'pfq_entries_per_slice'):
+            prefetcher.pfq_entries_per_slice = 16
+            prefetcher.queue_size = 16 * options.l2_slices
         if options.l1_to_l2_pf_hint:
-            prefetcher.queue_size = 128
             prefetcher.max_prefetch_requests_with_pending_translation = 128
 
 def _configure_l3_prefetcher(prefetcher, options):

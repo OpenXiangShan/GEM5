@@ -368,6 +368,18 @@ LLDPrefetcher::rxHint(BaseMMU::Translation *translation)
         delete dpp.pkt;
 }
 
+bool
+LLDPrefetcher::transferPacketTo(Base &target)
+{
+    if (pfq.empty()) {
+        return false;
+    }
+
+    target.rxHint(&pfq.front());
+    pfq.pop_front();
+    return true;
+}
+
 void
 LLDPrefetcher::preDumpStats()
 {

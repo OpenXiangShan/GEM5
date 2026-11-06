@@ -119,6 +119,9 @@ class LLDPrefetcher : public Queued
     void addToQueue(std::list<DeferredPacket> &queue,
                     DeferredPacket &dpp) override;
     void rxHint(BaseMMU::Translation *dpp) override;
+
+    /** Move one generated request to a composite without issue accounting. */
+    bool transferPacketTo(Base &target);
 };
 } // namespace prefetch
 } // namespace gem5

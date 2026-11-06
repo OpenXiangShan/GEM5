@@ -41,6 +41,7 @@
 #include <array>
 #include <cstdint>
 #include <deque>
+#include <limits>
 #include <list>
 #include <utility>
 
@@ -74,6 +75,8 @@ class Queued : public Base
         int pfahead_host = 0; // which level should process pfahead (e.g 2 is l2...)
         bool pfahead = false;
         int depth=0;
+        /** Optional owner-defined routing tag carried through translation. */
+        uint8_t queueTag{std::numeric_limits<uint8_t>::max()};
         PrefetchSourceType pfSource;
         PFTriggerInfo pf_trigger_info{};
         PrefetchCmd(Addr a, int32_t p) : addr(a), priority(p), isVA(true), isBOP(false)
@@ -111,6 +114,8 @@ class Queued : public Base
         int32_t priority;
         bool pfahead;
         int pfahead_host;
+        /** Optional owner-defined routing tag carried through translation. */
+        uint8_t queueTag{std::numeric_limits<uint8_t>::max()};
         /** Request used when a translation is needed */
         RequestPtr translationRequest;
         ThreadContext *tc;
@@ -404,6 +409,20 @@ class Queued : public Base
      * @param dpp DeferredPacket to add
      */
     virtual void addToQueue(std::list<DeferredPacket> &queue, DeferredPacket &dpp);
+
+    /** Dequeue an arbitrary ready-queue entry with the standard accounting. */
+    PacketPtr dequeuePacket(iterator it);
+
+    /**
+     * Whether a duplicate priority update may reorder the selected queue.
+     * Priority-ordered queues keep the default behavior; FIFO specializations
+     * can suppress reordering for their ready queue.
+     */
+    virtual bool reorderOnPriorityUpdate(
+        const std::list<DeferredPacket> &queue) const
+    {
+        return true;
+    }
 
     /**
      * Starts the translations of the queued prefetches with a
