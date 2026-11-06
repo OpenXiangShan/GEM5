@@ -1,8 +1,10 @@
 #ifndef __VALUEPRED_UNIT_HH__
 #define __VALUEPRED_UNIT_HH__
 
+#include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "base/statistics.hh"
 #include "base/types.hh"
@@ -18,8 +20,6 @@ namespace gem5
 namespace valuepred
 {
 
-
-
 class VPUnit : public SimObject
 {
   private:
@@ -28,10 +28,22 @@ class VPUnit : public SimObject
   protected:
     const unsigned numThreads;
 
+    using LatePredictReadyCallback =
+        std::function<void(const VPLatePredictReadyInfo &)>;
+
+    LatePredictReadyCallback latePredictReadyCallback;
+
+    void notifyLatePredictReady(const VPLatePredictReadyInfo &info);
     void assertValidTid(ThreadID tid) const;
 
   public:
     VPUnit(const Params &params);
+
+    void setLatePredictReadyCallback(
+            std::function<void(const VPLatePredictReadyInfo &)> callback)
+    {
+        latePredictReadyCallback = std::move(callback);
+    }
 
     std::string name() const { return "valuePredict.base"; }
 
@@ -40,6 +52,30 @@ class VPUnit : public SimObject
 
     VPResult valuePredict(const VPPredictRequest &request,
             std::unique_ptr<VPPredictionRecord> &record);
+
+    /** Allocate predictor state once an instruction is admitted at dispatch. */
+    virtual void dispatch(const VPDispatchInfo &dispatchInfo,
+            VPPredictionRecord *record);
+
+    /** Try a prediction after operands become ready but before issue selection. */
+    virtual VPPredictionCandidate latePredict(
+            const VPLatePredictRequest &request,
+            VPPredictionRecord *record);
+
+    /** Notify the predictor when an executed load's actual value is available. */
+    virtual void valueAvailable(const VPValueAvailableInfo &valueInfo,
+            VPPredictionRecord *record);
+
+    /** Notify all predictors of the value actually selected by arbitration. */
+    virtual void predictionApplied(const VPPredictionAppliedInfo &appliedInfo,
+            VPPredictionRecord *record);
+
+    /** Notify predictors when verification detects an applied wrong value. */
+    virtual void valueMispredicted(const VPMispredictionInfo &mispInfo,
+            VPPredictionRecord *record);
+
+    /** Notify predictors for every architecturally committed instruction. */
+    virtual void commitInstruction(const VPCommitInfo &commitInfo);
 
     // In commit time, update value predictor
     virtual void update(const VPUpdateInfo &updateInfo,
