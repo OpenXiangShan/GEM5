@@ -125,6 +125,26 @@ must match those hashes, both hashes must agree, and every actual INI must
 reference the recorded original path. Only that content-verified path
 variation is excluded before the expected-change comparison.
 
+## Frozen experiment identity
+
+Check a paired-run manifest against its completed build record and the exact
+source patch before using its results:
+
+```sh
+python3 util/tea/audit_experiment_identity.py \
+    --manifest /path/to/experiment/manifest.json \
+    --build /path/to/build.json \
+    --source-patch /path/to/source.patch
+```
+
+The manifest records `binary`, `binary_sha256`, and `source_patch_sha256`.
+The build records `complete`, `returncode`, `source_patch_sha256`, and
+`variants.fast.binary_sha256` (`--variant opt` selects the opt record).
+The command hashes the existing binary and patch, prints each identity check
+as JSON, and exits nonzero on a mismatch or unsuccessful build. It does not
+modify records or rerun simulations. This binds recorded inputs; correctness,
+resource, coverage and official CI checks remain separate.
+
 ## Validation and limits
 
 Run the targeted regression suite from the repository root:
