@@ -140,19 +140,13 @@ class DecoupledBPUWithBTB : public BPredUnit
         boost::dynamic_bitset<> s0BwHistory;  ///< global backward History bits
         std::vector<boost::dynamic_bitset<>> s0LHistory;  ///< local History bits
         boost::dynamic_bitset<> commitHistory;
-        PairPhase s0PairPhase{PairPhase::Even};
         FullBTBPrediction finalPred;      ///< Final prediction
-        PairTAGE::TrainPacket finalTrainPacket;
-        PairTAGE::TrainPacket twoTakenTrainPacket;
-        std::vector<BTBEntry> twoTakenBTBEntries;
         unsigned numOverrideBubbles{0};
         bool validprediction{false};
         bool squashing{false};
         bool nextPredictionAfterSquash{false};
         bool blockPredictionPending{false};
         bool redirectPending{false};
-        bool twoTakenTrainReady{false};
-        bool firstBlockProcessedThisTick{false};
     } threads[MaxThreads];
 
     std::vector<HistoryManager> historyManagers;
@@ -172,11 +166,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     std::vector<ThreadID> scheduleThreads();
 
     void processNewPrediction(ThreadID tid);
-    void prepareTwoTakenTraining(ThreadID tid);
-    void processTwoTakenBlock(ThreadID tid);
-    void refreshTwoTakenPredictionMetas(ThreadID tid, FullBTBPrediction &pred);
-    bool currentFirstBlockHasAllowedPairPhase(ThreadID tid) const;
-    bool pairtageFirstBlockNotOverriden(ThreadID tid) const;
 
     FetchTarget createFetchTargetEntry(ThreadID tid);
     FetchTarget createFetchTargetEntry(ThreadID tid, Addr startPC, FullBTBPrediction &pred);
