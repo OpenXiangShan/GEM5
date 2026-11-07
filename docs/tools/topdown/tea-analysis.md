@@ -195,7 +195,7 @@ identity, not correctness by themselves. The scripts audit existing files
 and recorded CI state; they never submit CI or restart a timed-out observer.
 
 
-## Partial four-corner comparisons
+## Partial paired and four-corner comparisons
 
 Summarize completed audited points with full input-instruction and SimPoint
 weights, retaining pending and unknown points:
@@ -206,6 +206,19 @@ python3 util/tea/summarize_four_corner_subset.py \
   --experiment-audit four-corner-audit.json \
   --corners control best compute combined --output contributions.json
 ```
+
+For a two-version experiment, pass its control and candidate names instead:
+
+```sh
+python3 util/tea/summarize_four_corner_subset.py \
+  --profile cluster.json --baseline-audit baseline-raw-audit.json \
+  --experiment-audit paired-audit.json \
+  --corners parent candidate --output paired-contributions.json
+```
+
+Paired output reports candidate signs and measured time contributions, without
+interaction or marginal fields. The baseline may be a fully audited parent
+version; its exact point windows must match the experiment's control windows.
 
 The experiment audit supplies `rows[].measured[corner]` cycle and retired
 instruction counts plus completed/pending coverage. The baseline audit must
