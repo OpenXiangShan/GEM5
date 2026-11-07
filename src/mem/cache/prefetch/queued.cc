@@ -189,7 +189,9 @@ Queued::Queued(const QueuedPrefetcherParams &p)
       missingTranslationQueueSize(
         p.max_prefetch_requests_with_pending_translation),
       latency(p.latency), queueSquash(p.queue_squash),
-      queueFilter(p.queue_filter), cacheSnoop(p.cache_snoop),
+      queueFilter(p.queue_filter),
+      offloadBufferedNeighborsToL3(p.offload_buffered_neighbors_to_l3),
+      cacheSnoop(p.cache_snoop),
       tagPrefetch(p.tag_prefetch),
       throttleControlPct(p.throttle_control_percentage),
       pfControl(p.pf_control),
@@ -1065,7 +1067,15 @@ Queued::PFSendEventWrapper()
             
         PacketPtr pkt = addr_prio.pf_trigger_info.pkt;
         PrefetchInfo pfi = PrefetchInfo(*addr_prio.pf_trigger_info.pfi_old);
-        //override address's prio to 1 
+        const bool is_neighbor =
+            addr_prio.pfSource == PrefetchSourceType::CDP &&
+            addr_prio.priority == 1;
+        if (offloadBufferedNeighborsToL3 && is_neighbor && hasHintDownStream() &&
+            !hintDownStream->hasHintsWaiting()) {
+            addr_prio.pfahead = true;
+            addr_prio.pfahead_host = 3;
+            statsQueued.pfBufferedNeighborsL3Marked++;
+        }
         addr_prio.priority = 1;
         // Block align prefetch address
         addr_prio.addr = blockAddress(addr_prio.addr);
@@ -1160,6 +1170,16 @@ Queued::QueuedStats::QueuedStats(statistics::Group *parent)
              "number of prefetch candidates identified"),
     ADD_STAT(pfBufferHit, statistics::units::Count::get(),
              "number of redundant prefetches already in prefetch queue"),
+    ADD_STAT(pfBufferedNeighborsL3Marked, statistics::units::Count::get(),
+             "buffered CDP neighbors marked for an idle L3 hint receiver"),
+    ADD_STAT(pfCdpL3Offloaded, statistics::units::Count::get(),
+             "CDP requests transferred to L3 while neighbor offload is enabled"),
+    ADD_STAT(pfCdpL3ReceiverBusy, statistics::units::Count::get(),
+             "CDP L3 deliveries observing a busy receiver"),
+    ADD_STAT(pfCdpL3FellBack, statistics::units::Count::get(),
+             "CDP neighbors retained at L2 because the receiver became busy"),
+    ADD_STAT(pfCdpL3OffloadedToBusy, statistics::units::Count::get(),
+             "CDP neighbors actually transferred to a busy L3 receiver"),
     ADD_STAT(pfInCache, statistics::units::Count::get(),
              "number of redundant prefetches already in cache/mshr dropped"),
     ADD_STAT(pfRemovedDemand, statistics::units::Count::get(),
@@ -1589,11 +1609,24 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
     unsigned queue_size;
     const char *queue_name;
     if (&queue == &pfq) {
+        const bool cdp_l3 = offloadBufferedNeighborsToL3 &&
+            hasHintDownStream() && dpp.pfahead && dpp.pfahead_host == 3 &&
+            dpp.pfInfo.getXsMetadata().prefetchSource == PrefetchSourceType::CDP;
+        const bool receiver_busy = cdp_l3 && hintDownStream->hasHintsWaiting();
+        statsQueued.pfCdpL3ReceiverBusy += receiver_busy;
+        if (receiver_busy) {
+            dpp.pfahead = false;
+            statsQueued.pfCdpL3FellBack++;
+        }
         // if found the dpp is pfahead marked
         // send it to next level pfq
         if (hasHintDownStream() && dpp.pfahead && (dpp.pfahead_host > cache->level())) {
             hintDownStream->rxHint(&dpp);
             prefetchStats.pfaheadOffloaded++;
+            if (cdp_l3) {
+                statsQueued.pfCdpL3Offloaded++;
+                statsQueued.pfCdpL3OffloadedToBusy += receiver_busy;
+            }
             DPRINTF(HWPrefetchOther,
                     "Prefetch ahead host: %d, will send to cache l%s\n",dpp.pfahead_host, cache->level() + 1);
             return;

@@ -344,6 +344,7 @@ class Scheduler : public SimObject
     LSQ* lsq;
     const int intel_fewops = 4;
     bool old_disp = false;
+    const bool rerouteBlockedComputeDispatch;
     const int intRegfileBanks;
 
     /** Load/store pipe counts derived from scheduler issue ports. */
@@ -354,6 +355,8 @@ class Scheduler : public SimObject
     {
         SchedulerStats(statistics::Group* parent);
         statistics::Scalar exec_stall_cycle;
+        statistics::Scalar computeDispatchFallbackAvailable;
+        statistics::Scalar computeDispatchRerouted;
         statistics::Scalar memstall_any_load;
         statistics::Scalar memstall_any_store;
         statistics::Scalar memstall_l1miss;
@@ -426,6 +429,8 @@ class Scheduler : public SimObject
     // should call at issue first/last cycle,
     void specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_queue);
     bool ready(OpClass op, ThreadID tid, int disp_seq);
+    IssueQue* findReadyDispatchAlternative(const IQGroup& iqs,
+        const IssueQue* selected, ThreadID tid) const;
 
   public:
     PendingWakeEventsType specWakeEvents;

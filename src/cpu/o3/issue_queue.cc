@@ -1568,6 +1568,11 @@ Scheduler::SpecWakeupCompletion::description() const
 Scheduler::SchedulerStats::SchedulerStats(statistics::Group* parent)
     : statistics::Group(parent),
       ADD_STAT(exec_stall_cycle, "SUM(OpsExecuted[= FEW])"),
+      ADD_STAT(computeDispatchFallbackAvailable,
+               statistics::units::Count::get(),
+               "Blocked compute readiness queries with a ready compatible IQ"),
+      ADD_STAT(computeDispatchRerouted, statistics::units::Count::get(),
+               "Compute instructions inserted into a ready alternative IQ"),
       ADD_STAT(memstall_any_load,
                "Cycles with no uops executed and at least X in-flight load that is not completed yet"),
       ADD_STAT(memstall_any_store, "Cycles with few uops executed and no more stores can be issued"),
@@ -1610,6 +1615,7 @@ Scheduler::disp_policy::operator()(IssueQue* a, IssueQue* b) const
 
 Scheduler::Scheduler(const SchedulerParams& params)
     : SimObject(params), old_disp(params.useOldDisp),
+      rerouteBlockedComputeDispatch(params.rerouteBlockedComputeDispatch),
       intRegfileBanks(params.intRegfileBanks), stats(this), issueQues(params.IQs)
 {
     dispTable.resize(MaxThreads, std::vector<IQGroup>(enums::OpClass::Num_OpClass));
@@ -2018,13 +2024,37 @@ Scheduler::ready(const DynInstPtr& inst, int disp_seq)
             }
         }
     } else {
-        if (iqs[dispSeqVec.at(disp_seq)]->ready(tid)) {
+        auto* selected = iqs[dispSeqVec.at(disp_seq)];
+        if (selected->ready(tid)) {
             return true;
+        }
+        const bool compute_candidate = !inst->isMemRef() &&
+            !inst->isReadBarrier() && !inst->isWriteBarrier() &&
+            !inst->isNonSpeculative() && !inst->isNop() &&
+            !inst->isEliminated();
+        if (compute_candidate) {
+            auto* fallback = findReadyDispatchAlternative(iqs, selected, tid);
+            stats.computeDispatchFallbackAvailable += fallback != nullptr;
+            if (rerouteBlockedComputeDispatch && fallback) {
+                return true;
+            }
         }
     }
 
     DPRINTF(Schedule, "IQ not ready, opclass: %s\n", enums::OpClassStrings[inst->opClass()]);
     return false;
+}
+
+IssueQue*
+Scheduler::findReadyDispatchAlternative(const IQGroup& iqs,
+    const IssueQue* selected, ThreadID tid) const
+{
+    for (auto* iq : iqs) {
+        if (iq != selected && iq->ready(tid)) {
+            return iq;
+        }
+    }
+    return nullptr;
 }
 
 bool
@@ -2118,8 +2148,17 @@ Scheduler::insert(const DynInstPtr& inst, int disp_seq)
         }
         panic_if(!insert, "can't find ready IQ to insert");
     } else {
-        assert(iqs[dispSeqVec.at(disp_seq)]->ready(tid));
-        iqs[dispSeqVec.at(disp_seq)]->insert(inst);
+        auto* target = iqs[dispSeqVec.at(disp_seq)];
+        if (rerouteBlockedComputeDispatch && !inst->isMemRef() &&
+            !inst->isReadBarrier() && !inst->isWriteBarrier() &&
+            !inst->isNonSpeculative() && !inst->isNop() &&
+            !inst->isEliminated() && !target->ready(tid)) {
+            target = findReadyDispatchAlternative(iqs, target, tid);
+            assert(target);
+            stats.computeDispatchRerouted++;
+        }
+        assert(target->ready(tid));
+        target->insert(inst);
     }
 
     DPRINTF(Schedule, "[sn:%llu] scheduler insert: %s\n", inst->seqNum, inst->staticInst->disassemble(0));
