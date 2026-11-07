@@ -2375,7 +2375,12 @@ LSQUnit::commitStores(InstSeqNum &youngest_inst)
             // doneMemSeqNum reaches here in the same cycle that ROB marks this
             // store squashed, do not advance SQ writeback state past the
             // squashed entry; IEW's next-cycle squash will remove it.
-            if (x.instruction()->isSquashed()) {
+            // A trace control-flow marker will fault at Commit even before
+            // its fault is injected. Keep it squashable when an older
+            // doneMemSeqNum still covers it.
+            if (x.instruction()->isSquashed() ||
+                x.instruction()->faulted() ||
+                x.instruction()->hasTraceCtrlFlowChange()) {
                 break;
             }
             if (x.instruction()->isSplitStoreAddr() && !x.splitStoreFinish()) {
