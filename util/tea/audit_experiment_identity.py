@@ -17,6 +17,11 @@ def completed_run_checks(manifest, folder):
     records = complete['results']
     expected = {(point, variant) for point in manifest['points']
                 for variant in manifest['variants']}
+    if 'new_long_control_variants' in manifest:
+        records = [record for group in records for record in group]
+        expected.update((point, variant)
+                        for point in manifest['new_long_control_points']
+                        for variant in manifest['new_long_control_variants'])
     checks = {
         'completed_run_matrix_matches_manifest': len(records) == len(expected)
         and {(record['point'], record['variant']) for record in records}
@@ -49,7 +54,7 @@ def main():
     parser.add_argument('--variant', choices=['fast', 'opt'], default='fast')
     parser.add_argument(
         '--completed-runs', action='store_true',
-        help='Also bind completed flat point-policy runs to their startup logs')
+        help='Also bind completed point-policy runs to their startup logs')
     args = parser.parse_args()
     manifest = json.loads(args.manifest.read_text())
     build = json.loads(args.build.read_text())
