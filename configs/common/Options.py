@@ -182,6 +182,12 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         choices=ObjectList.hwp_list.get_names(), help="L2 wrapper cache hardware prefetcher")
     parser.add_argument("--l3-hwp-type", default='WorkerPrefetcher',
                         choices=ObjectList.hwp_list.get_names(), help="L3 cache hardware prefetcher")
+    parser.add_argument("--enable-bop-cqf",
+                        "--enable-bop-direct-quality-gate",
+                        dest="enable_bop_cqf",
+                        action="store_true",
+                        default=False,
+                        help="enable CQF admission for L2 BOP candidates")
 
     # Run duration options
     parser.add_argument("-m", "--abs-max-tick", type=int, default=m5.MaxTick,
