@@ -145,6 +145,17 @@ as JSON, and exits nonzero on a mismatch or unsuccessful build. It does not
 modify records or rerun simulations. This binds recorded inputs; correctness,
 resource, coverage and official CI checks remain separate.
 
+For a finished short-screen run, add `--completed-runs` to also check the flat
+`complete.json` result list and each `<point>-<variant>/run.json` and `run.log`
+under the manifest directory. The checker requires the declared point-policy
+matrix exactly once, successful guest exits, matching completion/run records,
+the manifest's frozen binary path, and one startup `command line:` matching
+the recorded argument list. Quoted parameters are parsed as arguments. Without
+this flag, the pre-launch checks and output remain unchanged. This verifies
+recorded execution commands; it does not recover a terminated process's
+environment or replace guest correctness/resource/profile-weight audits.
+
+
 ## Validation and limits
 
 Run the targeted regression suite from the repository root:
