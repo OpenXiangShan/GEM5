@@ -233,8 +233,8 @@ class ROB
     /** Is the oldest instruction across all threads ready. */
 //    bool isHeadReady();
 
-    /** Is the oldest group of instructions across a particular thread ready. */
-    bool isHeadGroupReady(ThreadID tid);
+    /** Check the oldest group and optionally return the first commit blocker. */
+    bool isHeadGroupReady(ThreadID tid, DynInstPtr *blocker = nullptr);
 
     InstSeqNum getHeadGroupLastDoneSeq(ThreadID tid);
 

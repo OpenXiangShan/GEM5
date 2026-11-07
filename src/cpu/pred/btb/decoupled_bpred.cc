@@ -89,7 +89,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       smtFTQThreshold(p.smtFTQThreshold),
       ftq(p.numThreads, p.ftq_size),
       resolveBlockThreshold(p.resolveBlockThreshold),
-      dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum, p.numThreads)
+      dbpBtbStats(this, p.numStages, p.ftq_size, p.predictWidth, maxInstsNum, p.numThreads)
 {
     panic_if(numPredictingThreads == 0 ||
              numPredictingThreads > numThreads ||
@@ -173,10 +173,10 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
         thread.squashing = true;
     }
 
-    commitFsqEntryHasInstsVector.resize(maxInstsNum+1, 0);
-    lastPhaseFsqEntryNumCommittedInstDist.resize(maxInstsNum+1, 0);
-    commitFsqEntryFetchedInstsVector.resize(maxInstsNum+1, 0);
-    lastPhaseFsqEntryNumFetchedInstDist.resize(maxInstsNum+1, 0);
+    commitFtqEntryHasInstsVector.resize(maxInstsNum+1, 0);
+    lastPhaseFtqEntryNumCommittedInstDist.resize(maxInstsNum+1, 0);
+    commitFtqEntryFetchedInstsVector.resize(maxInstsNum+1, 0);
+    lastPhaseFtqEntryNumFetchedInstDist.resize(maxInstsNum+1, 0);
 
     registerExitCallback([this]() {
         this->dumpStats();
@@ -577,14 +577,14 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     threads[tid].numOverrideBubbles = first_hit_stage;
 }
 
-// this function enqueues fsq and update s0PC and s0History
+// This function enqueues an FTQ entry and updates s0PC and s0History.
 void
 DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
 {
 
     // Check if a prediction is available to enqueue
     if (!threads[tid].validprediction) {
-        DPRINTF(Override, "No prediction available to enqueue into FSQ\n");
+        DPRINTF(Override, "No prediction available to enqueue into FTQ\n");
         return;
     }
 
@@ -595,11 +595,11 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
         return;
     }
 
-    // Monitor FSQ size for statistics
-    dbpBtbStats.fsqEntryDist.sample(ftq.size(tid), 1);
+    // Monitor FTQ occupancy for statistics.
+    dbpBtbStats.ftqEntryDist.sample(ftq.size(tid), 1);
     if (ftqFull(tid)) {
-        dbpBtbStats.fsqFullCannotEnq++;
-        DPRINTF(Override, "FSQ is full (%lu entries)\n", ftq.size(tid));
+        dbpBtbStats.ftqFullCannotEnq++;
+        DPRINTF(Override, "FTQ is full (%lu entries)\n", ftq.size(tid));
         return;
     }
 
@@ -647,7 +647,7 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
 
     // 7. Increment statistics
     printTarget(ftq.back(tid));
-    dbpBtbStats.fsqEntryEnqueued++;
+    dbpBtbStats.ftqEntryEnqueued++;
 
 }
 
@@ -775,7 +775,7 @@ DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
             secondBlock.targetPC, secondBlock.taken);
 
     printTarget(ftq.back(tid));
-    dbpBtbStats.fsqEntryEnqueued++;
+    dbpBtbStats.ftqEntryEnqueued++;
 }
 
 void
@@ -995,7 +995,7 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
     threads[tid].s0PC = redirect_pc;
 
     DPRINTF(DecoupleBP,
-            "After squash, fsqId(next alloc)=%lu, fetchHeadFsqId=%lu, s0pc=%#lx\n",
+            "After squash, ftqId(next alloc)=%lu, fetchHeadFtqId=%lu, s0pc=%#lx\n",
             ftq.backId(tid) + 1, ftq.frontId(tid), redirect_pc);
 }
 
@@ -1145,7 +1145,7 @@ DecoupledBPUWithBTB::commit(
         }
 
         ftq.commitTarget(tid);
-        dbpBtbStats.fsqEntryCommitted++;
+        dbpBtbStats.ftqEntryCommitted++;
     }
 
     DPRINTF(DecoupleBP, "after commit target, fetchTargetQueue size: %lu\n", ftq.size(tid));

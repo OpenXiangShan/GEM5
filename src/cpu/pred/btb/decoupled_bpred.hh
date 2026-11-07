@@ -293,10 +293,9 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar overrideControlAddrMismatch;
         statistics::Scalar overrideTargetMismatch;
 
-        statistics::Distribution fsqEntryDist;
-        statistics::Scalar fsqEntryEnqueued;
-        statistics::Scalar fsqEntryCommitted;
-        // statistics::Distribution ftqEntryDist;
+        statistics::Distribution ftqEntryDist;
+        statistics::Scalar ftqEntryEnqueued;
+        statistics::Scalar ftqEntryCommitted;
         statistics::Scalar controlSquashFromDecode;
         statistics::Scalar controlSquashFromCommit;
         statistics::Scalar controlSquashFromPredecode;
@@ -304,16 +303,12 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar trapSquash;
 
         statistics::Scalar ftqNotValid;
-        statistics::Scalar fsqNotValid;
-        statistics::Scalar fsqFullCannotEnq;
         statistics::Scalar ftqFullCannotEnq;
-        statistics::Scalar fsqFullFetchHungry;
-        statistics::Scalar fsqEmpty;
-        //
-        statistics::Distribution commitFsqEntryHasInsts;
-        // write back once an fsq entry finishes fetch
-        statistics::Distribution commitFsqEntryFetchedInsts;
-        statistics::Scalar commitFsqEntryOnlyHasOneJump;
+        statistics::Distribution commitFtqInstBytes;
+        statistics::Distribution commitFtqEntryHasInsts;
+        // Write back once an FTQ entry finishes fetch.
+        statistics::Distribution commitFtqEntryFetchedInsts;
+        statistics::Scalar commitFtqEntryOnlyHasOneJump;
 
         statistics::Scalar btbHit;
         statistics::Scalar btbMiss;
@@ -341,7 +336,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar s3PredWrongRas;
 
         DBPBTBStats(statistics::Group* parent, unsigned numStages,
-                    unsigned fsqSize, unsigned maxInstsNum,
+                    unsigned ftqSize, unsigned predictWidth, unsigned maxInstsNum,
                     unsigned numThreads);
     } dbpBtbStats;
 
@@ -697,42 +692,40 @@ class DecoupledBPUWithBTB : public BPredUnit
      *
      * Vector indexed by instruction count, values are frequency.
      */
-    std::vector<int> lastPhaseFsqEntryNumCommittedInstDist;
+    std::vector<int> lastPhaseFtqEntryNumCommittedInstDist;
 
     /**
      * @brief Total committed instruction count distribution
      *
-     * Tracks how many FSQ entries have each number of committed instructions.
+     * Tracks how many FTQ entries have each number of committed instructions.
      */
-    std::vector<int> commitFsqEntryHasInstsVector;
-
+    std::vector<int> commitFtqEntryHasInstsVector;
     /**
      * @brief Committed instruction distributions by phase
      *
      * Each entry contains the distribution of committed instructions for a phase.
      */
-    std::vector<std::vector<int>> fsqEntryNumCommittedInstDistByPhase;
+    std::vector<std::vector<int>> ftqEntryNumCommittedInstDistByPhase;
 
     /**
      * @brief Distribution of fetched instructions from previous phase
      *
      * Vector indexed by instruction count, values are frequency.
      */
-    std::vector<int> lastPhaseFsqEntryNumFetchedInstDist;
+    std::vector<int> lastPhaseFtqEntryNumFetchedInstDist;
 
     /**
      * @brief Total fetched instruction count distribution
      *
-     * Tracks how many FSQ entries have each number of fetched instructions.
+     * Tracks how many FTQ entries have each number of fetched instructions.
      */
-    std::vector<int> commitFsqEntryFetchedInstsVector;
-
+    std::vector<int> commitFtqEntryFetchedInstsVector;
     /**
      * @brief Fetched instruction distributions by phase
      *
      * Each entry contains the distribution of fetched instructions for a phase.
      */
-    std::vector<std::vector<int>> fsqEntryNumFetchedInstDistByPhase;
+    std::vector<std::vector<int>> ftqEntryNumFetchedInstDistByPhase;
 
     /**
      * @brief Total branch misprediction count

@@ -72,6 +72,7 @@ CDP::CDP(const CDPParams &p)
           FilterTableEntry(p.filter_entry_region_blks)),
       filterRegionBlks(p.filter_entry_region_blks),
       filterEntryGranularityBits(ceil(log2(p.filter_entry_granularity))),
+      parentRid(requestorId),
       l3_miss_info(0, 0),
       byteOrder(p.sys->getGuestByteOrder()),
       cdpStats(this)
@@ -161,8 +162,7 @@ CDP::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addre
     int pf_depth = pfi.getXsMetadata().prefetchDepth;
     bool is_l1_prefetch =
         system->getRequestorName(pfi.getRequestorId()).find("dcache.prefetcher") != std::string::npos;
-    bool is_l2_prefetch =
-        system->getRequestorName(pfi.getRequestorId()).find("l2_caches.prefetcher") != std::string::npos;
+    bool is_l2_prefetch = pfi.getRequestorId() == parentRid;
     // demand access hits a block which is fetched by cdp previously
     bool pf_hit_cdp = !is_l1_prefetch && !is_l2_prefetch && \
                        pfi.isPfFirstHit() && (pf_source == PrefetchSourceType::CDP);

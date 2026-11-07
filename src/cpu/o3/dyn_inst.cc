@@ -45,6 +45,7 @@
 #include <cstring>
 #include <ostream>
 
+#include "arch/riscv/insts/fusion.hh"
 #include "arch/riscv/insts/mem.hh"
 #include "arch/riscv/pcstate.hh"
 #include "base/intmath.hh"
@@ -60,6 +61,39 @@ namespace gem5
 
 namespace o3
 {
+
+std::array<DynInst *, 2>
+DynInst::teaFusionMembers() const
+{
+    const auto *fusion =
+        static_cast<const RiscvISA::FusionInst *>(staticInst.get());
+    return {fusion->firstInst().get(), fusion->secondInst().get()};
+}
+
+const DynInst *
+DynInst::teaFirstMember() const
+{
+    return isFusion() ? teaFusionMembers()[0] : this;
+}
+
+void
+DynInst::teaSetEvent(TeaEvent::Event event)
+{
+    teaPsv |= TeaEvent::bit(event);
+    if (isFusion()) {
+        const bool memory_event = event == TeaEvent::ST_L1 ||
+            event == TeaEvent::ST_LLC || event == TeaEvent::ST_TLB ||
+            event == TeaEvent::FL_MO || event == TeaEvent::DR_SQ;
+        // FusionInst already owns the members; no per-DynInst references
+        // are needed for TEA.
+        for (auto *member : teaFusionMembers()) {
+            if ((!memory_event || member->isMemRef()) &&
+                (event != TeaEvent::FL_MB || member->isControl())) {
+                member->teaSetEvent(event);
+            }
+        }
+    }
+}
 
 std::ostream &
 operator<<(std::ostream &os, const branchInfo &b)

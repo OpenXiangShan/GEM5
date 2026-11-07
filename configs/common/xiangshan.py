@@ -474,6 +474,8 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
         cpu.mlpMissPatternTableSize = args.mlp_miss_pattern_table_size
         cpu.mlpDistanceTableSize = args.mlp_distance_table_size
         cpu.mlpLongLatencyCacheDepth = args.mlp_long_latency_cache_depth
+        cpu.enableTea = args.enable_tea
+        cpu.teaSamplePeriod = args.tea_sample_period
         cpu.mmu.pma_checker = PMAChecker(
             uncacheable=[AddrRange(0, size=0x80000000)])
         cpu.mmu.functional = args.functional_tlb
@@ -658,6 +660,9 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
 
         if args.xiangshan_ecore and args.no_l3cache:
             args.l2_size = '4MB'
+
+        for cpu in test_sys.cpu:
+            cpu.teaLastLevelCache = 3 if args.l3cache else 2
 
         CacheConfig.config_cache(args, test_sys)
 
@@ -973,37 +978,55 @@ def xiangshan_system_init():
     parser.add_argument(
         "--smt-rob-donor-entry",
         type=int,
-        default=8,
+        default=64,
         help="Minimum ROB entries reserved for a borrowing donor to resume",
     )
     parser.add_argument(
         "--smt-rob-base-entry",
         type=int,
-        default=80,
+        default=72,
         help="Minimum ROB entries reserved for a borrowing base to resume",
+    )
+    parser.add_argument(
+        "--smt-rob-donor-hold-cycles",
+        type=int,
+        default=8,
+        help="Cycles to keep an SMT thread marked as a ROB borrowing donor",
+    )
+    parser.add_argument(
+        "--lq-total-entry",
+        type=int,
+        default=120,
+        help="Number of load queue entries",
+    )
+    parser.add_argument(
+        "--sq-total-entry",
+        type=int,
+        default=64,
+        help="Number of store queue entries",
     )
     parser.add_argument(
         "--smt-lq-donor-entry",
         type=int,
-        default=60,
+        default=48,
         help="Minimum LQ entries reserved for a borrowing donor thread to resume",
     )
     parser.add_argument(
         "--smt-lq-base-entry",
         type=int,
-        default=60,
+        default=54,
         help="Minimum LQ entries reserved for a borrowing base thread to resume",
     )
     parser.add_argument(
         "--smt-sq-donor-entry",
         type=int,
-        default=32,
+        default=26,
         help="Minimum SQ entries reserved for a borrowing donor thread to resume",
     )
     parser.add_argument(
         "--smt-sq-base-entry",
         type=int,
-        default=32,
+        default=29,
         help="Minimum SQ entries reserved for a borrowing base thread to resume",
     )
     parser.add_argument(
@@ -1015,11 +1038,11 @@ def xiangshan_system_init():
     parser.add_argument(
         "--smt-sq-donor-hold-cycles",
         type=int,
-        default=1,
+        default=8,
         help="Cycles to keep an SMT thread marked as an SQ borrowing donor",
     )
     parser.add_argument(
-        "--lsq-borrow-donor-skip-rename-gate",
+        "--lsq-borrow-donor-enable-rename-gate",
         action="store_true",
         default=False,
         help="Force has_buffered_rename to false in LSQ borrowing donor gating (evaluation only)",
@@ -1035,6 +1058,24 @@ def xiangshan_system_init():
         action="store_true",
         default=False,
         help="Disable direction TAGE sources in kmhv3 and force MGSC standalone SC prediction",
+    )
+    parser.add_argument(
+        "--enable-tea",
+        action="store_true",
+        default=True,
+        help="Enable O3 Timing Event Attribution sampling (default)",
+    )
+    parser.add_argument(
+        "--disable-tea",
+        dest="enable_tea",
+        action="store_false",
+        help="Disable O3 Timing Event Attribution sampling",
+    )
+    parser.add_argument(
+        "--tea-sample-period",
+        type=int,
+        default=1,
+        help="TEA sample period in CPU cycles; zero samples every cycle",
     )
 
     parser.add_argument(
@@ -1165,6 +1206,12 @@ def xiangshan_system_init():
     if '--ruby' in sys.argv:
         Ruby.define_options(parser)
     args = parser.parse_args()
+
+    if args.enable_tea and args.ruby:
+        parser.error("--enable-tea is not supported with --ruby. "
+                     "Ruby memory system does not populate cacheAccessDepth "
+                     "required for TEA cache event attribution; "
+                     "use --disable-tea with --ruby.")
 
     # Validate MLP-aware policy combinations before CPU construction:
     # MlpAwarePolicy needs its predictor and a non-BaseLine fetch block

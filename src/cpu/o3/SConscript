@@ -66,6 +66,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('fp_wakeup.cc')
     Source('fp_wakeup_scheduler.cc')
     Source('perfCCT.cc')
+    Source('tea.cc')
 
 
     # Trace reader sources for trace-driven simulation

@@ -279,8 +279,6 @@ Decode::DecodeStats::DecodeStats(CPU *cpu, const BaseO3CPUParams &params,
     for (unsigned i = 0; i < static_cast<unsigned>(CompactionStop::NumReasons); ++i)
         compactionStopReasons.subname(i, stop_names[i]);
 
-    // Get decodeWidth using helper function to work around protected member access
-    
     idleCycles.prereq(idleCycles);
     blockedCycles.prereq(blockedCycles);
     runCycles.prereq(runCycles);
@@ -1564,6 +1562,10 @@ Decode::applyFusion(const DynInstPtr &first_inst,
     // Create a new DynInst from the instruction fetched.
     DynInstPtr instruction = new (arrays) DynInst(
             arrays, fused_inst, fused_inst, thispc, predPC, inst_pair[0]->seqNum, cpu);
+
+    if (cpu->getTea()) {
+        instruction->teaPsv = inst_pair[0]->teaPSV() | inst_pair[1]->teaPSV();
+    }
 
     DynInstPtr representative = nullptr;
     bool representativeLL = false;

@@ -46,6 +46,7 @@
 #include <cstring>
 #include <deque>
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include "arch/generic/decoder.hh"
@@ -133,18 +134,19 @@ class Fetch
     {
       protected:
         Fetch *fetch;
+        bool delayed = false;
 
       public:
         FetchTranslation(Fetch *_fetch) : fetch(_fetch) {}
 
-        void markDelayed() {}
+        void markDelayed() override { delayed = true; }
 
         void
         finish(const Fault &fault, const RequestPtr &req,
-            gem5::ThreadContext *tc, BaseMMU::Mode mode)
+            gem5::ThreadContext *tc, BaseMMU::Mode mode) override
         {
             assert(mode == BaseMMU::Execute);
-            fetch->finishTranslation(fault, req);
+            fetch->finishTranslation(fault, req, delayed);
             delete this;
         }
     };
@@ -489,7 +491,8 @@ class Fetch
     Addr pendingTraceInstructionPc[MaxThreads]{};
     bool pendingTraceSupplyValid[MaxThreads]{};
 
-    void finishTranslation(const Fault &fault, const RequestPtr &mem_req);
+    void finishTranslation(const Fault &fault, const RequestPtr &mem_req,
+                           bool delayed = false);
 
     /** Validate if a translation request is expected and should be processed.
      * @param tid Thread ID
@@ -761,6 +764,8 @@ class Fetch
     /** FIFO storing resolve entries waiting for BPU training. */
     std::deque<ResolveQueueEntry> resolveQueue;
 
+    std::array<std::optional<InstSeqNum>, MaxThreads> resolveSquashCutoff{};
+
     /** Trace-mode implementation owner (optional, enabled by params). */
     std::unique_ptr<TraceFetch> traceFetch;
 
@@ -856,6 +861,8 @@ class Fetch
 
         /** Number of completed packets received */
         unsigned completedPackets;
+        /** Pending events for the two demand cache-line requests. */
+        std::array<uint16_t, 2> teaPsv{};
 
         /** Constructor */
         CacheRequest() : baseAddr(0), totalSize(0), completedPackets(0) {}
@@ -908,6 +915,7 @@ class Fetch
             baseAddr = 0;
             totalSize = 0;
             completedPackets = 0;
+            teaPsv.fill(0);
         }
 
         /** Add a new request */
@@ -915,6 +923,21 @@ class Fetch
             requests.push_back(req);
             packets.push_back(nullptr);  // Initialize with null packet
             requestStatus.push_back(CacheIdle);  // Initialize status
+        }
+
+        /** Consume events only from requests supplying instruction bytes. */
+        uint16_t takeTeaEvents(Addr pc, unsigned size)
+        {
+            uint16_t psv = 0;
+            for (size_t i = 0; i < requests.size(); ++i) {
+                const auto &req = requests[i];
+                if (pc < req->getVaddr() + req->getSize() &&
+                    req->getVaddr() < pc + size) {
+                    psv |= teaPsv[i];
+                    teaPsv[i] = 0;
+                }
+            }
+            return psv;
         }
 
         /** Mark a specific request as failed (NEW) */

@@ -45,6 +45,7 @@
 
 #include "base/logging.hh"
 #include "cpu/o3/commit.hh"
+#include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
 #include "debug/Fetch.hh"
@@ -553,6 +554,9 @@ ROB::insertInstWithGroup(const DynInstPtr &inst, bool new_group)
     tail--;
 
     inst->setInROB();
+    if (auto *tea = cpu->getTea()) {
+        tea->allocate(inst);
+    }
 
     ++numInstsInROB;
 
@@ -633,9 +637,12 @@ ROB::drainSquashedHead(ThreadID tid)
 }
 
 bool
-ROB::isHeadGroupReady(ThreadID tid)
+ROB::isHeadGroupReady(ThreadID tid, DynInstPtr *blocker)
 {
     stats.reads++;
+    if (blocker) {
+        *blocker = nullptr;
+    }
 
     if (headGroupSize(tid) != 0) {
         auto it = instList[tid].begin();
@@ -645,6 +652,11 @@ ROB::isHeadGroupReady(ThreadID tid)
             if (!inst->readyToCommit()) {
                 if (i > 0 && inst->isSerializeBefore()) {
                     return true;
+                }
+                // This is the first observed failing predicate, not
+                // necessarily the only unfinished member of the group.
+                if (blocker) {
+                    *blocker = inst;
                 }
                 return false;
             }
@@ -749,6 +761,9 @@ ROB::doSquash(ThreadID tid)
         // Mark the instruction as squashed, and ready to commit so that
         // it can drain out of the pipeline.
         (*squashIt[tid])->setSquashed();
+        if (auto *tea = cpu->getTea()) {
+            tea->squash(*squashIt[tid]);
+        }
 
         (*squashIt[tid])->setCanCommit();
 
