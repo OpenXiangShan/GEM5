@@ -541,7 +541,7 @@ InstructionQueue::getInstToExecute()
     auto pending = std::move(instsToExecute.front());
     instsToExecute.pop_front();
     DynInstPtr inst = std::move(pending.inst);
-    if (scheduler->fmaRtlAlignmentEnabled() &&
+    if (scheduler->fpSpecWakeupEnabled() &&
         !scheduler->fpAttemptCurrent(inst, pending.attempt)) {
         DPRINTF(Schedule, "FPA discard-execute tid=%u seq=%llu attempt=%llu current=%llu\n",
             inst->threadNumber, inst->seqNum, pending.attempt, inst->fpWakeAttempt);
@@ -568,11 +568,11 @@ InstructionQueue::processFUCompletion(const DynInstPtr &inst, int fu_idx,
     // Each event owns exactly one outstanding charge, including stale events.
     assert(wbOutstanding > 0);
     --wbOutstanding;
-    if (scheduler->fmaRtlAlignmentEnabled())
+    if (scheduler->fpSpecWakeupEnabled())
         DPRINTF(Schedule, "FPA settle tid=%u seq=%llu attempt=%llu outstanding=%d\n",
             inst->threadNumber, inst->seqNum, attempt, wbOutstanding);
     iewStage->wakeCPU();
-    if (scheduler->fmaRtlAlignmentEnabled() &&
+    if (scheduler->fpSpecWakeupEnabled() &&
         !scheduler->fpAttemptCurrent(inst, attempt)) {
         DPRINTF(Schedule, "FPA discard-complete tid=%u seq=%llu attempt=%llu current=%llu\n",
             inst->threadNumber, inst->seqNum, attempt, inst->fpWakeAttempt);
@@ -703,10 +703,10 @@ InstructionQueue::scheduleReadyInsts()
             iqIOStats.intAluAccesses++;
         }
 
-        if (scheduler->fmaRtlAlignmentEnabled()) {
+        if (scheduler->fpSpecWakeupEnabled()) {
             scheduler->fpAtFU(issued_inst);
         }
-        const bool defer_fp_read = scheduler->fmaRtlAlignmentEnabled() &&
+        const bool defer_fp_read = scheduler->fpSpecWakeupEnabled() &&
             scheduler->fpNeedsDeferredRead(issued_inst);
         uint32_t op_latency = defer_fp_read ? 0 :
             scheduler->getOpLatency(issued_inst);

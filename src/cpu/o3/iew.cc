@@ -2193,7 +2193,7 @@ IEW::executeInsts()
             // If we execute the instruction (even if it's a nop) the fault
             // will be replaced and we will lose it.
             if (inst->getFault() == NoFault) {
-                if (scheduler->fmaRtlAlignmentEnabled() &&
+                if (scheduler->fpSpecWakeupEnabled() &&
                     !scheduler->fpExecutionReady(inst)) {
                     continue;
                 }
@@ -2201,7 +2201,7 @@ IEW::executeInsts()
                 if (!inst->readPredicate())
                     inst->forwardOldRegs();
             }
-            if (scheduler->fmaRtlAlignmentEnabled()) {
+            if (scheduler->fpSpecWakeupEnabled()) {
                 scheduler->fpComplete(inst);
             }
 
@@ -2444,7 +2444,7 @@ IEW::tick()
 
         executeInsts();
 
-        if (scheduler->fmaRtlAlignmentEnabled()) {
+        if (scheduler->fpSpecWakeupEnabled()) {
             scheduler->fpCheckDeadlines();
             instQueue.finishFpDeferredReads();
         }

@@ -410,7 +410,7 @@ class Scheduler : public SimObject
     };
     std::vector<FpPendingInst> instsToFu;
 
-    const bool enableFmaRtlAlignment;
+    const bool enableFpSpecWakeup;
     FpWakeupState fpWakeState;
     struct FpRecord
     {
@@ -497,7 +497,7 @@ class Scheduler : public SimObject
   public:
     PendingWakeEventsType specWakeEvents;
 
-    bool fmaRtlAlignmentEnabled() const { return enableFmaRtlAlignment; }
+    bool fpSpecWakeupEnabled() const { return enableFpSpecWakeup; }
     bool fpAttemptCurrent(const DynInstPtr& inst, uint64_t attempt) const;
     void fpAtFU(const DynInstPtr& inst);
     bool fpNeedsDeferredRead(const DynInstPtr& inst) const;

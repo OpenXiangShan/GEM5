@@ -552,7 +552,7 @@ IssueQue::addToFu(const DynInstPtr& inst)
     if (inst->isIssued()) [[unlikely]] {
         panic("%s [sn:%llu] has alreayd been issued\n", enums::OpClassStrings[inst->opClass()], inst->seqNum);
     }
-    if (scheduler->enableFmaRtlAlignment && scheduler->fpRecords.count(inst->seqNum))
+    if (scheduler->enableFpSpecWakeup && scheduler->fpRecords.count(inst->seqNum))
         DPRINTF(Schedule, "FPA release tid=%u seq=%llu attempt=%llu\n",
             inst->threadNumber, inst->seqNum, inst->fpWakeAttempt);
     inst->setIssued();
@@ -952,7 +952,7 @@ IssueQue::issueToFu()
             (inst->isLoad() && (issuedLoad >= numLoadPipe)) ||
             (inst->isStore() && (issuedStore >= numStorePipe)) || blockLoad;
         if (issueOccupied) {
-            if (scheduler->enableFmaRtlAlignment &&
+            if (scheduler->enableFpSpecWakeup &&
                 scheduler->fpRecords.count(inst->seqNum)) {
                 scheduler->fpCancel(inst);
                 addIfReady(inst);
@@ -1085,7 +1085,7 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
             int srcIdx = it.first;
             auto& consumer = it.second;
             if(consumer->threadNumber == inst->threadNumber){
-                if (speculative && scheduler->enableFmaRtlAlignment &&
+                if (speculative && scheduler->enableFpSpecWakeup &&
                     scheduler->fpProducer(inst) && scheduler->fpConsumer(consumer, srcIdx))
                     continue;
                 if (consumer->readySrcIdx(srcIdx)) {
@@ -1286,7 +1286,7 @@ IssueQue::selectInst()
                 break;
             } else {
                 iqstats->portBusy[pi]++;
-                if (scheduler->enableFmaRtlAlignment && scheduler->fpProducer(inst))
+                if (scheduler->enableFpSpecWakeup && scheduler->fpProducer(inst))
                     scheduler->stats.fpOutputConflicts++;
             }
 
@@ -1302,7 +1302,7 @@ IssueQue::scheduleInst()
     for (auto& info : selectQ) {
         auto& pi = info.first;  // issue port id
         auto& inst = info.second;
-        if (scheduler->enableFmaRtlAlignment &&
+        if (scheduler->enableFpSpecWakeup &&
             info.attempt != inst->fpWakeAttempt) {
             inst->clearArbFailed();
             continue;
@@ -1659,7 +1659,7 @@ Scheduler::disp_policy::operator()(IssueQue* a, IssueQue* b) const
 Scheduler::Scheduler(const SchedulerParams& params)
     : SimObject(params), old_disp(params.useOldDisp),
       intRegfileBanks(params.intRegfileBanks), stats(this), issueQues(params.IQs),
-      enableFmaRtlAlignment(params.enableFmaRtlAlignment)
+      enableFpSpecWakeup(params.enableFpSpecWakeup)
 {
     dispTable.resize(MaxThreads, std::vector<IQGroup>(enums::OpClass::Num_OpClass));
     opExecTimeTable.resize(enums::OpClass::Num_OpClass, 1);
@@ -1923,22 +1923,20 @@ Scheduler::setCPU(CPU* cpu, LSQ* lsq)
                  cpuParams.numPhysIntRegs / intRegfileBanks);
         spmtIntRegsPerThread = cpuParams.numPhysIntRegs / 2;
     }
-    panic_if(enableFmaRtlAlignment && (enableSpMT || cpu->numThreads != 1),
-             "FMA RTL alignment requires a single non-SpMT thread");
-    panic_if(enableFmaRtlAlignment &&
-                 (opExecTimeTable[FloatMultOp] != 4 ||
+    panic_if(enableFpSpecWakeup &&
+                 (opExecTimeTable[FloatMultOp] != 3 ||
                   opExecTimeTable[FloatMultAccOp] != 4 ||
                   !opPipelined[FloatMultOp] || !opPipelined[FloatMultAccOp]),
-             "FMA RTL alignment requires a four-cycle pipelined FMUL/FMA "
-             "baseline configuration");
+             "FP speculative wakeup requires three-cycle pipelined FMUL and "
+             "four-cycle pipelined FMA");
     for (auto it : issueQues) {
-        panic_if(enableFmaRtlAlignment && it->getIssueStages() != 2 &&
+        panic_if(enableFpSpecWakeup && it->getIssueStages() != 2 &&
                      (it->readyQclassify[FloatMultOp] || it->readyQclassify[FloatMultAccOp] ||
                       it->readyQclassify[FloatAddOp] || it->readyQclassify[FloatDivOp] ||
                       it->readyQclassify[FloatCmpOp] || it->readyQclassify[FloatCvtOp] ||
                       it->readyQclassify[FloatMvOp] || it->readyQclassify[FloatMiscOp] ||
                       it->readyQclassify[FloatSqrtOp]),
-                 "FMA RTL alignment requires two issue stages");
+                 "FP speculative wakeup requires two issue stages");
         it->setCPU(cpu);
         it->selector->setparent(this, it);
     }
@@ -2141,7 +2139,7 @@ Scheduler::getInstByDstReg(RegIndex flatIdx, ThreadID tid,
 void
 Scheduler::addProducer(const DynInstPtr& inst)
 {
-    if (enableFmaRtlAlignment) {
+    if (enableFpSpecWakeup) {
         for (int i = 0; i < inst->numDestRegs(); ++i) {
             auto reg = inst->renamedDestIdx(i);
             auto it = fpRegisters.find(reg->flatIndex());
@@ -2558,10 +2556,6 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
 uint32_t
 Scheduler::getOpLatency(const DynInstPtr& inst)
 {
-    if (enableFmaRtlAlignment && !inst->isVector() &&
-        inst->opClass() == FloatMultOp) {
-        return 3;
-    }
     if (inst->opClass() == FloatDivOp) [[unlikely]] {
         const auto* format = fdivFormat(inst->staticInst->operWid());
         if (format) {
@@ -2631,7 +2625,7 @@ Scheduler::isDrained()
             return false;
         }
     }
-    if (!enableFmaRtlAlignment) {
+    if (!enableFpSpecWakeup) {
         return true;
     }
     if (!fpRecords.empty()) {
