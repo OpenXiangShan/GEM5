@@ -145,9 +145,12 @@ as JSON, and exits nonzero on a mismatch or unsuccessful build. It does not
 modify records or rerun simulations. This binds recorded inputs; correctness,
 resource, coverage and official CI checks remain separate.
 
-For a finished short-screen run, add `--completed-runs` to also check the flat
-`complete.json` result list and each `<point>-<variant>/run.json` and `run.log`
-under the manifest directory. The checker requires the declared point-policy
+For a finished run, add `--completed-runs` to also check `complete.json`
+and each `<point>-<variant>/run.json` and `run.log` under the manifest directory.
+Short-screen results use a flat record list. Formal manifests declaring
+`new_long_control_points` and `new_long_control_variants` use one record group
+per point; the expected matrix also includes those additional controls.
+The checker requires the declared point-policy
 matrix exactly once, successful guest exits, matching completion/run records,
 the manifest's frozen binary path, and one startup `command line:` matching
 the recorded argument list. Quoted parameters are parsed as arguments. Without
