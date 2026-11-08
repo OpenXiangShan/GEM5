@@ -147,6 +147,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       lastTagAccessCheckCycle(0),
       lastMSHRAllocCycle(0),
       mshrAllocPerCycle(p.mshr_alloc_per_cycle),
+      demandMshrsBeforePrefetches(p.demand_mshrs_before_prefetches),
       demandReadsBeforeEvictions(p.demand_reads_before_evictions),
       compressor(p.compressor),
       prefetcher(p.prefetcher),
@@ -1518,6 +1519,17 @@ BaseCache::getNextQueueEntry()
     // note that null does not mean there is no request, it could
     // simply be that it is not ready
     MSHR *miss_mshr  = mshrQueue.getNext();
+    bool demand_chosen = false;
+    if (miss_mshr && miss_mshr->hasFromPref() && !miss_mshr->hasFromCPU()) {
+        if (MSHR *demand = mshrQueue.getReadyDemand()) {
+            stats.demandMshrBeforePrefetchEligible++;
+            if (demandMshrsBeforePrefetches) {
+                miss_mshr = demand;
+                demand_chosen = true;
+                stats.demandMshrBeforePrefetchChosen++;
+            }
+        }
+    }
     WriteQueueEntry *wq_entry = writeBuffer.getNext();
 
     const bool read_before_eviction = miss_mshr && wq_entry &&
@@ -1535,6 +1547,7 @@ BaseCache::getNextQueueEntry()
             return conflict;
         }
         stats.demandReadEvictSelected++;
+        stats.demandMshrBeforePrefetchReturned += demand_chosen;
         return miss_mshr;
     }
 
@@ -1575,6 +1588,7 @@ BaseCache::getNextQueueEntry()
         }
 
         // No conflicts; issue read
+        stats.demandMshrBeforePrefetchReturned += demand_chosen;
         return miss_mshr;
     }
 
@@ -3151,6 +3165,12 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "average number of cycles each access was blocked"),
     ADD_STAT(writebacks, statistics::units::Count::get(),
              "number of writebacks"),
+    ADD_STAT(demandMshrBeforePrefetchEligible, statistics::units::Count::get(),
+             "Arbiter calls with a ready pure-prefetch head and ready demand"),
+    ADD_STAT(demandMshrBeforePrefetchChosen, statistics::units::Count::get(),
+             "Eligible arbiter calls choosing the ready demand candidate"),
+    ADD_STAT(demandMshrBeforePrefetchReturned, statistics::units::Count::get(),
+             "Arbiter calls returning that demand after original WB checks"),
     ADD_STAT(demandReadEvictEligible, statistics::units::Count::get(),
              "Arbiter calls with demand read, ordinary eviction and WB room"),
     ADD_STAT(demandReadEvictSelected, statistics::units::Count::get(),

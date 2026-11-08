@@ -90,6 +90,17 @@ class MSHRQueue : public Queue<MSHR>
     MSHRQueue(const std::string &_label, int num_entries, int reserve,
               int demand_reserve, std::string cache_name);
 
+    /** First ready demand in the existing pending-list order. */
+    MSHR *getReadyDemand() const
+    {
+        for (MSHR *mshr : readyList) {
+            if (mshr->readyTime <= curTick() && mshr->hasFromCPU()) {
+                return mshr;
+            }
+        }
+        return nullptr;
+    }
+
     /**
      * Allocates a new MSHR for the request and size. This places the request
      * as the first target in the MSHR.

@@ -101,6 +101,8 @@ class BaseCache(ClockedObject):
     hit_under_block = Param.Bool(False,
         "Serve clean read hits while cache is blocked (MSHR-exhausted / "
         "downstream backpressure); misses still NAK+retry.")
+    demand_mshrs_before_prefetches = Param.Bool(
+        False, "Select ready demand MSHRs before a pure prefetch queue head")
     demand_reads_before_evictions = Param.Bool(
         False, "Prefer demand reads to evictions while write-buffer space remains")
     write_buffers = Param.Unsigned(8, "Number of write buffers")
