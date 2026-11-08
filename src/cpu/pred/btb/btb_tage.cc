@@ -121,6 +121,7 @@ tableTagBits(p.TTagBitSizes),
 tablePcShifts(p.TTagPcShifts),
 histLengths(p.histLengths),
 usePathHistory(p.usePathHistory),
+confidenceFromSelectedTaggedProvider(p.confidenceFromSelectedTaggedProvider),
 maxHistLen(p.maxHistLen),
 numWays(p.numWays),
 maxBranchPositions(p.maxBranchPositions),
@@ -438,17 +439,32 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
             results.push_back({btb_entry.pc, pred.taken});
             tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;
             tageInfoForMgscs[btb_entry.pc].tage_main_taken = pred.mainInfo.found ? pred.mainInfo.taken() : false;
-            tageInfoForMgscs[btb_entry.pc].tage_pred_conf_high = pred.mainInfo.found &&
-                                         abs(pred.mainInfo.entry.counter*2 + 1) == 7; // counter saturated, -4 or 3
-            tageInfoForMgscs[btb_entry.pc].tage_pred_conf_mid = pred.mainInfo.found &&
-                                         (abs(pred.mainInfo.entry.counter*2 + 1) < 7 &&
-                                         abs(pred.mainInfo.entry.counter*2 + 1) > 1); // counter not saturated, -3, -2, 1, 2
-            tageInfoForMgscs[btb_entry.pc].tage_pred_conf_low = !pred.mainInfo.found ||
-                                         (abs(pred.mainInfo.entry.counter*2 + 1) <= 1); // counter initialized, -1 or 0
+            setScConfidence(tageInfoForMgscs[btb_entry.pc], pred);
             // main predict is different from alt predict/base predict
             tageInfoForMgscs[btb_entry.pc].tage_pred_alt_diff = pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
         }
     }
+}
+
+void
+BTBTAGE::setScConfidence(TageInfoForMGSC &info, const TagePrediction &pred)
+{
+    const bool selected_alt = pred.useAlt && pred.altInfo.found;
+    const int main_strength = pred.mainInfo.found ?
+        abs(pred.mainInfo.entry.counter * 2 + 1) : 0;
+    const int alt_strength = selected_alt ?
+        abs(pred.altInfo.entry.counter * 2 + 1) : main_strength;
+    const bool eligible = selected_alt &&
+        ((main_strength == 7) != (alt_strength == 7) ||
+         (main_strength <= 1) != (alt_strength <= 1));
+    tageStats.predSelectedAltConfidenceEligible += eligible;
+    tageStats.predSelectedAltConfidenceApplied +=
+        eligible && confidenceFromSelectedTaggedProvider;
+    const int strength = confidenceFromSelectedTaggedProvider && selected_alt ?
+        alt_strength : main_strength;
+    info.tage_pred_conf_high = strength == 7;
+    info.tage_pred_conf_mid = strength > 1 && strength < 7;
+    info.tage_pred_conf_low = strength <= 1;
 }
 
 void
@@ -560,13 +576,7 @@ BTBTAGE::refreshPredictionMeta(Addr startPC,
         tage_info.tage_pred_taken = tage_pred.taken;
         tage_info.tage_main_taken =
             tage_pred.mainInfo.found ? tage_pred.mainInfo.taken() : false;
-        tage_info.tage_pred_conf_high = tage_pred.mainInfo.found &&
-            abs(tage_pred.mainInfo.entry.counter * 2 + 1) == 7;
-        tage_info.tage_pred_conf_mid = tage_pred.mainInfo.found &&
-            (abs(tage_pred.mainInfo.entry.counter * 2 + 1) < 7 &&
-             abs(tage_pred.mainInfo.entry.counter * 2 + 1) > 1);
-        tage_info.tage_pred_conf_low = !tage_pred.mainInfo.found ||
-            (abs(tage_pred.mainInfo.entry.counter * 2 + 1) <= 1);
+        setScConfidence(tage_info, tage_pred);
         tage_info.tage_pred_alt_diff = tage_pred.mainInfo.found &&
             tage_pred.mainInfo.taken() != tage_pred.altPred;
     }
@@ -1346,6 +1356,10 @@ BTBTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, ThreadID tid,
 // Constructor for TAGE statistics
 BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int numBanks):
     statistics::Group(parent),
+    ADD_STAT(predSelectedAltConfidenceEligible, statistics::units::Count::get(),
+        "SC confidence queries where selected tagged alternate changes category"),
+    ADD_STAT(predSelectedAltConfidenceApplied, statistics::units::Count::get(),
+        "Eligible queries classified using the selected tagged alternate"),
     ADD_STAT(predNoHitUseBim, statistics::units::Count::get(), "use bimodal when no hit on prediction"),
     ADD_STAT(predUseAlt, statistics::units::Count::get(), "use alt on prediction"),
     ADD_STAT(updateNoHitUseBim, statistics::units::Count::get(), "use bimodal when no hit on update"),

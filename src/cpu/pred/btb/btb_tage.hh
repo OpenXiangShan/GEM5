@@ -198,6 +198,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
   protected:
 #endif
 
+    void setScConfidence(TageInfoForMGSC &info, const TagePrediction &pred);
+
     // Look up predictions in TAGE tables for a stream of instructions
     void lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
                     std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
@@ -262,6 +264,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     std::vector<unsigned> histLengths;
 
     const bool usePathHistory;
+    const bool confidenceFromSelectedTaggedProvider{false};
 
     struct ThreadHistoryState
     {
@@ -363,6 +366,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
     struct TageStats : public statistics::Group
     {
 #endif
+        Scalar predSelectedAltConfidenceEligible;
+        Scalar predSelectedAltConfidenceApplied;
         Scalar predNoHitUseBim;
         Scalar predUseAlt;
         Scalar updateNoHitUseBim;

@@ -1051,6 +1051,8 @@ class BTBTAGE(TimedBaseBTBPredictor):
     cxx_header = "cpu/pred/btb/btb_tage.hh"
 
     usePathHistory = Param.Bool(True, "Use PHR-based folded history; false selects GHR-based folded history")
+    confidenceFromSelectedTaggedProvider = Param.Bool(
+        False, "Classify SC confidence from the selected tagged provider")
     enableSC = Param.Bool(False, "Enable SC or not")    # TODO: BTBTAGE doesn't support SC
     updateOnRead = Param.Bool(False, "Enable update on read, no need to save tage meta in FTQ")
     numPredictors = Param.Unsigned(8, "Number of TAGE predictors")
