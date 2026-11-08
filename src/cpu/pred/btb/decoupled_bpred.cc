@@ -71,6 +71,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       predictWidth(p.predictWidth),
       maxInstsNum(p.predictWidth / 2),
       historyBits(p.maxHistLen),
+      foldHalfwordTargetIntoPathHash(p.foldHalfwordTargetIntoPathHash),
       ubtb(p.ubtb),
       abtb(p.abtb),
       mbtb(p.mbtb),
@@ -1252,6 +1253,20 @@ DecoupledBPUWithBTB::histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> 
     history[0] = taken;
 }
 
+PathHistoryUpdate
+DecoupledBPUWithBTB::preparePathHistoryHashInput(PathHistoryUpdate update)
+{
+    const bool eligible = update.taken && (update.target & 2);
+    dbpBtbStats.pathHalfwordTargetEligible += eligible;
+    if (foldHalfwordTargetIntoPathHash && eligible) {
+        // Encode target[1] in the existing PC hash input, adding hash bit 4.
+        // Architectural branch and fetch addresses remain in BranchInfo.
+        update.pc ^= 2;
+        dbpBtbStats.pathHalfwordTargetApplied++;
+    }
+    return update;
+}
+
 void
 DecoupledBPUWithBTB::pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history, Addr pc, Addr target)
 {
@@ -1418,7 +1433,8 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry,
 
     const auto ghist_update = pred.getGHistUpdate();
     const auto bwhist_update = pred.getBwHistUpdate();
-    const auto phist_update = pred.getPHistUpdate();
+    const auto phist_update =
+        preparePathHistoryHashInput(pred.getPHistUpdate());
 
     // RAS updates its speculative stack, not folded history.
     if (ras->isEnabled()) {
@@ -1491,11 +1507,12 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     FetchTargetId targetId,
     const DirectionHistoryUpdate &ghistUpdate,
     const DirectionHistoryUpdate &bwhistUpdate,
-    const PathHistoryUpdate &phistUpdate,
+    const PathHistoryUpdate &rawPhistUpdate,
     const BranchInfo &recoveryBranch,
     bool actuallyTaken,
     SquashType squashType)
 {
+    const auto phistUpdate = preparePathHistoryHashInput(rawPhistUpdate);
     ThreadID tid = context.tid;
     auto& s0History = threads[tid].s0History;
     auto& s0PHistory = threads[tid].s0PHistory;

@@ -82,6 +82,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     unsigned maxInstsNum;
 
     const unsigned historyBits{488}; // will be overridden later by the constructor
+    const bool foldHalfwordTargetIntoPathHash;
 
     const Addr MaxAddr{~(0ULL)};
 
@@ -191,6 +192,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     // TODO: compare phr and ghr
     void histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history);
 
+    PathHistoryUpdate preparePathHistoryHashInput(PathHistoryUpdate update);
+
     void pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history, Addr pc, Addr target);
 
     void printTarget(const FetchTarget &e)
@@ -261,6 +264,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     struct DBPBTBStats : public statistics::Group {
         // Branch type statistics
         statistics::Scalar condNum;      ///< Number of conditional branches
+        statistics::Scalar pathHalfwordTargetEligible;
+        statistics::Scalar pathHalfwordTargetApplied;
         statistics::Scalar uncondNum;    ///< Number of unconditional branches
         statistics::Scalar returnNum;    ///< Number of return instructions
         statistics::Scalar otherNum;     ///< Number of other control instructions

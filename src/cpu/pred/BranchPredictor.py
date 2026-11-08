@@ -1215,6 +1215,9 @@ class DecoupledBPUWithBTB(BranchPredictor):
     cxx_class = 'gem5::branch_prediction::btb_pred::DecoupledBPUWithBTB'
     cxx_header = "cpu/pred/btb/decoupled_bpred.hh"
 
+    foldHalfwordTargetIntoPathHash = Param.Bool(
+        False, "Mix target halfword bit into the existing path history hash")
+
     # n = 2
     ftq_size = Param.Unsigned(128, "Fetch target queue size")
     smtFTQMode = Param.SMTFTQMode('Independent',

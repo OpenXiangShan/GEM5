@@ -455,6 +455,10 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     unsigned maxInstsNum, unsigned numThreads):
     statistics::Group(parent),
     ADD_STAT(condNum, statistics::units::Count::get(), "the number of cond branches"),
+    ADD_STAT(pathHalfwordTargetEligible, statistics::units::Count::get(),
+             "Taken path-hash descriptors with target halfword bit set"),
+    ADD_STAT(pathHalfwordTargetApplied, statistics::units::Count::get(),
+             "Descriptors encoding target halfword in existing hash input"),
     ADD_STAT(uncondNum, statistics::units::Count::get(), "the number of uncond branches"),
     ADD_STAT(returnNum, statistics::units::Count::get(), "the number of return branches"),
     ADD_STAT(otherNum, statistics::units::Count::get(), "the number of other branches"),
