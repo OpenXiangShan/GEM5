@@ -101,6 +101,19 @@ class MSHRQueue : public Queue<MSHR>
         return nullptr;
     }
 
+    /** Earliest logical order among ready demands; list order breaks ties. */
+    MSHR *getReadyDemandByOrder() const
+    {
+        MSHR *best = nullptr;
+        for (MSHR *mshr : readyList) {
+            if (mshr->readyTime <= curTick() && mshr->hasFromCPU() &&
+                (!best || mshr->order < best->order)) {
+                best = mshr;
+            }
+        }
+        return best;
+    }
+
     /**
      * Allocates a new MSHR for the request and size. This places the request
      * as the first target in the MSHR.
