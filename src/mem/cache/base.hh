@@ -421,6 +421,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
      */
     const int mshrAllocPerCycle;
     const bool demandMshrsBeforePrefetches;
+    const bool demandMshrsMoreTargetsFirst;
     const bool demandReadsBeforeEvictions;
 
     /** Compression method being used. */
@@ -1255,6 +1256,9 @@ class BaseCache : public ClockedObject, public CacheAccessor
         statistics::Scalar demandMshrBeforePrefetchEligible;
         statistics::Scalar demandMshrBeforePrefetchChosen;
         statistics::Scalar demandMshrBeforePrefetchReturned;
+        statistics::Scalar demandMshrMoreTargetsEligible;
+        statistics::Scalar demandMshrMoreTargetsChosen;
+        statistics::Scalar demandMshrMoreTargetsDirectReturned;
         statistics::Scalar demandReadEvictEligible;
         statistics::Scalar demandReadEvictSelected;
         statistics::Scalar demandReadEvictConflict;

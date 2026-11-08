@@ -103,6 +103,8 @@ class BaseCache(ClockedObject):
         "downstream backpressure); misses still NAK+retry.")
     demand_mshrs_before_prefetches = Param.Bool(
         False, "Select ready demand MSHRs before a pure prefetch queue head")
+    demand_mshrs_more_targets_first = Param.Bool(
+        False, "Prefer ready demand MSHRs with more allocated targets")
     demand_reads_before_evictions = Param.Bool(
         False, "Prefer demand reads to evictions while write-buffer space remains")
     write_buffers = Param.Unsigned(8, "Number of write buffers")

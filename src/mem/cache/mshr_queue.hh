@@ -101,6 +101,19 @@ class MSHRQueue : public Queue<MSHR>
         return nullptr;
     }
 
+    /** Most occupied ready demand, preserving list order on ties. */
+    MSHR *getReadyDemandWithMostTargets() const
+    {
+        MSHR *best = nullptr;
+        for (MSHR *mshr : readyList) {
+            if (mshr->readyTime <= curTick() && mshr->hasFromCPU() &&
+                (!best || mshr->getNumTargets() > best->getNumTargets())) {
+                best = mshr;
+            }
+        }
+        return best;
+    }
+
     /**
      * Allocates a new MSHR for the request and size. This places the request
      * as the first target in the MSHR.

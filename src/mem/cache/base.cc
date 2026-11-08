@@ -148,6 +148,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       lastMSHRAllocCycle(0),
       mshrAllocPerCycle(p.mshr_alloc_per_cycle),
       demandMshrsBeforePrefetches(p.demand_mshrs_before_prefetches),
+      demandMshrsMoreTargetsFirst(p.demand_mshrs_more_targets_first),
       demandReadsBeforeEvictions(p.demand_reads_before_evictions),
       compressor(p.compressor),
       prefetcher(p.prefetcher),
@@ -1530,6 +1531,19 @@ BaseCache::getNextQueueEntry()
             }
         }
     }
+    bool more_targets_chosen = false;
+    if (miss_mshr && miss_mshr->hasFromCPU()) {
+        MSHR *candidate = mshrQueue.getReadyDemandWithMostTargets();
+        if (candidate &&
+            candidate->getNumTargets() > miss_mshr->getNumTargets()) {
+            stats.demandMshrMoreTargetsEligible++;
+            if (demandMshrsMoreTargetsFirst) {
+                miss_mshr = candidate;
+                more_targets_chosen = true;
+                stats.demandMshrMoreTargetsChosen++;
+            }
+        }
+    }
     WriteQueueEntry *wq_entry = writeBuffer.getNext();
 
     const bool read_before_eviction = miss_mshr && wq_entry &&
@@ -1548,6 +1562,7 @@ BaseCache::getNextQueueEntry()
         }
         stats.demandReadEvictSelected++;
         stats.demandMshrBeforePrefetchReturned += demand_chosen;
+        stats.demandMshrMoreTargetsDirectReturned += more_targets_chosen;
         return miss_mshr;
     }
 
@@ -1589,6 +1604,7 @@ BaseCache::getNextQueueEntry()
 
         // No conflicts; issue read
         stats.demandMshrBeforePrefetchReturned += demand_chosen;
+        stats.demandMshrMoreTargetsDirectReturned += more_targets_chosen;
         return miss_mshr;
     }
 
@@ -3171,6 +3187,13 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "Eligible arbiter calls choosing the ready demand candidate"),
     ADD_STAT(demandMshrBeforePrefetchReturned, statistics::units::Count::get(),
              "Arbiter calls returning that demand after original WB checks"),
+    ADD_STAT(demandMshrMoreTargetsEligible, statistics::units::Count::get(),
+             "Arbiter calls with a ready demand having more targets"),
+    ADD_STAT(demandMshrMoreTargetsChosen, statistics::units::Count::get(),
+             "Eligible calls choosing that more-occupied ready demand"),
+    ADD_STAT(demandMshrMoreTargetsDirectReturned,
+             statistics::units::Count::get(),
+             "Chosen demands returned through direct miss-MSHR paths"),
     ADD_STAT(demandReadEvictEligible, statistics::units::Count::get(),
              "Arbiter calls with demand read, ordinary eviction and WB room"),
     ADD_STAT(demandReadEvictSelected, statistics::units::Count::get(),
