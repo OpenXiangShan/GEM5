@@ -1573,6 +1573,10 @@ Scheduler::SchedulerStats::SchedulerStats(statistics::Group* parent)
                "Blocked compute readiness queries with a ready compatible IQ"),
       ADD_STAT(computeDispatchRerouted, statistics::units::Count::get(),
                "Compute instructions inserted into a ready alternative IQ"),
+      ADD_STAT(regCacheNonIntInsertEligible, statistics::units::Count::get(),
+               "Non-SpMT noninteger RF cache insertion calls"),
+      ADD_STAT(regCacheNonIntInsertSkipped, statistics::units::Count::get(),
+               "Noninteger RF cache insertions skipped by admission filtering"),
       ADD_STAT(memstall_any_load,
                "Cycles with no uops executed and at least X in-flight load that is not completed yet"),
       ADD_STAT(memstall_any_store, "Cycles with few uops executed and no more stores can be issued"),
@@ -1616,6 +1620,7 @@ Scheduler::disp_policy::operator()(IssueQue* a, IssueQue* b) const
 Scheduler::Scheduler(const SchedulerParams& params)
     : SimObject(params), old_disp(params.useOldDisp),
       rerouteBlockedComputeDispatch(params.rerouteBlockedComputeDispatch),
+      filterNonIntRegCacheInserts(params.filterNonIntRegCacheInserts),
       intRegfileBanks(params.intRegfileBanks), stats(this), issueQues(params.IQs)
 {
     dispTable.resize(MaxThreads, std::vector<IQGroup>(enums::OpClass::Num_OpClass));
@@ -2327,6 +2332,12 @@ Scheduler::regCacheFor(ThreadID tid)
 void
 Scheduler::insertRegCache(const DynInstPtr& inst, PhysRegIdPtr reg)
 {
+    const bool nonint_insert = !enableSpMT && !reg->isIntReg();
+    stats.regCacheNonIntInsertEligible += nonint_insert;
+    if (filterNonIntRegCacheInserts && nonint_insert) {
+        stats.regCacheNonIntInsertSkipped++;
+        return;
+    }
     if (!enableSpMT || reg->isIntReg())
         regCacheFor(inst->threadNumber).insert(reg->flatIndex(), {});
 }

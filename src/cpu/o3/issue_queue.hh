@@ -345,6 +345,7 @@ class Scheduler : public SimObject
     const int intel_fewops = 4;
     bool old_disp = false;
     const bool rerouteBlockedComputeDispatch;
+    const bool filterNonIntRegCacheInserts;
     const int intRegfileBanks;
 
     /** Load/store pipe counts derived from scheduler issue ports. */
@@ -357,6 +358,8 @@ class Scheduler : public SimObject
         statistics::Scalar exec_stall_cycle;
         statistics::Scalar computeDispatchFallbackAvailable;
         statistics::Scalar computeDispatchRerouted;
+        statistics::Scalar regCacheNonIntInsertEligible;
+        statistics::Scalar regCacheNonIntInsertSkipped;
         statistics::Scalar memstall_any_load;
         statistics::Scalar memstall_any_store;
         statistics::Scalar memstall_l1miss;

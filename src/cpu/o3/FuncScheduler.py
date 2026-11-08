@@ -102,6 +102,8 @@ class Scheduler(SimObject):
     specWakeupNetwork = VectorParam.SpecWakeupChannel([], "")
     xbarWakeup = Param.Bool(False, "use xbar wakeup network, (will override specWakeupNetwork)")
     useOldDisp = Param.Bool(False, "Use old dispatch algorithm")
+    filterNonIntRegCacheInserts = Param.Bool(
+        False, "Skip noninteger admission into the integer RF bypass cache")
     rerouteBlockedComputeDispatch = Param.Bool(
         False, "Dispatch blocked compute instructions to a ready compatible IQ")
     enableMainRdpOpt = Param.Bool(False, "Enable TX dynamic read port optimization")
