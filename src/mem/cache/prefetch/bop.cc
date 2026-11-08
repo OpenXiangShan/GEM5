@@ -51,6 +51,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
       delayTicks(cyclesToTicks(p.delay_queue_cycles)),
       crossPage(p.crossPage),
       enableAdaptOffset(p.enable_adaptoffset),
+      preferIncumbentOnTie(p.prefer_incumbent_on_tie),
       victimListSize(p.victimOffsetsListSize),
       restoreCycle(p.restoreCycle),
       delayQueueEvent([this]{ delayQueueEventWrapper(); }, name()),
@@ -392,7 +393,17 @@ BOP::bestOffsetLearning(Addr x, bool late, const PrefetchInfo &pfi)
 
         DPRINTF(BOPPrefetcher, "Offset %d score: %i, late: %i, depth: %i, late sat: %u\n", offsetsListIterator->offset,
                 offsetsListIterator->score, late, offsetsListIterator->depth, (uint8_t)offsetsListIterator->late);
-        if (offsetsListIterator->score > bestScore) {
+        const bool incumbentTie = offsetsListIterator->score == bestScore &&
+            offsetsListIterator->calcOffset() == bestOffset &&
+            phaseBestOffset != bestOffset;
+        if (incumbentTie) {
+            stats.incumbentTieEligible++;
+        }
+        if (offsetsListIterator->score > bestScore ||
+            (preferIncumbentOnTie && incumbentTie)) {
+            if (incumbentTie) {
+                stats.incumbentTieSelected++;
+            }
             bestoffsetsListIterator = offsetsListIterator;
             bestScore = (*offsetsListIterator).score;
             phaseBestOffset = offsetsListIterator->calcOffset();
@@ -524,7 +535,12 @@ BOP::BopStats::BopStats(statistics::Group *parent)
     : statistics::Group(parent),
       ADD_STAT(issuedOffsetDist, statistics::units::Count::get(), "Distribution of issued offsets"),
       ADD_STAT(learnOffsetCount, statistics::units::Count::get(), "Number of learning offsets"),
-      ADD_STAT(throttledCount, statistics::units::Count::get(), "Number of throttled prefetches")
+      ADD_STAT(throttledCount, statistics::units::Count::get(),
+               "Number of throttled prefetches"),
+      ADD_STAT(incumbentTieEligible, statistics::units::Count::get(),
+               "Same-score opportunities to retain the current offset"),
+      ADD_STAT(incumbentTieSelected, statistics::units::Count::get(),
+               "Same-score selections of the current offset")
 {
     issuedOffsetDist.init(-64, 256, 1).prereq(issuedOffsetDist);
 }

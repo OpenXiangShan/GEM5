@@ -848,6 +848,8 @@ class BOPPrefetcher(QueuedPrefetcher):
 
     crossPage = Param.Bool(True, "Cross page prefetching")
     enable_adaptoffset = Param.Bool(True, "enable adapt offset")
+    prefer_incumbent_on_tie = Param.Bool(
+        False, "Prefer the current offset when its score ties the winner")
     victimOffsetsListSize = Param.Int(10, "The size of victimOffsetsList")
     restoreCycle = Param.Int(250000, "Cycles which Restore one offset from victimOffsetsList")
 

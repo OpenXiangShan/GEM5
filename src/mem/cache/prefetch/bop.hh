@@ -79,6 +79,7 @@ class BOP : public Queued
         const bool crossPage;
         /** Adapt Bop Offset */
         const bool enableAdaptOffset;
+        const bool preferIncumbentOnTie;
 
         const int victimListSize;
         const int restoreCycle;
@@ -221,6 +222,8 @@ class BOP : public Queued
             statistics::Distribution issuedOffsetDist;
             statistics::Scalar learnOffsetCount;
             statistics::Scalar throttledCount;
+            statistics::Scalar incumbentTieEligible;
+            statistics::Scalar incumbentTieSelected;
         } stats;
 
     public:
