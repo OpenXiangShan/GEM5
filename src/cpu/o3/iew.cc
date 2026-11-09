@@ -2445,6 +2445,9 @@ IEW::executeInsts()
         DPRINTF(IEW, "Execute: Executing instructions from IQ.\n");
 
         DynInstPtr inst = instQueue.getInstToExecute();
+        if (!inst) {
+            continue;
+        }
 
         // Notify potential listeners that this instruction has started
         // executing
@@ -2520,9 +2523,16 @@ IEW::executeInsts()
             // If we execute the instruction (even if it's a nop) the fault
             // will be replaced and we will lose it.
             if (inst->getFault() == NoFault) {
+                if (scheduler->fpSpecWakeupEnabled() &&
+                    !scheduler->fpExecutionReady(inst)) {
+                    continue;
+                }
                 inst->execute();
                 if (!inst->readPredicate())
                     inst->forwardOldRegs();
+            }
+            if (scheduler->fpSpecWakeupEnabled()) {
+                scheduler->fpComplete(inst);
             }
 
             if (!inst->isSplitStoreData()) {
@@ -2763,6 +2773,11 @@ IEW::tick()
         instQueue.scheduleReadyInsts();
 
         executeInsts();
+
+        if (scheduler->fpSpecWakeupEnabled()) {
+            scheduler->fpCheckDeadlines();
+            instQueue.finishFpDeferredReads();
+        }
 
         processDelayedVectorMemCompletions();
 
