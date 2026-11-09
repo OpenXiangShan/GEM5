@@ -538,8 +538,7 @@ XSCompositePrefetcher::updateInRegionPhtOffsets(ACTEntry *act_entry,
 
 void
 XSCompositePrefetcher::updateNeighborPhtOnEvict(
-    ACTEntry *act_entry, PhtEntry *pht_entry, bool re_act_mode,
-    bool already_early_updated)
+    ACTEntry *act_entry, PhtEntry *pht_entry, bool re_act_mode)
 {
     const Addr trigger_offset = act_entry->regionOffset;
     const Addr region_addr = act_entry->regionAddr / regionSize;
@@ -553,6 +552,10 @@ XSCompositePrefetcher::updateNeighborPhtOnEvict(
             contextKey(region_addr - 1, act_entry->contextId),
             act_entry->isSecure());
     }
+
+    // Early updates only cover offsets in the current ACT region. Offsets
+    // read from neighboring ACT entries have not updated these PHT counters.
+    constexpr bool already_early_updated = false;
 
     for (int offset = trigger_offset + 1, hist_offset = 0;
          hist_offset < int(regionBlks) - 1; ++offset, ++hist_offset) {
@@ -636,10 +639,8 @@ XSCompositePrefetcher::updatePht(ACTEntry *act_entry,
     }
 
     pht.accessEntry(pht_entry);
-    const bool already_early_updated = act_entry->phtUpdatedBits != 0;
     updateInRegionPhtOffsets(act_entry, pht_entry, true, re_act_mode);
-    updateNeighborPhtOnEvict(act_entry, pht_entry, re_act_mode,
-                             already_early_updated);
+    updateNeighborPhtOnEvict(act_entry, pht_entry, re_act_mode);
 
     DPRINTF(XSCompositePrefetcher,
             "Evict ACT region: %lx, offset: %lx, evicted by region %lx\n",

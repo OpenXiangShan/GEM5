@@ -147,8 +147,7 @@ class XSCompositePrefetcher : public Queued
     void updateInRegionPhtOffsets(ACTEntry *act_entry, PhtEntry *pht_entry,
                                   bool is_eviction, bool re_act_mode);
     void updateNeighborPhtOnEvict(ACTEntry *act_entry, PhtEntry *pht_entry,
-                                  bool re_act_mode,
-                                  bool already_early_updated);
+                                  bool re_act_mode);
 
     AssociativeSet<PhtEntry> pht;
 
