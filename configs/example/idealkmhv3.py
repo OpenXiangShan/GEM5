@@ -135,6 +135,10 @@ def setKmhV3IdealParams(args, system):
             cpu.dcache.tag_load_read_ports = 100
             cpu.dcache.mshrs = 16
             cpu.dcache.simulate_dcache_refill = True
+            if (cpu.dcache.prefetcher != NULL and
+                    hasattr(cpu.dcache.prefetcher,
+                            'enable_sms_dynamic_prefetch_level')):
+                cpu.dcache.prefetcher.enable_sms_dynamic_prefetch_level = True
             set_lsq_bank_conflict_cache_params(cpu, system)
 
     # l2 caches

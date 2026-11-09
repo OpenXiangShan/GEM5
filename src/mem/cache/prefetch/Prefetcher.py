@@ -1293,7 +1293,25 @@ class XSCompositePrefetcher(QueuedPrefetcher):
         "Replacement policy of pattern history table"
     )
     pht_pf_ahead = Param.Bool(True, "Prefetch pattern region ahead with stride")
-    pht_pf_level = Param.Int(2, "Prefetch target level")
+    pht_pf_level = Param.Int(
+        2,
+        "Fixed SMS PHT destination: 1=L1, 2=L2, 3=L3. Used when "
+        "enable_sms_dynamic_prefetch_level is false"
+    )
+    enable_sms_dynamic_prefetch_level = Param.Bool(
+        False,
+        "Select each SMS PHT prefetch destination from its confidence and "
+        "whether the lookup is triggered by the first access to a region"
+    )
+    sms_pht_high_conf_threshold = Param.Unsigned(
+        6, "SMS PHT counter threshold for high confidence"
+    )
+    sms_pht_medium_conf_threshold = Param.Unsigned(
+        4, "SMS PHT counter threshold for medium confidence"
+    )
+    sms_pht_low_conf_threshold = Param.Unsigned(
+        3, "SMS PHT counter threshold for low confidence"
+    )
     # pf gen table (full-assoc)
     # not implemented now, because queued prefetcher already had a filter
     pf_gen_entries = Param.MemorySize("16", "num of pf_gen entries")
