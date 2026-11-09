@@ -65,11 +65,11 @@
 
 **问题与影响。** 不同策略可能改变哪些零桶被输出。直接对两个 schema 作集合差，会误报新增观察字段；反过来全局忽略差异，又会掩盖未声明字段。
 
-**修复。** `b36bd30ffffef6d6852fae04b66a36850c6c4d69` 增加 `util/tea/cpu_observer_fields.py`，只允许明确声明的纯 host 观察字段，区分允许的稀疏桶与真正字段变化。
+**修复。** `b36bd30ffffef6d6852fae04b66a36850c6c4d69` 增加 `util/tea/cpu_observer_fields.py`，验证声明的观察字段在 before 不存在、在 after 存在，并单独报告其他 CPU 输出键的增删。它不根据输出键集合自动判定注册统计字段是否改变；源级注册检查与同策略精确复现仍由调用方负责。
 
 **验证。** 4 个语义回归、真实 GemsFDTD warmup/ROI case 与 style 检查通过；同策略控制全部共有 CPU schema/值及 CSV 的严格复现要求保留。记录：`tools-sparse-observers-commit-20261109.json`。
 
-**边界。** 不是“凡是缺失都当零”。未知点、未知事件、旧 binary 不存在的新计数不能因此补零。
+**边界。** helper 的 passed 只代表已声明观察字段的存在性检查通过，不证明其他新增输出键都是零桶，也不证明没有新增注册字段。不是“凡是缺失都当零”；未知点、未知事件、旧 binary 不存在的新计数不能补零。
 
 ### T7. O3PipeView dispatch 时间戳为 0，不能解释排队时间
 
