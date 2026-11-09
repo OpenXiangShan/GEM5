@@ -11,6 +11,7 @@
 #include <memory>
 
 #include "base/logging.hh"
+#include "mem/cache/cache_blk.hh"
 #include "params/XSDRRIPRP.hh"
 
 namespace gem5
@@ -24,6 +25,7 @@ XSDRRIP::XSDRRIP(const Params &p)
   : Base(p),
     mode(static_cast<Mode>(p.mode)),
     ignorePrefetchTouches(p.ignore_prefetch_touches),
+    preferCleanOnRripTie(p.prefer_clean_on_rrip_tie),
     numSets(p.num_sets),
     numWays(p.num_ways),
     pselCounter(PSEL_WIDTH, PSEL_THRESHOLD),
@@ -231,8 +233,9 @@ XSDRRIP::getVictim(const ReplacementCandidates& candidates) const
 {
     assert(candidates.size() > 0);
 
-    // Find entry with maximum RRPV
+    // Find entry with maximum RRPV. Keep the first clean tied candidate.
     ReplaceableEntry* victim = candidates[0];
+    ReplaceableEntry* clean_victim = nullptr;
     std::shared_ptr<XSDRRIPReplData> victim_repl_data =
         std::static_pointer_cast<XSDRRIPReplData>(
             victim->replacementData);
@@ -251,7 +254,21 @@ XSDRRIP::getVictim(const ReplacementCandidates& candidates) const
         if (candidate_repl_data->rrpv > victim_repl_data->rrpv) {
             victim = candidate;
             victim_repl_data = candidate_repl_data;
+            clean_victim = nullptr;
         }
+        if (preferCleanOnRripTie && !clean_victim &&
+            candidate_repl_data->rrpv == victim_repl_data->rrpv &&
+            !static_cast<const CacheBlk*>(candidate)->isSet(CacheBlk::DirtyBit)) {
+            clean_victim = candidate;
+        }
+    }
+    duelingStats.fullValidVictimChoices++;
+    if (clean_victim &&
+        static_cast<const CacheBlk*>(victim)->isSet(CacheBlk::DirtyBit)) {
+        duelingStats.cleanTieChanges++;
+        victim = clean_victim;
+        victim_repl_data = std::static_pointer_cast<XSDRRIPReplData>(
+            victim->replacementData);
     }
 
     // Calculate aging increment
@@ -315,7 +332,11 @@ XSDRRIP::XSDRRIPStats::XSDRRIPStats(statistics::Group* parent)
     ADD_STAT(prefetchTouchesIgnored,
         "Prefetch touches that keep existing replacement state"),
     ADD_STAT(prefetchHotDemotionsAvoided,
-        "Prefetch touches that would demote reused RRPV 0 or 1")
+        "Prefetch touches that would demote reused RRPV 0 or 1"),
+    ADD_STAT(fullValidVictimChoices,
+        "Victim selections with all replacement candidates valid"),
+    ADD_STAT(cleanTieChanges,
+        "Dirty victims replaced by clean candidates with the same maximum RRPV")
 {
 }
 

@@ -105,6 +105,7 @@ class XSDRRIP : public Base
     // Current working mode
     const Mode mode;
     const bool ignorePrefetchTouches;
+    const bool preferCleanOnRripTie;
 
     // Total number of sets in cache (used only in DRRIP mode)
     const unsigned numSets;
@@ -137,6 +138,8 @@ class XSDRRIP : public Base
         statistics::Scalar pselValue;
         statistics::Scalar prefetchTouchesIgnored;
         statistics::Scalar prefetchHotDemotionsAvoided;
+        statistics::Scalar fullValidVictimChoices;
+        statistics::Scalar cleanTieChanges;
     } duelingStats;
 
     /**

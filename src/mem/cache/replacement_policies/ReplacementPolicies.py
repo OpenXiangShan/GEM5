@@ -164,5 +164,7 @@ class XSDRRIPRP(BaseReplacementPolicy):
     mode = Param.Int(2, "Mode: 0=SRRIP, 1=BRRIP, 2=DRRIP (Set Dueling)")
     ignore_prefetch_touches = Param.Bool(
         False, "Keep replacement state unchanged on prefetch hits")
+    prefer_clean_on_rrip_tie = Param.Bool(
+        False, "Prefer clean cache blocks among equal maximum RRPV candidates")
     num_sets = Param.Int(0, "Number of sets in the cache (required for DRRIP mode)")
     num_ways = Param.Int(Parent.assoc, "Number of ways in each set")
