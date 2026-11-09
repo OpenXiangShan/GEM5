@@ -24,6 +24,7 @@ XSDRRIP::XSDRRIP(const Params &p)
   : Base(p),
     mode(static_cast<Mode>(p.mode)),
     ignorePrefetchTouches(p.ignore_prefetch_touches),
+    ignorePrefetchPsel(p.ignore_prefetch_psel),
     numSets(p.num_sets),
     numWays(p.num_ways),
     pselCounter(PSEL_WIDTH, PSEL_THRESHOLD),
@@ -185,14 +186,27 @@ XSDRRIP::reset(const std::shared_ptr<ReplacementData>& replacement_data,
     // DRRIP mode: update PSEL counter (only in leader sets)
     if (mode == DRRIP_MODE) {
         unsigned set_type = casted_replacement_data->setType;
+        const bool prefetch_leader = (set_type == 0 || set_type == 1) &&
+            pkt && pkt->req->isPrefetch();
+        const bool skip_training = ignorePrefetchPsel && prefetch_leader;
+        if (prefetch_leader) {
+            duelingStats.prefetchLeaderFills++;
+        }
+        if (skip_training) {
+            duelingStats.prefetchLeaderUpdatesSkipped++;
+        }
 
         if (set_type == 0) {
             // SRRIP region miss → PSEL++ (favor BRRIP)
-            pselCounter++;
+            if (!skip_training) {
+                pselCounter++;
+            }
             duelingStats.srripMisses++;
         } else if (set_type == 1) {
             // BRRIP region miss → PSEL-- (favor SRRIP)
-            pselCounter--;
+            if (!skip_training) {
+                pselCounter--;
+            }
             duelingStats.brripMisses++;
         }
 
@@ -315,7 +329,11 @@ XSDRRIP::XSDRRIPStats::XSDRRIPStats(statistics::Group* parent)
     ADD_STAT(prefetchTouchesIgnored,
         "Prefetch touches that keep existing replacement state"),
     ADD_STAT(prefetchHotDemotionsAvoided,
-        "Prefetch touches that would demote reused RRPV 0 or 1")
+        "Prefetch touches that would demote reused RRPV 0 or 1"),
+    ADD_STAT(prefetchLeaderFills,
+        "Prefetch fills observed in either policy leader set"),
+    ADD_STAT(prefetchLeaderUpdatesSkipped,
+        "Prefetch leader fills omitted from PSEL training")
 {
 }
 
