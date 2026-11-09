@@ -161,7 +161,7 @@ class PrefetchFilter
     void ensureTriggerStorage(Entry &e);
     void storeTriggersForBits(Entry &e, uint64_t bits, const TriggerInfo *trigger);
     uint64_t pendingForLevel(const Entry &e, unsigned level) const;
-    void applyLevelBits(Entry &e, uint64_t incoming, unsigned level);
+    uint64_t applyLevelBits(Entry &e, uint64_t incoming, unsigned level);
     void refreshDebugPFLevel(Entry &e);
 
     // Compute region-hash tag as described by chisel:

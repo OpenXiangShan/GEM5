@@ -70,14 +70,15 @@ PrefetchFilter::pendingForLevel(const Entry &entry, unsigned level) const
     return destination_bits & ~entry.filter_bits & region_mask;
 }
 
-void
+uint64_t
 PrefetchFilter::applyLevelBits(Entry &entry, uint64_t incoming,
                                unsigned level)
 {
     if (level < 1 || level > 3 || incoming == 0) {
-        return;
+        return 0;
     }
 
+    uint64_t accepted = 0;
     const unsigned limit = std::min(regionBlks, 64U);
     for (unsigned offset = 0; offset < limit; ++offset) {
         const uint64_t bit = uint64_t(1) << offset;
@@ -101,6 +102,7 @@ PrefetchFilter::applyLevelBits(Entry &entry, uint64_t incoming,
         } else {
             entry.l3_bits |= bit;
         }
+        accepted |= bit;
 
         // A request already sent to a farther level may be reissued when a
         // later lookup promotes the same offset closer to the core.
@@ -108,6 +110,7 @@ PrefetchFilter::applyLevelBits(Entry &entry, uint64_t incoming,
             entry.filter_bits &= ~bit;
         }
     }
+    return accepted;
 }
 
 void
@@ -486,10 +489,10 @@ PrefetchFilter::Insert(Addr region_addr, uint64_t region_bits, uint8_t alias_bit
         }
     }
     if (e) {
-        storeTriggersForBits(*e, incoming, trigger);
-        applyLevelBits(*e, l3_bits, 3);
-        applyLevelBits(*e, l2_bits, 2);
-        applyLevelBits(*e, l1_bits, 1);
+        uint64_t accepted = applyLevelBits(*e, l3_bits, 3);
+        accepted |= applyLevelBits(*e, l2_bits, 2);
+        accepted |= applyLevelBits(*e, l1_bits, 1);
+        storeTriggersForBits(*e, accepted, trigger);
         e->region_bits |= incoming;
         refreshDebugPFLevel(*e);
         table.accessEntry(e);
@@ -522,12 +525,12 @@ PrefetchFilter::Insert(Addr region_addr, uint64_t region_bits, uint8_t alias_bit
     for (auto &slot : victim->bitTriggers) {
         slot.reset();
     }
-    applyLevelBits(*victim, l3_bits, 3);
-    applyLevelBits(*victim, l2_bits, 2);
-    applyLevelBits(*victim, l1_bits, 1);
+    uint64_t accepted = applyLevelBits(*victim, l3_bits, 3);
+    accepted |= applyLevelBits(*victim, l2_bits, 2);
+    accepted |= applyLevelBits(*victim, l1_bits, 1);
     victim->region_bits = incoming;
     refreshDebugPFLevel(*victim);
-    storeTriggersForBits(*victim, incoming, trigger);
+    storeTriggersForBits(*victim, accepted, trigger);
 
     table.insertEntry(tag, is_secure, victim);
     DPRINTF(HWPrefetch, "Insert miss: region=%#lx tag=%#lx bits=%#lx level=%lu\n",
