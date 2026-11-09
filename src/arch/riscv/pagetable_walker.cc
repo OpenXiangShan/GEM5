@@ -50,6 +50,7 @@
 
 #include "arch/riscv/pagetable_walker.hh"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -424,12 +425,8 @@ Walker::doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc, BaseMMU::Tr
                            uint8_t translateMode, const TLB::TranslationContext &context,
                            int delaytick)
 {
-    DPRINTF(PageTableWalker2, "schedule %d\n", curCycle());
-    Tick hitdelay = curTick() + cyclesToTicks(Cycles(delaytick));
-    if (!doL2TLBHitEvent.scheduled()) {
-        schedule(doL2TLBHitEvent, hitdelay);
-    }
     L2TlbState l2state;
+    l2state.readyTick = curTick() + cyclesToTicks(Cycles(delaytick));
     l2state.req = req;
     l2state.tc = tc;
     l2state.translation = translation;
@@ -438,7 +435,31 @@ Walker::doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc, BaseMMU::Tr
     l2state.entry = entry;
     l2state.entry.translateMode = translateMode;
     l2state.context = context;
-    L2TLBrequestors.push_back(l2state);
+
+    const auto next = std::find_if(
+        L2TLBrequestors.begin(), L2TLBrequestors.end(),
+        [&l2state](const L2TlbState &pending) {
+            return pending.readyTick > l2state.readyTick;
+        });
+    L2TLBrequestors.insert(next, l2state);
+    DPRINTF(PageTableWalker2,
+            "schedule L2 hit req %p vaddr %#lx ready %llu\n",
+            req.get(), req->getVaddr(), l2state.readyTick);
+    scheduleNextL2TLBHit();
+}
+
+void
+Walker::scheduleNextL2TLBHit()
+{
+    if (L2TLBrequestors.empty())
+        return;
+
+    const Tick when = L2TLBrequestors.front().readyTick;
+    if (!doL2TLBHitEvent.scheduled()) {
+        schedule(doL2TLBHitEvent, when);
+    } else if (doL2TLBHitEvent.when() != when) {
+        reschedule(doL2TLBHitEvent, when);
+    }
 }
 
 Fault
@@ -746,9 +767,22 @@ void
 Walker::dol2TLBHit()
 {
     DPRINTF(PageTableWalker2, "dol2tlbhit %d\n", curCycle());
-    while (!L2TLBrequestors.empty()) {
-        L2TlbState dol2TLBHitrequestors = L2TLBrequestors.front();
-        L2TLBrequestors.pop_front();
+    std::list<L2TlbState> readyRequestors;
+    const auto firstPending = std::find_if(
+        L2TLBrequestors.begin(), L2TLBrequestors.end(),
+        [](const L2TlbState &pending) {
+            return pending.readyTick > curTick();
+        });
+    readyRequestors.splice(readyRequestors.end(), L2TLBrequestors,
+                           L2TLBrequestors.begin(), firstPending);
+    while (!readyRequestors.empty()) {
+        L2TlbState dol2TLBHitrequestors = readyRequestors.front();
+        readyRequestors.pop_front();
+        DPRINTF(PageTableWalker2,
+                "service L2 hit req %p vaddr %#lx ready %llu\n",
+                dol2TLBHitrequestors.req.get(),
+                dol2TLBHitrequestors.req->getVaddr(),
+                dol2TLBHitrequestors.readyTick);
 
         if (dol2TLBHitrequestors.translation &&
             !tlb->translationContextValid(dol2TLBHitrequestors.context,
@@ -807,6 +841,7 @@ Walker::dol2TLBHit()
             dol2TLBHitrequestors.req->getVaddr(), dol2TLBHitrequestors.paddr,
             dol2TLBHitrequestors.req->getPC());
     }
+    scheduleNextL2TLBHit();
     DPRINTF(PageTableWalker2, "finish dol2tlbhit\n");
 }
 bool

@@ -287,6 +287,7 @@ namespace RiscvISA
 
         struct L2TlbState
         {
+              Tick readyTick;
               RequestPtr req;
               ThreadContext *tc;
 
@@ -393,6 +394,7 @@ namespace RiscvISA
         /** Number of PTW memory requests currently in flight. */
         unsigned outstandingPtwMemReqs;
 
+        void scheduleNextL2TLBHit();
         void updatePtwMemCycleStats();
         bool ptwLevelAvailable(WalkerState *state, int level) const;
         bool reservePtwLevel(WalkerState *state, int level);
