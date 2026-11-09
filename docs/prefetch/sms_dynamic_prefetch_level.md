@@ -72,15 +72,6 @@ bit mask。固定模式插入请求时，会自动把全部 `region_bits` 映射
 同一 offset 如果再次以更近的层级插入，buffer 保留更近的目标层级，并允许已
 发送的较远层级请求在更近层级重新发送。
 
-### 非目标范围
-
-该 feature 不包含：
-
-- SMS first-touch-order 发送顺序；
-- stride 触发 SMS PHT lookup；
-- 命令行输入参数；
-- L2 worker 的 low-accuracy offload 策略调整。
-
 ## 统计与 review 入口
 
 动态与固定模式都记录最终分类结果：
@@ -97,13 +88,3 @@ bit mask。固定模式插入请求时，会自动把全部 `region_bits` 映射
 - `src/mem/cache/prefetch/prefetch_filter.cc`：按 offset 保存和发送 destination；
 - `configs/common/PrefetcherConfig.py`：KMHV3 固定层级配置；
 - `configs/example/idealkmhv3.py`：Ideal KMHV3 动态层级配置。
-
-## 风险与验证
-
-主要风险是动态模式下 PHT counter 更新次数变化，以及同一 region 内不同层级
-bit mask 的合并和重发语义。review 和回归应至少确认：
-
-1. feature 关闭时，SMS 仍按 `pht_pf_level` 固定发送，且生成数量与基线一致；
-2. feature 开启时，四个 classification stats 与上表一致；
-3. buffered request 的 `pfahead_host` 与分类层级一致；
-4. KMHV3 参数 dump 中开关为 `false`，Ideal KMHV3 中为 `true`。
