@@ -242,3 +242,7 @@ complete original baseline benchmark time. Negative time contributions are
 beneficial. Unknown candidate points remain unknown; partial contributions are
 neither complete benchmark gains nor suite scores. This summarizes prior audit
 results; it does not re-audit simulator correctness or resource budgets.
+
+## Fixed-resource investigation retrospective
+
+See the [2026-11-09 tool issue and fix ledger](gem5-tools-issues-and-fixes-20261109.md) for the observed failures, committed fixes, validation evidence, and remaining analysis limits. The ledger also distinguishes reusable tool changes from one-off experiment-script corrections.
