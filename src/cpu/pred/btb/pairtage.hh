@@ -257,8 +257,10 @@ class PairTAGE : public TimedBaseBTBPredictor
         PTAGEEntry entry;
     };
 
-    // Look up every table with the PC and folded histories of a block
-    LookupResult lookup(Addr pc, const ThreadHistoryState &history) const;
+    // Look up every table. The index comes from indexPC and the folded
+    // histories, and the tag from tagPC and the same histories.
+    LookupResult lookup(Addr indexPC, Addr tagPC,
+                        const ThreadHistoryState &history) const;
 
     // Replace a prediction with one block
     void fillPrediction(const PTAGEBlockInfo &block, uint8_t branchSize,
@@ -276,7 +278,9 @@ class PairTAGE : public TimedBaseBTBPredictor
     void resetConfidence(unsigned t, Addr index, unsigned way);
 
     // ========== Ahead Pipeline ==========
-    // The table read for a block is issued one block ahead.
+    // The table read for a block is issued one block ahead:
+    // * Index comes from the previous group's start PC and folded histories.
+    // * Tag comes from the current group's start PC.
     //
     // The term "Anchor" means that ahead pipeline start to output result.
     struct AheadKey

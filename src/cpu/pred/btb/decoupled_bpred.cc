@@ -640,6 +640,8 @@ DecoupledBPUWithBTB::enqueueSecondBlock(ThreadID tid)
                                              secondPred);
     }
 
+    // TODO: Currently the ABTB's ahead history is not updated for the second
+    // which maybe a expected behavior due to the physical timing constraints.
     FetchTarget entry = createFetchTargetEntry(tid, thread.s0PC, secondPred);
     thread.s0PC = secondPred.getTarget(predictWidth);
     updateHistoryForPrediction(entry, secondPred);
