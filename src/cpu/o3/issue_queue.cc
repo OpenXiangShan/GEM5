@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <deque>
+#include <limits>
 #include <queue>
 #include <stack>
 #include <string>
@@ -17,13 +18,15 @@
 #include "base/types.hh"
 #include "cpu/func_unit.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
-#include "cpu/o3/cpu.hh"
+#include "cpu/o3/iew.hh"
 #include "cpu/o3/inst_queue.hh"
 #include "cpu/reg_class.hh"
 #include "debug/Counters.hh"
 #include "debug/Dispatch.hh"
+#include "debug/EgDiff.hh"
 #include "debug/Schedule.hh"
 #include "enums/OpClass.hh"
 #include "params/BaseO3CPU.hh"
@@ -295,6 +298,7 @@ void
 IssueQue::IssueStream::push(const DynInstPtr& inst)
 {
     assert(size < 8);
+    attempts[size] = inst->fpWakeAttempt;
     insts[size++] = inst;
 }
 
@@ -302,7 +306,11 @@ DynInstPtr
 IssueQue::IssueStream::pop()
 {
     assert(size > 0);
-    return insts[--size];
+    --size;
+    auto inst = std::move(insts[size]);
+    if (inst && inst->fpWakeAttempt != attempts[size])
+        return nullptr;
+    return inst;
 }
 
 IssueQue::IssueQueStats::IssueQueStats(statistics::Group* parent, IssueQue* que, std::string name)
@@ -515,6 +523,8 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
 {
     for (int i = 0; i < inst->numSrcRegs(); i++) {
         auto src = inst->renamedSrcIdx(i);
+        if (scheduler->fpBound(inst, i))
+            continue;
         if (src->isFixedMapping()) [[unlikely]] {
             continue;
         }
@@ -544,6 +554,9 @@ IssueQue::addToFu(const DynInstPtr& inst)
     if (inst->isIssued()) [[unlikely]] {
         panic("%s [sn:%llu] has alreayd been issued\n", enums::OpClassStrings[inst->opClass()], inst->seqNum);
     }
+    if (scheduler->enableFpSpecWakeup && scheduler->fpRecords.count(inst->seqNum))
+        DPRINTF(Schedule, "FPA release tid=%u seq=%llu attempt=%llu\n",
+            inst->threadNumber, inst->seqNum, inst->fpWakeAttempt);
     inst->setIssued();
     POPINST(inst);
     if (hasInstsCounter()) {
@@ -941,14 +954,20 @@ IssueQue::issueToFu()
             (inst->isLoad() && (issuedLoad >= numLoadPipe)) ||
             (inst->isStore() && (issuedStore >= numStorePipe)) || blockLoad;
         if (issueOccupied) {
-            inst->clearScheduled();
-            // only for load/store
-            READYQ_PUSH(inst);
+            if (scheduler->enableFpSpecWakeup &&
+                scheduler->fpRecords.count(inst->seqNum)) {
+                scheduler->fpCancel(inst);
+                addIfReady(inst);
+            } else {
+                inst->clearScheduled();
+                // Only load/store queues normally encounter occupied issues.
+                READYQ_PUSH(inst);
+            }
             DPRINTF(Schedule, "[sn:%llu] issue failed due to being occupied\n",
                     inst->seqNum);
             continue;
         }
-        if (!checkScoreboard(inst)) {
+        if (!scheduler->fpAdmission(inst) || !checkScoreboard(inst)) {
             continue;
         }
 
@@ -1068,6 +1087,9 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
             int srcIdx = it.first;
             auto& consumer = it.second;
             if(consumer->threadNumber == inst->threadNumber){
+                if (speculative && scheduler->enableFpSpecWakeup &&
+                    scheduler->fpProducer(inst) && scheduler->fpConsumer(consumer, srcIdx))
+                    continue;
                 if (consumer->readySrcIdx(srcIdx)) {
                     continue;
                 }
@@ -1177,6 +1199,7 @@ IssueQue::cancel(const DynInstPtr& inst)
     // before issued
     assert(!inst->isIssued());
 
+    scheduler->fpCancel(inst);
     inst->setCancel();
     if (inst->isScheduled() && !opPipelined[inst->opClass()]) {
         inst->clearScheduled();
@@ -1217,7 +1240,7 @@ IssueQue::selectInst()
                 continue;
             }
 
-            uint32_t lat = scheduler->getCorrectedOpLat(inst);
+            uint32_t lat = scheduler->getOutputDistance(inst);
             uint64_t busy_bit = (lat > 63 ? -1 : (1llu << lat));
             if (!(portBusy[pi] & busy_bit)) {
                 DPRINTF(Schedule, "[sn %ld] was selected\n", inst->seqNum);
@@ -1258,12 +1281,15 @@ IssueQue::selectInst()
                     }
                 }
 
-                selectQ.push_back(std::make_pair(pi, inst));
+                scheduler->fpSelected(inst, pi);
+                selectQ.push_back({static_cast<uint32_t>(pi), inst, inst->fpWakeAttempt});
                 inst->clearInReadyQ();
                 readyQ->erase(it);
                 break;
             } else {
                 iqstats->portBusy[pi]++;
+                if (scheduler->enableFpSpecWakeup && scheduler->fpProducer(inst))
+                    scheduler->stats.fpOutputConflicts++;
             }
 
             it++;
@@ -1278,11 +1304,17 @@ IssueQue::scheduleInst()
     for (auto& info : selectQ) {
         auto& pi = info.first;  // issue port id
         auto& inst = info.second;
+        if (scheduler->enableFpSpecWakeup &&
+            info.attempt != inst->fpWakeAttempt) {
+            inst->clearArbFailed();
+            continue;
+        }
         if (inst->canceled()) {
             DPRINTF(Schedule, "[sn:%llu] was canceled\n", inst->seqNum);
         } else if (inst->arbFailed()) {
             DPRINTF(Schedule, "[sn:%llu] arbitration failed, retry\n", inst->seqNum);
             iqstats->arbFailed++;
+            scheduler->fpArbitrationFailed(inst);
             assert(inst->readyToIssue());
 
             READYQ_PUSH(inst);
@@ -1295,10 +1327,11 @@ IssueQue::scheduleInst()
 
             if (!opPipelined[inst->opClass()]) {
                 portBusy[pi] = -1ll;
-            } else if (scheduler->getCorrectedOpLat(inst) > 1 && inst->numDestRegs() > 0) {
-                portBusy[pi] |= 1ll << scheduler->getCorrectedOpLat(inst);
+            } else if (scheduler->getOutputDistance(inst) > 1 && inst->numDestRegs() > 0) {
+                portBusy[pi] |= 1ll << scheduler->getOutputDistance(inst);
             }
 
+            scheduler->fpPublished(inst);
             scheduler->specWakeUpDependents(inst, this);
             cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueArb);
         }
@@ -1378,6 +1411,7 @@ IssueQue::insert(const DynInstPtr& inst)
     if (hasInstsCounter()) {
         incInIQInstsCounter(inst->threadNumber);
     }
+    scheduler->fpInsert(inst);
     bool addToDepGraph = false;
     for (int i = 0; i < inst->numSrcRegs(); i++) {
         auto src = inst->renamedSrcIdx(i);
@@ -1458,6 +1492,7 @@ IssueQue::doCommit(const InstSeqNum seqNum, ThreadID tid)
         const auto &inst = *it;
         if (inst->threadNumber == tid && inst->seqNum <= seqNum) {
             assert(inst->isIssued());
+            scheduler->fpForget(inst);
             vectorReadyQSeqs.erase(inst->seqNum);
             eraseVectorSplitBlocker(inst->seqNum);
             it = instList.erase(it);
@@ -1477,6 +1512,8 @@ IssueQue::doSquash(SquashInfo squashInfo)
 {
     for (auto it = instList.begin(); it != instList.end();) {
         if (((*it)->seqNum > squashInfo.squashSn) && ((*it)->threadNumber == squashInfo.squashTid)) {
+            scheduler->fpCancel(*it, true);
+            scheduler->fpForget(*it);
             if (!(*it)->isIssued()) {
                 if (hasInstsCounter()) {
                     decInIQInstsCounter((*it)->threadNumber);
@@ -1548,15 +1585,21 @@ IssueQue::decInIQInstsCounter(ThreadID tid)
 
 Scheduler::SpecWakeupCompletion::SpecWakeupCompletion(const DynInstPtr& inst, IssueQue* to,
                                                       PendingWakeEventsType* owner)
-    : Event(Stat_Event_Pri, AutoDelete), inst(inst), owner(owner), to_issue_queue(to)
+    : Event(Stat_Event_Pri, AutoDelete), inst(inst), owner(owner), to_issue_queue(to), attempt(inst->fpWakeAttempt)
 {
 }
 
 void
 Scheduler::SpecWakeupCompletion::process()
 {
-    to_issue_queue->wakeUpDependents(inst, true);
-    (*owner)[inst->seqNum].erase(this);
+    if (to_issue_queue->scheduler->fpAttemptCurrent(inst, attempt))
+        to_issue_queue->wakeUpDependents(inst, true);
+    auto it = owner->find(inst->seqNum);
+    if (it != owner->end()) {
+        it->second.erase(this);
+        if (it->second.empty())
+            owner->erase(it);
+    }
 }
 
 const char*
@@ -1567,6 +1610,13 @@ Scheduler::SpecWakeupCompletion::description() const
 
 Scheduler::SchedulerStats::SchedulerStats(statistics::Group* parent)
     : statistics::Group(parent),
+      ADD_STAT(fpM2Hits, statistics::units::Count::get(), "FP M2 source wakes"),
+      ADD_STAT(fpM4Hits, statistics::units::Count::get(), "FP M4 addend wakes"),
+      ADD_STAT(fpM4ArbFailed, statistics::units::Count::get(), "FP M4 endpoint arbitration losses"),
+      ADD_STAT(fpConfirmFailed, statistics::units::Count::get(), "FP confirmation failures before IQ release"),
+      ADD_STAT(fpRetries, statistics::units::Count::get(), "FP local replay attempts"),
+      ADD_STAT(fpOutputConflicts, statistics::units::Count::get(), "FP output reservation conflicts"),
+      ADD_STAT(fpStatePeak, statistics::units::Count::get(), "Peak live FP instruction records"),
       ADD_STAT(exec_stall_cycle, "SUM(OpsExecuted[= FEW])"),
       ADD_STAT(memstall_any_load,
                "Cycles with no uops executed and at least X in-flight load that is not completed yet"),
@@ -1610,7 +1660,8 @@ Scheduler::disp_policy::operator()(IssueQue* a, IssueQue* b) const
 
 Scheduler::Scheduler(const SchedulerParams& params)
     : SimObject(params), old_disp(params.useOldDisp),
-      intRegfileBanks(params.intRegfileBanks), stats(this), issueQues(params.IQs)
+      intRegfileBanks(params.intRegfileBanks), stats(this), issueQues(params.IQs),
+      enableFpSpecWakeup(params.enableFpSpecWakeup)
 {
     dispTable.resize(MaxThreads, std::vector<IQGroup>(enums::OpClass::Num_OpClass));
     opExecTimeTable.resize(enums::OpClass::Num_OpClass, 1);
@@ -1852,11 +1903,13 @@ Scheduler::Scheduler(const SchedulerParams& params)
     dispSeqVec.resize(64);
 }
 
+/** Connect the CPU, LSQ, and IEW stage and initialize issue-queue CPU bindings. */
 void
-Scheduler::setCPU(CPU* cpu, LSQ* lsq)
+Scheduler::setCPU(CPU* cpu, LSQ* lsq, IEW* iew)
 {
     this->cpu = cpu;
     this->lsq = lsq;
+    this->iew = iew;
     const auto& cpuParams =
         dynamic_cast<const BaseO3CPUParams&>(cpu->params());
     smtIQPolicy = cpuParams.smtIQPolicy;
@@ -1874,7 +1927,20 @@ Scheduler::setCPU(CPU* cpu, LSQ* lsq)
                  cpuParams.numPhysIntRegs / intRegfileBanks);
         spmtIntRegsPerThread = cpuParams.numPhysIntRegs / 2;
     }
+    panic_if(enableFpSpecWakeup &&
+                 (opExecTimeTable[FloatMultOp] != 3 ||
+                  opExecTimeTable[FloatMultAccOp] != 4 ||
+                  !opPipelined[FloatMultOp] || !opPipelined[FloatMultAccOp]),
+             "FP speculative wakeup requires three-cycle pipelined FMUL and "
+             "four-cycle pipelined FMA");
     for (auto it : issueQues) {
+        panic_if(enableFpSpecWakeup && it->getIssueStages() != 2 &&
+                     (it->readyQclassify[FloatMultOp] || it->readyQclassify[FloatMultAccOp] ||
+                      it->readyQclassify[FloatAddOp] || it->readyQclassify[FloatDivOp] ||
+                      it->readyQclassify[FloatCmpOp] || it->readyQclassify[FloatCvtOp] ||
+                      it->readyQclassify[FloatMvOp] || it->readyQclassify[FloatMiscOp] ||
+                      it->readyQclassify[FloatSqrtOp]),
+                 "FP speculative wakeup requires two issue stages");
         it->setCPU(cpu);
         it->selector->setparent(this, it);
     }
@@ -1927,7 +1993,7 @@ Scheduler::addToFU(const DynInstPtr& inst)
         if (meta.lldpChain.valid)
             cpu->ppLldpDependenceTrain->notify(inst->xsMeta);
     }
-    instsToFu.push_back(inst);
+    instsToFu.push_back({inst, inst->fpWakeAttempt});
 }
 
 void
@@ -1940,10 +2006,13 @@ Scheduler::tick()
     }
 }
 
+/** Try late predictions, select and issue instructions, then record stall stats. */
 void
 Scheduler::issueAndSelect()
 {
+    fpProcessWakes();
     // must wait for all insts was issued
+    iew->processLatePredictions();
     for (auto it : issueQues) {
         it->selectInst();
     }
@@ -1953,9 +2022,8 @@ Scheduler::issueAndSelect()
     }
     std::fill(wrRfPortOccupancy.begin(), wrRfPortOccupancy.end(), std::make_tuple(nullptr, 0, 0));
 
-    for (auto it : issueQues) {
-        it->issueToFu();
-    }
+    for (auto iq : issueQues)
+        iq->issueToFu();
     if (instsToFu.size() < intel_fewops) {
         stats.exec_stall_cycle++;
     }
@@ -1975,6 +2043,10 @@ Scheduler::issueAndSelect()
     }
 }
 
+/**
+ * Collect eligible unissued loads and ask IEW to apply late predictions.
+ * Snapshot the candidates before prediction can wake dependent instructions.
+ */
 void
 Scheduler::lookahead(std::deque<DynInstPtr>& insts)
 {
@@ -2077,6 +2149,16 @@ Scheduler::getInstByDstReg(RegIndex flatIdx, ThreadID tid,
 void
 Scheduler::addProducer(const DynInstPtr& inst)
 {
+    if (enableFpSpecWakeup) {
+        for (int i = 0; i < inst->numDestRegs(); ++i) {
+            auto reg = inst->renamedDestIdx(i);
+            auto it = fpRegisters.find(reg->flatIndex());
+            if (it != fpRegisters.end()) {
+                fpWakeState.clearRegister(it->first, it->second);
+                fpRegisters.erase(it);
+            }
+        }
+    }
     DPRINTF(Schedule, "[sn:%llu] addProdecer\n", inst->seqNum);
     for (int i = 0; i < inst->numDestRegs(); i++) {
         auto dst = inst->renamedDestIdx(i);
@@ -2231,12 +2313,13 @@ Scheduler::specWakeUpFromLoadPipe(const DynInstPtr& inst)
 DynInstPtr
 Scheduler::getInstToFU()
 {
-    if (instsToFu.empty()) {
-        return DynInstPtr(nullptr);
+    while (!instsToFu.empty()) {
+        auto ret = std::move(instsToFu.back());
+        instsToFu.pop_back();
+        if (fpAttemptCurrent(ret.inst, ret.attempt))
+            return ret.inst;
     }
-    auto ret = instsToFu.back();
-    instsToFu.pop_back();
-    return ret;
+    return DynInstPtr(nullptr);
 }
 
 void
@@ -2361,6 +2444,7 @@ Scheduler::loadCancel(const DynInstPtr& inst)
     while (!dfs.empty()) {
         auto top = dfs.top();
         dfs.pop();
+        needSquashFallback |= fpCancel(top, inst->vpMisprediction);
         // clear pending wake events scheduled by top
         auto& pendingEvents = specWakeEvents[top->seqNum];
         for (auto it = pendingEvents.begin(); it != pendingEvents.end(); it++) {
@@ -2397,8 +2481,13 @@ Scheduler::loadCancel(const DynInstPtr& inst)
                                 continue;
                             }
 
+                            // Preserve VP recovery through the FP cancellation
+                            // closure before the IQ's local cancel callback.
+                            needSquashFallback |=
+                                fpCancel(depInst, inst->vpMisprediction);
                             depInst->issueQue->cancel(depInst);
-                            depInst->clearSrcRegReady(srcIdx);
+                            if (depInst->readySrcIdx(srcIdx))
+                                depInst->clearSrcRegReady(srcIdx);
                             if (!depInst->lldpInputs.empty()) {
                                 depInst->lldpInputs[srcIdx] = {};
                                 depInst->selectLldpChain();
@@ -2444,6 +2533,11 @@ Scheduler::writebackWakeup(const DynInstPtr& inst)
     }
 }
 
+/**
+ * Release execution resources and mark bypass destinations ready.
+ * For unsquashed eligible loads, report the actual value and verify any
+ * speculative prediction, notifying IEW on a mismatch.
+ */
 void
 Scheduler::bypassWriteback(const DynInstPtr& inst)
 {
@@ -2460,9 +2554,10 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
         bypassScoreboard[dst->flatIndex()] = true;
         DPRINTF(Schedule, "p%lu in bypassNetwork ready\n", dst->flatIndex());
     }
-    if (inst->canLVP()) {
+    if (inst->canLVP() && !inst->isSquashed()) {
         RegVal actualValue = cpu->getReg(inst->extRenamedDestIdx(0));
         inst->actualValue = actualValue;
+        iew->notifyValueAvailable(inst, actualValue);
         inst->vpMisprediction = false;
         if (inst->vpResult.speculative && inst->fault == NoFault &&
             actualValue != inst->vpResult.value) {
@@ -2470,7 +2565,23 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
                     inst->vpResult.value, inst->pcState().instAddr());
             inst->vpMisprediction = true;
             inst->vpResult.speculative = false;
+            iew->notifyValueMispredicted(inst);
         }
+        DPRINTF(EgDiff,
+                "[EgDiff][verify-result] tid=%u seq=%llu pc=%#lx "
+                "actual=%#llx applied=%d predicted=%#llx mispred=%d\n",
+                inst->threadNumber, inst->seqNum,
+                inst->pcState().instAddr(),
+                static_cast<unsigned long long>(actualValue),
+                inst->vpApplied,
+                static_cast<unsigned long long>(inst->vpResult.value),
+                inst->vpMisprediction);
+    } else if (inst->canLVP()) {
+        DPRINTF(EgDiff,
+                "[EgDiff][value-skip-squashed] tid=%u seq=%llu "
+                "pc=%#lx\n",
+                inst->threadNumber, inst->seqNum,
+                inst->pcState().instAddr());
     }
 }
 
@@ -2546,6 +2657,17 @@ Scheduler::isDrained()
             return false;
         }
     }
+    if (!enableFpSpecWakeup) {
+        return true;
+    }
+    if (!fpRecords.empty()) {
+        return false;
+    }
+
+    // Every live wake or data check has a producer or consumer record.
+    // With no records left, queued entries are stale and need not delay drain.
+    fpWakeDue.clear();
+    fpDataDue.clear();
     return true;
 }
 

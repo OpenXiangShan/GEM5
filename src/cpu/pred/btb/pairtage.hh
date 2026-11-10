@@ -6,7 +6,9 @@
 #include <queue>
 #include <vector>
 
+#include "base/statistics.hh"
 #include "base/types.hh"
+#include "cpu/o3/limits.hh"
 #include "cpu/pred/btb/folded_hist.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
 #include "params/PairTAGE.hh"
@@ -23,340 +25,373 @@ namespace btb_pred
 class PairTAGE : public TimedBaseBTBPredictor
 {
     using bitset = boost::dynamic_bitset<>;
+    static constexpr unsigned MaxThreads = o3::MaxThreads;
 
   public:
-    static constexpr unsigned NumBlocksPerEntry = 2;
-
     typedef PairTAGEParams Params;
 
-    struct PairBlockInfo
+    // Fields the model needs only and should not appear in real units.
+    struct PTAGEEntryModelInfo
     {
-        bool valid;
-        bool hasBranch;
-        bool taken;
+        // instruction size of the first and second block's exit
+        uint8_t branchSize;
+        uint8_t block2BranchSize;
+
+        PTAGEEntryModelInfo() : branchSize(0), block2BranchSize(0) {}
+    };
+
+    // Prediction Block Information
+    struct PTAGEBlockInfo
+    {
+        // Width of the signed direction counter
+        static constexpr unsigned CounterWidth = 2;
+
+        short directionCounter;
         Addr branchPC;
         Addr targetPC;
+
+        // Type of the exit branch, as the RTL branch attribute
         bool isCond;
         bool isDirect;
         bool isIndirect;
         bool isCall;
         bool isReturn;
-        uint8_t size;
 
-        PairBlockInfo()
-            : valid(false), hasBranch(false), taken(false),
-              branchPC(0), targetPC(0),
-              isCond(false), isDirect(false), isIndirect(false),
-              isCall(false), isReturn(false), size(0)
+        PTAGEBlockInfo()
+            : directionCounter(0), branchPC(0), targetPC(0), isCond(false),
+              isDirect(false), isIndirect(false), isCall(false),
+              isReturn(false)
+        {}
+
+        // A new block, weak in its direction. It leaves at exit when exit
+        // is valid, and falls through to targetPC otherwise.
+        PTAGEBlockInfo(const BTBEntry &exit, Addr targetPC)
+            : directionCounter(exit.valid ? 0 : -1),
+              branchPC(exit.valid ? exit.pc : 0), targetPC(targetPC),
+              isCond(exit.valid && exit.isCond),
+              isDirect(exit.valid && exit.isDirect),
+              isIndirect(exit.valid && exit.isIndirect),
+              isCall(exit.valid && exit.isCall),
+              isReturn(exit.valid && exit.isReturn)
+        {}
+
+        bool taken() const { return directionCounter >= 0; }
+
+        // Saturating update of the direction counter towards taken
+        void
+        updateCounter(bool taken)
         {
+            const short max = (1 << (CounterWidth - 1)) - 1;
+            const short min = -(1 << (CounterWidth - 1));
+            if (taken && directionCounter < max) {
+                ++directionCounter;
+            } else if (!taken && directionCounter > min) {
+                --directionCounter;
+            }
         }
 
-        static PairBlockInfo
-        makeBranchless(Addr startPC, Addr targetPC)
+        // Whether the direction counter is at one of its two weakest values
+        bool
+        isWeak() const
         {
-            PairBlockInfo block;
-            block.valid = true;
-            block.branchPC = startPC;
-            block.targetPC = targetPC;
-            return block;
+            return directionCounter == 0 || directionCounter == -1;
         }
-
-        PairBlockInfo(bool taken, Addr branchPC, Addr targetPC,
-                      bool isCond, bool isDirect, bool isIndirect,
-                      bool isCall, bool isReturn, uint8_t size)
-            : valid(true), hasBranch(true), taken(taken),
-              branchPC(branchPC), targetPC(targetPC),
-              isCond(isCond), isDirect(isDirect), isIndirect(isIndirect),
-              isCall(isCall), isReturn(isReturn), size(size)
-        {
-        }
-
-        void clear()
-        {
-            valid = false;
-            hasBranch = false;
-            taken = false;
-            branchPC = 0;
-            targetPC = 0;
-            isCond = false;
-            isDirect = false;
-            isIndirect = false;
-            isCall = false;
-            isReturn = false;
-            size = 0;
-        }
-
-        bool hasConsistentState() const
-        {
-            return (!hasBranch || valid) && (!taken || hasBranch);
-        }
-
-        bool isBranchlessFallthrough() const { return valid && !hasBranch; }
-
-        BTBEntry buildBTBEntry(int componentIdx) const {
-            BTBEntry entry;
-            entry.valid = valid && hasBranch;
-            entry.pc = branchPC;
-            entry.target = targetPC;
-            entry.size = hasBranch ? size : 0;
-            entry.isCond = isCond;
-            entry.isDirect = isDirect;
-            entry.isIndirect = isIndirect;
-            entry.isCall = isCall;
-            entry.isReturn = isReturn;
-            entry.ctr = taken ? 0 : -1;
-            entry.source = componentIdx;
-
-            return entry;
-        };
     };
 
-    struct PairTAGEEntry
+    struct PTAGEEntry
     {
-        static constexpr uint8_t MaxIdentityConfidence = 3;
-        static constexpr uint8_t InitialIdentityConfidence = 1;
-
         bool valid;
+        bool b2Valid;
         Addr tag;
-        short counter;
         bool useful;
-        uint8_t identityConfidence;
-        std::array<PairBlockInfo, NumBlocksPerEntry> blocks;
 
-        PairTAGEEntry()
-            : valid(false), tag(0), counter(0), useful(false),
-              identityConfidence(0), blocks{}
+        // Confidence that both blocks are predicted right
+        uint8_t confidence;
+
+        PTAGEBlockInfo block;
+        PTAGEBlockInfo block2;
+
+        PTAGEEntryModelInfo modelInfo;
+
+        PTAGEEntry()
+            : valid(false), b2Valid(false), tag(0), useful(false),
+              confidence(0)
+        {}
+
+        // A new allocate entry holding one block, weak in its direction
+        PTAGEEntry(Addr tag, const BTBEntry &exit, Addr targetPC)
+            : valid(true), b2Valid(false), tag(tag), useful(false),
+              confidence(0), block(exit, targetPC)
         {
+            modelInfo.branchSize = exit.valid ? exit.size : 0;
         }
-
-        const PairBlockInfo &firstBlock() const { return blocks[0]; }
-
-        const PairBlockInfo &secondBlock() const { return blocks[1]; }
-
-        bool hasSecondBlock() const { return blocks[1].valid; }
-
-        void setBlock(unsigned blockIdx, const PairBlockInfo &block);
-        void clearBlock(unsigned blockIdx);
-        void strengthenIdentity();
-        bool weakenIdentity();
-    };
-
-    struct TageMeta
-    {
-        std::vector<PathFoldedHist> tagFoldedHist;
-        std::vector<PathFoldedHist> indexFoldedHist;
-        std::vector<PathFoldedHist> altTagFoldedHist;
-        bool aheadIndexFoldedHistValid{false};
-        std::vector<PathFoldedHist> aheadIndexFoldedHist;
-        PairBlockInfo predictedFirstBlock;
-        PairBlockInfo predictedSecondBlock;
-    };
-
-    struct TrainPacket
-    {
-        enum class BranchFlag : uint8_t
-        {
-            Conditional = 1U << 0,
-            Direct = 1U << 1,
-            Indirect = 1U << 2,
-            Call = 1U << 3,
-            Return = 1U << 4
-        };
-
-        Addr startPC{0};
-        PairPhase phase{PairPhase::Even};
-        std::shared_ptr<const TageMeta> meta;
-        bool valid{false};
-        bool hasBranch{false};
-        bool taken{false};
-        Addr branchPC{0};
-        Addr targetPC{0};
-        uint8_t branchFlags{0};
-        uint8_t size{0};
-
-        static constexpr uint8_t branchFlag(BranchFlag flag) { return static_cast<uint8_t>(flag); }
-
-        bool hasBranchFlag(BranchFlag flag) const { return branchFlags & branchFlag(flag); }
-
-        bool hasConsistentState() const
-        {
-            return (!hasBranch || valid) && (!taken || hasBranch);
-        }
-
-        bool isBranchlessFallthrough() const { return valid && !hasBranch; }
-
-        void setBranchFlags(const BranchInfo &branch)
-        {
-            uint8_t flags = 0;
-            if (branch.isCond) {
-                flags |= PairTAGE::TrainPacket::branchFlag(BranchFlag::Conditional);
-            }
-            if (branch.isDirect) {
-                flags |= PairTAGE::TrainPacket::branchFlag(BranchFlag::Direct);
-            }
-            if (branch.isIndirect) {
-                flags |= PairTAGE::TrainPacket::branchFlag(BranchFlag::Indirect);
-            }
-            if (branch.isCall) {
-                flags |= PairTAGE::TrainPacket::branchFlag(BranchFlag::Call);
-            }
-            if (branch.isReturn) {
-                flags |= PairTAGE::TrainPacket::branchFlag(BranchFlag::Return);
-            }
-
-            branchFlags = flags;
-        }
-    };
-
-    struct TageTableInfo
-    {
-        bool found;
-        PairTAGEEntry entry;
-        unsigned table;
-        Addr index;
-        Addr tag;
-        unsigned way;
-
-        TageTableInfo() : found(false), table(0), index(0), tag(0), way(0) {}
-
-        TageTableInfo(bool found, const PairTAGEEntry &entry, unsigned table, Addr index, Addr tag, unsigned way)
-            : found(found), entry(entry), table(table), index(index), tag(tag), way(way)
-        {
-        }
-    };
-
-    struct ProviderInfo
-    {
-        TageTableInfo main;
-        TageTableInfo alt;
     };
 
     PairTAGE(const Params &p);
 
-    void putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBTBPrediction> &stagePreds) override;
+    // Predict at s1, alternating between the first block of a looked-up
+    // entry and the second block of the same entry. A prediction takes
+    // priority over uBTB and aBTB, and one that falls through overrides
+    // their taken predictions as well.
+    void putPCHistory(Addr startAddr, const bitset &history,
+                      std::vector<FullBTBPrediction> &stagePreds) override;
 
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
-    void refreshPredictionMeta(Addr startAddr,
-                               const boost::dynamic_bitset<> &history,
-                               FullBTBPrediction &pred) override;
-    void specUpdatePHist(const bitset &history,
-                         FullBTBPrediction &pred,
+
+    void specUpdatePHist(const bitset &history, FullBTBPrediction &pred,
                          const PathHistoryUpdate &update) override;
+
     void recoverPHist(const bitset &history,
                       const HistoryRecoveryContext &context,
                       const PathHistoryUpdate &update) override;
-    PairBlockInfo getSecondPredBlock() const;
-    bool secondBlockMatches(const TrainPacket &packet) const;
-    void setPredictionPhase(PairPhase phase);
-    TrainPacket buildTrainPacketFromPredForFirstBlock(FullBTBPrediction &finalPred) const;
-    TrainPacket buildTwoTakenTrainPacket(Addr startPC, PairPhase phase, const std::vector<BTBEntry> &btbEntries,
-                                         const CondTakens &condTakens) const;
-    void trainFromS3Pred(
-        const TrainPacket &finalTrainPacket,
-        const TrainPacket *twoTakenTrainPacket = nullptr);
-    void recordTwoTakenBlockEnqueued();
-    bool secondBlockEnabled() const { return enableSecondBlock; }
-    bool phaseEnabled(PairPhase phase) const
-    {
-        return allowOddPhase || phase == PairPhase::Even;
-    }
+
+    // Fast training hook, driven by the final-stage prediction of every
+    // predicted block, like the other s1 predictors.
+    void updateUsingS3Pred(FullBTBPrediction &s3Pred);
+
+    // Fill pred with the second block to enqueue in the same cycle as the
+    // first block just predicted, and return whether there is one
+    bool getSecondBlock(ThreadID tid, FullBTBPrediction &pred);
+
+    // Record the meta of a second block enqueued with its first block
+    void refreshPredictionMeta(Addr startAddr, const bitset &history,
+                               FullBTBPrediction &pred) override;
+
+    // A control squash on a second block enqueued with its first block
+    // means the second block was wrong, so its entry loses the confidence
+    // to emit both blocks again
+    void handleControlSquash(const FetchTarget &target);
+
+    // Check the folded histories of thread tid against its full history
+    void checkFoldedHist(const bitset &history, ThreadID tid,
+                         const char *when);
 
   private:
-    enum TrainingType : unsigned
+    // Number of PairTAGE tables
+    const unsigned numPredictors;
+
+    // Number of entries in each table, summed over all banks and ways
+    std::vector<unsigned> tableSizes;
+
+    // Number of bits used for indexing each table, bank bits included
+    std::vector<unsigned> tableIndexBits;
+
+    // Number of bits used for tags in each table
+    std::vector<unsigned> tableTagBits;
+
+    // History lengths for each table
+    std::vector<unsigned> histLengths;
+
+    // Number of ways per set;
+    const unsigned numWays;
+
+    // ========== Bank Configuration ==========
+    // Each table is split into banks selected by low PC bits, A bank
+    // owns a contiguous range of indices, so an index is laid out
+    // as {bank, set}.
+    const unsigned numBanks;         // Number of banks (e.g., 4)
+    const unsigned bankIdWidth;      // log2(numBanks), computed in constructor
+
+    // The PairTAGE prediction tables (table x index x way).
+    std::vector<std::vector<std::vector<PTAGEEntry>>> table;
+
+    // ========== Index and Tag ==========
+    // PC fields from high to low bits: {tag, set, bank, instOffset}
+    // The tag takes the PC bits right above the index, so it carries
+    // information the index does not already have.
+
+    // Instruction alignment bits stripped before any PC field
+    const unsigned instShiftAmt{1};
+
+    // Bank selected by the PC bits right above the instruction offset
+    unsigned getBankId(Addr pc) const;
+
+    // Set within a bank: the PC bits above the bank XORed with the folded
+    // history of table t
+    Addr getSetIndex(Addr pc, unsigned t, uint64_t foldedHist) const;
+
+    // Index into table[t], laid out as {bank, set}
+    Addr getIndex(unsigned t, unsigned bank, Addr set) const;
+
+    // Tag: the PC bits above the index XORed with two folds of different
+    // widths, so the tag does not simply repeat the history the index uses
+    Addr getTag(Addr pc, unsigned t, uint64_t foldedHist,
+                uint64_t altFoldedHist) const;
+
+    // ========== History ==========
+    // Path folded histories of every table, kept per thread. Each table
+    // folds its own history length to the width of its set index and tag.
+    struct ThreadHistoryState
     {
-        Fallthrough,
-        HasBranchNotTaken,
-        IsCond,
-        IsDirect,
-        IsIndirect,
-        IsCall,
-        IsReturn,
-        NumTrainingTypes
+        std::vector<PathFoldedHist> indexFoldedHist;
+        std::vector<PathFoldedHist> tagFoldedHist;
+        std::vector<PathFoldedHist> altTagFoldedHist;
     };
+
+    std::vector<ThreadHistoryState> threadHistory;
+
+    ThreadHistoryState &historyState(ThreadID tid);
+    const ThreadHistoryState &historyState(ThreadID tid) const;
+
+    // Advance the folded histories of thread tid by one block
+    void doUpdateHist(const bitset &history, const PathHistoryUpdate &update,
+                      ThreadID tid);
+
+    // ========== Table Access ==========
+    // Entry index in one table, including useful bit for training.
+    struct TableIndex
+    {
+        Addr index{0};
+        Addr tag{0};
+        bool useful{false};
+    };
+
+    // Result of looking up every table for one block. Tables are ordered
+    // by history length, so the provider is the highest-numbered table
+    // that hits.
+    struct LookupResult
+    {
+        std::vector<TableIndex> tableIndexes;
+        int provider{-1};
+        unsigned providerWay{0};
+        PTAGEEntry entry;
+    };
+
+    // Look up every table with the PC and folded histories of a block
+    LookupResult lookup(Addr pc, const ThreadHistoryState &history) const;
+
+    // Replace a prediction with one block
+    void fillPrediction(const PTAGEBlockInfo &block, uint8_t branchSize,
+                        FullBTBPrediction &pred);
+
+    // Replace the stage predictions with one block
+    void fillStagePredictions(const PTAGEBlockInfo &block, uint8_t branchSize,
+                              std::vector<FullBTBPrediction> &stagePreds);
+
+    // Overwrite one way of set index of table t
+    void writeEntry(unsigned t, Addr index, unsigned way,
+                    const PTAGEEntry &entry);
+
+    // Clear the confidence of one way of set index of table t
+    void resetConfidence(unsigned t, Addr index, unsigned way);
+
+    // ========== Ahead Pipeline ==========
+    // The table read for a block is issued one block ahead.
+    //
+    // The term "Anchor" means that ahead pipeline start to output result.
+    struct AheadKey
+    {
+        // False at start and after a squash, until a first block enters
+        // the FTQ
+        bool valid{false};
+        Addr pc{0};
+        ThreadHistoryState history;
+    };
+
+    std::vector<AheadKey> threadAhead;
+
+    // ========== Block Phase ==========
+    // Predictions alternate between the two blocks of an entry. The first
+    // block phase looks up an entry and predicts its first block. The
+    // second block phase predicts the second block of the same entry,
+    // without a lookup. Where an entry holds a whole group, only the first
+    // block of a group becomes the key of the next one. A squash restarts
+    // at the first block phase.
+    enum class StatePhase { First, Second };
+
+    std::vector<StatePhase> threadPhase;
+
+    // ========== Live Entry ==========
+    // The entry a pair is working with, and where it is. Prediction keeps
+    // the entry its first block was predicted from, so the second block
+    // comes from the same read. Training keeps the entry its first block
+    // was trained into, until the next block arrives and is trained as
+    // its second block.
+    struct LiveEntryInfo
+    {
+        bool valid{false};
+        unsigned table{0};
+        Addr index{0};
+        unsigned way{0};
+        PTAGEEntry entry;
+        Addr nextPC{0};             // where the second block has to start
+        bool firstCorrect{false};   // training: the first block was right
+    };
+
+    std::vector<LiveEntryInfo> predLiveEntryInfo;
+    std::vector<LiveEntryInfo> trainLiveEntryInfo;
+
+    // ========== Prediction Meta ==========
+    // Recorded in the FTQ entry of every predicted block
+    struct PairTAGEMeta
+    {
+        // Folded histories the block was predicted with, restored on squash
+        ThreadHistoryState history;
+
+        // Mark this block has no anchor so there is no meta for training
+        // And the training will be skipped for this block.
+        bool noAnchor{false};
+
+        // Phase the block was predicted in
+        StatePhase phase{StatePhase::First};
+
+        // First block phase: lookup the block was predicted with
+        LookupResult lookup;
+
+        // Enqueued as the second block of a two-taken prediction, from the
+        // entry twoTakenEntry
+        bool twoTaken{false};
+        LiveEntryInfo twoTakenEntry;
+    };
+
+    std::vector<std::shared_ptr<PairTAGEMeta>> threadMeta;
+
+    // ========== Training ==========
+    // Allocations refused because every candidate entry is useful. Once the
+    // count saturates, the next allocation may evict a useful entry, so
+    // entries that stopped being used do not hold their tables forever.
+    static constexpr unsigned AllocRefusalWidth = 5;
+    unsigned allocRefusals{0};
+
+    // Entry confidence rises when a strengthened first block is followed
+    // by a strengthened second block, and falls when a valid second block
+    // is wrong. An entry whose confidence saturates at confidenceSaturate
+    // is ready to emit both blocks in one cycle, when enableTwoTaken.
+    const unsigned confidenceSaturate;
+    const bool enableTwoTaken;
+
+    // Train the first block of the looked-up entry, and return the entry
+    // it was trained into, invalid when it is not written
+    LiveEntryInfo trainFirstBlock(const LookupResult &lookup,
+                                  const BTBEntry &exit, Addr targetPC);
+
+    // Train the second block of the entry its first block was trained into
+    void trainSecondBlock(const LiveEntryInfo &live, const BTBEntry &exit,
+                          Addr targetPC);
 
     struct PairTAGEStats : public statistics::Group
     {
-        statistics::Scalar firstBlockLookups;
-        statistics::Scalar firstBlockHits;
-        statistics::Formula firstBlockHitRate;
-        statistics::Scalar firstBlockAccuracySamples;
-        statistics::Scalar firstBlockCorrect;
-        statistics::Formula firstBlockAccuracy;
+        statistics::Scalar lookups;
+        statistics::Scalar lookupNoAnchor;
+        statistics::Vector providerTable;
+        statistics::Scalar s3TrainEvents;
+        statistics::Scalar trainStrengthen;
+        statistics::Scalar trainCorrect;
+        statistics::Scalar trainAllocate;
+        statistics::Scalar trainAllocateEvicted;
+        statistics::Scalar trainNoTableFree;
+        statistics::Scalar secondPhasePreds;
+        statistics::Scalar secondPhaseProvided;
+        statistics::Scalar trainSecondStrengthen;
+        statistics::Scalar trainSecondReplace;
+        statistics::Scalar trainSecondBroken;
+        statistics::Vector providerConfidence;
+        statistics::Scalar twoTakenCandidates;
+        statistics::Scalar twoTakenSquashes;
 
-        statistics::Scalar secondBlockProduced;
-        statistics::Formula secondBlockProductionRate;
-        statistics::Scalar secondBlockAccuracySamples;
-        statistics::Scalar secondBlockCorrect;
-        statistics::Formula secondBlockAccuracy;
-
-        statistics::Scalar twoTakenBlocksEnqueued;
-        statistics::Formula twoTakenEnqueueRate;
-
-        statistics::Vector firstBlockTrainTypes;
-        statistics::Vector secondBlockTrainTypes;
-
-        statistics::Scalar allocations;
-        statistics::Scalar evictions;
-
-        PairTAGEStats(statistics::Group *parent);
-    };
-
-    ProviderInfo lookupProviders(Addr startPC) const;
-    ProviderInfo lookupProviders(Addr startPC, const TageMeta &predMeta) const;
-    TageTableInfo lookupEntry(Addr startPC) const;
-    void fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pred) const;
-    PairBlockInfo buildTrainingBlock(const TrainPacket &packet) const;
-    void recordTrainingTypes(statistics::Vector &typeStats,
-                             const PairBlockInfo &block);
-    bool blocksMatch(const PairBlockInfo &lhs, const PairBlockInfo &rhs) const;
-    bool blockIdentityMatches(const PairBlockInfo &lhs,
-                              const PairBlockInfo &rhs) const;
-    bool entryMatchesTraining(const PairTAGEEntry &entry, const PairBlockInfo &firstBlock,
-                              const PairBlockInfo &secondBlock) const;
-    void updateCounter(bool taken, unsigned width, short &counter);
-    bool satIncrement(int max, short &counter);
-    bool satDecrement(int min, short &counter);
-    bool betterProviderCandidate(const TageTableInfo &candidate,
-                                 const TageTableInfo &current) const;
-    int selectMatchingReplacementWay(
-        const std::vector<PairTAGEEntry> &set, Addr tag,
-        const PairBlockInfo &trainedBlock,
-        const PairBlockInfo &trainedSecondBlock) const;
-    int selectAllocationWay(const std::vector<PairTAGEEntry> &set) const;
-    void resetUsefulBits();
-    bool allocateEntries(Addr startPC, const TageMeta &predMeta,
-                         const PairBlockInfo &trainedBlock,
-                         const PairBlockInfo &trainedSecondBlock,
-                         unsigned startTable);
-    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist) const;
-    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist) const;
-    Addr getFallThrough(Addr startPC) const;
-    bool isBranchInFirstBlock(Addr branchPC, Addr startPC) const;
-    void doUpdateHist(const bitset &history, bool taken, Addr pc, Addr target);
-
-    const unsigned numPredictors;
-    std::vector<unsigned> tableSizes;
-    std::vector<unsigned> tableIndexBits;
-    std::vector<unsigned> tableTagBits;
-    std::vector<unsigned> tablePcShifts;
-    std::vector<unsigned> histLengths;
-    std::vector<PathFoldedHist> tagFoldedHist;
-    std::vector<PathFoldedHist> altTagFoldedHist;
-    std::vector<PathFoldedHist> indexFoldedHist;
-    LFSR64 allocLFSR;
-    const unsigned numTablesToAlloc;
-    const unsigned numWays;
-    std::vector<std::vector<std::vector<PairTAGEEntry>>> tageTable;
-    int usefulResetCnt{0};
-    unsigned instShiftAmt{1};
-    std::queue<std::vector<PathFoldedHist>> aheadIndexFoldedHist;
-    std::shared_ptr<TageMeta> meta;
-    PairBlockInfo secondPredBlock;
-    PairPhase predictionPhase{PairPhase::Even};
-    const bool enableSecondBlock;
-    const bool allowOddPhase;
-    const bool trainStandaloneFallThrough;
-    PairTAGEStats pairTageStats;
+        PairTAGEStats(statistics::Group *parent, unsigned numPredictors,
+                      unsigned confidenceSaturate);
+    } pairTageStats;
 };
 
 }  // namespace btb_pred

@@ -47,6 +47,7 @@
 #include <map>
 #include <queue>
 #include <set>
+#include <tuple>
 #include <vector>
 
 #include <boost/circular_buffer.hpp>
@@ -62,6 +63,7 @@
 #include "cpu/timebuf.hh"
 #include "cpu/valuepred/valuepred_unit.hh"
 #include "debug/IEW.hh"
+#include "sim/eventq.hh"
 #include "sim/probe/probe.hh"
 
 namespace gem5
@@ -454,6 +456,23 @@ class IEW
     /** Value predictor */
     valuepred::VPUnit *valuePred;
 
+    struct LatePredictionKey
+    {
+        ThreadID tid = 0;
+        InstSeqNum seqNo = 0;
+
+        bool operator<(const LatePredictionKey &other) const
+        {
+            return std::tie(tid, seqNo) < std::tie(other.tid, other.seqNo);
+        }
+    };
+
+    std::map<LatePredictionKey, DynInstPtr> latePredictionTargets;
+    std::map<LatePredictionKey, uint64_t> latePredictionCycles;
+    std::map<uint64_t, std::set<LatePredictionKey>> latePredictionByCycle;
+    std::set<LatePredictionKey> readyLatePredictions;
+    EventFunctionWrapper latePredictionEvent;
+
     /** Enable selective VP flush path */
     bool enableSelectiveVPFlush;
 
@@ -474,6 +493,15 @@ class IEW
   public:
 
     Scheduler* getScheduler() { return scheduler; }
+    void registerLatePrediction(const DynInstPtr &inst);
+    void latePredictionReady(const valuepred::VPLatePredictReadyInfo &info);
+    void processLatePredictionEvent();
+    void processLatePredictions();
+    void unregisterLatePrediction(const DynInstPtr &inst);
+    bool tryLateValuePrediction(const DynInstPtr &inst);
+    void notifyPredictionApplied(const DynInstPtr &inst);
+    void notifyValueAvailable(const DynInstPtr &inst, RegVal actualValue);
+    void notifyValueMispredicted(const DynInstPtr &inst);
     /** Instruction queue. */
     InstructionQueue instQueue;
 

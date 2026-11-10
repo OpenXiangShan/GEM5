@@ -142,19 +142,13 @@ class DecoupledBPUWithBTB : public BPredUnit
         boost::dynamic_bitset<> s0BwHistory;  ///< global backward History bits
         std::vector<boost::dynamic_bitset<>> s0LHistory;  ///< local History bits
         boost::dynamic_bitset<> commitHistory;
-        PairPhase s0PairPhase{PairPhase::Even};
         FullBTBPrediction finalPred;      ///< Final prediction
-        PairTAGE::TrainPacket finalTrainPacket;
-        PairTAGE::TrainPacket twoTakenTrainPacket;
-        std::vector<BTBEntry> twoTakenBTBEntries;
         unsigned numOverrideBubbles{0};
         bool validprediction{false};
         bool squashing{false};
         bool nextPredictionAfterSquash{false};
         bool blockPredictionPending{false};
         bool redirectPending{false};
-        bool twoTakenTrainReady{false};
-        bool firstBlockProcessedThisTick{false};
     } threads[MaxThreads];
 
     std::vector<HistoryManager> historyManagers;
@@ -174,11 +168,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     std::vector<ThreadID> scheduleThreads();
 
     void processNewPrediction(ThreadID tid);
-    void prepareTwoTakenTraining(ThreadID tid);
-    void processTwoTakenBlock(ThreadID tid);
-    void refreshTwoTakenPredictionMetas(ThreadID tid, FullBTBPrediction &pred);
-    bool currentFirstBlockHasAllowedPairPhase(ThreadID tid) const;
-    bool pairtageFirstBlockNotOverriden(ThreadID tid) const;
+    void enqueueSecondBlock(ThreadID tid);
 
     FetchTarget createFetchTargetEntry(ThreadID tid);
     FetchTarget createFetchTargetEntry(ThreadID tid, Addr startPC, FullBTBPrediction &pred);
@@ -295,10 +285,11 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar overrideControlAddrMismatch;
         statistics::Scalar overrideTargetMismatch;
 
-        statistics::Distribution fsqEntryDist;
-        statistics::Scalar fsqEntryEnqueued;
-        statistics::Scalar fsqEntryCommitted;
-        // statistics::Distribution ftqEntryDist;
+        statistics::Distribution ftqEntryDist;
+        statistics::Scalar ftqEntryEnqueued;
+        statistics::Scalar secondBlockEnqueued;
+        statistics::Scalar secondBlockFtqFull;
+        statistics::Scalar ftqEntryCommitted;
         statistics::Scalar controlSquashFromDecode;
         statistics::Scalar controlSquashFromCommit;
         statistics::Scalar controlSquashFromPredecode;
@@ -306,16 +297,12 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar trapSquash;
 
         statistics::Scalar ftqNotValid;
-        statistics::Scalar fsqNotValid;
-        statistics::Scalar fsqFullCannotEnq;
         statistics::Scalar ftqFullCannotEnq;
-        statistics::Scalar fsqFullFetchHungry;
-        statistics::Scalar fsqEmpty;
-        //
-        statistics::Distribution commitFsqEntryHasInsts;
-        // write back once an fsq entry finishes fetch
-        statistics::Distribution commitFsqEntryFetchedInsts;
-        statistics::Scalar commitFsqEntryOnlyHasOneJump;
+        statistics::Distribution commitFtqInstBytes;
+        statistics::Distribution commitFtqEntryHasInsts;
+        // Write back once an FTQ entry finishes fetch.
+        statistics::Distribution commitFtqEntryFetchedInsts;
+        statistics::Scalar commitFtqEntryOnlyHasOneJump;
 
         statistics::Scalar btbHit;
         statistics::Scalar btbMiss;
@@ -339,6 +326,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar s1PredWrongFallthrough;
         statistics::Scalar s1PredWrongUbtb;
         statistics::Scalar s1PredWrongAbtb;
+        statistics::Scalar s1PredWrongPairtage;
         statistics::Vector2d s1PredWrongBySourceAndReason;
         statistics::Scalar s3PredWrongMbtb;
         statistics::Scalar s3PredWrongTage;
@@ -346,7 +334,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar s3PredWrongRas;
 
         DBPBTBStats(statistics::Group* parent, unsigned numStages,
-                    unsigned fsqSize, unsigned maxInstsNum,
+                    unsigned ftqSize, unsigned predictWidth, unsigned maxInstsNum,
                     unsigned numThreads);
     } dbpBtbStats;
 
@@ -702,42 +690,40 @@ class DecoupledBPUWithBTB : public BPredUnit
      *
      * Vector indexed by instruction count, values are frequency.
      */
-    std::vector<int> lastPhaseFsqEntryNumCommittedInstDist;
+    std::vector<int> lastPhaseFtqEntryNumCommittedInstDist;
 
     /**
      * @brief Total committed instruction count distribution
      *
-     * Tracks how many FSQ entries have each number of committed instructions.
+     * Tracks how many FTQ entries have each number of committed instructions.
      */
-    std::vector<int> commitFsqEntryHasInstsVector;
-
+    std::vector<int> commitFtqEntryHasInstsVector;
     /**
      * @brief Committed instruction distributions by phase
      *
      * Each entry contains the distribution of committed instructions for a phase.
      */
-    std::vector<std::vector<int>> fsqEntryNumCommittedInstDistByPhase;
+    std::vector<std::vector<int>> ftqEntryNumCommittedInstDistByPhase;
 
     /**
      * @brief Distribution of fetched instructions from previous phase
      *
      * Vector indexed by instruction count, values are frequency.
      */
-    std::vector<int> lastPhaseFsqEntryNumFetchedInstDist;
+    std::vector<int> lastPhaseFtqEntryNumFetchedInstDist;
 
     /**
      * @brief Total fetched instruction count distribution
      *
-     * Tracks how many FSQ entries have each number of fetched instructions.
+     * Tracks how many FTQ entries have each number of fetched instructions.
      */
-    std::vector<int> commitFsqEntryFetchedInstsVector;
-
+    std::vector<int> commitFtqEntryFetchedInstsVector;
     /**
      * @brief Fetched instruction distributions by phase
      *
      * Each entry contains the distribution of fetched instructions for a phase.
      */
-    std::vector<std::vector<int>> fsqEntryNumFetchedInstDistByPhase;
+    std::vector<std::vector<int>> ftqEntryNumFetchedInstDistByPhase;
 
     /**
      * @brief Total branch misprediction count

@@ -1103,27 +1103,22 @@ class MicroTAGE(TimedBaseBTBPredictor):
     numDelay = 0
 
 class PairTAGE(TimedBaseBTBPredictor):
-    """Pair-aware MicroTAGE storage skeleton for two-block emissions."""
+    """Pair TAGE: s1 fast predictor whose entries hold two blocks"""
     type = 'PairTAGE'
     cxx_class = 'gem5::branch_prediction::btb_pred::PairTAGE'
     cxx_header = "cpu/pred/btb/pairtage.hh"
 
-    numPredictors = Param.Unsigned(4, "Number of TAGE predictors")
-    tableSizes = VectorParam.Unsigned([8192] * 4,"the TAGE T0~Tn length")
-    TTagBitSizes = VectorParam.Unsigned([16] * 4 ,"the T0~Tn entry's tag bit size")
-    TTagPcShifts = VectorParam.Unsigned([1] * 4 ,"when the T0~Tn entry's tag generating, PC right shift")
-
-    histLengths = VectorParam.Unsigned([5,9,17,27] ,"the BTB TAGE T0~Tn history length")
-    numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
-    numWays = Param.Unsigned(2, "Number of ways per set")
-    enableSecondBlock = Param.Bool(True, "Enable PairTAGE second-block emission and training")
-    allowOddPhase = Param.Bool(
-        True,
-        "Allow PairTAGE predict/train/second-block paths to operate on odd pair phase")
-    trainStandaloneFallThrough = Param.Bool(
-        True,
-        "Allow PairTAGE to train fallthrough first blocks even when no valid second block exists")
-    numDelay = 2
+    # Defaults follow the RTL pTAGE: 3 direct-mapped tables of
+    # 4 banks x 256 sets each.
+    numPredictors = Param.Unsigned(3, "Number of PairTAGE tables")
+    tableSizes = VectorParam.Unsigned([1024] * 3, "the T0~Tn entry count, summed over all banks")
+    TTagBitSizes = VectorParam.Unsigned([8] * 3, "the T0~Tn tag bit size")
+    histLengths = VectorParam.Unsigned([8, 20, 40], "the T0~Tn path history length")
+    numWays = Param.Unsigned(1, "Number of ways per set")
+    numBanks = Param.Unsigned(4, "Number of banks per table")
+    confidenceSaturate = Param.Unsigned(10, "Entry confidence at which both blocks may be emitted in one cycle")
+    enableTwoTaken = Param.Bool(False, "Emit both blocks of a saturated entry in one cycle")
+    numDelay = 0
     enabled = False
 
 class BTBITTAGE(TimedBaseBTBPredictor):

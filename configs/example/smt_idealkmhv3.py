@@ -79,6 +79,8 @@ def setDualFrontendProbeParams(system):
         cpu.branchPred.abtb.usingS3Pred = False
         cpu.branchPred.microtage.enabled = True
         cpu.branchPred.microtage.usingS3Pred = False
+        cpu.branchPred.pairtage.enabled = False
+        cpu.branchPred.pairtage.enableTwoTaken = False
 
 
 def setTidPartitionedPredictorParams(system):

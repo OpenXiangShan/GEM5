@@ -43,6 +43,7 @@
 #define __CPU_O3_INST_QUEUE_HH__
 
 #include <array>
+#include <cstdint>
 #include <list>
 #include <map>
 #include <queue>
@@ -116,6 +117,9 @@ class InstructionQueue
       private:
         /** Executing instruction. */
         DynInstPtr inst;
+
+        /** Attempt that owned this event when it was created. */
+        uint64_t attempt;
 
         /** Index of the FU used for executing. */
         int fuIdx;
@@ -236,7 +240,8 @@ class InstructionQueue
     void recordAddrOrDataReady(const DynInstPtr &inst);
 
     /** Process FU completion event. */
-    void processFUCompletion(const DynInstPtr &inst, int fu_idx);
+    void processFUCompletion(const DynInstPtr &inst, int fu_idx,
+                             uint64_t attempt);
 
     bool execLatencyCheck(const DynInstPtr& inst, uint32_t& op_latency);
 
@@ -245,6 +250,9 @@ class InstructionQueue
      * the queue to execute.
      */
     void scheduleReadyInsts();
+
+    /** Classify deferred FP operands after this cycle's real completions. */
+    void finishFpDeferredReads();
 
     /** Schedules a single specific non-speculative instruction. */
     void scheduleNonSpec(const InstSeqNum &inst);
@@ -345,7 +353,19 @@ class InstructionQueue
     Scheduler* scheduler;
 
     /** List of instructions that are ready to be executed. */
-    std::list<DynInstPtr> instsToExecute;
+    struct PendingExecute
+    {
+        DynInstPtr inst;
+        uint64_t attempt;
+    };
+    std::list<PendingExecute> instsToExecute;
+
+    struct DeferredFpRead
+    {
+        PendingExecute pending;
+        Tick atFuTick;
+    };
+    std::vector<DeferredFpRead> deferredFpReads;
 
     /** List of instructions waiting for their DTB translation to
      *  complete (hw page table walk in progress).

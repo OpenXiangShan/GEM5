@@ -338,11 +338,11 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
     ADD_STAT(idleCycles, statistics::units::Cycle::get(),
              "Number of cycles fetch was idle"),
     ADD_STAT(smtidleCycles, statistics::units::Cycle::get(),
-             "Number of cycles fetch was idle per tid"),         
+             "Number of cycles fetch was idle per tid"),
     ADD_STAT(blockedCycles, statistics::units::Cycle::get(),
              "Number of cycles fetch has spent blocked"),
     ADD_STAT(smtblockedCycles, statistics::units::Cycle::get(),
-             "Number of cycles fetch has spent blocked per tid"),         
+             "Number of cycles fetch has spent blocked per tid"),
     ADD_STAT(miscStallCycles, statistics::units::Cycle::get(),
              "Number of cycles fetch has spent waiting on interrupts, or bad "
              "addresses, or out of MSHRs"),
@@ -393,9 +393,9 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
     ADD_STAT(decodeStalls, statistics::units::Count::get(),
              "Number of decode stalls"),
     ADD_STAT(smtdecodeStalls, statistics::units::Count::get(),
-             "Number of decode stalls per tid"),  
+             "Number of decode stalls per tid"),
     ADD_STAT(smtftqempty, statistics::units::Count::get(),
-             "Number of ftq empty per tid"),                  
+             "Number of ftq empty per tid"),
     ADD_STAT(decodeStallRate, statistics::units::Rate<
                     statistics::units::Count, statistics::units::Cycle>::get(),
              "Number of decode stalls per cycle",
@@ -577,7 +577,7 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .prereq(decodeStalls);
         smtdecodeStalls
             .init(fetch->numThreads)
-            .flags(statistics::total);  
+            .flags(statistics::total);
         smtftqempty
             .init(fetch->numThreads)
             .flags(statistics::total);
@@ -586,7 +586,7 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .flags(statistics::total);
         smtblockedCycles
             .init(fetch->numThreads)
-            .flags(statistics::total);     
+            .flags(statistics::total);
         fetchTargetsStartedPerCycle
             .init(0, fetch->numThreads, 1);
         fetchTargetsStartedByThread
@@ -706,14 +706,14 @@ Fetch::initDecodeScheduler()
     robCounter = new InstsCounter();
     DPRINTF(Fetch, "Initialized SMT Decode Scheduler: 0\n");
 
-    for (ThreadID tid = 0; tid < numThreads; tid++) 
+    for (ThreadID tid = 0; tid < numThreads; tid++)
     {
         lsqCounter->setCounter(tid, 0);
         iqCounter->setCounter(tid, 0);
         robCounter->setCounter(tid, 0);
     }
     DPRINTF(Fetch, "Initialized SMT Decode Scheduler: 1\n");
-    
+
     if (smtDecodePolicy == SMTDecodePolicy::ICount) {
         // Use ROB as default counter for icount
         decodeScheduler = new ICountScheduler(numThreads, robCounter);
@@ -1772,6 +1772,7 @@ Fetch::tick()
 bool
 Fetch::initializeTickState()
 {
+    resolveSquashCutoff.fill(std::nullopt);
     idealFetchTargetsUsed = 0;
     if (idealInstructionFetch) {
         for (ThreadID tid = 0; tid < numThreads; ++tid) {
@@ -2022,7 +2023,7 @@ Fetch::sendInstructionsToDecode()
             any_thread_active = true;
             //break;
         }else{
-            fetchStats.smtdecodeStalls[i]++; 
+            fetchStats.smtdecodeStalls[i]++;
         }
 
         // === Flush Policy: initiate flush after asymmetric check passes ===
@@ -2119,7 +2120,7 @@ Fetch::sendInstructionsToDecode()
         bool block_policy_active = isThrottlePolicyActive();
         if (tid != primary_tid && !stallSig->blockFetch[tid] &&
             !fetchQueue[tid].empty() &&
-            !(block_policy_active && (mlpAwareMode[tid] ? 
+            !(block_policy_active && (mlpAwareMode[tid] ?
                 mlpThreadFetchThrottled[tid] : threadFetchThrottled[tid]))) {
             selected_tids.push_back(tid);
         }
@@ -2177,7 +2178,7 @@ Fetch::sendInstructionsToDecode()
         total_insts_to_decode += thread_insts;
         measureFrontendBubbles(thread_insts, tid);
         updateStallReasons(thread_insts, tid);
-        
+
         // MLP block: count instructions sent after LL load
         if (smtMlpFetchBlockPolicy == SMTMLPFetchBlockPolicy::MlpAwarePolicy &&
             isBlockPolicy() && mlpAwareMode[tid]) {
@@ -2839,11 +2840,16 @@ Fetch::processResolveUpdates()
             squashResolveQueue(tid, iewInfo.redirectLastValidSeqNum);
         }
         for (const auto &resolved : iewInfo.resolvedCFIs) {
-            if (!iewInfo.redirectPending ||
-                resolved.seqNum <= iewInfo.redirectLastValidSeqNum) {
+            if (!resolveSquashCutoff[tid] ||
+                resolved.seqNum <= *resolveSquashCutoff[tid]) {
                 enqueueSize++;
             } else {
                 fetchStats.resolveSquashedEvents++;
+                DPRINTF(Fetch,
+                        "[tid:%i] Dropping resolved branch seq=%llu PC=%#lx "
+                        "past squash cutoff=%llu\n",
+                        tid, resolved.seqNum, resolved.pc,
+                        *resolveSquashCutoff[tid]);
             }
         }
     }
@@ -2858,8 +2864,8 @@ Fetch::processResolveUpdates()
             for (const auto &resolved : incoming) {
                 panic_if(resolved.tid != tid,
                          "Resolve event arrived on the wrong thread wire");
-                if (iewInfo.redirectPending &&
-                    resolved.seqNum > iewInfo.redirectLastValidSeqNum) {
+                if (resolveSquashCutoff[tid] &&
+                    resolved.seqNum > *resolveSquashCutoff[tid]) {
                     continue;
                 }
                 bool merged = false;
@@ -2908,6 +2914,13 @@ Fetch::processResolveUpdates()
 void
 Fetch::squashResolveQueue(ThreadID tid, InstSeqNum squashSeqNum)
 {
+    auto &cutoff = resolveSquashCutoff[tid];
+    if (cutoff) {
+        squashSeqNum = std::min(squashSeqNum, *cutoff);
+    }
+    cutoff = squashSeqNum;
+    DPRINTF(Fetch, "[tid:%i] Resolve queue squash cutoff=%llu\n",
+            tid, squashSeqNum);
     for (auto entry = resolveQueue.begin(); entry != resolveQueue.end();) {
         if (entry->tid != tid) {
             ++entry;

@@ -95,7 +95,7 @@ class FP_SLOW(FUDesc):
 class FP_ALU(FUDesc):
     opList = [ OpDesc(opClass='FloatAdd', opLat=2),
                OpDesc(opClass='FloatMisc', opLat=2),
-               OpDesc(opClass='FloatMult', opLat=4)]
+               OpDesc(opClass='FloatMult', opLat=3)]
 
 class FP_MISC(FUDesc):
     opList = [ OpDesc(opClass='FloatCvt', opLat=4),

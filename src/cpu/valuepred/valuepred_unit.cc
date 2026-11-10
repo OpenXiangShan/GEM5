@@ -27,6 +27,14 @@ VPUnit::assertValidTid(ThreadID tid) const
                 name().c_str(), static_cast<unsigned>(tid), numThreads);
 }
 
+void
+VPUnit::notifyLatePredictReady(const VPLatePredictReadyInfo &info)
+{
+    if (latePredictReadyCallback) {
+        latePredictReadyCallback(info);
+    }
+}
+
 VPResult
 VPUnit::valuePredict(const VPPredictRequest &request,
         std::unique_ptr<VPPredictionRecord> &record)
@@ -34,6 +42,59 @@ VPUnit::valuePredict(const VPPredictRequest &request,
     auto candidate = predict(request);
     record = std::move(candidate.record);
     return candidate.result;
+}
+
+/** Ignore dispatch by default for predictors without dispatch-time state. */
+void
+VPUnit::dispatch(const VPDispatchInfo &dispatchInfo,
+        VPPredictionRecord *record)
+{
+    (void)dispatchInfo;
+    (void)record;
+}
+
+/** Return an empty candidate by default for predictors without late prediction. */
+VPPredictionCandidate
+VPUnit::latePredict(const VPLatePredictRequest &request,
+        VPPredictionRecord *record)
+{
+    (void)request;
+    (void)record;
+    return {};
+}
+
+/** Ignore executed-value feedback by default. */
+void
+VPUnit::valueAvailable(const VPValueAvailableInfo &valueInfo,
+        VPPredictionRecord *record)
+{
+    (void)valueInfo;
+    (void)record;
+}
+
+/** Ignore applied-prediction feedback by default. */
+void
+VPUnit::predictionApplied(const VPPredictionAppliedInfo &appliedInfo,
+        VPPredictionRecord *record)
+{
+    (void)appliedInfo;
+    (void)record;
+}
+
+/** Ignore misprediction feedback by default. */
+void
+VPUnit::valueMispredicted(const VPMispredictionInfo &mispInfo,
+        VPPredictionRecord *record)
+{
+    (void)mispInfo;
+    (void)record;
+}
+
+/** Ignore per-instruction commit notifications by default. */
+void
+VPUnit::commitInstruction(const VPCommitInfo &commitInfo)
+{
+    (void)commitInfo;
 }
 
 VPUnit::ValuePredUnitStats::ValuePredUnitStats(VPUnit *vp)

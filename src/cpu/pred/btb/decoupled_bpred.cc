@@ -40,22 +40,6 @@ DecoupledBPUWithBTB::getThreadAsidHash(ThreadID tid) const
     return foldAsidHash16To4(asid);
 }
 
-namespace
-{
-
-PairPhase
-flippedPairPhase(PairPhase phase)
-{
-    return phase == PairPhase::Even ? PairPhase::Odd : PairPhase::Even;
-}
-
-void
-advancePairPhase(PairPhase &phase)
-{
-    phase = flippedPairPhase(phase);
-}
-
-} // namespace
 void
 DecoupledBPUWithBTB::consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid)
 {
@@ -91,7 +75,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       smtFTQThreshold(p.smtFTQThreshold),
       ftq(p.numThreads, p.ftq_size),
       resolveBlockThreshold(p.resolveBlockThreshold),
-      dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum, p.numThreads)
+      dbpBtbStats(this, p.numStages, p.ftq_size, p.predictWidth, maxInstsNum, p.numThreads)
 {
     panic_if(idealPredictionsPerCycle < 1 || idealPredictionsPerCycle > 2,
              "idealPredictionsPerCycle must be one or two");
@@ -105,7 +89,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
              "numThreads (%u))]",
              numPredictingThreads, numThreads);
     panic_if(numPredictingThreads > 1 && pairtage->isEnabled(),
-             "PairTAGE does not yet support concurrent SMT predictions; "
+             "PairTAGE does not support concurrent SMT predictions yet; "
              "disable PairTAGE or set smtNumPredictingThreads to one");
     panic_if(ftqMode == SMTFTQMode::Shared &&
              ftqPolicy == SMTFTQPolicy::Threshold &&
@@ -176,14 +160,13 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
             thread.s0LHistory[i].resize(historyBits, 0);
         }
         thread.commitHistory.resize(historyBits, 0);
-        thread.s0PairPhase = PairPhase::Even;
         thread.squashing = true;
     }
 
-    commitFsqEntryHasInstsVector.resize(maxInstsNum+1, 0);
-    lastPhaseFsqEntryNumCommittedInstDist.resize(maxInstsNum+1, 0);
-    commitFsqEntryFetchedInstsVector.resize(maxInstsNum+1, 0);
-    lastPhaseFsqEntryNumFetchedInstDist.resize(maxInstsNum+1, 0);
+    commitFtqEntryHasInstsVector.resize(maxInstsNum+1, 0);
+    lastPhaseFtqEntryNumCommittedInstDist.resize(maxInstsNum+1, 0);
+    commitFtqEntryFetchedInstsVector.resize(maxInstsNum+1, 0);
+    lastPhaseFtqEntryNumFetchedInstDist.resize(maxInstsNum+1, 0);
 
     registerExitCallback([this]() {
         this->dumpStats();
@@ -333,15 +316,6 @@ DecoupledBPUWithBTB::tick()
 {
     DPRINTF(Override, "DecoupledBPUWithBTB::tick()\n");
 
-    for (int tid = 0; tid < numThreads; ++tid) {
-        auto &thread = threads[tid];
-        thread.finalTrainPacket = PairTAGE::TrainPacket{};
-        thread.twoTakenTrainPacket = PairTAGE::TrainPacket{};
-        thread.twoTakenBTBEntries.clear();
-        thread.firstBlockProcessedThisTick = false;
-        thread.twoTakenTrainReady = false;
-    }
-
     const auto scheduledTids = scheduleThreads();
     bool anyActiveThread = false;
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
@@ -360,8 +334,6 @@ DecoupledBPUWithBTB::tick()
             threads[tid].validprediction = false;
             threads[tid].numOverrideBubbles = 0;
             threads[tid].nextPredictionAfterSquash = true;
-            threads[tid].twoTakenTrainReady = false;
-            threads[tid].firstBlockProcessedThisTick = false;
             tage->dryRunCycle(threads[tid].s0PC);
             DPRINTF(Override, "Squashing, BPU state updated.\n");
             threads[tid].squashing = false;
@@ -383,13 +355,14 @@ DecoupledBPUWithBTB::tick()
     dbpBtbStats.predictionsStartedPerCycle.sample(predictionsStarted);
 
     for (int tid = 0; tid < numThreads; tid++) {
+        const auto first_prediction_size = ftq.size(tid);
         processNewPrediction(tid);
 
         // The first target owns its metadata and has already advanced PC,
         // folded histories and RAS before the second lookup is made. Keep
         // cycle-level scheduling, resolve handling and bubble aging once.
         if (idealPredictionsPerCycle == 2 &&
-            threads[tid].firstBlockProcessedThisTick &&
+            ftq.size(tid) > first_prediction_size &&
             canStartPrediction(tid)) {
             dbpBtbStats.idealSecondPredictionRequests++;
             dbpBtbStats.predictionsStartedByThread[tid]++;
@@ -407,20 +380,6 @@ DecoupledBPUWithBTB::tick()
             numOverrideBubbles--;
             dbpBtbStats.overrideBubbleNum++;
             DPRINTF(Override, "Consuming override bubble, %d remaining\n", numOverrideBubbles);
-        }
-    }
-
-    for (int tid = 0; tid < numThreads; tid++) {
-        auto &thread = threads[tid];
-
-        prepareTwoTakenTraining(tid);
-        processTwoTakenBlock(tid);
-
-        if (thread.firstBlockProcessedThisTick && pairtage &&
-            pairtage->isEnabled()) {
-            const auto *secondPacket = thread.twoTakenTrainReady ?
-                &thread.twoTakenTrainPacket : nullptr;
-            pairtage->trainFromS3Pred(thread.finalTrainPacket, secondPacket);
         }
     }
 
@@ -449,10 +408,6 @@ DecoupledBPUWithBTB::requestNewPrediction(ThreadID tid)
         predsOfEachStage[i].asidHash = asid_hash;
         predsOfEachStage[i].bbStart = thread.s0PC;
         predsOfEachStage[i].predSource = i;
-    }
-
-    if (pairtage && pairtage->isEnabled()) {
-        pairtage->setPredictionPhase(thread.s0PairPhase);
     }
 
     // Query each predictor component with current PC and history
@@ -574,6 +529,9 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     if (microtage->isEnabled()) {
         microtage->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
     }
+    if (pairtage->isEnabled()) {
+        pairtage->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
+    }
 
     // 4. Record override bubbles and update statistics
     if (first_hit_stage > 0) {
@@ -604,14 +562,14 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     }
 }
 
-// this function enqueues fsq and update s0PC and s0History
+// This function enqueues an FTQ entry and updates s0PC and s0History.
 void
 DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
 {
 
     // Check if a prediction is available to enqueue
     if (!threads[tid].validprediction) {
-        DPRINTF(Override, "No prediction available to enqueue into FSQ\n");
+        DPRINTF(Override, "No prediction available to enqueue into FTQ\n");
         return;
     }
 
@@ -622,11 +580,11 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
         return;
     }
 
-    // Monitor FSQ size for statistics
-    dbpBtbStats.fsqEntryDist.sample(ftq.size(tid), 1);
+    // Monitor FTQ occupancy for statistics.
+    dbpBtbStats.ftqEntryDist.sample(ftq.size(tid), 1);
     if (ftqFull(tid)) {
-        dbpBtbStats.fsqFullCannotEnq++;
-        DPRINTF(Override, "FSQ is full (%lu entries)\n", ftq.size(tid));
+        dbpBtbStats.ftqFullCannotEnq++;
+        DPRINTF(Override, "FTQ is full (%lu entries)\n", ftq.size(tid));
         return;
     }
 
@@ -642,10 +600,6 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
 
     // 1. Create a new fetch target entry with prediction information
     FetchTarget entry = createFetchTargetEntry(tid);
-
-    if (pairtage && pairtage->isEnabled()) {
-        threads[tid].finalTrainPacket = pairtage->buildTrainPacketFromPredForFirstBlock(threads[tid].finalPred);
-    }
 
     // 2. Update global PC state to target or fall-through
     s0PC = threads[tid].finalPred.getTarget(predictWidth);;
@@ -663,9 +617,7 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
     // 5. Add entry to fetch target queue
     ftq.insert(std::move(entry));
     threads[tid].nextPredictionAfterSquash = false;
-    advancePairPhase(threads[tid].s0PairPhase);
     threads[tid].validprediction = false;
-    threads[tid].firstBlockProcessedThisTick = true;
 
     // 6. Debug output and update statistics
     dumpFsq("after insert new target");
@@ -674,245 +626,63 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
 
     // 7. Increment statistics
     printTarget(ftq.back(tid));
-    dbpBtbStats.fsqEntryEnqueued++;
+    dbpBtbStats.ftqEntryEnqueued++;
 
+    // 8. A second block may follow the first in the same cycle
+    enqueueSecondBlock(tid);
 }
 
 void
-DecoupledBPUWithBTB::processTwoTakenBlock(ThreadID tid)
+DecoupledBPUWithBTB::enqueueSecondBlock(ThreadID tid)
 {
     auto &thread = threads[tid];
 
-    if (!thread.firstBlockProcessedThisTick) {
+    // Only a first block the final prediction agrees with may carry a
+    // second block: an overridden one drops it, as the RTL flushes both
+    if (!pairtage->isEnabled() || thread.finalPred.predSource != 0) {
         return;
     }
 
-    if (!pairtage || !pairtage->isEnabled()) {
-        return;
-    }
-
-    if (!pairtage->secondBlockEnabled()) {
-        return;
-    }
-
-    if (!currentFirstBlockHasAllowedPairPhase(tid)) {
-        DPRINTF(DecoupleBP,
-                "Skip PairTAGE second block for thread %u because first block phase is Odd\n",
-                tid);
-        return;
-    }
-
-    if (!pairtageFirstBlockNotOverriden(tid)) {
-        DPRINTF(DecoupleBP,
-                "Skip PairTAGE second block for thread %u because first block was overridden by final prediction\n",
-                tid);
-        return;
-    }
-
-    if (ftq.full(tid)) {
-        DPRINTF(DecoupleBP,
-                "Skip PairTAGE second block enqueue for thread %u because FTQ is full\n",
-                tid);
-        return;
-    }
-
-    auto secondBlock = pairtage->getSecondPredBlock();
-    if (!secondBlock.valid) {
-        DPRINTF(DecoupleBP,
-                "No pending PairTAGE second block for thread %u after first block\n",
-                tid);
-        return;
-    }
-
-    if (thread.twoTakenTrainReady &&
-        !pairtage->secondBlockMatches(thread.twoTakenTrainPacket)) {
-        const auto &teacherPacket = thread.twoTakenTrainPacket;
-        const bool teacherValid = teacherPacket.valid;
-        DPRINTF(DecoupleBP,
-                "Skip PairTAGE second block enqueue for thread %u because training prediction disagrees: "
-                "pairtage(valid=%d pc=%#lx target=%#lx taken=%d) vs "
-                "teacher(valid=%d pc=%#lx target=%#lx taken=%d)\n",
-                tid,
-                secondBlock.valid, secondBlock.branchPC,
-                secondBlock.targetPC, secondBlock.taken,
-                teacherValid, teacherPacket.branchPC,
-                teacherPacket.targetPC, teacherPacket.taken);
-        return;
-    }
-
-    // Cast the second block prediction into a FullBTBPrediction for FTQ enqueue & refreshing metas
     FullBTBPrediction secondPred;
     secondPred.tid = tid;
     secondPred.asidHash = thread.finalPred.asidHash;
     secondPred.bbStart = thread.s0PC;
-    secondPred.predSource = pairtage->getComponentIdx();
-    secondPred.overrideReason = OverrideReason::NO_OVERRIDE;
     secondPred.predTick = thread.finalPred.predTick;
+    secondPred.predSource = 0;
+    secondPred.overrideReason = OverrideReason::NO_OVERRIDE;
     secondPred.s1Source = pairtage->getComponentIdx();
     secondPred.s3Source = pairtage->getComponentIdx();
-
-    BTBEntry secondEntry = secondBlock.buildBTBEntry(pairtage->getComponentIdx());
-    secondPred.btbEntries.push_back(secondEntry);
-    if (secondEntry.valid && secondEntry.isCond) {
-        secondPred.condTakens.push_back({secondEntry.pc, secondBlock.taken});
-    }
-    if (secondEntry.valid && secondEntry.isIndirect) {
-        if (secondEntry.isReturn) {
-            secondPred.returnTarget = secondEntry.target;
-        } else {
-            secondPred.indirectTargets.push_back({secondEntry.pc, secondEntry.target});
-        }
+    if (!pairtage->getSecondBlock(tid, secondPred)) {
+        return;
     }
 
-    // Merge the second block teacher's additional conditional candidates into
-    // this prediction; component-local metadata records the training view.
-    if (thread.twoTakenTrainReady && secondBlock.valid && !secondBlock.isBranchlessFallthrough()) {
-        for (const auto &teacherEntry : thread.twoTakenBTBEntries) {
-            if (!teacherEntry.valid || !teacherEntry.isCond) {
-                continue;
-            }
-            if (teacherEntry.pc < secondPred.bbStart || teacherEntry.pc >= secondBlock.branchPC) {
-                continue;
-            }
-            if (teacherEntry.pc == secondBlock.branchPC) {
-                continue;
-            }
-
-            secondPred.btbEntries.push_back(teacherEntry);
-            secondPred.condTakens.push_back({teacherEntry.pc, false});
-        }
-
-        std::sort(secondPred.btbEntries.begin(), secondPred.btbEntries.end(),
-                  [](const BTBEntry &lhs, const BTBEntry &rhs) { return lhs.pc < rhs.pc; });
+    // Without room for both, the second block waits for the next cycle
+    if (ftqFull(tid)) {
+        dbpBtbStats.secondBlockFtqFull++;
+        return;
     }
 
-    refreshTwoTakenPredictionMetas(tid, secondPred);
-    auto entry = createFetchTargetEntry(tid, thread.s0PC, secondPred);
+    // Every component records the meta the second block recovers from
+    for (int i = 0; i < numComponents; ++i) {
+        components[i]->refreshPredictionMeta(thread.s0PC, thread.s0History,
+                                             secondPred);
+    }
 
+    FetchTarget entry = createFetchTargetEntry(tid, thread.s0PC, secondPred);
     thread.s0PC = secondPred.getTarget(predictWidth);
     updateHistoryForPrediction(entry, secondPred);
     fillAheadPipeline(entry);
+
+    if (enablePredFSQTrace) {
+        predTraceManager->write_record(PredictionTrace(ftq.backId(tid), entry));
+    }
+
     ftq.insert(std::move(entry));
-    pairtage->recordTwoTakenBlockEnqueued();
-    advancePairPhase(thread.s0PairPhase);
-
-    DPRINTF(DecoupleBP,
-            "Inserted PairTAGE second block %lu for thread %u: startPC %#lx, branchPC %#lx, target %#lx, taken %d\n",
-            ftq.backId(tid), tid, ftq.back(tid).startPC, secondBlock.branchPC,
-            secondBlock.targetPC, secondBlock.taken);
-
+    DPRINTF(DecoupleBP, "Inserted second block %lu starting at PC %#lx\n",
+            ftq.backId(tid), ftq.back(tid).startPC);
     printTarget(ftq.back(tid));
-    dbpBtbStats.fsqEntryEnqueued++;
-}
-
-void
-DecoupledBPUWithBTB::refreshTwoTakenPredictionMetas(
-    ThreadID tid, FullBTBPrediction &pred)
-{
-    auto &thread = threads[tid];
-
-    if (pairtage && pairtage->isEnabled()) {
-        pairtage->setPredictionPhase(thread.s0PairPhase);
-    }
-
-    pred.tageInfoForMgscs.clear();
-    for (int i = 0; i < numComponents; ++i) {
-        components[i]->refreshPredictionMeta(thread.s0PC, thread.s0History, pred);
-    }
-}
-
-void
-DecoupledBPUWithBTB::prepareTwoTakenTraining(ThreadID tid)
-{
-    auto &thread = threads[tid];
-    thread.twoTakenTrainReady = false;
-    thread.twoTakenTrainPacket = PairTAGE::TrainPacket{};
-    thread.twoTakenBTBEntries.clear();
-
-    if (!thread.firstBlockProcessedThisTick) {
-        return;
-    }
-
-    if (!pairtage || !pairtage->isEnabled() || !mbtb || !mbtb->isEnabled()) {
-        return;
-    }
-
-    if (!pairtage->secondBlockEnabled()) {
-        return;
-    }
-
-    if (!currentFirstBlockHasAllowedPairPhase(tid)) {
-        return;
-    }
-
-    if (!pairtageFirstBlockNotOverriden(tid)) {
-        DPRINTF(DecoupleBP,
-                "Skip PairTAGE second-block training prediction for thread %u because first block was overridden\n",
-                tid);
-        return;
-    }
-
-    const Addr startPC = thread.s0PC;
-    const uint8_t asidHash = thread.finalPred.asidHash;
-    auto &btbEntries = thread.twoTakenBTBEntries;
-    btbEntries = mbtb->getPredictedEntriesNoSideEffect(
-        startPC, tid, asidHash);
-
-    CondTakens condTakens;
-    condTakens.reserve(btbEntries.size());
-
-    if (tage && tage->isEnabled()) {
-        tage->lookupNoSideEffect(startPC, btbEntries, condTakens, tid,
-                                 asidHash);
-    } else {
-        for (const auto &entry : btbEntries) {
-            if (entry.valid && entry.isCond) {
-                condTakens.push_back(
-                    {entry.pc, entry.ctr >= 0});
-            }
-        }
-    }
-
-    thread.twoTakenTrainPacket =
-        pairtage->buildTwoTakenTrainPacket(startPC, thread.s0PairPhase, btbEntries, condTakens);
-    thread.twoTakenTrainReady = true;
-
-    DPRINTF(DecoupleBP,
-            "Prepared PairTAGE second-block training prediction for thread %u: startPC %#lx, %zu BTB entries, %zu "
-            "cond takens\n",
-            tid, startPC, btbEntries.size(), condTakens.size());
-}
-
-bool
-DecoupledBPUWithBTB::currentFirstBlockHasAllowedPairPhase(ThreadID tid) const
-{
-    return threads[tid].firstBlockProcessedThisTick &&
-           !ftq.empty(tid) &&
-           pairtage &&
-           pairtage->phaseEnabled(ftq.back(tid).pairPhase);
-}
-
-bool
-DecoupledBPUWithBTB::pairtageFirstBlockNotOverriden(ThreadID tid) const
-{
-    if (!pairtage || !pairtage->isEnabled()) {
-        return false;
-    }
-
-    if (!currentFirstBlockHasAllowedPairPhase(tid)) {
-        return false;
-    }
-
-    const auto &packet = threads[tid].finalTrainPacket;
-    if (!packet.meta || !packet.valid ||
-        !packet.meta->predictedFirstBlock.valid) {
-        return false;
-    }
-
-    const auto &pairFirstBlock = packet.meta->predictedFirstBlock;
-    return pairFirstBlock.branchPC == packet.branchPC &&
-           pairFirstBlock.taken == packet.taken &&
-           pairFirstBlock.targetPC == packet.targetPC;
+    dbpBtbStats.ftqEntryEnqueued++;
+    dbpBtbStats.secondBlockEnqueued++;
 }
 
 /**
@@ -1022,7 +792,7 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
     threads[tid].s0PC = redirect_pc;
 
     DPRINTF(DecoupleBP,
-            "After squash, fsqId(next alloc)=%lu, fetchHeadFsqId=%lu, s0pc=%#lx\n",
+            "After squash, ftqId(next alloc)=%lu, fetchHeadFtqId=%lu, s0pc=%#lx\n",
             ftq.backId(tid) + 1, ftq.frontId(tid), redirect_pc);
 }
 
@@ -1062,6 +832,9 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
         return;
     }
     auto &target = ftq.get(target_id, tid);
+    if (pairtage->isEnabled()) {
+        pairtage->handleControlSquash(target);
+    }
     // Get target address
     Addr real_target = corr_target.instAddr();
     if (!fromCommit && squashBranchInfo.isReturn &&
@@ -1172,7 +945,7 @@ DecoupledBPUWithBTB::commit(
         }
 
         ftq.commitTarget(tid);
-        dbpBtbStats.fsqEntryCommitted++;
+        dbpBtbStats.ftqEntryCommitted++;
     }
 
     DPRINTF(DecoupleBP, "after commit target, fetchTargetQueue size: %lu\n", ftq.size(tid));
@@ -1328,13 +1101,7 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     Addr fallThroughAddr = pred.getFallThrough(predictWidth);
     Addr nextPC = pred.getTarget(predictWidth);
 
-    auto pairMeta = pairtage ? std::static_pointer_cast<PairTAGE::TageMeta>(
-        pairtage->getPredictionMeta()) : nullptr;
-    const bool pairtageFallThroughHit = pairMeta &&
-        pairMeta->predictedFirstBlock.valid &&
-        pairMeta->predictedFirstBlock.isBranchlessFallthrough();
-
-    entry.isHit = !pred.btbEntries.empty() || pairtageFallThroughHit;
+    entry.isHit = !pred.btbEntries.empty();
     entry.falseHit = false;
     entry.setPredictedBranches(pred.btbEntries);
     entry.predTaken = taken;
@@ -1351,7 +1118,6 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     entry.phistory = s0PHistory;
     entry.bwhistory = s0BwHistory;
     entry.lhistory = s0LHistory;
-    entry.pairPhase = threads[tid].s0PairPhase;
     entry.predTick = pred.predTick;
     entry.predSource = pred.predSource;
     entry.overrideReason = pred.overrideReason;
@@ -1499,6 +1265,9 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry,
     if (microtage->isEnabled()) {
         microtage->checkFoldedHist(s0PHistory, tid, "speculative update");
     }
+    if (pairtage->isEnabled()) {
+        pairtage->checkFoldedHist(s0PHistory, tid, "speculative update");
+    }
     if (mgsc->isEnabled()) {
         mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory, tid,
                               "speculative update");
@@ -1535,7 +1304,6 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     s0PHistory = context.phistory;
     s0BwHistory = context.bwhistory;
     s0LHistory = context.lhistory;
-    threads[tid].s0PairPhase = context.pairPhase;
 
     // RAS recovers its speculative stack, not folded history.
     if (ras->isEnabled()) {
@@ -1574,8 +1342,6 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     histShiftIn(ghistUpdate.shamt, ghistUpdate.taken,
                 s0LHistory[localHistoryIndex]);
 
-    advancePairPhase(threads[tid].s0PairPhase);
-
     // Update history manager with appropriate branch info
     if (squashType == SQUASH_CTRL) {
         historyManagers[tid].squash(targetId, ghistUpdate,
@@ -1601,6 +1367,11 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     }
     if (microtage->isEnabled()) {
         microtage->checkFoldedHist(s0PHistory, tid,
+            squashType == SQUASH_CTRL ? "control squash" :
+            squashType == SQUASH_OTHER ? "non control squash" : "trap squash");
+    }
+    if (pairtage->isEnabled()) {
+        pairtage->checkFoldedHist(s0PHistory, tid,
             squashType == SQUASH_CTRL ? "control squash" :
             squashType == SQUASH_OTHER ? "non control squash" : "trap squash");
     }
