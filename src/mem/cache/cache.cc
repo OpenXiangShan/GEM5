@@ -54,6 +54,7 @@
 #include "base/trace.hh"
 #include "base/types.hh"
 #include "debug/Cache.hh"
+#include "debug/CacheRepl.hh"
 #include "debug/CacheTags.hh"
 #include "debug/CacheVerbose.hh"
 #include "enums/Clusivity.hh"
@@ -70,10 +71,79 @@ namespace gem5
 {
 
 Cache::Cache(const CacheParams &p)
-    : BaseCache(p, p.system->cacheLineSize())
+    : BaseCache(p, p.system->cacheLineSize()),
+      l2EvictInvalidateL1(p.l2_evict_invalidate_l1),
+      evictionSnoopStats(this)
 {
     assert(p.tags);
     assert(p.replacement_policy);
+}
+
+Cache::EvictionSnoopStats::EvictionSnoopStats(Cache *cache)
+    : statistics::Group(cache, "evictionSnoop"),
+      ADD_STAT(absent, statistics::units::Count::get(),
+               "L2 victims without upper copies"),
+      ADD_STAT(clean, statistics::units::Count::get(),
+               "L2 victims invalidated without a data response"),
+      ADD_STAT(dirty, statistics::units::Count::get(),
+               "L2 victims waiting for upper dirty data"),
+      ADD_STAT(dirtyResponses, statistics::units::Count::get(),
+               "Dirty victim responses merged into writebacks"),
+      ADD_STAT(absentDelayTicks, statistics::units::Tick::get(),
+               "Ready delay for victims without upper copies"),
+      ADD_STAT(cleanDelayTicks, statistics::units::Tick::get(),
+               "Snoop ready delay without a data response"),
+      ADD_STAT(dirtyProbeDelayTicks, statistics::units::Tick::get(),
+               "Snoop delay including dirty data access"),
+      ADD_STAT(dirtyDataReturnTicks, statistics::units::Tick::get(),
+               "Time from victim generation until full dirty data returns")
+{
+}
+
+void
+Cache::invalidateVictimCopies(PacketPtr wb_pkt)
+{
+    const Tick generated = curTick();
+    const Tick no_copy_ready = clockEdge(Cycles(1));
+    if (!isCachedAbove(wb_pkt)) {
+        auto *entry = allocateWriteBuffer(wb_pkt, no_copy_ready);
+        entry->enforceReadyTime = true;
+        ++evictionSnoopStats.absent;
+        evictionSnoopStats.absentDelayTicks += no_copy_ready - generated;
+        DPRINTF(CacheRepl, "EvictL1Absent addr=%#x generated=%llu "
+                "ready=%llu\n", wb_pkt->getAddr(), generated, no_copy_ready);
+        return;
+    }
+
+    // Keep capacity and same-address ordering while the upper dirty owner
+    // supplies its current data. Never expose the old L2 payload downstream.
+    auto *entry = allocateWriteBuffer(wb_pkt, MaxTick);
+    entry->enforceReadyTime = true;
+    auto req = std::make_shared<Request>(
+        wb_pkt->getAddr(), blkSize, wb_pkt->req->getFlags(),
+        Request::wbRequestorId);
+    Packet snoop(req, MemCmd::ReadExReq);
+    snoop.setExpressSnoop();
+    snoop.l2EvictionSnoop = true;
+    pendingEvictions.emplace(req, PendingEviction{entry, generated, MaxTick});
+    cpuSidePort.sendTimingSnoopReq(&snoop);
+
+    const Tick ready = std::max(no_copy_ready, generated + snoop.headerDelay);
+    wb_pkt->clearBlockCached();
+    if (snoop.cacheResponding()) {
+        pendingEvictions.at(req).ready = ready;
+        ++evictionSnoopStats.dirty;
+        evictionSnoopStats.dirtyProbeDelayTicks += ready - generated;
+    } else {
+        pendingEvictions.erase(req);
+        writeBuffer.setReadyTime(entry, ready);
+        schedMemSideSendEvent(ready);
+        ++evictionSnoopStats.clean;
+        evictionSnoopStats.cleanDelayTicks += ready - generated;
+    }
+    DPRINTF(CacheRepl, "EvictL1Probe addr=%#x generated=%llu data=%d "
+            "delay=%llu ready=%llu\n", wb_pkt->getAddr(), generated,
+            snoop.cacheResponding(), snoop.headerDelay, ready);
 }
 
 void
@@ -198,6 +268,11 @@ Cache::doWritebacks(PacketList& writebacks, Tick forward_time)
 {
     while (!writebacks.empty()) {
         PacketPtr wbPkt = writebacks.front();
+        if (l2EvictInvalidateL1 && level() == 2 && wbPkt->isEviction()) {
+            invalidateVictimCopies(wbPkt);
+            writebacks.pop_front();
+            continue;
+        }
         // We use forwardLatency here because we are copying writebacks to
         // write buffer.
 
@@ -238,6 +313,8 @@ Cache::doWritebacks(PacketList& writebacks, Tick forward_time)
 void
 Cache::doWritebacksAtomic(PacketList& writebacks)
 {
+    fatal_if(l2EvictInvalidateL1 && level() == 2,
+             "L2 victim invalidation requires timing mode");
     while (!writebacks.empty()) {
         PacketPtr wbPkt = writebacks.front();
         // Call isCachedAbove for both Writebacks and CleanEvicts. If
@@ -274,6 +351,32 @@ void
 Cache::recvTimingSnoopResp(PacketPtr pkt)
 {
     DPRINTF(Cache, "%s for %s\n", __func__, pkt->print());
+    auto pending = pendingEvictions.find(pkt->req);
+    if (pending != pendingEvictions.end()) {
+        const auto state = pending->second;
+        auto *wb_pkt = state.entry->getTarget()->pkt;
+        panic_if(pkt->isError() || !pkt->hasData() || pkt->getSize() != blkSize,
+                 "Invalid dirty response to L2 victim snoop");
+        const bool allocate_data = !wb_pkt->hasData();
+        wb_pkt->cmd = MemCmd::WritebackDirty;
+        if (allocate_data) {
+            wb_pkt->allocate();
+        }
+        wb_pkt->setData(pkt->getConstPtr<uint8_t>());
+        wb_pkt->clearBlockCached();
+        const Tick data_ready = curTick() + pkt->headerDelay +
+            pkt->payloadDelay;
+        const Tick ready = std::max(state.ready, data_ready);
+        writeBuffer.setReadyTime(state.entry, ready);
+        pendingEvictions.erase(pending);
+        schedMemSideSendEvent(ready);
+        ++evictionSnoopStats.dirtyResponses;
+        evictionSnoopStats.dirtyDataReturnTicks += data_ready - state.generated;
+        DPRINTF(CacheRepl, "EvictL1Data addr=%#x generated=%llu ready=%llu\n",
+                wb_pkt->getAddr(), state.generated, ready);
+        delete pkt;
+        return;
+    }
 
     // determine if the response is from a snoop request we created
     // (in which case it should be in the outstandingSnoop), or if we
@@ -1157,7 +1260,10 @@ Cache::doTimingSupplyResponse(PacketPtr req_pkt, const uint8_t *blk_data,
     // Here we consider forward_time, paying for just forward latency and
     // also charging the delay provided by the xbar.
     // forward_time is used as send_time in next allocateWriteBuffer().
-    Tick forward_time = clockEdge(forwardLatency) + pkt->headerDelay;
+    const Cycles access_latency = forwardLatency +
+        (req_pkt->l2EvictionSnoop && req_pkt->isRead() ?
+         dataLatency : Cycles(0));
+    Tick forward_time = clockEdge(access_latency) + pkt->headerDelay;
     // Here we reset the timing of the packet.
     pkt->headerDelay = pkt->payloadDelay = 0;
     DPRINTF(CacheVerbose, "%s: created response: %s tick: %lu\n", __func__,
@@ -1414,6 +1520,7 @@ Cache::recvTimingSnoopReq(PacketPtr pkt)
     }
 
     bool is_secure = pkt->isSecure();
+    const bool already_responding = pkt->cacheResponding();
     CacheBlk *blk = tags->findBlock(pkt->getAddr(), is_secure);
 
     Addr blk_addr = pkt->getBlockAddr(blkSize);
@@ -1516,6 +1623,10 @@ Cache::recvTimingSnoopReq(PacketPtr pkt)
     // request is non-exclusive or if the writeback is
     // exclusive.
     uint32_t snoop_delay = handleSnoop(pkt, blk, true, false, false, nullptr);
+    if (pkt->l2EvictionSnoop && !already_responding &&
+        pkt->cacheResponding() && pkt->isRead()) {
+        snoop_delay += dataLatency * clockPeriod();
+    }
 
     // Override what we did when we first saw the snoop, as we now
     // also have the cost of the upwards snoops to account for

@@ -94,6 +94,7 @@ WriteQueueEntry::allocate(Addr blk_addr, unsigned blk_size, PacketPtr target,
     blkSize = blk_size;
     isSecure = target->isSecure();
     readyTime = when_ready;
+    enforceReadyTime = false;
     order = _order;
     assert(target);
     _isUncacheable = target->req->isUncacheable();

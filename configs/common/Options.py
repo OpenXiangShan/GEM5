@@ -145,6 +145,9 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--l2cache", action="store_true")
     parser.add_argument("--l3cache", action="store_true")
     parser.add_argument("--no-l3cache", action="store_true")
+    parser.add_argument(
+        "--l2-evict-invalidate-l1", action="store_true",
+        help="Invalidate L1 copies of L2 victims; wait for dirty snoop data")
     parser.add_argument("--l1-to-l2-pf-hint", action="store_true")
     parser.add_argument("--l2-to-l3-pf-hint", action="store_true")
 

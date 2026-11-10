@@ -70,6 +70,9 @@ def _get_cache_opts(cpu, level, options):
     if hasattr(options, prefetcher_attr) and (not options.no_pf):
         opts['prefetcher'] = create_prefetcher(cpu, level, options)
 
+    if level == 'l2':
+        opts['l2_evict_invalidate_l1'] = getattr(
+            options, 'l2_evict_invalidate_l1', False)
     return opts
 
 def config_classic_l2(options, system, l2_cache_class):

@@ -392,6 +392,12 @@ class Packet : public Printable
     bool retriedPkt = false;
 
   public:
+    // Charge data access only for dirty responses to L2 victim invalidations.
+    bool l2EvictionSnoop = false;
+
+  private:
+
+  public:
     typedef MemCmd::Command Command;
 
     /// The command field of the packet.
@@ -1040,7 +1046,8 @@ class Packet : public Printable
      * packet should allocate its own data.
      */
     Packet(const PacketPtr pkt, bool clear_flags, bool alloc_data)
-        :  cmd(pkt->cmd), id(pkt->id), req(pkt->req),
+        :  l2EvictionSnoop(pkt->l2EvictionSnoop),
+           cmd(pkt->cmd), id(pkt->id), req(pkt->req),
            data(nullptr),
            addr(pkt->addr), _isSecure(pkt->_isSecure), size(pkt->size),
            bytesValid(pkt->bytesValid),

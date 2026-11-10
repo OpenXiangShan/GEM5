@@ -139,6 +139,8 @@ class BaseCache(ClockedObject):
     # this should be set to True for anything but the last-level
     # cache.
     writeback_clean = Param.Bool(False, "Writeback clean lines")
+    l2_evict_invalidate_l1 = Param.Bool(False,
+        "Invalidate upper copies of L2 victims and wait for dirty snoop data")
 
     # Control whether this cache should be mostly inclusive or mostly
     # exclusive with respect to upstream caches. The behaviour on a

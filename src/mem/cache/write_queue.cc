@@ -85,4 +85,13 @@ WriteQueue::markInService(WriteQueueEntry *entry)
     deallocate(entry);
 }
 
+void
+WriteQueue::setReadyTime(WriteQueueEntry *entry, Tick when_ready)
+{
+    assert(!entry->inService);
+    readyList.erase(entry->readyIter);
+    entry->readyTime = when_ready;
+    entry->readyIter = addToReadyList(entry);
+}
+
 } // namespace gem5

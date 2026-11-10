@@ -47,6 +47,7 @@
 #define __MEM_CACHE_CACHE_HH__
 
 #include <cstdint>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "base/compiler.hh"
@@ -74,6 +75,32 @@ class Cache : public BaseCache
      * generated and which ones were merely forwarded.
      */
     std::unordered_set<RequestPtr> outstandingSnoop;
+
+    const bool l2EvictInvalidateL1;
+
+    struct PendingEviction
+    {
+        WriteQueueEntry *entry;
+        Tick generated;
+        Tick ready;
+    };
+    // Each pending snoop owns one slot in the bounded write buffer.
+    std::unordered_map<RequestPtr, PendingEviction> pendingEvictions;
+
+    struct EvictionSnoopStats : public statistics::Group
+    {
+        EvictionSnoopStats(Cache *cache);
+        statistics::Scalar absent;
+        statistics::Scalar clean;
+        statistics::Scalar dirty;
+        statistics::Scalar dirtyResponses;
+        statistics::Scalar absentDelayTicks;
+        statistics::Scalar cleanDelayTicks;
+        statistics::Scalar dirtyProbeDelayTicks;
+        statistics::Scalar dirtyDataReturnTicks;
+    } evictionSnoopStats;
+
+    void invalidateVictimCopies(PacketPtr pkt);
 
   protected:
     /**

@@ -94,6 +94,11 @@ class WriteQueueEntry : public QueueEntry, public Printable
 
     bool sendPacket(BaseCache &cache) override;
 
+    // A dependent miss must not bypass a victim's snoop/data ready time.
+    bool enforceReadyTime = false;
+
+    Tick getReadyTime() const { return readyTime; }
+
   private:
 
     /**

@@ -96,6 +96,9 @@ class WriteQueue : public Queue<WriteQueueEntry>
      * @param entry The entry to mark in service.
      */
     void markInService(WriteQueueEntry *entry);
+
+    /** Reinsert a buffered victim when its snoop/data dependency completes. */
+    void setReadyTime(WriteQueueEntry *entry, Tick when_ready);
 };
 
 } // namespace gem5

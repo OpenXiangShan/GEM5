@@ -1523,6 +1523,10 @@ BaseCache::getNextQueueEntry()
         // need to check for conflicting earlier writeback
         WriteQueueEntry *conflict_mshr = writeBuffer.findPending(miss_mshr);
         if (conflict_mshr) {
+            if (conflict_mshr->enforceReadyTime &&
+                conflict_mshr->getReadyTime() > curTick()) {
+                return nullptr;
+            }
             // not sure why we don't check order here... it was in the
             // original code but commented out.
 
@@ -2710,12 +2714,23 @@ BaseCache::invalidateVisitor(CacheBlk &blk)
 Tick
 BaseCache::nextQueueReadyTime() const
 {
-    Tick nextReady = std::min(mshrQueue.nextReadyTime(),
-                              writeBuffer.nextReadyTime());
+    Tick miss_ready = mshrQueue.nextReadyTime();
+    bool snoop_blocked = false;
+    if (const auto *mshr = mshrQueue.getNext()) {
+        const auto *victim = writeBuffer.findPending(mshr);
+        if (victim && victim->enforceReadyTime &&
+            victim->getReadyTime() > curTick()) {
+            // The snoop response will wake the port if readyTime is MaxTick.
+            miss_ready = victim->getReadyTime();
+            snoop_blocked = true;
+        }
+    }
+    Tick nextReady = std::min(miss_ready, writeBuffer.nextReadyTime());
 
-    // Don't signal prefetch ready time if no MSHRs available
-    // Will signal once enoguh MSHRs are deallocated
-    if (prefetcher && dcacheMainPipeCanPrefetch() && !isBlocked()) {
+    // A blocked head miss cannot issue prefetches. Avoid same-tick polling
+    // while its dirty victim is awaiting a response from above.
+    if (!snoop_blocked && prefetcher && dcacheMainPipeCanPrefetch() &&
+        !isBlocked()) {
         nextReady = std::min(nextReady, nextPrefetchReadyTime());
     }
 
@@ -2835,6 +2850,9 @@ BaseCache::sendWriteQueuePacket(WriteQueueEntry* wq_entry)
     PacketPtr tgt_pkt = wq_entry->getTarget()->pkt;
 
     DPRINTF(Cache, "%s: write %s\n", __func__, tgt_pkt->print());
+    panic_if(wq_entry->enforceReadyTime &&
+             wq_entry->getReadyTime() > curTick(),
+             "Sending a victim before its snoop/data dependency is ready");
 
     const bool track_response =
         tgt_pkt->req->isUncacheable() && tgt_pkt->needsResponse();
