@@ -1061,8 +1061,19 @@ def xiangshan_system_init():
         default=False,
         help="Disable direction TAGE sources in kmhv3 and force MGSC standalone SC prediction",
     )
-    parser.add_argument("--enable-dip", action="store_true",
-                        help="Enable DIP dispatch per-instruction cycle stacks")
+    parser.add_argument(
+        "--enable-dip", action="store_true", default=True,
+        help="Enable DIP dispatch per-instruction cycle stacks (default)",
+    )
+    parser.add_argument(
+        "--disable-dip", dest="enable_dip", action="store_false",
+        help="Disable DIP dispatch per-instruction cycle stacks",
+    )
+    parser.add_argument(
+        "--disable-profile-report", dest="profile_report",
+        action="store_false", default=True,
+        help="Skip automatic DIP/TEA plots and report after simulation",
+    )
     parser.add_argument("--dip-sample-period", type=int, default=1,
                         help="DIP sample period in CPU cycles (0 or 1: all cycles)")
     parser.add_argument(
@@ -1217,12 +1228,13 @@ def xiangshan_system_init():
         parser.error("--enable-tea is not supported with --ruby. "
                      "Ruby memory system does not populate cacheAccessDepth "
                      "required for TEA cache event attribution; "
-                     "use --disable-tea with --ruby.")
+                     "use --disable-tea --disable-dip with --ruby.")
 
     if args.enable_dip and args.ruby:
         parser.error("--enable-dip is not supported with --ruby. "
                      "Ruby memory system does not populate cacheAccessDepth "
-                     "required for DIP cache event attribution.")
+                     "required for DIP cache event attribution; "
+                     "use --disable-dip with --ruby.")
 
     # Validate MLP-aware policy combinations before CPU construction:
     # MlpAwarePolicy needs its predictor and a non-BaseLine fetch block

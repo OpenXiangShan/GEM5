@@ -64,8 +64,8 @@ Normal single-core GCPT slices use their embedded restorer.
 | `--tea-sample-period=N` | `1` | Sample every N CPU cycles; both `0` and `1` sample every cycle |
 
 Use `--disable-tea` to disable TEA. Setting the sample period to `0` does not
-disable it. Ruby configurations require `--disable-tea` because Ruby does not
-provide cache-depth attribution. When disabled,
+disable it. Ruby configurations require `--disable-tea --disable-dip` because Ruby does
+not provide cache-depth attribution. When disabled,
 TEA creates no tracker, runs no attribution callbacks or event marking, and
 produces no TEA statistics group or CSV. The normal execution path retains
 enable checks and a small amount of field initialization.
@@ -227,6 +227,15 @@ slice percentages. Retain `stats.txt`, the CSV, `config.json`, and slice weights
 for the same measurement window so the results can be checked.
 
 ## Visualization
+
+Successful XiangShan runs automatically generate a combined DIP/TEA report at
+`<outdir>/profile/report.md`, using the final statistics window and the plotting
+scripts below. Matplotlib must be available to `python3`. The report links the
+TEA state/event chart and the DIP state/cause and PC charts in separate sections.
+Use `--disable-profile-report` to skip postprocessing; this leaves sampling
+unchanged. See the [automatic report guide](dip.md#automatic-report-after-simulation)
+for output paths, profiler opt-outs and regeneration with
+`python3 util/profile_report.py <outdir>`.
 
 Use [util/plot_tea.py](../../../util/plot_tea.py) to draw a stacked state chart
 and an event heatmap. The script requires Python 3 and Matplotlib and runs

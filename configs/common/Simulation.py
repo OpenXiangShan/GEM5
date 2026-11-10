@@ -37,7 +37,10 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import atexit
+import subprocess
 import sys
+from pathlib import Path
 from os import getcwd
 from os.path import join as joinpath
 
@@ -435,7 +438,37 @@ def repeatSwitch(testsys, repeat_switch_cpu_list, maxtick, switch_freq):
             exit_event = m5.simulate(maxtick - m5.curTick())
             return exit_event
 
+def register_profile_report(options):
+    """Run reporting after gem5's normal exit cleanup and final stats dump."""
+    exit_code = None
+
+    def report():
+        if exit_code != 0:
+            return
+        script = (
+            Path(__file__).resolve().parents[2] / "util" / "profile_report.py"
+        )
+        try:
+            subprocess.run(
+                ["python3", str(script), str(m5.options.outdir)], check=True
+            )
+        except (OSError, subprocess.CalledProcessError) as error:
+            warn("DIP/TEA report generation failed: %s", error)
+
+    # simulate() registers cleanup and stats later; atexit runs in reverse order.
+    if getattr(options, "profile_report", False) and (
+        options.enable_dip or options.enable_tea
+    ):
+        atexit.register(report)
+
+    def set_exit_code(event):
+        nonlocal exit_code
+        exit_code = event.getCode()
+
+    return set_exit_code
+
 def run(options, root, testsys, cpu_class):
+    set_profile_exit = register_profile_report(options)
     if options.checkpoint_dir:
         cptdir = options.checkpoint_dir
     elif m5.options.outdir:
@@ -771,7 +804,10 @@ def run(options, root, testsys, cpu_class):
     if exit_event.getCode() != 0:
         print("Simulated exit code not 0! Exit code is", exit_event.getCode())
 
+    set_profile_exit(exit_event)
+
 def run_vanilla(options, root, testsys, cpu_class):
+    set_profile_exit = register_profile_report(options)
     # Setup global stat filtering.
     stat_root_simobjs = []
     for stat_root_str in options.stats_root:
@@ -854,3 +890,5 @@ def run_vanilla(options, root, testsys, cpu_class):
 
     if exit_event.getCode() != 0:
         print("Simulated exit code not 0! Exit code is", exit_event.getCode())
+
+    set_profile_exit(exit_event)

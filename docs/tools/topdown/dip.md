@@ -5,10 +5,11 @@ implementation follows the per-slot attribution policy in Figure 3 of
 *Chips Need DIP: Time-Proportional Per-Instruction Cycle Stacks at Dispatch*
 (ASPLOS 2026, DOI 10.1145/3779212.3790139).
 
-Enable it with the single-thread XiangShan configuration:
+DIP and TEA are enabled by default with the single-thread XiangShan
+configuration:
 
 ```sh
-build/RISCV/gem5.opt configs/example/kmhv3.py --enable-dip \
+build/RISCV/gem5.opt configs/example/kmhv3.py \
     --generic-rv-cpt=<checkpoint.zstd>
 ```
 
@@ -16,10 +17,12 @@ Difftest is enabled by default. Configure its reference model with
 `--difftest-ref-so=<reference.so>` or `GCBV_REF_SO`; use `--disable-difftest`
 when running without a reference model.
 
-DIP requires the classic memory system. `--enable-dip --ruby` is rejected
-because Ruby does not supply the cache-depth metadata used for frontend events.
+DIP requires the classic memory system. With Ruby, pass both `--disable-dip`
+and `--disable-tea`, because Ruby does not supply the cache-depth metadata used
+for frontend events. Pass `--disable-dip` for SMT, which DIP does not support.
 
-The default is off. `--dip-sample-period=N` samples every N active CPU ticks;
+Use `--disable-dip` to turn DIP off; `--enable-dip` explicitly turns it on.
+`--dip-sample-period=N` samples every N active CPU ticks;
 zero and one enumerate every tick. TEA and DIP can run together. DIP also
 preserves fetch cache-line miss metadata when TEA is disabled.
 
@@ -114,6 +117,61 @@ Stall masks describe the gates that the simulator actually evaluates. Upstream
 ROB/LSQ/register causes may overlap; at direct admission, earlier failing gates
 can mask later predicates. They are not an exhaustive test of all hypothetical
 resource constraints, and cause counts must not be summed as disjoint cycles.
+
+## Automatic report after simulation
+
+After a successful XiangShan simulation, normal exit cleanup and the final stats
+dump complete before the DIP and TEA analysis/plotting tools run using `python3`.
+Install Matplotlib in that interpreter's environment before running:
+
+```sh
+python3 -m pip install matplotlib
+build/RISCV/gem5.opt --outdir=m5out configs/example/kmhv3.py \
+    --generic-rv-cpt=<checkpoint.zstd>
+```
+
+Open `m5out/profile/report.md` for the combined report with embedded figure
+links, cycle/instruction counts, CPI, DIP state shares and TEA state/event
+shares. Each CPU has a subdirectory named after its SimObject path, such as:
+
+```text
+m5out/profile/
+  report.md
+  system.cpu/
+    tea.png
+    dip/
+      report.md
+      summary.csv
+      pcs.csv
+      contexts.csv
+      overview.png
+      pcs.png
+```
+
+DIP's plots show the complete state/pending stack, overlapping causes and
+finalized PC hotspots. TEA's plot shows its independent states and events.
+The report uses the final stats window, after the configured warmup reset.
+If the run ends during warmup, the report says that no measured DIP profile
+was collected; any TEA samples shown still describe that final warmup window.
+Profilers disabled with `--disable-dip` or `--disable-tea` are omitted from
+plotting and marked disabled in the report. A snapshot with no finalized PC
+attribution has no PC chart. A nonzero simulated exit skips the report.
+
+Use `--disable-profile-report` to keep collection enabled without automatic
+postprocessing. If both profilers are disabled, no automatic report runs.
+Report-generation errors are warnings and do not change the simulation result.
+When a plotting dependency fails, numerical tables and the report remain
+available; the report records the plotting error. After installing the missing
+dependency, regenerate from the existing output without rerunning gem5:
+
+```sh
+python3 util/profile_report.py m5out
+```
+
+The manual entrypoint defaults to `m5out/profile`; `-o <directory>` selects a
+different report directory. It also discovers named CPU objects from
+`config.ini`, so multicore output is kept in separate CPU subdirectories.
+The ordinary text `stats.txt` and `config.ini` outputs must be enabled.
 
 ## Offline processing and visualization
 
