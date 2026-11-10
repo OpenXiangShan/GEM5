@@ -10,7 +10,7 @@
 
 | 项目 | kmhv3.py 默认 | ideal.py 初步配置 |
 | --- | --- | --- |
-| decode / rename / commit / 物理寄存器释放 | 各 8 | 各 12 |
+| decode / rename / commit / 物理寄存器释放 | 各 8 | 各 10 |
 | 前端 | timing I-cache，默认预测带宽与 override 等待 | 按需 functional 供给、串行双预测、双目标取指、零 override 气泡 |
 | scalar issue 延迟 / constant folding / shared leaf TLB | 2 周期 / 关闭 / 128 | 保持主线默认 |
 | 六个整数 IQ 的 ready 新入队项 | 下周期可参与选择 | 同周期可参与选择 |
@@ -21,9 +21,9 @@
 | IEW→Fetch / Commit→Fetch / squash 宽度 | 4 / 4 / 8 | 2 / 1 / 32 |
 | TAGE / MGSC / PHAST | 主线默认 | TAGE 各表 8192 组 × 8 路，增加 MGSC local/PC 门控，开启 PHAST |
 | LVP / L1 LLDP / L2 CDP | 默认开关 | 主线 IdealConstantLVP / 开启 / 关闭 |
-| L2 / L3 | 2 MiB / 32 MiB | 32 MiB（4 片、data/dir 各 4 bank）/ 64 MiB |
+| L2 / L3 | 2 MiB / 32 MiB | 2 MiB（4 片各 512 KiB、data/dir 各 4 bank）/ 64 MiB |
 
-“12 宽”指表中四处流水宽度，不额外施加全局每周期最多 12 条 issue 的硬限制。该配置仍使用实际分支预测器和恢复流程；functional 供给绕过普通 timing I-cache 等待。容量、吞吐和时延假设未包含面积、功耗与频率代价，测得差距用于寻找优化方向。
+“10 宽”指表中四处流水宽度，不额外施加全局每周期最多 10 条 issue 的硬限制。该配置仍使用实际分支预测器和恢复流程；functional 供给绕过普通 timing I-cache 等待。容量、吞吐和时延假设未包含面积、功耗与频率代价，测得差距用于寻找优化方向。
 
 入口支持单核、单线程、四片 wrapper L2 和普通 DecoupledBPUWithBTB；SMT、SpMT、Hybrid ROB、Ruby、trace 和 ECore 不在范围内。现有 `idealkmhv3.py` 继续作为另一套独立配置使用。
 
@@ -56,3 +56,5 @@ done
 2026-11-05：精简配置通过 RISCV `gem5.opt` 构建、CoreMark 默认/ideal/参数覆盖三次短程运行、gcc_expr/1687、mcf/6753、perlbench_checkspam/5886 三对 200k 预热加 800k ROI difftest，以及本地临时 Sv39/Sv48 权限与取指边界检查（测试程序不随 PR 提交）。INI 确认使用主线 CompositeValuePredictor/IdealConstantLVP、scalar issue=2、folding=False、shared leaf=128；mcf 与 perlbench 中观测到实际值预测。
 
 默认入口在 CoreMark 300k 检查中的 5213 个既有 INI 字段、300001 条指令和 207449 周期与 base 一致。上述仅为配置和正确性 smoke，不是新配置的完整加权性能结果。
+
+2026-11-10：默认 L2 总容量收回至 2 MiB（四片各 512 KiB，DRRIP 每片 1024 sets），decode/rename/commit/物理寄存器释放宽度设为 10。其余 preset 参数保持不变。此前 32 MiB L2、12 宽版本的 SPEC06 0.3c INT 29.02525 属于旧配置；新组合尚无完整加权跑分。CoreMark 300k difftest 通过：实际 INI 仅有预期的21处字段变化；与旧 preset 加等价参数覆盖的 8510 个非host统计值完全一致。

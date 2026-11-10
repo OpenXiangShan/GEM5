@@ -27,11 +27,11 @@ def configureIdealArgs(args):
 def setIdealParams(args, system):
     """Apply resource and frontend defaults before user --param overrides."""
     for cpu in system.cpu:
-        # Pipeline widths do not impose a global twelve-instruction issue cap.
-        cpu.decodeWidth = 12
-        cpu.renameWidth = 12
-        cpu.commitWidth = 12
-        cpu.phyregReleaseWidth = 12
+        # Pipeline widths do not impose a global instruction issue cap.
+        cpu.decodeWidth = 10
+        cpu.renameWidth = 10
+        cpu.commitWidth = 10
+        cpu.phyregReleaseWidth = 10
         cpu.iewToFetchDelay = 2
         cpu.commitToFetchDelay = 1
         cpu.squashWidth = 32
@@ -79,14 +79,14 @@ def setIdealParams(args, system):
         cpu.branchPred.mgsc.enablePCThreshold = True
 
     l2 = system.l2_wrappers[0]
-    l2.cache_size = "32MiB"
+    l2.cache_size = "2MiB"
     l2.prefetcher.enable_cdp = False
     l2.data_sram_banks = 4
     l2.dir_sram_banks = 4
     for cache_slice in l2.slices:
-        cache_slice.inner_cache.size = "8MiB"
+        cache_slice.inner_cache.size = "512KiB"
         cache_slice.inner_cache.replacement_policy = XSDRRIPRP(
-            mode=2, num_sets=16384)
+            mode=2, num_sets=1024)
     system.l3.size = "64MiB"
     system.tol3bus.snoop_filter.max_capacity = "64MiB"
 
