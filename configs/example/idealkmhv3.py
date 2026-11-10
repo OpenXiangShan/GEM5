@@ -28,6 +28,7 @@ def setPtwLevelLimitParams(args, tlb):
 
 
 def setKmhV3IdealParams(args, system):
+    """Apply the ideal KMH V3 CPU, predictor, and cache configuration."""
     for cpu in system.cpu:
 
         # fetch
@@ -98,6 +99,7 @@ def setKmhV3IdealParams(args, system):
                                 IdealConstantLVP(),
                                 # ExampleValuePredictor(),
                                 # EStride(logMaxConfidence=13, thresholdPercent=0.35)
+                                # EgDiff(),
                             ],
                             arb=CVPConfidenceArb(counterBits=6)
                         )
@@ -124,7 +126,9 @@ def setKmhV3IdealParams(args, system):
             cpu.branchPred.tage.tableSizes = [2048, 2048, 8192, 8192, 8192, 8192, 8192, 2048]
             cpu.branchPred.tage.numWays = [2, 2, 4, 2, 2, 2, 2, 2]
             cpu.branchPred.microtage.usingS3Pred = True
-            # cpu.branchPred.microtage.enabled = False
+            # Enable 2 Taken on ideal KMHv3 config
+            cpu.branchPred.pairtage.enabled = True
+            cpu.branchPred.pairtage.enableTwoTaken = True
 
         # l1 cache per core
         if args.caches:

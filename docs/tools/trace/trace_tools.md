@@ -100,6 +100,7 @@ $gem5_home/configs/example/kmhv3.py \
 - 从 workload 列表读取 trace 路径 + warmup/sample 配置。
 - 调用 arch_script（通常是 `util/xs_scripts/trace/run_trace_champsim.sh`）并行跑一批 workload。
 - 支持 `.gz/.zstd/.xz` 自动识别，支持输出根目录重定向（`XSGEM5_WORK_ROOT`）。
+- 为了在 CI 中和 checkpoint 运行统一格式，该脚本增加了对直接使用 gem5 python 配置文件的支持。
 
 **workload 列表格式**
 
@@ -595,6 +596,89 @@ bash util/xs_scripts/report_pc_mismatch_bind.sh \
   ```text
   $WORK_ROOT/<workload>/panic_trace_snippet.txt
   ```
+
+---
+
+## 5. 每周性能 CI
+
+**运行方式**
+
+`.github/workflows/gem5-ideal-btb-perf-weekly.yml` 每周运行 Google / CBP 两项全量 trace 测试，共用 `gem5-perf-template.yml`，默认配置为 `configs/example/kmhv3.py`。
+
+输入清单在 `util/xs_scripts/perf_benchmarks.py` 中配置。`parallel_trace_sim.sh` 直接接收 gem5 配置脚本，并发数由 `xsgem5_para_jobs` 指定，未设置时为 63。
+
+**输入与 warmup/sample**
+
+| weekly 任务 | benchmark 类型 | trace 根目录 | trace 格式 |
+| --- | --- | --- | --- |
+| `trace_test_google` | `trace-google` | `/nfs/home/share/gem5_ci/gem5_trace/google_trace` | `tracertl` |
+| `trace_test_cbp` | `trace-cbp` | `/nfs/home/share/gem5_ci/gem5_trace/cbp_traces` | `cbp2025` |
+
+- Google：读取输入目录中的 `google_traces.lst`，共 49 个切片。warmup/sample 使用配套 `.trace.log` 中转换后的记录数（`to` 字段）。
+- CBP：读取输入目录中的 `cbp_traces.lst`，共 105 条 trace。warmup=`fw + dw`，sample=`sample`。
+
+两份 `.lst` 文件均为六列格式，`skip=0`，`--maxinsts` 为 warmup + sample。
+
+
+**归档与结果检查**
+
+归档根目录、运行目录命名和保留规则与 checkpoint 性能 CI 相同：
+
+```text
+/nfs/home/share/gem5_ci/performance_data/<benchmark_type>/
+  <时间>_<提交短哈希>_<配置名>_run<run_number>/
+    metadata.txt
+    checkpoints.lst
+    score.txt
+    spec_all/<workload>/
+      log.txt
+      config.ini
+      config.json
+      stats.txt
+      completed 或 abort
+```
+
+- `<benchmark_type>` 为 `trace-google` 或 `trace-cbp`，每类保留最近 200 次运行。
+- 完整输出保留在 NFS。`score.txt` 写入 Actions Summary，并作为 artifact 上传，保留 30 天。
+- 报告从最后一个完整 stats 段计算每条 trace 的 IPC 和提交阶段 branch MPKI。
+
+
+**IPC/MPKI 汇总**
+
+报告列出每条 trace 的结果和加权平均 IPC、branch MPKI。
+- Google：先按 RV64 指令权重计算每个 workload 的平均值，再对各 workload 等权平均。运行 0.3c 或筛选部分切片时，重新归一化所选切片的权重。
+- CBP：没有 SimPoint 权重，每条 trace 等权平均。
+
+Google 的原始 SimPoint 权重写在 trace 文件名中，例如 `_128_0.6_.trace.zstd` 中的 `0.6`。RV64 权重表保存在 `/nfs/home/share/gem5_ci/gem5_trace/google_trace/google_trace_weights.json`，记录原始权重、采样段的源记录数和 RV64 记录数。每个 workload 的权重计算方式如下：
+
+```text
+RV64 权重 = 原权重 × (采样段 RV64 记录数 / 采样段源记录数)
+归一化权重 = RV64 权重 / 该 workload 的 RV64 权重之和
+```
+
+换算权重时只使用 `.trace.log` 中的 Sampling Interval，不计 warmup。更换或重新转换 Google 语料后，运行以下独立脚本生成一次权重表：
+
+```bash
+python3 util/xs_scripts/trace/gen_google_trace_weights.py \
+  /nfs/home/share/gem5_ci/gem5_trace/google_trace \
+  /nfs/home/share/gem5_ci/gem5_trace/google_trace/google_trace_weights.json
+```
+
+**筛选与调度**
+
+- `specific_benchmarks` 支持逗号分隔、不区分大小写的子串匹配，与 checkpoint CI 相同。
+- `extra_args` 按 checkpoint CI 的方式处理，追加到 gem5 命令。
+- `distributed_servers` 留空时本地并行；设置后由 `distributed_sim.py` 选择服务器、控制每机并发，无可用服务器时回退到本地运行。
+
+## 6. 主线 trace smoke test
+
+`.github/workflows/gem5-trace-0.3c.yml` 在每次 push 到 `xs-dev` 后运行 Google / CBP 子集，共用性能模板和归档流程。两套子集配置在 `util/xs_scripts/perf_benchmarks.py` 中注册：
+
+| benchmark 类型 | 覆盖方式 | 清单 | 数量 |
+| --- | --- | --- | ---: |
+| `trace-google-0.3c` | 每个 workload 按 SimPoint 权重选取，覆盖至少 30% | `google_traces_0.3c.lst` | 13/49 |
+| `trace-cbp-0.3c` | 每个类别按指令量分布抽取约 30% | `cbp_traces_0.3c.lst` | 35/105 |
+
 
 ---
 

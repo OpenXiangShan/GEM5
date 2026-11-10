@@ -1950,7 +1950,8 @@ LSQ::completeSbufferEvict(PacketPtr pkt)
     notifyOtherThreadsStoreVisible(request->sbuffer_entry->tid,
                                    request->mainReq()->getPaddr(),
                                    request->mainReq()->getByteEnable());
-    if (cpu->goldenMemManager() &&
+    if (!cpu->system->params().golden_mem_at_write &&
+        cpu->goldenMemManager() &&
         cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
         Addr paddr = request->mainReq()->getPaddr();
         DPRINTF(LSQ, "StoreBuffer writing to golden memory at addr %#x\n",
