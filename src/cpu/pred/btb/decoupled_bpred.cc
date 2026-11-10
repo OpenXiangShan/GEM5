@@ -73,6 +73,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       smtFTQThreshold(p.smtFTQThreshold),
       ftq(p.numThreads, p.ftq_size),
       resolveBlockThreshold(p.resolveBlockThreshold),
+      twoTakenMaxRunAhead(p.twoTakenMaxRunAhead),
       dbpBtbStats(this, p.numStages, p.ftq_size, p.predictWidth, maxInstsNum, p.numThreads)
 {
     panic_if(numPredictingThreads == 0 ||
@@ -625,6 +626,15 @@ DecoupledBPUWithBTB::enqueueSecondBlock(ThreadID tid)
     secondPred.s1Source = pairtage->getComponentIdx();
     secondPred.s3Source = pairtage->getComponentIdx();
     if (!pairtage->getSecondBlock(tid, secondPred)) {
+        return;
+    }
+
+    // Not enqueue 2 Taken when FTQ has enough entries since the second block
+    // cause MPKI increase and no improvement in this circumstance.
+    assert(ftq.fetchId(tid) <= ftq.backId(tid) + 1);
+    const unsigned runAhead = ftq.backId(tid) + 1 - ftq.fetchId(tid);
+    if (twoTakenMaxRunAhead && runAhead > twoTakenMaxRunAhead) {
+        dbpBtbStats.secondBlockRunAhead++;
         return;
     }
 
