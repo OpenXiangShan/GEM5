@@ -165,7 +165,8 @@ IrregularStreamBuffer::calculatePrefetch(const PrefetchInfo &pfi,
                 //generate prefetch
                 if (spm.counter > 0) {
                     Addr pf_addr = spm.address << lBlkSize;
-                    addresses.push_back(AddrPriority(pf_addr, 0));
+                    addresses.push_back(AddrPriority(
+                        pf_addr, 0, PrefetchSourceType::PF_NONE));
                 }
             }
         }

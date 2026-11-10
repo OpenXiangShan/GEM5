@@ -13,6 +13,10 @@
 新实现位于 `src/mem/cache/replacement_policies/sdbp_{core,rp}.{hh,cc}`，
 通过 `SDBPRP` 配置。它采用下述参数化设计，不是比赛源码的逐行移植。
 
+当前功能级实现的接入位置、状态组织、训练与替换流程，以及统计口径，
+见 [IMPLEMENTATION.md](IMPLEMENTATION.md)。该文档以香山 XS 特化 L2
+和 `idealkmhv3.py` 配置为主，不涉及 RTL 时序对齐。
+
 已完成的香山 `idealkmhv3.py` 六切片 LRU/SDBP 对照、计数器分析与验证记录
 见 [RESULTS.md](RESULTS.md)，完整数值见
 [results-20260924.csv](results-20260924.csv)。
@@ -214,8 +218,8 @@ cache.replacement_policy = SDBPRP(
 文档的 camelCase 参数对应 Python 的 snake_case 参数。新增参数包括
 `num_sets`、`crc_live_update` 和 `enable_bypass`。
 
-- `num_sets` 是不小于 4 的 2 次幂；`sampler_num` 在 `[2, num_sets/2]`。
-  实际采样数量取最近的 2 次幂，平局取较小值；启动日志输出实际数量和
+- `num_sets` 是不小于 4 的 2 次幂；`sampler_num` 是 `[2, num_sets]` 内的 2 次幂，可采样全部 sets。
+  实际采样数量等于 `sampler_num`；启动日志输出实际数量和
   `half_set_bits`。匹配集合的低 `half_set_bits` 位是唯一 sampler index。
 - `sampler_assoc >= 1`，`predictor_tables` 为 1..32，`predictor_entries`
   为不小于 2 的 2 次幂，`counter_bits` 为 1..8。
@@ -223,7 +227,7 @@ cache.replacement_policy = SDBPRP(
   `sum >= threshold`。阈值 0 表示始终预测 dead，适合边界测试。
 - `partial_tag_bits` 和 `partial_pc_bits` 为 1..63，`pc_shift` 为 0..63。
   partial tag 截取 indexing policy 返回 tag 的低位；碰撞视为 sampler
-  命中，属于允许的训练噪声。额外保存 secure 位，避免安全域之间的 tag 假命中。
+  命中，属于允许的训练噪声。sampler 不区分安全域。
 
 ### 哈希与训练
 
@@ -248,6 +252,8 @@ dead；然后保存当前 signature，并查询更新后的 predictor 得到该 
 dead 标记。无效 entry 不训练，这与参考代码无条件训练旧 trace 的行为不同。
 
 Sampler victim 顺序为无效 entry、way 顺序中的第一个 dead entry、LRU。
+`sampler_use_prediction=False` 时仅使用无效 entry 优先、否则 LRU，训练规则不变；
+香山命令行可用 `--sdbp-sampler-lru` 关闭预测参与 sampler 替换，默认保持开启。
 真实 cache victim 采用相同优先级。dead 标记只在该 entry 被访问或填充时
 更新，不会随着其他 PC 的 predictor 训练而主动刷新。LRU 使用访问序号，
 同一 tick 的多个访问也有确定顺序。
@@ -255,8 +261,8 @@ Sampler victim 顺序为无效 entry、way 顺序中的第一个 dead entry、LR
 ### 事件边界与 bypass
 
 - `BaseSetAssoc::accessBlock()` 在 hit/miss 判定后、replacement touch 前
-  通知 sampler。只采集有 PC 的 demand 请求；预取、writeback、eviction、
-  无 PC 请求不训练，不把缺失 PC 当成 PC=0。
+  通知 sampler。采集有 PC 的 demand 形式请求，包括上层预取 miss 转换的
+  普通读请求；直接预取命令、writeback、eviction、无 PC 请求不训练。
 - 每次到达 tag lookup 的请求都算一次访问，包括合并进 MSHR 的请求。
   同一请求若重新经过 lookup 也会再次观察；没有额外的请求去重逻辑。
 - Fill/reset 不重复训练 sampler，仅使用响应 Request 中保留的 miss PC
@@ -282,9 +288,9 @@ scons build/RISCV/mem/cache/replacement_policies/sdbp_rp.test.opt -j8
 build/RISCV/mem/cache/replacement_policies/sdbp_rp.test.opt
 ```
 
-核心测试覆盖重叠/非重叠位段的采样数量及映射唯一性、目标数量取整、计数器
+核心测试覆盖重叠/非重叠位段的采样数量及映射唯一性、非法采样数量拒绝、计数器
 饱和和 live 更新、旧 signature 训练、无效 entry、partial-tag 碰撞、LRU、
-安全域隔离、PC 高位参与哈希和非法配置。
+PC 高位参与哈希和非法配置。
 接口测试覆盖 fill 不重复训练、响应 PC 预测、packet 类型过滤、无效/dead/LRU
 优先级、无 packet 回退、满 set bypass，以及 invalidate 不影响独立 sampler。
 
@@ -294,7 +300,6 @@ build/RISCV/mem/cache/replacement_policies/sdbp_rp.test.opt
 
 ```text
 --l2-replacement-policy={default,lru,sdbp}
---l3-replacement-policy={default,lru,sdbp}
 --sdbp-sampler-num=32
 --sdbp-sampler-assoc=6
 --sdbp-dead-threshold=8
@@ -387,7 +392,7 @@ build/RISCV/gem5.opt --outdir=m5out/sdbp-trace \
   --debug-flags=SDBP --debug-start=1000000000 --debug-end=1000100000 \
   --debug-file=sdbp.trace configs/example/idealkmhv3.py \
   --generic-rv-cpt=/path/to/checkpoint.zstd \
-  --l2-replacement-policy=sdbp --l3-replacement-policy=lru \
+  --l2-replacement-policy=sdbp \
   --sdbp-sampler-assoc=6
 ```
 
@@ -431,12 +436,12 @@ gh workflow run manual-perf.yml --repo OpenXiangShan/GEM5 --ref xs-dev \
   -f branch=codex/sdbp -f configuration=idealkmhv3.py \
   -f benchmark_type=spec06-rva23-novec-gcc16-0.3c \
   -f note=SDBP-LRU-baseline \
-  -f 'extra_args=--l2-replacement-policy=lru --l3-replacement-policy=lru'
+  -f 'extra_args=--l2-replacement-policy=lru'
 gh workflow run manual-perf.yml --repo OpenXiangShan/GEM5 --ref xs-dev \
   -f branch=codex/sdbp -f configuration=idealkmhv3.py \
   -f benchmark_type=spec06-rva23-novec-gcc16-0.3c \
   -f note=SDBP-comparison \
-  -f 'extra_args=--l2-replacement-policy=sdbp --l3-replacement-policy=lru --sdbp-sampler-assoc=6'
+  -f 'extra_args=--l2-replacement-policy=sdbp --sdbp-sampler-assoc=6'
 gh run list --repo OpenXiangShan/GEM5 --workflow manual-perf.yml \
   --event workflow_dispatch --limit 10
 ```

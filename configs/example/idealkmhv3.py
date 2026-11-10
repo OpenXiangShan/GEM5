@@ -129,7 +129,7 @@ def setKmhV3IdealParams(args, system):
         for i in range(args.num_cpus):
             if args.classic_l2:
                 system.l2_caches[i].wpu = NULL
-                system.l2_caches[i].slice_num = 0 # 4 -> 0, no slice
+                system.l2_caches[i].num_slices = 0 # 4 -> 0, no slice
             else:
                 l2_wrapper = system.l2_wrappers[i]
                 l2_wrapper.data_sram_banks = 2
@@ -139,8 +139,13 @@ def setKmhV3IdealParams(args, system):
                 for j in range(args.l2_slices):
                     l2_wrapper.slices[j].inner_cache.wpu = NULL
                     # Configure XSDRRIP replacement policy (DRRIP mode)
-                    # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
-                    l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
+                    cache = l2_wrapper.slices[j].inner_cache
+                    num_sets = int(cache.size) // (
+                        int(cache.assoc) * int(system.cache_line_size)
+                    )
+                    cache.replacement_policy = XSDRRIPRP(
+                        mode=2, num_sets=num_sets
+                    )
             system.tol2bus_list[i].forward_latency = 3  # 0->3
             system.tol2bus_list[i].response_latency = 3  # 0->3
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1  # 0->1
@@ -157,6 +162,7 @@ def setKmhV3IdealParams(args, system):
     if args.l3cache:
         system.l3.mshrs = 64
         system.l3.num_slices = 4
+        system.l3.clusivity = 'mostly_incl'
 
 if __name__ == '__m5_main__':
     FutureClass = None
@@ -168,7 +174,9 @@ if __name__ == '__m5_main__':
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3
     args.bp_type = 'DecoupledBPUWithBTB'
-    args.l2_size = '2MB'
+    args.l2_size = '1MB'
+    args.l2_assoc = 8
+    args.l2_slices = 4
     args.l3_size = '32MB'
     args.l1d_enable_lldp = True
     args.l2_enable_lldp = True

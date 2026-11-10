@@ -385,6 +385,16 @@ class Request
     using LocalAccessor =
         std::function<Cycles(ThreadContext *tc, Packet *pkt)>;
 
+    /** Request origin at L2, independent of command/coherence conversion. */
+    enum class L2RequestSource : uint8_t
+    {
+        Unclassified,
+        L1Demand,
+        L1Prefetch,
+        L2Prefetch,
+        Other
+    };
+
     typedef struct XsMetadata
     {
         bool validXsMetadata;
@@ -454,6 +464,8 @@ class Request
         VALID_INST_COUNT      = 0x00000800,
         /** Whether or not the XS metadata is valid. */
         VALID_XS_METADATA     = 0x00001000,
+        /** Whether the original prefetch trigger PC is valid. */
+        VALID_PREFETCH_TRIGGER_PC = 0x00002000,
         /**
          * These flags are *not* cleared when a Request object is reused
          * (assigned a new address).
@@ -543,6 +555,10 @@ class Request
     /** program counter of initiating access; for tracing/debugging */
     Addr _pc = MaxAddr;
 
+    /** Original prefetch trigger, independent of the demand PC at refill. */
+    Addr _prefetchTriggerPC = MaxAddr;
+    L2RequestSource _l2RequestSource = L2RequestSource::Unclassified;
+
     /** Sequence number of the instruction that creates the request */
     InstSeqNum _reqInstSeqNum = 0;
 
@@ -620,7 +636,9 @@ class Request
           _time(other._time),
           _taskId(other._taskId), _vaddr(other._vaddr),
           _extraData(other._extraData), _contextId(other._contextId),
-          _pc(other._pc), _reqInstSeqNum(other._reqInstSeqNum),
+          _pc(other._pc), _prefetchTriggerPC(other._prefetchTriggerPC),
+          _l2RequestSource(other._l2RequestSource),
+          _reqInstSeqNum(other._reqInstSeqNum),
           _xsMetadata(other._xsMetadata),
           _localAccessor(other._localAccessor),
           translateDelta(other.translateDelta),
@@ -705,6 +723,7 @@ class Request
         _size = size;
         _requestorId = id;
         _pc = pc;
+        _l2RequestSource = L2RequestSource::Unclassified;
         _time = curTick();
 
         _flags.clear(~STICKY_FLAGS);
@@ -1139,6 +1158,15 @@ class Request
         _pc = pc;
     }
 
+    void clearPC() { privateFlags.clear(VALID_PC); }
+
+    void setL2RequestSource(L2RequestSource source)
+    {
+        _l2RequestSource = source;
+    }
+
+    L2RequestSource l2RequestSource() const { return _l2RequestSource; }
+
     bool
     hasPC() const
     {
@@ -1151,6 +1179,27 @@ class Request
     {
         assert(hasPC());
         return _pc;
+    }
+
+    /** Preserve the originating instruction across prefetch chains/merges. */
+    void
+    setPrefetchTriggerPC(Addr pc)
+    {
+        privateFlags.set(VALID_PREFETCH_TRIGGER_PC);
+        _prefetchTriggerPC = pc;
+    }
+
+    bool
+    hasPrefetchTriggerPC() const
+    {
+        return privateFlags.isSet(VALID_PREFETCH_TRIGGER_PC);
+    }
+
+    Addr
+    getPrefetchTriggerPC() const
+    {
+        assert(hasPrefetchTriggerPC());
+        return _prefetchTriggerPC;
     }
 
     /**

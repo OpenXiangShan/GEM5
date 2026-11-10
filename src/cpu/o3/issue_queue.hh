@@ -343,6 +343,8 @@ class Scheduler : public SimObject
     MemDepUnit* memDepUnit;
     LSQ* lsq;
     const int intel_fewops = 4;
+    static constexpr unsigned loadStallPCSlots = 4096;
+    std::unordered_map<Addr, unsigned> loadStallPCIndices;
     bool old_disp = false;
     const int intRegfileBanks;
 
@@ -359,6 +361,13 @@ class Scheduler : public SimObject
         statistics::Scalar memstall_l1miss;
         statistics::Scalar memstall_l2miss;
         statistics::Scalar memstall_l3miss;
+        statistics::Vector loadStallDepthMask;
+        statistics::Vector loadStallStateMask;
+        statistics::Vector loadStallNoDepth1StateMask;
+        statistics::Vector loadStallNoDepth1OldestDepthState;
+        statistics::Distribution loadStallOutstandingRequests;
+        statistics::Vector loadStallOldestPC;
+        statistics::Vector loadStallNoDepth1OldestPC;
         statistics::Scalar lldpWakeups;
         statistics::Scalar lldpChains;
         statistics::Scalar lldpSingleSrcImmediateArithmetic;

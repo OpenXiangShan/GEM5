@@ -1924,11 +1924,30 @@ int LSQ::numLoads(ThreadID tid) const { return thread.at(tid).numLoads(); }
 int LSQ::numRAREntries(ThreadID tid) const { return thread.at(tid).numRAREntries(); }
 int LSQ::numRAWEntries(ThreadID tid) const { return thread.at(tid).numRAWEntries(); }
 
-int LSQ::anyInflightLoadsNotComplete()
+int LSQ::anyInflightLoadsNotComplete(LoadStallSnapshot *snapshot)
 {
+    if (snapshot)
+        *snapshot = LoadStallSnapshot{};
     int l1miss = 0, l2miss = 0, l3miss = 0, any = 0;
     for (auto it : thread.at(0).inflightLoads) {
         if (it->isAnyOutstandingRequest()) {
+            if (snapshot) {
+                // Preserve the legacy exact-depth tests below.  The new
+                // mask distinguishes depth 0, 1, 2, 3, and >=4.
+                const unsigned depth = std::min(
+                    4u, static_cast<unsigned>(std::max(0, it->mainReq()->depth)));
+                const auto &inst = it->instruction();
+                const unsigned state = it->outstandingStateMask();
+                snapshot->depthMask |= 1u << depth;
+                snapshot->stateMask |= state;
+                if (!snapshot->requests || inst->seqNum < snapshot->oldestSeq) {
+                    snapshot->oldestSeq = inst->seqNum;
+                    snapshot->oldestPC = inst->pcState().instAddr();
+                    snapshot->oldestDepth = depth;
+                    snapshot->oldestState = state;
+                }
+                ++snapshot->requests;
+            }
             if (it->mainReq()->depth == 1) {
                 l1miss = 1;
             }

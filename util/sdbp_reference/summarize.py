@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Institute of Computing Technology, CAS
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Summarize completed LRU/SDBP pairs; never merge warmup and measured stats."""
+"""Summarize policy comparisons; never merge warmup and measured stats."""
 
 import argparse
 import csv
@@ -55,9 +55,11 @@ def normalized_config(directory, level, variant):
                 else path == "system.l3"
             )
             if selected and policy is not None:
-                expected = "LRURP" if variant == "lru" else "SDBPRP"
+                expected = {"lru": "LRURP", "xs-drrip": "XSDRRIPRP"}.get(variant, "SDBPRP")
                 if policy["type"] != expected:
                     raise ValueError(f"Wrong policy at {path}: {directory}")
+                if expected == "XSDRRIPRP" and policy["mode"] != 2:
+                    raise ValueError(f"XS-DRRIP is not in DRRIP mode: {directory}")
                 if expected == "SDBPRP" and policy["enable_bypass"] != (
                     variant == "bypass"
                 ):

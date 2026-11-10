@@ -1138,6 +1138,21 @@ class BaseCache : public ClockedObject, public CacheAccessor
     /** System we are currently operating in. */
     System *system;
 
+    /** Origins observed at L2, independent of MemCmd demand attributes. */
+    enum L2RequestClass
+    {
+        L1Demand, L1Prefetch, L2Prefetch, Instruction, Other,
+        NumL2RequestClasses, IgnoreL2Request = NumL2RequestClasses
+    };
+
+    L2RequestClass classifyL2Request(const PacketPtr pkt,
+                                   bool local_prefetch = false) const;
+    void annotateL2RequestSource(const PacketPtr pkt,
+                                 L2RequestClass source) const;
+    void recordL2Request(L2RequestClass source, const PacketPtr pkt,
+                         bool tag_hit, bool hit, bool prefetched = false);
+    std::vector<bool> cpuDataRequestors;
+
     struct CacheCmdStats : public statistics::Group
     {
         CacheCmdStats(BaseCache &c, const std::string &name);
@@ -1206,6 +1221,20 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
         const BaseCache &cache;
 
+        /** Accepted L2 lookups by instruction/prefetch origin. */
+        statistics::Vector l2RequestLookups;
+        statistics::Vector l2RequestAccesses;
+        statistics::Vector l2RequestTagHits;
+        statistics::Vector l2RequestHits;
+        statistics::Vector l2RequestMisses;
+        statistics::Vector l2RequestMshrHits;
+        statistics::Vector l2RequestMshrMisses;
+        statistics::Vector l2RequestWriteBufferHits;
+        statistics::Vector l2RequestArbRetries;
+        statistics::Vector l2RequestNoPc;
+        statistics::Vector l2RequestHitsOnPrefetchedBlocks;
+        statistics::Scalar l2PrefetchReceived;
+
         /** Number of hits for demand accesses. */
         statistics::Formula demandHits;
         /** Number of hit for all accesses. */
@@ -1248,6 +1277,12 @@ class BaseCache : public ClockedObject, public CacheAccessor
         /** The average number of cycles blocked for each blocked cause. */
         statistics::Formula avgBlocked;
 
+        /** Diagnostics for committed replacement blocks and upper snoops. */
+        statistics::Scalar committedReplacementBlocks;
+        statistics::Scalar replacementPackets;
+        statistics::Scalar replacementNoPacket;
+        statistics::Vector replacementUpperPresence;
+        statistics::Vector replacementUpperSourceMask;
         /** Number of blocks written back per thread. */
         statistics::Vector writebacks;
 
@@ -1392,6 +1427,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
     ~BaseCache();
 
     void init() override;
+    void startup() override;
     void resetStats() override;
 
     Port &getPort(const std::string &if_name,

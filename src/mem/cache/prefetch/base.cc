@@ -68,6 +68,7 @@ Base::PrefetchInfo::PrefetchInfo(PacketPtr pkt, Addr addr, bool miss)
         pkt->req->contextId() : InvalidContextID),
     validContextId(pkt->req->hasContextId()),
     validPC(pkt->req->hasPC()),
+    prefetchTriggerPC(*pkt->req),
     secure(pkt->isSecure()), size(pkt->req->getSize()), write(pkt->isWrite()),
     paddress(pkt->req->getPaddr()), cacheMiss(miss)
 {
@@ -95,6 +96,7 @@ Base::PrefetchInfo::PrefetchInfo(
         pkt->req->contextId() : InvalidContextID),
     validContextId(pkt->req->hasContextId()),
     validPC(pkt->req->hasPC()),
+    prefetchTriggerPC(*pkt->req),
     secure(pkt->isSecure()), size(pkt->req->getSize()), write(pkt->isWrite()),
     paddress(pkt->req->getPaddr()), cacheMiss(miss), xsMetadata(xsMeta)
 {
@@ -116,7 +118,8 @@ Base::PrefetchInfo::PrefetchInfo(
 Base::PrefetchInfo::PrefetchInfo(PrefetchInfo const &pfi, Addr addr)
   : address(addr), pc(pfi.pc), requestorId(pfi.requestorId),
     _contextId(pfi._contextId), validContextId(pfi.validContextId),
-    validPC(pfi.validPC), secure(pfi.secure), size(pfi.size),
+    validPC(pfi.validPC), prefetchTriggerPC(pfi.prefetchTriggerPC),
+    secure(pfi.secure), size(pfi.size),
     write(pfi.write), paddress(pfi.paddress), cacheMiss(pfi.cacheMiss),
     data(nullptr),data_ptr(nullptr)
 {
@@ -124,7 +127,8 @@ Base::PrefetchInfo::PrefetchInfo(PrefetchInfo const &pfi, Addr addr)
 Base::PrefetchInfo::PrefetchInfo(PrefetchInfo_old const &pfi)
   : address(pfi.address), pc(pfi.pc), requestorId(pfi.requestorId),
     _contextId(pfi._contextId), validContextId(pfi.validContextId),
-    validPC(pfi.validPC), secure(pfi.secure), size(pfi.size),
+    validPC(pfi.validPC), prefetchTriggerPC(pfi.prefetchTriggerPC),
+    secure(pfi.secure), size(pfi.size),
     write(pfi.write), paddress(pfi.paddress), cacheMiss(pfi.cacheMiss),
     data(nullptr),data_ptr(nullptr)
 {
@@ -136,6 +140,7 @@ Base::PrefetchInfo_old::PrefetchInfo_old(PacketPtr pkt, Addr addr, bool miss)
         pkt->req->contextId() : InvalidContextID),
     validContextId(pkt->req->hasContextId()),
     validPC(pkt->req->hasPC()),
+    prefetchTriggerPC(*pkt->req),
     secure(pkt->isSecure()), size(pkt->req->getSize()), write(pkt->isWrite()),
     paddress(pkt->req->getPaddr()), cacheMiss(miss)
 {
@@ -163,6 +168,7 @@ Base::PrefetchInfo_old::PrefetchInfo_old(
         pkt->req->contextId() : InvalidContextID),
     validContextId(pkt->req->hasContextId()),
     validPC(pkt->req->hasPC()),
+    prefetchTriggerPC(*pkt->req),
     secure(pkt->isSecure()), size(pkt->req->getSize()), write(pkt->isWrite()),
     paddress(pkt->req->getPaddr()), cacheMiss(miss), xsMetadata(xsMeta)
 {
@@ -183,7 +189,8 @@ Base::PrefetchInfo_old::PrefetchInfo_old(
 Base::PrefetchInfo_old::PrefetchInfo_old(PrefetchInfo_old const &other)
   : address(other.address), pc(other.pc), requestorId(other.requestorId),
     _contextId(other._contextId), validContextId(other.validContextId),
-    validPC(other.validPC), secure(other.secure), size(other.size),
+    validPC(other.validPC), prefetchTriggerPC(other.prefetchTriggerPC),
+    secure(other.secure), size(other.size),
     write(other.write), paddress(other.paddress), cacheMiss(other.cacheMiss),
     data(nullptr),data_ptr(nullptr)
 {
@@ -192,7 +199,8 @@ Base::PrefetchInfo_old::PrefetchInfo_old(PrefetchInfo_old const &other)
 Base::PrefetchInfo_old::PrefetchInfo_old(PrefetchInfo_old const &pfi, Addr addr)
   : address(addr), pc(pfi.pc), requestorId(pfi.requestorId),
     _contextId(pfi._contextId), validContextId(pfi.validContextId),
-    validPC(pfi.validPC), secure(pfi.secure), size(pfi.size),
+    validPC(pfi.validPC), prefetchTriggerPC(pfi.prefetchTriggerPC),
+    secure(pfi.secure), size(pfi.size),
     write(pfi.write), paddress(pfi.paddress), cacheMiss(pfi.cacheMiss),
     data(nullptr),data_ptr(nullptr)
 {
@@ -200,7 +208,8 @@ Base::PrefetchInfo_old::PrefetchInfo_old(PrefetchInfo_old const &pfi, Addr addr)
 Base::PrefetchInfo_old::PrefetchInfo_old(PrefetchInfo const &pfi)
   : address(pfi.address), pc(pfi.pc), requestorId(pfi.requestorId),
     _contextId(pfi._contextId), validContextId(pfi.validContextId),
-    validPC(pfi.validPC), secure(pfi.secure), size(pfi.size),
+    validPC(pfi.validPC), prefetchTriggerPC(pfi.prefetchTriggerPC),
+    secure(pfi.secure), size(pfi.size),
     write(pfi.write), paddress(pfi.paddress), cacheMiss(pfi.cacheMiss),
     data(nullptr),data_ptr(nullptr)
 {

@@ -80,6 +80,35 @@ MSHR::TargetList::TargetList(const std::string &name)
         canMergeWrites(true), writesBitmap(0)
 {}
 
+PacketPtr
+MSHR::samplerTarget() const
+{
+    PacketPtr demandWithoutPc = nullptr;
+    PacketPtr fallback = nullptr;
+    auto choose = [&](const TargetList &list) -> PacketPtr {
+        for (const auto &target : list) {
+            PacketPtr candidate = target.pkt;
+            if (!fallback)
+                fallback = candidate;
+            if (candidate->req && !candidate->req->isPrefetch() &&
+                (candidate->isDemand() || candidate->isUpgrade() ||
+                 candidate->req->l2RequestSource() ==
+                     Request::L2RequestSource::L1Demand)) {
+                if (candidate->req->hasPC())
+                    return candidate;
+                if (!demandWithoutPc)
+                    demandWithoutPc = candidate;
+            }
+        }
+        return nullptr;
+    };
+    if (auto selected = choose(targets))
+        return selected;
+    if (auto selected = choose(deferredTargets))
+        return selected;
+    return demandWithoutPc ? demandWithoutPc : fallback;
+}
+
 
 void
 MSHR::TargetList::updateFlags(PacketPtr pkt, Target::Source source,

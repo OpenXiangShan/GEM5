@@ -56,8 +56,10 @@
 #include "base/stats/group.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
+#include "cpu/base.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/lsq.hh"
+#include "cpu/thread_context.hh"
 #include "debug/ArchDB.hh"
 #include "debug/Cache.hh"
 #include "debug/CacheComp.hh"
@@ -71,6 +73,7 @@
 #include "mem/cache/mshr.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
 #include "mem/cache/queue_entry.hh"
+#include "mem/cache/tags/base_set_assoc.hh"
 #include "mem/cache/tags/compressed_tags.hh"
 #include "mem/cache/tags/super_blk.hh"
 #include "mem/packet.hh"
@@ -204,6 +207,27 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
 
     tempBlock = new TempCacheBlk(blkSize);
     tags->tagsInit();
+    if (!p.sdbp_l1_caches.empty()) {
+        auto *sdbp = dynamic_cast<replacement_policy::SDBP *>(p.replacement_policy);
+        fatal_if(!sdbp || p.cache_level != 2,
+                 "%s: L1-copy protection requires an L2 SDBP cache", name());
+        for (const auto *l1 : p.sdbp_l1_caches) {
+            fatal_if(!l1 || l1 == this || l1->level() != 1,
+                     "%s: L1-copy probe targets must be L1 caches", name());
+        }
+        // Ideal resident-copy information: inspect tags without coherence
+        // traffic, metadata updates, or additional simulated lookup latency.
+        sdbp->setL1CopyProbe([this, l1_caches = p.sdbp_l1_caches](
+                                const ReplaceableEntry *candidate) {
+            const auto *blk = static_cast<const CacheBlk *>(candidate);
+            const Addr addr = tags->regenerateBlkAddr(blk);
+            for (const auto *l1 : l1_caches) {
+                if (l1->inCache(addr, blk->isSecure()))
+                    return true;
+            }
+            return false;
+        });
+    }
     for (int i = 0; i < size / assoc / blkSize; i++) {
         for (int j = 0; j < assoc; j++)
             wayPreTable[i].push_back(DEFAULTWAYPRE);
@@ -319,6 +343,92 @@ BaseCache::init()
     cpuSidePort.sendRangeChange();
     forwardSnoops = cpuSidePort.isSnooping();
     mshrQueue.resetOccupancyStats(curTick());
+}
+
+void
+BaseCache::startup()
+{
+    ClockedObject::startup();
+    if (cacheLevel == 2) {
+        cpuDataRequestors.assign(system->maxRequestors(), false);
+        for (auto *tc : system->threads) {
+            const auto id = tc->getCpuPtr()->dataRequestorId();
+            assert(id < cpuDataRequestors.size());
+            cpuDataRequestors[id] = true;
+        }
+    }
+}
+
+BaseCache::L2RequestClass
+BaseCache::classifyL2Request(const PacketPtr pkt, bool local_prefetch) const
+{
+    if (cacheLevel != 2 || !pkt || !pkt->req || !pkt->isRequest() ||
+        pkt->isEviction() || pkt->cmd == MemCmd::WriteClean ||
+        pkt->isStorePFTrain() || pkt->req->isUncacheable() ||
+        pkt->req->isCacheMaintenance()) {
+        return IgnoreL2Request;
+    }
+    // A local prefetch is checked in getNextQueueEntry(), not access().
+    if (local_prefetch)
+        return L2Prefetch;
+    if (pkt->req->isPrefetch())
+        return L1Prefetch;
+    if (pkt->cmd.isPrefetch())
+        return Other;
+    if (pkt->req->isInstFetch())
+        return Instruction;
+    const auto id = pkt->requestorId();
+    if (id < cpuDataRequestors.size() && cpuDataRequestors[id] &&
+        !pkt->req->isPTWalk() &&
+        (pkt->isRead() || pkt->isWrite() || pkt->isUpgrade() ||
+         pkt->isInvalidate())) {
+        return L1Demand;
+    }
+    return Other;
+}
+
+void
+BaseCache::annotateL2RequestSource(const PacketPtr pkt,
+                                   L2RequestClass source) const
+{
+    if (cacheLevel != 2 || !pkt || !pkt->req)
+        return;
+    using Origin = Request::L2RequestSource;
+    Origin origin = Origin::Other;
+    switch (source) {
+      case L1Demand:
+        origin = Origin::L1Demand;
+        break;
+      case L1Prefetch:
+        origin = Origin::L1Prefetch;
+        break;
+      case L2Prefetch:
+        origin = Origin::L2Prefetch;
+        break;
+      default:
+        break;
+    }
+    pkt->req->setL2RequestSource(origin);
+}
+
+void
+BaseCache::recordL2Request(L2RequestClass source, const PacketPtr pkt,
+                          bool tag_hit, bool hit, bool prefetched)
+{
+    if (source == IgnoreL2Request)
+        return;
+    ++stats.l2RequestAccesses[source];
+    if (tag_hit)
+        ++stats.l2RequestTagHits[source];
+    if (hit) {
+        ++stats.l2RequestHits[source];
+        if (prefetched)
+            ++stats.l2RequestHitsOnPrefetchedBlocks[source];
+    } else {
+        ++stats.l2RequestMisses[source];
+    }
+    if (!pkt->req->hasPC())
+        ++stats.l2RequestNoPc[source];
 }
 
 void
@@ -580,6 +690,9 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 // buffer and to schedule an event to the queued
                 // port and also takes into account the additional
                 // delay of the xbar.
+                const auto request_source = classifyL2Request(pkt);
+                if (request_source != IgnoreL2Request)
+                    ++stats.l2RequestMshrHits[request_source];
                 mshr->allocateTarget(pkt, forward_time, order++,
                                      allocOnFill(pkt->cmd));
                 if (mshr->getNumTargets() >= numTarget) {
@@ -635,6 +748,9 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
             // Here we are using forward_time, modelling the latency of
             // a miss (outbound) just as forwardLatency, neglecting the
             // lookupLatency component.
+            const auto request_source = classifyL2Request(pkt);
+            if (request_source != IgnoreL2Request)
+                ++stats.l2RequestMshrMisses[request_source];
             allocateMissBuffer(pkt, forward_time);
 
         }
@@ -710,6 +826,8 @@ BaseCache::recvTimingReq(PacketPtr pkt)
 
     if (pkt->cmd == MemCmd::HardPFReq) {
         if (prefetcher) {
+            if (cacheLevel == 2)
+                ++stats.l2PrefetchReceived;
             prefetcher->recvPrefetchFromCache(pkt);
             // schedule a prefetch
             Tick next_pf_time = std::max(prefetcher->nextPrefetchReadyTime(),
@@ -720,6 +838,10 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         }
         return;
     }
+
+    const auto request_source = classifyL2Request(pkt);
+    if (request_source != IgnoreL2Request)
+        ++stats.l2RequestLookups[request_source];
 
     // anything that is merely forwarded pays for the forward latency and
     // the delay provided by the crossbar
@@ -821,6 +943,8 @@ BaseCache::recvTimingReq(PacketPtr pkt)
     pkt->lldpHint = prefetcher ? prefetcher->loadTrain(pkt, !satisfied) : lldp::Hint();
 
     if (satisfied) {
+        recordL2Request(request_source, pkt, blk != nullptr, true,
+                        blk && blk->wasPrefetched());
         // notify before anything else as later handleTimingReqHit might turn
         // the packet in a response
         if (blk && !pkt->isWrite()) {
@@ -911,7 +1035,15 @@ BaseCache::recvTimingReq(PacketPtr pkt)
             }
         }
 
+        const bool request_tag_hit = blk != nullptr;
         handleTimingReqMiss(pkt, blk, forward_time, request_time);
+        if (request_source != IgnoreL2Request) {
+            if (pkt->mshrArbFailed()) {
+                ++stats.l2RequestArbRetries[request_source];
+            } else {
+                recordL2Request(request_source, pkt, request_tag_hit, false);
+            }
+        }
 
         ppMiss->notify(pkt);
     }
@@ -1069,6 +1201,27 @@ BaseCache::recvTimingResp(PacketPtr pkt)
          mshr->wasWholeLineWrite);
     const bool pure_prefetch_fill =
         mshr->hasFromPref() && !mshr->hasFromCPU();
+    // A demand merged into a prefetch MSHR determines the sampler event at
+    // refill time.  The downstream response may still carry the prefetch
+    // request metadata, so copy the representative demand metadata onto the
+    // refill packet before it reaches tags->insertBlock().
+    if (!pure_prefetch_fill) {
+        PacketPtr sampler_target = mshr->samplerTarget();
+        if (sampler_target && sampler_target->req &&
+            !sampler_target->req->isPrefetch() &&
+            (sampler_target->isDemand() || sampler_target->isUpgrade() ||
+             sampler_target->req->l2RequestSource() ==
+                 Request::L2RequestSource::L1Demand)) {
+            pkt->setSamplerDemand();
+            pkt->req->clearFlags(Request::PREFETCH | Request::PF_EXCLUSIVE);
+            if (sampler_target->req->hasPC())
+                pkt->req->setPC(sampler_target->req->getPC());
+            else
+                pkt->req->clearPC();
+            pkt->req->setL2RequestSource(
+                sampler_target->req->l2RequestSource());
+        }
+    }
     if (pure_prefetch_fill) {
         const PrefetchSourceType pf_source = mshr->getPFSource();
         const int pf_depth = mshr->getPFDepth();
@@ -1567,7 +1720,17 @@ BaseCache::getNextQueueEntry()
         if (pkt) {
             Addr pf_addr = pkt->getBlockAddr(blkSize);
             PrefetchSourceType pf_type = pkt->req->getXsMetadata().prefetchSource;
-            if (tags->findBlock(pf_addr, pkt->isSecure())) {
+            const auto request_source = classifyL2Request(pkt, true);
+            annotateL2RequestSource(pkt, request_source);
+            if (request_source != IgnoreL2Request)
+                ++stats.l2RequestLookups[request_source];
+            const auto *pf_blk = tags->findBlock(pf_addr, pkt->isSecure());
+            if (auto *set_assoc = dynamic_cast<BaseSetAssoc *>(tags)) {
+                set_assoc->observeLocalPrefetch(pkt, pf_blk != nullptr);
+            }
+            if (pf_blk) {
+                recordL2Request(request_source, pkt, true, true,
+                                pf_blk->wasPrefetched());
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in cache, "
                         "dropped.\n", pf_addr);
                 prefetcher->pfHitInCache(pf_type);
@@ -1578,6 +1741,9 @@ BaseCache::getNextQueueEntry()
             } else if (mshrQueue.findMatch(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in a MSHR, "
                         "dropped.\n", pf_addr);
+                recordL2Request(request_source, pkt, false, false);
+                if (request_source != IgnoreL2Request)
+                    ++stats.l2RequestMshrHits[request_source];
                 prefetcher->pfHitInMSHR(pf_type);
                 if (pf_type == PrefetchSourceType::SStream)
                     prefetcher->streamPflate();
@@ -1586,6 +1752,9 @@ BaseCache::getNextQueueEntry()
             } else if (writeBuffer.findMatch(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in the "
                         "Write Buffer, dropped.\n", pf_addr);
+                recordL2Request(request_source, pkt, false, false);
+                if (request_source != IgnoreL2Request)
+                    ++stats.l2RequestWriteBufferHits[request_source];
                 prefetcher->pfHitInWB(pf_type);
                 if (pf_type == PrefetchSourceType::SStream)
                     prefetcher->streamPflate();
@@ -1601,6 +1770,9 @@ BaseCache::getNextQueueEntry()
                 // that we send the packet straight away, so do not
                 // schedule the send
                 DPRINTF(HWPrefetch, "Allocating MSHR for prefetching addr %#x\n", pf_addr);
+                recordL2Request(request_source, pkt, false, false);
+                if (request_source != IgnoreL2Request)
+                    ++stats.l2RequestMshrMisses[request_source];
                 auto buf = allocateMissBuffer(pkt, curTick(), false);
                 return buf;
             }
@@ -1672,7 +1844,22 @@ BaseCache::handleEvictions(std::vector<CacheBlk*> &evict_blks,
                         }
                     }
                 }
+                // Snapshot before invalidateBlock clears replacement metadata.
+                const auto *set_assoc = dynamic_cast<BaseSetAssoc *>(tags);
+                const unsigned victim_class = set_assoc ?
+                    set_assoc->replacementVictimClass(blk) : 0;
+                const auto previous_size = writebacks.size();
+                ++stats.committedReplacementBlocks;
                 evictBlock(blk, writebacks, evicted_dirty);
+                if (writebacks.size() != previous_size) {
+                    assert(writebacks.size() == previous_size + 1);
+                    auto *pkt = writebacks.back();
+                    assert(pkt->replacementVictimClass == 0);
+                    pkt->replacementVictimClass = victim_class + 1;
+                    ++stats.replacementPackets;
+                } else {
+                    ++stats.replacementNoPacket;
+                }
             }
         }
     }
@@ -1979,6 +2166,9 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
     gem5_assert(!(isReadOnly && pkt->isWrite()),
                 "Should never see a write in a read-only cache %s\n",
                 name());
+
+    // Preserve the L2 origin across coherence commands and refill packets.
+    annotateL2RequestSource(pkt, classifyL2Request(pkt));
 
     // Access block in the tags
     Cycles tag_latency(0);
@@ -3096,6 +3286,30 @@ BaseCache::CacheCmdStats::regStatsFromParent()
 BaseCache::CacheStats::CacheStats(BaseCache &c)
     : statistics::Group(&c), cache(c),
 
+    ADD_STAT(l2RequestLookups, statistics::units::Count::get(),
+             "L2 lookup attempts by origin, including MSHR arbitration retries"),
+    ADD_STAT(l2RequestAccesses, statistics::units::Count::get(),
+             "Accepted L2 lookups by origin, excluding arbitration retries"),
+    ADD_STAT(l2RequestTagHits, statistics::units::Count::get(),
+             "Accepted L2 lookups finding a resident tag, irrespective of permissions"),
+    ADD_STAT(l2RequestHits, statistics::units::Count::get(),
+             "L2 service hits; local prefetch hits are resident-tag drops"),
+    ADD_STAT(l2RequestMisses, statistics::units::Count::get(),
+             "Accepted L2 service misses, including permission misses"),
+    ADD_STAT(l2RequestMshrHits, statistics::units::Count::get(),
+             "L2 misses merging into an MSHR or local prefetches dropped on an MSHR"),
+    ADD_STAT(l2RequestMshrMisses, statistics::units::Count::get(),
+             "L2 requests allocating a new MSHR by origin"),
+    ADD_STAT(l2RequestWriteBufferHits, statistics::units::Count::get(),
+             "Local L2 prefetches dropped on a write-buffer match"),
+    ADD_STAT(l2RequestArbRetries, statistics::units::Count::get(),
+             "L2 lookup attempts rejected by MSHR arbitration"),
+    ADD_STAT(l2RequestNoPc, statistics::units::Count::get(),
+             "Accepted L2 requests without PC metadata by origin"),
+    ADD_STAT(l2RequestHitsOnPrefetchedBlocks, statistics::units::Count::get(),
+             "L2 hits on blocks still marked prefetched, by request origin"),
+    ADD_STAT(l2PrefetchReceived, statistics::units::Count::get(),
+             "HardPFReq packets received by the L2 prefetch queue"),
     ADD_STAT(demandHits, statistics::units::Count::get(),
              "number of demand (read+write) hits"),
     ADD_STAT(overallHits, statistics::units::Count::get(),
@@ -3133,6 +3347,18 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
     ADD_STAT(avgBlocked, statistics::units::Rate<
                 statistics::units::Cycle, statistics::units::Count>::get(),
              "average number of cycles each access was blocked"),
+    ADD_STAT(committedReplacementBlocks, statistics::units::Count::get(),
+             "Valid blocks evicted by successful handleEvictions calls"),
+    ADD_STAT(replacementPackets, statistics::units::Count::get(),
+             "Committed replacement blocks generating an eviction packet"),
+    ADD_STAT(replacementNoPacket, statistics::units::Count::get(),
+             "Committed replacement blocks generating no eviction packet"),
+    ADD_STAT(replacementUpperPresence, statistics::units::Count::get(),
+             "Replacement packets at existing upper snoop: policy and presence; "
+             "unknown means snoop forwarding disabled"),
+    ADD_STAT(replacementUpperSourceMask, statistics::units::Count::get(),
+             "Replacement snoop observations by policy: resident=1 MSHR=2 WB=4; "
+             "only when forwarding enabled"),
     ADD_STAT(writebacks, statistics::units::Count::get(),
              "number of writebacks"),
     ADD_STAT(demandMshrHits, statistics::units::Count::get(),
@@ -3249,6 +3475,19 @@ BaseCache::CacheStats::regStats()
 
     System *system = cache.system;
     const auto max_requestors = system->maxRequestors();
+
+    const char *request_names[] = {
+        "l1Demand", "l1Prefetch", "l2Prefetch", "instruction", "other"
+    };
+    for (auto *stat : {&l2RequestLookups, &l2RequestAccesses,
+                      &l2RequestTagHits, &l2RequestHits, &l2RequestMisses,
+                      &l2RequestMshrHits, &l2RequestMshrMisses,
+                      &l2RequestWriteBufferHits, &l2RequestArbRetries,
+                      &l2RequestNoPc, &l2RequestHitsOnPrefetchedBlocks}) {
+        stat->init(NumL2RequestClasses).flags(total);
+        for (unsigned i = 0; i < NumL2RequestClasses; ++i)
+            stat->subname(i, request_names[i]);
+    }
 
     reqArriveInterval.resize(cache.getActualSliceNum());
     for (int i = 0; i < reqArriveInterval.size(); i++) {
@@ -3381,6 +3620,21 @@ BaseCache::CacheStats::regStats()
         .subname(Blocked_NoTargets, "no_targets")
         ;
     avgBlocked = blockedCycles / blockedCauses;
+
+    replacementUpperSourceMask.init(24).flags(total);
+    replacementUpperPresence.init(9).flags(total);
+    const char *victim_classes[] = {"other", "sdbpLive", "sdbpDead"};
+    const char *presence[] = {"absent", "present", "unknown"};
+    for (unsigned kind = 0; kind < 3; ++kind) {
+        for (unsigned mask = 0; mask < 8; ++mask) {
+            replacementUpperSourceMask.subname(kind * 8 + mask,
+                std::string(victim_classes[kind]) + "_" + std::to_string(mask));
+        }
+        for (unsigned state = 0; state < 3; ++state) {
+            replacementUpperPresence.subname(kind * 3 + state,
+                std::string(victim_classes[kind]) + "_" + presence[state]);
+        }
+    }
 
     writebacks
         .init(max_requestors)

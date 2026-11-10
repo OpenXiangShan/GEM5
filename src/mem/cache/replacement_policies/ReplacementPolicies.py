@@ -84,10 +84,20 @@ class SDBPRP(BaseReplacementPolicy):
     cxx_header = "mem/cache/replacement_policies/sdbp_rp.hh"
 
     num_sets = Param.Unsigned("Number of sets in the attached cache")
-    sampler_num = Param.Unsigned(32, "Target number of sampled sets")
+    sampler_num = Param.Unsigned(32, "Number of sampled sets (power of two)")
     sampler_assoc = Param.Unsigned(12, "Associativity of the independent sampler")
-    predictor_tables = Param.Unsigned(3, "Number of skewed prediction tables")
-    predictor_entries = Param.Unsigned(4096, "Counters per prediction table")
+    l1_copy_protection = Param.Bool(True, "Skip L1-resident dead L2 victims")
+    sampler_dead_first = Param.Bool(True, "Prefer dead sampler entries over LRU")
+    sampler_demand_pc_only = Param.Bool(
+        False, "Only allocate and train the sampler for demand requests with a PC"
+    )
+    sampler_protect_youngest = Param.Unsigned(
+        0, "Number of youngest sampler entries skipped during dead selection"
+    )
+    predictor_tables = Param.Unsigned(
+        3, "Skewed prediction tables per demand/L1-prefetch/L2-prefetch bank"
+    )
+    predictor_entries = Param.Unsigned(4096, "Counters per table in each bank")
     counter_bits = Param.Unsigned(2, "Saturating counter width")
     dead_threshold = Param.Unsigned(8, "Minimum confidence sum predicting dead")
     partial_tag_bits = Param.Unsigned(15, "Sampler partial tag width")

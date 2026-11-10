@@ -133,7 +133,8 @@ SBOOE::calculatePrefetch(const PrefetchInfo &pfi,
 
     if (evaluationFinished && bestSandbox->score() > scoreThreshold) {
         Addr pref_line = pfi_line + bestSandbox->stride;
-        addresses.push_back(AddrPriority(pref_line << lBlkSize, 0));
+        addresses.push_back(AddrPriority(
+            pref_line << lBlkSize, 0, PrefetchSourceType::PF_NONE));
     }
 }
 

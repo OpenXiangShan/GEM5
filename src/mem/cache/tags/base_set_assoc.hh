@@ -110,6 +110,11 @@ class BaseSetAssoc : public BaseTags
      */
     void tagsInit() override;
 
+    unsigned replacementVictimClass(const CacheBlk *blk) const
+    {
+        return sdbpPolicy ? sdbpPolicy->victimClass(blk->replacementData) : 0;
+    }
+
     /**
      * This function updates the tags when a block is invalidated. It also
      * updates the replacement data.
@@ -128,6 +133,15 @@ class BaseSetAssoc : public BaseTags
      * @param lat The latency of the tag lookup.
      * @return Pointer to the cache block if found.
      */
+    /** Local PF checks bypass accessBlock, but still train the sampler. */
+    void observeLocalPrefetch(const PacketPtr pkt, bool hit)
+    {
+        if (sdbpPolicy) {
+            sdbpPolicy->observe(pkt, indexingPolicy->extractSet(pkt->getAddr()),
+                                extractTag(pkt->getAddr()), hit);
+        }
+    }
+
     CacheBlk* accessBlock(const PacketPtr pkt, Cycles &lat) override
     {
         CacheBlk *blk = findBlock(pkt->getAddr(), pkt->isSecure());
@@ -206,6 +220,15 @@ class BaseSetAssoc : public BaseTags
     {
         // Insert block
         BaseTags::insertBlock(pkt, blk);
+
+        // SDBP samples misses when the refill is installed.  This lets a
+        // demand merged into a prefetch MSHR replace the prefetch metadata
+        // before the independent sampler is updated.
+        if (sdbpPolicy) {
+            sdbpPolicy->observeFill(
+                pkt, indexingPolicy->extractSet(pkt->getAddr()),
+                extractTag(pkt->getAddr()));
+        }
 
         // Increment tag counter
         stats.tagsInUse++;

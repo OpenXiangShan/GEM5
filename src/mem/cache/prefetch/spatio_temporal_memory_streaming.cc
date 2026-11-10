@@ -261,7 +261,8 @@ STeMS::reconstructSequence(
 
     for (Addr pf_addr : reconstruction) {
         if (pf_addr != MaxAddr) {
-            addresses.push_back(AddrPriority(pf_addr, 0));
+            addresses.push_back(AddrPriority(
+                pf_addr, 0, PrefetchSourceType::PF_NONE));
         }
     }
 }

@@ -374,6 +374,13 @@ class MSHR : public QueueEntry, public Printable
         return targets.hasFromCPU;
     }
 
+    /**
+     * Return the representative target for a refill sampler event. A demand
+     * target with a PC has priority over a demand without a PC; otherwise the
+     * first target (normally the prefetch that allocated the MSHR) is used.
+     */
+    PacketPtr samplerTarget() const;
+
     PrefetchSourceType getPFSource() const {
         return targets.pfSource;
     }

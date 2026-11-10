@@ -138,6 +138,7 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID req
     }
 
     req->setFlags(Request::PREFETCH);
+    pfInfo.tagPrefetchTriggerPC(*req);
     const PrefetchSourceType safe_pf_src =
         owner->sanitizePfControlSourceType(pf_src);
     req->setXsMetadata(Request::XsMetadata(safe_pf_src, prf_depth));
@@ -1459,6 +1460,7 @@ Queued::createPrefetchRequest(Addr addr, PrefetchInfo const &pfi, PacketPtr pkt,
     RequestPtr translation_req = std::make_shared<Request>(
             addr, blkSize, pkt->req->getFlags(), requestorId, pfi.getPC(),
             pfi.contextId());
+    pfi.tagPrefetchTriggerPC(*translation_req);
     translation_req->setFlags(Request::PF_EXCLUSIVE);
     translation_req->setPFSource(pf_src);
     translation_req->setPFDepth(pf_depth);

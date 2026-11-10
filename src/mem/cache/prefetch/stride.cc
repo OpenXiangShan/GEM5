@@ -188,7 +188,8 @@ Stride::calculatePrefetch(const PrefetchInfo &pfi,
 
             Addr new_addr = pf_addr + d * prefetch_stride;
             DPRINTF(StridePrefetcher, "Prefetch: PC %#x for addr %#x\n", pc, new_addr);
-            addresses.push_back(AddrPriority(new_addr, 0));
+            addresses.push_back(AddrPriority(
+                new_addr, 0, PrefetchSourceType::PF_NONE));
         }
     } else {
         // Miss in table

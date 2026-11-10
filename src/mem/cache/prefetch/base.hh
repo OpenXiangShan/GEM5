@@ -58,6 +58,7 @@
 #include "base/types.hh"
 #include "mem/cache/cache_probe_arg.hh"
 #include "mem/cache/prefetch/context_key.hh"
+#include "mem/cache/prefetch/trigger_pc.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
 #include "sim/arch_db.hh"
@@ -173,6 +174,8 @@ class Base : public ClockedObject
         bool validContextId;
         /** Validity bit for the PC of this address. */
         bool validPC;
+        /** Original instruction that initiated this prefetch chain. */
+        TriggerPC prefetchTriggerPC;
         /** Whether this address targets the secure memory space. */
         bool secure;
         /** Size in bytes of the request triggering this event */
@@ -239,6 +242,21 @@ class Base : public ClockedObject
         bool hasPC() const
         {
             return validPC;
+        }
+
+        bool hasPrefetchTriggerPC() const
+        {
+            return prefetchTriggerPC.hasPC();
+        }
+
+        Addr getPrefetchTriggerPC() const
+        {
+            return prefetchTriggerPC.getPC();
+        }
+
+        void tagPrefetchTriggerPC(Request &request) const
+        {
+            prefetchTriggerPC.tag(request);
         }
 
         /**
@@ -441,6 +459,8 @@ class Base : public ClockedObject
         bool validContextId;
         /** Validity bit for the PC of this address. */
         bool validPC;
+        /** Original instruction that initiated this prefetch chain. */
+        TriggerPC prefetchTriggerPC;
         /** Whether this address targets the secure memory space. */
         bool secure;
         /** Size in bytes of the request triggering this event */
@@ -507,6 +527,16 @@ class Base : public ClockedObject
         bool hasPC() const
         {
             return validPC;
+        }
+
+        bool hasPrefetchTriggerPC() const
+        {
+            return prefetchTriggerPC.hasPC();
+        }
+
+        Addr getPrefetchTriggerPC() const
+        {
+            return prefetchTriggerPC.getPC();
         }
 
         /**

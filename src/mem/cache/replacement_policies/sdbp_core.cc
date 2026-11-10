@@ -65,7 +65,8 @@ SDBPCore::SDBPCore(const Config &config) : cfg(config)
             throw std::invalid_argument(message);
     };
     require(powerOfTwo(cfg.numSets) && cfg.numSets >= 4, "num_sets must be a power of two >= 4");
-    require(cfg.samplerNum >= 2 && cfg.samplerNum <= cfg.numSets / 2, "sampler_num must be in [2, num_sets/2]");
+    require(powerOfTwo(cfg.samplerNum) && cfg.samplerNum >= 2 && cfg.samplerNum <= cfg.numSets,
+            "sampler_num must be a power of two in [2, num_sets]");
     require(cfg.samplerAssoc >= 1, "sampler_assoc must be positive");
     require(cfg.predictorTables >= 1 && cfg.predictorTables <= 32, "predictor_tables must be in [1, 32]");
     require(powerOfTwo(cfg.predictorEntries) && cfg.predictorEntries >= 2,
@@ -95,16 +96,14 @@ SDBPCore::SDBPCore(const Config &config) : cfg(config)
     unsigned set_bits = 0;
     for (unsigned sets = cfg.numSets; sets > 1; sets >>= 1)
         ++set_bits;
-    auto distance = [&](unsigned h) {
-        const int64_t difference = (int64_t(1) << h) - int64_t(cfg.samplerNum);
-        return difference < 0 ? -difference : difference;
-    };
-    for (unsigned h = 2; h < set_bits; ++h) {
-        if (distance(h) < distance(halfSetBits))
-            halfSetBits = h;
-    }
+    halfSetBits = 0;
+    for (unsigned sets = cfg.samplerNum; sets > 1; sets >>= 1)
+        ++halfSetBits;
     matchBits = set_bits - halfSetBits;
-    tables.assign(cfg.predictorTables, std::vector<uint8_t>(cfg.predictorEntries, 0));
+    for (auto &bank : tables) {
+        bank.assign(cfg.predictorTables,
+                    std::vector<uint8_t>(cfg.predictorEntries, 0));
+    }
     sampler.assign(samplerSets(), std::vector<Entry>(cfg.samplerAssoc));
 }
 
@@ -151,25 +150,29 @@ SDBPCore::index(uint64_t signature, unsigned table) const
 }
 
 unsigned
-SDBPCore::confidence(uint64_t signature) const
+SDBPCore::confidence(uint64_t signature, RequestType type) const
 {
+    const auto source = static_cast<unsigned>(type);
+    assert(source < NumRequestTypes);
     unsigned sum = 0;
     for (unsigned t = 0; t < cfg.predictorTables; ++t)
-        sum += tables[t][index(signature, t)];
+        sum += tables[source][t][index(signature, t)];
     return sum;
 }
 
 bool
-SDBPCore::predict(uint64_t signature) const
+SDBPCore::predict(uint64_t signature, RequestType type) const
 {
-    return confidence(signature) >= cfg.deadThreshold;
+    return confidence(signature, type) >= cfg.deadThreshold;
 }
 
 void
-SDBPCore::train(uint64_t signature, bool dead)
+SDBPCore::train(uint64_t signature, bool dead, RequestType type)
 {
+    const auto source = static_cast<unsigned>(type);
+    assert(source < NumRequestTypes);
     for (unsigned t = 0; t < cfg.predictorTables; ++t) {
-        auto &counter = tables[t][index(signature, t)];
+        auto &counter = tables[source][t][index(signature, t)];
         if (dead) {
             if (counter < counterMax)
                 ++counter;
@@ -182,9 +185,15 @@ SDBPCore::train(uint64_t signature, bool dead)
 }
 
 SDBPCore::AccessResult
-SDBPCore::access(unsigned set, uint64_t tag, bool secure, uint64_t pc)
+SDBPCore::access(unsigned set, uint64_t tag, RequestType type,
+                 bool has_pc, uint64_t pc)
 {
     AccessResult result;
+    // Filter before lookup so rejected requests cannot train or alter LRU.
+    if (!has_pc ||
+        (cfg.samplerDemandPcOnly && type != RequestType::Demand)) {
+        return result;
+    }
     const int sample = sampleIndex(set);
     if (sample < 0)
         return result;
@@ -193,7 +202,7 @@ SDBPCore::access(unsigned set, uint64_t tag, bool secure, uint64_t pc)
     tag &= mask(cfg.partialTagBits);
     Entry *selected = nullptr;
     for (auto &entry : entries) {
-        if (entry.valid && entry.tag == tag && entry.secure == secure) {
+        if (entry.valid && entry.tag == tag) {
             selected = &entry;
             result.hit = true;
             break;
@@ -206,12 +215,24 @@ SDBPCore::access(unsigned set, uint64_t tag, bool secure, uint64_t pc)
                 break;
             }
         }
-        if (!selected) {
+        if (!selected && cfg.samplerDeadFirst) {
+            // Protect the N youngest positions across all entries, preserving
+            // original way order among eligible dead candidates. Global LRU
+            // remains the fallback, even when every position is protected.
             for (auto &entry : entries) {
-                if (entry.dead) {
-                    selected = &entry;
-                    break;
+                if (!entry.dead)
+                    continue;
+                if (cfg.samplerProtectYoungest) {
+                    const auto younger = std::count_if(
+                        entries.begin(), entries.end(),
+                        [&entry](const Entry &other) {
+                            return other.lastUse > entry.lastUse;
+                        });
+                    if (younger < cfg.samplerProtectYoungest)
+                        continue;
                 }
+                selected = &entry;
+                break;
             }
         }
         if (!selected) {
@@ -223,14 +244,23 @@ SDBPCore::access(unsigned set, uint64_t tag, bool secure, uint64_t pc)
 
     if (selected->valid) {
         result.previousDead = selected->dead;
+        result.previousSignatureValid = selected->signatureValid;
         result.previousSignature = selected->signature;
-        train(selected->signature, !result.hit);
+        result.previousType = selected->type;
+        if (selected->signatureValid)
+            train(selected->signature, !result.hit, selected->type);
     }
+
     selected->valid = true;
     selected->tag = tag;
-    selected->secure = secure;
-    selected->signature = signature(pc);
-    selected->dead = predict(selected->signature);
+    selected->type = type;
+    selected->signatureValid = has_pc;
+    if (selected->signatureValid) {
+        selected->signature = signature(pc);
+        selected->dead = predict(selected->signature, type);
+    } else {
+        selected->dead = false;
+    }
     selected->lastUse = ++sequence;
     return result;
 }

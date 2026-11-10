@@ -1,0 +1,41 @@
+{
+  "experiment": "sdbp-mcf4541-no-pf-20261023",
+  "base_commit": "9208445e5df598ef69d59bbbd3414a6bb4d161a2",
+  "binary_sha256": "4a2fed0df0d3c8e337d9d5d5770e156b348a0263bdbd72efe4a89b6b5a6cfe3a",
+  "source_sha256": {
+    "configs/common/SDBP.py": "6504abc081c85a24849a4c0e62d838a6e4a750d096b8c55c6c85c390893e1f89",
+    "src/cpu/o3/issue_queue.cc": "6bbb1c906af6131199c14a188e96df7514f6514d15bfa3e4973eaed4ad661b67",
+    "src/cpu/o3/issue_queue.hh": "746a5c10005c5f63490100c69fb68208509ee69689bfdc06f57d88131ffe9f3d",
+    "src/cpu/o3/lsq.cc": "2d48b65b60ec5562d44cf92c68fffe2904b0cd625275d2ab828e31fa2d63d8ce",
+    "src/cpu/o3/lsq.hh": "20a74771a722edb0e47743dc26e0ecb2c05c62bc5d799da8ebc0a5da44b89e30",
+    "src/mem/cache/base.cc": "4b20d6009d8064957a44664dea8fca49da6f02b6dee53b7db00d2d5d47bba3da",
+    "src/mem/cache/base.hh": "0c52672920b34b57790b63dad06a4295ffbf5ccd18866801b5ebaa4a988467fc",
+    "src/mem/cache/cache.cc": "c721cee9bd8ecedaf1c473322a005bd081590ac0d6a1636726058cc0298c43e0",
+    "src/mem/cache/mshr.cc": "7c52ef937a52b81d6a9ebbcd70bca2065f0012a4e02df9f0d83305176270685a",
+    "src/mem/cache/mshr.hh": "fcf7534b2dcf2b952df966d63388bd3bc7df36c31c52c41458176f73b0b471cc",
+    "src/mem/cache/replacement_policies/ReplacementPolicies.py": "ff5f4ef54c9205764e4b6096f447a825aa825afa9d36414cc3e3f501b84f6b60",
+    "src/mem/cache/replacement_policies/sdbp_core.cc": "13cf7b6ff746979c68e0b524cc0f1d649c555870dafd4a5813a9213fed4b5cc8",
+    "src/mem/cache/replacement_policies/sdbp_core.hh": "8d3d9c5b434dbb1ff7aec6a1a537b4d4431b6faf9195bf259e97757cffec02cc",
+    "src/mem/cache/replacement_policies/sdbp_core.test.cc": "5d9fd89cfcb16831221641cec2cd2f7ff85cdf409ad0ad4fd95e251477264a04",
+    "src/mem/cache/replacement_policies/sdbp_rp.cc": "7845591831be8a4a8cac14be290f23e110a86d9063da22b1ea81c2ba5552b229",
+    "src/mem/cache/replacement_policies/sdbp_rp.hh": "05f2ed8090f31039743569ff656b64c5d413de3086f714c075e09f5aea80a238",
+    "src/mem/cache/replacement_policies/sdbp_rp.test.cc": "b65c3c9bb00040fc36ed94694fb6c778b2d6d3f44ef00377c1c55a375d63acee",
+    "src/mem/cache/tags/base_set_assoc.hh": "b01332b60fbab7bdd6ddd30b9f3b65fb3b8341fef5650f101a7a33ce706b3d6f",
+    "src/mem/packet.hh": "003b39a3390e568df289f6a51219cf97a8ebf76c1a2c16aa1123739e7eed8487",
+    "util/sdbp_reference/README.md": "95733761f0003f3b3b49c2cdbf0ec4e05da71cafdca4e497469af3e451049e98",
+    "util/sdbp_reference/run_comparison.py": "af463124c19f0e7746c036d16379bdf4aec6195ffa5a918de2ab4c91b974ec1c",
+    "util/sdbp_reference/summarize.py": "344d9d2e932bc5c226d1ca886f0a87737a68b22040234e6e1ef1eec25efc89b0",
+    "util/sdbp_reference/analyze_load_stalls.py": "148c58d422d7e33d651f40c1549a62ec35d10df057f5d90ea001adc5aa10a53a",
+    "util/sdbp_reference/analyze_upper_victims.py": "81bcd8bd864759909f5dcfcaf78ab248be6470d9ec8f63319423c4a353c05ec7",
+    "util/sdbp_reference/compare_counters.py": "1dbdca1b4b5d4fa9738581b388b303c90d54f976b44586293d3d1559bfdc33cf"
+  },
+  "local_measurement": {
+    "lru_cycles": 60847149,
+    "sdbp_cycles": 43804667
+  },
+  "configuration_note": "Inherited no_pf=True in idealkmhv3.py; all 22 previously modified tracked files match the successful experiment patch exactly. Two style-only adjustments listed separately; source hashes describe committed files.",
+  "style_only_changes": [
+    "src/mem/cache/base.cc: sort include",
+    "util/sdbp_reference/analyze_upper_victims.py: wrap lines"
+  ]
+}

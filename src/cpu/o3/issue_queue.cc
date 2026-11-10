@@ -1576,6 +1576,20 @@ Scheduler::SchedulerStats::SchedulerStats(statistics::Group* parent)
                "Cycles with no uops executed and at least X in-flight load that has missed the L2-cache"),
       ADD_STAT(memstall_l3miss,
                "Cycles with no uops executed and at least X in-flight load that has missed the L3-cache"),
+      ADD_STAT(loadStallDepthMask,
+               "Zero-issue cycles by outstanding load depth bitmask (bits 0..4: depth 0,1,2,3,>=4; zero: no request)"),
+      ADD_STAT(loadStallStateMask,
+               "Zero-issue cycles by union of tracked load request states (translation=1, packet=2, writeback=4)"),
+      ADD_STAT(loadStallNoDepth1StateMask,
+               "Outstanding-load zero-issue cycles without depth=1, by request state union"),
+      ADD_STAT(loadStallNoDepth1OldestDepthState,
+               "No-depth1 load stalls by oldest tracked request: index=depth_bin*8+state_mask"),
+      ADD_STAT(loadStallOutstandingRequests,
+               "Tracked outstanding request count on outstanding-load zero-issue cycles"),
+      ADD_STAT(loadStallOldestPC,
+               "Outstanding-load zero-issue cycles attributed to oldest tracked request PC (not proven critical)"),
+      ADD_STAT(loadStallNoDepth1OldestPC,
+               "No-depth1 outstanding-load zero-issue cycles by oldest tracked request PC"),
       ADD_STAT(lldpWakeups, statistics::units::Count::get(),
                "IQ source operands successfully woken"),
       ADD_STAT(lldpChains, statistics::units::Count::get(),
@@ -1591,6 +1605,18 @@ Scheduler::SchedulerStats::SchedulerStats(statistics::Group* parent)
       ADD_STAT(lldpArithmeticTypes, statistics::units::Count::get(),
                "Arithmetic operation classes in LLDP chains")
 {
+    loadStallDepthMask.init(32);
+    loadStallStateMask.init(8);
+    loadStallNoDepth1StateMask.init(8);
+    loadStallNoDepth1OldestDepthState.init(40);
+    loadStallOutstandingRequests.init(1, 128, 1);
+    // Hex subnames preserve full-width PCs; sparse histogram bucket names
+    // pass through floating point and may lose address precision.
+    loadStallOldestPC.init(loadStallPCSlots + 1).flags(statistics::nozero);
+    loadStallNoDepth1OldestPC.init(loadStallPCSlots + 1)
+        .flags(statistics::nozero);
+    loadStallOldestPC.subname(loadStallPCSlots, "overflow");
+    loadStallNoDepth1OldestPC.subname(loadStallPCSlots, "overflow");
     lldpChainLengths.init(1, 64, 1).flags(statistics::nozero);
     lldpArithmeticTypes.init(5).flags(statistics::nozero);
     const char *names[] = {"add_sub", "shift", "logic", "mul_div", "other"};
@@ -1892,7 +1918,31 @@ Scheduler::issueAndSelect()
         stats.exec_stall_cycle++;
     }
     if (instsToFu.size() == 0) {
-        int misslevel = lsq->anyInflightLoadsNotComplete();
+        LSQ::LoadStallSnapshot snapshot;
+        int misslevel = lsq->anyInflightLoadsNotComplete(&snapshot);
+        stats.loadStallDepthMask[snapshot.depthMask]++;
+        stats.loadStallStateMask[snapshot.stateMask]++;
+        if (snapshot.requests) {
+            stats.loadStallOutstandingRequests.sample(snapshot.requests);
+            auto pc_it = loadStallPCIndices.find(snapshot.oldestPC);
+            unsigned pc_slot = loadStallPCSlots;
+            if (pc_it != loadStallPCIndices.end()) {
+                pc_slot = pc_it->second;
+            } else if (loadStallPCIndices.size() < loadStallPCSlots) {
+                pc_slot = loadStallPCIndices.size();
+                loadStallPCIndices.emplace(snapshot.oldestPC, pc_slot);
+                const auto name = csprintf("%#x", snapshot.oldestPC);
+                stats.loadStallOldestPC.subname(pc_slot, name);
+                stats.loadStallNoDepth1OldestPC.subname(pc_slot, name);
+            }
+            stats.loadStallOldestPC[pc_slot]++;
+            if (!(snapshot.depthMask & (1u << 1))) {
+                stats.loadStallNoDepth1StateMask[snapshot.stateMask]++;
+                stats.loadStallNoDepth1OldestDepthState[
+                    snapshot.oldestDepth * 8 + snapshot.oldestState]++;
+                stats.loadStallNoDepth1OldestPC[pc_slot]++;
+            }
+        }
         if (misslevel != 0)
             stats.memstall_any_load++;
         if ((misslevel & ((1 << 1) - 1)) == ((1 << 1) - 1))

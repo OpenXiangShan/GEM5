@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Institute of Computing Technology, CAS
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Run paired, fixed-instruction LRU/SDBP checkpoint comparisons locally.
+"""Run fixed-instruction L2 LRU/SDBP/XS-DRRIP checkpoint comparisons locally.
 
 The output directory must not exist: commands, logs, manifests and stats are
 kept together, and an earlier experiment is never silently overwritten.
@@ -77,13 +77,12 @@ def main():
     parser.add_argument("--measure", type=int, default=20_000_000)
     parser.add_argument("--sampler-assoc", type=int, default=8)
     parser.add_argument("--sampler-num", type=int, default=32)
-    parser.add_argument("--level", choices=("l2", "l3"), default="l2")
     parser.add_argument(
         "--variants",
         nargs="+",
         default=["lru", "sdbp"],
-        choices=("lru", "sdbp", "bypass"),
-        help="Policies to compare (default: lru sdbp; bypass is opt-in)",
+        choices=("lru", "sdbp", "bypass", "xs-drrip"),
+        help="Policies to compare (xs-drrip uses the platform L2 default)",
     )
     parser.add_argument("--extra-arg", action="append", default=[])
     args = parser.parse_args()
@@ -127,7 +126,7 @@ def main():
         "config": args.config,
         "warmup": args.warmup,
         "measure": args.measure,
-        "level": args.level,
+        "level": "l2",
         "sampler_assoc": args.sampler_assoc,
         "sampler_num": args.sampler_num,
         "checkpoints": checkpoints,
@@ -169,8 +168,7 @@ def main():
     for point, checkpoint in checkpoints.items():
         for variant in args.variants:
             directory = output / f"{point.replace('/', '_')}__{variant}"
-            policy = "lru" if variant == "lru" else "sdbp"
-            other_level = "l3" if args.level == "l2" else "l2"
+            policy = {"lru": "lru", "xs-drrip": "default"}.get(variant, "sdbp")
             command = [
                 str(binary),
                 f"--outdir={directory}",
@@ -180,8 +178,7 @@ def main():
                 f"--difftest-ref-so={ref}",
                 f"--warmup-insts-no-switch={args.warmup}",
                 f"--maxinsts={args.warmup + args.measure}",
-                f"--{args.level}-replacement-policy={policy}",
-                f"--{other_level}-replacement-policy=lru",
+                f"--l2-replacement-policy={policy}",
                 f"--sdbp-sampler-assoc={args.sampler_assoc}",
                 f"--sdbp-sampler-num={args.sampler_num}",
             ]

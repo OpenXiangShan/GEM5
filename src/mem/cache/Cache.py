@@ -112,6 +112,9 @@ class BaseCache(ClockedObject):
     replacement_policy = Param.BaseReplacementPolicy(LRURP(),
         "Replacement policy")
 
+    sdbp_l1_caches = VectorParam.BaseCache(
+        [], "L1 caches queried for resident copies before SDBP dead eviction")
+
     compressor = Param.BaseCacheCompressor(NULL, "Cache compressor.")
     replace_expansions = Param.Bool(True, "Apply replacement policy to " \
         "decide which blocks should be evicted on a data expansion")
