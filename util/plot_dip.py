@@ -3,9 +3,11 @@
 
 import argparse
 import csv
+import subprocess
 from pathlib import Path
 
 from analyze_dip import CAUSES, STACK, STATES, cycle_cost
+from pc_symbols import pc_labels
 
 
 COLORS = ("#4c78a8", "#e9a03b", "#72b7b2", "#d45d61", "#b5b5b5")
@@ -101,7 +103,7 @@ def overview(plt, rows, unit):
     return fig, axes
 
 
-def hotspots(plt, folder, summary, unit, top):
+def hotspots(plt, folder, summary, unit, top, elfs=(), objdump=None):
     with (folder / "pcs.csv").open(newline="") as source:
         rows = [
             row
@@ -114,7 +116,12 @@ def hotspots(plt, folder, summary, unit, top):
         key=lambda row: (-int(row["overhead_slots"]), int(row["pc"], 16))
     )
     rows = rows[:top]
-    fig, ax = plt.subplots(figsize=(11, max(4.5, len(rows) * 0.38 + 2)))
+    fig, ax = plt.subplots(
+        figsize=(
+            14 if elfs else 11,
+            max(4.5, len(rows) * (0.65 if elfs else 0.38) + 2),
+        )
+    )
     offsets = [0.0] * len(rows)
     for state, color in zip(STATES, COLORS):
         values = [
@@ -124,7 +131,11 @@ def hotspots(plt, folder, summary, unit, top):
             range(len(rows)), values, left=offsets, label=state, color=color
         )
         offsets = [a + b for a, b in zip(offsets, values)]
-    ax.set_yticks(range(len(rows)), [row["pc"] for row in rows])
+    ax.set_yticks(
+        range(len(rows)),
+        pc_labels([row["pc"] for row in rows], elfs, objdump),
+        fontsize=9,
+    )
     ax.invert_yaxis()
     ax.set_title(f"{summary['run']}: top {len(rows)} PCs by non-Base slots")
     ax.set_xlabel(
@@ -160,6 +171,16 @@ def main():
     parser.add_argument(
         "--top", type=int, default=15, help="number of PC hotspots"
     )
+    parser.add_argument(
+        "--elf",
+        type=Path,
+        action="append",
+        default=[],
+        help="matching workload ELF for PC labels; repeat for kernel ELF",
+    )
+    parser.add_argument(
+        "--objdump", help="RISC-V objdump executable for --elf"
+    )
     parser.add_argument("--title", default="DIP dispatch-slot attribution")
     args = parser.parse_args()
     if args.top <= 0:
@@ -182,7 +203,15 @@ def main():
         if args.view == "pcs":
             if len(rows) != 1:
                 raise ValueError("use --run to select one run for the PC plot")
-            fig, axes = hotspots(plt, args.input, rows[0], args.unit, args.top)
+            fig, axes = hotspots(
+                plt,
+                args.input,
+                rows[0],
+                args.unit,
+                args.top,
+                args.elf,
+                args.objdump,
+            )
         else:
             fig, axes = overview(plt, rows, args.unit)
         for ax in axes:
@@ -201,7 +230,12 @@ def main():
         args.output.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(args.output, dpi=180, bbox_inches="tight")
         plt.close(fig)
-    except (OSError, KeyError, ValueError) as error:
+    except (
+        OSError,
+        KeyError,
+        ValueError,
+        subprocess.CalledProcessError,
+    ) as error:
         parser.error(str(error))
     print(f"Saved {args.output}")
 

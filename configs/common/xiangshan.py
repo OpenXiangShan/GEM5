@@ -1072,7 +1072,7 @@ def xiangshan_system_init():
     parser.add_argument(
         "--disable-profile-report", dest="profile_report",
         action="store_false", default=True,
-        help="Skip automatic DIP/TEA plots and report after simulation",
+        help="Skip automatic DIP/TEA CSV and Markdown reports",
     )
     parser.add_argument("--dip-sample-period", type=int, default=1,
                         help="DIP sample period in CPU cycles (0 or 1: all cycles)")

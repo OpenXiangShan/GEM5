@@ -2,9 +2,13 @@
 """Plot TEA state shares and event weights from gem5 stats or summary CSVs."""
 
 import argparse
+from collections import Counter
 import csv
 import math
 from pathlib import Path
+import subprocess
+
+from pc_symbols import pc_labels
 
 
 STATES = ("Computing", "Stalled", "Flushed", "Drained")
@@ -117,6 +121,66 @@ def plot(rows, output, title):
     plt.close(fig)
 
 
+def read_pcs(path):
+    """Rank finalized attributed PCs; the denominator includes all resolutions."""
+    pcs = Counter()
+    total = 0.0
+    with path.open(newline="") as source:
+        for row in csv.DictReader(source):
+            weight = float(row["sample_weight"])
+            if not math.isfinite(weight) or weight < 0:
+                raise ValueError(
+                    "TEA sample weights must be finite and nonnegative"
+                )
+            total += weight
+            if int(row["psv"]) >= 0 and row["pc"]:
+                pcs[hex(int(row["pc"], 16))] += weight
+    if total <= 0:
+        raise ValueError("no TEA samples")
+    return (
+        sorted(pcs.items(), key=lambda item: (-item[1], int(item[0], 16))),
+        total,
+    )
+
+
+def plot_pcs(path, output, cpu, top, elfs, objdump):
+    import matplotlib
+
+    matplotlib.use("Agg")
+    from matplotlib import pyplot as plt
+
+    rows, total = read_pcs(path)
+    rows = rows[:top]
+    if not rows:
+        raise ValueError("no finalized attributed TEA PC samples")
+    fig, ax = plt.subplots(
+        figsize=(
+            14 if elfs else 11,
+            max(4.5, len(rows) * (0.65 if elfs else 0.38) + 2),
+        )
+    )
+    ax.barh(
+        range(len(rows)),
+        [100 * weight / total for _, weight in rows],
+        color=COLORS[0],
+    )
+    ax.set_yticks(
+        range(len(rows)),
+        pc_labels([pc for pc, _ in rows], elfs, objdump),
+        fontsize=9,
+    )
+    ax.invert_yaxis()
+    ax.set_title(f"{cpu}: TEA finalized PC sample weights (all states)")
+    ax.set_xlabel(
+        "Share of all TEA samples (%); pending/cancelled/unresolved excluded from PCs"
+    )
+    ax.spines[["top", "right"]].set_visible(False)
+    fig.tight_layout()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -142,8 +206,43 @@ def main():
         nargs="+",
         help="display labels, one per plotted row",
     )
+    parser.add_argument(
+        "--view", choices=("overview", "pcs"), default="overview"
+    )
+    parser.add_argument("--top", type=int, default=15)
+    parser.add_argument(
+        "--elf",
+        type=Path,
+        action="append",
+        default=[],
+        help="matching workload ELF for PC labels; repeat for kernel ELF",
+    )
+    parser.add_argument(
+        "--objdump", help="RISC-V objdump executable for --elf"
+    )
     parser.add_argument("--title", default="TEA sample breakdown")
     args = parser.parse_args()
+    if args.top <= 0:
+        parser.error("--top must be positive")
+    if args.view == "pcs":
+        if len(args.inputs) != 1:
+            parser.error("--view pcs requires one stats.txt or raw TEA CSV")
+        path = args.inputs[0]
+        if path.suffix != ".csv":
+            path = path.parent / f"{args.cpu}.tea.csv"
+        try:
+            plot_pcs(
+                path, args.output, args.cpu, args.top, args.elf, args.objdump
+            )
+        except (
+            OSError,
+            KeyError,
+            ValueError,
+            subprocess.CalledProcessError,
+        ) as error:
+            parser.error(str(error))
+        print(f"Saved {args.output}")
+        return
 
     rows = []
     for path in args.inputs:

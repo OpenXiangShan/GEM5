@@ -118,60 +118,88 @@ ROB/LSQ/register causes may overlap; at direct admission, earlier failing gates
 can mask later predicates. They are not an exhaustive test of all hypothetical
 resource constraints, and cause counts must not be summed as disjoint cycles.
 
-## Automatic report after simulation
+## Automatic CSV and Markdown report
 
 After a successful XiangShan simulation, normal exit cleanup and the final stats
-dump complete before the DIP and TEA analysis/plotting tools run using `python3`.
-Install Matplotlib in that interpreter's environment before running:
+dump complete before `python3` generates CSV tables and a Markdown report.
+This automatic step uses only the Python standard library; it does not plot,
+extract ELF files or require Matplotlib/objdump.
 
-```sh
-python3 -m pip install matplotlib
-build/RISCV/gem5.opt --outdir=m5out configs/example/kmhv3.py \
-    --generic-rv-cpt=<checkpoint.zstd>
-```
-
-Open `m5out/profile/report.md` for the combined report with embedded figure
-links, cycle/instruction counts, CPI, DIP state shares and TEA state/event
-shares. Each CPU has a subdirectory named after its SimObject path, such as:
+Read `<outdir>/profile/report.md` for cycle/instruction counts, CPI, DIP state
+shares and TEA state/event shares. Each CPU has its own directory:
 
 ```text
 m5out/profile/
   report.md
-  system.cpu/
-    tea.png
-    dip/
-      report.md
-      summary.csv
-      pcs.csv
-      contexts.csv
-      overview.png
-      pcs.png
+  system.cpu/dip/
+    report.md
+    summary.csv
+    pcs.csv
+    contexts.csv
 ```
 
-DIP's plots show the complete state/pending stack, overlapping causes and
-finalized PC hotspots. TEA's plot shows its independent states and events.
 The report uses the final stats window, after the configured warmup reset.
-If the run ends during warmup, the report says that no measured DIP profile
-was collected; any TEA samples shown still describe that final warmup window.
-Profilers disabled with `--disable-dip` or `--disable-tea` are omitted from
-plotting and marked disabled in the report. A snapshot with no finalized PC
-attribution has no PC chart. A nonzero simulated exit skips the report.
+If the run ends during warmup, it says no measured DIP profile was collected;
+any TEA samples shown still describe that final warmup window. Disabled
+profilers are marked disabled. A nonzero simulated exit skips reporting.
+`--disable-profile-report` skips automatic postprocessing without changing
+collection; disabling both profilers also skips it. Reporting errors warn
+without changing the simulation result.
 
-Use `--disable-profile-report` to keep collection enabled without automatic
-postprocessing. If both profilers are disabled, no automatic report runs.
-Report-generation errors are warnings and do not change the simulation result.
-When a plotting dependency fails, numerical tables and the report remain
-available; the report records the plotting error. After installing the missing
-dependency, regenerate from the existing output without rerunning gem5:
+Regenerate the numerical report without running gem5 again:
 
 ```sh
 python3 util/profile_report.py m5out
 ```
 
-The manual entrypoint defaults to `m5out/profile`; `-o <directory>` selects a
-different report directory. It also discovers named CPU objects from
-`config.ini`, so multicore output is kept in separate CPU subdirectories.
-The ordinary text `stats.txt` and `config.ini` outputs must be enabled.
+Use `-o <directory>` to select a different report directory. The ordinary
+`stats.txt` and `config.ini` outputs must be available alongside the raw CSVs.
+
+## Manual image report and PC instruction labels
+
+Generate images only when requested:
+
+```sh
+python3 -m pip install matplotlib
+python3 util/profile_report.py m5out --plots
+```
+
+This adds DIP state/cause and PC charts under `profile/<cpu>/dip/`, TEA
+state/event and PC charts at `profile/<cpu>/tea.png` and `tea-pcs.png`, and
+image links to `profile/report.md`. Pending or unattributed PCs do not enter
+hotspot charts. TEA PC weights include all states; they are not stall costs.
+A snapshot with no finalized PC attribution has no PC chart.
+
+PC charts show the address, instruction and function when matching ELF files
+and a RISC-V objdump are available. For current `manual-perf` SPEC profiles,
+the tool derives the profile from `config.ini`'s `system.gcpt_file`, reads
+`manifest/<workload>.json` and `cmd/<workload>.run.sh`, and finds the commanded
+application in its rootfs. A profile `elf/*.elf` is reused only when its bytes
+match that executable. Otherwise the actual ELF is extracted to `profile/elf/`.
+The manifest's kernel ELF is also included. Shared CI assets are only read.
+This avoids mislabeling PCs when a similarly named ELF belongs to a launcher.
+
+Outside those profile layouts, supply the workload ELF explicitly:
+
+```sh
+python3 util/profile_report.py m5out --plots --elf /path/to/workload.elf
+python3 util/plot_dip.py dip-report --view pcs --elf /path/to/workload.elf \
+    -o dip-report/instructions.png
+```
+
+Repeat `--elf` for a kernel or another matching image. `--objdump <executable>`
+selects a disassembler; by default the tools search for
+`riscv64-unknown-linux-gnu-objdump`, then `riscv64-linux-gnu-objdump` on PATH.
+Use a version that supports the workload's ISA. Debug information is not
+required for instructions; function names require symbols. Supply the guest
+program's ELF, not the gem5 executable. ELF virtual addresses must match the
+profiled PCs; relocated images need their runtime address mapping first.
+Unknown PCs remain explicitly unmapped rather than using a nearby instruction.
+
+Without ELF assets or objdump, the manual report keeps PC-only charts and
+records why instruction labels are unavailable. Plot failures retain the
+numerical report. Re-running with `--plots` regenerates the images; an automatic
+numerical run does not update existing image files.
 
 ## Offline processing and visualization
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate DIP/TEA plots and a Markdown report from a completed gem5 run."""
+"""Generate DIP/TEA CSVs and Markdown, with optional plots for a completed run."""
 
 import argparse
 import configparser
@@ -10,9 +10,10 @@ import sys
 
 from analyze_dip import STACK, cycle_cost, read_stats
 import plot_tea
+from pc_symbols import objdump_tool, profile_elfs
 
 
-def generate(folder, output):
+def generate(folder, output, elfs=(), objdump=None, plots=False):
     config = configparser.ConfigParser(interpolation=None)
     config.read(folder / "config.ini")
     tools = Path(__file__).resolve().parent
@@ -26,6 +27,25 @@ def generate(folder, output):
         "Cause/event bits overlap and are observations, not removable cycle costs.",
         "",
     ]
+    symbol_args = []
+    if plots:
+        elfs = list(elfs) or profile_elfs(config, output)
+        if elfs and objdump_tool(objdump):
+            lines.extend(["ELF inputs for exact PC instruction labels:", ""])
+            for elf in elfs:
+                lines.append(f"- `{elf}`")
+                symbol_args.extend(["--elf", str(elf)])
+            if objdump:
+                symbol_args.extend(["--objdump", objdump])
+            lines.append("")
+        else:
+            lines.extend(
+                [
+                    "Instruction labels unavailable: no matching profile ELF "
+                    "or RISC-V objdump. Supply --elf and --objdump to annotate PCs.",
+                    "",
+                ]
+            )
     figures = []
     for cpu in config.sections():
         dip = config.getboolean(cpu, "enableDip", fallback=False)
@@ -93,25 +113,27 @@ def generate(folder, output):
                     "",
                 ]
             )
-            for view in ("overview", "pcs"):
-                if view == "pcs" and not int(summary["resolved_slots"]):
-                    continue
-                image = dest / f"{view}.png"
-                figures.append(
-                    (
-                        f"{cpu} DIP {view}",
-                        image,
-                        [
-                            sys.executable,
-                            str(tools / "plot_dip.py"),
-                            str(dest),
-                            "--view",
-                            view,
-                            "-o",
-                            str(image),
-                        ],
+            if plots:
+                for view in ("overview", "pcs"):
+                    if view == "pcs" and not int(summary["resolved_slots"]):
+                        continue
+                    image = dest / f"{view}.png"
+                    figures.append(
+                        (
+                            f"{cpu} DIP {view}",
+                            image,
+                            [
+                                sys.executable,
+                                str(tools / "plot_dip.py"),
+                                str(dest),
+                                "--view",
+                                view,
+                                "-o",
+                                str(image),
+                                *(symbol_args if view == "pcs" else []),
+                            ],
+                        )
                     )
-                )
         else:
             lines.extend(
                 [
@@ -160,24 +182,46 @@ def generate(folder, output):
                     "",
                 ]
             )
-            image = output / cpu / "tea.png"
-            figures.append(
-                (
-                    f"{cpu} TEA",
-                    image,
-                    [
-                        sys.executable,
-                        str(tools / "plot_tea.py"),
-                        str(folder / "stats.txt"),
-                        "--cpu",
-                        cpu,
-                        "--labels",
-                        cpu,
-                        "-o",
-                        str(image),
-                    ],
+            if plots:
+                image = output / cpu / "tea.png"
+                figures.append(
+                    (
+                        f"{cpu} TEA",
+                        image,
+                        [
+                            sys.executable,
+                            str(tools / "plot_tea.py"),
+                            str(folder / "stats.txt"),
+                            "--cpu",
+                            cpu,
+                            "--labels",
+                            cpu,
+                            "-o",
+                            str(image),
+                        ],
+                    )
                 )
-            )
+                pc_rows, _ = plot_tea.read_pcs(folder / f"{cpu}.tea.csv")
+                if pc_rows:
+                    image = output / cpu / "tea-pcs.png"
+                    figures.append(
+                        (
+                            f"{cpu} TEA PCs",
+                            image,
+                            [
+                                sys.executable,
+                                str(tools / "plot_tea.py"),
+                                str(folder / f"{cpu}.tea.csv"),
+                                "--view",
+                                "pcs",
+                                "--cpu",
+                                cpu,
+                                "-o",
+                                str(image),
+                                *symbol_args,
+                            ],
+                        )
+                    )
         else:
             lines.extend(
                 [
@@ -189,7 +233,16 @@ def generate(folder, output):
                     "",
                 ]
             )
-    lines.extend(["## Visualizations", ""])
+    if plots:
+        lines.extend(["## Visualizations", ""])
+    else:
+        lines.extend(
+            [
+                "Generate the image report manually with "
+                "`python3 util/profile_report.py <outdir> --plots`.",
+                "",
+            ]
+        )
     errors = []
     for caption, image, command in figures:
         try:
@@ -220,9 +273,30 @@ def main():
         type=Path,
         help="report directory (default: INPUT/profile)",
     )
+    parser.add_argument(
+        "--plots",
+        action="store_true",
+        help="also generate the image report (requires Matplotlib)",
+    )
+    parser.add_argument(
+        "--elf",
+        type=Path,
+        action="append",
+        default=[],
+        help="workload ELF for --plots; repeat for additional images; default: checkpoint profile discovery",
+    )
+    parser.add_argument(
+        "--objdump", help="RISC-V objdump executable for instruction labels"
+    )
     args = parser.parse_args()
     try:
-        generate(args.input, args.output or args.input / "profile")
+        generate(
+            args.input,
+            args.output or args.input / "profile",
+            args.elf,
+            args.objdump,
+            args.plots,
+        )
     except (
         OSError,
         KeyError,
