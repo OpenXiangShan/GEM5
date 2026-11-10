@@ -58,6 +58,31 @@ splitmix64(uint64_t x)
     return x ^ (x >> 31);
 }
 
+uint64_t
+lowMask(unsigned bits)
+{
+    return bits >= 64 ? ~0ULL : ((1ULL << bits) - 1);
+}
+
+uint64_t
+foldBitGroups(uint64_t value, unsigned high, unsigned low,
+        unsigned group_width)
+{
+    assert(high >= low);
+    assert(group_width > 0);
+
+    uint64_t folded = 0;
+    unsigned bit = low;
+    while (bit + group_width - 1 <= high) {
+        folded ^= (value >> bit) & lowMask(group_width);
+        bit += group_width;
+    }
+    if (bit <= high) {
+        folded ^= (value >> bit) & lowMask(high - bit + 1);
+    }
+    return folded & lowMask(group_width);
+}
+
 } // anonymous namespace
 
 BOP::BOP(const BOPPrefetcherParams &p)
@@ -76,6 +101,9 @@ BOP::BOP(const BOPPrefetcherParams &p)
       issuePrefetchRequests(false),
       bestOffset(1), phaseBestOffset(0),
       bestScore(0), round(0),
+      issueGateEnable(p.issue_gate_enable),
+      issueConfThreshold(p.issue_conf_threshold),
+      issueConfidence(0),
       enableStudentCover(p.enable_student_cover),
       studentPoolSize(p.student_pool_size),
       studentConfAlpha(p.student_conf_alpha),
@@ -88,6 +116,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
       studentFilterEntries(p.student_filter_entries),
       studentHashCount(p.student_hash_count),
       studentHashMode(p.student_hash_mode),
+      studentHashAddrBits(p.student_hash_addr_bits),
       studentDelayQueueEnabled(p.student_delay_queue_enable),
       studentDelayQueueSize(p.student_delay_queue_size),
       studentDelayTicks(cyclesToTicks(p.student_delay_queue_cycles)),
@@ -121,6 +150,9 @@ BOP::BOP(const BOPPrefetcherParams &p)
     fatal_if(enableStudentCover && studentHashCount == 0,
         "%s: student_hash_count must be non-zero when student coverage is enabled",
         name());
+    fatal_if(issueGateEnable && issueConfThreshold > 15,
+        "%s: issue_conf_threshold must fit in the RTL 4-bit confidence",
+        name());
     fatal_if(enableStudentCover && studentDelayQueueEnabled &&
             studentDelayQueueSize == 0,
         "%s: student_delay_queue_size must be non-zero when delayed coverage is enabled",
@@ -139,10 +171,18 @@ BOP::BOP(const BOPPrefetcherParams &p)
     fatal_if(enableStudentCover &&
             (studentHashMode != "lowbits") &&
             (studentHashMode != "bop_rr") &&
+            (studentHashMode != "pairs_low9") &&
             (studentHashMode != "splitmix") &&
             (studentHashMode != "oracle") &&
             (studentHashMode != "exact"),
         "%s: unsupported student_hash_mode '%s'", name(), studentHashMode);
+    fatal_if(enableStudentCover && studentHashMode == "pairs_low9" &&
+            studentHashCount != 1,
+        "%s: pairs_low9 supports exactly one student hash", name());
+    fatal_if(enableStudentCover && studentHashMode == "pairs_low9" &&
+            (studentHashAddrBits <= lBlkSize + 6 ||
+             studentHashAddrBits > 64 || studentFilterEntries < 1024),
+        "%s: invalid pairs_low9 address width or filter size", name());
     if (enableStudentCover && studentTeacherTopN > 1) {
         warn("%s: student_teacher_top_n=%u currently reuses only the teacher best offset",
              name(), studentTeacherTopN);
@@ -465,6 +505,17 @@ BOP::studentHashIndexes(Addr line_addr) const
         base1 = base;
         base2 = ((((line_addr >> (2 * lgm)) & mask) ^ line_addr ^
                 0xC2B2ULL) | 1ULL);
+    } else if (studentHashMode == "pairs_low9") {
+        constexpr unsigned raw_low_bits = 9;
+        constexpr unsigned hash_start_bit = 6;
+        const unsigned index_bits = floorLog2(studentFilterEntries);
+        const unsigned hash_bits = index_bits - raw_low_bits;
+        const unsigned line_addr_bits = studentHashAddrBits - lBlkSize;
+        const uint64_t rtl_line_addr = line_addr & lowMask(line_addr_bits);
+        const uint64_t folded_high = foldBitGroups(
+            rtl_line_addr, line_addr_bits - 1, hash_start_bit, hash_bits);
+        base1 = (folded_high << raw_low_bits) |
+            (rtl_line_addr & lowMask(raw_low_bits));
     } else {
         base1 = splitmix64(line_addr);
         base2 = splitmix64(line_addr ^ 0x9E3779B97F4A7C15ULL) | 1ULL;
@@ -849,6 +900,26 @@ BOP::studentShouldIssue() const
     return enableStudentCover && studentSelectedValid && studentSelectedEnable;
 }
 
+bool
+BOP::issueGateAllowsIssue() const
+{
+    return !issueGateEnable || issueConfidence < issueConfThreshold;
+}
+
+void
+BOP::updateIssueConfidence(bool teacher_disabled)
+{
+    if (!issueGateEnable) {
+        return;
+    }
+
+    if (teacher_disabled) {
+        issueConfidence = issueConfidence >= 13 ? 15 : issueConfidence + 2;
+    } else {
+        issueConfidence = issueConfidence == 0 ? 0 : issueConfidence - 1;
+    }
+}
+
 int64_t
 BOP::studentSelectIssueOffset(int64_t teacher_best_offset) const
 {
@@ -1045,6 +1116,7 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
 {
     Addr addr = blockAddress(pfi.getAddr());
     Addr tag_x = tag(addr);
+    const bool issue_gate = issueGateAllowsIssue();
 
     DPRINTF(BOPPrefetcher,
             "Train prefetcher with addr %#lx tag %#lx\n", addr, tag_x);
@@ -1067,19 +1139,24 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     // prefetch at most per access
     bool student_issue = studentShouldIssue();
     int64_t issue_offset = studentSelectIssueOffset(bestOffset);
-    bool do_issue = issuePrefetchRequests || student_issue;
+    bool do_issue = (issuePrefetchRequests || student_issue) && issue_gate;
     Addr prefetch_addr = addr + (issue_offset * (1ULL << lBlkSize));
 
     if (do_issue) {
         stats.issuedOffsetDist.sample(issue_offset);
         sendPFWithFilter(pfi, prefetch_addr, addresses, 32, PrefetchSourceType::HWP_BOP);
         DPRINTF(BOPPrefetcher,
-                "Generated prefetch %#lx offset: %ld student %d teacher_issue %d\n",
+                "Generated prefetch %#lx offset: %ld student %d "
+                "teacher_issue %d gate %d conf %u\n",
                 prefetch_addr, issue_offset, student_issue,
-                issuePrefetchRequests);
+                issuePrefetchRequests, issue_gate, issueConfidence);
     } else {
         stats.throttledCount++;
         DPRINTF(BOPPrefetcher, "Issue prefetch is false, can't issue\n");
+    }
+
+    if (teacher_phase_end) {
+        updateIssueConfidence(!issuePrefetchRequests);
     }
 
     if (!victimRestoreScheduled && victimOffsetsList.size() > 0) {

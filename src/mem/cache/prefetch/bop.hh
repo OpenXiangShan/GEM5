@@ -172,6 +172,9 @@ class BOP : public Queued
         unsigned int bestScore;
         /** Current round */
         unsigned int round;
+        const bool issueGateEnable;
+        const unsigned issueConfThreshold;
+        uint8_t issueConfidence;
 
         struct StudentOffsetEntry
         {
@@ -196,6 +199,7 @@ class BOP : public Queued
         const unsigned studentFilterEntries;
         const unsigned studentHashCount;
         const std::string studentHashMode;
+        const unsigned studentHashAddrBits;
         const bool studentDelayQueueEnabled;
         const unsigned studentDelayQueueSize;
         const Tick studentDelayTicks;
@@ -275,6 +279,8 @@ class BOP : public Queued
         bool studentInsertTeacherBest(int64_t offset);
         int64_t studentSelectIssueOffset(int64_t teacher_best_offset) const;
         bool studentShouldIssue() const;
+        bool issueGateAllowsIssue() const;
+        void updateIssueConfidence(bool teacher_disabled);
         bool studentUseOracleMode() const;
         void studentClearPhaseState();
         void studentDrainDelayQueue(Tick now);

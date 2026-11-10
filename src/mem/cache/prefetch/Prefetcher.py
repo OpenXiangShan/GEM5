@@ -860,9 +860,20 @@ class BOPPrefetcher(QueuedPrefetcher):
         0.99,
         "Coefficient used by the stream-like large-offset priority detector")
     student_filter_entries = Param.Unsigned(1024, "Entries in the student direct-mapped coverage filter")
-    student_hash_mode = Param.String("bop_rr", "Student coverage mode: bop_rr/lowbits/splitmix for DM filter, \
-                                     oracle/exact for collision-free phase-local coverage")
+    student_hash_mode = Param.String(
+        "bop_rr",
+        "Student coverage mode: bop_rr/pairs_low9/lowbits/splitmix "
+        "for DM filter, oracle/exact for collision-free phase-local coverage")
     student_hash_count = Param.Unsigned(1, "Number of hashes used by the student direct-mapped filter")
+    student_hash_addr_bits = Param.Unsigned(
+        64,
+        "Address width used by the student coverage hash")
+    issue_gate_enable = Param.Bool(
+        False,
+        "Gate BOP requests using phase-level teacher confidence")
+    issue_conf_threshold = Param.Unsigned(
+        14,
+        "Issue gate confidence threshold")
     student_delay_queue_enable = Param.Bool(
         False,
         "Enable delayed coverage update for the student filter")
@@ -891,8 +902,11 @@ class XSPhysicalSmallBOP(BOPPrefetcher):
     student_cov_threshold = 0.05
     student_large_offset_priority_enable = False
     student_filter_entries = 2048
-    student_hash_mode = "splitmix"
+    student_hash_mode = "bop_rr"
     student_hash_count = 1
+    student_hash_addr_bits = 48
+    issue_gate_enable = True
+    issue_conf_threshold = 14
     student_delay_queue_enable = False
     student_delay_queue_size = 16
     student_delay_queue_cycles = 300
@@ -915,11 +929,14 @@ class XSVirtualLargeBOP(BOPPrefetcher):
     student_teacher_top_n = 1
     student_pool_size = 4
     student_conf_alpha = 0.0
-    student_cov_threshold = 0.02
-    student_large_offset_priority_enable = True
+    student_cov_threshold = 0.0
+    student_large_offset_priority_enable = False
     student_filter_entries = 4096
-    student_hash_mode = "bop_rr"
+    student_hash_mode = "pairs_low9"
     student_hash_count = 1
+    student_hash_addr_bits = 50
+    issue_gate_enable = True
+    issue_conf_threshold = 14
     student_delay_queue_enable = True
     student_delay_queue_size = 64
     student_delay_queue_cycles = 300
@@ -930,12 +947,7 @@ class XSVirtualLargeBOP(BOPPrefetcher):
           -192, -180, -162, -160, -150, -144, -135, -128,
           -125, -120, -108, -100, -96, -90, -81, -80,
           -75, -72, -64, -60, -54, -50, -48, -45,
-          -40, -36, -32, -30, -27, -25, -24, -20,
-          -18, -16, -15, -12, -10, -9, -8, -6,
-          -5, -4, -3, -2, -1,
-          1, 2, 3, 4, 5, 6, 8,
-          9, 10, 12, 15, 16, 18, 20, 24,
-          25, 27, 30, 32, 36, 40, 45, 48,
+          -40, -36, 32, 36, 40, 45, 48,
           50, 54, 60, 64, 72, 75, 80, 81,
           90, 96, 100, 108, 120, 125, 128, 135,
           144, 150, 160, 162, 180, 192, 200, 216,
