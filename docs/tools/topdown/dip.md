@@ -115,6 +115,95 @@ ROB/LSQ/register causes may overlap; at direct admission, earlier failing gates
 can mask later predicates. They are not an exhaustive test of all hypothetical
 resource constraints, and cause counts must not be summed as disjoint cycles.
 
+## Offline processing and visualization
+
+From the repository root, process a completed output directory:
+
+```sh
+python3 util/analyze_dip.py m5out -o dip-report
+python3 util/plot_dip.py dip-report -o dip-report/overview.png
+python3 util/plot_dip.py dip-report --view pcs -o dip-report/pcs.png
+```
+
+Processing uses only the Python standard library. Plotting requires Matplotlib
+(`python3 -m pip install matplotlib`) and works on servers without a display.
+Use `.png`, `.svg` or `.pdf` for the figure filename. All paths and labels are
+caller supplied; these tools do not depend on a benchmark suite or a cluster.
+
+The processor reads `system.cpu.dip.csv`, `config.ini` and the **latest** block
+of `stats.txt` in the supplied directory. Alternatively, pass the CSV filename
+with its config and stats alongside it. `--cpu=<object-name>` selects another
+CPU object and its CSV. Keep all three files from the same dump/window. The
+processor checks the slot/cycle conversion, resolution totals, every finalized
+state/cause counter, and `sampledSlots = samples * renameWidth` before writing
+results. A missing CSV after a run that ended during warmup means there was no
+measurement snapshot to process. Wait for a running simulation to finish before
+processing its output; its CSV and stats may still be changing.
+
+The output directory contains:
+
+| File | Content |
+| --- | --- |
+| `report.md` | Readable accounting summary, state shares, actual/estimated CPI and top PCs for each run |
+| `summary.csv` | One row per input: source, width, sample period, samples, cycles, committed instructions, resolution totals, finalized state/cause slots, Pending slots, CPI and auxiliary counters |
+| `pcs.csv` | Finalized **resolved** slots aggregated by PC and state, sorted by non-Base slots; includes total/overhead slots, share of all sampled slots and estimated CPI |
+| `contexts.csv` | Slots aggregated by state, full cause mask, resolution, IQ ID/flags, frontend reason and flush reason; includes decoded cause/IQ/flush names and all three resolutions |
+
+Re-running the command replaces these four derived files. Raw input files are
+only read. PC addresses in `pcs.csv` refer to a single executable/address space;
+resolve them against the matching workload ELF if function or source names are
+needed. `contexts.csv` retains numeric `frontend_reason` values from
+`StallReason` in `src/cpu/o3/comm.hh`.
+
+Compare runs by supplying their directories and unique display labels:
+
+```sh
+python3 util/analyze_dip.py baseline/m5out candidate/m5out \
+    --labels baseline candidate -o dip-compare
+python3 util/plot_dip.py dip-compare -o dip-compare/shares.svg
+python3 util/plot_dip.py dip-compare --unit cpi -o dip-compare/cpi.pdf
+python3 util/plot_dip.py dip-compare --view pcs --run candidate --top 20 \
+    -o dip-compare/candidate-pcs.png
+```
+
+The overview shows a complete stack (four finalized states plus Pending) and
+an independent heatmap of finalized, possibly overlapping causes. `--view pcs`
+shows the largest non-Base PC hotspots with their state stacks. Percentages use
+**all sampled slots of the selected run** as their denominator, including on the
+PC chart; the top PCs are not renormalized to 100%. For multiple runs, select one
+with `--run` when plotting PCs. Labels default to the directory name, or its
+parent name when the directory is named `m5out`; use `--labels` when they collide.
+
+The CSV columns ending in `_slots` and `slot_weight` count **sampled slots**;
+`contexts.csv`'s `sampled_cycles` divides this by `renameWidth`. The `cause` and
+`iq_flags` columns remain full multi-hot masks. `Pending_slots` is a fifth stack
+bucket: its provisional state and PC must not enter finalized state or hotspot
+totals. `unresolved_slots` is already included in the four finalized states;
+adding it again would double count. Auxiliary `decode_stranded_slots` and
+`ready_branch_waits` stay outside the stack.
+
+For any state, cause or PC with slot weight `s`:
+
+```text
+share_pct      = 100 * s / sampledSlots
+sampled_cycles = s / renameWidth
+estimated_cpi  = sampled_cycles * max(1, dipSamplePeriod) / committedInsts
+actual_cpi     = numCycles / committedInsts
+```
+
+`--unit cpi` uses the estimated formula for every segment; at periods above one,
+the sum retains sampling error and need not equal actual CPI. Default percentage
+plots do not multiply by the period. Do not rescale samples to force agreement
+with actual cycles. Compare equivalent measured windows/configurations when
+interpreting performance changes; these tools validate snapshot accounting,
+not experimental equivalence or workload correctness.
+
+Each input remains a separate run. To combine SimPoints, first calculate each
+point's state/cause CPI, then apply normalized point weights within an input and
+full input instruction counts across inputs. Do not average state percentages
+or pool raw slots from different runs; the commands above compare snapshots and
+do not compute suite scores. TEA and DIP remain independent observation points.
+
 ## Admission context
 
 CSV rows additionally retain `iq`, `iq_flags`, and `frontend_reason`.
