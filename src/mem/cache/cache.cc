@@ -188,7 +188,10 @@ Cache::satisfyRequest(PacketPtr pkt, CacheBlk *blk,
                 //   copy of the line
                 if (blk->isSet(CacheBlk::DirtyBit)) {
                     // special considerations if we're owner:
-                    if (!deferred_response) {
+                    if (!deferred_response ||
+                        hierarchyPolicy.allowDeferredWritable(pkt)) {
+                        if (deferred_response)
+                            ++stats.deferredWritableGrants;
                         // respond with the line in Modified state
                         // (cacheResponding set, hasSharers not set)
                         DPRINTF(CacheVerbose, "%s set packet %s (%#lx) as cache responding, when blk is dirty 2\n",
@@ -224,6 +227,10 @@ Cache::satisfyRequest(PacketPtr pkt, CacheBlk *blk,
                 // otherwise only respond with a shared copy
                 pkt->setHasSharers();
             }
+        }
+        if (hierarchyPolicy.expectWritableRead(pkt, isReadOnly) &&
+            pkt->writableFillExpected && !pkt->hasSharers()) {
+            ++stats.defaultWritableGrants;
         }
     }
 }
@@ -268,7 +275,12 @@ Cache::doWritebacks(PacketList& writebacks, Tick forward_time)
 {
     while (!writebacks.empty()) {
         PacketPtr wbPkt = writebacks.front();
-        if (l2EvictInvalidateL1 && level() == 2 && wbPkt->isEviction()) {
+        // A temporary bypass refill never occupied L2 tags. Only resident
+        // replacements invalidate L1; normal temporary writebacks retain
+        // their LLC allocation behavior.
+        if (l2EvictInvalidateL1 && level() == 2 &&
+            wbPkt->isEviction() && wbPkt->replacementVictimClass) {
+            wbPkt->replacementVictimClass = 0;
             invalidateVictimCopies(wbPkt);
             writebacks.pop_front();
             continue;
@@ -282,6 +294,13 @@ Cache::doWritebacks(PacketList& writebacks, Tick forward_time)
         if (wbPkt->replacementVictimClass) {
             assert(wbPkt->replacementVictimClass <= 3);
             const unsigned state = forwardSnoops ? unsigned(cached_above) : 2;
+            DPRINTF(CacheRepl,
+                    "ReplUpper addr=%#x cmd=%s class=%u present=%d "
+                    "mask=%u action=%s\n", wbPkt->getAddr(),
+                    wbPkt->cmdString(), wbPkt->replacementVictimClass - 1,
+                    cached_above, wbPkt->replacementProbeMask,
+                    cached_above && (wbPkt->cmd == MemCmd::CleanEvict ||
+                    wbPkt->cmd == MemCmd::WritebackClean) ? "drop" : "send");
             ++stats.replacementUpperPresence[
                 (wbPkt->replacementVictimClass - 1) * 3 + state];
             if (forwardSnoops) {
@@ -304,7 +323,7 @@ Cache::doWritebacks(PacketList& writebacks, Tick forward_time)
             } else if (wbPkt->cmd == MemCmd::WritebackClean) {
                 // clean writeback, do not send since the block is
                 // still cached above
-                assert(writebackClean || wbPkt->sdbpBypassL2);
+                assert(writebackClean || wbPkt->bypassL2);
                 delete wbPkt;
             } else {
                 assert(wbPkt->cmd == MemCmd::WritebackDirty ||
@@ -496,7 +515,7 @@ Cache::handleTimingReqMiss(PacketPtr pkt, CacheBlk *blk, Tick forward_time,
 
     // This writeback must stay ordered in the write buffer even if another
     // L1 request has an outstanding L2 MSHR for the same address.
-    if (level() == 2 && pkt->isWriteback() && pkt->sdbpBypassL2) {
+    if (hierarchyPolicy.forwardBypassWriteback(level(), pkt)) {
         allocateWriteBuffer(pkt, forward_time);
         return;
     }
@@ -681,17 +700,6 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
 
     bool blkValid = blk && blk->isValid();
 
-    // The L2 bypass prediction is made at refill time. Ask for ownership
-    // up front so both L1 and L2 MSHRs order snoops before a dirty bypass
-    // response transfers responsibility to L1. Read-only and prefetch
-    // requests keep their existing protocol.
-    if (sdbpBypassWritable && !blkValid &&
-        cpu_pkt->cmd == MemCmd::ReadReq &&
-        !cpu_pkt->req->isUncacheable() &&
-        !cpu_pkt->req->isInstFetch() && !cpu_pkt->req->isPrefetch()) {
-        needsWritable = true;
-    }
-
     if (cpu_pkt->req->isUncacheable() ||
         (!blkValid && cpu_pkt->isUpgrade()) ||
         cpu_pkt->cmd == MemCmd::InvalidateReq || cpu_pkt->isClean()) {
@@ -744,6 +752,8 @@ Cache::createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
             (force_clean_rsp ? MemCmd::ReadCleanReq : MemCmd::ReadSharedReq);
     }
     PacketPtr pkt = new Packet(cpu_pkt->req, cmd, blkSize);
+    pkt->writableFillExpected = cmd == MemCmd::ReadSharedReq &&
+        hierarchyPolicy.expectWritableRead(cpu_pkt, isReadOnly);
     pkt->setLSQPtr(cpu_pkt->getLSQPtr());
 
     // if there are upstream caches that have already marked the
@@ -925,8 +935,8 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
     for (auto &target: targets) {
         Packet *tgt_pkt = target.pkt;
         // Forward the local routing hint with the response delivered to L1.
-        if (level() == 2 && pkt->sdbpBypassL2)
-            tgt_pkt->sdbpBypassL2 = true;
+        if (level() == 2 && pkt->bypassL2)
+            tgt_pkt->bypassL2 = true;
         switch (target.source) {
           case MSHR::Target::FromCPU:
             from_core = true;
@@ -1229,8 +1239,11 @@ Cache::sendHintViaMSHRTargets(MSHR *mshr, const PacketPtr pkt)
 PacketPtr
 Cache::evictBlock(CacheBlk *blk)
 {
-    PacketPtr pkt = (blk->isSet(CacheBlk::DirtyBit) || writebackClean ||
-                     (level() == 1 && blk->sdbpBypassL2)) ?
+    // XiangShan single-core L1 victims read/return data only when dirty.
+    // Lower levels retain their configured clean-writeback/clusivity policy.
+    PacketPtr pkt = (blk->isSet(CacheBlk::DirtyBit) ||
+                    (writebackClean &&
+                     !hierarchyPolicy.dropCleanL1Data(level()))) ?
         writebackBlk(blk) : cleanEvictBlk(blk);
 
     invalidateBlock(blk);
@@ -1241,8 +1254,10 @@ Cache::evictBlock(CacheBlk *blk)
 PacketPtr
 Cache::cleanEvictBlk(CacheBlk *blk)
 {
-    assert(!writebackClean);
+    assert(!writebackClean || hierarchyPolicy.dropCleanL1Data(level()));
     assert(blk && blk->isValid() && !blk->isSet(CacheBlk::DirtyBit));
+    if (blk->bypassL2)
+        ++stats.bypassL2CleanEvictions;
 
     // Creating a zero sized write, a message to the snoop filter
     RequestPtr req = std::make_shared<Request>(

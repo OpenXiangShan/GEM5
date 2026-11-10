@@ -442,7 +442,7 @@ TEST_F(SDBPInterface, L1CopyGuardDoesNotProbeInvalidOrBypassedSets)
     policy.reset(b.replacementData);
     auto response = packet(MemCmd::ReadExResp);
     EXPECT_EQ(policy.getVictim(candidates, response.get()), nullptr);
-    EXPECT_TRUE(response->sdbpBypassL2);
+    EXPECT_TRUE(response->bypassL2);
     EXPECT_EQ(queries, 0);
     policy.touch(a.replacementData);
     EXPECT_EQ(policy.getVictim(candidates), &b);
@@ -450,38 +450,40 @@ TEST_F(SDBPInterface, L1CopyGuardDoesNotProbeInvalidOrBypassedSets)
     EXPECT_EQ(stat(policy, "l1CopyLruFallbacks"), 0);
 }
 
-TEST_F(SDBPInterface, BypassDeadRefillsEvenWithInvalidWays)
+TEST_F(SDBPInterface, BypassPreservesInvalidWaysAndOrdinaryReadRequests)
 {
     SDBP policy(testParams(true, 0));
     ReplaceableEntry a, b;
     a.replacementData = policy.instantiateEntry();
     b.replacementData = policy.instantiateEntry();
-    ReplacementCandidates candidates{&a, &b};
-    auto response = packet(MemCmd::ReadExResp);
-    EXPECT_EQ(policy.getVictim(candidates, response.get()), nullptr);
-    EXPECT_TRUE(response->sdbpBypassL2);
+    const ReplacementCandidates candidates{&a, &b};
+    auto first = packet(MemCmd::ReadResp);
+    EXPECT_EQ(policy.getVictim(candidates, first.get()), &a);
+    EXPECT_FALSE(first->bypassL2);
     policy.reset(a.replacementData);
+    EXPECT_EQ(policy.getVictim(candidates, first.get()), &b);
     policy.reset(b.replacementData);
-    auto full = packet(MemCmd::ReadExResp);
+    auto full = packet(MemCmd::ReadResp);
     EXPECT_EQ(policy.getVictim(candidates, full.get()), nullptr);
-    EXPECT_TRUE(full->sdbpBypassL2);
-    auto missing = packet(MemCmd::ReadExResp, false);
+    EXPECT_TRUE(full->bypassL2);
+    policy.observeFill(full.get(), 0, 1);
+    EXPECT_EQ(stat(policy, "samplerBypassAccesses"), 1);
+    auto missing = packet(MemCmd::ReadResp, false);
     EXPECT_NE(policy.getVictim(candidates, missing.get()), nullptr);
-    EXPECT_FALSE(missing->sdbpBypassL2);
-    auto prefetch = packet(MemCmd::ReadExResp);
-    prefetch->req->setFlags(Request::PREFETCH);
-    EXPECT_EQ(policy.getVictim(candidates, prefetch.get()), nullptr);
-    EXPECT_TRUE(prefetch->sdbpBypassL2);
+    EXPECT_FALSE(missing->bypassL2);
+    auto prefetch = packet(MemCmd::HardPFResp);
+    EXPECT_NE(policy.getVictim(candidates, prefetch.get()), nullptr);
+    EXPECT_FALSE(prefetch->bypassL2);
     for (auto cmd : {MemCmd::ReadReq, MemCmd::UpgradeResp,
                     MemCmd::InvalidateResp, MemCmd::WritebackDirty,
                     MemCmd::WritebackClean, MemCmd::WriteClean,
                     MemCmd::CleanEvict}) {
         auto other = packet(cmd);
         EXPECT_NE(policy.getVictim(candidates, other.get()), nullptr);
-        EXPECT_FALSE(other->sdbpBypassL2);
+        EXPECT_FALSE(other->bypassL2);
     }
     EXPECT_NE(policy.getVictim(candidates), nullptr);
-    EXPECT_EQ(stat(policy, "bypasses"), 3);
+    EXPECT_EQ(stat(policy, "bypasses"), 1);
 }
 
 TEST_F(SDBPInterface, DisabledBypassStillAllocatesDeadRefills)
@@ -489,43 +491,27 @@ TEST_F(SDBPInterface, DisabledBypassStillAllocatesDeadRefills)
     SDBP policy(testParams(false, 0));
     ReplaceableEntry entry;
     entry.replacementData = policy.instantiateEntry();
-    auto response = packet(MemCmd::ReadExResp);
+    policy.reset(entry.replacementData);
+    auto response = packet(MemCmd::ReadResp);
     EXPECT_EQ(policy.getVictim({&entry}, response.get()), &entry);
-    EXPECT_FALSE(response->sdbpBypassL2);
+    EXPECT_FALSE(response->bypassL2);
     EXPECT_EQ(stat(policy, "bypasses"), 0);
 }
 
-TEST_F(SDBPInterface, BypassRequiresOwnershipOrCleanInstructionResponse)
+TEST_F(SDBPInterface, BypassExcludesInstructionFetches)
 {
     SDBP policy(testParams(true, 0));
     ReplaceableEntry entry;
     entry.replacementData = policy.instantiateEntry();
-    const ReplacementCandidates candidates{&entry};
-    auto shared = packet(MemCmd::ReadResp);
-    EXPECT_EQ(policy.getVictim(candidates, shared.get()), &entry);
-    auto invalidated = packet(MemCmd::ReadRespWithInvalidate);
-    invalidated->req->setFlags(Request::INST_FETCH);
-    EXPECT_EQ(policy.getVictim(candidates, invalidated.get()), &entry);
-    auto downgraded = packet(MemCmd::ReadExResp);
-    downgraded->setHasSharers();
-    EXPECT_EQ(policy.getVictim(candidates, downgraded.get()), &entry);
+    policy.reset(entry.replacementData);
     auto instruction = packet(MemCmd::ReadResp);
     instruction->req->setFlags(Request::INST_FETCH);
-    EXPECT_EQ(policy.getVictim(candidates, instruction.get()), nullptr);
-    auto shared_instruction = packet(MemCmd::ReadResp);
-    shared_instruction->req->setFlags(Request::INST_FETCH);
-    shared_instruction->setHasSharers();
-    EXPECT_EQ(policy.getVictim(candidates, shared_instruction.get()), nullptr);
-    auto dirty_instruction = packet(MemCmd::ReadSharedReq);
-    dirty_instruction->req->setFlags(Request::INST_FETCH);
-    dirty_instruction->setCacheResponding();
-    dirty_instruction->makeResponse();
-    EXPECT_EQ(policy.getVictim(candidates, dirty_instruction.get()), &entry);
-    auto dirty_data = packet(MemCmd::ReadExReq);
-    dirty_data->setCacheResponding();
-    dirty_data->makeResponse();
-    EXPECT_EQ(policy.getVictim(candidates, dirty_data.get()), nullptr);
-    EXPECT_EQ(stat(policy, "bypasses"), 3);
+    EXPECT_EQ(policy.getVictim({&entry}, instruction.get()), &entry);
+    EXPECT_FALSE(instruction->bypassL2);
+    auto exclusive = packet(MemCmd::ReadExResp);
+    EXPECT_EQ(policy.getVictim({&entry}, exclusive.get()), nullptr);
+    EXPECT_TRUE(exclusive->bypassL2);
+    EXPECT_EQ(stat(policy, "bypasses"), 1);
 }
 
 TEST_F(SDBPInterface, InvalidationDoesNotForgetIndependentSampler)

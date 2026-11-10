@@ -26,7 +26,9 @@ def main():
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--ref-so", type=Path, required=True)
-    parser.add_argument("--checkpoint", type=Path, action="append", required=True)
+    parser.add_argument(
+        "--checkpoint", type=Path, action="append", required=True
+    )
     parser.add_argument("--warmup", type=int, default=2000000)
     parser.add_argument("--measure", type=int, default=3000000)
     args = parser.parse_args()
@@ -42,12 +44,14 @@ def main():
         "commit": subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=repo, text=True
         ).strip(),
-        "binary": str(binary), "binary_sha256": digest(binary),
-        "ref_so": str(ref), "ref_sha256": digest(ref),
-        "warmup": args.warmup, "measure": args.measure,
-        "memory": "SimpleMemory", "checkpoints": {
-            str(path): digest(path) for path in checkpoints
-        },
+        "binary": str(binary),
+        "binary_sha256": digest(binary),
+        "ref_so": str(ref),
+        "ref_sha256": digest(ref),
+        "warmup": args.warmup,
+        "measure": args.measure,
+        "memory": "SimpleMemory",
+        "checkpoints": {str(path): digest(path) for path in checkpoints},
     }
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2))
     (output / "implementation.patch").write_bytes(
@@ -64,10 +68,13 @@ def main():
         directory = output / name
         directory.mkdir()
         command = [
-            str(binary), f"--outdir={directory}",
+            str(binary),
+            f"--outdir={directory}",
             str(repo / "configs/example/kmhv3.py"),
-            "--mem-type=SimpleMemory", f"--generic-rv-cpt={checkpoint}",
-            "--enable-difftest", f"--difftest-ref-so={ref}",
+            "--mem-type=SimpleMemory",
+            f"--generic-rv-cpt={checkpoint}",
+            "--enable-difftest",
+            f"--difftest-ref-so={ref}",
             f"--warmup-insts-no-switch={args.warmup}",
             f"--maxinsts={args.warmup + args.measure}",
         ]
@@ -77,22 +84,29 @@ def main():
         start = time.monotonic()
         with (directory / "run.log").open("w") as log:
             process = subprocess.Popen(
-                command, cwd=repo, env=env, stdout=log, stderr=subprocess.STDOUT
+                command,
+                cwd=repo,
+                env=env,
+                stdout=log,
+                stderr=subprocess.STDOUT,
             )
             (directory / "pid").write_text(str(process.pid))
             print(f"START {name} pid={process.pid}", flush=True)
             code = process.wait()
         log = (directory / "run.log").read_text(errors="replace")
         result = {
-            "returncode": code, "seconds": time.monotonic() - start,
-            "completed": code == 0 and
-            "a thread reached the max instruction count" in log,
+            "returncode": code,
+            "seconds": time.monotonic() - start,
+            "completed": code == 0
+            and "a thread reached the max instruction count" in log,
         }
         (directory / "status.json").write_text(json.dumps(result, indent=2))
         print(f"DONE {name}: {json.dumps(result)}", flush=True)
         return name, result
 
-    jobs = [(path, enabled) for path in checkpoints for enabled in (False, True)]
+    jobs = [
+        (path, enabled) for path in checkpoints for enabled in (False, True)
+    ]
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
         results = dict(pool.map(run, jobs))
     (output / "results.json").write_text(json.dumps(results, indent=2))

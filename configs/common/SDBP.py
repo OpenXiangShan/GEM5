@@ -53,8 +53,8 @@ def add_sdbp_options(parser):
     parser.add_argument(
         "--sdbp-enable-bypass",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Bypass dead L2 fills and return their L1 victims to L3 (default: on)",
+        default=False,
+        help="Bypass dead L2 fills and return their L1 victims to L3 (default: off)",
     )
     parser.add_argument(
         "--sdbp-pc-hash-type",
@@ -69,8 +69,6 @@ def configure_sdbp(args, system):
         if policy == "lru":
             cache.replacement_policy = LRURP()
         elif policy == "sdbp":
-            # L1 must expect ownership before L2's refill-time prediction.
-            cpu.dcache.sdbp_bypass_writable = args.sdbp_enable_bypass
             # Query only the owning core's resident L1I/L1D tags.
             cache.sdbp_l1_caches = (
                 [cpu.icache, cpu.dcache]

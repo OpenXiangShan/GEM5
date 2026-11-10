@@ -461,6 +461,9 @@ class MSHR : public QueueEntry, public Printable
 
     void markInService(bool pending_modified_resp);
 
+    /** Transfer a request buffer's temporary hold to a downstream cache. */
+    void setDownstreamPending(bool pending) { downstreamPending = pending; }
+
     void clearDownstreamPending();
 
     /**

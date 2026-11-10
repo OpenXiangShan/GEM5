@@ -164,6 +164,8 @@ SDBP::sample(const PacketPtr pkt, unsigned set, Addr tag)
     if (!result.sampled)
         return;
     ++stats.samplerAccesses;
+    if (pkt->bypassL2)
+        ++stats.samplerBypassAccesses;
     ++stats.samplerAccessesBySource[static_cast<unsigned>(type)];
     if (result.hit) {
         ++stats.samplerHits;
@@ -309,20 +311,6 @@ SDBP::getVictim(const ReplacementCandidates &candidates, const PacketPtr pkt) co
     ReplaceableEntry *lru = candidates.front();
     ReplaceableEntry *dead = nullptr;
     uint64_t oldest = std::static_pointer_cast<SDBPReplData>(lru->replacementData)->lastUse;
-    // Data bypass requires an explicit ownership request from above. A
-    // shared read response cannot safely transfer dirty ownership during
-    // a deferred fill. Instruction fills remain clean and need no upgrade.
-    // Dead fills still bypass when the set contains invalid entries.
-    const bool bypass_response = pkt && pkt->req && pkt->isResponse() &&
-        ((pkt->cmd == MemCmd::ReadExResp && !pkt->hasSharers()) ||
-         (pkt->cmd == MemCmd::ReadResp && pkt->req->isInstFetch() &&
-          (pkt->hasSharers() || !pkt->cacheResponding())));
-    if (enableBypass && bypass_response && predict(pkt)) {
-        ++stats.bypasses;
-        pkt->sdbpBypassL2 = true;
-        DPRINTF(SDBP, "bypass addr=%#x pc=%#x\n", pkt->getAddr(), pkt->req->getPC());
-        return nullptr;
-    }
     for (auto *candidate : candidates) {
         const auto &entry = *std::static_pointer_cast<SDBPReplData>(candidate->replacementData);
         if (!entry.valid) {
@@ -333,6 +321,16 @@ SDBP::getVictim(const ReplacementCandidates &candidates, const PacketPtr pkt) co
             oldest = entry.lastUse;
             lru = candidate;
         }
+    }
+    // Preserve invalid-way priority. Bypass only predicted-dead demand data
+    // refills; the independent hierarchy policy controls grants and routing.
+    if (enableBypass && pkt && pkt->isResponse() && pkt->isRead() &&
+        isDemand(pkt) && predict(pkt)) {
+        ++stats.bypasses;
+        pkt->bypassL2 = true;
+        DPRINTF(SDBP, "bypass addr=%#x pc=%#x\n",
+                pkt->getAddr(), requestPc(pkt));
+        return nullptr;
     }
     bool protectedDead = false;
     for (auto *candidate : candidates) {
@@ -380,6 +378,7 @@ SDBP::SDBPStats::SDBPStats(statistics::Group *parent)
       ADD_STAT(noPcAccesses, "Demand or prefetch lookups without a PC"),
       ADD_STAT(eligibleMisses, "Eligible lookups that miss the real cache"),
       ADD_STAT(samplerAccesses, "Eligible lookups to sampled sets"),
+      ADD_STAT(samplerBypassAccesses, "Sampled demand fills bypassing L2"),
       ADD_STAT(samplerHits, "Partial-tag hits in the sampler"),
       ADD_STAT(samplerEvictions, "Valid entries evicted from the sampler"),
       ADD_STAT(liveTraining, "Old signatures trained live"),

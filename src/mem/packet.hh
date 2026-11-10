@@ -592,7 +592,10 @@ class Packet : public Printable
     bool replacementProbe = false;
     // L2-dead refill, or its L1 eviction: carry data past L2 to L3.
     // Snoop copies deliberately do not inherit this local routing hint.
-    bool sdbpBypassL2 = false;
+    bool bypassL2 = false;
+
+    // Prepared ordinary-read MSHR; packet and snoop copies start false.
+    bool writableFillExpected = false;
     // OR of observations on the existing snoop: resident=1, MSHR=2, WB=4.
     uint8_t replacementProbeMask = 0;
 

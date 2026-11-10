@@ -7,7 +7,7 @@ The experiment uses timing mode.
 
 ## Behavior
 
-For every L2 eviction packet, first query upper-level presence using the
+For every resident L2 replacement packet, first query upper-level presence using the
 existing `isCachedAbove()` path. If no upper copy is reported, put the victim
 in the write buffer with a ready time of the next L2 clock edge plus one
 cycle. The presence query's annotated delay is intentionally not charged
@@ -152,3 +152,66 @@ For checkpoint regression, use
 with a new `--output` directory, `--ref-so`, and repeated `--checkpoint`
 arguments. Defaults reproduce the 2M/3M instruction windows; saved
 `command.json` files contain every exact invocation used above.
+
+## Combined CI matrix: 2026-11-10
+
+The same executable now combines this latency policy with the selected
+`baserun.md` three-source SDBP baseline and the main checkout's independent
+`xiangshan_single_core` hierarchy policy. Ordinary reads retain their protocol;
+all replacement variants use the same writable grants and dirty-only L1 data
+victims. Bypass refills use invalid ways first, and only demand refills can
+bypass a full set. The independent sampler still observes bypassed fills once.
+Instruction fetches remain excluded from the selected three-source predictor.
+
+Only resident L2 replacements trigger victim invalidation. Temporary blocks,
+including bypass refills that were never installed in L2, keep their normal
+writeback/LLC allocation path. This prevents L2 temporary-block eviction from
+invalidating the refill being delivered to L1. The packet's existing resident
+replacement marker distinguishes the two cases.
+
+The five CI cases use ideal KMHv3, default OPEN_PAGE DRAMsim3, 1 MiB/8-way L2,
+32 MiB/16-way mostly exclusive L3, and the default SPEC06 GCC16 1.0c set.
+Sampler parameters are explicit: 128 sets, 6 ways, dead-first enabled, youngest
+protection zero, threshold 8. L1-copy protection stays enabled as in baserun.
+The cases are prefetch-off LRU, SDBP without bypass, SDBP with bypass, then
+prefetch-on LRU and SDBP without bypass. Each uses 20M warmup and 20M measured
+instructions, default distributed servers and 32 jobs per server.
+
+
+The integration preflight found and fixed a buffered-request ordering cycle.
+L2CacheSlice had accepted an L1 exclusive prefetch miss into its request buffer
+without marking the upstream MSHR as downstream-pending. A victim probe then
+mistook the still-queued miss for an ordering owner and waited for its data,
+while the same-address miss waited for that victim writeback. Buffered requests
+now hold the existing MSHR downstream-pending state and transfer it to the inner
+cache before issue, restoring it on retry. Express probes therefore precede a
+request that has not reached the inner cache. The fix retains the existing
+request-buffer capacity, arbitration, pipeline stages and write-buffer limits.
+
+The added `buffered_pressure` MemTest case uses four testers, a one-entry write
+buffer, and a sliced L2. A 20,000-load-per-tester check completed with 144,379
+dirty responses and independent data checking. The trace that exposed the
+checkpoint cycle is saved under
+`m5out/l2-eviction-matrix-20261110/stall_trace/stall.trace`.
+
+
+Combined integration validation passed on 2026-11-10:
+
+- 62 C++ unit tests: 29 SDBP core, 26 interface, 7 hierarchy policy.
+- Two Python configuration tests, including propagation across cores/slices.
+- Ten existing MemTest data/latency cases and the new buffered-pressure case.
+- Ten three-level SE cases: timing/atomic, SDBP bypass/control, LRU, legacy,
+  mostly-exclusive LLC and clean-only L1 with clean-writeback requested.
+- Six checkpoint difftests using the final DRAMsim3 binary: all five mcf
+  configurations and an extra bzip2 bypass case. No-prefetch mcf controls use
+  1M warmup + 1M measurement; prefetch mcf and bzip2 use 2M + 3M. All reached
+  their configured instruction limit. These are correctness checks, not scores.
+- Generated configurations confirm all four L2 slices use the selected policy,
+  128x6 dead-first sampler, zero youngest protection, requested bypass/prefetch,
+  mostly-exclusive L3 and the default OPEN_PAGE DRAMsim3 ini.
+- Repository modified-region style, Black 22.6.0 on new cache test/config scripts,
+  Python compilation and `git diff --check` pass.
+
+Commands, per-case status, configuration, stats, binary/reference/ini hashes,
+integration patch and diagnostic traces are saved in
+`m5out/l2-eviction-matrix-20261110/`. The complete CI score remains pending.

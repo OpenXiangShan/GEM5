@@ -191,6 +191,10 @@ L2CacheSlice::cpuSidePortRecvTimingReq(PacketPtr pkt)
             return false;
         }
         requestBuffer.push(pkt, source);
+        // The request has left L1 but has not reached the inner cache's
+        // ordering point. Express snoops must precede this buffered miss.
+        if (auto *mshr = pkt->findNextSenderState<MSHR>())
+            mshr->setDownstreamPending(true);
         DPRINTF(L2CacheSlice, "Request buffered, buffer size: %d\n", requestBuffer.size());
         return true;
     }
@@ -206,6 +210,10 @@ L2CacheSlice::cpuSidePortRecvTimingReq(PacketPtr pkt)
             return false;
         }
         requestBuffer.push(pkt, source);
+        // The request has left L1 but has not reached the inner cache's
+        // ordering point. Express snoops must precede this buffered miss.
+        if (auto *mshr = pkt->findNextSenderState<MSHR>())
+            mshr->setDownstreamPending(true);
         DPRINTF(L2CacheSlice, "Request buffered, buffer size: %d\n", requestBuffer.size());
         return true;
     }
@@ -246,8 +254,15 @@ L2CacheSlice::trySendFromBuffer()
             requestBuffer.size());
 
     const RequestBuffer::Entry entry = requestBuffer.front();
+    auto *upstream_mshr = entry.pkt->findNextSenderState<MSHR>();
+    // Hand off the flag before the inner cache registers its own MSHR.
+    // A hit already has a response; a miss takes over the pending state.
+    if (upstream_mshr)
+        upstream_mshr->setDownstreamPending(false);
 
     if (!innerCpuPortSendTimingReq(entry.pkt, entry.source)) {
+        if (upstream_mshr)
+            upstream_mshr->setDownstreamPending(true);
         DPRINTF(L2CacheSlice, "Send delayed request failed, blocking again\n");
         inner_cache_blocked = true;
     } else {

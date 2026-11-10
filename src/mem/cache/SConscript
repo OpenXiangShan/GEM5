@@ -30,7 +30,7 @@ Import('*')
 
 SimObject('Cache.py', sim_objects=[
     'WriteAllocator', 'BaseCache', 'Cache', 'NoncoherentCache'],
-    enums=['Clusivity'])
+    enums=['Clusivity', 'CacheHierarchyPolicy'])
 
 Source('base.cc')
 Source('cache.cc')
@@ -60,3 +60,16 @@ DebugFlag('HWPrefetchQueue')
 CompoundFlag('CacheAll', ['Cache', 'CacheComp', 'CachePort', 'CacheRepl',
                           'CacheVerbose', 'HWPrefetch', 'MSHR'])
 
+
+
+GTest('hierarchy_policy.test', 'hierarchy_policy.test.cc',
+      '../../base/stats/group.cc', '../../base/stats/info.cc',
+      '../../base/stats/storage.cc', '../../base/statistics.cc',
+      '../../base/time.cc', '../../base/hostinfo.cc',
+      '../../base/output.cc', '../../sim/core.cc',
+      '../../sim/sim_object.cc', '../../sim/globals.cc',
+      '../../sim/tags.cc', '../../sim/root.cc',
+      '../../sim/probe/probe.cc', '../../sim/port.cc',
+      '../../sim/bufval.cc', '../packet.cc',
+      with_any_tags('gem5 trace', 'gem5 events',
+                    'gem5 drain', 'gem5 serialize'))

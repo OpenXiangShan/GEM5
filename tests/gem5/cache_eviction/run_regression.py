@@ -44,11 +44,24 @@ def main():
         "clean_eviction": ["--enable", "--clean-evict"],
         "trace_fast": ["--enable", "--testers=1", "--reads=35"],
         "trace_slow": [
-            "--enable", "--testers=1", "--reads=35", "--l1-data-latency=6"
+            "--enable",
+            "--testers=1",
+            "--reads=35",
+            "--l1-data-latency=6",
         ],
         "absent": ["--enable", "--l1-size=512B", "--l2-size=8KiB"],
         "pressure": [
-            "--enable", "--write-buffers=1", "--testers=4", "--reads=35"
+            "--enable",
+            "--write-buffers=1",
+            "--testers=4",
+            "--reads=35",
+        ],
+        "buffered_pressure": [
+            "--enable",
+            "--sliced-l2",
+            "--write-buffers=1",
+            "--testers=4",
+            "--reads=35",
         ],
     }
 
@@ -59,12 +72,12 @@ def main():
         trace = name.startswith("trace_")
         command = [str(args.binary.resolve()), f"--outdir={directory}"]
         if trace:
-            command.extend([
-                "--debug-flags=CacheRepl", "--debug-file=eviction.trace"
-            ])
-        command.extend([
-            str(config), f"--loads={2000 if trace else args.loads}", *options
-        ])
+            command.extend(
+                ["--debug-flags=CacheRepl", "--debug-file=eviction.trace"]
+            )
+        command.extend(
+            [str(config), f"--loads={2000 if trace else args.loads}", *options]
+        )
         (directory / "command.json").write_text(json.dumps(command, indent=2))
         start = time.monotonic()
         with (directory / "run.log").open("w") as log:
@@ -75,15 +88,27 @@ def main():
             code = process.wait()
         record = {"returncode": code, "seconds": time.monotonic() - start}
         log = (directory / "run.log").read_text()
-        record["passed"] = code == 0 and "maximum number of loads reached" in log
+        record["passed"] = (
+            code == 0 and "maximum number of loads reached" in log
+        )
         if record["passed"]:
             values = stats(directory / "stats.txt")
-            prefix = "system.l2.evictionSnoop."
+            cache = (
+                "system.l2_wrapper.slices.inner_cache"
+                if ("--sliced-l2" in options)
+                else "system.l2"
+            )
+            prefix = f"{cache}.evictionSnoop."
             record["counters"] = {
-                key[len(prefix):]: value for key, value in values.items()
+                key[len(prefix) :]: value
+                for key, value in values.items()
                 if key.startswith(prefix)
             }
             counts = record["counters"]
+            if name == "buffered_pressure":
+                record["passed"] &= (
+                    values["system.l2_wrapper.slices.l1ReqEnterPipeFail"] > 0
+                )
             if name == "baseline":
                 record["passed"] &= sum(counts.values()) == 0
             else:
@@ -106,7 +131,8 @@ def main():
             probes = {}
             for match in re.finditer(
                 r"EvictL1Probe addr=(\S+) generated=(\d+) data=(\d+) "
-                r"delay=(\d+) ready=(\d+)", text
+                r"delay=(\d+) ready=(\d+)",
+                text,
             ):
                 addr, generated, dirty, delay, ready = match.groups()
                 probes[addr, int(generated)] = (int(dirty), int(delay))

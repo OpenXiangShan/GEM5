@@ -12,10 +12,13 @@ import argparse
 import m5
 from _m5.core import seedRandom
 from m5.objects import (
+    NULL,
     AddrRange,
     Cache,
     CoherentXBar,
     MemTest,
+    L2CacheSlice,
+    L2CacheWrapper,
     Root,
     SimpleMemory,
     SnoopFilter,
@@ -27,6 +30,7 @@ from m5.objects import (
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--enable", action="store_true")
+parser.add_argument("--sliced-l2", action="store_true")
 parser.add_argument("--loads", type=int, default=100000)
 parser.add_argument("--testers", type=int, default=2)
 parser.add_argument("--reads", type=int, default=65)
@@ -55,7 +59,7 @@ system.to_l2 = CoherentXBar(
     snoop_filter=SnoopFilter(lookup_latency=0),
     point_of_unification=True,
 )
-system.l2 = Cache(
+l2 = Cache(
     size=args.l2_size,
     assoc=2,
     tag_latency=1,
@@ -68,9 +72,30 @@ system.l2 = Cache(
     writeback_clean=not args.clean_evict,
     l2_evict_invalidate_l1=args.enable,
 )
-system.l2.cpu_side = system.to_l2.mem_side_ports
 system.membus = SystemXBar()
-system.l2.mem_side = system.membus.cpu_side_ports
+if args.sliced_l2:
+    system.l2_wrapper = L2CacheWrapper(
+        num_slices=1,
+        cache_size=args.l2_size,
+        cache_assoc=2,
+        prefetcher=NULL,
+    )
+    wrapper = system.l2_wrapper
+    wrapper.slices = [L2CacheSlice(buffer_size=4)]
+    cache_slice = wrapper.slices[0]
+    cache_slice.inner_cache = l2
+    wrapper.addCacheAccessor(l2)
+    wrapper.addSliceAccessor(cache_slice)
+    cache_slice.setCacheAccessor(l2)
+    cache_slice.inner_cpu_port = l2.cpu_side
+    l2.mem_side = cache_slice.inner_mem_port
+    cache_slice.cpu_side = wrapper.slice_cpuside_ports
+    wrapper.cpu_side = system.to_l2.mem_side_ports
+    cache_slice.mem_side = system.membus.cpu_side_ports
+else:
+    system.l2 = l2
+    l2.cpu_side = system.to_l2.mem_side_ports
+    l2.mem_side = system.membus.cpu_side_ports
 system.memory = SimpleMemory(range=system.mem_ranges[0], latency="30ns")
 system.memory.port = system.membus.mem_side_ports
 system.system_port = system.membus.cpu_side_ports

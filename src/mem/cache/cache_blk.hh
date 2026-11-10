@@ -110,7 +110,7 @@ class CacheBlk : public TaggedEntry
 
     // This L1 line was supplied without installing a copy in L2.
     // Also used on the L2 temporary fill block to tag upstream responses.
-    bool sdbpBypassL2 = false;
+    bool bypassL2 = false;
 
   protected:
     /**
@@ -189,7 +189,7 @@ class CacheBlk : public TaggedEntry
             setPendingInvalidate();
         }
         setCoherenceBits(other.coherence);
-        sdbpBypassL2 = other.sdbpBypassL2;
+        bypassL2 = other.bypassL2;
         setTaskId(other.getTaskId());
         setXsMetadata(other.getXsMetadata());
         setWhenReady(curTick());
@@ -210,7 +210,7 @@ class CacheBlk : public TaggedEntry
     virtual void invalidate() override
     {
         TaggedEntry::invalidate();
-        sdbpBypassL2 = false;
+        bypassL2 = false;
 
         clearAllPrefetched();
         clearPendingInvalidate();

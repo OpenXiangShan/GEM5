@@ -146,6 +146,10 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--l3cache", action="store_true")
     parser.add_argument("--no-l3cache", action="store_true")
     parser.add_argument(
+        "--l3-clusivity", choices=("mostly_incl", "mostly_excl"),
+        default=None, help="Override ideal KMHv3 L3 clusivity",
+    )
+    parser.add_argument(
         "--l2-evict-invalidate-l1", action="store_true",
         help="Invalidate L1 copies of L2 victims; wait for dirty snoop data")
     parser.add_argument("--l1-to-l2-pf-hint", action="store_true")
@@ -665,8 +669,10 @@ def addFSOptions(parser):
                         help="Wait for remote GDB to connect.")
 
 def addXiangshanCommonOptions(parser):
+    from common.CacheHierarchy import add_cache_hierarchy_options
     from common.SDBP import add_sdbp_options
 
+    add_cache_hierarchy_options(parser)
     add_sdbp_options(parser)
     # Xiangshan related options
     parser.add_argument("--xiangshan-system", action="store_true",

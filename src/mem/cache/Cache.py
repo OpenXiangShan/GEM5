@@ -71,6 +71,10 @@ class WriteAllocator(SimObject):
     block_size = Param.Int(Parent.cache_line_size, "block size in bytes")
 
 
+class CacheHierarchyPolicy(Enum):
+    vals = ["legacy", "xiangshan_single_core"]
+
+
 class BaseCache(ClockedObject):
     type = 'BaseCache'
     abstract = True
@@ -144,9 +148,8 @@ class BaseCache(ClockedObject):
     writeback_clean = Param.Bool(False, "Writeback clean lines")
     l2_evict_invalidate_l1 = Param.Bool(False,
         "Invalidate upper copies of L2 victims and wait for dirty snoop data")
-    sdbp_bypass_writable = Param.Bool(
-        False,
-        "Request ownership on L1D demand read misses for SDBP bypass",
+    cache_hierarchy_policy = Param.CacheHierarchyPolicy(
+        "legacy", "Cache hierarchy behavior; XiangShan alignment is single-core"
     )
 
     # Control whether this cache should be mostly inclusive or mostly

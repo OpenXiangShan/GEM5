@@ -80,6 +80,7 @@ class SDBP : public Base
         statistics::Scalar noPcAccesses;
         statistics::Scalar eligibleMisses;
         statistics::Scalar samplerAccesses;
+        statistics::Scalar samplerBypassAccesses;
         statistics::Scalar samplerHits;
         statistics::Scalar samplerEvictions;
         statistics::Scalar liveTraining;

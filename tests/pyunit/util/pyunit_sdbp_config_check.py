@@ -73,7 +73,8 @@ class SDBPConfigTest(unittest.TestCase):
                     if demand_pc_only:
                         flags.append("--sdbp-sampler-demand-pc-only")
                     args = self.parser().parse_args(flags)
-                    args.l2cache = args.caches = True
+                    args.l2cache = args.caches = args.l3cache = True
+                    args.no_l3cache = False
                     args.classic_l2 = classic
                     cpus = [
                         SimpleNamespace(icache=Cache(), dcache=Cache())

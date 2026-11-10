@@ -67,6 +67,7 @@
 #include "mem/cache/cache_blk.hh"
 #include "mem/cache/cache_probe_arg.hh"
 #include "mem/cache/compressors/base.hh"
+#include "mem/cache/hierarchy_policy.hh"
 #include "mem/cache/mshr_queue.hh"
 #include "mem/cache/prefetch/associative_set.hh"
 #include "mem/cache/prefetch/base.hh"
@@ -796,8 +797,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
      */
     const bool writebackClean;
 
-    /** Request ownership before an L1D read can bypass the downstream L2. */
-    const bool sdbpBypassWritable;
+    /** Independent hierarchy behavior, shared by all replacement policies. */
+    const cache_hierarchy::Policy hierarchyPolicy;
 
     /**
      * Writebacks from the tempBlock, resulting on the response path
@@ -1288,9 +1289,13 @@ class BaseCache : public ClockedObject, public CacheAccessor
         statistics::Vector replacementUpperSourceMask;
         /** Number of blocks written back per thread. */
         statistics::Vector writebacks;
-        /** SDBP bypass traffic: L1 fills, L2 forwards and L3 receives. */
-        statistics::Scalar sdbpBypassFills;
-        statistics::Scalar sdbpBypassWritebacks;
+        /** Hierarchy grants, MSHR promises and bypass victim routing. */
+        statistics::Scalar writableReadExpectations;
+        statistics::Scalar defaultWritableGrants;
+        statistics::Scalar deferredWritableGrants;
+        statistics::Scalar bypassL2Fills;
+        statistics::Vector bypassL2Writebacks;
+        statistics::Scalar bypassL2CleanEvictions;
 
         /** Demand misses that hit in the MSHRs. */
         statistics::Formula demandMshrHits;

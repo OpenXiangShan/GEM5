@@ -1458,8 +1458,12 @@ Queued::createPrefetchRequest(Addr addr, PrefetchInfo const &pfi, PacketPtr pkt,
 {
     assert(pfi.hasContextId());
     RequestPtr translation_req = std::make_shared<Request>(
-            addr, blkSize, pkt->req->getFlags(), requestorId, pfi.getPC(),
-            pfi.contextId());
+            addr, blkSize, pkt->req->getFlags(), requestorId,
+            pfi.hasPC() ? pfi.getPC() : 0, pfi.contextId());
+    // Forwarded prefetches may carry only a trigger PC. Preserve the
+    // distinction from an instruction PC while constructing a virtual req.
+    if (!pfi.hasPC())
+        translation_req->clearPC();
     pfi.tagPrefetchTriggerPC(*translation_req);
     translation_req->setFlags(Request::PF_EXCLUSIVE);
     translation_req->setPFSource(pf_src);

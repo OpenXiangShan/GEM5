@@ -154,7 +154,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       prefetcher(p.prefetcher),
       writeAllocator(p.write_allocator),
       writebackClean(p.writeback_clean),
-      sdbpBypassWritable(p.sdbp_bypass_writable),
+      hierarchyPolicy(p.cache_hierarchy_policy),
       tempBlockWriteback(nullptr),
       writebackTempBlockAtomicEvent([this]{ writebackTempBlockAtomic(); },
                                     name(), false,
@@ -208,9 +208,8 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
 
     tempBlock = new TempCacheBlk(blkSize);
     tags->tagsInit();
-    fatal_if(sdbpBypassWritable && (cacheLevel != 1 || isReadOnly),
-             "%s: SDBP bypass ownership requests require a writable L1",
-             name());
+    fatal_if(hierarchyPolicy.xiangshanSingleCore() && system->multiCore(),
+             "%s: XiangShan single-core cache policy requires one CPU", name());
 
     if (!p.sdbp_l1_caches.empty()) {
         auto *sdbp = dynamic_cast<replacement_policy::SDBP *>(p.replacement_policy);
@@ -1439,6 +1438,12 @@ BaseCache::recvAtomic(PacketPtr pkt)
     CacheBlk *blk = nullptr;
     PacketList writebacks;
     bool satisfied = access(pkt, blk, lat, writebacks);
+    // access() defers a clean exclusive hit's tag invalidation until the
+    // caller has finished using the block. Timing mode consumes this flag
+    // in recvTimingReq(); atomic hits must consume it here as well.
+    if (satisfied && blk && blk->needInvalidate()) {
+        invalidateBlock(blk);
+    }
 
     if (pkt->isClean() && blk && blk->isSet(CacheBlk::DirtyBit)) {
         // A cache clean opearation is looking for a dirty
@@ -2000,9 +2005,9 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
 
     DPRINTF(Cache, "satisfyRequest for %s\n", pkt->print());
 
-    if (cacheLevel == 2 && blk == tempBlock && blk->sdbpBypassL2 &&
+    if (cacheLevel == 2 && blk == tempBlock && blk->bypassL2 &&
         pkt->isRead() && pkt->fromCache()) {
-        pkt->sdbpBypassL2 = true;
+        pkt->bypassL2 = true;
     }
 
     // Check RMW operations first since both isRead() and
@@ -2249,12 +2254,10 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         lat = calculateTagOnlyLatency(pkt->headerDelay, tag_latency);
     }
 
-    if (cacheLevel == 2 && pkt->isWriteback() && pkt->sdbpBypassL2) {
-        // A later refill may have installed a copy while the bypassed line
-        // lived in L1. Drop that copy before forwarding the current data.
+    if (hierarchyPolicy.forwardBypassWriteback(cacheLevel, pkt)) {
+        // Another refill may have installed a copy while this line lived
+        // in L1. Do not leave stale data or discard real dirty ownership.
         if (blk) {
-            // Preserve real dirty ownership held by L2 (e.g. a ReadClean
-            // response left the owner here). This is not synthetic dirtiness.
             if (blk->isSet(CacheBlk::DirtyBit) &&
                 pkt->cmd == MemCmd::WritebackClean) {
                 pkt->cmd = MemCmd::WritebackDirty;
@@ -2262,12 +2265,16 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
             invalidateBlock(blk);
             blk = nullptr;
         }
-        ++stats.sdbpBypassWritebacks;
+        ++stats.bypassL2Writebacks[pkt->cmd == MemCmd::WritebackDirty];
+        DPRINTF(Cache, "Forward L2 bypass writeback %s\n", pkt->print());
         incMissCount(pkt);
         return false;
     }
-    if (cacheLevel == 3 && pkt->isWriteback() && pkt->sdbpBypassL2)
-        ++stats.sdbpBypassWritebacks;
+    if (hierarchyPolicy.consumeBypassWriteback(cacheLevel, pkt)) {
+        ++stats.bypassL2Writebacks[pkt->cmd == MemCmd::WritebackDirty];
+        // The routing hint skips only L2, never the LLC allocation policy.
+        pkt->bypassL2 = false;
+    }
 
     // Writeback handling is special case.  We can write the block into
     // the cache without having a writeable copy (or any copy at all).
@@ -2542,8 +2549,8 @@ BaseCache::handleFill(
             // current request and then get rid of it
             blk = tempBlock;
             tempBlock->insert(addr, is_secure);
-            if (cacheLevel == 2 && pkt->sdbpBypassL2)
-                tempBlock->sdbpBypassL2 = true;
+            if (cacheLevel == 2 && pkt->bypassL2)
+                tempBlock->bypassL2 = true;
             DPRINTF(Cache, "using temp block for %#llx (%s)\n", addr,
                     is_secure ? "s" : "ns");
         } else if (wpu) {
@@ -2596,12 +2603,12 @@ BaseCache::handleFill(
         }
     }
 
-    if (cacheLevel == 1 && pkt->sdbpBypassL2) {
-        if (!blk->sdbpBypassL2)
-            ++stats.sdbpBypassFills;
+    if (hierarchyPolicy.captureBypassFill(cacheLevel, pkt)) {
+        if (!blk->bypassL2)
+            ++stats.bypassL2Fills;
         // Routing is independent of whether the line was really modified.
         // A clean bypassed line must remain clean throughout the hierarchy.
-        blk->sdbpBypassL2 = true;
+        blk->bypassL2 = true;
     }
 
     DPRINTF(Cache, "Block addr %#llx (%s) moving from %s to %s\n",
@@ -2784,11 +2791,12 @@ BaseCache::evictBlock(CacheBlk *blk, PacketList &writebacks,
 PacketPtr
 BaseCache::writebackBlk(CacheBlk *blk)
 {
-    const bool bypass_l2 = cacheLevel == 1 && blk->sdbpBypassL2;
-    gem5_assert(!isReadOnly || writebackClean || bypass_l2,
+    const bool bypass_l2 = cacheLevel == 1 && blk->bypassL2;
+    gem5_assert(!isReadOnly || writebackClean,
                 "Writeback from read-only cache");
     assert(blk && blk->isValid() &&
-        (blk->isSet(CacheBlk::DirtyBit) || writebackClean || bypass_l2));
+        (blk->isSet(CacheBlk::DirtyBit) || writebackClean));
+    assert(!bypass_l2 || blk->isSet(CacheBlk::DirtyBit));
 
     stats.writebacks[Request::wbRequestorId]++;
 
@@ -2804,10 +2812,9 @@ BaseCache::writebackBlk(CacheBlk *blk)
     PacketPtr pkt =
         new Packet(req, blk->isSet(CacheBlk::DirtyBit) ?
                    MemCmd::WritebackDirty : MemCmd::WritebackClean);
-    // The bypass bit selects the route, not the coherence state. Clean
-    // victims carry data to L3 without creating a dirty copy there; real
-    // dirty victims must still transfer responsibility for modified data.
-    pkt->sdbpBypassL2 = bypass_l2;
+    pkt->bypassL2 = bypass_l2;
+    if (bypass_l2)
+        ++stats.bypassL2Writebacks[pkt->cmd == MemCmd::WritebackDirty];
 
     DPRINTF(Cache, "Create Writeback %s writable: %d, dirty: %d\n",
         pkt->print(), blk->isSet(CacheBlk::WritableBit),
@@ -3035,8 +3042,7 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
     }
 
     // A hit below can turn pkt into a response during sendTimingReq().
-    const bool read_requests_ownership = sdbpBypassWritable &&
-        tgt_pkt->cmd == MemCmd::ReadReq && pkt->needsWritable();
+    const bool expects_writable = pkt->writableFillExpected;
     if (!memSidePort.sendTimingReq(pkt)) {
         // we are awaiting a retry, but we
         // delete the packet and will be creating a new packet
@@ -3057,12 +3063,12 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
         // so, we know it is dirty, and we can determine if it is
         // being passed as Modified, making our MSHR the ordering
         // point
-        // An SDBP L1 read can request exclusive ownership even though its
-        // CPU target is a plain read. Track that promise before any later
-        // snoop arrives, just as for an ordinary write miss.
-        bool pending_modified_resp = read_requests_ownership ||
-            (!pkt->hasSharers() && pkt->cacheResponding());
+        // Prepare ordinary reads before a deferred dirty grant arrives.
+        const bool pending_modified_resp = !pkt->hasSharers() &&
+            (expects_writable || pkt->cacheResponding());
         markInService(mshr, pending_modified_resp);
+        if (expects_writable && !pkt->hasSharers())
+            ++stats.writableReadExpectations;
 
         if (pkt->isClean() && blk && blk->isSet(CacheBlk::DirtyBit)) {
             // A cache clean opearation is looking for a dirty
@@ -3412,10 +3418,18 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "only when forwarding enabled"),
     ADD_STAT(writebacks, statistics::units::Count::get(),
              "number of writebacks"),
-    ADD_STAT(sdbpBypassFills, statistics::units::Count::get(),
-             "L1 fills bypassing L2 storage"),
-    ADD_STAT(sdbpBypassWritebacks, statistics::units::Count::get(),
-             "Bypass writebacks forwarded by L2 or received by L3"),
+    ADD_STAT(writableReadExpectations, statistics::units::Count::get(),
+             "Ordinary read MSHRs prepared for default writable responses"),
+    ADD_STAT(defaultWritableGrants, statistics::units::Count::get(),
+             "Ordinary reads granted writable by the hierarchy policy"),
+    ADD_STAT(deferredWritableGrants, statistics::units::Count::get(),
+             "Deferred dirty ordinary reads granted writable"),
+    ADD_STAT(bypassL2Fills, statistics::units::Count::get(),
+             "L1 fills marked to bypass L2 on eviction"),
+    ADD_STAT(bypassL2Writebacks, statistics::units::Count::get(),
+             "Marked victims generated at L1, forwarded at L2, or seen at L3"),
+    ADD_STAT(bypassL2CleanEvictions, statistics::units::Count::get(),
+             "Clean bypass victims evicted without transferring data"),
     ADD_STAT(demandMshrHits, statistics::units::Count::get(),
              "number of demand (read+write) MSHR hits"),
     ADD_STAT(overallMshrHits, statistics::units::Count::get(),
@@ -3690,6 +3704,10 @@ BaseCache::CacheStats::regStats()
                 std::string(victim_classes[kind]) + "_" + presence[state]);
         }
     }
+
+    bypassL2Writebacks.init(2).flags(total);
+    bypassL2Writebacks.subname(0, "clean");
+    bypassL2Writebacks.subname(1, "dirty");
 
     writebacks
         .init(max_requestors)
