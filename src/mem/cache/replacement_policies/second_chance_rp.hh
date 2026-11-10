@@ -110,6 +110,9 @@ class SecondChance : public FIFO
     void reset(const std::shared_ptr<ReplacementData>& replacement_data) const
                                                                      override;
 
+    void reset4memtrace(const std::shared_ptr<ReplacementData>& replacement_data,int priority) const override
+    {
+    }
     /**
      * Find replacement victim using insertion timestamps and second chance
      * bit.

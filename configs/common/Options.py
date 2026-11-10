@@ -148,6 +148,8 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--l1-to-l2-pf-hint", action="store_true")
     parser.add_argument("--l2-to-l3-pf-hint", action="store_true")
 
+    parser.add_argument("--memtrace_path", type=str, default=None)  # Memtrace file path for restoring the microarchitectural state in L3 Cache
+    
     parser.add_argument("--num-dirs", type=int, default=1)
     parser.add_argument("--num-l2caches", type=int, default=1)
     parser.add_argument("--num-l3caches", type=int, default=1)
