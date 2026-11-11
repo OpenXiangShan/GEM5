@@ -142,6 +142,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       writeBuffer("write buffer", p.write_buffers, p.mshrs, p.name),
       tags(p.tags),
       tagLoadReadPorts(p.tag_load_read_ports),
+      icacheDataBankBytes(p.icache_data_bank_bytes),
       sliceNum(p.num_slices),
       freeTagLoadReadPorts(p.tag_load_read_ports),
       lastTagAccessCheckCycle(0),
@@ -192,6 +193,9 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       Prefetch_CanOffload(p.prefetch_can_offload)
 {
     hitUnderBlock = p.hit_under_block;
+    fatal_if(icacheDataBankBytes && (!supportsTwoFetch() || !isPowerOf2(icacheDataBankBytes) ||
+                                     icacheDataBankBytes > blkSize || assoc > 64),
+             "ICache banks require a read-only 64B L1, <=64 ways and power-of-two width");
 
     // the MSHR queue has no reserve entries as we check the MSHR
     // queue on every single allocation, whereas the write queue has
@@ -227,10 +231,6 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
     if (sliceNum > 0) {
         sliceReadyTick.resize(sliceNum, 0);
         assert(popCount(sliceNum) == 1);
-    }
-
-    for (int i = 0; i < getActualSliceNum(); i++) {
-        prevReqCycles.emplace_back(system->maxRequestors(), Cycles{0});
     }
 
     if (dumpMissPC && cacheLevel) {
@@ -314,6 +314,10 @@ BaseCache::regenerateBlkAddr(CacheBlk* blk)
 void
 BaseCache::init()
 {
+    // Switched-out CPUs also register requestors during construction.
+    for (int i = 0; i < getActualSliceNum(); i++) {
+        prevReqCycles.emplace_back(system->maxRequestors(), Cycles{0});
+    }
     if (!cpuSidePort.isConnected() || !memSidePort.isConnected())
         fatal("Cache ports on %s are not connected\n", name());
     cpuSidePort.sendRangeChange();
@@ -3520,6 +3524,7 @@ BaseCache::CpuSidePort::recvTimingSnoopResp(PacketPtr pkt)
 bool
 BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
 {
+    pkt->icacheTagPortRejected = false;
     if (cache.system->bypassCaches() || pkt->isExpressSnoop()
         || pkt->isStorePFTrain()) {
         // always let express snoop packets through even if blocked
@@ -3541,6 +3546,7 @@ BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
         return false;
     }
     if (!cache.tryAccessTag(pkt)) {
+        pkt->icacheTagPortRejected = pkt->req->isInstFetch();
         DPRINTF(TagReadFail, "tryAccessTag fails addr: %lx\n", pkt->getAddr());
         return false;
     }
@@ -3802,3 +3808,43 @@ WriteAllocator::updateMode(Addr write_addr, unsigned write_size,
 }
 
 } // namespace gem5
+
+namespace gem5
+{
+
+BaseCache *
+BaseCache::fromCpuSidePort(Port &port)
+{
+    auto *cache_port = dynamic_cast<CpuSidePort *>(&port);
+    return cache_port ? &cache_port->cache : nullptr;
+}
+
+bool
+BaseCache::twoFetchDataConflict(const std::array<std::vector<icache_banks::ReadRange>, 2> &ranges) const
+{
+    if (!icacheDataBankBytes)
+        return false;
+    fatal_if(!supportsTwoFetch() || !isPowerOf2(icacheDataBankBytes) || icacheDataBankBytes > blkSize,
+             "ICache bank model requires a 64B read-only L1 and power-of-two banks");
+    const unsigned sets = size / (assoc * blkSize);
+    for (const auto &a : ranges[0]) {
+        const auto *blk0 = tags->findBlock(a.paddr, a.secure);
+        const uint64_t way0 = blk0 ? uint64_t(1) << blk0->getWay() : 0;
+        for (const auto &b : ranges[1]) {
+            const auto *blk1 = tags->findBlock(b.paddr, b.secure);
+            const uint64_t way1 = blk1 ? uint64_t(1) << blk1->getWay() : 0;
+            const auto mask0 = icache_banks::bankMask(a.vaddr, a.size, blkSize, icacheDataBankBytes);
+            const auto mask1 = icache_banks::bankMask(b.vaddr, b.size, blkSize, icacheDataBankBytes);
+            DPRINTF(Cache,
+                    "TwoFetch bank probe: va=%#lx/%#lx mask=%#lx/%#lx "
+                    "way=%#lx/%#lx set=%u/%u\n",
+                    a.vaddr, b.vaddr, mask0, mask1, way0, way1, unsigned(a.vaddr / blkSize % sets),
+                    unsigned(b.vaddr / blkSize % sets));
+            if (icache_banks::conflict(mask0, mask1, way0, way1, a.vaddr / blkSize % sets, b.vaddr / blkSize % sets))
+                return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace gem5

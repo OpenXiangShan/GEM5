@@ -299,6 +299,9 @@ class MemCmd
 class Packet : public Printable
 {
   public:
+    // Pure I-cache tag-port rejection, distinct from retry-protocol blocking.
+    bool icacheTagPortRejected = false;
+
     typedef uint32_t FlagsType;
     typedef gem5::Flags<FlagsType> Flags;
 

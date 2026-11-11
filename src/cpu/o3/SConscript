@@ -44,6 +44,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('decode.cc')
     Source('dyn_inst.cc')
     Source('fetch.cc')
+    Source('fetch_group.cc')
     Source('free_list.cc')
     Source('fu_pool.cc')
     Source('iew.cc')
@@ -265,3 +266,5 @@ else:
           # Stats Root is required when constructing statistics::Group in tests
           '../../sim/root.cc',
           with_tag('gem5 trace'))
+
+GTest('two_fetch.test', 'two_fetch.test.cc')
