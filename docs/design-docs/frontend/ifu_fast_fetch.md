@@ -1,5 +1,11 @@
 # Configurable IFU fast fetch
 
+This document describes the legacy offer-and-dedup path. KMHV3 defaults to
+[mask routing](ifu-fast-fetch-mask-routing.md), which assigns each instruction
+to one path and optionally rearms fast fetch when IBuffer drains. To select the
+legacy path for all comparisons below, explicitly set both
+`enableFastFetchMaskRouting=False` and `enableFastFetchOnEmpty=False`.
+
 With `enableFastFetch`, an eligible backend recovery starts a fast-fetch
 opportunity. The first candidate uses the existing recovery path. With
 `enableFastFetchContinuation`, its remaining instructions and subsequent FTQ
@@ -34,7 +40,9 @@ the `FastFetch` trace labels offers and acceptances with `continuation`.
 
 The two mode parameters default to false in `BaseO3CPU`. The continuous KMHV3
 configuration enables both; `enableFastFetch` remains the master switch.
-All modes use the same candidate restrictions, normal channel, and dedup logic.
+With mask routing and empty-buffer rearming disabled, all modes use the same
+candidate restrictions, normal channel, and dedup logic. The two parameters in
+the table alone do not select the legacy path.
 
 | Mode | `fastFetchAllowBlockedDecode` | `enableFastFetchContinuation` |
 | --- | --- | --- |
@@ -48,6 +56,15 @@ the normal fallback. Blocking Decode always stops continuation even when first
 bundle buffering is enabled. Decode buffers must remain empty for fast
 admission in every mode; this parameter does not merge normal and fast packets.
 
-For a controlled 64-byte comparison, set `fastFetchBytes=64` and select the
-mode with `--param system.cpu[0].fastFetchAllowBlockedDecode=False` and
-`--param system.cpu[0].enableFastFetchContinuation=False` as appropriate.
+For a controlled legacy comparison, use these common overrides:
+
+```sh
+--param system.cpu[0].enableFastFetch=True \
+--param system.cpu[0].enableFastFetchMaskRouting=False \
+--param system.cpu[0].enableFastFetchOnEmpty=False \
+--param system.cpu[0].fastFetchBytes=64
+```
+
+Then select the two table parameters with `--param` as appropriate.
+`enableFastFetch` remains the master switch; set it to false for the normal-only
+legacy baseline while keeping the other common overrides unchanged.

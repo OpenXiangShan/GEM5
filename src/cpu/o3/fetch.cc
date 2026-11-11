@@ -155,10 +155,10 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
              "twoFetchMaxBytes (%u) requires a fetch buffer of at least "
              "%u bytes, but fetchBufferSize is %u",
              twoFetchMaxBytes, twoFetchMaxBytes + 2, fetchBufferSize);
-    panic_if(fastFetchBytes == 0 || fastFetchBytes > fetchBufferSize,
-             "fastFetchBytes (%u) must be in [1, fetchBufferSize=%u]",
-             fastFetchBytes, fetchBufferSize);
     if (enableFastFetch) {
+        panic_if(fastFetchBytes == 0 || fastFetchBytes > fetchBufferSize,
+                 "fastFetchBytes (%u) must be in [1, fetchBufferSize=%u]",
+                 fastFetchBytes, fetchBufferSize);
         panic_if(!enablePredecode || numThreads != 1,
                  "fast fetch requires single-thread predecode");
         panic_if(params.fetchToDecodeDelay < Cycles(2),

@@ -101,6 +101,10 @@ Counters include `fastFetchCompleteBlocks`, `fastFetchNextBlocks`,
 The invalid counter counts invalid slots retained for normal accounting;
 it does not count an early discard. `normal-enqueue` trace events verify the
 original input cycle, and `normal-ready` events verify output timing.
+The checker requires exactly one on-time enqueue for every normal lane whose
+ready cycle has been reached. A final routed packet may still be in flight when
+the trace ends; its pending lanes are reported as `normal_inflight`. A later CPU
+tick makes those enqueues mandatory, even if no later packet is routed.
 The legacy normal-dedup counter stays zero in this mode. Performance comparisons
 must keep fetch/decode widths, byte budgets, predecode delays, fusion settings
 and workloads equal; compare legacy continuous, mask routing and fast disabled.
