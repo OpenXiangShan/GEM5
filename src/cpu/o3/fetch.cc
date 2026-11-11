@@ -215,9 +215,13 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     }
     smtLdstqHighWater = params.smtBorrowLdstqHighWater;
     if (smtLdstqHighWater == 0) {
+        const unsigned perThreadLQ =
+            params.enableSpMT ? params.LQEntries / 2 : params.LQEntries;
+        const unsigned perThreadSQ =
+            params.enableSpMT ? params.SQEntries / 2 : params.SQEntries;
         smtLdstqHighWater =
-            (params.LQEntries +
-             params.SQEntries * params.StoreQueueMultiple) *
+            (perThreadLQ +
+             perThreadSQ * params.StoreQueueMultiple) *
             params.smtBorrowLdstqHighWaterPercent / 100;
     }
 
