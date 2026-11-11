@@ -86,7 +86,9 @@ def setKmhV3IdealParams(args, system):
                                 # IdealConstantLVP(),
                                 # ExampleValuePredictor(),
                                 # EStride(logMaxConfidence=13, thresholdPercent=0.35)
-                                EgDiff(suppressZeroDiff=True),
+                                EgDiff(
+                                    checkValueWidth=args.egdiff_check_value_width,
+                                ),
                             ],
                             arb=CVPConfidenceArb(counterBits=6)
                         )

@@ -43,15 +43,9 @@ EgDiff::EgDiffStats::EgDiffStats(statistics::Group *parent)
                "Dispatches suppressed because FPC was not saturated"),
       ADD_STAT(lastMispSuppressions, statistics::units::Count::get(),
                "Prediction opportunities suppressed by last-misp"),
-      ADD_STAT(zeroDiffSuppressions, statistics::units::Count::get(),
-               "Dispatches suppressed because the entry difference was zero"),
       ADD_STAT(widthMismatchSuppressions, statistics::units::Count::get(),
                "Offers dropped because the predicted value is not "
                "representable at the target load's width"),
-      ADD_STAT(zeroDiffAllocationSkips, statistics::units::Count::get(),
-               "Zero-diff entries not created under suppressZeroDiff"),
-      ADD_STAT(zeroDiffInvalidations, statistics::units::Count::get(),
-               "Trained entries dropped after polling landed on a zero diff"),
       ADD_STAT(noEntry, statistics::units::Count::get(),
                "Dispatches without a trained exact-PC entry"),
       ADD_STAT(historyTooShort, statistics::units::Count::get(),
@@ -127,7 +121,7 @@ EgDiff::EgDiff(const Params &params)
       normalPredictionLatency(params.normalPredictionLatency),
       deferredPredictionLatency(params.deferredPredictionLatency),
       lastMispWindow(params.lastMispWindow),
-      suppressZeroDiff(params.suppressZeroDiff), states(params.numThreads),
+      checkValueWidth(params.checkValueWidth), states(params.numThreads),
       table(tableEntryCount), egdiffStats(this)
 {
     fatal_if(order == 0, "EgDiff order must be non-zero");
@@ -512,22 +506,6 @@ EgDiff::dispatch(const VPDispatchInfo &info, VPPredictionRecord *record)
         egdiffStats.historyTooShort++;
         return;
     }
-    /*
-     * A zero stored difference predicts that this load produces exactly its
-     * base load's value. Filter those out here rather than in latePredict():
-     * the difference is copied into the history slot below and never changes
-     * before the offer, so suppressing at dispatch removes the same offers
-     * without spending a GVQ slot or a deferred-waiter binding on them.
-     */
-    if (suppressZeroDiff && entry.diff == 0) {
-        egdiffStats.zeroDiffSuppressions++;
-        DPRINTF(EgDiff,
-                "[EgDiff][zero-diff-suppress] tid=%u seq=%llu pc=%#lx "
-                "ordinal=%llu distance=%u\n",
-                info.tid, info.seqNo, info.pc, ordinal, entry.distance);
-        return;
-    }
-
     target.predictionDistance = entry.distance;
     target.predictionDiff = entry.diff;
     target.baseOrdinal = ordinal - entry.distance;
@@ -595,7 +573,8 @@ EgDiff::latePredict(const VPLatePredictRequest &request,
      * can carry bits this load can never produce. Such a prediction is wrong
      * by construction; drop it instead of offering it.
      */
-    if (!valueFitsWidth(predicted, target->valueBytes, target->valueSigned)) {
+    if (checkValueWidth &&
+        !valueFitsWidth(predicted, target->valueBytes, target->valueSigned)) {
         target->requestReady = false;
         target->requestDelivered = true;
         egdiffStats.widthMismatchSuppressions++;
@@ -809,23 +788,7 @@ EgDiff::update(const VPUpdateInfo &info,
             const auto *base = findHistory(state, target->ordinal - order);
             if (base && base->committed && base->actualValid) {
                 egdiffStats.allocationAttempts++;
-                /*
-                 * A zero difference would predict that this load returns its
-                 * base's value. When such predictions are not offered, the
-                 * entry must not be created at all: it trains as a perfect
-                 * match on every commit, pins usefulness at its maximum, and
-                 * then blocks its index against every conflicting allocation
-                 * while contributing no prediction.
-                 */
-                if (suppressZeroDiff &&
-                    info.actualValue == base->actualValue) {
-                    egdiffStats.allocationSkips++;
-                    egdiffStats.zeroDiffAllocationSkips++;
-                    DPRINTF(EgDiff,
-                            "[EgDiff][allocate-skip] tid=%u seq=%llu "
-                            "pc=%#lx index=%zu reason=zero-diff\n",
-                            info.tid, info.seqNo, info.pc, index);
-                } else if (!shouldAllocate()) {
+                if (!shouldAllocate()) {
                     egdiffStats.allocationSkips++;
                     egdiffStats.allocationProbabilitySkips++;
                     DPRINTF(EgDiff,
@@ -940,23 +903,6 @@ EgDiff::update(const VPUpdateInfo &info,
                             static_cast<unsigned long long>(entry.diff),
                             static_cast<unsigned>(old_fpc),
                             static_cast<unsigned>(old_usefulness));
-                    /*
-                     * Polling landed on a zero difference. Keeping the entry
-                     * would pin its usefulness at the maximum and block every
-                     * conflicting allocation, yet it can never be offered
-                     * under suppressZeroDiff. Hand the index back instead.
-                     */
-                    if (suppressZeroDiff && new_diff == 0) {
-                        const uint64_t old_tag = entry.tag;
-                        entry = Entry{};
-                        egdiffStats.zeroDiffInvalidations++;
-                        updateTableEntryStats();
-                        DPRINTF(EgDiff,
-                                "[EgDiff][zero-diff-invalidate] tid=%u "
-                                "seq=%llu pc=%#lx distance=%u tag=%#llx\n",
-                                info.tid, info.seqNo, info.pc, new_distance,
-                                static_cast<unsigned long long>(old_tag));
-                    }
                 }
             }
         }

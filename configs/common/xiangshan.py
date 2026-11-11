@@ -1062,6 +1062,12 @@ def xiangshan_system_init():
         default=0,
         help="SMT IQ watermark for fpIQ/vecIQ (entries reserved per thread)",
     )
+    parser.add_argument(
+        "--egdiff-check-value-width",
+        action="store_true",
+        default=False,
+        help="Drop EgDiff offers the target load's width cannot represent",
+    )
 
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:

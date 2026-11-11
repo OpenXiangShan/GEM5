@@ -173,5 +173,5 @@ class EgDiff(ValuePredictor):
         2, "Cycles from base availability to a deferred prediction")
     lastMispWindow = Param.Unsigned(
         1024, "Committed instructions suppressed after a value misprediction")
-    suppressZeroDiff = Param.Bool(False,
-        "Never offer a prediction whose stored difference is zero")
+    checkValueWidth = Param.Bool(False,
+        "Never offer a prediction the target load's width cannot represent")
