@@ -255,6 +255,9 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar uncondMiss;   ///< Unconditional branch mispredictions
         statistics::Scalar returnMiss;   ///< Return mispredictions
         statistics::Scalar otherMiss;    ///< Other control mispredictions
+        statistics::Formula retiredCondBranches;
+        statistics::Formula retiredCondMispredictions;
+        statistics::Formula retiredBranchMispredictions;
 
         // Fine-grained branch classification statistics
         statistics::Vector branchClassCounts; ///< Classified branch occurrences

@@ -356,6 +356,10 @@ CPU::CPUStats::CPUStats(CPU *cpu)
                "Number of Instructions Simulated"),
       ADD_STAT(committedOps, statistics::units::Count::get(),
                "Number of Ops (including micro ops) Simulated"),
+      ADD_STAT(retiredInsts, statistics::units::Count::get(),
+               "Total retired architectural instructions across all threads"),
+      ADD_STAT(retiredOps, statistics::units::Count::get(),
+               "Total retired operations including micro ops across all threads"),
       ADD_STAT(cpi, statistics::units::Rate<
                     statistics::units::Cycle, statistics::units::Count>::get(),
                "CPI: Cycles Per Instruction"),
@@ -461,6 +465,9 @@ CPU::CPUStats::CPUStats(CPU *cpu)
     committedOps
         .init(cpu->numThreads)
         .flags(statistics::total);
+
+    retiredInsts = sum(committedInsts);
+    retiredOps = sum(committedOps);
 
     cpi
         .precision(6);

@@ -449,6 +449,12 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(uncondMiss, statistics::units::Count::get(), "the number of uncond branch misses"),
     ADD_STAT(returnMiss, statistics::units::Count::get(), "the number of return branch misses"),
     ADD_STAT(otherMiss, statistics::units::Count::get(), "the number of other branch misses"),
+    ADD_STAT(retiredCondBranches, statistics::units::Count::get(),
+             "Retired conditional branches"),
+    ADD_STAT(retiredCondMispredictions, statistics::units::Count::get(),
+             "Retired conditional branch mispredictions"),
+    ADD_STAT(retiredBranchMispredictions, statistics::units::Count::get(),
+             "Retired branch mispredictions across all branch classes"),
     ADD_STAT(branchClassCounts, statistics::units::Count::get(), "branch counts by fine-grained class"),
     ADD_STAT(branchClassMisses, statistics::units::Count::get(), "branch mispredictions by fine-grained class"),
     ADD_STAT(branchClassCountsTotal, statistics::units::Count::get(), "total number of classified branches"),
@@ -520,6 +526,9 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     branchClassCounts.init(NumBranchClasses);
     branchClassMisses.init(NumBranchClasses);
     controlSquashByClass.init(NumBranchClasses);
+    retiredCondBranches = condNum;
+    retiredCondMispredictions = condMiss;
+    retiredBranchMispredictions = condMiss + uncondMiss + returnMiss + otherMiss;
     for (int i = 0; i < NumS1SourceBuckets; ++i) {
         s1PredWrongBySourceAndReason.subname(i, S1SourceLabels[i]);
     }

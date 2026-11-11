@@ -672,6 +672,10 @@ class CPU : public BaseCPU
         /** Stat for the number of committed ops (including micro ops) per
          *  thread. */
         statistics::Vector committedOps;
+        /** Total retired architectural instructions across all threads. */
+        statistics::Formula retiredInsts;
+        /** Total retired operations, including micro ops, across all threads. */
+        statistics::Formula retiredOps;
         /** Stat for the CPI per thread. */
         statistics::Formula cpi;
         /** Stat for the total CPI. */
