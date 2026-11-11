@@ -172,6 +172,13 @@ struct DiffState
     ExecutionGuide guide;
 };
 
+// Layout expected by NEMU difftest_interrupt_delegate.
+struct InterruptDelegate
+{
+    bool interrupt_to_hs;
+    bool interrupt_to_vs;
+};
+
 class RefProxy
 {
   public:
@@ -192,6 +199,7 @@ class RefProxy
     vaddr_t (*guided_exec)(void *disambiguate_para) = nullptr;
     vaddr_t (*update_config)(void *config) = nullptr;
     void (*raise_intr)(uint64_t no) = nullptr;
+    void (*interrupt_delegate)(void *delegate) = nullptr;
     void (*isa_reg_display)() = nullptr;
     void (*query)(void *result_buffer, uint64_t type) = nullptr;
     void (*debug_mem_sync)(paddr_t addr, void *bytes, size_t size) = nullptr;
