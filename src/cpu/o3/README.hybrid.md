@@ -86,10 +86,48 @@ already-retired squash-after anchors retain the architectural sequence
 boundary, including faults inside a partly retired simple slot. The exact
 sequence prefix is propagated consistently to Rename, IQ, and LSQ.
 
+## Single-thread RAB capacity
+
+KMHV3 defaults to `numRABEntries=352` for every single-thread ROB policy,
+including Hybrid. `BaseO3CPU` defaults to zero, which disables the capacity
+limit. Use `--param='system.cpu[0].numRABEntries=16'` for capacity pressure,
+or set it to zero for an unlimited-capacity comparison. The parameter only
+applies when `numThreads == 1`.
+
+Each integer, floating-point, or vector destination mapping consumes one
+entry, including move elimination, repeated physical mappings, and internal
+temporaries. Zero/invalid, Misc, RMisc (including VL/VTYPE), and CC destinations
+keep their existing history records without consuming RAB capacity. A bundle
+checks the actual charged demand in the next `renameWidth` positions, skipping
+squashed instructions. Insufficient space stalls the whole bundle with
+`RABFull`; a zero-demand bundle can proceed. A bundle larger than a positive
+capacity terminates with a configuration error instead of waiting forever.
+
+Entries are released when the existing commit or squash paths remove their
+history records. `phyregReleaseWidth` retains its sequence-based release
+behavior. This models total capacity, without adding RTL pipeline reservations,
+a strict RAB commit bandwidth, or RTL forward-walk recovery. Gem5 mappings and
+RTL uops are not necessarily one-to-one.
+
+`rename.rabAllocatedEntries`, `rabCommittedEntries`, and `rabSquashedEntries`
+count charged mappings; `rabOccupancy` reports current occupancy,
+`rabPeakOccupancy` records its maximum since the last statistics reset, and
+`rabFullCycles` counts capacity stalls once per cycle. Across a measurement
+window, initial occupancy plus allocations minus commit and squash releases
+must equal final occupancy. Rename debug traces report every charged allocation,
+release, and capacity stall for checking this invariant.
+
 ## Build
 
 ```sh
 scons build/RISCV/gem5.opt --gold-linker -j64
+```
+
+Build and run the RAB accounting boundary tests with:
+
+```sh
+scons build/RISCV/cpu/o3/rename_rab.test.opt --unit-test -j16
+build/RISCV/cpu/o3/rename_rab.test.opt
 ```
 
 Planner and slot boundary tests are retained locally as development aids
@@ -144,8 +182,9 @@ uncovered instruction classes remain N according to visible flags/faults and
 the conservative default. Only enqueue-time faults affect classification;
 later faults use the existing precise per-DynInst recovery path.
 
-There is no explicit RAB or new pipeline stage. Physical entry and slot
-metadata model allocation, retirement bandwidth, and redirect selection;
+RAB capacity is accounted through Rename history records, without a separate
+RAB pipeline stage. Physical ROB entry and slot metadata model allocation,
+retirement bandwidth, and redirect selection;
 architectural side effects and precise faults remain per DynInst. A fused DynInst can represent two architectural
 instructions, so allocation and quota statistics differ from `committedInsts`.
 No claim of cycle or performance equivalence to XiangShan RTL or the paper is

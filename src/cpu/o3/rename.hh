@@ -52,6 +52,7 @@
 #include "cpu/o3/free_list.hh"
 #include "cpu/o3/iew.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/rename_rab.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/valuepred/valuepred_unit.hh"
 #include "enums/ROBWalkPolicy.hh"
@@ -118,6 +119,7 @@ class Rename
         RegFull,
         SerializeInst,
         BWFull,
+        RABFull,
         StallEventCount
     };
 
@@ -226,6 +228,11 @@ class Rename
     /** Checks if the rename map can rename all the given number of instructions this cycle. */
     bool canRename(ThreadID tid);
 
+    /** Check the entire single-thread bundle against RAB capacity. */
+    bool canRenameRAB(ThreadID tid) const;
+    /** Count a RAB capacity stall at most once per cycle. */
+    void recordRABFull();
+
     /** Whether any non-squashed, buffered instruction for this thread still
      *  needs a new physical register this cycle. Used to decide whether the
      *  thread is a Preg SMT-DynamicBorrowing donor candidate (see
@@ -271,9 +278,10 @@ class Rename
     {
         RenameHistory(InstSeqNum _instSeqNum, const RegId& _archReg,
                       VirtRegId _newPhysReg,
-                      VirtRegId _prevPhysReg)
+                      VirtRegId _prevPhysReg, bool _occupiesRABEntry)
             : instSeqNum(_instSeqNum), archReg(_archReg),
-              newPhysReg(_newPhysReg), prevPhysReg(_prevPhysReg)
+              newPhysReg(_newPhysReg), prevPhysReg(_prevPhysReg),
+              occupiesRABEntry(_occupiesRABEntry)
         {
         }
 
@@ -286,6 +294,8 @@ class Rename
         /** The old physical register that the arch. register was renamed to.
          */
         VirtRegId prevPhysReg;
+        /** Whether this history record consumes single-thread RAB space. */
+        bool occupiesRABEntry;
     };
 
     /** A per-thread list of all destination register renames, used to either
@@ -419,6 +429,9 @@ class Rename
     /** The number of threads active in rename. */
     ThreadID numThreads;
 
+    /** Single-thread capacity; history records own the charged entries. */
+    RenameRAB rab;
+
     /** Whether a thread stalled on ROB/dispatch-queue-bandwidth backpressure
      *  (a resource other than Preg itself) should also be treated as a Preg
      *  borrowing donor. When false, only hasPregDemand() drives donor status. */
@@ -449,6 +462,15 @@ class Rename
     {
         // RenameStats(statistics::Group *parent);
         RenameStats(CPU *cpu, Rename *rename);
+        void resetStats() override;
+
+        Rename &owner;
+        statistics::Scalar rabAllocatedEntries;
+        statistics::Scalar rabCommittedEntries;
+        statistics::Scalar rabSquashedEntries;
+        statistics::Scalar rabFullCycles;
+        statistics::Value rabOccupancy;
+        statistics::Scalar rabPeakOccupancy;
 
         /** Stat for total number of cycles spent squashing. */
         statistics::Scalar squashCycles;
@@ -537,6 +559,7 @@ class Rename
     /** Set within tick() when any thread stalls on RegFull this cycle;
      *  used to avoid double-incrementing stallEvents[RegFull]. */
     bool regFullThisCycle{false};
+    bool rabFullThisCycle{false};
 
     void setAllStalls(ThreadID tid, StallReason renameStall);
 

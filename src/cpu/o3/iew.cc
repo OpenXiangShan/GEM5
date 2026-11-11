@@ -409,6 +409,7 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         {StallReason::TrapRecovery, "TrapRecovery"},
         {StallReason::ROBFull, "ROBFull"},
         {StallReason::RegFull, "RegFull"},
+        {StallReason::RABFull, "RABFull"},
         {StallReason::OtherStall, "OtherStall"},
         {StallReason::OtherFetchStall, "OtherFetchStall"},
         {StallReason::FTQBubble, "FTQBubble"},

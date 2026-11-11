@@ -111,6 +111,7 @@ enum StallReason {
     ROBFull,  // B
     RegFull,  // B
     OtherStall,  // B
+    RABFull,  // B
     NumStallReasons
 };
 
