@@ -1,6 +1,6 @@
 # ideal.py：初步 KISS 上限探索配置
 
-`configs/example/ideal.py` 复用 `kmhv3.py` 的系统构建、checkpoint 恢复和运行流程，只集中设置资源与前端差异。它是方便后续实验的初步配置，性能分数需要重新测量，不是历史 R10 28.72509 分的原样复现。
+`configs/example/ideal.py` 复用 `kmhv3.py` 的系统构建、checkpoint 恢复和运行流程，只集中设置资源与前端差异。它用于同版本对照与后续实验，不继承历史 R10 28.72509 分的配置或测量口径。
 
 ## 复用与改动范围
 
@@ -21,7 +21,7 @@
 | FP speculative wakeup | 开启 | 关闭：与本配置LVP组合的兼容性限制；FMUL/FMA执行延迟仍为主线3/4拍 |
 | IEW→Fetch / Commit→Fetch / squash 宽度 | 4 / 4 / 8 | 2 / 1 / 32 |
 | TAGE / MGSC / PHAST | 主线默认 | TAGE 各表 8192 组 × 8 路，增加 MGSC local/PC 门控，开启 PHAST |
-| LVP / L1 LLDP / L2 CDP | 默认开关 | 主线 IdealConstantLVP / 开启 / 关闭 |
+| LVP / L1 LLDP / L2 CDP | 关闭 / 关闭 / 开启 | 主线 IdealConstantLVP / 开启 / 关闭 |
 | L2 / L3 | 2 MiB / 32 MiB | 2 MiB（4 片各 512 KiB、data/dir 各 4 bank）/ 64 MiB |
 
 “10 宽”指表中四处流水宽度，不额外施加全局每周期最多 10 条 issue 的硬限制。该配置仍使用实际分支预测器和恢复流程；functional 供给绕过普通 timing I-cache 等待。容量、吞吐和时延假设未包含面积、功耗与频率代价，测得差距用于寻找优化方向。
@@ -50,14 +50,18 @@ done
 
 完整测量可在 `manual-perf.yml` 分别选择 `kmhv3.py` 和 `ideal.py`，固定同一 source ref、benchmark profile、REF 和参数；正式计分显式加 `--disable-tea`。新入口产物为 `score-upperbound-<benchmark_type>`，与 `score-*` 和既有 `score-ideal-*` 区分。0.3c 和 1c 各使用自己的采样点与权重。
 
-## 验证与后续
+## 验证与性能记录
 
-历史 28.72509 来自源码 `36584adaf6` 的另一套配置。这里复用了不同的 LVP 并保留主线 issue/folding/leaf TLB 默认，因此不继承旧分数或旧逐点性能结果。下一轮应在同一新版本上重新测量默认与 ideal 的完整 profile。
+最终运行源码为`d379cf29cde13636c7c891806327a1f5044df65b`，已同步`xs-dev`至`14fcdbab13`。后续文档更新不改变被测运行代码。RISCV `gem5.opt`构建、默认/ideal CoreMark、namd短FP切片，以及PR的Clang构建、单测与smoke检查均通过；临时权限/边界探针不随PR提交。
 
-2026-11-05：精简配置通过 RISCV `gem5.opt` 构建、CoreMark 默认/ideal/参数覆盖三次短程运行、gcc_expr/1687、mcf/6753、perlbench_checkspam/5886 三对 200k 预热加 800k ROI difftest，以及本地临时 Sv39/Sv48 权限与取指边界检查（测试程序不随 PR 提交）。INI 确认使用主线 CompositeValuePredictor/IdealConstantLVP、scalar issue=2、folding=False、shared leaf=128；mcf 与 perlbench 中观测到实际值预测。
+| SPEC06 GCC16 RVA23 no-vector 0.3c | INT/GHz | FP/GHz | Overall/GHz |
+| --- | ---: | ---: | ---: |
+| 历史32 MiB L2、12宽，`61bdf46438` | 29.02525 | 27.44660 | 28.08914 |
+| 2 MiB L2、10宽，合并主线前`0709985578` | 27.76761 | 26.80767 | 27.20079 |
+| **最终2 MiB L2、10宽，`d379cf29cd`** | **27.76963** | **26.91932** | **27.26797** |
 
-默认入口在 CoreMark 300k 检查中的 5213 个既有 INI 字段、300001 条指令和 207449 周期与 base 一致。上述仅为配置和正确性 smoke，不是新配置的完整加权性能结果。
+最终[run2078](https://github.com/OpenXiangShan/GEM5/actions/runs/42947459385)成功，145/145点正常完成、零abort、difftest通过；使用固定REF、checkpoint/list、权重及20M＋20M窗口，TEA关闭。每点实际INI精确匹配预注册的41项差异；使用归档自己的`cluster.json`重算，INT/FP/overall与CI一致。0.3c结果不作为1c分数。
 
-2026-11-10：默认 L2 总容量收回至 2 MiB（四片各 512 KiB，DRRIP 每片 1024 sets），decode/rename/commit/物理寄存器释放宽度设为 10。其余 preset 参数保持不变。此前 32 MiB L2、12 宽版本的 SPEC06 0.3c INT 29.02525 属于旧配置；新组合尚无完整加权跑分。CoreMark 300k difftest 通过：实际 INI 仅有预期的21处字段变化；与旧 preset 加等价参数覆盖的 8510 个非host统计值完全一致。
+历史到合并前新默认仅修改L2和四处宽度及文档，联合变化为INT −4.33%、FP −2.33%；不拆为L2单项收益。最终相对旧ideal为INT −4.33%、FP −1.92%；相对合并前新默认为INT +0.0073%、FP +0.4165%，还包含主线FP执行时序和resolve输入过滤等变化，不能归因于单个参数。TAGE及其余ideal资源参数保持。
 
-2026-11-11：已同步`xs-dev`至`14fcdbab13`并解决Fetch初始化及旧PairTAGE首块标记的集成冲突。完整重跑在`soplex_pds-50_9466`出现整数load difftest错误；同输入、REF与20M＋20M窗口的本地复现显示，仅关闭FP speculative wakeup或仅关闭LVP均通过。因此ideal保留既有constant LVP，显式关闭新主线FP speculative wakeup；这是该组合的兼容性约束，尚未确定内部根因，不是主线FP机制已修复。其他ideal资源与TAGE参数不变。
+FP speculative wakeup的关闭是兼容性约束：中间合并版本在`soplex_pds-50_9466`出现整数load difftest错误；同输入、REF与20M＋20M窗口的本地复现显示，单独关闭FP speculative wakeup或LVP均通过。最终保留constant LVP、关闭FP speculative wakeup，FMUL/FMA执行延迟仍为主线3/4拍；该切片在最终完整CI也通过。内部根因尚未确定，不能称为主线FP机制已修复。SMT、H-extension、自修改代码和完整RVV组合未纳入本次验收。
