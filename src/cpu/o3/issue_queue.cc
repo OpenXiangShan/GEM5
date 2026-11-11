@@ -1659,9 +1659,13 @@ Scheduler::disp_policy::operator()(IssueQue* a, IssueQue* b) const
 }
 
 Scheduler::Scheduler(const SchedulerParams& params)
-    : SimObject(params), old_disp(params.useOldDisp),
-      intRegfileBanks(params.intRegfileBanks), stats(this), issueQues(params.IQs),
-      enableFpSpecWakeup(params.enableFpSpecWakeup)
+    : SimObject(params),
+      old_disp(params.useOldDisp),
+      intRegfileBanks(params.intRegfileBanks),
+      stats(this),
+      issueQues(params.IQs),
+      enableFpSpecWakeup(params.enableFpSpecWakeup),
+      enableFpDivSqrtPipelining(params.enableFpDivSqrtPipelining)
 {
     dispTable.resize(MaxThreads, std::vector<IQGroup>(enums::OpClass::Num_OpClass));
     opExecTimeTable.resize(enums::OpClass::Num_OpClass, 1);
@@ -1933,7 +1937,19 @@ Scheduler::setCPU(CPU* cpu, LSQ* lsq, IEW* iew)
                   !opPipelined[FloatMultOp] || !opPipelined[FloatMultAccOp]),
              "FP speculative wakeup requires three-cycle pipelined FMUL and "
              "four-cycle pipelined FMA");
+    if (enableFpDivSqrtPipelining) {
+        opPipelined[FloatDivOp] = true;
+        opPipelined[FloatSqrtOp] = true;
+    }
     for (auto it : issueQues) {
+        if (enableFpDivSqrtPipelining) {
+            // Keep IQ reservations and scheduler wakeups on the same policy.
+            for (auto op : {FloatDivOp, FloatSqrtOp}) {
+                if (it->readyQclassify[op]) {
+                    it->opPipelined[op] = true;
+                }
+            }
+        }
         panic_if(enableFpSpecWakeup && it->getIssueStages() != 2 &&
                      (it->readyQclassify[FloatMultOp] || it->readyQclassify[FloatMultAccOp] ||
                       it->readyQclassify[FloatAddOp] || it->readyQclassify[FloatDivOp] ||
@@ -2588,6 +2604,21 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
 uint32_t
 Scheduler::getOpLatency(const DynInstPtr& inst)
 {
+    if (enableFpDivSqrtPipelining && !inst->isVector() &&
+        (inst->opClass() == FloatDivOp || inst->opClass() == FloatSqrtOp)) {
+        // Fixed pipeline timing also applies to special values and subnormals.
+        const bool div = inst->opClass() == FloatDivOp;
+        switch (inst->staticInst->operWid()) {
+            case 16:
+                return div ? 5 : 4;
+            case 32:
+                return 7;
+            case 64:
+                return div ? 12 : 11;
+            default:
+                panic("Pipelined FP DIV/SQRT requires 16-, 32- or 64-bit operands");
+        }
+    }
     if (inst->opClass() == FloatDivOp) [[unlikely]] {
         const auto* format = fdivFormat(inst->staticInst->operWid());
         if (format) {

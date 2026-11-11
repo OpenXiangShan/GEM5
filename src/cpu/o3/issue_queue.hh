@@ -412,6 +412,7 @@ class Scheduler : public SimObject
     std::vector<FpPendingInst> instsToFu;
 
     const bool enableFpSpecWakeup;
+    const bool enableFpDivSqrtPipelining;
     FpWakeupState fpWakeState;
     struct FpRecord
     {
