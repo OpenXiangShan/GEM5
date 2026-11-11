@@ -109,6 +109,13 @@ enum l2TLBPage
     L_L2SUM
 
 };
+
+constexpr unsigned
+l2tlbPtesPerEntry(int type)
+{
+    return type == L_L2L1 || type == L_L2L0 ? l2tlbLineSize : 1;
+}
+
 enum HTLBHitState
 {
     H_L1miss = 0,
