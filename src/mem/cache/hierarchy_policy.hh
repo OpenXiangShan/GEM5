@@ -17,8 +17,9 @@ namespace cache_hierarchy
 /** XiangShan single-core grants and victim routing, independent of replacement.
  *
  * Ordinary reads retain their request command. An explicit expectation prepares
- * the requesting MSHR before a lower cache may transfer deferred dirty ownership.
- * Real sharers, pending downgrades and ReadCleanReq retain the normal protocol.
+ * the requesting MSHR before a lower cache may grant deferred writable access.
+ * L2 retains dirty responsibility while L1 records its own writes. Real sharers,
+ * pending downgrades and ReadCleanReq retain the normal protocol.
  */
 class Policy
 {
@@ -45,6 +46,26 @@ class Policy
     bool allowDeferredWritable(const PacketPtr pkt) const
     {
         return xiangshanSingleCore() && pkt->writableFillExpected;
+    }
+
+    bool retainDirty(unsigned level) const
+    {
+        return xiangshanSingleCore() && level == 2;
+    }
+
+    bool retainDirtyOnGrant(unsigned level, const PacketPtr pkt) const
+    {
+        return retainDirty(level) && pkt && pkt->req && pkt->fromCache() &&
+            !pkt->req->isUncacheable() && !pkt->req->isInstFetch() &&
+            !pkt->req->isPTWalk() && !pkt->isWrite() &&
+            (pkt->isRead() || pkt->isUpgrade());
+    }
+
+    bool prepareWritableRead(unsigned level) const
+    {
+        // A read-only L1 transaction must not promise a dirty snoop response.
+        // Actual writes still prepare their MSHR through needsWritable.
+        return !xiangshanSingleCore() || level != 1;
     }
 
     bool dropCleanL1Data(unsigned level) const

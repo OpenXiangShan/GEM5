@@ -125,7 +125,7 @@ Cache::invalidateVictimCopies(PacketPtr wb_pkt)
     Packet snoop(req, MemCmd::ReadExReq);
     snoop.setExpressSnoop();
     snoop.l2EvictionSnoop = true;
-    pendingEvictions.emplace(req, PendingEviction{entry, generated, MaxTick});
+    pendingEvictions.emplace(req, PendingEviction{entry, generated, MaxTick, {}});
     cpuSidePort.sendTimingSnoopReq(&snoop);
 
     const Tick ready = std::max(no_copy_ready, generated + snoop.headerDelay);
@@ -150,6 +150,8 @@ void
 Cache::satisfyRequest(PacketPtr pkt, CacheBlk *blk,
                       bool deferred_response, bool pending_downgrade)
 {
+    const bool retain_dirty = hierarchyPolicy.retainDirtyOnGrant(level(), pkt);
+    const bool was_dirty = blk->isSet(CacheBlk::DirtyBit);
     BaseCache::satisfyRequest(pkt, blk);
 
     if (pkt->isRead()) {
@@ -166,7 +168,7 @@ Cache::satisfyRequest(PacketPtr pkt, CacheBlk *blk,
 
                 // if we have a dirty copy, make sure the recipient
                 // keeps it marked dirty (in the modified state)
-                if (blk->isSet(CacheBlk::DirtyBit)) {
+                if (blk->isSet(CacheBlk::DirtyBit) && !retain_dirty) {
                     DPRINTF(CacheVerbose,
                             "%s set packet %s (%#lx) as cache responding, when blk is dirty and pkt need writable\n",
                             __func__, pkt->print(), (uint64_t)pkt);
@@ -186,7 +188,7 @@ Cache::satisfyRequest(PacketPtr pkt, CacheBlk *blk,
                 //   snooping the packet)
                 // - the read has explicitly asked for a clean
                 //   copy of the line
-                if (blk->isSet(CacheBlk::DirtyBit)) {
+                if (blk->isSet(CacheBlk::DirtyBit) && !retain_dirty) {
                     // special considerations if we're owner:
                     if (!deferred_response ||
                         hierarchyPolicy.allowDeferredWritable(pkt)) {
@@ -231,7 +233,13 @@ Cache::satisfyRequest(PacketPtr pkt, CacheBlk *blk,
         if (hierarchyPolicy.expectWritableRead(pkt, isReadOnly) &&
             pkt->writableFillExpected && !pkt->hasSharers()) {
             ++stats.defaultWritableGrants;
+            if (retain_dirty && was_dirty && deferred_response)
+                ++stats.deferredWritableGrants;
         }
+    }
+    if (retain_dirty && was_dirty) {
+        ++stats.retainedDirtyGrants;
+        assert(blk->isSet(CacheBlk::DirtyBit));
     }
 }
 
@@ -278,8 +286,12 @@ Cache::doWritebacks(PacketList& writebacks, Tick forward_time)
         // A temporary bypass refill never occupied L2 tags. Only resident
         // replacements invalidate L1; normal temporary writebacks retain
         // their LLC allocation behavior.
-        if (l2EvictInvalidateL1 && level() == 2 &&
+        const bool retained_dirty = hierarchyPolicy.retainDirty(level()) &&
+            wbPkt->cmd == MemCmd::WritebackDirty;
+        if ((l2EvictInvalidateL1 || retained_dirty) && level() == 2 &&
             wbPkt->isEviction() && wbPkt->replacementVictimClass) {
+            if (retained_dirty && !l2EvictInvalidateL1)
+                ++stats.retainedDirtyVictimProbes;
             wbPkt->replacementVictimClass = 0;
             invalidateVictimCopies(wbPkt);
             writebacks.pop_front();
@@ -356,6 +368,28 @@ Cache::doWritebacksAtomic(PacketList& writebacks)
         // isCachedAbove returns true we set BLOCK_CACHED flag in Writebacks
         // and discard CleanEvicts.
         const bool cached_above = isCachedAbove(wbPkt, false);
+        if (hierarchyPolicy.retainDirty(level()) &&
+            wbPkt->cmd == MemCmd::WritebackDirty &&
+            wbPkt->replacementVictimClass) {
+            // A retained L2 dirty bit does not guarantee current data. Atomic
+            // mode must also collect any newer upper copy before eviction.
+            if (cached_above) {
+                auto req = std::make_shared<Request>(
+                    wbPkt->getAddr(), blkSize, wbPkt->req->getFlags(),
+                    Request::wbRequestorId);
+                Packet snoop(req, MemCmd::ReadExReq);
+                snoop.allocate();
+                cpuSidePort.sendAtomicSnoop(&snoop);
+                if (snoop.cacheResponding())
+                    wbPkt->setData(snoop.getConstPtr<uint8_t>());
+            }
+            ++stats.retainedDirtyVictimProbes;
+            wbPkt->clearBlockCached();
+            memSidePort.sendAtomic(wbPkt);
+            writebacks.pop_front();
+            delete wbPkt;
+            continue;
+        }
         if (wbPkt->replacementVictimClass) {
             assert(wbPkt->replacementVictimClass <= 3);
             const unsigned state = forwardSnoops ? unsigned(cached_above) : 2;
@@ -420,11 +454,56 @@ Cache::recvTimingSnoopResp(PacketPtr pkt)
         const Tick ready = std::max(state.ready, data_ready);
         writeBuffer.setReadyTime(state.entry, ready);
         pendingEvictions.erase(pending);
+        bool transfer_victim = false;
+        for (auto *snoop : state.snoops) {
+            if (snoop->isClean()) {
+                // Reuse the reserved slot for the latest maintenance data;
+                // allocating a second slot can deadlock a one-entry buffer.
+                auto req = std::make_shared<Request>(
+                    wb_pkt->getAddr(), blkSize,
+                    wb_pkt->req->getFlags() | snoop->req->getDest(),
+                    Request::wbRequestorId);
+                req->taskId(wb_pkt->req->taskId());
+                req->setXsMetadata(wb_pkt->req->getXsMetadata());
+                auto *clean = new Packet(
+                    req, MemCmd::WriteClean, blkSize, snoop->id);
+                clean->allocate();
+                clean->setData(wb_pkt->getConstPtr<uint8_t>());
+                if (wb_pkt->hasSharers())
+                    clean->setHasSharers();
+                if (snoop->req->getDest())
+                    clean->setWriteThrough();
+                state.entry->getTarget()->pkt = clean;
+                delete wb_pkt;
+                wb_pkt = clean;
+                delete snoop;
+                continue;
+            }
+            if (snoop->needsResponse()) {
+                snoop->setCacheResponding();
+                if (!wb_pkt->hasSharers())
+                    snoop->setResponderHadWritable();
+                if (snoop->isRead() && !snoop->isInvalidate()) {
+                    snoop->setHasSharers();
+                    wb_pkt->setHasSharers();
+                }
+                transfer_victim |= snoop->isInvalidate();
+                snoop->headerDelay = data_ready - curTick();
+                doTimingSupplyResponse(snoop, wb_pkt->getConstPtr<uint8_t>(),
+                                       true, false);
+            } else {
+                delete snoop;
+            }
+        }
+        if (transfer_victim) {
+            markInService(state.entry);
+            delete wb_pkt;
+        }
         schedMemSideSendEvent(ready);
         ++evictionSnoopStats.dirtyResponses;
         evictionSnoopStats.dirtyDataReturnTicks += data_ready - state.generated;
         DPRINTF(CacheRepl, "EvictL1Data addr=%#x generated=%llu ready=%llu\n",
-                wb_pkt->getAddr(), state.generated, ready);
+                pkt->getAddr(), state.generated, ready);
         delete pkt;
         return;
     }
@@ -1365,6 +1444,8 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
              name(), pkt->print());
 
     uint32_t snoop_delay = 0;
+    bool upper_responding = false;
+    bool upper_cleaning = false;
 
     if (forwardSnoops) {
         // first propagate snoop upward to see if anyone above us wants to
@@ -1403,12 +1484,30 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
 
             // Copy over flags from the snoop response to make sure we
             // inform the final destination
-            pkt->copyResponderFlags(&snoopPkt);
+            upper_responding = snoopPkt.cacheResponding();
+            upper_cleaning = snoopPkt.satisfied();
+            // A deferred L2 promise and a newer upper response describe one
+            // transaction. Preserve that promise without registering twice.
+            if (!hierarchyPolicy.retainDirty(level()) ||
+                !pkt->cacheResponding() || !upper_responding) {
+                pkt->copyResponderFlags(&snoopPkt);
+            }
             if (snoopPkt.cacheResponding()) {
                 // Ownership may have moved to an upstream MSHR while
                 // this deferred snoop waited for our fill. Let that
                 // MSHR provide the single response we promised below.
                 pkt->setCacheRespondingBy(snoopPkt.getCacheRespondingBy());
+            }
+        } else if (hierarchyPolicy.retainDirty(level())) {
+            Packet snoop(pkt, true, true);
+            cpuSidePort.sendAtomicSnoop(&snoop);
+            upper_responding = snoop.cacheResponding();
+            upper_cleaning = snoop.satisfied();
+            pkt->copyResponderFlags(&snoop);
+            if (snoop.isResponse()) {
+                pkt->cmd = snoop.cmd;
+                if (pkt->hasData())
+                    pkt->setData(snoop.getConstPtr<uint8_t>());
             }
         } else {
             bool already_responded = pkt->cacheResponding();
@@ -1425,6 +1524,13 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
     bool blk_valid = blk && blk->isValid();
     DPRINTF(Cache, "pkt %s is clean: %i\n", pkt->print(), pkt->isClean());
     if (pkt->isClean()) {
+        if (hierarchyPolicy.retainDirty(level()) && upper_cleaning &&
+            blk_valid) {
+            // The upper WriteClean carries the latest data down this path.
+            // Sending our stale copy as well would create two writes for the
+            // same maintenance transaction.
+            blk->clearCoherenceBits(CacheBlk::DirtyBit);
+        }
         if (blk_valid && blk->isSet(CacheBlk::DirtyBit)) {
             DPRINTF(CacheVerbose, "%s: packet (snoop) %s found block: %s\n",
                     __func__, pkt->print(), blk->print());
@@ -1494,6 +1600,13 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
         gem5_assert(!(isReadOnly && blk->isSet(CacheBlk::DirtyBit)),
             "Should never have a dirty block in a read-only cache %s\n",
             name());
+    }
+
+    if (hierarchyPolicy.retainDirty(level()) && upper_responding) {
+        // L1 may have modified a line whose older dirty obligation is still
+        // recorded here. Only the upper cache has the latest data.
+        respond = false;
+        ++stats.retainedDirtyUpperResponses;
     }
 
     // Invalidate any prefetch's from below that would strip write permissions
@@ -1664,6 +1777,35 @@ Cache::recvTimingSnoopReq(PacketPtr pkt)
             DPRINTF(Cache, "%s: Squashing %s from lower cache on writequeue "
                     "hit\n", __func__, pkt->print());
             return;
+        }
+
+        if (hierarchyPolicy.retainDirty(level())) {
+            // The reserved victim may still contain old L2 data. Promise a
+            // response but keep its slot until the upper data is complete.
+            for (auto &[request, pending] : pendingEvictions) {
+                if (pending.entry != wb_entry)
+                    continue;
+                if (pending.postInvalidate)
+                    return;
+                if (pending.snoops.size() >= numTarget)
+                    warn("allocating bonus target for pending victim snoop");
+                auto *copy = new Packet(pkt, true, pkt->isRead());
+                if (pkt->isClean()) {
+                    pkt->setSatisfied();
+                } else if (pkt->needsResponse()) {
+                    pkt->setCacheResponding();
+                    if (!wb_pkt->hasSharers())
+                        pkt->setResponderHadWritable();
+                    if (pkt->isRead() && !pkt->isInvalidate()) {
+                        pkt->setHasSharers();
+                        copy->setHasSharers();
+                    }
+                }
+                pending.snoops.push_back(copy);
+                pending.postInvalidate = pkt->isInvalidate();
+                ++stats.retainedDirtySnoopDeferrals;
+                return;
+            }
         }
 
         // conceptually writebacks are no different to other blocks in

@@ -83,6 +83,8 @@ class Cache : public BaseCache
         WriteQueueEntry *entry;
         Tick generated;
         Tick ready;
+        PacketList snoops;
+        bool postInvalidate = false;
     };
     // Each pending snoop owns one slot in the bounded write buffer.
     std::unordered_map<RequestPtr, PendingEviction> pendingEvictions;

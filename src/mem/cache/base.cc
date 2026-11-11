@@ -1518,6 +1518,14 @@ BaseCache::functionalAccess(PacketPtr pkt, bool from_cpu_side)
     CacheBlk *blk = tags->findBlock(pkt->getAddr(), is_secure);
     MSHR *mshr = mshrQueue.findMatch(blk_addr, is_secure);
 
+    const bool checked_above = hierarchyPolicy.retainDirty(cacheLevel) &&
+        !from_cpu_side && forwardSnoops;
+    if (checked_above) {
+        cpuSidePort.sendFunctionalSnoop(pkt);
+        if (pkt->isResponse())
+            return;
+    }
+
     pkt->pushLabel(name());
 
     CacheBlkPrintWrapper cbpw(blk);
@@ -1558,7 +1566,7 @@ BaseCache::functionalAccess(PacketPtr pkt, bool from_cpu_side)
         // continues towards the memory side
         if (from_cpu_side) {
             memSidePort.sendFunctional(pkt);
-        } else if (cpuSidePort.isSnooping()) {
+        } else if (cpuSidePort.isSnooping() && !checked_above) {
             // if it came from the memory side, it must be a snoop request
             // and we should only forward it if we are forwarding snoops
             cpuSidePort.sendFunctionalSnoop(pkt);
@@ -2077,7 +2085,8 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
         // sanity check
         assert(!pkt->hasSharers());
 
-        if (blk->isSet(CacheBlk::DirtyBit)) {
+        if (blk->isSet(CacheBlk::DirtyBit) &&
+            !hierarchyPolicy.retainDirtyOnGrant(cacheLevel, pkt)) {
             // we were in the Owned state, and a cache above us that
             // has the line in Shared state needs to be made aware
             // that the data it already has is in fact dirty
@@ -3065,7 +3074,9 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
         // point
         // Prepare ordinary reads before a deferred dirty grant arrives.
         const bool pending_modified_resp = !pkt->hasSharers() &&
-            (expects_writable || pkt->cacheResponding());
+            ((expects_writable &&
+              hierarchyPolicy.prepareWritableRead(cacheLevel)) ||
+             pkt->cacheResponding());
         markInService(mshr, pending_modified_resp);
         if (expects_writable && !pkt->hasSharers())
             ++stats.writableReadExpectations;
@@ -3424,6 +3435,14 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "Ordinary reads granted writable by the hierarchy policy"),
     ADD_STAT(deferredWritableGrants, statistics::units::Count::get(),
              "Deferred dirty ordinary reads granted writable"),
+    ADD_STAT(retainedDirtyGrants, statistics::units::Count::get(),
+             "L2 grants retaining dirty responsibility below L1"),
+    ADD_STAT(retainedDirtyUpperResponses, statistics::units::Count::get(),
+             "L2 snoops using the upper response instead of retained data"),
+    ADD_STAT(retainedDirtySnoopDeferrals, statistics::units::Count::get(),
+             "Snoops waiting for the latest data of a retained-dirty victim"),
+    ADD_STAT(retainedDirtyVictimProbes, statistics::units::Count::get(),
+             "Dirty L2 victims probed for correctness without the latency option"),
     ADD_STAT(bypassL2Fills, statistics::units::Count::get(),
              "L1 fills marked to bypass L2 on eviction"),
     ADD_STAT(bypassL2Writebacks, statistics::units::Count::get(),

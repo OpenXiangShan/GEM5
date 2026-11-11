@@ -13,10 +13,16 @@ XiangShan single-core behavior specified for these experiments:
 
 This is functional and resource modeling alignment with the stated single-core
 behavior. It is not a claim of complete TileLink or cycle-level RTL equivalence.
-In particular, inherited dirty ownership still follows gem5's existing rule:
-when dirty responsibility is transferred upward, the receiver becomes dirty,
-even if it has not executed a local store. A full RTL comparison of that
-responsibility placement remains separate work.
+At the L2-to-L1D boundary, dirty responsibility stays at L2 while L1D
+records its own writes. L2's dirty bit does not guarantee that its data is
+current when L1D has writable permission. Snoops and retained-dirty victim
+writebacks must therefore collect any newer upper data first. A downstream
+snoop racing a pending victim is deferred in that victim's reserved write
+buffer transaction; it cannot respond with the old payload or free the slot
+before the upper response arrives. L3-to-L2
+ownership transfer retains the classic protocol. This does not implement
+RTL ProbeQueue/mainpipe arbitration, the RTL's non-coherent L1I, or its SDBP
+predictor algorithm.
 
 ## Selection and scope
 
@@ -59,15 +65,19 @@ same hierarchy policy on both sides of a bypass comparison instead.
 The normal downstream command remains `ReadSharedReq`; no invalidating
 `ReadExReq` is inserted for an ordinary read. Before issuing the request, each
 requesting cache sets a transient `writableFillExpected` promise. After a
-successful send, that promise prepares the MSHR's existing pending ownership
-state, unless a real sharer has already been reported.
+successful send, lower caches prepare their existing MSHR ownership state
+unless a real sharer has already been reported. Ordinary L1 read MSHRs do
+not promise dirty ownership merely because they may receive writable data.
+Explicit write/upgrade targets still prepare ownership through needsWritable;
+merged writes can also be promoted once the writable response arrives.
 
 The promise is not a dirty bit or an unconditional grant. A responder must
 still have `WritableBit`, no `hasSharers`, no pending downgrade, and an eligible
-ordinary data read. It may then transfer dirty ownership upward even when
-responding after its own miss (`deferred_response`). Legacy gem5 conservatively
-returns Shared in that deferred dirty case because the upstream MSHR did not
-prepare for an unsolicited ownership transfer.
+ordinary data read. L2 keeps its dirty obligation when granting data or an
+upgrade to L1D, including after its own miss (`deferred_response`). L3 can
+still transfer dirty ownership to L2. Legacy gem5 conservatively returns
+Shared in the deferred dirty case where the upstream MSHR did not prepare
+for an unsolicited ownership transfer.
 
 Packet copies, including snoops, start without this promise. Each cache arms
 its own downstream request; it must not accidentally authorize an unrelated
@@ -77,10 +87,14 @@ coherence handling. Instruction fetches, read-only caches, prefetches,
 existing request semantics. The selector is intentionally limited to a single
 core and is not a new general multi-core coherence protocol.
 
-Clean grants remain Exclusive (writable, clean). Dirty grants transfer the
-existing dirty responsibility as Modified. Having multiple writable states
-along the same inclusive hierarchy path follows the existing gem5 convention;
-it does not permit independent writable sibling copies.
+A data read can leave L1D writable and clean even when L2 is dirty relative
+to L3. A later L1 write marks L1 dirty without clearing the L2 obligation;
+both levels may then be dirty and only L1 has the latest data. The model
+forwards an upper response instead of also responding with stale L2 data.
+Functional snoops from below also search upper caches before trusting L2's
+dirty bit. An upper WriteClean supplies the latest maintenance data, avoiding
+a second stale WriteClean from L2. Multiple writable states along one path
+do not permit independently writable sibling copies.
 
 ## Victims and data-array resources
 
@@ -100,6 +114,21 @@ L2/L3 retain their configured `writeback_clean` and clusivity semantics. In
 particular, an L2 temporary bypass fill retains its normal eviction handling;
 suppressing its clean data unconditionally would alter LLC residency when L3
 is mostly exclusive.
+
+## Retained dirty victims
+
+With `--l2-evict-invalidate-l1`, the existing timed victim probe collects
+upper dirty data before releasing the L2 write buffer. If this latency option
+is disabled, resident dirty L2 victims still use that recovery path for
+correctness: retained responsibility cannot authorize writing stale data.
+Clean victims retain their existing behavior. Atomic mode performs the
+corresponding synchronous probe before sending a retained-dirty victim.
+
+Temporary bypass fills never occupied a real L2 way and do not invalidate
+the response being sent to L1. If such a fill retained a dirty obligation,
+its normal temporary-block writeback carries that obligation to L3. L1's
+routing marker does not make the line dirty; a later actual L1 write uses
+the existing marked writeback route to L3.
 
 ## L2 bypass routing and sampler boundaries
 
@@ -136,6 +165,10 @@ Cache counters are independent of SDBP:
 | `writableReadExpectations` | Successfully issued ordinary reads whose MSHRs prepare for a writable response; timing mode |
 | `defaultWritableGrants` | Ordinary read responses granted writable under this policy |
 | `deferredWritableGrants` | Deferred dirty read responses allowed to transfer writable ownership |
+| `retainedDirtyGrants` | L2 data/upgrade grants that retain an existing dirty obligation |
+| `retainedDirtyUpperResponses` | L2 snoops using an upper response instead of its retained copy |
+| `retainedDirtySnoopDeferrals` | Downstream snoops waiting for complete victim data |
+| `retainedDirtyVictimProbes` | Correctness recovery of dirty L2 victims without the timed-victim option |
 | `bypassL2Fills` | L1 fills marked for later L2-bypass eviction |
 | `bypassL2Writebacks::{clean,dirty}` | Marked writebacks generated by L1, forwarded by L2, or consumed at L3 |
 | `bypassL2CleanEvictions` | Marked clean L1 evictions without data |
@@ -218,3 +251,43 @@ The current five-run setup and integration validation are recorded in
 fixed: atomic clean exclusive hits now consume their deferred tag-invalidation
 flag, and Queued::createPrefetchRequest preserves an absent instruction PC
 instead of asserting when a forwarded prefetch has only a trigger PC.
+
+## Dirty-responsibility regression
+
+`tests/gem5/cache_eviction/dirty_responsibility.S` uses five m5_exit phases
+and no implicit stack stores. It first writes a line back to L2, reads and
+cleanly evicts it from L1, modifies it in L1 while L2 retains the older dirty
+copy, and executes enough code to force L2 replacement without unrelated
+L1D accesses. The guest verifies the latest value. The final read/eviction
+also exercises dirty data returning from the mostly-exclusive LLC. The
+configuration checks per-phase data-writeback counts and retained-grant/
+dirty-response counters, with timing/atomic and legacy controls.
+
+```sh
+riscv64-linux-gnu-gcc -nostdlib -static -march=rv64g -mabi=lp64d \
+  -Wl,-e,_start tests/gem5/cache_eviction/dirty_responsibility.S \
+  -o /tmp/dirty-responsibility
+build/RISCV/gem5.opt --outdir=m5out/dirty-responsibility \
+  tests/gem5/cache_eviction/dirty_responsibility.py \
+  /tmp/dirty-responsibility --invalidate
+```
+
+`l2_invalidate.py --peer --cache-hierarchy-policy=xiangshan_single_core`
+adds a coherent traffic injector below L2, exercising downward snoops and
+false-sharing data checks. This is a protocol stress test, not a supported
+multi-core XiangShan configuration. `--functional` adds functional accesses;
+`--write-buffers=1` and `--sliced-l2` stress buffering and same-address ordering.
+
+The complete retained-dirty suite builds its own RISC-V guests and runs phase,
+three-level timing/atomic, bypass, and MemTest cases:
+
+```sh
+python3 tests/gem5/cache_eviction/run_dirty_regression.py \
+  --binary=build/RISCV/gem5.opt --output=m5out/dirty-regression
+```
+
+The lower-snoop case also checks the retained victim path with CacheRepl
+tracing enabled. The phase test compares legacy inherited dirty writebacks
+with zero L1 data writebacks for read-only reuse under this policy. These
+checks verify dirty responsibility and data integrity; they do not establish
+cycle-level RTL equivalence or replace full performance evaluation.

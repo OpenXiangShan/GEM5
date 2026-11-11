@@ -1293,6 +1293,10 @@ class BaseCache : public ClockedObject, public CacheAccessor
         statistics::Scalar writableReadExpectations;
         statistics::Scalar defaultWritableGrants;
         statistics::Scalar deferredWritableGrants;
+        statistics::Scalar retainedDirtyGrants;
+        statistics::Scalar retainedDirtyUpperResponses;
+        statistics::Scalar retainedDirtySnoopDeferrals;
+        statistics::Scalar retainedDirtyVictimProbes;
         statistics::Scalar bypassL2Fills;
         statistics::Vector bypassL2Writebacks;
         statistics::Scalar bypassL2CleanEvictions;

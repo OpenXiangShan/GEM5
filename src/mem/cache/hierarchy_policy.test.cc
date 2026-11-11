@@ -58,6 +58,37 @@ TEST_F(CacheHierarchyPolicy, ReadOnlyPrefetchAndUncacheableKeepTheirProtocol)
     }
 }
 
+TEST_F(CacheHierarchyPolicy, DirtyResponsibilityStaysAtTheL2DataBoundary)
+{
+    const Policy policy(enums::xiangshan_single_core);
+    for (auto cmd : {MemCmd::ReadSharedReq, MemCmd::ReadExReq,
+                     MemCmd::UpgradeReq}) {
+        auto request = readPacket(cmd);
+        EXPECT_TRUE(policy.retainDirtyOnGrant(2, request.get()));
+        EXPECT_FALSE(policy.retainDirtyOnGrant(1, request.get()));
+        EXPECT_FALSE(policy.retainDirtyOnGrant(3, request.get()));
+    }
+    for (auto flag : {Request::INST_FETCH, Request::UNCACHEABLE}) {
+        auto request = readPacket(MemCmd::ReadSharedReq, flag);
+        EXPECT_FALSE(policy.retainDirtyOnGrant(2, request.get()));
+    }
+    auto core_read = readPacket(MemCmd::ReadReq);
+    EXPECT_FALSE(policy.retainDirtyOnGrant(2, core_read.get()));
+    const Policy legacy(enums::legacy);
+    auto request = readPacket();
+    EXPECT_FALSE(legacy.retainDirtyOnGrant(2, request.get()));
+}
+
+TEST_F(CacheHierarchyPolicy, WritableL1ReadDoesNotPromiseDirtyOwnership)
+{
+    const Policy policy(enums::xiangshan_single_core);
+    EXPECT_FALSE(policy.prepareWritableRead(1));
+    EXPECT_TRUE(policy.prepareWritableRead(2));
+    EXPECT_TRUE(policy.prepareWritableRead(3));
+    const Policy legacy(enums::legacy);
+    EXPECT_TRUE(legacy.prepareWritableRead(1));
+}
+
 TEST_F(CacheHierarchyPolicy, PromiseDoesNotLeakIntoSnoopsOrPacketCopies)
 {
     auto read = readPacket();
