@@ -713,6 +713,8 @@ InstructionQueue::scheduleReadyInsts()
             scheduler->getOpLatency(issued_inst);
         if (!defer_fp_read) {
             execLatencyCheck(issued_inst, op_latency);
+            // Use the final latency after operand-dependent corrections.
+            scheduler->specWakeUpFromDiv(issued_inst, op_latency);
         }
         assert(op_latency < 64);
         if (defer_fp_read) {
@@ -778,6 +780,8 @@ InstructionQueue::finishFpDeferredReads()
         uint32_t op_latency = scheduler->getOpLatency(inst);
         execLatencyCheck(inst, op_latency);
         assert(op_latency > 1 && op_latency < 64);
+        // Deferred reads schedule their wake here instead of the regular path.
+        scheduler->specWakeUpFromDiv(inst, op_latency);
         DPRINTF(Schedule, "[sn:%llu] deferred FP read: native latency %u cycles\n",
                 inst->seqNum, op_latency);
         ++wbOutstanding;
