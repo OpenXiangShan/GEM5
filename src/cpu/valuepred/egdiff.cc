@@ -45,6 +45,9 @@ EgDiff::EgDiffStats::EgDiffStats(statistics::Group *parent)
                "Prediction opportunities suppressed by last-misp"),
       ADD_STAT(zeroDiffSuppressions, statistics::units::Count::get(),
                "Dispatches suppressed because the entry difference was zero"),
+      ADD_STAT(widthMismatchSuppressions, statistics::units::Count::get(),
+               "Offers dropped because the predicted value is not "
+               "representable at the target load's width"),
       ADD_STAT(zeroDiffAllocationSkips, statistics::units::Count::get(),
                "Zero-diff entries not created under suppressZeroDiff"),
       ADD_STAT(zeroDiffInvalidations, statistics::units::Count::get(),
@@ -291,6 +294,21 @@ EgDiff::advanceFpc(Entry &entry)
     return advance;
 }
 
+bool
+EgDiff::valueFitsWidth(RegVal value, uint8_t bytes, bool isSigned)
+{
+    if (bytes >= 8) {
+        return true;
+    }
+    const unsigned bits = static_cast<unsigned>(bytes) * 8;
+    if (isSigned) {
+        const int64_t signed_value = static_cast<int64_t>(value);
+        const int64_t max_value = (1LL << (bits - 1)) - 1;
+        return signed_value >= ~max_value && signed_value <= max_value;
+    }
+    return (value >> bits) == 0;
+}
+
 const char *
 EgDiff::valueSourceName(ValueSource source)
 {
@@ -463,6 +481,8 @@ EgDiff::dispatch(const VPDispatchInfo &info, VPPredictionRecord *record)
     new_entry.ordinal = ordinal;
     new_entry.seqNo = info.seqNo;
     new_entry.pc = info.pc;
+    new_entry.valueBytes = info.valueBytes ? info.valueBytes : 8;
+    new_entry.valueSigned = info.valueSigned;
     auto [it, inserted] = state.history.emplace(ordinal, new_entry);
     gem5_assert(inserted, "EgDiff allocated a duplicate load ordinal");
     auto &target = it->second;
@@ -568,6 +588,26 @@ EgDiff::latePredict(const VPLatePredictRequest &request,
     }
 
     const RegVal predicted = base->specValue + target->predictionDiff;
+    /*
+     * A load writes back a value of its own width: a signed load sign-extends
+     * it and an unsigned load zero-extends it. The stored difference is a full
+     * register-width subtraction against a base that may be wider, so the sum
+     * can carry bits this load can never produce. Such a prediction is wrong
+     * by construction; drop it instead of offering it.
+     */
+    if (!valueFitsWidth(predicted, target->valueBytes, target->valueSigned)) {
+        target->requestReady = false;
+        target->requestDelivered = true;
+        egdiffStats.widthMismatchSuppressions++;
+        DPRINTF(EgDiff,
+                "[EgDiff][width-mismatch] cycle=%llu tid=%u seq=%llu pc=%#lx "
+                "ordinal=%llu bytes=%u signed=%d predicted=%#llx\n",
+                request.cycle, request.tid, request.seqNo, request.pc,
+                target->ordinal, static_cast<unsigned>(target->valueBytes),
+                target->valueSigned,
+                static_cast<unsigned long long>(predicted));
+        return candidate;
+    }
     candidate.result = {true, predicted};
     candidate.score = MaxFpc;
     target->requestReady = false;

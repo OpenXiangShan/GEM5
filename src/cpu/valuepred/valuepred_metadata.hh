@@ -150,6 +150,14 @@ class VPDispatchInfo
     uint64_t seqNo = 0;
     ThreadID tid = 0;
     uint64_t cycle = 0;
+    /*
+     * Width of the value this load writes back, in bytes, and whether that
+     * value is sign-extended. A narrower load can only produce a value whose
+     * high bits are the extension of its low bits, so a prediction that does
+     * not have that shape is wrong before it is offered.
+     */
+    uint8_t valueBytes = 8;
+    bool valueSigned = false;
 };
 
 class VPLatePredictRequest

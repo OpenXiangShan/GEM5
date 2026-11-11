@@ -47,6 +47,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstring>
 #include <queue>
 #include <tuple>
 
@@ -677,6 +678,44 @@ IEW::processLatePredictionEvent()
         cpu->schedule(latePredictionEvent, when);
     }
 }
+
+namespace
+{
+
+/*
+ * Integer loads write back a value of their own width. A signed load
+ * (lb/lh/lw and their compressed forms) sign-extends it; an unsigned load
+ * (lbu/lhu/lwu, likewise) zero-extends it. Nothing on StaticInst records
+ * which one, so the distinction comes from the mnemonic: every unsigned
+ * integer load's name ends in 'u'.
+ *
+ * A floating-point load NaN-boxes its result instead, so the same test would
+ * reject legitimate predictions. Only integer memory reads are constrained;
+ * everything else is reported as a full register, which no prediction can
+ * violate.
+ */
+void
+loadValueShape(const StaticInst *inst, uint8_t &bytes, bool &isSigned)
+{
+    bytes = 8;
+    isSigned = false;
+    if (inst->opClass() != MemReadOp) {
+        return;
+    }
+    const int32_t bits = inst->operWid();
+    if (bits != 8 && bits != 16 && bits != 32 && bits != 64) {
+        return;
+    }
+    bytes = bits / 8;
+
+    const char *name = inst->getMnemonic();
+    const char *suffix = name ? std::strrchr(name, '_') : nullptr;
+    const char *op = suffix ? suffix + 1 : name;
+    const std::size_t length = op ? std::strlen(op) : 0;
+    isSigned = length >= 2 && op[0] == 'l' && op[length - 1] != 'u';
+}
+
+} // namespace
 
 void
 IEW::processLatePredictions()
@@ -1821,6 +1860,8 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
                 dispatch_info.seqNo = inst->seqNum;
                 dispatch_info.tid = tid;
                 dispatch_info.cycle = static_cast<uint64_t>(cpu->curCycle());
+                loadValueShape(inst->staticInst.get(),
+                        dispatch_info.valueBytes, dispatch_info.valueSigned);
                 valuePred->dispatch(dispatch_info, inst->vpRecord.get());
                 if (inst->vpApplied) {
                     notifyPredictionApplied(inst);
@@ -1998,6 +2039,8 @@ IEW::classifyInstToDispQue(ThreadID tid, unsigned max_insts,
                 dispatch_info.seqNo = inst->seqNum;
                 dispatch_info.tid = tid;
                 dispatch_info.cycle = static_cast<uint64_t>(cpu->curCycle());
+                loadValueShape(inst->staticInst.get(),
+                        dispatch_info.valueBytes, dispatch_info.valueSigned);
                 valuePred->dispatch(dispatch_info, inst->vpRecord.get());
                 if (inst->vpApplied) {
                     notifyPredictionApplied(inst);

@@ -73,6 +73,9 @@ class EgDiff : public VPUnit
         unsigned predictionDistance = 0;
         RegVal predictionDiff = 0;
         uint64_t readyCycle = 0;
+        // Width and extension of the value this load writes back.
+        uint8_t valueBytes = 8;
+        bool valueSigned = false;
     };
 
     struct ThreadState
@@ -138,6 +141,7 @@ class EgDiff : public VPUnit
     void wakeDeferred(ThreadState &state, ThreadID tid,
             HistoryEntry &base, uint64_t cycle);
     void pruneHistory(ThreadState &state, ThreadID tid);
+    static bool valueFitsWidth(RegVal value, uint8_t bytes, bool isSigned);
     void updateHistoryOccupancyStats();
     void updateTableEntryStats();
     bool lastMispActive() const { return !lastMispActivations.empty(); }
@@ -160,6 +164,7 @@ class EgDiff : public VPUnit
         statistics::Scalar confidenceSuppressions;
         statistics::Scalar lastMispSuppressions;
         statistics::Scalar zeroDiffSuppressions;
+        statistics::Scalar widthMismatchSuppressions;
         statistics::Scalar zeroDiffAllocationSkips;
         statistics::Scalar zeroDiffInvalidations;
         statistics::Scalar noEntry;
