@@ -284,12 +284,6 @@ struct LFSR64
     }
 };
 
-enum class PairPhase : uint8_t
-{
-    Even = 0,
-    Odd = 1
-};
-
 // {branch pc -> istaken} maps
 using CondTakens = std::vector<std::pair<Addr, bool>>;
 // {branch pc -> target pc} maps
@@ -345,7 +339,6 @@ struct FetchTarget
 
     unsigned predSource;   // source of the prediction(numStage)
     OverrideReason overrideReason; // reason of the override(for profiling)
-    PairPhase pairPhase;   // PairTAGE logical phase of this block start
 
     // prediction metas
     // FIXME: use vec
@@ -361,6 +354,7 @@ struct FetchTarget
     // for profiling
     int fetchInstNum;
     int commitInstNum;
+    int commitInstBytes;
 
     int s1Source; // which stage the prediction comes from
     int s3Source; // which stage the prediction comes from
@@ -375,7 +369,6 @@ struct FetchTarget
          isHit(false),
          falseHit(false),
          predSource(0),
-         pairPhase(PairPhase::Even),
          predTick(0),
          history(),
          phistory(),
@@ -383,6 +376,7 @@ struct FetchTarget
          lhistory(),
          fetchInstNum(0),
          commitInstNum(0),
+         commitInstBytes(0),
          s1Source(-1),
          s3Source(-1)
    {
@@ -458,7 +452,6 @@ struct HistoryRecoveryContext
     ThreadID tid;
     uint8_t asidHash;
     Addr startPC;
-    PairPhase pairPhase;
 
     const std::array<std::shared_ptr<void>, 9> &predMetas;
     const boost::dynamic_bitset<> &history;
@@ -470,7 +463,6 @@ struct HistoryRecoveryContext
         : tid(target.tid),
           asidHash(target.asidHash),
           startPC(target.startPC),
-          pairPhase(target.pairPhase),
           predMetas(target.predMetas),
           history(target.history),
           phistory(target.phistory),

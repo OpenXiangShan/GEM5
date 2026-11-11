@@ -889,6 +889,8 @@ def build_xiangshan_system(args):
     test_sys.num_cpus = np
     test_sys.xiangshan_system = True
     test_sys.enable_difftest = args.enable_difftest
+    # Ruby/CHI executes writes inside its protocol and retains the legacy path.
+    test_sys.golden_mem_at_write = not ruby
 
     if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
         args.difftest_ref_so = None
@@ -978,37 +980,55 @@ def xiangshan_system_init():
     parser.add_argument(
         "--smt-rob-donor-entry",
         type=int,
-        default=8,
+        default=64,
         help="Minimum ROB entries reserved for a borrowing donor to resume",
     )
     parser.add_argument(
         "--smt-rob-base-entry",
         type=int,
-        default=80,
+        default=72,
         help="Minimum ROB entries reserved for a borrowing base to resume",
+    )
+    parser.add_argument(
+        "--smt-rob-donor-hold-cycles",
+        type=int,
+        default=8,
+        help="Cycles to keep an SMT thread marked as a ROB borrowing donor",
+    )
+    parser.add_argument(
+        "--lq-total-entry",
+        type=int,
+        default=120,
+        help="Number of load queue entries",
+    )
+    parser.add_argument(
+        "--sq-total-entry",
+        type=int,
+        default=64,
+        help="Number of store queue entries",
     )
     parser.add_argument(
         "--smt-lq-donor-entry",
         type=int,
-        default=60,
+        default=48,
         help="Minimum LQ entries reserved for a borrowing donor thread to resume",
     )
     parser.add_argument(
         "--smt-lq-base-entry",
         type=int,
-        default=60,
+        default=54,
         help="Minimum LQ entries reserved for a borrowing base thread to resume",
     )
     parser.add_argument(
         "--smt-sq-donor-entry",
         type=int,
-        default=32,
+        default=26,
         help="Minimum SQ entries reserved for a borrowing donor thread to resume",
     )
     parser.add_argument(
         "--smt-sq-base-entry",
         type=int,
-        default=32,
+        default=29,
         help="Minimum SQ entries reserved for a borrowing base thread to resume",
     )
     parser.add_argument(
@@ -1020,11 +1040,11 @@ def xiangshan_system_init():
     parser.add_argument(
         "--smt-sq-donor-hold-cycles",
         type=int,
-        default=1,
+        default=8,
         help="Cycles to keep an SMT thread marked as an SQ borrowing donor",
     )
     parser.add_argument(
-        "--lsq-borrow-donor-skip-rename-gate",
+        "--lsq-borrow-donor-enable-rename-gate",
         action="store_true",
         default=False,
         help="Force has_buffered_rename to false in LSQ borrowing donor gating (evaluation only)",

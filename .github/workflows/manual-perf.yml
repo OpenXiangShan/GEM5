@@ -38,6 +38,10 @@ on:
           - spec06int-rvv-0.8c
           - gcc15-spec26-0.3c
           - gcc15-spec26-1.0c
+          - trace-google
+          - trace-google-0.3c
+          - trace-cbp
+          - trace-cbp-0.3c
           - custom
           - custom-spec06
           - custom-spec17

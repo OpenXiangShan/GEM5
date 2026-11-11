@@ -28,6 +28,7 @@ def setPtwLevelLimitParams(args, tlb):
 
 
 def setKmhV3IdealParams(args, system):
+    """Apply the ideal KMH V3 CPU, predictor, and cache configuration."""
     for cpu in system.cpu:
 
         # fetch
@@ -74,6 +75,7 @@ def setKmhV3IdealParams(args, system):
         cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
         cpu.smtBorrowDonorReserveEntries = args.smt_rob_donor_entry
         cpu.smtBorrowBaseReserveEntries = args.smt_rob_base_entry
+        cpu.smtBorrowDonorHoldCycles = args.smt_rob_donor_hold_cycles
         cpu.robWalkPolicy = 'NaiveCpt' # ideal core recovers via RAT checkpoints
 
         # lsu
@@ -89,7 +91,7 @@ def setKmhV3IdealParams(args, system):
         cpu.smtSQBorrowBaseReserveEntries = args.smt_sq_base_entry
         cpu.smtLQBorrowDonorHoldCycles = args.smt_lq_donor_hold_cycles
         cpu.smtSQBorrowDonorHoldCycles = args.smt_sq_donor_hold_cycles
-        cpu.lsqBorrowDonorSkipRenameGate = args.lsq_borrow_donor_skip_rename_gate
+        cpu.lsqBorrowDonorSkipRenameGate = not args.lsq_borrow_donor_enable_rename_gate
 
         # value predictor
         cpu.valuePred = CompositeValuePredictor(
@@ -97,13 +99,14 @@ def setKmhV3IdealParams(args, system):
                                 IdealConstantLVP(),
                                 # ExampleValuePredictor(),
                                 # EStride(logMaxConfidence=13, thresholdPercent=0.35)
+                                # EgDiff(),
                             ],
                             arb=CVPConfidenceArb(counterBits=6)
                         )
 
         # lsq
-        cpu.LQEntries = 120
-        cpu.SQEntries = 64
+        cpu.LQEntries = args.lq_total_entry
+        cpu.SQEntries = args.sq_total_entry
         cpu.StoreQueueMultiple = 2
         cpu.RARQEntries = 96
         cpu.RAWQEntries = 56
@@ -112,7 +115,10 @@ def setKmhV3IdealParams(args, system):
         cpu.RARDequeuePerCycle = 4
         cpu.RAWDequeuePerCycle = 4
         cpu.SbufferEntries = 16
-        cpu.SbufferEvictThreshold = 8
+        if args.enable_spmt:
+            cpu.SbufferEvictThreshold = 3
+        else:
+            cpu.SbufferEvictThreshold = 8
         cpu.store_prefetch_train = False
 
         # branch predictor
@@ -123,7 +129,9 @@ def setKmhV3IdealParams(args, system):
             cpu.branchPred.tage.tableSizes = [2048, 2048, 8192, 8192, 8192, 8192, 8192, 2048]
             cpu.branchPred.tage.numWays = [2, 2, 4, 2, 2, 2, 2, 2]
             cpu.branchPred.microtage.usingS3Pred = True
-            # cpu.branchPred.microtage.enabled = False
+            # Enable 2 Taken on ideal KMHv3 config
+            cpu.branchPred.pairtage.enabled = True
+            cpu.branchPred.pairtage.enableTwoTaken = True
 
         # l1 cache per core
         if args.caches:

@@ -2375,7 +2375,12 @@ LSQUnit::commitStores(InstSeqNum &youngest_inst)
             // doneMemSeqNum reaches here in the same cycle that ROB marks this
             // store squashed, do not advance SQ writeback state past the
             // squashed entry; IEW's next-cycle squash will remove it.
-            if (x.instruction()->isSquashed()) {
+            // A trace control-flow marker will fault at Commit even before
+            // its fault is injected. Keep it squashable when an older
+            // doneMemSeqNum still covers it.
+            if (x.instruction()->isSquashed() ||
+                x.instruction()->faulted() ||
+                x.instruction()->hasTraceCtrlFlowChange()) {
                 break;
             }
             if (x.instruction()->isSplitStoreAddr() && !x.splitStoreFinish()) {
@@ -2766,7 +2771,7 @@ LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas,
     DPRINTF(
         StoreBuffer,
         "insert %#x to entry[%#x] successed, sbuffer size: %d unsentsize: %d\n",
-        paddr, blockPaddr, storeBuffer.size(), storeBuffer.unsentSize());
+        paddr, blockPaddr, storeBuffer.size(lsqID), storeBuffer.unsentSize(lsqID));
     return true;
 }
 
@@ -3141,7 +3146,7 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
             request->mainReq()->getByteEnable());
     }
 
-    if (!from_sbuffer &&
+    if (!system->params().golden_mem_at_write && !from_sbuffer &&
         (!store_inst->isStoreConditional() || store_inst->lockedWriteSuccess()) &&
         cpu->goldenMemManager() &&
         has_paddr &&

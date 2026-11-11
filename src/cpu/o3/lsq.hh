@@ -223,6 +223,7 @@ class LSQ
         uint64_t _size = 0;
         int max_size = 0;
         int max_thread = 0;
+        bool enableSpMT = false;
         std::unordered_map<uint64_t, StoreBufferEntry *> data_map;
         std::vector<mapIter> crossRef;
         boost::circular_buffer<int> lru_index;
@@ -240,12 +241,14 @@ class LSQ
       public:
         void setData(std::vector<StoreBufferEntry *> &data_vec);
         void setMaxThread(ThreadID max_thread);
-	bool full() const;
+        void setEnableSpMT(bool enable);
+	    bool full() const;
         bool full(ThreadID tid) const;
 	uint64_t size() const;
         uint64_t size(ThreadID tid) const;
         uint64_t size(ThreadID tid, InstSeqNum seq_num) const;
         uint64_t unsentSize() const;
+        uint64_t unsentSize(ThreadID tid) const;
         const std::vector<StoreBufferEntry *> &entries() const { return data_vec; }
         bool valid(size_t index) const { return data_vld.at(index); }
         StoreBufferEntry *getEmpty();
@@ -1237,14 +1240,30 @@ class LSQ
     uint32_t getSbufferEntries() const { return sbufferEntries; }
     uint64_t getStoreBufferInactiveCycles() const
     {
-        return storeBufferWritebackInactive;
+        return storeBufferWritebackInactive[0];
+    }
+    uint64_t getStoreBufferInactiveCycles(ThreadID tid) const
+    {
+        return storeBufferWritebackInactive[tid];
     }
     uint64_t getStoreBufferInactiveThreshold() const
     {
         return storeBufferInactiveThreshold;
     }
-    void resetStoreBufferInactiveCycles() { storeBufferWritebackInactive = 0; }
-    void incStoreBufferInactiveCycles() { ++storeBufferWritebackInactive; }
+    void resetStoreBufferInactiveCycles() { storeBufferWritebackInactive[0] = 0; }
+    void resetStoreBufferInactiveCycles(ThreadID tid)
+    {
+        if (enableSpMT) {
+            storeBufferWritebackInactive[tid] = 0;
+        } else {
+            storeBufferWritebackInactive[0] = 0;
+        }
+    }
+    void incStoreBufferInactiveCycles() { ++storeBufferWritebackInactive[0]; }
+    void incStoreBufferInactiveCycles(ThreadID tid)
+    {
+        ++storeBufferWritebackInactive[tid];
+    }
     bool storeBufferBlocked() const
     {
         // A replayed eviction is still owned by the StoreBuffer and has priority
@@ -1498,7 +1517,7 @@ class LSQ
     const uint32_t sbufferEntries;
     const bool sbufferReleaseOnMiss;
     const uint64_t storeBufferInactiveThreshold;
-    const uint32_t maxStoreBufferEntriesAcceptedFromSQPerCycle = 2;
+    const uint32_t maxStoreBufferEntriesAcceptedFromSQPerCycle;
     StoreBuffer storeBuffer;
     // Keep each accepted target alive until its own cache response. The
     // per-line order also supplies youngest-eligible-byte forwarding.
@@ -1510,7 +1529,8 @@ class LSQ
     InstSeqNum _storeBufferFlushBeforeSeq[MaxThreads] = {
         static_cast<InstSeqNum>(-1)
     };
-    uint64_t storeBufferWritebackInactive = 0;
+    uint64_t storeBufferWritebackInactive[MaxThreads] = {0};
+    ThreadID nextStoreBufferEvictTid = InvalidThreadID;
     StoreBufferEntry *blockedSbufferEntry = nullptr;
     StoreBufferBlockCause blockedSbufferCause = StoreBufferBlockCause::None;
     bool lastSbufferSendBlockedByMainPipe = false;
@@ -1539,6 +1559,10 @@ class LSQ
     bool waitingForStaleTranslation;
     /** The ID if the transaction that made translations stale */
     Addr staleTranslationWaitTxnId;
+
+    /** Strict two-thread SpMT static partitioning of LQ/SQ/RARQ/RAWQ and the
+     *  store buffer. Each thread owns exactly half of every queue. */
+    const bool enableSpMT;
 
     /** The LSQ policy for SMT mode. */
     SMTLSQMode lsqMode;
@@ -1586,28 +1610,28 @@ class LSQ
     {
         LSQStats(statistics::Group *parent, unsigned num_threads);
 
-        /** Per-cycle occupancy samples for the aggregated LSQ structures. */
-        statistics::Average lqAvgEntryNum;
-        statistics::Average sqAvgEntryNum;
-        statistics::Average sbufferAvgEntryNum;
+        /** Per-thread occupancy samples for the partitioned LSQ structures. */
+        statistics::AverageVector lqAvgEntryNum;
+        statistics::AverageVector sqAvgEntryNum;
+        statistics::AverageVector sbufferAvgEntryNum;
         /** Per-thread full signals based on whether an enqueue bundle fits. */
         statistics::Vector lqFullCycles;
         statistics::Vector sqFullCycles;
         statistics::Vector lsqFullCycles;
         statistics::Vector sbufferFullCycles;
-        statistics::Scalar sbufferEvictDuetoFlush;
-        statistics::Scalar sbufferEvictDuetoFull;
-        statistics::Scalar sbufferEvictDuetoSQFull;
-        statistics::Scalar sbufferEvictDuetoTimeout;
+        statistics::Vector sbufferEvictDuetoFlush;
+        statistics::Vector sbufferEvictDuetoFull;
+        statistics::Vector sbufferEvictDuetoSQFull;
+        statistics::Vector sbufferEvictDuetoTimeout;
         /** Handshake-level sbuffer to dcache request outcomes. */
-        statistics::Scalar sbufferDcacheReqFire;
-        statistics::Scalar sbufferMissEntriesReleased;
-        statistics::Average sbufferMissPending;
-        statistics::Scalar sbufferMissSameLineReplay;
-        statistics::Scalar sbufferMissMerged;
-        statistics::Scalar sbufferMissForward;
-        statistics::Scalar sbufferDcacheReqBlocked;
-        statistics::Scalar sbufferDcacheReqBlockedByMainPipe;
+        statistics::Vector sbufferDcacheReqFire;
+        statistics::Vector sbufferMissEntriesReleased;
+        statistics::AverageVector sbufferMissPending;
+        statistics::Vector sbufferMissSameLineReplay;
+        statistics::Vector sbufferMissMerged;
+        statistics::Vector sbufferMissForward;
+        statistics::Vector sbufferDcacheReqBlocked;
+        statistics::Vector sbufferDcacheReqBlockedByMainPipe;
         statistics::Scalar dcacheMainPipeRefillEnter;
         statistics::Scalar dcacheMainPipeStoreEnter;
         statistics::Scalar dcacheMainPipeStoreBlockedByRefill;
@@ -1640,7 +1664,8 @@ class LSQ
         statistics::Vector sqBorrowingState;
     } stats;
 
-    void recordStoreBufferEviction(StoreBufferEvictCause cause);
+    void recordStoreBufferEviction(StoreBufferEvictCause cause,
+                                   ThreadID tid);
 
     /** List of Active Threads in System. */
     std::list<ThreadID> *activeThreads;

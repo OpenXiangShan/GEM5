@@ -21,13 +21,14 @@ namespace btb_pred
 namespace
 {
 
-constexpr int NumS1SourceBuckets = 3;
+constexpr int NumS1SourceBuckets = 4;
 constexpr int NumOverrideReasonBuckets = 4;
 
 constexpr const char *S1SourceLabels[NumS1SourceBuckets] = {
     "fallthrough",
     "ubtb",
-    "abtb"
+    "abtb",
+    "pairtage"
 };
 
 constexpr const char *OverrideReasonLabels[NumOverrideReasonBuckets] = {
@@ -290,8 +291,8 @@ DecoupledBPUWithBTB::dumpStats()
     }
     simout.close(outFile);
 
-    // Process FSQ distribution data
-    auto processFsqDistribution = [&](const std::string& filename,
+    // Process FTQ instruction distributions.
+    auto processFtqDistribution = [&](const std::string& filename,
                                   const auto& distByPhase) {
         outFile = simout.create(filename, false, true);
         auto& out = *outFile->stream();
@@ -308,28 +309,28 @@ DecoupledBPUWithBTB::dumpStats()
         for (const auto& dist : distByPhase) {
             out << phaseID;
 
-            int numFsqEntries = 0;
+            int numFtqEntries = 0;
             for (int i = 0; i <= maxInstsNum; i++) {
-                numFsqEntries += dist[i];
+                numFtqEntries += dist[i];
             }
 
             for (int i = 0; i <= maxInstsNum; i++) {
                 out << "," << dist[i];
             }
 
-            out << "," << (double)phaseSizeByInst / (double)numFsqEntries << std::endl;
+            out << "," << (double)phaseSizeByInst / (double)numFtqEntries << std::endl;
             phaseID++;
         }
 
         simout.close(outFile);
     };
 
-    // 7-8. Output FSQ distribution data
-    processFsqDistribution("fsqEntryCommittedInstNumDistsByPhase.csv",
-                          fsqEntryNumCommittedInstDistByPhase);
+    // 7-8. Output FTQ distribution data
+    processFtqDistribution("ftqEntryCommittedInstNumDistsByPhase.csv",
+                          ftqEntryNumCommittedInstDistByPhase);
 
-    processFsqDistribution("fsqEntryFetchedInstNumDistsByPhase.csv",
-                          fsqEntryNumFetchedInstDistByPhase);
+    processFtqDistribution("ftqEntryFetchedInstNumDistsByPhase.csv",
+                          ftqEntryNumFetchedInstDistByPhase);
 
     // 9. Output BTB entries
     int outputTopNEntries = 1;
@@ -451,8 +452,8 @@ classifyBranchImpl(const InstPtr &inst)
 } // anonymous namespace
 
 DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
-    statistics::Group* parent, unsigned numStages, unsigned fsqSize,
-    unsigned maxInstsNum, unsigned numThreads):
+    statistics::Group* parent, unsigned numStages, unsigned ftqSize,
+    unsigned predictWidth, unsigned maxInstsNum, unsigned numThreads):
     statistics::Group(parent),
     ADD_STAT(condNum, statistics::units::Count::get(), "the number of cond branches"),
     ADD_STAT(uncondNum, statistics::units::Count::get(), "the number of uncond branches"),
@@ -482,24 +483,34 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     "Number of overrides due to control address mismatches, on commit path"),
     ADD_STAT(overrideTargetMismatch, statistics::units::Count::get(),
     "Number of overrides due to target mismatches, on commit path"),
-    ADD_STAT(fsqEntryDist, statistics::units::Count::get(), "the distribution of number of entries in fsq"),
-    ADD_STAT(fsqEntryEnqueued, statistics::units::Count::get(), "the number of fsq entries enqueued"),
-    ADD_STAT(fsqEntryCommitted, statistics::units::Count::get(), "the number of fsq entries committed at last"),
-    ADD_STAT(controlSquashFromDecode, statistics::units::Count::get(), "the number of control squashes in bpu from decode"),
-    ADD_STAT(controlSquashFromCommit, statistics::units::Count::get(), "the number of control squashes in bpu from commit"),
+    ADD_STAT(ftqEntryDist, statistics::units::Count::get(),
+             "the distribution of number of entries in ftq"),
+    ADD_STAT(ftqEntryEnqueued, statistics::units::Count::get(),
+             "the number of ftq entries enqueued"),
+    ADD_STAT(secondBlockEnqueued, statistics::units::Count::get(),
+             "second blocks enqueued in the same cycle as their first block"),
+    ADD_STAT(secondBlockFtqFull, statistics::units::Count::get(),
+             "second blocks dropped because the FTQ had no room left"),
+    ADD_STAT(ftqEntryCommitted, statistics::units::Count::get(),
+             "the number of ftq entries committed"),
+    ADD_STAT(controlSquashFromDecode, statistics::units::Count::get(),
+             "the number of control squashes in bpu from decode"),
+    ADD_STAT(controlSquashFromCommit, statistics::units::Count::get(),
+             "the number of control squashes in bpu from commit"),
     ADD_STAT(controlSquashFromPredecode, statistics::units::Count::get(),
     "the number of control squashes in bpu from predecode"),
     ADD_STAT(nonControlSquash, statistics::units::Count::get(), "the number of non-control squashes in bpu"),
     ADD_STAT(trapSquash, statistics::units::Count::get(), "the number of trap squashes in bpu"),
     ADD_STAT(ftqNotValid, statistics::units::Count::get(), "fetch needs ftq req but ftq not valid"),
-    ADD_STAT(fsqNotValid, statistics::units::Count::get(), "ftq needs fsq req but fsq not valid"),
-    ADD_STAT(fsqFullCannotEnq, statistics::units::Count::get(), "bpu has req but fsq full cannot enqueue"),
-    ADD_STAT(ftqFullCannotEnq, statistics::units::Count::get(), "fsq has entry but ftq full cannot enqueue"),
-    ADD_STAT(fsqFullFetchHungry, statistics::units::Count::get(), "fetch hungry when fsq full and bpu cannot enqueue"),
-    ADD_STAT(fsqEmpty, statistics::units::Count::get(), "fsq is empty"),
-    ADD_STAT(commitFsqEntryHasInsts, statistics::units::Count::get(), "number of insts that commit fsq entries have"),
-    ADD_STAT(commitFsqEntryFetchedInsts, statistics::units::Count::get(), "number of insts that commit fsq entries fetched"),
-    ADD_STAT(commitFsqEntryOnlyHasOneJump, statistics::units::Count::get(), "number of fsq entries with only one instruction (jump)"),
+    ADD_STAT(ftqFullCannotEnq, statistics::units::Count::get(), "bpu has req but ftq full cannot enqueue"),
+    ADD_STAT(commitFtqInstBytes, statistics::units::Byte::get(),
+             "size of commit ftq entries"),
+    ADD_STAT(commitFtqEntryHasInsts, statistics::units::Count::get(),
+             "number of insts that commit ftq entries have"),
+    ADD_STAT(commitFtqEntryFetchedInsts, statistics::units::Count::get(),
+             "number of insts that commit ftq entries fetched"),
+    ADD_STAT(commitFtqEntryOnlyHasOneJump, statistics::units::Count::get(),
+             "number of ftq entries with only one instruction (jump)"),
     ADD_STAT(btbHit, statistics::units::Count::get(), "btb hits (in predict block)"),
     ADD_STAT(btbMiss, statistics::units::Count::get(), "btb misses (in predict block)"),
     ADD_STAT(btbEntriesWithDifferentStart, statistics::units::Count::get(), "number of btb entries with different start PC"),
@@ -520,6 +531,7 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(s1PredWrongFallthrough, statistics::units::Count::get(), "S1pred wrong full throughs"),
     ADD_STAT(s1PredWrongUbtb, statistics::units::Count::get(),"S1pred wrong using ubtb "),
     ADD_STAT(s1PredWrongAbtb, statistics::units::Count::get(), "S1pred wrong using abtb "),
+    ADD_STAT(s1PredWrongPairtage, statistics::units::Count::get(), "S1pred wrong using pairtage "),
     ADD_STAT(s1PredWrongBySourceAndReason, statistics::units::Count::get(),
              "committed S1 mispredictions bucketed by S1 source and override reason"),
     ADD_STAT(s3PredWrongMbtb, statistics::units::Count::get(), "S3pred wrong blame mbtb "),
@@ -532,9 +544,10 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     commitPredsFromEachStage.init(numStages+1);
     commitOverrideBubbleNum = commitPredsFromEachStage[1] + 2 * commitPredsFromEachStage[2] ;
     commitOverrideCount = commitPredsFromEachStage[1] + commitPredsFromEachStage[2];
-    fsqEntryDist.init(0, fsqSize, 20).flags(statistics::total);
-    commitFsqEntryHasInsts.init(0, maxInstsNum >> 1, 1);
-    commitFsqEntryFetchedInsts.init(0, maxInstsNum >> 1, 1);
+    ftqEntryDist.init(0, ftqSize, 20).flags(statistics::total);
+    commitFtqInstBytes.init(0, predictWidth, 1);
+    commitFtqEntryHasInsts.init(0, maxInstsNum >> 1, 1);
+    commitFtqEntryFetchedInsts.init(0, maxInstsNum >> 1, 1);
     s1PredWrongBySourceAndReason.init(NumS1SourceBuckets, NumOverrideReasonBuckets);
     branchClassCounts.init(NumBranchClasses);
     predictionsStartedPerCycle.init(0, numThreads, 1);
@@ -583,13 +596,13 @@ DecoupledBPUWithBTB::processFetchDistributions(std::vector<int> &currentPhaseCom
 
     // Calculate the difference between current and last phase values
     for (int i = 0; i <= maxInstsNum; i++) {
-        currentPhaseCommittedDist[i] = commitFsqEntryHasInstsVector[i] -
-                                     lastPhaseFsqEntryNumCommittedInstDist[i];
-        lastPhaseFsqEntryNumCommittedInstDist[i] = commitFsqEntryHasInstsVector[i];
+        currentPhaseCommittedDist[i] = commitFtqEntryHasInstsVector[i] -
+                                     lastPhaseFtqEntryNumCommittedInstDist[i];
+        lastPhaseFtqEntryNumCommittedInstDist[i] = commitFtqEntryHasInstsVector[i];
 
-        currentPhaseFetchedDist[i] = commitFsqEntryFetchedInstsVector[i] -
-                                   lastPhaseFsqEntryNumFetchedInstDist[i];
-        lastPhaseFsqEntryNumFetchedInstDist[i] = commitFsqEntryFetchedInstsVector[i];
+        currentPhaseFetchedDist[i] = commitFtqEntryFetchedInstsVector[i] -
+                                   lastPhaseFtqEntryNumFetchedInstDist[i];
+        lastPhaseFtqEntryNumFetchedInstDist[i] = commitFtqEntryFetchedInstsVector[i];
     }
 }
 
@@ -805,20 +818,21 @@ DecoupledBPUWithBTB::updateStatistics(
     overrideStats(target.overrideReason);
 
     // --- Instruction Statistics ---
-    // Track committed instruction counts
-    dbpBtbStats.commitFsqEntryHasInsts.sample(target.commitInstNum, 1);
+    // Track committed fetch block size and instruction counts
+    dbpBtbStats.commitFtqInstBytes.sample(target.commitInstBytes);
+    dbpBtbStats.commitFtqEntryHasInsts.sample(target.commitInstNum, 1);
     if (target.commitInstNum >= 0 && target.commitInstNum <= maxInstsNum) {
-        commitFsqEntryHasInstsVector[target.commitInstNum]++;
+        commitFtqEntryHasInstsVector[target.commitInstNum]++;
         if (target.commitInstNum == 1 &&
             update.outcome.valid && update.outcome.branch.isUncond()) {
-            dbpBtbStats.commitFsqEntryOnlyHasOneJump++;
+            dbpBtbStats.commitFtqEntryOnlyHasOneJump++;
         }
     }
 
-    // Track fetched instruction counts
-    dbpBtbStats.commitFsqEntryFetchedInsts.sample(target.fetchInstNum, 1);
+    // Track fetched instruction counts.
+    dbpBtbStats.commitFtqEntryFetchedInsts.sample(target.fetchInstNum, 1);
     if (target.fetchInstNum >= 0 && target.fetchInstNum <= maxInstsNum) {
-        commitFsqEntryFetchedInstsVector[target.fetchInstNum]++;
+        commitFtqEntryFetchedInstsVector[target.fetchInstNum]++;
     }
 
     // --- Misprediction Statistics ---
@@ -920,6 +934,7 @@ DecoupledBPUWithBTB::commitPredWrongSource(
 {
     int ubtbid = ubtb->getComponentIdx();
     int abtbid = abtb->getComponentIdx();
+    int pairtageid = pairtage->getComponentIdx();
     int mbtbid = mbtb->getComponentIdx();
     int tageid = tage->getComponentIdx();
     int ittageid = ittage->getComponentIdx();
@@ -938,7 +953,10 @@ DecoupledBPUWithBTB::commitPredWrongSource(
     } else if (s1PredSource == abtbid) {
         dbpBtbStats.s1PredWrongAbtb++;
         s1SourceBucket = 2;
-    }else {
+    } else if (s1PredSource == pairtageid) {
+        dbpBtbStats.s1PredWrongPairtage++;
+        s1SourceBucket = 3;
+    } else {
         dbpBtbStats.s1PredWrongFallthrough++;
     }
 
@@ -997,8 +1015,9 @@ DecoupledBPUWithBTB::commitPredWrongSource(
 void
 DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
 {
-    // Update committed instruction count for target
+    // Update committed instruction count & bytes count for target
     ftq.get(inst->ftqId, inst->threadNumber).commitInstNum++;
+    ftq.get(inst->ftqId, inst->threadNumber).commitInstBytes += inst->getInstBytes();
 
     // Update global committed instruction count
     numInstCommitted++;
@@ -1023,8 +1042,8 @@ DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
             processFetchDistributions(committedInstDist, fetchedInstDist);
 
             // Store the distributions
-            fsqEntryNumCommittedInstDistByPhase.push_back(committedInstDist);
-            fsqEntryNumFetchedInstDistByPhase.push_back(fetchedInstDist);
+            ftqEntryNumCommittedInstDistByPhase.push_back(committedInstDist);
+            ftqEntryNumFetchedInstDistByPhase.push_back(fetchedInstDist);
 
             // Process BTB entries
             BTBEntriesByPhase.push_back(processBTBEntries());

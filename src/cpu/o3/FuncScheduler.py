@@ -103,6 +103,10 @@ class Scheduler(SimObject):
     xbarWakeup = Param.Bool(False, "use xbar wakeup network, (will override specWakeupNetwork)")
     useOldDisp = Param.Bool(False, "Use old dispatch algorithm")
     enableMainRdpOpt = Param.Bool(False, "Enable TX dynamic read port optimization")
+    enableFpSpecWakeup = Param.Bool(
+        False, "Enable speculative wakeup for scalar FP instructions from "
+        "FMUL/FMA producers"
+    )
 
     intRegfileBanks = Param.Int(1, "number of integer register file banks")
     enableSpMT = Param.Bool(False, "Enable SpMT mode")

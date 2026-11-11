@@ -1108,12 +1108,13 @@ Commit::handleInterrupt()
         // CPU will handle interrupt. Note that we ignore the local copy of
         // interrupt. This is because the local copy may no longer be the
         // interrupt that the interrupt controller thinks is being handled.
+        const Fault pending_interrupt = cpu->getInterrupts();
         if (cpu->difftestEnabled()) {
-            cpu->difftestRaiseIntr(cpu->getInterruptsNO() | (1ULL << 63));
+            cpu->difftestRaiseIntr(pending_interrupt);
         }
-        traceLogHandleInterrupt();
+        traceLogHandleInterrupt(pending_interrupt);
         cpu->mmu->setOldPriv(cpu->getContext(0));
-        cpu->processInterrupts(cpu->getInterrupts());
+        cpu->processInterrupts(pending_interrupt);
 
         thread[0]->noSquashFromTC = false;
 
@@ -2099,6 +2100,10 @@ Commit::diffInst(ThreadID tid, const DynInstPtr &inst) {
 }
 
 
+/**
+ * Try to commit the ROB head, handling execution constraints and faults.
+ * Return true on successful retirement and notify the value predictor.
+ */
 bool
 Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num,
                    bool &logical_trace_record_retired)
@@ -2429,6 +2434,13 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num,
                 valuePred->stats.VPcorrected++;
             }
         }
+    }
+
+    if (valuePred) {
+        valuepred::VPCommitInfo commit_info;
+        commit_info.seqNo = head_inst->seqNum;
+        commit_info.tid = tid;
+        valuePred->commitInstruction(commit_info);
     }
 
     if (head_inst->isLoad()) {

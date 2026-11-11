@@ -1,11 +1,10 @@
 #include "cpu/pred/btb/pairtage.hh"
 
-#include <algorithm>
 #include <cassert>
-#include <cstdlib>
 
+#include "base/bitfield.hh"
 #include "base/intmath.hh"
-#include "sim/core.hh"
+#include "base/logging.hh"
 
 namespace gem5
 {
@@ -16,571 +15,219 @@ namespace branch_prediction
 namespace btb_pred
 {
 
-void
-PairTAGE::PairTAGEEntry::setBlock(unsigned blockIdx, const PairBlockInfo &block)
-{
-    assert(blockIdx < NumBlocksPerEntry);
-    assert(block.hasConsistentState());
-    blocks[blockIdx] = block;
-}
-
-void
-PairTAGE::PairTAGEEntry::clearBlock(unsigned blockIdx)
-{
-    assert(blockIdx < NumBlocksPerEntry);
-    blocks[blockIdx].clear();
-}
-
-void
-PairTAGE::PairTAGEEntry::strengthenIdentity()
-{
-    if (identityConfidence < MaxIdentityConfidence) {
-        ++identityConfidence;
-    }
-}
-
-bool
-PairTAGE::PairTAGEEntry::weakenIdentity()
-{
-    if (identityConfidence > 0) {
-        --identityConfidence;
-    }
-    return identityConfidence == 0;
-}
-
 PairTAGE::PairTAGE(const Params &p)
     : TimedBaseBTBPredictor(p),
       numPredictors(p.numPredictors),
       tableSizes(p.tableSizes),
-      tableIndexBits(p.numPredictors),
       tableTagBits(p.TTagBitSizes),
-      tablePcShifts(p.TTagPcShifts),
       histLengths(p.histLengths),
-      numTablesToAlloc(p.numTablesToAlloc),
       numWays(p.numWays),
-      enableSecondBlock(p.enableSecondBlock),
-      allowOddPhase(p.allowOddPhase),
-      trainStandaloneFallThrough(p.trainStandaloneFallThrough),
-      pairTageStats(this)
+      numBanks(p.numBanks),
+      bankIdWidth(ceilLog2(p.numBanks)),
+      confidenceSaturate(p.confidenceSaturate),
+      enableTwoTaken(p.enableTwoTaken),
+      pairTageStats(this, p.numPredictors, confidenceSaturate)
 {
-    if (tablePcShifts.size() < numPredictors) {
-        tablePcShifts.resize(numPredictors, 1);
+    fatal_if(tableSizes.size() < numPredictors,
+             "PairTAGE: tableSizes has %zu entries, need %u",
+             tableSizes.size(), numPredictors);
+    fatal_if(tableTagBits.size() < numPredictors,
+             "PairTAGE: TTagBitSizes has %zu entries, need %u",
+             tableTagBits.size(), numPredictors);
+    fatal_if(histLengths.size() < numPredictors,
+             "PairTAGE: histLengths has %zu entries, need %u",
+             histLengths.size(), numPredictors);
+    for (unsigned i = 1; i < numPredictors; ++i) {
+        fatal_if(histLengths[i] <= histLengths[i - 1],
+                 "PairTAGE: histLengths must be strictly increasing, "
+                 "histLengths[%u] (%u) <= histLengths[%u] (%u)",
+                 i, histLengths[i], i - 1, histLengths[i - 1]);
     }
+    // Follows the RTL, which has direct-mapped tables.
+    // TODO: Maybe support set-associative tables in the future with a
+    // more complex replacement & allocation policy.
+    fatal_if(numWays != 1, "PairTAGE: only direct-mapped tables (numWays "
+             "= 1) are supported, got %u", numWays);
+    fatal_if(!isPowerOf2(numBanks),
+             "PairTAGE: numBanks (%u) must be a power of two", numBanks);
 
-    assert(tableSizes.size() >= numPredictors);
-    assert(tableTagBits.size() >= numPredictors);
-    assert(histLengths.size() >= numPredictors);
+    table.resize(numPredictors);
+    tableIndexBits.resize(numPredictors);
+    threadHistory.resize(MaxThreads);
+    threadMeta.resize(MaxThreads);
+    threadAhead.resize(MaxThreads);
+    threadPhase.resize(MaxThreads, StatePhase::First);
+    predLiveEntryInfo.resize(MaxThreads);
+    trainLiveEntryInfo.resize(MaxThreads);
 
-    tageTable.resize(numPredictors);
-    for (unsigned i = 0; i < numPredictors; ++i) {
-        tageTable[i].resize(tableSizes[i]);
-        for (unsigned j = 0; j < tableSizes[i]; ++j) {
-            tageTable[i][j].resize(numWays);
+    for (unsigned int i = 0; i < numPredictors; ++i) {
+        // Every bank of a table holds the same number of sets, and both are
+        // selected by bit fields, so the size has to split evenly.
+        fatal_if(!isPowerOf2(tableSizes[i]) || tableSizes[i] < numBanks,
+                 "PairTAGE: tableSizes[%u] (%u) must be a power of two and "
+                 "at least numBanks (%u)", i, tableSizes[i], numBanks);
+
+        table[i].resize(tableSizes[i]);
+        for (unsigned int j = 0; j < tableSizes[i]; ++j) {
+            table[i][j].resize(numWays);
         }
+
         tableIndexBits[i] = ceilLog2(tableSizes[i]);
-        tagFoldedHist.emplace_back(histLengths[i], tableTagBits[i], 16);
-        altTagFoldedHist.emplace_back(histLengths[i], tableTagBits[i] - 1, 16);
-        indexFoldedHist.emplace_back(histLengths[i], tableIndexBits[i], 16);
+
+        const int setBits = tableIndexBits[i] - bankIdWidth;
+        for (auto &state : threadHistory) {
+            state.indexFoldedHist.emplace_back(histLengths[i], setBits, 16);
+            state.tagFoldedHist.emplace_back(
+                histLengths[i], tableTagBits[i], 16);
+            state.altTagFoldedHist.emplace_back(
+                histLengths[i], tableTagBits[i] - 1, 16);
+        }
     }
 }
 
-PairTAGE::PairTAGEStats::PairTAGEStats(statistics::Group *parent)
+PairTAGE::PairTAGEStats::PairTAGEStats(statistics::Group *parent,
+                                       unsigned numPredictors,
+                                       unsigned confidenceSaturate)
     : statistics::Group(parent),
-      ADD_STAT(firstBlockLookups, statistics::units::Count::get(),
-               "eligible normal prediction lookups issued to PairTAGE"),
-      ADD_STAT(firstBlockHits, statistics::units::Count::get(), "PairTAGE lookups that produced a valid first block"),
-      ADD_STAT(firstBlockHitRate, statistics::units::Ratio::get(), "fraction of eligible PairTAGE lookups that hit",
-               firstBlockHits / firstBlockLookups),
-      ADD_STAT(firstBlockAccuracySamples, statistics::units::Count::get(),
-               "PairTAGE first-block hits compared with a final prediction"),
-      ADD_STAT(firstBlockCorrect, statistics::units::Count::get(),
-               "PairTAGE first blocks matching final branch PC, direction, and target"),
-      ADD_STAT(firstBlockAccuracy, statistics::units::Ratio::get(),
-               "PairTAGE first-block agreement with final predictions", firstBlockCorrect / firstBlockAccuracySamples),
-      ADD_STAT(secondBlockProduced, statistics::units::Count::get(),
-               "PairTAGE first-block hits carrying a valid second block"),
-      ADD_STAT(secondBlockProductionRate, statistics::units::Ratio::get(),
-               "fraction of PairTAGE first-block hits carrying a second block", secondBlockProduced / firstBlockHits),
-      ADD_STAT(secondBlockAccuracySamples, statistics::units::Count::get(),
-               "PairTAGE second blocks compared with an available teacher prediction"),
-      ADD_STAT(secondBlockCorrect, statistics::units::Count::get(),
-               "PairTAGE second blocks fully matching the teacher prediction"),
-      ADD_STAT(secondBlockAccuracy, statistics::units::Ratio::get(),
-               "PairTAGE second-block agreement with teacher predictions",
-               secondBlockCorrect / secondBlockAccuracySamples),
-      ADD_STAT(twoTakenBlocksEnqueued, statistics::units::Count::get(),
-               "PairTAGE second blocks successfully enqueued into the FTQ"),
-      ADD_STAT(twoTakenEnqueueRate, statistics::units::Ratio::get(),
-               "fraction of produced PairTAGE second blocks enqueued into the FTQ",
-               twoTakenBlocksEnqueued / secondBlockProduced),
-      ADD_STAT(firstBlockTrainTypes, statistics::units::Count::get(),
-               "first-block types accepted by PairTAGE training"),
-      ADD_STAT(secondBlockTrainTypes, statistics::units::Count::get(),
-               "second-block types accepted by PairTAGE training"),
-      ADD_STAT(allocations, statistics::units::Count::get(), "PairTAGE table entries installed by allocation"),
-      ADD_STAT(evictions, statistics::units::Count::get(), "valid PairTAGE table entries overwritten by allocation")
+      ADD_STAT(lookups, statistics::units::Count::get(),
+               "first block phase lookups issued to PairTAGE"),
+      ADD_STAT(lookupNoAnchor, statistics::units::Count::get(),
+               "lookups skipped because no ahead key exists after a squash"),
+      ADD_STAT(providerTable, statistics::units::Count::get(),
+               "lookups provided by each table"),
+      ADD_STAT(s3TrainEvents, statistics::units::Count::get(),
+               "final-stage predictions delivered to PairTAGE for training"),
+      ADD_STAT(trainStrengthen, statistics::units::Count::get(),
+               "trainings that strengthened a provider naming the right exit"),
+      ADD_STAT(trainCorrect, statistics::units::Count::get(),
+               "trainings that rewrote a wrong provider in place"),
+      ADD_STAT(trainAllocate, statistics::units::Count::get(),
+               "trainings that allocated an entry in a longer history"),
+      ADD_STAT(trainAllocateEvicted, statistics::units::Count::get(),
+               "allocations made while useful entries could be evicted"),
+      ADD_STAT(trainNoTableFree, statistics::units::Count::get(),
+               "trainings that found no table to allocate in"),
+      ADD_STAT(secondPhasePreds, statistics::units::Count::get(),
+               "predictions made in the second block phase"),
+      ADD_STAT(secondPhaseProvided, statistics::units::Count::get(),
+               "second block phase predictions given by a valid second block"),
+      ADD_STAT(trainSecondStrengthen, statistics::units::Count::get(),
+               "trainings that strengthened a second block naming the right "
+               "exit"),
+      ADD_STAT(trainSecondReplace, statistics::units::Count::get(),
+               "trainings that replaced or installed a second block"),
+      ADD_STAT(trainSecondBroken, statistics::units::Count::get(),
+               "trained first blocks dropped because the next block did "
+               "not continue them"),
+      ADD_STAT(providerConfidence, statistics::units::Count::get(),
+               "first block phase hits by provider confidence"),
+      ADD_STAT(twoTakenCandidates, statistics::units::Count::get(),
+               "first block phase hits whose provider could emit both "
+               "blocks in one cycle"),
+      ADD_STAT(twoTakenSquashes, statistics::units::Count::get(),
+               "control squashes on second blocks enqueued with their "
+               "first block")
 {
-    static constexpr std::array<const char *, NumTrainingTypes> typeNames = {
-        "fallthrough", "hasBranchNotTaken", "isCond", "isDirect", "isIndirect", "isCall", "isReturn"};
-
-    firstBlockTrainTypes.init(NumTrainingTypes);
-    secondBlockTrainTypes.init(NumTrainingTypes);
-    for (unsigned type = 0; type < NumTrainingTypes; ++type) {
-        firstBlockTrainTypes.subname(type, typeNames[type]);
-        secondBlockTrainTypes.subname(type, typeNames[type]);
-    }
-
-    firstBlockHitRate.precision(6);
-    firstBlockAccuracy.precision(6);
-    secondBlockProductionRate.precision(6);
-    secondBlockAccuracy.precision(6);
-    twoTakenEnqueueRate.precision(6);
+    providerTable.init(numPredictors);
+    providerConfidence.init(confidenceSaturate + 1);
 }
 
 void
-PairTAGE::setPredictionPhase(PairPhase phase)
+PairTAGE::putPCHistory(Addr startAddr, const bitset &history,
+                       std::vector<FullBTBPrediction> &stagePreds)
 {
-    predictionPhase = phase;
-}
-
-void
-PairTAGE::recordTwoTakenBlockEnqueued()
-{
-    pairTageStats.twoTakenBlocksEnqueued++;
-}
-
-void
-PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBTBPrediction> &stagePreds)
-{
+    // Lookups use the ahead key maintained by `specUpdatePHist`, so the
+    // history argument is not used here.
     (void)history;
-    secondPredBlock.clear();
 
-    meta = std::make_shared<TageMeta>();
-    meta->tagFoldedHist = tagFoldedHist;
-    meta->altTagFoldedHist = altTagFoldedHist;
-    meta->indexFoldedHist = indexFoldedHist;
-    meta->aheadIndexFoldedHistValid = !aheadIndexFoldedHist.empty();
-    if (meta->aheadIndexFoldedHistValid) {
-        meta->aheadIndexFoldedHist = aheadIndexFoldedHist.front();
-    }
+    assert(!stagePreds.empty());
+    const ThreadID tid = stagePreds.front().tid;
 
-    if (!phaseEnabled(predictionPhase)) {
+    auto meta = std::make_shared<PairTAGEMeta>();
+    meta->history = historyState(tid);
+    meta->phase = threadPhase[tid];
+    threadMeta[tid] = meta;
+
+    if (meta->phase == StatePhase::Second) {
+        // No lookup: predict the second block of the entry the first block
+        // was predicted from, as long as this block starts where the first
+        // block was predicted to go
+        pairTageStats.secondPhasePreds++;
+        const auto &live = predLiveEntryInfo[tid];
+        if (live.valid && live.nextPC == startAddr && live.entry.b2Valid) {
+            pairTageStats.secondPhaseProvided++;
+            fillStagePredictions(live.entry.block2,
+                                 live.entry.modelInfo.block2BranchSize,
+                                 stagePreds);
+        }
         return;
     }
 
-    pairTageStats.firstBlockLookups++;
-    auto tableInfo = lookupEntry(startAddr);
-    if (!tableInfo.found) {
-        return;
+    const auto &ahead = threadAhead[tid];
+    meta->noAnchor = !ahead.valid;
+    if (!meta->noAnchor) {
+        meta->lookup = lookup(ahead.pc, ahead.history);
     }
 
-    meta->predictedFirstBlock = tableInfo.entry.firstBlock();
-    meta->predictedSecondBlock = tableInfo.entry.secondBlock();
-    secondPredBlock = tableInfo.entry.secondBlock();
+    auto &live = predLiveEntryInfo[tid];
+    live = LiveEntryInfo();
 
-    if (!tableInfo.entry.firstBlock().valid) {
-        return;
-    }
+    pairTageStats.lookups++;
+    if (meta->noAnchor) {
+        pairTageStats.lookupNoAnchor++;
+    } else if (meta->lookup.provider >= 0) {
+        const auto &entry = meta->lookup.entry;
+        live.valid = true;
+        live.table = meta->lookup.provider;
+        live.index = meta->lookup.tableIndexes[live.table].index;
+        live.way = meta->lookup.providerWay;
+        live.entry = entry;
+        live.nextPC = entry.block.targetPC;
 
-    pairTageStats.firstBlockHits++;
-    if (tableInfo.entry.secondBlock().valid) {
-        pairTageStats.secondBlockProduced++;
-    }
-
-    for (int s = getDelay(); s < stagePreds.size(); ++s) {
-        fillStagePrediction(tableInfo.entry.firstBlock(), stagePreds[s]);
+        pairTageStats.providerTable[meta->lookup.provider]++;
+        pairTageStats.providerConfidence[entry.confidence]++;
+        if (entry.b2Valid && entry.confidence == confidenceSaturate) {
+            pairTageStats.twoTakenCandidates++;
+        }
+        fillStagePredictions(meta->lookup.entry.block,
+                             meta->lookup.entry.modelInfo.branchSize,
+                             stagePreds);
     }
 }
 
 std::shared_ptr<void>
 PairTAGE::getPredictionMeta(ThreadID tid)
 {
-    (void)tid;
-    return meta;
-}
-
-PairTAGE::TrainPacket
-PairTAGE::buildTrainPacketFromPredForFirstBlock(FullBTBPrediction &finalPred) const
-{
-    using BranchFlag = TrainPacket::BranchFlag;
-
-    TrainPacket packet;
-    packet.startPC = finalPred.bbStart;
-    packet.phase = predictionPhase;
-    packet.meta = meta;
-
-    auto trainEntry = finalPred.getTakenEntry();
-    const bool taken = trainEntry.valid;
-    bool hasValidEntry = taken;
-    if (!taken) {
-        for (auto it = finalPred.btbEntries.rbegin(); it != finalPred.btbEntries.rend(); ++it) {
-            if (!it->valid) {
-                continue;
-            }
-            hasValidEntry = true;
-            if (it->isCond && it->isDirect && !it->isIndirect && !it->isCall && !it->isReturn) {
-                trainEntry = *it;
-                break;
-            }
-        }
+    if (tid >= threadMeta.size()) {
+        return nullptr;
     }
-
-    if (!trainEntry.valid) {
-        if (!hasValidEntry) {
-            packet.valid = true;
-            packet.branchPC = finalPred.bbStart;
-            packet.targetPC = getFallThrough(finalPred.bbStart);
-        }
-        return packet;
-    }
-
-    packet.valid = true;
-    packet.hasBranch = true;
-    packet.taken = taken;
-    packet.branchPC = trainEntry.pc;
-    packet.targetPC = taken ? finalPred.getEntryTarget(trainEntry) : trainEntry.target;
-    if (taken) {
-        packet.size = trainEntry.size;
-        packet.setBranchFlags(trainEntry);
-    } else {
-        packet.branchFlags =
-            TrainPacket::branchFlag(BranchFlag::Conditional) | TrainPacket::branchFlag(BranchFlag::Direct);
-        packet.size = 4;
-    }
-    return packet;
-}
-
-PairTAGE::TrainPacket
-PairTAGE::buildTwoTakenTrainPacket(Addr startPC, PairPhase phase, const std::vector<BTBEntry> &btbEntries,
-                                   const CondTakens &condTakens) const
-{
-    using BranchFlag = TrainPacket::BranchFlag;
-
-    TrainPacket packet;
-    packet.startPC = startPC;
-    packet.phase = phase;
-
-    const BTBEntry *trainEntry = nullptr;
-    bool taken = false;
-    for (const auto &entry : btbEntries) {
-        if (!entry.valid) {
-            continue;
-        }
-
-        if (entry.isCond) {
-            const Addr branchPC = entry.pc;
-            auto direction = CondTakens_find(condTakens, branchPC);
-            if (direction != condTakens.end() && direction->second) {
-                trainEntry = &entry;
-                taken = true;
-                break;
-            }
-        } else if (entry.isUncond()) {
-            trainEntry = &entry;
-            taken = true;
-            break;
-        }
-    }
-
-    if (!taken) {
-        for (auto it = btbEntries.rbegin(); it != btbEntries.rend(); ++it) {
-            if (it->valid && it->isCond && it->isDirect && !it->isIndirect && !it->isCall && !it->isReturn) {
-                trainEntry = &*it;
-                break;
-            }
-        }
-    }
-
-    if (!trainEntry || !trainEntry->valid || !trainEntry->isCond || !trainEntry->isDirect || trainEntry->isIndirect ||
-        trainEntry->isCall || trainEntry->isReturn) {
-        return packet;
-    }
-
-    packet.valid = true;
-    packet.hasBranch = true;
-    packet.branchPC = trainEntry->pc;
-    packet.targetPC = trainEntry->target;
-    packet.taken = taken;
-    packet.branchFlags =
-        TrainPacket::branchFlag(BranchFlag::Conditional) | TrainPacket::branchFlag(BranchFlag::Direct);
-    packet.size = 4;
-    return packet;
-}
-
-void
-PairTAGE::refreshPredictionMeta(Addr startAddr,
-                                const bitset &history,
-                                FullBTBPrediction &pred)
-{
-    (void)history;
-    (void)pred;
-
-    meta = std::make_shared<TageMeta>();
-    meta->tagFoldedHist = tagFoldedHist;
-    meta->altTagFoldedHist = altTagFoldedHist;
-    meta->indexFoldedHist = indexFoldedHist;
-    meta->aheadIndexFoldedHistValid = !aheadIndexFoldedHist.empty();
-    if (meta->aheadIndexFoldedHistValid) {
-        meta->aheadIndexFoldedHist = aheadIndexFoldedHist.front();
-    }
-
-    if (!phaseEnabled(predictionPhase)) {
-        return;
-    }
-
-    auto tableInfo = lookupEntry(startAddr);
-    if (!tableInfo.found) {
-        return;
-    }
-
-    meta->predictedFirstBlock = tableInfo.entry.firstBlock();
-}
-
-PairTAGE::PairBlockInfo
-PairTAGE::getSecondPredBlock() const
-{
-    return secondPredBlock;
-}
-
-bool
-PairTAGE::secondBlockMatches(const TrainPacket &packet) const
-{
-    return blocksMatch(secondPredBlock, buildTrainingBlock(packet));
-}
-
-void
-PairTAGE::updateCounter(bool taken, unsigned width, short &counter)
-{
-    const int max = (1 << (width - 1)) - 1;
-    const int min = -(1 << (width - 1));
-    if (taken) {
-        satIncrement(max, counter);
-    } else {
-        satDecrement(min, counter);
-    }
-}
-
-bool
-PairTAGE::satIncrement(int max, short &counter)
-{
-    if (counter < max) {
-        ++counter;
-        return true;
-    }
-    return false;
-}
-
-bool
-PairTAGE::satDecrement(int min, short &counter)
-{
-    if (counter > min) {
-        --counter;
-        return true;
-    }
-    return false;
-}
-
-bool
-PairTAGE::betterProviderCandidate(const TageTableInfo &candidate,
-                                  const TageTableInfo &current) const
-{
-    if (!candidate.found) {
-        return false;
-    }
-    if (!current.found) {
-        return true;
-    }
-
-    const auto &cand = candidate.entry;
-    const auto &cur = current.entry;
-    if (cand.identityConfidence != cur.identityConfidence) {
-        return cand.identityConfidence > cur.identityConfidence;
-    }
-    if (cand.useful != cur.useful) {
-        return cand.useful;
-    }
-    if (cand.hasSecondBlock() != cur.hasSecondBlock()) {
-        return cand.hasSecondBlock();
-    }
-    const int candStrength = std::abs(cand.counter * 2 + 1);
-    const int curStrength = std::abs(cur.counter * 2 + 1);
-    if (candStrength != curStrength) {
-        return candStrength > curStrength;
-    }
-    return candidate.way < current.way;
-}
-
-int
-PairTAGE::selectMatchingReplacementWay(
-    const std::vector<PairTAGEEntry> &set, Addr tag,
-    const PairBlockInfo &trainedBlock,
-    const PairBlockInfo &trainedSecondBlock) const
-{
-    auto selectVictim = [&](auto predicate) {
-        int selectedWay = -1;
-        TageTableInfo selectedInfo;
-        for (unsigned way = 0; way < set.size(); ++way) {
-            const auto &entry = set[way];
-            if (!entry.valid || entry.tag != tag ||
-                !blockIdentityMatches(entry.firstBlock(), trainedBlock) ||
-                entryMatchesTraining(entry, trainedBlock,
-                                     trainedSecondBlock) ||
-                !predicate(entry)) {
-                continue;
-            }
-
-            auto info = TageTableInfo{true, entry, 0, 0, tag, way};
-            if (!betterProviderCandidate(selectedInfo, info)) {
-                selectedInfo = info;
-                selectedWay = way;
-            }
-        }
-        return selectedWay;
-    };
-
-    const int firstBlockVictim = selectVictim([&](const PairTAGEEntry &entry) {
-        return !blocksMatch(entry.firstBlock(), trainedBlock);
-    });
-    if (firstBlockVictim >= 0) {
-        return firstBlockVictim;
-    }
-
-    if (trainedSecondBlock.valid) {
-        return selectVictim([&](const PairTAGEEntry &entry) {
-            return !blocksMatch(entry.secondBlock(), trainedSecondBlock);
-        });
-    }
-
-    return -1;
-}
-
-int
-PairTAGE::selectAllocationWay(const std::vector<PairTAGEEntry> &set) const
-{
-    for (unsigned way = 0; way < set.size(); ++way) {
-        if (!set[way].valid) {
-            return way;
-        }
-    }
-
-    for (unsigned way = 0; way < set.size(); ++way) {
-        const auto &cand = set[way];
-        const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
-        if (!cand.useful && weakish) {
-            return way;
-        }
-    }
-
-    for (unsigned way = 0; way < set.size(); ++way) {
-        if (!set[way].useful) {
-            return way;
-        }
-    }
-
-    return -1;
-}
-
-void
-PairTAGE::resetUsefulBits()
-{
-    usefulResetCnt = 0;
-    for (auto &table : tageTable) {
-        for (auto &set : table) {
-            for (auto &entry : set) {
-                entry.useful = false;
-            }
-        }
-    }
-}
-
-bool
-PairTAGE::allocateEntries(Addr startPC, const TageMeta &predMeta,
-                          const PairBlockInfo &trainedBlock,
-                          const PairBlockInfo &trainedSecondBlock,
-                          unsigned startTable)
-{
-    if (startTable >= numPredictors) {
-        return false;
-    }
-
-    std::vector<unsigned> candidateTables;
-    std::vector<unsigned> candidateWays;
-    candidateTables.reserve(numPredictors - startTable);
-    candidateWays.reserve(numPredictors - startTable);
-    for (unsigned table = startTable; table < numPredictors; ++table) {
-        const Addr index =
-            getTageIndex(startPC, table, predMeta.indexFoldedHist[table].get());
-        const Addr tag = getTageTag(
-            startPC, table, predMeta.tagFoldedHist[table].get(),
-            predMeta.altTagFoldedHist[table].get());
-        const auto &set = tageTable[table][index];
-        int selectedWay = selectMatchingReplacementWay(
-            set, tag, trainedBlock, trainedSecondBlock);
-        if (selectedWay < 0) {
-            selectedWay = selectAllocationWay(set);
-        }
-        if (selectedWay >= 0) {
-            candidateTables.push_back(table);
-            candidateWays.push_back(static_cast<unsigned>(selectedWay));
-        }
-    }
-
-    if (candidateTables.empty()) {
-        usefulResetCnt++;
-        if (usefulResetCnt >= 256) {
-            resetUsefulBits();
-        }
-        return false;
-    }
-
-    usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
-
-    const unsigned rotateBy = allocLFSR.get() % candidateTables.size();
-    std::rotate(candidateTables.begin(), candidateTables.begin() + rotateBy,
-                candidateTables.end());
-    std::rotate(candidateWays.begin(), candidateWays.begin() + rotateBy,
-                candidateWays.end());
-
-    const unsigned allocCount =
-        std::min<unsigned>(numTablesToAlloc, candidateTables.size());
-    for (unsigned allocIdx = 0; allocIdx < allocCount; ++allocIdx) {
-        const unsigned table = candidateTables[allocIdx];
-        const unsigned way = candidateWays[allocIdx];
-        const Addr index =
-            getTageIndex(startPC, table, predMeta.indexFoldedHist[table].get());
-        auto &targetEntry = tageTable[table][index][way];
-
-        PairTAGEEntry newEntry;
-        newEntry.valid = true;
-        newEntry.tag = getTageTag(
-            startPC, table, predMeta.tagFoldedHist[table].get(),
-            predMeta.altTagFoldedHist[table].get());
-        newEntry.counter = trainedBlock.taken ? 0 : -1;
-        newEntry.useful = false;
-        newEntry.identityConfidence = PairTAGEEntry::InitialIdentityConfidence;
-        newEntry.setBlock(0, trainedBlock);
-        if (trainedSecondBlock.valid) {
-            newEntry.setBlock(1, trainedSecondBlock);
-        } else {
-            newEntry.clearBlock(1);
-        }
-
-        pairTageStats.allocations++;
-        if (targetEntry.valid) {
-            pairTageStats.evictions++;
-        }
-        targetEntry = newEntry;
-    }
-
-    return true;
+    return threadMeta[tid];
 }
 
 void
 PairTAGE::specUpdatePHist(const bitset &history, FullBTBPrediction &pred,
                           const PathHistoryUpdate &update)
 {
-    (void)pred;
-    doUpdateHist(history, update.taken, update.pc, update.target);
+    // A first block entering the FTQ becomes the key of the next pair,
+    // and the phase moves on to its second block
+    auto &phase = threadPhase[pred.tid];
+    if (phase == StatePhase::First) {
+        auto &ahead = threadAhead[pred.tid];
+        ahead.valid = true;
+        ahead.pc = pred.bbStart;
+        ahead.history = historyState(pred.tid);
+        phase = StatePhase::Second;
+    } else {
+        // A second block enqueued with its first block is never trained
+        // from S3, so its first block stops waiting for it
+        const auto &meta = threadMeta[pred.tid];
+        if (meta && meta->twoTaken) {
+            trainLiveEntryInfo[pred.tid].valid = false;
+        }
+        phase = StatePhase::First;
+    }
+
+    doUpdateHist(history, update, pred.tid);
 }
 
 void
@@ -588,481 +235,388 @@ PairTAGE::recoverPHist(const bitset &history,
                        const HistoryRecoveryContext &context,
                        const PathHistoryUpdate &update)
 {
-    auto predMeta = std::static_pointer_cast<TageMeta>(
+    // The block after a squash starts a new pair without a key
+    threadAhead[context.tid].valid = false;
+    threadPhase[context.tid] = StatePhase::First;
+    predLiveEntryInfo[context.tid].valid = false;
+    trainLiveEntryInfo[context.tid].valid = false;
+
+    auto predMeta = std::static_pointer_cast<PairTAGEMeta>(
         context.predMetas[getComponentIdx()]);
     if (!predMeta) {
         return;
     }
 
-    for (unsigned i = 0; i < numPredictors; ++i) {
-        indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
-        altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
-        tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
+    // Restore the prediction-time state, then apply the actual outcome
+    auto &state = historyState(context.tid);
+    const auto &saved = predMeta->history;
+    for (unsigned t = 0; t < numPredictors; ++t) {
+        state.indexFoldedHist[t].recover(saved.indexFoldedHist[t]);
+        state.tagFoldedHist[t].recover(saved.tagFoldedHist[t]);
+        state.altTagFoldedHist[t].recover(saved.altTagFoldedHist[t]);
     }
-
-    while (!aheadIndexFoldedHist.empty()) {
-        aheadIndexFoldedHist.pop();
-    }
-    if (predMeta->aheadIndexFoldedHistValid) {
-        assert(predMeta->aheadIndexFoldedHist.size() == numPredictors);
-        aheadIndexFoldedHist.push(predMeta->aheadIndexFoldedHist);
-    }
-
-    doUpdateHist(history, update.taken, update.pc, update.target);
+    doUpdateHist(history, update, context.tid);
 }
 
-PairTAGE::ProviderInfo
-PairTAGE::lookupProviders(Addr startPC, const TageMeta &predMeta) const
+void
+PairTAGE::updateUsingS3Pred(FullBTBPrediction &s3Pred)
 {
-    ProviderInfo providers;
+    pairTageStats.s3TrainEvents++;
 
-    for (int table = numPredictors - 1; table >= 0; --table) {
-        const Addr index = getTageIndex(startPC, table, predMeta.indexFoldedHist[table].get());
-        auto &set = tageTable[table][index];
-        TageTableInfo bestInTable;
+    const auto &meta = threadMeta[s3Pred.tid];
+    assert(meta);
 
-        for (unsigned way = 0; way < numWays; ++way) {
-            const auto &entry = set[way];
-            if (!entry.valid || !entry.firstBlock().valid) {
-                continue;
-            }
+    // The final prediction information
+    // TODO: Recogonize fallthrough with attibutes rather than mark branch PC to zero.
+    const bool taken = s3Pred.isTaken();
+    const BTBEntry exit = taken ? s3Pred.getTakenEntry() : BTBEntry();
+    const Addr targetPC = s3Pred.getTarget(predictWidth);
 
-            // Todo: why this check is needed? If the first block is invalid or meet
-            // aliasing, the entry should be override by higher predictors and should
-            // not in final stage pred.
-            const auto &firstBlock = entry.firstBlock();
-            if (!isBranchInFirstBlock(firstBlock.branchPC, startPC)) {
-                continue;
-            }
-
-            const Addr tag = getTageTag(startPC, table,
-                predMeta.tagFoldedHist[table].get(),
-                predMeta.altTagFoldedHist[table].get());
-
-            if (entry.tag == tag) {
-                auto info = TageTableInfo{
-                    true, entry, static_cast<unsigned>(table), index, tag, way};
-                if (betterProviderCandidate(info, bestInTable)) {
-                    bestInTable = info;
-                }
-            }
+    // The block right after a trained first block is its second block,
+    // whatever phase it was predicted in, as long as it continues it.
+    // Otherwise a first block phase block trains its own first block.
+    auto &live = trainLiveEntryInfo[s3Pred.tid];
+    if (live.valid) {
+        if (s3Pred.bbStart == live.nextPC) {
+            trainSecondBlock(live, exit, targetPC);
+        } else {
+            pairTageStats.trainSecondBroken++;
         }
+        live.valid = false;
+    } else if (meta->phase == StatePhase::First && !meta->noAnchor) {
+        live = trainFirstBlock(meta->lookup, exit, targetPC);
+    }
+}
 
-        if (!bestInTable.found) {
-            continue;
+PairTAGE::LiveEntryInfo
+PairTAGE::trainFirstBlock(const LookupResult &lookup, const BTBEntry &exit,
+                          Addr targetPC)
+{
+    const bool taken = exit.valid;
+    const Addr branchPC = exit.valid ? exit.pc : 0;
+    LiveEntryInfo live;
+    live.nextPC = targetPC;
+
+    // Hit & Pred Correct: Update counters and targetPC
+    // TODO: Maybe the target PC incorrect also counts as a misprediction.
+    const bool hit = lookup.provider >= 0;
+    if (hit && lookup.entry.block.branchPC == branchPC) {
+        PTAGEEntry entry = lookup.entry;
+        entry.block.updateCounter(taken);
+        // The second block starts at the first block's target, so it no
+        // longer holds once that target moves
+        if (entry.block.targetPC != targetPC) {
+            entry.b2Valid = false;
         }
-        if (!providers.main.found) {
-            providers.main = bestInTable;
-            continue;
-        }
-        providers.alt = bestInTable;
-        if (providers.alt.found) {
+        entry.block.targetPC = targetPC;
+        entry.useful = true;
+        const auto &ti = lookup.tableIndexes[lookup.provider];
+        writeEntry(lookup.provider, ti.index, lookup.providerWay, entry);
+        pairTageStats.trainStrengthen++;
+        live.valid = true;
+        live.firstCorrect = true;
+        live.table = lookup.provider;
+        live.index = ti.index;
+        live.way = lookup.providerWay;
+        live.entry = entry;
+        return live;
+    }
+
+    // Miss or Mispred: Find alloc unused entry or force allocate when refusals saturate.
+    // TODO: Does global refusal count cause frequent evictions of useful entries?
+    const bool mayEvict = allocRefusals == mask(AllocRefusalWidth);
+    int allocTable = -1;
+    for (int t = lookup.provider + 1; t < (int)numPredictors; ++t) {
+        if (!lookup.tableIndexes[t].useful || mayEvict) {
+            allocTable = t;
             break;
         }
     }
 
-    return providers;
-}
+    // Mispred but hit entry weak: rewrite the entry with correct information.
+    // Mispred but hit entry not weak:
+    //   - Try to find a free entry
+    //   - Force alloc when refusals saturate, which may evict a useful entry
+    if (hit && (lookup.entry.block.isWeak() ||
+                allocTable < 0)) {
+        const auto &ti = lookup.tableIndexes[lookup.provider];
+        live.valid = true;
+        live.table = lookup.provider;
+        live.index = ti.index;
+        live.way = lookup.providerWay;
+        live.entry = PTAGEEntry(ti.tag, exit, targetPC);
+        writeEntry(live.table, live.index, live.way, live.entry);
+        pairTageStats.trainCorrect++;
+    } else if (allocTable >= 0) {
+        const auto &ti = lookup.tableIndexes[allocTable];
+        live.valid = true;
+        live.table = allocTable;
+        live.index = ti.index;
+        live.way = 0;
+        live.entry = PTAGEEntry(ti.tag, exit, targetPC);
+        writeEntry(live.table, live.index, live.way, live.entry);
+        pairTageStats.trainAllocate++;
+        if (mayEvict) {
+            allocRefusals = 0;
+            pairTageStats.trainAllocateEvicted++;
+        }
+    }
 
-PairTAGE::ProviderInfo
-PairTAGE::lookupProviders(Addr startPC) const
-{
-    auto predMeta = TageMeta();
-    predMeta.tagFoldedHist = tagFoldedHist;
-    predMeta.altTagFoldedHist = altTagFoldedHist;
-    predMeta.indexFoldedHist = indexFoldedHist;
-    return lookupProviders(startPC, predMeta);
-}
+    // Count refusals until one eviction is allowed. Successes **do not** clear
+    // the count: they interleave with refusals.
+    // TODO: Does this strategy only work with frequent alloc failure case / blocks?
+    if (allocTable < 0) {
+        allocRefusals = (allocRefusals + 1) & mask(AllocRefusalWidth);
+        pairTageStats.trainNoTableFree++;
+    }
 
-PairTAGE::TageTableInfo
-PairTAGE::lookupEntry(Addr startPC) const
-{
-    return lookupProviders(startPC).main;
+    return live;
 }
 
 void
-PairTAGE::fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pred) const
+PairTAGE::trainSecondBlock(const LiveEntryInfo &live, const BTBEntry &exit,
+                           Addr targetPC)
+{
+    const Addr branchPC = exit.valid ? exit.pc : 0;
+    PTAGEEntry entry = live.entry;
+
+    // A second block naming the right exit is strengthened; anything else
+    // is replaced by the block that actually followed the first one
+    if (entry.b2Valid && entry.block2.branchPC == branchPC) {
+        entry.block2.updateCounter(exit.valid);
+        entry.block2.targetPC = targetPC;
+        if (live.firstCorrect && entry.confidence < confidenceSaturate) {
+            entry.confidence++;
+        }
+        pairTageStats.trainSecondStrengthen++;
+    } else {
+        // A wrong second block costs confidence; installing a missing one
+        // does not, since it was never predicted
+        if (entry.b2Valid && entry.confidence > 0) {
+            entry.confidence--;
+        }
+        entry.b2Valid = true;
+        entry.block2 = PTAGEBlockInfo(exit, targetPC);
+        entry.modelInfo.block2BranchSize = exit.valid ? exit.size : 0;
+        pairTageStats.trainSecondReplace++;
+    }
+
+    writeEntry(live.table, live.index, live.way, entry);
+}
+
+bool
+PairTAGE::getSecondBlock(ThreadID tid, FullBTBPrediction &pred)
+{
+    // A first block predicted from a saturated entry also emits the
+    // entry's second block, as long as the final prediction follows the
+    // first block to where the second block starts
+    const auto &meta = threadMeta[tid];
+    const auto &live = predLiveEntryInfo[tid];
+    const auto &entry = live.entry;
+    if (!enableTwoTaken || meta->phase != StatePhase::First || !live.valid ||
+        live.nextPC != pred.bbStart || !entry.b2Valid ||
+        entry.confidence != confidenceSaturate) {
+        return false;
+    }
+
+    fillPrediction(entry.block2, entry.modelInfo.block2BranchSize, pred);
+    return true;
+}
+
+void
+PairTAGE::refreshPredictionMeta(Addr startAddr, const bitset &history,
+                                FullBTBPrediction &pred)
+{
+    // A second block enqueued with its first block has no lookup of its
+    // own, so only its history is recorded, for squash recovery
+    (void)startAddr;
+    (void)history;
+    auto meta = std::make_shared<PairTAGEMeta>();
+    meta->history = historyState(pred.tid);
+    meta->phase = threadPhase[pred.tid];
+    meta->twoTaken = true;
+    meta->twoTakenEntry = predLiveEntryInfo[pred.tid];
+    threadMeta[pred.tid] = meta;
+}
+
+void
+PairTAGE::handleControlSquash(const FetchTarget &target)
+{
+    auto meta = std::static_pointer_cast<PairTAGEMeta>(
+        target.predMetas[getComponentIdx()]);
+    if (!meta || !meta->twoTaken) {
+        return;
+    }
+
+    const auto &live = meta->twoTakenEntry;
+    resetConfidence(live.table, live.index, live.way);
+    pairTageStats.twoTakenSquashes++;
+}
+
+unsigned
+PairTAGE::getBankId(Addr pc) const
+{
+    return (pc >> instShiftAmt) & mask(bankIdWidth);
+}
+
+Addr
+PairTAGE::getSetIndex(Addr pc, unsigned t, uint64_t foldedHist) const
+{
+    const unsigned setBits = tableIndexBits[t] - bankIdWidth;
+    const Addr pcBits = pc >> (instShiftAmt + bankIdWidth);
+    return (pcBits ^ foldedHist) & mask(setBits);
+}
+
+Addr
+PairTAGE::getIndex(unsigned t, unsigned bank, Addr set) const
+{
+    const unsigned setBits = tableIndexBits[t] - bankIdWidth;
+    return (static_cast<Addr>(bank) << setBits) | set;
+}
+
+Addr
+PairTAGE::getTag(Addr pc, unsigned t, uint64_t foldedHist,
+                 uint64_t altFoldedHist) const
+{
+    const Addr pcBits = pc >> (instShiftAmt + tableIndexBits[t]);
+    return (pcBits ^ foldedHist ^ (altFoldedHist << 1)) &
+           mask(tableTagBits[t]);
+}
+
+PairTAGE::LookupResult
+PairTAGE::lookup(Addr pc, const ThreadHistoryState &history) const
+{
+    LookupResult result;
+    result.tableIndexes.resize(numPredictors);
+
+    const unsigned bank = getBankId(pc);
+    for (unsigned t = 0; t < numPredictors; ++t) {
+        auto &ti = result.tableIndexes[t];
+        const Addr set =
+            getSetIndex(pc, t, history.indexFoldedHist[t].get());
+        ti.index = getIndex(t, bank, set);
+        ti.tag = getTag(pc, t, history.tagFoldedHist[t].get(),
+                        history.altTagFoldedHist[t].get());
+
+        // Direct mapped: the one entry of the set is what an allocation
+        // into this table would replace
+        const auto &ways = table[t][ti.index];
+        ti.useful = ways[0].valid && ways[0].useful;
+        for (unsigned way = 0; way < numWays; ++way) {
+            if (ways[way].valid && ways[way].tag == ti.tag) {
+                // A later, longer-history table overrides an earlier one
+                result.provider = t;
+                result.providerWay = way;
+                result.entry = ways[way];
+                break;
+            }
+        }
+    }
+    return result;
+}
+
+void
+PairTAGE::fillPrediction(const PTAGEBlockInfo &block, uint8_t branchSize,
+                         FullBTBPrediction &pred)
 {
     pred.btbEntries.clear();
     pred.condTakens.clear();
     pred.indirectTargets.clear();
-    pred.tageInfoForMgscs.clear();
     pred.returnTarget = 0;
     pred.predTick = curTick();
 
-    if (!block.valid) {
+    // A block that falls through has no branch to predict
+    if (!block.taken()) {
         return;
     }
 
-    if (block.isBranchlessFallthrough()) {
-        return;
-    }
+    BTBEntry btbEntry;
+    btbEntry.valid = true;
+    btbEntry.pc = block.branchPC;
+    btbEntry.target = block.targetPC;
+    btbEntry.isCond = block.isCond;
+    btbEntry.isDirect = block.isDirect;
+    btbEntry.isIndirect = block.isIndirect;
+    btbEntry.isCall = block.isCall;
+    btbEntry.isReturn = block.isReturn;
+    btbEntry.size = branchSize;
+    btbEntry.ctr = block.directionCounter;
+    btbEntry.source = getComponentIdx();
 
-    auto entry = block.buildBTBEntry(componentIdx);
-    pred.btbEntries.push_back(entry);
-    if (entry.isCond) {
-        pred.condTakens.push_back({entry.pc, block.taken});
-    }
-    if (entry.isIndirect) {
-        if (entry.isReturn) {
-            pred.returnTarget = block.targetPC;
-        } else {
-            pred.indirectTargets.push_back({entry.pc, block.targetPC});
-        }
-    }
-}
-
-PairTAGE::PairBlockInfo
-PairTAGE::buildTrainingBlock(const TrainPacket &packet) const
-{
-    assert(packet.hasConsistentState());
-
-    if (!packet.valid) {
-        return PairBlockInfo{};
-    }
-
-    if (!packet.hasBranch) {
-        return PairBlockInfo::makeBranchless(
-            packet.branchPC, packet.targetPC);
-    }
-
-    return PairBlockInfo(
-        packet.taken, packet.branchPC, packet.targetPC,
-        packet.hasBranchFlag(TrainPacket::BranchFlag::Conditional),
-        packet.hasBranchFlag(TrainPacket::BranchFlag::Direct),
-        packet.hasBranchFlag(TrainPacket::BranchFlag::Indirect),
-        packet.hasBranchFlag(TrainPacket::BranchFlag::Call),
-        packet.hasBranchFlag(TrainPacket::BranchFlag::Return), packet.size);
-}
-
-void
-PairTAGE::recordTrainingTypes(statistics::Vector &typeStats,
-                              const PairBlockInfo &block)
-{
-    assert(block.valid);
-    // Untaken branches use one outcome bucket; taken branches expose all type flags.
-    if (!block.hasBranch) {
-        typeStats[Fallthrough]++;
-        return;
-    }
-    if (!block.taken) {
-        typeStats[HasBranchNotTaken]++;
-        return;
-    }
-
+    pred.btbEntries.push_back(btbEntry);
     if (block.isCond) {
-        typeStats[IsCond]++;
+        pred.condTakens.push_back({block.branchPC, true});
+    } else if (block.isIndirect) {
+        pred.indirectTargets.push_back({block.branchPC, block.targetPC});
+        if (block.isReturn) {
+            pred.returnTarget = block.targetPC;
+        }
     }
-    if (block.isDirect) {
-        typeStats[IsDirect]++;
-    }
-    if (block.isIndirect) {
-        typeStats[IsIndirect]++;
-    }
-    if (block.isCall) {
-        typeStats[IsCall]++;
-    }
-    if (block.isReturn) {
-        typeStats[IsReturn]++;
-    }
-}
-
-bool
-PairTAGE::blocksMatch(const PairBlockInfo &lhs, const PairBlockInfo &rhs) const
-{
-    if (lhs.valid != rhs.valid) {
-        return false;
-    }
-    if (!lhs.valid) {
-        return true;
-    }
-    return lhs.taken == rhs.taken && lhs.branchPC == rhs.branchPC &&
-           lhs.hasBranch == rhs.hasBranch &&
-           lhs.targetPC == rhs.targetPC &&
-           lhs.isCond == rhs.isCond &&
-           lhs.isDirect == rhs.isDirect &&
-           lhs.isIndirect == rhs.isIndirect &&
-           lhs.isCall == rhs.isCall &&
-           lhs.isReturn == rhs.isReturn &&
-           lhs.size == rhs.size;
-}
-
-bool
-PairTAGE::blockIdentityMatches(const PairBlockInfo &lhs,
-                               const PairBlockInfo &rhs) const
-{
-    if (lhs.valid != rhs.valid) {
-        return false;
-    }
-    if (!lhs.valid) {
-        return true;
-    }
-    return lhs.hasBranch == rhs.hasBranch &&
-           lhs.branchPC == rhs.branchPC &&
-           lhs.isCond == rhs.isCond &&
-           lhs.isDirect == rhs.isDirect &&
-           lhs.isIndirect == rhs.isIndirect &&
-           lhs.isCall == rhs.isCall &&
-           lhs.isReturn == rhs.isReturn &&
-           lhs.size == rhs.size;
-}
-
-bool
-PairTAGE::entryMatchesTraining(const PairTAGEEntry &entry,
-                               const PairBlockInfo &firstBlock,
-                               const PairBlockInfo &secondBlock) const
-{
-    if (!blocksMatch(entry.firstBlock(), firstBlock)) {
-        return false;
-    }
-    if (!enableSecondBlock) {
-        return true;
-    }
-    return blocksMatch(entry.secondBlock(), secondBlock);
 }
 
 void
-PairTAGE::trainFromS3Pred(
-    const TrainPacket &finalTrainPacket,
-    const TrainPacket *twoTakenTrainPacket)
+PairTAGE::fillStagePredictions(const PTAGEBlockInfo &block, uint8_t branchSize,
+                               std::vector<FullBTBPrediction> &stagePreds)
 {
-    if (!phaseEnabled(finalTrainPacket.phase)) {
-        return;
-    }
-
-    const auto &predMeta = finalTrainPacket.meta;
-    if (!predMeta) {
-        return;
-    }
-
-    const Addr pairEntryStartPC = finalTrainPacket.startPC;
-    auto providers = lookupProviders(pairEntryStartPC, *predMeta);
-    auto provider = providers.main;
-    auto altProvider = providers.alt;
-
-    auto trainedFirstBlock = buildTrainingBlock(finalTrainPacket);
-
-    auto secondBlockTrainInfo =
-        (enableSecondBlock && twoTakenTrainPacket) ?
-            buildTrainingBlock(*twoTakenTrainPacket) : PairBlockInfo{};
-
-    if (predMeta->predictedFirstBlock.valid) {
-        pairTageStats.firstBlockAccuracySamples++;
-        const auto &predictedFirstBlock = predMeta->predictedFirstBlock;
-        if (finalTrainPacket.valid && predictedFirstBlock.branchPC == finalTrainPacket.branchPC &&
-            predictedFirstBlock.taken == finalTrainPacket.taken &&
-            predictedFirstBlock.targetPC == finalTrainPacket.targetPC) {
-            pairTageStats.firstBlockCorrect++;
-        }
-    }
-
-    if (predMeta->predictedSecondBlock.valid && twoTakenTrainPacket) {
-        pairTageStats.secondBlockAccuracySamples++;
-        if (blocksMatch(predMeta->predictedSecondBlock, secondBlockTrainInfo)) {
-            pairTageStats.secondBlockCorrect++;
-        }
-    }
-
-    if (!trainedFirstBlock.valid) {
-        if (provider.found) {
-            auto &providerEntry =
-                tageTable[provider.table][provider.index][provider.way];
-            providerEntry = PairTAGEEntry{};
-        }
-        return;
-    }
-    const bool skipStandaloneFallThrough =
-        trainedFirstBlock.isBranchlessFallthrough() && !secondBlockTrainInfo.valid && !trainStandaloneFallThrough;
-    if (skipStandaloneFallThrough) {
-        return;
-    }
-
-    recordTrainingTypes(pairTageStats.firstBlockTrainTypes, trainedFirstBlock);
-    if (secondBlockTrainInfo.valid) {
-        recordTrainingTypes(pairTageStats.secondBlockTrainTypes, secondBlockTrainInfo);
-    }
-
-    const bool providerMatchesTraining = provider.found &&
-        entryMatchesTraining(provider.entry, trainedFirstBlock, secondBlockTrainInfo);
-    const bool providerFirstBlockMatches = provider.found &&
-        blocksMatch(provider.entry.firstBlock(), trainedFirstBlock);
-    const bool providerFirstBlockIdentityMatches = provider.found &&
-        blockIdentityMatches(provider.entry.firstBlock(), trainedFirstBlock);
-    const bool altMatchesTraining = altProvider.found &&
-        entryMatchesTraining(altProvider.entry, trainedFirstBlock, secondBlockTrainInfo);
-    const bool canAllocHigher = provider.found &&
-        provider.table < numPredictors - 1;
-    bool preserveProviderOnMismatch = provider.found &&
-        !providerMatchesTraining && canAllocHigher;
-    bool providerRewrittenForIdentity = false;
-
-    if (provider.found && !providerFirstBlockIdentityMatches &&
-        canAllocHigher) {
-        auto &providerEntry =
-            tageTable[provider.table][provider.index][provider.way];
-        const auto oldEntry = providerEntry;
-        const bool shouldRewrite = providerEntry.weakenIdentity();
-        if (shouldRewrite && oldEntry.identityConfidence == 0) {
-            PairTAGEEntry newEntry;
-            newEntry.valid = true;
-            newEntry.tag = getTageTag(
-                pairEntryStartPC, provider.table,
-                predMeta->tagFoldedHist[provider.table].get(),
-                predMeta->altTagFoldedHist[provider.table].get());
-            newEntry.counter = trainedFirstBlock.taken ? 0 : -1;
-            newEntry.useful = false;
-            newEntry.identityConfidence = PairTAGEEntry::InitialIdentityConfidence;
-            newEntry.setBlock(0, trainedFirstBlock);
-            if (secondBlockTrainInfo.valid) {
-                newEntry.setBlock(1, secondBlockTrainInfo);
-            } else {
-                newEntry.clearBlock(1);
-            }
-
-            providerEntry = newEntry;
-            preserveProviderOnMismatch = false;
-            providerRewrittenForIdentity = true;
-        }
-    } else if (provider.found && providerFirstBlockIdentityMatches &&
-               !providerFirstBlockMatches && preserveProviderOnMismatch) {
-        auto &providerEntry =
-            tageTable[provider.table][provider.index][provider.way];
-        providerEntry.strengthenIdentity();
-    }
-
-    if (provider.found && !preserveProviderOnMismatch &&
-        !providerRewrittenForIdentity) {
-        auto &providerEntry =
-            tageTable[provider.table][provider.index][provider.way];
-        auto oldEntry = providerEntry;
-        PairTAGEEntry newEntry = oldEntry;
-
-        short trainedCounter = oldEntry.counter;
-        if (blocksMatch(oldEntry.firstBlock(), trainedFirstBlock)) {
-            updateCounter(trainedFirstBlock.taken, 3, trainedCounter);
-        } else {
-            trainedCounter = trainedFirstBlock.taken ? 0 : -1;
-        }
-
-        newEntry.valid = true;
-        newEntry.tag = getTageTag(
-            pairEntryStartPC, provider.table,
-            predMeta->tagFoldedHist[provider.table].get(),
-            predMeta->altTagFoldedHist[provider.table].get());
-        newEntry.counter = trainedCounter;
-        newEntry.useful = oldEntry.useful;
-        if (providerMatchesTraining && altProvider.found && !altMatchesTraining) {
-            newEntry.useful = true;
-        }
-        if (providerFirstBlockIdentityMatches) {
-            newEntry.strengthenIdentity();
-        } else {
-            newEntry.identityConfidence = PairTAGEEntry::InitialIdentityConfidence;
-        }
-        newEntry.setBlock(0, trainedFirstBlock);
-        if (secondBlockTrainInfo.valid) {
-            newEntry.setBlock(1, secondBlockTrainInfo);
-        } else {
-            newEntry.clearBlock(1);
-        }
-
-        providerEntry = newEntry;
-    } else if (provider.found && providerFirstBlockMatches) {
-        auto &providerEntry =
-            tageTable[provider.table][provider.index][provider.way];
-        auto oldEntry = providerEntry;
-        PairTAGEEntry newEntry = oldEntry;
-        short trainedCounter = oldEntry.counter;
-
-        updateCounter(trainedFirstBlock.taken, 3, trainedCounter);
-        newEntry.counter = trainedCounter;
-        if (altProvider.found && !altMatchesTraining) {
-            newEntry.useful = true;
-        }
-        newEntry.strengthenIdentity();
-
-        if (newEntry.counter != oldEntry.counter ||
-            newEntry.useful != oldEntry.useful ||
-            newEntry.identityConfidence != oldEntry.identityConfidence) {
-            providerEntry = newEntry;
-        }
-    }
-
-    bool needHigherAlloc = false;
-    unsigned allocStartTable = 0;
-    if (!provider.found) {
-        needHigherAlloc = true;
-        allocStartTable = 0;
-    } else if (!providerMatchesTraining &&
-               provider.table < numPredictors - 1) {
-        needHigherAlloc = true;
-        allocStartTable = provider.table + 1;
-    }
-
-    if (needHigherAlloc) {
-        allocateEntries(pairEntryStartPC, *predMeta, trainedFirstBlock,
-                        secondBlockTrainInfo, allocStartTable);
-    }
-}
-
-Addr
-PairTAGE::getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist) const
-{
-    const Addr mask = (1ULL << tableTagBits[table]) - 1;
-    const unsigned pcShift = tablePcShifts[table];
-    const Addr pcBits = (pc >> pcShift) & mask;
-    const Addr foldedBits = foldedHist & mask;
-    const Addr altTagBits = (altFoldedHist << 1) & mask;
-
-    return pcBits ^ foldedBits ^ altTagBits;
-}
-
-Addr
-PairTAGE::getTageIndex(Addr pc, int table, uint64_t foldedHist) const
-{
-    const Addr mask = (1ULL << tableIndexBits[table]) - 1;
-    const Addr pcBits = (pc >> instShiftAmt) & mask;
-    const Addr foldedBits = foldedHist & mask;
-
-    return pcBits ^ foldedBits;
-}
-
-Addr
-PairTAGE::getFallThrough(Addr startPC) const
-{
-    return (startPC + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
-}
-
-bool
-PairTAGE::isBranchInFirstBlock(Addr branchPC, Addr startPC) const
-{
-    return branchPC >= startPC && branchPC < getFallThrough(startPC);
+    FillStageLoop(s) fillPrediction(block, branchSize, stagePreds[s]);
 }
 
 void
-PairTAGE::doUpdateHist(const bitset &history, bool taken, Addr pc, Addr target)
+PairTAGE::writeEntry(unsigned t, Addr index, unsigned way,
+                     const PTAGEEntry &entry)
 {
-    if (!aheadIndexFoldedHist.empty()) {
-        indexFoldedHist = aheadIndexFoldedHist.front();
-    }
+    assert(t < numPredictors && index < table[t].size() && way < numWays);
 
-    if (!taken) {
-        return;
-    }
+    table[t][index][way] = entry;
+}
 
+void
+PairTAGE::resetConfidence(unsigned t, Addr index, unsigned way)
+{
+    assert(t < numPredictors && index < table[t].size() && way < numWays);
+
+    table[t][index][way].confidence = 0;
+}
+
+PairTAGE::ThreadHistoryState &
+PairTAGE::historyState(ThreadID tid)
+{
+    assert(tid < threadHistory.size());
+    return threadHistory[tid];
+}
+
+const PairTAGE::ThreadHistoryState &
+PairTAGE::historyState(ThreadID tid) const
+{
+    assert(tid < threadHistory.size());
+    return threadHistory[tid];
+}
+
+void
+PairTAGE::doUpdateHist(const bitset &history, const PathHistoryUpdate &update,
+                       ThreadID tid)
+{
+    auto &state = historyState(tid);
     for (unsigned t = 0; t < numPredictors; ++t) {
-        tagFoldedHist[t].update(history, 2, taken, pc, target);
-        altTagFoldedHist[t].update(history, 2, taken, pc, target);
+        state.indexFoldedHist[t].update(history, update.shamt, update.taken,
+                                        update.pc, update.target);
+        state.tagFoldedHist[t].update(history, update.shamt, update.taken,
+                                      update.pc, update.target);
+        state.altTagFoldedHist[t].update(history, update.shamt, update.taken,
+                                         update.pc, update.target);
     }
+}
 
-    auto nextIndexFoldedHist = indexFoldedHist;
+void
+PairTAGE::checkFoldedHist(const bitset &history, ThreadID tid,
+                          const char *when)
+{
+    (void)when;
+    const auto &state = historyState(tid);
     for (unsigned t = 0; t < numPredictors; ++t) {
-        nextIndexFoldedHist[t].update(history, 2, taken, pc, target);
-    }
-
-    aheadIndexFoldedHist.push(nextIndexFoldedHist);
-    if (aheadIndexFoldedHist.size() > 1) {
-        aheadIndexFoldedHist.pop();
+        state.indexFoldedHist[t].check(history);
+        state.tagFoldedHist[t].check(history);
+        state.altTagFoldedHist[t].check(history);
     }
 }
 
