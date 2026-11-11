@@ -18,6 +18,7 @@
 | ROB / Int PRF / FP PRF | 352 / 224 / 256 | 640 / 512 / 384 |
 | LQ / SQ / RAR / RAW | 120 / 64 / 96 / 56 | 256 / 128 / 192 / 128 |
 | L1 DTLB / FP IQ | 48 / 每队列 18 项 | 512 / 每队列 24 项 |
+| FP speculative wakeup | 开启 | 关闭：与本配置LVP组合的兼容性限制；FMUL/FMA执行延迟仍为主线3/4拍 |
 | IEW→Fetch / Commit→Fetch / squash 宽度 | 4 / 4 / 8 | 2 / 1 / 32 |
 | TAGE / MGSC / PHAST | 主线默认 | TAGE 各表 8192 组 × 8 路，增加 MGSC local/PC 门控，开启 PHAST |
 | LVP / L1 LLDP / L2 CDP | 默认开关 | 主线 IdealConstantLVP / 开启 / 关闭 |
@@ -58,3 +59,5 @@ done
 默认入口在 CoreMark 300k 检查中的 5213 个既有 INI 字段、300001 条指令和 207449 周期与 base 一致。上述仅为配置和正确性 smoke，不是新配置的完整加权性能结果。
 
 2026-11-10：默认 L2 总容量收回至 2 MiB（四片各 512 KiB，DRRIP 每片 1024 sets），decode/rename/commit/物理寄存器释放宽度设为 10。其余 preset 参数保持不变。此前 32 MiB L2、12 宽版本的 SPEC06 0.3c INT 29.02525 属于旧配置；新组合尚无完整加权跑分。CoreMark 300k difftest 通过：实际 INI 仅有预期的21处字段变化；与旧 preset 加等价参数覆盖的 8510 个非host统计值完全一致。
+
+2026-11-11：已同步`xs-dev`至`14fcdbab13`并解决Fetch初始化及旧PairTAGE首块标记的集成冲突。完整重跑在`soplex_pds-50_9466`出现整数load difftest错误；同输入、REF与20M＋20M窗口的本地复现显示，仅关闭FP speculative wakeup或仅关闭LVP均通过。因此ideal保留既有constant LVP，显式关闭新主线FP speculative wakeup；这是该组合的兼容性约束，尚未确定内部根因，不是主线FP机制已修复。其他ideal资源与TAGE参数不变。

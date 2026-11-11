@@ -46,6 +46,9 @@ def setIdealParams(args, system):
         cpu.RAWQEntries = 128
         cpu.mmu.dtb.size = 512
 
+        # FP speculative wakeup with LVP fails soplex_pds-50_9466 difftest.
+        cpu.scheduler.enableFpSpecWakeup = False
+
         # Keep the existing ports and IQ indices; append only the fourth load.
         for iq in cpu.scheduler.IQs:
             name = str(iq.name)
