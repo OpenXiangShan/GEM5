@@ -433,6 +433,7 @@ def set_l2_replacement_policy(cache, options):
             epf_entries=options.icp_epf_entries,
             accuracy_threshold=options.icp_accuracy_threshold,
             high_priority=options.icp_high_priority,
+            low_priority=options.icp_low_priority,
             demote_on_first_use=options.icp_demote_on_first_use,
             **geometry,
         )

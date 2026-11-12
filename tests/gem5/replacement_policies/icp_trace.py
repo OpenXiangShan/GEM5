@@ -3,7 +3,7 @@
 
 """Exercise ICP through actual cache packets, fills and evictions.
 
-Run with gem5.opt, optionally --scenario feedback|no-epf|secure|demotion|merged|superseded.
+Run with gem5.opt; use --help for scenarios and predictor/insertion options.
 The trace is serialized locally without requiring protoc or Python protobuf.
 """
 
@@ -18,8 +18,11 @@ from m5.objects import (
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--scenario", default="feedback",
-                    choices=["feedback", "no-epf", "secure", "demotion", "merged", "superseded", "pc-isolation"])
+                    choices=["feedback", "no-epf", "secure", "demotion",
+                             "merged", "superseded", "pc-isolation",
+                             "low-retention"])
 parser.add_argument("--pc-entries", type=int, default=0, choices=[0, 64])
+parser.add_argument("--low-priority", type=int, default=-1, choices=[-1, 2])
 args = parser.parse_args()
 
 
@@ -45,7 +48,14 @@ def message(file, value):
 READ, PREFETCH = 2, 14
 PF_FLAG, SECURE_FLAG = 0x01000000, 0x10000000
 trace = [(READ, line, 0) for line in range(4)]
-if args.scenario == "pc-isolation":
+if args.scenario == "low-retention":
+    trace += [(PREFETCH, 4, PF_FLAG), (READ, 5, 0), (READ, 4, 0)]
+    retained = args.low_priority == 2
+    expected = dict(prefetchFills=1, highPriorityFills=0, lowPriorityFills=1,
+                    usefulPrefetches=1 if retained else 0,
+                    unusedPrefetches=0 if retained else 1,
+                    epfHits=0 if retained else 1)
+elif args.scenario == "pc-isolation":
     # One successful stream must not raise an unrelated stream's confidence.
     trace += [(PREFETCH, 4, PF_FLAG), (READ, 4, 0),
               (PREFETCH, 5, PF_FLAG), (PREFETCH, 6, PF_FLAG)]
@@ -121,6 +131,7 @@ system.l2 = Cache(
     prefetcher=PrefetcherForwarder(),
     replacement_policy=ICPRP(
         num_sets=1, num_ways=4, block_size=64, pc_entries=args.pc_entries,
+        low_priority=args.low_priority,
         initial_accuracy={"demotion": 2, "merged": 2, "superseded": 1,
                           "pc-isolation": 1}.get(args.scenario, 0),
         accuracy_threshold=2,
@@ -148,7 +159,8 @@ for name, value in expected.items():
     actual = float(values["system.l2.replacement_policy." + name])
     assert actual == value, (args.scenario, name, actual, value)
 misses = {"secure": 7, "demotion": 6, "merged": 9, "superseded": 5,
-          "pc-isolation": 4}.get(args.scenario, 12)
+          "pc-isolation": 4,
+          "low-retention": 5 if args.low_priority == 2 else 6}.get(args.scenario, 12)
 actual_misses = float(values["system.l2.demandMisses::total"])
 assert actual_misses == misses, (args.scenario, "demandMisses", actual_misses, misses)
 print("PASS ICP", args.scenario, expected, "demandMisses", actual_misses)

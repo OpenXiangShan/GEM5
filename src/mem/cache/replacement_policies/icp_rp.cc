@@ -25,6 +25,7 @@ ICP::ICP(const Params &p)
       counterMax(p.counter_bits > 0 && p.counter_bits <= 16 ?
                  (1U << p.counter_bits) - 1 : 0),
       threshold(p.accuracy_threshold), highPriority(p.high_priority),
+      lowPriority(p.low_priority == -1 ? numWays - 1 : p.low_priority),
       demoteOnFirstUse(p.demote_on_first_use), epfAssoc(p.epf_assoc),
       epfSets(p.epf_assoc ? p.epf_entries / p.epf_assoc : 0),
       accuracy(NUM_PF_SOURCES * (std::min(pcEntries, 4096U) + 1)),
@@ -34,7 +35,9 @@ ICP::ICP(const Params &p)
     fatal_if(!isPowerOf2(blockSize), "ICP block size must be a power of 2");
     fatal_if(!counterMax || threshold > counterMax ||
              p.initial_accuracy > counterMax, "Invalid ICP accuracy counter");
-    fatal_if(highPriority >= numWays, "ICP insertion rank exceeds associativity");
+    fatal_if(p.low_priority < -1 || highPriority > lowPriority ||
+             lowPriority >= numWays,
+             "ICP insertion ranks must satisfy high <= low < associativity");
     fatal_if(p.epf_entries && (!epfAssoc || !epfSets ||
              p.epf_entries % epfAssoc), "Invalid ICP EPF geometry");
     fatal_if(pcEntries > 4096 || (pcEntries && !isPowerOf2(pcEntries)),
@@ -266,7 +269,7 @@ ICP::reset(const std::shared_ptr<ReplacementData> &data, const PacketPtr pkt)
         entry.source = sourceOf(pkt);
         entry.predictor = predictorOf(pkt);
         entry.predictedLow = accuracy[entry.predictor] < threshold;
-        rank = entry.predictedLow ? numWays - 1 : highPriority;
+        rank = entry.predictedLow ? lowPriority : highPriority;
         ++stats.prefetchFills;
         ++stats.fillsBySource[entry.source];
         if (pcEntries && pkt->req->hasPC()) {

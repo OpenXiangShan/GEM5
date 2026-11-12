@@ -179,6 +179,7 @@ class ICPRP(BaseReplacementPolicy):
     initial_accuracy = Param.Unsigned(8, "Initial accuracy counter value")
     accuracy_threshold = Param.Unsigned(8, "Minimum counter for high priority")
     high_priority = Param.Unsigned(0, "Accurate prefetch rank, zero means MRU")
+    low_priority = Param.Int(-1, "Inaccurate prefetch rank; -1 selects LRU")
     epf_entries = Param.Unsigned(256, "EPF capacity; zero disables correction")
     epf_assoc = Param.Unsigned(4, "EPF associativity")
     demote_on_first_use = Param.Bool(False, "Enable ICP first-demand-use demotion")

@@ -151,3 +151,52 @@ difftest for all candidates. On GemsFDTD/65615, PC buckets improve IPC from
 prefetch fills in these two PC-enabled tests carry a PC. Finer granularity
 helps GemsFDTD but does not resolve mcf, so this remains an optional candidate;
 no default or full-suite speedup claim follows from these directed results.
+
+
+### Conservative low-confidence retention
+
+`--icp-low-priority` controls the rank used for predicted-inaccurate prefetches.
+The default `-1` retains the paper's LRU position. An explicit rank gives an
+uncertain prefetch a bounded opportunity to survive more intervening fills;
+high-confidence insertion remains independently controlled. Ranks must satisfy
+`0 <= high <= low < associativity`. This adds no predictor or queue storage and
+retains the same bounded stack operations.
+
+The `low-retention` packet test proves the tradeoff directly: an LRU-inserted
+prefetch is evicted by the next demand miss, whereas rank 2 in a four-way cache
+survives and supplies the subsequent demand hit. Demand misses change from 6 to
+5. All eight scenarios pass in both source-only and 64-PC modes, plus both
+explicit retention tests (18 fast checks). Four focused GCC opt checks also
+pass, covering both PC modes at default LRU and rank 2 insertion.
+
+Directed mcf/6753 results (same 2M/4M window) improve to IPC 0.769963 with
+64 PC buckets and low rank 4, compared with 0.734951 for PC buckets with LRU
+insertion. This is still 0.79% below LRU. GemsFDTD/65615 reaches 6.299649 with
+the same configuration (0.12% below LRU); source-only rank 4 reaches 6.327700,
+but performs worse on mcf. Low ranks 2 and 6 were also evaluated. A single
+balanced candidate, 64 PC buckets and low rank 4, is selected for complete
+145-point screening. This selection does not establish an aggregate gain.
+
+### Matched reference screening
+
+Both existing reference runs completed successfully at source
+`db4900752a8dca7245601b74350a4cce15e9cc49`. Their LRU/XSDRRIP implementations
+are unchanged from this branch's base. All 145 points completed, their archived
+checkpoint lists and weights match the local screening inputs exactly, and
+the effective configurations match after excluding the replacement policy and
+the location of the identical DRAM INI. The workflow builds DRAMsim3 from the
+same shared source cache used locally.
+
+| Reference | Actions run | Score/GHz |
+| --- | --- | ---: |
+| LRU | 43269172688 | 24.25147898539802 |
+| XSDRRIP | 43269179825 | 24.17447693774795 |
+
+Scores were independently regenerated using the shared `gem5_data_proc`
+`run.py` pipeline with the archived `cluster.json`. Each raw CSV contains all
+145 points; the derived weighted and score CSVs aggregate benchmarks and
+reproduce the archived total scores. Legacy wrapper-incompatible L2 aliases
+can report zero, so L2 demand analysis uses the `l2_demand` YAML group and raw
+slice counters instead. The normal analysis environment lacks SciPy; a separate
+temporary SciPy installation was used without modifying the shared tool or
+user environment. Full 1.0c confirmation and the ICP remote run remain pending.

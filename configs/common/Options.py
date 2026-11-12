@@ -172,6 +172,8 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         help="Minimum 4-bit accuracy counter for high priority")
     parser.add_argument("--icp-high-priority", type=int, default=0,
                         help="Accurate prefetch insertion rank (0 is MRU)")
+    parser.add_argument("--icp-low-priority", type=int, default=-1,
+                        help="Low-confidence insertion rank (-1 is LRU)")
     parser.add_argument("--icp-demote-on-first-use", action="store_true",
                         help="Also enable ICP demotion on first demand use")
     parser.add_argument("--classic-l2", action="store_true", default=False,

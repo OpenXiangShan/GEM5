@@ -59,6 +59,7 @@ class ICP : public Base
     const unsigned counterMax;
     const unsigned threshold;
     const unsigned highPriority;
+    const unsigned lowPriority;
     const bool demoteOnFirstUse;
     const unsigned epfAssoc;
     const unsigned epfSets;
