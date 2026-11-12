@@ -200,3 +200,57 @@ can report zero, so L2 demand analysis uses the `l2_demand` YAML group and raw
 slice counters instead. The normal analysis environment lacks SciPy; a separate
 temporary SciPy installation was used without modifying the shared tool or
 user environment. Full 1.0c confirmation and the ICP remote run remain pending.
+
+
+### Additional validation and rejected hit-promotion variant
+
+The GCC `gcc_cpdecl/1944` 2M/4M diagnostic also passes difftest for LRU,
+XSDRRIP, source-only/PC64 with LRU insertion, and source-only/PC64 with low
+rank 4. IPC is 1.727399 for LRU, 1.701265 for XSDRRIP, 1.726555 for source-only
+rank 4, and 1.718496 for PC64 rank 4. This short window does not reproduce
+exactly the regression magnitude of the full 20M/40M screening window.
+
+A temporary variant promoted every prefetch hit to MRU regardless of its
+accuracy. Nine diagnostic variants and one default control completed with
+difftest. The GCC default control reproduces the original candidate's ticks,
+measured instructions, IPC, and L2 demand misses exactly. With PC64 and low
+rank 4 held constant, the hit-promotion change produces:
+
+| Diagnostic point | Selective hit promotion IPC | Unconditional promotion IPC |
+| --- | ---: | ---: |
+| mcf/6753 | 0.769963 | 0.760130 |
+| GemsFDTD/65615 | 6.299649 | 6.299649 |
+| gcc_cpdecl/1944 | 1.718496 | 1.711545 |
+
+All entries use the same 2M warmup/4M total window. The variant does not give
+a consistent gain, so its configuration and implementation were discarded.
+The branch retains the existing accuracy-based prefetch-hit handling.
+
+The completed GemsFDTD/43464 candidate point uses the full 20M/40M window.
+Its normalized speed relative to the matched LRU reference changes from
+-7.496% for the initial implementation to -0.241% for PC64/low rank 4. This
+is a point result; aggregate screening remains pending complete coverage.
+
+### Full-profile reference audit
+
+The existing 1.0c references also completed successfully at source
+`a61859f355cf013aa6c15f95b6be0fe24b829976`:
+
+| Reference | Actions run | Points | Score/GHz |
+| --- | --- | ---: | ---: |
+| LRU | 43271285986 | 1094 | 22.96817155872683 |
+| XSDRRIP | 43271296003 | 1094 | 22.916332459687805 |
+
+Both archived checkpoint lists and weights match the full local profile
+byte for byte. Original LRU/XSDRRIP header and implementation blob IDs match
+this branch exactly. Effective sample configurations match the screening
+references apart from the identical DRAM INI's location, and both runs use
+20M warmup/40M total instructions through the configuration defaults.
+
+The shared scoring pipeline independently reproduces both scores. Each raw
+CSV contains exactly the 1094 point names in the weights JSON, and score CSVs
+contain 29 benchmark rows plus integer, floating-point, and overall summaries.
+Summary rows must be excluded from a second geometric-mean calculation.
+The minimum reported coverage, 0.999743155 for cactusADM, equals that workload's
+weight sum in the original profile; all listed points are present. An ICP
+full-profile result and remote candidate run are still required.
