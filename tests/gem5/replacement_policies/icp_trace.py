@@ -18,7 +18,8 @@ from m5.objects import (
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--scenario", default="feedback",
-                    choices=["feedback", "no-epf", "secure", "demotion", "merged", "superseded"])
+                    choices=["feedback", "no-epf", "secure", "demotion", "merged", "superseded", "pc-isolation"])
+parser.add_argument("--pc-entries", type=int, default=0, choices=[0, 64])
 args = parser.parse_args()
 
 
@@ -44,7 +45,17 @@ def message(file, value):
 READ, PREFETCH = 2, 14
 PF_FLAG, SECURE_FLAG = 0x01000000, 0x10000000
 trace = [(READ, line, 0) for line in range(4)]
-if args.scenario == "superseded":
+if args.scenario == "pc-isolation":
+    # One successful stream must not raise an unrelated stream's confidence.
+    trace += [(PREFETCH, 4, PF_FLAG), (READ, 4, 0),
+              (PREFETCH, 5, PF_FLAG), (PREFETCH, 6, PF_FLAG)]
+    split = bool(args.pc_entries)
+    expected = dict(prefetchFills=3, highPriorityFills=1 if split else 2,
+                    lowPriorityFills=2 if split else 1, usefulPrefetches=1,
+                    unusedPrefetches=1 if split else 0, epfHits=0,
+                    pcPrefetchFills=3 if split else 0,
+                    fallbackPrefetchFills=0 if split else 3)
+elif args.scenario == "superseded":
     # Re-prefetch an evicted low-priority line, then consume it. Merely
     # superseding the old ghost must not penalize the accuracy predictor.
     trace += [(PREFETCH, 4, PF_FLAG), (READ, 5, 0),
@@ -90,6 +101,8 @@ with trace_path.open("wb") as file:
     for i, (cmd, line, flags) in enumerate(trace):
         packet = (integer(1, 505000 if args.scenario == "merged" and i == 5 else (i + 1) * 100000) + integer(2, cmd) +
                   integer(3, line * 64) + integer(4, 64) + integer(5, flags))
+        if args.scenario == "pc-isolation":
+            packet += integer(7, 0x2000 if i == 6 else 0x1000)
         message(file, packet)
 state_path = output / "icp-traffic.cfg"
 duration = (len(trace) + 2) * 100000
@@ -107,8 +120,9 @@ system.l2 = Cache(
     response_latency=1, mshrs=8, tgts_per_mshr=8, cache_level=2,
     prefetcher=PrefetcherForwarder(),
     replacement_policy=ICPRP(
-        num_sets=1, num_ways=4, block_size=64,
-        initial_accuracy={"demotion": 2, "merged": 2, "superseded": 1}.get(args.scenario, 0),
+        num_sets=1, num_ways=4, block_size=64, pc_entries=args.pc_entries,
+        initial_accuracy={"demotion": 2, "merged": 2, "superseded": 1,
+                          "pc-isolation": 1}.get(args.scenario, 0),
         accuracy_threshold=2,
         epf_entries=0 if args.scenario == "no-epf" else 8, epf_assoc=4,
         demote_on_first_use=args.scenario == "demotion",
@@ -133,7 +147,8 @@ for line in (output / "stats.txt").read_text().splitlines():
 for name, value in expected.items():
     actual = float(values["system.l2.replacement_policy." + name])
     assert actual == value, (args.scenario, name, actual, value)
-misses = {"secure": 7, "demotion": 6, "merged": 9, "superseded": 5}.get(args.scenario, 12)
+misses = {"secure": 7, "demotion": 6, "merged": 9, "superseded": 5,
+          "pc-isolation": 4}.get(args.scenario, 12)
 actual_misses = float(values["system.l2.demandMisses::total"])
 assert actual_misses == misses, (args.scenario, "demandMisses", actual_misses, misses)
 print("PASS ICP", args.scenario, expected, "demandMisses", actual_misses)

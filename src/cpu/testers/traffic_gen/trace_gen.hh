@@ -83,6 +83,8 @@ class TraceGen : public BaseGen
 
         /** Potential request flags to use */
         Request::FlagsType flags;
+        bool hasPC = false;
+        Addr pc = 0;
 
         /**
          * Check validity of this element.

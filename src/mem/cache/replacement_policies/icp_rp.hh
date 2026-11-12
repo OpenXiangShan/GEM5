@@ -7,7 +7,6 @@
 #ifndef __MEM_CACHE_REPLACEMENT_POLICIES_ICP_RP_HH__
 #define __MEM_CACHE_REPLACEMENT_POLICIES_ICP_RP_HH__
 
-#include <array>
 #include <vector>
 
 #include "base/statistics.hh"
@@ -24,7 +23,7 @@ namespace replacement_policy
 /**
  * Feedback-directed LRU insertion using ICP's accuracy predictor and EPF.
  * Only insertion changes by default; first-use demotion is independently
- * selectable. Accuracy is tracked per prefetch source, rather than per stream,
+ * selectable. Accuracy can be tracked per source or per source/PC bucket,
  * since gem5's composite prefetchers do not expose a common stream identifier.
  */
 class ICP : public Base
@@ -40,6 +39,7 @@ class ICP : public Base
         Addr address = 0;
         bool secure = false;
         unsigned source = 0;
+        unsigned predictor = 0;
     };
 
     struct Ghost
@@ -48,12 +48,14 @@ class ICP : public Base
         bool secure = false;
         bool valid = false;
         unsigned source = 0;
+        unsigned predictor = 0;
         uint64_t sequence = 0;
     };
 
     const unsigned numSets;
     const unsigned numWays;
     const unsigned blockSize;
+    const unsigned pcEntries;
     const unsigned counterMax;
     const unsigned threshold;
     const unsigned highPriority;
@@ -62,13 +64,14 @@ class ICP : public Base
     const unsigned epfSets;
     unsigned entryCount = 0;
     mutable uint64_t sequence = 0;
-    mutable std::array<unsigned, NUM_PF_SOURCES> accuracy;
+    mutable std::vector<unsigned> accuracy;
     std::vector<std::vector<ICPReplData *>> sets;
     mutable std::vector<Ghost> ghosts;
 
     void position(ICPReplData &data, unsigned rank) const;
-    void train(unsigned source, bool useful) const;
+    void train(unsigned predictor, bool useful) const;
     unsigned sourceOf(const PacketPtr pkt) const;
+    unsigned predictorOf(const PacketPtr pkt) const;
     unsigned ghostSet(Addr address, bool secure) const;
     void remember(const ICPReplData &data) const;
     void forget(Addr address, bool secure, bool demand) const;
@@ -79,6 +82,8 @@ class ICP : public Base
     {
         explicit ICPStats(statistics::Group *parent);
         statistics::Scalar prefetchFills;
+        statistics::Scalar pcPrefetchFills;
+        statistics::Scalar fallbackPrefetchFills;
         statistics::Scalar highPriorityFills;
         statistics::Scalar lowPriorityFills;
         statistics::Scalar usefulPrefetches;
@@ -88,6 +93,7 @@ class ICP : public Base
         statistics::Scalar epfSuperseded;
         statistics::Scalar ignoredPrefetchHits;
         statistics::Vector fillsBySource;
+        statistics::Vector lowFillsBySource;
         statistics::Vector usefulBySource;
         statistics::Vector epfHitsBySource;
     } stats;

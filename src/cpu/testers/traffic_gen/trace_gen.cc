@@ -85,6 +85,8 @@ TraceGen::InputStream::read(TraceElement& element)
         element.blocksize = pkt_msg.size();
         element.tick = pkt_msg.tick();
         element.flags = pkt_msg.has_flags() ? pkt_msg.flags() : 0;
+        element.hasPC = pkt_msg.has_pc();
+        element.pc = pkt_msg.pc();
         return true;
     }
 
@@ -152,6 +154,10 @@ TraceGen::getNextPacket()
     PacketPtr pkt = getPacket(currElement.addr + addrOffset,
                               currElement.blocksize,
                               currElement.cmd, currElement.flags);
+
+    if (currElement.hasPC) {
+        pkt->req->setPC(currElement.pc);
+    }
 
     // XiangShan's hardware prefetch queue requires source metadata, including
     // for externally replayed prefetches without a specific source ID.

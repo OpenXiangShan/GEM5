@@ -21,12 +21,13 @@ namespace replacement_policy
 
 ICP::ICP(const Params &p)
     : Base(p), numSets(p.num_sets), numWays(p.num_ways),
-      blockSize(p.block_size),
+      blockSize(p.block_size), pcEntries(p.pc_entries),
       counterMax(p.counter_bits > 0 && p.counter_bits <= 16 ?
                  (1U << p.counter_bits) - 1 : 0),
       threshold(p.accuracy_threshold), highPriority(p.high_priority),
       demoteOnFirstUse(p.demote_on_first_use), epfAssoc(p.epf_assoc),
       epfSets(p.epf_assoc ? p.epf_entries / p.epf_assoc : 0),
+      accuracy(NUM_PF_SOURCES * (std::min(pcEntries, 4096U) + 1)),
       sets(numSets), ghosts(p.epf_entries), stats(this)
 {
     fatal_if(!numSets || !numWays, "ICP requires nonzero cache geometry");
@@ -36,7 +37,9 @@ ICP::ICP(const Params &p)
     fatal_if(highPriority >= numWays, "ICP insertion rank exceeds associativity");
     fatal_if(p.epf_entries && (!epfAssoc || !epfSets ||
              p.epf_entries % epfAssoc), "Invalid ICP EPF geometry");
-    accuracy.fill(p.initial_accuracy);
+    fatal_if(pcEntries > 4096 || (pcEntries && !isPowerOf2(pcEntries)),
+             "ICP PC entries must be zero or a power of two up to 4096");
+    std::fill(accuracy.begin(), accuracy.end(), p.initial_accuracy);
 }
 
 bool
@@ -61,10 +64,24 @@ ICP::sourceOf(const PacketPtr pkt) const
     return source < NUM_PF_SOURCES ? source : 0;
 }
 
-void
-ICP::train(unsigned source, bool useful) const
+unsigned
+ICP::predictorOf(const PacketPtr pkt) const
 {
-    auto &counter = accuracy[source];
+    const unsigned offset = sourceOf(pkt) * (pcEntries + 1);
+    if (!pcEntries || !pkt->req->hasPC()) {
+        return offset;
+    }
+    // Keep one source-only fallback counter separate from the PC buckets.
+    const Addr pc = pkt->req->getPC();
+    const unsigned bucket = ((pc >> 1) ^ (pc >> 11) ^ (pc >> 21)) &
+                            (pcEntries - 1);
+    return offset + 1 + bucket;
+}
+
+void
+ICP::train(unsigned predictor, bool useful) const
+{
+    auto &counter = accuracy[predictor];
     if (useful) {
         counter = std::min(counter + 1, counterMax);
     } else if (counter) {
@@ -122,10 +139,11 @@ ICP::remember(const ICPReplData &data) const
         }
     }
     if (victim->valid) {
-        train(victim->source, false);
+        train(victim->predictor, false);
         ++stats.epfReplacements;
     }
-    *victim = {data.address, data.secure, true, data.source, ++sequence};
+    *victim = {data.address, data.secure, true, data.source, data.predictor,
+               ++sequence};
 }
 
 void
@@ -139,7 +157,7 @@ ICP::forget(Addr address, bool secure, bool demand) const
         auto &ghost = ghosts[i];
         if (ghost.valid && ghost.address == address && ghost.secure == secure) {
             if (demand) {
-                train(ghost.source, true);
+                train(ghost.predictor, true);
                 ++stats.epfHits;
                 ++stats.epfHitsBySource[ghost.source];
             } else {
@@ -167,7 +185,7 @@ ICP::notifyPrefetchFill(const std::shared_ptr<ReplacementData> &data,
 {
     auto &entry = *std::static_pointer_cast<ICPReplData>(data);
     if (entry.prefetched && demand_merged) {
-        train(entry.source, true);
+        train(entry.predictor, true);
         ++stats.usefulPrefetches;
         ++stats.usefulBySource[entry.source];
         entry.prefetched = false;
@@ -187,7 +205,7 @@ ICP::invalidate(const std::shared_ptr<ReplacementData> &data)
         if (entry.predictedLow && epfSets) {
             remember(entry);
         } else {
-            train(entry.source, false);
+            train(entry.predictor, false);
         }
     }
     for (auto *other : sets[entry.set]) {
@@ -207,7 +225,7 @@ ICP::touch(const std::shared_ptr<ReplacementData> &data, const PacketPtr pkt)
         return;
     }
     if (isPrefetch(pkt)) {
-        if (accuracy[sourceOf(pkt)] >= threshold) {
+        if (accuracy[predictorOf(pkt)] >= threshold) {
             position(entry, highPriority);
         } else {
             ++stats.ignoredPrefetchHits;
@@ -215,7 +233,7 @@ ICP::touch(const std::shared_ptr<ReplacementData> &data, const PacketPtr pkt)
         return;
     }
     if (entry.prefetched && isDemand(pkt)) {
-        train(entry.source, true);
+        train(entry.predictor, true);
         ++stats.usefulPrefetches;
         ++stats.usefulBySource[entry.source];
         entry.prefetched = false;
@@ -246,12 +264,19 @@ ICP::reset(const std::shared_ptr<ReplacementData> &data, const PacketPtr pkt)
     unsigned rank = 0;
     if (entry.prefetched) {
         entry.source = sourceOf(pkt);
-        entry.predictedLow = accuracy[entry.source] < threshold;
+        entry.predictor = predictorOf(pkt);
+        entry.predictedLow = accuracy[entry.predictor] < threshold;
         rank = entry.predictedLow ? numWays - 1 : highPriority;
         ++stats.prefetchFills;
         ++stats.fillsBySource[entry.source];
+        if (pcEntries && pkt->req->hasPC()) {
+            ++stats.pcPrefetchFills;
+        } else {
+            ++stats.fallbackPrefetchFills;
+        }
         if (entry.predictedLow) {
             ++stats.lowPriorityFills;
+            ++stats.lowFillsBySource[entry.source];
         } else {
             ++stats.highPriorityFills;
         }
@@ -302,6 +327,8 @@ ICP::instantiateEntry()
 ICP::ICPStats::ICPStats(statistics::Group *parent)
     : statistics::Group(parent),
       ADD_STAT(prefetchFills, "Prefetch block insertions"),
+      ADD_STAT(pcPrefetchFills, "Prefetch fills using a source and PC counter"),
+      ADD_STAT(fallbackPrefetchFills, "Prefetch fills using a source-only counter"),
       ADD_STAT(highPriorityFills, "Predicted-accurate prefetch insertions"),
       ADD_STAT(lowPriorityFills, "Predicted-inaccurate prefetch insertions"),
       ADD_STAT(usefulPrefetches, "First demand uses of resident prefetches"),
@@ -311,15 +338,18 @@ ICP::ICPStats::ICPStats(statistics::Group *parent)
       ADD_STAT(epfSuperseded, "Unresolved EPF records retired by a new residency"),
       ADD_STAT(ignoredPrefetchHits, "Low-confidence prefetch hits not promoted"),
       ADD_STAT(fillsBySource, "Prefetch fills by source"),
+      ADD_STAT(lowFillsBySource, "Low-priority prefetch fills by source"),
       ADD_STAT(usefulBySource, "Useful resident prefetches by source"),
       ADD_STAT(epfHitsBySource, "EPF corrections by source")
 {
     fillsBySource.init(NUM_PF_SOURCES);
+    lowFillsBySource.init(NUM_PF_SOURCES);
     usefulBySource.init(NUM_PF_SOURCES);
     epfHitsBySource.init(NUM_PF_SOURCES);
     for (unsigned i = 0; i < NUM_PF_SOURCES; ++i) {
         const auto name = enums::PrefetchSourceTypeStrings[i];
         fillsBySource.subname(i, name);
+        lowFillsBySource.subname(i, name);
         usefulBySource.subname(i, name);
         epfHitsBySource.subname(i, name);
     }

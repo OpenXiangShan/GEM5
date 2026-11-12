@@ -164,6 +164,8 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--l2-replacement-policy", default="default",
                         choices=["default", "lru", "xsdrrip", "icp"],
                         help="L2 replacement policy for KMHV3 experiments")
+    parser.add_argument("--icp-pc-entries", type=int, default=0,
+                        help="PC accuracy counters per source (0 is source-only)")
     parser.add_argument("--icp-epf-entries", type=int, default=256,
                         help="Evicted-prefetch filter entries per L2 slice")
     parser.add_argument("--icp-accuracy-threshold", type=int, default=8,

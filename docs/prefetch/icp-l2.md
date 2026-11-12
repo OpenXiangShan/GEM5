@@ -116,3 +116,38 @@ The correction retires superseded evidence neutrally and exposes
 six behavioral checks pass after the correction; the new sequence fails with
 both the original opt and original Clang fast binaries. A matched Clang fast
 mcf A/B is running to establish the performance impact.
+
+
+### Optional PC-granularity accuracy predictor
+
+`--icp-pc-entries=64` gives each prefetch source 64 hashed PC counters plus one
+source-only fallback counter for requests without a PC. It approximates the
+paper's per-stream predictor using metadata already attached to most prefetch
+requests. The table defaults to zero PC entries, preserving the source-only
+experiment until performance evidence supports changing that choice.
+
+Counters remain 4-bit and all sources remain separate. Each resident prefetch
+and EPF record retains its originating predictor index, so later demand use or
+expiration trains the same bucket. The table has bounded storage:
+`NUM_PF_SOURCES * (pc_entries + 1) * counter_bits` counter bits per L2 slice,
+plus predictor indices on tag/EPF metadata. Hash collisions can merge PCs;
+PC is an available proxy for a stream rather than an exact stream identifier.
+There are no prefetch-generation changes. Predictor access and training cost
+O(1); existing stack and EPF bounds remain unchanged.
+
+`pcPrefetchFills` and `fallbackPrefetchFills` expose PC coverage, while
+`lowFillsBySource` identifies which sources receive low-priority insertion.
+TraceGen now preserves the packet format's existing optional PC field, enabling
+a two-stream hardware-prefetch test. The test proves that a success on one PC
+raises only its own confidence when PC buckets are enabled. All seven scenarios
+pass with both zero and 64 PC entries (14 checks). GCC opt also builds and passes PC-isolation and superseded-record checks in
+both modes (four additional checks).
+
+Directed checkpoint A/B (2M warmup / 4M total instructions, Clang fast) passes
+difftest for all candidates. On GemsFDTD/65615, PC buckets improve IPC from
+5.724234 (source only) to 6.132436, while LRU is 6.306927 and XSDRRIP is
+6.362302. On mcf/6753, source-only IPC is 0.741689 and PC buckets produce
+0.734951; PC buckets with 1024 EPF entries reach 0.741911. All measured
+prefetch fills in these two PC-enabled tests carry a PC. Finer granularity
+helps GemsFDTD but does not resolve mcf, so this remains an optional candidate;
+no default or full-suite speedup claim follows from these directed results.

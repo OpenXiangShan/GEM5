@@ -429,6 +429,7 @@ def set_l2_replacement_policy(cache, options):
     elif policy == "icp":
         cache.replacement_policy = ICPRP(
             block_size=options.cacheline_size,
+            pc_entries=options.icp_pc_entries,
             epf_entries=options.icp_epf_entries,
             accuracy_threshold=options.icp_accuracy_threshold,
             high_priority=options.icp_high_priority,
