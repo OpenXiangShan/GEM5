@@ -272,12 +272,16 @@ class Feedback
     }
 
     unsigned
-    insertionRank(unsigned ways) const
+    insertionRank(unsigned ways, int mid_rank = -1) const
     {
+        assert(ways > 0);
+        assert(mid_rank >= -1);
+        assert(mid_rank < 0 || static_cast<unsigned>(mid_rank) < ways);
         // Positions are counted from LRU starting at one in the paper.
         switch (position) {
           case Mid:
-            return ways - std::max(1U, ways / 2);
+            return mid_rank < 0 ? ways - std::max(1U, ways / 2) :
+                static_cast<unsigned>(mid_rank);
           case Quarter:
             return ways - std::max(1U, ways / 4);
           case Lru:

@@ -21,6 +21,9 @@ makeFeedback(const FDPRPParams &p)
 {
     // Validate before allocating the pollution filter or shifting its size.
     fatal_if(p.num_ways == 0, "FDP requires at least one way");
+    fatal_if(p.mid_rank < -1 || (p.mid_rank >= 0 &&
+             static_cast<unsigned>(p.mid_rank) >= p.num_ways),
+             "FDP mid_rank must be -1 or a valid zero-based stack rank");
     fatal_if(p.source_utility && (!p.source_feedback || !p.tagged_filter),
              "FDP source utility requires source feedback and tagged filtering");
     fatal_if(p.source_utility && NUM_PF_SOURCES > 256,
@@ -43,10 +46,11 @@ makeFeedback(const FDPRPParams &p)
 } // anonymous namespace
 
 FDP::FDP(const Params &p)
-  : Base(p), numWays(p.num_ways), feedback(makeFeedback(p)),
+  : Base(p), numWays(p.num_ways), midRank(p.mid_rank),
+    feedback(makeFeedback(p)),
     sourceFeedback(p.source_feedback), sourceUtility(p.source_utility),
     prefetchHitGuard(p.prefetch_hit_guard), confidence(NUM_PF_SOURCES),
-    lruFallback(p.lru_fallback), fdpStats(this)
+    lruFallback(p.lru_fallback), fdpStats(this, numWays)
 {
     if (lruFallback)
         fdpStats.fallbackSelector = insertion.value();
@@ -126,7 +130,8 @@ FDP::reset(const std::shared_ptr<ReplacementData> &data,
         const bool fallback = lruFallback && insertion.useLru(d->sample);
         const bool protect = !fallback && sourceFeedback &&
             d->source != PF_NONE && confidence.protect(d->source);
-        rank = fallback || protect ? 0 : feedback.insertionRank(numWays);
+        rank = fallback || protect ? 0 :
+            feedback.insertionRank(numWays, midRank);
         if (fallback)
             fdpStats.fallbackPrefetches++;
         feedback.prefetchFill(pkt->getAddr(), pkt->isSecure());
@@ -147,6 +152,8 @@ FDP::reset(const std::shared_ptr<ReplacementData> &data,
         }
     }
     d->stack->insert(d->way, prefetch, rank);
+    if (prefetch)
+        fdpStats.prefetchInsertionRanks[d->line().rank]++;
 }
 
 void
@@ -254,7 +261,7 @@ FDP::instantiateEntry()
     return std::make_shared<FDPReplData>(currentSet, way, sample);
 }
 
-FDP::FDPStats::FDPStats(statistics::Group *parent)
+FDP::FDPStats::FDPStats(statistics::Group *parent, unsigned ways)
   : statistics::Group(parent),
     ADD_STAT(demandMisses, "Demand tag misses observed by FDP"),
     ADD_STAT(pollutionMisses, "Demand misses matching the pollution filter"),
@@ -272,6 +279,7 @@ FDP::FDPStats::FDPStats(statistics::Group *parent)
     ADD_STAT(fallbackPrefetches, "Prefetch fills using sampled LRU fallback"),
     ADD_STAT(fallbackSelector, "FDP/LRU insertion selector (LRU if >= 512)"),
     ADD_STAT(prefetchInsertions, "Prefetch fills by insertion position"),
+    ADD_STAT(prefetchInsertionRanks, "Prefetch fills by actual stack rank"),
     ADD_STAT(intervalPositions, "Feedback intervals by selected position"),
     ADD_STAT(protectedBySource, "High-confidence prefetch fills placed at MRU"),
     ADD_STAT(pollutionBySource, "Tagged pollution misses by causing prefetch source"),
@@ -284,6 +292,7 @@ FDP::FDPStats::FDPStats(statistics::Group *parent)
         v->subname(fdp::Feedback::Lru, "lru");
     }
     prefetchInsertions.subname(3, "mru");
+    prefetchInsertionRanks.init(ways);
     for (auto *v : {&protectedBySource, &pollutionBySource, &usefulBySource}) {
         v->init(NUM_PF_SOURCES);
         for (unsigned i = 0; i < NUM_PF_SOURCES; ++i)

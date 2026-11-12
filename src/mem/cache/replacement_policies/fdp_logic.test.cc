@@ -294,3 +294,38 @@ TEST(FDPFeedback, UtilityIncludesConsumedPrefetchVictimsButPaperDoesNot)
     EXPECT_FALSE(utility.demandMiss(128, false));
     EXPECT_EQ(utility.lastPolluter(), 0);
 }
+
+TEST(FDPFeedback, MidRankOverrideFitsCacheAssociativity)
+{
+    Feedback feedback(6, 12, 1, 0.005, 0.25);
+    for (unsigned ways : {1U, 2U, 3U, 8U, 16U}) {
+        EXPECT_EQ(feedback.insertionRank(ways),
+                  ways - std::max(1U, ways / 2));
+        Stack stack(ways);
+        for (unsigned way = 0; way < ways; ++way)
+            stack.insert(way, false, 0);
+        for (unsigned rank = 0; rank < ways; ++rank) {
+            stack.insert(0, true, feedback.insertionRank(ways, rank));
+            EXPECT_EQ(stack.lines[0].rank, rank);
+            EXPECT_TRUE(stack.lines[0].unusedPrefetch);
+        }
+    }
+}
+
+TEST(FDPFeedback, MidRankOverridePreservesOtherPollutionPositions)
+{
+    Feedback feedback(6, 12, 1, 0.005, 0.25);
+    EXPECT_EQ(feedback.insertionRank(8, 1), 1);
+    EXPECT_TRUE(feedback.evict(64, false, true, true, true));
+    feedback.demandMiss(64, false);
+    for (unsigned i = 0; i < 9; ++i)
+        feedback.demandMiss(128, false);
+    EXPECT_TRUE(feedback.evict(0, false, true, true, false));
+    EXPECT_EQ(feedback.getPosition(), Feedback::Quarter);
+    EXPECT_EQ(feedback.insertionRank(8, 1), 6);
+    for (unsigned i = 0; i < 100; ++i)
+        feedback.demandMiss(64, false);
+    EXPECT_TRUE(feedback.evict(0, false, true, true, false));
+    EXPECT_EQ(feedback.getPosition(), Feedback::Lru);
+    EXPECT_EQ(feedback.insertionRank(8, 1), 7);
+}

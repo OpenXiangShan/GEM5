@@ -78,6 +78,7 @@ class FDPRP(BaseReplacementPolicy):
     cxx_header = 'mem/cache/replacement_policies/fdp_rp.hh'
 
     num_ways = Param.Unsigned(Parent.assoc, "Ways in each exact LRU stack")
+    mid_rank = Param.Int(-1, "MID rank from MRU; -1 uses the paper position")
     num_sets = Param.Unsigned(0, "Sets, required for sampled LRU fallback")
     lru_fallback = Param.Bool(
         False, "Sample demand fills to choose FDP or MRU prefetch insertion")

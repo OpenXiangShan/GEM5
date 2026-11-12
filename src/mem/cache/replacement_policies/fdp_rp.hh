@@ -35,6 +35,7 @@ class FDP : public Base
     };
 
     const unsigned numWays;
+    const int midRank;
     unsigned entryCount = 0;
     std::shared_ptr<fdp::Stack> currentSet;
     fdp::Feedback feedback;
@@ -49,7 +50,7 @@ class FDP : public Base
 
     mutable struct FDPStats : public statistics::Group
     {
-        explicit FDPStats(statistics::Group *parent);
+        FDPStats(statistics::Group *parent, unsigned ways);
         statistics::Scalar demandMisses;
         statistics::Scalar pollutionMisses;
         statistics::Scalar filterAliasesRejected;
@@ -66,6 +67,7 @@ class FDP : public Base
         statistics::Scalar fallbackPrefetches;
         statistics::Scalar fallbackSelector;
         statistics::Vector prefetchInsertions;
+        statistics::Vector prefetchInsertionRanks;
         statistics::Vector intervalPositions;
         statistics::Vector protectedBySource;
         statistics::Vector pollutionBySource;
