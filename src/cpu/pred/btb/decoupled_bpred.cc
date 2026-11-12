@@ -637,25 +637,7 @@ DecoupledBPUWithBTB::enqueueSecondBlock(ThreadID tid)
     dbpBtbStats.secondBlockEnqueued++;
 }
 
-/**
- * @brief Common logic for handling squash events
- *
- * This function encapsulates the shared logic between different types of squashes:
- * - Setting squashing state
- * - Finding and updating the target
- * - Recovering history information
- * - Clearing predictions
- * - Updating FTQ and FSQ state
- *
- * @param target_id ID of the target being squashed
- * @param squash_type Type of squash (CTRL/OTHER/TRAP)
- * @param squash_pc PC where the squash occurred
- * @param redirect_pc PC to redirect to after squash
- * @param is_conditional Whether the squash is caused by a conditional branch
- * @param actually_taken Whether the branch was actually taken (for conditional branches)
- * @param static_inst Static instruction pointer (for control squash)
- * @param control_inst_size Size of the control instruction (for control squash)
- */
+/** Build branch identity, preferring trace facts over static decode. */
 BranchInfo
 DecoupledBPUWithBTB::makeBranchInfo(Addr control_pc, Addr target_pc,
                                     const DynInstPtr &inst,
@@ -674,6 +656,10 @@ DecoupledBPUWithBTB::makeBranchInfo(Addr control_pc, Addr target_pc,
     return info;
 }
 
+/**
+ * Recover shared predictor state. A control branch is supplied only when the
+ * caller has a static instruction; otherwise retain the FTQ prediction.
+ */
 void
 DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
                                  SquashType squash_type,
@@ -681,9 +667,7 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
                                  Addr redirect_pc,
                                  bool is_conditional,
                                  bool actually_taken,
-                                 const StaticInstPtr &static_inst,
-                                 unsigned control_inst_size,
-                                 const DynInstPtr &inst)
+                                 const BranchInfo *control_branch)
 {
     // Set squashing state
     threads[tid].squashing = true;
@@ -706,10 +690,8 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
     auto &target = ftq.get(target_id, tid);
 
     BranchInfo recovery_branch = target.predBranchInfo;
-    if (squash_type == SQUASH_CTRL && static_inst) {
-        recovery_branch = makeBranchInfo(
-            squash_pc.instAddr(), redirect_pc, inst, static_inst,
-            control_inst_size);
+    if (squash_type == SQUASH_CTRL && control_branch) {
+        recovery_branch = *control_branch;
     }
 
     // Remove targets after the squashed one
@@ -792,6 +774,7 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
         real_target = ras->getTopAddrFromMetas(target);
         // TODO: set real target to dynamic inst
     }
+    squashBranchInfo.target = real_target;
 
     // Detailed debugging for control squash
     DPRINTF(DecoupleBP,
@@ -804,8 +787,8 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
 
     // Call shared squash handling logic
     handleSquash(tid, target_id, SQUASH_CTRL, control_pc,
-                real_target, is_conditional, actually_taken, static_inst,
-                control_inst_size, inst);
+                real_target, is_conditional, actually_taken,
+                static_inst ? &squashBranchInfo : nullptr);
 }
 
 void

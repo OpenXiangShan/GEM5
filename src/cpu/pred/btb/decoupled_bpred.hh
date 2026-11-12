@@ -472,9 +472,7 @@ class DecoupledBPUWithBTB : public BPredUnit
                       Addr redirect_pc,
                       bool is_conditional = false,
                       bool actually_taken = false,
-                      const StaticInstPtr &static_inst = nullptr,
-                      unsigned control_inst_size = 0,
-                      const DynInstPtr &inst = nullptr);
+                      const BranchInfo *control_branch = nullptr);
 
     BranchInfo makeBranchInfo(Addr control_pc, Addr target_pc,
                               const DynInstPtr &inst,
