@@ -6,7 +6,9 @@ implementation follows the per-slot attribution policy in Figure 3 of
 (ASPLOS 2026, DOI 10.1145/3779212.3790139).
 
 DIP and TEA are enabled by default with the single-thread XiangShan
-configuration:
+configuration. DIP defaults off with `--smt`; explicitly enabling it with SMT
+is rejected because its dispatch-slot attribution currently supports one
+thread per CPU:
 
 ```sh
 build/RISCV/gem5.opt configs/example/kmhv3.py \
@@ -19,9 +21,10 @@ when running without a reference model.
 
 DIP requires the classic memory system. With Ruby, pass both `--disable-dip`
 and `--disable-tea`, because Ruby does not supply the cache-depth metadata used
-for frontend events. Pass `--disable-dip` for SMT, which DIP does not support.
+for frontend events.
 
-Use `--disable-dip` to turn DIP off; `--enable-dip` explicitly turns it on.
+Use `--disable-dip` to turn DIP off; `--enable-dip` explicitly turns it on
+for non-SMT runs.
 `--dip-sample-period=N` samples every N active CPU ticks;
 zero and one enumerate every tick. TEA and DIP can run together. DIP also
 preserves fetch cache-line miss metadata when TEA is disabled.

@@ -1062,11 +1062,11 @@ def xiangshan_system_init():
         help="Disable direction TAGE sources in kmhv3 and force MGSC standalone SC prediction",
     )
     parser.add_argument(
-        "--enable-dip", action="store_true", default=True,
-        help="Enable DIP dispatch per-instruction cycle stacks (default)",
+        "--enable-dip", dest="enable_dip", action="store_true", default=None,
+        help="Enable DIP dispatch per-instruction cycle stacks",
     )
     parser.add_argument(
-        "--disable-dip", dest="enable_dip", action="store_false",
+        "--disable-dip", dest="enable_dip", action="store_false", default=None,
         help="Disable DIP dispatch per-instruction cycle stacks",
     )
     parser.add_argument(
@@ -1223,6 +1223,13 @@ def xiangshan_system_init():
     if '--ruby' in sys.argv:
         Ruby.define_options(parser)
     args = parser.parse_args()
+
+    if args.enable_dip is None:
+        args.enable_dip = not args.smt
+
+    if args.enable_dip and args.smt:
+        parser.error("--enable-dip is not supported with --smt; "
+                     "DIP currently requires a single-thread dispatch window.")
 
     if args.enable_tea and args.ruby:
         parser.error("--enable-tea is not supported with --ruby. "

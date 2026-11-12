@@ -53,6 +53,24 @@ def generate(folder, output, elfs=(), objdump=None, plots=False):
         if not (dip or tea):
             continue
         stats = read_stats(folder / "stats.txt", cpu)
+        required_stats = ["numCycles", "committedInsts"]
+        if dip:
+            required_stats.append("dip.samples")
+        if tea:
+            required_stats.append("tea.samples")
+        missing_stats = [key for key in required_stats if key not in stats]
+        if missing_stats:
+            lines.extend(
+                [
+                    f"## {cpu}",
+                    "",
+                    "Statistics unavailable; skipping this CPU. Missing: "
+                    + ", ".join(f"`{key}`" for key in missing_stats)
+                    + ".",
+                    "",
+                ]
+            )
+            continue
         cycles = int(stats["numCycles"])
         instructions = int(stats["committedInsts"])
         cpi = f"{cycles / instructions:.6f}" if instructions else "n/a"

@@ -467,6 +467,14 @@ def register_profile_report(options):
 
     return set_exit_code
 
+def validate_dip_ruby_compatibility(testsys):
+    """Reject DIP with Ruby after command-line parameter overrides apply."""
+    if hasattr(testsys, "ruby") and any(
+        getattr(cpu, "enableDip", False) for cpu in testsys.cpu
+    ):
+        fatal("DIP is not supported with Ruby because Ruby does not populate "
+              "cacheAccessDepth; set system.cpu.enableDip=False.")
+
 def run(options, root, testsys, cpu_class):
     set_profile_exit = register_profile_report(options)
     if options.checkpoint_dir:
@@ -682,6 +690,7 @@ def run(options, root, testsys, cpu_class):
     if options.checkpoint_restore:
         cpt_starttick, checkpoint_dir = findCptDir(options, cptdir, testsys)
     root.apply_config(options.param)
+    validate_dip_ruby_compatibility(testsys)
     m5.instantiate(checkpoint_dir)
 
     # Initialization is complete.  If we're not in control of simulation
@@ -857,6 +866,7 @@ def run_vanilla(options, root, testsys, cpu_class):
 
     checkpoint_dir = None
     root.apply_config(options.param)
+    validate_dip_ruby_compatibility(testsys)
     m5.instantiate(checkpoint_dir)
 
     # Handle the max tick settings now that tick frequency was resolved
