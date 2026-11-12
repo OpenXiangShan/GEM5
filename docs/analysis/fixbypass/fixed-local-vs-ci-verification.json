@@ -1,0 +1,42 @@
+[
+  {
+    "point": "bwaves_13153",
+    "nonhost_counter_differences": [],
+    "measured_cycles": 17706707.0
+  },
+  {
+    "point": "libquantum_85656",
+    "nonhost_counter_differences": [],
+    "measured_cycles": 4796882.0
+  },
+  {
+    "point": "libquantum_85924",
+    "nonhost_counter_differences": [],
+    "measured_cycles": 4707901.0
+  },
+  {
+    "point": "mcf_1820",
+    "nonhost_counter_differences": [],
+    "measured_cycles": 33607662.0
+  },
+  {
+    "point": "milc_5841",
+    "nonhost_counter_differences": [],
+    "measured_cycles": 30199381.0
+  },
+  {
+    "point": "milc_7983",
+    "nonhost_counter_differences": [],
+    "measured_cycles": 32778781.0
+  },
+  {
+    "point": "sphinx3_157921",
+    "nonhost_counter_differences": [],
+    "measured_cycles": 5732835.0
+  },
+  {
+    "point": "xalancbmk_10335",
+    "nonhost_counter_differences": [],
+    "measured_cycles": 7453472.0
+  }
+]

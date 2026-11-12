@@ -1,0 +1,35 @@
+{
+  "run_id": 43282989822,
+  "tested_sha": "56aceca0ba8398a2526eaca7ded59e3921216fd3",
+  "baseline_run_id": 43238615944,
+  "points_checked": 1094,
+  "non_algorithm_config_differences": 0,
+  "algorithm_field": {
+    "key": "bypass_dead_victims",
+    "fixed_value": "false",
+    "baseline_value": null,
+    "occurrences_per_point": 4,
+    "sections": [
+      "system.l2_wrappers.slices0.inner_cache.replacement_policy",
+      "system.l2_wrappers.slices1.inner_cache.replacement_policy",
+      "system.l2_wrappers.slices2.inner_cache.replacement_policy",
+      "system.l2_wrappers.slices3.inner_cache.replacement_policy"
+    ]
+  },
+  "total_algorithm_field_differences": 4376,
+  "identical_runtime_metadata_fields": [
+    "config_path",
+    "benchmark_type",
+    "checkpoint_root",
+    "specific_benchmarks",
+    "resolved_extra_args",
+    "ref_so"
+  ],
+  "input_hashes": {
+    "cluster.json": "ed5b8a0795604cf2dd0e98a36a8811610960f5115336de27593cc3ca80ad6d5f",
+    "checkpoints.lst": "d608c8029c30690e6e07be5ca814052d846de96c4bc00bcef196549641a0339a"
+  },
+  "ref_so_sha256": "e5e58a35ae758b46de9c17cf8d30ef92e0a168d197939926a7185ee94a9315f3",
+  "full_comparison_path": "/tmp/fixbypass-analysis/full-ci-config-validation.json",
+  "full_comparison_sha256": "5a36569011858ecdeb0d4c6be2ba16e6f1020b234dee85ad4f762843a07162ed"
+}

@@ -1,0 +1,116 @@
+{
+  "status": "passed",
+  "audited_at": "2026-11-12T21:12:13.617229+00:00",
+  "worktree": "/nfs/home/chenzhuo/fixbypass",
+  "branch": "codex/fixbypass",
+  "tested_source_commit": "56aceca0ba8398a2526eaca7ded59e3921216fd3",
+  "source_hashes_match_local_validation": true,
+  "changes_after_tested_commit_are_documentation_only": true,
+  "interface_tests_passed": 31,
+  "configuration_tests_passed": 2,
+  "configuration_combinations": 320,
+  "cache_integration_tests_passed": 32,
+  "exact_original_local_counter_comparisons": 12,
+  "exact_fixed_local_ci_counter_comparisons": 8,
+  "full_ci_run": 43282989822,
+  "full_ci_conclusion": "success",
+  "full_ci_completed_points": 1094,
+  "full_ci_marker_counts": {
+    "completed": 1094,
+    "running": 0,
+    "abort": 0
+  },
+  "warmup_simInsts_range": [
+    20000000,
+    20000016
+  ],
+  "measurement_simInsts_range": [
+    19999985,
+    20000016
+  ],
+  "total_simInsts_range": [
+    40000000,
+    40000018
+  ],
+  "instruction_count_note": "Warmup and stop statistics are serviced at commit/tick event boundaries; configured targets remain 20M warmup and 40M total. Scores use measured simInsts.",
+  "native_topdown_maximum_closure_error": {
+    "level1": 1.000000000139778e-06,
+    "level2": 1.000000000139778e-06
+  },
+  "non_algorithm_config_differences": 0,
+  "full_point_integrity_path": "/tmp/fixbypass-analysis/full-ci-point-integrity.json",
+  "full_point_integrity_sha256": "93d4d32a2ecad95e4b61eeb04401fb6ed48057fc4171faba1c5a9fb47665783c",
+  "overall_score_3ghz": 47.407003168554795,
+  "overall_change_vs_original_on_pct": 0.1574137546498599,
+  "overall_change_vs_off_pct": -0.0247818549172662,
+  "requirements": [
+    {
+      "requirement": "Create ~/fixbypass worktree",
+      "evidence": "/nfs/home/chenzhuo/fixbypass",
+      "verified": true
+    },
+    {
+      "requirement": "Compare original ON, OFF, and LRU counters and scores",
+      "evidence": [
+        "input-validation.json",
+        "point-counters.csv",
+        "score-comparison.csv"
+      ],
+      "verified": true
+    },
+    {
+      "requirement": "Analyze native TopDown",
+      "evidence": [
+        "topdown-benchmarks-native.csv",
+        "full-ci-topdown-comparison.csv"
+      ],
+      "verified": true
+    },
+    {
+      "requirement": "Trace concrete requests, addresses, and PCs",
+      "evidence": [
+        "report.md",
+        "libquantum85924-on-trace-summary.json",
+        "mcf1820-on-trace-summary.json"
+      ],
+      "verified": true
+    },
+    {
+      "requirement": "Implement and validate a policy fix",
+      "evidence": "56aceca0ba8398a2526eaca7ded59e3921216fd3",
+      "verified": true
+    },
+    {
+      "requirement": "Test severe regression points locally",
+      "evidence": [
+        "local-results.csv",
+        "local-completion-audit.json",
+        "bounded-policy-summary.json"
+      ],
+      "verified": true
+    },
+    {
+      "requirement": "Run full 1.0c after local improvement",
+      "evidence": 43282989822,
+      "verified": true
+    },
+    {
+      "requirement": "Keep non-algorithm parameters identical",
+      "evidence": [
+        "full-ci-config-validation-summary.json",
+        "ci-runtime-inputs.json"
+      ],
+      "verified": true
+    },
+    {
+      "requirement": "Verify final scores and disclose remaining regressions",
+      "evidence": [
+        "full-ci-result.json",
+        "full-ci-score-comparison.csv",
+        "full-ci-point-comparison.csv",
+        "report.md"
+      ],
+      "verified": true
+    }
+  ]
+}

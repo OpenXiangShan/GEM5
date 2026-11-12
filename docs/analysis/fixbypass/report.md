@@ -1,7 +1,8 @@
 # SDBP bypass 性能分析与修复
 
 分析目录：`/tmp/fixbypass-analysis`；独立 worktree：`~/fixbypass`。
-本文记录已完成的 8 个本地切片测量；排队中的全量 CI 不计为通过。
+本文记录三组原始 CI 的计数器、原生 TopDown、请求/地址/PC trace 分析、修复与本地验证，
+以及修复后已成功完成的 1094 点全量 SPEC06 1.0c CI。
 
 ## 对照口径
 
@@ -10,8 +11,10 @@
 | SDBP bypass 开 | 43238615944 | 0fd6c64e9c | 47.332495 |
 | SDBP bypass 关 | 42941526485 | 2e545b04af | 47.418754 |
 | LRU | 42941521627 | 2e545b04af | 47.008429 |
+| 修复后 SDBP bypass 开 | 43282989822 | 56aceca0ba | 47.407003 |
 
-三组均有 1094 个 `completed` 切片和对应统计，无缺失，score 的 coverage 均为 1.0。
+三组原始 CI 均有 1094 个 `completed` 切片和对应统计，无缺失。coverage 按归档显示精度为 1.0；
+原始权重和存在舍入误差（例如 cactusADM 为 0.999743155），各组精确覆盖相同点集。
 checkpoint 清单、权重 JSON 的 SHA-256 三组完全一致，见 `input-validation.json`。
 两次基线 Actions 的 failure 来自仿真、计分后的历史归档清理，错误为 NFS stale file handle；
 不能因此把已完成的数据丢掉，也不能把它们的 workflow 状态写成 success。
@@ -157,7 +160,7 @@ WritebackClean RETRY 为 2,420/98。窗口的请求数不同，应结合吞吐�
 风险是有限时间窗口可能牺牲很长间隔的 L2 reuse；L1-copy 查询仍沿用既有理想 tag probe，
 不能据此声称 RTL 的面积、能耗或探测开销已建模。必须通过正常参数的多切片和全量 CI 验证收益。
 
-## 本地验证与后续全量 CI
+## 本地验证
 
 31 个 SDBP interface 单测通过，包含 bypass 引用老化、真实 reuse 刷新及 L1 驻留保护。
 两个配置测试通过，覆盖 320 组 classic/sliced、多核和新/原策略组合。
@@ -202,7 +205,7 @@ mcf/1820 的原版 on/off trace 定位到 PC `0x113cc`（`ld a3,8(a5)`）和
 `0x113da`（`ld a3,16(a5)`），位于每次推进 64B 且连续执行 store 的循环中。
 地址 `0x890b1e80` 在 L2 bypass 后，以 `WritebackDirty` 从 L1 经 L2 回到 L3。
 完整关闭的 on/off trace 摘要保存在 `mcf1820-*-trace-summary.json`；60M ticks 窗口内
-on 的两个 PC 分别发生 7,068/940 次 bypass，地址示例记录包含各级时间戳。
+on 的两个 PC 分别发生 7,071/941 次 bypass，地址示例记录包含各级时间戳。
 这里主要是 dirty 流量，不能只用额外 clean 数据回送解释所有退化。
 修复版的 L2 平均 miss latency 从 83.374 降到 75.588 ns，
 测量 bypass 从 1,667,179 降到 658。其第一版只调整 dead 优先级的周期减少 0.021%，
@@ -210,9 +213,83 @@ on 的两个 PC 分别发生 7,068/940 次 bypass，地址示例记录包含各�
 mcf 的 bank-conflict 计数同时从 1,990,066 增到 2,238,592；这说明它的加速不能
 用 bank conflict 单项下降解释，应结合 L2 miss latency、写回时机及总停顿判断。
 
-已触发全量 1.0c：GitHub Actions run **43282989822**，被测提交
-`56aceca0ba8398a2526eaca7ded59e3921216fd3`。setup 成功，确认时性能 job 为 queued，
-没有最终 conclusion，不能写成 CI 已通过。`extra_args` 与 run 43238615944 的
-`resolved_extra_args` 逐字符相同，REF 路径固定，全部 benchmark、distributed=default、
-每机 32 jobs。完整输入和核对记录见 `ci-dispatch.json`。
-构建及测试日志、原始 trace、统计和退出记录在 `/tmp/fixbypass-analysis`。
+## 全量 SPEC06 1.0c 结果
+
+GitHub Actions run **43282989822** 已完成，workflow 和两个 job 均为 **success**，
+被测提交为 `56aceca0ba8398a2526eaca7ded59e3921216fd3`，性能 job 为
+`131408980855`，runner 为 `node038-2`。只触发了这一次全量测试。
+实际归档：
+
+```
+/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-1.0c/20261113_032346_56aceca0ba_idealkmhv3_run2125
+```
+
+完整 1094/1094 个切片均有 `completed`，没有 `running`、`abort` 或缺失点，
+每点均有预热和测量两个 stats block。soplex_ref/3078 的一次 SSH 启动失败由既有调度器
+自动重试恢复，最终完成；没有手动重启或额外 dispatch。
+共享处理器提取 1094 个唯一切片、29 个 benchmark，coverage 与原版逐项相同。
+复算 INT、FP、overall 与归档 `score.txt` 的每 GHz 分数误差均小于 1e-9。
+最终记录见 `full-ci-result.json`。
+
+| SPEC06 3 GHz | 原 bypass 开 | bypass 关 | LRU | 修复后 | 修复相对开 | 修复相对关 | 修复相对 LRU |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| INT | 54.789953 | 54.846912 | 54.011879 | 54.819440 | +0.0538% | -0.0501% | +1.4952% |
+| FP | 42.688074 | 42.789473 | 42.618824 | 42.786515 | +0.2306% | -0.0069% | +0.3935% |
+| Overall | 47.332495 | 47.418754 | 47.008429 | 47.407003 | +0.1574% | -0.0248% | +0.8479% |
+
+修复改善了原开启版的整体表现，但全量总分仍略低于关闭版，不能声称全面胜出。
+完整 29 benchmark 分数及相对三组基线的变化见 `full-ci-score-comparison.csv`
+（文件中的绝对分数为每 GHz，表中乘以 3）。主要改善与取舍为：
+
+| benchmark | 修复相对原 bypass 分数变化 | 修复相对关闭 bypass |
+|---|---:|---:|
+| bwaves | +2.6855% | -0.0034% |
+| libquantum | +1.5270% | -0.4338% |
+| milc | +1.1808% | -0.0459% |
+| calculix | +0.4344% | -0.0057% |
+| xalancbmk | -0.8218% | -0.0524% |
+| sphinx3 | -0.6319% | +0.1242% |
+| lbm | -0.2843% | -0.0366% |
+| mcf | -0.2059% | -0.0761% |
+| omnetpp | -0.2007% | +0.0152% |
+
+mcf/1820 虽改善 10.065%，其权重仅 0.005512，不能代表整个 mcf；全 benchmark
+仍回退 0.2059%。全量切片相对原开启版，55 点周期减少超过 1%，42 点周期增加超过 1%。
+最大周期回退包括 omnetpp/24064 的 +5.599%、xalancbmk/6663 的 +5.295%、
+omnetpp/244 的 +5.035% 和 libquantum/86704 的 +4.176%。其中 xalancbmk/6663
+比关闭版也多 1.356%；libquantum/27811 比关闭版多 2.899%，说明残余收益差距并非仅舍入。
+完整点级周期、权重和三组对比保存在 `full-ci-point-comparison.csv`。
+
+全量原生 TopDown 仍按各 workload 预计执行周期加权，不使用共享处理器的旧重算公式。
+修复版 1094 点均通过 Level 1 和 Level 2 闭合检查，最大绝对误差约 1e-6；
+原始三组的原生闭合记录见 `native-topdown-closure-check.csv`。
+下表比例单位为百分比，前后顺序为原开启版 → 修复版：
+
+| benchmark | coreBound | memoryBound | l2Bound | l3Bound |
+|---|---:|---:|---:|---:|
+| bwaves | 30.066 → 30.705 | 56.450 → 55.450 | 36.504 → 35.369 | 0.462 → 0.474 |
+| libquantum | 31.441 → 30.726 | 23.347 → 23.356 | 10.913 → 11.911 | 1.671 → 1.356 |
+| milc | 20.330 → 20.358 | 69.057 → 68.905 | 58.311 → 58.237 | 0.643 → 0.669 |
+| mcf | 26.099 → 25.881 | 55.867 → 56.112 | 20.511 → 19.807 | 9.682 → 9.711 |
+| sphinx3 | 34.777 → 34.852 | 19.018 → 19.254 | 9.204 → 9.012 | 4.764 → 5.058 |
+| xalancbmk | 20.828 → 20.870 | 12.578 → 13.024 | 2.460 → 2.420 | 5.955 → 6.394 |
+
+bwaves 的 memory/l2 占比和 libquantum 的 core 剩余停顿占比下降，与本地请求链证据相符。
+libquantum 的 l2Bound 占比上升不能直接当作绝对停顿增加；总执行周期和其他分类也在变化。
+xalancbmk、sphinx3 的 memory/l3 占比上升与回退同时出现，但这些汇总本身不能确定具体
+失效地址或证明单一根因。完整四组原生汇总在 `full-ci-topdown-comparison.csv`；
+原版导出未包含 l1Bound，该列仅修复版有值。
+
+全 1094 个 `config.ini` 与原开启版逐字段比较，只增加了四个 slice 的
+`bypass_dead_victims=false`，合计 4376 处算法字段；**非算法配置差异为 0**。
+`resolved_extra_args` 逐字符相同，REF 路径和二进制哈希、checkpoint 清单和权重 JSON
+哈希完全一致。审计摘要见 `full-ci-config-validation-summary.json`，输入见
+`ci-runtime-inputs.json`。8 个本地修复版点在全量 CI 的预热与测量阶段，所有非 host
+计数器逐项相同（包括两个回退控制点），见 `fixed-local-vs-ci-verification.json`。
+
+代码、接口/配置/缓存层级回归、本地 difftest、trace 与计数器核对，以及全量测试均已完成。
+该实现消除了无界保留旧 live 行这一问题，但有限保护仍会损失部分长间隔 reuse；
+保留当前默认容量窗口，不把剩余退化隐藏为测试噪声，也没有追加参数调优或第二次全量测试。
+被测提交后的提交仅保存文档和证据，模拟器实现与 CI 被测版本相同。
+构建及测试日志、原始 trace、完整统计和退出记录在 `/tmp/fixbypass-analysis`；
+全量原始统计同时保存在上述共享 CI 归档。
