@@ -1,7 +1,7 @@
 # SDBP bypass 性能分析与修复
 
 分析目录：`/tmp/fixbypass-analysis`；独立 worktree：`~/fixbypass`。
-本文记录已结束的本地测量；仍在运行的本地 mcf 及后续全量 CI 不计为通过。
+本文记录已完成的 8 个本地切片测量；排队中的全量 CI 不计为通过。
 
 ## 对照口径
 
@@ -169,6 +169,8 @@ WritebackClean RETRY 为 2,420/98。窗口的请求数不同，应结合吞吐�
 第二版所有 8 组生成配置与原 on CI 对比，只有四个 slice 的新算法选项
 `bypass_dead_victims=false` 和内容相同的 DRAM ini 根路径不同。
 精确 argv、固定 REF 与开始时间见 `local-commands.json`，配置差异见 `bounded-config-validation.json`。
+`local-completion-audit.json` 逐组确认退出码、两个指令区间、checkpoint、REF 哈希、
+所有非算法命令行参数及 DRAM 配置文件内容相同。
 
 下表只列已完成的第二版测量。周期负变化表示加速，正变化表示回退。
 
@@ -179,10 +181,14 @@ WritebackClean RETRY 为 2,420/98。窗口的请求数不同，应结合吞吐�
 | bwaves_13153 | 17,706,707 | -3.319% | -0.006% | 775 |
 | milc_7983 | 32,778,781 | -7.452% | +0.043% | 2,422 |
 | milc_5841 | 30,199,381 | -3.258% | +0.236% | 3,257 |
+| mcf_1820 | 33,607,662 | -10.065% | -0.047% | 658 |
 | sphinx3_157921 | 5,732,835 | +0.993% | -0.127% | 1,836 |
 | xalancbmk_10335 | 7,453,472 | +3.766% | -0.342% | 741 |
 
-尚在运行或未结束的测量：mcf_1820。这些点不算通过，也不能用预热块代替最终结果。
+8 个切片均完成完整的 20M 预热及 20M 测量，difftest 运行退出码均为 0。
+6 个重灾点周期均下降，两个原 bypass 收益控制点回退。
+8 个完整 SDBP trace 的测量区间事件数与对应 bypass/dead-allocation/stale-allocation
+计数器逐项相等，见 `bounded-policy-summary.json`。
 
 libquantum/85924 的 L2 平均 miss latency 从 13.571 降到 9.861 ns；bank conflict 从
 361,258 降到 211,413，coreBound 从 37.3215% 降到 29.6216%。
@@ -191,6 +197,16 @@ libquantum/85924 的 L2 平均 miss latency 从 13.571 降到 9.861 ns；bank co
 精确得到原 CI 的 5,303,213 cycles；预热/测量的全部已有非 host 计数器差异为零。
 新增诊断计数器单独列出，不混入该一致性断言，见 `same-binary-original-verification.json`。
 sphinx3 控制点的收益损失必须保留：优先替换与有限保护也可能减少原 bypass 的收益。
+
+mcf/1820 的原版 on/off trace 定位到 PC `0x113cc`（`ld a3,8(a5)`）和
+`0x113da`（`ld a3,16(a5)`），位于每次推进 64B 且连续执行 store 的循环中。
+地址 `0x890b1e80` 在 L2 bypass 后，以 `WritebackDirty` 从 L1 经 L2 回到 L3。
+这里主要是 dirty 流量，不能只用额外 clean 数据回送解释所有退化。
+修复版的 L2 平均 miss latency 从 83.374 降到 75.588 ns，
+测量 bypass 从 1,667,179 降到 658。其第一版只调整 dead 优先级的周期减少 0.021%，
+加入年龄上限后的周期减少 10.065%，支持必须处理旧 live 内容长期保留这一判断。
+mcf 的 bank-conflict 计数同时从 1,990,066 增到 2,238,592；这说明它的加速不能
+用 bank conflict 单项下降解释，应结合 L2 miss latency、写回时机及总停顿判断。
 
 已触发全量 1.0c：GitHub Actions run **43282989822**，被测提交
 `56aceca0ba8398a2526eaca7ded59e3921216fd3`。setup 成功，确认时性能 job 为 queued，

@@ -190,34 +190,36 @@
     ]
   },
   "mcf_1820": {
-    "complete_gzip": false,
-    "last_tick": 15575961447,
+    "complete_gzip": true,
+    "last_tick": 23678228403,
     "measurement_start_tick": 12486877623,
     "all_events": {
-      "bypass": 2244,
-      "allocate-dead-over-bypass": 2045474,
-      "allocate-stale-over-bypass": 110542
+      "bypass": 2711,
+      "allocate-dead-over-bypass": 3206349,
+      "allocate-stale-over-bypass": 157855
     },
     "measurement_events": {
-      "allocate-dead-over-bypass": 442003,
-      "allocate-stale-over-bypass": 16449,
-      "bypass": 191
+      "allocate-dead-over-bypass": 1602878,
+      "allocate-stale-over-bypass": 63762,
+      "bypass": 658
     },
     "measurement_pcs": {
       "allocate-dead-over-bypass": {
-        "0x113cc": 383527,
-        "0x113da": 58417,
-        "0x113d4": 59
+        "0x113cc": 1389080,
+        "0x113da": 213362,
+        "0x113d4": 435,
+        "0x113dc": 1
       },
       "allocate-stale-over-bypass": {
-        "0x113cc": 14270,
-        "0x113da": 2150,
-        "0x113d4": 28,
+        "0x113cc": 55192,
+        "0x113da": 8399,
+        "0x113d4": 170,
         "0x113dc": 1
       },
       "bypass": {
-        "0x113cc": 172,
-        "0x113da": 19
+        "0x113cc": 573,
+        "0x113da": 84,
+        "0x113d4": 1
       }
     },
     "stale_examples": [
