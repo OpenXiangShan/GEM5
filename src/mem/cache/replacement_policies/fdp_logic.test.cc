@@ -160,3 +160,31 @@ TEST(FDPFeedback, PaperFilterRetainsItsOriginalSemantics)
     feedback.prefetchFill(uint64_t(1) << 18, false);
     EXPECT_FALSE(feedback.demandMiss(64, false));
 }
+
+TEST(FDPConfidence, SourceIsolationAndThreshold)
+{
+    gem5::replacement_policy::fdp::SourceConfidence confidence(3);
+    EXPECT_FALSE(confidence.protect(0));
+    for (unsigned i = 0; i < 15; ++i)
+        confidence.train(0, true);
+    EXPECT_FALSE(confidence.protect(0));
+    confidence.train(0, true);
+    EXPECT_TRUE(confidence.protect(0));
+    EXPECT_FALSE(confidence.protect(1));
+    confidence.train(0, false);
+    EXPECT_FALSE(confidence.protect(0));
+}
+
+TEST(FDPConfidence, SaturatesWithoutWrapping)
+{
+    gem5::replacement_policy::fdp::SourceConfidence confidence(2);
+    for (unsigned i = 0; i < 1000; ++i) {
+        confidence.train(0, true);
+        confidence.train(1, false);
+    }
+    EXPECT_TRUE(confidence.protect(0));
+    EXPECT_FALSE(confidence.protect(1));
+    for (unsigned i = 0; i < 16; ++i)
+        confidence.train(0, false);
+    EXPECT_FALSE(confidence.protect(0));
+}

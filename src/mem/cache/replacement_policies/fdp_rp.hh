@@ -26,6 +26,7 @@ class FDP : public Base
     {
         std::shared_ptr<fdp::Stack> stack;
         unsigned way;
+        unsigned source = 0;
         FDPReplData(std::shared_ptr<fdp::Stack> set, unsigned w)
           : stack(set), way(w) {}
         fdp::Stack::Line &line() const { return stack->lines[way]; }
@@ -35,6 +36,8 @@ class FDP : public Base
     unsigned entryCount = 0;
     std::shared_ptr<fdp::Stack> currentSet;
     fdp::Feedback feedback;
+    const bool sourceFeedback;
+    fdp::SourceConfidence confidence;
 
     mutable struct FDPStats : public statistics::Group
     {
@@ -50,6 +53,7 @@ class FDP : public Base
         statistics::Scalar pollutionRate;
         statistics::Vector prefetchInsertions;
         statistics::Vector intervalPositions;
+        statistics::Vector protectedBySource;
     } fdpStats;
 
     static bool isPrefetch(const PacketPtr pkt);

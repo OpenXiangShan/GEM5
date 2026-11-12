@@ -35,7 +35,9 @@ makeFeedback(const FDPRPParams &p)
 } // anonymous namespace
 
 FDP::FDP(const Params &p)
-  : Base(p), numWays(p.num_ways), feedback(makeFeedback(p)), fdpStats(this)
+  : Base(p), numWays(p.num_ways), feedback(makeFeedback(p)),
+    sourceFeedback(p.source_feedback), confidence(NUM_PF_SOURCES),
+    fdpStats(this)
 {
 }
 
@@ -61,8 +63,11 @@ FDP::touch(const std::shared_ptr<ReplacementData> &data,
     if (pkt && pkt->cmd == MemCmd::StorePFTrain)
         return;
     const bool demand = pkt && pkt->isDemand() && !isPrefetch(pkt);
-    if (demand && d->line().unusedPrefetch)
+    if (demand && d->line().unusedPrefetch) {
         fdpStats.usefulPrefetches++;
+        if (sourceFeedback)
+            confidence.train(d->source, true);
+    }
     d->stack->touch(d->way, demand);
 }
 
@@ -81,9 +86,17 @@ FDP::reset(const std::shared_ptr<ReplacementData> &data,
     const bool prefetch = isPrefetch(pkt);
     unsigned rank = 0;
     if (prefetch) {
-        rank = feedback.insertionRank(numWays);
+        const unsigned source = static_cast<unsigned>(pkt->req->getPFSource());
+        d->source = source < NUM_PF_SOURCES ? source :
+            static_cast<unsigned>(PF_NONE);
+        const bool protect = sourceFeedback && d->source != PF_NONE &&
+            confidence.protect(d->source);
+        rank = protect ? 0 : feedback.insertionRank(numWays);
         feedback.prefetchFill(pkt->getAddr(), pkt->isSecure());
-        fdpStats.prefetchInsertions[feedback.getPosition()]++;
+        const unsigned position = feedback.getPosition();
+        fdpStats.prefetchInsertions[protect ? 3 : position]++;
+        if (protect)
+            fdpStats.protectedBySource[d->source]++;
     } else if (pkt) {
         feedback.demandFill(pkt->getAddr(), pkt->isSecure());
     }
@@ -121,10 +134,13 @@ FDP::notifyEviction(const std::shared_ptr<ReplacementData> &data,
     const bool prefetch = isPrefetch(incoming);
     if (prefetch && line.demandFetched)
         fdpStats.demandEvictedByPrefetch++;
-    if (line.unusedPrefetch)
+    if (line.unusedPrefetch) {
         fdpStats.unusedPrefetchEvictions++;
-    else
+        if (sourceFeedback)
+            confidence.train(d->source, false);
+    } else {
         fdpStats.usefulEvictions++;
+    }
 
     if (feedback.evict(addr, secure, line.demandFetched,
                        !line.unusedPrefetch, prefetch)) {
@@ -174,14 +190,19 @@ FDP::FDPStats::FDPStats(statistics::Group *parent)
     ADD_STAT(intervals, "Completed FDP feedback intervals"),
     ADD_STAT(pollutionRate, "Most recent smoothed pollution rate"),
     ADD_STAT(prefetchInsertions, "Prefetch fills by insertion position"),
-    ADD_STAT(intervalPositions, "Feedback intervals by selected position")
+    ADD_STAT(intervalPositions, "Feedback intervals by selected position"),
+    ADD_STAT(protectedBySource, "High-confidence prefetch fills placed at MRU")
 {
     for (auto *v : {&prefetchInsertions, &intervalPositions}) {
-        v->init(3);
+        v->init(v == &prefetchInsertions ? 4 : 3);
         v->subname(fdp::Feedback::Mid, "mid");
         v->subname(fdp::Feedback::Quarter, "quarter");
         v->subname(fdp::Feedback::Lru, "lru");
     }
+    prefetchInsertions.subname(3, "mru");
+    protectedBySource.init(NUM_PF_SOURCES);
+    for (unsigned i = 0; i < NUM_PF_SOURCES; ++i)
+        protectedBySource.subname(i, enums::PrefetchSourceTypeStrings[i]);
 }
 
 } // namespace replacement_policy

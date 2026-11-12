@@ -142,3 +142,29 @@ launched compatible baseline candidates at source
 LRU `43271285986`, XSDRRIP `43271296003`. Source inspection confirms the same
 L2 geometry and default 20M warmup/40M total. Archived effective configs,
 checkpoint weights, and REF must still be compared before these are reused.
+
+
+### Per-source protection experiment
+
+`FDPRP.source_feedback=True` adds independent 6-bit saturating usefulness
+confidence per prefetch source. Counters start at 32, increase on first demand
+use, decrease on unused capacity eviction, and protect sources at MRU when
+confidence reaches 48. This is confidence, not a calibrated accuracy percentage.
+Unknown sources retain ordinary FDP insertion. The default remains disabled.
+
+Eleven unit cases and the optimized build pass. The tagged+source mcf smoke
+passes NEMU difftest, but its IPC 0.763816 is 0.29% below tagged-only 0.766017.
+It protects 12891 DespacitoStream fills in the measurement period. It therefore
+has not demonstrated a mcf improvement and is not selected as the default.
+Its usefulness for other regressing benchmarks remains an experiment.
+
+The existing classic-L2 configs referenced the removed `slice_num` parameter;
+they now use the current `num_slices`. Short 100K-instruction NEMU-difftest
+runs pass for ideal/classic, kmhv3/classic, and kmhv3/sliced L2. This correction
+does not affect the aligned L2 configuration used for remote comparisons.
+
+The full LRU and XSDRRIP baseline archives have now been checked against their
+matching screening configs. Every effective setting matches; the only text
+difference is each runner's DRAM configuration path, whose contents have the
+same SHA-256. Their archived weights match the full 1094-point JSON. The
+machine-readable equivalence evidence is in `docs/experiments/fdp-l2/`.

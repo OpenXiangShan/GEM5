@@ -1,0 +1,12 @@
+{
+  "commit": "cf41c6068005a859945b63ecd04847ed05fed028",
+  "created_at": "2026-11-12T17:45:28.518709+00:00",
+  "extra_args": "--l2-replacement-policy=fdp --param=system.l2_wrappers[0].slices[0:4].inner_cache.replacement_policy.tagged_filter=True --warmup-insts-no-switch=20000000 --maxinsts=40000000",
+  "configuration": "idealkmhv3.py",
+  "benchmark_type": "spec06-rva23-novec-gcc16-0.3c",
+  "returncode": 0,
+  "stdout": "https://github.com/OpenXiangShan/GEM5/actions/runs/43272656207",
+  "stderr": "",
+  "run_id": 43272656207,
+  "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/43272656207"
+}

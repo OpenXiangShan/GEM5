@@ -79,6 +79,33 @@ class Stack
     }
 };
 
+// A small outcome predictor protects consistently useful prefetch sources.
+class SourceConfidence
+{
+  private:
+    static constexpr unsigned Maximum = 63;
+    static constexpr unsigned Threshold = 48;
+    std::vector<unsigned> confidence;
+
+  public:
+    explicit SourceConfidence(unsigned sources) : confidence(sources, 32) {}
+
+    void
+    train(unsigned source, bool useful)
+    {
+        auto &value = confidence.at(source);
+        if (useful)
+            value = std::min(Maximum, value + 1);
+        else if (value)
+            --value;
+    }
+
+    bool protect(unsigned source) const
+    {
+        return confidence.at(source) >= Threshold;
+    }
+};
+
 // Sections 3.1.3, 3.2 and 3.3.2 of Srinath et al., HPCA 2007.
 class Feedback
 {

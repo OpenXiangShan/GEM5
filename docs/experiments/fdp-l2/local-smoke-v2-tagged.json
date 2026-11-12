@@ -1,0 +1,29 @@
+{
+  "policy": "fdp-tagged",
+  "returncode": 0,
+  "seconds": 334.4206884354353,
+  "command": [
+    "/nfs/home/chenzhuo/prefetchGEM5/build/RISCV/gem5.opt",
+    "--outdir=/tmp/fdp-smoke-tagged",
+    "/nfs/home/chenzhuo/prefetchGEM5/configs/example/idealkmhv3.py",
+    "--generic-rv-cpt=/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/mcf/6753/_6753_0.218742_memory_.zstd",
+    "--l2-replacement-policy=fdp",
+    "--param=system.l2_wrappers[0].slices[0:4].inner_cache.replacement_policy.tagged_filter=True",
+    "--warmup-insts-no-switch=2000000",
+    "--maxinsts=4000000",
+    "--enable-mem-dedup"
+  ],
+  "ref_so": "/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal-dedup/riscv64-nemu-interpreter-so",
+  "outdir": "/tmp/fdp-smoke-tagged",
+  "measurement": {
+    "simInsts": 2000001.0,
+    "system.cpu.numCycles": 2610908.0,
+    "system.cpu.ipc": 0.766017,
+    "pollutionMisses": 6692.0,
+    "demandMisses": 56689.0,
+    "filterAliasesRejected": 34773.0,
+    "prefetchInsertions::mid": 0.0,
+    "prefetchInsertions::quarter": 120266.0,
+    "prefetchInsertions::lru": 0.0
+  }
+}
