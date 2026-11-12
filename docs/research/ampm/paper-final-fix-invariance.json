@@ -1,0 +1,92 @@
+{
+  "milc_5841": {
+    "archive_stats": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261113_043238_ffb2aa58_idealkmhv3_run2130/spec_all/milc_5841/m5out/stats.txt",
+    "local_stats": "/tmp/apmp-first-use-targets-v1-milc-paper/stats.txt",
+    "common_non_host_counters": 12444,
+    "different_common_counters": 0,
+    "ipc": 1.043213,
+    "measured_instructions": 20000001.0,
+    "translated_hint_address_drops": 0.0,
+    "local_stats_sha256": "42fb17358e58fba6cdb21598794510c98bae6414eb1b3a360bad64fc5fb0bd7c",
+    "archive_stats_sha256": "6e8bfca761314476e0d0d60be5219a2d0d4789aa49c043bf300fc1345266723e",
+    "command": {
+      "ref": "/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal-dedup/riscv64-nemu-interpreter-so",
+      "source": {
+        "head": "7b909ec3ecba43efcecaae20fffba6efc9854f0e",
+        "binary_sha256": "fd17245d83683e060e082831af3ad1a7495122ee7c7022ae1b547abc1ed953f0",
+        "diff_sha256": "dd0b45b9bf8f4112007f9db200c2aaddec9dfb8375a485e29dc61babb4080f2f"
+      },
+      "target": {
+        "workload": "milc",
+        "point": "5841",
+        "weight": 0.0850275,
+        "ipc": {
+          "lru": 1.165922,
+          "paper": 1.043213
+        },
+        "relative_pct": -10.52463200797309,
+        "weighted_cpi_cost": 0.008578144137946246,
+        "checkpoint": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/milc/5841/_5841_0.085028_memory_.zstd"
+      },
+      "argv": [
+        "/tmp/apmp-build/build/RISCV/gem5.first-use-targets-v1.fast",
+        "--outdir=/tmp/apmp-first-use-targets-v1-milc-paper",
+        "configs/example/idealkmhv3.py",
+        "--generic-rv-cpt=/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/milc/5841/_5841_0.085028_memory_.zstd",
+        "--enable-mem-dedup",
+        "--maxinsts=40000000",
+        "--warmup-insts-no-switch=20000000",
+        "--l2-replacement-policy=ampm",
+        "--ampm-insertion-mode=drrip",
+        "--ampm-rrpv-bits=3",
+        "--l1d-hwp-type=AMPMPrefetcher",
+        "--ampm-hint-source=prefetcher"
+      ]
+    }
+  },
+  "sphinx3_39957": {
+    "archive_stats": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261113_043238_ffb2aa58_idealkmhv3_run2130/spec_all/sphinx3_39957/m5out/stats.txt",
+    "local_stats": "/tmp/apmp-first-use-targets-v1-sphinx3-paper/stats.txt",
+    "common_non_host_counters": 12106,
+    "different_common_counters": 0,
+    "ipc": 3.351635,
+    "measured_instructions": 19999987.0,
+    "translated_hint_address_drops": 0.0,
+    "local_stats_sha256": "d8fd34886988c6fca549144e6718fd96accf74b84e1fa58f2624a2985417d410",
+    "archive_stats_sha256": "219537ad5ab0b98d5d7aa424c2467b554308f1dfa29988df56ee58e700ae3c08",
+    "command": {
+      "ref": "/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal-dedup/riscv64-nemu-interpreter-so",
+      "source": {
+        "head": "7b909ec3ecba43efcecaae20fffba6efc9854f0e",
+        "binary_sha256": "fd17245d83683e060e082831af3ad1a7495122ee7c7022ae1b547abc1ed953f0",
+        "diff_sha256": "dd0b45b9bf8f4112007f9db200c2aaddec9dfb8375a485e29dc61babb4080f2f"
+      },
+      "target": {
+        "workload": "sphinx3",
+        "point": "39957",
+        "weight": 0.0943629,
+        "ipc": {
+          "lru": 3.62709,
+          "paper": 3.351635
+        },
+        "relative_pct": -7.594380067767825,
+        "weighted_cpi_cost": 0.0021381437026906825,
+        "checkpoint": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/sphinx3/39957/_39957_0.094363_memory_.zstd"
+      },
+      "argv": [
+        "/tmp/apmp-build/build/RISCV/gem5.first-use-targets-v1.fast",
+        "--outdir=/tmp/apmp-first-use-targets-v1-sphinx3-paper",
+        "configs/example/idealkmhv3.py",
+        "--generic-rv-cpt=/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/sphinx3/39957/_39957_0.094363_memory_.zstd",
+        "--enable-mem-dedup",
+        "--maxinsts=40000000",
+        "--warmup-insts-no-switch=20000000",
+        "--l2-replacement-policy=ampm",
+        "--ampm-insertion-mode=drrip",
+        "--ampm-rrpv-bits=3",
+        "--l1d-hwp-type=AMPMPrefetcher",
+        "--ampm-hint-source=prefetcher"
+      ]
+    }
+  }
+}

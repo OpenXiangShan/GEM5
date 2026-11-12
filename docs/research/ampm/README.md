@@ -3,7 +3,47 @@
 CRP Section 5.4.1 (printed page 49) spells the predictor **AMPM**, and
 separately cites Ishii et al. 2011 for the prefetcher and Ishii et al. 2012
 for its cache insertion extension. The task spells this APMP and also refers
-to FDP; clarification is pending. FDP has a separate active implementation.
+to FDP. This work implements AMPM/PA-MAIP; FDP has a separate active
+implementation and checkout.
+
+## Current verified result
+
+The complete paper configuration is adaptive **3-bit** PA-MAIP:
+
+```sh
+--l2-replacement-policy=ampm --ampm-insertion-mode=drrip --ampm-rrpv-bits=3
+```
+
+The initial fixed-BRRIP/2-bit implementation below is an ablation. Both
+corrected 0.3c workflows have now completed successfully. Each comparison
+uses exactly 145 selected checkpoints, their original cov0.3 weights,
+20M warmup and 40M total instructions. No benchmark subset is selected.
+
+| Prefetch protocol | LRU overall/GHz | XSDRRIP | PA-MAIP | vs LRU | vs XSDRRIP |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Default XSComposite / L2 shadow map | 24.251479 | 24.174477 | 24.182810 | -0.283% | +0.034% |
+| Original L1D AMPM map | 22.731668 | 22.624384 | 22.660310 | -0.314% | +0.159% |
+
+`remote-screens.json` records the archives, exact tested commits, successful
+workflow conclusions, arguments, REF, weights hash and benchmark scores.
+Default-prefetcher LRU/XSDRRIP scores are the successful full 1.0c baseline
+runs filtered and reweighted to precisely these 145 points. The AMPM
+protocol has separate LRU/XSDRRIP controls. The two protocols must not be
+mixed. These results do **not** demonstrate a gain over both baselines.
+
+The largest AMPM regressions are milc and sphinx3 (both about -5.4% weighted
+benchmark score vs LRU); omnetpp gains 4.3%. Full-phase local reproductions
+of milc 5841 and sphinx3 39957 match every common non-host statistic of the
+archived paper runs after the protocol, refill-snapshot and translation
+fixes (12444 and 12106 counters respectively). There were no translated
+hint address drops in these two runs. `paper-final-fix-invariance.json`
+preserves the commands, source/binary hashes and comparison counts.
+
+L2 adaptation experiments remain in progress. Partial first-use retention,
+a fixed SRRIP control and ordinary promotion for prefetches lacking AMPM
+hints are being screened with difftest at the same 20M/40M phases. They are
+not paper claims or established improvements. Historical experiments and
+negative results follow below.
 
 ## Publications
 
@@ -17,7 +57,7 @@ to FDP; clarification is pending. FDP has a separate active implementation.
   This is the actual insertion-control reference in CRP. Publisher PDF
   returned HTTP 403. Public full text was subsequently located at
   https://www.academia.edu/58343593/Unified_memory_optimizing_architecture
-  Section 3.3, Table 2, and the following RRIP discussion provide the
+  Sections 3.3 and 4.2.2, Table 2, and its RRIP discussion provide the
   insertion and promotion specification. An actual UMOA PDF download is
   still unavailable; the 2011 AMPM PDF and original source are local.
 
@@ -339,8 +379,8 @@ Every run adds `--l1d-hwp-type=AMPMPrefetcher --ampm-hint-source=prefetcher`:
 
 | Policy | Run | Result |
 | --- | --- | --- |
-| LRU | 43288386888 | Created, final result pending |
-| XSDRRIP | 43288394351 | Created, final result pending |
+| LRU | 43288386888 | Success; overall/GHz 22.731668 |
+| XSDRRIP | 43288394351 | Success; overall/GHz 22.624384 |
 | Fixed-BRRIP PA-MAIP (2-bit) | 43288403317 | Canceled while queued; superseded by adaptive configuration |
 
 ## L2 demand-protection experiment
@@ -439,8 +479,8 @@ Tested commit `ffb2aa580f1f7f27e3ecf42c50160405eeb76814`:
 - Default-prefetcher/L2-map adaptive 3-bit: run **43295089737**.
 
 Both use idealkmhv3, all benchmarks in the standard 0.3c point set, default
-servers and 32 jobs/server. Dispatch and fixed heads were verified; final
-results are pending. The still-queued fixed-BRRIP real-AMPM candidate
+servers and 32 jobs/server. Both workflows completed successfully; their
+verified scores are in the current-result table above. The still-queued fixed-BRRIP real-AMPM candidate
 43288403317 was canceled and is excluded from performance results.
 
 The 0.3c set contains 145 checkpoints. Its `checkpoints_cov0.3.json` point
