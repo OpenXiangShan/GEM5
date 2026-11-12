@@ -958,6 +958,7 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
                             "%lu to cache block ready tick %lu\n",
                             tgt_pkt->getAddr(), completion_time, block_ready);
                     completion_time = block_ready;
+                    tgt_pkt->setAllowEarlierResponse();
                 }
             }
 

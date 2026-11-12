@@ -137,7 +137,10 @@ PacketQueue::schedSendTiming(PacketPtr pkt, Tick when)
     auto it = transmitList.end();
     while (it != transmitList.begin()) {
         --it;
-        if ((forceOrder && it->pkt->matchAddr(pkt)) || it->tick <= when) {
+        const bool orders_same_address =
+            forceOrder && it->pkt->matchAddr(pkt) &&
+            !(it->pkt->allowsEarlierResponse() && when < it->tick);
+        if (orders_same_address || it->tick <= when) {
             // emplace inserts the element before the position pointed to by
             // the iterator, so advance it one step
             transmitList.emplace(++it, when, pkt);
