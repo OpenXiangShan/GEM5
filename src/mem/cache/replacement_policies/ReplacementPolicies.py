@@ -88,7 +88,9 @@ class FDPRP(BaseReplacementPolicy):
     source_feedback = Param.Bool(
         False, "Use source confidence for prefetch insertion and hit promotion")
     source_utility = Param.Bool(
-        False, "Train source penalties from tagged pollution, not unused evictions")
+        False, "Use attributed cache pollution for source confidence")
+    prefetch_hit_guard = Param.Bool(
+        True, "Suppress unused prefetch hits from low-confidence sources")
     interval_evictions = Param.Unsigned(
         8192, "Useful capacity evictions per feedback interval")
     pollution_low = Param.Float(0.005, "Low pollution threshold (HPCA 2007)")

@@ -45,7 +45,7 @@ makeFeedback(const FDPRPParams &p)
 FDP::FDP(const Params &p)
   : Base(p), numWays(p.num_ways), feedback(makeFeedback(p)),
     sourceFeedback(p.source_feedback), sourceUtility(p.source_utility),
-    confidence(NUM_PF_SOURCES),
+    prefetchHitGuard(p.prefetch_hit_guard), confidence(NUM_PF_SOURCES),
     lruFallback(p.lru_fallback), fdpStats(this)
 {
     if (lruFallback)
@@ -87,7 +87,8 @@ FDP::touch(const std::shared_ptr<ReplacementData> &data,
     if (pkt && pkt->cmd == MemCmd::StorePFTrain)
         return;
     const bool fallback = lruFallback && insertion.useLru(d->sample);
-    if (sourceFeedback && !fallback && d->source != PF_NONE &&
+    if (prefetchHitGuard && sourceFeedback && !fallback &&
+        d->source != PF_NONE &&
         isPrefetch(pkt) && d->line().unusedPrefetch &&
         !confidence.protect(d->source)) {
         // A repeated prediction is not evidence that demand needs this line.
@@ -97,6 +98,7 @@ FDP::touch(const std::shared_ptr<ReplacementData> &data,
     const bool demand = pkt && pkt->isDemand() && !isPrefetch(pkt);
     if (demand && d->line().unusedPrefetch) {
         fdpStats.usefulPrefetches++;
+        fdpStats.usefulBySource[d->source]++;
         if (sourceFeedback)
             confidence.train(d->source, true);
     }
@@ -161,6 +163,7 @@ FDP::notifyDemandUse(const std::shared_ptr<ReplacementData> &data)
     if (!d->line().unusedPrefetch)
         return;
     fdpStats.usefulPrefetches++;
+    fdpStats.usefulBySource[d->source]++;
     fdpStats.latePrefetchUses++;
     // A merged consumer also waited for a fill; count it once, not as a hit.
     sampleDemandFill(d);
@@ -271,7 +274,8 @@ FDP::FDPStats::FDPStats(statistics::Group *parent)
     ADD_STAT(prefetchInsertions, "Prefetch fills by insertion position"),
     ADD_STAT(intervalPositions, "Feedback intervals by selected position"),
     ADD_STAT(protectedBySource, "High-confidence prefetch fills placed at MRU"),
-    ADD_STAT(pollutionBySource, "Tagged pollution misses by causing prefetch source")
+    ADD_STAT(pollutionBySource, "Tagged pollution misses by causing prefetch source"),
+    ADD_STAT(usefulBySource, "First demand uses by original prefetch source")
 {
     for (auto *v : {&prefetchInsertions, &intervalPositions}) {
         v->init(v == &prefetchInsertions ? 4 : 3);
@@ -280,7 +284,7 @@ FDP::FDPStats::FDPStats(statistics::Group *parent)
         v->subname(fdp::Feedback::Lru, "lru");
     }
     prefetchInsertions.subname(3, "mru");
-    for (auto *v : {&protectedBySource, &pollutionBySource}) {
+    for (auto *v : {&protectedBySource, &pollutionBySource, &usefulBySource}) {
         v->init(NUM_PF_SOURCES);
         for (unsigned i = 0; i < NUM_PF_SOURCES; ++i)
             v->subname(i, enums::PrefetchSourceTypeStrings[i]);

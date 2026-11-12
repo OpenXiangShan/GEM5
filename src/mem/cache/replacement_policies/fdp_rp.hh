@@ -40,6 +40,7 @@ class FDP : public Base
     fdp::Feedback feedback;
     const bool sourceFeedback;
     const bool sourceUtility;
+    const bool prefetchHitGuard;
     fdp::SourceConfidence confidence;
     const bool lruFallback;
     fdp::SampledInsertion insertion;
@@ -68,6 +69,7 @@ class FDP : public Base
         statistics::Vector intervalPositions;
         statistics::Vector protectedBySource;
         statistics::Vector pollutionBySource;
+        statistics::Vector usefulBySource;
     } fdpStats;
 
     static bool isPrefetch(const PacketPtr pkt);
