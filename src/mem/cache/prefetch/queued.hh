@@ -332,6 +332,7 @@ class Queued : public Base
     struct QueuedStats : public statistics::Group
     {
         QueuedStats(statistics::Group *parent);
+        statistics::Scalar insertionHintAddressDrops;
         // STATS
         statistics::Scalar pfIdentified;
         statistics::Scalar pfBufferHit;

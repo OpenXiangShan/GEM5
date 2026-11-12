@@ -547,3 +547,14 @@ uses ordinary SRRIP insertion. Before/after 100K difftest smokes match all
 11375 common non-host statistics. The pre-access snapshot remains the only
 source of history for insertion; absent snapshots cannot use later map
 updates.
+
+
+Translated prefetch snapshots now require the final physical cache-line
+address to match the trained target when the predictor uses physical
+addresses. Virtual-address snapshots follow their translated request.
+A mismatch discards only the hint and increments
+`insertionHintAddressDrops`; prefetch generation remains unchanged.
+Three real-Request regression cases cover same-block offsets, a remapped
+physical block and a virtual target. All 16 unit tests pass. The real-AMPM
+100K difftest smoke still issues 13 prefetches and records 13 hinted fills,
+with zero address mismatches in that smoke.

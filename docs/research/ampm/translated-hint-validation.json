@@ -1,0 +1,8 @@
+{
+  "unit_tests_passed": 16,
+  "difftest_smoke_instructions": 100000,
+  "prefetches_issued": 13,
+  "hinted_prefetch_fills": 13,
+  "physical_address_hint_drops": 0,
+  "smoke_exit_status": 0
+}

@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include "base/gtest/cur_tick_fake.hh"
+#include "mem/cache/prefetch/insertion_hint.hh"
 #include "mem/request.hh"
 
 using namespace gem5;
@@ -51,4 +52,36 @@ TEST(PAMAIPRequestTest, RecycledVirtualRequestCannotReuseOldHint)
     request.setInsertionHint(&owner, 0);
     ASSERT_TRUE(request.getInsertionHint(&owner, state));
     EXPECT_EQ(state, 0);
+}
+
+TEST(PAMAIPRequestTest, PhysicalHintSurvivesOffsetsWithinTheSameBlock)
+{
+    Request request(0x1038, 8, 0, 0);
+    int owner = 0;
+    ASSERT_TRUE(prefetch::attachInsertionHint(
+        request, &owner, 1, 0x1000, false, 64));
+    uint8_t state = 0;
+    ASSERT_TRUE(request.getInsertionHint(&owner, state));
+    EXPECT_EQ(state, 1);
+}
+
+TEST(PAMAIPRequestTest, PhysicalHintCannotDescribeATranslatedDifferentBlock)
+{
+    Request request(0x9000, 64, 0, 0);
+    int owner = 0;
+    EXPECT_FALSE(prefetch::attachInsertionHint(
+        request, &owner, 1, 0x1000, false, 64));
+    uint8_t state = 0;
+    EXPECT_FALSE(request.getInsertionHint(&owner, state));
+}
+
+TEST(PAMAIPRequestTest, VirtualHintFollowsItsTranslatedRequest)
+{
+    Request request(0x9000, 64, 0, 0);
+    int owner = 0;
+    ASSERT_TRUE(prefetch::attachInsertionHint(
+        request, &owner, 2, 0x7fff1000, true, 64));
+    uint8_t state = 0;
+    ASSERT_TRUE(request.getInsertionHint(&owner, state));
+    EXPECT_EQ(state, 2);
 }

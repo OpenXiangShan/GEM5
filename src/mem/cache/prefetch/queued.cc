@@ -50,6 +50,7 @@
 #include "debug/HWPrefetchOther.hh"
 #include "debug/HWPrefetchQueue.hh"
 #include "mem/cache/base.hh"
+#include "mem/cache/prefetch/insertion_hint.hh"
 #include "mem/request.hh"
 #include "params/QueuedPrefetcher.hh"
 
@@ -137,8 +138,10 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID req
     }
 
     req->setFlags(Request::PREFETCH);
-    if (insertionHintOwner) {
-        req->setInsertionHint(insertionHintOwner, insertionHint);
+    if (insertionHintOwner && !attachInsertionHint(
+            *req, insertionHintOwner, insertionHint, pfInfo.getAddr(),
+            owner->useVirtualAddresses, blk_size)) {
+        owner->statsQueued.insertionHintAddressDrops++;
     }
     const PrefetchSourceType safe_pf_src =
         owner->sanitizePfControlSourceType(pf_src);
@@ -1159,6 +1162,8 @@ Queued::getPacket()
 
 Queued::QueuedStats::QueuedStats(statistics::Group *parent)
     : statistics::Group(parent),
+    ADD_STAT(insertionHintAddressDrops, statistics::units::Count::get(),
+             "Insertion hints discarded after physical target remapping"),
     ADD_STAT(pfIdentified, statistics::units::Count::get(),
              "number of prefetch candidates identified"),
     ADD_STAT(pfBufferHit, statistics::units::Count::get(),
