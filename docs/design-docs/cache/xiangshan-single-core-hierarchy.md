@@ -145,8 +145,12 @@ the existing marked writeback route to L3.
 
 ## L2 bypass routing and sampler boundaries
 
-SDBP determines whether a full-set allocation is bypassed. The decision is
-carried as generic `bypassL2` transport/block metadata:
+SDBP determines whether a full-set allocation is bypassed. Its default admission
+policy first uses eligible dead residents and bounds protection of unused live
+victims by the slice capacity, while preserving resident L1 copies. The original
+bypass-first policy remains selectable with `--sdbp-bypass-dead-victims`.
+Admission changes do not alter the following transport or ownership rules.
+The decision is carried as generic `bypassL2` transport/block metadata:
 
 1. L2 observes the completed fill in the sampler exactly once, even when using
    its temporary block rather than a real cache way.

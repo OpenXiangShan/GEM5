@@ -1,0 +1,424 @@
+{
+  "sphinx3_157921": {
+    "complete_gzip": true,
+    "last_tick": 4829441724,
+    "measurement_start_tick": 2920408335,
+    "all_events": {
+      "allocate-stale-over-bypass": 26118,
+      "allocate-dead-over-bypass": 278697,
+      "bypass": 3213
+    },
+    "measurement_events": {
+      "allocate-stale-over-bypass": 11744,
+      "allocate-dead-over-bypass": 146605,
+      "bypass": 1836
+    },
+    "measurement_pcs": {
+      "allocate-stale-over-bypass": {
+        "0x25a74": 3793,
+        "0x25a84": 3134,
+        "0x13778": 502,
+        "0x13774": 470,
+        "0x25a50": 396,
+        "0x25a6c": 341,
+        "0x25a48": 324,
+        "0x13304": 313,
+        "0x13342": 275,
+        "0x25a64": 253,
+        "0x13322": 209,
+        "0x1376a": 171
+      },
+      "allocate-dead-over-bypass": {
+        "0x25a74": 48078,
+        "0x25a84": 48064,
+        "0x25a50": 7296,
+        "0x13774": 6888,
+        "0x13778": 5674,
+        "0x25a6c": 4742,
+        "0x25a48": 4134,
+        "0x25a64": 3383,
+        "0x1376a": 1596,
+        "0x13342": 1369,
+        "0x1360a": 1229,
+        "0x1376c": 1182
+      },
+      "bypass": {
+        "0x25a74": 520,
+        "0x25a84": 496,
+        "0x13774": 137,
+        "0x13778": 108,
+        "0x25a6c": 58,
+        "0x25a50": 56,
+        "0x25a64": 54,
+        "0x1376a": 43,
+        "0x13342": 43,
+        "0x13c1a": 29,
+        "0x25a48": 25,
+        "0x13756": 24
+      }
+    },
+    "stale_examples": [
+      "339903423: system.l2_wrappers.slices0.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0x840b9b00 pc=0x25a74 set=411 way=0 age=5974 capacity=4096",
+      "340326333: system.l2_wrappers.slices0.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0x840b9d00 pc=0x25a74 set=413 way=0 age=5699 capacity=4096",
+      "340382943: system.l2_wrappers.slices1.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0x840b9d40 pc=0x25a74 set=413 way=0 age=5531 capacity=4096"
+    ]
+  },
+  "milc_5841": {
+    "complete_gzip": true,
+    "last_tick": 17892510912,
+    "measurement_start_tick": 7836119037,
+    "all_events": {
+      "allocate-dead-over-bypass": 1353801,
+      "bypass": 11837,
+      "allocate-stale-over-bypass": 288645
+    },
+    "measurement_events": {
+      "allocate-stale-over-bypass": 82953,
+      "allocate-dead-over-bypass": 806567,
+      "bypass": 3257
+    },
+    "measurement_pcs": {
+      "allocate-stale-over-bypass": {
+        "0x1d27a": 18198,
+        "0x1d282": 14609,
+        "0x1d288": 12985,
+        "0x1d276": 7851,
+        "0x1d27e": 4564,
+        "0x1d286": 3949,
+        "0x1d29e": 3010,
+        "0x1d322": 1936,
+        "0x1d320": 1480,
+        "0x1d324": 1404,
+        "0x1d326": 1226,
+        "0x1c5e6": 1189
+      },
+      "allocate-dead-over-bypass": {
+        "0x1d30c": 158626,
+        "0x1d37a": 132575,
+        "0x1d382": 129690,
+        "0x1d322": 39398,
+        "0x1d326": 38100,
+        "0x1d324": 36737,
+        "0x1d320": 32175,
+        "0x1d31e": 30012,
+        "0x1d34c": 27891,
+        "0x1d37e": 24782,
+        "0x1d386": 21283,
+        "0x1d27a": 17486
+      },
+      "bypass": {
+        "0x1d382": 1081,
+        "0x1d37a": 1033,
+        "0x1d37e": 199,
+        "0x1d30c": 165,
+        "0x1d386": 136,
+        "0x1d322": 101,
+        "0x1d324": 91,
+        "0x1d326": 91,
+        "0x1d34c": 80,
+        "0x1d38a": 78,
+        "0x1d320": 77,
+        "0x1d31e": 68
+      }
+    },
+    "stale_examples": [
+      "59065875: system.l2_wrappers.slices2.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0x93c5e180 pc=0x1d136 set=481 way=0 age=4135 capacity=4096",
+      "59230377: system.l2_wrappers.slices3.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0x93c629c0 pc=0x1d12e set=41 way=0 age=4138 capacity=4096",
+      "59312961: system.l2_wrappers.slices3.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0x93c641c0 pc=0x1d12e set=65 way=0 age=4124 capacity=4096"
+    ]
+  },
+  "xalancbmk_10335": {
+    "complete_gzip": true,
+    "last_tick": 5967004689,
+    "measurement_start_tick": 3485001177,
+    "all_events": {
+      "bypass": 2293,
+      "allocate-stale-over-bypass": 10761,
+      "allocate-dead-over-bypass": 712064
+    },
+    "measurement_events": {
+      "allocate-dead-over-bypass": 364225,
+      "allocate-stale-over-bypass": 3739,
+      "bypass": 741
+    },
+    "measurement_pcs": {
+      "allocate-dead-over-bypass": {
+        "0xddb4c": 73001,
+        "0xddbfc": 70088,
+        "0xddba2": 58672,
+        "0xddbb0": 53357,
+        "0xddbba": 45347,
+        "0xddbc0": 25106,
+        "0xddbc8": 21110,
+        "0xddbaa": 10713,
+        "0xddb6c": 3973,
+        "0xddc38": 2461,
+        "0xddc30": 184,
+        "0xddb70": 107
+      },
+      "allocate-stale-over-bypass": {
+        "0xddb4c": 885,
+        "0xddba2": 710,
+        "0xddbba": 539,
+        "0xddbb0": 445,
+        "0xddbfc": 402,
+        "0xddbc0": 268,
+        "0xddbc8": 180,
+        "0xddb6c": 175,
+        "0xddbaa": 119,
+        "0xddc38": 16
+      },
+      "bypass": {
+        "0xddb4c": 150,
+        "0xddba2": 138,
+        "0xddbba": 103,
+        "0xddbb0": 101,
+        "0xddbfc": 94,
+        "0xddbc8": 44,
+        "0xddbc0": 41,
+        "0xddb6c": 37,
+        "0xddbaa": 29,
+        "0xddc38": 2,
+        "0xddc30": 1,
+        "0xddb70": 1
+      }
+    },
+    "stale_examples": [
+      "209184939: system.l2_wrappers.slices1.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0x9a59cd40 pc=0xddbfc set=461 way=0 age=4394 capacity=4096",
+      "257821587: system.l2_wrappers.slices0.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0x9a5b9f00 pc=0xddba2 set=415 way=0 age=7386 capacity=4096",
+      "259928145: system.l2_wrappers.slices1.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0x9a5bc040 pc=0xddbfc set=448 way=1 age=7221 capacity=4096"
+    ]
+  },
+  "mcf_1820": {
+    "complete_gzip": false,
+    "last_tick": 15575961447,
+    "measurement_start_tick": 12486877623,
+    "all_events": {
+      "bypass": 2244,
+      "allocate-dead-over-bypass": 2045474,
+      "allocate-stale-over-bypass": 110542
+    },
+    "measurement_events": {
+      "allocate-dead-over-bypass": 442003,
+      "allocate-stale-over-bypass": 16449,
+      "bypass": 191
+    },
+    "measurement_pcs": {
+      "allocate-dead-over-bypass": {
+        "0x113cc": 383527,
+        "0x113da": 58417,
+        "0x113d4": 59
+      },
+      "allocate-stale-over-bypass": {
+        "0x113cc": 14270,
+        "0x113da": 2150,
+        "0x113d4": 28,
+        "0x113dc": 1
+      },
+      "bypass": {
+        "0x113cc": 172,
+        "0x113da": 19
+      }
+    },
+    "stale_examples": [
+      "227367405: system.l2_wrappers.slices2.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0x811a0780 pc=0x10c66 set=7 way=1 age=4534 capacity=4096",
+      "230290479: system.l2_wrappers.slices0.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0x811a1000 pc=0x10c5a set=16 way=0 age=4284 capacity=4096",
+      "232506927: system.l2_wrappers.slices2.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0x811a5f80 pc=0x10c5a set=95 way=0 age=4663 capacity=4096"
+    ]
+  },
+  "bwaves_13153": {
+    "complete_gzip": true,
+    "last_tick": 14527943181,
+    "measurement_start_tick": 8631616743,
+    "all_events": {
+      "bypass": 6875,
+      "allocate-dead-over-bypass": 1762149,
+      "allocate-stale-over-bypass": 35760
+    },
+    "measurement_events": {
+      "allocate-dead-over-bypass": 675869,
+      "allocate-stale-over-bypass": 22508,
+      "bypass": 775
+    },
+    "measurement_pcs": {
+      "allocate-dead-over-bypass": {
+        "0x107a8": 18953,
+        "0x106cc": 18937,
+        "0x106d4": 18902,
+        "0x107c0": 18847,
+        "0x107c4": 18840,
+        "0x10728": 18809,
+        "0x10720": 18762,
+        "0x1072c": 18752,
+        "0x106c8": 18750,
+        "0x10778": 18738,
+        "0x106e0": 18721,
+        "0x10774": 18711
+      },
+      "allocate-stale-over-bypass": {
+        "0x107b0": 4509,
+        "0x107ac": 2599,
+        "0x10660": 1510,
+        "0x107bc": 1426,
+        "0x107b8": 761,
+        "0x1077c": 534,
+        "0x106e4": 515,
+        "0x10668": 502,
+        "0x106dc": 486,
+        "0x10710": 485,
+        "0x10730": 470,
+        "0x10718": 447
+      },
+      "bypass": {
+        "0x1072c": 35,
+        "0x10694": 35,
+        "0x106e0": 32,
+        "0x10774": 31,
+        "0x10778": 31,
+        "0x107c4": 30,
+        "0x106dc": 27,
+        "0x10690": 26,
+        "0x107a8": 25,
+        "0x107c0": 25,
+        "0x106d4": 25,
+        "0x107b8": 25
+      }
+    },
+    "stale_examples": [
+      "97891011: system.l2_wrappers.slices3.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0xb8cf56c0 pc=0x139a4 set=342 way=0 age=4398 capacity=4096",
+      "97898004: system.l2_wrappers.slices0.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0xb8cf5700 pc=0x139c0 set=343 way=0 age=4409 capacity=4096",
+      "98899668: system.l2_wrappers.slices0.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0xb8cf5c00 pc=0x139c0 set=348 way=0 age=4411 capacity=4096"
+    ]
+  },
+  "milc_7983": {
+    "complete_gzip": true,
+    "last_tick": 17487418077,
+    "measurement_start_tick": 6572088000,
+    "all_events": {
+      "bypass": 6163,
+      "allocate-dead-over-bypass": 1121547,
+      "allocate-stale-over-bypass": 37776
+    },
+    "measurement_events": {
+      "allocate-dead-over-bypass": 824947,
+      "allocate-stale-over-bypass": 23562,
+      "bypass": 2422
+    },
+    "measurement_pcs": {
+      "allocate-dead-over-bypass": {
+        "0x1b328": 75341,
+        "0x1b32c": 72467,
+        "0x1b2d8": 69469,
+        "0x1b366": 66782,
+        "0x1b25e": 58617,
+        "0x1b23c": 49690,
+        "0x1b260": 34269,
+        "0x1b2da": 28357,
+        "0x1b23e": 24880,
+        "0x1b2c4": 21889,
+        "0x1b312": 20422,
+        "0x1b302": 20049
+      },
+      "allocate-stale-over-bypass": {
+        "0x1b328": 3555,
+        "0x1b32c": 3136,
+        "0x1b366": 1733,
+        "0x1b312": 969,
+        "0x1b2c4": 939,
+        "0x1b244": 932,
+        "0x1b28a": 886,
+        "0x1b302": 833,
+        "0x1b2b0": 776,
+        "0x1b24e": 753,
+        "0x1b2a0": 696,
+        "0x1b32a": 674
+      },
+      "bypass": {
+        "0x1b2d8": 433,
+        "0x1b25e": 433,
+        "0x1b23c": 383,
+        "0x1b260": 271,
+        "0x1b2da": 168,
+        "0x1b23e": 167,
+        "0x1b246": 83,
+        "0x1b328": 61,
+        "0x1b32c": 61,
+        "0x1b24a": 43,
+        "0x1b366": 38,
+        "0x1b2c4": 23
+      }
+    },
+    "stale_examples": [
+      "125625582: system.l2_wrappers.slices0.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0x8b6b0100 pc=0x1d6f4 set=257 way=0 age=4134 capacity=4096",
+      "125754786: system.l2_wrappers.slices0.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0x8b6b0900 pc=0x1d6f4 set=265 way=0 age=4124 capacity=4096",
+      "126487386: system.l2_wrappers.slices0.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0x8b6b4100 pc=0x1d6f4 set=321 way=0 age=4148 capacity=4096"
+    ]
+  },
+  "libquantum_85924": {
+    "complete_gzip": true,
+    "last_tick": 5768241651,
+    "measurement_start_tick": 4200512283,
+    "all_events": {
+      "bypass": 4276,
+      "allocate-stale-over-bypass": 8627,
+      "allocate-dead-over-bypass": 1059733
+    },
+    "measurement_events": {
+      "allocate-dead-over-bypass": 486560,
+      "allocate-stale-over-bypass": 6550,
+      "bypass": 5
+    },
+    "measurement_pcs": {
+      "allocate-dead-over-bypass": {
+        "0x12286": 363111,
+        "0x122a8": 120779,
+        "0x125aa": 2670
+      },
+      "allocate-stale-over-bypass": {
+        "0x12286": 3957,
+        "0x125aa": 1982,
+        "0x122a8": 611
+      },
+      "bypass": {
+        "0x12286": 5
+      }
+    },
+    "stale_examples": [
+      "108359199: system.l2_wrappers.slices0.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0x865cf000 pc=0x124b6 set=240 way=1 age=6728 capacity=4096",
+      "169404093: system.l2_wrappers.slices3.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0x8664cdc0 pc=0x124b6 set=205 way=0 age=10582 capacity=4096",
+      "418126788: system.l2_wrappers.slices3.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0x8684ddc0 pc=0x124b6 set=221 way=0 age=27012 capacity=4096"
+    ]
+  },
+  "libquantum_85656": {
+    "complete_gzip": true,
+    "last_tick": 5861920878,
+    "measurement_start_tick": 4264561836,
+    "all_events": {
+      "allocate-stale-over-bypass": 2541,
+      "bypass": 4162,
+      "allocate-dead-over-bypass": 1037796
+    },
+    "measurement_events": {
+      "allocate-dead-over-bypass": 485512,
+      "allocate-stale-over-bypass": 2498,
+      "bypass": 41
+    },
+    "measurement_pcs": {
+      "allocate-dead-over-bypass": {
+        "0x125aa": 466059,
+        "0x124b6": 19453
+      },
+      "allocate-stale-over-bypass": {
+        "0x125aa": 2498
+      },
+      "bypass": {
+        "0x125aa": 41
+      }
+    },
+    "stale_examples": [
+      "97100469: system.l2_wrappers.slices0.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0x864ef000 pc=0x124b6 set=240 way=1 age=5978 capacity=4096",
+      "111046509: system.l2_wrappers.slices0.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0x8650be00 pc=0x124b6 set=190 way=0 age=6149 capacity=4096",
+      "266537529: system.l2_wrappers.slices3.inner_cache.replacement_policy: allocate-stale-over-bypass addr=0x8664cdc0 pc=0x124b6 set=205 way=0 age=16893 capacity=4096"
+    ]
+  }
+}

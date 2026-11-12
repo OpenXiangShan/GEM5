@@ -1,0 +1,23 @@
+{
+  "run_id": 43282989822,
+  "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/43282989822",
+  "tested_sha": "56aceca0ba8398a2526eaca7ded59e3921216fd3",
+  "workflow_ref": "codex/fixbypass",
+  "status_at_confirmation": "queued",
+  "conclusion_at_confirmation": "",
+  "created_at": "2026-11-12T18:44:35Z",
+  "inputs": {
+    "note": "fixbypass bounded victims SPEC06 1.0c",
+    "configuration": "idealkmhv3.py",
+    "benchmark_type": "spec06-rva23-novec-gcc16-1.0c",
+    "specific_benchmarks": "",
+    "extra_args": "--l2-evict-invalidate-l1 --cache-hierarchy-policy=xiangshan_single_core --mem-type=DRAMsim3 --l3-clusivity=mostly_excl --no-pf --l2-replacement-policy=sdbp --sdbp-sampler-num=128 --sdbp-sampler-assoc=6 --sdbp-sampler-dead-first --sdbp-sampler-protect-youngest=0 --sdbp-l1-copy-protection --sdbp-enable-bypass --warmup-insts-no-switch=20000000 --maxinsts=40000000 --enable-mem-dedup --enable-difftest",
+    "gcbv_ref_so": "/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3-multi16g-zfa-cbo/normal-dedup/riscv64-nemu-interpreter-so",
+    "distributed_servers": "default",
+    "distributed_jobs_per_server": "32",
+    "branch": "56aceca0ba8398a2526eaca7ded59e3921216fd3"
+  },
+  "same_extra_args_as_43238615944": true,
+  "same_ref_as_43238615944": true,
+  "note": "Performance job queued at confirmation; no completed CI result is claimed."
+}

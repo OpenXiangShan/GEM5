@@ -1,5 +1,6 @@
 {
-  "base_commit": "0fd6c64e9cd12ccaf33c69d9f03cb9dbbf7cb17b",
+  "baseline_commit": "0fd6c64e9cd12ccaf33c69d9f03cb9dbbf7cb17b",
+  "checkout_commit_at_collection": "56aceca0ba8398a2526eaca7ded59e3921216fd3",
   "source_hashes": {
     "configs/common/SDBP.py": "9893929b7bd7b7999f6a48a59e07c18db87cfc99275220b8252b33da693ff925",
     "src/mem/cache/replacement_policies/ReplacementPolicies.py": "dc974c8bc14795f3bd1b602a23937afb283d53c093c9e99479a59f5a24bdbfac",
@@ -246,6 +247,14 @@
       "local_blocks": 2,
       "ci_blocks": 2,
       "measured_cycles": 4689674.0,
+      "nonhost_stat_difference_count": 0
+    },
+    {
+      "point": "libquantum_85656",
+      "variant": "off",
+      "local_blocks": 2,
+      "ci_blocks": 2,
+      "measured_cycles": 4812330.0,
       "nonhost_stat_difference_count": 0
     }
   ],

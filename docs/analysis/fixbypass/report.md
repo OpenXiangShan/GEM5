@@ -165,7 +165,7 @@ WritebackClean RETRY 为 2,420/98。窗口的请求数不同，应结合吞吐�
 新编译的最终版本再次通过 interface/config 检查；style 与 `git diff --check` 通过。
 原策略传输微测试继续强制覆盖 clean/dirty bypass，正常 checkpoint/difftest 运行覆盖新默认策略。
 
-原版已有 9 组完整 checkpoint 开/关复现实验完成，预热和测量两个 block 的非 host 统计差异均为 0。
+原版已有 10 组完整 checkpoint 开/关复现实验完成，预热和测量两个 block 的非 host 统计差异均为 0。
 第二版所有 8 组生成配置与原 on CI 对比，只有四个 slice 的新算法选项
 `bypass_dead_victims=false` 和内容相同的 DRAM ini 根路径不同。
 精确 argv、固定 REF 与开始时间见 `local-commands.json`，配置差异见 `bounded-config-validation.json`。
@@ -187,7 +187,14 @@ WritebackClean RETRY 为 2,420/98。窗口的请求数不同，应结合吞吐�
 libquantum/85924 的 L2 平均 miss latency 从 13.571 降到 9.861 ns；bank conflict 从
 361,258 降到 211,413，coreBound 从 37.3215% 降到 29.6216%。
 这与绕过导致的数据回送/资源竞争及旧 live 内容保护假设相符，不能从单点外推全套分数。
+同一个第二版二进制用 `--sdbp-bypass-dead-victims` 恢复原策略时，libquantum/85924
+精确得到原 CI 的 5,303,213 cycles；预热/测量的全部已有非 host 计数器差异为零。
+新增诊断计数器单独列出，不混入该一致性断言，见 `same-binary-original-verification.json`。
 sphinx3 控制点的收益损失必须保留：优先替换与有限保护也可能减少原 bypass 的收益。
 
-全量 1.0c 将在本地确认关键点提升及相关检查完成后触发；当前尚无新 run。
+已触发全量 1.0c：GitHub Actions run **43282989822**，被测提交
+`56aceca0ba8398a2526eaca7ded59e3921216fd3`。setup 成功，确认时性能 job 为 queued，
+没有最终 conclusion，不能写成 CI 已通过。`extra_args` 与 run 43238615944 的
+`resolved_extra_args` 逐字符相同，REF 路径固定，全部 benchmark、distributed=default、
+每机 32 jobs。完整输入和核对记录见 `ci-dispatch.json`。
 构建及测试日志、原始 trace、统计和退出记录在 `/tmp/fixbypass-analysis`。
