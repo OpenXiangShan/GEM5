@@ -1,6 +1,6 @@
 {
   "baseline_commit": "0fd6c64e9cd12ccaf33c69d9f03cb9dbbf7cb17b",
-  "checkout_commit_at_collection": "393af6a54d8bb81a726c3a222d08a9336b4ae3d1",
+  "checkout_commit_at_collection": "4cd9c408f12d9e3797e8bfd31c06451a161dea95",
   "source_hashes": {
     "configs/common/SDBP.py": "9893929b7bd7b7999f6a48a59e07c18db87cfc99275220b8252b33da693ff925",
     "src/mem/cache/replacement_policies/ReplacementPolicies.py": "dc974c8bc14795f3bd1b602a23937afb283d53c093c9e99479a59f5a24bdbfac",
@@ -186,6 +186,14 @@
       "nonhost_stat_difference_count": 0
     },
     {
+      "point": "mcf_1820",
+      "variant": "on",
+      "local_blocks": 2,
+      "ci_blocks": 2,
+      "measured_cycles": 37368914.0,
+      "nonhost_stat_difference_count": 0
+    },
+    {
       "point": "bwaves_13153",
       "variant": "on",
       "local_blocks": 2,
@@ -223,6 +231,14 @@
       "local_blocks": 2,
       "ci_blocks": 2,
       "measured_cycles": 30128359.0,
+      "nonhost_stat_difference_count": 0
+    },
+    {
+      "point": "mcf_1820",
+      "variant": "off",
+      "local_blocks": 2,
+      "ci_blocks": 2,
+      "measured_cycles": 33623530.0,
       "nonhost_stat_difference_count": 0
     },
     {

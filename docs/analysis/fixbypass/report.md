@@ -165,7 +165,7 @@ WritebackClean RETRY 为 2,420/98。窗口的请求数不同，应结合吞吐�
 新编译的最终版本再次通过 interface/config 检查；style 与 `git diff --check` 通过。
 原策略传输微测试继续强制覆盖 clean/dirty bypass，正常 checkpoint/difftest 运行覆盖新默认策略。
 
-原版已有 10 组完整 checkpoint 开/关复现实验完成，预热和测量两个 block 的非 host 统计差异均为 0。
+原版已有 12 组完整 checkpoint 开/关复现实验完成，预热和测量两个 block 的非 host 统计差异均为 0。
 第二版所有 8 组生成配置与原 on CI 对比，只有四个 slice 的新算法选项
 `bypass_dead_victims=false` 和内容相同的 DRAM ini 根路径不同。
 精确 argv、固定 REF 与开始时间见 `local-commands.json`，配置差异见 `bounded-config-validation.json`。
@@ -201,6 +201,8 @@ sphinx3 控制点的收益损失必须保留：优先替换与有限保护也可
 mcf/1820 的原版 on/off trace 定位到 PC `0x113cc`（`ld a3,8(a5)`）和
 `0x113da`（`ld a3,16(a5)`），位于每次推进 64B 且连续执行 store 的循环中。
 地址 `0x890b1e80` 在 L2 bypass 后，以 `WritebackDirty` 从 L1 经 L2 回到 L3。
+完整关闭的 on/off trace 摘要保存在 `mcf1820-*-trace-summary.json`；60M ticks 窗口内
+on 的两个 PC 分别发生 7,068/940 次 bypass，地址示例记录包含各级时间戳。
 这里主要是 dirty 流量，不能只用额外 clean 数据回送解释所有退化。
 修复版的 L2 平均 miss latency 从 83.374 降到 75.588 ns，
 测量 bypass 从 1,667,179 降到 658。其第一版只调整 dead 优先级的周期减少 0.021%，
