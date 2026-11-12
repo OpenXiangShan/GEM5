@@ -153,6 +153,12 @@ TraceGen::getNextPacket()
                               currElement.blocksize,
                               currElement.cmd, currElement.flags);
 
+    // XiangShan's hardware prefetch queue requires source metadata, including
+    // for externally replayed prefetches without a specific source ID.
+    if (currElement.cmd.isHWPrefetch()) {
+        pkt->req->setXsMetadata(Request::XsMetadata());
+    }
+
     if (!traceComplete)
         DPRINTF(TrafficGen, "nextElement: %c addr %d size %d tick %d (%d)\n",
                 nextElement.cmd.isRead() ? 'r' : 'w',

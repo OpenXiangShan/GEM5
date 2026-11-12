@@ -1002,6 +1002,10 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
         }
     }
 
+    if (blk && blk->isValid() && from_pref) {
+        tags->notifyPrefetchFill(blk, from_core);
+    }
+
     if (blk && !from_core && from_pref) {
         blk->setPrefetched();
         blk->setXsMetadata(pkt->req->getXsMetadata());

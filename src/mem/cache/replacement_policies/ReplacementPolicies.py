@@ -164,3 +164,20 @@ class XSDRRIPRP(BaseReplacementPolicy):
     mode = Param.Int(2, "Mode: 0=SRRIP, 1=BRRIP, 2=DRRIP (Set Dueling)")
     num_sets = Param.Int(0, "Number of sets in the cache (required for DRRIP mode)")
     num_ways = Param.Int(Parent.assoc, "Number of ways in each set")
+
+
+class ICPRP(BaseReplacementPolicy):
+    type = 'ICPRP'
+    cxx_class = 'gem5::replacement_policy::ICP'
+    cxx_header = "mem/cache/replacement_policies/icp_rp.hh"
+
+    num_sets = Param.Unsigned(0, "Number of sets in this cache slice")
+    num_ways = Param.Unsigned(Parent.assoc, "Cache associativity")
+    block_size = Param.Unsigned(Parent.cache_line_size, "Cache line size")
+    counter_bits = Param.Unsigned(4, "Accuracy counter width per prefetch source")
+    initial_accuracy = Param.Unsigned(8, "Initial accuracy counter value")
+    accuracy_threshold = Param.Unsigned(8, "Minimum counter for high priority")
+    high_priority = Param.Unsigned(0, "Accurate prefetch rank, zero means MRU")
+    epf_entries = Param.Unsigned(256, "EPF capacity; zero disables correction")
+    epf_assoc = Param.Unsigned(4, "EPF associativity")
+    demote_on_first_use = Param.Bool(False, "Enable ICP first-demand-use demotion")

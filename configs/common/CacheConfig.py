@@ -410,3 +410,28 @@ def ExternalCacheFactory(port_type):
         return ExternalCache(port_data=name, port_type=port_type,
                              addr_ranges=[AllMemory])
     return make
+
+
+def set_l2_replacement_policy(cache, options):
+    """Apply an explicit policy after the KMHV3 cache defaults are installed."""
+    policy = options.l2_replacement_policy
+    if policy == "default":
+        return
+    if policy == "lru":
+        cache.replacement_policy = LRURP()
+        return
+    geometry = dict(
+        num_sets=int(cache.size) // (options.cacheline_size * int(cache.assoc)),
+        num_ways=int(cache.assoc),
+    )
+    if policy == "xsdrrip":
+        cache.replacement_policy = XSDRRIPRP(mode=2, **geometry)
+    elif policy == "icp":
+        cache.replacement_policy = ICPRP(
+            block_size=options.cacheline_size,
+            epf_entries=options.icp_epf_entries,
+            accuracy_threshold=options.icp_accuracy_threshold,
+            high_priority=options.icp_high_priority,
+            demote_on_first_use=options.icp_demote_on_first_use,
+            **geometry,
+        )

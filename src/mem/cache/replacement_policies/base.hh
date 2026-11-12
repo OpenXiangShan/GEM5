@@ -59,6 +59,13 @@ class Base : public SimObject
     Base(const Params &p) : SimObject(p) {}
     virtual ~Base() = default;
 
+    /** Observe a tag lookup, including misses, for feedback-based policies. */
+    virtual void notifyAccess(const PacketPtr pkt, bool hit) {}
+
+    /** Credit a demand merged into an outstanding prefetch exactly once. */
+    virtual void notifyPrefetchFill(
+        const std::shared_ptr<ReplacementData> &data, bool demand_merged) {}
+
     /**
      * Invalidate replacement data to set it as the next probable victim.
      *

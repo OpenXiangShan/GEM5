@@ -161,6 +161,17 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--l2_size", type=str, default="1MB")
     parser.add_argument("--l2_assoc", type=int, default=8)
     parser.add_argument("--l2_slices", type=int, default=4)
+    parser.add_argument("--l2-replacement-policy", default="default",
+                        choices=["default", "lru", "xsdrrip", "icp"],
+                        help="L2 replacement policy for KMHV3 experiments")
+    parser.add_argument("--icp-epf-entries", type=int, default=256,
+                        help="Evicted-prefetch filter entries per L2 slice")
+    parser.add_argument("--icp-accuracy-threshold", type=int, default=8,
+                        help="Minimum 4-bit accuracy counter for high priority")
+    parser.add_argument("--icp-high-priority", type=int, default=0,
+                        help="Accurate prefetch insertion rank (0 is MRU)")
+    parser.add_argument("--icp-demote-on-first-use", action="store_true",
+                        help="Also enable ICP demotion on first demand use")
     parser.add_argument("--classic-l2", action="store_true", default=False,
                         help="use classic L2 cache, instead of RTL aligned L2 cache")
 

@@ -127,6 +127,7 @@ class BaseSetAssoc : public BaseTags
     CacheBlk* accessBlock(const PacketPtr pkt, Cycles &lat) override
     {
         CacheBlk *blk = findBlock(pkt->getAddr(), pkt->isSecure());
+        replacementPolicy->notifyAccess(pkt, blk != nullptr);
 
         // Access all tags in parallel, hence one in each way.  The data side
         // either accesses all blocks in parallel, or one block sequentially on
@@ -203,6 +204,15 @@ class BaseSetAssoc : public BaseTags
 
         // Update replacement policy
         replacementPolicy->reset(blk->replacementData, pkt);
+    }
+
+    void notifyPrefetchFill(CacheBlk *blk, bool demand_merged) override
+    {
+        // Temporary fills have no tag-store replacement metadata.
+        if (blk->replacementData) {
+            replacementPolicy->notifyPrefetchFill(
+                blk->replacementData, demand_merged);
+        }
     }
 
     void moveBlock(CacheBlk *src_blk, CacheBlk *dest_blk) override;

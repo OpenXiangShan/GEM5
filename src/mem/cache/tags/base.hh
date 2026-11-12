@@ -255,6 +255,9 @@ class BaseTags : public ClockedObject
         return -1;
     }
 
+    /** Forward prefetch completion feedback to the replacement policy. */
+    virtual void notifyPrefetchFill(CacheBlk *blk, bool demand_merged) {}
+
     /**
      * This function updates the tags when a block is invalidated
      *
