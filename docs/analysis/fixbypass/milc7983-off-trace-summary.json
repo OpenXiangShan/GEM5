@@ -1,0 +1,23 @@
+{
+  "trace": "/tmp/fixbypass-analysis/local/baseline/off/milc_7983/m5out/trace.gz",
+  "lines": 2634699,
+  "first_tick": 6572989098,
+  "last_tick": 6632983044,
+  "incomplete_gzip": false,
+  "bypass_pcs": [],
+  "counts": {
+    "SDBP victim": 3791,
+    "L3 access": 6761,
+    "tol3bus WritebackClean BUSY": 1023,
+    "L1 writeback": 818,
+    "tol3bus WritebackClean RETRY": 1169,
+    "tol3bus ReadSharedReq BUSY": 1658,
+    "tol3bus ReadSharedReq RETRY": 2763,
+    "tol3bus WritebackDirty RETRY": 277,
+    "tol3bus WritebackDirty BUSY": 57,
+    "tol3bus InvalidateReq RETRY": 352,
+    "tol3bus InvalidateReq BUSY": 32
+  },
+  "tracked_bypasses": 0,
+  "examples": {}
+}

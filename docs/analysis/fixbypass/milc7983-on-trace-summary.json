@@ -1,0 +1,160 @@
+{
+  "trace": "/tmp/fixbypass-analysis/local/baseline/on/milc_7983/m5out/trace.gz",
+  "lines": 2606485,
+  "first_tick": 6585766641,
+  "last_tick": 6645758589,
+  "incomplete_gzip": false,
+  "bypass_pcs": [
+    [
+      "0x1d4c2",
+      360
+    ],
+    [
+      "0x1d4ac",
+      359
+    ],
+    [
+      "0x1d4aa",
+      349
+    ],
+    [
+      "0x1d77a",
+      332
+    ],
+    [
+      "0x1d6f4",
+      312
+    ],
+    [
+      "0x1d4a6",
+      249
+    ],
+    [
+      "0x1d4a4",
+      231
+    ],
+    [
+      "0x1d6fa",
+      202
+    ],
+    [
+      "0x1d70c",
+      155
+    ],
+    [
+      "0x1d4b0",
+      130
+    ],
+    [
+      "0x1d4be",
+      112
+    ],
+    [
+      "0x1d754",
+      45
+    ],
+    [
+      "0x1d788",
+      28
+    ],
+    [
+      "0x1d4bc",
+      12
+    ],
+    [
+      "0x1d708",
+      3
+    ],
+    [
+      "0x1d712",
+      2
+    ],
+    [
+      "0x1d4c6",
+      2
+    ],
+    [
+      "0x1d71e",
+      1
+    ]
+  ],
+  "counts": {
+    "L1 writeback": 3702,
+    "L2 forward": 2879,
+    "L3 access": 6771,
+    "SDBP victim": 917,
+    "tol3bus WritebackClean BUSY": 61,
+    "tol3bus ReadSharedReq BUSY": 1642,
+    "tol3bus ReadSharedReq RETRY": 2799,
+    "tol3bus InvalidateReq RETRY": 397,
+    "tol3bus WritebackClean RETRY": 491,
+    "tol3bus WritebackDirty RETRY": 255,
+    "tol3bus WritebackDirty BUSY": 40,
+    "tol3bus InvalidateReq BUSY": 27
+  },
+  "tracked_bypasses": 2884,
+  "examples": {
+    "0x94e14980": {
+      "pc": "0x1d4a4",
+      "events": [
+        [
+          6585768972,
+          "system.l2_wrappers.slices2.inner_cache.replacement_policy",
+          "bypass addr=0x94e14980 pc=0x1d4a4"
+        ],
+        [
+          6588749322,
+          "system.cpu.dcache",
+          "Create Writeback WritebackClean [94e14980:94e149bf] writable: 1, dirty: 0"
+        ],
+        [
+          6588749655,
+          "system.l2_wrappers.slices2.inner_cache",
+          "Forward L2 bypass writeback WritebackClean [94e14980:94e149bf]"
+        ],
+        [
+          6588750987,
+          "system.l3",
+          "access for WritebackClean [94e14980:94e149bf] miss, block access lat 2"
+        ]
+      ],
+      "stages": {
+        "bypass": 1,
+        "L1 writeback": 1,
+        "L2 forward": 1,
+        "L3 access": 1
+      }
+    },
+    "0x94e149c0": {
+      "pc": "0x1d4a6",
+      "events": [
+        [
+          6585769638,
+          "system.l2_wrappers.slices3.inner_cache.replacement_policy",
+          "bypass addr=0x94e149c0 pc=0x1d4a6"
+        ],
+        [
+          6591750984,
+          "system.cpu.dcache",
+          "Create Writeback WritebackClean [94e149c0:94e149ff] writable: 1, dirty: 0"
+        ],
+        [
+          6591751317,
+          "system.l2_wrappers.slices3.inner_cache",
+          "Forward L2 bypass writeback WritebackClean [94e149c0:94e149ff]"
+        ],
+        [
+          6591752649,
+          "system.l3",
+          "access for WritebackClean [94e149c0:94e149ff] miss, block access lat 2"
+        ]
+      ],
+      "stages": {
+        "bypass": 1,
+        "L1 writeback": 1,
+        "L2 forward": 1,
+        "L3 access": 1
+      }
+    }
+  }
+}

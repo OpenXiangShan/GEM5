@@ -57,6 +57,12 @@ def add_sdbp_options(parser):
         help="Bypass dead L2 fills and return their L1 victims to L3 (default: off)",
     )
     parser.add_argument(
+        "--sdbp-bypass-dead-victims",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Use the original bypass-first policy without victim aging",
+    )
+    parser.add_argument(
         "--sdbp-pc-hash-type",
         choices=("xor_fold", "mixed", "low_bits"),
         default="xor_fold",
@@ -89,6 +95,8 @@ def configure_sdbp(args, system):
                 pc_hash_type=args.sdbp_pc_hash_type,
                 pc_shift=args.sdbp_pc_shift,
             )
+            if args.sdbp_bypass_dead_victims:
+                cache.replacement_policy.bypass_dead_victims = True
 
     if args.l2_replacement_policy != "default":
         if not args.l2cache:

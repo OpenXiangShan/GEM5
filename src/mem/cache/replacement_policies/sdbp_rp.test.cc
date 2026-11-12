@@ -44,6 +44,7 @@ testParams(bool bypass = false, unsigned threshold = 8)
     p.index_hash_type = "mixed";
     p.crc_live_update = true;
     p.enable_bypass = bypass;
+    p.bypass_dead_victims = false;
     return p;
 }
 
@@ -423,7 +424,7 @@ TEST_F(SDBPInterface, L1CopyGuardUsesCurrentPresenceAndPreservesDeadBit)
     EXPECT_EQ(SDBP::victimClass(dead.replacementData), 2);
 }
 
-TEST_F(SDBPInterface, L1CopyGuardDoesNotProbeInvalidOrBypassedSets)
+TEST_F(SDBPInterface, L1CopyGuardChecksDeadCandidatesBeforeBypass)
 {
     SDBP policy(testParams(true, 0));
     ReplaceableEntry a, b;
@@ -443,11 +444,115 @@ TEST_F(SDBPInterface, L1CopyGuardDoesNotProbeInvalidOrBypassedSets)
     auto response = packet(MemCmd::ReadExResp);
     EXPECT_EQ(policy.getVictim(candidates, response.get()), nullptr);
     EXPECT_TRUE(response->bypassL2);
-    EXPECT_EQ(queries, 0);
+    EXPECT_EQ(queries, 1);
     policy.touch(a.replacementData);
     EXPECT_EQ(policy.getVictim(candidates), &b);
-    EXPECT_EQ(queries, 0);
+    EXPECT_EQ(queries, 1);
     EXPECT_EQ(stat(policy, "l1CopyLruFallbacks"), 0);
+}
+
+TEST_F(SDBPInterface, DeadVictimAvoidsBypassWithoutDisplacingLiveCapacity)
+{
+    SDBP policy(testParams(true, 0));
+    ReplaceableEntry live, dead;
+    live.replacementData = policy.instantiateEntry();
+    dead.replacementData = policy.instantiateEntry();
+    policy.reset(live.replacementData);
+    auto demand = packet();
+    policy.reset(dead.replacementData, demand.get());
+    unsigned queries = 0;
+    policy.setL1CopyProbe([&](const ReplaceableEntry *entry) {
+        EXPECT_EQ(entry, &dead);
+        ++queries;
+        return false;
+    });
+    auto response = packet(MemCmd::ReadResp);
+    EXPECT_EQ(policy.getVictim({&live, &dead}, response.get()), &dead);
+    EXPECT_FALSE(response->bypassL2);
+    EXPECT_EQ(queries, 1);
+    EXPECT_EQ(stat(policy, "bypassDeadVictimAllocations"), 1);
+    EXPECT_EQ(stat(policy, "bypasses"), 0);
+    EXPECT_EQ(stat(policy, "nonLruDeadVictims"), 1);
+}
+
+TEST_F(SDBPInterface, BypassReferencesAgeAnUnusedLiveVictim)
+{
+    const auto params = testParams(true, 0);
+    SDBP policy(params);
+    ReplaceableEntry entry;
+    entry.replacementData = policy.instantiateEntry();
+    policy.reset(entry.replacementData);
+    for (unsigned i = 0; i < params.num_sets; ++i) {
+        auto response = packet(MemCmd::ReadResp);
+        EXPECT_EQ(policy.getVictim({&entry}, response.get()), nullptr);
+        EXPECT_TRUE(response->bypassL2);
+    }
+    auto response = packet(MemCmd::ReadResp);
+    EXPECT_EQ(policy.getVictim({&entry}, response.get()), &entry);
+    EXPECT_FALSE(response->bypassL2);
+    EXPECT_EQ(stat(policy, "bypasses"), params.num_sets);
+    EXPECT_EQ(stat(policy, "bypassStaleVictimAllocations"), 1);
+}
+
+TEST_F(SDBPInterface, RealCacheReuseRefreshesBypassProtection)
+{
+    const auto params = testParams(true, 0);
+    SDBP policy(params);
+    ReplaceableEntry entry;
+    entry.replacementData = policy.instantiateEntry();
+    policy.reset(entry.replacementData);
+    auto clock = policy.instantiateEntry();
+    for (unsigned i = 0; i < params.num_sets; ++i)
+        policy.touch(clock);
+    policy.touch(entry.replacementData);
+    auto response = packet(MemCmd::ReadResp);
+    EXPECT_EQ(policy.getVictim({&entry}, response.get()), nullptr);
+    EXPECT_TRUE(response->bypassL2);
+    EXPECT_EQ(stat(policy, "bypassStaleVictimAllocations"), 0);
+}
+
+TEST_F(SDBPInterface, ResidentL1CopyProtectsAnOldLiveVictim)
+{
+    const auto params = testParams(true, 0);
+    SDBP policy(params);
+    ReplaceableEntry entry;
+    entry.replacementData = policy.instantiateEntry();
+    policy.reset(entry.replacementData);
+    auto clock = policy.instantiateEntry();
+    for (unsigned i = 0; i < params.num_sets; ++i)
+        policy.touch(clock);
+    policy.setL1CopyProbe([&](const ReplaceableEntry *candidate) {
+        EXPECT_EQ(candidate, &entry);
+        return true;
+    });
+    auto response = packet(MemCmd::ReadResp);
+    EXPECT_EQ(policy.getVictim({&entry}, response.get()), nullptr);
+    EXPECT_TRUE(response->bypassL2);
+    EXPECT_EQ(stat(policy, "bypassL1CopyChecks"), 1);
+    EXPECT_EQ(stat(policy, "bypassL1CopyPreserved"), 1);
+    EXPECT_EQ(stat(policy, "bypassStaleVictimAllocations"), 0);
+}
+
+TEST_F(SDBPInterface, OriginalBypassOrderRemainsExplicitlySelectable)
+{
+    auto params = testParams(true, 0);
+    params.bypass_dead_victims = true;
+    SDBP policy(params);
+    ReplaceableEntry entry;
+    entry.replacementData = policy.instantiateEntry();
+    auto demand = packet();
+    policy.reset(entry.replacementData, demand.get());
+    unsigned queries = 0;
+    policy.setL1CopyProbe([&](const ReplaceableEntry *) {
+        ++queries;
+        return false;
+    });
+    auto response = packet(MemCmd::ReadResp);
+    EXPECT_EQ(policy.getVictim({&entry}, response.get()), nullptr);
+    EXPECT_TRUE(response->bypassL2);
+    EXPECT_EQ(queries, 0);
+    EXPECT_EQ(stat(policy, "bypasses"), 1);
+    EXPECT_EQ(stat(policy, "bypassDeadVictimAllocations"), 0);
 }
 
 TEST_F(SDBPInterface, BypassPreservesInvalidWaysAndOrdinaryReadRequests)

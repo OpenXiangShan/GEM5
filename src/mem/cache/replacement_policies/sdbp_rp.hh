@@ -66,6 +66,7 @@ class SDBP : public Base
     bool predict(const PacketPtr pkt) const;
     SDBPCore core;
     const bool enableBypass;
+    const bool bypassDeadVictims;
     const bool l1CopyProtection;
     bool bound = false;
     L1CopyProbe l1CopyProbe;
@@ -96,6 +97,10 @@ class SDBP : public Base
         statistics::Scalar nonLruDeadVictims;
         statistics::Scalar lruVictims;
         statistics::Scalar bypasses;
+        statistics::Scalar bypassDeadVictimAllocations;
+        statistics::Scalar bypassStaleVictimAllocations;
+        statistics::Scalar bypassL1CopyChecks;
+        statistics::Scalar bypassL1CopyPreserved;
         statistics::Scalar l1CopyChecks;
         statistics::Scalar l1CopyProtectedDead;
         statistics::Scalar l1CopyLruFallbacks;

@@ -40,6 +40,9 @@ class SDBPConfigTest(unittest.TestCase):
         self.assertFalse(args.sdbp_sampler_demand_pc_only)
         self.assertEqual(args.sdbp_sampler_protect_youngest, 0)
         self.assertFalse(args.sdbp_enable_bypass)
+        self.assertFalse(args.sdbp_bypass_dead_victims)
+        original = self.parser().parse_args(["--sdbp-bypass-dead-victims"])
+        self.assertTrue(original.sdbp_bypass_dead_victims)
         with contextlib.redirect_stderr(io.StringIO()):
             for value in ("-1", "1.5"):
                 with self.assertRaises(SystemExit):
@@ -48,8 +51,8 @@ class SDBPConfigTest(unittest.TestCase):
                     )
 
     def test_options_reach_all_cores_and_slices(self):
-        for classic, l1, dead, bypass, demand_pc_only in itertools.product(
-            (False, True), repeat=5
+        for classic, l1, dead, bypass, demand_pc_only, original in itertools.product(
+            (False, True), repeat=6
         ):
             for guard in (0, 1, 2, 3, 8):
                 with self.subTest(
@@ -58,6 +61,7 @@ class SDBPConfigTest(unittest.TestCase):
                     dead=dead,
                     bypass=bypass,
                     demand_pc_only=demand_pc_only,
+                    original=original,
                     guard=guard,
                 ):
                     flags = [
@@ -70,6 +74,8 @@ class SDBPConfigTest(unittest.TestCase):
                         flags.append("--no-sdbp-sampler-dead-first")
                     if bypass:
                         flags.append("--sdbp-enable-bypass")
+                    if original:
+                        flags.append("--sdbp-bypass-dead-victims")
                     if demand_pc_only:
                         flags.append("--sdbp-sampler-demand-pc-only")
                     args = self.parser().parse_args(flags)
@@ -106,6 +112,9 @@ class SDBPConfigTest(unittest.TestCase):
                         for cache in group:
                             policy = cache.replacement_policy
                             self.assertEqual(policy.type, "SDBPRP")
+                            self.assertEqual(
+                                bool(policy.bypass_dead_victims), original
+                            )
                             self.assertEqual(int(policy.num_sets), 512)
                             self.assertEqual(
                                 bool(policy.l1_copy_protection), l1

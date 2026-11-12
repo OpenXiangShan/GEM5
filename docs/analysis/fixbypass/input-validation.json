@@ -1,0 +1,163 @@
+{
+  "43238615944": {
+    "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-1.0c/20261112_224259_0fd6c64e9c_idealkmhv3_run2112",
+    "completed": 1094,
+    "missing": [],
+    "cluster_sha256": "ed5b8a0795604cf2dd0e98a36a8811610960f5115336de27593cc3ca80ad6d5f",
+    "cptlist_sha256": "d608c8029c30690e6e07be5ca814052d846de96c4bc00bcef196549641a0339a"
+  },
+  "42941526485": {
+    "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-1.0c/20261111_144903_2e545b04af_idealkmhv3_run2074",
+    "completed": 1094,
+    "missing": [],
+    "cluster_sha256": "ed5b8a0795604cf2dd0e98a36a8811610960f5115336de27593cc3ca80ad6d5f",
+    "cptlist_sha256": "d608c8029c30690e6e07be5ca814052d846de96c4bc00bcef196549641a0339a"
+  },
+  "42941521627": {
+    "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-1.0c/20261111_144952_2e545b04_idealkmhv3_run2073",
+    "completed": 1094,
+    "missing": [],
+    "cluster_sha256": "ed5b8a0795604cf2dd0e98a36a8811610960f5115336de27593cc3ca80ad6d5f",
+    "cptlist_sha256": "d608c8029c30690e6e07be5ca814052d846de96c4bc00bcef196549641a0339a"
+  },
+  "libquantum_85924": {
+    "on_off_config_diffs": [
+      [
+        "system.l2_wrappers.slices0.inner_cache.replacement_policy",
+        "enable_bypass",
+        "true",
+        "false"
+      ],
+      [
+        "system.l2_wrappers.slices1.inner_cache.replacement_policy",
+        "enable_bypass",
+        "true",
+        "false"
+      ],
+      [
+        "system.l2_wrappers.slices2.inner_cache.replacement_policy",
+        "enable_bypass",
+        "true",
+        "false"
+      ],
+      [
+        "system.l2_wrappers.slices3.inner_cache.replacement_policy",
+        "enable_bypass",
+        "true",
+        "false"
+      ]
+    ]
+  },
+  "bwaves_13153": {
+    "on_off_config_diffs": [
+      [
+        "system.l2_wrappers.slices0.inner_cache.replacement_policy",
+        "enable_bypass",
+        "true",
+        "false"
+      ],
+      [
+        "system.l2_wrappers.slices1.inner_cache.replacement_policy",
+        "enable_bypass",
+        "true",
+        "false"
+      ],
+      [
+        "system.l2_wrappers.slices2.inner_cache.replacement_policy",
+        "enable_bypass",
+        "true",
+        "false"
+      ],
+      [
+        "system.l2_wrappers.slices3.inner_cache.replacement_policy",
+        "enable_bypass",
+        "true",
+        "false"
+      ]
+    ]
+  },
+  "milc_7983": {
+    "on_off_config_diffs": [
+      [
+        "system.l2_wrappers.slices0.inner_cache.replacement_policy",
+        "enable_bypass",
+        "true",
+        "false"
+      ],
+      [
+        "system.l2_wrappers.slices1.inner_cache.replacement_policy",
+        "enable_bypass",
+        "true",
+        "false"
+      ],
+      [
+        "system.l2_wrappers.slices2.inner_cache.replacement_policy",
+        "enable_bypass",
+        "true",
+        "false"
+      ],
+      [
+        "system.l2_wrappers.slices3.inner_cache.replacement_policy",
+        "enable_bypass",
+        "true",
+        "false"
+      ]
+    ]
+  },
+  "milc_5841": {
+    "on_off_config_diffs": [
+      [
+        "system.l2_wrappers.slices0.inner_cache.replacement_policy",
+        "enable_bypass",
+        "true",
+        "false"
+      ],
+      [
+        "system.l2_wrappers.slices1.inner_cache.replacement_policy",
+        "enable_bypass",
+        "true",
+        "false"
+      ],
+      [
+        "system.l2_wrappers.slices2.inner_cache.replacement_policy",
+        "enable_bypass",
+        "true",
+        "false"
+      ],
+      [
+        "system.l2_wrappers.slices3.inner_cache.replacement_policy",
+        "enable_bypass",
+        "true",
+        "false"
+      ]
+    ]
+  },
+  "mcf_1820": {
+    "on_off_config_diffs": [
+      [
+        "system.l2_wrappers.slices0.inner_cache.replacement_policy",
+        "enable_bypass",
+        "true",
+        "false"
+      ],
+      [
+        "system.l2_wrappers.slices1.inner_cache.replacement_policy",
+        "enable_bypass",
+        "true",
+        "false"
+      ],
+      [
+        "system.l2_wrappers.slices2.inner_cache.replacement_policy",
+        "enable_bypass",
+        "true",
+        "false"
+      ],
+      [
+        "system.l2_wrappers.slices3.inner_cache.replacement_policy",
+        "enable_bypass",
+        "true",
+        "false"
+      ]
+    ]
+  }
+}

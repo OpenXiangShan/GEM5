@@ -1,0 +1,88 @@
+{
+  "trace": "/tmp/fixbypass-analysis/local/baseline/on/libquantum_85924/m5out/trace.gz",
+  "lines": 11581455,
+  "first_tick": 4192711425,
+  "last_tick": 4252711032,
+  "incomplete_gzip": false,
+  "bypass_pcs": [
+    [
+      "0x12286",
+      17919
+    ]
+  ],
+  "counts": {
+    "tol3bus ReadSharedReq BUSY": 16864,
+    "tol3bus ReadSharedReq RETRY": 114638,
+    "L1 writeback": 17920,
+    "L2 forward": 17920,
+    "L3 access": 35908,
+    "tol3bus WritebackClean BUSY": 16746,
+    "SDBP victim": 35,
+    "tol3bus WritebackClean RETRY": 2420
+  },
+  "tracked_bypasses": 17919,
+  "examples": {
+    "0x84ae7b80": {
+      "pc": "0x12286",
+      "events": [
+        [
+          4192714422,
+          "system.l2_wrappers.slices2.inner_cache.replacement_policy",
+          "bypass addr=0x84ae7b80 pc=0x12286"
+        ],
+        [
+          4196036763,
+          "system.cpu.dcache",
+          "Create Writeback WritebackClean [84ae7b80:84ae7bbf] writable: 1, dirty: 0"
+        ],
+        [
+          4196037096,
+          "system.l2_wrappers.slices2.inner_cache",
+          "Forward L2 bypass writeback WritebackClean [84ae7b80:84ae7bbf]"
+        ],
+        [
+          4196039094,
+          "system.l3",
+          "access for WritebackClean [84ae7b80:84ae7bbf] miss, block access lat 2"
+        ]
+      ],
+      "stages": {
+        "bypass": 1,
+        "L1 writeback": 1,
+        "L2 forward": 1,
+        "L3 access": 1
+      }
+    },
+    "0x84ae7bc0": {
+      "pc": "0x12286",
+      "events": [
+        [
+          4192717752,
+          "system.l2_wrappers.slices3.inner_cache.replacement_policy",
+          "bypass addr=0x84ae7bc0 pc=0x12286"
+        ],
+        [
+          4196040093,
+          "system.cpu.dcache",
+          "Create Writeback WritebackClean [84ae7bc0:84ae7bff] writable: 1, dirty: 0"
+        ],
+        [
+          4196040426,
+          "system.l2_wrappers.slices3.inner_cache",
+          "Forward L2 bypass writeback WritebackClean [84ae7bc0:84ae7bff]"
+        ],
+        [
+          4196042424,
+          "system.l3",
+          "access for WritebackClean [84ae7bc0:84ae7bff] miss, block access lat 2"
+        ]
+      ],
+      "stages": {
+        "bypass": 1,
+        "L1 writeback": 1,
+        "L2 forward": 1,
+        "L3 access": 1
+      }
+    }
+  }
+}

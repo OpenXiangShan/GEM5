@@ -53,6 +53,7 @@ makeCore(const SDBPRPParams &p)
 
 SDBP::SDBP(const Params &p)
     : Base(p), core(makeCore(p)), enableBypass(p.enable_bypass),
+      bypassDeadVictims(p.bypass_dead_victims),
       l1CopyProtection(p.l1_copy_protection), stats(this)
 {
     inform(
@@ -322,16 +323,24 @@ SDBP::getVictim(const ReplacementCandidates &candidates, const PacketPtr pkt) co
             lru = candidate;
         }
     }
-    // Preserve invalid-way priority. Bypass only predicted-dead demand data
-    // refills; the independent hierarchy policy controls grants and routing.
-    if (enableBypass && pkt && pkt->isResponse() && pkt->isRead() &&
-        isDemand(pkt) && predict(pkt)) {
+    const bool bypass_candidate = enableBypass && pkt &&
+        pkt->isResponse() && pkt->isRead() && isDemand(pkt) && predict(pkt);
+    auto bypass = [&]() -> ReplaceableEntry * {
         ++stats.bypasses;
+        // A bypass is still a reference. Otherwise a streaming phase can
+        // freeze both the replacement clock and unused live residents.
+        if (!bypassDeadVictims)
+            ++sequence;
         pkt->bypassL2 = true;
         DPRINTF(SDBP, "bypass addr=%#x pc=%#x\n",
                 pkt->getAddr(), requestPc(pkt));
         return nullptr;
-    }
+    };
+    // Retain the original decision order for controlled policy comparisons
+    // and directed tests that force the bypass transport path.
+    if (bypass_candidate && bypassDeadVictims)
+        return bypass();
+
     bool protectedDead = false;
     for (auto *candidate : candidates) {
         const auto &entry = *std::static_pointer_cast<SDBPReplData>(
@@ -348,6 +357,38 @@ SDBP::getVictim(const ReplacementCandidates &candidates, const PacketPtr pkt) co
         }
         dead = candidate;
         break;
+    }
+    // Allocating over an eligible dead line already preserves live capacity.
+    // Bound protection of an unused live victim to one cache-capacity worth
+    // of references. L1 residency is evidence of current use even when L1
+    // hits are invisible to the L2 replacement policy.
+    if (bypass_candidate) {
+        if (dead) {
+            ++stats.bypassDeadVictimAllocations;
+            DPRINTF(SDBP,
+                    "allocate-dead-over-bypass addr=%#x pc=%#x set=%u way=%u\n",
+                    pkt->getAddr(), requestPc(pkt), dead->getSet(),
+                    dead->getWay());
+        } else {
+            const uint64_t capacity = uint64_t(core.numSets()) *
+                candidates.size();
+            const bool stale = sequence - oldest >= capacity;
+            bool cached_l1 = false;
+            if (stale && l1CopyProtection && l1CopyProbe) {
+                ++stats.bypassL1CopyChecks;
+                cached_l1 = l1CopyProbe(lru);
+                if (cached_l1)
+                    ++stats.bypassL1CopyPreserved;
+            }
+            if (!stale || cached_l1)
+                return bypass();
+            ++stats.bypassStaleVictimAllocations;
+            DPRINTF(SDBP,
+                    "allocate-stale-over-bypass addr=%#x pc=%#x "
+                    "set=%u way=%u age=%llu capacity=%llu\n",
+                    pkt->getAddr(), requestPc(pkt), lru->getSet(),
+                    lru->getWay(), sequence - oldest, capacity);
+        }
     }
     // The fallback is the original LRU, even when it has an L1 copy.
     if (!dead && protectedDead)
@@ -394,6 +435,14 @@ SDBP::SDBPStats::SDBPStats(statistics::Group *parent)
       ADD_STAT(nonLruDeadVictims, "Dead victims different from the LRU victim"),
       ADD_STAT(lruVictims, "Victim selections falling back to LRU"),
       ADD_STAT(bypasses, "Predicted-dead data refills bypassed by SDBP"),
+      ADD_STAT(bypassDeadVictimAllocations,
+               "Dead refills allocated over eligible dead victims instead of bypass"),
+      ADD_STAT(bypassStaleVictimAllocations,
+               "Dead refills allocated over unused old victims instead of bypass"),
+      ADD_STAT(bypassL1CopyChecks,
+               "Stale bypass victims checked for a resident L1 copy"),
+      ADD_STAT(bypassL1CopyPreserved,
+               "Stale victims still bypassed because an L1 copy is resident"),
       ADD_STAT(l1CopyChecks, "Dead candidates checked for resident L1 copies"),
       ADD_STAT(l1CopyProtectedDead, "Dead candidates skipped due to resident L1 copies"),
       ADD_STAT(l1CopyLruFallbacks, "Selections using LRU because every dead candidate has an L1 copy"),

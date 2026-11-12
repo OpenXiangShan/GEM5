@@ -1,0 +1,24 @@
+{
+  "trace": "/tmp/fixbypass-analysis/local/baseline/off/bwaves_13153/m5out/trace.gz",
+  "lines": 4825851,
+  "first_tick": 8627860170,
+  "last_tick": 8687859111,
+  "incomplete_gzip": false,
+  "bypass_pcs": [],
+  "counts": {
+    "tol3bus ReadSharedReq RETRY": 40985,
+    "L3 access": 14925,
+    "tol3bus WritebackDirty BUSY": 989,
+    "tol3bus ReadSharedReq BUSY": 6241,
+    "SDBP victim": 7461,
+    "tol3bus WritebackClean BUSY": 896,
+    "L1 writeback": 704,
+    "tol3bus WritebackClean RETRY": 717,
+    "tol3bus WritebackDirty RETRY": 627,
+    "tol3bus InvalidateReq BUSY": 2,
+    "tol3bus InvalidateReq RETRY": 7,
+    "tol3bus ReadExReq BUSY": 1
+  },
+  "tracked_bypasses": 0,
+  "examples": {}
+}

@@ -109,6 +109,9 @@ class SDBPRP(BaseReplacementPolicy):
     table_hash_seeds = VectorParam.UInt64([], "Distinct per-table hash seeds")
     crc_live_update = Param.Bool(True, "Halve odd tables on live training")
     enable_bypass = Param.Bool(False, "Bypass predicted-dead data refills (L2 only)")
+    bypass_dead_victims = Param.Bool(
+        False, "Use the original bypass-first policy without victim aging"
+    )
 
 class LIPRP(BIPRP):
     btp = 0
