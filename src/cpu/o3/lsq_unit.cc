@@ -1189,11 +1189,29 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
      */
     while (loadIt != loadQueue.end()) {
         DynInstPtr ld_inst = loadIt->instruction();
-        LSQRequest *load_request = loadIt->request();
-        if (!ld_inst || !load_request || !ld_inst->effAddrValid() ||
-                ld_inst->strictlyOrdered()) {
+        if (!ld_inst || ld_inst->strictlyOrdered()) {
             ++loadIt;
             continue;
+        }
+
+        // A cache-miss replay clears the active LQ request and translation
+        // state, but its old read can still supply a value on the next retry.
+        // Keep that observation in the ordering domain until it is discarded
+        // or consumed, including the response-to-retry data-bus window.
+        LSQRequest *load_request = nullptr;
+        auto buffered_read = lsq->bus.find(ld_inst->seqNum);
+        const bool pending_read = ld_inst->hasPendingCacheReq() &&
+            ld_inst->pendingCacheReq &&
+            !ld_inst->pendingCacheReq->isReleased();
+        const bool cached_read = pending_read || buffered_read != lsq->bus.end();
+        if (pending_read) {
+            load_request = ld_inst->pendingCacheReq;
+        } else if (buffered_read == lsq->bus.end()) {
+            load_request = loadIt->request();
+            if (!load_request || !ld_inst->effAddrValid()) {
+                ++loadIt;
+                continue;
+            }
         }
 
         // The LQ is ordered oldest to youngest. Once the remaining loads are
@@ -1216,15 +1234,29 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
             DPRINTF(LSQUnit, "Checking for violations for [sn:%lli], addr: %#lx\n",
                     inst->seqNum, req0->getPaddr());
 
-            for (auto req1 : load_request->_reqs) {
+            // Bus entries only represent normal, non-split loads. Pending
+            // and active requests retain their translated fragment ranges.
+            const size_t fragments = load_request ? load_request->_reqs.size() : 1;
+            for (size_t fragment = 0; fragment < fragments; ++fragment) {
+                Addr load_addr;
+                unsigned load_size;
+                if (load_request) {
+                    const auto &req1 = load_request->_reqs[fragment];
                     if (!req1 || !req1->hasPaddr()) {
                         continue;
                     }
-                Addr ld_eff_addr1 = req1->getPaddr() >> depCheckShift;
-                Addr ld_eff_addr2 = (req1->getPaddr() + req1->getSize() - 1) >> depCheckShift;
+                    load_addr = req1->getPaddr();
+                    load_size = req1->getSize();
+                } else {
+                    load_addr = buffered_read->second;
+                    load_size = ld_inst->effSize;
+                }
+                Addr ld_eff_addr1 = load_addr >> depCheckShift;
+                Addr ld_eff_addr2 =
+                    (load_addr + load_size - 1) >> depCheckShift;
 
                 DPRINTF(LSQUnit, "Checking for violations for load [sn:%lli], addr: %#lx\n",
-                        ld_inst->seqNum, req1->getPaddr());
+                        ld_inst->seqNum, load_addr);
                 if (inst_eff_addr2 >= ld_eff_addr1 && inst_eff_addr1 <= ld_eff_addr2) {
                     if (inst->isLoad()) {
                         // If this load is to the same block as an external snoop
@@ -1268,14 +1300,14 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                         // if this load has been marked as Nuke, the load will then be replayed
                         // So next time this load replaying to pipeline will forward from store correctly
                         // And no RAW violation happens
-                        if (ld_inst->needNukeReplay()) {
+                        if (!cached_read && ld_inst->needNukeReplay()) {
                             done_checking_load = true;
                             break;
                         }
 
                         // If load is at stage 0 while store is at stage 1, no RAW violation
                         // should occur since the load can forward data from store later
-                        if (ld_inst->skipRawCheck()) {
+                        if (!cached_read && ld_inst->skipRawCheck()) {
                             ++stats.skipRawWhenLoadAtS0;
                             done_checking_load = true;
                             break;
