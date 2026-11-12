@@ -211,12 +211,29 @@ Kunminghu v3 不是无代价升级。它至少引入了以下顶层权衡：
 - BTB 顶层：
   - `src/cpu/pred/btb/decoupled_bpred.hh`
   - `src/cpu/pred/btb/decoupled_bpred.cc`
+- BTB 观察数据与 CSV 输出：
+  - `src/cpu/pred/btb/bpu_profiler.hh`
+  - `src/cpu/pred/btb/bpu_profiler.cc`
 - BTB 参数配置：
   - `src/cpu/pred/BranchPredictor.py`
 - BTB block 组织说明：
   - `src/cpu/pred/btb/docs/btb.md`
 - fetch 侧 resolve queue 路径：
   - `src/cpu/o3/fetch.cc`
+
+BTB 顶层的控制状态与观察数据按以下边界组织：
+
+| 所有者 | 负责的内容 | 对外边界 |
+| --- | --- | --- |
+| `DecoupledBPUWithBTB` | 线程调度、预测级选择、FTQ 入队、历史推进、训练与恢复 | 接收 Fetch/Commit 请求，按既有顺序调用组件 |
+| `DBPBTBStats` | 注册在 BPU 下的标准统计计数器与分布 | 由控制流程在对应事件处更新 |
+| `BPUProfiler` | 热点分支、phase/subphase 快照和 CSV 报告 | 只接收已发生的指令、分支与 fetch block 提交事实 |
+
+`BPUProfiler` 自己拥有观察数据和差分算法。它通过四个入口记录指令提交、分支提交、fetch block 提交和输出报告，不访问 BPU owner，也不持有 FTQ、组件或 history 的可写引用。首次观察到某个静态分支或 BTB 起点时，返回该事实，由顶层更新对应标准计数器。这样既保留原有统计字段，也明确了观察状态的所有权。
+
+`commitBranch()` 中的组件 commit 钩子和 `notifyInstCommit()` 中的 FTQ 指令数、字节数记账属于控制流程，放在主实现中。每条指令先完成 FTQ 记账，再通知 profiler 处理 phase；phase 仍按同一个 BPU 的所有线程累计，主 phase 和 subphase 保留各自的差分快照。
+
+入队时先保存当前 history 和组件 metadata，再推进 PC/history、准备 ahead 信息，最后插入 FTQ。第二块在首块推进历史之后取得自己的 metadata。恢复时，`controlSquash()` 复用已分类的 `BranchInfo`，应用 RAS 修正后的目标再交给共享恢复入口；共享入口继续负责 FTQ 截断、history 恢复和重定向。
 
 ## 12. 参考资料
 
