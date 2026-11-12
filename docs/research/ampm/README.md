@@ -62,7 +62,50 @@ Validated on 2026-11-13:
 - Real gem5 SimObject configuration checks: classic/sliced L2, default/LRU/
   XSDRRIP, and 512 KiB / 8-way / 64-byte geometry (1024 sets).
 - `util/style.py --modifications` for the changed Python files: passed.
-- Fresh optimized build in `/tmp/apmp-build/build/RISCV`: in progress.
+- Optimized build in `/tmp/apmp-build/build/RISCV`: passed. The local
+  worktree links `ext/dramsim3/DRAMsim3` to the read-only shared CI dependency
+  at `/nfs/home/share/gem5_ci/DRAMsim3`.
+- Full-system `gcb_test.zstd` smoke tests with DRAMSim3 and NEMU difftest:
+  LRU and XSDRRIP both exited normally after 100,000 committed instructions.
+  Both reported 56,368,242 simTicks; this small checkpoint does not establish
+  a performance trend. All four L2 slice policies were verified in config.ini.
+  L1D remained TreePLRU and L3 remained LRU in both configurations.
 
-Remote baselines and the implemented AMPM/UMOA candidate are still required;
-no performance improvement has been demonstrated.
+The AMPM/UMOA candidate is still required; no performance improvement has
+been demonstrated. UMOA's 2012 full text and source have not been obtained.
+Unpaywall additionally reports no open-access locations; this is an access
+limitation, not evidence that no implementation exists.
+
+## Remote experiment ledger
+
+Fixed tested commit: `a61859f355cf013aa6c15f95b6be0fe24b829976`.
+Workflow ref: `ampm-l2`. Configuration: `idealkmhv3.py`.
+Suite: full `spec06-rva23-novec-gcc16-1.0c`, no benchmark subset.
+Distributed servers: `default`; 32 jobs per server. All prefetcher and other
+machine settings use the configuration defaults.
+
+| Policy | Run | URL | Last verified result |
+| --- | --- | --- | --- |
+| LRU | 43271285986 | https://github.com/OpenXiangShan/GEM5/actions/runs/43271285986 | Created; final result pending |
+| XSDRRIP | 43271296003 | https://github.com/OpenXiangShan/GEM5/actions/runs/43271296003 | Created; final result pending |
+
+Only the extra argument differs: `--l2-replacement-policy=lru` versus
+`--l2-replacement-policy=xsdrrip`.
+
+Initial runs 43270560390 / 43270568832 failed at checkout because the short
+SHA was interpreted as a branch. Neither compiled or simulated; exclude
+both runs from all performance comparisons. Corrected runs above use the
+full 40-character SHA.
+
+Reproduce the local smoke from the worktree with:
+
+```sh
+GCBV_REF_SO=/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so \
+/tmp/apmp-build/build/RISCV/gem5.opt --outdir=/tmp/apmp-smoke-lru-dram \
+  configs/example/idealkmhv3.py \
+  --generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/gcb_test.zstd \
+  --maxinsts=100000 --warmup-insts-no-switch=0 --l2-replacement-policy=lru
+```
+
+Use a separate output directory and `--l2-replacement-policy=xsdrrip` for
+the second policy. The checkpoint uses its embedded restorer.
