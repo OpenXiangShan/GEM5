@@ -423,52 +423,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     // Store the chosen prediction as our final prediction
     finalPred = *chosenPrediction;
 
-    finalPred.s1Source = -1;//meaning fallthrough
-    finalPred.s3Source = -1;
-
-    if (predsOfEachStage[0].btbEntries.size() != 0) {
-        for (auto entry : predsOfEachStage[0].btbEntries){
-            if (entry.isIndirect || entry.isDirect || entry.baseTaken) {
-                finalPred.s1Source = entry.source;
-                break;
-            }
-        }
-    }
-
-    bool found_s3_taken = false;
-    bool na_s3_taken_but_have_cond = false;
-
-    for (BranchPrediction entry : predsOfEachStage[2].btbEntries) {
-        if (entry.isDirect || entry.isIndirect || entry.baseTaken) {
-            found_s3_taken = true;
-        }else if (entry.isCond){
-            //only use when there's no taken prediction in s3
-            na_s3_taken_but_have_cond = true;
-        }
-    }
-
-    if (found_s3_taken) {
-        auto pred_taken_entry = finalPred.getTakenEntry();
-        if (pred_taken_entry.valid) {
-            if (pred_taken_entry.isReturn) {
-                finalPred.s3Source = ras->getComponentIdx();
-            } else if (pred_taken_entry.isIndirect && ittage->tageHit(tid)) {
-                finalPred.s3Source = ittage->getComponentIdx();
-            }else if (pred_taken_entry.isCond) {
-                finalPred.s3Source = tage->getComponentIdx();
-            } else {
-                finalPred.s3Source = mbtb->getComponentIdx();
-            }
-        }else {
-            if (na_s3_taken_but_have_cond) {
-                finalPred.s3Source = tage->getComponentIdx();
-            }else {
-                finalPred.s3Source = -1;
-            }
-        }
-    }
-
-
+    setPredictionSources(tid);
 
     // 3. Calculate override bubbles needed for pipeline consistency
     // Override bubbles are needed when earlier stages predict differently from later stages
@@ -485,23 +440,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
         overrideReason = reason;
     }
 
-    // Match RTL fastTrain: every valid S3 prediction is broadcast to the S1
-    // predictors, even when the final result is fallthrough.
-    if (ubtb->isEnabled()) {
-        ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
-    }
-    if (abtb->isEnabled() && !ftq.empty(tid)) {
-        auto previous_block_startpc = ftq.back(tid).startPC;
-        abtb->updateUsingS3Pred(predsOfEachStage[numStages - 1], previous_block_startpc);
-    } else if (abtb->isEnabled()) {
-        abtb->updateUsingS3Pred(predsOfEachStage[numStages - 1], 0);
-    }
-    if (microtage->isEnabled()) {
-        microtage->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
-    }
-    if (pairtage->isEnabled()) {
-        pairtage->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
-    }
+    fastTrainPredictors(tid);
 
     // 4. Record override bubbles and update statistics
     if (first_hit_stage > 0) {
@@ -526,6 +465,83 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
 
     DPRINTF(Override, "Prediction complete: override bubbles=%d\n", first_hit_stage);
     threads[tid].numOverrideBubbles = first_hit_stage;
+}
+
+void
+DecoupledBPUWithBTB::setPredictionSources(ThreadID tid)
+{
+    const auto &predsOfEachStage = threads[tid].predsOfEachStage;
+    auto &finalPred = threads[tid].finalPred;
+
+    // Source accounting uses saved base directions, not final taken bits.
+    finalPred.s1Source = -1; // Fallthrough
+    finalPred.s3Source = -1;
+
+    if (predsOfEachStage[0].btbEntries.size() != 0) {
+        for (const auto &entry : predsOfEachStage[0].btbEntries) {
+            if (entry.isIndirect || entry.isDirect || entry.baseTaken) {
+                finalPred.s1Source = entry.source;
+                break;
+            }
+        }
+    }
+
+    bool found_s3_taken = false;
+    bool na_s3_taken_but_have_cond = false;
+
+    for (const auto &entry : predsOfEachStage[2].btbEntries) {
+        if (entry.isDirect || entry.isIndirect || entry.baseTaken) {
+            found_s3_taken = true;
+        } else if (entry.isCond) {
+            // Remember conditional fallthroughs for source attribution.
+            na_s3_taken_but_have_cond = true;
+        }
+    }
+
+    if (found_s3_taken) {
+        auto pred_taken_entry = finalPred.getTakenEntry();
+        if (pred_taken_entry.valid) {
+            if (pred_taken_entry.isReturn) {
+                finalPred.s3Source = ras->getComponentIdx();
+            } else if (pred_taken_entry.isIndirect && ittage->tageHit(tid)) {
+                finalPred.s3Source = ittage->getComponentIdx();
+            } else if (pred_taken_entry.isCond) {
+                finalPred.s3Source = tage->getComponentIdx();
+            } else {
+                finalPred.s3Source = mbtb->getComponentIdx();
+            }
+        } else {
+            if (na_s3_taken_but_have_cond) {
+                finalPred.s3Source = tage->getComponentIdx();
+            } else {
+                finalPred.s3Source = -1;
+            }
+        }
+    }
+}
+
+void
+DecoupledBPUWithBTB::fastTrainPredictors(ThreadID tid)
+{
+    auto &s3Pred = threads[tid].predsOfEachStage[numStages - 1];
+
+    // Match RTL fastTrain: every valid S3 prediction is broadcast to the S1
+    // predictors, even when the final result is fallthrough.
+    if (ubtb->isEnabled()) {
+        ubtb->updateUsingS3Pred(s3Pred);
+    }
+    if (abtb->isEnabled() && !ftq.empty(tid)) {
+        auto previous_block_startpc = ftq.back(tid).startPC;
+        abtb->updateUsingS3Pred(s3Pred, previous_block_startpc);
+    } else if (abtb->isEnabled()) {
+        abtb->updateUsingS3Pred(s3Pred, 0);
+    }
+    if (microtage->isEnabled()) {
+        microtage->updateUsingS3Pred(s3Pred);
+    }
+    if (pairtage->isEnabled()) {
+        pairtage->updateUsingS3Pred(s3Pred);
+    }
 }
 
 // This function enqueues an FTQ entry and updates s0PC and s0History.
@@ -564,37 +580,19 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
 
     DPRINTF(DecoupleBP, "Creating new prediction for PC %#lx\n", s0PC);
 
-    // 1. Create a new fetch target entry with prediction information
-    FetchTarget entry = createFetchTargetEntry(tid);
-
-    // 2. Update global PC state to target or fall-through
-    s0PC = threads[tid].finalPred.getTarget(predictWidth);;
-
-    // 3. Update history information
-    updateHistoryForPrediction(entry, threads[tid].finalPred);
-
-    // 4. Fill ahead pipeline
-    fillAheadPipeline(entry);
-
-    if (enablePredFSQTrace) {
-        predTraceManager->write_record(PredictionTrace(ftq.backId(tid), entry));
-    }
-
-    // 5. Add entry to fetch target queue
-    ftq.insert(std::move(entry));
+    enqueuePrediction(tid, threads[tid].finalPred);
     threads[tid].nextPredictionAfterSquash = false;
     threads[tid].validprediction = false;
 
-    // 6. Debug output and update statistics
+    // Record the first block before attempting the second one.
     dumpFsq("after insert new target");
     DPRINTF(DecoupleBP, "Inserted fetch target %lu starting at PC %#lx\n",
             ftq.backId(tid), ftq.back(tid).startPC);
 
-    // 7. Increment statistics
     printTarget(ftq.back(tid));
     dbpBtbStats.ftqEntryEnqueued++;
 
-    // 8. A second block may follow the first in the same cycle
+    // A second block may follow the first in the same cycle.
     enqueueSecondBlock(tid);
 }
 
@@ -634,16 +632,7 @@ DecoupledBPUWithBTB::enqueueSecondBlock(ThreadID tid)
                                              secondPred);
     }
 
-    FetchTarget entry = createFetchTargetEntry(tid, thread.s0PC, secondPred);
-    thread.s0PC = secondPred.getTarget(predictWidth);
-    updateHistoryForPrediction(entry, secondPred);
-    fillAheadPipeline(entry);
-
-    if (enablePredFSQTrace) {
-        predTraceManager->write_record(PredictionTrace(ftq.backId(tid), entry));
-    }
-
-    ftq.insert(std::move(entry));
+    enqueuePrediction(tid, secondPred);
     DPRINTF(DecoupleBP, "Inserted second block %lu starting at PC %#lx\n",
             ftq.backId(tid), ftq.back(tid).startPC);
     printTarget(ftq.back(tid));
@@ -1036,15 +1025,20 @@ DecoupledBPUWithBTB::pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<>
     }
 }
 
-/**
- * @brief Creates a new FetchTarget entry with prediction information
- *
- * @return FetchTarget The created fetch target
- */
-FetchTarget
-DecoupledBPUWithBTB::createFetchTargetEntry(ThreadID tid)
+void
+DecoupledBPUWithBTB::enqueuePrediction(ThreadID tid, FullBTBPrediction &pred)
 {
-    return createFetchTargetEntry(tid, threads[tid].s0PC, threads[tid].finalPred);
+    // Capture recovery state before advancing PC and speculative history.
+    FetchTarget entry = createFetchTargetEntry(tid, threads[tid].s0PC, pred);
+    threads[tid].s0PC = pred.getTarget(predictWidth);
+    updateHistoryForPrediction(entry, pred);
+    fillAheadPipeline(entry);
+
+    if (enablePredFSQTrace) {
+        predTraceManager->write_record(PredictionTrace(ftq.backId(tid), entry));
+    }
+
+    ftq.insert(std::move(entry));
 }
 
 FetchTarget
@@ -1220,24 +1214,7 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry,
         s0LHistory[localHistoryIndex]);
 
 #ifndef NDEBUG
-    if (tage->isEnabled()) {
-        tage->checkFoldedHist(
-            tage->usesPathHistory() ? s0PHistory : s0History, tid,
-            "speculative update");
-    }
-    if (ittage->isEnabled()) {
-        ittage->checkFoldedHist(s0PHistory, tid, "speculative update");
-    }
-    if (microtage->isEnabled()) {
-        microtage->checkFoldedHist(s0PHistory, tid, "speculative update");
-    }
-    if (pairtage->isEnabled()) {
-        pairtage->checkFoldedHist(s0PHistory, tid, "speculative update");
-    }
-    if (mgsc->isEnabled()) {
-        mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory, tid,
-                              "speculative update");
-    }
+    checkFoldedHistories(tid, "speculative update");
 #endif
 }
 
@@ -1264,7 +1241,6 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     auto& s0BwHistory = threads[tid].s0BwHistory;
     auto& s0LHistory = threads[tid].s0LHistory;
 
-    //printf("recover target_id: %u\n", target_id);
     // Restore history from the target
     s0History = context.history;
     s0PHistory = context.phistory;
@@ -1320,34 +1296,41 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     // Perform history consistency checks when not a fast build variant
 #ifndef NDEBUG
     checkHistories(s0History, s0PHistory, tid);
+    const char *reason = squashType == SQUASH_CTRL ? "control squash" :
+                         squashType == SQUASH_OTHER ? "non control squash" :
+                                                     "trap squash";
+    checkFoldedHistories(tid, reason);
+#endif
+}
+
+#ifndef NDEBUG
+void
+DecoupledBPUWithBTB::checkFoldedHistories(ThreadID tid, const char *reason)
+{
+    const auto &s0History = threads[tid].s0History;
+    const auto &s0PHistory = threads[tid].s0PHistory;
+    const auto &s0LHistory = threads[tid].s0LHistory;
+
     if (tage->isEnabled()) {
         tage->checkFoldedHist(
             tage->usesPathHistory() ? s0PHistory : s0History, tid,
-            squashType == SQUASH_CTRL ? "control squash" :
-            squashType == SQUASH_OTHER ? "non control squash" : "trap squash");
+            reason);
     }
     if (ittage->isEnabled()) {
-        ittage->checkFoldedHist(s0PHistory, tid,
-            squashType == SQUASH_CTRL ? "control squash" :
-            squashType == SQUASH_OTHER ? "non control squash" : "trap squash");
+        ittage->checkFoldedHist(s0PHistory, tid, reason);
     }
     if (microtage->isEnabled()) {
-        microtage->checkFoldedHist(s0PHistory, tid,
-            squashType == SQUASH_CTRL ? "control squash" :
-            squashType == SQUASH_OTHER ? "non control squash" : "trap squash");
+        microtage->checkFoldedHist(s0PHistory, tid, reason);
     }
     if (pairtage->isEnabled()) {
-        pairtage->checkFoldedHist(s0PHistory, tid,
-            squashType == SQUASH_CTRL ? "control squash" :
-            squashType == SQUASH_OTHER ? "non control squash" : "trap squash");
+        pairtage->checkFoldedHist(s0PHistory, tid, reason);
     }
     if (mgsc->isEnabled()) {
         mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory, tid,
-            squashType == SQUASH_CTRL ? "control squash" :
-            squashType == SQUASH_OTHER ? "non control squash" : "trap squash");
+                              reason);
     }
-#endif
 }
+#endif
 
 
 }  // namespace btb_pred

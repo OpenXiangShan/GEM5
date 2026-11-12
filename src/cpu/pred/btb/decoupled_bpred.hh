@@ -158,7 +158,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     void processNewPrediction(ThreadID tid);
     void enqueueSecondBlock(ThreadID tid);
 
-    FetchTarget createFetchTargetEntry(ThreadID tid);
+    void enqueuePrediction(ThreadID tid, FullBTBPrediction &pred);
     FetchTarget createFetchTargetEntry(ThreadID tid, Addr startPC, FullBTBPrediction &pred);
 
     void updateHistoryForPrediction(FetchTarget &entry, FullBTBPrediction &pred);
@@ -167,6 +167,10 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     // Tick helper functions
     void requestNewPrediction(ThreadID tid);
+
+#ifndef NDEBUG
+    void checkFoldedHistories(ThreadID tid, const char *reason);
+#endif
 
     void histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history);
 
@@ -192,6 +196,8 @@ class DecoupledBPUWithBTB : public BPredUnit
      * - Updates prediction state
      */
     void generateFinalPredAndCreateBubbles(ThreadID tid);
+    void setPredictionSources(ThreadID tid);
+    void fastTrainPredictors(ThreadID tid);
 
     void clearPreds(ThreadID tid) {
         for (int i = 0; i < threads[tid].predsOfEachStage.size(); ++i) {
