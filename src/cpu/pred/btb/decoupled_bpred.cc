@@ -6,8 +6,6 @@
 #include <utility>
 
 #include "arch/riscv/regs/misc.hh"
-#include "base/debug_helper.hh"
-#include "base/output.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/trace/TraceBranchTruth.hh"
@@ -15,9 +13,7 @@
 #include "cpu/thread_context.hh"
 #include "debug/BTB.hh"
 #include "debug/DecoupleBPHist.hh"
-#include "debug/DecoupleBPVerbose.hh"
 #include "debug/Override.hh"
-#include "debug/Profiling.hh"
 #include "sim/core.hh"
 
 namespace gem5
@@ -64,7 +60,6 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       ittage(p.ittage),
       mgsc(p.mgsc),
       ras(p.ras),
-      // uras(p.uras),
       bpDBSwitches(p.bpDBSwitches),
       numStages(p.numStages),
       ftqEntries(p.ftq_size),
@@ -398,8 +393,7 @@ DecoupledBPUWithBTB::requestNewPrediction(ThreadID tid)
     threads[tid].validprediction = true;
 }
 
-// this function collects predictions from all stages and generate bubbles
-// when loop buffer is active, predictions are from saved target
+// Select a stage prediction and account for overrides of earlier stages.
 void
 DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
 {

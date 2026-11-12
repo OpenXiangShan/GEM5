@@ -30,7 +30,7 @@ namespace btb_pred
  * This class tracks branch prediction history and handles:
  * - Speculative history updates for predicted branches
  * - History recovery on misprediction
- * - History commit when branches are resolved
+ * - Retirement of history entries when fetch blocks commit
  */
 class HistoryManager
 {
@@ -89,11 +89,6 @@ class HistoryManager
      * Each entry represents a predicted branch that has not yet been committed
      */
     std::list<HistoryEntry> speculativeHists;
-
-    /**
-     * Ideal history length for branch prediction
-     */
-    unsigned IdealHistLen{246};
 
     /**
      * Maximum allowed shift amount for history updates
@@ -165,19 +160,6 @@ class HistoryManager
     }
 
     /**
-     * @brief Gets the list of speculative history entries
-     *
-     * Used for debugging and history reconstruction.
-     * Used in DecoupledBPUWithBTB::checkHistory to rebuild the "ideal" history
-     *
-     * @return Reference to the list of speculative history entries
-     */
-    const std::list<HistoryEntry> &getSpeculativeHist()
-    {
-        return speculativeHists;
-    }
-
-    /**
      * @brief Handles history recovery during squash
      *
      * Updates the history for the squashed stream with actual branch outcome
@@ -218,7 +200,7 @@ class HistoryManager
                 printEntry("Squash", *it);
                 it = speculativeHists.erase(it);
             } else { // it->streamId < stream_id
-                // Keep entries with lower stream IDs (already committed)
+                // Keep entries older than the squashed stream.
                 DPRINTF(DecoupleBPVerbose,
                         "Skip stream %lu when squashing stream %lu\n",
                         it->streamId, stream_id);
@@ -315,7 +297,6 @@ class HistoryManager
         }
 
         // Iterate through history entries checking shift amounts
-        auto last = speculativeHists.begin();
         auto cur = speculativeHists.begin();
         cur++;
 
@@ -327,7 +308,6 @@ class HistoryManager
             }
 
             // Move to next entry
-            last = cur;
             cur++;
         }
     }

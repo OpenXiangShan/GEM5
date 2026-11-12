@@ -1,11 +1,12 @@
 #ifndef __CPU_PRED_BTB_DECOUPLED_BPRED_HH__
 #define __CPU_PRED_BTB_DECOUPLED_BPRED_HH__
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
-#include <deque>
-#include <queue>
-#include <stack>
+#include <map>
+#include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -28,7 +29,7 @@
 #include "cpu/pred/btb/ras.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
 #include "cpu/pred/general_arch_db.hh"
-#include "cpu/timebuf.hh"
+#include "debug/BTB.hh"
 #include "debug/DBPBTBStats.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/DecoupleBPProbe.hh"
@@ -55,7 +56,7 @@ using CPU = o3::CPU;
  * This predictor implements a decoupled front-end with:
  * - Multiple prediction stages (UBTB -> BTB/TAGE/ITTAGE)
  * - Fetch Target Queue (FTQ) for managing predicted targets
- * - Support for loop prediction and jump-ahead prediction
+ * - Speculative history updates and squash recovery
  */
 class DecoupledBPUWithBTB : public BPredUnit
 {
@@ -67,21 +68,13 @@ class DecoupledBPUWithBTB : public BPredUnit
     DecoupledBPUWithBTB(const Params &params);
 
   private:
-    // FSQ storage: a simple FIFO queue with implicit IDs (baseId + index),
-    // which is closer to RTL than std::map and makes "head" explicit.
-    // unsigned fetchTargetQueueSize;
-    // std::deque<FetchTarget> fetchTargetQueue;
-    // FetchTargetId fetchTargetBaseId{1}; // ID of fetchTargetQueue.front()
-    // FetchTargetId ftqId{1}; // next FSQ id to allocate (monotonic)
-    // FetchTargetId fetchHeadFtqId{1}; // next FSQ id to be consumed by fetch
-
     CPU *cpu;
     ThreadID nextPredictTid = 0;
     const unsigned numPredictingThreads;
-    unsigned predictWidth;  // max predict width, default 64
+    unsigned predictWidth;  // Prediction block width in bytes
     unsigned maxInstsNum;
 
-    const unsigned historyBits{488}; // will be overridden later by the constructor
+    const unsigned historyBits;
 
     const Addr MaxAddr{~(0ULL)};
 
@@ -94,9 +87,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     BTBITTAGE *ittage{};
     BTBMGSC *mgsc{};
     btb_pred::BTBRAS *ras{};
-    // btb_pred::BTBuRAS *uras{};
 
-    // bool enableDB;
     std::vector<std::string> bpDBSwitches;
     bool someDBenabled{false};
     bool enableBranchTrace{false};
@@ -121,7 +112,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     void initDB();
 
     std::vector<TimedBaseBTBPredictor*> components{};
-    // std::vector<FullBTBPrediction> predsOfEachStage{};
     unsigned numComponents{};
     unsigned numStages{};
     unsigned ftqEntries;
@@ -178,7 +168,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     // Tick helper functions
     void requestNewPrediction(ThreadID tid);
 
-    // TODO: compare phr and ghr
     void histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history);
 
     void pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history, Addr pc, Addr target);
@@ -198,7 +187,7 @@ class DecoupledBPUWithBTB : public BPredUnit
      * @brief Generate final prediction from all stages
      *
      * Collects predictions from all stages and:
-     * - Selects most accurate prediction
+     * - Selects the latest stage with branch candidates
      * - Generates necessary bubbles
      * - Updates prediction state
      */
@@ -210,8 +199,6 @@ class DecoupledBPUWithBTB : public BPredUnit
             threads[tid].predsOfEachStage[i].predSource = i;
         }
     }
-
-    // const bool dumpLoopPred;
 
     void printBTBEntry(const BranchPrediction &e) {
         DPRINTF(BTB,
@@ -236,7 +223,7 @@ class DecoupledBPUWithBTB : public BPredUnit
      * - Branch types and mispredictions
      * - Predictor component usage
      * - Queue utilization
-     * - Loop and jump-ahead prediction performance
+     * - Per-stage sources and overrides
      */
     struct DBPBTBStats : public statistics::Group {
         // Branch type statistics
@@ -328,9 +315,9 @@ class DecoupledBPUWithBTB : public BPredUnit
      * @brief Main prediction cycle function
      *
      * This function handles:
-     * - FSQ/FTQ management
+     * - FTQ management
      * - Prediction generation
-     * - Loop buffer management
+     * - Speculative history updates
      * - Statistics collection
      */
     void tick();
@@ -349,8 +336,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     uint8_t getThreadAsidHash(ThreadID tid) const;
 
     void consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid);
-
-    int getTargetTid() { return ftq.getTargetTid(); }
 
     struct BpTrace : public Record
     {
@@ -419,7 +404,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         FetchTargetId fsqID, ThreadID tid,
         const std::vector<CommittedFetchBlock> &committedBlocks);
 
-    // Fetch-facing interface: consume FSQ head directly (RTL-like single queue).
+    // Fetch-facing interface: read the current FTQ fetch head.
     bool ftqHasFetching(ThreadID tid) const { return ftq.hasTarget(ftq.fetchId(tid), tid); }
     FetchBlockPrediction ftqFetchBlock(ThreadID tid, unsigned offset = 0) const
     {
@@ -433,12 +418,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     {
         return ftq.hasTarget(ftq.fetchId(tid) + 1, tid);
     }
-    int getTargetTid(const std::array<bool, MaxThreads> &eligible,
-                     unsigned *ineligibleSkips)
-    {
-        return ftq.getTargetTid(eligible, ineligibleSkips);
-    }
-    
     int getTargetTidByFetchQueueSize(const std::array<bool, MaxThreads> &eligible,
                                      unsigned *ineligibleSkips,
                                      const std::array<unsigned, MaxThreads> &fetchQueueSizes)
@@ -448,7 +427,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void dumpFsq(const char *when);
 
-    // Dummy overriding
+    // Legacy BPredUnit interface; decoupled prediction uses the FTQ APIs.
     void uncondBranch(ThreadID tid, Addr pc, void *&bp_history) override {}
 
     void squash(ThreadID tid, void *bp_history) override {}
@@ -462,7 +441,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     }
 
     bool lookup(ThreadID tid, Addr instPC, void *&bp_history) override { return false; }
-    // end Dummy overriding
 
     void overrideStats(OverrideReason overrideReason);
 
@@ -711,19 +689,11 @@ class DecoupledBPUWithBTB : public BPredUnit
     std::vector<std::vector<int>> ftqEntryNumFetchedInstDistByPhase;
 
     /**
-     * @brief Total branch misprediction count
-     */
-    unsigned int missCount{0};
-
-    /**
      * @brief Branch statistics from the previous sub-phase
      *
      * Used to calculate delta statistics between sub-phases.
      */
     BranchStatsMap lastSubPhaseTopMispredictsByBranch;
-    // These are already declared above, so no need to redeclare
-    // std::vector<BranchStatsMap> topMispredictsByBranchBySubPhase;
-    // std::vector<std::map<Addr, int>> takenBranchesBySubPhase;
 
     void recoverHistoryForSquash(
         const HistoryRecoveryContext &context,
@@ -898,7 +868,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     /**
      * @brief Process BTB entries for a phase
      *
-     * @return std::map<Addr, std::pair<BTBEntry, int>> Map of BTB entries for the phase
+     * @return Map of BTB entries and visit counts for the phase
      */
     std::unordered_map<Addr, std::pair<BTBEntry, int>> processBTBEntries();
 
