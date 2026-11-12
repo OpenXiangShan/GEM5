@@ -114,12 +114,30 @@ AMPMHintTable::recordPrefetchHint(uint8_t state)
 PAMAIP::PAMAIP(const Params &p)
   : Base(p), hints(p.hints), lowInsertPeriod(p.low_insert_period),
     suppressFirstHit(p.suppress_first_hit), protectDemand(p.protect_demand),
+    duelDemandOnly(p.duel_demand_only),
     insertionMode(p.insertion_mode), maxRRPV(checkedRRPV(p)),
     numWays(p.num_ways), dueling(p.insertion_mode == 2 ? p.num_sets : 4),
     stats(this, maxRRPV + 1)
 {
     fatal_if(!hints || lowInsertPeriod == 0,
              "PA-MAIP requires access maps and a nonzero insertion period");
+}
+
+void
+PAMAIP::sampleDemandMiss(pa_maip::Dueling::Team team)
+{
+    if (insertionMode != 2) {
+        return;
+    }
+    if (team == pa_maip::Dueling::Srrip) {
+        stats.leaderSrripDemandFills++;
+    } else if (team == pa_maip::Dueling::Brrip) {
+        stats.leaderBrripDemandFills++;
+    }
+    if (duelDemandOnly) {
+        dueling.sample(team);
+        stats.selector = dueling.value();
+    }
 }
 
 void
@@ -135,6 +153,7 @@ PAMAIP::notifyDataUse(const std::shared_ptr<ReplacementData>& replacement_data,
     auto data = std::static_pointer_cast<PAMAIPReplData>(replacement_data);
     if (pkt->isDemand() && !isPrefetch(pkt) && data->consumeDemand()) {
         stats.fillConsumptions++;
+        sampleDemandMiss(data->team);
         if (protectDemand) {
             data->rrpv = 0;
             stats.protectedDemandFills++;
@@ -221,7 +240,12 @@ PAMAIP::reset(const std::shared_ptr<ReplacementData>& replacement_data,
         } else {
             stats.followerSrripFills++;
         }
-        dueling.sample(data->team);
+        if (!duelDemandOnly) {
+            dueling.sample(data->team);
+        }
+        if (demand_fill) {
+            sampleDemandMiss(data->team);
+        }
         stats.selector = dueling.value();
     }
     bool high = !use_brrip || !has_hint || pa_maip::highPriority(state);
@@ -333,6 +357,10 @@ PAMAIP::PolicyStats::PolicyStats(statistics::Group *parent, unsigned levels)
              "Fills in SRRIP leader sets"),
     ADD_STAT(leaderBrripFills, statistics::units::Count::get(),
              "Fills in BRRIP leader sets"),
+    ADD_STAT(leaderSrripDemandFills, statistics::units::Count::get(),
+             "Demand allocations and late-prefetch uses in SRRIP leaders"),
+    ADD_STAT(leaderBrripDemandFills, statistics::units::Count::get(),
+             "Demand allocations and late-prefetch uses in BRRIP leaders"),
     ADD_STAT(followerSrripFills, statistics::units::Count::get(),
              "Follower fills using SRRIP"),
     ADD_STAT(followerBrripFills, statistics::units::Count::get(),

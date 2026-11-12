@@ -1,0 +1,256 @@
+{
+  "unit_tests": 16,
+  "results": [
+    {
+      "variant": "paper",
+      "returncode": 0,
+      "arguments": [
+        "/tmp/apmp-build/build/RISCV/gem5.fast",
+        "--outdir=/tmp/apmp-final-default-smoke-paper",
+        "configs/example/idealkmhv3.py",
+        "--generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/gcb_test.zstd",
+        "--enable-mem-dedup",
+        "--maxinsts=100000",
+        "--warmup-insts-no-switch=0",
+        "--l2-replacement-policy=ampm",
+        "--l1d-hwp-type=AMPMPrefetcher",
+        "--ampm-hint-source=prefetcher"
+      ],
+      "ref": "/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal-dedup/riscv64-nemu-interpreter-so",
+      "policies": [
+        {
+          "type": "PAMAIPRP",
+          "duel_demand_only": "false",
+          "eventq_index": "0",
+          "hints": "system.l2_ampm_hints0",
+          "insertion_mode": "2",
+          "low_insert_period": "32",
+          "num_bits": "3",
+          "num_sets": "1024",
+          "num_ways": "8",
+          "protect_demand": "false",
+          "suppress_first_hit": "true"
+        },
+        {
+          "type": "PAMAIPRP",
+          "duel_demand_only": "false",
+          "eventq_index": "0",
+          "hints": "system.l2_ampm_hints0",
+          "insertion_mode": "2",
+          "low_insert_period": "32",
+          "num_bits": "3",
+          "num_sets": "1024",
+          "num_ways": "8",
+          "protect_demand": "false",
+          "suppress_first_hit": "true"
+        },
+        {
+          "type": "PAMAIPRP",
+          "duel_demand_only": "false",
+          "eventq_index": "0",
+          "hints": "system.l2_ampm_hints0",
+          "insertion_mode": "2",
+          "low_insert_period": "32",
+          "num_bits": "3",
+          "num_sets": "1024",
+          "num_ways": "8",
+          "protect_demand": "false",
+          "suppress_first_hit": "true"
+        },
+        {
+          "type": "PAMAIPRP",
+          "duel_demand_only": "false",
+          "eventq_index": "0",
+          "hints": "system.l2_ampm_hints0",
+          "insertion_mode": "2",
+          "low_insert_period": "32",
+          "num_bits": "3",
+          "num_sets": "1024",
+          "num_ways": "8",
+          "protect_demand": "false",
+          "suppress_first_hit": "true"
+        }
+      ],
+      "ipc": 0.413009,
+      "sim_ticks": 80628291.0,
+      "unchanged_common_non_host_counters": 9879
+    },
+    {
+      "variant": "demand",
+      "returncode": 0,
+      "arguments": [
+        "/tmp/apmp-build/build/RISCV/gem5.fast",
+        "--outdir=/tmp/apmp-final-default-smoke-demand",
+        "configs/example/idealkmhv3.py",
+        "--generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/gcb_test.zstd",
+        "--enable-mem-dedup",
+        "--maxinsts=100000",
+        "--warmup-insts-no-switch=0",
+        "--l2-replacement-policy=ampm",
+        "--l1d-hwp-type=AMPMPrefetcher",
+        "--ampm-hint-source=prefetcher",
+        "--ampm-duel-demand-only"
+      ],
+      "ref": "/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal-dedup/riscv64-nemu-interpreter-so",
+      "policies": [
+        {
+          "type": "PAMAIPRP",
+          "duel_demand_only": "true",
+          "eventq_index": "0",
+          "hints": "system.l2_ampm_hints0",
+          "insertion_mode": "2",
+          "low_insert_period": "32",
+          "num_bits": "3",
+          "num_sets": "1024",
+          "num_ways": "8",
+          "protect_demand": "false",
+          "suppress_first_hit": "true"
+        },
+        {
+          "type": "PAMAIPRP",
+          "duel_demand_only": "true",
+          "eventq_index": "0",
+          "hints": "system.l2_ampm_hints0",
+          "insertion_mode": "2",
+          "low_insert_period": "32",
+          "num_bits": "3",
+          "num_sets": "1024",
+          "num_ways": "8",
+          "protect_demand": "false",
+          "suppress_first_hit": "true"
+        },
+        {
+          "type": "PAMAIPRP",
+          "duel_demand_only": "true",
+          "eventq_index": "0",
+          "hints": "system.l2_ampm_hints0",
+          "insertion_mode": "2",
+          "low_insert_period": "32",
+          "num_bits": "3",
+          "num_sets": "1024",
+          "num_ways": "8",
+          "protect_demand": "false",
+          "suppress_first_hit": "true"
+        },
+        {
+          "type": "PAMAIPRP",
+          "duel_demand_only": "true",
+          "eventq_index": "0",
+          "hints": "system.l2_ampm_hints0",
+          "insertion_mode": "2",
+          "low_insert_period": "32",
+          "num_bits": "3",
+          "num_sets": "1024",
+          "num_ways": "8",
+          "protect_demand": "false",
+          "suppress_first_hit": "true"
+        }
+      ],
+      "ipc": 0.413009,
+      "sim_ticks": 80628291.0,
+      "unchanged_common_non_host_counters": 9879,
+      "leader_feedback": [
+        {
+          "slice": 0,
+          "srrip_demand_samples": 28,
+          "brrip_demand_samples": 39,
+          "selector": 501
+        },
+        {
+          "slice": 1,
+          "srrip_demand_samples": 29,
+          "brrip_demand_samples": 37,
+          "selector": 504
+        },
+        {
+          "slice": 2,
+          "srrip_demand_samples": 37,
+          "brrip_demand_samples": 29,
+          "selector": 520
+        },
+        {
+          "slice": 3,
+          "srrip_demand_samples": 32,
+          "brrip_demand_samples": 27,
+          "selector": 517
+        }
+      ]
+    },
+    {
+      "variant": "legacy",
+      "returncode": 0,
+      "arguments": [
+        "/tmp/apmp-build/build/RISCV/gem5.fast",
+        "--outdir=/tmp/apmp-final-default-smoke-legacy",
+        "configs/example/idealkmhv3.py",
+        "--generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/gcb_test.zstd",
+        "--enable-mem-dedup",
+        "--maxinsts=100000",
+        "--warmup-insts-no-switch=0",
+        "--l2-replacement-policy=ampm",
+        "--l1d-hwp-type=AMPMPrefetcher",
+        "--ampm-hint-source=prefetcher",
+        "--ampm-insertion-mode=brrip",
+        "--ampm-rrpv-bits=2"
+      ],
+      "ref": "/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal-dedup/riscv64-nemu-interpreter-so",
+      "policies": [
+        {
+          "type": "PAMAIPRP",
+          "duel_demand_only": "false",
+          "eventq_index": "0",
+          "hints": "system.l2_ampm_hints0",
+          "insertion_mode": "1",
+          "low_insert_period": "32",
+          "num_bits": "2",
+          "num_sets": "1024",
+          "num_ways": "8",
+          "protect_demand": "false",
+          "suppress_first_hit": "true"
+        },
+        {
+          "type": "PAMAIPRP",
+          "duel_demand_only": "false",
+          "eventq_index": "0",
+          "hints": "system.l2_ampm_hints0",
+          "insertion_mode": "1",
+          "low_insert_period": "32",
+          "num_bits": "2",
+          "num_sets": "1024",
+          "num_ways": "8",
+          "protect_demand": "false",
+          "suppress_first_hit": "true"
+        },
+        {
+          "type": "PAMAIPRP",
+          "duel_demand_only": "false",
+          "eventq_index": "0",
+          "hints": "system.l2_ampm_hints0",
+          "insertion_mode": "1",
+          "low_insert_period": "32",
+          "num_bits": "2",
+          "num_sets": "1024",
+          "num_ways": "8",
+          "protect_demand": "false",
+          "suppress_first_hit": "true"
+        },
+        {
+          "type": "PAMAIPRP",
+          "duel_demand_only": "false",
+          "eventq_index": "0",
+          "hints": "system.l2_ampm_hints0",
+          "insertion_mode": "1",
+          "low_insert_period": "32",
+          "num_bits": "2",
+          "num_sets": "1024",
+          "num_ways": "8",
+          "protect_demand": "false",
+          "suppress_first_hit": "true"
+        }
+      ],
+      "ipc": 0.413009,
+      "sim_ticks": 80628291.0,
+      "unchanged_common_non_host_counters": null
+    }
+  ]
+}

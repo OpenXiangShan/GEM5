@@ -39,11 +39,32 @@ fixes (12444 and 12106 counters respectively). There were no translated
 hint address drops in these two runs. `paper-final-fix-invariance.json`
 preserves the commands, source/binary hashes and comparison counts.
 
-L2 adaptation experiments remain in progress. Partial first-use retention,
-a fixed SRRIP control and ordinary promotion for prefetches lacking AMPM
-hints are being screened with difftest at the same 20M/40M phases. They are
-not paper claims or established improvements. Historical experiments and
-negative results follow below.
+L2 adaptation experiments remain in progress. Partial first-use retention
+regressed both complete local points and has been withdrawn from runtime;
+its exact patch and six successful difftest runs are preserved under
+`experiments/first-use-retention.*`. Fixed SRRIP recovers milc 5841 from
+IPC 1.043213 to 1.138884 and sphinx3 39957 from 3.351635 to 3.615784,
+while still trailing LRU on both points. This motivates the optional
+`--ampm-duel-demand-only` experiment: demand allocations and demand targets
+merged into a prefetched fill train the selector; prefetch-only and
+writeback allocations do not. Dedicated leader roles and insertion rules
+are unchanged. Two leader-demand counters make that feedback observable.
+Ordinary demand-hit promotion for prefetches lacking AMPM hints also
+regressed both points (milc IPC 0.955254 and sphinx3 3.299966) and has been
+withdrawn. `experiments/unhinted-promotion.*` preserves its patch and the
+four complete runs, including 2-bit controls (1.065313 and 3.353795).
+`experiments/fixed-srrip3.json` records the successful SRRIP controls.
+Demand-only feedback remains an experiment, not a paper claim or an
+established suite improvement.
+
+The clean fast build, 16 unit tests, Python/style checks and three final
+100K difftest smokes pass. Default paper and demand-only modes each match
+all 9879 common non-host counters of their explicit 3-bit references; the
+legacy fixed-BRRIP/2-bit override is also checked. Every L2 slice has the
+expected 1024-set/8-way geometry. In the unsaturated demand-only smoke,
+each selector equals 512 + SRRIP demand samples - BRRIP demand samples
+exactly. `demand-dueling-smoke.json` records the commands and configuration.
+Historical experiments and negative results follow below.
 
 ## Publications
 
@@ -438,8 +459,10 @@ The corrected Table 2 implementation is selected explicitly:
 
 For the real AMPM protocol, add the same
 `--l1d-hwp-type=AMPMPrefetcher --ampm-hint-source=prefetcher` to every
-comparison policy. Defaults retain the initial fixed-BRRIP, 2-bit control
-so existing commands and ongoing experiments keep their meaning.
+comparison policy. Defaults now select the complete adaptive 3-bit policy. Reproduce the
+initial ablation explicitly with `--ampm-insertion-mode=brrip
+--ampm-rrpv-bits=2`; historical CI inputs and pinned binaries retain their
+original effective configuration.
 
 - SRRIP inserts all map states at RRPV 6.
 - BRRIP inserts Init/Prefetched at RRPV 7, with one in 32 at RRPV 6;

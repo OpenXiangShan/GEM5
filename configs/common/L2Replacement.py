@@ -45,18 +45,17 @@ def configure_l2_replacement(args, system):
                     hints=hints,
                     low_insert_period=args.ampm_low_insert_period,
                     suppress_first_hit=not args.ampm_promote_first_hit,
-                    protect_demand=args.ampm_protect_demand)
-                if (args.ampm_insertion_mode != "brrip" or
-                        args.ampm_rrpv_bits != 2):
-                    policy = cache.replacement_policy
-                    policy.insertion_mode = {
-                        "srrip": 0, "brrip": 1, "drrip": 2,
-                    }[args.ampm_insertion_mode]
-                    policy.num_bits = args.ampm_rrpv_bits
-                    policy.num_sets = (int(cache.size) //
-                                       (int(cache.assoc) *
-                                        int(system.cache_line_size)))
-                    policy.num_ways = int(cache.assoc)
+                    protect_demand=args.ampm_protect_demand,
+                    duel_demand_only=args.ampm_duel_demand_only)
+                policy = cache.replacement_policy
+                policy.insertion_mode = {
+                    "srrip": 0, "brrip": 1, "drrip": 2,
+                }[args.ampm_insertion_mode]
+                policy.num_bits = args.ampm_rrpv_bits
+                policy.num_sets = (int(cache.size) //
+                                   (int(cache.assoc) *
+                                    int(system.cache_line_size)))
+                policy.num_ways = int(cache.assoc)
             else:
                 assoc = int(cache.assoc)
                 block_size = int(system.cache_line_size)

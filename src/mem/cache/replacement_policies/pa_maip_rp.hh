@@ -56,6 +56,7 @@ class PAMAIP : public Base
     const unsigned lowInsertPeriod;
     const bool suppressFirstHit;
     const bool protectDemand;
+    const bool duelDemandOnly;
     const unsigned insertionMode;
     const unsigned maxRRPV;
     const unsigned numWays;
@@ -77,10 +78,14 @@ class PAMAIP : public Base
         statistics::Scalar protectedDemandFills;
         statistics::Scalar leaderSrripFills;
         statistics::Scalar leaderBrripFills;
+        statistics::Scalar leaderSrripDemandFills;
+        statistics::Scalar leaderBrripDemandFills;
         statistics::Scalar followerSrripFills;
         statistics::Scalar followerBrripFills;
         statistics::Scalar selector;
     } stats;
+
+    void sampleDemandMiss(pa_maip::Dueling::Team team);
 
   public:
     using Params = PAMAIPRPParams;

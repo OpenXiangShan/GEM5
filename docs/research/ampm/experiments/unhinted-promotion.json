@@ -1,0 +1,183 @@
+{
+  "conclusion": "Ordinary demand-hit promotion for unhinted fills regresses both full-phase points; runtime option withdrawn. The 2-bit controls do not recover the paper regressions.",
+  "patch_base": "7b909ec3ecba43efcecaae20fffba6efc9854f0e",
+  "patch_note": "Also contains the disabled partial first-use option present in the pinned experiment binary.",
+  "results": [
+    {
+      "benchmark": "sphinx3",
+      "variant": "rrpv2",
+      "returncode": 0,
+      "elapsed_seconds": 602.4850318431854,
+      "ipc": 3.353795,
+      "measured_instructions": 19999986,
+      "unhinted_prefetch_fallbacks": 0,
+      "command": {
+        "ref": "/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal-dedup/riscv64-nemu-interpreter-so",
+        "source": {
+          "head": "7b909ec3ecba43efcecaae20fffba6efc9854f0e",
+          "diff_sha256": "899f69ecf9528cda67da6a6aa9b691ba3f6b07df29d1ea6fe771cc37b3bd7d48",
+          "binary_sha256": "b3956d08a81a02bd07d77180d98fe4183d00d4c26cbd6cd46e8207bd47b42fef"
+        },
+        "target": {
+          "workload": "sphinx3",
+          "point": "39957",
+          "weight": 0.0943629,
+          "ipc": {
+            "lru": 3.62709,
+            "paper": 3.351635
+          },
+          "relative_pct": -7.594380067767825,
+          "weighted_cpi_cost": 0.0021381437026906825,
+          "checkpoint": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/sphinx3/39957/_39957_0.094363_memory_.zstd"
+        },
+        "argv": [
+          "/tmp/apmp-build/build/RISCV/gem5.fallback-targets-v1.fast",
+          "--outdir=/tmp/apmp-fallback-targets-v1-sphinx3-rrpv2",
+          "configs/example/idealkmhv3.py",
+          "--generic-rv-cpt=/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/sphinx3/39957/_39957_0.094363_memory_.zstd",
+          "--enable-mem-dedup",
+          "--maxinsts=40000000",
+          "--warmup-insts-no-switch=20000000",
+          "--l2-replacement-policy=ampm",
+          "--ampm-insertion-mode=drrip",
+          "--ampm-rrpv-bits=2",
+          "--l1d-hwp-type=AMPMPrefetcher",
+          "--ampm-hint-source=prefetcher"
+        ]
+      }
+    },
+    {
+      "benchmark": "sphinx3",
+      "variant": "unhinted",
+      "returncode": 0,
+      "elapsed_seconds": 611.4223170280457,
+      "ipc": 3.299966,
+      "measured_instructions": 19999988,
+      "unhinted_prefetch_fallbacks": 258082,
+      "command": {
+        "ref": "/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal-dedup/riscv64-nemu-interpreter-so",
+        "source": {
+          "head": "7b909ec3ecba43efcecaae20fffba6efc9854f0e",
+          "diff_sha256": "899f69ecf9528cda67da6a6aa9b691ba3f6b07df29d1ea6fe771cc37b3bd7d48",
+          "binary_sha256": "b3956d08a81a02bd07d77180d98fe4183d00d4c26cbd6cd46e8207bd47b42fef"
+        },
+        "target": {
+          "workload": "sphinx3",
+          "point": "39957",
+          "weight": 0.0943629,
+          "ipc": {
+            "lru": 3.62709,
+            "paper": 3.351635
+          },
+          "relative_pct": -7.594380067767825,
+          "weighted_cpi_cost": 0.0021381437026906825,
+          "checkpoint": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/sphinx3/39957/_39957_0.094363_memory_.zstd"
+        },
+        "argv": [
+          "/tmp/apmp-build/build/RISCV/gem5.fallback-targets-v1.fast",
+          "--outdir=/tmp/apmp-fallback-targets-v1-sphinx3-unhinted",
+          "configs/example/idealkmhv3.py",
+          "--generic-rv-cpt=/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/sphinx3/39957/_39957_0.094363_memory_.zstd",
+          "--enable-mem-dedup",
+          "--maxinsts=40000000",
+          "--warmup-insts-no-switch=20000000",
+          "--l2-replacement-policy=ampm",
+          "--ampm-insertion-mode=drrip",
+          "--ampm-rrpv-bits=3",
+          "--l1d-hwp-type=AMPMPrefetcher",
+          "--ampm-hint-source=prefetcher",
+          "--ampm-promote-unhinted-prefetches"
+        ]
+      }
+    },
+    {
+      "benchmark": "milc",
+      "variant": "rrpv2",
+      "returncode": 0,
+      "elapsed_seconds": 913.5985584259033,
+      "ipc": 1.065313,
+      "measured_instructions": 20000000,
+      "unhinted_prefetch_fallbacks": 0,
+      "command": {
+        "ref": "/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal-dedup/riscv64-nemu-interpreter-so",
+        "source": {
+          "head": "7b909ec3ecba43efcecaae20fffba6efc9854f0e",
+          "diff_sha256": "899f69ecf9528cda67da6a6aa9b691ba3f6b07df29d1ea6fe771cc37b3bd7d48",
+          "binary_sha256": "b3956d08a81a02bd07d77180d98fe4183d00d4c26cbd6cd46e8207bd47b42fef"
+        },
+        "target": {
+          "workload": "milc",
+          "point": "5841",
+          "weight": 0.0850275,
+          "ipc": {
+            "lru": 1.165922,
+            "paper": 1.043213
+          },
+          "relative_pct": -10.52463200797309,
+          "weighted_cpi_cost": 0.008578144137946246,
+          "checkpoint": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/milc/5841/_5841_0.085028_memory_.zstd"
+        },
+        "argv": [
+          "/tmp/apmp-build/build/RISCV/gem5.fallback-targets-v1.fast",
+          "--outdir=/tmp/apmp-fallback-targets-v1-milc-rrpv2",
+          "configs/example/idealkmhv3.py",
+          "--generic-rv-cpt=/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/milc/5841/_5841_0.085028_memory_.zstd",
+          "--enable-mem-dedup",
+          "--maxinsts=40000000",
+          "--warmup-insts-no-switch=20000000",
+          "--l2-replacement-policy=ampm",
+          "--ampm-insertion-mode=drrip",
+          "--ampm-rrpv-bits=2",
+          "--l1d-hwp-type=AMPMPrefetcher",
+          "--ampm-hint-source=prefetcher"
+        ]
+      }
+    },
+    {
+      "benchmark": "milc",
+      "variant": "unhinted",
+      "returncode": 0,
+      "elapsed_seconds": 932.5048577785492,
+      "ipc": 0.955254,
+      "measured_instructions": 20000001,
+      "unhinted_prefetch_fallbacks": 1235058,
+      "command": {
+        "ref": "/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal-dedup/riscv64-nemu-interpreter-so",
+        "source": {
+          "head": "7b909ec3ecba43efcecaae20fffba6efc9854f0e",
+          "diff_sha256": "899f69ecf9528cda67da6a6aa9b691ba3f6b07df29d1ea6fe771cc37b3bd7d48",
+          "binary_sha256": "b3956d08a81a02bd07d77180d98fe4183d00d4c26cbd6cd46e8207bd47b42fef"
+        },
+        "target": {
+          "workload": "milc",
+          "point": "5841",
+          "weight": 0.0850275,
+          "ipc": {
+            "lru": 1.165922,
+            "paper": 1.043213
+          },
+          "relative_pct": -10.52463200797309,
+          "weighted_cpi_cost": 0.008578144137946246,
+          "checkpoint": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/milc/5841/_5841_0.085028_memory_.zstd"
+        },
+        "argv": [
+          "/tmp/apmp-build/build/RISCV/gem5.fallback-targets-v1.fast",
+          "--outdir=/tmp/apmp-fallback-targets-v1-milc-unhinted",
+          "configs/example/idealkmhv3.py",
+          "--generic-rv-cpt=/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/milc/5841/_5841_0.085028_memory_.zstd",
+          "--enable-mem-dedup",
+          "--maxinsts=40000000",
+          "--warmup-insts-no-switch=20000000",
+          "--l2-replacement-policy=ampm",
+          "--ampm-insertion-mode=drrip",
+          "--ampm-rrpv-bits=3",
+          "--l1d-hwp-type=AMPMPrefetcher",
+          "--ampm-hint-source=prefetcher",
+          "--ampm-promote-unhinted-prefetches"
+        ]
+      }
+    }
+  ],
+  "patch_file": "unhinted-promotion.patch.gz",
+  "uncompressed_patch_sha256": "899f69ecf9528cda67da6a6aa9b691ba3f6b07df29d1ea6fe771cc37b3bd7d48"
+}
