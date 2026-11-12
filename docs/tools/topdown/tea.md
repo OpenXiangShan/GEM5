@@ -64,8 +64,8 @@ Normal single-core GCPT slices use their embedded restorer.
 | `--tea-sample-period=N` | `1` | Sample every N CPU cycles; both `0` and `1` sample every cycle |
 
 Use `--disable-tea` to disable TEA. Setting the sample period to `0` does not
-disable it. Ruby configurations require `--disable-tea` because Ruby does not
-provide cache-depth attribution. When disabled,
+disable it. Ruby configurations require `--disable-tea --disable-dip` because Ruby does
+not provide cache-depth attribution. When disabled,
 TEA creates no tracker, runs no attribution callbacks or event marking, and
 produces no TEA statistics group or CSV. The normal execution path retains
 enable checks and a small amount of field initialization.
@@ -228,6 +228,21 @@ for the same measurement window so the results can be checked.
 
 ## Visualization
 
+Successful XiangShan runs automatically generate CSV tables and a numerical
+DIP/TEA report at `<outdir>/profile/report.md`. Images are generated manually:
+
+```sh
+python3 util/profile_report.py m5out --plots
+```
+
+The manual image report includes TEA state/event and PC charts plus DIP
+state/cause and PC charts. It can find current `manual-perf` SPEC application
+ELFs from the checkpoint profile, or accept `--elf <workload.elf>` explicitly.
+See the [DIP report guide](dip.md#manual-image-report-and-pc-instruction-labels)
+for asset discovery, dependencies and instruction labels.
+`--disable-profile-report` skips automatic numerical reporting without changing
+sampling. Automatic reporting requires only Python's standard library.
+
 Use [util/plot_tea.py](../../../util/plot_tea.py) to draw a stacked state chart
 and an event heatmap. The script requires Python 3 and Matplotlib and runs
 without a graphical display. Install Matplotlib in your Python environment
@@ -275,6 +290,20 @@ or average percentages across files.
 Both panels use all samples as the denominator, including cancelled, pending,
 and unresolved samples. Event weights overlap and do not represent removable
 stall cycles. The script rejects missing TEA counters or zero-sample runs.
+
+To plot finalized attributed PC weights with instructions and function names:
+
+```sh
+python3 util/plot_tea.py m5out/stats.txt --view pcs --top 15 \
+    --elf /path/to/workload.elf -o tea-pcs.png
+```
+
+`--view pcs` also accepts a raw `<cpu>.tea.csv`. It aggregates nonnegative PSV
+rows by PC, excluding pending, cancelled and unresolved attribution. The
+percentage denominator includes **all** CSV sample weight, not just the top
+PCs. Weights cover all states and do not isolate stall cycles. Omit `--elf` for
+PC-only labels; repeat it for a matching kernel ELF, or use `--objdump PATH`
+for a specific RISC-V disassembler. Unknown instruction boundaries stay unmapped.
 
 ## Weighted Comparisons
 

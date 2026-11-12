@@ -818,6 +818,12 @@ Commit::generateTCEvent(ThreadID tid)
 void
 Commit::squashAll(ThreadID tid)
 {
+    if (auto *dip = cpu->getDip();
+        dip && curSquashCause[tid] != SquashCause::Trap) {
+        dip->setFlushCause(squashAfterInst[tid],
+            squashAfterInst[tid] ? Dip::Flush : Dip::UnknownFlush,
+            curSquashCause[tid]);
+    }
     if (auto *tea = cpu->getTea();
         tea && curSquashCause[tid] != SquashCause::Trap) {
         tea->setFlush(tid, 0, 0, false);
@@ -1123,6 +1129,9 @@ Commit::handleInterrupt()
         if (auto *tea = cpu->getTea()) {
             tea->setFlush(0, 0, 0, false);
         }
+        if (auto *dip = cpu->getDip()) {
+            dip->setFlushCause(nullptr, Dip::UnknownFlush, SquashCause::Trap);
+        }
         generateTrapEvent(0, interrupt);
 
         avoidQuiesceLiveLock = false;
@@ -1274,6 +1283,14 @@ Commit::commit()
                 } else {
                     tea->setFlush(tid, 0, 0, false);
                 }
+            }
+
+            if (auto *dip = cpu->getDip()) {
+                auto cause = fromIEW->mispredictInst[tid];
+                if (!cause) {
+                    cause = rob->findInst(tid, fromIEW->squashedSeqNum[tid]);
+                }
+                dip->setFlushCause(cause, Dip::Flush, curSquashCause[tid]);
             }
 
             DPRINTF(Commit, "[tid:%i] Redirecting to PC %#x\n",
@@ -1519,6 +1536,10 @@ Commit::handleMdpViolation(const DynInstPtr &head_inst, ThreadID tid)
         }
         tea->setFlush(tid, cause_inst->pcState().instAddr(),
                       cause_inst->teaPSV());
+    }
+    if (auto *dip = cpu->getDip()) {
+        dip->setFlushCause(head_inst, Dip::Flush,
+                           SquashCause::MemOrderViolation);
     }
     if (rob->isHybrid()) {
         squashed_inst = rob->squashHybrid(head_inst, true, tid);
@@ -2322,6 +2343,11 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num,
             }
             tea->setFlush(tid, head_inst->getPC(), head_inst->teaPSV());
         }
+        if (auto *dip = cpu->getDip()) {
+            dip->setFlushCause(head_inst,
+                dynamic_cast<ReExec *>(inst_fault.get()) == nullptr ?
+                    Dip::SoftwareException : Dip::Flush, SquashCause::Trap);
+        }
         generateTrapEvent(tid, inst_fault);
         return false;
     }
@@ -2512,6 +2538,9 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num,
     if (auto *tea = cpu->getTea()) {
         tea->commit(head_inst);
     }
+    if (auto *dip = cpu->getDip()) {
+        dip->commit(head_inst);
+    }
     rob->retireHead(tid);
 
 #if TRACING_ON
@@ -2612,6 +2641,12 @@ Commit::moveInstsToBuffer()
         if (robblock) {
             block_reason = squashCauseToStallReason(curSquashCause[i]);
         } else if (block) {
+            if (auto *dip = cpu->getDip()) {
+                dip->upstreamStall(Dip::ROB);
+                if (!fixedbuffer[i].empty()) {
+                    dip->block(fixedbuffer[i].front(), Dip::ROB);
+                }
+            }
             block_reason = robInfoFromIEW->iewInfo[i].robHeadStallReason;
             stats.ROBFull[i]++;
             unsigned restEntry = rob->getTotalEntries();
@@ -2754,6 +2789,9 @@ Commit::squashInflightAndUpdateVersion(ThreadID tid)
 
     localSquashVer[tid].update(localSquashVer[tid].nextVersion());
     toIEW->commitInfo[tid].squashVersion = localSquashVer[tid];
+    if (auto *dip = cpu->getDip()) {
+        dip->squash(toIEW->commitInfo[tid].doneSeqNum, localSquashVer[tid]);
+    }
     DPRINTF(Commit, "Updating squash version to %u\n",
             localSquashVer[tid].getVersion());
 }
