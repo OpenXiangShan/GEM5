@@ -6,6 +6,10 @@
  * must remain clean, including after the LLC evicts its original copy.
  */
 
+#ifndef LINES
+#define LINES 4096
+#endif
+
     .text
     .global _start
 _start:
@@ -13,7 +17,7 @@ _start:
     li a0, 0
 1:
     la t0, data
-    li t1, 4096
+    li t1, LINES
 2:
     ld t2, 0(t0)
     or a0, a0, t2
@@ -33,4 +37,4 @@ _start:
     .bss
     .balign 4096
 data:
-    .skip 262144
+    .skip LINES * 64

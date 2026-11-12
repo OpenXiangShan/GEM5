@@ -150,7 +150,9 @@ void
 Cache::satisfyRequest(PacketPtr pkt, CacheBlk *blk,
                       bool deferred_response, bool pending_downgrade)
 {
-    const bool retain_dirty = hierarchyPolicy.retainDirtyOnGrant(level(), pkt);
+    const bool bypass_fill = blk == tempBlock && blk->bypassL2;
+    const bool retain_dirty =
+        hierarchyPolicy.retainDirtyOnGrant(level(), pkt, bypass_fill);
     const bool was_dirty = blk->isSet(CacheBlk::DirtyBit);
     BaseCache::satisfyRequest(pkt, blk);
 
@@ -1318,9 +1320,12 @@ Cache::sendHintViaMSHRTargets(MSHR *mshr, const PacketPtr pkt)
 PacketPtr
 Cache::evictBlock(CacheBlk *blk)
 {
-    // XiangShan single-core L1 victims read/return data only when dirty.
+    // Marked L1 bypass victims return data even when clean, so an exclusive
+    // LLC can retain them. Ordinary L1 victims still return only dirty data.
     // Lower levels retain their configured clean-writeback/clusivity policy.
     PacketPtr pkt = (blk->isSet(CacheBlk::DirtyBit) ||
+                    hierarchyPolicy.writebackBypassVictim(
+                        level(), blk->bypassL2) ||
                     (writebackClean &&
                      !hierarchyPolicy.dropCleanL1Data(level()))) ?
         writebackBlk(blk) : cleanEvictBlk(blk);

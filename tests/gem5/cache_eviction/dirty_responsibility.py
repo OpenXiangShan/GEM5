@@ -1,11 +1,11 @@
 # Copyright (c) 2026 Institute of Computing Technology, CAS
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Check retained L2 dirty responsibility and data recovery in five phases.
+"""Check resident L2 retention and bypass dirty transfer across five phases.
 
-Compile dirty_responsibility.S as a static freestanding RISC-V executable.
-The guest checks values; per-phase statistics distinguish inherited dirty
-responsibility from stores issued by L1 itself.
+Compile dirty_responsibility.S, or bypass_dirty_owner.S with --bypass, as
+a static freestanding RISC-V executable. The guest checks values; per-phase
+statistics distinguish inherited dirty responsibility from local L1 stores.
 """
 
 import argparse
@@ -21,6 +21,7 @@ from m5.objects import (
     L2XBar,
     Process,
     Root,
+    SDBPRP,
     SEWorkload,
     SimpleMemory,
     SrcClockDomain,
@@ -35,8 +36,10 @@ parser.add_argument("binary")
 parser.add_argument("--mode", choices=("timing", "atomic"), default="timing")
 parser.add_argument("--legacy", action="store_true")
 parser.add_argument("--invalidate", action="store_true")
+parser.add_argument("--bypass", action="store_true")
 args = parser.parse_args()
 assert not (args.mode == "atomic" and args.invalidate)
+assert not (args.bypass and args.legacy)
 
 system = System(
     mem_mode=args.mode,
@@ -77,6 +80,14 @@ system.l2 = cache(
     writeback_clean=True,
     l2_evict_invalidate_l1=args.invalidate,
 )
+if args.bypass:
+    system.l2.replacement_policy = SDBPRP(
+        num_sets=128,
+        sampler_num=128,
+        sampler_assoc=6,
+        dead_threshold=0,
+        enable_bypass=True,
+    )
 system.l3bus = L2XBar()
 system.l3 = cache("128KiB", 4, 3, clusivity="mostly_excl")
 system.membus = SystemXBar()
@@ -125,8 +136,19 @@ for phase in range(5):
         if "retainedDirty" in key
         or "writebacks::total" in key
         or "evictionSnoop" in key
+        or "bypassL2" in key
     }
     phases.append(selected)
+    if args.bypass:
+        if phase in (1, 2):
+            # The guest executes no stores here: dirty L1 victims must have
+            # inherited their obligation from bypassed LLC responses.
+            dirty = values.get("system.dcache.bypassL2Writebacks::dirty", 0)
+            assert dirty > 0, selected
+            assert values.get("system.l2.bypassL2Writebacks::dirty", 0) > 0
+            assert values.get("system.l3.bypassL2Writebacks::dirty", 0) > 0
+        m5.stats.reset()
+        continue
     if phase == 0:
         assert values.get("system.dcache.writebacks::total", 0) > 0
     if phase in (1, 4):

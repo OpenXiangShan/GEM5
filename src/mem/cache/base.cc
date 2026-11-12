@@ -1814,11 +1814,11 @@ BaseCache::getNextQueueEntry()
 
 bool
 BaseCache::handleEvictions(std::vector<CacheBlk*> &evict_blks,
-    PacketList &writebacks, bool *evicted_dirty)
+    PacketList &writebacks, bool *need_data_read)
 {
     bool replacement = false;
-    if (evicted_dirty) {
-        *evicted_dirty = false;
+    if (need_data_read) {
+        *need_data_read = false;
     }
 
     for (const auto& blk : evict_blks) {
@@ -1868,7 +1868,7 @@ BaseCache::handleEvictions(std::vector<CacheBlk*> &evict_blks,
                     set_assoc->replacementVictimClass(blk) : 0;
                 const auto previous_size = writebacks.size();
                 ++stats.committedReplacementBlocks;
-                evictBlock(blk, writebacks, evicted_dirty);
+                evictBlock(blk, writebacks, need_data_read);
                 if (writebacks.size() != previous_size) {
                     assert(writebacks.size() == previous_size + 1);
                     auto *pkt = writebacks.back();
@@ -2086,7 +2086,8 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
         assert(!pkt->hasSharers());
 
         if (blk->isSet(CacheBlk::DirtyBit) &&
-            !hierarchyPolicy.retainDirtyOnGrant(cacheLevel, pkt)) {
+            !hierarchyPolicy.retainDirtyOnGrant(
+                cacheLevel, pkt, blk == tempBlock && blk->bypassL2)) {
             // we were in the Owned state, and a cache above us that
             // has the line in Shared state needs to be made aware
             // that the data it already has is in fact dirty
@@ -2670,7 +2671,7 @@ BaseCache::handleFill(
 CacheBlk*
 BaseCache::allocateBlock(
     const PacketPtr pkt, PacketList &writebacks,
-    PrefetchSourceType prefetch_fill_source, bool *evicted_dirty)
+    PrefetchSourceType prefetch_fill_source, bool *need_data_read)
 {
     // Get address
     const Addr addr = pkt->getAddr();
@@ -2725,7 +2726,7 @@ BaseCache::allocateBlock(
     }
 
     // Try to evict blocks; if it fails, give up on allocation
-    if (!handleEvictions(evict_blks, writebacks, evicted_dirty)) {
+    if (!handleEvictions(evict_blks, writebacks, need_data_read)) {
         return nullptr;
     }
 
@@ -2776,7 +2777,7 @@ BaseCache::invalidateBlock(CacheBlk *blk)
 
 void
 BaseCache::evictBlock(CacheBlk *blk, PacketList &writebacks,
-                      bool *evicted_dirty)
+                      bool *need_data_read)
 {
     if (archDBer) {
         Addr paddr = regenerateBlkAddr(blk);
@@ -2786,8 +2787,12 @@ BaseCache::evictBlock(CacheBlk *blk, PacketList &writebacks,
 
     DPRINTF(CacheTrace, "Evicting block %#llx\n", regenerateBlkAddr(blk));
 
-    if (evicted_dirty && blk->isSet(CacheBlk::DirtyBit)) {
-        *evicted_dirty = true;
+    // Clean bypass victims also read the data array and use the L1D
+    // writeback port. Keep the existing accounting for unmarked victims.
+    if (need_data_read &&
+        (blk->isSet(CacheBlk::DirtyBit) ||
+         hierarchyPolicy.writebackBypassVictim(cacheLevel, blk->bypassL2))) {
+        *need_data_read = true;
     }
 
     PacketPtr pkt = evictBlock(blk);
@@ -2800,12 +2805,12 @@ BaseCache::evictBlock(CacheBlk *blk, PacketList &writebacks,
 PacketPtr
 BaseCache::writebackBlk(CacheBlk *blk)
 {
-    const bool bypass_l2 = cacheLevel == 1 && blk->bypassL2;
+    const bool bypass_l2 =
+        hierarchyPolicy.writebackBypassVictim(cacheLevel, blk->bypassL2);
     gem5_assert(!isReadOnly || writebackClean,
                 "Writeback from read-only cache");
     assert(blk && blk->isValid() &&
-        (blk->isSet(CacheBlk::DirtyBit) || writebackClean));
-    assert(!bypass_l2 || blk->isSet(CacheBlk::DirtyBit));
+        (blk->isSet(CacheBlk::DirtyBit) || writebackClean || bypass_l2));
 
     stats.writebacks[Request::wbRequestorId]++;
 

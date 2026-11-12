@@ -79,6 +79,23 @@ TEST_F(CacheHierarchyPolicy, DirtyResponsibilityStaysAtTheL2DataBoundary)
     EXPECT_FALSE(legacy.retainDirtyOnGrant(2, request.get()));
 }
 
+TEST_F(CacheHierarchyPolicy, BypassFillsUseNormalDirtyOwnershipTransfer)
+{
+    const Policy policy(enums::xiangshan_single_core);
+    for (auto cmd : {MemCmd::ReadSharedReq, MemCmd::ReadExReq,
+                     MemCmd::UpgradeReq}) {
+        auto request = readPacket(cmd);
+        EXPECT_TRUE(policy.retainDirtyOnGrant(2, request.get(), false));
+        EXPECT_FALSE(policy.retainDirtyOnGrant(2, request.get(), true));
+        // A packet hint alone cannot exempt a resident L2 block.
+        request->bypassL2 = true;
+        EXPECT_TRUE(policy.retainDirtyOnGrant(2, request.get(), false));
+    }
+    const Policy legacy(enums::legacy);
+    auto request = readPacket();
+    EXPECT_FALSE(legacy.retainDirtyOnGrant(2, request.get(), true));
+}
+
 TEST_F(CacheHierarchyPolicy, WritableL1ReadDoesNotPromiseDirtyOwnership)
 {
     const Policy policy(enums::xiangshan_single_core);
@@ -125,6 +142,24 @@ TEST_F(CacheHierarchyPolicy, CleanL1OverrideDoesNotChangeLowerLevelClusivity)
     EXPECT_TRUE(policy.forwardBypassWriteback(2, wb.get()));
     EXPECT_FALSE(policy.forwardBypassWriteback(3, wb.get()));
     EXPECT_TRUE(policy.consumeBypassWriteback(3, wb.get()));
+}
+
+TEST_F(CacheHierarchyPolicy, OnlyMarkedL1BypassVictimsOverrideCleanEviction)
+{
+    const Policy policy(enums::xiangshan_single_core);
+    const Policy legacy(enums::legacy);
+    CacheBlk block;
+    block.insert(0x1000, false);
+    block.setCoherenceBits(CacheBlk::ReadableBit | CacheBlk::WritableBit);
+    EXPECT_FALSE(policy.writebackBypassVictim(1, block.bypassL2));
+    block.bypassL2 = true;
+    EXPECT_TRUE(policy.writebackBypassVictim(1, block.bypassL2));
+    EXPECT_FALSE(block.isSet(CacheBlk::DirtyBit));
+    EXPECT_FALSE(policy.writebackBypassVictim(2, block.bypassL2));
+    EXPECT_FALSE(policy.writebackBypassVictim(3, block.bypassL2));
+    EXPECT_FALSE(legacy.writebackBypassVictim(1, block.bypassL2));
+    block.invalidate();
+    EXPECT_FALSE(policy.writebackBypassVictim(1, block.bypassL2));
 }
 
 TEST_F(CacheHierarchyPolicy, WritablePermissionDoesNotMakeVictimDirty)

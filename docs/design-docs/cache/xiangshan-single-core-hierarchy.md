@@ -6,16 +6,20 @@ XiangShan single-core behavior specified for these experiments:
 
 - Ordinary data reads receive writable permission when the responding cache
   has writable permission and no actual sharer or pending downgrade prevents it.
-- Writable permission and dirty data are independent. Receiving a clean,
-  writable line does not require a data writeback when L1 evicts it.
-- L1 victims return data only when dirty. Dirty L1 victims marked as having
-  bypassed L2 are forwarded through L2's write buffer to L3 without L2 allocation.
+- Writable permission and dirty data are independent. Ordinary clean L1
+  victims do not return data merely because they have writable permission.
+- L1 victims return data when dirty or marked as having bypassed L2. Marked
+  victims use `WritebackClean` or `WritebackDirty` according to their real dirty
+  state and pass through L2's write buffer to L3 without L2 allocation.
 
 This is functional and resource modeling alignment with the stated single-core
 behavior. It is not a claim of complete TileLink or cycle-level RTL equivalence.
-At the L2-to-L1D boundary, dirty responsibility stays at L2 while L1D
-records its own writes. L2's dirty bit does not guarantee that its data is
-current when L1D has writable permission. Snoops and retained-dirty victim
+At the L2-to-L1D boundary, resident L2 blocks retain dirty responsibility
+while L1D records its own writes. An actual SDBP bypass temporary fill instead
+uses the existing dirty-ownership transfer path when the grant permits it.
+The receiving L1 then owns the inherited dirty data even without a local store.
+A resident L2's dirty bit does not guarantee that its data is current when L1D
+has writable permission. Snoops and retained-dirty victim
 writebacks must therefore collect any newer upper data first. A downstream
 snoop racing a pending victim is deferred in that victim's reserved write
 buffer transaction; it cannot respond with the old payload or free the slot
@@ -73,9 +77,13 @@ merged writes can also be promoted once the writable response arrives.
 
 The promise is not a dirty bit or an unconditional grant. A responder must
 still have `WritableBit`, no `hasSharers`, no pending downgrade, and an eligible
-ordinary data read. L2 keeps its dirty obligation when granting data or an
-upgrade to L1D, including after its own miss (`deferred_response`). L3 can
-still transfer dirty ownership to L2. Legacy gem5 conservatively returns
+ordinary data read. Resident L2 blocks keep their dirty obligation when granting
+data or an upgrade to L1D, including after their own miss (`deferred_response`).
+An actual bypass temporary fill opts out of retention, but still obeys sharer,
+pending-downgrade, ReadCleanReq and deferred-writable checks. A successful
+dirty transfer sets `cacheResponding` on the response and clears the temporary
+block's dirty bit; L1 installs the response as dirty. No clean fill is dirtied
+merely to force this transfer. L3 can still transfer dirty ownership to L2. Legacy gem5 conservatively returns
 Shared in the deferred dirty case where the upstream MSHR did not prepare
 for an unsolicited ownership transfer.
 
@@ -87,8 +95,8 @@ coherence handling. Instruction fetches, read-only caches, prefetches,
 existing request semantics. The selector is intentionally limited to a single
 core and is not a new general multi-core coherence protocol.
 
-A data read can leave L1D writable and clean even when L2 is dirty relative
-to L3. A later L1 write marks L1 dirty without clearing the L2 obligation;
+A non-bypass data read can leave L1D writable and clean even when L2 is dirty
+relative to L3. A later L1 write marks L1 dirty without clearing the L2 obligation;
 both levels may then be dirty and only L1 has the latest data. The model
 forwards an upper response instead of also responding with stale L2 data.
 Functional snoops from below also search upper caches before trusting L2's
@@ -98,22 +106,27 @@ do not permit independently writable sibling copies.
 
 ## Victims and data-array resources
 
-The policy makes every clean L1 eviction use `CleanEvict`, even if
-`writeback_clean=True` was requested on L1. This preserves a control notification
-for the existing snoop filter but transfers no cache-line data. Dirty L1 victims
-use `WritebackDirty` and copy the data. Writable permission alone is not tested
-to decide whether an eviction has data.
+Ordinary clean L1 evictions use `CleanEvict`, even if `writeback_clean=True`
+was requested on L1. This preserves a control notification for the existing
+snoop filter but transfers no cache-line data. An L1 victim marked `bypassL2`
+instead returns its data: `WritebackClean` when clean, `WritebackDirty` when
+dirty. The marker is installed only by an actual SDBP bypass refill with
+`--sdbp-enable-bypass` enabled under this hierarchy policy. Enabling bypass
+does not change eviction handling for unmarked lines. Writable permission
+alone does not decide whether an eviction has data, and a clean bypass victim
+never becomes dirty merely to force data transfer.
 
-The existing L1D refill/mainpipe resource model obtains `needDataRead` from the
-evicted victim's dirty state. It reserves the data-read banks and writeback
-port for dirty victims, and omits those resources for clean victims. Incoming
-refill data still needs its own tag/data-write resources. This change does not
-introduce a new data-array timing model or change unrelated LSQ behavior.
+The existing L1D refill/mainpipe resource model obtains `needDataRead` from
+whether the victim is dirty or a marked L1 bypass victim. Both reserve the
+data-read banks and writeback port. Ordinary clean victims retain their
+existing resource accounting. Incoming refill data still needs its own
+tag/data-write resources. This uses the existing resource model and adds no
+new LSQ pipeline or timing parameter.
 
 L2/L3 retain their configured `writeback_clean` and clusivity semantics. In
-particular, an L2 temporary bypass fill retains its normal eviction handling;
-suppressing its clean data unconditionally would alter LLC residency when L3
-is mostly exclusive.
+particular, an L2 temporary bypass fill retains its normal eviction handling
+after any successful dirty-ownership transfer to L1. Suppressing its clean data
+unconditionally would alter LLC residency when L3 is mostly exclusive.
 
 ## Retained dirty victims
 
@@ -138,12 +151,24 @@ carried as generic `bypassL2` transport/block metadata:
 1. L2 observes the completed fill in the sampler exactly once, even when using
    its temporary block rather than a real cache way.
 2. Under this hierarchy policy, the L2 response marks L1's installed block.
-3. A clean marked L1 block sends only `CleanEvict`; a dirty marked block sends
-   `WritebackDirty` carrying `bypassL2`.
+   A dirty bypass temporary block transfers its dirty obligation to L1 when
+   the existing grant checks allow writable ownership, instead of retaining
+   that obligation in storage about to be discarded. Its later clean temporary
+   eviction can be suppressed by the existing upper-presence check. If ownership
+   cannot transfer, normal dirty handling remains necessary.
+3. A marked L1 block always returns data on eviction, carrying `bypassL2`:
+   clean blocks use `WritebackClean`, dirty blocks use `WritebackDirty`.
 4. L2 routes that writeback through its normal write buffer, preserves ordering
    with same-address misses, and does not allocate an L2 way. A later installed
    same-address L2 copy is invalidated, preserving any actual dirty obligation.
 5. L3 consumes the routing marker and handles the packet normally.
+
+This clean-victim exception preserves LLC reuse when L3 is mostly exclusive.
+Such an LLC may not retain demand refills, and L2's temporary-block clean
+writeback can be discarded by `isCachedAbove()` while the L1 MSHR is present.
+Returning the marked clean L1 victim supplies the later opportunity to install
+it in L3. The marked writeback follows the existing write-buffer ordering and
+same-address handling; it does not allocate L2 or bypass the modeled buses.
 
 Block moves transfer the marker and invalidation clears it. It is independent
 of coherence state and never marks data dirty by itself. The policy keeps
@@ -193,8 +218,12 @@ The policy tests and three-level integration workload cover ordinary read
 commands, promise isolation from packet copies/snoops, clean permission without
 dirty state, legacy behavior, bypass marker moves/invalidation, timing/atomic,
 bypass on/off, SDBP/LRU, clean-only execution, normal predictor training and
-L1 `writeback_clean` overrides. Mixed read/write workloads verify data after
-reuse beyond LLC capacity and exercise deferred dirty grants.
+L1 `writeback_clean` overrides. Read-only bypass cases require clean data
+writebacks through all three levels and zero dirty writebacks. A repeated
+32 KiB read-only footprint in a 64 KiB mostly-exclusive LLC also bounds memory
+reads with bypass off/on, catching loss of clean LLC residency. Mixed read/write
+workloads verify data after reuse beyond LLC capacity and exercise deferred
+dirty grants.
 
 ```sh
 scons build/RISCV/gem5.opt \
@@ -251,6 +280,59 @@ The current five-run setup and integration validation are recorded in
 fixed: atomic clean exclusive hits now consume their deferred tag-invalidation
 flag, and Queued::createPrefetchRequest preserves an absent instruction PC
 instead of asserting when a forwarded prefetch has only a trigger PC.
+
+## Clean bypass victim validation
+
+Validated on 2026-11-11 with `--sdbp-enable-bypass` controlling the existing
+L1 marker. All 10 hierarchy-policy unit tests and 30 dirty-responsibility
+integration cases pass, including timing/atomic, read-only, mixed data,
+legacy bypass, and bypass-disabled controls. Eight matched micro runs cover
+inclusive/exclusive L3 and bypass off/on. For the 32 KiB read-only footprint
+in a 64 KiB exclusive L3, the bypass case's memory reads fall from 1417 to 579;
+all 1257 marked clean writebacks reach L1/L2/L3 counters without dirtying data.
+
+Six matched checkpoint runs of `sphinx3/157921` complete 20M warmup plus 20M
+measurement with difftest, DRAMsim3, no prefetch, exclusive L3, and the same REF.
+With bypass enabled, measured cycles fall from 15,107,973 to 5,672,306 and DRAM
+reads from 157,545 to 2058. LRU and bypass-disabled SDBP reproduce all simulation
+counters except host execution metrics. DRAM reads subtract the warmup block
+because this executable's DRAMsim3 AbstractMemory counters are cumulative.
+These checkpoint results do not establish a full SPEC score or RTL equivalence.
+
+## Bypass dirty ownership
+
+Only `blk == tempBlock && blk->bypassL2` exempts a grant from L2 dirty
+retention. A routing hint on a resident block does not change retention.
+Legacy mode and bypass-disabled execution keep the previous behavior.
+The existing response and snoop protocol carries dirty ownership; no new
+runtime parameter or L3 permission-directory model is introduced.
+
+`bypass_dirty_owner.S` writes a footprint that fits the LLC, then executes two
+read-only refill/eviction phases before forcing eviction beyond LLC capacity
+and verifying the values again. Both timing and atomic cases require inherited
+dirty writebacks at L1/L2/L3 despite no guest stores in those read-only phases.
+This complements the existing retained-L2, clean-only, deferred, functional,
+and lower-snoop regressions.
+
+Validated on 2026-11-12: 11 hierarchy-policy tests, 29 SDBP core tests,
+26 SDBP adapter tests, and 32 integration cases pass. In each of the two
+read-only ownership phases, both timing and atomic tests observe 512 inherited
+dirty bypass writebacks at each cache boundary. The same directed test fails
+on the previous executable because L1 generates no inherited dirty writebacks.
+All non-host counters match for 24 unaffected integration controls and eight
+clean-only micro runs. The MemTest lower-snoop cases exercise resident dirty
+recovery; they do not supply PCs and do not test SDBP bypass snoop races.
+
+Three matched libquantum checkpoints use the previous clean-bypass fix as
+baseline, 20M warmup + 20M measurement, no prefetch, DRAMsim3, exclusive L3,
+and difftest. Cycles decrease by 4.24% on 85656 and 5.84% on 27811; 32961
+increases by 0.03%. Bypass still costs 5.05%, 0.75%, and 3.13% respectively
+relative to bypass off. In the bounded 85656 timing trace, 23,663 dirty
+temporary fills transfer dirty state to L1 and eventually write back from L1;
+none sends a clean or dirty writeback to L3 before L1 eviction. The former
+23,663 double-dirty chains disappear. Less writeback traffic does not guarantee
+lower cycles: placement, arbitration and upper-cache resource use still matter.
+These selected slices do not establish a full benchmark or SPEC score.
 
 ## Dirty-responsibility regression
 

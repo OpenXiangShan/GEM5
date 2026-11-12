@@ -47,6 +47,7 @@ parser.add_argument("--deferred", action="store_true")
 parser.add_argument("--read-only", action="store_true")
 parser.add_argument("--l1-writeback-clean", action="store_true")
 parser.add_argument("--threshold", type=int, default=0)
+parser.add_argument("--max-memory-reads", type=int)
 parser.add_argument("--mode", choices=("timing", "atomic"), default="timing")
 args = parser.parse_args()
 
@@ -97,15 +98,17 @@ system.l2 = cache(
     2,
     writeback_clean=True,
     l2_evict_invalidate_l1=args.l2_evict_invalidate_l1,
-    replacement_policy=SDBPRP(
-        num_sets=64,
-        sampler_num=64,
-        sampler_assoc=6,
-        dead_threshold=args.threshold,
-        enable_bypass=args.bypass,
-    )
-    if args.replacement == "sdbp"
-    else LRURP(),
+    replacement_policy=(
+        SDBPRP(
+            num_sets=64,
+            sampler_num=64,
+            sampler_assoc=6,
+            dead_threshold=args.threshold,
+            enable_bypass=args.bypass,
+        )
+        if args.replacement == "sdbp"
+        else LRURP()
+    ),
 )
 system.l3bus = L2XBar()
 system.l3 = cache(
@@ -161,22 +164,27 @@ for command in ("clean", "dirty"):
     l1 = sum(stats[f"system.{name}{suffix}"] for name in ("icache", "dcache"))
     l2 = stats[f"system.l2{suffix}"]
     l3 = stats[f"system.l3{suffix}"]
-    if xs_policy and args.bypass and not args.read_only and command == "dirty":
+    if (
+        xs_policy
+        and args.bypass
+        and (command == "clean" or not args.read_only)
+    ):
         assert l1 > 0 and l2 > 0 and l3 > 0, (command, l1, l2, l3)
+        if args.read_only:
+            assert l1 == l2 == l3, (command, l1, l2, l3)
     else:
         assert l1 == l2 == l3 == 0, (command, l1, l2, l3)
 clean_evictions = stats["system.dcache.bypassL2CleanEvictions"]
 if xs_policy and args.bypass:
     assert bypasses > 1000, bypasses
     assert stats["system.dcache.bypassL2Fills"] > 1000
-    if args.read_only:
-        assert clean_evictions > 1000, clean_evictions
 
 else:
-    assert clean_evictions == 0
     assert stats["system.dcache.bypassL2Fills"] == 0
     if not args.bypass:
         assert bypasses == 0
+# Marked clean victims now carry data; ordinary clean victims stay control-only.
+assert clean_evictions == 0, clean_evictions
 assert stats["system.l3.bypassL2Fills"] == 0
 if xs_policy:
     # Ordinary reads remain shared requests, but the grants are writable.
@@ -199,10 +207,13 @@ if xs_policy:
     else:
         assert stats["system.dcache.writableReadExpectations"] == 0
     if args.read_only:
-        # Bus command histograms include L2 eviction snoops toward L1. Check
-        # packets generated at L1 itself; L2 keeps its clean-writeback policy.
+        # Every L1 data writeback must be a marked clean bypass victim.
+        # Unmarked clean lines still generate only CleanEvict.
         for cache_name in ("icache", "dcache"):
-            assert stats.get(f"system.{cache_name}.writebacks::total", 0) == 0
+            prefix = f"system.{cache_name}"
+            assert stats.get(f"{prefix}.writebacks::total", 0) == stats.get(
+                f"{prefix}.bypassL2Writebacks::clean", 0
+            )
 else:
     for level in ("icache", "dcache", "l2", "l3"):
         assert stats[f"system.{level}.defaultWritableGrants"] == 0
@@ -214,6 +225,10 @@ if args.read_only:
     assert stats["system.dcache.bypassL2Writebacks::dirty"] == 0
     # The bus histogram omits command bins with a zero count.
     assert stats.get("system.membus.transDist::WritebackDirty", 0) == 0
+if args.max_memory_reads is not None:
+    # A repeated clean footprint that fits LLC must survive L2 bypass.
+    reads = stats["system.memory.numReads::total"]
+    assert reads <= args.max_memory_reads, (reads, args.max_memory_reads)
 report = {
     k: v
     for k, v in stats.items()

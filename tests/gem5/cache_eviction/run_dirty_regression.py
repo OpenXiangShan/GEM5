@@ -35,6 +35,7 @@ def main():
     guests = {}
     for name, source, options in (
         ("phases", "dirty_responsibility.S", []),
+        ("bypass_owner", "bypass_dirty_owner.S", []),
         ("mixed", "bypass_workload.c", ["-O2", "-fno-builtin"]),
         (
             "deferred",
@@ -42,6 +43,7 @@ def main():
             ["-O2", "-fno-builtin", "-DLINES=256"],
         ),
         ("readonly", "bypass_readonly.S", []),
+        ("readonly_fit", "bypass_readonly.S", ["-DLINES=512"]),
     ):
         guest = output / name
         subprocess.run(
@@ -80,6 +82,19 @@ def main():
             )
         )
     for mode in ("timing", "atomic"):
+        jobs.append(
+            (
+                f"bypass_owner_{mode}",
+                [
+                    str(tests / "dirty_responsibility.py"),
+                    str(guests["bypass_owner"]),
+                    "--bypass",
+                    f"--mode={mode}",
+                    *(["--invalidate"] if mode == "timing" else []),
+                ],
+                "latest-data checks PASS",
+            )
+        )
         for name, guest, options in (
             ("bypass", "mixed", ["--bypass"]),
             (
@@ -87,9 +102,28 @@ def main():
                 "readonly",
                 ["--bypass", "--read-only", "--l1-writeback-clean"],
             ),
+            (
+                "readonly_fit",
+                "readonly_fit",
+                [
+                    "--read-only",
+                    "--l1-writeback-clean",
+                    "--max-memory-reads=800",
+                ],
+            ),
+            (
+                "readonly_fit_bypass",
+                "readonly_fit",
+                ["--bypass", "--read-only", "--max-memory-reads=800"],
+            ),
             ("sdbp", "mixed", []),
             ("lru", "mixed", ["--replacement=lru"]),
             ("legacy", "mixed", ["--cache-hierarchy-policy=legacy"]),
+            (
+                "legacy_bypass",
+                "mixed",
+                ["--cache-hierarchy-policy=legacy", "--bypass"],
+            ),
             ("deferred", "deferred", ["--deferred"]),
             ("deferred_bypass", "deferred", ["--deferred", "--bypass"]),
         ):

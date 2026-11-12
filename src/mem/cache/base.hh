@@ -890,10 +890,11 @@ class BaseCache : public ClockedObject, public CacheAccessor
      *
      * @param evict_blks Blocks marked for eviction.
      * @param writebacks List for any writebacks that need to be performed.
+     * @param need_data_read Whether a victim needs an L1D data-array read.
      * @return False if any of the evicted blocks is in transient state.
      */
     bool handleEvictions(std::vector<CacheBlk*> &evict_blks,
-        PacketList &writebacks, bool *evicted_dirty = nullptr);
+        PacketList &writebacks, bool *need_data_read = nullptr);
 
     /**
      * Handle a fill operation caused by a received packet.
@@ -928,12 +929,13 @@ class BaseCache : public ClockedObject, public CacheAccessor
      *
      * @param pkt Packet holding the address to update
      * @param writebacks A list of writeback packets for the evicted blocks
+     * @param need_data_read Whether a victim needs an L1D data-array read.
      * @return the allocated block
      */
     CacheBlk *allocateBlock(
         const PacketPtr pkt, PacketList &writebacks,
         PrefetchSourceType prefetch_fill_source = PrefetchSourceType::PF_NONE,
-        bool *evicted_dirty = nullptr);
+        bool *need_data_read = nullptr);
     /**
      * Evict a cache block.
      *
@@ -951,9 +953,10 @@ class BaseCache : public ClockedObject, public CacheAccessor
      *
      * @param blk Block to invalidate
      * @param writebacks Return a list of packets with writebacks
+     * @param need_data_read Set if the victim needs an L1D data-array read.
      */
     void evictBlock(CacheBlk *blk, PacketList &writebacks,
-                    bool *evicted_dirty = nullptr);
+                    bool *need_data_read = nullptr);
 
     /**
      * Invalidate a cache block.
