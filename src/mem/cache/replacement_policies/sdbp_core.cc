@@ -65,9 +65,11 @@ SDBPCore::SDBPCore(const Config &config) : cfg(config)
             throw std::invalid_argument(message);
     };
     require(powerOfTwo(cfg.numSets) && cfg.numSets >= 4, "num_sets must be a power of two >= 4");
-    require(powerOfTwo(cfg.samplerNum) && cfg.samplerNum >= 2 && cfg.samplerNum <= cfg.numSets,
-            "sampler_num must be a power of two in [2, num_sets]");
-    require(cfg.samplerAssoc >= 1, "sampler_assoc must be positive");
+    if (cfg.enableSampler) {
+        require(powerOfTwo(cfg.samplerNum) && cfg.samplerNum >= 2 && cfg.samplerNum <= cfg.numSets,
+                "sampler_num must be a power of two in [2, num_sets]");
+        require(cfg.samplerAssoc >= 1, "sampler_assoc must be positive");
+    }
     require(cfg.predictorTables >= 1 && cfg.predictorTables <= 32, "predictor_tables must be in [1, 32]");
     require(powerOfTwo(cfg.predictorEntries) && cfg.predictorEntries >= 2,
             "predictor_entries must be a power of two >= 2");
@@ -93,24 +95,29 @@ SDBPCore::SDBPCore(const Config &config) : cfg(config)
         require(seeds.size() == cfg.tableHashSeeds.size(), "table_hash_seeds must be distinct");
     }
 
-    unsigned set_bits = 0;
-    for (unsigned sets = cfg.numSets; sets > 1; sets >>= 1)
-        ++set_bits;
-    halfSetBits = 0;
-    for (unsigned sets = cfg.samplerNum; sets > 1; sets >>= 1)
-        ++halfSetBits;
-    matchBits = set_bits - halfSetBits;
+    if (cfg.enableSampler) {
+        unsigned set_bits = 0;
+        for (unsigned sets = cfg.numSets; sets > 1; sets >>= 1)
+            ++set_bits;
+        halfSetBits = 0;
+        for (unsigned sets = cfg.samplerNum; sets > 1; sets >>= 1)
+            ++halfSetBits;
+        matchBits = set_bits - halfSetBits;
+    }
     for (auto &bank : tables) {
         bank.assign(cfg.predictorTables,
                     std::vector<uint8_t>(cfg.predictorEntries, 0));
     }
-    sampler.assign(samplerSets(), std::vector<Entry>(cfg.samplerAssoc));
+    if (cfg.enableSampler)
+        sampler.assign(samplerSets(), std::vector<Entry>(cfg.samplerAssoc));
 }
 
 int
 SDBPCore::sampleIndex(unsigned set) const
 {
     assert(set < cfg.numSets);
+    if (!cfg.enableSampler)
+        return -1;
     // Fields may overlap. Equality makes each low h-bit suffix unique.
     if ((set >> halfSetBits) != (set & mask(matchBits)))
         return -1;
@@ -190,7 +197,7 @@ SDBPCore::access(unsigned set, uint64_t tag, RequestType type,
 {
     AccessResult result;
     // Filter before lookup so rejected requests cannot train or alter LRU.
-    if (!has_pc ||
+    if (!cfg.enableSampler || !has_pc ||
         (cfg.samplerDemandPcOnly && type != RequestType::Demand)) {
         return result;
     }

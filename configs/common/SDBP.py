@@ -18,9 +18,12 @@ def nonnegative_int(value):
 def add_sdbp_options(parser):
     parser.add_argument(
         "--l2-replacement-policy",
-        choices=("default", "lru", "sdbp"),
+        choices=("default", "lru", "sdbp", "lru-sdbp"),
         default="default",
-        help="Override L2 replacement after platform defaults",
+        help=(
+            "Override L2 replacement after platform defaults; lru-sdbp "
+            "keeps LRU victims and observes full-cache SDBP predictions"
+        ),
     )
     parser.add_argument("--sdbp-sampler-num", type=int, default=128)
     parser.add_argument("--sdbp-sampler-assoc", type=int, default=8)
@@ -68,11 +71,12 @@ def configure_sdbp(args, system):
     def configure(cache, policy, cpu):
         if policy == "lru":
             cache.replacement_policy = LRURP()
-        elif policy == "sdbp":
+        elif policy in ("sdbp", "lru-sdbp"):
+            observation_only = policy == "lru-sdbp"
             # Query only the owning core's resident L1I/L1D tags.
             cache.sdbp_l1_caches = (
                 [cpu.icache, cpu.dcache]
-                if args.sdbp_l1_copy_protection
+                if args.sdbp_l1_copy_protection and not observation_only
                 else []
             )
             cache.replacement_policy = SDBPRP(
@@ -80,12 +84,17 @@ def configure_sdbp(args, system):
                 // (int(cache.assoc) * int(system.cache_line_size)),
                 sampler_num=args.sdbp_sampler_num,
                 sampler_assoc=args.sdbp_sampler_assoc,
-                l1_copy_protection=args.sdbp_l1_copy_protection,
+                l1_copy_protection=(
+                    args.sdbp_l1_copy_protection and not observation_only
+                ),
                 sampler_dead_first=args.sdbp_sampler_dead_first,
                 sampler_demand_pc_only=args.sdbp_sampler_demand_pc_only,
                 sampler_protect_youngest=args.sdbp_sampler_protect_youngest,
                 dead_threshold=args.sdbp_dead_threshold,
-                enable_bypass=args.sdbp_enable_bypass,
+                enable_bypass=(
+                    args.sdbp_enable_bypass and not observation_only
+                ),
+                observation_only=observation_only,
                 pc_hash_type=args.sdbp_pc_hash_type,
                 pc_shift=args.sdbp_pc_shift,
             )
@@ -93,6 +102,20 @@ def configure_sdbp(args, system):
     if args.l2_replacement_policy != "default":
         if not args.l2cache:
             raise ValueError("--l2-replacement-policy requires --l2cache")
+        if (
+            args.l2_replacement_policy == "lru-sdbp"
+            and args.sdbp_enable_bypass
+        ):
+            raise ValueError(
+                "lru-sdbp observation mode cannot bypass L2 fills"
+            )
+        if (
+            args.l2_replacement_policy == "lru-sdbp"
+            and args.sdbp_sampler_demand_pc_only
+        ):
+            raise ValueError(
+                "lru-sdbp observation mode tracks demand and prefetch PCs"
+            )
         if (
             args.l2_replacement_policy == "sdbp"
             and args.sdbp_enable_bypass

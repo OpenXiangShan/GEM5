@@ -25,6 +25,7 @@ class SDBPCore
         unsigned numSets = 2048;
         unsigned samplerNum = 32;
         unsigned samplerAssoc = 12;
+        bool enableSampler = true;
         bool samplerDeadFirst = true;
         bool samplerDemandPcOnly = false;
         unsigned samplerProtectYoungest = 0;
@@ -63,7 +64,7 @@ class SDBPCore
 
     explicit SDBPCore(const Config &config);
     unsigned numSets() const { return cfg.numSets; }
-    unsigned samplerSets() const { return 1U << halfSetBits; }
+    unsigned samplerSets() const { return cfg.enableSampler ? 1U << halfSetBits : 0; }
     unsigned halfBits() const { return halfSetBits; }
     /** Return -1 for an unsampled set, otherwise a dense sampler index. */
     int sampleIndex(unsigned set) const;

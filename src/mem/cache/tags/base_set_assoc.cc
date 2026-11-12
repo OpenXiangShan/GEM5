@@ -134,8 +134,11 @@ BaseSetAssoc::moveBlock(CacheBlk *src_blk, CacheBlk *dest_blk)
     // Since the blocks were using different replacement data pointers,
     // we must touch the replacement data of the new entry, and invalidate
     // the one that is being moved.
-    replacementPolicy->invalidate(src_blk->replacementData);
-    replacementPolicy->reset(dest_blk->replacementData);
+    if (!sdbpPolicy || !sdbpPolicy->transferEntry(
+            src_blk->replacementData, dest_blk->replacementData)) {
+        replacementPolicy->invalidate(src_blk->replacementData);
+        replacementPolicy->reset(dest_blk->replacementData);
+    }
 }
 
 } // namespace gem5

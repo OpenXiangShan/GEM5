@@ -1744,7 +1744,7 @@ BaseCache::getNextQueueEntry()
                 ++stats.l2RequestLookups[request_source];
             const auto *pf_blk = tags->findBlock(pf_addr, pkt->isSecure());
             if (auto *set_assoc = dynamic_cast<BaseSetAssoc *>(tags)) {
-                set_assoc->observeLocalPrefetch(pkt, pf_blk != nullptr);
+                set_assoc->observeLocalPrefetch(pkt, pf_blk);
             }
             if (pf_blk) {
                 recordL2Request(request_source, pkt, true, true,
@@ -1863,11 +1863,13 @@ BaseCache::handleEvictions(std::vector<CacheBlk*> &evict_blks,
                     }
                 }
                 // Snapshot before invalidateBlock clears replacement metadata.
-                const auto *set_assoc = dynamic_cast<BaseSetAssoc *>(tags);
+                auto *set_assoc = dynamic_cast<BaseSetAssoc *>(tags);
                 const unsigned victim_class = set_assoc ?
                     set_assoc->replacementVictimClass(blk) : 0;
                 const auto previous_size = writebacks.size();
                 ++stats.committedReplacementBlocks;
+                if (set_assoc)
+                    set_assoc->notifyReplacementEviction(blk);
                 evictBlock(blk, writebacks, evicted_dirty);
                 if (writebacks.size() != previous_size) {
                     assert(writebacks.size() == previous_size + 1);

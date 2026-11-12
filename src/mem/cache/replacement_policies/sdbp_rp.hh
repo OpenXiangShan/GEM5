@@ -26,11 +26,19 @@ class SDBP : public Base
     using Params = SDBPRPParams;
     explicit SDBP(const Params &p);
     void startup() override;
+    void resetStats() override;
     void bindCache(unsigned num_sets);
     using L1CopyProbe = std::function<bool(const ReplaceableEntry *)>;
     void setL1CopyProbe(L1CopyProbe probe);
     void observe(const PacketPtr pkt, unsigned set, Addr tag, bool hit);
     void observeFill(const PacketPtr pkt, unsigned set, Addr tag);
+    void observeLocalPrefetch(
+        const PacketPtr pkt,
+        const std::shared_ptr<ReplacementData> &data);
+    void notifyReplacementEviction(
+        const std::shared_ptr<ReplacementData> &data);
+    bool transferEntry(const std::shared_ptr<ReplacementData> &src,
+                       const std::shared_ptr<ReplacementData> &dest);
 
     void invalidate(const std::shared_ptr<ReplacementData> &data) override;
     void touch(const std::shared_ptr<ReplacementData> &data, const PacketPtr pkt) override;
@@ -40,6 +48,7 @@ class SDBP : public Base
     ReplaceableEntry *getVictim(const ReplacementCandidates &candidates) const override;
     ReplaceableEntry *getVictim(const ReplacementCandidates &candidates, const PacketPtr pkt) const;
     std::shared_ptr<ReplacementData> instantiateEntry() override;
+    bool isObservationOnly() const { return observationOnly; }
 
     // Diagnostic for SDBP metadata only: 1 for live, 2 for dead.
     static unsigned victimClass(const std::shared_ptr<ReplacementData> &data)
@@ -52,8 +61,15 @@ class SDBP : public Base
     struct SDBPReplData : ReplacementData
     {
         uint64_t lastUse = 0;
+        uint64_t signature = 0;
+        Tick lastTouchTick = 0;
+        SDBPCore::RequestType signatureType = SDBPCore::RequestType::Demand;
+        SDBPCore::RequestType fillType = SDBPCore::RequestType::Demand;
         bool valid = false;
         bool dead = false;
+        bool signatureValid = false;
+        bool prefetchOrigin = false;
+        bool prefetchDemandUsed = false;
     };
 
     static bool eligible(const PacketPtr pkt);
@@ -64,12 +80,21 @@ class SDBP : public Base
     static SDBPCore::RequestType requestType(const PacketPtr pkt);
     void sample(const PacketPtr pkt, unsigned set, Addr tag);
     bool predict(const PacketPtr pkt) const;
+    void updateLine(const std::shared_ptr<ReplacementData> &data,
+                    const PacketPtr pkt, bool updateRecency);
+    void startPrediction(SDBPReplData &entry, const PacketPtr pkt);
+    void resolvePrediction(SDBPReplData &entry, bool actualDead,
+                           SDBPCore::RequestType reuseType =
+                               SDBPCore::RequestType::Demand);
+    void censorPrediction(SDBPReplData &entry);
     SDBPCore core;
     const bool enableBypass;
     const bool l1CopyProtection;
+    const bool observationOnly;
     bool bound = false;
     L1CopyProbe l1CopyProbe;
     mutable uint64_t sequence = 0;
+    std::vector<std::weak_ptr<SDBPReplData>> observationEntries;
 
     struct SDBPStats : statistics::Group
     {
@@ -99,12 +124,34 @@ class SDBP : public Base
         statistics::Scalar l1CopyChecks;
         statistics::Scalar l1CopyProtectedDead;
         statistics::Scalar l1CopyLruFallbacks;
+        statistics::Scalar fullCachePredictions;
+        statistics::Scalar fullCacheResolved;
+        statistics::Scalar fullCacheCensored;
+        statistics::Scalar fullCachePending;
         statistics::Vector samplerAccessesBySource;
         statistics::Vector samplerHitsBySource;
         statistics::Vector liveTrainingBySource;
         statistics::Vector deadTrainingBySource;
         statistics::Vector predictionQueriesBySource;
         statistics::Vector deadPredictionsBySource;
+        statistics::Vector fullCachePredictionsBySource;
+        statistics::Vector fullCacheCarriedInBySource;
+        statistics::Vector fullCacheResolvedBySource;
+        statistics::Vector fullCacheCensoredBySource;
+        statistics::Vector fullCacheDeadTruePositiveBySource;
+        statistics::Vector fullCacheDeadFalsePositiveBySource;
+        statistics::Vector fullCacheLiveTrueNegativeBySource;
+        statistics::Vector fullCacheLiveFalseNegativeBySource;
+        statistics::Vector fullCachePendingBySource;
+        statistics::Vector fullCacheDemandReuseBySource;
+        statistics::Vector fullCachePrefetchReuseBySource;
+        statistics::Vector fullCachePredDeadDemandReuseBySource;
+        statistics::Vector fullCachePrefetchFillsBySource;
+        statistics::Vector fullCachePrefetchCarriedInBySource;
+        statistics::Vector fullCachePrefetchPendingBySource;
+        statistics::Vector fullCachePrefetchDemandUsesBySource;
+        statistics::Vector fullCachePrefetchUnusedEvictionsBySource;
+        statistics::Vector fullCachePrefetchUnusedInvalidationsBySource;
     };
     mutable SDBPStats stats;
 };

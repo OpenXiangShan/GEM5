@@ -52,6 +52,20 @@ TEST(SDBPCore, SamplingRejectsNonPowerOfTwo)
     EXPECT_THROW(SDBPCore{cfg}, std::invalid_argument);
 }
 
+TEST(SDBPCore, FullCacheModeDisablesIndependentSampler)
+{
+    SDBPCore::Config cfg;
+    cfg.enableSampler = false;
+    SDBPCore core(cfg);
+
+    EXPECT_EQ(core.samplerSets(), 0);
+    EXPECT_EQ(core.sampleIndex(0), -1);
+    const auto result = core.access(
+        0, 1, SDBPCore::RequestType::Demand, true, 0x1000);
+    EXPECT_FALSE(result.sampled);
+    EXPECT_EQ(core.confidence(core.signature(0x1000)), 0);
+}
+
 TEST(SDBPCore, CounterSaturationAndCrcLiveUpdate)
 {
     SDBPCore core{SDBPCore::Config()};

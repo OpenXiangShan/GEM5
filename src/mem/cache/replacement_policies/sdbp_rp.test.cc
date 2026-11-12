@@ -8,7 +8,9 @@
 #include <array>
 #include <vector>
 
+#include "mem/cache/replacement_policies/lru_rp.hh"
 #include "mem/cache/replacement_policies/sdbp_rp.hh"
+#include "params/LRURP.hh"
 #include "params/SDBPRP.hh"
 #include "sim/eventq.hh"
 
@@ -44,6 +46,7 @@ testParams(bool bypass = false, unsigned threshold = 8)
     p.index_hash_type = "mixed";
     p.crc_live_update = true;
     p.enable_bypass = bypass;
+    p.observation_only = false;
     return p;
 }
 
@@ -91,6 +94,15 @@ class SDBPInterface : public ::testing::Test
   protected:
     void SetUp() override { curEventQueue(getEventQueue(0)); }
 };
+
+SDBPRPParams
+observerParams(unsigned threshold = 8)
+{
+    auto params = testParams(false, threshold);
+    params.observation_only = true;
+    params.l1_copy_protection = false;
+    return params;
+}
 
 TEST_F(SDBPInterface, ResetDoesNotTrainAndResponsePcPredicts)
 {
@@ -580,6 +592,208 @@ TEST_F(SDBPInterface, PrefetchUsesTriggerPcAndOnlyItsOwnPredictor)
         policy.observeFill(l2.get(), 0, tag);
     policy.reset(data, l2.get());
     EXPECT_EQ(SDBP::victimClass(data), 2);
+}
+
+TEST_F(SDBPInterface, FullCacheObserverScoresEpisodesAndPrefetchDemandUse)
+{
+    auto params = testParams(false, 0);
+    params.observation_only = true;
+    params.l1_copy_protection = false;
+    SDBP policy(params);
+    auto data = policy.instantiateEntry();
+    auto prefetch = sourcedPacket(Request::L2RequestSource::L2Prefetch,
+                                  0x1000);
+    auto demand = sourcedPacket(Request::L2RequestSource::L1Demand,
+                                0x2000);
+
+    policy.reset(data, prefetch.get());
+    EXPECT_EQ(stat(policy, "fullCachePending"), 1);
+    EXPECT_EQ(sourceStat(policy, "fullCachePrefetchPendingBySource", 2), 1);
+
+    policy.touch(data, demand.get());
+    EXPECT_EQ(sourceStat(policy, "fullCacheDeadFalsePositiveBySource", 2), 1);
+    EXPECT_EQ(sourceStat(policy, "fullCachePredDeadDemandReuseBySource", 2), 1);
+    EXPECT_EQ(sourceStat(policy, "fullCachePrefetchDemandUsesBySource", 2), 1);
+    EXPECT_EQ(sourceStat(policy, "fullCachePrefetchPendingBySource", 2), 0);
+
+    policy.notifyReplacementEviction(data);
+    EXPECT_EQ(sourceStat(policy, "fullCacheDeadTruePositiveBySource", 0), 1);
+    EXPECT_EQ(stat(policy, "fullCacheResolved"), 2);
+    EXPECT_EQ(stat(policy, "fullCachePending"), 0);
+    EXPECT_EQ(stat(policy, "liveTraining"), 1);
+    EXPECT_EQ(stat(policy, "deadTraining"), 1);
+
+    policy.invalidate(data);
+    EXPECT_EQ(stat(policy, "fullCacheCensored"), 0);
+    EXPECT_EQ(stat(policy, "fullCachePending"), 0);
+}
+
+TEST_F(SDBPInterface, FullCacheObserverCensorsExternalInvalidation)
+{
+    auto params = testParams();
+    params.observation_only = true;
+    params.l1_copy_protection = false;
+    SDBP policy(params);
+    auto data = policy.instantiateEntry();
+    auto demand = sourcedPacket(Request::L2RequestSource::L1Demand,
+                                0x1000);
+
+    policy.reset(data, demand.get());
+    policy.invalidate(data);
+
+    EXPECT_EQ(stat(policy, "fullCacheCensored"), 1);
+    EXPECT_EQ(stat(policy, "fullCachePending"), 0);
+    EXPECT_EQ(sourceStat(policy, "fullCacheResolvedBySource", 0), 0);
+    EXPECT_EQ(sourceStat(policy, "fullCacheCensoredBySource", 0), 1);
+}
+
+TEST_F(SDBPInterface, FullCacheObserverVictimMatchesLruDespiteDeadPrediction)
+{
+    auto params = testParams(false, 0);
+    params.observation_only = true;
+    params.l1_copy_protection = false;
+    SDBP policy(params);
+    LRURPParams lru_params;
+    lru_params.name = "lru_test";
+    lru_params.eventq_index = 0;
+    LRU lru(lru_params);
+
+    std::array<ReplaceableEntry, 3> observer_entries;
+    std::array<ReplaceableEntry, 3> lru_entries;
+    std::array<std::shared_ptr<ReplacementData>, 3> observer_data;
+    std::array<std::shared_ptr<ReplacementData>, 3> lru_data;
+    auto demand = sourcedPacket(Request::L2RequestSource::L1Demand,
+                                0x1000);
+    for (unsigned way = 0; way < observer_entries.size(); ++way) {
+        observer_entries[way].setPosition(0, way);
+        lru_entries[way].setPosition(0, way);
+        observer_data[way] = policy.instantiateEntry();
+        lru_data[way] = lru.instantiateEntry();
+        observer_entries[way].replacementData = observer_data[way];
+        lru_entries[way].replacementData = lru_data[way];
+        curEventQueue()->setCurTick(Tick(way + 1));
+        policy.reset(observer_data[way], demand.get());
+        lru.reset(lru_data[way]);
+    }
+
+    curEventQueue()->setCurTick(Tick(4));
+    policy.touch(observer_data[0], demand.get());
+    lru.touch(lru_data[0]);
+    const ReplacementCandidates observer_candidates{
+        &observer_entries[0], &observer_entries[1], &observer_entries[2]};
+    const ReplacementCandidates lru_candidates{
+        &lru_entries[0], &lru_entries[1], &lru_entries[2]};
+
+    EXPECT_TRUE(SDBP::victimClass(observer_data[1]) == 2);
+    EXPECT_EQ(policy.getVictim(observer_candidates), &observer_entries[1]);
+    EXPECT_EQ(lru.getVictim(lru_candidates), &lru_entries[1]);
+    // A tick tie must retain native candidate order, not access sequence.
+    curEventQueue()->setCurTick(Tick(7));
+    for (unsigned way : {2U, 1U, 0U}) {
+        policy.touch(observer_data[way], demand.get());
+        lru.touch(lru_data[way]);
+    }
+    EXPECT_EQ(policy.getVictim(observer_candidates), &observer_entries[0]);
+    EXPECT_EQ(lru.getVictim(lru_candidates), &lru_entries[0]);
+    policy.invalidate(observer_data[1]);
+    lru.invalidate(lru_data[1]);
+    EXPECT_EQ(policy.getVictim(observer_candidates), &observer_entries[1]);
+    EXPECT_EQ(lru.getVictim(lru_candidates), &lru_entries[1]);
+}
+
+TEST_F(SDBPInterface, FullCacheObserverTrainsRealLinesAndScoresLivePredictions)
+{
+    SDBP policy(observerParams());
+    auto data = policy.instantiateEntry();
+    auto pf = sourcedPacket(Request::L2RequestSource::L1Prefetch, 0x1000);
+    auto other = sourcedPacket(Request::L2RequestSource::L2Prefetch, 0x1000);
+    // Three real LRU evictions saturate this source's dead counters.
+    for (unsigned i = 0; i < 3; ++i) {
+        policy.reset(data, pf.get());
+        EXPECT_EQ(SDBP::victimClass(data), 1);
+        policy.notifyReplacementEviction(data);
+        policy.invalidate(data);
+    }
+    policy.reset(data, pf.get());
+    EXPECT_EQ(SDBP::victimClass(data), 2);
+    // Ordinary request PC does not change prefetch signature attribution.
+    pf->req->setPC(0x4000);
+    policy.touch(data, pf.get());
+    EXPECT_EQ(SDBP::victimClass(data), 1);
+    policy.touch(data, other.get());
+    policy.notifyReplacementEviction(data);
+    policy.invalidate(data);
+    EXPECT_EQ(sourceStat(policy, "fullCacheLiveFalseNegativeBySource", 1), 3);
+    EXPECT_EQ(sourceStat(policy, "fullCacheDeadFalsePositiveBySource", 1), 1);
+    EXPECT_EQ(sourceStat(policy, "fullCacheLiveTrueNegativeBySource", 1), 1);
+    EXPECT_EQ(sourceStat(policy, "fullCacheLiveFalseNegativeBySource", 2), 1);
+    EXPECT_EQ(sourceStat(policy, "liveTrainingBySource", 1), 2);
+    EXPECT_EQ(stat(policy, "samplerAccesses"), 0);
+    EXPECT_EQ(stat(policy, "fullCachePending"), 0);
+}
+
+TEST_F(SDBPInterface, FullCacheObserverResetStatsPreservesPendingAndPredictor)
+{
+    SDBP policy(observerParams(0));
+    auto data = policy.instantiateEntry();
+    auto pf = sourcedPacket(Request::L2RequestSource::L2Prefetch, 0x1000);
+    auto demand = sourcedPacket(Request::L2RequestSource::L1Demand, 0x2000);
+    policy.reset(data, pf.get());
+    policy.resetStats();
+    EXPECT_EQ(stat(policy, "fullCachePredictions"), 0);
+    EXPECT_EQ(stat(policy, "fullCachePending"), 1);
+    EXPECT_EQ(sourceStat(policy, "fullCacheCarriedInBySource", 2), 1);
+    EXPECT_EQ(sourceStat(policy, "fullCachePrefetchCarriedInBySource", 2), 1);
+    policy.touch(data, demand.get());
+    EXPECT_EQ(sourceStat(policy, "fullCacheDeadFalsePositiveBySource", 2), 1);
+    EXPECT_EQ(sourceStat(policy, "fullCachePrefetchDemandUsesBySource", 2), 1);
+    EXPECT_EQ(sourceStat(policy, "fullCachePrefetchPendingBySource", 2), 0);
+    policy.notifyReplacementEviction(data);
+    policy.invalidate(data);
+    EXPECT_EQ(stat(policy, "fullCachePending"), 0);
+    EXPECT_EQ(stat(policy, "fullCacheResolved"), 2);
+    EXPECT_EQ(stat(policy, "fullCachePredictions"), 1);
+}
+
+TEST_F(SDBPInterface, FullCacheObserverLocalPrefetchDoesNotRefreshLru)
+{
+    SDBP policy(observerParams(0));
+    ReplaceableEntry a, b;
+    a.replacementData = policy.instantiateEntry();
+    b.replacementData = policy.instantiateEntry();
+    auto demand = sourcedPacket(Request::L2RequestSource::L1Demand, 0x1000);
+    auto pf = sourcedPacket(Request::L2RequestSource::L2Prefetch, 0x2000);
+    curEventQueue()->setCurTick(10);
+    policy.reset(a.replacementData, demand.get());
+    curEventQueue()->setCurTick(20);
+    policy.reset(b.replacementData, demand.get());
+    curEventQueue()->setCurTick(30);
+    policy.observeLocalPrefetch(pf.get(), a.replacementData);
+    EXPECT_EQ(policy.getVictim({&a, &b}), &a);
+    EXPECT_EQ(sourceStat(policy, "fullCachePrefetchReuseBySource", 0), 1);
+    // Selection is speculative; only committed eviction trains dead.
+    EXPECT_EQ(stat(policy, "deadTraining"), 0);
+    policy.notifyReplacementEviction(a.replacementData);
+    EXPECT_EQ(sourceStat(policy, "deadTrainingBySource", 2), 1);
+}
+
+TEST_F(SDBPInterface, FullCacheObserverMissingPcReuseResolvesButCannotPredict)
+{
+    SDBP policy(observerParams(0));
+    auto data = policy.instantiateEntry();
+    auto pf = sourcedPacket(Request::L2RequestSource::L1Prefetch, 0x1000);
+    auto demand = packet(MemCmd::ReadReq, false);
+    auto wb = packet(MemCmd::WritebackDirty);
+    policy.reset(data, pf.get());
+    policy.touch(data, wb.get());
+    EXPECT_EQ(stat(policy, "fullCacheResolved"), 0);
+    policy.touch(data, demand.get());
+    EXPECT_EQ(sourceStat(policy, "fullCacheDeadFalsePositiveBySource", 1), 1);
+    EXPECT_EQ(stat(policy, "fullCachePending"), 0);
+    EXPECT_EQ(stat(policy, "fullCachePredictions"), 1);
+    policy.notifyReplacementEviction(data);
+    policy.invalidate(data);
+    EXPECT_EQ(stat(policy, "deadTraining"), 0);
 }
 
 TEST_F(SDBPInterface, LocalPrefetchCacheHitTrainsSamplerVictimDead)

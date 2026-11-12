@@ -54,6 +54,7 @@ Source('xs_drrip_rp.cc')
 GTest('replaceable_entry.test', 'replaceable_entry.test.cc')
 GTest('sdbp_core.test', 'sdbp_core.test.cc', 'sdbp_core.cc')
 GTest('sdbp_rp.test', 'sdbp_rp.test.cc', 'sdbp_core.cc', 'sdbp_rp.cc',
+      'lru_rp.cc',
       '../../../base/stats/group.cc', '../../../base/stats/info.cc',
       '../../../base/stats/storage.cc', '../../../base/statistics.cc',
       '../../../base/time.cc', '../../../base/hostinfo.cc',

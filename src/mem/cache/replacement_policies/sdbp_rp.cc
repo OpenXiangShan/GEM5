@@ -12,6 +12,7 @@
 #include "base/trace.hh"
 #include "debug/SDBP.hh"
 #include "params/SDBPRP.hh"
+#include "sim/cur_tick.hh"
 
 namespace gem5
 {
@@ -27,6 +28,7 @@ makeCore(const SDBPRPParams &p)
     cfg.numSets = p.num_sets;
     cfg.samplerNum = p.sampler_num;
     cfg.samplerAssoc = p.sampler_assoc;
+    cfg.enableSampler = !p.observation_only;
     cfg.samplerDeadFirst = p.sampler_dead_first;
     cfg.samplerDemandPcOnly = p.sampler_demand_pc_only;
     cfg.samplerProtectYoungest = p.sampler_protect_youngest;
@@ -53,16 +55,22 @@ makeCore(const SDBPRPParams &p)
 
 SDBP::SDBP(const Params &p)
     : Base(p), core(makeCore(p)), enableBypass(p.enable_bypass),
-      l1CopyProtection(p.l1_copy_protection), stats(this)
+      l1CopyProtection(p.l1_copy_protection),
+      observationOnly(p.observation_only), stats(this)
 {
+    fatal_if(observationOnly && enableBypass,
+             "%s: observation-only SDBP cannot bypass fills", name());
+    fatal_if(observationOnly && l1CopyProtection,
+             "%s: observation-only SDBP does not use L1-copy protection", name());
     inform(
         "%s: SDBP num_sets=%u sampler_sets=%u half_set_bits=%u "
         "sampler_assoc=%u sampler_dead_first=%d sampler_protect_youngest=%u "
         "sampler_demand_pc_only=%d "
-        "l1_copy_protection=%d bypass=%d",
+        "l1_copy_protection=%d bypass=%d observation_only=%d",
         name(), core.numSets(), core.samplerSets(), core.halfBits(),
         p.sampler_assoc, p.sampler_dead_first, p.sampler_protect_youngest,
-        p.sampler_demand_pc_only, l1CopyProtection, enableBypass);
+        p.sampler_demand_pc_only, l1CopyProtection, enableBypass,
+        observationOnly);
 }
 
 void
@@ -89,6 +97,32 @@ SDBP::startup()
              "%s: SDBP requires direct use by BaseSetAssoc tags "
              "with SetAssociative indexing (no DuelingRP or Ruby)",
              name());
+}
+
+void
+SDBP::resetStats()
+{
+    Base::resetStats();
+    if (!observationOnly)
+        return;
+
+    // Reset counters without forgetting predictions made during warmup.
+    for (const auto &weak : observationEntries) {
+        const auto entry = weak.lock();
+        if (!entry || !entry->valid)
+            continue;
+        if (entry->signatureValid) {
+            const auto source = static_cast<unsigned>(entry->signatureType);
+            ++stats.fullCachePending;
+            ++stats.fullCachePendingBySource[source];
+            ++stats.fullCacheCarriedInBySource[source];
+        }
+        if (entry->prefetchOrigin && !entry->prefetchDemandUsed) {
+            const auto source = static_cast<unsigned>(entry->fillType);
+            ++stats.fullCachePrefetchPendingBySource[source];
+            ++stats.fullCachePrefetchCarriedInBySource[source];
+        }
+    }
 }
 
 bool
@@ -213,7 +247,8 @@ SDBP::observe(const PacketPtr pkt, unsigned set, Addr tag, bool hit)
         ++stats.eligibleMisses;
         return;
     }
-    sample(pkt, set, tag);
+    if (!observationOnly)
+        sample(pkt, set, tag);
 }
 
 void
@@ -230,7 +265,50 @@ SDBP::observeFill(const PacketPtr pkt, unsigned set, Addr tag)
     }
     ++stats.eligibleAccesses;
     ++stats.eligibleMisses;
-    sample(pkt, set, tag);
+    if (!observationOnly)
+        sample(pkt, set, tag);
+}
+
+void
+SDBP::observeLocalPrefetch(
+    const PacketPtr pkt, const std::shared_ptr<ReplacementData> &data)
+{
+    if (observationOnly)
+        updateLine(data, pkt, false);
+}
+
+void
+SDBP::notifyReplacementEviction(
+    const std::shared_ptr<ReplacementData> &data)
+{
+    if (!observationOnly)
+        return;
+
+    auto &entry = *std::static_pointer_cast<SDBPReplData>(data);
+    resolvePrediction(entry, true);
+    if (entry.prefetchOrigin && !entry.prefetchDemandUsed) {
+        ++stats.fullCachePrefetchUnusedEvictionsBySource[
+            static_cast<unsigned>(entry.fillType)];
+        --stats.fullCachePrefetchPendingBySource[
+            static_cast<unsigned>(entry.fillType)];
+    }
+    entry.prefetchOrigin = false;
+}
+
+bool
+SDBP::transferEntry(const std::shared_ptr<ReplacementData> &src_data,
+                    const std::shared_ptr<ReplacementData> &dest_data)
+{
+    if (!observationOnly)
+        return false;
+
+    auto &src = *std::static_pointer_cast<SDBPReplData>(src_data);
+    auto &dest = *std::static_pointer_cast<SDBPReplData>(dest_data);
+    dest = src;
+    dest.lastUse = ++sequence;
+    dest.lastTouchTick = curTick();
+    src = SDBPReplData();
+    return true;
 }
 
 bool
@@ -260,16 +338,31 @@ void
 SDBP::invalidate(const std::shared_ptr<ReplacementData> &data)
 {
     auto &entry = *std::static_pointer_cast<SDBPReplData>(data);
+    if (observationOnly) {
+        censorPrediction(entry);
+        if (entry.prefetchOrigin && !entry.prefetchDemandUsed) {
+            ++stats.fullCachePrefetchUnusedInvalidationsBySource[
+                static_cast<unsigned>(entry.fillType)];
+            --stats.fullCachePrefetchPendingBySource[
+                static_cast<unsigned>(entry.fillType)];
+        }
+    }
     entry = SDBPReplData();
 }
 
 void
 SDBP::touch(const std::shared_ptr<ReplacementData> &data, const PacketPtr pkt)
 {
+    if (observationOnly) {
+        updateLine(data, pkt, true);
+        return;
+    }
+
     auto &entry = *std::static_pointer_cast<SDBPReplData>(data);
     if (entry.dead && isDemand(pkt) && hasPc(pkt))
         ++stats.deadHits;
     entry.lastUse = ++sequence;
+    entry.lastTouchTick = curTick();
     if (eligible(pkt) && (isDemand(pkt) || hasPc(pkt)))
         entry.dead = predict(pkt);
 }
@@ -279,15 +372,32 @@ SDBP::touch(const std::shared_ptr<ReplacementData> &data) const
 {
     auto &entry = *std::static_pointer_cast<SDBPReplData>(data);
     entry.lastUse = ++sequence;
-    entry.dead = false;
+    entry.lastTouchTick = curTick();
+    if (!observationOnly)
+        entry.dead = false;
 }
 
 void
 SDBP::reset(const std::shared_ptr<ReplacementData> &data, const PacketPtr pkt)
 {
     reset(data);
-    std::static_pointer_cast<SDBPReplData>(data)->dead =
-        predict(pkt);
+    auto &entry = *std::static_pointer_cast<SDBPReplData>(data);
+    if (observationOnly) {
+        entry.signatureValid = false;
+        entry.prefetchOrigin = eligible(pkt) && isPrefetch(pkt);
+        entry.prefetchDemandUsed = false;
+        if (entry.prefetchOrigin) {
+            entry.fillType = requestType(pkt);
+            ++stats.fullCachePrefetchFillsBySource[
+                static_cast<unsigned>(entry.fillType)];
+            ++stats.fullCachePrefetchPendingBySource[
+                static_cast<unsigned>(entry.fillType)];
+        }
+        if (eligible(pkt) && hasPc(pkt))
+            startPrediction(entry, pkt);
+    } else {
+        entry.dead = predict(pkt);
+    }
     ++stats.fills;
 }
 
@@ -308,6 +418,26 @@ ReplaceableEntry *
 SDBP::getVictim(const ReplacementCandidates &candidates, const PacketPtr pkt) const
 {
     assert(!candidates.empty());
+    if (observationOnly) {
+        auto *lru = candidates.front();
+        auto oldest = std::static_pointer_cast<SDBPReplData>(
+            lru->replacementData)->lastTouchTick;
+        for (auto *candidate : candidates) {
+            const auto tick = std::static_pointer_cast<SDBPReplData>(
+                candidate->replacementData)->lastTouchTick;
+            if (tick < oldest) {
+                oldest = tick;
+                lru = candidate;
+            }
+        }
+        if (!std::static_pointer_cast<SDBPReplData>(
+                lru->replacementData)->valid) {
+            ++stats.invalidVictims;
+        }
+        ++stats.lruVictims;
+        return lru;
+    }
+
     ReplaceableEntry *lru = candidates.front();
     ReplaceableEntry *dead = nullptr;
     uint64_t oldest = std::static_pointer_cast<SDBPReplData>(lru->replacementData)->lastUse;
@@ -367,7 +497,113 @@ SDBP::getVictim(const ReplacementCandidates &candidates, const PacketPtr pkt) co
 std::shared_ptr<ReplacementData>
 SDBP::instantiateEntry()
 {
-    return std::make_shared<SDBPReplData>();
+    auto entry = std::make_shared<SDBPReplData>();
+    if (observationOnly)
+        observationEntries.emplace_back(entry);
+    return entry;
+}
+
+void
+SDBP::updateLine(const std::shared_ptr<ReplacementData> &data,
+                 const PacketPtr pkt, bool updateRecency)
+{
+    auto &entry = *std::static_pointer_cast<SDBPReplData>(data);
+    if (updateRecency) {
+        entry.lastUse = ++sequence;
+        entry.lastTouchTick = curTick();
+    }
+    if (!eligible(pkt))
+        return;
+
+    const auto type = requestType(pkt);
+    if (entry.prefetchOrigin && !entry.prefetchDemandUsed && isDemand(pkt)) {
+        entry.prefetchDemandUsed = true;
+        ++stats.fullCachePrefetchDemandUsesBySource[
+            static_cast<unsigned>(entry.fillType)];
+        --stats.fullCachePrefetchPendingBySource[
+            static_cast<unsigned>(entry.fillType)];
+    }
+    if (entry.signatureValid) {
+        if (entry.dead && isDemand(pkt) && hasPc(pkt))
+            ++stats.deadHits;
+        resolvePrediction(entry, false, type);
+    }
+    if (hasPc(pkt)) {
+        startPrediction(entry, pkt);
+    } else {
+        entry.dead = false;
+    }
+}
+
+void
+SDBP::startPrediction(SDBPReplData &entry, const PacketPtr pkt)
+{
+    entry.signature = core.signature(requestPc(pkt));
+    entry.signatureType = requestType(pkt);
+    entry.signatureValid = true;
+    entry.dead = predict(pkt);
+    ++stats.fullCachePredictions;
+    ++stats.fullCachePredictionsBySource[
+        static_cast<unsigned>(entry.signatureType)];
+    ++stats.fullCachePending;
+    ++stats.fullCachePendingBySource[
+        static_cast<unsigned>(entry.signatureType)];
+}
+
+void
+SDBP::resolvePrediction(SDBPReplData &entry, bool actualDead,
+                        SDBPCore::RequestType reuseType)
+{
+    if (!entry.signatureValid)
+        return;
+
+    const auto source = static_cast<unsigned>(entry.signatureType);
+    ++stats.fullCacheResolved;
+    ++stats.fullCacheResolvedBySource[source];
+    --stats.fullCachePending;
+    --stats.fullCachePendingBySource[source];
+    if (entry.dead) {
+        if (actualDead) {
+            ++stats.fullCacheDeadTruePositiveBySource[source];
+        } else {
+            ++stats.fullCacheDeadFalsePositiveBySource[source];
+            if (reuseType == SDBPCore::RequestType::Demand)
+                ++stats.fullCachePredDeadDemandReuseBySource[source];
+        }
+    } else if (actualDead) {
+        ++stats.fullCacheLiveFalseNegativeBySource[source];
+    } else {
+        ++stats.fullCacheLiveTrueNegativeBySource[source];
+    }
+
+    if (actualDead) {
+        core.train(entry.signature, true, entry.signatureType);
+        ++stats.deadTraining;
+        ++stats.deadTrainingBySource[source];
+    } else {
+        core.train(entry.signature, false, entry.signatureType);
+        ++stats.liveTraining;
+        ++stats.liveTrainingBySource[source];
+        if (reuseType == SDBPCore::RequestType::Demand)
+            ++stats.fullCacheDemandReuseBySource[source];
+        else
+            ++stats.fullCachePrefetchReuseBySource[source];
+    }
+    entry.signatureValid = false;
+}
+
+void
+SDBP::censorPrediction(SDBPReplData &entry)
+{
+    if (!entry.signatureValid)
+        return;
+
+    const auto source = static_cast<unsigned>(entry.signatureType);
+    ++stats.fullCacheCensored;
+    ++stats.fullCacheCensoredBySource[source];
+    --stats.fullCachePending;
+    --stats.fullCachePendingBySource[source];
+    entry.signatureValid = false;
 }
 
 SDBP::SDBPStats::SDBPStats(statistics::Group *parent)
@@ -397,6 +633,14 @@ SDBP::SDBPStats::SDBPStats(statistics::Group *parent)
       ADD_STAT(l1CopyChecks, "Dead candidates checked for resident L1 copies"),
       ADD_STAT(l1CopyProtectedDead, "Dead candidates skipped due to resident L1 copies"),
       ADD_STAT(l1CopyLruFallbacks, "Selections using LRU because every dead candidate has an L1 copy"),
+      ADD_STAT(fullCachePredictions,
+               "Full-cache line predictions started"),
+      ADD_STAT(fullCacheResolved,
+               "Full-cache line predictions resolved by reuse or replacement"),
+      ADD_STAT(fullCacheCensored,
+               "Full-cache line predictions censored by non-replacement invalidation"),
+      ADD_STAT(fullCachePending,
+               "Full-cache line predictions still resident and unresolved"),
       ADD_STAT(samplerAccessesBySource, statistics::units::Count::get(),
                "Sampled accesses by incoming request source"),
       ADD_STAT(samplerHitsBySource, statistics::units::Count::get(),
@@ -408,12 +652,80 @@ SDBP::SDBPStats::SDBPStats(statistics::Group *parent)
       ADD_STAT(predictionQueriesBySource, statistics::units::Count::get(),
                "Real-cache predictor queries by request source"),
       ADD_STAT(deadPredictionsBySource, statistics::units::Count::get(),
-               "Real-cache dead predictions by request source")
+               "Real-cache dead predictions by request source"),
+      ADD_STAT(fullCachePredictionsBySource,
+               statistics::units::Count::get(),
+               "Full-cache predictions by signature source"),
+      ADD_STAT(fullCacheCarriedInBySource,
+               statistics::units::Count::get(),
+               "Unresolved predictions carried across the last stats reset"),
+      ADD_STAT(fullCacheResolvedBySource, statistics::units::Count::get(),
+               "Resolved full-cache predictions by signature source"),
+      ADD_STAT(fullCacheCensoredBySource, statistics::units::Count::get(),
+               "Censored full-cache predictions by signature source"),
+      ADD_STAT(fullCacheDeadTruePositiveBySource,
+               statistics::units::Count::get(),
+               "Predicted-dead lines replaced before reuse by signature source"),
+      ADD_STAT(fullCacheDeadFalsePositiveBySource,
+               statistics::units::Count::get(),
+               "Predicted-dead lines reused before replacement by signature source"),
+      ADD_STAT(fullCacheLiveTrueNegativeBySource,
+               statistics::units::Count::get(),
+               "Predicted-live lines reused before replacement by signature source"),
+      ADD_STAT(fullCacheLiveFalseNegativeBySource,
+               statistics::units::Count::get(),
+               "Predicted-live lines replaced before reuse by signature source"),
+      ADD_STAT(fullCachePendingBySource, statistics::units::Count::get(),
+               "Unresolved full-cache predictions by signature source"),
+      ADD_STAT(fullCacheDemandReuseBySource, statistics::units::Count::get(),
+               "Resolved predictions reused by demand by signature source"),
+      ADD_STAT(fullCachePrefetchReuseBySource,
+               statistics::units::Count::get(),
+               "Resolved predictions reused by prefetch by signature source"),
+      ADD_STAT(fullCachePredDeadDemandReuseBySource,
+               statistics::units::Count::get(),
+               "Predicted-dead lines later reused by demand by signature source"),
+      ADD_STAT(fullCachePrefetchFillsBySource,
+               statistics::units::Count::get(),
+               "Prefetch-origin line fills by prefetch source"),
+      ADD_STAT(fullCachePrefetchCarriedInBySource,
+               statistics::units::Count::get(),
+               "Unused prefetch-origin lines carried across the last stats reset"),
+      ADD_STAT(fullCachePrefetchPendingBySource,
+               statistics::units::Count::get(),
+               "Prefetch-origin lines awaiting first demand use"),
+      ADD_STAT(fullCachePrefetchDemandUsesBySource,
+               statistics::units::Count::get(),
+               "Prefetch-origin lines used by demand before removal"),
+      ADD_STAT(fullCachePrefetchUnusedEvictionsBySource,
+               statistics::units::Count::get(),
+               "Prefetch-origin lines replaced before demand use"),
+      ADD_STAT(fullCachePrefetchUnusedInvalidationsBySource,
+               statistics::units::Count::get(),
+               "Prefetch-origin lines invalidated before demand use")
 {
     for (auto *vector : {&samplerAccessesBySource, &samplerHitsBySource,
                          &liveTrainingBySource, &deadTrainingBySource,
                          &predictionQueriesBySource,
-                         &deadPredictionsBySource}) {
+                         &deadPredictionsBySource,
+                         &fullCachePredictionsBySource,
+                         &fullCacheCarriedInBySource,
+                         &fullCacheResolvedBySource,
+                         &fullCacheCensoredBySource,
+                         &fullCacheDeadTruePositiveBySource,
+                         &fullCacheDeadFalsePositiveBySource,
+                         &fullCacheLiveTrueNegativeBySource,
+                         &fullCacheLiveFalseNegativeBySource,
+                         &fullCachePendingBySource,
+                         &fullCacheDemandReuseBySource,
+                         &fullCachePrefetchReuseBySource,
+                         &fullCachePredDeadDemandReuseBySource,
+                         &fullCachePrefetchFillsBySource,
+                         &fullCachePrefetchCarriedInBySource,
+                         &fullCachePrefetchPendingBySource,
+                         &fullCachePrefetchDemandUsesBySource,
+                         &fullCachePrefetchUnusedEvictionsBySource,
+                         &fullCachePrefetchUnusedInvalidationsBySource}) {
         vector->init(SDBPCore::NumRequestTypes);
         vector->flags(statistics::total | statistics::nozero);
         vector->subname(0, "l1Demand");

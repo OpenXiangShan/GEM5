@@ -128,6 +128,40 @@ class SDBPConfigTest(unittest.TestCase):
                                 [cpu.icache, cpu.dcache] if l1 else [],
                             )
 
+    def test_observer_keeps_lru_and_disables_policy_actions(self):
+        for classic in (False, True):
+            args = self.parser().parse_args(
+                ["--l2-replacement-policy=lru-sdbp"]
+            )
+            args.l2cache = args.caches = True
+            args.classic_l2 = classic
+            caches = [Cache(size="256KiB", assoc=8) for _ in range(4)]
+            system = SimpleNamespace(
+                cpu=[SimpleNamespace(icache=Cache(), dcache=Cache())],
+                cache_line_size=64,
+                l2_caches=[caches[0]],
+                l2_wrappers=[
+                    SimpleNamespace(
+                        slices=[SimpleNamespace(inner_cache=c) for c in caches]
+                    )
+                ],
+            )
+            MODULE.configure_sdbp(args, system)
+            for cache in caches[:1] if classic else caches:
+                policy = cache.replacement_policy
+                self.assertTrue(bool(policy.observation_only))
+                self.assertFalse(bool(policy.enable_bypass))
+                self.assertFalse(bool(policy.l1_copy_protection))
+                self.assertEqual(list(cache.sdbp_l1_caches), [])
+            for flag in (
+                "--sdbp-enable-bypass",
+                "--sdbp-sampler-demand-pc-only",
+            ):
+                setattr(args, flag[2:].replace("-", "_"), True)
+                with self.assertRaises(ValueError):
+                    MODULE.configure_sdbp(args, system)
+                setattr(args, flag[2:].replace("-", "_"), False)
+
 
 if __name__ in ("__main__", "__m5_main__"):
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(SDBPConfigTest)

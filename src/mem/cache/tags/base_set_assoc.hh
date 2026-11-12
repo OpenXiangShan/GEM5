@@ -112,7 +112,8 @@ class BaseSetAssoc : public BaseTags
 
     unsigned replacementVictimClass(const CacheBlk *blk) const
     {
-        return sdbpPolicy ? sdbpPolicy->victimClass(blk->replacementData) : 0;
+        return sdbpPolicy && !sdbpPolicy->isObservationOnly() ?
+            sdbpPolicy->victimClass(blk->replacementData) : 0;
     }
 
     /**
@@ -133,12 +134,24 @@ class BaseSetAssoc : public BaseTags
      * @param lat The latency of the tag lookup.
      * @return Pointer to the cache block if found.
      */
-    /** Local PF checks bypass accessBlock, but still train the sampler. */
-    void observeLocalPrefetch(const PacketPtr pkt, bool hit)
+    /** Local PF checks bypass accessBlock, but still train SDBP. */
+    void observeLocalPrefetch(const PacketPtr pkt, const CacheBlk *blk)
     {
         if (sdbpPolicy) {
             sdbpPolicy->observe(pkt, indexingPolicy->extractSet(pkt->getAddr()),
-                                extractTag(pkt->getAddr()), hit);
+                                extractTag(pkt->getAddr()), blk != nullptr);
+            if (blk) {
+                sdbpPolicy->observeLocalPrefetch(
+                    pkt, blk->replacementData);
+            }
+        }
+    }
+
+    /** Resolve full-cache SDBP metadata for an eviction that will commit. */
+    void notifyReplacementEviction(CacheBlk *blk)
+    {
+        if (sdbpPolicy && blk && blk->isValid()) {
+            sdbpPolicy->notifyReplacementEviction(blk->replacementData);
         }
     }
 
