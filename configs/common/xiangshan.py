@@ -916,11 +916,12 @@ def build_xiangshan_system(args):
     return _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby)
 
 
-def xiangshan_system_init():
+def xiangshan_system_init(*, smt=False):
     _warn_if_deprecated_xiangshan_entrypoint()
     # Add args
     parser = argparse.ArgumentParser()
     Options.addCommonOptions(parser, configure_xiangshan=True)
+    parser.set_defaults(smt=smt)
     Options.addXiangshanFSOptions(parser)
     Options.addXiangshanTraceOptions(parser)
     parser.add_argument(
