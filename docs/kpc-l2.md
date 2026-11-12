@@ -124,3 +124,51 @@ Remote comparisons and subsequent iterations are recorded below.
 Relevant stats are under `system.kpc_repl_state0` (one object per core) (accesses, sampler hit/miss,
 first reuses, unused victims and DGH/PGH values) and each L2 replacement policy
 (demand/prefetch RRPV-2/3 insertions and hit promotions).
+
+
+## Local screening: initial implementation 60f9ac4ec2
+
+These are single highest-weight checkpoints, **not** a full SPEC06 score.
+Each uses the same `idealkmhv3.py`, DDR3 memory model, 2M warmup and about 2M
+measured instructions. NEMU difftest passed in all 12 runs. The three policy
+baselines share the same executable; the promotion experiment changes only
+`--kpc-promote-prefetch-hits`.
+
+| Checkpoint | LRU IPC | XSDRRIP IPC | KPC v1 IPC | KPC / LRU | KPC / XSDRRIP |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| mcf/6753 | 0.696185 | 0.706001 | 0.695864 | -0.046% | -1.436% |
+| lbm/6382 | 2.045235 | 2.056141 | 2.055693 | +0.511% | -0.022% |
+| libquantum/69175 | 2.423003 | 2.405900 | 2.423003 | 0.000% | +0.711% |
+
+Always promoting prefetch hits changes KPC IPC by +0.095%, -0.433%, and
+-0.036% on these respective points. This does not resolve the mcf regression
+against XSDRRIP, so the conservative default is retained for now. These
+results do not establish that optimization opportunities are exhausted.
+
+For mcf, v1 reduces the reported L2 `demandMisses::total` from 116023 to
+115063 relative to XSDRRIP, but increases L3 demand misses from 42793 to
+43824 and L1D demand misses from 384560 to 392939. The runtime prefetch
+feedback also changes. Thus, L2 misses alone do not explain total performance.
+The cache stats aggregate by MemCmd: downstream prefetches converted to
+`ReadReq` can be included in the reported demand counts.
+
+Artifacts: `/tmp/kpc-l2-01a1d0ba/local-screen-v1-summary.json`,
+`local-compare-v1/`, and `local-compare-promote/` in the same task directory.
+The original executable and SHA256 are retained under `versions/` and
+`v1-binary.json` for reproducing subsequent policy comparisons.
+
+## Clean-writeback sampling correction
+
+Source inspection found that `Packet::isCleanEviction()` includes both
+no-data `CleanEvict` and data-carrying `WritebackClean`. V1 therefore skipped
+clean writebacks despite the intended demand-side writeback training above.
+The observer now excludes only `MemCmd::CleanEvict`, allowing both clean and
+dirty writebacks to train. Actual writeback hits still do not promote RRIP.
+
+The two-level `kpc_traffic.py --clean-writebacks` regression creates L1 clean
+writebacks and compares the observer count against actual L2 command-access
+statistics. The saved v1 executable reports 1088 observed accesses versus
+2174 expected (1088 reads plus 1086 clean writebacks), demonstrating the gap.
+The corrected implementation observes all 2174 accesses and 1028 first reuses.
+Demand-only and prefetch traffic tests and all nine sampler unit tests also
+pass after the correction. The performance comparison follows below.

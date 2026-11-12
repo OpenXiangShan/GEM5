@@ -27,6 +27,7 @@ from m5.objects import (
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--prefetch", action="store_true")
+parser.add_argument("--clean-writebacks", action="store_true")
 args = parser.parse_args()
 system = System(mem_mode="timing", mem_ranges=[AddrRange("1MiB")])
 system.clk_domain = SrcClockDomain(
@@ -63,7 +64,16 @@ if args.prefetch:
 system.a_generator = PyTrafficGen()
 system.bus = SystemXBar()
 system.memory = SimpleMemory(range=system.mem_ranges[0], latency="5ns")
-system.a_generator.port = system.cache.cpu_side
+if args.clean_writebacks:
+    system.l1 = Cache(
+        size="128B", assoc=2, tag_latency=1, data_latency=1,
+        response_latency=1, mshrs=8, tgts_per_mshr=8,
+        cache_level=1, writeback_clean=True,
+    )
+    system.a_generator.port = system.l1.cpu_side
+    system.l1.mem_side = system.cache.cpu_side
+else:
+    system.a_generator.port = system.cache.cpu_side
 system.cache.mem_side = system.bus.cpu_side_ports
 system.memory.port = system.bus.mem_side_ports
 system.system_port = system.bus.cpu_side_ports
@@ -104,7 +114,23 @@ for line in (Path(m5.options.outdir) / "stats.txt").read_text().splitlines():
 assert values["system.kpc_state.demandAccesses"] > 0
 assert values["system.kpc_state.samplerMisses"] > 0
 assert values["system.kpc_state.demandFirstReuse"] > 0
-if args.prefetch:
+if args.clean_writebacks:
+    clean_accesses = sum(
+        values.get(f"system.cache.WritebackClean.{kind}::total", 0)
+        for kind in ("hits", "misses")
+    )
+    read_accesses = sum(
+        values.get(f"system.cache.{cmd}.{kind}::total", 0)
+        for cmd in ("ReadReq", "ReadSharedReq", "ReadCleanReq", "ReadExReq")
+        for kind in ("hits", "misses")
+    )
+    assert clean_accesses > 0
+    assert values["system.kpc_state.demandAccesses"] == (
+        read_accesses + clean_accesses
+    ), (values["system.kpc_state.demandAccesses"],
+        read_accesses + clean_accesses)
+    assert values["system.kpc_state.demandFirstReuse"] >= 1024
+elif args.prefetch:
     assert values["system.kpc_state.prefetchAccesses"] > 0
     assert values["system.cache.replacement_policy.prefetchInsertions2"] > 0
 else:

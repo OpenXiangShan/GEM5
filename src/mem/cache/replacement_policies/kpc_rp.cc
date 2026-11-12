@@ -91,9 +91,10 @@ KPC::isPrefetch(const PacketPtr pkt)
 void
 KPC::observeAccess(const PacketPtr pkt, const BaseIndexingPolicy *indexing)
 {
-    // Maintenance and clean-evict messages are not reuse. Writebacks may
-    // allocate in this non-inclusive L2, so train them as demand-side accesses.
-    if (pkt->isCleanEviction() || pkt->isStorePFTrain() ||
+    // Maintenance and no-data CleanEvict messages are not reuse. Clean and
+    // dirty writebacks may allocate in this non-inclusive L2, so train them
+    // as demand-side accesses.
+    if (pkt->cmd == MemCmd::CleanEvict || pkt->isStorePFTrain() ||
         pkt->req->isCacheMaintenance() || pkt->req->isUncacheable()) {
         return;
     }
