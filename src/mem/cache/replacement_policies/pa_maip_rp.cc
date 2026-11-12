@@ -196,13 +196,10 @@ PAMAIP::reset(const std::shared_ptr<ReplacementData>& replacement_data,
     auto data = std::static_pointer_cast<PAMAIPReplData>(replacement_data);
     const bool prefetch = isPrefetch(pkt);
     pa_maip::State state = pa_maip::Init;
-    bool has_hint = hints->getHint(pkt, state);
+    // A missing snapshot must not consult history trained after the miss.
+    const bool has_hint = hints->getHint(pkt, state);
     if (!has_hint) {
-        hints->observe(pkt);
-        has_hint = hints->getHint(pkt, state);
-        if (!has_hint) {
-            stats.missingHints++;
-        }
+        stats.missingHints++;
     }
     // Writeback allocations have no demand instruction/map hint. Retain the
     // ordinary SRRIP insertion level rather than claiming inferred reuse.

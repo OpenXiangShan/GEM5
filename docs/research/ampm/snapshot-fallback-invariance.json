@@ -1,0 +1,10 @@
+{
+  "common": 11375,
+  "differences": [],
+  "checkpoint": "gcb_test.zstd",
+  "instructions": 100000,
+  "difftest": true,
+  "before_exit_status": 0,
+  "after_exit_status": 0,
+  "purpose": "Missing snapshots use SRRIP insertion without querying map state at refill"
+}
