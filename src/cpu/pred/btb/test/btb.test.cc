@@ -49,19 +49,7 @@ createResolveEvent(ThreadID tid, FetchTargetId ftqId, InstSeqNum seqNum,
                    const BranchInfo &branch, bool taken, bool mispredicted)
 {
     return BranchOutcome{
-        tid,
-        ftqId,
-        seqNum,
-        branch.pc,
-        branch.target,
-        taken,
-        mispredicted,
-        branch.isCond,
-        branch.isIndirect,
-        branch.isDirect,
-        branch.isCall,
-        branch.isReturn,
-        branch.size
+        tid, ftqId, seqNum, branch, taken, mispredicted
     };
 }
 
@@ -432,32 +420,37 @@ TEST_F(BTBTest, ConditionalCounter) {
     std::vector<FullBTBPrediction> stagePreds =
         predictUpdateCycle(mbtb, 0x1000, branch, true);
 
+    EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, 0);
+
     // A newly allocated entry starts weakly taken, matching RTL.
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
-        EXPECT_EQ(entries[0].ctr, 0);
+        EXPECT_EQ(entries[0].baseTaken, true);
     }
     
     // A second taken update makes the entry strongly taken.
     stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, true);
+    EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, 1);
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
-        EXPECT_EQ(stagePreds[i].btbEntries[0].ctr, 1);
+        EXPECT_EQ(stagePreds[i].btbEntries[0].baseTaken, true);
     }
 
     // The first not-taken update preserves a taken prediction.
     stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, false);
+    EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, 0);
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
-        EXPECT_EQ(stagePreds[i].btbEntries[0].ctr, 0);
+        EXPECT_EQ(stagePreds[i].btbEntries[0].baseTaken, true);
     }
 
     // A second not-taken update changes the prediction direction.
     stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, false);
+    EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, -1);
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
-        EXPECT_EQ(stagePreds[i].btbEntries[0].ctr, -1);
+        EXPECT_EQ(stagePreds[i].btbEntries[0].baseTaken, false);
     }
 }
 
@@ -483,7 +476,7 @@ TEST_F(BTBTest, ActualBranchAttributesReplaceExistingEntry)
     EXPECT_FALSE(entries[0].isIndirect);
     EXPECT_FALSE(entries[0].isCall);
     EXPECT_FALSE(entries[0].isReturn);
-    EXPECT_EQ(entries[0].ctr, -1);
+    EXPECT_EQ(entries[0].baseTaken, false);
 }
 
 TEST_F(BTBTest, ActualBranchUpdatePreservesLiveCounter)
@@ -508,7 +501,7 @@ TEST_F(BTBTest, ActualBranchUpdatePreservesLiveCounter)
     mbtb->putPCHistory(start_pc, boost::dynamic_bitset<>(8, 0), predictions);
     const auto &entries = predictions[mbtb->getDelay()].btbEntries;
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].ctr, 0);
+    EXPECT_EQ(entries[0].baseTaken, true);
     EXPECT_EQ(entries[0].target, actual_branch.target);
     EXPECT_EQ(entries[0].size, actual_branch.size);
 }
@@ -526,19 +519,26 @@ TEST_F(BTBTest, CounterSaturation) {
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
-        EXPECT_EQ(entries[0].ctr, 0);  // Counter should be at 0
+        EXPECT_EQ(entries[0].baseTaken, true);  // Counter should be at 0
     }
     
+    for (int i = 0; i < 4; ++i) {
+        stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, true);
+        EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, 1);
+    }
+
     // Update multiple times with not taken to test negative saturation
     for (int i = 0; i < 3; i++) {  // 3 times should reach saturation
         stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, false);
     }
     
+    EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, -2);
+
     // Check counter is saturated at -2
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
-        EXPECT_EQ(entries[0].ctr, -2);  // Counter should saturate at -2
+        EXPECT_EQ(entries[0].baseTaken, false);  // Counter should saturate at -2
     }
 }
 
@@ -820,8 +820,8 @@ TEST_F(BTBTest, ResolvedUpdateOnlyAppliesMarkedBranch)
     mbtb->putPCHistory(0x1000, history, predictions);
     const auto &entries = predictions[mbtb->getDelay()].btbEntries;
     ASSERT_EQ(entries.size(), 2);
-    EXPECT_EQ(entries[0].ctr, -1);
-    EXPECT_EQ(entries[1].ctr, 0);
+    EXPECT_EQ(entries[0].baseTaken, false);
+    EXPECT_EQ(entries[1].baseTaken, true);
 }
 
 TEST_F(BTBTest, UnpredictedNotTakenBranchDoesNotAllocate)
@@ -859,7 +859,7 @@ TEST_F(BTBTest, MispredictionRecovery) {
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
-        EXPECT_LT(entries[0].ctr, 0);
+        EXPECT_FALSE(entries[0].baseTaken);
     }
 }
 

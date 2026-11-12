@@ -68,19 +68,7 @@ BranchOutcome
 createBranchOutcome(const BTBEntry &entry, bool taken, bool mispredicted)
 {
     return BranchOutcome{
-        0,
-        0,
-        1,
-        entry.pc,
-        entry.target,
-        taken,
-        mispredicted,
-        entry.isCond,
-        entry.isIndirect,
-        entry.isDirect,
-        entry.isCall,
-        entry.isReturn,
-        entry.size
+        0, 0, 1, entry, taken, mispredicted
     };
 }
 
@@ -355,7 +343,7 @@ bool predictTAGE(BTBTAGE* tage, Addr startPC,
                 boost::dynamic_bitset<>& history,
                 std::vector<FullBTBPrediction>& stagePreds) {
     // Setup stage predictions with BTB entries
-    stagePreds[1].btbEntries = entries;
+    stagePreds[1].btbEntries.assign(entries.begin(), entries.end());
 
     // Make prediction
     tage->putPCHistory(startPC, history, stagePreds);

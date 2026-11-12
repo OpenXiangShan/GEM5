@@ -412,7 +412,7 @@ BTBMGSC::calculateWeightScaleDiff(int total_sum, int scale_percsum, int percsum)
  * @return TagePrediction containing main and alternative predictions
  */
 BTBMGSC::MgscPrediction
-BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC,
+BTBMGSC::generateSinglePrediction(const BranchPrediction &btb_entry, const Addr &startPC,
                                   const TageInfoForMGSC &tage_info,
                                   ThreadID tid, uint8_t asidHash)
 {
@@ -548,7 +548,7 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
  * @return Map of branch PC addresses to their predicted outcomes
  */
 void
-BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
+BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BranchPrediction> &btbEntries,
                       const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
                       CondTakens &results, ThreadID tid, uint8_t asidHash)
 {

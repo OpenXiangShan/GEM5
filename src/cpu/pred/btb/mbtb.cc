@@ -349,14 +349,14 @@ MBTB::putPCHistory(Addr startAddr,
     updatePredictionMeta(processed_entries, stagePreds);
 }
 
-std::vector<BTBEntry>
+std::vector<BranchPrediction>
 MBTB::getPredictedEntriesNoSideEffect(Addr startAddr, ThreadID tid,
                                       uint8_t asidHash) const
 {
     auto found_entries = lookupNoSideEffect(startAddr, tid, asidHash);
     auto processed_entries = processEntriesNoSideEffect(found_entries, startAddr);
 
-    std::vector<BTBEntry> entries;
+    std::vector<BranchPrediction> entries;
     entries.reserve(processed_entries.size());
     for (const auto &entry : processed_entries) {
         entries.emplace_back(entry);
@@ -767,7 +767,7 @@ MBTB::update(
             continue;
         }
 
-        BTBEntry entry(makeBranchInfo(branch));
+        BTBEntry entry(branch);
         entry.source = getComponentIdx();
         if (hit == meta->hit_entries.end()) {
             btbStats.newEntry++;

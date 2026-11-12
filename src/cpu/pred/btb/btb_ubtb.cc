@@ -302,7 +302,9 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
         return;
     }
 
-    auto takenEntry = s3Pred.getTakenEntry();
+    auto prediction = s3Pred.getTakenEntry();
+    BTBEntry takenEntry(prediction.getBranchInfo());
+    takenEntry.valid = prediction.valid;
     if (takenEntry.valid) {
         ubtbStats.s3UpdateHits++;
     }else {
