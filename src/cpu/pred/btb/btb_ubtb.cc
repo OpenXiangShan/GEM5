@@ -161,25 +161,13 @@ UBTB::fillStagePredictions(const TickedUBTBEntry &entry, std::vector<FullBTBPred
 
         // Copy uBTB entries to stage prediction
         stagePreds[s].btbEntries.clear();
-        stagePreds[s].condTakens.clear();  // TODO: consider moving this to another place -- the uBTB shouldn't need to
-                                           // take care of this
         // Set predictions for each branch
         stagePreds[s].predTick = curTick();
     }
 
     if (entry.valid) {
         FillStageLoop(s) stagePreds[s].btbEntries.push_back(BTBEntry(entry));
-        if (entry.isCond) {
-            // uBTB always predicts present conditional entries as taken.
-            FillStageLoop(s) stagePreds[s].condTakens.push_back({entry.pc, true});
-        } else if (entry.isIndirect) {
-            // Set predicted target for indirect branches
-            DPRINTF(UBTB, "setting indirect target for pc %#lx to %#lx\n", entry.pc, entry.target);
-            FillStageLoop(s) stagePreds[s].indirectTargets.push_back({entry.pc, entry.target});
-            if (entry.isReturn) {
-                FillStageLoop(s) stagePreds[s].returnTarget = entry.target;
-            }
-        }
+        FillStageLoop(s) stagePreds[s].btbEntries.back().taken = true;
     }
 }
 

@@ -131,8 +131,7 @@ class BTBITTAGE : public TimedBaseBTBPredictor
   private:
 
     // return provided
-    void lookupHelper(Addr stream_start, const std::vector<BranchPrediction> &btbEntries,
-                      IndirectTargets& results, ThreadID tid, uint8_t asidHash);
+    void lookupHelper(Addr stream_start, std::vector<BranchPrediction> &btbEntries, ThreadID tid, uint8_t asidHash);
 
     // use blockPC
     Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0,

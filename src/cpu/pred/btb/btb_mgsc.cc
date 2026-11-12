@@ -548,9 +548,9 @@ BTBMGSC::generateSinglePrediction(const BranchPrediction &btb_entry, const Addr 
  * @return Map of branch PC addresses to their predicted outcomes
  */
 void
-BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BranchPrediction> &btbEntries,
+BTBMGSC::lookupHelper(const Addr &startPC, std::vector<BranchPrediction> &btbEntries,
                       const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
-                      CondTakens &results, ThreadID tid, uint8_t asidHash)
+                      ThreadID tid, uint8_t asidHash)
 {
     DPRINTF(MGSC, "lookupHelper startAddr: %#lx\n", startPC);
 
@@ -570,7 +570,7 @@ BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BranchPrediction> &
                 tage_info != tageInfoForMgscs.end() ? tage_info->second : missing_tage_info;
             auto pred = generateSinglePrediction(btb_entry, startPC, info, tid, asidHash);
             threadMeta[tid]->preds[btb_entry.pc] = pred;
-            results.push_back({btb_entry.pc, pred.taken});
+            btb_entry.taken = pred.taken;
         }
     }
 }
@@ -615,9 +615,8 @@ BTBMGSC::putPCHistory(Addr stream_start, const boost::dynamic_bitset<> &history,
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
         auto &stage_pred = stagePreds[s];
-        stage_pred.condTakens.clear();
         lookupHelper(stream_start, stage_pred.btbEntries,
-                     stage_pred.tageInfoForMgscs, stage_pred.condTakens, tid,
+                     stage_pred.tageInfoForMgscs, tid,
                      asidHash);
     }
 }
