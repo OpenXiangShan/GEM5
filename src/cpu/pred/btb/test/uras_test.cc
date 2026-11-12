@@ -85,7 +85,7 @@ public:
         auto &sp = specSp;
         // do push & pops on prediction
         for (auto &entry : pred.btbEntries) {
-            if (entry.isReturn) {
+            if (entry.isIndirect && entry.isReturn) {
                 entry.predictedTarget = stack[sp].retAddr;
             }
         }
@@ -352,6 +352,7 @@ TEST_F(URASTest, SpecUpdateStateReturn) {
     BTBEntry retEntry;
     retEntry.valid = true;
     retEntry.pc = 0x1000;
+    retEntry.isIndirect = true;
     retEntry.isReturn = true;
     retEntry.target = 0x2000;
     pred.btbEntries.push_back(retEntry);
@@ -391,6 +392,7 @@ TEST_F(URASTest, SpecUpdateStateCallReturn) {
     BTBEntry retEntry;
     retEntry.valid = true;
     retEntry.pc = 0x2000;
+    retEntry.isIndirect = true;
     retEntry.isReturn = true;
     retEntry.target = 0x1004;  // 返回到call的下一条指令
     pred2.btbEntries.push_back(retEntry);
@@ -420,6 +422,7 @@ TEST_F(URASTest, SpecUpdateStatePopThenPush) {
     entry.pc = 0x3000;
     entry.size = 4;
     entry.isCall = true;
+    entry.isIndirect = true;
     entry.isReturn = true;
     pred.btbEntries.push_back(entry);
 
