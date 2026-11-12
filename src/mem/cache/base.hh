@@ -889,7 +889,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
      * @return False if any of the evicted blocks is in transient state.
      */
     bool handleEvictions(std::vector<CacheBlk*> &evict_blks,
-        PacketList &writebacks, bool *evicted_dirty = nullptr);
+        PacketList &writebacks, bool *evicted_dirty = nullptr,
+        const PacketPtr incoming = nullptr);
 
     /**
      * Handle a fill operation caused by a received packet.

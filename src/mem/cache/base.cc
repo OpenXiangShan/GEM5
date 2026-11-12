@@ -1643,7 +1643,7 @@ BaseCache::getNextQueueEntry()
 
 bool
 BaseCache::handleEvictions(std::vector<CacheBlk*> &evict_blks,
-    PacketList &writebacks, bool *evicted_dirty)
+    PacketList &writebacks, bool *evicted_dirty, const PacketPtr incoming)
 {
     bool replacement = false;
     if (evicted_dirty) {
@@ -1691,6 +1691,7 @@ BaseCache::handleEvictions(std::vector<CacheBlk*> &evict_blks,
                         }
                     }
                 }
+                tags->notifyEviction(blk, incoming);
                 evictBlock(blk, writebacks, evicted_dirty);
             }
         }
@@ -2516,7 +2517,7 @@ BaseCache::allocateBlock(
     }
 
     // Try to evict blocks; if it fails, give up on allocation
-    if (!handleEvictions(evict_blks, writebacks, evicted_dirty)) {
+    if (!handleEvictions(evict_blks, writebacks, evicted_dirty, pkt)) {
         return nullptr;
     }
 

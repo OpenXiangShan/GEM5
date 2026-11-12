@@ -31,12 +31,13 @@ Import('*')
 SimObject('ReplacementPolicies.py', sim_objects=[
     'BaseReplacementPolicy', 'DuelingRP', 'FIFORP', 'SecondChanceRP',
     'LFURP', 'LRURP', 'BIPRP', 'MRURP', 'RandomRP', 'BRRIPRP', 'SHiPRP',
-    'SHiPMemRP', 'SHiPPCRP', 'TreePLRURP', 'WeightedLRURP', 'XSDRRIPRP'])
+    'SHiPMemRP', 'SHiPPCRP', 'TreePLRURP', 'WeightedLRURP', 'XSDRRIPRP', 'FDPRP'])
 
 Source('bip_rp.cc')
 Source('brrip_rp.cc')
 Source('dueling_rp.cc')
 Source('fifo_rp.cc')
+Source('fdp_rp.cc')
 Source('lfu_rp.cc')
 Source('lru_rp.cc')
 Source('mru_rp.cc')
@@ -48,3 +49,4 @@ Source('weighted_lru_rp.cc')
 Source('xs_drrip_rp.cc')
 
 GTest('replaceable_entry.test', 'replaceable_entry.test.cc')
+GTest('fdp_logic.test', 'fdp_logic.test.cc')

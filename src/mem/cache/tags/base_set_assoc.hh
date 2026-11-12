@@ -151,6 +151,8 @@ class BaseSetAssoc : public BaseTags
 
             // Update replacement data of accessed block
             replacementPolicy->touch(blk->replacementData, pkt);
+        } else {
+            replacementPolicy->notifyMiss(pkt);
         }
 
         // The tag lookup latency is the same for a hit or a miss
@@ -203,6 +205,12 @@ class BaseSetAssoc : public BaseTags
 
         // Update replacement policy
         replacementPolicy->reset(blk->replacementData, pkt);
+    }
+
+    void notifyEviction(CacheBlk *blk, const PacketPtr incoming) override
+    {
+        replacementPolicy->notifyEviction(blk->replacementData,
+            regenerateBlkAddr(blk), blk->isSecure(), incoming);
     }
 
     void moveBlock(CacheBlk *src_blk, CacheBlk *dest_blk) override;

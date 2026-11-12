@@ -95,6 +95,14 @@ class Base : public SimObject
     virtual void reset(const std::shared_ptr<ReplacementData>&
         replacement_data) const = 0;
 
+    /** Observe a tag miss without changing replacement state. */
+    virtual void notifyMiss(const PacketPtr pkt) {}
+
+    /** Observe a committed capacity eviction before its metadata is cleared. */
+    virtual void notifyEviction(
+        const std::shared_ptr<ReplacementData> &data, Addr addr, bool secure,
+        const PacketPtr incoming) {}
+
     /**
      * Find replacement victim among candidates.
      *

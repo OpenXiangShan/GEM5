@@ -272,6 +272,9 @@ class BaseTags : public ClockedObject
         blk->invalidate();
     }
 
+    /** Notify replacement feedback of a committed capacity eviction. */
+    virtual void notifyEviction(CacheBlk *blk, const PacketPtr incoming) {}
+
     /**
      * Find replacement victim based on address. If the address requires
      * blocks to be evicted, their locations are listed for eviction. If a

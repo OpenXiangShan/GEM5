@@ -15,6 +15,7 @@ from common.SysPaths import *
 from common.Benchmarks import *
 from common import Simulation
 from common.Caches import *
+from common.L2Replacement import set_l2_replacement
 from common.xiangshan import *
 from util.solver.runtime.integration import maybe_handle_solver_runtime
 
@@ -174,6 +175,13 @@ def setKmhV3IdealParams(args, system):
                 LayerBandwidthConfig(direction="req", port_index=0, max_per_cycle=2),
                 LayerBandwidthConfig(direction="resp", port_index=1, max_per_cycle=2),
             ]
+
+    if args.l2cache:
+        for i in range(args.num_cpus):
+            caches = ([system.l2_caches[i]] if args.classic_l2 else
+                      [s.inner_cache for s in system.l2_wrappers[i].slices])
+            for cache in caches:
+                set_l2_replacement(args, cache)
 
     # l3 cache
     if args.l3cache:

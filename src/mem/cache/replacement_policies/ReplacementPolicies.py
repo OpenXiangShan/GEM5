@@ -72,6 +72,20 @@ class LRURP(BaseReplacementPolicy):
     cxx_class = 'gem5::replacement_policy::LRU'
     cxx_header = "mem/cache/replacement_policies/lru_rp.hh"
 
+class FDPRP(BaseReplacementPolicy):
+    type = 'FDPRP'
+    cxx_class = 'gem5::replacement_policy::FDP'
+    cxx_header = 'mem/cache/replacement_policies/fdp_rp.hh'
+
+    num_ways = Param.Unsigned(Parent.assoc, "Ways in each exact LRU stack")
+    block_bits = Param.Unsigned(6, "Log2 of the cache line size")
+    filter_bits = Param.Unsigned(12, "Log2 of pollution filter entries")
+    interval_evictions = Param.Unsigned(
+        8192, "Useful capacity evictions per feedback interval")
+    pollution_low = Param.Float(0.005, "Low pollution threshold (HPCA 2007)")
+    pollution_high = Param.Float(0.25, "High pollution threshold (HPCA 2007)")
+
+
 class BIPRP(LRURP):
     type = 'BIPRP'
     cxx_class = 'gem5::replacement_policy::BIP'
