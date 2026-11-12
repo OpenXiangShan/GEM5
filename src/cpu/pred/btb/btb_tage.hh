@@ -488,21 +488,22 @@ private:
     // Helper method to generate prediction for a single BTB entry
     // If predMeta is provided, use snapshot folded history for index/tag calculation (update path)
     // If predMeta is nullptr, use current folded history (prediction path)
-    TagePrediction generateSinglePrediction(const BTBEntry &btb_entry,
+    TagePrediction generateSinglePrediction(const BranchInfo &btb_entry,
                                            const Addr &startPC,
+                                           bool baseTaken,
                                            const std::shared_ptr<TageMeta> predMeta = nullptr,
                                            ThreadID tid = 0,
                                            uint8_t asidHash = 0) const;
 
     // Helper method to update predictor state for a single entry
-    bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
+    bool updatePredictorStateAndCheckAllocation(const BranchInfo &entry,
                                  bool actual_taken,
                                  const TagePrediction &pred,
                                  bool control_mispred);
 
     // Helper method to handle new entry allocation
     bool handleNewEntryAllocation(const Addr &startPC,
-                                 const BTBEntry &entry,
+                                 const BranchInfo &entry,
                                  bool actual_taken,
                                  unsigned main_table,
                                  std::shared_ptr<TageMeta> meta,
