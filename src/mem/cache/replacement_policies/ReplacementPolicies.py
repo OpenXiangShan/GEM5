@@ -164,3 +164,28 @@ class XSDRRIPRP(BaseReplacementPolicy):
     mode = Param.Int(2, "Mode: 0=SRRIP, 1=BRRIP, 2=DRRIP (Set Dueling)")
     num_sets = Param.Int(0, "Number of sets in the cache (required for DRRIP mode)")
     num_ways = Param.Int(Parent.assoc, "Number of ways in each set")
+
+
+class KPCReplState(SimObject):
+    type = 'KPCReplState'
+    cxx_class = 'gem5::replacement_policy::KPCReplState'
+    cxx_header = "mem/cache/replacement_policies/kpc_rp.hh"
+
+    num_sets = Param.Unsigned("Total number of sets across all private L2 slices")
+    num_ways = Param.Unsigned("Associativity of each sampled set")
+    block_size = Param.Unsigned(64, "Cache line size in bytes")
+    sampled_sets = Param.Unsigned(64, "Number of independent true-LRU sets")
+    hysteresis_bits = Param.Unsigned(3, "Width of each global hysteresis counter")
+    initial_hysteresis = Param.Unsigned(0, "Initial value of both counters")
+
+
+class KPCRP(BaseReplacementPolicy):
+    type = 'KPCRP'
+    cxx_class = 'gem5::replacement_policy::KPC'
+    cxx_header = "mem/cache/replacement_policies/kpc_rp.hh"
+
+    state = Param.KPCReplState("Training state shared by slices of one core")
+    num_slices = Param.Unsigned(1, "Number of slices sharing the training state")
+    slice_index = Param.Unsigned(0, "Index of this slice")
+    promote_prefetch_hits = Param.Bool(
+        False, "Promote PF hits; no path confidence exists in the XS prefetchers")

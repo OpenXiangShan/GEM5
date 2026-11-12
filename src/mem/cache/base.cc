@@ -1586,7 +1586,9 @@ BaseCache::getNextQueueEntry()
         if (pkt) {
             Addr pf_addr = pkt->getBlockAddr(blkSize);
             PrefetchSourceType pf_type = pkt->req->getXsMetadata().prefetchSource;
-            if (tags->findBlock(pf_addr, pkt->isSecure())) {
+            CacheBlk *pf_blk = tags->findBlock(pf_addr, pkt->isSecure());
+            tags->notifyPrefetch(pkt, pf_blk);
+            if (pf_blk) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in cache, "
                         "dropped.\n", pf_addr);
                 prefetcher->pfHitInCache(pf_type);

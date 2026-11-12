@@ -78,3 +78,6 @@ microbench/dramsim3*
 *.log
 *.gz
 *.zstd
+
+# Locally downloaded KPC reference (URL and checksum in docs/kpc-l2.md).
+/docs/papers/kpc-asplos2017.pdf

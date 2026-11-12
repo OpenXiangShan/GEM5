@@ -198,6 +198,9 @@ class BaseTags : public ClockedObject
      */
     virtual CacheBlk *findBlock(Addr addr, bool is_secure) const;
 
+    /** Notify sampling replacement policies of a local prefetch probe. */
+    virtual void notifyPrefetch(const PacketPtr pkt, CacheBlk *blk) {}
+
     /**
      * Find a block given set and way.
      *

@@ -40,6 +40,8 @@
 namespace gem5
 {
 
+class BaseIndexingPolicy;
+
 /**
  * Replacement candidates as chosen by the indexing policy.
  */
@@ -58,6 +60,17 @@ class Base : public SimObject
     typedef BaseReplacementPolicyParams Params;
     Base(const Params &p) : SimObject(p) {}
     virtual ~Base() = default;
+
+    /** Observe tag accesses, including misses, for independent samplers. */
+    virtual void observeAccess(const PacketPtr pkt,
+                               const BaseIndexingPolicy *indexing) {}
+
+    /** Observe local prefetch candidates, which bypass accessBlock().
+     * Existing policies retain their original treatment of these probes.
+     */
+    virtual void observePrefetch(const PacketPtr pkt,
+        const BaseIndexingPolicy *indexing,
+        const std::shared_ptr<ReplacementData> &data) {}
 
     /**
      * Invalidate replacement data to set it as the next probable victim.

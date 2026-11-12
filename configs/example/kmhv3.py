@@ -13,6 +13,7 @@ addToPath('../../')
 
 from ruby import Ruby
 from common.LSQBankConflict import set_lsq_bank_conflict_cache_params
+from common.L2Replacement import configure_l2_replacement
 
 from common.FSConfig import *
 from common.SysPaths import *
@@ -227,7 +228,7 @@ def setKmhV3Params(args, system):
     if args.l2cache:
         for i in range(args.num_cpus):
             if args.classic_l2:
-                system.l2_caches[i].slice_num = 4
+                system.l2_caches[i].num_slices = 4
                 system.l2_caches[i].wpu = NULL
                 system.l2_caches[i].do_fast_writeline = True
                 system.l2_caches[i].prefetch_can_offload = False
@@ -265,6 +266,9 @@ def setKmhV3Params(args, system):
         system.l3.do_fast_writeline = True
         system.l3.prefetch_can_offload = False
         system.l3.num_slices = 4
+
+    configure_l2_replacement(args, system)
+
 
 if __name__ == '__m5_main__':
     FutureClass = None
