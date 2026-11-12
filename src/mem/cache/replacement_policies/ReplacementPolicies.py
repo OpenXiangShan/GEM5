@@ -187,3 +187,7 @@ class PAMAIPRP(BaseReplacementPolicy):
     low_insert_period = Param.Unsigned(32, 'One long insertion per N distant fills')
     suppress_first_hit = Param.Bool(True, 'Do not promote first demand use of prefetch')
     protect_demand = Param.Bool(False, 'Insert demand fills with immediate reuse priority')
+    num_bits = Param.Unsigned(2, 'RRPV bits; the UMOA evaluation uses three')
+    insertion_mode = Param.Unsigned(1, '0: SRRIP, 1: BRRIP, 2: set dueling')
+    num_sets = Param.Unsigned(0, 'Sets per L2 slice for insertion dueling')
+    num_ways = Param.Unsigned(1, 'Ways per L2 set for leader allocation')

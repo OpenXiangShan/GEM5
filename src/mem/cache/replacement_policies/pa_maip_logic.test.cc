@@ -85,3 +85,48 @@ TEST(PAMAIPTest, InsertionOnlyControlAllowsFirstHitPromotion)
     EXPECT_EQ(line.rrpv, 0);
     EXPECT_FALSE(line.unusedPrefetch);
 }
+
+TEST(PAMAIPTest, DuelingLeadersAreDisjointAndBalanced)
+{
+    Dueling duel(1024);
+    unsigned srrip = 0, brrip = 0, followers = 0;
+    for (unsigned set = 0; set < 1024; ++set) {
+        switch (duel.team(set)) {
+          case Dueling::Srrip: srrip++; break;
+          case Dueling::Brrip: brrip++; break;
+          case Dueling::Follower: followers++; break;
+        }
+    }
+    EXPECT_EQ(srrip, 32);
+    EXPECT_EQ(brrip, 32);
+    EXPECT_EQ(followers, 960);
+}
+
+TEST(PAMAIPTest, DuelingSelectsTheTeamWithFewerLeaderFills)
+{
+    Dueling duel(1024);
+    EXPECT_TRUE(duel.useBrrip(Dueling::Follower));
+    duel.sample(Dueling::Brrip);
+    EXPECT_FALSE(duel.useBrrip(Dueling::Follower));
+    EXPECT_TRUE(duel.useBrrip(Dueling::Brrip));
+    EXPECT_FALSE(duel.useBrrip(Dueling::Srrip));
+    duel.sample(Dueling::Srrip);
+    EXPECT_TRUE(duel.useBrrip(Dueling::Follower));
+}
+
+TEST(PAMAIPTest, DuelingSaturatesAndFollowersDoNotTrain)
+{
+    Dueling duel(1024);
+    for (unsigned i = 0; i < 2048; ++i) {
+        duel.sample(Dueling::Brrip);
+    }
+    EXPECT_EQ(duel.value(), 0);
+    duel.sample(Dueling::Follower);
+    EXPECT_EQ(duel.value(), 0);
+    for (unsigned i = 0; i < 2048; ++i) {
+        duel.sample(Dueling::Srrip);
+    }
+    EXPECT_EQ(duel.value(), 1023);
+    duel.sample(Dueling::Follower);
+    EXPECT_EQ(duel.value(), 1023);
+}

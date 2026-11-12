@@ -169,6 +169,11 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--ampm-map-entries", type=int, default=256)
     parser.add_argument("--ampm-map-assoc", type=int, default=16)
     parser.add_argument("--ampm-low-insert-period", type=int, default=32)
+    parser.add_argument("--ampm-insertion-mode", default="brrip",
+                        choices=["srrip", "brrip", "drrip"],
+                        help="Select fixed or adaptive PA-MAIP insertion")
+    parser.add_argument("--ampm-rrpv-bits", type=int, default=2,
+                        choices=[2, 3], help="UMOA evaluates 3-bit RRPV")
     parser.add_argument("--ampm-promote-first-hit", action="store_true",
                         help="Disable PA-MAIP's first prefetch-use suppression")
     parser.add_argument("--ampm-protect-demand", action="store_true",

@@ -50,7 +50,7 @@ to FDP; clarification is pending. FDP has a separate active implementation.
 
 Use the isolated `ampm-l2` worktree, based on `f9649a04ee`, for L2-only
 insertion controls, LRU and XSDRRIP comparisons, and remote manual-perf
-experiments. The PA-MAIP insertion/promotion subset is implemented below;
+experiments. The initial fixed-BRRIP insertion/promotion control is implemented below;
 performance validation is still in progress.
 
 ## Baseline setup validation
@@ -117,11 +117,13 @@ the second policy. The checkpoint uses its embedded restorer.
 
 ## L2 PA-MAIP implementation
 
-The selected subset is UMOA Section 3.3's map-state insertion and promotion
-policy. The unmodified prefetchers still generate exactly their existing
-requests. This is not a complete MUMSC implementation: IP-Table bypass,
-DRAM scheduling, and whole-system predictor placement are outside scope.
-Table 2's normal-IP insertion column is the implemented starting point.
+The first implementation is a fixed-BRRIP, 2-bit control for UMOA Section
+3.3's map-state insertion and promotion. Its prefetchers generate their
+existing requests. It omits the SRRIP/BRRIP selection used in the full
+PA-MAIP paper configuration. The corrected adaptive configuration is
+specified below. DRAM scheduling and complete MUMSC placement are outside
+scope. Earlier references here to a 'normal-IP column' and IP-Table bypass
+were incorrect: Table 2 has SRRIP and BRRIP columns, not IP classes.
 
 - Each core has one `AMPMHintTable` shared by all L2 slices: 256 entries,
   16 ways, 4 KiB zones and 64-byte lines. Four map states distinguish Init,
@@ -218,9 +220,9 @@ physical-address training on all data accesses, and unchanged degree-control
 thresholds. These runs require their own baselines; default XSComposite
 baselines cannot establish a cooperative-AMPM speedup.
 
-The existing AMPM has three stored states. For Table 2's selected normal-IP
-column, Accessed and Accessed* have the same insertion priority, so the
-three-state provider is sufficient. An earlier demand use absorbed by L1
+The existing AMPM has the paper's three stored states. The shadow map's
+extra Reused state maps to the same insertion priority as Accessed; it is
+a diagnostic distinction, not a fourth predictor state required by UMOA. An earlier demand use absorbed by L1
 can clear the shared cache's otherwise stale unused-prefetch indication.
 Unannotated instruction-cache/page-table traffic falls back to ordinary
 SRRIP insertion rather than inventing predictor knowledge.
@@ -339,11 +341,11 @@ Every run adds `--l1d-hwp-type=AMPMPrefetcher --ampm-hint-source=prefetcher`:
 | --- | --- | --- |
 | LRU | 43288386888 | Created, final result pending |
 | XSDRRIP | 43288394351 | Created, final result pending |
-| Paper PA-MAIP | 43288403317 | Created, final result pending |
+| Fixed-BRRIP PA-MAIP (2-bit) | 43288403317 | Created, final result pending |
 
 ## L2 demand-protection experiment
 
-The raw normal-IP rule demotes a first demand fill to RRPV 3. On the cold
+The initial fixed-BRRIP control demotes a first demand fill to RRPV 3. On the cold
 4M mcf diagnostic, replacing all insertion levels by RRPV 2 recovers most
 of its regression, whereas allowing first-use promotion makes it worse.
 The optional `--ampm-protect-demand` inserts demand responses at RRPV 0;
@@ -362,7 +364,7 @@ predicate did not enable demand insertion and is excluded.
 | --- | ---: |
 | LRU | 0.828631 |
 | XSDRRIP | 0.821380 |
-| Paper PA-MAIP | 0.771002 |
+| Fixed-BRRIP PA-MAIP (2-bit) | 0.771002 |
 | Paper, promote first hit | 0.735215 |
 | All RRPV 2, suppress first use | 0.824147 |
 | All RRPV 2, promote first use | 0.822649 |
@@ -376,3 +378,54 @@ is +0.011% vs LRU and +0.894% vs XSDRRIP. This diagnoses the L2 adaptation;
 it does not establish a weighted suite gain. The extra demand-protection
 counter and response predicate need broader point validation before use
 in a final performance candidate.
+
+
+## Corrected adaptive paper configuration
+
+A second check of the complete UMOA Section 3.3/Table 2 exposed an omission
+in the initial experiment: the paper selects SRRIP or BRRIP with set
+dueling, and evaluates 3-bit RRPV. The initial fixed-BRRIP, 2-bit runs are
+valid ablations but do not establish the performance of full PA-MAIP.
+The 'normal-IP' wording used earlier was an incorrect reading and has
+been removed. The distinct 2010 MAIP predecessor must not be conflated
+with this 2012 table.
+
+The corrected Table 2 implementation is selected explicitly:
+
+```sh
+--l2-replacement-policy=ampm --ampm-insertion-mode=drrip --ampm-rrpv-bits=3
+```
+
+For the real AMPM protocol, add the same
+`--l1d-hwp-type=AMPMPrefetcher --ampm-hint-source=prefetcher` to every
+comparison policy. Defaults retain the initial fixed-BRRIP, 2-bit control
+so existing commands and ongoing experiments keep their meaning.
+
+- SRRIP inserts all map states at RRPV 6.
+- BRRIP inserts Init/Prefetched at RRPV 7, with one in 32 at RRPV 6;
+  Accessed (including the shadow map's Reused diagnostic) inserts at 6.
+- A 10-bit saturating selector favors the leader with fewer allocations.
+  At 1024 sets, 32 disjoint sets lead each policy and 960 follow the
+  selector. Set roles are computed once per entry. Selector access and
+  updates are constant-time; victim selection still scans only the ways.
+- Prefetch hits and first demand consumption do not promote; temporal
+  demand reuse promotes to RRPV 0. The existing demand-protection and
+  first-hit options remain explicit L2 adaptation experiments.
+- Missing predictor hints use the ordinary SRRIP insertion level, 6 for
+  3-bit RRPV. This is an adaptation for other prefetch workers and traffic
+  absent from the original cooperative predictor, not a paper claim.
+
+The per-slice selector and leader allocation counts are exported alongside
+follower SRRIP/BRRIP fills and insertion RRPVs. New selector tests verify
+balanced/disjoint leaders, the feedback direction, saturation, and that
+followers do not train. Build, state-machine tests, small real-AMPM
+transport checks, and warmed point comparisons precede corrected remote
+runs. Earlier fixed-BRRIP runs retain their own ledger and result labels.
+
+
+Adaptive-policy validation (local): the fast build and all 13 unit tests
+passed. A 100K gcb_test.zstd run with real AMPM and difftest exited normally.
+All four slices report insertion_mode=2, num_bits=3, 1024 sets and 8 ways.
+Both RRPV 6 and 7 insertions occur; all 13 issued AMPM prefetches retain
+hints at L2. Both leader teams and both follower choices record fills.
+Warmed point validation and the corrected Cactus reproducer are running.

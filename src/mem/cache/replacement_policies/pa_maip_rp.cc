@@ -36,6 +36,16 @@ checkedEntries(const AMPMHintTableParams &p)
     return p.entries;
 }
 
+unsigned
+checkedRRPV(const PAMAIPRPParams &p)
+{
+    fatal_if(p.num_bits < 2 || p.num_bits > 3 || p.insertion_mode > 2 ||
+             !p.num_ways || (p.insertion_mode == 2 &&
+             (p.num_sets < 4 || !isPowerOf2(p.num_sets))),
+             "PA-MAIP needs 2/3-bit RRPV, a valid insertion mode and geometry");
+    return (1U << p.num_bits) - 1;
+}
+
 } // anonymous namespace
 
 AMPMHintTable::AMPMHintTable(const Params &p)
@@ -70,7 +80,7 @@ AMPMHintTable::observe(const PacketPtr pkt)
         !(pkt->isResponse() && pkt->isRead())) {
         return;
     }
-    pa_maip::State state;
+    pa_maip::State state = pa_maip::Init;
     if (getHint(pkt, state)) {
         return;
     }
@@ -104,7 +114,9 @@ AMPMHintTable::recordPrefetchHint(uint8_t state)
 PAMAIP::PAMAIP(const Params &p)
   : Base(p), hints(p.hints), lowInsertPeriod(p.low_insert_period),
     suppressFirstHit(p.suppress_first_hit), protectDemand(p.protect_demand),
-    stats(this)
+    insertionMode(p.insertion_mode), maxRRPV(checkedRRPV(p)),
+    numWays(p.num_ways), dueling(p.insertion_mode == 2 ? p.num_sets : 4),
+    stats(this, maxRRPV + 1)
 {
     fatal_if(!hints || lowInsertPeriod == 0,
              "PA-MAIP requires access maps and a nonzero insertion period");
@@ -136,7 +148,7 @@ PAMAIP::invalidate(const std::shared_ptr<ReplacementData>& replacement_data)
     auto data = std::static_pointer_cast<PAMAIPReplData>(replacement_data);
     data->valid = false;
     data->unusedPrefetch = false;
-    data->rrpv = 3;
+    data->rrpv = maxRRPV;
 }
 
 void
@@ -150,7 +162,7 @@ PAMAIP::touch(const std::shared_ptr<ReplacementData>& replacement_data,
         return;
     }
     if (!prefetch && data->unusedPrefetch && hints->isExternal()) {
-        pa_maip::State state;
+        pa_maip::State state = pa_maip::Init;
         if (hints->getHint(pkt, state) && pa_maip::highPriority(state)) {
             // AMPM has observed an earlier demand use absorbed by L1.
             data->consumeDemand();
@@ -183,7 +195,7 @@ PAMAIP::reset(const std::shared_ptr<ReplacementData>& replacement_data,
 {
     auto data = std::static_pointer_cast<PAMAIPReplData>(replacement_data);
     const bool prefetch = isPrefetch(pkt);
-    pa_maip::State state;
+    pa_maip::State state = pa_maip::Init;
     bool has_hint = hints->getHint(pkt, state);
     if (!has_hint) {
         hints->observe(pkt);
@@ -200,12 +212,27 @@ PAMAIP::reset(const std::shared_ptr<ReplacementData>& replacement_data,
                             (pkt->isRead() || pkt->isWrite()))) &&
         !pkt->req->isCacheMaintenance();
     const bool protected_fill = protectDemand && demand_fill;
-    bool high = !has_hint || pa_maip::highPriority(state);
+    const bool use_brrip = insertionMode == 1 ||
+        (insertionMode == 2 && dueling.useBrrip(data->team));
+    if (insertionMode == 2) {
+        if (data->team == pa_maip::Dueling::Srrip) {
+            stats.leaderSrripFills++;
+        } else if (data->team == pa_maip::Dueling::Brrip) {
+            stats.leaderBrripFills++;
+        } else if (use_brrip) {
+            stats.followerBrripFills++;
+        } else {
+            stats.followerSrripFills++;
+        }
+        dueling.sample(data->team);
+        stats.selector = dueling.value();
+    }
+    bool high = !use_brrip || !has_hint || pa_maip::highPriority(state);
     if (!protected_fill && !high && ++lowCounter == lowInsertPeriod) {
         high = true;
         lowCounter = 0;
     }
-    data->rrpv = high ? 2 : 3;
+    data->rrpv = high ? maxRRPV - 1 : maxRRPV;
     if (protected_fill) {
         data->rrpv = 0;
         stats.protectedDemandFills++;
@@ -225,7 +252,7 @@ void
 PAMAIP::reset(const std::shared_ptr<ReplacementData>& replacement_data) const
 {
     auto data = std::static_pointer_cast<PAMAIPReplData>(replacement_data);
-    data->rrpv = 2;
+    data->rrpv = maxRRPV - 1;
     data->valid = true;
     data->unusedPrefetch = false;
 }
@@ -247,7 +274,7 @@ PAMAIP::getVictim(const ReplacementCandidates& candidates) const
             victim = candidate;
         }
     }
-    const unsigned increment = 3 - maximum;
+    const unsigned increment = maxRRPV - maximum;
     for (const auto candidate : candidates) {
         auto data = std::static_pointer_cast<PAMAIPReplData>(
             candidate->replacementData);
@@ -259,7 +286,13 @@ PAMAIP::getVictim(const ReplacementCandidates& candidates) const
 std::shared_ptr<ReplacementData>
 PAMAIP::instantiateEntry()
 {
-    return std::make_shared<PAMAIPReplData>();
+    auto data = std::make_shared<PAMAIPReplData>();
+    data->rrpv = maxRRPV;
+    if (insertionMode == 2) {
+        data->team = dueling.team(entryCount / numWays);
+    }
+    entryCount++;
+    return data;
 }
 
 AMPMHintTable::HintStats::HintStats(statistics::Group *parent)
@@ -279,7 +312,7 @@ AMPMHintTable::HintStats::HintStats(statistics::Group *parent)
     }
 }
 
-PAMAIP::PolicyStats::PolicyStats(statistics::Group *parent)
+PAMAIP::PolicyStats::PolicyStats(statistics::Group *parent, unsigned levels)
   : statistics::Group(parent),
     ADD_STAT(insertions, statistics::units::Count::get(),
              "Fills by insertion RRPV"),
@@ -298,9 +331,19 @@ PAMAIP::PolicyStats::PolicyStats(statistics::Group *parent)
     ADD_STAT(missingHints, statistics::units::Count::get(),
              "Fills lacking demand/prefetch hints, including writebacks"),
     ADD_STAT(protectedDemandFills, statistics::units::Count::get(),
-             "Demand fills given immediate reuse priority")
+             "Demand fills given immediate reuse priority"),
+    ADD_STAT(leaderSrripFills, statistics::units::Count::get(),
+             "Fills in SRRIP leader sets"),
+    ADD_STAT(leaderBrripFills, statistics::units::Count::get(),
+             "Fills in BRRIP leader sets"),
+    ADD_STAT(followerSrripFills, statistics::units::Count::get(),
+             "Follower fills using SRRIP"),
+    ADD_STAT(followerBrripFills, statistics::units::Count::get(),
+             "Follower fills using BRRIP"),
+    ADD_STAT(selector, statistics::units::Count::get(),
+             "Current 10-bit insertion selector, high favors BRRIP")
 {
-    insertions.init(4);
+    insertions.init(levels);
 }
 
 } // namespace replacement_policy

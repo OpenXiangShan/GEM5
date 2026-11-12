@@ -42,21 +42,29 @@ class AMPMHintTable : public SimObject
 };
 
 /** L2 adaptation of UMOA PA-MAIP's map-state insertion and promotion rules.
- * Implements Table 2's normal-IP column; IP bypass and DRAM scheduling are
- * outside this policy. Existing prefetch generation is left unchanged.
+ * Table 2 duels SRRIP and BRRIP insertion according to AMPM map state.
+ * DRAM scheduling and complete MUMSC placement are outside this policy.
  */
 class PAMAIP : public Base
 {
   private:
-    struct PAMAIPReplData : ReplacementData, pa_maip::Line {};
+    struct PAMAIPReplData : ReplacementData, pa_maip::Line
+    {
+        pa_maip::Dueling::Team team = pa_maip::Dueling::Follower;
+    };
     AMPMHintTable *const hints;
     const unsigned lowInsertPeriod;
     const bool suppressFirstHit;
     const bool protectDemand;
+    const unsigned insertionMode;
+    const unsigned maxRRPV;
+    const unsigned numWays;
+    unsigned entryCount = 0;
+    pa_maip::Dueling dueling;
     unsigned lowCounter = 0;
     struct PolicyStats : statistics::Group
     {
-        explicit PolicyStats(statistics::Group *parent);
+        PolicyStats(statistics::Group *parent, unsigned levels);
         statistics::Vector insertions;
         statistics::Scalar prefetchFills;
         statistics::Scalar prefetchHintFills;
@@ -67,6 +75,11 @@ class PAMAIP : public Base
         statistics::Scalar fillConsumptions;
         statistics::Scalar missingHints;
         statistics::Scalar protectedDemandFills;
+        statistics::Scalar leaderSrripFills;
+        statistics::Scalar leaderBrripFills;
+        statistics::Scalar followerSrripFills;
+        statistics::Scalar followerBrripFills;
+        statistics::Scalar selector;
     } stats;
 
   public:

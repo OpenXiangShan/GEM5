@@ -104,6 +104,62 @@ class AccessMap
     }
 };
 
+/** A 10-bit DRRIP selector, sampled by disjoint cache-set leaders. */
+class Dueling
+{
+  public:
+    enum Team : uint8_t { Srrip, Brrip, Follower };
+
+  private:
+    unsigned lowBits = 0;
+    unsigned mask = 0;
+    unsigned selector = 512;
+
+  public:
+    explicit Dueling(unsigned num_sets)
+    {
+        assert(num_sets >= 4 && (num_sets & (num_sets - 1)) == 0);
+        unsigned bits = 0;
+        for (unsigned sets = num_sets; sets > 1; sets >>= 1) {
+            bits++;
+        }
+        lowBits = bits / 2;
+        mask = (1U << lowBits) - 1;
+    }
+
+    Team
+    team(unsigned set) const
+    {
+        const unsigned low = set & mask;
+        const unsigned high = (set >> lowBits) & mask;
+        if (low == high) {
+            return Srrip;
+        }
+        if (low == ((~high) & mask)) {
+            return Brrip;
+        }
+        return Follower;
+    }
+
+    bool
+    useBrrip(Team team) const
+    {
+        return team == Brrip || (team == Follower && selector >= 512);
+    }
+
+    void
+    sample(Team team)
+    {
+        if (team == Srrip && selector < 1023) {
+            selector++;
+        } else if (team == Brrip && selector > 0) {
+            selector--;
+        }
+    }
+
+    unsigned value() const { return selector; }
+};
+
 struct Line
 {
     uint8_t rrpv = 3;
