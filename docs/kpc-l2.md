@@ -169,6 +169,44 @@ The two-level `kpc_traffic.py --clean-writebacks` regression creates L1 clean
 writebacks and compares the observer count against actual L2 command-access
 statistics. The saved v1 executable reports 1088 observed accesses versus
 2174 expected (1088 reads plus 1086 clean writebacks), demonstrating the gap.
-The corrected implementation observes all 2174 accesses and 1028 first reuses.
+The corrected implementation observes all 2174 accesses and 1029 first reuses.
 Demand-only and prefetch traffic tests and all nine sampler unit tests also
 pass after the correction. The performance comparison follows below.
+
+
+The corrected policy is committed as `3dab7453fa`. Classic and sliced L2
+`mcf/6753` checkpoint smoke tests both pass NEMU difftest after the fix.
+All three 2M-warmup/2M-ROI local screening points also pass difftest:
+
+| Checkpoint | KPC corrected IPC | vs LRU | vs XSDRRIP | vs KPC v1 |
+| --- | ---: | ---: | ---: | ---: |
+| mcf/6753 | 0.704443 | +1.186% | -0.221% | +1.233% |
+| lbm/6382 | 2.055693 | +0.511% | -0.022% | +0.000% |
+| libquantum/69175 | 2.423003 | +0.000% | +0.711% | +0.000% |
+
+The baseline policy implementations and all workload/configuration arguments
+are unchanged; only the KPC access observer differs between these commits.
+The comparison manifest is `local-screen-v2-summary.json`; complete outputs
+are in `local-compare-v2/`, under `/tmp/kpc-l2-01a1d0ba/`.
+
+This correction reduces the local mcf regression but does not establish a full
+SPEC06 improvement or exhaust optimization opportunities. Keep the original
+KPC-R RRPV 2/3 insertion mapping and conservative prefetch promotion pending
+longer, complete-suite evidence. If full runs confirm regressions, a separate
+L2-specific live-line insertion experiment is a candidate; it has not been
+implemented or claimed as an improvement.
+
+## Remote validation gate
+
+The first push to `OpenXiangShan/GEM5:kpc-l2` was rejected by automatic
+approval review because the then-visible user instructions did not explicitly
+authorize publishing the source payload; assistant summaries were not accepted
+as authorization. No push or performance dispatch executed. A user
+confirmation request is pending. Do not interpret automatic goal continuations
+or elapsed time as approval, and do not work around the rejected push.
+
+After explicit authorization, push the current validated KPC branch, reread
+`manual-perf.yml` at the workflow ref, and submit the same tested SHA for LRU,
+XSDRRIP and KPC with full default SPEC06 coverage. Record run IDs, actual
+archive paths, completion status and coverage before reporting global scores
+or choosing further policy changes.
