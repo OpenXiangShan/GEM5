@@ -266,6 +266,10 @@ def setKmhV3Params(args, system):
         system.l3.prefetch_can_offload = False
         system.l3.num_slices = 4
 
+    from common.L2Replacement import configure_l2_replacement
+    configure_l2_replacement(args, system)
+
+
 if __name__ == '__m5_main__':
     FutureClass = None
 

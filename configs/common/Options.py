@@ -160,6 +160,9 @@ def addNoISAOptions(parser, configure_xiangshan=False):
 
     parser.add_argument("--l2_size", type=str, default="1MB")
     parser.add_argument("--l2_assoc", type=int, default=8)
+    parser.add_argument("--l2-replacement-policy", default="default",
+                        choices=["default", "lru", "xsdrrip"],
+                        help="Override KMHv3 L2 replacement after defaults")
     parser.add_argument("--l2_slices", type=int, default=4)
     parser.add_argument("--classic-l2", action="store_true", default=False,
                         help="use classic L2 cache, instead of RTL aligned L2 cache")
