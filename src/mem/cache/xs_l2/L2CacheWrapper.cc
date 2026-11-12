@@ -155,7 +155,12 @@ L2CacheWrapper::CPUSidePort::recvTimingReq(PacketPtr pkt)
     auto slice_id = owner.getSliceId(pkt->getAddr());
     DPRINTF(L2CacheWrapper, "Got timing req for addr %#x, routing to slice %d\n", pkt->getAddr(), slice_id);
 
-    if (owner.prefetch_blocked || !owner.slice_cpuside_ports[slice_id].sendTimingReq(pkt)) {
+    // A snooping cache may already have committed to a response. Rejecting
+    // this packet would prevent the crossbar from recording its return route.
+    if ((!pkt->isExpressSnoop() && owner.prefetch_blocked) ||
+        !owner.slice_cpuside_ports[slice_id].sendTimingReq(pkt)) {
+        panic_if(pkt->isExpressSnoop(),
+                 "%s: slice rejected an express snoop", name());
         DPRINTF(L2CacheWrapper, "Slice %d is busy, blocking CPU side\n", slice_id);
         owner.upper_req_blocked = true;
         return false;

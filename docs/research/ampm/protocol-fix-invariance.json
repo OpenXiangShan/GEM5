@@ -1,0 +1,79 @@
+[
+  {
+    "case": "cactus-lru",
+    "common": 13505,
+    "differences": [],
+    "after_fix": "/tmp/apmp-cactus16-fixed-lru/stats.txt",
+    "before_fix": "/tmp/apmp-cactus16-repro-lru/stats.txt"
+  },
+  {
+    "case": "mcf-lru",
+    "common": 11249,
+    "differences": [],
+    "after_fix": "/tmp/apmp-post-fix-warm4m-v1-mcf-lru/stats.txt",
+    "before_fix": "/tmp/apmp-topweight-warm4m-v1-mcf-lru/stats.txt"
+  },
+  {
+    "case": "mcf-xsdrrip",
+    "common": 11287,
+    "differences": [],
+    "after_fix": "/tmp/apmp-post-fix-warm4m-v1-mcf-xsdrrip/stats.txt",
+    "before_fix": "/tmp/apmp-topweight-warm4m-v1-mcf-xsdrrip/stats.txt"
+  },
+  {
+    "case": "milc-lru",
+    "common": 11035,
+    "differences": [],
+    "after_fix": "/tmp/apmp-post-fix-warm4m-v1-milc-lru/stats.txt",
+    "before_fix": "/tmp/apmp-topweight-warm4m-v1-milc-lru/stats.txt"
+  },
+  {
+    "case": "milc-xsdrrip",
+    "common": 11051,
+    "differences": [],
+    "after_fix": "/tmp/apmp-post-fix-warm4m-v1-milc-xsdrrip/stats.txt",
+    "before_fix": "/tmp/apmp-topweight-warm4m-v1-milc-xsdrrip/stats.txt"
+  },
+  {
+    "case": "libquantum-lru",
+    "common": 10466,
+    "differences": [],
+    "after_fix": "/tmp/apmp-post-fix-warm4m-v1-libquantum-lru/stats.txt",
+    "before_fix": "/tmp/apmp-topweight-warm4m-v1-libquantum-lru/stats.txt"
+  },
+  {
+    "case": "libquantum-xsdrrip",
+    "common": 10496,
+    "differences": [],
+    "after_fix": "/tmp/apmp-post-fix-warm4m-v1-libquantum-xsdrrip/stats.txt",
+    "before_fix": "/tmp/apmp-topweight-warm4m-v1-libquantum-xsdrrip/stats.txt"
+  },
+  {
+    "case": "omnetpp-lru",
+    "common": 12404,
+    "differences": [],
+    "after_fix": "/tmp/apmp-post-fix-warm4m-v1-omnetpp-lru/stats.txt",
+    "before_fix": "/tmp/apmp-topweight-warm4m-v1-omnetpp-lru/stats.txt"
+  },
+  {
+    "case": "omnetpp-xsdrrip",
+    "common": 12366,
+    "differences": [],
+    "after_fix": "/tmp/apmp-post-fix-warm4m-v1-omnetpp-xsdrrip/stats.txt",
+    "before_fix": "/tmp/apmp-topweight-warm4m-v1-omnetpp-xsdrrip/stats.txt"
+  },
+  {
+    "case": "lbm-lru",
+    "common": 10935,
+    "differences": [],
+    "after_fix": "/tmp/apmp-post-fix-warm4m-v1-lbm-lru/stats.txt",
+    "before_fix": "/tmp/apmp-topweight-warm4m-v1-lbm-lru/stats.txt"
+  },
+  {
+    "case": "lbm-xsdrrip",
+    "common": 10982,
+    "differences": [],
+    "after_fix": "/tmp/apmp-post-fix-warm4m-v1-lbm-xsdrrip/stats.txt",
+    "before_fix": "/tmp/apmp-topweight-warm4m-v1-lbm-xsdrrip/stats.txt"
+  }
+]

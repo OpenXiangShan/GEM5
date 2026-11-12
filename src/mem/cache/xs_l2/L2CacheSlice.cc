@@ -148,7 +148,6 @@ L2CacheSlice::innerMemPortRecvRespRetry()
 bool
 L2CacheSlice::cpuSidePortRecvTimingReq(PacketPtr pkt)
 {
-    assert(!pending_l1_retry);
     DPRINTF(L2CacheSlice, "Got req from CPU side for addr: %#x\n", pkt->getAddr());
 
     bool is_prefetch = pkt->cmd.isHWPrefetch();
@@ -159,6 +158,7 @@ L2CacheSlice::cpuSidePortRecvTimingReq(PacketPtr pkt)
         DPRINTF(L2CacheSlice, "Express snoop request, forwarding directly to inner cache\n");
         return CacheWrapper::cpuSidePortRecvTimingReq(pkt);
     }
+    assert(!pending_l1_retry);
     // If the request is from write_queue(WriteBackClean/CleanEvict etc.),
     // we cannot buffer it and just forward it to inner cache
     if (!pkt->needsResponse() && !is_prefetch) {

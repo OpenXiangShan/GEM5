@@ -341,7 +341,7 @@ Every run adds `--l1d-hwp-type=AMPMPrefetcher --ampm-hint-source=prefetcher`:
 | --- | --- | --- |
 | LRU | 43288386888 | Created, final result pending |
 | XSDRRIP | 43288394351 | Created, final result pending |
-| Fixed-BRRIP PA-MAIP (2-bit) | 43288403317 | Created, final result pending |
+| Fixed-BRRIP PA-MAIP (2-bit) | 43288403317 | Canceled while queued; superseded by adaptive configuration |
 
 ## L2 demand-protection experiment
 
@@ -429,3 +429,62 @@ All four slices report insertion_mode=2, num_bits=3, 1024 sets and 8 ways.
 Both RRPV 6 and 7 insertions occur; all 13 issued AMPM prefetches retain
 hints at L2. Both leader teams and both follower choices record fills.
 Warmed point validation and the corrected Cactus reproducer are running.
+
+
+## Corrected remote screens
+
+Tested commit `ffb2aa580f1f7f27e3ecf42c50160405eeb76814`:
+
+- Real AMPM adaptive 3-bit: run **43295082033**.
+- Default-prefetcher/L2-map adaptive 3-bit: run **43295089737**.
+
+Both use idealkmhv3, all benchmarks in the standard 0.3c point set, default
+servers and 32 jobs/server. Dispatch and fixed heads were verified; final
+results are pending. The still-queued fixed-BRRIP real-AMPM candidate
+43288403317 was canceled and is excluded from performance results.
+
+The 0.3c set contains 145 checkpoints. Its `checkpoints_cov0.3.json` point
+IDs exactly match the archived checkpoint list of real-AMPM LRU run
+43288386888. The completed default-prefetcher 1.0c baseline CSVs were
+filtered to precisely those IDs and reweighted with that JSON. The 0.3c
+baseline overall/GHz scores are 24.251479 (LRU) and 24.174477 (XSDRRIP).
+These are matched-point baselines; they are not the full 1.0c scores.
+
+## Cactus express-snoop protocol failure
+
+The original fixed-BRRIP default-prefetcher run reproducibly crashes on
+`cactusADM_16`. Local LRU succeeds for the same 20M warmup / 40M total and
+matches **all 13445 common non-host statistics** of the completed remote
+LRU point. The local fixed-BRRIP run reproduces the remote crash, and the
+assertion-enabled debugger identifies a missing `CoherentXBar::routeTo`
+entry on a snoop response.
+
+A narrow trace locates the cause at tick 4080280968, address 0x82e6a340:
+L1D's CMC prefetch misses, the DTB walker cache holds a dirty Owned line
+and commits to a response, and the crossbar forwards an express snoop.
+The L2 wrapper rejects it under prefetch backpressure, so the crossbar
+never installs its return route. The promised response arrives at tick
+4080281634 and fails the route lookup. The policy exposes a protocol bug;
+the missing route is not fixed by dropping the response or disabling
+difftest.
+
+The local fix allows express snoops past the wrapper's prefetch blockage,
+and moves the slice's ordinary-request retry assertion after its express
+snoop bypass. Successful forwarding retains the existing prefetch-event
+scheduling. Unexpected rejection by the downstream slice is fatal rather
+than silently corrupting the protocol. The failing fixed-BRRIP point and matched LRU now both pass the complete
+40M-instruction run with 20M warmup and difftest. An assertion-enabled
+23M-instruction run also passes beyond the original failure. The fixed
+BRRIP candidate measures IPC 2.615483 versus LRU 2.619233 on that point.
+All 13505 common non-host LRU statistics match the pre-fix local control.
+The five warmed real-AMPM workloads also retain every common non-host
+LRU/XSDRRIP statistic across the protocol fix (ten additional comparisons).
+Broader final performance results must identify their source version;
+runs pinned to ffb2aa remain pre-fix experiments.
+
+
+Real-AMPM LRU screen 43288386888 completed successfully: all 145 points
+finished and the official overall/GHz score is **22.731668** (integer
+23.229888, floating point 22.386430). It has its own AMPM-prefetcher
+protocol and must be compared against the matched AMPM XSDRRIP and
+PA-MAIP screens, not against the XSComposite baseline scores.

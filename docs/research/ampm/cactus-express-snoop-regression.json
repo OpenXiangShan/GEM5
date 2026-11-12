@@ -1,0 +1,30 @@
+{
+  "checkpoint": "cactusADM/16/_16_0.000105_memory_.zstd",
+  "ref": "af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal-dedup",
+  "difftest": true,
+  "fast": {
+    "warmup": 20000000,
+    "total": 40000000,
+    "policies": {
+      "fixed_brrip_2bit": {
+        "exit_status": 0,
+        "ipc": 2.615483
+      },
+      "lru": {
+        "exit_status": 0,
+        "ipc": 2.619233
+      }
+    }
+  },
+  "opt": {
+    "warmup": 20000000,
+    "total": 23000000,
+    "fixed_brrip_2bit_exit_status": 0
+  },
+  "original_failure": {
+    "assertion": "CoherentXBar::recvTimingSnoopResp route_lookup != routeTo.end()",
+    "tick": 4080281634,
+    "address": "0x82e6a340",
+    "cause": "Express snoop rejected by prefetch backpressure after an upstream dirty-data response was promised"
+  }
+}

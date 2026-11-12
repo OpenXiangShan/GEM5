@@ -1,0 +1,6 @@
+{
+  "common_statistics": 13445,
+  "differences": [],
+  "local": "/tmp/apmp-cactus16-repro-lru/stats.txt",
+  "baseline": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-1.0c/20261113_014415_a61859f355_idealkmhv3_run2118/spec_all/cactusADM_16/m5out/stats.txt"
+}
