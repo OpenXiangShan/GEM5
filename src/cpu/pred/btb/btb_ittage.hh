@@ -131,7 +131,7 @@ class BTBITTAGE : public TimedBaseBTBPredictor
   private:
 
     // return provided
-    void lookupHelper(Addr stream_start, const std::vector<BTBEntry> &btbEntries,
+    void lookupHelper(Addr stream_start, const std::vector<BranchPrediction> &btbEntries,
                       IndirectTargets& results, ThreadID tid, uint8_t asidHash);
 
     // use blockPC

@@ -29,21 +29,15 @@ makeBranchOutcome(const DynInstPtr &inst)
         inst->branchTarget()->instAddr() : actual_next->instAddr();
 
     return branch_prediction::btb_pred::BranchOutcome{
-        inst->threadNumber,
-        inst->getFtqId(),
-        inst->seqNum,
-        inst->getPC(),
-        resolved_target,
-        inst->isUncondCtrl() || inst->branching(),
-        inst->mispredicted(),
-        inst->isCondCtrl(),
-        inst->isIndirectCtrl(),
-        is_direct,
-        inst->isCall(),
-        inst->isReturn() &&
-            !inst->staticInst->isNonSpeculative() &&
-            !is_direct,
-        static_cast<uint8_t>(inst->getInstBytes())
+        inst->threadNumber, inst->getFtqId(), inst->seqNum,
+        branch_prediction::btb_pred::BranchInfo(
+            inst->getPC(), resolved_target,
+            branch_prediction::btb_pred::BranchAttribute{
+                inst->isCondCtrl(), inst->isIndirectCtrl(), is_direct,
+                inst->isCall(), inst->isReturn() &&
+                    !inst->staticInst->isNonSpeculative() && !is_direct},
+            static_cast<uint8_t>(inst->getInstBytes())),
+        inst->isUncondCtrl() || inst->branching(), inst->mispredicted()
     };
 }
 

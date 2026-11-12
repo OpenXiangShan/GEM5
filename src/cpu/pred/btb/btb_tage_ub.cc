@@ -262,7 +262,7 @@ BTBTAGEUpperBound::lookupExactPrediction(
 
 void
 BTBTAGEUpperBound::notePredictionResult(
-    const BTBEntry &btbEntry,
+    const BranchPrediction &btbEntry,
     const TagePrediction &pred,
     std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
     CondTakens &results) const
@@ -312,7 +312,7 @@ BTBTAGEUpperBound::putPCHistory(Addr startAddr, const bitset &history,
 
             BranchPredictionMeta branchMeta;
             auto pred = lookupExactPrediction(
-                btbEntry, btbEntry.ctr >= 0, ubMeta->historyWords, &branchMeta);
+                btbEntry, btbEntry.baseTaken, ubMeta->historyWords, &branchMeta);
             ubMeta->preds[btbEntry.pc] = pred;
             ubMeta->branchMeta[btbEntry.pc] = branchMeta;
             tageStats.updateStatsWithTagePrediction(pred, true);
@@ -512,7 +512,7 @@ BTBTAGEUpperBound::update(
         if (!branch.isCond) {
             continue;
         }
-        auto btbEntry = makeBranchInfo(branch);
+        auto btbEntry = BranchInfo(branch);
         auto predIt = predMeta->preds.find(btbEntry.pc);
         auto metaIt = predMeta->branchMeta.find(btbEntry.pc);
         if (predIt == predMeta->preds.end() ||

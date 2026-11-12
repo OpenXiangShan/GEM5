@@ -269,7 +269,7 @@ PairTAGE::updateUsingS3Pred(FullBTBPrediction &s3Pred)
     // The final prediction information
     // TODO: Recogonize fallthrough with attibutes rather than mark branch PC to zero.
     const bool taken = s3Pred.isTaken();
-    const BTBEntry exit = taken ? s3Pred.getTakenEntry() : BTBEntry();
+    const BranchPrediction exit = taken ? s3Pred.getTakenEntry() : BranchPrediction();
     const Addr targetPC = s3Pred.getTarget(predictWidth);
 
     // The block right after a trained first block is its second block,
@@ -289,7 +289,7 @@ PairTAGE::updateUsingS3Pred(FullBTBPrediction &s3Pred)
 }
 
 PairTAGE::LiveEntryInfo
-PairTAGE::trainFirstBlock(const LookupResult &lookup, const BTBEntry &exit,
+PairTAGE::trainFirstBlock(const LookupResult &lookup, const BranchPrediction &exit,
                           Addr targetPC)
 {
     const bool taken = exit.valid;
@@ -374,7 +374,7 @@ PairTAGE::trainFirstBlock(const LookupResult &lookup, const BTBEntry &exit,
 }
 
 void
-PairTAGE::trainSecondBlock(const LiveEntryInfo &live, const BTBEntry &exit,
+PairTAGE::trainSecondBlock(const LiveEntryInfo &live, const BranchPrediction &exit,
                            Addr targetPC)
 {
     const Addr branchPC = exit.valid ? exit.pc : 0;

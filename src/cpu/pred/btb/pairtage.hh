@@ -65,7 +65,7 @@ class PairTAGE : public TimedBaseBTBPredictor
 
         // A new block, weak in its direction. It leaves at exit when exit
         // is valid, and falls through to targetPC otherwise.
-        PTAGEBlockInfo(const BTBEntry &exit, Addr targetPC)
+        PTAGEBlockInfo(const BranchPrediction &exit, Addr targetPC)
             : directionCounter(exit.valid ? 0 : -1),
               branchPC(exit.valid ? exit.pc : 0), targetPC(targetPC),
               isCond(exit.valid && exit.isCond),
@@ -119,7 +119,7 @@ class PairTAGE : public TimedBaseBTBPredictor
         {}
 
         // A new allocate entry holding one block, weak in its direction
-        PTAGEEntry(Addr tag, const BTBEntry &exit, Addr targetPC)
+        PTAGEEntry(Addr tag, const BranchPrediction &exit, Addr targetPC)
             : valid(true), b2Valid(false), tag(tag), useful(false),
               confidence(0), block(exit, targetPC)
         {
@@ -363,10 +363,10 @@ class PairTAGE : public TimedBaseBTBPredictor
     // Train the first block of the looked-up entry, and return the entry
     // it was trained into, invalid when it is not written
     LiveEntryInfo trainFirstBlock(const LookupResult &lookup,
-                                  const BTBEntry &exit, Addr targetPC);
+                                  const BranchPrediction &exit, Addr targetPC);
 
     // Train the second block of the entry its first block was trained into
-    void trainSecondBlock(const LiveEntryInfo &live, const BTBEntry &exit,
+    void trainSecondBlock(const LiveEntryInfo &live, const BranchPrediction &exit,
                           Addr targetPC);
 
     struct PairTAGEStats : public statistics::Group
