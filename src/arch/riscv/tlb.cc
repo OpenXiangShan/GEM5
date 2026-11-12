@@ -116,6 +116,29 @@ hasSameCompressionAttrs(PTE lhs, PTE rhs)
            lhs.d == rhs.d;
 }
 
+static Fault
+checkPhysicalAddress(const RequestPtr &req, BaseMMU::Mode mode)
+{
+    // RV64 PMP encodes a 56-bit physical address. Check the whole request so
+    // an access crossing the limit cannot wrap into another address.
+    constexpr Addr physicalAddressLimit = Addr{1} << 56;
+    const Addr paddr = req->getPaddr();
+    if (paddr < physicalAddressLimit &&
+        req->getSize() <= physicalAddressLimit - paddr) {
+        return NoFault;
+    }
+
+    ExceptionCode code;
+    if (mode == BaseMMU::Read) {
+        code = ExceptionCode::LOAD_ACCESS;
+    } else if (mode == BaseMMU::Write) {
+        code = ExceptionCode::STORE_ACCESS;
+    } else {
+        code = ExceptionCode::INST_ACCESS;
+    }
+    return std::make_shared<AddressFault>(req->getVaddr(), 0, code);
+}
+
 static int
 firstValidIdx(uint8_t valid_idx)
 {
@@ -2910,20 +2933,8 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
             }
         }
 
-        // according to the RISC-V tests, negative physical addresses trigger
-        // an illegal address exception.
-        // TODO where is that written in the manual?
-        if (!delayed && fault == NoFault && bits(req->getPaddr(), 63)) {
-            ExceptionCode code;
-            if (mode == BaseMMU::Read)
-                code = ExceptionCode::LOAD_ACCESS;
-            else if (mode == BaseMMU::Write) {
-                code = ExceptionCode::STORE_ACCESS;
-            }
-            else
-                code = ExceptionCode::INST_ACCESS;
-            fault = std::make_shared<AddressFault>(req->getVaddr(), 0, code);
-        }
+        if (!delayed && fault == NoFault)
+            fault = checkPhysicalAddress(req, mode);
 
         if (!delayed && fault == NoFault) {
             pma->check(req);
@@ -3082,6 +3093,11 @@ TLB::translateFunctional(const RequestPtr &req, ThreadContext *tc,
 
     DPRINTF(TLB, "Translated (functional) %#x -> %#x.\n", vaddr, paddr);
     req->setPaddr(paddr);
+    if (FullSystem) {
+        Fault fault = checkPhysicalAddress(req, mode);
+        if (fault != NoFault)
+            return fault;
+    }
     pma->check(req);
     return pmp->pmpCheck(req, mode, static_cast<MMU *>(tc->getMMUPtr())->getMemPriv(tc, mode), tc);
 }

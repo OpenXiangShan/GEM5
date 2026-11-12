@@ -392,7 +392,11 @@ AbstractMemory::access(PacketPtr pkt)
       return;
     }
 
-    assert(pkt->getAddrRange().isSubset(range));
+    const auto pkt_range = pkt->getAddrRange();
+    panic_if(!pkt_range.isSubset(range),
+             "%s: %s packet range %s is outside memory range %s",
+             name(), pkt->cmdString(), pkt_range.to_string(),
+             range.to_string());
 
     uint8_t *host_addr = toHostAddr(pkt->getAddr());
     DPRINTF(MemoryAccess, "guest addr %#lx -> host_addr %#lx\n", pkt->getAddr(),
@@ -484,7 +488,11 @@ AbstractMemory::access(PacketPtr pkt)
 void
 AbstractMemory::functionalAccess(PacketPtr pkt)
 {
-    assert(pkt->getAddrRange().isSubset(range));
+    const auto pkt_range = pkt->getAddrRange();
+    panic_if(!pkt_range.isSubset(range),
+             "%s: %s packet range %s is outside memory range %s",
+             name(), pkt->cmdString(), pkt_range.to_string(),
+             range.to_string());
 
     uint8_t *host_addr = toHostAddr(pkt->getAddr());
 
