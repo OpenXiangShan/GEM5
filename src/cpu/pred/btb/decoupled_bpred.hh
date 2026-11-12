@@ -4,9 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
-#include <map>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -16,6 +14,7 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/btb/abtb.hh"
+#include "cpu/pred/btb/bpu_profiler.hh"
 #include "cpu/pred/btb/btb_ittage.hh"
 #include "cpu/pred/btb/btb_mgsc.hh"
 #include "cpu/pred/btb/btb_tage.hh"
@@ -316,6 +315,8 @@ class DecoupledBPUWithBTB : public BPredUnit
                     unsigned numThreads);
     } dbpBtbStats;
 
+    BPUProfiler profiler;
+
   public:
     /**
      * @brief Main prediction cycle function
@@ -431,8 +432,6 @@ class DecoupledBPUWithBTB : public BPredUnit
         return ftq.getTargetTidByFetchQueueSize(eligible, ineligibleSkips, fetchQueueSizes);
     }
 
-    void dumpFsq(const char *when);
-
     // Legacy BPredUnit interface; decoupled prediction uses the FTQ APIs.
     void uncondBranch(ThreadID tid, Addr pc, void *&bp_history) override {}
 
@@ -455,251 +454,6 @@ class DecoupledBPUWithBTB : public BPredUnit
                         ThreadID tid);
 
     Addr getPreservedReturnAddr(const DynInstPtr &dynInst);
-
-    std::unordered_map<Addr, int> takenBranches;      // branch address -> taken count
-    std::unordered_map<Addr, int> currentPhaseTakenBranches;
-    std::unordered_map<Addr, int> currentSubPhaseTakenBranches;
-
-    /**
-     * @brief Types of control flow instruction mispredictions
-     */
-    enum MispredType {
-        DIR_WRONG,      ///< Direction prediction error (predicted taken when not taken or vice versa)
-        TARGET_WRONG,   ///< Target address prediction was wrong (branch taken but to the wrong address)
-        NO_PRED,        ///< No prediction was made (branch wasn't predicted at all)
-        FAKE_LAST       ///< Sentinel value
-    };
-
-    /**
-     * @brief Branch statistics structure holding detailed misprediction data
-     *
-     * This structure captures comprehensive statistics about a specific branch,
-     * tracking both execution counts and various types of mispredictions.
-     * It allows for detailed analysis of predictor performance for each branch.
-     */
-    struct BranchStats
-    {
-        Addr pc;                ///< Branch PC address
-        int branchType;         ///< Branch type (0=cond, 1=uncond, 2=call, 3=ind, etc.)
-        int totalCount;         ///< Total number of times branch was executed
-        int mispredCount;       ///< Total number of mispredictions for this branch
-        int dirWrongCount;      ///< Number of times direction was mispredicted
-        int targetWrongCount;   ///< Number of times target address was mispredicted
-        int noPredCount;        ///< Number of times no prediction was made
-
-        /**
-         * @brief Default constructor
-         */
-        BranchStats()
-            : pc(0), branchType(0), totalCount(0), mispredCount(0),
-              dirWrongCount(0), targetWrongCount(0), noPredCount(0) {}
-
-        /**
-         * @brief Create branch stats with initial values
-         */
-        BranchStats(Addr _pc, int _type)
-            : pc(_pc), branchType(_type), totalCount(0), mispredCount(0),
-              dirWrongCount(0), targetWrongCount(0), noPredCount(0) {}
-
-        /**
-         * @brief Increment total execution count
-         */
-        void incrementTotal() { totalCount++; }
-
-        /**
-         * @brief Increment misprediction count for a specific type
-         */
-        void incrementMispred(MispredType type) {
-            mispredCount++;
-            switch(type) {
-                case DIR_WRONG: dirWrongCount++; break;
-                case TARGET_WRONG: targetWrongCount++; break;
-                case NO_PRED: noPredCount++; break;
-                default: break;
-            }
-        }
-
-        /**
-         * @brief Calculate misprediction rate (per 1000 executions)
-         *
-         * @return Misprediction rate scaled to per-mille (0-1000)
-         */
-        double getMispredRate() const {
-            return totalCount > 0 ? (double)(mispredCount * 1000) / totalCount : 0;
-        }
-    };
-
-    /**
-     * @brief Index type for branch statistics maps
-     */
-    using BranchKey = std::pair<Addr, int>;
-
-    /**
-     * @brief Map type for branch statistics
-     */
-    using BranchStatsMap = std::map<BranchKey, BranchStats>;
-
-    // Branch statistics maps
-    /**
-     * @brief Maps (startPC, controlPC) pairs to misprediction counts
-     *
-     * This tracks mispredictions based on the starting address of a basic block
-     * and the address of the control instruction that was mispredicted.
-     */
-    std::map<std::pair<Addr, Addr>, int> topMispredicts;
-
-    /**
-     * @brief Maps branch keys (PC, type) to detailed branch statistics
-     *
-     * Main container for branch prediction statistics, storing information about
-     * each branch's execution count, mispredictions, and error types.
-     */
-    BranchStatsMap topMispredictsByBranch;
-
-    /**
-     * @brief Maps branch history patterns to misprediction counts
-     *
-     * Tracks which history patterns tend to cause more mispredictions.
-     * Key: History pattern value
-     * Value: Count of mispredictions with this pattern
-     */
-    std::map<uint64_t, uint64_t> topMispredHist;
-
-    // Phase-based statistics
-    /**
-     * @brief Stores branch statistics from the previous phase
-     *
-     * Used to calculate delta statistics between phases.
-     */
-    BranchStatsMap lastPhaseTopMispredictsByBranch;
-
-    /**
-     * @brief Vector of branch statistics for each phase
-     *
-     * Each entry contains the branch statistics for a complete phase.
-     */
-    std::vector<BranchStatsMap> topMispredictsByBranchByPhase;
-
-    /**
-     * @brief Vector of branch statistics for each sub-phase
-     *
-     * Similar to topMispredictsByBranchByPhase but with finer granularity.
-     */
-    std::vector<BranchStatsMap> topMispredictsByBranchBySubPhase;
-
-    /**
-     * @brief Vector of taken branches for each phase
-     *
-     * Each entry maps branch addresses to execution counts for a phase.
-     */
-    std::vector<std::unordered_map<Addr, int>> takenBranchesByPhase;
-
-    /**
-     * @brief Vector of taken branches for each sub-phase
-     *
-     * Each entry maps branch addresses to execution counts for a sub-phase.
-     */
-    std::vector<std::unordered_map<Addr, int>> takenBranchesBySubPhase;
-
-    // BTB entry tracking
-    /**
-     * @brief BTB entries from the previous phase
-     *
-     * Maps start address to (BTBEntry, visit count) to track BTB entry usage.
-     */
-    std::unordered_map<Addr, std::pair<BTBEntry, int>> lastPhaseBTBEntries;
-
-    /**
-     * @brief Cumulative BTB entries seen so far
-     *
-     * Maps start address to (BTBEntry, visit count) with total usage.
-     */
-    std::unordered_map<Addr, std::pair<BTBEntry, int>> totalBTBEntries;
-
-    /**
-     * @brief Vector of BTB entries for each phase
-     *
-     * Each entry contains the BTB entries used during a phase.
-     */
-    std::vector<std::unordered_map<Addr, std::pair<BTBEntry, int>>> BTBEntriesByPhase;
-
-    /**
-     * @brief Next phase ID to dump statistics for
-     */
-    int phaseIdToDump{1};
-
-    /**
-     * @brief Total number of instructions committed
-     */
-    int numInstCommitted{0};
-
-    /**
-     * @brief Number of instructions per phase
-     */
-    int phaseSizeByInst{100000};
-
-    /**
-     * @brief Next sub-phase ID to dump statistics for
-     */
-    int subPhaseIdToDump{1};
-
-    /**
-     * @brief Ratio between phase and sub-phase sizes
-     */
-    int subPhaseRatio{10};
-
-    /**
-     * @brief Calculate sub-phase size in instructions
-     * @return Number of instructions per sub-phase
-     */
-    int subPhaseSizeByInst() { return phaseSizeByInst/subPhaseRatio; }
-
-    /**
-     * @brief Distribution of committed instructions from previous phase
-     *
-     * Vector indexed by instruction count, values are frequency.
-     */
-    std::vector<int> lastPhaseFtqEntryNumCommittedInstDist;
-
-    /**
-     * @brief Total committed instruction count distribution
-     *
-     * Tracks how many FTQ entries have each number of committed instructions.
-     */
-    std::vector<int> commitFtqEntryHasInstsVector;
-    /**
-     * @brief Committed instruction distributions by phase
-     *
-     * Each entry contains the distribution of committed instructions for a phase.
-     */
-    std::vector<std::vector<int>> ftqEntryNumCommittedInstDistByPhase;
-
-    /**
-     * @brief Distribution of fetched instructions from previous phase
-     *
-     * Vector indexed by instruction count, values are frequency.
-     */
-    std::vector<int> lastPhaseFtqEntryNumFetchedInstDist;
-
-    /**
-     * @brief Total fetched instruction count distribution
-     *
-     * Tracks how many FTQ entries have each number of fetched instructions.
-     */
-    std::vector<int> commitFtqEntryFetchedInstsVector;
-    /**
-     * @brief Fetched instruction distributions by phase
-     *
-     * Each entry contains the distribution of fetched instructions for a phase.
-     */
-    std::vector<std::vector<int>> ftqEntryNumFetchedInstDistByPhase;
-
-    /**
-     * @brief Branch statistics from the previous sub-phase
-     *
-     * Used to calculate delta statistics between sub-phases.
-     */
-    BranchStatsMap lastSubPhaseTopMispredictsByBranch;
 
     void recoverHistoryForSquash(
         const HistoryRecoveryContext &context,
@@ -809,7 +563,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     /**
      * @brief Process a branch instruction during commit
      *
-     * Updates branch and component-level prediction statistics.
+     * Records branch statistics and notifies component commit hooks.
      *
      * @param inst Dynamic instruction pointer
      * @param miss Whether the branch was mispredicted
@@ -822,78 +576,11 @@ class DecoupledBPUWithBTB : public BPredUnit
         bool actuallyTaken);
 
     /**
-     * @brief Process branch misprediction, determine type and update statistics
-     *
-     * @param entry The fetch target entry
-     * @param branchAddr Branch instruction address
-     * @param info Branch information
-     * @param taken Whether the branch was taken
-     * @param mispred Whether the branch was mispredicted
-     */
-    void processMisprediction(
-        const FetchTarget &entry,
-        Addr branchAddr,
-        const BranchInfo &info,
-        bool taken,
-        bool mispred);
-
-    /**
-     * @brief Track statistics for taken branches
-     *
-     * @param branchAddr Branch instruction address
-     */
-    void trackTakenBranch(Addr branchAddr);
-
-    /**
-     * @brief Process phase-based statistics at phase boundaries
-     *
-     * @param isSubPhase Whether this is a sub-phase or main phase
-     * @param phaseID Current phase ID
-     * @param phaseToDump Phase ID to be processed
-     * @param lastPhaseStats Last phase branch statistics map
-     * @param phaseStatsList List of all phases branch statistics
-     * @param currentPhaseBranches Current phase taken branches map
-     * @param phaseBranchesList List of all phases taken branches
-     * @return true If the phase was processed
-     */
-    bool processPhase(bool isSubPhase, int phaseID, int &phaseToDump,
-                     BranchStatsMap &lastPhaseStats,
-                     std::vector<BranchStatsMap> &phaseStatsList,
-                     std::unordered_map<Addr, int> &currentPhaseBranches,
-                     std::vector<std::unordered_map<Addr, int>> &phaseBranchesList);
-
-    /**
-     * @brief Process fetch instruction distributions for a phase
-     *
-     * @param currentPhaseCommittedDist Output vector for committed instruction distribution
-     * @param currentPhaseFetchedDist Output vector for fetched instruction distribution
-     */
-    void processFetchDistributions(std::vector<int> &currentPhaseCommittedDist,
-                                  std::vector<int> &currentPhaseFetchedDist);
-
-    /**
-     * @brief Process BTB entries for a phase
-     *
-     * @return Map of BTB entries and visit counts for the phase
-     */
-    std::unordered_map<Addr, std::pair<BTBEntry, int>> processBTBEntries();
-
-    /**
-     * @brief Process instruction commit and update phase-based statistics
-     *
-     * Called whenever an instruction is committed, updating instruction counts
-     * and phase-based statistics when phase boundaries are reached.
+     * @brief Record FTQ instruction retirement and notify the profiler
      *
      * @param inst Dynamic instruction pointer of the committed instruction
      */
     void notifyInstCommit(const DynInstPtr &inst);
-
-    /**
-     * @brief Tracks mispredictions of indirect branches
-     *
-     * Maps indirect branch addresses to misprediction counts.
-     */
-    std::map<Addr, unsigned> topMispredIndirect;
 
     /**
      * @brief Dump statistics on program exit

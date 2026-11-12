@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "arch/riscv/regs/misc.hh"
+#include "cpu/o3/bpu_update.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/trace/TraceBranchTruth.hh"
@@ -14,6 +15,7 @@
 #include "debug/BTB.hh"
 #include "debug/DecoupleBPHist.hh"
 #include "debug/Override.hh"
+#include "debug/Profiling.hh"
 #include "sim/core.hh"
 
 namespace gem5
@@ -68,7 +70,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       smtFTQThreshold(p.smtFTQThreshold),
       ftq(p.numThreads, p.ftq_size),
       resolveBlockThreshold(p.resolveBlockThreshold),
-      dbpBtbStats(this, p.numStages, p.ftq_size, p.predictWidth, maxInstsNum, p.numThreads)
+      dbpBtbStats(this, p.numStages, p.ftq_size, p.predictWidth, maxInstsNum, p.numThreads),
+      profiler(name(), maxInstsNum)
 {
     panic_if(numPredictingThreads == 0 ||
              numPredictingThreads > numThreads ||
@@ -150,11 +153,6 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
         thread.commitHistory.resize(historyBits, 0);
         thread.squashing = true;
     }
-
-    commitFtqEntryHasInstsVector.resize(maxInstsNum+1, 0);
-    lastPhaseFtqEntryNumCommittedInstDist.resize(maxInstsNum+1, 0);
-    commitFtqEntryFetchedInstsVector.resize(maxInstsNum+1, 0);
-    lastPhaseFtqEntryNumFetchedInstDist.resize(maxInstsNum+1, 0);
 
     registerExitCallback([this]() {
         this->dumpStats();
@@ -585,7 +583,6 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
     threads[tid].validprediction = false;
 
     // Record the first block before attempting the second one.
-    dumpFsq("after insert new target");
     DPRINTF(DecoupleBP, "Inserted fetch target %lu starting at PC %#lx\n",
             ftq.backId(tid), ftq.back(tid).startPC);
 
@@ -715,9 +712,6 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
             control_inst_size);
     }
 
-    if (squash_type == SQUASH_CTRL && static_inst)
-        dumpFsq("Before control squash");
-
     // Remove targets after the squashed one
     ftq.squashAfter(target_id, tid);
 
@@ -841,6 +835,81 @@ DecoupledBPUWithBTB::trapSquash(unsigned target_id,
 
     // Call shared squash handling logic
     handleSquash(tid, target_id, SQUASH_TRAP, inst_pc, inst_pc.instAddr());
+}
+
+void
+DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
+{
+    auto &target = ftq.get(inst->ftqId, inst->threadNumber);
+    target.commitInstNum++;
+    target.commitInstBytes += inst->getInstBytes();
+
+    DPRINTF(Profiling, "notifyInstCommit, inst=%s, commitInstNum=%d\n",
+            inst->staticInst->disassemble(inst->pcState().instAddr()),
+            target.commitInstNum);
+    profiler.recordInstructionCommit();
+}
+
+void
+DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
+{
+    // ---------- Update overall branch statistics ----------
+    if (inst->isUncondCtrl()) {
+        addCfi(UNCOND, mispred);
+    }
+    if (inst->isCondCtrl()) {
+        addCfi(COND, mispred);
+    }
+    if (inst->isReturn()) {
+        addCfi(RETURN, mispred);
+    } else if (inst->isIndirectCtrl()) {
+        addCfi(OTHER, mispred);
+    }
+
+    auto branchClass = classifyBranch(inst);
+    addBranchClassStat(branchClass, mispred);
+
+    // ---------- Find corresponding fetch target entry ----------
+    auto entry = ftq.get(inst->ftqId, inst->threadNumber);
+
+    // Record branch trace if enabled
+    if (enableBranchTrace) {
+        bptrace->write_record(BpTrace(inst->ftqId, entry, inst, mispred));
+    }
+
+    // ---------- Extract branch information ----------
+    const auto outcome = o3::makeBranchOutcome(inst);
+    Addr branchAddr = inst->pcState().instAddr();
+    const auto &rv_pc = inst->pcState().as<RiscvISA::PCState>();
+    Addr targetAddr = rv_pc.npc();
+    Addr fallThruPC = rv_pc.getFallThruPC();
+    // Anchored rule (TraceBranchTruth.hh; guards the b5fefebcef port-gap):
+    // trace metadata wins for target and taken; absent facts keep the
+    // static-decode values.
+    const auto trace_facts = inst->hasTraceBranchInfo()
+                                 ? o3::TraceBranchTruth::factsFrom(*inst)
+                                 : o3::TraceBranchTruth::TraceBranchFacts{};
+    targetAddr = o3::TraceBranchTruth::effectiveTarget(targetAddr, trace_facts);
+    BranchInfo info = makeBranchInfo(
+        branchAddr, targetAddr, inst, inst->staticInst, fallThruPC - branchAddr);
+    bool taken = o3::TraceBranchTruth::effectiveTaken(
+        rv_pc.branching() || inst->isUncondCtrl(), trace_facts);
+
+    // ---------- Process misprediction and update statistics ----------
+    if (profiler.recordBranch(entry, branchAddr, info, taken, mispred)) {
+        dbpBtbStats.staticBranchNum++;
+    }
+
+    // ---------- Update predictor components ----------
+    const PredictionUpdateContext context(entry);
+    for (auto component : components) {
+        component->commitBranch(context, outcome);
+    }
+
+    if (mispred) {
+        commitPredWrongSource(entry, info, taken);
+    }
+
 }
 
 void
