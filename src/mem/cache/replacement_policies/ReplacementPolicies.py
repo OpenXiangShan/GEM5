@@ -178,7 +178,8 @@ class ICPRP(BaseReplacementPolicy):
     pc_entries = Param.Unsigned(0, "PC counters per source; zero uses source only")
     initial_accuracy = Param.Unsigned(8, "Initial accuracy counter value")
     accuracy_threshold = Param.Unsigned(8, "Minimum counter for high priority")
-    high_priority = Param.Unsigned(0, "Accurate prefetch rank, zero means MRU")
+    high_priority = Param.Unsigned(
+        0, "Accurate prefetch insertion rank, zero means MRU")
     low_priority = Param.Int(-1, "Inaccurate prefetch rank; -1 selects LRU")
     epf_entries = Param.Unsigned(256, "EPF capacity; zero disables correction")
     epf_assoc = Param.Unsigned(4, "EPF associativity")

@@ -20,9 +20,10 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--scenario", default="feedback",
                     choices=["feedback", "no-epf", "secure", "demotion",
                              "merged", "superseded", "pc-isolation",
-                             "low-retention"])
+                             "low-retention", "prefetch-recency"])
 parser.add_argument("--pc-entries", type=int, default=0, choices=[0, 64])
 parser.add_argument("--low-priority", type=int, default=-1, choices=[-1, 2])
+parser.add_argument("--high-priority", type=int, default=0, choices=[0, 1])
 args = parser.parse_args()
 
 
@@ -45,10 +46,19 @@ def message(file, value):
 
 # MemCmd indices are from src/mem/packet.hh. Request flags from request.hh.
 # HardPFReq is admitted through the cache hardware prefetch queue.
-READ, PREFETCH = 2, 14
+READ, SOFT_PREFETCH, PREFETCH = 2, 12, 14
 PF_FLAG, SECURE_FLAG = 0x01000000, 0x10000000
 trace = [(READ, line, 0) for line in range(4)]
-if args.scenario == "low-retention":
+if args.scenario == "prefetch-recency":
+    # A configurable insertion rank must not demote the most recent line
+    # when an accurate prefetch hits it.
+    trace += [(READ, 0, 0), (SOFT_PREFETCH, 0, PF_FLAG)]
+    trace += [(READ, line, 0) for line in range(4, 7)]
+    trace += [(READ, 0, 0)]
+    expected = dict(prefetchFills=0, highPriorityFills=0, lowPriorityFills=0,
+                    usefulPrefetches=0, unusedPrefetches=0, epfHits=0,
+                    ignoredPrefetchHits=0)
+elif args.scenario == "low-retention":
     trace += [(PREFETCH, 4, PF_FLAG), (READ, 5, 0), (READ, 4, 0)]
     retained = args.low_priority == 2
     expected = dict(prefetchFills=1, highPriorityFills=0, lowPriorityFills=1,
@@ -131,9 +141,10 @@ system.l2 = Cache(
     prefetcher=PrefetcherForwarder(),
     replacement_policy=ICPRP(
         num_sets=1, num_ways=4, block_size=64, pc_entries=args.pc_entries,
-        low_priority=args.low_priority,
+        high_priority=args.high_priority, low_priority=args.low_priority,
         initial_accuracy={"demotion": 2, "merged": 2, "superseded": 1,
-                          "pc-isolation": 1}.get(args.scenario, 0),
+                          "pc-isolation": 1,
+                          "prefetch-recency": 2}.get(args.scenario, 0),
         accuracy_threshold=2,
         epf_entries=0 if args.scenario == "no-epf" else 8, epf_assoc=4,
         demote_on_first_use=args.scenario == "demotion",
@@ -159,7 +170,7 @@ for name, value in expected.items():
     actual = float(values["system.l2.replacement_policy." + name])
     assert actual == value, (args.scenario, name, actual, value)
 misses = {"secure": 7, "demotion": 6, "merged": 9, "superseded": 5,
-          "pc-isolation": 4,
+          "pc-isolation": 4, "prefetch-recency": 7,
           "low-retention": 5 if args.low_priority == 2 else 6}.get(args.scenario, 12)
 actual_misses = float(values["system.l2.demandMisses::total"])
 assert actual_misses == misses, (args.scenario, "demandMisses", actual_misses, misses)

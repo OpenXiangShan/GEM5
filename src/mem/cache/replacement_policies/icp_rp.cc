@@ -229,7 +229,8 @@ ICP::touch(const std::shared_ptr<ReplacementData> &data, const PacketPtr pkt)
     }
     if (isPrefetch(pkt)) {
         if (accuracy[predictorOf(pkt)] >= threshold) {
-            position(entry, highPriority);
+            // An insertion rank must not demote a more recent line on a hit.
+            position(entry, 0);
         } else {
             ++stats.ignoredPrefetchHits;
         }
