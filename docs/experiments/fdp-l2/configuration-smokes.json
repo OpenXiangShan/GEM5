@@ -1,0 +1,121 @@
+[
+  {
+    "mode": "ideal-classic",
+    "returncode": 0,
+    "command": [
+      "/nfs/home/chenzhuo/prefetchGEM5/build/RISCV/gem5.opt",
+      "--outdir=/tmp/fdp-config-ideal-classic",
+      "/nfs/home/chenzhuo/prefetchGEM5/configs/example/idealkmhv3.py",
+      "--raw-cpt",
+      "--generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin",
+      "--enable-mem-dedup",
+      "--warmup-insts-no-switch=0",
+      "--maxinsts=100000",
+      "--l2-replacement-policy=fdp",
+      "--classic-l2"
+    ],
+    "fdp_objects": [
+      {
+        "type": "FDPRP",
+        "block_bits": "6",
+        "eventq_index": "0",
+        "filter_bits": "12",
+        "interval_evictions": "16384",
+        "num_ways": "8",
+        "pollution_high": "0.25",
+        "pollution_low": "0.005",
+        "tagged_filter": "false"
+      }
+    ]
+  },
+  {
+    "mode": "kmhv3-sliced",
+    "returncode": 0,
+    "command": [
+      "/nfs/home/chenzhuo/prefetchGEM5/build/RISCV/gem5.opt",
+      "--outdir=/tmp/fdp-config-kmhv3-sliced",
+      "/nfs/home/chenzhuo/prefetchGEM5/configs/example/kmhv3.py",
+      "--raw-cpt",
+      "--generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin",
+      "--enable-mem-dedup",
+      "--warmup-insts-no-switch=0",
+      "--maxinsts=100000",
+      "--l2-replacement-policy=fdp"
+    ],
+    "fdp_objects": [
+      {
+        "type": "FDPRP",
+        "block_bits": "6",
+        "eventq_index": "0",
+        "filter_bits": "12",
+        "interval_evictions": "4096",
+        "num_ways": "8",
+        "pollution_high": "0.25",
+        "pollution_low": "0.005",
+        "tagged_filter": "false"
+      },
+      {
+        "type": "FDPRP",
+        "block_bits": "6",
+        "eventq_index": "0",
+        "filter_bits": "12",
+        "interval_evictions": "4096",
+        "num_ways": "8",
+        "pollution_high": "0.25",
+        "pollution_low": "0.005",
+        "tagged_filter": "false"
+      },
+      {
+        "type": "FDPRP",
+        "block_bits": "6",
+        "eventq_index": "0",
+        "filter_bits": "12",
+        "interval_evictions": "4096",
+        "num_ways": "8",
+        "pollution_high": "0.25",
+        "pollution_low": "0.005",
+        "tagged_filter": "false"
+      },
+      {
+        "type": "FDPRP",
+        "block_bits": "6",
+        "eventq_index": "0",
+        "filter_bits": "12",
+        "interval_evictions": "4096",
+        "num_ways": "8",
+        "pollution_high": "0.25",
+        "pollution_low": "0.005",
+        "tagged_filter": "false"
+      }
+    ]
+  },
+  {
+    "mode": "kmhv3-classic",
+    "returncode": 0,
+    "command": [
+      "/nfs/home/chenzhuo/prefetchGEM5/build/RISCV/gem5.opt",
+      "--outdir=/tmp/fdp-config-kmhv3-classic",
+      "/nfs/home/chenzhuo/prefetchGEM5/configs/example/kmhv3.py",
+      "--raw-cpt",
+      "--generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin",
+      "--enable-mem-dedup",
+      "--warmup-insts-no-switch=0",
+      "--maxinsts=100000",
+      "--l2-replacement-policy=fdp",
+      "--classic-l2"
+    ],
+    "fdp_objects": [
+      {
+        "type": "FDPRP",
+        "block_bits": "6",
+        "eventq_index": "0",
+        "filter_bits": "12",
+        "interval_evictions": "16384",
+        "num_ways": "8",
+        "pollution_high": "0.25",
+        "pollution_low": "0.005",
+        "tagged_filter": "false"
+      }
+    ]
+  }
+]
