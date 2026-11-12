@@ -13,7 +13,7 @@ from common.LSQBankConflict import set_lsq_bank_conflict_cache_params
 from common.FSConfig import *
 from common.SysPaths import *
 from common.Benchmarks import *
-from common import Simulation
+from common import PrefetcherConfig, Simulation
 from common.Caches import *
 from common.xiangshan import *
 from util.solver.runtime.integration import maybe_handle_solver_runtime
@@ -161,8 +161,11 @@ def setKmhV3IdealParams(args, system):
                     # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
                     l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
                 l2_prefetcher = l2_wrapper.prefetcher
-            if l2_prefetcher != NULL and hasattr(l2_prefetcher, 'offload_low_accuracy'):
-                l2_prefetcher.offload_low_accuracy = True
+            if l2_prefetcher != NULL:
+                PrefetcherConfig.configure_l2_teacher_student_bop(
+                    l2_prefetcher)
+                if hasattr(l2_prefetcher, 'offload_low_accuracy'):
+                    l2_prefetcher.offload_low_accuracy = True
             system.tol2bus_list[i].forward_latency = 0
             system.tol2bus_list[i].response_latency = 1
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1

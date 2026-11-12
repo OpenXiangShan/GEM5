@@ -497,16 +497,21 @@ def _configure_l2_composite_default(prefetcher):
     prefetcher.enable_cmc = False
     prefetcher.enable_despacito_stream = True
 
+
+def configure_l2_teacher_student_bop(prefetcher):
+    prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,
+                                             enable_adaptoffset=False)
+    prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,
+                                              enable_adaptoffset=False)
+
+
 def _configure_l2_composite_kmh_align(prefetcher):
     # RTL-aligned L2CompositeWithWorker profile.
     prefetcher.enable_cmc = False
     prefetcher.enable_bop = True
     prefetcher.enable_cdp = True
     prefetcher.enable_despacito_stream = False
-    prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,
-                                             enable_adaptoffset=False)
-    prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,
-                                              enable_adaptoffset=False)
+    configure_l2_teacher_student_bop(prefetcher)
 
 
 def _configure_cdp(prefetcher, options):
