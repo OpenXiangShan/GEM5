@@ -33,7 +33,9 @@ rank); an inaccurate prefetch enters at LRU. A first demand hit trains success.
 An unused accurate prefetch trains failure on invalidation. An unused inaccurate
 prefetch enters a bounded, four-way evicted-prefetch filter (EPF): a subsequent
 demand miss trains success; displacement without use trains failure. An address
-is counted at most once per residency. EPF entries include full physical line
+is counted at most once per residency. A new residency retires an unresolved
+EPF record without classifying it as inaccurate; only a true EPF displacement
+trains a failure. `epfSuperseded` records these neutral retirements. EPF entries include full physical line
 addresses and the secure bit; unlike the paper's partial tags this has no tag
 alias false positives. The current composite prefetchers expose source IDs but
 not a uniform stream ID, so source-specific counters replace paper stream IDs.
@@ -82,7 +84,7 @@ The deterministic cache tests run with:
 build/RISCV/gem5.opt -d /tmp/icp-feedback tests/gem5/replacement_policies/icp_trace.py --scenario feedback
 ```
 
-Other scenarios are `no-epf`, `secure`, `demotion`, and `merged`. Hardware-prefetch
+Other scenarios are `no-epf`, `secure`, `demotion`, `merged`, and `superseded`. Hardware-prefetch
 trace packets need XiangShan source metadata; TraceGen initializes default
 metadata for such packets so the tests traverse the existing prefetch queue.
 The first four scenarios were also checked through software-prefetch fills.
@@ -92,3 +94,25 @@ Initial remote screening uses `idealkmhv3.py`,
 `--warmup-insts-no-switch=20000000 --maxinsts=40000000`, distributed default pool
 with 16 jobs/server.
 Full 1.0c validation remains pending. No performance claim yet.
+
+
+## Local performance investigation
+
+The initial implementation at `e52af023fc` is undergoing complete 145-point
+screening from immutable source/binary snapshots. Its mcf/6753 directed test
+(2M warmup, 4M total instructions, same pinned dedup REF) passes difftest but
+shows a regression: IPC LRU 0.776126, XSDRRIP 0.773607, ICP 0.733915. ICP uses
+low-priority insertion for 101,342 of 123,039 prefetch fills, with 1,027 EPF
+corrections and 84,346 EPF displacements. These are one-point diagnostic results,
+not full-suite performance conclusions.
+
+Source inspection found an extra negative-training event when a new prefetch
+superseded an old EPF record. The paper trains a failure on EPF displacement,
+not on re-prefetch alone. A directed sequence reproduces the issue: re-prefetch
+an evicted low-confidence line, consume it, then issue another prefetch. The
+initial implementation incorrectly leaves the last prefetch at low priority.
+The correction retires superseded evidence neutrally and exposes
+`epfSuperseded`. The directed sequence fails before this correction. The
+six behavioral checks pass after the correction; the new sequence fails with
+both the original opt and original Clang fast binaries. A matched Clang fast
+mcf A/B is running to establish the performance impact.

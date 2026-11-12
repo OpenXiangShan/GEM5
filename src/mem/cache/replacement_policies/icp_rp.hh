@@ -85,6 +85,7 @@ class ICP : public Base
         statistics::Scalar unusedPrefetches;
         statistics::Scalar epfHits;
         statistics::Scalar epfReplacements;
+        statistics::Scalar epfSuperseded;
         statistics::Scalar ignoredPrefetchHits;
         statistics::Vector fillsBySource;
         statistics::Vector usefulBySource;

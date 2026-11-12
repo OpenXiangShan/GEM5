@@ -138,10 +138,14 @@ ICP::forget(Addr address, bool secure, bool demand) const
     for (unsigned i = start; i < start + epfAssoc; ++i) {
         auto &ghost = ghosts[i];
         if (ghost.valid && ghost.address == address && ghost.secure == secure) {
-            train(ghost.source, demand);
             if (demand) {
+                train(ghost.source, true);
                 ++stats.epfHits;
                 ++stats.epfHitsBySource[ghost.source];
+            } else {
+                // A new residency makes the old evidence unresolved; it
+                // does not demonstrate that the old prefetch was useless.
+                ++stats.epfSuperseded;
             }
             ghost.valid = false;
             return;
@@ -304,6 +308,7 @@ ICP::ICPStats::ICPStats(statistics::Group *parent)
       ADD_STAT(unusedPrefetches, "Prefetches invalidated before demand use"),
       ADD_STAT(epfHits, "Demand misses to prematurely evicted prefetches"),
       ADD_STAT(epfReplacements, "Unused prefetch records displaced from EPF"),
+      ADD_STAT(epfSuperseded, "Unresolved EPF records retired by a new residency"),
       ADD_STAT(ignoredPrefetchHits, "Low-confidence prefetch hits not promoted"),
       ADD_STAT(fillsBySource, "Prefetch fills by source"),
       ADD_STAT(usefulBySource, "Useful resident prefetches by source"),
