@@ -15,7 +15,11 @@ to FDP; clarification is pending. FDP has a separate active implementation.
   Subsystem Control with a Unified Predictor*. ICS 2012, pp. 267–278.
   DOI: https://doi.org/10.1145/2304576.2304614
   This is the actual insertion-control reference in CRP. Publisher PDF
-  returned HTTP 403; a public author manuscript is still being sought.
+  returned HTTP 403. Public full text was subsequently located at
+  https://www.academia.edu/58343593/Unified_memory_optimizing_architecture
+  Section 3.3, Table 2, and the following RRIP discussion provide the
+  insertion and promotion specification. An actual UMOA PDF download is
+  still unavailable; the 2011 AMPM PDF and original source are local.
 
 ## Source search
 
@@ -46,8 +50,8 @@ to FDP; clarification is pending. FDP has a separate active implementation.
 
 Use the isolated `ampm-l2` worktree, based on `f9649a04ee`, for L2-only
 insertion controls, LRU and XSDRRIP comparisons, and remote manual-perf
-experiments. Policy details and validation will be recorded after the
-paper's mechanism is confirmed.
+experiments. The PA-MAIP insertion/promotion subset is implemented below;
+performance validation is still in progress.
 
 ## Baseline setup validation
 
@@ -71,10 +75,11 @@ Validated on 2026-11-13:
   a performance trend. All four L2 slice policies were verified in config.ini.
   L1D remained TreePLRU and L3 remained LRU in both configurations.
 
-The AMPM/UMOA candidate is still required; no performance improvement has
-been demonstrated. UMOA's 2012 full text and source have not been obtained.
-Unpaywall additionally reports no open-access locations; this is an access
-limitation, not evidence that no implementation exists.
+The PA-MAIP candidate now has source code in this worktree; build and
+behavioral validation are in progress. No performance improvement has
+been demonstrated. UMOA's original source has not been found. Unpaywall
+reported no open-access locations, but the public full-text page above
+subsequently supplied the algorithm specification.
 
 ## Remote experiment ledger
 
@@ -109,3 +114,50 @@ GCBV_REF_SO=/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so \
 
 Use a separate output directory and `--l2-replacement-policy=xsdrrip` for
 the second policy. The checkpoint uses its embedded restorer.
+
+## L2 PA-MAIP implementation
+
+The selected subset is UMOA Section 3.3's map-state insertion and promotion
+policy. The unmodified prefetchers still generate exactly their existing
+requests. This is not a complete MUMSC implementation: IP-Table bypass,
+DRAM scheduling, and whole-system predictor placement are outside scope.
+Table 2's normal-IP insertion column is the implemented starting point.
+
+- Each core has one `AMPMHintTable` shared by all L2 slices: 256 entries,
+  16 ways, 4 KiB zones and 64-byte lines. Four map states distinguish Init,
+  Prefetched, Accessed and Reused (the paper's Accessed*).
+- A prefetch moves Init to Prefetched; its first demand consumption moves
+  to Accessed. A later demand reference moves Accessed to Reused. Prefetch
+  references never manufacture temporal reuse.
+- Requests snapshot the **previous** map state before training. Init and
+  Prefetched insert at RRPV 3; Accessed and Reused insert at RRPV 2.
+  One in every 32 low-priority insertions gets RRPV 2 (a local deterministic
+  BIP counter). Demand fills do not consult future accesses at refill time.
+- Prefetch tag hits do not promote. A per-line unused-prefetch bit suppresses
+  promotion for the first demand hit; later demand hits promote to RRPV 0.
+  A demand merged into an in-flight prefetch consumes that first-use bit
+  directly at fill without falsely promoting the newly inserted block.
+- Repeated lookups of the same request reuse its snapshot. The bounded
+  annotation is owned by `Request`, including its copy/reuse lifecycle;
+  there is no unbounded outstanding-request table in the policy.
+- Writebacks have no demand map hint and use ordinary SRRIP insertion at
+  RRPV 2. Valid victims use RRIP aging; invalid entries win before aging.
+
+Adaptation boundary: the paper observes private-cache references with a
+co-designed AMPM predictor and controls L3. Here the map observes L2 traffic
+and controls L2, as requested. References absorbed by L1 are not visible.
+The request annotation carries two map-state bits; its software owner
+pointer deduplicates cache observation and is not modeled hardware storage.
+No extra modeled latency is added. A lookup probes at most 16 map entries;
+a map replacement clears 64 bounded states; victim selection scans the
+cache ways. Default baseline policies receive no-op callbacks.
+
+Configuration: `--l2-replacement-policy=ampm`. Optional experiment controls
+are `--ampm-map-entries`, `--ampm-map-assoc`, `--ampm-low-insert-period` and
+`--ampm-promote-first-hit` (insertion-only ablation).
+
+Validation plan: targeted state/first-consumption unit tests, rebuilt opt
+binary, unchanged LRU/XSDRRIP smoke statistics with the added no-op hooks,
+PA-MAIP checkpoint difftest and counter checks, then remote full SPEC06
+comparison to the fixed baselines. Regressions will be analyzed with demand
+misses, map-state distributions, insertion RRPV and promotion statistics.

@@ -1584,6 +1584,7 @@ BaseCache::getNextQueueEntry()
             pkt = prefetcher->getPacket();
         }
         if (pkt) {
+            tags->notifyRequest(pkt);
             Addr pf_addr = pkt->getBlockAddr(blkSize);
             PrefetchSourceType pf_type = pkt->req->getXsMetadata().prefetchSource;
             if (tags->findBlock(pf_addr, pkt->isSecure())) {
@@ -1816,6 +1817,9 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
     assert(pkt->isRequest());
 
     assert(blk && blk->isValid());
+    if (blk != tempBlock) {
+        tags->notifyDataUse(blk, pkt);
+    }
     // Occasionally this is not true... if we are a lower-level cache
     // satisfying a string of Read and ReadEx requests from
     // upper-level caches, a Read will mark the block as shared but we

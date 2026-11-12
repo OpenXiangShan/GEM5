@@ -95,6 +95,14 @@ class Base : public SimObject
     virtual void reset(const std::shared_ptr<ReplacementData>&
         replacement_data) const = 0;
 
+    /** Observe a cache request, including a locally generated prefetch. */
+    virtual void notifyAccess(const PacketPtr pkt) {}
+
+    /** Observe data consumed by an MSHR target, without promoting a fill. */
+    virtual void notifyDataUse(
+        const std::shared_ptr<ReplacementData>& replacement_data,
+        const PacketPtr pkt) {}
+
     /**
      * Find replacement victim among candidates.
      *

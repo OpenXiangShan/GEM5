@@ -127,6 +127,7 @@ class BaseSetAssoc : public BaseTags
     CacheBlk* accessBlock(const PacketPtr pkt, Cycles &lat) override
     {
         CacheBlk *blk = findBlock(pkt->getAddr(), pkt->isSecure());
+        replacementPolicy->notifyAccess(pkt);
 
         // Access all tags in parallel, hence one in each way.  The data side
         // either accesses all blocks in parallel, or one block sequentially on
@@ -203,6 +204,16 @@ class BaseSetAssoc : public BaseTags
 
         // Update replacement policy
         replacementPolicy->reset(blk->replacementData, pkt);
+    }
+
+    void notifyRequest(const PacketPtr pkt) override
+    {
+        replacementPolicy->notifyAccess(pkt);
+    }
+
+    void notifyDataUse(CacheBlk *blk, const PacketPtr pkt) override
+    {
+        replacementPolicy->notifyDataUse(blk->replacementData, pkt);
     }
 
     void moveBlock(CacheBlk *src_blk, CacheBlk *dest_blk) override;

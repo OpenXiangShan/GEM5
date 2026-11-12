@@ -161,8 +161,13 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--l2_size", type=str, default="1MB")
     parser.add_argument("--l2_assoc", type=int, default=8)
     parser.add_argument("--l2-replacement-policy", default="default",
-                        choices=["default", "lru", "xsdrrip"],
+                        choices=["default", "lru", "xsdrrip", "ampm"],
                         help="Override KMHv3 L2 replacement after defaults")
+    parser.add_argument("--ampm-map-entries", type=int, default=256)
+    parser.add_argument("--ampm-map-assoc", type=int, default=16)
+    parser.add_argument("--ampm-low-insert-period", type=int, default=32)
+    parser.add_argument("--ampm-promote-first-hit", action="store_true",
+                        help="Disable PA-MAIP's first prefetch-use suppression")
     parser.add_argument("--l2_slices", type=int, default=4)
     parser.add_argument("--classic-l2", action="store_true", default=False,
                         help="use classic L2 cache, instead of RTL aligned L2 cache")

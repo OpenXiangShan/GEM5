@@ -164,3 +164,24 @@ class XSDRRIPRP(BaseReplacementPolicy):
     mode = Param.Int(2, "Mode: 0=SRRIP, 1=BRRIP, 2=DRRIP (Set Dueling)")
     num_sets = Param.Int(0, "Number of sets in the cache (required for DRRIP mode)")
     num_ways = Param.Int(Parent.assoc, "Number of ways in each set")
+
+
+class AMPMHintTable(SimObject):
+    type = 'AMPMHintTable'
+    cxx_class = 'gem5::replacement_policy::AMPMHintTable'
+    cxx_header = 'mem/cache/replacement_policies/pa_maip_rp.hh'
+
+    entries = Param.Unsigned(256, 'Access-map entries shared across L2 slices')
+    assoc = Param.Unsigned(16, 'Access-map table associativity')
+    zone_size = Param.Unsigned(4096, 'Bytes covered by one access map')
+    block_size = Param.Unsigned(64, 'Cache-line bytes')
+
+
+class PAMAIPRP(BaseReplacementPolicy):
+    type = 'PAMAIPRP'
+    cxx_class = 'gem5::replacement_policy::PAMAIP'
+    cxx_header = 'mem/cache/replacement_policies/pa_maip_rp.hh'
+
+    hints = Param.AMPMHintTable('Shared AMPM access-state predictor')
+    low_insert_period = Param.Unsigned(32, 'One long insertion per N distant fills')
+    suppress_first_hit = Param.Bool(True, 'Do not promote first demand use of prefetch')

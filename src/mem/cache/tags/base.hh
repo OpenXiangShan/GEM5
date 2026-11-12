@@ -320,6 +320,12 @@ class BaseTags : public ClockedObject
      */
     virtual CacheBlk* accessBlock(const PacketPtr pkt, Cycles &lat) = 0;
 
+    /** Let replacement policies observe locally generated cache requests. */
+    virtual void notifyRequest(const PacketPtr pkt) {}
+
+    /** Record a use satisfied directly from an MSHR fill. */
+    virtual void notifyDataUse(CacheBlk *blk, const PacketPtr pkt) {}
+
     /**
      * Generate the tag from the given address.
      *

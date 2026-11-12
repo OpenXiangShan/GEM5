@@ -469,6 +469,10 @@ class Request
      */
     Addr _paddr = 0;
 
+    /** Cache insertion hint captured once before access-map training. */
+    const void *_insertionHintOwner = nullptr;
+    uint8_t _insertionHint = 0;
+
     /**
      * The size of the request. This field must be set when vaddr or
      * paddr is written via setVirt() or a phys basec constructor, so it is
@@ -611,7 +615,9 @@ class Request
     }
 
     Request(const Request& other)
-        : _paddr(other._paddr), _size(other._size),
+        : _paddr(other._paddr),
+          _insertionHintOwner(other._insertionHintOwner),
+          _insertionHint(other._insertionHint), _size(other._size),
           _byteEnable(other._byteEnable),
           _requestorId(other._requestorId),
           _flags(other._flags),
@@ -701,6 +707,8 @@ class Request
     setVirt(Addr vaddr, unsigned size, Flags flags, RequestorID id, Addr pc,
             AtomicOpFunctorPtr amo_op=nullptr)
     {
+        _insertionHintOwner = nullptr;
+        _insertionHint = 0;
         _vaddr = vaddr;
         _size = size;
         _requestorId = id;
@@ -1224,6 +1232,23 @@ class Request
         _xsMetadata = xs_metadata;
         pfSource = xs_metadata.prefetchSource;
         pfDepth = xs_metadata.prefetchDepth;
+    }
+
+    bool
+    getInsertionHint(const void *owner, uint8_t &hint) const
+    {
+        if (_insertionHintOwner != owner) {
+            return false;
+        }
+        hint = _insertionHint;
+        return true;
+    }
+
+    void
+    setInsertionHint(const void *owner, uint8_t hint)
+    {
+        _insertionHintOwner = owner;
+        _insertionHint = hint;
     }
 
     bool isStorePFTrain() const { return _flags.isSet(STORE_PF_TRAIN); }
