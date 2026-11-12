@@ -40,6 +40,14 @@ addresses and the secure bit; unlike the paper's partial tags this has no tag
 alias false positives. The current composite prefetchers expose source IDs but
 not a uniform stream ID, so source-specific counters replace paper stream IDs.
 
+On a prefetch tag hit, the incoming source/PC accuracy controls MRU
+promotion independently of the insertion rank. The author source exposes
+this choice through `use-accuracy-prefetch-hit`; its one-core
+`1m-ap-only-aph` configuration enables it, while `1m-ap-only` leaves that
+option disabled. The gem5 experiment therefore includes this explicit
+hit-promotion choice as well as accuracy-based insertion. It does not
+reproduce every author configuration.
+
 Demand hits normally promote to MRU. `--icp-demote-on-first-use` separately enables
 ICP-D's first-use behavior. A fill-completion hook also credits a demand
 merged into an outstanding hardware prefetch exactly once. Training-only requests
@@ -63,7 +71,14 @@ Coherence invalidations also terminate residency and train unused prefetches.
 
 ## Current state
 
-Experimental branch: `icp-l2`, based on `f9649a04ee`.
+Experimental branch: `icp-l2`, based on `f9649a04ee`. The retained implementation
+includes the prefetch-hit recency correction at `6f1545f6c6`; unsuccessful
+prefetch-read-credit experiments have been removed. The best completed
+145-point candidate is PC64 with low rank 4: -0.0627% versus LRU and
++0.2557% versus XSDRRIP. PC64 with low rank 1 is still undergoing full
+screening. These are local ICP results; an ICP Actions run and full-profile
+confirmation remain pending.
+
 The optimized simulator builds successfully. Python syntax, repository style
 checks and `git diff --check` pass. Local CoreMark smoke runs for LRU, XSDRRIP
 and ICP all pass difftest (20k warmup, 200k total instructions) and finish at
@@ -89,17 +104,18 @@ trace packets need XiangShan source metadata; TraceGen initializes default
 metadata for such packets so the tests traverse the existing prefetch queue.
 The first four scenarios were also checked through software-prefetch fills.
 
-Initial remote screening uses `idealkmhv3.py`,
-`spec06-rva23-novec-gcc16-0.3c`, all 145 points, explicit
-`--warmup-insts-no-switch=20000000 --maxinsts=40000000`, distributed default pool
-with 16 jobs/server.
-Full 1.0c validation remains pending. No performance claim yet.
+Matched screening references use `idealkmhv3.py`,
+`spec06-rva23-novec-gcc16-0.3c`, all 145 points, and explicit
+`--warmup-insts-no-switch=20000000 --maxinsts=40000000`. The references ran
+through Actions on the default distributed pool with 16 jobs/server.
+The ICP screens below run locally with 16 workers and identical point lists,
+weights, configuration, and REF. Full 1.0c candidate validation remains pending.
 
 
 ## Local performance investigation
 
-The initial implementation at `e52af023fc` is undergoing complete 145-point
-screening from immutable source/binary snapshots. Its mcf/6753 directed test
+The initial implementation at `e52af023fc` completed all 145 screening points
+from immutable source/binary snapshots. Its mcf/6753 directed test
 (2M warmup, 4M total instructions, same pinned dedup REF) passes difftest but
 shows a regression: IPC LRU 0.776126, XSDRRIP 0.773607, ICP 0.733915. ICP uses
 low-priority insertion for 101,342 of 123,039 prefetch fills, with 1,027 EPF
@@ -114,8 +130,8 @@ initial implementation incorrectly leaves the last prefetch at low priority.
 The correction retires superseded evidence neutrally and exposes
 `epfSuperseded`. The directed sequence fails before this correction. The
 six behavioral checks pass after the correction; the new sequence fails with
-both the original opt and original Clang fast binaries. A matched Clang fast
-mcf A/B is running to establish the performance impact.
+both the original opt and original Clang fast binaries. Full-suite results
+below distinguish the initial implementation from subsequent corrections.
 
 
 ### Optional PC-granularity accuracy predictor
@@ -199,7 +215,7 @@ reproduce the archived total scores. Legacy wrapper-incompatible L2 aliases
 can report zero, so L2 demand analysis uses the `l2_demand` YAML group and raw
 slice counters instead. The normal analysis environment lacks SciPy; a separate
 temporary SciPy installation was used without modifying the shared tool or
-user environment. Full 1.0c confirmation and the ICP remote run remain pending.
+user environment. ICP full-profile confirmation and its remote run remain pending.
 
 
 ### Additional validation and rejected hit-promotion variant
@@ -229,7 +245,7 @@ The branch retains the existing accuracy-based prefetch-hit handling.
 The completed GemsFDTD/43464 candidate point uses the full 20M/40M window.
 Its normalized speed relative to the matched LRU reference changes from
 -7.496% for the initial implementation to -0.241% for PC64/low rank 4. This
-is a point result; aggregate screening remains pending complete coverage.
+is a point result; complete 145-point results are reported below.
 
 ### Full-profile reference audit
 
@@ -254,3 +270,197 @@ Summary rows must be excluded from a second geometric-mean calculation.
 The minimum reported coverage, 0.999743155 for cactusADM, equals that workload's
 weight sum in the original profile; all listed points are present. An ICP
 full-profile result and remote candidate run are still required.
+
+
+### Further full-window retention controls
+
+The `gcc_200/5108` regression persists at 20M warmup/40M total instructions.
+The following controls use that same window, pinned REF, difftest, and cache
+geometry. Positive values indicate normalized speed above the original LRU.
+
+| Configuration | IPC | Speed vs LRU |
+| --- | ---: | ---: |
+| pc64-low1 | 2.206715 | +0.3576% |
+| Always MRU: threshold 0, low rank 0 | 2.198852 | +0.0000% |
+| pc64-low2 | 2.146812 | -2.3667% |
+| pc1024-low4 | 2.132456 | -3.0196% |
+| pc256-low4 | 2.121609 | -3.5129% |
+| pc16-low4 | 2.120124 | -3.5804% |
+| pc0-low4 | 2.106503 | -4.1999% |
+| pc64-low0 | 2.095390 | -4.7053% |
+| PC64, low rank 4 (screening candidate) | 2.112488 | -3.9277% |
+
+At threshold 8, low-confidence prefetch hits retain their previous rank.
+Threshold 0 also promotes these hits. This always-MRU control matches the
+original LRU ticks, instructions, and IPC exactly in both warmup and final
+measurement. The warmup cycle and L2 demand-miss counts also match.
+
+PC64 with low rank 1 is selected for additional full-window mcf and GemsFDTD
+checks. The completed GemsFDTD/65615 result is IPC 5.509482, +0.4978% over
+LRU and +0.3201% over XSDRRIP. An aggregate gain is still unproven.
+
+### Experimental feedback from prefetch reads
+
+The cache clears its prefetched marker when the first read supplies data,
+including a read issued by an upper prefetcher. Demand-only ICP feedback can
+leave its separate unused-prefetch marker set until the line is evicted.
+A prototype `--icp-credit-prefetch-hits` experiment credited a resident
+prefetch once on a prefetch read tag hit. The originating source/PC counter
+received the update. A later demand use received no second credit. The
+existing accuracy rule determined hit promotion after training; the first
+credited use also honored the optional demotion setting.
+
+The replacement callback observes tag matches before permission checks.
+This event is a proxy for application usefulness. A speculative
+prefetch read may still never benefit a CPU demand, so complete workload
+comparisons are needed to judge its value. The prototype retained EPF
+demand-miss correction. It defaulted to disabled and has been removed from
+the retained branch after the full-window controls below.
+
+The initial prototype passed 30 Clang fast packet checks and 12 focused GCC
+opt checks. These
+cover single-use accounting, the originating PC, and demotion interaction.
+The new/old default control on gcc_200/5108 reproduces ticks, instructions,
+IPC, prefetch fill/use counts, and L2 demand misses exactly.
+
+The following diagnostic IPCs all use 2M warmup/4M total instructions:
+
+| Configuration | mcf/6753 | GemsFDTD/65615 | gcc_200/5108 |
+| --- | ---: | ---: | ---: |
+| Credit, source only, low LRU | 0.735247 | 6.311777 | 2.855831 |
+| Credit, PC64, low LRU | 0.738422 | 6.330951 | 2.855831 |
+| Credit, PC64, low rank 4 | 0.772400 | 6.306927 | 2.855831 |
+| Original LRU | 0.776126 | 6.306927 | 2.855831 |
+
+All 13 diagnostic variants and controls completed with difftest. The short
+GCC window is insensitive to these changes. Full 20M/40M results for mcf,
+GemsFDTD, and GCC are reported below; GCC compares low ranks 1 and 4.
+Observed prefetch-hit requests carry PFDepth value 0 in these tests;
+the feedback rule does not require a depth classification.
+
+
+### Completed PC64 rank 4 screening
+
+All 145 points completed without aborts. The scorer uses the matched 0.3c
+weights and validates final 20M instruction blocks after 20M warmup.
+
+| Policy | Execution | Score/GHz |
+| --- | --- | ---: |
+| LRU | Actions run 43269172688 | 24.251478985 |
+| XSDRRIP | Actions run 43269179825 | 24.174476938 |
+| ICP, initial `e52af023fc` | Local frozen snapshot | 23.953828062 |
+| ICP, PC64, low rank 4 | Local frozen snapshot | 24.236283867 |
+
+The candidate is -0.0627% versus LRU and
++0.2557% versus XSDRRIP. It improves on
+XSDRRIP but has not achieved an overall improvement against both references.
+
+| Benchmark | Speed vs LRU |
+| --- | ---: |
+| zeusmp | -0.6915% |
+| omnetpp | -0.5169% |
+| cactusADM | -0.4675% |
+| gcc | -0.4502% |
+| mcf | -0.3700% |
+| gobmk | +0.2956% |
+| bwaves | +0.2414% |
+| xalancbmk | +0.1865% |
+
+The additional PC64 rank 1 mcf/6753 result is IPC 0.743522, -0.3401% versus LRU and
++0.7792% versus XSDRRIP. Together with the GCC and
+GemsFDTD full-window controls, it supports testing rank 1 on all 145 points.
+That new screening uses an independent copy of the same frozen runtime,
+PC64, low rank 1, and the existing feedback rule. A complete comparison
+against both references is required before selecting it.
+
+
+### Completed feedback controls
+
+The following results use 20M warmup/40M total instructions with PC64.
+All eight feedback variants completed with difftest. Positive values indicate
+normalized speed above the matched LRU point:
+
+| Point | Low rank | Prefetch-read credit | Credit plus first-use demotion |
+| --- | ---: | ---: | ---: |
+| gcc_200/5108 | 1 | -1.7983% | -3.0610% |
+| gcc_200/5108 | 4 | -3.6960% | -3.3851% |
+| GemsFDTD/65615 | 4 | +0.6410% | -0.1079% |
+| mcf/6753 | 4 | -0.7528% | -3.3221% |
+
+The demotion combination does not give a consistent gain. A further GCC
+control with corrected hit behavior, high rank 1, low rank 4, PC64, and
+credit enabled also completes with difftest: IPC 2.122438, -3.4752% versus
+LRU and -3.0579% versus XSDRRIP. Moving accurate-prefetch insertion below
+MRU does not resolve the regression. The credit flag, its extra statistics,
+and its packet scenarios are therefore removed from the retained branch.
+The frozen prototype and results remain available locally for reproduction:
+`/tmp/icp-recency-fast` and `/tmp/icp-prefetch-use-high1-full`. The removed
+patch is saved as `/tmp/icp-rejected-prefetch-read-credit.patch`.
+
+### Prefetch hit recency correction
+
+The nonzero `high_priority` setting previously also controlled the position
+assigned on an accurate prefetch hit. With high rank 1, a prefetch hit could
+move a currently MRU line down to rank 1. The setting now controls insertion;
+accurate prefetch hits promote to MRU. The existing rank-1 full screening
+uses high rank 0, where the old and corrected hit updates are identical.
+
+The `prefetch-recency` cache-packet test first demand-touches a line, then
+issues an accurate software-prefetch hit and three conflicting demand fills.
+The old frozen binary reports 8 demand misses instead of the expected 7 at
+high rank 1 in both source-only and PC64 modes. Both high-rank-0 controls pass.
+The corrected implementation passes all 34 Clang fast checks and 16 focused
+GCC opt checks. Earlier high-rank-2 experiments used the previous hit rule;
+their results describe that historical implementation.
+
+The archived prototype uses raw prefetch-hit depth names `depth0` through
+`depth3`, plus `other`, matching the request PFDepth value directly. All
+observed credited hits have value 0; no hierarchy level is inferred from it.
+These diagnostic counters were removed together with the prototype.
+
+A boundary audit checks all 145 points from the initial implementation, the
+PC64 rank-4 candidate, and each reference. All 580 results have separate
+warmup and measurement blocks near 20M instructions, increasing final ticks,
+and the expected instruction-limit exit. Completed points in the ongoing
+rank-1 screening pass the same audit; its total score still awaits coverage.
+
+
+### Requestor-aware regression diagnosis
+
+The L2 `demandMisses::total` vector includes requests from upper-level
+prefetchers in this hierarchy. It must not be presented as a count of CPU
+demand misses alone. Requestor suffixes such as `cpu.data`,
+`cpu.mmu.dtb.walker`, and `cpu.dcache.prefetcher` distinguish these paths.
+The scoring result remains normalized execution time; these counters help
+explain behavior but do not substitute for that result.
+
+For `gcc_cpdecl/1944`, all entries below use the full 20M/40M window:
+
+| Policy | Speed vs LRU | CPU data L2 misses | Upper-prefetcher L2 misses | HardPFReq MSHR misses |
+| --- | ---: | ---: | ---: | ---: |
+| LRU | 0.0000% | 30,566 | 108,536 | 166,684 |
+| ICP PC64, low rank 4 | -0.3676% | 27,569 | 99,060 | 136,313 |
+| ICP PC64, low rank 1 | -1.6703% | 30,001 | 107,405 | 163,408 |
+
+Upper-prefetcher misses sum the `cpu.dcache.prefetcher` and
+`cpu.dcache.prefetcher.lldp` requestors. Hardware-prefetch MSHR misses use
+the separate `HardPFReq.mshrMisses::total` statistic. CPU data misses
+decrease for both ICP settings, while measured execution slows. This
+does not identify a unique cause; prefetch timing and the critical
+miss sequence remain unresolved factors. Rank 1 also inserts 268,821
+prefetches compared with 233,567 for rank 4.
+
+
+### Validation of the retained implementation
+
+After retiring the prefetch-read-credit prototype, GCC opt and Clang 19
+fast both rebuild successfully. Each passes the same 22 cache-packet
+checks: demand and EPF feedback, secure separation, first-use demotion,
+merged demand, superseded records, PC isolation, low-rank retention, and
+the nonzero-high-rank recency regression. Repository style checks for the
+retained policy, parameters, and test script pass, as does the whitespace
+check. The retained runtime is committed at `6f1545f6c6`.
+
+Local build/check manifests are in `/tmp/icp-retained-build-results.json`.
+The older 34/16 check counts above describe the archived credit prototype;
+its removed scenarios do not belong to the retained test set.
