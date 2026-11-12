@@ -171,6 +171,8 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--ampm-low-insert-period", type=int, default=32)
     parser.add_argument("--ampm-promote-first-hit", action="store_true",
                         help="Disable PA-MAIP's first prefetch-use suppression")
+    parser.add_argument("--ampm-protect-demand", action="store_true",
+                        help="Insert demand fills at RRPV 0 in PA-MAIP")
     parser.add_argument("--l2_slices", type=int, default=4)
     parser.add_argument("--classic-l2", action="store_true", default=False,
                         help="use classic L2 cache, instead of RTL aligned L2 cache")

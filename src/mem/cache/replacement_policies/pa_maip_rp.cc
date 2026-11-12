@@ -103,7 +103,8 @@ AMPMHintTable::recordPrefetchHint(uint8_t state)
 
 PAMAIP::PAMAIP(const Params &p)
   : Base(p), hints(p.hints), lowInsertPeriod(p.low_insert_period),
-    suppressFirstHit(p.suppress_first_hit), stats(this)
+    suppressFirstHit(p.suppress_first_hit), protectDemand(p.protect_demand),
+    stats(this)
 {
     fatal_if(!hints || lowInsertPeriod == 0,
              "PA-MAIP requires access maps and a nonzero insertion period");
@@ -122,6 +123,10 @@ PAMAIP::notifyDataUse(const std::shared_ptr<ReplacementData>& replacement_data,
     auto data = std::static_pointer_cast<PAMAIPReplData>(replacement_data);
     if (pkt->isDemand() && !isPrefetch(pkt) && data->consumeDemand()) {
         stats.fillConsumptions++;
+        if (protectDemand) {
+            data->rrpv = 0;
+            stats.protectedDemandFills++;
+        }
     }
 }
 
@@ -189,12 +194,22 @@ PAMAIP::reset(const std::shared_ptr<ReplacementData>& replacement_data,
     }
     // Writeback allocations have no demand instruction/map hint. Retain the
     // ordinary SRRIP insertion level rather than claiming inferred reuse.
+    // Refill packets are responses, which MemCmd::isDemand() excludes.
+    const bool demand_fill = !prefetch &&
+        (pkt->isDemand() || (pkt->isResponse() &&
+                            (pkt->isRead() || pkt->isWrite()))) &&
+        !pkt->req->isCacheMaintenance();
+    const bool protected_fill = protectDemand && demand_fill;
     bool high = !has_hint || pa_maip::highPriority(state);
-    if (!high && ++lowCounter == lowInsertPeriod) {
+    if (!protected_fill && !high && ++lowCounter == lowInsertPeriod) {
         high = true;
         lowCounter = 0;
     }
     data->rrpv = high ? 2 : 3;
+    if (protected_fill) {
+        data->rrpv = 0;
+        stats.protectedDemandFills++;
+    }
     data->valid = true;
     data->unusedPrefetch = prefetch;
     stats.insertions[data->rrpv]++;
@@ -281,7 +296,9 @@ PAMAIP::PolicyStats::PolicyStats(statistics::Group *parent)
     ADD_STAT(fillConsumptions, statistics::units::Count::get(),
              "Prefetch first uses satisfied directly by a fill"),
     ADD_STAT(missingHints, statistics::units::Count::get(),
-             "Fills lacking demand/prefetch hints, including writebacks")
+             "Fills lacking demand/prefetch hints, including writebacks"),
+    ADD_STAT(protectedDemandFills, statistics::units::Count::get(),
+             "Demand fills given immediate reuse priority")
 {
     insertions.init(4);
 }

@@ -186,3 +186,4 @@ class PAMAIPRP(BaseReplacementPolicy):
     hints = Param.AMPMHintTable('Shared AMPM access-state predictor')
     low_insert_period = Param.Unsigned(32, 'One long insertion per N distant fills')
     suppress_first_hit = Param.Bool(True, 'Do not promote first demand use of prefetch')
+    protect_demand = Param.Bool(False, 'Insert demand fills with immediate reuse priority')

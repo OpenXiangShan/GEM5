@@ -91,8 +91,8 @@ machine settings use the configuration defaults.
 
 | Policy | Run | URL | Last verified result |
 | --- | --- | --- | --- |
-| LRU | 43271285986 | https://github.com/OpenXiangShan/GEM5/actions/runs/43271285986 | Created; final result pending |
-| XSDRRIP | 43271296003 | https://github.com/OpenXiangShan/GEM5/actions/runs/43271296003 | Created; final result pending |
+| LRU | 43271285986 | https://github.com/OpenXiangShan/GEM5/actions/runs/43271285986 | Success; overall/GHz 22.96817 |
+| XSDRRIP | 43271296003 | https://github.com/OpenXiangShan/GEM5/actions/runs/43271296003 | Success; overall/GHz 22.91633 |
 
 Only the extra argument differs: `--l2-replacement-policy=lru` versus
 `--l2-replacement-policy=xsdrrip`.
@@ -304,3 +304,75 @@ miss-count improvement alone is insufficient. An insertion-only ablation
 (`--ampm-promote-first-hit`) will separate this effect from demand insertion
 priority. These cold 4M results are mechanism diagnostics, not suite scores.
 Results are archived in `mcf4m-ampm-corrected.json`.
+
+
+## Completed default-prefetcher controls
+
+Both full 1.0c baseline runs completed successfully with 1094 points and
+29 benchmarks. Archived `mcf_6753` configs verify 20M warmup / 40M total,
+1024 sets / 8 ways in each L2 slice, and the intended policy in all slices.
+Official scores were reproduced with the read-only CI tool at
+`/nfs/home/share/gem5_ci/gem5_data_proc/run.py`, with outputs under
+`/tmp/apmp-proc-lru` and `/tmp/apmp-proc-xs`. The preferred personal tool
+path is inaccessible; no shared files were modified.
+
+| Metric per GHz | LRU | XSDRRIP |
+| --- | ---: | ---: |
+| Integer | 21.897064 | 21.911378 |
+| Floating point | 23.755644 | 23.653340 |
+| Overall | 22.968172 | 22.916332 |
+
+XSDRRIP is -0.226% overall relative to LRU; the largest difference is
+milc (-4.40%). These controls use XSComposite, not the real AMPM protocol.
+The default-prefetcher PA-MAIP run 43279634993 remains in progress and
+has a segmentation fault on `cactusADM_16`. It is not a passing performance
+result. A local matched LRU/PA-MAIP reproduction is underway.
+
+## Matched cooperative AMPM screening
+
+Fixed commit `6676dc34048d0248e787f7fa73d13ae3b9fc1c55`, workflow ref
+`ampm-l2`, `idealkmhv3.py`, full benchmark set of
+`spec06-rva23-novec-gcc16-0.3c`, default distributed servers, 32 jobs/server.
+Every run adds `--l1d-hwp-type=AMPMPrefetcher --ampm-hint-source=prefetcher`:
+
+| Policy | Run | Result |
+| --- | --- | --- |
+| LRU | 43288386888 | Created, final result pending |
+| XSDRRIP | 43288394351 | Created, final result pending |
+| Paper PA-MAIP | 43288403317 | Created, final result pending |
+
+## L2 demand-protection experiment
+
+The raw normal-IP rule demotes a first demand fill to RRPV 3. On the cold
+4M mcf diagnostic, replacing all insertion levels by RRPV 2 recovers most
+of its regression, whereas allowing first-use promotion makes it worse.
+The optional `--ampm-protect-demand` inserts demand responses at RRPV 0;
+map-state insertion still controls prefetch fills. A demand merged with
+an in-flight prefetch receives the same protection on consumption at fill.
+First demand tag hits retain the paper rule unless the separate first-hit
+ablation is requested. The option defaults off and adds no predictor state.
+
+The refill path passes responses, so the experiment explicitly recognizes
+ReadResp/WriteResp as demand fills instead of relying on MemCmd::isDemand,
+which lists only requests. `protectedDemandFills` and `insertions::0` verify
+that the option takes effect. The first diagnostic with a request-only
+predicate did not enable demand insertion and is excluded.
+
+| mcf cold 4M variant | IPC |
+| --- | ---: |
+| LRU | 0.828631 |
+| XSDRRIP | 0.821380 |
+| Paper PA-MAIP | 0.771002 |
+| Paper, promote first hit | 0.735215 |
+| All RRPV 2, suppress first use | 0.824147 |
+| All RRPV 2, promote first use | 0.822649 |
+| Demand protection, suppress first use | 0.828722 |
+| Demand protection, promote first use | 0.823462 |
+
+All listed runs exited normally with difftest. The final demand-protection
+run recorded 118261 immediate-priority insertions plus 1034 merged
+prefetch consumptions; all 43 AMPM prefetch fills retained hints. Its IPC
+is +0.011% vs LRU and +0.894% vs XSDRRIP. This diagnoses the L2 adaptation;
+it does not establish a weighted suite gain. The extra demand-protection
+counter and response predicate need broader point validation before use
+in a final performance candidate.

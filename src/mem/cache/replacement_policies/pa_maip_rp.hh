@@ -52,6 +52,7 @@ class PAMAIP : public Base
     AMPMHintTable *const hints;
     const unsigned lowInsertPeriod;
     const bool suppressFirstHit;
+    const bool protectDemand;
     unsigned lowCounter = 0;
     struct PolicyStats : statistics::Group
     {
@@ -65,6 +66,7 @@ class PAMAIP : public Base
         statistics::Scalar promotions;
         statistics::Scalar fillConsumptions;
         statistics::Scalar missingHints;
+        statistics::Scalar protectedDemandFills;
     } stats;
 
   public:

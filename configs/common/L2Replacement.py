@@ -44,7 +44,8 @@ def configure_l2_replacement(args, system):
                 cache.replacement_policy = PAMAIPRP(
                     hints=hints,
                     low_insert_period=args.ampm_low_insert_period,
-                    suppress_first_hit=not args.ampm_promote_first_hit)
+                    suppress_first_hit=not args.ampm_promote_first_hit,
+                    protect_demand=args.ampm_protect_demand)
             else:
                 assoc = int(cache.assoc)
                 block_size = int(system.cache_line_size)
