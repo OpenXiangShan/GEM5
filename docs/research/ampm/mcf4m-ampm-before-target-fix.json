@@ -1,0 +1,43 @@
+{
+  "lru": {
+    "simInsts": 4000001.0,
+    "simTicks": 1607469921.0,
+    "system.cpu.ipc": 0.828631,
+    "hostSeconds": 285.48,
+    "l2.demandMisses::cpu.data": 140443.0,
+    "l2.demandMissLatency::cpu.data": 4113793606.0,
+    "system.cpu.dcache.prefetcher.pfIssued": 42.0,
+    "system.cpu.dcache.prefetcher.pfUseful": 10.0,
+    "l2.cpu_data_avg_miss_ticks": 29291.553199518665
+  },
+  "xsdrrip": {
+    "simInsts": 4000001.0,
+    "simTicks": 1617302079.0,
+    "system.cpu.ipc": 0.823594,
+    "hostSeconds": 187.98,
+    "l2.demandMisses::cpu.data": 160054.0,
+    "l2.demandMissLatency::cpu.data": 4481131554.0,
+    "system.cpu.dcache.prefetcher.pfIssued": 42.0,
+    "system.cpu.dcache.prefetcher.pfUseful": 10.0,
+    "l2.cpu_data_avg_miss_ticks": 27997.62301473253
+  },
+  "ampm": {
+    "simInsts": 4000001.0,
+    "simTicks": 1729363572.0,
+    "system.cpu.ipc": 0.770226,
+    "hostSeconds": 237.05,
+    "l2.demandMisses::cpu.data": 138633.0,
+    "l2.demandMissLatency::cpu.data": 4803168264.0,
+    "l2.prefetchFills": 210592.0,
+    "l2.prefetchHintFills": 42.0,
+    "l2.firstUses": 208389.0,
+    "l2.suppressedFirstUses": 208389.0,
+    "l2.fillConsumptions": 1024.0,
+    "l2.promotions": 1268502.0,
+    "l2.insertions::2": 216428.0,
+    "l2.insertions::3": 133348.0,
+    "system.cpu.dcache.prefetcher.pfIssued": 42.0,
+    "system.cpu.dcache.prefetcher.pfUseful": 10.0,
+    "l2.cpu_data_avg_miss_ticks": 34646.64447858735
+  }
+}

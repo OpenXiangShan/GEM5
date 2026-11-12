@@ -137,6 +137,9 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID req
     }
 
     req->setFlags(Request::PREFETCH);
+    if (insertionHintOwner) {
+        req->setInsertionHint(insertionHintOwner, insertionHint);
+    }
     const PrefetchSourceType safe_pf_src =
         owner->sanitizePfControlSourceType(pf_src);
     req->setXsMetadata(Request::XsMetadata(safe_pf_src, prf_depth));
@@ -1555,6 +1558,8 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
 
     /* Create the packet and find the spot to insert it */
     DeferredPacket dpp(this, new_pfi, 0, priority);
+    dpp.insertionHintOwner = addr_prio.insertionHintOwner;
+    dpp.insertionHint = addr_prio.insertionHint;
     dpp.pfahead = addr_prio.pfahead;
     dpp.pfahead_host = addr_prio.pfahead_host;
     if (dpp.pfahead) {

@@ -1,0 +1,64 @@
+{
+  "protocol": {
+    "checkpoint": "mcf/12886/_12886_0.149435_memory_.zstd",
+    "instructions": 4000000,
+    "warmup": 0,
+    "prefetcher": "AMPMPrefetcher",
+    "hint_source": "prefetcher",
+    "target_predicate": "AM_INIT",
+    "difftest": "normal-dedup, enabled"
+  },
+  "results": {
+    "lru": {
+      "simInsts": 4000001.0,
+      "simTicks": 1607469921.0,
+      "system.cpu.ipc": 0.828631,
+      "hostSeconds": 163.86,
+      "system.cpu.dcache.prefetcher.pfIssued": 43.0,
+      "system.cpu.dcache.prefetcher.pfUseful": 10.0,
+      "l2.demandMisses::cpu.data": 140443.0,
+      "l2.demandMissLatency::cpu.data": 4113793606.0,
+      "l2.demandMisses::total": 142039.0,
+      "l2.prefetcher.pfIssued": 0.0,
+      "l2.prefetcher.pfUseful": 0.0,
+      "l2.cpu_data_avg_miss_ticks": 29291.553199518665
+    },
+    "xsdrrip": {
+      "simInsts": 4000001.0,
+      "simTicks": 1621660716.0,
+      "system.cpu.ipc": 0.82138,
+      "hostSeconds": 138.47,
+      "system.cpu.dcache.prefetcher.pfIssued": 43.0,
+      "system.cpu.dcache.prefetcher.pfUseful": 10.0,
+      "l2.demandMisses::cpu.data": 160257.0,
+      "l2.demandMissLatency::cpu.data": 4476212840.0,
+      "l2.demandMisses::total": 162228.0,
+      "l2.prefetcher.pfIssued": 0.0,
+      "l2.prefetcher.pfUseful": 0.0,
+      "l2.cpu_data_avg_miss_ticks": 27931.465333807573
+    },
+    "ampm": {
+      "simInsts": 4000009.0,
+      "simTicks": 1727626644.0,
+      "system.cpu.ipc": 0.771002,
+      "hostSeconds": 152.19,
+      "system.cpu.dcache.prefetcher.pfIssued": 43.0,
+      "system.cpu.dcache.prefetcher.pfUseful": 10.0,
+      "l2.demandMisses::cpu.data": 139807.0,
+      "l2.demandMissLatency::cpu.data": 4852200204.0,
+      "l2.demandMisses::total": 141389.0,
+      "l2.prefetcher.pfIssued": 0.0,
+      "l2.prefetcher.pfUseful": 0.0,
+      "l2.prefetchFills": 209401.0,
+      "l2.prefetchHintFills": 43.0,
+      "l2.firstUses": 207177.0,
+      "l2.suppressedFirstUses": 207177.0,
+      "l2.fillConsumptions": 1110.0,
+      "l2.promotions": 1268995.0,
+      "l2.insertions::2": 215266.0,
+      "l2.insertions::3": 134406.0,
+      "l2.missingHints": 210932.0,
+      "l2.cpu_data_avg_miss_ticks": 34706.41816218072
+    }
+  }
+}

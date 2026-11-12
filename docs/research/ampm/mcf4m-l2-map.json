@@ -1,0 +1,43 @@
+{
+  "lru": {
+    "simTicks": 2217745701.0,
+    "simInsts": 4000009.0,
+    "system.cpu.ipc": 0.600611,
+    "system.cpu.numCycles": 6659898.0,
+    "l2.demandMisses::total": 249674.0,
+    "l2.overallMisses::total": 249674.0,
+    "l2.cpu_data_misses": 186326
+  },
+  "xsdrrip": {
+    "simTicks": 2207842947.0,
+    "simInsts": 4000009.0,
+    "system.cpu.ipc": 0.603305,
+    "system.cpu.numCycles": 6630160.0,
+    "l2.demandMisses::total": 247161.0,
+    "l2.overallMisses::total": 247161.0,
+    "l2.cpu_data_misses": 178463
+  },
+  "ampm": {
+    "simTicks": 2216180601.0,
+    "simInsts": 4000001.0,
+    "system.cpu.ipc": 0.601034,
+    "system.cpu.numCycles": 6655198.0,
+    "l2.demandMisses::total": 255653.0,
+    "l2.overallMisses::total": 255653.0,
+    "l2.prefetchFills": 327526.0,
+    "l2.firstUses": 89818.0,
+    "l2.suppressedFirstUses": 89818.0,
+    "l2.fillConsumptions": 34912.0,
+    "l2.promotions": 1603573.0,
+    "l2.missingHints": 41.0,
+    "system.l2_ampm_hints0.demandStates::init": 1107912.0,
+    "system.l2_ampm_hints0.prefetchStates::init": 931229.0,
+    "system.l2_ampm_hints0.demandStates::prefetched": 73509.0,
+    "system.l2_ampm_hints0.prefetchStates::prefetched": 91325.0,
+    "system.l2_ampm_hints0.demandStates::accessed": 70053.0,
+    "system.l2_ampm_hints0.prefetchStates::accessed": 29166.0,
+    "system.l2_ampm_hints0.demandStates::reused": 609590.0,
+    "system.l2_ampm_hints0.prefetchStates::reused": 0.0,
+    "l2.cpu_data_misses": 165764
+  }
+}

@@ -76,6 +76,8 @@ class Queued : public Base
         int depth=0;
         PrefetchSourceType pfSource;
         PFTriggerInfo pf_trigger_info{};
+        const void *insertionHintOwner = nullptr;
+        uint8_t insertionHint = 0;
         PrefetchCmd(Addr a, int32_t p) : addr(a), priority(p), isVA(true), isBOP(false)
         {
             panic("PrefetchCmd: no source specified");
@@ -115,6 +117,8 @@ class Queued : public Base
         RequestPtr translationRequest;
         ThreadContext *tc;
         bool ongoingTranslation;
+        const void *insertionHintOwner = nullptr;
+        uint8_t insertionHint = 0;
 
         /**
          * Constructor

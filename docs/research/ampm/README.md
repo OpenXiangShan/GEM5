@@ -161,3 +161,146 @@ binary, unchanged LRU/XSDRRIP smoke statistics with the added no-op hooks,
 PA-MAIP checkpoint difftest and counter checks, then remote full SPEC06
 comparison to the fixed baselines. Regressions will be analyzed with demand
 misses, map-state distributions, insertion RRPV and promotion statistics.
+
+## Initial L2-map validation (dd595ca9d8)
+
+- Seven access-map/line-state tests and three actual `Request` ownership,
+  copying and virtual-request-reuse tests passed.
+- All three policies passed the 100K-instruction DRAMSim3/NEMU smoke. With
+  the new no-op observation hooks, **all** common non-host statistics match
+  the previous LRU/XSDRRIP outputs: 11,224 / 11,244 common statistics.
+- The first SPEC mcf attempt used the old shared `ref/normal` library and
+  failed at the embedded restorer's `mstateen0` instruction for all three
+  policies, at the same tick. Exclude these attempts from performance data.
+- Corrected mcf tests use the checked release returned by
+  `python3 util/nemu_ref/resolve.py normal-dedup`, namely release
+  `af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc`, with `--enable-mem-dedup`.
+  All three exited normally with difftest enabled.
+
+Local point: `mcf/12886/_12886_0.149435_memory_.zstd`, 4M total instructions,
+zero warmup. This is a cold short smoke, **not** a weighted SPEC result.
+
+| Policy | IPC | L2 read/write-command misses (includes upstream PF) | simTicks |
+| --- | ---: | ---: | ---: |
+| LRU | 0.600611 | 249674 | 2217745701 |
+| XSDRRIP | 0.603305 | 247161 | 2207842947 |
+| L2-map PA-MAIP | 0.601034 | 255653 | 2216180601 |
+
+PA-MAIP is about +0.07% IPC versus LRU and -0.38% versus XSDRRIP here.
+Instruction-limit overshoot differs by eight instructions; compare IPC,
+not an exact instruction-matched runtime. The generic `demandMisses::total`
+formula includes upstream prefetchers' ReadSharedReq commands. Splitting
+by requestor gives genuine CPU-data misses of 186326 (LRU), 178463
+(XSDRRIP), and 165764 (PA-MAIP). Thus CPU-data misses decrease by 7.1%
+versus XSDRRIP while IPC is slightly worse. The aggregate increase is
+from prefetch requests; increased prefetch traffic, miss latency and
+resource waits need investigation before attributing a cause.
+
+Full default-prefetcher PA-MAIP control run:
+https://github.com/OpenXiangShan/GEM5/actions/runs/43279634993
+Tested commit: `dd595ca9d8e268cf4d8a2c0e83fd4cf7047095f9`.
+Same full SPEC06 configuration as runs 43271285986 / 43271296003; only
+`--l2-replacement-policy=ampm` differs. Final status/score pending.
+
+## Real AMPM state provider
+
+The L2-map reconstruction above is kept as a separate control. To exercise
+the paper's actual cooperative information source, an optional receiver is
+attached to the existing AMPM prefetcher. It reads the real map before
+training a demand or changing a target to Prefetched. Demand requests and
+both physical/translated prefetch queue entries carry that snapshot to L2.
+The receiver allocates no second access-map table in this mode.
+
+Use `--ampm-hint-source=prefetcher --l1d-hwp-type=AMPMPrefetcher` together
+with each of `--l2-replacement-policy=lru|xsdrrip|ampm`. All three must use
+identical AMPM parameters. The helper sets 256 maps, 16 ways and 4 KiB zones,
+physical-address training on all data accesses, and unchanged degree-control
+thresholds. These runs require their own baselines; default XSComposite
+baselines cannot establish a cooperative-AMPM speedup.
+
+The existing AMPM has three stored states. For Table 2's selected normal-IP
+column, Accessed and Accessed* have the same insertion priority, so the
+three-state provider is sufficient. An earlier demand use absorbed by L1
+can clear the shared cache's otherwise stale unused-prefetch indication.
+Unannotated instruction-cache/page-table traffic falls back to ordinary
+SRRIP insertion rather than inventing predictor knowledge.
+
+Required compatibility fixes for this AMPM path are applied identically in
+all comparisons: tag AMPM candidates with a distinct source (the old
+source-less constructor panics), do not wrap an unsigned degree below zero,
+and honor a zero candidate budget. These are controller correctness fixes,
+not parameter tuning to compensate for replacement regressions.
+
+A `prefetchHintFills` counter checks that issued prefetch metadata survives
+the queue/translation path. In external mode, `prefetchStates` counts
+candidate hints before queue filtering; `prefetchFills` counts actual fills.
+
+Real-provider validation so far:
+
+- `gem5.fast` build and all ten unit tests passed.
+- Three 100K-instruction gcb_test.zstd smokes passed with the pinned REF.
+  Configs confirm identical AMPM geometry and training in all three cases.
+- A configuration mismatch in the legacy `MemorySize` entry-count parameter
+  was fixed with string conversion before successful runs.
+- The generic configuration enabled PFRequestBuffer for AMPM, but AMPM
+  returns vector candidates. Disable **only AMPM's** buffer mode in all
+  three controls. Otherwise it generates hints but issues no prefetches.
+- After this interface fix, 13 AMPM prefetches reached the issue boundary;
+  all 13 corresponding L2 PA-MAIP fills retained their map-state hints.
+  Other L2 worker prefetches remain unannotated and use the documented
+  ordinary fallback.
+- Real-provider 4M-instruction mcf comparisons passed functional checks;
+  the corrected results are below. Full coupled SPEC06 runs are pending.
+
+Default-prefetcher baseline archives were identified from their actual
+`metadata.txt` workflow_run_id fields while the jobs were live (the normal
+CI log locator returned HTTP 404 for unfinished logs):
+
+- LRU 43271285986:
+  `/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-1.0c/20261113_014415_a61859f355_idealkmhv3_run2118`
+- XSDRRIP 43271296003:
+  `/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-1.0c/20261113_014354_a61859f355_idealkmhv3_run2119`
+
+Both list 1094 checkpoints and the same pinned normal-dedup REF. Many
+stats files exist, but no final score/conclusion was available at the last
+check. File existence alone does not prove that a point completed.
+
+### AMPM monotonic-state correction before final controls
+
+Further inspection of JILP 2011 Section 3.1 and the downloaded author
+source (`MemoryAccessMapTable::IsCandidate`) confirms that only Init
+positions may generate prefetches. The repository's prior `tgt != AM_INVALID`
+test also selected Accessed/Prefetched positions, then rewrote their states
+to Prefetched. This violates the paper's unidirectional state transitions
+and corrupts the first-use information consumed by PA-MAIP.
+
+The provider now requires `tgt == AM_INIT`, and asserts that only Init can
+transition to Prefetched. This prerequisite is identical in every final
+cooperative-AMPM control; it is not a replacement-only speedup claim.
+
+Before correcting this legacy target predicate, the 4M mcf test passed
+functional checks but PA-MAIP IPC was 0.770226 versus 0.828631 LRU and
+0.823594 XSDRRIP. AMPM issued only 42 prefetches; all 42 carried hints to
+L2. PA-MAIP's genuine CPU-data misses were 138633 versus 160054 XSDRRIP,
+but mean L2 CPU-data miss latency rose to 34647 ticks versus 27998.
+These are diagnostic pre-correction results, not the final AMPM controls.
+
+The corrected three-policy mcf test uses output prefix
+`/tmp/apmp-coupled-correct-mcf4m-`. All three exited normally with difftest
+enabled. All candidate hints were Init; none were Prefetched or Accessed.
+AMPM issued 43 prefetches and all 43 PA-MAIP prefetch fills retained hints.
+
+| Policy | IPC | L2 CPU-data misses | Mean L2 CPU-data miss ticks |
+| --- | ---: | ---: | ---: |
+| LRU | 0.828631 | 140443 | 29292 |
+| XSDRRIP | 0.821380 | 160257 | 27931 |
+| PA-MAIP | 0.771002 | 139807 | 34706 |
+
+The state correction does not remove the regression: PA-MAIP is -6.95%
+versus LRU and -6.13% versus XSDRRIP. PA-MAIP suppresses promotion for
+207177 first uses, predominantly of other L2 worker prefetches without an
+AMPM hint. Lower miss count is accompanied by higher miss latency; a
+miss-count improvement alone is insufficient. An insertion-only ablation
+(`--ampm-promote-first-hit`) will separate this effect from demand insertion
+priority. These cold 4M results are mechanism diagnostics, not suite scores.
+Results are archived in `mcf4m-ampm-corrected.json`.

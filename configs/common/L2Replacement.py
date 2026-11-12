@@ -1,6 +1,8 @@
 """Apply replacement experiments only to the configured L2 caches."""
 
-from m5.objects import AMPMHintTable, LRURP, PAMAIPRP, XSDRRIPRP
+from m5.objects import (
+    AMPMHintTable, AMPMPrefetcher, LRURP, PAMAIPRP, XSDRRIPRP,
+)
 
 
 def configure_l2_replacement(args, system):
@@ -10,11 +12,31 @@ def configure_l2_replacement(args, system):
         caches = ([system.l2_caches[i]] if args.classic_l2 else
                   [s.inner_cache for s in system.l2_wrappers[i].slices])
         hints = None
-        if args.l2_replacement_policy == "ampm":
+        external = args.ampm_hint_source == "prefetcher"
+        if args.l2_replacement_policy == "ampm" or external:
             hints = AMPMHintTable(entries=args.ampm_map_entries,
                                   assoc=args.ampm_map_assoc,
-                                  block_size=int(system.cache_line_size))
+                                  block_size=int(system.cache_line_size),
+                                  external_hints=external)
             setattr(system, "l2_ampm_hints%d" % i, hints)
+            if external:
+                prefetcher = system.cpu[i].dcache.prefetcher
+                if not isinstance(prefetcher, AMPMPrefetcher):
+                    raise ValueError("AMPM hints require "
+                                     "--l1d-hwp-type=AMPMPrefetcher")
+                # AMPM returns vector candidates; it does not fill PFRequestBuffer.
+                prefetcher.use_pf_buffer = False
+                prefetcher.use_virtual_addresses = False
+                prefetcher.prefetch_on_access = True
+                prefetcher.prefetch_on_pf_hit = False
+                prefetcher.prefetch_train = False
+                prefetcher.on_inst = False
+                prefetcher.on_miss = False
+                prefetcher.on_data = True
+                prefetcher.ampm.hot_zone_size = "4KiB"
+                prefetcher.ampm.access_map_table_entries = str(args.ampm_map_entries)
+                prefetcher.ampm.access_map_table_assoc = args.ampm_map_assoc
+                prefetcher.ampm.replacement_hints = hints
         for cache in caches:
             if args.l2_replacement_policy == "lru":
                 cache.replacement_policy = LRURP()

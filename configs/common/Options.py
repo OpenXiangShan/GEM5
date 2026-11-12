@@ -163,6 +163,9 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--l2-replacement-policy", default="default",
                         choices=["default", "lru", "xsdrrip", "ampm"],
                         help="Override KMHv3 L2 replacement after defaults")
+    parser.add_argument("--ampm-hint-source", default="cache",
+                        choices=["cache", "prefetcher"],
+                        help="Use L2 history or the original L1D AMPM map")
     parser.add_argument("--ampm-map-entries", type=int, default=256)
     parser.add_argument("--ampm-map-assoc", type=int, default=16)
     parser.add_argument("--ampm-low-insert-period", type=int, default=32)

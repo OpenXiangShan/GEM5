@@ -49,6 +49,11 @@ namespace gem5
 struct AccessMapPatternMatchingParams;
 struct AMPMPrefetcherParams;
 
+namespace replacement_policy
+{
+class AMPMHintTable;
+}
+
 GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
@@ -57,6 +62,7 @@ class AccessMapPatternMatching : public ClockedObject
 {
     /** Cacheline size used by the prefetcher using this object */
     const unsigned blkSize;
+    replacement_policy::AMPMHintTable *const replacementHints;
     /** Limit the stride checking to -limitStride/+limitStride */
     const unsigned limitStride;
     /** Maximum number of prefetch generated */
@@ -153,7 +159,7 @@ class AccessMapPatternMatching : public ClockedObject
         enum AccessMapState s     = states[current + stride];
         enum AccessMapState s2    = states[current + 2 * stride];
         enum AccessMapState s2_p1 = states[current + 2 * stride + 1];
-        return (tgt != AM_INVALID &&
+        return (tgt == AM_INIT &&
                 ((s == AM_ACCESS && s2 == AM_ACCESS) ||
                 (s == AM_ACCESS && s2_p1 == AM_ACCESS)));
     }
@@ -185,11 +191,16 @@ class AccessMapPatternMatching : public ClockedObject
     void processEpochEvent();
     EventFunctionWrapper epochEvent;
 
+    void addCandidate(std::vector<Queued::AddrPriority> &addresses, Addr address,
+                      AccessMapState previous);
+
   public:
     AccessMapPatternMatching(const AccessMapPatternMatchingParams &p);
     ~AccessMapPatternMatching() = default;
 
     void startup() override;
+    void captureReplacementHint(const PacketPtr pkt,
+                                const Base::PrefetchInfo &pfi);
     void calculatePrefetch(const Base::PrefetchInfo &pfi,
         std::vector<Queued::AddrPriority> &addresses);
 };
@@ -201,6 +212,7 @@ class AMPM : public Queued
     AMPM(const AMPMPrefetcherParams &p);
     ~AMPM() = default;
 
+    void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
     void calculatePrefetch(const PrefetchInfo &pfi,
                            std::vector<AddrPriority> &addresses) override;
 };

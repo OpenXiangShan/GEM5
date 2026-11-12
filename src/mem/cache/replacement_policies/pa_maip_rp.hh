@@ -22,7 +22,8 @@ namespace replacement_policy
 class AMPMHintTable : public SimObject
 {
   private:
-    pa_maip::AccessMap maps;
+    std::unique_ptr<pa_maip::AccessMap> maps;
+    const bool externalHints;
     struct HintStats : statistics::Group
     {
         explicit HintStats(statistics::Group *parent);
@@ -34,6 +35,9 @@ class AMPMHintTable : public SimObject
     using Params = AMPMHintTableParams;
     explicit AMPMHintTable(const Params &p);
     void observe(const PacketPtr pkt);
+    void capture(const PacketPtr pkt, uint8_t state);
+    void recordPrefetchHint(uint8_t state);
+    bool isExternal() const { return externalHints; }
     bool getHint(const PacketPtr pkt, pa_maip::State &state) const;
 };
 
@@ -54,6 +58,7 @@ class PAMAIP : public Base
         explicit PolicyStats(statistics::Group *parent);
         statistics::Vector insertions;
         statistics::Scalar prefetchFills;
+        statistics::Scalar prefetchHintFills;
         statistics::Scalar firstUses;
         statistics::Scalar suppressedFirstUses;
         statistics::Scalar prefetchHits;

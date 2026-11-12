@@ -30,6 +30,7 @@
 
 #include "debug/HWPrefetch.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
+#include "mem/cache/replacement_policies/pa_maip_rp.hh"
 #include "params/AMPMPrefetcher.hh"
 #include "params/AccessMapPatternMatching.hh"
 
@@ -42,7 +43,8 @@ namespace prefetch
 
 AccessMapPatternMatching::AccessMapPatternMatching(
     const AccessMapPatternMatchingParams &p)
-    : ClockedObject(p), blkSize(p.block_size), limitStride(p.limit_stride),
+    : ClockedObject(p), blkSize(p.block_size),
+      replacementHints(p.replacement_hints), limitStride(p.limit_stride),
       startDegree(p.start_degree), hotZoneSize(p.hot_zone_size),
       highCoverageThreshold(p.high_coverage_threshold),
       lowCoverageThreshold(p.low_coverage_threshold),
@@ -94,7 +96,9 @@ AccessMapPatternMatching::processEpochEvent()
                 cache_hit_ratio > highCacheHitThreshold)) ||
                (prefetch_accuracy < lowAccuracyThreshold &&
                 cache_hit_ratio > highCacheHitThreshold)) {
-        usefulDegree -= 1;
+        if (usefulDegree > 0) {
+            usefulDegree -= 1;
+        }
     }
     degree = std::min((unsigned) memory_bandwidth, usefulDegree);
     // reset epoch stats
@@ -125,6 +129,8 @@ AccessMapPatternMatching::setEntryState(AccessMapEntry &entry,
     Addr block, enum AccessMapState state)
 {
     enum AccessMapState old = entry.states[block];
+    // AMPM's map transitions are unidirectional: only Init can be prefetched.
+    assert(state != AM_PREFETCH || old == AM_INIT);
     entry.states[block] = state;
 
     //do not update stats when initializing
@@ -156,6 +162,34 @@ AccessMapPatternMatching::setEntryState(AccessMapEntry &entry,
 }
 
 void
+AccessMapPatternMatching::captureReplacementHint(
+    const PacketPtr pkt, const Base::PrefetchInfo &pfi)
+{
+    if (!replacementHints || pkt->req->isPrefetch() || !pkt->isDemand()) {
+        return;
+    }
+    const Addr zone = pfi.getAddr() / hotZoneSize;
+    const unsigned offset = (pfi.getAddr() % hotZoneSize) / blkSize;
+    const auto entry = accessMapTable.findEntry(zone, pfi.isSecure());
+    const uint8_t state = entry ? entry->states[offset] : AM_INIT;
+    replacementHints->capture(pkt, state);
+}
+
+void
+AccessMapPatternMatching::addCandidate(
+    std::vector<Queued::AddrPriority> &addresses, Addr address,
+    AccessMapState previous)
+{
+    Queued::AddrPriority candidate(address, 0, PrefetchSourceType::AMPM);
+    if (replacementHints) {
+        candidate.insertionHintOwner = replacementHints;
+        candidate.insertionHint = previous;
+        replacementHints->recordPrefetchHint(previous);
+    }
+    addresses.push_back(candidate);
+}
+
+void
 AccessMapPatternMatching::calculatePrefetch(const Base::PrefetchInfo &pfi,
     std::vector<Queued::AddrPriority> &addresses)
 {
@@ -180,6 +214,10 @@ AccessMapPatternMatching::calculatePrefetch(const Base::PrefetchInfo &pfi,
 
     //Mark the current access as Accessed
     setEntryState(*am_entry_curr, current_block, AM_ACCESS);
+
+    if (degree == 0) {
+        return;
+    }
 
     /**
      * Create a contiguous copy of the 3 entries states.
@@ -210,21 +248,24 @@ AccessMapPatternMatching::calculatePrefetch(const Base::PrefetchInfo &pfi,
         if (checkCandidate(states, states_current_block, stride)) {
             // candidate found, current_block - stride
             Addr pf_addr;
+            AccessMapState previous;
             if (stride > current_block) {
                 // The index (current_block - stride) falls in the range of
                 // the previous zone (am_entry_prev), adjust the address
                 // accordingly
                 Addr blk = states_current_block - stride;
                 pf_addr = (am_addr - 1) * hotZoneSize + blk * blkSize;
+                previous = am_entry_prev->states[blk];
                 setEntryState(*am_entry_prev, blk, AM_PREFETCH);
             } else {
                 // The index (current_block - stride) falls within
                 // am_entry_curr
                 Addr blk = current_block - stride;
                 pf_addr = am_addr * hotZoneSize + blk * blkSize;
+                previous = am_entry_curr->states[blk];
                 setEntryState(*am_entry_curr, blk, AM_PREFETCH);
             }
-            addresses.push_back(Queued::AddrPriority(pf_addr, 0));
+            addCandidate(addresses, pf_addr, previous);
             if (addresses.size() == degree) {
                 break;
             }
@@ -234,21 +275,24 @@ AccessMapPatternMatching::calculatePrefetch(const Base::PrefetchInfo &pfi,
         if (checkCandidate(states, states_current_block, -stride)) {
             // candidate found, current_block + stride
             Addr pf_addr;
+            AccessMapState previous;
             if (current_block + stride >= lines_per_zone) {
                 // The index (current_block + stride) falls in the range of
                 // the next zone (am_entry_next), adjust the address
                 // accordingly
                 Addr blk = (states_current_block + stride) % lines_per_zone;
                 pf_addr = (am_addr + 1) * hotZoneSize + blk * blkSize;
+                previous = am_entry_next->states[blk];
                 setEntryState(*am_entry_next, blk, AM_PREFETCH);
             } else {
                 // The index (current_block + stride) falls within
                 // am_entry_curr
                 Addr blk = current_block + stride;
                 pf_addr = am_addr * hotZoneSize + blk * blkSize;
+                previous = am_entry_curr->states[blk];
                 setEntryState(*am_entry_curr, blk, AM_PREFETCH);
             }
-            addresses.push_back(Queued::AddrPriority(pf_addr, 0));
+            addCandidate(addresses, pf_addr, previous);
             if (addresses.size() == degree) {
                 break;
             }
@@ -259,6 +303,13 @@ AccessMapPatternMatching::calculatePrefetch(const Base::PrefetchInfo &pfi,
 AMPM::AMPM(const AMPMPrefetcherParams &p)
   : Queued(p), ampm(*p.ampm)
 {
+}
+
+void
+AMPM::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
+{
+    ampm.captureReplacementHint(pkt, pfi);
+    Queued::notify(pkt, pfi);
 }
 
 void

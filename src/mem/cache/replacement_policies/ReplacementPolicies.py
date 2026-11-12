@@ -175,6 +175,7 @@ class AMPMHintTable(SimObject):
     assoc = Param.Unsigned(16, 'Access-map table associativity')
     zone_size = Param.Unsigned(4096, 'Bytes covered by one access map')
     block_size = Param.Unsigned(64, 'Cache-line bytes')
+    external_hints = Param.Bool(False, 'Receive states from the AMPM prefetcher')
 
 
 class PAMAIPRP(BaseReplacementPolicy):

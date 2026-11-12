@@ -712,6 +712,8 @@ class AccessMapPatternMatching(ClockedObject):
     epoch_cycles = Param.Cycles(256000, "Cycles in an epoch period")
     offchip_memory_latency = Param.Latency("30ns",
         "Memory latency used to compute the required memory bandwidth")
+    replacement_hints = Param.AMPMHintTable(NULL,
+        "Optional PA-MAIP receiver for pre-access map states")
 
 class AMPMPrefetcher(QueuedPrefetcher):
     type = 'AMPMPrefetcher'

@@ -39,9 +39,12 @@ checkedEntries(const AMPMHintTableParams &p)
 } // anonymous namespace
 
 AMPMHintTable::AMPMHintTable(const Params &p)
-  : SimObject(p), maps(checkedEntries(p), p.assoc, p.zone_size, p.block_size),
-    stats(this)
+  : SimObject(p),
+    maps(p.external_hints ? nullptr : std::make_unique<pa_maip::AccessMap>(
+        checkedEntries(p), p.assoc, p.zone_size, p.block_size)),
+    externalHints(p.external_hints), stats(this)
 {
+    checkedEntries(p);
 }
 
 bool
@@ -71,9 +74,31 @@ AMPMHintTable::observe(const PacketPtr pkt)
     if (getHint(pkt, state)) {
         return;
     }
-    state = maps.access(pkt->getAddr(), pkt->isSecure(), prefetch);
+    if (externalHints) {
+        // Instruction-cache and page-table traffic has no AMPM data hint.
+        // Do not invent an access-map state for these requests.
+        return;
+    }
+    capture(pkt, maps->access(pkt->getAddr(), pkt->isSecure(), prefetch));
+}
+
+void
+AMPMHintTable::capture(const PacketPtr pkt, uint8_t state)
+{
+    pa_maip::State previous;
+    if (getHint(pkt, previous)) {
+        return;
+    }
+    assert(state <= pa_maip::Reused);
     pkt->req->setInsertionHint(this, state);
-    (prefetch ? stats.prefetchStates : stats.demandStates)[state]++;
+    (isPrefetch(pkt) ? stats.prefetchStates : stats.demandStates)[state]++;
+}
+
+void
+AMPMHintTable::recordPrefetchHint(uint8_t state)
+{
+    assert(state <= pa_maip::Reused);
+    stats.prefetchStates[state]++;
 }
 
 PAMAIP::PAMAIP(const Params &p)
@@ -118,6 +143,13 @@ PAMAIP::touch(const std::shared_ptr<ReplacementData>& replacement_data,
     // Cache maintenance and writebacks are not demand consumption events.
     if ((!prefetch && !pkt->isDemand()) || pkt->req->isCacheMaintenance()) {
         return;
+    }
+    if (!prefetch && data->unusedPrefetch && hints->isExternal()) {
+        pa_maip::State state;
+        if (hints->getHint(pkt, state) && pa_maip::highPriority(state)) {
+            // AMPM has observed an earlier demand use absorbed by L1.
+            data->consumeDemand();
+        }
     }
     if (prefetch) {
         stats.prefetchHits++;
@@ -168,6 +200,9 @@ PAMAIP::reset(const std::shared_ptr<ReplacementData>& replacement_data,
     stats.insertions[data->rrpv]++;
     if (prefetch) {
         stats.prefetchFills++;
+        if (has_hint) {
+            stats.prefetchHintFills++;
+        }
     }
 }
 
@@ -234,6 +269,8 @@ PAMAIP::PolicyStats::PolicyStats(statistics::Group *parent)
     ADD_STAT(insertions, statistics::units::Count::get(),
              "Fills by insertion RRPV"),
     ADD_STAT(prefetchFills, statistics::units::Count::get(), "Prefetch fills"),
+    ADD_STAT(prefetchHintFills, statistics::units::Count::get(),
+             "Prefetch fills carrying a pre-access map hint"),
     ADD_STAT(firstUses, statistics::units::Count::get(),
              "First demand tag hits on a prefetched line"),
     ADD_STAT(suppressedFirstUses, statistics::units::Count::get(),
