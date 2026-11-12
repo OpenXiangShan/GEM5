@@ -737,6 +737,7 @@ Rename::canRenameRAB(ThreadID tid) const
     if (rab.capacity() == 0)
         return true;
 
+    // Check the whole bundle before rename changes RAT or Preg state.
     unsigned demand = 0;
     const auto &insts = fixedbuffer[tid];
     const unsigned count = std::min<unsigned>(insts.size(), renameWidth);
@@ -1084,6 +1085,7 @@ Rename::doSquash(const InstSeqNum &squashed_seq_num, ThreadID tid)
         ppSquashInRename->notify(std::make_pair(hb_it->instSeqNum,
                                                 hb_it->newPhysReg.PhyReg()));
 
+        // Release the charged slot when its history record is discarded.
         if (hb_it->occupiesRABEntry) {
             rab.release();
             ++stats.rabSquashedEntries;
@@ -1181,6 +1183,7 @@ Rename::removeFromHistory(InstSeqNum inst_seq_num, ThreadID tid)
             tryFreePReg(entry.prevPhysReg.PhyReg(), tid);
         }
 
+        // Keep occupancy paired with removal from the history buffer.
         if (entry.occupiesRABEntry) {
             rab.release();
             ++stats.rabCommittedEntries;
@@ -1329,6 +1332,7 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
                 rename_result.first.toString());
 
         // Record the rename information so that a history can be kept.
+        // Save the billing decision for the matching commit/squash release.
         const bool occupies_rab = numThreads == 1 &&
             RenameRAB::counts(flat_dest_regid);
         RenameHistory hb_entry(inst->seqNum, flat_dest_regid,

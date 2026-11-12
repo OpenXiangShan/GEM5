@@ -76,6 +76,7 @@ def setKmhV3Params(args, system):
 
         # rename
         cpu.renameWidth = 8
+        # Match the RTL depth for single-thread runs; leave SMT uncapped.
         cpu.numRABEntries = 352 if int(cpu.numThreads) == 1 else 0
         cpu.numPhysIntRegs = 224
         cpu.numPhysFloatRegs = 256

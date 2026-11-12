@@ -26,6 +26,8 @@ class RenameRAB
     static bool
     counts(const RegId &reg)
     {
+        // Charge destination mappings even when a move reuses its source Preg.
+        // Zero, Misc, RMisc, and CC mappings remain in history but do not count.
         switch (reg.classValue()) {
           case IntRegClass:
           case FloatRegClass:
@@ -42,6 +44,7 @@ class RenameRAB
     Admission
     check(unsigned demand) const
     {
+        // Zero disables admission checks without disabling occupancy tracking.
         if (numEntries == 0)
             return Admission::Ready;
         if (demand > numEntries)
