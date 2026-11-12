@@ -1,0 +1,53 @@
+{
+  "commit": "db4900752a8dca7245601b74350a4cce15e9cc49",
+  "workflow_ref": "fdp-l2",
+  "configuration": "idealkmhv3.py",
+  "benchmark_type": "spec06-rva23-novec-gcc16-0.3c",
+  "created_at": "2026-11-12T17:25:30.911433+00:00",
+  "runs": [
+    {
+      "policy": "lru",
+      "note": "FDP-v1-screen-lru",
+      "extra_args": "--l2-replacement-policy=lru --warmup-insts-no-switch=20000000 --maxinsts=40000000",
+      "dispatch_returncode": 0,
+      "stdout": "https://github.com/OpenXiangShan/GEM5/actions/runs/43269172688",
+      "stderr": "",
+      "databaseId": 43269172688,
+      "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/43269172688",
+      "headSha": "db4900752a8dca7245601b74350a4cce15e9cc49",
+      "status": "in_progress",
+      "conclusion": "",
+      "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261113_013247_db490075_idealkmhv3_run2113"
+    },
+    {
+      "policy": "xs-drrip",
+      "note": "FDP-v1-screen-xs-drrip",
+      "extra_args": "--l2-replacement-policy=xs-drrip --warmup-insts-no-switch=20000000 --maxinsts=40000000",
+      "dispatch_returncode": 0,
+      "stdout": "https://github.com/OpenXiangShan/GEM5/actions/runs/43269179825",
+      "stderr": "",
+      "databaseId": 43269179825,
+      "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/43269179825",
+      "headSha": "db4900752a8dca7245601b74350a4cce15e9cc49",
+      "status": "in_progress",
+      "conclusion": "",
+      "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261113_013125_db490075_idealkmhv3_run2114"
+    },
+    {
+      "policy": "fdp",
+      "note": "FDP-v1-screen-fdp",
+      "extra_args": "--l2-replacement-policy=fdp --warmup-insts-no-switch=20000000 --maxinsts=40000000",
+      "dispatch_returncode": 0,
+      "stdout": "https://github.com/OpenXiangShan/GEM5/actions/runs/43269188685",
+      "stderr": "",
+      "databaseId": 43269188685,
+      "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/43269188685",
+      "headSha": "db4900752a8dca7245601b74350a4cce15e9cc49",
+      "status": "in_progress",
+      "conclusion": "",
+      "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261113_013330_db490075_idealkmhv3_run2115"
+    }
+  ],
+  "paper_sha256": "cb1c60bbe98b88c499bc9cf4282868737508cc86f77558150eedf755660ac1ce",
+  "reference_source_commit": "45e57250c9b60f29243c9c826ec7d9bf9bd75051"
+}

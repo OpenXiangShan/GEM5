@@ -1,0 +1,16 @@
+{
+  "source_commit": "a61859f355cf013aa6c15f95b6be0fe24b829976",
+  "configuration": "idealkmhv3.py",
+  "benchmark_type": "spec06-rva23-novec-gcc16-1.0c",
+  "runs": [
+    {
+      "policy": "lru",
+      "run_id": 43271285986
+    },
+    {
+      "policy": "xs-drrip",
+      "run_id": 43271296003
+    }
+  ],
+  "verification": "Source controls and instruction defaults inspected; final archived effective config equivalence pending"
+}

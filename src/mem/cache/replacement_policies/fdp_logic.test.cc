@@ -133,3 +133,30 @@ TEST(FDPFeedback, SmoothedCountersChooseAllThreePositions)
     EXPECT_EQ(feedback.insertionRank(1), 0);
     EXPECT_EQ(feedback.insertionRank(2), 1);
 }
+
+TEST(FDPFeedback, TaggedFilterRejectsAliasesAndConsumesEvidenceOnce)
+{
+    Feedback feedback(6, 12, 16, 0.005, 0.25, true);
+    feedback.evict(64, false, true, true, true);
+    EXPECT_FALSE(feedback.demandMiss(uint64_t(1) << 18, false));
+    EXPECT_EQ(feedback.rejectedAliases(), 1);
+    // An unrelated refill must not erase the original tagged record.
+    feedback.prefetchFill(uint64_t(1) << 18, false);
+    EXPECT_TRUE(feedback.demandMiss(64, false));
+    EXPECT_FALSE(feedback.demandMiss(64, false));
+    feedback.evict(64, false, true, true, true);
+    feedback.demandFill(64, false);
+    EXPECT_FALSE(feedback.demandMiss(64, false));
+}
+
+TEST(FDPFeedback, PaperFilterRetainsItsOriginalSemantics)
+{
+    Feedback feedback(6, 12, 16, 0.005, 0.25);
+    feedback.evict(64, false, true, true, true);
+    EXPECT_TRUE(feedback.demandMiss(uint64_t(1) << 18, false));
+    EXPECT_TRUE(feedback.demandMiss(64, false));
+    feedback.demandFill(64, false);
+    EXPECT_TRUE(feedback.demandMiss(64, false));
+    feedback.prefetchFill(uint64_t(1) << 18, false);
+    EXPECT_FALSE(feedback.demandMiss(64, false));
+}

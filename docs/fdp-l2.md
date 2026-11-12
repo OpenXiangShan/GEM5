@@ -33,6 +33,19 @@ but exposes no adaptive insertion implementation. Neither repository is
 established as the original authors' simulator/code.
 The gem5 implementation is written from the paper; no third-party code is copied.
 
+A later search found the author-linked **CMU-SAFARI/memsim** simulator:
+https://github.com/CMU-SAFARI/memsim at
+`45e57250c9b60f29243c9c826ec7d9bf9bd75051`.
+Onur Mutlu's https://users.ece.cmu.edu/~omutlu/projects.htm links it as the
+source of the 2015 informed-caching work. Its `Simulator/CmpFDP.h` implements
+a pollution-based FDP baseline; `Simulator/CmpFDPAP.h` implements an
+accuracy-based variant. The former uses a tagged evicted-address filter and
+two insertion priorities with a 25% threshold, rather than the 2007 paper's
+bit filter and three positions. This is released source containing FDP
+baselines, not evidence of the exact original 2007 simulator's release.
+A source snapshot with its README/license is saved locally as
+`docs/papers/memsim-fdp-reference-45e57250.tar.gz`.
+
 ## Model
 
 - Exact LRU stack within each L2 set, with MRU demand insertion and LRU hit
@@ -76,5 +89,56 @@ before claiming a performance improvement.
 Local checks so far: seven core GoogleTest cases passed; repository style
 checks passed for new code and modified regions; Python syntax and generated
 SimObject configuration construction passed (8-way, 1024-set L2 slice and
-4096 useful evictions per interval). Full build and checkpoint smoke validation
-are in progress. Remote measurements are pending.
+4096 useful evictions per interval). The optimized simulator build passed. Checkpoint smoke validation and remote
+measurements are in progress. The mutable legacy REF path failed identically
+for all three policies in the checkpoint restorer; smoke tests therefore use
+the verified `util/nemu_ref/resolve.py normal` release, as the workflow does
+for PGO (the workflow uses its normal-dedup variant for benchmark runs).
+
+
+Initial remote screening (all runs use source `db4900752a`):
+
+| Policy | Run ID | Configuration | Coverage |
+| --- | --- | --- | --- |
+| LRU | 43269172688 | idealkmhv3.py | gcc16 SPEC06 0.3c, all 145 slices |
+| XSDRRIP | 43269179825 | idealkmhv3.py | gcc16 SPEC06 0.3c, all 145 slices |
+| FDP paper | 43269188685 | idealkmhv3.py | gcc16 SPEC06 0.3c, all 145 slices |
+
+All three explicitly use 20M warmup instructions and 40M total instructions,
+the default distributed server pool and 16 jobs/server. These are screening
+measurements; final performance claims require full-coverage confirmation.
+
+
+Analysis tooling: the personal default `gem5_data_proc/run.py` exists but is
+not readable by this account. Use the workflow's accessible shared copy at
+`/nfs/home/share/gem5_ci/gem5_data_proc/run.py`, with the archived `cluster.json`
+passed explicitly. No additional tools were installed.
+
+
+### Tagged pollution-feedback candidate
+
+The mcf/6753 integration smoke (2M warmup + 2M measured instructions) passed
+NEMU difftest for all three policies. Measured IPC: LRU 0.776126,
+XSDRRIP 0.773607, paper FDP 0.745430. This is a short local reproduction,
+not the weighted suite result. Paper FDP selected LRU insertion for
+121018 / 123060 prefetch fills during measurement, with 15398 pollution-filter
+hits in 57158 eligible demand misses.
+
+The optional `FDPRP.tagged_filter=True` candidate retains the same
+MID/LRU-4/LRU rule and thresholds, but validates eviction records with block
+addresses, consumes a record after one demand miss, and retires it upon a
+new residency. This tests whether stale or aliased bit-filter evidence causes
+excessive low-priority insertion. `filterAliasesRejected` makes rejected aliases
+observable. The default remains the paper's bit-filter policy until performance
+validation supports a change. The tagged variant adds address-tag storage;
+it is an algorithm modification, not a claim of identical hardware cost.
+
+Nine core unit tests and the optimized build pass with both filter modes.
+The tagged mcf smoke and weighted remote comparisons are in progress.
+
+For final full-coverage comparison, the independent AMPM session has already
+launched compatible baseline candidates at source
+`a61859f355cf013aa6c15f95b6be0fe24b829976`:
+LRU `43271285986`, XSDRRIP `43271296003`. Source inspection confirms the same
+L2 geometry and default 20M warmup/40M total. Archived effective configs,
+checkpoint weights, and REF must still be compared before these are reused.

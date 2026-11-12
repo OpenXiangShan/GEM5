@@ -29,7 +29,7 @@ makeFeedback(const FDPRPParams &p)
                p.pollution_low < p.pollution_high),
              "FDP requires 0 <= pollution_low < pollution_high <= 1");
     return fdp::Feedback(p.block_bits, p.filter_bits, p.interval_evictions,
-                         p.pollution_low, p.pollution_high);
+                         p.pollution_low, p.pollution_high, p.tagged_filter);
 }
 
 } // anonymous namespace
@@ -84,6 +84,8 @@ FDP::reset(const std::shared_ptr<ReplacementData> &data,
         rank = feedback.insertionRank(numWays);
         feedback.prefetchFill(pkt->getAddr(), pkt->isSecure());
         fdpStats.prefetchInsertions[feedback.getPosition()]++;
+    } else if (pkt) {
+        feedback.demandFill(pkt->getAddr(), pkt->isSecure());
     }
     d->stack->insert(d->way, prefetch, rank);
 }
@@ -104,8 +106,10 @@ FDP::notifyMiss(const PacketPtr pkt)
         return;
     }
     fdpStats.demandMisses++;
+    const auto aliases = feedback.rejectedAliases();
     if (feedback.demandMiss(pkt->getAddr(), pkt->isSecure()))
         fdpStats.pollutionMisses++;
+    fdpStats.filterAliasesRejected += feedback.rejectedAliases() - aliases;
 }
 
 void
@@ -162,6 +166,7 @@ FDP::FDPStats::FDPStats(statistics::Group *parent)
   : statistics::Group(parent),
     ADD_STAT(demandMisses, "Demand tag misses observed by FDP"),
     ADD_STAT(pollutionMisses, "Demand misses matching the pollution filter"),
+    ADD_STAT(filterAliasesRejected, "Tag misses rejecting pollution aliases"),
     ADD_STAT(demandEvictedByPrefetch, "Demand-filled lines evicted by prefetch"),
     ADD_STAT(usefulEvictions, "Useful lines evicted (FDP interval clock)"),
     ADD_STAT(unusedPrefetchEvictions, "Unused prefetch lines evicted"),

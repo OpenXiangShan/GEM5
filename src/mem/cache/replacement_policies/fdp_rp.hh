@@ -41,6 +41,7 @@ class FDP : public Base
         explicit FDPStats(statistics::Group *parent);
         statistics::Scalar demandMisses;
         statistics::Scalar pollutionMisses;
+        statistics::Scalar filterAliasesRejected;
         statistics::Scalar demandEvictedByPrefetch;
         statistics::Scalar usefulEvictions;
         statistics::Scalar unusedPrefetchEvictions;

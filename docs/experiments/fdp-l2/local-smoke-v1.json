@@ -1,0 +1,65 @@
+[
+  {
+    "policy": "lru",
+    "returncode": 0,
+    "seconds": 416.70449295826256,
+    "command": [
+      "/nfs/home/chenzhuo/prefetchGEM5/build/RISCV/gem5.opt",
+      "--outdir=/tmp/fdp-smoke-lru",
+      "/nfs/home/chenzhuo/prefetchGEM5/configs/example/idealkmhv3.py",
+      "--generic-rv-cpt=/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/mcf/6753/_6753_0.218742_memory_.zstd",
+      "--l2-replacement-policy=lru",
+      "--warmup-insts-no-switch=2000000",
+      "--maxinsts=4000000"
+    ],
+    "outdir": "/tmp/fdp-smoke-lru",
+    "measurement": {
+      "simInsts": 2000009.0,
+      "system.cpu.numCycles": 2576913.0,
+      "system.cpu.ipc": 0.776126
+    },
+    "ref_so": "/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal/riscv64-nemu-interpreter-so"
+  },
+  {
+    "policy": "xs-drrip",
+    "returncode": 0,
+    "seconds": 365.3113932106644,
+    "command": [
+      "/nfs/home/chenzhuo/prefetchGEM5/build/RISCV/gem5.opt",
+      "--outdir=/tmp/fdp-smoke-xs-drrip",
+      "/nfs/home/chenzhuo/prefetchGEM5/configs/example/idealkmhv3.py",
+      "--generic-rv-cpt=/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/mcf/6753/_6753_0.218742_memory_.zstd",
+      "--l2-replacement-policy=xs-drrip",
+      "--warmup-insts-no-switch=2000000",
+      "--maxinsts=4000000"
+    ],
+    "outdir": "/tmp/fdp-smoke-xs-drrip",
+    "measurement": {
+      "simInsts": 2000009.0,
+      "system.cpu.numCycles": 2585303.0,
+      "system.cpu.ipc": 0.773607
+    },
+    "ref_so": "/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal/riscv64-nemu-interpreter-so"
+  },
+  {
+    "policy": "fdp",
+    "returncode": 0,
+    "seconds": 328.14998250827193,
+    "command": [
+      "/nfs/home/chenzhuo/prefetchGEM5/build/RISCV/gem5.opt",
+      "--outdir=/tmp/fdp-smoke-fdp",
+      "/nfs/home/chenzhuo/prefetchGEM5/configs/example/idealkmhv3.py",
+      "--generic-rv-cpt=/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/mcf/6753/_6753_0.218742_memory_.zstd",
+      "--l2-replacement-policy=fdp",
+      "--warmup-insts-no-switch=2000000",
+      "--maxinsts=4000000"
+    ],
+    "outdir": "/tmp/fdp-smoke-fdp",
+    "measurement": {
+      "simInsts": 2000001.0,
+      "system.cpu.numCycles": 2683017.0,
+      "system.cpu.ipc": 0.74543
+    },
+    "ref_so": "/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal/riscv64-nemu-interpreter-so"
+  }
+]

@@ -80,6 +80,8 @@ class FDPRP(BaseReplacementPolicy):
     num_ways = Param.Unsigned(Parent.assoc, "Ways in each exact LRU stack")
     block_bits = Param.Unsigned(6, "Log2 of the cache line size")
     filter_bits = Param.Unsigned(12, "Log2 of pollution filter entries")
+    tagged_filter = Param.Bool(
+        False, "Use tagged, single-use pollution evidence instead of bits")
     interval_evictions = Param.Unsigned(
         8192, "Useful capacity evictions per feedback interval")
     pollution_low = Param.Float(0.005, "Low pollution threshold (HPCA 2007)")

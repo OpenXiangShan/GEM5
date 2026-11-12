@@ -93,6 +93,9 @@ class Feedback
     const double highThreshold;
     // Keep security domains independent while retaining the paper's hash.
     std::array<std::vector<bool>, 2> filter;
+    const bool tagged;
+    std::array<std::vector<uint64_t>, 2> tags;
+    uint64_t aliases = 0;
     uint64_t demand = 0;
     uint64_t pollution = 0;
     uint64_t evictions = 0;
@@ -109,35 +112,61 @@ class Feedback
 
   public:
     Feedback(unsigned block_bits, unsigned filter_bits, uint64_t period,
-             double low, double high)
+             double low, double high, bool use_tags = false)
       : blockBits(block_bits), filterBits(filter_bits), interval(period),
-        lowThreshold(low), highThreshold(high)
+        lowThreshold(low), highThreshold(high), tagged(use_tags)
     {
         for (auto &domain : filter)
             domain.resize(uint64_t(1) << filterBits, false);
+        if (tagged) {
+            for (auto &domain : tags)
+                domain.resize(uint64_t(1) << filterBits);
+        }
     }
 
     bool
     demandMiss(uint64_t addr, bool secure)
     {
         ++demand;
-        const bool polluted = filter[secure][index(addr)];
+        const unsigned slot = index(addr);
+        const bool match = !tagged || tags[secure][slot] == (addr >> blockBits);
+        const bool polluted = filter[secure][slot] && match;
+        aliases += filter[secure][slot] && !match;
         pollution += polluted;
+        // A tagged record describes one eviction, not all future misses.
+        if (tagged && polluted)
+            filter[secure][slot] = false;
         return polluted;
     }
 
     void
     prefetchFill(uint64_t addr, bool secure)
     {
-        filter[secure][index(addr)] = false;
+        const unsigned slot = index(addr);
+        if (!tagged || tags[secure][slot] == (addr >> blockBits))
+            filter[secure][slot] = false;
     }
+
+    void
+    demandFill(uint64_t addr, bool secure)
+    {
+        // A new residency ends the lifetime of the previous eviction record.
+        if (tagged)
+            prefetchFill(addr, secure);
+    }
+
+    uint64_t rejectedAliases() const { return aliases; }
 
     bool
     evict(uint64_t addr, bool secure, bool demand_fetched, bool useful,
           bool incoming_prefetch)
     {
-        if (demand_fetched && incoming_prefetch)
-            filter[secure][index(addr)] = true;
+        if (demand_fetched && incoming_prefetch) {
+            const unsigned slot = index(addr);
+            filter[secure][slot] = true;
+            if (tagged)
+                tags[secure][slot] = addr >> blockBits;
+        }
         if (!useful || ++evictions < interval)
             return false;
 
