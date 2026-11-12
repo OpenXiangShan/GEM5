@@ -111,6 +111,19 @@ FDP::reset(const std::shared_ptr<ReplacementData> &data) const
 }
 
 void
+FDP::notifyDemandUse(const std::shared_ptr<ReplacementData> &data)
+{
+    const auto d = std::static_pointer_cast<FDPReplData>(data);
+    if (!d->line().unusedPrefetch)
+        return;
+    fdpStats.usefulPrefetches++;
+    fdpStats.latePrefetchUses++;
+    if (sourceFeedback)
+        confidence.train(d->source, true);
+    d->stack->touch(d->way, true);
+}
+
+void
 FDP::notifyMiss(const PacketPtr pkt)
 {
     if (!pkt->isDemand() || pkt->cmd == MemCmd::StorePFTrain ||
@@ -186,7 +199,8 @@ FDP::FDPStats::FDPStats(statistics::Group *parent)
     ADD_STAT(demandEvictedByPrefetch, "Demand-filled lines evicted by prefetch"),
     ADD_STAT(usefulEvictions, "Useful lines evicted (FDP interval clock)"),
     ADD_STAT(unusedPrefetchEvictions, "Unused prefetch lines evicted"),
-    ADD_STAT(usefulPrefetches, "First demand hits to prefetched lines"),
+    ADD_STAT(usefulPrefetches, "First demand uses of prefetched lines"),
+    ADD_STAT(latePrefetchUses, "First demand uses during fill target service"),
     ADD_STAT(intervals, "Completed FDP feedback intervals"),
     ADD_STAT(pollutionRate, "Most recent smoothed pollution rate"),
     ADD_STAT(prefetchInsertions, "Prefetch fills by insertion position"),

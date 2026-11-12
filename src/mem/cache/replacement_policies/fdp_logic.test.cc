@@ -24,6 +24,8 @@ TEST(FDPStack, ExactInsertionAndPromotion)
     EXPECT_EQ(stack.lines[4].rank, 3);
     EXPECT_TRUE(stack.lines[0].unusedPrefetch);
     EXPECT_FALSE(stack.lines[0].demandFetched);
+    stack.touch(0, false);
+    EXPECT_TRUE(stack.lines[0].unusedPrefetch);
     stack.touch(0, true);
     EXPECT_EQ(stack.lines[0].rank, 0);
     EXPECT_FALSE(stack.lines[0].unusedPrefetch);

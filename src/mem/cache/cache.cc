@@ -774,6 +774,13 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
         switch (target.source) {
           case MSHR::Target::FromCPU:
             from_core = true;
+            // A merged demand consumes a prefetch fill without accessBlock().
+            // Let feedback policies observe its first use before clusivity can
+            // invalidate the filled line. Legacy policies use an empty hook.
+            if (!is_error && blk && blk != tempBlock && blk->isValid() &&
+                tgt_pkt->isDemand() && !tgt_pkt->req->isPrefetch()) {
+                tags->notifyDemandUse(blk);
+            }
             if (prefetcher && target.lldpHint.valid && !is_error) {
                 const uint8_t *line = nullptr;
                 unsigned bytes = 0;

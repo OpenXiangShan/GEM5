@@ -49,6 +49,7 @@ class FDP : public Base
         statistics::Scalar usefulEvictions;
         statistics::Scalar unusedPrefetchEvictions;
         statistics::Scalar usefulPrefetches;
+        statistics::Scalar latePrefetchUses;
         statistics::Scalar intervals;
         statistics::Scalar pollutionRate;
         statistics::Vector prefetchInsertions;
@@ -68,6 +69,8 @@ class FDP : public Base
     void reset(const std::shared_ptr<ReplacementData> &data,
                const PacketPtr pkt) override;
     void reset(const std::shared_ptr<ReplacementData> &data) const override;
+    void notifyDemandUse(const std::shared_ptr<ReplacementData> &data)
+                         override;
     void notifyMiss(const PacketPtr pkt) override;
     void notifyEviction(const std::shared_ptr<ReplacementData> &data,
                         Addr addr, bool secure, const PacketPtr incoming)

@@ -272,6 +272,9 @@ class BaseTags : public ClockedObject
         blk->invalidate();
     }
 
+    /** Notify a demand use during fill/merged-target service. */
+    virtual void notifyDemandUse(CacheBlk *blk) {}
+
     /** Notify replacement feedback of a committed capacity eviction. */
     virtual void notifyEviction(CacheBlk *blk, const PacketPtr incoming) {}
 

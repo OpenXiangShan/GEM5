@@ -207,6 +207,11 @@ class BaseSetAssoc : public BaseTags
         replacementPolicy->reset(blk->replacementData, pkt);
     }
 
+    void notifyDemandUse(CacheBlk *blk) override
+    {
+        replacementPolicy->notifyDemandUse(blk->replacementData);
+    }
+
     void notifyEviction(CacheBlk *blk, const PacketPtr incoming) override
     {
         replacementPolicy->notifyEviction(blk->replacementData,

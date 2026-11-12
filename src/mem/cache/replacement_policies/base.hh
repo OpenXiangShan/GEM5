@@ -95,6 +95,10 @@ class Base : public SimObject
     virtual void reset(const std::shared_ptr<ReplacementData>&
         replacement_data) const = 0;
 
+    /** Observe a demand consuming fill data without another tag lookup. */
+    virtual void notifyDemandUse(const std::shared_ptr<ReplacementData> &data)
+    {}
+
     /** Observe a tag miss without changing replacement state. */
     virtual void notifyMiss(const PacketPtr pkt) {}
 

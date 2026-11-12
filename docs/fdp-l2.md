@@ -168,3 +168,16 @@ matching screening configs. Every effective setting matches; the only text
 difference is each runner's DRAM configuration path, whose contents have the
 same SHA-256. Their archived weights match the full 1094-point JSON. The
 machine-readable equivalence evidence is in `docs/experiments/fdp-l2/`.
+
+
+### Merged-demand use accounting
+
+The cache services MSHR demand targets directly from fill data, without a
+second `BaseSetAssoc::accessBlock` call. FDP now receives a separate demand-use
+notification on this path. A prefetched entry is counted as used once,
+promoted according to demand-use LRU semantics, and (when enabled) positively
+trains its source confidence. Subsequent consumers cannot count it twice.
+Legacy replacement policies have an empty hook, preserving their decisions.
+Earlier v1–v3 experiments predate this accounting correction; final performance
+claims must use a candidate containing the fix. Eleven core tests and the
+optimized build pass; checkpoint regression measurements are pending.
