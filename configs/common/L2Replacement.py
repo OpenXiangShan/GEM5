@@ -20,5 +20,6 @@ def set_l2_replacement(args, cache):
     elif policy == "fdp":
         # Match the paper's interval/cache-capacity ratio on each L2 slice.
         cache.replacement_policy = FDPRP(
-            num_ways=ways, block_bits=int(math.log2(line_size)),
+            num_ways=ways, num_sets=sets,
+            block_bits=int(math.log2(line_size)),
             interval_evictions=max(1, sets * ways // 2))

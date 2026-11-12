@@ -78,12 +78,15 @@ class FDPRP(BaseReplacementPolicy):
     cxx_header = 'mem/cache/replacement_policies/fdp_rp.hh'
 
     num_ways = Param.Unsigned(Parent.assoc, "Ways in each exact LRU stack")
+    num_sets = Param.Unsigned(0, "Sets, required for sampled LRU fallback")
+    lru_fallback = Param.Bool(
+        False, "Sample demand fills to choose FDP or MRU prefetch insertion")
     block_bits = Param.Unsigned(6, "Log2 of the cache line size")
     filter_bits = Param.Unsigned(12, "Log2 of pollution filter entries")
     tagged_filter = Param.Bool(
         False, "Use tagged, single-use pollution evidence instead of bits")
     source_feedback = Param.Bool(
-        False, "Protect consistently useful prefetch sources at MRU")
+        False, "Use source confidence for prefetch insertion and hit promotion")
     interval_evictions = Param.Unsigned(
         8192, "Useful capacity evictions per feedback interval")
     pollution_low = Param.Float(0.005, "Low pollution threshold (HPCA 2007)")

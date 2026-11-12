@@ -12,6 +12,7 @@
 
 using gem5::replacement_policy::fdp::Feedback;
 using gem5::replacement_policy::fdp::Stack;
+using gem5::replacement_policy::fdp::SampledInsertion;
 
 TEST(FDPStack, ExactInsertionAndPromotion)
 {
@@ -189,4 +190,54 @@ TEST(FDPConfidence, SaturatesWithoutWrapping)
     for (unsigned i = 0; i < 16; ++i)
         confidence.train(0, false);
     EXPECT_FALSE(confidence.protect(0));
+}
+
+TEST(FDPSampling, BalancedLeadersAcrossIndexSpace)
+{
+    for (unsigned sets : {32U, 64U, 1024U, 4096U}) {
+        std::array<unsigned, 3> counts = {};
+        for (unsigned set = 0; set < sets; ++set)
+            ++counts[SampledInsertion::classifySet(set)];
+        EXPECT_EQ(counts[SampledInsertion::FdpSample], sets / 32);
+        EXPECT_EQ(counts[SampledInsertion::LruSample], sets / 32);
+        EXPECT_EQ(counts[SampledInsertion::Follower], sets * 30 / 32);
+    }
+}
+
+TEST(FDPSampling, FollowsDemandFillAdvantageAndKeepsLeadersFixed)
+{
+    SampledInsertion monitor;
+    EXPECT_TRUE(monitor.useLru(SampledInsertion::Follower));
+    // FDP wins if the equally sized LRU samples need more demand fills.
+    for (unsigned i = 0; i < 200; ++i) {
+        monitor.demandFill(SampledInsertion::LruSample);
+        monitor.demandFill(SampledInsertion::FdpSample);
+        monitor.demandFill(SampledInsertion::LruSample);
+    }
+    EXPECT_FALSE(monitor.useLru(SampledInsertion::Follower));
+    EXPECT_FALSE(monitor.useLru(SampledInsertion::FdpSample));
+    EXPECT_TRUE(monitor.useLru(SampledInsertion::LruSample));
+    // A later phase with more FDP fills must be able to reverse the choice.
+    for (unsigned i = 0; i < 400; ++i) {
+        monitor.demandFill(SampledInsertion::FdpSample);
+        monitor.demandFill(SampledInsertion::LruSample);
+        monitor.demandFill(SampledInsertion::FdpSample);
+    }
+    EXPECT_TRUE(monitor.useLru(SampledInsertion::Follower));
+    EXPECT_FALSE(monitor.useLru(SampledInsertion::FdpSample));
+}
+
+TEST(FDPSampling, FollowersDoNotTrainAndSelectorSaturates)
+{
+    SampledInsertion monitor;
+    const unsigned initial = monitor.value();
+    for (unsigned i = 0; i < 2000; ++i)
+        monitor.demandFill(SampledInsertion::Follower);
+    EXPECT_EQ(monitor.value(), initial);
+    for (unsigned i = 0; i < 2000; ++i)
+        monitor.demandFill(SampledInsertion::FdpSample);
+    EXPECT_EQ(monitor.value(), 1023);
+    for (unsigned i = 0; i < 2000; ++i)
+        monitor.demandFill(SampledInsertion::LruSample);
+    EXPECT_EQ(monitor.value(), 0);
 }

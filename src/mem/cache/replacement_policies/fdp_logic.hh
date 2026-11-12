@@ -106,6 +106,45 @@ class SourceConfidence
     }
 };
 
+// Compare demand fills in fixed, equally sized FDP and LRU sample groups.
+class SampledInsertion
+{
+  public:
+    enum Team { FdpSample, LruSample, Follower };
+
+  private:
+    static constexpr unsigned Threshold = 512;
+    static constexpr unsigned Maximum = 1023;
+    unsigned selector = Threshold;
+
+  public:
+    static Team
+    classifySet(unsigned set)
+    {
+        // Fold high bits to spread samples across the cache index space.
+        const unsigned group = (set ^ (set >> 5)) & 31;
+        return group == 0 ? FdpSample :
+            (group == 1 ? LruSample : Follower);
+    }
+
+    void
+    demandFill(Team team)
+    {
+        if (team == FdpSample)
+            selector = std::min(Maximum, selector + 1);
+        else if (team == LruSample && selector)
+            --selector;
+    }
+
+    bool useLru(Team team) const
+    {
+        return team == LruSample ||
+            (team == Follower && selector >= Threshold);
+    }
+
+    unsigned value() const { return selector; }
+};
+
 // Sections 3.1.3, 3.2 and 3.3.2 of Srinath et al., HPCA 2007.
 class Feedback
 {

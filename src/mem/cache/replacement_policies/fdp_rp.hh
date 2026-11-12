@@ -26,9 +26,11 @@ class FDP : public Base
     {
         std::shared_ptr<fdp::Stack> stack;
         unsigned way;
+        fdp::SampledInsertion::Team sample;
         unsigned source = 0;
-        FDPReplData(std::shared_ptr<fdp::Stack> set, unsigned w)
-          : stack(set), way(w) {}
+        FDPReplData(std::shared_ptr<fdp::Stack> set, unsigned w,
+                    fdp::SampledInsertion::Team team)
+          : stack(set), way(w), sample(team) {}
         fdp::Stack::Line &line() const { return stack->lines[way]; }
     };
 
@@ -38,6 +40,10 @@ class FDP : public Base
     fdp::Feedback feedback;
     const bool sourceFeedback;
     fdp::SourceConfidence confidence;
+    const bool lruFallback;
+    fdp::SampledInsertion insertion;
+
+    void sampleDemandFill(const std::shared_ptr<FDPReplData> &data);
 
     mutable struct FDPStats : public statistics::Group
     {
@@ -50,8 +56,13 @@ class FDP : public Base
         statistics::Scalar unusedPrefetchEvictions;
         statistics::Scalar usefulPrefetches;
         statistics::Scalar latePrefetchUses;
+        statistics::Scalar ignoredPrefetchHits;
         statistics::Scalar intervals;
         statistics::Scalar pollutionRate;
+        statistics::Scalar fdpSampleFills;
+        statistics::Scalar lruSampleFills;
+        statistics::Scalar fallbackPrefetches;
+        statistics::Scalar fallbackSelector;
         statistics::Vector prefetchInsertions;
         statistics::Vector intervalPositions;
         statistics::Vector protectedBySource;

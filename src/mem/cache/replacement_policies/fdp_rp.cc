@@ -21,6 +21,9 @@ makeFeedback(const FDPRPParams &p)
 {
     // Validate before allocating the pollution filter or shifting its size.
     fatal_if(p.num_ways == 0, "FDP requires at least one way");
+    fatal_if(p.lru_fallback && (p.num_sets < 32 ||
+             (p.num_sets & (p.num_sets - 1))),
+             "FDP sampled fallback requires power-of-two sets, at least 32");
     fatal_if(p.filter_bits == 0 || p.filter_bits > 24,
              "FDP filter_bits must be between 1 and 24");
     fatal_if(p.block_bits > 32, "FDP block_bits must be at most 32");
@@ -37,8 +40,23 @@ makeFeedback(const FDPRPParams &p)
 FDP::FDP(const Params &p)
   : Base(p), numWays(p.num_ways), feedback(makeFeedback(p)),
     sourceFeedback(p.source_feedback), confidence(NUM_PF_SOURCES),
-    fdpStats(this)
+    lruFallback(p.lru_fallback), fdpStats(this)
 {
+    if (lruFallback)
+        fdpStats.fallbackSelector = insertion.value();
+}
+
+void
+FDP::sampleDemandFill(const std::shared_ptr<FDPReplData> &data)
+{
+    if (!lruFallback)
+        return;
+    insertion.demandFill(data->sample);
+    if (data->sample == fdp::SampledInsertion::FdpSample)
+        fdpStats.fdpSampleFills++;
+    else if (data->sample == fdp::SampledInsertion::LruSample)
+        fdpStats.lruSampleFills++;
+    fdpStats.fallbackSelector = insertion.value();
 }
 
 bool
@@ -62,6 +80,14 @@ FDP::touch(const std::shared_ptr<ReplacementData> &data,
     const auto d = std::static_pointer_cast<FDPReplData>(data);
     if (pkt && pkt->cmd == MemCmd::StorePFTrain)
         return;
+    const bool fallback = lruFallback && insertion.useLru(d->sample);
+    if (sourceFeedback && !fallback && d->source != PF_NONE &&
+        isPrefetch(pkt) && d->line().unusedPrefetch &&
+        !confidence.protect(d->source)) {
+        // A repeated prediction is not evidence that demand needs this line.
+        fdpStats.ignoredPrefetchHits++;
+        return;
+    }
     const bool demand = pkt && pkt->isDemand() && !isPrefetch(pkt);
     if (demand && d->line().unusedPrefetch) {
         fdpStats.usefulPrefetches++;
@@ -89,16 +115,28 @@ FDP::reset(const std::shared_ptr<ReplacementData> &data,
         const unsigned source = static_cast<unsigned>(pkt->req->getPFSource());
         d->source = source < NUM_PF_SOURCES ? source :
             static_cast<unsigned>(PF_NONE);
-        const bool protect = sourceFeedback && d->source != PF_NONE &&
-            confidence.protect(d->source);
-        rank = protect ? 0 : feedback.insertionRank(numWays);
+        const bool fallback = lruFallback && insertion.useLru(d->sample);
+        const bool protect = !fallback && sourceFeedback &&
+            d->source != PF_NONE && confidence.protect(d->source);
+        rank = fallback || protect ? 0 : feedback.insertionRank(numWays);
+        if (fallback)
+            fdpStats.fallbackPrefetches++;
         feedback.prefetchFill(pkt->getAddr(), pkt->isSecure());
         const unsigned position = feedback.getPosition();
-        fdpStats.prefetchInsertions[protect ? 3 : position]++;
+        fdpStats.prefetchInsertions[fallback || protect ? 3 : position]++;
         if (protect)
             fdpStats.protectedBySource[d->source]++;
     } else if (pkt) {
         feedback.demandFill(pkt->getAddr(), pkt->isSecure());
+        // Fills normally carry response commands; isDemand() covers requests.
+        const bool demand = pkt->isDemand() || (pkt->isResponse() &&
+            (pkt->isRead() || pkt->isWrite()));
+        if (demand && !pkt->isEviction() &&
+            !pkt->req->isUncacheable() &&
+            !pkt->req->isCacheMaintenance() &&
+            pkt->cmd != MemCmd::StorePFTrain) {
+            sampleDemandFill(d);
+        }
     }
     d->stack->insert(d->way, prefetch, rank);
 }
@@ -118,6 +156,8 @@ FDP::notifyDemandUse(const std::shared_ptr<ReplacementData> &data)
         return;
     fdpStats.usefulPrefetches++;
     fdpStats.latePrefetchUses++;
+    // A merged consumer also waited for a fill; count it once, not as a hit.
+    sampleDemandFill(d);
     if (sourceFeedback)
         confidence.train(d->source, true);
     d->stack->touch(d->way, true);
@@ -185,10 +225,12 @@ FDP::getVictim(const ReplacementCandidates &candidates) const
 std::shared_ptr<ReplacementData>
 FDP::instantiateEntry()
 {
+    const auto sample = fdp::SampledInsertion::classifySet(
+        entryCount / numWays);
     const unsigned way = entryCount++ % numWays;
     if (way == 0)
         currentSet = std::make_shared<fdp::Stack>(numWays);
-    return std::make_shared<FDPReplData>(currentSet, way);
+    return std::make_shared<FDPReplData>(currentSet, way, sample);
 }
 
 FDP::FDPStats::FDPStats(statistics::Group *parent)
@@ -201,8 +243,13 @@ FDP::FDPStats::FDPStats(statistics::Group *parent)
     ADD_STAT(unusedPrefetchEvictions, "Unused prefetch lines evicted"),
     ADD_STAT(usefulPrefetches, "First demand uses of prefetched lines"),
     ADD_STAT(latePrefetchUses, "First demand uses during fill target service"),
+    ADD_STAT(ignoredPrefetchHits, "Unused prefetch hits without source confidence"),
     ADD_STAT(intervals, "Completed FDP feedback intervals"),
     ADD_STAT(pollutionRate, "Most recent smoothed pollution rate"),
+    ADD_STAT(fdpSampleFills, "Demand fills in FDP sample sets"),
+    ADD_STAT(lruSampleFills, "Demand fills in LRU sample sets"),
+    ADD_STAT(fallbackPrefetches, "Prefetch fills using sampled LRU fallback"),
+    ADD_STAT(fallbackSelector, "FDP/LRU insertion selector (LRU if >= 512)"),
     ADD_STAT(prefetchInsertions, "Prefetch fills by insertion position"),
     ADD_STAT(intervalPositions, "Feedback intervals by selected position"),
     ADD_STAT(protectedBySource, "High-confidence prefetch fills placed at MRU")
