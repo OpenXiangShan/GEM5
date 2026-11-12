@@ -39,6 +39,7 @@ class FDP : public Base
     std::shared_ptr<fdp::Stack> currentSet;
     fdp::Feedback feedback;
     const bool sourceFeedback;
+    const bool sourceUtility;
     fdp::SourceConfidence confidence;
     const bool lruFallback;
     fdp::SampledInsertion insertion;
@@ -66,6 +67,7 @@ class FDP : public Base
         statistics::Vector prefetchInsertions;
         statistics::Vector intervalPositions;
         statistics::Vector protectedBySource;
+        statistics::Vector pollutionBySource;
     } fdpStats;
 
     static bool isPrefetch(const PacketPtr pkt);

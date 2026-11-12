@@ -241,3 +241,56 @@ TEST(FDPSampling, FollowersDoNotTrainAndSelectorSaturates)
         monitor.demandFill(SampledInsertion::LruSample);
     EXPECT_EQ(monitor.value(), 0);
 }
+
+TEST(FDPFeedback, AttributesPollutionToItsSourceOnceAndBySecurityDomain)
+{
+    Feedback feedback(6, 12, 16, 0.005, 0.25, true, true);
+    feedback.evict(64, false, true, true, true, 3);
+    EXPECT_FALSE(feedback.demandMiss(uint64_t(1) << 18, false));
+    EXPECT_EQ(feedback.lastPolluter(), 0);
+    EXPECT_FALSE(feedback.demandMiss(64, true));
+    EXPECT_EQ(feedback.lastPolluter(), 0);
+    EXPECT_TRUE(feedback.demandMiss(64, false));
+    EXPECT_EQ(feedback.lastPolluter(), 3);
+    EXPECT_FALSE(feedback.demandMiss(64, false));
+    EXPECT_EQ(feedback.lastPolluter(), 0);
+    feedback.evict(64, true, true, true, true, 7);
+    EXPECT_TRUE(feedback.demandMiss(64, true));
+    EXPECT_EQ(feedback.lastPolluter(), 7);
+}
+
+TEST(FDPFeedback, ReplacedOrRefilledRecordsCannotChargeAnOldSource)
+{
+    Feedback feedback(6, 12, 16, 0.005, 0.25, true, true);
+    feedback.evict(64, false, true, true, true, 3);
+    const uint64_t alias = uint64_t(1) << 18;
+    feedback.evict(alias, false, true, true, true, 7);
+    EXPECT_FALSE(feedback.demandMiss(64, false));
+    EXPECT_EQ(feedback.lastPolluter(), 0);
+    EXPECT_TRUE(feedback.demandMiss(alias, false));
+    EXPECT_EQ(feedback.lastPolluter(), 7);
+    feedback.evict(64, false, true, true, true, 3);
+    feedback.demandFill(64, false);
+    EXPECT_FALSE(feedback.demandMiss(64, false));
+    EXPECT_EQ(feedback.lastPolluter(), 0);
+    // An unused prefetch victim and a demand-caused victim are not pollution.
+    feedback.evict(128, false, false, false, true, 3);
+    EXPECT_FALSE(feedback.demandMiss(128, false));
+    feedback.evict(256, false, true, true, false, 3);
+    EXPECT_FALSE(feedback.demandMiss(256, false));
+}
+
+TEST(FDPFeedback, UtilityIncludesConsumedPrefetchVictimsButPaperDoesNot)
+{
+    Feedback paper(6, 12, 16, 0.005, 0.25, true);
+    Feedback utility(6, 12, 16, 0.005, 0.25, true, true);
+    paper.evict(64, false, false, true, true, 3);
+    utility.evict(64, false, false, true, true, 3);
+    EXPECT_FALSE(paper.demandMiss(64, false));
+    EXPECT_TRUE(utility.demandMiss(64, false));
+    EXPECT_EQ(utility.lastPolluter(), 3);
+    // A prefetch never consumed by demand still provides no pollution evidence.
+    utility.evict(128, false, false, false, true, 7);
+    EXPECT_FALSE(utility.demandMiss(128, false));
+    EXPECT_EQ(utility.lastPolluter(), 0);
+}

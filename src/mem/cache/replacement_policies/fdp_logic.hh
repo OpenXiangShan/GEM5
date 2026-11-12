@@ -160,7 +160,10 @@ class Feedback
     // Keep security domains independent while retaining the paper's hash.
     std::array<std::vector<bool>, 2> filter;
     const bool tagged;
+    const bool trackSources;
     std::array<std::vector<uint64_t>, 2> tags;
+    std::array<std::vector<uint8_t>, 2> sources;
+    unsigned polluter = 0;
     uint64_t aliases = 0;
     uint64_t demand = 0;
     uint64_t pollution = 0;
@@ -178,14 +181,21 @@ class Feedback
 
   public:
     Feedback(unsigned block_bits, unsigned filter_bits, uint64_t period,
-             double low, double high, bool use_tags = false)
+             double low, double high, bool use_tags = false,
+             bool track_sources = false)
       : blockBits(block_bits), filterBits(filter_bits), interval(period),
-        lowThreshold(low), highThreshold(high), tagged(use_tags)
+        lowThreshold(low), highThreshold(high), tagged(use_tags),
+        trackSources(track_sources)
     {
         for (auto &domain : filter)
             domain.resize(uint64_t(1) << filterBits, false);
         if (tagged) {
             for (auto &domain : tags)
+                domain.resize(uint64_t(1) << filterBits);
+        }
+        if (trackSources) {
+            assert(tagged);
+            for (auto &domain : sources)
                 domain.resize(uint64_t(1) << filterBits);
         }
     }
@@ -197,6 +207,7 @@ class Feedback
         const unsigned slot = index(addr);
         const bool match = !tagged || tags[secure][slot] == (addr >> blockBits);
         const bool polluted = filter[secure][slot] && match;
+        polluter = polluted && trackSources ? sources[secure][slot] : 0;
         aliases += filter[secure][slot] && !match;
         pollution += polluted;
         // A tagged record describes one eviction, not all future misses.
@@ -222,16 +233,23 @@ class Feedback
     }
 
     uint64_t rejectedAliases() const { return aliases; }
+    unsigned lastPolluter() const { return polluter; }
 
     bool
     evict(uint64_t addr, bool secure, bool demand_fetched, bool useful,
-          bool incoming_prefetch)
+          bool incoming_prefetch, unsigned incoming_source = 0)
     {
-        if (demand_fetched && incoming_prefetch) {
+        // Utility also accounts for prefetched data already consumed by demand.
+        const bool useful_victim = demand_fetched || (trackSources && useful);
+        if (useful_victim && incoming_prefetch) {
             const unsigned slot = index(addr);
             filter[secure][slot] = true;
             if (tagged)
                 tags[secure][slot] = addr >> blockBits;
+            if (trackSources) {
+                assert(incoming_source < 256);
+                sources[secure][slot] = incoming_source;
+            }
         }
         if (!useful || ++evictions < interval)
             return false;

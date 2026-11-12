@@ -21,6 +21,10 @@ makeFeedback(const FDPRPParams &p)
 {
     // Validate before allocating the pollution filter or shifting its size.
     fatal_if(p.num_ways == 0, "FDP requires at least one way");
+    fatal_if(p.source_utility && (!p.source_feedback || !p.tagged_filter),
+             "FDP source utility requires source feedback and tagged filtering");
+    fatal_if(p.source_utility && NUM_PF_SOURCES > 256,
+             "FDP source attribution stores at most 256 source types");
     fatal_if(p.lru_fallback && (p.num_sets < 32 ||
              (p.num_sets & (p.num_sets - 1))),
              "FDP sampled fallback requires power-of-two sets, at least 32");
@@ -32,14 +36,16 @@ makeFeedback(const FDPRPParams &p)
                p.pollution_low < p.pollution_high),
              "FDP requires 0 <= pollution_low < pollution_high <= 1");
     return fdp::Feedback(p.block_bits, p.filter_bits, p.interval_evictions,
-                         p.pollution_low, p.pollution_high, p.tagged_filter);
+                         p.pollution_low, p.pollution_high, p.tagged_filter,
+                         p.source_utility);
 }
 
 } // anonymous namespace
 
 FDP::FDP(const Params &p)
   : Base(p), numWays(p.num_ways), feedback(makeFeedback(p)),
-    sourceFeedback(p.source_feedback), confidence(NUM_PF_SOURCES),
+    sourceFeedback(p.source_feedback), sourceUtility(p.source_utility),
+    confidence(NUM_PF_SOURCES),
     lruFallback(p.lru_fallback), fdpStats(this)
 {
     if (lruFallback)
@@ -173,8 +179,15 @@ FDP::notifyMiss(const PacketPtr pkt)
     }
     fdpStats.demandMisses++;
     const auto aliases = feedback.rejectedAliases();
-    if (feedback.demandMiss(pkt->getAddr(), pkt->isSecure()))
+    if (feedback.demandMiss(pkt->getAddr(), pkt->isSecure())) {
         fdpStats.pollutionMisses++;
+        if (sourceUtility) {
+            const unsigned source = feedback.lastPolluter();
+            fdpStats.pollutionBySource[source]++;
+            if (source != PF_NONE)
+                confidence.train(source, false);
+        }
+    }
     fdpStats.filterAliasesRejected += feedback.rejectedAliases() - aliases;
 }
 
@@ -185,18 +198,23 @@ FDP::notifyEviction(const std::shared_ptr<ReplacementData> &data,
     const auto d = std::static_pointer_cast<FDPReplData>(data);
     const auto &line = d->line();
     const bool prefetch = isPrefetch(incoming);
+    unsigned incoming_source = prefetch ?
+        static_cast<unsigned>(incoming->req->getPFSource()) :
+        static_cast<unsigned>(PF_NONE);
+    if (incoming_source >= NUM_PF_SOURCES)
+        incoming_source = PF_NONE;
     if (prefetch && line.demandFetched)
         fdpStats.demandEvictedByPrefetch++;
     if (line.unusedPrefetch) {
         fdpStats.unusedPrefetchEvictions++;
-        if (sourceFeedback)
+        if (sourceFeedback && !sourceUtility)
             confidence.train(d->source, false);
     } else {
         fdpStats.usefulEvictions++;
     }
 
     if (feedback.evict(addr, secure, line.demandFetched,
-                       !line.unusedPrefetch, prefetch)) {
+                       !line.unusedPrefetch, prefetch, incoming_source)) {
         fdpStats.intervals++;
         fdpStats.pollutionRate = feedback.getPollution();
         fdpStats.intervalPositions[feedback.getPosition()]++;
@@ -252,7 +270,8 @@ FDP::FDPStats::FDPStats(statistics::Group *parent)
     ADD_STAT(fallbackSelector, "FDP/LRU insertion selector (LRU if >= 512)"),
     ADD_STAT(prefetchInsertions, "Prefetch fills by insertion position"),
     ADD_STAT(intervalPositions, "Feedback intervals by selected position"),
-    ADD_STAT(protectedBySource, "High-confidence prefetch fills placed at MRU")
+    ADD_STAT(protectedBySource, "High-confidence prefetch fills placed at MRU"),
+    ADD_STAT(pollutionBySource, "Tagged pollution misses by causing prefetch source")
 {
     for (auto *v : {&prefetchInsertions, &intervalPositions}) {
         v->init(v == &prefetchInsertions ? 4 : 3);
@@ -261,9 +280,11 @@ FDP::FDPStats::FDPStats(statistics::Group *parent)
         v->subname(fdp::Feedback::Lru, "lru");
     }
     prefetchInsertions.subname(3, "mru");
-    protectedBySource.init(NUM_PF_SOURCES);
-    for (unsigned i = 0; i < NUM_PF_SOURCES; ++i)
-        protectedBySource.subname(i, enums::PrefetchSourceTypeStrings[i]);
+    for (auto *v : {&protectedBySource, &pollutionBySource}) {
+        v->init(NUM_PF_SOURCES);
+        for (unsigned i = 0; i < NUM_PF_SOURCES; ++i)
+            v->subname(i, enums::PrefetchSourceTypeStrings[i]);
+    }
 }
 
 } // namespace replacement_policy

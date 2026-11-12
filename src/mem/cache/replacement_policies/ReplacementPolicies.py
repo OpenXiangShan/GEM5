@@ -87,6 +87,8 @@ class FDPRP(BaseReplacementPolicy):
         False, "Use tagged, single-use pollution evidence instead of bits")
     source_feedback = Param.Bool(
         False, "Use source confidence for prefetch insertion and hit promotion")
+    source_utility = Param.Bool(
+        False, "Train source penalties from tagged pollution, not unused evictions")
     interval_evictions = Param.Unsigned(
         8192, "Useful capacity evictions per feedback interval")
     pollution_low = Param.Float(0.005, "Low pollution threshold (HPCA 2007)")
