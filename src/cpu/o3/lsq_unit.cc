@@ -2350,9 +2350,18 @@ LSQUnit::commitLoads(InstSeqNum &youngest_inst)
 {
     assert(loadQueue.size() == 0 || loadQueue.front().valid());
 
+    bool committed_load = false;
+    InstSeqNum last_committed_load = 0;
     while (loadQueue.size() != 0 && loadQueue.front().instruction()->seqNum
             <= youngest_inst) {
+        committed_load = true;
+        last_committed_load = loadQueue.front().instruction()->seqNum;
         commitLoad();
+    }
+
+    if (committed_load) {
+        getLsq()->eraseBusEntries(
+            lsqID, last_committed_load, LSQ::BusEntryRange::AtOrBefore);
     }
 }
 
@@ -2825,6 +2834,9 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
         lastClockLQPopEntries++;
         ++stats.squashedLoads;
     }
+
+    getLsq()->eraseBusEntries(
+        lsqID, squashed_num, LSQ::BusEntryRange::After);
 
     // Squash only removes entries with seqNum > squashed_num. completedIdx
     // is rewound only when it points past squashed_num or is invalid.
@@ -4099,8 +4111,9 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         DPRINTF(LoadPipeline, "Load [sn:%ld]: Forward from bus, data: %lx\n",
                 load_inst->seqNum, *((uint64_t*)load_inst->memData));
         panic_if(bus.size() > lsq->getLQEntries(), "packets on bus should never be greater than LQ size");
-        for (auto ele : bus) {
-            DPRINTF(LSQUnit, " bus:[sn:%ld], paddr:%lx\n", ele.first, ele.second);
+        for (const auto &[seq_num, entry] : bus) {
+            DPRINTF(LSQUnit, " bus:[sn:%llu], paddr:%lx\n",
+                    seq_num, entry.addr);
         }
         // this load can forward data from bus
         forwardFromBus(load_inst, request);

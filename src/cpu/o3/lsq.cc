@@ -1636,6 +1636,30 @@ LSQ::commitLoads(InstSeqNum &youngest_inst, ThreadID tid)
 }
 
 void
+LSQ::eraseBusEntries(ThreadID tid, InstSeqNum boundary,
+                     BusEntryRange range)
+{
+    for (auto it = bus.begin(); it != bus.end();) {
+        const InstSeqNum seq_num = it->first;
+        const BusEntry &entry = it->second;
+        const bool in_range = range == BusEntryRange::AtOrBefore ?
+            seq_num <= boundary : seq_num > boundary;
+
+        if (entry.tid == tid && in_range) {
+            DPRINTF(LSQ,
+                    "Erase bus entry on load lifetime end: tid=%u "
+                    "sn=%llu addr=%#lx boundary=%llu range=%s\n",
+                    tid, seq_num, entry.addr, boundary,
+                    range == BusEntryRange::AtOrBefore ?
+                        "at-or-before" : "after");
+            it = bus.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void
 LSQ::commitStores(InstSeqNum &youngest_inst, ThreadID tid)
 {
     thread.at(tid).commitStores(youngest_inst);
@@ -2405,12 +2429,16 @@ LSQ::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
         // Data block is ready in Dcache, data on bus can be cleared now
         Addr busClearBlkAddr = pkt->getAddr();
         DPRINTF(Hint, "Bus Clear\n");
-        DPRINTF(LSQ, "Bus_Clear, clear address: %#lx, bus size: %d\n", busClearBlkAddr, bus.size());
+        DPRINTF(LSQ, "Bus_Clear, clear address: %#lx, bus size: %zu\n",
+                busClearBlkAddr, bus.size());
         for (auto it = bus.begin(); it != bus.end();) {
-            auto [seqNum, addr] = *it;
-            if ((addr & ~((uint64_t)cpu->cacheLineSize() - 1)) == busClearBlkAddr) {
+            const InstSeqNum seq_num = it->first;
+            const BusEntry &entry = it->second;
+            if ((entry.addr & ~((uint64_t)cpu->cacheLineSize() - 1)) ==
+                busClearBlkAddr) {
+                DPRINTF(LSQ, " erased bus: [sn:%llu] addr: %#lx\n",
+                        seq_num, entry.addr);
                 it = bus.erase(it);
-                DPRINTF(LSQ, " erased bus: [sn:%ld] addr: %#lx\n", seqNum, addr);
             } else {
                 it++;
             }
@@ -4024,7 +4052,7 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
         } else {
             DPRINTF(LSQ, "[sn:%ld] addToBus\n", _inst->seqNum);
             // Cache miss refill, make data stable on data bus
-            lsq->bus[_inst->seqNum] = pkt->getAddr();
+            lsq->bus[_inst->seqNum] = {pkt->getAddr(), _port.lsqID};
             _port.getStats()->busAppendTimes++;
             discard();
         }
