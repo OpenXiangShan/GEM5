@@ -269,9 +269,9 @@ class BTBMGSC : public TimedBaseBTBPredictor
     void updateGlobalThreshold(Addr pc, bool update_direction);
 
     // Look up predictions in MGSC tables for a stream of instructions
-    void lookupHelper(const Addr &stream_start, const std::vector<BranchPrediction> &btbEntries,
+    void lookupHelper(const Addr &stream_start, std::vector<BranchPrediction> &btbEntries,
                       const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
-                      CondTakens &results, ThreadID tid, uint8_t asidHash);
+                      ThreadID tid, uint8_t asidHash);
 
     // Calculate MGSC history index with folded history
     Addr getHistIndex(Addr pc, unsigned tableIndexBits, uint64_t foldedHist,

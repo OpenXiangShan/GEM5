@@ -135,17 +135,19 @@ struct BranchPrediction : BranchInfo
 {
     bool valid{false};
     bool taken{false};
+    Addr predictedTarget{0}; // Selected target; inherited target is the BTB input.
     bool baseTaken{false};
     bool baseStrong{false};
     int source{-1};
 
     BranchPrediction() = default;
     BranchPrediction(const BranchInfo &branch)
-        : BranchInfo(branch), valid(true)
+        : BranchInfo(branch), valid(true), predictedTarget(branch.target)
     {}
     BranchPrediction(const BTBEntry &entry)
         : BranchInfo(entry), valid(entry.valid),
           taken(!entry.isCond || entry.ctr >= 0),
+          predictedTarget(entry.target),
           baseTaken(entry.ctr >= 0),
           baseStrong(std::abs(2 * entry.ctr + 1) == 5),
           source(entry.source)
@@ -206,18 +208,6 @@ struct LFSR64
         }
     }
 };
-
-// {branch pc -> istaken} maps
-using CondTakens = std::vector<std::pair<Addr, bool>>;
-// {branch pc -> target pc} maps
-using IndirectTargets = std::vector<std::pair<Addr, Addr>>;
-
-#define CondTakens_find(condTakens, branch_pc) \
-    std::find_if(condTakens.begin(), condTakens.end(), \
-                 [&branch_pc](const auto &p) { return p.first == branch_pc; })
-#define IndirectTakens_find(indirectTargets, branch_pc) \
-    std::find_if(indirectTargets.begin(), indirectTargets.end(), \
-                 [&branch_pc](const auto &p) { return p.first == branch_pc; })
 
 #define FillStageLoop(x) for (int x = getDelay(); x < stagePreds.size(); ++x)
 
@@ -497,13 +487,6 @@ struct FullBTBPrediction
     uint8_t asidHash;
     Addr bbStart;
     std::vector<BranchPrediction> btbEntries; // for BTB, only assigned when hit, sorted by inst order
-    // for conditional branch predictors, mapped with lowest bits of branches
-    CondTakens condTakens;
-
-    // for indirect predictor, mapped with lowest bits of branches
-    IndirectTargets indirectTargets;
-    Addr returnTarget; // for RAS
-
     std::unordered_map<Addr, TageInfoForMGSC> tageInfoForMgscs;
 
     unsigned predSource;
@@ -518,9 +501,6 @@ struct FullBTBPrediction
         asidHash(0),
         bbStart(0),
         btbEntries(),
-        condTakens(),
-        indirectTargets(),
-        returnTarget(0),
         tageInfoForMgscs(),
         predSource(0),
         overrideReason(OverrideReason::NO_OVERRIDE),
@@ -528,28 +508,15 @@ struct FullBTBPrediction
         s1Source(-1),
         s3Source(-1) {}
 
-    BranchPrediction getTakenEntry() {
-        // IMPORTANT: assume entries are sorted
-        for (auto &entry : this->btbEntries) {
-            // hit
-            if (entry.valid) {
-                if (entry.isCond) {
-                    // find corresponding direction pred in condTakens
-                    // TODO: use lower-bit offset of branch instruction
-                    auto& pc = entry.pc;
-                    auto it = CondTakens_find(condTakens, pc);
-                    if (it != condTakens.end()) {
-                        if (it->second) {   // find and taken, return the entry
-                            return entry;
-                        }
-                    }
-                }
-                if (entry.isUncond()) { // find the first uncond entry
-                    return entry;
-                }
+    BranchPrediction getTakenEntry() const
+    {
+        // Keep the not-taken prefix for speculative history updates.
+        for (const auto &entry : btbEntries) {
+            if (entry.valid && (!entry.isCond || entry.taken)) {
+                return entry;
             }
         }
-        return BranchPrediction(); // not found, return empty entry
+        return {};
     }
 
     bool isTaken() {
@@ -561,29 +528,11 @@ struct FullBTBPrediction
         return (bbStart + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
     }
 
-    Addr getEntryTarget(const BranchPrediction &entry) {
-        Addr target = entry.target;
-        // indirect target should come from ipred or ras,
-        // or btb itself when ipred miss
-        if (entry.isIndirect) {
-            if (!entry.isReturn) { // normal indirect, see ittage
-                auto& pc = entry.pc;
-                auto it = IndirectTakens_find(indirectTargets, pc);
-                if (it != indirectTargets.end()) { // found in ittage, use it
-                    target = it->second;
-                }
-            } else { // indirect return, use RAS target
-                target = returnTarget;
-            }
-        } // else: normal taken, use btb target
-        return target;
-    }
-
     Addr getTarget(Addr predictWidth) {
         Addr target;
         const auto &entry = getTakenEntry();
         if (entry.valid) { // found a taken entry
-            target = getEntryTarget(entry);
+            target = entry.predictedTarget;
         } else {
             target = getFallThrough(predictWidth);
         }
@@ -627,52 +576,31 @@ struct FullBTBPrediction
         }
     }
 
-    DirectionHistoryUpdate getGHistUpdate()  //global or local
+    DirectionHistoryUpdate getGHistUpdate() const
     {
-        DirectionHistoryUpdate update; // shamt is the number of bits to shift in history update
-        for (auto &entry : btbEntries) {
-            if (entry.valid) {
-                if (entry.isCond) { // if found a cond branch, shamt++
-                    update.shamt++;
-                    auto& pc = entry.pc;
-                    auto it = CondTakens_find(condTakens, pc);
-                    if (it != condTakens.end()) {
-                        if (it->second) { // if the cond branch is taken, taken = true
-                            update.taken = true;
-                            break;
-                        }
-                    }
-                } else {
-                    // uncond
-                    break;
-                }
+        DirectionHistoryUpdate update;
+        for (const auto &entry : btbEntries) {
+            if (!entry.valid) {
+                continue;
+            }
+            if (!entry.isCond) {
+                break;
+            }
+            ++update.shamt;
+            if (entry.taken) {
+                update.taken = true;
+                break;
             }
         }
-        // For example, return (3, true) means 3 bits to shift in history update,
-        // and the third branch is taken, new hist = xxx001
         return update;
     }
 
-    DirectionHistoryUpdate getBwHistUpdate() //global backward or imli
+    DirectionHistoryUpdate getBwHistUpdate() const
     {
-        DirectionHistoryUpdate update;
-        for (auto &entry : btbEntries) {
-            if (entry.valid) {
-                if (entry.isCond) {
-                    update.shamt++;
-                    auto& pc = entry.pc;
-                    auto it = CondTakens_find(condTakens, pc);
-                    if (it != condTakens.end()) {
-                        if (it->second) {
-                            update.taken = (entry.target < entry.pc); // branch is backward if target < pc
-                            break;
-                        }
-                    }
-                } else {
-                    // uncond
-                    break;
-                }
-            }
+        auto update = getGHistUpdate();
+        if (update.taken) {
+            const auto entry = getTakenEntry();
+            update.taken = entry.target < entry.pc;
         }
         return update;
     }
@@ -684,7 +612,7 @@ struct FullBTBPrediction
         if (entry.valid) {
             update.taken = true;
             update.pc = entry.pc;
-            update.target = getEntryTarget(entry);
+            update.target = entry.predictedTarget;
         }
         return update;
     }

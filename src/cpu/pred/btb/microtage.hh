@@ -168,8 +168,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
 #endif
 
     // Look up predictions in TAGE tables for a stream of instructions
-    void lookupHelper(const Addr &startPC, const std::vector<BranchPrediction> &btbEntries,
-                      CondTakens& results, ThreadID tid, uint8_t asidHash);
+    void lookupHelper(const Addr &startPC, std::vector<BranchPrediction> &btbEntries, ThreadID tid, uint8_t asidHash);
 
     // Calculate TAGE index for a given PC and table
     Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0,
@@ -417,8 +416,7 @@ public:
     // Build the reachable conditional prefix for S3 teacher update.
     std::vector<BranchPrediction> prepareS3UpdateEntriesFromAbtbMeta(
         const std::vector<BranchPrediction> &abtbEntries,
-        FullBTBPrediction &s3Pred,
-        CondTakens &teacherCondTakens);
+        FullBTBPrediction &s3Pred);
     std::vector<BranchPrediction> getAbtbConditionalEntries(
         const std::vector<BranchPrediction> &btbEntries) const;
     bool isAbtbEntry(const BranchPrediction &entry) const;

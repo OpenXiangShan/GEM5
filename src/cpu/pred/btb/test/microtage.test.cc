@@ -52,14 +52,20 @@ makeBranchOutcome(const BTBEntry &entry, bool taken, bool mispredicted)
 
 FullBTBPrediction
 makeStagePred(Addr start_pc, const std::vector<BTBEntry> &entries,
-              const CondTakens &cond_takens)
+              const std::vector<std::pair<Addr, bool>> &directions)
 {
     FullBTBPrediction pred;
     pred.tid = 0;
     pred.asidHash = 0;
     pred.bbStart = start_pc;
     pred.btbEntries.assign(entries.begin(), entries.end());
-    pred.condTakens = cond_takens;
+    for (auto &entry : pred.btbEntries) {
+        for (const auto &direction : directions) {
+            if (entry.pc == direction.first) {
+                entry.taken = direction.second;
+            }
+        }
+    }
     return pred;
 }
 
@@ -92,9 +98,7 @@ class MicroTAGES3UpdateTest : public ::testing::Test
         stage_preds[0].bbStart = start_pc;
         stage_preds[0].btbEntries = {entry};
         predictor->putPCHistory(start_pc, boost::dynamic_bitset<>(64), stage_preds);
-        Addr branch_pc = entry.pc;
-        auto it = CondTakens_find(stage_preds[0].condTakens, branch_pc);
-        return it != stage_preds[0].condTakens.end() && it->second;
+        return stage_preds[0].btbEntries.front().taken;
     }
 
     std::unique_ptr<MicroTAGE> tage;
