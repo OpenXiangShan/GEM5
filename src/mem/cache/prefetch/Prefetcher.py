@@ -965,7 +965,7 @@ class XSPhysicalSmallBOP(BOPPrefetcher):
     crossPage = False
     enable_student_cover = False
     student_teacher_top_n = 1
-    student_pool_size = 8
+    student_pool_size = 4
     student_conf_alpha = 0.0
     student_cov_threshold = 0.05
     student_filter_entries = 2048
