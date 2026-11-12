@@ -1,0 +1,179 @@
+diff --git a/configs/common/L2Replacement.py b/configs/common/L2Replacement.py
+index 37a7a0249b..f3bd4249fa 100644
+--- a/configs/common/L2Replacement.py
++++ b/configs/common/L2Replacement.py
+@@ -13,12 +13,18 @@ def configure_l2_replacement(args, system):
+                   [s.inner_cache for s in system.l2_wrappers[i].slices])
+         hints = None
+         external = args.ampm_hint_source == "prefetcher"
+-        if args.l2_replacement_policy == "ampm" or external:
++        if (args.l2_replacement_policy == "ampm" or external or
++                args.ampm_map_observe_l1):
+             hints = AMPMHintTable(entries=args.ampm_map_entries,
+                                   assoc=args.ampm_map_assoc,
+                                   block_size=int(system.cache_line_size),
+                                   external_hints=external)
+             setattr(system, "l2_ampm_hints%d" % i, hints)
++            if args.ampm_map_observe_l1:
++                if external:
++                    raise ValueError("L1 map observation requires "
++                                     "--ampm-hint-source=cache")
++                hints.private_cache = system.cpu[i].dcache
+             if external:
+                 prefetcher = system.cpu[i].dcache.prefetcher
+                 if not isinstance(prefetcher, AMPMPrefetcher):
+diff --git a/configs/common/Options.py b/configs/common/Options.py
+index 68d1874814..14d32eacb9 100644
+--- a/configs/common/Options.py
++++ b/configs/common/Options.py
+@@ -168,6 +168,8 @@ def addNoISAOptions(parser, configure_xiangshan=False):
+                         help="Use L2 history or the original L1D AMPM map")
+     parser.add_argument("--ampm-map-entries", type=int, default=256)
+     parser.add_argument("--ampm-map-assoc", type=int, default=16)
++    parser.add_argument("--ampm-map-observe-l1", action="store_true",
++                        help="Include L1D accesses in reconstructed AMPM history")
+     parser.add_argument("--ampm-low-insert-period", type=int, default=32)
+     parser.add_argument("--ampm-insertion-mode", default="brrip",
+                         choices=["srrip", "brrip", "drrip"],
+diff --git a/src/mem/cache/replacement_policies/ReplacementPolicies.py b/src/mem/cache/replacement_policies/ReplacementPolicies.py
+index ae45414299..17fc7c65cb 100644
+--- a/src/mem/cache/replacement_policies/ReplacementPolicies.py
++++ b/src/mem/cache/replacement_policies/ReplacementPolicies.py
+@@ -176,6 +176,7 @@ class AMPMHintTable(SimObject):
+     zone_size = Param.Unsigned(4096, 'Bytes covered by one access map')
+     block_size = Param.Unsigned(64, 'Cache-line bytes')
+     external_hints = Param.Bool(False, 'Receive states from the AMPM prefetcher')
++    private_cache = Param.BaseCache(NULL, 'Optional private-cache history source')
+ 
+ 
+ class PAMAIPRP(BaseReplacementPolicy):
+diff --git a/src/mem/cache/replacement_policies/pa_maip_rp.cc b/src/mem/cache/replacement_policies/pa_maip_rp.cc
+index abd05738a4..99ccf3e791 100644
+--- a/src/mem/cache/replacement_policies/pa_maip_rp.cc
++++ b/src/mem/cache/replacement_policies/pa_maip_rp.cc
+@@ -10,6 +10,7 @@
+ 
+ #include "base/intmath.hh"
+ #include "base/logging.hh"
++#include "mem/cache/base.hh"
+ 
+ namespace gem5
+ {
+@@ -52,9 +53,39 @@ AMPMHintTable::AMPMHintTable(const Params &p)
+   : SimObject(p),
+     maps(p.external_hints ? nullptr : std::make_unique<pa_maip::AccessMap>(
+         checkedEntries(p), p.assoc, p.zone_size, p.block_size)),
+-    externalHints(p.external_hints), stats(this)
++    externalHints(p.external_hints), privateCache(p.private_cache), stats(this)
+ {
+     checkedEntries(p);
++    fatal_if(externalHints && privateCache,
++             "AMPM private probes and external hints cannot both own a map");
++}
++
++void
++AMPMHintTable::regProbeListeners()
++{
++    if (privateCache) {
++        auto manager = privateCache->getProbeManager();
++        for (const char *probe : {"Hit", "Miss"}) {
++            privateListeners.push_back(
++                manager->connect<PrivateListener>(*this, probe));
++        }
++    }
++}
++
++void
++AMPMHintTable::PrivateListener::notify(const PacketPtr &pkt)
++{
++    if (!pkt->isDemand() || isPrefetch(pkt) ||
++        pkt->cmd == MemCmd::StorePFTrain) {
++        return;
++    }
++    pa_maip::State state = pa_maip::Init;
++    if (!owner.getHint(pkt, state)) {
++        owner.observe(pkt);
++        if (owner.getHint(pkt, state)) {
++            owner.stats.privateCaptures++;
++        }
++    }
+ }
+ 
+ bool
+@@ -161,10 +192,10 @@ PAMAIP::touch(const std::shared_ptr<ReplacementData>& replacement_data,
+     if ((!prefetch && !pkt->isDemand()) || pkt->req->isCacheMaintenance()) {
+         return;
+     }
+-    if (!prefetch && data->unusedPrefetch && hints->isExternal()) {
++    if (!prefetch && data->unusedPrefetch && hints->seesPrivateUses()) {
+         pa_maip::State state = pa_maip::Init;
+         if (hints->getHint(pkt, state) && pa_maip::highPriority(state)) {
+-            // AMPM has observed an earlier demand use absorbed by L1.
++            // The map has observed an earlier demand use absorbed by L1.
+             data->consumeDemand();
+         }
+     }
+@@ -300,7 +331,9 @@ AMPMHintTable::HintStats::HintStats(statistics::Group *parent)
+     ADD_STAT(demandStates, statistics::units::Count::get(),
+              "Demand requests by pre-access map state"),
+     ADD_STAT(prefetchStates, statistics::units::Count::get(),
+-             "Prefetch requests by pre-access map state")
++             "Prefetch requests by pre-access map state"),
++    ADD_STAT(privateCaptures, statistics::units::Count::get(),
++             "Demand snapshots captured at the private cache")
+ {
+     demandStates.init(4);
+     prefetchStates.init(4);
+diff --git a/src/mem/cache/replacement_policies/pa_maip_rp.hh b/src/mem/cache/replacement_policies/pa_maip_rp.hh
+index f0b5f0f69d..59a4f1ef9a 100644
+--- a/src/mem/cache/replacement_policies/pa_maip_rp.hh
++++ b/src/mem/cache/replacement_policies/pa_maip_rp.hh
+@@ -13,9 +13,13 @@
+ #include "mem/cache/replacement_policies/pa_maip_logic.hh"
+ #include "params/AMPMHintTable.hh"
+ #include "params/PAMAIPRP.hh"
++#include "sim/probe/probe.hh"
+ 
+ namespace gem5
+ {
++
++class BaseCache;
++
+ namespace replacement_policy
+ {
+ 
+@@ -24,20 +28,33 @@ class AMPMHintTable : public SimObject
+   private:
+     std::unique_ptr<pa_maip::AccessMap> maps;
+     const bool externalHints;
++    BaseCache *const privateCache;
++    class PrivateListener : public ProbeListenerArgBase<PacketPtr>
++    {
++      private:
++        AMPMHintTable &owner;
++      public:
++        PrivateListener(AMPMHintTable &owner_, const std::string &name)
++          : ProbeListenerArgBase<PacketPtr>(name), owner(owner_) {}
++        void notify(const PacketPtr &pkt) override;
++    };
++    std::vector<ProbeListenerPtr<PrivateListener>> privateListeners;
+     struct HintStats : statistics::Group
+     {
+         explicit HintStats(statistics::Group *parent);
+         statistics::Vector demandStates;
+         statistics::Vector prefetchStates;
++        statistics::Scalar privateCaptures;
+     } stats;
+ 
+   public:
+     using Params = AMPMHintTableParams;
+     explicit AMPMHintTable(const Params &p);
++    void regProbeListeners() override;
+     void observe(const PacketPtr pkt);
+     void capture(const PacketPtr pkt, uint8_t state);
+     void recordPrefetchHint(uint8_t state);
+-    bool isExternal() const { return externalHints; }
++    bool seesPrivateUses() const { return externalHints || privateCache; }
+     bool getHint(const PacketPtr pkt, pa_maip::State &state) const;
+ };
+ 

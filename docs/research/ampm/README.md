@@ -488,3 +488,62 @@ finished and the official overall/GHz score is **22.731668** (integer
 23.229888, floating point 22.386430). It has its own AMPM-prefetcher
 protocol and must be compared against the matched AMPM XSDRRIP and
 PA-MAIP screens, not against the XSComposite baseline scores.
+
+
+## Rejected private-cache shadow-map observation
+
+A temporary probe listener included L1D Hit/Miss references in the shared
+shadow map and allowed an earlier L1 use to clear L2's unused-prefetch bit.
+This used the same bounded map, pre-access request snapshots and unchanged
+XSComposite prefetch generation. All three 100K difftest smokes passed;
+LRU with/without the listener matched all 11279 common non-host statistics.
+
+Warmed diagnostics (4M warmup + 4M measured, all difftest passes):
+
+| Point | LRU IPC | L2-map DRRIP3 | L1-observed DRRIP3 |
+| --- | ---: | ---: | ---: |
+| GemsFDTD 65615 | 6.354797 | 6.362513 | 6.263680 |
+| mcf 6753 | 0.806989 | 0.803794 | 0.802471 |
+| omnetpp 18492 | 1.265756 | 1.283191 | 1.254880 |
+
+The extra visibility changes map history and promotion counts but does
+not improve any of these diagnostics. The runtime option was withdrawn;
+`experiments/private-l1-observation.patch` and its JSON retain the exact
+implementation and results. Real AMPM's original private-state provider
+remains implemented. The patch is relative to protocol-fix commit
+464a6fb08d4c72832d373cb5980cfbe4983a28df.
+
+## Reproducing matched comparisons
+
+`compare_complete.py` accepts an explicit weights JSON and any number of
+`--run LABEL=ARCHIVE` arguments. It requires every selected point to have a
+completed marker, no abort marker, and nonempty statistics. It checks the
+REF/checkpoint root, configuration path, warmup and total instructions,
+CPU clock, L2 geometry and effective L1D prefetcher parameters. It creates
+read-only symlink views under a fresh output directory, then invokes the
+existing gem5_data_proc pipeline with the exact same weights for each run.
+It reproduced the three 145-point default-prefetcher scores and correctly
+rejected both the failed full fixed-BRRIP run and a mixed AMPM/XSComposite
+comparison. The helper verifies the selected subset, not the conclusion
+of an entire GitHub workflow.
+
+
+The capacity ablation used the existing L2-only shadow-map option and kept
+prefetch generation unchanged. At 1024 maps (four times the state storage),
+GemsFDTD 65615 measured IPC 6.259754 versus 6.362513 with 256 maps; mcf
+6753 measured 0.800943 versus 0.803794. The 2-bit adaptive controls at 256
+maps measured 6.322286 and 0.805238 respectively. All runs used 4M warmup
+and 4M measured instructions with difftest. Extra history does not recover
+these points; keep the 256-map, 3-bit paper configuration as the reference.
+`experiments/map-capacity.json` retains the state distributions.
+
+Wrapper and slice prefetch counters are separate observation boundaries;
+forwarded traffic can appear in both. New diagnostic JSON reports them
+separately rather than adding them. Genuine CPU-data comparisons use the
+explicit `demandMisses::cpu.data` requestor counter, not the generic total.
+
+The missing-snapshot refill fallback now skips map lookup altogether and
+uses ordinary SRRIP insertion. Before/after 100K difftest smokes match all
+11375 common non-host statistics. The pre-access snapshot remains the only
+source of history for insertion; absent snapshots cannot use later map
+updates.

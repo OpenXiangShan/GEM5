@@ -1,0 +1,46 @@
+{
+  "mcf": {
+    "l2map2": {
+      "simTicks": 1654164180.0,
+      "simInsts": 3999989.0,
+      "system.cpu.ipc": 0.805238,
+      "system.l2_ampm_hints0.demandStates::init": 517794.0,
+      "system.l2_ampm_hints0.demandStates::prefetched": 42724.0,
+      "system.l2_ampm_hints0.demandStates::accessed": 39511.0,
+      "system.l2_ampm_hints0.demandStates::reused": 314583.0,
+      "system.mem_ctrls.numReads::cpu.data": 76017.0
+    },
+    "map1k3": {
+      "simTicks": 1663039629.0,
+      "simInsts": 4000000.0,
+      "system.cpu.ipc": 0.800943,
+      "system.l2_ampm_hints0.demandStates::init": 403440.0,
+      "system.l2_ampm_hints0.demandStates::prefetched": 59145.0,
+      "system.l2_ampm_hints0.demandStates::accessed": 55571.0,
+      "system.l2_ampm_hints0.demandStates::reused": 402067.0,
+      "system.mem_ctrls.numReads::cpu.data": 79920.0
+    }
+  },
+  "GemsFDTD": {
+    "l2map2": {
+      "simTicks": 210683772.0,
+      "simInsts": 4000009.0,
+      "system.cpu.ipc": 6.322286,
+      "system.l2_ampm_hints0.demandStates::init": 1464.0,
+      "system.l2_ampm_hints0.demandStates::prefetched": 31317.0,
+      "system.l2_ampm_hints0.demandStates::accessed": 266.0,
+      "system.l2_ampm_hints0.demandStates::reused": 111.0,
+      "system.mem_ctrls.numReads::cpu.data": 670.0
+    },
+    "map1k3": {
+      "simTicks": 212788665.0,
+      "simInsts": 4000014.0,
+      "system.cpu.ipc": 6.259754,
+      "system.l2_ampm_hints0.demandStates::init": 947.0,
+      "system.l2_ampm_hints0.demandStates::prefetched": 29145.0,
+      "system.l2_ampm_hints0.demandStates::accessed": 2140.0,
+      "system.l2_ampm_hints0.demandStates::reused": 203.0,
+      "system.mem_ctrls.numReads::cpu.data": 698.0
+    }
+  }
+}
