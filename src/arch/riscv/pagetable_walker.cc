@@ -84,6 +84,8 @@ Walker::WalkerStats::WalkerStats(statistics::Group *parent)
                "Number of PTW memory requests sent"),
       ADD_STAT(ptwMemCycle, statistics::units::Cycle::get(),
                "Cycles with at least one PTW memory request in flight"),
+      ADD_STAT(droppedSpecWalks, statistics::units::Count::get(),
+               "Speculative walks dropped by ptw_max_spec_walks"),
       ADD_STAT(ptwAvgMemLatency,
                statistics::units::Rate<
                    statistics::units::Cycle,
@@ -359,6 +361,33 @@ Walker::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *translation,
     return std::make_pair(false, NoFault);
 }
 
+unsigned
+Walker::countSpecWalks() const
+{
+    unsigned spec_walks = 0;
+    for (auto *ws : currStates) {
+        if (ws->fromPre || ws->fromBackPre ||
+            (ws->mainReq && ws->mainReq->isPrefetch()))
+            spec_walks++;
+    }
+    return spec_walks;
+}
+
+void
+Walker::processSpecDrops()
+{
+    while (!specDropQueue.empty()) {
+        SpecDropEntry drop = specDropQueue.front();
+        specDropQueue.pop_front();
+        DPRINTF(PageTableWalker,
+                "Finish dropped speculative walk for vaddr %#lx (pc=%#lx) "
+                "with fault\n",
+                drop.req->getVaddr(), drop.req->getPC());
+        drop.translation->finish(drop.fault, drop.req, drop.tc,
+                                 drop.mode);
+    }
+}
+
 Fault
 Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
               const RequestPtr &_req, BaseMMU::Mode _mode, bool from_forward_pre_req,
@@ -381,6 +410,46 @@ Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
         auto [coalesced, fault] =
             tryCoalesce(_tc, _translation, _req, _mode, from_l2tlb, asid, from_forward_pre_req, from_back_pre_req);
         if (!coalesced) {
+            // Admission control for speculative walks. The level-limit
+            // scheme deliberately exempts prefetch / pre-req walks, so
+            // without a cap an unbounded number of WalkerStates can pile
+            // up in currStates (e.g. a prefetch translation storm after
+            // restore) and a single recvReqRetry fan-out overflows the
+            // walker cache response queue. Coalescing into an in-flight
+            // walk only adds a requestor, so the cap is checked here,
+            // only when a new WalkerState is about to be created; demand
+            // walks are never throttled.
+            const bool is_pre_req = from_forward_pre_req || from_back_pre_req;
+            if (ptwMaxSpecWalks > 0 && (is_pre_req || _req->isPrefetch())) {
+                const unsigned spec_walks = countSpecWalks();
+                if (spec_walks >= ptwMaxSpecWalks) {
+                    stats.droppedSpecWalks++;
+                    DPRINTF(PageTableWalker,
+                            "Speculative walk limit %u reached (%u in "
+                            "flight), dropping %s walk for vaddr %#lx "
+                            "(pc=%#lx)\n",
+                            ptwMaxSpecWalks, spec_walks,
+                            is_pre_req ? "pre-req" : "prefetch",
+                            _req->getVaddr(), _req->getPC());
+                    if (!is_pre_req && _translation != nullptr) {
+                        // Finish the translation asynchronously with a
+                        // fault, mirroring the existing async walk-fault
+                        // flow (endWalk -> pageFaultOnRequestor ->
+                        // finish). Doing it synchronously here would free
+                        // the prefetcher's DeferredPacket while
+                        // translateTiming still calls markDelayed() on it.
+                        specDropQueue.push_back(
+                            {_tc, _translation, _req, _mode,
+                             tlb->createPagefault(_req->getVaddr(), 0,
+                                                  _mode, false)});
+                        if (!specDropEvent.scheduled())
+                            schedule(specDropEvent, curTick());
+                    }
+                    // pre-req walks never finish their requestors (see
+                    // endWalk), so dropping them is a plain no-op.
+                    return NoFault;
+                }
+            }
             // create state
             WalkerState *newState = new WalkerState(this, _translation, _req);
             newState->initState(_tc, _req, _mode, sys->isTimingMode(), from_forward_pre_req, from_back_pre_req);
