@@ -16,7 +16,9 @@ from m5.objects import (
 parser = argparse.ArgumentParser()
 parser.add_argument("--scenario", choices=["leaders", "switch", "prefetch-only",
                     "saturation", "merged-lru", "merged-icp",
-                    "sampling-geometry"], required=True)
+                    "sampling-geometry", "merged-prefetch-lru",
+                    "merged-prefetch-icp", "merged-upper-demand-lru",
+                    "merged-upper-demand-icp"], required=True)
 parser.add_argument("--pc-entries", type=int, choices=[0, 64], default=0)
 args = parser.parse_args()
 READ, SOFT_PREFETCH, PREFETCH = 2, 12, 14
@@ -99,19 +101,33 @@ elif args.scenario == "saturation":
                     policySwitches=2, selectorValue=0, prefetchFills=2,
                     highPriorityFills=1, lowPriorityFills=1)
 else:
-    # The CPU request merges into an outstanding prefetch fill. It must
-    # train the selected leader exactly once, despite no demand allocation.
-    icp = args.scenario == "merged-icp"
+    # Model local hardware prefetches and upper-level prefetches, which
+    # arrive as ReadReq with PREFETCH set. Only a true demand target may
+    # train the selected leader and credit useful prefetches.
+    icp = args.scenario.endswith("icp")
     line = 3 if icp else 0
-    prefetch(line)
-    reads([line])
-    misses = 1
+    if args.scenario.startswith("merged-upper-demand"):
+        trace.append((READ, line, PF_FLAG))
+    else:
+        prefetch(line)
+    if args.scenario.startswith("merged-prefetch"):
+        trace.append((READ, line, PF_FLAG))
+    else:
+        reads([line])
+    if args.scenario.startswith("merged-upper-demand"):
+        # A subsequent demand hit must not credit the merged use twice.
+        reads([line])
+    misses = 2 if args.scenario.startswith("merged-upper-demand") else 1
     expected.update(lruLeaderDemandFills=0 if icp else 1,
                     icpLeaderDemandFills=1 if icp else 0,
                     selectorValue=510 if icp else 512,
                     policySwitches=0 if icp else 1, prefetchFills=1,
                     highPriorityFills=0 if icp else 1,
                     lowPriorityFills=1 if icp else 0, usefulPrefetches=1)
+
+    if args.scenario.startswith("merged-prefetch"):
+        expected.update(lruLeaderDemandFills=0, icpLeaderDemandFills=0,
+                        selectorValue=511, policySwitches=0, usefulPrefetches=0)
 
 
 def varint(value):

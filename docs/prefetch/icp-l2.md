@@ -97,7 +97,7 @@ feedback path; they do not establish a speedup.
 The deterministic cache tests run with:
 
 ```sh
-build/RISCV/gem5.opt -d /tmp/icp-feedback tests/gem5/replacement_policies/icp_trace.py --scenario feedback
+build/RISCV/gem5.opt -d "$HOME/.tmp/icp-feedback" tests/gem5/replacement_policies/icp_trace.py --scenario feedback
 ```
 
 Other scenarios are `no-epf`, `secure`, `demotion`, `merged`, and `superseded`. Hardware-prefetch
@@ -554,9 +554,9 @@ are exercised. No suite gain is inferred from these functional tests.
 
 The initial sampler used the XOR of the low and next five set-index bits.
 Its frozen implementation is `~/.tmp/icp-l2-20261114/adaptive-fast` and passed
-34 checks with each compiler. Full-window scouts so far are +0.5812% versus
-LRU on GemsFDTD/65615, -1.2291% on zeusmp/66319, and -0.5995% on
-gcc_200/5108. The zeusmp sampling leaders favor ICP even though retained
+34 checks with each compiler. All four full-window scouts completed:
++0.5812% versus LRU on GemsFDTD/65615, -1.2291% on zeusmp/66319,
+-0.5995% on gcc_200/5108, and -1.1497% on mcf/6753. The zeusmp sampling leaders favor ICP even though retained
 whole-slice CPU data miss counts and cumulative miss latency exceed LRU.
 This motivates testing the permuted sampling cohorts separately; it is a
 hypothesis about representativeness, not proof of a cause.
@@ -564,8 +564,91 @@ hypothesis about representativeness, not proof of a cause.
 The permuted sampler is frozen independently at
 `~/.tmp/icp-l2-20261114/adaptive-mixed-fast`. It compares the same four full
 20M/40M workload windows with the original cohorts and matched LRU/XSDRRIP
-references. A separate GCC control with adaptation disabled checks both
-warmup and final ticks, instructions, and IPC against retained static ICP.
-The full-suite launcher requires all four scouts and that exact disabled-mode
-control to finish. Candidate selection and aggregate performance remain
-pending complete measured results.
+references. Completed points so far are +0.9285% versus LRU on
+GemsFDTD/65615, -0.9084% on zeusmp/66319, -3.1155% on gcc_200/5108,
+and -0.5999% on mcf/6753; all four scouts are complete.
+The new sampling distribution improves the first two points but worsens GCC;
+no uniform benefit follows from the sampling change. Separate rank-1 scouts
+use the same source to test whether shallower insertion limits that regression.
+Completed rank-1 points are +0.7126% versus LRU on GemsFDTD/65615,
+-2.4828% on gcc_200/5108, and -2.3551% on zeusmp/66319; mcf remains
+in progress. This improves GCC relative to rank 4 but worsens zeusmp.
+No aggregate score follows from scouts.
+
+The GCC control with adaptation disabled exactly reproduces retained static
+ICP ticks, instructions, and IPC in both warmup and final measurement.
+The full 145-point permuted/rank-4 screening runs with 16 workers in parallel
+with the remaining slow scouts. Its scorer requires that exact control plus
+complete point, configuration, and measurement-window audits before producing
+an aggregate result. Candidate selection and suite performance remain pending.
+
+Two additional always-MRU controls set high/low rank and accuracy threshold
+to zero with adaptation disabled. They compare GemsFDTD/65615 and
+zeusmp/66319 directly against original LRU to distinguish insertion effects
+from rank/timestamp tie handling or training-only request treatment. The
+prior always-MRU GCC control already matches original LRU exactly. Both new
+controls also pass: warmup and measurement ticks, instructions, and IPC match
+original LRU exactly, yielding 0.0% speed difference. Their result manifests
+are under `experiments/always-mru-controls` in the temporary experiment root.
+This rules out a measurable rank-versus-timestamp difference for these windows;
+it does not show that sampled selection is beneficial.
+
+A further parameter-only diagnostic holds the frozen binary, PC64, and low
+rank 4 fixed while changing sample stride from 32 to 64. All four effective
+configurations are checked: each 1024-set slice has 16 leaders per policy.
+This tests whether fewer fixed experimental sets reduce interference, at the
+cost of slower selector training. The four full-window scouts remain pending.
+An initial override used printed object names instead of Python vector indices
+and failed before simulation; those logs are preserved separately and excluded.
+
+GCC's permuted/rank-4 warmup uses 9,110 ICP follower prefetch fills in slice 0
+and 7,940 in slice 3, despite ending warmup at selector 511 in both. In the
+measured window, the total follower counts are 49,353 LRU and 790 ICP, yet
+L2 hardware-prefetch MSHR misses total only 5,509 versus 34,601 for original
+LRU. The shared L2 prefetcher issues 12,577 requests versus 209,613 for LRU;
+CPU-data L2 misses are 11,153 versus 10,245. These observations are consistent
+with persistent cache/prefetcher state from earlier decisions. They do not
+isolate historical effects from the fixed leader sets or prove a unique cause.
+The raw phase comparisons are saved under
+`~/.tmp/icp-l2-20261114/audit/adaptive-scouts/comparison.json`.
+
+An independent incremental auditor additionally checks both reference windows
+and the actual instruction boundaries for each completed screening point. It
+also requires both warmup and final scout statistics to match exactly wherever
+a scout has a corresponding completed suite point. Partial coverage is reported
+only as audited point counts, never as a suite score.
+
+Full 1.0c confirmation still covers all 1094 points. Its checkpoint list and
+weights have been verified and its matched reference score CSVs copied under
+`~/.tmp/icp-l2-20261114/full-reference-scores`. A separate full-profile launcher
+and scorer are prepared; screening alone does not establish final success.
+
+### Correct demand feedback for upper-level prefetch merges
+
+A request from the CPU side of a cache is not necessarily a CPU demand.
+Upper-level hardware prefetches reach L2 as ReadReq carrying Request::PREFETCH.
+The original fill callback used any FromCPU target as demand evidence, and
+required a local FromPrefetcher target before invoking the replacement policy.
+This produces two symmetric errors: an upper-level prefetch merged into a local
+prefetch trains a false demand use, while a real demand merged into an
+upper-level prefetch receives no completion credit.
+
+Eight packet regressions reproduce these errors in the frozen sampler binary:
+both leader roles and both source-only/PC64 modes fail their expected selector
+training count. The correction collects true demand targets independently of
+upstream-side targets and invokes the replacement-policy completion callback
+for every valid fill. ICP itself checks whether that residency was prefetched.
+The existing cache prefetch marking and prefetcher feedback paths retain their
+own upstream/local classification; this change concerns replacement feedback.
+Both pure-prefetch merges and real demand merges now receive the intended
+training, with a subsequent demand hit checking that merged use is credited
+only once.
+
+Clang fast and GCC opt each pass all 44 packet checks, including the existing
+36 scenarios and eight new upper-level merge checks. Scoped repository style
+and whitespace checks pass. The fixed runtime is frozen independently at
+`~/.tmp/icp-l2-20261114/adaptive-mergefix-fast`; earlier sampler results above
+use the previous completion callback and are retained as historical evidence.
+Four static and four adaptive full-window scouts plus an exact original-LRU
+GCC always-MRU control are running with the corrected source. Their results
+must precede any performance conclusion about the corrected implementation.
