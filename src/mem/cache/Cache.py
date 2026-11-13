@@ -162,6 +162,9 @@ class BaseCache(ClockedObject):
 
     cache_level = Param.Unsigned(0, "Cache level (L1 is 1, L2 is 2, etc.)")
 
+    icache_data_bank_bytes = Param.Unsigned(0,
+        "ICache Data SRAM bank width in bytes; zero disables pair conflicts")
+
     tag_load_read_ports = Param.Unsigned(3, "Total tag read ports for load/prefetcher(in L1 Cache)")
 
     num_slices = Param.Int(-1, "slice number (-1 is disable)")

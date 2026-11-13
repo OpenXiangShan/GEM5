@@ -441,6 +441,7 @@ struct FetchBlockPrediction
     bool taken = false;
     Addr controlPC = 0;
     Addr target = 0;
+    unsigned controlSize = 0;
 };
 
 /**

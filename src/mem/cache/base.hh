@@ -48,6 +48,7 @@
 
 #include <sys/types.h>
 
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <queue>
@@ -67,6 +68,7 @@
 #include "mem/cache/cache_blk.hh"
 #include "mem/cache/cache_probe_arg.hh"
 #include "mem/cache/compressors/base.hh"
+#include "mem/cache/icache_banks.hh"
 #include "mem/cache/mshr_queue.hh"
 #include "mem/cache/prefetch/associative_set.hh"
 #include "mem/cache/prefetch/base.hh"
@@ -335,6 +337,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
      */
     class CpuSidePort : public CacheResponsePort
     {
+        friend class BaseCache;
+
       protected:
         virtual bool recvTimingSnoopResp(PacketPtr pkt) override;
 
@@ -399,6 +403,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
     /** Max Tag read ports for L1 Load/pretche */
     const unsigned tagLoadReadPorts;
+    const unsigned icacheDataBankBytes;
 
     const int sliceNum;
 
@@ -1681,6 +1686,14 @@ public:
 
     /** Read-only hit probe (no LRU/writeback side effects) for hit-under-blocked. */
     bool probeHit(const PacketPtr pkt) const;
+
+    /** Resolve the directly connected cache without a construction dependency. */
+    static BaseCache *fromCpuSidePort(Port &port);
+
+    /** Side-effect-free way snapshot; no tag-port or replacement update. */
+    bool twoFetchDataConflict(const std::array<std::vector<icache_banks::ReadRange>, 2> &ranges) const;
+    bool supportsTwoFetch() const { return cacheLevel == 1 && isReadOnly && blkSize == 64; }
+
     void incHitUnderBlockServed() { stats.hitUnderBlockServed++; }
 
     // CacheAccessor overrided function

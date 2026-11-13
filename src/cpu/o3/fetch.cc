@@ -142,12 +142,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
              "\tincrease MaxWidth in src/cpu/o3/limits.hh\n",
              fetchWidth, static_cast<int>(MaxWidth));
     panic_if(enableTwoFetch &&
-             (twoFetchMaxBytes == 0 ||
-              fetchBufferSize < 2 ||
-              twoFetchMaxBytes > fetchBufferSize - 2),
-             "twoFetchMaxBytes (%u) requires a fetch buffer of at least "
-             "%u bytes, but fetchBufferSize is %u",
-             twoFetchMaxBytes, twoFetchMaxBytes + 2, fetchBufferSize);
+             (twoFetchMaxBytes == 0 || twoFetchMaxBytes > 64),
+             "twoFetchMaxBytes must be in [1, 64]");
     panic_if(numFetchTargetThreads == 0 ||
              numFetchTargetThreads > numThreads ||
              numFetchTargetThreads > 2,
@@ -256,12 +252,27 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
 
     traceFetch = std::make_unique<TraceFetch>(*this, params);
 
+    if (useFetchGroups()) {
+        fatal_if(numThreads != 1, "Two fetch requires a single thread");
+        groupTagRetry = std::make_unique<EventFunctionWrapper>([this] { sendGroupPackets(); },
+                                                               cpu->name() + ".two_fetch_tag_retry");
+        legacyTagRetry = std::make_unique<EventFunctionWrapper>([this] {
+            if (cacheBlocked && !retryPkt.empty() && retryPkt.front()->icacheTagPortRejected)
+                retryPendingIcacheRequests();
+        }, cpu->name() + ".two_fetch_legacy_tag_retry");
+    }
+
     if (isTraceMode() && traceFetch && !traceFetch->allowDecoupledFrontend()) {
         fatal("Trace mode requires allowDecoupledFrontend=true for decoupled+BTB-only fetch\n");
     }
 }
 
-Fetch::~Fetch() = default;
+Fetch::~Fetch()
+{
+    if (legacyTagRetry && legacyTagRetry->scheduled())
+        cpu->deschedule(*legacyTagRetry);
+    clearFetchGroup();
+}
 
 Fetch::PredecodeEntry::PredecodeEntry() = default;
 Fetch::PredecodeEntry::~PredecodeEntry() = default;
@@ -443,9 +454,18 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
     ADD_STAT(fetchTargetRequestBlocked, statistics::units::Count::get(),
              "Prepared FTQ heads whose cache request could not be started"),
     ADD_STAT(twoFetchAttempts, statistics::units::Count::get(),
-             "Predicted-taken FTQ boundaries considered for limited two-fetch"),
+             "Fetch-group pair candidates examined"),
     ADD_STAT(twoFetchSuccesses, statistics::units::Count::get(),
-             "FTQ boundaries crossed using the current fetch buffer"),
+             "Paired FTQ boundaries actually crossed during consumption"),
+    ADD_STAT(singleFetchIssued, statistics::units::Count::get(), "Single-block groups issued"),
+    ADD_STAT(twoFetchIssued, statistics::units::Count::get(), "Logical paired groups issued"),
+    ADD_STAT(twoFetchSameCycleAccepted, statistics::units::Count::get(),
+             "Paired groups with all initial fragments accepted in one ICache cycle"),
+    ADD_STAT(twoFetchRejected, statistics::units::Count::get(), "Pair rejection reasons"),
+    ADD_STAT(twoFetchTagWaits, statistics::units::Count::get(), "Tag-port waits"),
+    ADD_STAT(twoFetchCacheRetries, statistics::units::Count::get(), "Cache retry callbacks"),
+    ADD_STAT(twoFetchSupplements, statistics::units::Count::get(), "Instruction tail supplements"),
+    ADD_STAT(twoFetchCancelled, statistics::units::Count::get(), "Cancelled unconsumed groups"),
     ADD_STAT(traceMetaStores, statistics::units::Count::get(),
              "Number of stored trace metadata records (seqNum -> traceInst)"),
     ADD_STAT(traceMetaCleanupSquashCalls, statistics::units::Count::get(),
@@ -577,13 +597,19 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
         smtblockedCycles
             .init(fetch->numThreads)
             .flags(statistics::total);
+        twoFetchRejected.init(static_cast<unsigned>(two_fetch::Reject::Count));
+        const char *reject_names[] = {
+            "none", "no_next", "range", "link", "size",
+            "page", "cross_page", "bank", "exception"};
+        for (unsigned i = 0; i < static_cast<unsigned>(two_fetch::Reject::Count); ++i)
+            twoFetchRejected.subname(i, reject_names[i]);
         fetchTargetsStartedPerCycle
             .init(0, fetch->numThreads, 1);
         fetchTargetsStartedByThread
             .init(fetch->numThreads)
             .flags(statistics::total);
         fetchLineRequestsCreatedPerCycle
-            .init(0, 2 * fetch->numThreads, 1);
+            .init(0, fetch->enableTwoFetch ? 8 : 2 * fetch->numThreads, 1);
         decodeStallRate
             .flags(statistics::total);
         fetchBubbles
@@ -742,6 +768,8 @@ Fetch::setFetchQueue(TimeBuffer<FetchStruct> *ftb_ptr)
 void
 Fetch::startupStage()
 {
+    if (useFetchGroups() && !cpu->switchedOut())
+        resolveTwoFetchIcache();
     assert(priorityList.empty());
     resetStage();
 
@@ -757,6 +785,7 @@ Fetch::startupStage()
 void
 Fetch::clearStates(ThreadID tid)
 {
+    clearFetchGroup();
     clearResolveQueue(tid);
     setThreadStatus(tid, Running);
     set(threads[tid].fetchpc, cpu->pcState(tid));
@@ -796,6 +825,11 @@ Fetch::clearStates(ThreadID tid)
 void
 Fetch::resetStage()
 {
+    if (legacyTagRetry && legacyTagRetry->scheduled())
+        cpu->deschedule(*legacyTagRetry);
+    groupLineRequestsCreated = 0;
+    groupDrainStop = false;
+    clearFetchGroup();
     numInst = 0;
     interruptPending = false;
     for (auto *pkt : retryPkt) {
@@ -863,6 +897,8 @@ Fetch::resetStage()
 bool
 Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
 {
+    if (useFetchGroups())
+        groupLineRequestsCreated += 2;
     DPRINTF(Fetch, "[tid:%i] Handling multi-cacheline fetch for addr %#x, pc=%#lx\n", tid, vaddr, pc);
     // Transition to WaitingCache state when initiating cache access
     setThreadStatus(tid, WaitingCache);
@@ -977,6 +1013,8 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
             const bool sameThreadRetry = queuedTid == tid &&
                 threads[tid].cacheReq.findRequestIndex(queuedPkt->req) != SIZE_MAX;
 
+            if (useFetchGroups())
+                queuedPkt->tagReadFail = false;
             if (sameThreadRetry && icachePort.sendTimingReq(queuedPkt)) {
                 DPRINTF(Fetch,
                         "[tid:%i] Retrying matching queued I-cache packet %#lx "
@@ -989,6 +1027,8 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
                 if (retryPkt.empty()) {
                     cacheBlocked = false;
                 }
+            } else if (sameThreadRetry) {
+                retryLegacyTag(queuedPkt);
             }
         }
 
@@ -1029,6 +1069,10 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
 void
 Fetch::processCacheCompletion(PacketPtr pkt)
 {
+    if (dynamic_cast<GroupSenderState *>(pkt->senderState)) {
+        completeGroupPacket(pkt);
+        return;
+    }
     ThreadID tid = cpu->contextToThread(pkt->req->contextId());
     assert(pkt->req->isMisalignedFetch() && "Only multi-cacheline fetch is supported");
 
@@ -1083,11 +1127,18 @@ Fetch::processCacheCompletion(PacketPtr pkt)
 void
 Fetch::drainResume()
 {
+    if (useFetchGroups() && groupDrainStop) {
+        groupDrainStop = false;
+        setThreadStatus(0, Running);
+    }
 }
 
 void
 Fetch::drainSanityCheck() const
 {
+    assert(!fetchGroup);
+    assert(!groupTagRetry || !groupTagRetry->scheduled());
+    assert(!legacyTagRetry || !legacyTagRetry->scheduled());
     assert(isDrained());
     assert(retryPkt.size() == 0);
     assert(!cacheBlocked);
@@ -1104,6 +1155,9 @@ Fetch::drainSanityCheck() const
 bool
 Fetch::isDrained() const
 {
+    if (fetchGroup || (groupTagRetry && groupTagRetry->scheduled()) ||
+        (legacyTagRetry && legacyTagRetry->scheduled()))
+        return false;
     /* Make sure that threads are either idle of that the commit stage
      * has signaled that draining has completed by setting the drain
      * stall flag. This effectively forces the pipeline to be disabled
@@ -1135,12 +1189,26 @@ Fetch::takeOverFrom()
 {
     assert(cpu->getInstPort().isConnected());
     resetStage();
-
+    if (useFetchGroups())
+        resolveTwoFetchIcache();
 }
 
 void
 Fetch::drainStall(ThreadID tid)
 {
+    if (!useFetchGroups())
+        return;
+    groupDrainStop = true;
+    if (legacyTagRetry && legacyTagRetry->scheduled())
+        cpu->deschedule(*legacyTagRetry);
+    clearFetchGroup();
+    threads[tid].cacheReq.reset();
+    threads[tid].valid = false;
+    for (auto *pkt : retryPkt)
+        delete pkt;
+    retryPkt.clear();
+    cacheBlocked = false;
+    setThreadStatus(tid, Idle);
 }
 
 void
@@ -1235,7 +1303,11 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
 
     // Track how many dynamic instructions were fetched for this (legacy) FTQ/FSQ entry.
     ftqEntryFetchedInsts[tid]++;
+    run_out |=
+        fetchGroup && two_fetch::skippedControl(prediction.taken, prediction.controlPC, curr_pc, next_pc.instAddr());
     false_hit = run_out && prediction.taken && !predict_taken;
+    if (fetchGroup && predict_taken && inst->getInstBytes() != prediction.controlSize)
+        fetchGroup->noCross = true;
     if (false_hit) {
         DPRINTF(DecoupleBP,
                 "False BTB hit at FTQ %lu: stream [%#lx, %#lx) "
@@ -1248,32 +1320,19 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
                                  inst->seqNum, tid, currentLoopIter);
         ftqEntryFetchedInsts[tid] = 0;
         threads[tid].valid = false;
+        clearFetchGroup();
     } else if (run_out) {
-        if (enableTwoFetch && !isTraceMode() &&
-            allow_two_fetch && predict_taken) {
-            ++fetchStats.twoFetchAttempts;
-
-            if (dbpbtb->ftqHasNext(tid)) {
-                const auto next_prediction = dbpbtb->ftqFetchBlock(tid, 1);
-                const bool target_matches =
-                    next_pc.instAddr() == next_prediction.startPC;
-                const bool valid_range =
-                    next_prediction.startPC >= prediction.startPC &&
-                    next_prediction.endPC >= next_prediction.startPC;
-                const bool fits_window = valid_range &&
-                    next_prediction.endPC - prediction.startPC <=
-                        twoFetchMaxBytes;
-                const bool has_fetch_capacity =
-                    numInst < fetchWidth &&
-                    fetchQueue[tid].size() < fetchQueueSize;
-                const bool can_cross_boundary =
-                    !redirectPending[tid] &&
-                    (!checkInterrupt(next_pc.instAddr()) ||
-                     delayedCommit[tid]);
-
-                continued_to_next_target = target_matches && fits_window &&
-                    has_fetch_capacity && can_cross_boundary;
-            }
+        if (fetchGroup && !fetchGroup->noCross &&
+            fetchGroup->current == 0 && fetchGroup->count == 2 &&
+            !two_fetch::controlAlreadyPassed(fetchGroup->blocks[1].taken,
+                fetchGroup->blocks[1].controlPC, next_pc.instAddr()) &&
+            (next_pc.instAddr() == fetchGroup->blocks[1].startPC ||
+             (!prediction.taken && next_pc.instAddr() == fetchGroup->blocks[1].startPC + 2 &&
+              curr_pc + inst->getInstBytes() == next_pc.instAddr())) &&
+            !redirectPending[tid] &&
+            (!checkInterrupt(next_pc.instAddr()) || delayedCommit[tid])) {
+            continued_to_next_target = true;
+            fetchGroup->current = 1;
         }
 
         dbpbtb->consumeFetchTarget(ftqEntryFetchedInsts[tid], tid);
@@ -1286,6 +1345,8 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
                     dbpbtb->ftqFetchBlock(tid).ftqId);
         } else {
             threads[tid].valid = false;
+            const bool cancelled = fetchGroup && fetchGroup->count == 2 && fetchGroup->current == 0;
+            clearFetchGroup(cancelled);
             DPRINTF(DecoupleBP, "Used up fetch targets.\n");
         }
     }
@@ -1418,6 +1479,7 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
         setAllFetchStalls(tid, StallReason::IcacheStall);
         retryPkt.push_back(data_pkt);
         cacheBlocked = true;
+        retryLegacyTag(data_pkt);
     } else {
         DPRINTF(Fetch, "[tid:%i] Doing Icache access.\n", tid);
         DPRINTF(Activity, "[tid:%i] Activity: Waiting on I-cache response.\n", tid);
@@ -1545,6 +1607,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
 {
     DPRINTF(Fetch, "[tid:%i] Squashing, setting PC to: %s. seqNum: %lu\n",
             tid, new_pc, seqNum);
+    clearFetchGroup();
     squashResolveQueue(tid, seqNum);
     // Notify the value predictor at the point the frontend actually stops
     // fetching down the wrong path: instructions fetched after the commit
@@ -1652,8 +1715,11 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
 void
 Fetch::flushFetchBuffer()
 {
+    clearFetchGroup();
     for (ThreadID i = 0; i < numThreads; ++i) {
         threads[i].valid = false;
+        if (useFetchGroups() && fetchStatus[i] == WaitingCache && !hasPendingCacheRequests(i))
+            setThreadStatus(i, Running);
     }
 }
 
@@ -1785,6 +1851,8 @@ Fetch::initializeTickState()
     }
 
     handleIEWSignals();
+    if (groupDrainStop)
+        setThreadStatus(0, Idle);
 
     DPRINTF(Fetch, "Running stage.\n");
     return status_change;
@@ -2286,7 +2354,7 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
     }
 
     // Handle WaitingCache state: check if cache request is complete
-    if (fetchStatus[tid] == WaitingCache &&
+    if (!fetchGroup && fetchStatus[tid] == WaitingCache &&
         threads[tid].cacheReq.getOverallStatus() == AccessComplete) {
         // Cache access completed, transition to Running
         setThreadStatus(tid, Running);
@@ -3075,7 +3143,9 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
     // using its bytes, including instructions that span both lines.
     if ((cpu->getTea() || cpu->getDip()) &&
         (!instruction->isMicroop() || instruction->isFirstMicroop())) {
-        instruction->teaPsv = threads[tid].cacheReq.takeTeaEvents(
+        instruction->teaPsv =
+            fetchGroup ? takeGroupTea(instruction->getPC(), instruction->getInstBytes())
+                       : threads[tid].cacheReq.takeTeaEvents(
             instruction->getPC(), instruction->getInstBytes());
     }
 
@@ -3302,7 +3372,7 @@ Fetch::getEligibleFetchTargetTid(
     std::array<bool, MaxThreads> eligible;
     eligible.fill(true);
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        eligible[tid] = !redirectPending[tid] && !excluded[tid];
+        eligible[tid] = !groupDrainStop && !redirectPending[tid] && !excluded[tid];
         if (fetchStatus[tid] == Idle || fetchStatus[tid] == Blocked ||
             fetchStatus[tid] == TrapPending ||
             fetchStatus[tid] == WaitingCache) {
@@ -3425,7 +3495,8 @@ Fetch::fetch(bool &status_change)
     }
     fetchStats.fetchTargetsStartedPerCycle.sample(fetch_targets_started);
     fetchStats.fetchLineRequestsCreatedPerCycle.sample(
-        2 * fetch_targets_started);
+        useFetchGroups() ? groupLineRequestsCreated : 2 * fetch_targets_started);
+    groupLineRequestsCreated = 0;
 }
 
 StallReason
@@ -3443,6 +3514,9 @@ Fetch::checkMemoryNeeds(ThreadID tid, PCStateBase &this_pc,
         assert(traceFetch);
         return traceFetch->checkMemoryNeeds(tid, this_pc);
     }
+
+    if (fetchGroup)
+        return supplyGroupBytes(tid, this_pc);
 
     Addr fetch_pc = this_pc.instAddr();
 
@@ -3595,6 +3669,8 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 void
 Fetch::performInstructionFetch(ThreadID tid)
 {
+    if (groupDrainStop)
+        return;
     if (isTraceMode()) {
         assert(traceFetch);
         if (traceFetch->maybeStallFetch(tid)) {
@@ -3766,12 +3842,24 @@ Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
     DPRINTF(Fetch, "[tid:%i] Issuing a pipelined I-cache access for new FSQ entry, "
                   "starting at PC %#x (endPC %#x; original PC %s)\n",
             tid, start_pc, prediction.endPC, pc_state);
+    if (useFetchGroups()) {
+        if (fetchGroup)
+            return false;
+        if (startFetchGroup(tid))
+            return true;
+    }
     return fetchCacheLine(start_pc, tid, pc_state.instAddr());
 }
 
 void
 Fetch::recvReqRetry()
 {
+    if (fetchGroup && fetchGroup->cacheWait) {
+        fetchGroup->cacheWait = false;
+        ++fetchStats.twoFetchCacheRetries;
+        sendGroupPackets();
+        return;
+    }
     if (retryPkt.empty()) {
         // Access has been squashed since it was sent out.  Just clear
         // the cache being blocked.
@@ -3787,7 +3875,10 @@ Fetch::retryPendingIcacheRequests()
 {
     while (!retryPkt.empty()) {
         PacketPtr pkt = retryPkt.front();
+        if (useFetchGroups())
+            pkt->tagReadFail = false;
         if (!icachePort.sendTimingReq(pkt)) {
+            retryLegacyTag(pkt);
             return;
         }
 
@@ -3936,6 +4027,7 @@ Fetch::updateCacheRequestStatusByRequest(ThreadID tid, const RequestPtr& req,
 void
 Fetch::cancelAllCacheRequests(ThreadID tid)
 {
+    clearFetchGroup();
     assert(tid < MaxThreads);
 
     DPRINTF(Fetch, "[tid:%d] cancelAllCacheRequests: status before cancel: %s\n",

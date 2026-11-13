@@ -437,7 +437,8 @@ class DecoupledBPUWithBTB : public BPredUnit
         assert(ftq.hasTarget(id, tid));
         const auto &target = ftq.get(id, tid);
         return {id, target.startPC, target.predEndPC, target.predTaken,
-                target.predBranchInfo.pc, target.predBranchInfo.target};
+                target.predBranchInfo.pc, target.predBranchInfo.target,
+                target.predBranchInfo.size};
     }
     bool ftqHasNext(ThreadID tid) const
     {

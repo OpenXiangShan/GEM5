@@ -61,6 +61,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/mlp_predictor.hh"
 #include "cpu/o3/smt_sched.hh"
+#include "cpu/o3/two_fetch.hh"
 #include "cpu/pc_event.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
@@ -71,6 +72,7 @@
 #include "enums/SMTFetchBlockPolicy.hh"
 #include "enums/SMTFetchPolicy.hh"
 #include "enums/SMTMLPFetchBlockPolicy.hh"
+#include "mem/cache/base.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
 #include "sim/eventq.hh"
@@ -816,11 +818,85 @@ class Fetch
     /** The width of fetch in instructions. */
     unsigned fetchWidth;
 
-    /** Enable consuming two consecutive FTQ targets from one fetch buffer. */
+    /** Enable requesting and consuming two consecutive FTQ blocks. */
     const bool enableTwoFetch;
 
-    /** Maximum byte window covered by limited two-fetch. */
+    /** Combined effective-byte budget of the two predicted blocks. */
     const unsigned twoFetchMaxBytes;
+    BaseCache *twoFetchIcache = nullptr;
+
+    struct GroupSenderState : Packet::SenderState
+    {
+        uint64_t generation;
+        unsigned fragment;
+        GroupSenderState(uint64_t gen, unsigned index) : generation(gen), fragment(index) {}
+    };
+    enum class FragmentState { Translating, Ready, Sent, Complete, Failed };
+    struct GroupFragment
+    {
+        RequestPtr request;
+        PacketPtr pending = nullptr;  // owned only until sendTimingReq succeeds
+        FragmentState state = FragmentState::Translating;
+        std::vector<uint8_t> data;
+        Fault fault = NoFault;
+        unsigned blockMask = 0;
+        uint16_t tea = 0;
+    };
+    struct FetchGroup
+    {
+        uint64_t generation = 0;
+        std::array<branch_prediction::btb_pred::FetchBlockPrediction, 2> blocks;
+        std::array<Addr, 2> ends{};
+        std::vector<GroupFragment> fragments;
+        unsigned count = 1;
+        unsigned current = 0;
+        bool finalized = false;
+        bool issued = false;
+        bool noCross = false;
+        bool cacheWait = false;
+        Tick firstSend = 0;
+        unsigned initialFragments = 0;
+    };
+    std::unique_ptr<FetchGroup> fetchGroup;
+    uint64_t groupGeneration = 0;
+    unsigned groupLineRequestsCreated = 0;
+    bool groupDrainStop = false;
+    std::unique_ptr<EventFunctionWrapper> groupTagRetry;
+    std::unique_ptr<EventFunctionWrapper> legacyTagRetry;
+
+    class GroupTranslation : public BaseMMU::Translation
+    {
+        Fetch &fetch;
+        uint64_t generation;
+        unsigned fragment;
+        bool delayed = false;
+
+      public:
+        GroupTranslation(Fetch &f, uint64_t gen, unsigned index) : fetch(f), generation(gen), fragment(index) {}
+        void markDelayed() override { delayed = true; }
+        void finish(const Fault &fault, const RequestPtr &req, ThreadContext *tc, BaseMMU::Mode mode) override
+        {
+            fetch.finishGroupTranslation(generation, fragment, fault, delayed);
+            delete this;
+        }
+    };
+
+    bool useFetchGroups() const;
+    void resolveTwoFetchIcache();
+    void retryLegacyTag(PacketPtr pkt);
+    bool startFetchGroup(ThreadID tid);
+    void clearFetchGroup(bool cancelled = true);
+    void translateGroupFragment(unsigned index);
+    void finishGroupTranslation(uint64_t generation, unsigned index, const Fault &fault, bool delayed);
+    void finalizeFetchGroup();
+    void sendGroupPackets();
+    void completeGroupPacket(PacketPtr pkt);
+    void updateGroupReady();
+    void rejectGroupPair(two_fetch::Reject reason);
+    bool groupByte(Addr pc, uint8_t &value) const;
+    StallReason supplyGroupBytes(ThreadID tid, PCStateBase &pc);
+    void supplementGroup(Addr pc, unsigned size);
+    uint16_t takeGroupTea(Addr pc, unsigned size);
 
     /** The width of decode in instructions. */
     unsigned decodeWidth;
@@ -1344,8 +1420,17 @@ class Fetch
         statistics::Scalar fetchTargetRequestBlocked;
         /** Predicted-taken FTQ boundaries considered for limited two-fetch. */
         statistics::Scalar twoFetchAttempts;
-        /** FTQ boundaries crossed using the current fetch buffer. */
+        /** Paired FTQ boundaries crossed during group consumption. */
         statistics::Scalar twoFetchSuccesses;
+        statistics::Scalar singleFetchIssued;
+        statistics::Scalar twoFetchIssued;
+        statistics::Scalar twoFetchSameCycleAccepted;
+        statistics::Vector twoFetchRejected;
+        statistics::Scalar twoFetchTagWaits;
+        statistics::Scalar twoFetchCacheRetries;
+        statistics::Scalar twoFetchSupplements;
+        statistics::Scalar twoFetchCancelled;
+
 
         // Trace metadata accounting (trace mode)
         /** Number of stored trace metadata records (seqNum -> traceInst). */

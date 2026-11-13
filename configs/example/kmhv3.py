@@ -215,6 +215,7 @@ def setKmhV3Params(args, system):
         # l1 cache per core
         if args.caches:
             cpu.icache.size = '64kB'
+            cpu.icache.icache_data_bank_bytes = 8
             cpu.dcache.size = '64kB'
             cpu.dcache.tag_load_read_ports = 100
             cpu.dcache.mshrs = 16
