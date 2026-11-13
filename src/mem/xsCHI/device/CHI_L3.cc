@@ -27,6 +27,14 @@ namespace
 constexpr uint64_t DiagnosticAgeWarnCycles = 10000;
 
 bool
+isCpuReadTxn(CHI_OP_TYPE op)
+{
+    return op == CHI_OP_TYPE::CHI_REQ_READUNIQUE ||
+           op == CHI_OP_TYPE::CHI_REQ_READSHARED ||
+           op == CHI_OP_TYPE::CHI_REQ_READCLEAN;
+}
+
+bool
 isReadLifecycleTxn(CHI_OP_TYPE op)
 {
     switch (op) {
@@ -404,6 +412,10 @@ CHI_L3::dispatchReadToXbar(PacketPtr pkt, uint32_t txnId)
     } else {
         // completePendingRead(pkt->getAddr());
         if (cleanupTxn) {
+            if (isCpuReadTxn(metaIt->second.opcode)) {
+                retireCacheRespondingReadTxn(txnId);
+                return true;
+            }
             // Handle CLEANUNIQUE completion: send CHI_RSP_COMP and wait COMPACK
             assert(metaIt->second.req->getOpcode() == CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE ||
                    metaIt->second.req->getOpcode() == CHI_OP_TYPE::CHI_REQ_EVICT );
@@ -635,6 +647,7 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
                 meta.req = std::make_shared<Request>(op, flit->getAddr(), flit->getSize());
                 meta.cacheResponding = flit->getCacheResponding();
                 meta.responderHadWritable = flit->getResponderHadWritable();
+                meta.retireAfterXbarSend = meta.cacheResponding;
                 txnTable[txnId] = meta;
                 DPRINTF(CHIL3Txn,
                     "txnTable insert key=%u reason=cpu_req_track opcode=%s addr=%#lx size=%u src=%u retTxn=%u size_now=%u\n",
@@ -1267,15 +1280,19 @@ CHI_L3::handleCacheMemTimingResp(PacketPtr pkt)
     scanAgedReadTxns("handleCacheMemTimingResp");
     DPRINTF(CHIL3, "cache->CHI_L3 timing resp addr=%#lx size=%u cmd=%s\n",
             pkt->getAddr(), pkt->getSize(), pkt->cmd.toString());
+    if (pkt->isExpressSnoop()) {
+        panic_if(!pkt->cacheResponding(),
+                 "Express snoop without cache responder for addr=%#lx",
+                 pkt->getAddr());
+        DPRINTF(CHIL3, "consume express snoop addr=%#lx cmd=%s\n",
+                pkt->getAddr(), pkt->cmd.toString());
+        pendingDelete.reset(pkt);
+        return true;
+    }
     if (pkt->cmd == MemCmd::UpgradeReq) {
         DPRINTF(CHIL3,
                 "UpgradeReq received for addr=%#lx size=%u, send UpgradeResp to cache\n",
                 pkt->getAddr(), pkt->getSize());
-        if (pkt->cacheResponding()&&pkt->isExpressSnoop()){
-            DPRINTF(CHIL3,
-                    "ingnore L3's snoop\n");
-            return true;
-        }
         pkt->makeTimingResponse();
         if (!innerCacheRespPort.sendTimingResp(pkt)) {
             DPRINTF(CHIL3,
@@ -1442,6 +1459,24 @@ CHI_L3::releaseTxn(uint32_t txnId)
             "txnId release id=%u\n",
             txnId);
         txnIdMgr.releaseID(txnId);
+}
+
+void
+CHI_L3::retireCacheRespondingReadTxn(uint32_t txnId)
+{
+    auto it = txnTable.find(txnId);
+    panic_if(it == txnTable.end(), "Missing cache-responding read txn %u", txnId);
+    const auto &meta = it->second;
+    panic_if(!isCpuReadTxn(meta.opcode) || !meta.cacheResponding,
+             "Invalid cache-responding read txn %u", txnId);
+    const Addr addr = meta.addr;
+    panic_if(!eraseCacheReqTxn(meta.pkt, addr, txnId),
+             "Missing cache request mapping for txn %u", txnId);
+    logTxnLifecycle("cpu_read_cache_responding_retire", txnId, meta,
+                    meta.srcId);
+    txnTable.erase(it);
+    completePendingRead(addr);
+    releaseTxn(txnId);
 }
 
 bool
@@ -1828,11 +1863,15 @@ CHI_L3::drainPendingXbarQueue()
 
     if (p.cleanupTxn) {
         auto it = txnTable.find(p.txnId);
-        assert(it->second.opcode == CHI_OP_TYPE::CHI_REQ_WRITEBACKFULL ||
+        panic_if(it == txnTable.end(), "Missing pending xbar txn %u", p.txnId);
+        assert(isCpuReadTxn(it->second.opcode) ||
+                it->second.opcode == CHI_OP_TYPE::CHI_REQ_WRITEBACKFULL ||
                 it->second.opcode == CHI_OP_TYPE::CHI_REQ_WRITECLEANFULL ||
                 it->second.opcode == CHI_OP_TYPE::CHI_REQ_EVICT ||
                 it->second.opcode == CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE);
-        if (it->second.opcode == CHI_OP_TYPE::CHI_REQ_WRITEBACKFULL ||
+        if (isCpuReadTxn(it->second.opcode)) {
+            retireCacheRespondingReadTxn(p.txnId);
+        } else if (it->second.opcode == CHI_OP_TYPE::CHI_REQ_WRITEBACKFULL ||
                 it->second.opcode == CHI_OP_TYPE::CHI_REQ_WRITECLEANFULL ){
             //consider write is done
             if (it != txnTable.end()) {

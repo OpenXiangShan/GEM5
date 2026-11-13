@@ -307,6 +307,10 @@ CHIBridge::BridgeStats::BridgeStats(CHIBridge *parent)
         assert(req->isRequest());
         const CHI_OP_TYPE op = req->getOpcode();
         const uint64_t addr = req->getAddr();
+        const bool cacheRespondingRead = req->getCacheResponding() &&
+            (op == CHI_OP_TYPE::CHI_REQ_READUNIQUE ||
+             op == CHI_OP_TYPE::CHI_REQ_READSHARED ||
+             op == CHI_OP_TYPE::CHI_REQ_READCLEAN);
 
         if ((isReadReqOp(op) || isWriteReqOp(op)) &&
             (hasInProgressWrite(addr) ||
@@ -337,13 +341,17 @@ CHIBridge::BridgeStats::BridgeStats(CHIBridge *parent)
             // 尝试发送到网络端口
             DPRINTF(CHIBridge,"Try send Flit op:%s, addr: %lx, size:%d\n",CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(flit->getOpcode()),flit->getAddr(),flit->getSize());
             if (networkPort->send(flit)){
-                //send success, we need to save the request and txn_id
-                req->setTransactionId(txn_id);
-                saveOutstandingRequest(req, txn_id);
-                if (isReadReqOp(op)) {
-                    trackReadStart(addr);
-                } else if (isWriteReqOp(op)) {
-                    trackWriteStart(addr);
+                if (cacheRespondingRead) {
+                    // The cache responder supplies data; this bridge gets no reply.
+                    TXN_Manager.releaseID(txn_id);
+                } else {
+                    req->setTransactionId(txn_id);
+                    saveOutstandingRequest(req, txn_id);
+                    if (isReadReqOp(op)) {
+                        trackReadStart(addr);
+                    } else if (isWriteReqOp(op)) {
+                        trackWriteStart(addr);
+                    }
                 }
                 recordProtocolTx(txOp);
                 success = true;

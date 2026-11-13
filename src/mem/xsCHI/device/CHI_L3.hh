@@ -164,6 +164,7 @@ class CHI_L3 : public ClockedObject
     // Txn bookkeeping
     uint32_t allocateTxnId();
     void releaseTxn(uint32_t txnId);
+    void retireCacheRespondingReadTxn(uint32_t txnId);
 
     // TODO: fill mappings per design doc
     struct TxnMeta
@@ -297,6 +298,7 @@ class CHI_L3 : public ClockedObject
     // deferred due to transient backpressure inside handleCacheMemTimingResp.
     std::deque<PacketPtr> pendingCacheMemReqQ;
     EventFunctionWrapper pendingCacheMemReqSendEvent;
+    std::unique_ptr<Packet> pendingDelete;
 
     // Members
     CHIPort *networkPort{nullptr};

@@ -511,6 +511,12 @@ blockAddrForDebug(Addr addr)
     {
         panic_if(!req, "%s shadowNeedOutstandingTrack got null req", name());
         const CHI_OP_TYPE op = req->getOpcode();
+        if (req->getCacheResponding() &&
+            (op == CHI_OP_TYPE::CHI_REQ_READUNIQUE ||
+             op == CHI_OP_TYPE::CHI_REQ_READSHARED ||
+             op == CHI_OP_TYPE::CHI_REQ_READCLEAN)) {
+            return false;
+        }
         return op == CHI_OP_TYPE::CHI_REQ_READUNIQUE ||
                op == CHI_OP_TYPE::CHI_REQ_READSHARED ||
                op == CHI_OP_TYPE::CHI_REQ_READCLEAN ||
