@@ -2,8 +2,8 @@ name: gem5 Weekly Performance Test
 
 on:
   schedule:
-    # Run every Thursday at 23:59 UTC+8 (15:59 UTC)
-    - cron: '59 15 * * 4'
+    # Run every Thursday at 21:17 UTC+8 (13:17 UTC)
+    - cron: '17 13 * * 4'
   workflow_dispatch:
     inputs:
       jobs:
