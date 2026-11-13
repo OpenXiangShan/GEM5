@@ -432,6 +432,11 @@ class Fetch
      */
     void sendInstructionsToDecode();
 
+    void clearFastFetchState(ThreadID tid);
+    void armFastFetch(ThreadID tid, bool on_empty = false);
+    void collectFastFetchCandidate(const DynInstPtr &instruction);
+    bool prepareFastFetchMask(const DynInstPtr &instruction);
+
     /**
      * update stall reasons based on fetch status
      * @param insts_to_decode number of instructions to send to decode stage
@@ -618,6 +623,16 @@ class Fetch
     const o3::TraceInstruction* getTraceInstMetadata(InstSeqNum seqNum) const;
     bool isTraceInstruction(InstSeqNum seqNum) const;
     void cleanupTraceMetadataOnCommit(InstSeqNum seqNum);
+
+    void recordFastFetchAccepted(ThreadID tid, unsigned count, bool continuation);
+    void recordFastFetchDropped(const DynInstPtr &instruction);
+    void recordFastFetchDedup(unsigned count);
+    uint64_t getFastFetchEpoch(ThreadID tid) const
+    { return fastFetchEpoch[tid]; }
+    void stopFastFetchEpoch(ThreadID tid, uint64_t epoch);
+    void recordFastFetchRouting(unsigned normal, unsigned invalid,
+                               bool complete, bool next_block,
+                               FastFetchStopReason reason);
     uint64_t findTraceIndexForSeqNum(InstSeqNum seqNum) const;
     bool lookupTraceIndexForSeqNum(InstSeqNum seqNum, uint64_t &index) const;
     Addr getTracePCByIndex(uint64_t index);
@@ -824,6 +839,16 @@ class Fetch
 
     /** The width of decode in instructions. */
     unsigned decodeWidth;
+
+    /** Enable the idealized post-recovery fast fetch path. */
+    const bool enableFastFetch;
+    const bool enableFastFetchContinuation;
+    const bool enableFastFetchMaskRouting;
+    const bool enableFastFetchOnEmpty;
+    const Cycles normalDeliveryDelay;
+
+    /** Maximum number of bytes covered by one fast-fetch candidate block. */
+    const unsigned fastFetchBytes;
 
     /** Is the cache blocked?  If so no threads can access it. */
     bool cacheBlocked;
@@ -1160,6 +1185,19 @@ class Fetch
     // Used to explicitly notify the BPU when an entry is consumed (Phase5 prep).
     unsigned ftqEntryFetchedInsts[MaxThreads]{};
 
+    /** Fast-fetch state after a backend recovery. */
+    bool fastFetchPending[MaxThreads]{};
+    bool fastFetchEmptyEpoch[MaxThreads]{};
+    bool fastFetchReady[MaxThreads]{};
+    bool fastFetchContinuing[MaxThreads]{};
+    unsigned fastFetchTargetId[MaxThreads]{};
+    std::deque<DynInstPtr> fastFetchCandidates[MaxThreads];
+    uint64_t fastFetchEpoch[MaxThreads]{};
+    unsigned fastFetchBlockInsts[MaxThreads]{};
+    bool fastFetchBlockValid[MaxThreads]{};
+    bool fastFetchBlockStopped[MaxThreads]{};
+    uint64_t fastFetchMaskBlockId[MaxThreads]{};
+
     /** fetch stall reasons */
     std::array<std::vector<StallReason>, MaxThreads> stallReason;
 
@@ -1230,6 +1268,23 @@ class Fetch
         statistics::Scalar predictedBranches;
         /** RISC-V predecode-owned recovery events. */
         statistics::Scalar predecodeRedirects;
+        statistics::Scalar fastFetchCandidateInsts;
+        statistics::Scalar fastFetchPublishedInsts;
+        statistics::Scalar fastFetchAcceptedBundles;
+        statistics::Scalar fastFetchContinuedBundles;
+        statistics::Scalar fastFetchAcceptedInsts;
+        statistics::Scalar fastFetchEmptyRearms;
+        statistics::Scalar fastFetchEmptyAcceptedBundles;
+        statistics::Scalar fastFetchEmptyAcceptedInsts;
+        statistics::Scalar fastFetchDroppedBundles;
+        statistics::Scalar fastFetchNormalDedupInsts;
+        statistics::Scalar fastFetchPredecodeChecked;
+        statistics::Scalar fastFetchPredecodeRedirects;
+        statistics::Scalar fastFetchCompleteBlocks;
+        statistics::Scalar fastFetchNextBlocks;
+        statistics::Scalar fastFetchNormalInsts;
+        statistics::Scalar fastFetchInvalidInsts;
+        statistics::Vector fastFetchStopReasons;
         /** Stat for total number of cycles spent fetching. */
         statistics::Scalar cycles;
         /** Stat for total number of cycles spent squashing. */

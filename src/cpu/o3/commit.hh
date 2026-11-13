@@ -644,6 +644,8 @@ class Commit
 
         /** Total number of instructions committed. */
         statistics::Vector instsCommitted;
+        /** Total number of instructions that reached commit through fast fetch. */
+        statistics::Scalar fastFetchCommittedInsts;
         /** Total number of pagefault.*/
         statistics::Vector pagefaulttimes;
         /** Total number of ops (including micro ops) committed. */
