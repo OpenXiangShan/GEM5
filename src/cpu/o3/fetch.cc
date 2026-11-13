@@ -49,6 +49,7 @@
 
 #include "arch/generic/tlb.hh"
 #include "arch/riscv/decoder.hh"
+#include "arch/riscv/faults.hh"
 #include "arch/riscv/pcstate.hh"
 #include "base/debug_helper.hh"
 #include "base/random.hh"
@@ -108,6 +109,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       commitToFetchDelay(params.commitToFetchDelay),
       fetchWidth(params.fetchWidth),
       enableTwoFetch(params.enableTwoFetch),
+      idealInstructionFetch(params.idealInstructionFetch),
       twoFetchMaxBytes(params.twoFetchMaxBytes),
       decodeWidth(params.decodeWidth),
       retryPkt(),
@@ -141,7 +143,11 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         fatal("fetchWidth (%d) is larger than compiled limit (%d),\n"
              "\tincrease MaxWidth in src/cpu/o3/limits.hh\n",
              fetchWidth, static_cast<int>(MaxWidth));
-    panic_if(enableTwoFetch &&
+    panic_if(idealInstructionFetch && numThreads != 1,
+             "Functional instruction-supply upper bound requires one thread");
+    panic_if(idealInstructionFetch && params.enableTraceMode,
+             "Functional instruction supply cannot be combined with trace mode");
+    panic_if(enableTwoFetch && !idealInstructionFetch &&
              (twoFetchMaxBytes == 0 ||
               fetchBufferSize < 2 ||
               twoFetchMaxBytes > fetchBufferSize - 2),
@@ -445,7 +451,15 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
     ADD_STAT(twoFetchAttempts, statistics::units::Count::get(),
              "Predicted-taken FTQ boundaries considered for limited two-fetch"),
     ADD_STAT(twoFetchSuccesses, statistics::units::Count::get(),
-             "FTQ boundaries crossed using the current fetch buffer"),
+             "predicted-taken FTQ boundaries crossed in the same fetch cycle"),
+    ADD_STAT(idealInstructionSupplies, statistics::units::Count::get(),
+             "instructions supplied by functional Execute translation"),
+    ADD_STAT(idealInstructionBytes, statistics::units::Count::get(),
+             "instruction bytes read by ideal instruction supply"),
+    ADD_STAT(idealInstructionFaults, statistics::units::Count::get(),
+             "faults on demanded bytes in ideal instruction supply"),
+    ADD_STAT(idealFetchTargetsConsumed, statistics::units::Count::get(),
+             "FTQ targets fully consumed by ideal instruction supply"),
     ADD_STAT(traceMetaStores, statistics::units::Count::get(),
              "Number of stored trace metadata records (seqNum -> traceInst)"),
     ADD_STAT(traceMetaCleanupSquashCalls, statistics::units::Count::get(),
@@ -1249,6 +1263,10 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
         ftqEntryFetchedInsts[tid] = 0;
         threads[tid].valid = false;
     } else if (run_out) {
+        if (idealInstructionFetch) {
+            ++idealFetchTargetsUsed;
+            ++fetchStats.idealFetchTargetsConsumed;
+        }
         if (enableTwoFetch && !isTraceMode() &&
             allow_two_fetch && predict_taken) {
             ++fetchStats.twoFetchAttempts;
@@ -1271,7 +1289,9 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
                     (!checkInterrupt(next_pc.instAddr()) ||
                      delayedCommit[tid]);
 
-                continued_to_next_target = target_matches && fits_window &&
+                const bool supply_covers_target = idealInstructionFetch ?
+                    idealFetchTargetsUsed < 2 : fits_window;
+                continued_to_next_target = target_matches && supply_covers_target &&
                     has_fetch_capacity && can_cross_boundary;
             }
         }
@@ -1466,6 +1486,14 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
             fetch_pc.instAddr(), fetch_pc.getFallThruPC() - fetch_pc.instAddr()) :
         0;
     threads[tid].cacheReq.reset();
+
+    emitFetchFault(tid, fault, tea_psv);
+}
+
+void
+Fetch::emitFetchFault(ThreadID tid, const Fault &fault, uint16_t tea_psv)
+{
+    const PCStateBase &fetch_pc = *threads[tid].fetchpc;
 
     // Send the fault to commit.  This thread will not do anything
     // until commit handles the fault.  The only other way it can
@@ -1749,6 +1777,12 @@ bool
 Fetch::initializeTickState()
 {
     resolveSquashCutoff.fill(std::nullopt);
+    idealFetchTargetsUsed = 0;
+    if (idealInstructionFetch) {
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            this->threads[tid].usedForTwoFetch = false;
+        }
+    }
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
     bool status_change = false;
@@ -3379,7 +3413,21 @@ Fetch::fetch(bool &status_change)
     std::list<ThreadID>::iterator end = activeThreads->end();
     while (threadit != end) {
         ThreadID tid = *threadit++;
+        if (idealInstructionFetch &&
+            (!canFetchInstructions(tid) || redirectPending[tid] ||
+             (checkInterrupt(threads[tid].fetchpc->instAddr()) &&
+              !delayedCommit[tid]))) {
+            continue;
+        }
         performInstructionFetch(tid);
+    }
+
+    if (idealInstructionFetch) {
+        // No timing I-cache transactions are manufactured in this mode.
+        // The normal FTQ/PC, predecode, squash and delivery paths still run.
+        fetchStats.fetchTargetsStartedPerCycle.sample(0);
+        fetchStats.fetchLineRequestsCreatedPerCycle.sample(0);
+        return;
     }
 
     std::array<bool, MaxThreads> attempted{};
@@ -3444,6 +3492,10 @@ Fetch::checkMemoryNeeds(ThreadID tid, PCStateBase &this_pc,
         return traceFetch->checkMemoryNeeds(tid, this_pc);
     }
 
+    if (idealInstructionFetch) {
+        return supplyIdealInstructionBytes(tid, this_pc);
+    }
+
     Addr fetch_pc = this_pc.instAddr();
 
     // Check if fetch buffer is valid and contains this PC
@@ -3472,6 +3524,55 @@ Fetch::checkMemoryNeeds(ThreadID tid, PCStateBase &this_pc,
     // Call decoder with the actual instruction PC
     decoder[tid]->moreBytes(this_pc, fetch_pc);
 
+    return StallReason::NoStall;
+}
+
+StallReason
+Fetch::supplyIdealInstructionBytes(ThreadID tid, PCStateBase &pc)
+{
+    uint8_t bytes[4] = {};
+    const Addr inst_pc = pc.instAddr();
+    auto read_halfword = [&](Addr address, uint8_t *dest) -> Fault {
+        RequestPtr req = std::make_shared<Request>(
+            address, 2, Request::INST_FETCH, cpu->instRequestorId(),
+            inst_pc, cpu->thread[tid]->contextId());
+        req->taskId(cpu->taskId());
+        Fault fault = cpu->mmu->translateFunctional(
+            req, cpu->thread[tid]->getTC(), BaseMMU::Execute);
+        if (fault != NoFault) {
+            return fault;
+        }
+        if (!cpu->system->isMemAddr(req->getPaddr())) {
+            return std::make_shared<RiscvISA::AddressFault>(
+                address, 0, RiscvISA::INST_ACCESS);
+        }
+        Packet packet(req, MemCmd::ReadReq);
+        packet.dataStatic(dest);
+        icachePort.sendFunctional(&packet);
+        if (packet.isError()) {
+            return std::make_shared<RiscvISA::AddressFault>(
+                address, 0, RiscvISA::INST_ACCESS);
+        }
+        fetchStats.idealInstructionBytes += 2;
+        return NoFault;
+    };
+
+    // RISC-V compressed instructions at a page end must not touch the next
+    // page. A 32-bit instruction translates its second half independently.
+    Fault fault = read_halfword(inst_pc, bytes);
+    if (fault == NoFault && (bytes[0] & 3) == 3) {
+        fault = read_halfword(inst_pc + 2, bytes + 2);
+    }
+    if (fault != NoFault) {
+        ++fetchStats.idealInstructionFaults;
+        emitFetchFault(tid, fault, 0);
+        return StallReason::TrapStall;
+    }
+
+    auto *dec_ptr = decoder[tid];
+    memcpy(dec_ptr->moreBytesPtr(), bytes, sizeof(bytes));
+    dec_ptr->moreBytes(pc, inst_pc);
+    ++fetchStats.idealInstructionSupplies;
     return StallReason::NoStall;
 }
 
@@ -3614,7 +3715,9 @@ Fetch::performInstructionFetch(ThreadID tid)
     // For decoupled frontend (including trace mode), check FTQ availability
     StallReason stall = StallReason::NoStall;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
-           !stopFetchThisCycle && !ftqEmpty(tid) && !waitForVsetvl[tid]) {
+           !stopFetchThisCycle && !ftqEmpty(tid) && !waitForVsetvl[tid] &&
+           (!idealInstructionFetch ||
+            idealFetchTargetsUsed < (enableTwoFetch ? 2 : 1))) {
 
         // Check memory needs and supply bytes to decoder if required
         stall = checkMemoryNeeds(tid, pc_state, curMacroop);

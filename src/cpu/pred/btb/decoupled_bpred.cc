@@ -52,6 +52,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     : BPredUnit(p),
 
       numPredictingThreads(p.smtNumPredictingThreads),
+      idealPredictionsPerCycle(p.idealPredictionsPerCycle),
+      idealNoOverrideBubbles(p.idealNoOverrideBubbles),
       predictWidth(p.predictWidth),
       maxInstsNum(p.predictWidth / 2),
       historyBits(p.maxHistLen),
@@ -75,6 +77,11 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       resolveBlockThreshold(p.resolveBlockThreshold),
       dbpBtbStats(this, p.numStages, p.ftq_size, p.predictWidth, maxInstsNum, p.numThreads)
 {
+    panic_if(idealPredictionsPerCycle < 1 || idealPredictionsPerCycle > 2,
+             "idealPredictionsPerCycle must be one or two");
+    panic_if(idealPredictionsPerCycle > 1 &&
+             (numThreads != 1 || pairtage->isEnabled()),
+             "Serial double prediction requires one thread and no PairTAGE");
     panic_if(numPredictingThreads == 0 ||
              numPredictingThreads > numThreads ||
              numPredictingThreads > 2,
@@ -348,7 +355,24 @@ DecoupledBPUWithBTB::tick()
     dbpBtbStats.predictionsStartedPerCycle.sample(predictionsStarted);
 
     for (int tid = 0; tid < numThreads; tid++) {
+        const auto first_prediction_size = ftq.size(tid);
         processNewPrediction(tid);
+
+        // The first target owns its metadata and has already advanced PC,
+        // folded histories and RAS before the second lookup is made. Keep
+        // cycle-level scheduling, resolve handling and bubble aging once.
+        if (idealPredictionsPerCycle == 2 &&
+            ftq.size(tid) > first_prediction_size &&
+            canStartPrediction(tid)) {
+            dbpBtbStats.idealSecondPredictionRequests++;
+            dbpBtbStats.predictionsStartedByThread[tid]++;
+            requestNewPrediction(tid);
+            const auto old_size = ftq.size(tid);
+            processNewPrediction(tid);
+            if (ftq.size(tid) > old_size) {
+                dbpBtbStats.idealSecondPredictionEnqueues++;
+            }
+        }
 
         // Decrement override bubbles counter
         auto& numOverrideBubbles = threads[tid].numOverrideBubbles;
@@ -531,7 +555,11 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     clearPreds(tid);
 
     DPRINTF(Override, "Prediction complete: override bubbles=%d\n", first_hit_stage);
-    threads[tid].numOverrideBubbles = first_hit_stage;
+    threads[tid].numOverrideBubbles =
+        idealNoOverrideBubbles ? 0 : first_hit_stage;
+    if (idealNoOverrideBubbles) {
+        dbpBtbStats.idealOverrideBubblesSaved += first_hit_stage;
+    }
 }
 
 // This function enqueues an FTQ entry and updates s0PC and s0History.
