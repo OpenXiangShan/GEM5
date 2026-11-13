@@ -259,3 +259,29 @@ XSDRRIP archive:
 
 Machine-readable results are `complete-scores.json` and
 `kpc-vs-xsdrrip.json` in the dispatch artifact directory above.
+
+### Complete same-commit three-policy comparison
+
+All three runs completed all 1094 checkpoints; all 29 benchmarks report
+coverage 1.0. The LRU Actions conclusion is `success`; KPC and XSDRRIP
+passed simulation and result validation but failed old-archive NFS cleanup,
+as documented above. All three test commit
+`60f9ac4ec2afce93df9120d62b238509f321ad40`.
+
+| Estimated 3.0 GHz score | LRU | XSDRRIP | KPC | KPC / LRU | KPC / XSDRRIP |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Int | 65.691192 | 65.734135 | 65.730046 | +0.059% | -0.006% |
+| FP | 71.266931 | 70.960019 | 71.113644 | -0.215% | +0.216% |
+| overall | 68.904515 | 68.748997 | 68.834436 | -0.102% | +0.124% |
+
+KPC improves over XSDRRIP overall, but does not beat LRU overall. The
+largest regression against LRU is milc (-4.40%); gcc also regresses
+(-0.50% vs LRU, -0.93% vs XSDRRIP). Investigate these points and the
+previously identified clean-writeback correction before declaring the
+replacement policy optimized.
+
+LRU archive:
+`/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-1.0c/20261114_011445_60f9ac4ec2_idealkmhv3_run2142`
+
+Machine-readable results: `three-policy-scores.json` in the dispatch
+artifact directory.
