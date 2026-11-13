@@ -380,7 +380,11 @@ class Packet : public Printable
         DCACHE_MAINPIPE_SBUFFER_REQ = 0x00100000,
 
         // Record whether the fake-mainpipe StoreBuffer access hit in L1D.
-        DCACHE_MAINPIPE_SBUFFER_HIT = 0x00200000
+        DCACHE_MAINPIPE_SBUFFER_HIT = 0x00200000,
+
+        // This response must not hold an earlier-ready same-address response
+        // behind it in a force-ordered response queue.
+        ALLOW_EARLIER_RESPONSE = 0x00400000
     };
 
     Flags flags;
@@ -836,6 +840,11 @@ class Packet : public Printable
     { return flags.isSet(DCACHE_MAINPIPE_SBUFFER_HIT); }
     void clearDcacheMainPipeSbufferHit()
     { flags.clear(DCACHE_MAINPIPE_SBUFFER_HIT); }
+
+    void setAllowEarlierResponse()
+    { flags.set(ALLOW_EARLIER_RESPONSE); }
+    bool allowsEarlierResponse() const
+    { return flags.isSet(ALLOW_EARLIER_RESPONSE); }
 
     void setLSQPtr(o3::LSQ *lsq) { lsqPtr = lsq; }
     o3::LSQ *getLSQPtr() const { return lsqPtr; }

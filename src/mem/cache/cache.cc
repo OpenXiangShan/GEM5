@@ -945,6 +945,23 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
                 // carried over to cache above
                 tgt_pkt->copyResponderFlags(pkt);
             }
+            // Keep the LSU forwarding snapshot alive until the cache block can
+            // take over subsequent SBuffer-to-load forwarding.
+            if (!is_error &&
+                tgt_pkt->isDcacheMainPipeSbufferReq() &&
+                tgt_pkt->cmd == MemCmd::WriteReq &&
+                blk && blk->isValid()) {
+                const Tick block_ready = blk->getWhenReady();
+                if (completion_time < block_ready) {
+                    DPRINTF(Cache,
+                            "Delaying SBuffer response for %#lx from tick "
+                            "%lu to cache block ready tick %lu\n",
+                            tgt_pkt->getAddr(), completion_time, block_ready);
+                    completion_time = block_ready;
+                    tgt_pkt->setAllowEarlierResponse();
+                }
+            }
+
             tgt_pkt->makeTimingResponse();
             // if this packet is an error copy that to the new packet
             if (is_error)
