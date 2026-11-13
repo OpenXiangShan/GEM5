@@ -225,3 +225,32 @@ and must be evaluated separately from this initial comparison.
 
 Dispatch commands and run metadata are retained in
 `/nfs/home/chenzhuo/.tmp/kpc-l2-remote-20261114/`.
+
+### Completed KPC and XSDRRIP pair; LRU pending
+
+Both policies completed all 1094 checkpoints with no abort markers. All
+29 benchmarks have reported coverage 1.0. The performance result checks
+passed; workflow cleanup was still completing at the first score read.
+The LRU run remains in progress, so this is the complete KPC/XSDRRIP pair,
+not the final three-policy comparison.
+
+| Estimated 3.0 GHz score | XSDRRIP | KPC | KPC change |
+| --- | ---: | ---: | ---: |
+| Int | 65.734135 | 65.730046 | -0.006% |
+| FP | 70.960019 | 71.113644 | +0.216% |
+| overall | 68.748997 | 68.834436 | +0.124% |
+
+The largest KPC score regressions against XSDRRIP are gcc (-0.93%),
+libquantum (-0.40%) and mcf (-0.22%). The largest gains include soplex
+(+0.91%), sphinx3 (+0.75%) and zeusmp (+0.48%). Benchmark deltas use
+the score file's rounded benchmark values. Do not mix the historical LRU
+run on `a61859f355` into this same-commit comparison.
+
+KPC archive:
+`/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-1.0c/20261114_011153_60f9ac4e_idealkmhv3_run2144`
+
+XSDRRIP archive:
+`/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-1.0c/20261114_011036_60f9ac4e_idealkmhv3_run2143`
+
+Machine-readable results are `complete-scores.json` and
+`kpc-vs-xsdrrip.json` in the dispatch artifact directory above.
