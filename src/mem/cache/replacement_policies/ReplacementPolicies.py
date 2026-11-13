@@ -177,6 +177,7 @@ class KPCReplState(SimObject):
     sampled_sets = Param.Unsigned(64, "Number of independent true-LRU sets")
     hysteresis_bits = Param.Unsigned(3, "Width of each global hysteresis counter")
     initial_hysteresis = Param.Unsigned(0, "Initial value of both counters")
+    live_rrpv = Param.Unsigned(2, "Non-saturated insertion RRPV (paper: 2)")
 
 
 class KPCRP(BaseReplacementPolicy):

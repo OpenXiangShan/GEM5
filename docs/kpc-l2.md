@@ -285,3 +285,49 @@ LRU archive:
 
 Machine-readable results: `three-policy-scores.json` in the dispatch
 artifact directory.
+
+### Focused investigation and optional insertion experiment
+
+Reprocessing all three archives reproduced their scores exactly. Raw CSVs
+contain 1094 points each. The local processor initially lacked SciPy; an
+isolated task dependency resolved it. Raw/weighted/score CSVs and processor
+logs are retained under the dispatch artifact directory's `proc/`.
+
+The largest time contributions identify `milc/5841`, `milc/9643`,
+`gcc_g23/6319`, `gcc_166/1439`, `mcf/6753`, and `libquantum/69175`
+for targeted screening. At `gcc_g23/6319`, KPC IPC is 15.60% below
+XSDRRIP and L3 demand misses increase from 34929 to 74974. At
+`gcc_166/1439`, L3 demand misses increase from 80320 to 213728.
+Milc's benchmark cycles grow 4.60% against LRU while its L2 load misses
+fall about 1.04%, so miss count alone does not explain the runtime change.
+
+The previously committed clean-writeback correction is being screened with
+CI's DRAMsim3 DDR4 configuration, pinned normal-dedup REF, 20M warmup and
+20M measured instructions. A LRU control point checks local/CI comparability.
+Prefetch-hit promotion is evaluated separately from the insertion experiment.
+Saved executables and per-run commands prevent a concurrent rebuild from
+changing queued experiments.
+
+`KPCReplState.live_rrpv` is an optional L2 experiment: when DGH/PGH is
+not saturated, insert at this RRPV (0, 1 or 2); saturation still inserts
+at 3. The default remains the paper's value 2. Sampler training, hysteresis,
+victim selection and demand promotion are unchanged. For example:
+
+```text
+--l2-replacement=kpc --param=system.kpc_repl_state0.live_rrpv=1
+```
+
+A more protected insertion may preserve useful L2 lines but can also retain
+pollution longer. No performance improvement is claimed for this option
+until the targeted and broader comparisons complete. RRPV 0/1 insertion
+counts are reported separately for demand and prefetch fills.
+
+Validation: the DRAMsim3 build, RRPV 0/1 FS smoke cases with NEMU difftest,
+invalid-parameter rejection, all nine sampler unit tests, Python syntax,
+changed-region style and diff whitespace checks pass. Default RRPV 2 matches
+all common system statistics and simulation ticks against the previous
+corrected executable in the smoke case. Full evidence is recorded in
+`live-rrpv-validation.json`, `live-smoke-results.json`,
+`screen-ci-model-manifest.json` and `screen-live-rrpv-manifest.json`.
+Long-window screening is still running; these checks establish configuration
+and functional correctness, not full-suite improvement.

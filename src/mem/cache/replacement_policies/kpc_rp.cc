@@ -16,7 +16,8 @@ namespace replacement_policy
 {
 
 KPCReplState::KPCReplState(const Params &p)
-  : SimObject(p), stats(this), numSets(p.num_sets), numWays(p.num_ways),
+  : SimObject(p), liveRRPV(p.live_rrpv), stats(this),
+    numSets(p.num_sets), numWays(p.num_ways),
     blockSize(p.block_size)
 {
     fatal_if(!isPowerOf2(numSets) || !numWays || !isPowerOf2(blockSize),
@@ -25,6 +26,7 @@ KPCReplState::KPCReplState(const Params &p)
              "KPC sampled_sets must be in [1, num_sets]");
     fatal_if(!p.hysteresis_bits || p.hysteresis_bits > 16,
              "KPC hysteresis_bits must be in [1, 16]");
+    fatal_if(p.live_rrpv > 2, "KPC live_rrpv must be in [0, 2]");
     fatal_if(p.initial_hysteresis >= (1U << p.hysteresis_bits),
              "KPC initial hysteresis exceeds counter range");
     sampler = std::make_unique<KPCSampler>(numSets, numWays, p.sampled_sets,
@@ -154,11 +156,19 @@ KPC::reset(const std::shared_ptr<ReplacementData> &data, const PacketPtr pkt)
     entry->valid = true;
     entry->rrpv = state->insertionRRPV(pf);
     if (pf) {
-        if (entry->rrpv == 3) {
+        if (entry->rrpv == 0) {
+            ++stats.prefetchInsertions0;
+        } else if (entry->rrpv == 1) {
+            ++stats.prefetchInsertions1;
+        } else if (entry->rrpv == 3) {
             ++stats.prefetchInsertions3;
         } else {
             ++stats.prefetchInsertions2;
         }
+    } else if (entry->rrpv == 0) {
+        ++stats.demandInsertions0;
+    } else if (entry->rrpv == 1) {
+        ++stats.demandInsertions1;
     } else if (entry->rrpv == 3) {
         ++stats.demandInsertions3;
     } else {
@@ -224,8 +234,12 @@ KPCReplState::KPCStateStats::KPCStateStats(statistics::Group *parent)
 
 KPC::KPCStats::KPCStats(statistics::Group *parent)
   : statistics::Group(parent),
+    ADD_STAT(demandInsertions0, "Demand-side insertions at RRPV 0"),
+    ADD_STAT(demandInsertions1, "Demand-side insertions at RRPV 1"),
     ADD_STAT(demandInsertions2, "Demand-side insertions at RRPV 2"),
     ADD_STAT(demandInsertions3, "Demand-side insertions at RRPV 3"),
+    ADD_STAT(prefetchInsertions0, "Prefetch insertions at RRPV 0"),
+    ADD_STAT(prefetchInsertions1, "Prefetch insertions at RRPV 1"),
     ADD_STAT(prefetchInsertions2, "Prefetch insertions at RRPV 2"),
     ADD_STAT(prefetchInsertions3, "Prefetch insertions at RRPV 3"),
     ADD_STAT(demandPromotions, "Demand hit promotions to RRPV 0"),

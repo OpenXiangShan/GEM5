@@ -23,6 +23,7 @@ class KPCReplState : public SimObject
 {
   private:
     std::unique_ptr<KPCSampler> sampler;
+    const uint8_t liveRRPV;
     struct KPCStateStats : public statistics::Group
     {
         KPCStateStats(statistics::Group *parent);
@@ -48,7 +49,7 @@ class KPCReplState : public SimObject
     void access(unsigned set, const PacketPtr pkt, bool prefetch);
     uint8_t insertionRRPV(bool pf) const
     {
-        return sampler->insertionRRPV(pf);
+        return sampler->insertionRRPV(pf) == 3 ? 3 : liveRRPV;
     }
 };
 
@@ -69,8 +70,12 @@ class KPC : public Base
     mutable struct KPCStats : public statistics::Group
     {
         KPCStats(statistics::Group *parent);
+        statistics::Scalar demandInsertions0;
+        statistics::Scalar demandInsertions1;
         statistics::Scalar demandInsertions2;
         statistics::Scalar demandInsertions3;
+        statistics::Scalar prefetchInsertions0;
+        statistics::Scalar prefetchInsertions1;
         statistics::Scalar prefetchInsertions2;
         statistics::Scalar prefetchInsertions3;
         statistics::Scalar demandPromotions;
