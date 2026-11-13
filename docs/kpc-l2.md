@@ -196,17 +196,32 @@ longer, complete-suite evidence. If full runs confirm regressions, a separate
 L2-specific live-line insertion experiment is a candidate; it has not been
 implemented or claimed as an improvement.
 
-## Remote validation gate
+## Remote SPEC06 comparison
 
-The first push to `OpenXiangShan/GEM5:kpc-l2` was rejected by automatic
-approval review because the then-visible user instructions did not explicitly
-authorize publishing the source payload; assistant summaries were not accepted
-as authorization. No push or performance dispatch executed. A user
-confirmation request is pending. Do not interpret automatic goal continuations
-or elapsed time as approval, and do not work around the rejected push.
+The user explicitly authorized publishing `60f9ac4ec2` and dispatching the
+three complete SPEC06 comparisons. The exact initial commit
+`60f9ac4ec2afce93df9120d62b238509f321ad40` was pushed to
+`OpenXiangShan/GEM5:kpc-l2`; subsequent local corrections are not part of
+this first remote comparison.
 
-After explicit authorization, push the current validated KPC branch, reread
-`manual-perf.yml` at the workflow ref, and submit the same tested SHA for LRU,
-XSDRRIP and KPC with full default SPEC06 coverage. Record run IDs, actual
-archive paths, completion status and coverage before reporting global scores
-or choosing further policy changes.
+All three runs use `manual-perf.yml` at workflow commit
+`24be168ad2ac878d3c6ac7b19aa6857fb07ef00a` (`xs-dev`),
+`idealkmhv3.py`, `spec06-rva23-novec-gcc16-1.0c`, all benchmarks,
+`distributed_servers=default`, and 32 jobs per server. The tested SHA is
+supplied explicitly through the workflow `branch` input. Only
+`--l2-replacement` changes.
+
+| Policy | Run | Initial status |
+| --- | --- | --- |
+| lru | [43469074117](https://github.com/OpenXiangShan/GEM5/actions/runs/43469074117) | in_progress |
+| xs-drrip | [43469084627](https://github.com/OpenXiangShan/GEM5/actions/runs/43469084627) | in_progress |
+| kpc | [43469091526](https://github.com/OpenXiangShan/GEM5/actions/runs/43469091526) | queued |
+
+These runs have been created, not declared passed. The workflow head SHA is
+not the tested code SHA. Inspect the build checkout, completion status,
+actual archive path and coverage before interpreting the scores. The known
+clean-writeback sampling correction `3dab7453fa` remains validated locally
+and must be evaluated separately from this initial comparison.
+
+Dispatch commands and run metadata are retained in
+`/nfs/home/chenzhuo/.tmp/kpc-l2-remote-20261114/`.
