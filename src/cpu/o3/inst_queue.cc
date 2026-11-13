@@ -47,6 +47,8 @@
 #include <limits>
 #include <vector>
 
+#include "arch/riscv/insts/static_inst.hh"
+#include "base/bitfield.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
@@ -590,41 +592,72 @@ InstructionQueue::processFUCompletion(const DynInstPtr &inst, int fu_idx,
 bool
 InstructionQueue::execLatencyCheck(const DynInstPtr& inst, uint32_t& op_latency)
 {
-    // Leading zero count
-    auto clz = [](RegVal val) {
-#if defined(__GNUC__) || defined(__clang__)
-        return val == 0 ? 64 : __builtin_clzll(val);
-#else
-        for (int i = 0; i < 64; i++) {
-            if (val & (0x1lu << 63)) {
-                return i;
-            }
-            val <<= 1;
-        }
-        return 64;
-#endif
-    };
-
-
     RegVal rs1;
     RegVal rs2;
     int delay_;
     switch (inst->opClass()) {
-        case OpClass::IntDiv:
-            rs1 = cpu->readArchIntReg(inst->srcRegIdx(0).index(),
-                                      inst->threadNumber);
-            rs2 = cpu->readArchIntReg(inst->srcRegIdx(1).index(),
-                                      inst->threadNumber);
+        case OpClass::IntDiv: {
+            // Producers may have written these operands before committing.
+            rs1 = cpu->peekReg(inst->extRenamedSrcIdx(0));
+            rs2 = cpu->peekReg(inst->extRenamedSrcIdx(1));
+            const auto *riscv_inst =
+                dynamic_cast<const RiscvISA::RiscvStaticInst *>(
+                    inst->staticInst.get());
+            if (riscv_inst) {
+                const auto encoding = riscv_inst->machInst;
+                // DIV/REM use opcode 0x33; their W variants use 0x3b.
+                if ((encoding.opcode7 == 0x33 || encoding.opcode7 == 0x3b) &&
+                    encoding.funct7 == 1 && encoding.funct3 >= 4) {
+                    // funct3 bit 0 distinguishes signed and unsigned forms.
+                    const bool signed_op = !(encoding.funct3 & 1);
+                    const bool word_op = encoding.opcode7 == 0x3b;
+                    // W operations discard upper bits before sign handling.
+                    const RegVal operand_mask =
+                        word_op ? 0xffffffffULL : ~RegVal{0};
+                    RegVal dividend = rs1 & operand_mask;
+                    RegVal divisor = rs2 & operand_mask;
+                    if (signed_op) {
+                        const RegVal sign_bit =
+                            RegVal{1} << (word_op ? 31 : 63);
+                        // Unsigned negation safely handles INT_MIN's magnitude.
+                        if (dividend & sign_bit) {
+                            dividend = (RegVal{0} - dividend) & operand_mask;
+                        }
+                        if (divisor & sign_bit) {
+                            divisor = (RegVal{0} - divisor) & operand_mask;
+                        }
+                    }
+
+                    // Compare operand bit lengths using their magnitudes.
+                    delay_ = clz64(divisor) - clz64(dividend);
+                    // These special cases skip the SRT iteration loop.
+                    if (dividend == 0 || divisor <= 1 || delay_ < 0) {
+                        op_latency = 5;
+                    } else {
+                        // SRT16 initializes iterations to (lzcDiff + 1) >> 2.
+                        op_latency = 7 + (delay_ + 1) / 4;
+                    }
+                    DPRINTF(Schedule,
+                            "[sn:%llu] semantic intdiv signed=%u word=%u "
+                            "opLat=%u raw_opa=%#llx raw_opb=%#llx\n",
+                            inst->seqNum, signed_op, word_op, op_latency,
+                            static_cast<unsigned long long>(rs1),
+                            static_cast<unsigned long long>(rs2));
+                    return true;
+                }
+            }
+
+            // Preserve the legacy calculation for other IntDiv encodings.
             // rs1 / rs2 : 0x80/0x8 ,delay_ = 4
             // get the leading zero difference between rs1 and rs2 (rs1 > rs2)
-            delay_ = std::max(clz(rs2) - clz(rs1), 0);
+            delay_ = clz64(rs2) - clz64(rs1);
             if (rs2 == 1) {
                 // rs1 / 1 = rs1
                 op_latency = 5;
             } else if (rs1 == rs2) {
                 // rs1 / rs2 = 1 rem 0
                 op_latency = 7;
-            } else if (clz(rs2) - clz(rs1) < 0) {
+            } else if (delay_ < 0) {
                 // if rs2 > rs1 then rs1/rs2 = 0 rem rs1
                 op_latency = 5;
             } else {
@@ -633,6 +666,7 @@ InstructionQueue::execLatencyCheck(const DynInstPtr& inst, uint32_t& op_latency)
                 op_latency = 7 + delay_ / 4;
             }
             return true;
+        }
         default:
             return false;
     }
