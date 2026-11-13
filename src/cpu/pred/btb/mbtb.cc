@@ -283,30 +283,9 @@ MBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         if (s == getDelay()) dumpBTBEntries(stagePreds[s].btbEntries);
 
         stagePreds[s].predTick = curTick();
-        stagePreds[s].condTakens.clear();
-        stagePreds[s].indirectTargets.clear();
     }
 
-    // Set predictions for each branch
-    for (auto &e : entries) {
-        assert(e.valid);
-        if (e.isCond) {
-            // TODO: a performance bug here, mbtb should not update condTakens!
 
-            FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.ctr >= 0});
-
-        } else if (e.isIndirect) {
-            // Set predicted target for indirect branches
-            DPRINTF(BTB, "setting indirect target for pc %#lx to %#lx\n", e.pc, e.target);
-
-            FillStageLoop(s) stagePreds[s].indirectTargets.push_back({e.pc, e.target});
-
-            if (e.isReturn) {
-                FillStageLoop(s) stagePreds[s].returnTarget = e.target;
-            }
-            break;
-        }
-    }
 }
 
 /**
@@ -349,14 +328,14 @@ MBTB::putPCHistory(Addr startAddr,
     updatePredictionMeta(processed_entries, stagePreds);
 }
 
-std::vector<BTBEntry>
+std::vector<BranchPrediction>
 MBTB::getPredictedEntriesNoSideEffect(Addr startAddr, ThreadID tid,
                                       uint8_t asidHash) const
 {
     auto found_entries = lookupNoSideEffect(startAddr, tid, asidHash);
     auto processed_entries = processEntriesNoSideEffect(found_entries, startAddr);
 
-    std::vector<BTBEntry> entries;
+    std::vector<BranchPrediction> entries;
     entries.reserve(processed_entries.size());
     for (const auto &entry : processed_entries) {
         entries.emplace_back(entry);
@@ -767,7 +746,7 @@ MBTB::update(
             continue;
         }
 
-        BTBEntry entry(makeBranchInfo(branch));
+        BTBEntry entry(branch);
         entry.source = getComponentIdx();
         if (hit == meta->hit_entries.end()) {
             btbStats.newEntry++;

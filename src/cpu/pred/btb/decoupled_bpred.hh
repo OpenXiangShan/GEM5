@@ -213,11 +213,11 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     // const bool dumpLoopPred;
 
-    void printBTBEntry(const BTBEntry &e) {
+    void printBTBEntry(const BranchPrediction &e) {
         DPRINTF(BTB,
-            "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, "
-            "target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
-            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect,
+            "Branch candidate: valid %d, pc:%#lx, size:%d, taken:%d, "
+            "target:%#lx (BTB:%#lx), cond:%d, indirect:%d, call:%d, return:%d\n",
+            e.valid, e.pc, e.size, e.taken, e.predictedTarget, e.target, e.isCond, e.isIndirect,
             e.isCall, e.isReturn);
     }
 
@@ -227,16 +227,6 @@ class DecoupledBPUWithBTB : public BPredUnit
         for (auto &e: pred.btbEntries) {
             printBTBEntry(e);
         }
-        DPRINTF(DecoupleBP, "condTakens: ");
-        for (auto pair : pred.condTakens) {
-            DPRINTFR(DecoupleBP, "%#lx %d ,", pair.first, pair.second);
-        }
-        DPRINTFR(DecoupleBP, "\n");
-        for (auto pair : pred.indirectTargets) {
-            DPRINTF(DecoupleBP, "indirectTarget of %#lx: %#lx\n",
-            pair.first, pair.second);
-        }
-        DPRINTF(DecoupleBP, "returnTarget %#lx\n", pred.returnTarget);
     }
 
     /**

@@ -190,7 +190,8 @@ BTBTAGEUpperBound::makeTableInfo(bool found, const TageEntry *entry,
 
 BTBTAGE::TagePrediction
 BTBTAGEUpperBound::lookupExactPrediction(
-    const BTBEntry &btbEntry,
+    const BranchInfo &btbEntry,
+    bool baseTaken,
     const std::array<uint64_t, MaxHistoryWords> &historyWords,
     BranchPredictionMeta *metaOut) const
 {
@@ -228,7 +229,6 @@ BTBTAGEUpperBound::lookupExactPrediction(
 
     const bool mainTaken = mainInfo.taken();
     const bool altTaken = altInfo.taken();
-    const bool baseTaken = btbEntry.ctr >= 0;
     const bool altPred = altProvided ? altTaken : baseTaken;
     Addr useAltIdx = getUseAltIdx(btbEntry.pc);
     short useAltCtr = useAlt[useAltIdx];
@@ -262,12 +262,11 @@ BTBTAGEUpperBound::lookupExactPrediction(
 
 void
 BTBTAGEUpperBound::notePredictionResult(
-    const BTBEntry &btbEntry,
+    BranchPrediction &btbEntry,
     const TagePrediction &pred,
-    std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
-    CondTakens &results) const
+    std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs) const
 {
-    results.push_back({btbEntry.pc, pred.taken});
+    btbEntry.taken = pred.taken;
     tageInfoForMgscs[btbEntry.pc].tage_pred_taken = pred.taken;
     tageInfoForMgscs[btbEntry.pc].tage_main_taken =
         pred.mainInfo.found ? pred.mainInfo.taken() : false;
@@ -302,7 +301,6 @@ BTBTAGEUpperBound::putPCHistory(Addr startAddr, const bitset &history,
 
     for (int s = getDelay(); s < stagePreds.size(); ++s) {
         auto &stagePred = stagePreds[s];
-        stagePred.condTakens.clear();
         stagePred.tageInfoForMgscs.clear();
 
         for (auto &btbEntry : stagePred.btbEntries) {
@@ -312,12 +310,11 @@ BTBTAGEUpperBound::putPCHistory(Addr startAddr, const bitset &history,
 
             BranchPredictionMeta branchMeta;
             auto pred = lookupExactPrediction(
-                btbEntry, ubMeta->historyWords, &branchMeta);
+                btbEntry, btbEntry.baseTaken, ubMeta->historyWords, &branchMeta);
             ubMeta->preds[btbEntry.pc] = pred;
             ubMeta->branchMeta[btbEntry.pc] = branchMeta;
             tageStats.updateStatsWithTagePrediction(pred, true);
-            notePredictionResult(btbEntry, pred, stagePred.tageInfoForMgscs,
-                                 stagePred.condTakens);
+            notePredictionResult(btbEntry, pred, stagePred.tageInfoForMgscs);
         }
     }
 }
@@ -373,7 +370,7 @@ BTBTAGEUpperBound::recoverPHist(const boost::dynamic_bitset<> &history,
 
 bool
 BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
-    const BTBEntry &entry, bool actualTaken, const TagePrediction &pred,
+    const BranchInfo &entry, bool actualTaken, const TagePrediction &pred,
     const BranchPredictionMeta &meta, bool controlMispred)
 {
     tageStats.updateStatsWithTagePrediction(pred, false);
@@ -381,7 +378,7 @@ BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
     const auto &mainInfo = pred.mainInfo;
     const auto &altInfo = pred.altInfo;
     const bool usedAlt = pred.useAlt;
-    const bool baseTaken = entry.ctr >= 0;
+    const bool baseTaken = pred.basePred;
     const bool altTaken = altInfo.found ? altInfo.taken() : baseTaken;
 
     if (mainInfo.found) {
@@ -467,7 +464,7 @@ BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
 
 bool
 BTBTAGEUpperBound::allocateExactEntry(
-    const BTBEntry &entry, bool actualTaken, unsigned startTable,
+    const BranchInfo &entry, bool actualTaken, unsigned startTable,
     const std::array<uint64_t, MaxHistoryWords> &historyWords,
     uint64_t &allocatedTable)
 {
@@ -512,7 +509,7 @@ BTBTAGEUpperBound::update(
         if (!branch.isCond) {
             continue;
         }
-        auto btbEntry = BTBEntry(makeBranchInfo(branch));
+        auto btbEntry = BranchInfo(branch);
         auto predIt = predMeta->preds.find(btbEntry.pc);
         auto metaIt = predMeta->branchMeta.find(btbEntry.pc);
         if (predIt == predMeta->preds.end() ||
@@ -522,7 +519,6 @@ BTBTAGEUpperBound::update(
         const bool actualTaken = branch.taken;
         const auto &storedPred = predIt->second;
         const auto &storedMeta = metaIt->second;
-        btbEntry.ctr = storedPred.basePred ? 0 : -1;
 
         if (storedPred.taken != actualTaken) {
             hasStoredVsActualDiff = true;

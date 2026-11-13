@@ -434,7 +434,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
 
     if (predsOfEachStage[0].btbEntries.size() != 0) {
         for (auto entry : predsOfEachStage[0].btbEntries){
-            if (entry.isIndirect || entry.isDirect || entry.ctr >= 0) {
+            if (entry.isIndirect || entry.isDirect || entry.baseTaken) {
                 finalPred.s1Source = entry.source;
                 break;
             }
@@ -444,8 +444,8 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     bool found_s3_taken = false;
     bool na_s3_taken_but_have_cond = false;
 
-    for (BTBEntry entry : predsOfEachStage[2].btbEntries) {
-        if (entry.isDirect || entry.isIndirect || entry.ctr >= 0) {
+    for (BranchPrediction entry : predsOfEachStage[2].btbEntries) {
+        if (entry.isDirect || entry.isIndirect || entry.baseTaken) {
             found_s3_taken = true;
         }else if (entry.isCond){
             //only use when there's no taken prediction in s3

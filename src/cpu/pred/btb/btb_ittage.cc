@@ -101,8 +101,7 @@ void
 BTBITTAGE::tick() {}
 
 void
-BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
-                        IndirectTargets& results, ThreadID tid, uint8_t asidHash)
+BTBITTAGE::lookupHelper(Addr startAddr, std::vector<BranchPrediction> &btbEntries, ThreadID tid, uint8_t asidHash)
 {
     (void)asidHash;
     DPRINTF(ITTAGE, "lookupHelper startAddr: %#lx\n", startAddr);
@@ -163,9 +162,7 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
                 target = base_target;
                 warn("no target found\n");
             }
-            if (taken) {
-                results.push_back({btb_entry.pc, target});
-            }
+            btb_entry.predictedTarget = taken ? target : btb_entry.target;
             DPRINTF(ITTAGE, "tage predict %#lx target %#lx\n", btb_entry.pc, target);
 
             // Update prediction statistics
@@ -230,9 +227,8 @@ BTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
 
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         auto &stage_pred = stagePreds[s];
-        stage_pred.indirectTargets.clear();
         lookupHelper(stream_start, stage_pred.btbEntries,
-                     stage_pred.indirectTargets, tid, asidHash);
+                     tid, asidHash);
     }
     DPRINTF(ITTAGE, "putPCHistory end\n");
     debugFlag = false;
@@ -338,7 +334,7 @@ BTBITTAGE::update(
         if (!(branch.isIndirect && !branch.isReturn)) {
             continue;
         }
-        const auto btb_entry = BTBEntry(makeBranchInfo(branch));
+        const auto btb_entry = BranchPrediction(branch);
         auto pred_it = preds.find(btb_entry.pc);
         TagePrediction pred;
         if (pred_it != preds.end()) {

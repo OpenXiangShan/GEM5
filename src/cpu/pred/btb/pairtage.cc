@@ -269,7 +269,7 @@ PairTAGE::updateUsingS3Pred(FullBTBPrediction &s3Pred)
     // The final prediction information
     // TODO: Recogonize fallthrough with attibutes rather than mark branch PC to zero.
     const bool taken = s3Pred.isTaken();
-    const BTBEntry exit = taken ? s3Pred.getTakenEntry() : BTBEntry();
+    const BranchPrediction exit = taken ? s3Pred.getTakenEntry() : BranchPrediction();
     const Addr targetPC = s3Pred.getTarget(predictWidth);
 
     // The block right after a trained first block is its second block,
@@ -289,7 +289,7 @@ PairTAGE::updateUsingS3Pred(FullBTBPrediction &s3Pred)
 }
 
 PairTAGE::LiveEntryInfo
-PairTAGE::trainFirstBlock(const LookupResult &lookup, const BTBEntry &exit,
+PairTAGE::trainFirstBlock(const LookupResult &lookup, const BranchPrediction &exit,
                           Addr targetPC)
 {
     const bool taken = exit.valid;
@@ -374,7 +374,7 @@ PairTAGE::trainFirstBlock(const LookupResult &lookup, const BTBEntry &exit,
 }
 
 void
-PairTAGE::trainSecondBlock(const LiveEntryInfo &live, const BTBEntry &exit,
+PairTAGE::trainSecondBlock(const LiveEntryInfo &live, const BranchPrediction &exit,
                            Addr targetPC)
 {
     const Addr branchPC = exit.valid ? exit.pc : 0;
@@ -520,38 +520,29 @@ PairTAGE::fillPrediction(const PTAGEBlockInfo &block, uint8_t branchSize,
                          FullBTBPrediction &pred)
 {
     pred.btbEntries.clear();
-    pred.condTakens.clear();
-    pred.indirectTargets.clear();
-    pred.returnTarget = 0;
     pred.predTick = curTick();
 
-    // A block that falls through has no branch to predict
+    // A hit that falls through clears earlier candidates without emitting one.
     if (!block.taken()) {
         return;
     }
 
-    BTBEntry btbEntry;
-    btbEntry.valid = true;
-    btbEntry.pc = block.branchPC;
-    btbEntry.target = block.targetPC;
-    btbEntry.isCond = block.isCond;
-    btbEntry.isDirect = block.isDirect;
-    btbEntry.isIndirect = block.isIndirect;
-    btbEntry.isCall = block.isCall;
-    btbEntry.isReturn = block.isReturn;
-    btbEntry.size = branchSize;
-    btbEntry.ctr = block.directionCounter;
-    btbEntry.source = getComponentIdx();
+    BranchPrediction entry;
+    entry.valid = true;
+    entry.pc = block.branchPC;
+    entry.target = block.targetPC;
+    entry.isCond = block.isCond;
+    entry.isDirect = block.isDirect;
+    entry.isIndirect = block.isIndirect;
+    entry.isCall = block.isCall;
+    entry.isReturn = block.isReturn;
+    entry.size = branchSize;
+    entry.taken = true;
+    entry.baseTaken = true;
+    entry.predictedTarget = block.targetPC;
+    entry.source = getComponentIdx();
 
-    pred.btbEntries.push_back(btbEntry);
-    if (block.isCond) {
-        pred.condTakens.push_back({block.branchPC, true});
-    } else if (block.isIndirect) {
-        pred.indirectTargets.push_back({block.branchPC, block.targetPC});
-        if (block.isReturn) {
-            pred.returnTarget = block.targetPC;
-        }
-    }
+    pred.btbEntries.push_back(entry);
 }
 
 void

@@ -158,24 +158,24 @@ class BTBTAGEUpperBound : public BTBTAGE
                              unsigned histLen) const;
     TageTableInfo makeTableInfo(bool found, const TageEntry *entry,
                                 unsigned table) const;
-    TagePrediction lookupExactPrediction(const BTBEntry &btbEntry,
+    TagePrediction lookupExactPrediction(const BranchInfo &btbEntry,
+                                         bool baseTaken,
                                          const std::array<uint64_t,
                                              MaxHistoryWords> &historyWords,
                                          BranchPredictionMeta *metaOut) const;
-    bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
+    bool updatePredictorStateAndCheckAllocation(const BranchInfo &entry,
                                                 bool actualTaken,
                                                 const TagePrediction &pred,
                                                 const BranchPredictionMeta &meta,
                                                 bool controlMispred);
-    bool allocateExactEntry(const BTBEntry &entry, bool actualTaken,
+    bool allocateExactEntry(const BranchInfo &entry, bool actualTaken,
                             unsigned startTable,
                             const std::array<uint64_t, MaxHistoryWords> &historyWords,
                             uint64_t &allocatedTable);
     void refreshContextStats(unsigned table);
-    void notePredictionResult(const BTBEntry &btbEntry,
+    void notePredictionResult(BranchPrediction &btbEntry,
                               const TagePrediction &pred,
-                              std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
-                              CondTakens &results) const;
+                              std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs) const;
 
     std::vector<ExactTable> exactTables;
     mutable std::vector<uint64_t> historyBlocksScratch;

@@ -2,6 +2,7 @@
 #define __CPU_PRED_BTB_STREAM_STRUCT_HH__
 
 #include <algorithm>
+#include <cstdlib>
 #include <queue>
 #include <string>
 
@@ -82,18 +83,6 @@ enum SquashType
     SQUASH_OTHER
 };
 
-enum BranchType
-{
-    BR_COND=0,
-    BR_DIRECT_NORMAL=1,
-    BR_DIRECT_CALL=2,
-    BR_INDIRECT_NORMAL=3,
-    BR_INDIRECT_RET=4,
-    BR_INDIRECT_CALL=5,
-    BR_INDIRECT_CALL_RET=6,
-    BR_DIRECT_RET=7
-};
-
 enum class OverrideReason
 {
     NO_OVERRIDE,
@@ -109,96 +98,6 @@ enum class HistoryType
     LOCAL,
     IMLI,
     PATH
-};
-
-
-/**
- * @brief Branch information structure containing branch properties and targets
- *
- * Stores essential information about a branch instruction including:
- * - PC and target address
- * - Branch type (conditional, indirect, call, return)
- * - Instruction size
- */
-struct BranchInfo
-{
-    Addr pc;
-    Addr target;
-    bool isCond;
-    bool isIndirect;
-    bool isDirect;
-    bool isCall;
-    bool isReturn;
-    uint8_t size;
-    bool isUncond() const { return !this->isCond; }
-    Addr getEnd() { return this->pc + this->size; }
-    BranchInfo()
-        : pc(0), target(0), isCond(false), isIndirect(false), isDirect(false),
-          isCall(false), isReturn(false), size(0)
-    {
-    }
-    // BranchInfo(const Addr &pc, const Addr &target_pc, bool is_cond) :
-    // pc(pc), target(target_pc), isCond(is_cond), isIndirect(false), isCall(false), isReturn(false), size(0) {}
-    BranchInfo(const Addr &control_pc, const Addr &target_pc, const StaticInstPtr &static_inst, unsigned size)
-        : pc(control_pc),
-          target(target_pc),
-          isCond(static_inst->isCondCtrl()),
-          isIndirect(static_inst->isIndirectCtrl()),
-          isDirect(static_inst->isDirectCtrl()),
-          isCall(static_inst->isCall()),
-          isReturn(static_inst->isReturn() && !static_inst->isNonSpeculative() && !static_inst->isDirectCtrl()),
-          size(size)
-    {
-    }
-    int getType() const {
-        if (isCond) {
-            return BR_COND;
-        } else if (!isIndirect) { // uncond direct
-            if (isReturn) {
-                fatal("jal return detected!\n");
-                return BR_DIRECT_RET;
-            }
-            if (!isCall) {
-                return BR_DIRECT_NORMAL;
-            } else {
-                return BR_DIRECT_CALL;
-            }
-        } else {  // uncond indirect
-            if (!isCall) {
-                if (!isReturn) {
-                    return BR_INDIRECT_NORMAL; // normal indirect
-                } else {
-                    return BR_INDIRECT_RET; // indirect return
-                }
-            } else {
-                if (!isReturn) { // indirect call
-                    return BR_INDIRECT_CALL;
-                } else { // call & return
-                    return BR_INDIRECT_CALL_RET;
-                }
-            }
-        }
-    }
-
-    bool operator < (const BranchInfo &other) const
-    {
-        return this->pc < other.pc;
-    }
-
-    bool operator == (const BranchInfo &other) const
-    {
-        return this->pc == other.pc;
-    }
-
-    bool operator > (const BranchInfo &other) const
-    {
-        return this->pc > other.pc;
-    }
-
-    bool operator != (const BranchInfo &other) const
-    {
-        return this->pc != other.pc;
-    }
 };
 
 
@@ -229,6 +128,32 @@ struct BTBEntry : BranchInfo
     void setsource(int src) {
         source = src;
     }
+};
+
+/** A branch candidate, independent of BTB storage and replacement state. */
+struct BranchPrediction : BranchInfo
+{
+    bool valid{false};
+    bool taken{false};
+    Addr predictedTarget{0}; // Selected target; inherited target is the BTB input.
+    bool baseTaken{false};
+    bool baseStrong{false};
+    int source{-1};
+
+    BranchPrediction() = default;
+    BranchPrediction(const BranchInfo &branch)
+        : BranchInfo(branch), valid(true), predictedTarget(branch.target)
+    {}
+    BranchPrediction(const BTBEntry &entry)
+        : BranchInfo(entry), valid(entry.valid),
+          taken(!entry.isCond || entry.ctr >= 0),
+          predictedTarget(entry.target),
+          baseTaken(entry.ctr >= 0),
+          baseStrong(std::abs(2 * entry.ctr + 1) == 5),
+          source(entry.source)
+    {}
+
+    BranchInfo getBranchInfo() const { return *this; }
 };
 
 /**
@@ -283,18 +208,6 @@ struct LFSR64
         }
     }
 };
-
-// {branch pc -> istaken} maps
-using CondTakens = std::vector<std::pair<Addr, bool>>;
-// {branch pc -> target pc} maps
-using IndirectTargets = std::vector<std::pair<Addr, Addr>>;
-
-#define CondTakens_find(condTakens, branch_pc) \
-    std::find_if(condTakens.begin(), condTakens.end(), \
-                 [&branch_pc](const auto &p) { return p.first == branch_pc; })
-#define IndirectTakens_find(indirectTargets, branch_pc) \
-    std::find_if(indirectTargets.begin(), indirectTargets.end(), \
-                 [&branch_pc](const auto &p) { return p.first == branch_pc; })
 
 #define FillStageLoop(x) for (int x = getDelay(); x < stagePreds.size(); ++x)
 
@@ -383,7 +296,8 @@ struct FetchTarget
        predMetas.fill(nullptr);
    }
 
-    void setPredictedBranches(const std::vector<BTBEntry> &entries)
+    template<class Entry = BranchPrediction>
+    void setPredictedBranches(const std::vector<Entry> &entries)
     {
         predictedBranchPCs.clear();
         predictedBranchPCs.reserve(entries.size());
@@ -514,21 +428,6 @@ struct ControlFlowOutcome
     bool valid = false;
 };
 
-inline BranchInfo
-makeBranchInfo(const BranchOutcome &event)
-{
-    BranchInfo branch;
-    branch.pc = event.pc;
-    branch.target = event.target;
-    branch.isCond = event.isCond;
-    branch.isIndirect = event.isIndirect;
-    branch.isDirect = event.isDirect;
-    branch.isCall = event.isCall;
-    branch.isReturn = event.isReturn;
-    branch.size = event.size;
-    return branch;
-}
-
 struct PreparedUpdate
 {
     std::vector<BranchOutcome> branches;
@@ -569,7 +468,7 @@ struct PreparedUpdate
         const auto &primary = selected != sortedBranches.end() ?
             *selected : sortedBranches.back();
         return ControlFlowOutcome{
-            makeBranchInfo(primary), primary.taken, primary.mispredicted, true
+            primary, primary.taken, primary.mispredicted, true
         };
     }
 };
@@ -587,14 +486,7 @@ struct FullBTBPrediction
     ThreadID tid;
     uint8_t asidHash;
     Addr bbStart;
-    std::vector<BTBEntry> btbEntries; // for BTB, only assigned when hit, sorted by inst order
-    // for conditional branch predictors, mapped with lowest bits of branches
-    CondTakens condTakens;
-
-    // for indirect predictor, mapped with lowest bits of branches
-    IndirectTargets indirectTargets;
-    Addr returnTarget; // for RAS
-
+    std::vector<BranchPrediction> btbEntries; // for BTB, only assigned when hit, sorted by inst order
     std::unordered_map<Addr, TageInfoForMGSC> tageInfoForMgscs;
 
     unsigned predSource;
@@ -609,9 +501,6 @@ struct FullBTBPrediction
         asidHash(0),
         bbStart(0),
         btbEntries(),
-        condTakens(),
-        indirectTargets(),
-        returnTarget(0),
         tageInfoForMgscs(),
         predSource(0),
         overrideReason(OverrideReason::NO_OVERRIDE),
@@ -619,28 +508,15 @@ struct FullBTBPrediction
         s1Source(-1),
         s3Source(-1) {}
 
-    BTBEntry getTakenEntry() {
-        // IMPORTANT: assume entries are sorted
-        for (auto &entry : this->btbEntries) {
-            // hit
-            if (entry.valid) {
-                if (entry.isCond) {
-                    // find corresponding direction pred in condTakens
-                    // TODO: use lower-bit offset of branch instruction
-                    auto& pc = entry.pc;
-                    auto it = CondTakens_find(condTakens, pc);
-                    if (it != condTakens.end()) {
-                        if (it->second) {   // find and taken, return the entry
-                            return entry;
-                        }
-                    }
-                }
-                if (entry.isUncond()) { // find the first uncond entry
-                    return entry;
-                }
+    BranchPrediction getTakenEntry() const
+    {
+        // Keep the not-taken prefix for speculative history updates.
+        for (const auto &entry : btbEntries) {
+            if (entry.valid && (!entry.isCond || entry.taken)) {
+                return entry;
             }
         }
-        return BTBEntry(); // not found, return empty entry
+        return {};
     }
 
     bool isTaken() {
@@ -652,29 +528,11 @@ struct FullBTBPrediction
         return (bbStart + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
     }
 
-    Addr getEntryTarget(const BTBEntry &entry) {
-        Addr target = entry.target;
-        // indirect target should come from ipred or ras,
-        // or btb itself when ipred miss
-        if (entry.isIndirect) {
-            if (!entry.isReturn) { // normal indirect, see ittage
-                auto& pc = entry.pc;
-                auto it = IndirectTakens_find(indirectTargets, pc);
-                if (it != indirectTargets.end()) { // found in ittage, use it
-                    target = it->second;
-                }
-            } else { // indirect return, use RAS target
-                target = returnTarget;
-            }
-        } // else: normal taken, use btb target
-        return target;
-    }
-
     Addr getTarget(Addr predictWidth) {
         Addr target;
         const auto &entry = getTakenEntry();
         if (entry.valid) { // found a taken entry
-            target = getEntryTarget(entry);
+            target = entry.predictedTarget;
         } else {
             target = getFallThrough(predictWidth);
         }
@@ -718,52 +576,31 @@ struct FullBTBPrediction
         }
     }
 
-    DirectionHistoryUpdate getGHistUpdate()  //global or local
+    DirectionHistoryUpdate getGHistUpdate() const
     {
-        DirectionHistoryUpdate update; // shamt is the number of bits to shift in history update
-        for (auto &entry : btbEntries) {
-            if (entry.valid) {
-                if (entry.isCond) { // if found a cond branch, shamt++
-                    update.shamt++;
-                    auto& pc = entry.pc;
-                    auto it = CondTakens_find(condTakens, pc);
-                    if (it != condTakens.end()) {
-                        if (it->second) { // if the cond branch is taken, taken = true
-                            update.taken = true;
-                            break;
-                        }
-                    }
-                } else {
-                    // uncond
-                    break;
-                }
+        DirectionHistoryUpdate update;
+        for (const auto &entry : btbEntries) {
+            if (!entry.valid) {
+                continue;
+            }
+            if (!entry.isCond) {
+                break;
+            }
+            ++update.shamt;
+            if (entry.taken) {
+                update.taken = true;
+                break;
             }
         }
-        // For example, return (3, true) means 3 bits to shift in history update,
-        // and the third branch is taken, new hist = xxx001
         return update;
     }
 
-    DirectionHistoryUpdate getBwHistUpdate() //global backward or imli
+    DirectionHistoryUpdate getBwHistUpdate() const
     {
-        DirectionHistoryUpdate update;
-        for (auto &entry : btbEntries) {
-            if (entry.valid) {
-                if (entry.isCond) {
-                    update.shamt++;
-                    auto& pc = entry.pc;
-                    auto it = CondTakens_find(condTakens, pc);
-                    if (it != condTakens.end()) {
-                        if (it->second) {
-                            update.taken = (entry.target < entry.pc); // branch is backward if target < pc
-                            break;
-                        }
-                    }
-                } else {
-                    // uncond
-                    break;
-                }
-            }
+        auto update = getGHistUpdate();
+        if (update.taken) {
+            const auto entry = getTakenEntry();
+            update.taken = entry.target < entry.pc;
         }
         return update;
     }
@@ -775,7 +612,7 @@ struct FullBTBPrediction
         if (entry.valid) {
             update.taken = true;
             update.pc = entry.pc;
-            update.target = getEntryTarget(entry);
+            update.target = entry.predictedTarget;
         }
         return update;
     }

@@ -412,7 +412,7 @@ BTBMGSC::calculateWeightScaleDiff(int total_sum, int scale_percsum, int percsum)
  * @return TagePrediction containing main and alternative predictions
  */
 BTBMGSC::MgscPrediction
-BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC,
+BTBMGSC::generateSinglePrediction(const BranchPrediction &btb_entry, const Addr &startPC,
                                   const TageInfoForMGSC &tage_info,
                                   ThreadID tid, uint8_t asidHash)
 {
@@ -548,9 +548,9 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
  * @return Map of branch PC addresses to their predicted outcomes
  */
 void
-BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
+BTBMGSC::lookupHelper(const Addr &startPC, std::vector<BranchPrediction> &btbEntries,
                       const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
-                      CondTakens &results, ThreadID tid, uint8_t asidHash)
+                      ThreadID tid, uint8_t asidHash)
 {
     DPRINTF(MGSC, "lookupHelper startAddr: %#lx\n", startPC);
 
@@ -570,7 +570,7 @@ BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
                 tage_info != tageInfoForMgscs.end() ? tage_info->second : missing_tage_info;
             auto pred = generateSinglePrediction(btb_entry, startPC, info, tid, asidHash);
             threadMeta[tid]->preds[btb_entry.pc] = pred;
-            results.push_back({btb_entry.pc, pred.taken});
+            btb_entry.taken = pred.taken;
         }
     }
 }
@@ -615,9 +615,8 @@ BTBMGSC::putPCHistory(Addr stream_start, const boost::dynamic_bitset<> &history,
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
         auto &stage_pred = stagePreds[s];
-        stage_pred.condTakens.clear();
         lookupHelper(stream_start, stage_pred.btbEntries,
-                     stage_pred.tageInfoForMgscs, stage_pred.condTakens, tid,
+                     stage_pred.tageInfoForMgscs, tid,
                      asidHash);
     }
 }

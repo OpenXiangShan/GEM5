@@ -69,7 +69,11 @@ public:
         auto &sp = specSp;
         assert(getDelay() < stagePreds.size());
         for (int i = getDelay(); i < stagePreds.size(); i++) {
-            stagePreds[i].returnTarget = stack[sp].retAddr;
+            for (auto &entry : stagePreds[i].btbEntries) {
+                if (entry.isReturn) {
+                    entry.predictedTarget = stack[sp].retAddr;
+                }
+            }
         }
         meta.sp = sp;
         meta.tos = stack[sp];
@@ -80,7 +84,11 @@ public:
         auto &stack = specStack;
         auto &sp = specSp;
         // do push & pops on prediction
-        pred.returnTarget = stack[sp].retAddr;
+        for (auto &entry : pred.btbEntries) {
+            if (entry.isIndirect && entry.isReturn) {
+                entry.predictedTarget = stack[sp].retAddr;
+            }
+        }
         auto takenSlot = pred.getTakenEntry();
         if (takenSlot.isReturn) { // return inst, pop retAddr from spec stack
             // do pop
@@ -276,12 +284,20 @@ TEST_F(URASTest, PutPCHistoryBasic) {
     // push an address to the stack
     uras->push(retAddr, stack, sp);
     
+    BTBEntry ret;
+    ret.valid = true;
+    ret.isIndirect = true;
+    ret.isReturn = true;
+    for (auto &stage : stagePreds) {
+        stage.btbEntries.push_back(ret);
+    }
+
     // call putPCHistory
     uras->putPCHistory(startAddr, history, stagePreds);
 
     // test return target for all stages
     for (int i = 0; i < stagePreds.size(); i++) {
-        EXPECT_EQ(stagePreds[i].returnTarget, retAddr);
+        EXPECT_EQ(stagePreds[i].getTakenEntry().predictedTarget, retAddr);
     }
     
     // verify meta is correctly saved
@@ -336,6 +352,7 @@ TEST_F(URASTest, SpecUpdateStateReturn) {
     BTBEntry retEntry;
     retEntry.valid = true;
     retEntry.pc = 0x1000;
+    retEntry.isIndirect = true;
     retEntry.isReturn = true;
     retEntry.target = 0x2000;
     pred.btbEntries.push_back(retEntry);
@@ -345,7 +362,7 @@ TEST_F(URASTest, SpecUpdateStateReturn) {
 
     // 验证：
     // 1. returnTarget应该是栈顶的地址
-    EXPECT_EQ(pred.returnTarget, 0x2000);
+    EXPECT_EQ(pred.getTakenEntry().predictedTarget, 0x2000);
     // 2. sp应该减少
     EXPECT_EQ(sp, 0);
 }
@@ -375,6 +392,7 @@ TEST_F(URASTest, SpecUpdateStateCallReturn) {
     BTBEntry retEntry;
     retEntry.valid = true;
     retEntry.pc = 0x2000;
+    retEntry.isIndirect = true;
     retEntry.isReturn = true;
     retEntry.target = 0x1004;  // 返回到call的下一条指令
     pred2.btbEntries.push_back(retEntry);
@@ -388,7 +406,7 @@ TEST_F(URASTest, SpecUpdateStateCallReturn) {
     // 1. sp应该回到初始位置
     EXPECT_EQ(sp, 0);
     // 2. returnTarget应该匹配call的下一条指令
-    EXPECT_EQ(pred2.returnTarget, 0x1004);
+    EXPECT_EQ(pred2.getTakenEntry().predictedTarget, 0x1004);
 }
 
 TEST_F(URASTest, SpecUpdateStatePopThenPush) {
@@ -404,12 +422,13 @@ TEST_F(URASTest, SpecUpdateStatePopThenPush) {
     entry.pc = 0x3000;
     entry.size = 4;
     entry.isCall = true;
+    entry.isIndirect = true;
     entry.isReturn = true;
     pred.btbEntries.push_back(entry);
 
     uras->specUpdateState(pred);
 
-    EXPECT_EQ(pred.returnTarget, 0x2004);
+    EXPECT_EQ(pred.getTakenEntry().predictedTarget, 0x2004);
     EXPECT_EQ(sp, 2);
     EXPECT_EQ(stack[sp].retAddr, 0x3004);
 }
