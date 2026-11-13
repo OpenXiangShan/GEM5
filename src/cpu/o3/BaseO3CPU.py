@@ -333,6 +333,9 @@ class BaseO3CPU(BaseCPU):
     numROBEntries = Param.Unsigned(160, "Number of reorder buffer entries")
     CROB_instPerGroup = Param.Unsigned(6, "Max number of inst per group")
     phyregReleaseWidth = Param.Unsigned(6, "Physical register dealloc width")
+    # Zero preserves the unconstrained behavior for generic CPU models.
+    numRABEntries = Param.Unsigned(
+        0, "Single-thread rename mapping capacity; 0 disables the limit")
 
     smtNumFetchingThreads = Param.Unsigned(1, "SMT Number of Fetching Threads")
     smtNumFetchTargetThreads = Param.Unsigned(
