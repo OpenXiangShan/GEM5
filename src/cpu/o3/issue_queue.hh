@@ -535,6 +535,8 @@ class Scheduler : public SimObject
 
     void specWakeUpFromVP(const DynInstPtr& inst);
     void specWakeUpFromLoadPipe(const DynInstPtr& inst);
+    // Notify divider dependents up to two cycles before native result availability.
+    void specWakeUpFromDiv(const DynInstPtr& inst, uint32_t latency);
     bool loadCancel(const DynInstPtr& inst);
 
     void writebackWakeup(const DynInstPtr& inst);

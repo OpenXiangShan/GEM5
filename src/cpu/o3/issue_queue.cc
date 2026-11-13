@@ -1609,8 +1609,11 @@ Scheduler::SpecWakeupCompletion::SpecWakeupCompletion(const DynInstPtr& inst, Is
 void
 Scheduler::SpecWakeupCompletion::process()
 {
-    if (to_issue_queue->scheduler->fpAttemptCurrent(inst, attempt))
+    // Reject stale notifications even when FP speculative wakeup is disabled.
+    if (!inst->isSquashed() && !inst->canceled() &&
+        inst->fpWakeAttempt == attempt) {
         to_issue_queue->wakeUpDependents(inst, true);
+    }
     auto it = owner->find(inst->seqNum);
     if (it != owner->end()) {
         it->second.erase(this);
@@ -2302,6 +2305,40 @@ Scheduler::specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_que
             // track these pending events
             specWakeEvents[inst->seqNum].insert(wakeEvent);
             cpu->schedule(wakeEvent, cpu->clockEdge(Cycles(wakeDelay)) - 1);
+        }
+    }
+}
+
+void
+Scheduler::specWakeUpFromDiv(const DynInstPtr& inst, uint32_t latency)
+{
+    if ((inst->opClass() != IntDivOp && inst->opClass() != FloatDivOp) ||
+        inst->numDestRegs() == 0 || inst->isSquashed() || inst->canceled()) {
+        return;
+    }
+
+    assert(latency > 0);
+    auto from_issue_queue = inst->issueQue;
+    // Native result availability is AtFU + latency - 1 cycles.
+    const Tick dataTick = cpu->clockEdge(Cycles(latency - 1));
+    for (auto to : wakeMatrix[from_issue_queue->getId()]) {
+        // Consumers must reach the bypass check no earlier than the result.
+        const uint32_t lead = std::min(2, to->getIssueStages());
+        // Clamp short latencies to this cycle without unsigned underflow.
+        const uint32_t wakeDelay = latency > lead + 1 ? latency - lead - 1 : 0;
+        const Tick wakeTick = cpu->clockEdge(Cycles(wakeDelay));
+        DPRINTF(Schedule,
+                "[sn:%llu] div wakeup to %s, latency %u, lead %u, "
+                "delay %u, wake %llu, data %llu\n",
+                inst->seqNum, to->getName(), latency, lead, wakeDelay,
+                wakeTick, dataTick);
+        if (wakeDelay == 0) {
+            to->wakeUpDependents(inst, true);
+        } else {
+            auto wakeEvent = new SpecWakeupCompletion(inst, to, &specWakeEvents);
+            specWakeEvents[inst->seqNum].insert(wakeEvent);
+            // Run one tick before the edge so IQ selection sees the wakeup.
+            cpu->schedule(wakeEvent, wakeTick - 1);
         }
     }
 }
