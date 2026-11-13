@@ -79,6 +79,22 @@ class Stack
     }
 };
 
+// Keep source-only fallback rows separate from PC-indexed confidence rows.
+inline unsigned
+sourceSignature(unsigned source, unsigned sources, unsigned pc_entries,
+                bool has_pc, uint64_t pc)
+{
+    assert(source < sources);
+    assert(pc_entries == 0 || (pc_entries & (pc_entries - 1)) == 0);
+    if (pc_entries == 0 || !has_pc)
+        return source;
+    // Preserve compressed-instruction PCs and fold distant address bits.
+    const uint64_t instruction = pc >> 1;
+    const uint64_t hash = instruction ^ (instruction >> 10) ^
+        (instruction >> 20) ^ (instruction >> 30);
+    return sources + source * pc_entries + (hash & (pc_entries - 1));
+}
+
 // A small outcome predictor protects consistently useful prefetch sources.
 class SourceConfidence
 {

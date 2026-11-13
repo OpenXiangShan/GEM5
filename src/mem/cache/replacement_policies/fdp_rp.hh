@@ -28,6 +28,7 @@ class FDP : public Base
         unsigned way;
         fdp::SampledInsertion::Team sample;
         unsigned source = 0;
+        unsigned confidenceIndex = 0;
         FDPReplData(std::shared_ptr<fdp::Stack> set, unsigned w,
                     fdp::SampledInsertion::Team team)
           : stack(set), way(w), sample(team) {}
@@ -41,6 +42,7 @@ class FDP : public Base
     fdp::Feedback feedback;
     const bool sourceFeedback;
     const bool sourceUtility;
+    const unsigned pcEntries;
     const bool prefetchHitGuard;
     fdp::SourceConfidence confidence;
     const bool lruFallback;
@@ -60,6 +62,10 @@ class FDP : public Base
         statistics::Scalar usefulPrefetches;
         statistics::Scalar latePrefetchUses;
         statistics::Scalar ignoredPrefetchHits;
+        statistics::Scalar pcIndexedPrefetches;
+        statistics::Scalar sourceOnlyPrefetches;
+        statistics::Scalar pcIndexedUseful;
+        statistics::Scalar pcIndexedUnused;
         statistics::Scalar intervals;
         statistics::Scalar pollutionRate;
         statistics::Scalar fdpSampleFills;

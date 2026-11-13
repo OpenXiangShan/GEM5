@@ -90,6 +90,8 @@ class FDPRP(BaseReplacementPolicy):
         False, "Use source confidence for prefetch insertion and hit promotion")
     source_utility = Param.Bool(
         False, "Use attributed cache pollution for source confidence")
+    pc_confidence_entries = Param.Unsigned(
+        0, "PC confidence rows per source; 0 keeps source-only feedback")
     prefetch_hit_guard = Param.Bool(
         True, "Suppress unused prefetch hits from low-confidence sources")
     interval_evictions = Param.Unsigned(

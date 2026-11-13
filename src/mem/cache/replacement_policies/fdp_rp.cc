@@ -26,6 +26,13 @@ makeFeedback(const FDPRPParams &p)
              "FDP mid_rank must be -1 or a valid zero-based stack rank");
     fatal_if(p.source_utility && (!p.source_feedback || !p.tagged_filter),
              "FDP source utility requires source feedback and tagged filtering");
+    fatal_if(p.pc_confidence_entries > 1024 ||
+             (p.pc_confidence_entries &&
+              (p.pc_confidence_entries & (p.pc_confidence_entries - 1))),
+             "FDP PC confidence entries must be zero or a power of two <= 1024");
+    fatal_if(p.pc_confidence_entries &&
+             (!p.source_feedback || p.source_utility),
+             "FDP PC confidence requires accuracy-based source feedback");
     fatal_if(p.source_utility && NUM_PF_SOURCES > 256,
              "FDP source attribution stores at most 256 source types");
     fatal_if(p.lru_fallback && (p.num_sets < 32 ||
@@ -49,7 +56,8 @@ FDP::FDP(const Params &p)
   : Base(p), numWays(p.num_ways), midRank(p.mid_rank),
     feedback(makeFeedback(p)),
     sourceFeedback(p.source_feedback), sourceUtility(p.source_utility),
-    prefetchHitGuard(p.prefetch_hit_guard), confidence(NUM_PF_SOURCES),
+    pcEntries(p.pc_confidence_entries), prefetchHitGuard(p.prefetch_hit_guard),
+    confidence(NUM_PF_SOURCES * (pcEntries + 1)),
     lruFallback(p.lru_fallback), fdpStats(this, numWays)
 {
     if (lruFallback)
@@ -94,7 +102,7 @@ FDP::touch(const std::shared_ptr<ReplacementData> &data,
     if (prefetchHitGuard && sourceFeedback && !fallback &&
         d->source != PF_NONE &&
         isPrefetch(pkt) && d->line().unusedPrefetch &&
-        !confidence.protect(d->source)) {
+        !confidence.protect(d->confidenceIndex)) {
         // A repeated prediction is not evidence that demand needs this line.
         fdpStats.ignoredPrefetchHits++;
         return;
@@ -103,8 +111,10 @@ FDP::touch(const std::shared_ptr<ReplacementData> &data,
     if (demand && d->line().unusedPrefetch) {
         fdpStats.usefulPrefetches++;
         fdpStats.usefulBySource[d->source]++;
+        if (d->confidenceIndex >= NUM_PF_SOURCES)
+            fdpStats.pcIndexedUseful++;
         if (sourceFeedback)
-            confidence.train(d->source, true);
+            confidence.train(d->confidenceIndex, true);
     }
     d->stack->touch(d->way, demand);
 }
@@ -127,9 +137,16 @@ FDP::reset(const std::shared_ptr<ReplacementData> &data,
         const unsigned source = static_cast<unsigned>(pkt->req->getPFSource());
         d->source = source < NUM_PF_SOURCES ? source :
             static_cast<unsigned>(PF_NONE);
+        const bool indexed = pcEntries && pkt->req->hasPC();
+        d->confidenceIndex = fdp::sourceSignature(d->source, NUM_PF_SOURCES,
+            pcEntries, indexed, indexed ? pkt->req->getPC() : 0);
+        if (indexed)
+            fdpStats.pcIndexedPrefetches++;
+        else
+            fdpStats.sourceOnlyPrefetches++;
         const bool fallback = lruFallback && insertion.useLru(d->sample);
         const bool protect = !fallback && sourceFeedback &&
-            d->source != PF_NONE && confidence.protect(d->source);
+            d->source != PF_NONE && confidence.protect(d->confidenceIndex);
         rank = fallback || protect ? 0 :
             feedback.insertionRank(numWays, midRank);
         if (fallback)
@@ -171,11 +188,13 @@ FDP::notifyDemandUse(const std::shared_ptr<ReplacementData> &data)
         return;
     fdpStats.usefulPrefetches++;
     fdpStats.usefulBySource[d->source]++;
+    if (d->confidenceIndex >= NUM_PF_SOURCES)
+        fdpStats.pcIndexedUseful++;
     fdpStats.latePrefetchUses++;
     // A merged consumer also waited for a fill; count it once, not as a hit.
     sampleDemandFill(d);
     if (sourceFeedback)
-        confidence.train(d->source, true);
+        confidence.train(d->confidenceIndex, true);
     d->stack->touch(d->way, true);
 }
 
@@ -217,8 +236,10 @@ FDP::notifyEviction(const std::shared_ptr<ReplacementData> &data,
         fdpStats.demandEvictedByPrefetch++;
     if (line.unusedPrefetch) {
         fdpStats.unusedPrefetchEvictions++;
+        if (d->confidenceIndex >= NUM_PF_SOURCES)
+            fdpStats.pcIndexedUnused++;
         if (sourceFeedback && !sourceUtility)
-            confidence.train(d->source, false);
+            confidence.train(d->confidenceIndex, false);
     } else {
         fdpStats.usefulEvictions++;
     }
@@ -272,6 +293,10 @@ FDP::FDPStats::FDPStats(statistics::Group *parent, unsigned ways)
     ADD_STAT(usefulPrefetches, "First demand uses of prefetched lines"),
     ADD_STAT(latePrefetchUses, "First demand uses during fill target service"),
     ADD_STAT(ignoredPrefetchHits, "Unused prefetch hits without source confidence"),
+    ADD_STAT(pcIndexedPrefetches, "Prefetch fills using PC-indexed confidence"),
+    ADD_STAT(sourceOnlyPrefetches, "Prefetch fills using source-only confidence"),
+    ADD_STAT(pcIndexedUseful, "First demand uses with PC-indexed confidence"),
+    ADD_STAT(pcIndexedUnused, "Unused evictions with PC-indexed confidence"),
     ADD_STAT(intervals, "Completed FDP feedback intervals"),
     ADD_STAT(pollutionRate, "Most recent smoothed pollution rate"),
     ADD_STAT(fdpSampleFills, "Demand fills in FDP sample sets"),

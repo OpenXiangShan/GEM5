@@ -329,3 +329,51 @@ TEST(FDPFeedback, MidRankOverridePreservesOtherPollutionPositions)
     EXPECT_EQ(feedback.getPosition(), Feedback::Lru);
     EXPECT_EQ(feedback.insertionRank(8, 1), 7);
 }
+
+TEST(FDPSignature, DisabledAndMissingPcKeepIndependentSourceRows)
+{
+    using gem5::replacement_policy::fdp::sourceSignature;
+    for (unsigned source = 0; source < 16; ++source) {
+        EXPECT_EQ(sourceSignature(source, 16, 0, true, 0x80001234), source);
+        EXPECT_EQ(sourceSignature(source, 16, 0, false, 0), source);
+        EXPECT_EQ(sourceSignature(source, 16, 64, false, 0), source);
+    }
+}
+
+TEST(FDPSignature, SeparatesSourcesAndCompressedInstructionPcs)
+{
+    using gem5::replacement_policy::fdp::sourceSignature;
+    const unsigned first = sourceSignature(1, 16, 64, true, 0);
+    const unsigned second = sourceSignature(1, 16, 64, true, 2);
+    const unsigned other_source = sourceSignature(2, 16, 64, true, 0);
+    const unsigned missing_pc = sourceSignature(1, 16, 64, false, 0);
+    ASSERT_NE(first, second);
+    ASSERT_NE(first, other_source);
+    ASSERT_NE(first, missing_pc);
+    gem5::replacement_policy::fdp::SourceConfidence confidence(16 * 65);
+    for (unsigned i = 0; i < 16; ++i)
+        confidence.train(first, true);
+    EXPECT_TRUE(confidence.protect(first));
+    EXPECT_FALSE(confidence.protect(second));
+    EXPECT_FALSE(confidence.protect(other_source));
+    EXPECT_FALSE(confidence.protect(missing_pc));
+}
+
+TEST(FDPSignature, FoldedPcsStayWithinTheirSourcePartition)
+{
+    using gem5::replacement_policy::fdp::sourceSignature;
+    std::mt19937_64 rng(37);
+    for (unsigned entries : {1U, 2U, 64U, 1024U}) {
+        for (unsigned i = 0; i < 10000; ++i) {
+            const unsigned source = rng() % 16;
+            const unsigned index = sourceSignature(source, 16, entries,
+                                                   true, rng());
+            EXPECT_GE(index, 16 + source * entries);
+            EXPECT_LT(index, 16 + (source + 1) * entries);
+            EXPECT_LT(index, 16 * (entries + 1));
+        }
+    }
+    // High PC bits must contribute, rather than aliasing every aligned region.
+    EXPECT_NE(sourceSignature(0, 16, 64, true, 0),
+              sourceSignature(0, 16, 64, true, uint64_t(1) << 21));
+}
