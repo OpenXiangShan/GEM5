@@ -11,35 +11,21 @@ Defaults preserve that commit's unguarded, L1-copy-protected behavior.
 | `--sdbp-sampler-dead-first` / `--no-sdbp-sampler-dead-first` | Enabled | Select dead-first or pure LRU replacement in the independent sampler |
 | `--sdbp-sampler-protect-youngest=N` | `0` | Exclude the N youngest sampler entries from the dead-first scan |
 | `--sdbp-sampler-demand-pc-only` / `--no-sdbp-sampler-demand-pc-only` | Disabled | Only let L2 demand requests with a PC access, allocate, and train the sampler |
-| `--sdbp-enable-bypass` | Disabled | Bypass dead fills when no eligible dead or unused old victim is available |
-| `--sdbp-bypass-dead-victims` | Disabled | Restore the original bypass-first policy without victim aging |
+| `--sdbp-enable-bypass` | Disabled | Enable the existing basic full-set bypass path |
 
 There is no separate real-L2 dead-first switch: it is part of SDBP. Disabling
 sampler dead-first changes sampler residency and consequently training, while
 the real L2 continues to select predicted-dead victims.
 
 For both the real cache and sampler, invalid entries have first priority.
-L1-copy protection filters the real-cache dead scan and also protects an old
-LRU victim when deciding whether to bypass. The sampler recency guard applies
-only to the sampler dead-first scan. Neither clears dead bits or restricts
-the ordinary global LRU fallback.
+L1-copy protection and the sampler recency guard apply only to their respective
+dead-first scans; neither clears dead bits or restricts the global LRU fallback.
 The sampler guard counts recency positions across all entries, including live
 entries. It accepts any nonnegative integer: zero disables protection, two
 reproduces the previous youngest-two mode, and N >= sampler associativity
 protects every entry from the dead scan, so selection falls back to LRU.
 With sampler dead-first disabled, the guard has no effect. By default,
 demand/prefetch sampling remains active in either replacement mode.
-
-With bypass enabled, an eligible dead resident victim takes priority over
-bypassing the incoming dead fill. When no such victim exists, the LRU victim
-remains protected for one slice-capacity of policy references
-(`num_sets * candidate_ways`), or while its L1 copy is still resident.
-Bypassed references advance this clock, so streaming fills cannot indefinitely
-freeze unused live residents. `--sdbp-bypass-dead-victims` restores the original
-bypass-first decision and clock behavior for controlled comparisons. These
-choices do not alter independent sampler training or bypass transport.
-See [the performance analysis](analysis/fixbypass/report.md) for request/PC
-traces, native TopDown evidence, local results, and the full-suite CI run.
 
 Enabling `--sdbp-sampler-demand-pc-only` filters out all prefetch requests
 and all requests without PC metadata before the sampler lookup, on both

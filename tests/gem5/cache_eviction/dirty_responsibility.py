@@ -87,8 +87,6 @@ if args.bypass:
         sampler_assoc=6,
         dead_threshold=0,
         enable_bypass=True,
-        # Force transport coverage independently of the admission policy.
-        bypass_dead_victims=True,
     )
 system.l3bus = L2XBar()
 system.l3 = cache("128KiB", 4, 3, clusivity="mostly_excl")

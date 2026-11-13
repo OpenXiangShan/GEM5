@@ -105,8 +105,6 @@ system.l2 = cache(
             sampler_assoc=6,
             dead_threshold=args.threshold,
             enable_bypass=args.bypass,
-            # Force transport coverage independently of the admission policy.
-            bypass_dead_victims=True,
         )
         if args.replacement == "sdbp"
         else LRURP()
