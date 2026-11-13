@@ -2,6 +2,8 @@
 #define __CPU_PRED_BTB_FTQ_HH__
 
 #include <array>
+#include <cassert>
+#include <deque>
 
 #include "base/types.hh"
 #include "cpu/o3/limits.hh"
@@ -84,16 +86,13 @@ public:
     }
     inline uint32_t size(ThreadID tid) const { return queue[tid].cap.size(); }
 
-    int getTargetTid();
-    int getTargetTid(const std::array<bool, MaxThreads> &eligible,
-                     unsigned *ineligibleSkips);
     /**
      * @brief Select thread with minimum fetch queue entries (load-balancing)
      * 
      * Prioritizes threads with fewer fetched-but-not-decoded instructions
      * to prevent fetch queue overflow and balance decode pressure.
      * 
-     * @param eligible Bitmask of eligible threads
+     * @param eligible Eligibility of each thread
      * @param ineligibleSkips Output counter for skipped ineligible threads
      * @param fetchQueueSizes Array of fetch queue sizes for each thread
      * @return ThreadID of selected thread, or -1 if no eligible thread
