@@ -26,7 +26,8 @@ ICP::ICP(const Params &p)
                  (1U << p.counter_bits) - 1 : 0),
       threshold(p.accuracy_threshold), highPriority(p.high_priority),
       lowPriority(p.low_priority == -1 ? numWays - 1 : p.low_priority),
-      demoteOnFirstUse(p.demote_on_first_use), adaptive(p.adaptive),
+      demoteOnFirstUse(p.demote_on_first_use),
+      accuracyOnPrefetchHit(p.accuracy_on_prefetch_hit), adaptive(p.adaptive),
       sampleStride(p.sample_stride), epfAssoc(p.epf_assoc),
       epfSets(p.epf_assoc ? p.epf_entries / p.epf_assoc : 0),
       accuracy(NUM_PF_SOURCES * (std::min(pcEntries, 4096U) + 1)),
@@ -281,7 +282,8 @@ ICP::touch(const std::shared_ptr<ReplacementData> &data, const PacketPtr pkt)
         return;
     }
     if (isPrefetch(pkt)) {
-        if (!useIcp(entry.set) || accuracy[predictorOf(pkt)] >= threshold) {
+        if (!useIcp(entry.set) || !accuracyOnPrefetchHit ||
+            accuracy[predictorOf(pkt)] >= threshold) {
             // An insertion rank must not demote a more recent line on a hit.
             position(entry, 0);
         } else {

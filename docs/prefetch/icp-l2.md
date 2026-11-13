@@ -45,8 +45,12 @@ promotion independently of the insertion rank. The author source exposes
 this choice through `use-accuracy-prefetch-hit`; its one-core
 `1m-ap-only-aph` configuration enables it, while `1m-ap-only` leaves that
 option disabled. The gem5 experiment therefore includes this explicit
-hit-promotion choice as well as accuracy-based insertion. It does not
-reproduce every author configuration.
+hit-promotion choice as well as accuracy-based insertion.
+`--icp-promote-all-prefetch-hits` disables the accuracy check on prefetch hits,
+while retaining accuracy-based insertion. It selects the insertion-only hit
+behavior of `1m-ap-only`; leaving it unset retains the `1m-ap-only-aph` choice.
+The composite prefetchers and accuracy indexing still differ from the author
+model, so this does not reproduce every author configuration.
 
 Demand hits normally promote to MRU. `--icp-demote-on-first-use` separately enables
 ICP-D's first-use behavior. A fill-completion hook also credits a demand
@@ -570,9 +574,9 @@ and -0.5999% on mcf/6753; all four scouts are complete.
 The new sampling distribution improves the first two points but worsens GCC;
 no uniform benefit follows from the sampling change. Separate rank-1 scouts
 use the same source to test whether shallower insertion limits that regression.
-Completed rank-1 points are +0.7126% versus LRU on GemsFDTD/65615,
--2.4828% on gcc_200/5108, and -2.3551% on zeusmp/66319; mcf remains
-in progress. This improves GCC relative to rank 4 but worsens zeusmp.
+All four rank-1 points are complete: +0.7126% versus LRU on
+GemsFDTD/65615, -2.4828% on gcc_200/5108, -2.3551% on zeusmp/66319,
+and -0.2123% on mcf/6753. This improves GCC relative to rank 4 but worsens zeusmp.
 No aggregate score follows from scouts.
 
 The GCC control with adaptation disabled exactly reproduces retained static
@@ -652,3 +656,40 @@ use the previous completion callback and are retained as historical evidence.
 Four static and four adaptive full-window scouts plus an exact original-LRU
 GCC always-MRU control are running with the corrected source. Their results
 must precede any performance conclusion about the corrected implementation.
+
+The corrected full-window scouts confirm an exact original-LRU match for the
+GCC always-MRU control in both warmup and measurement. Corrected static/rank-4
+ICP is -0.7216% versus LRU on gcc_200/5108, +0.8933% on GemsFDTD/65615, and
+-1.7979% on zeusmp/66319. Corrected adaptive/rank-4 ICP is -3.7422%, +0.3408%,
+and -0.7192%, respectively; both mcf scouts remain in progress. Independent
+145-point static and adaptive screens now run from immutable source
+`8d8c98fedd` with 32 local workers each. These are separate experiments with
+matched point lists, weights, REF, and 20M/40M windows.
+
+### Independent prefetch-hit promotion control
+
+The author policy defaults use-accuracy-prefetch-hit to false, independently
+of its insertion-accuracy predictor. Exposing that choice lets this experiment
+test accuracy-based insertion without suppressing recency updates on hits.
+The optional `--icp-promote-all-prefetch-hits` flag sets
+`ICPRP.accuracy_on_prefetch_hit=False`; the parameter defaults to true, retaining
+the prior experiment when the flag is omitted. All prefetch hits then promote
+the resident line to MRU. Confidence lookup, insertion rank, demand-use credit,
+and EPF training retain their existing behavior.
+
+More promotions may protect useful lines or retain pollution longer. A directed
+four-way sequence demonstrates the behavioral distinction: an inaccurate
+prefetch enters at LRU, a second prefetch hits it, and a demand fill intervenes.
+With hit filtering, that fill evicts the prefetched line; with unconditional
+promotion it survives and satisfies the next demand. The sequence checks the
+insertion class, useful/unused accounting, EPF correction, ignored-hit count,
+and actual demand misses. Clang fast and GCC opt each pass all 48 cache-packet
+checks, including both modes and source-only/PC64 predictor configurations.
+Scoped repository style and whitespace checks pass.
+
+The new immutable snapshot is `~/.tmp/icp-l2-20261114/insertion-only-fast`.
+Four full-window insertion-only scouts use PC64, high rank 0, low rank 4,
+adaptation disabled, and unconditional prefetch-hit promotion. A fifth GCC
+control leaves the new flag unset and must exactly reproduce the corrected
+static ICP warmup and measurement metrics. These experiments remain in progress;
+no suite improvement has yet been demonstrated.

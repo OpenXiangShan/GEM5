@@ -436,5 +436,6 @@ def set_l2_replacement_policy(cache, options):
             low_priority=options.icp_low_priority,
             demote_on_first_use=options.icp_demote_on_first_use,
             adaptive=options.icp_adaptive,
+            accuracy_on_prefetch_hit=not options.icp_promote_all_prefetch_hits,
             **geometry,
         )

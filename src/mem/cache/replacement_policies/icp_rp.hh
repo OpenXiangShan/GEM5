@@ -63,6 +63,7 @@ class ICP : public Base
     const unsigned highPriority;
     const unsigned lowPriority;
     const bool demoteOnFirstUse;
+    const bool accuracyOnPrefetchHit;
     const bool adaptive;
     const unsigned sampleStride;
     static constexpr unsigned SelectorThreshold = 512;

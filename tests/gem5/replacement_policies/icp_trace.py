@@ -20,10 +20,12 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--scenario", default="feedback",
                     choices=["feedback", "no-epf", "secure", "demotion",
                              "merged", "superseded", "pc-isolation",
-                             "low-retention", "prefetch-recency"])
+                             "low-retention", "prefetch-recency",
+                             "inaccurate-prefetch-hit"])
 parser.add_argument("--pc-entries", type=int, default=0, choices=[0, 64])
 parser.add_argument("--low-priority", type=int, default=-1, choices=[-1, 2])
 parser.add_argument("--high-priority", type=int, default=0, choices=[0, 1])
+parser.add_argument("--promote-all-prefetch-hits", action="store_true")
 args = parser.parse_args()
 
 
@@ -49,7 +51,18 @@ def message(file, value):
 READ, SOFT_PREFETCH, PREFETCH = 2, 12, 14
 PF_FLAG, SECURE_FLAG = 0x01000000, 0x10000000
 trace = [(READ, line, 0) for line in range(4)]
-if args.scenario == "prefetch-recency":
+if args.scenario == "inaccurate-prefetch-hit":
+    # Promote an inaccurate prefetch hit without changing its insertion rank.
+    # With filtering enabled it remains LRU and the next miss evicts it.
+    trace += [(PREFETCH, 4, PF_FLAG), (SOFT_PREFETCH, 4, PF_FLAG),
+              (READ, 5, 0), (READ, 4, 0)]
+    promote = args.promote_all_prefetch_hits
+    expected = dict(prefetchFills=1, highPriorityFills=0, lowPriorityFills=1,
+                    usefulPrefetches=1 if promote else 0,
+                    unusedPrefetches=0 if promote else 1,
+                    epfHits=0 if promote else 1,
+                    ignoredPrefetchHits=0 if promote else 1)
+elif args.scenario == "prefetch-recency":
     # A configurable insertion rank must not demote the most recent line
     # when an accurate prefetch hits it.
     trace += [(READ, 0, 0), (SOFT_PREFETCH, 0, PF_FLAG)]
@@ -142,6 +155,7 @@ system.l2 = Cache(
     replacement_policy=ICPRP(
         num_sets=1, num_ways=4, block_size=64, pc_entries=args.pc_entries,
         high_priority=args.high_priority, low_priority=args.low_priority,
+        accuracy_on_prefetch_hit=not args.promote_all_prefetch_hits,
         initial_accuracy={"demotion": 2, "merged": 2, "superseded": 1,
                           "pc-isolation": 1,
                           "prefetch-recency": 2}.get(args.scenario, 0),
@@ -171,7 +185,8 @@ for name, value in expected.items():
     assert actual == value, (args.scenario, name, actual, value)
 misses = {"secure": 7, "demotion": 6, "merged": 9, "superseded": 5,
           "pc-isolation": 4, "prefetch-recency": 7,
-          "low-retention": 5 if args.low_priority == 2 else 6}.get(args.scenario, 12)
+          "low-retention": 5 if args.low_priority == 2 else 6,
+          "inaccurate-prefetch-hit": 5 if args.promote_all_prefetch_hits else 6}.get(args.scenario, 12)
 actual_misses = float(values["system.l2.demandMisses::total"])
 assert actual_misses == misses, (args.scenario, "demandMisses", actual_misses, misses)
 print("PASS ICP", args.scenario, expected, "demandMisses", actual_misses)
