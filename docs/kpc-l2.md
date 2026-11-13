@@ -329,5 +329,64 @@ all common system statistics and simulation ticks against the previous
 corrected executable in the smoke case. Full evidence is recorded in
 `live-rrpv-validation.json`, `live-smoke-results.json`,
 `screen-ci-model-manifest.json` and `screen-live-rrpv-manifest.json`.
-Long-window screening is still running; these checks establish configuration
-and functional correctness, not full-suite improvement.
+The configuration and functional checks above preceded the completed
+long-window screening below.
+
+
+### Completed long-window insertion screening
+
+All 19 local cases exited normally after 20M warmup and 20M measured
+instructions, using the CI DRAMsim3 DDR4 model and pinned dedup REF. The
+`milc/5841` LRU control reproduces all 12,875 common system, instruction
+and tick statistics from CI exactly, including IPC 1.053290. Each comparison
+uses the final complete statistics block. Binary hashes, native parameters,
+commands and ROI length were checked; no case timed out.
+
+The corrected KPC column includes clean-writeback sampler training and
+retains insertion RRPV 2. The prefetch-promotion column changes only the
+existing hit-promotion option. RRPV 0/1 columns retain normal hit behavior
+and change only non-saturated insertion. Saturated insertion remains RRPV 3.
+
+| Checkpoint | LRU CI | XSDRRIP CI | Initial KPC CI | Corrected KPC | PF promotion | RRPV 1 | RRPV 0 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| milc_5841 | 1.053290 | 0.963310 | 0.966141 | 0.962484 | 0.968544 | 0.985865 | 1.044229 |
+| milc_9643 | 1.126472 | 0.990995 | 0.986893 | 0.986893 | 0.998819 | — | — |
+| gcc_g23_6319 | 0.770037 | 0.885293 | 0.747225 | 0.749994 | 0.749375 | 0.864466 | 0.860348 |
+| gcc_166_1439 | 0.880696 | 0.870339 | 0.783925 | 0.785341 | 0.705889 | 0.785682 | 0.790932 |
+| mcf_6753 | 0.746060 | 0.737773 | 0.734756 | 0.734250 | 0.734676 | — | — |
+| libquantum_69175 | 5.414300 | 5.478076 | 5.421564 | 5.471455 | 5.471420 | — | — |
+
+The clean-writeback correction is required for sampler semantics, but is not
+a uniform performance improvement. It improves `libquantum/69175` by 0.92%
+against initial KPC while slightly worsening `milc/5841` and `mcf/6753`.
+Prefetch-hit promotion is rejected as a default optimization: it reduces
+`gcc_166/1439` IPC from 0.785341 to 0.705889 despite small milc improvements.
+
+Non-saturated RRPV 0 improves `milc/5841` IPC by 8.493% against corrected
+KPC and reduces the gap to LRU to 0.86%. It improves `gcc_g23/6319` by
+14.714% against corrected KPC, but remains 2.82% below XSDRRIP. At
+`gcc_166/1439`, RRPV 0 still trails LRU by 10.19%. This parameter is
+therefore a candidate for broader validation, not a complete regression fix.
+
+The original manifests record base HEAD `e401274c41`. The live-RRPV
+executable was frozen with the then-uncommitted parameter implementation,
+subsequently committed as `daf86dbe4b`; its captured hash and observed
+RRPV 0/1 configuration distinguish it from the earlier corrected executable.
+`live-rrpv-implementation.patch` preserves the implementation difference.
+The default RRPV 2 implementation remains unchanged.
+
+Machine-readable evidence is `focused-screen-results.json`, with original
+case directories under `screen-ci-model/` and `screen-live-rrpv/` in the
+task artifact directory. These selected points do not establish a new
+full-suite score. Expanded validation will cover the remaining regression
+points and representative original gains before choosing a new default.
+
+Expanded screening uses the same frozen live-RRPV executable for 13 cases:
+RRPV 0 on `milc/9643`, `mcf/6753`, and `libquantum/69175`; RRPV 0/2
+pairs on `lbm/6382`, `soplex_ref/5312`, `sphinx3/157921`, `zeusmp/27787`,
+and `leslie3d/18494`. The first four added benchmarks select the largest
+weighted gain against XSDRRIP, and leslie3d selects the largest weighted
+regression against LRU. The comparison retains 20M warmup and 20M ROI,
+six workers, no prefetch-hit promotion, and a two-hour per-case timeout.
+Its manifest, selection rationale and outputs are under `screen-expanded`.
+The paper default remains RRPV 2 while this evaluation is pending.
