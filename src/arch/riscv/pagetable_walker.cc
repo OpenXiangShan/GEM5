@@ -973,7 +973,7 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
                     inl2Entry.pte = pte;
                     inl2Entry.logBytes = PageShift + (l2_level * LEVEL_BITS);
                     inl2Entry.level = l2_level;
-                    const int l2_type = L_L2L3 + 3 - l2_level;
+                    const int l2_type = L_L2L3 + L2L3CheckLevel - l2_level;
                     const int ptesPerEntry = l2tlbPtesPerEntry(l2_type);
                     const int firstPte = ptesPerEntry == 1 ?
                         (gPaddr >> inl2Entry.logBytes) & VADDR_CHOOSE_MASK : 0;
@@ -1061,7 +1061,8 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
                 inl2Entry.logBytes = PageShift + (l2_level * LEVEL_BITS);
                 inl2Entry.level = l2_level;
                 if (!tlbHit) {
-                    const int l2_type = l2_level == 0 ? L_L2L0 : L_L2sp3 + 3 - l2_level;
+                    const int l2_type = l2_level == L2L0CheckLevel ?
+                        L_L2L0 : L_L2sp3 + L2L3CheckLevel - l2_level;
                     const int ptesPerEntry = l2tlbPtesPerEntry(l2_type);
                     const int firstPte = ptesPerEntry == 1 ?
                         (entry.gpaddr >> inl2Entry.logBytes) & VADDR_CHOOSE_MASK : 0;
@@ -1273,7 +1274,8 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                             inl2Entry.logBytes = PageShift + (l2_level * LEVEL_BITS);
                             inl2Entry.level = l2_level;
 
-                            const int l2_type = l2_level == 0 ? L_L2L0 : L_L2sp3 + 3 - l2_level;
+                            const int l2_type = l2_level == L2L0CheckLevel ?
+                                L_L2L0 : L_L2sp3 + L2L3CheckLevel - l2_level;
                             const int ptesPerEntry = l2tlbPtesPerEntry(l2_type);
                             const int firstPte = ptesPerEntry == 1 ?
                                 (entry.vaddr >> inl2Entry.logBytes) & VADDR_CHOOSE_MASK : 0;
@@ -1372,7 +1374,7 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                         inl2Entry.logBytes = PageShift + (l2_level * LEVEL_BITS);
                         inl2Entry.level = l2_level;
 
-                        const int l2_type = L_L2L3 + 3 - l2_level;
+                        const int l2_type = L_L2L3 + L2L3CheckLevel - l2_level;
                         const int ptesPerEntry = l2tlbPtesPerEntry(l2_type);
                         const int firstPte = ptesPerEntry == 1 ?
                             (entry.vaddr >> inl2Entry.logBytes) & VADDR_CHOOSE_MASK : 0;
@@ -1588,7 +1590,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                     inl2Entry.level = l2_level;
 
                     bool has_valid_pte = false;
-                    const int l2_type = L_L2L3 + 3 - l2_level;
+                    const int l2_type = L_L2L3 + L2L3CheckLevel - l2_level;
                     const int ptesPerEntry = l2tlbPtesPerEntry(l2_type);
                     const int firstPte = ptesPerEntry == 1 ?
                         (entry.vaddr >> inl2Entry.logBytes) & VADDR_CHOOSE_MASK : 0;
@@ -1713,7 +1715,8 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                 inl2Entry.level = level;
                 DPRINTF(PageTableWalker3, "final l1tlb vaddr %#x pre %d\n", entry.vaddr, entry.fromForwardPreReq);
 
-                const int l2_type = l2_level == 0 ? L_L2L0 : L_L2sp3 + 3 - l2_level;
+                const int l2_type = l2_level == L2L0CheckLevel ?
+                    L_L2L0 : L_L2sp3 + L2L3CheckLevel - l2_level;
                 const int ptesPerEntry = l2tlbPtesPerEntry(l2_type);
                 const int firstPte = ptesPerEntry == 1 ?
                     (entry.vaddr >> inl2Entry.logBytes) & VADDR_CHOOSE_MASK : 0;
