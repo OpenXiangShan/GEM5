@@ -42,6 +42,8 @@ class ICP : public Base
         unsigned predictor = 0;
     };
 
+    enum class SetRole { LruLeader, IcpLeader, Follower };
+
     struct Ghost
     {
         Addr address = 0;
@@ -61,6 +63,11 @@ class ICP : public Base
     const unsigned highPriority;
     const unsigned lowPriority;
     const bool demoteOnFirstUse;
+    const bool adaptive;
+    const unsigned sampleStride;
+    static constexpr unsigned SelectorThreshold = 512;
+    static constexpr unsigned SelectorMax = 1023;
+    unsigned selector = SelectorThreshold - 1;
     const unsigned epfAssoc;
     const unsigned epfSets;
     unsigned entryCount = 0;
@@ -68,9 +75,12 @@ class ICP : public Base
     mutable std::vector<unsigned> accuracy;
     std::vector<std::vector<ICPReplData *>> sets;
     mutable std::vector<Ghost> ghosts;
+    std::vector<SetRole> setRoles;
 
     void position(ICPReplData &data, unsigned rank) const;
     void train(unsigned predictor, bool useful) const;
+    bool useIcp(unsigned set) const;
+    void trainSelector(unsigned set);
     unsigned sourceOf(const PacketPtr pkt) const;
     unsigned predictorOf(const PacketPtr pkt) const;
     unsigned ghostSet(Addr address, bool secure) const;
@@ -93,6 +103,12 @@ class ICP : public Base
         statistics::Scalar epfReplacements;
         statistics::Scalar epfSuperseded;
         statistics::Scalar ignoredPrefetchHits;
+        statistics::Scalar lruLeaderDemandFills;
+        statistics::Scalar icpLeaderDemandFills;
+        statistics::Scalar followerLruPrefetchFills;
+        statistics::Scalar followerIcpPrefetchFills;
+        statistics::Scalar policySwitches;
+        statistics::Value selectorValue;
         statistics::Vector fillsBySource;
         statistics::Vector lowFillsBySource;
         statistics::Vector usefulBySource;

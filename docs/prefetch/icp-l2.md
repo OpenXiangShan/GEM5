@@ -75,9 +75,10 @@ Experimental branch: `icp-l2`, based on `f9649a04ee`. The retained implementatio
 includes the prefetch-hit recency correction at `6f1545f6c6`; unsuccessful
 prefetch-read-credit experiments have been removed. The best completed
 145-point candidate is PC64 with low rank 4: -0.0627% versus LRU and
-+0.2557% versus XSDRRIP. PC64 with low rank 1 is still undergoing full
-screening. These are local ICP results; an ICP Actions run and full-profile
-confirmation remain pending.
++0.2557% versus XSDRRIP. PC64 with low rank 1 also completed all 145 points:
+-0.0637% versus LRU and +0.2546% versus XSDRRIP. Neither static setting
+improves over both references. These are local ICP results; an ICP Actions
+run and full-profile confirmation remain pending.
 
 The optimized simulator builds successfully. Python syntax, repository style
 checks and `git diff --check` pass. Local CoreMark smoke runs for LRU, XSDRRIP
@@ -464,3 +465,107 @@ check. The retained runtime is committed at `6f1545f6c6`.
 Local build/check manifests are in `/tmp/icp-retained-build-results.json`.
 The older 34/16 check counts above describe the archived credit prototype;
 its removed scenarios do not belong to the retained test set.
+
+
+### Completed PC64 rank 1 screening and additional controls
+
+All 145 rank-1 points completed without aborts. A full audit checks every
+point's instruction-limit exit, separate approximately 20M warmup and 20M
+measurement windows, all four L2 slice policy configurations, and instruction
+boundaries against both references. The runtime differs from the retained
+source only in the equivalent high-rank-0 hit update and parameter wording.
+
+| Policy | Score/GHz | Speed vs LRU | Speed vs XSDRRIP |
+| --- | ---: | ---: | ---: |
+| ICP PC64, low rank 1 | 24.236022160 | -0.0637% | +0.2546% |
+| ICP PC64, low rank 4 | 24.236283867 | -0.0627% | +0.2557% |
+
+Rank-1 benchmark regressions versus LRU include zeusmp (-0.8141%), omnetpp
+(-0.6133%), cactusADM (-0.5326%), leslie3d (-0.3604%), and mcf (-0.2435%).
+The similar aggregate scores conceal differences between individual workloads.
+
+Moving accurate insertion from MRU to rank 1 with low rank 1 and demand-only
+feedback also fails to resolve the regressions: cactusADM/163 is -0.5370%
+versus LRU, while gcc_200/5108 is -2.6282%. These runs use the corrected
+prefetch-hit MRU behavior and full 20M/40M windows.
+
+A separate prototype promoted prefetch hits on demand-fetched or already
+demand-used lines irrespective of incoming confidence, while continuing to
+suppress hits on unused inaccurate prefetches. It passed 28 packet checks,
+including explicit no-double-credit and suppression controls. Full-window
+results show why it was removed:
+
+| Point | Low rank | Speed vs LRU | Speed vs same-rank retained ICP |
+| --- | ---: | ---: | ---: |
+| gcc_200/5108 | 1 | -4.1561% | -4.4976% |
+| gcc_200/5108 | 4 | -3.4438% | +0.5037% |
+| gcc_cpdecl/1944 | 1 | -0.8697% | +0.8142% |
+| gcc_cpdecl/1944 | 4 | -0.3674% | +0.0003% |
+
+A packet-level recency improvement therefore does not establish a workload
+performance benefit. The prototype's exact patch and summarized results are
+preserved under `~/.tmp/icp-l2-20261114/retired/`. The full rank-1 audit is
+`~/.tmp/icp-l2-20261114/audit/rank1/audit.json`.
+
+### Experimental sampled LRU/ICP selection
+
+Static rank changes and hit-promotion changes trade performance between
+workloads without an aggregate gain over LRU. An optional `--icp-adaptive`
+experiment therefore compares LRU recency and the configured ICP policy in
+fixed sampling sets. It uses no workload identifiers or offline scores.
+
+With the normal 1024-set slice and sample stride 32, an invertible permutation
+of set-index bits assigns 32 LRU leaders and 32 ICP leaders. XOR shifts, an
+odd multiplicative constant, and the set mask spread the leader groups across
+regular address strides while preserving their exact counts. Adaptive mode
+requires a power-of-two set count and sample stride. All other sets follow a
+slice-local 10-bit saturating selector. LRU leader demand fills
+increment the selector toward ICP; ICP leader demand fills decrement it
+toward LRU. Values at least 512 select ICP; the initial value 511 selects LRU.
+Leaders retain their assigned policies independently of the selector.
+
+Training observes non-prefetch read-response allocations and direct demand
+request allocations. A demand merged into a prefetch fill trains once through
+the existing fill-completion callback. Prefetch-only fills and hits do not
+train the selector. This is an allocation-based demand-miss proxy; it does
+not count every permission miss or MSHR-merged request separately.
+
+The LRU alternative inserts and touches at MRU and suppresses first-use
+demotion. Accuracy evidence remains active in both modes, but only actual
+ICP low-priority insertions enter EPF on unused eviction. Policy changes
+apply to subsequent accesses and insertions; they do not reorder all resident
+lines. Followers expose separate LRU/ICP prefetch-fill counts, while leader
+fill counts, switch counts, and a live selector value explain the choice.
+The live value remains valid after statistics are reset at warmup.
+
+The experiment defaults to disabled, preserves cache geometry and modeled
+latencies, and adds constant-time selection/training to the existing bounded
+rank/EPF work. The simulator caches set roles in a bounded array. Sampling
+bias and training lag may reduce performance; the leaders themselves also
+retain the less successful policy in part of the cache. This extension is
+an optimization experiment rather than part of the original paper's policy.
+
+Clang fast and GCC opt each pass 36 packet checks: the 22 retained scenarios
+plus 14 sampled policy checks across source-only and PC64 predictors. The new
+cases verify leader behavior, follower switches in both directions, saturation
+at both limits, no prefetch-only training, one-time credit for demand-merged
+prefetch fills, and exactly 32 leaders per policy when all 1024 set-index bits
+are exercised. No suite gain is inferred from these functional tests.
+
+The initial sampler used the XOR of the low and next five set-index bits.
+Its frozen implementation is `~/.tmp/icp-l2-20261114/adaptive-fast` and passed
+34 checks with each compiler. Full-window scouts so far are +0.5812% versus
+LRU on GemsFDTD/65615, -1.2291% on zeusmp/66319, and -0.5995% on
+gcc_200/5108. The zeusmp sampling leaders favor ICP even though retained
+whole-slice CPU data miss counts and cumulative miss latency exceed LRU.
+This motivates testing the permuted sampling cohorts separately; it is a
+hypothesis about representativeness, not proof of a cause.
+
+The permuted sampler is frozen independently at
+`~/.tmp/icp-l2-20261114/adaptive-mixed-fast`. It compares the same four full
+20M/40M workload windows with the original cohorts and matched LRU/XSDRRIP
+references. A separate GCC control with adaptation disabled checks both
+warmup and final ticks, instructions, and IPC against retained static ICP.
+The full-suite launcher requires all four scouts and that exact disabled-mode
+control to finish. Candidate selection and aggregate performance remain
+pending complete measured results.

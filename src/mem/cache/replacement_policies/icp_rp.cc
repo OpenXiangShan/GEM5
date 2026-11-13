@@ -26,10 +26,12 @@ ICP::ICP(const Params &p)
                  (1U << p.counter_bits) - 1 : 0),
       threshold(p.accuracy_threshold), highPriority(p.high_priority),
       lowPriority(p.low_priority == -1 ? numWays - 1 : p.low_priority),
-      demoteOnFirstUse(p.demote_on_first_use), epfAssoc(p.epf_assoc),
+      demoteOnFirstUse(p.demote_on_first_use), adaptive(p.adaptive),
+      sampleStride(p.sample_stride), epfAssoc(p.epf_assoc),
       epfSets(p.epf_assoc ? p.epf_entries / p.epf_assoc : 0),
       accuracy(NUM_PF_SOURCES * (std::min(pcEntries, 4096U) + 1)),
-      sets(numSets), ghosts(p.epf_entries), stats(this)
+      sets(numSets), ghosts(p.epf_entries),
+      setRoles(numSets, SetRole::Follower), stats(this)
 {
     fatal_if(!numSets || !numWays, "ICP requires nonzero cache geometry");
     fatal_if(!isPowerOf2(blockSize), "ICP block size must be a power of 2");
@@ -42,7 +44,27 @@ ICP::ICP(const Params &p)
              p.epf_entries % epfAssoc), "Invalid ICP EPF geometry");
     fatal_if(pcEntries > 4096 || (pcEntries && !isPowerOf2(pcEntries)),
              "ICP PC entries must be zero or a power of two up to 4096");
+    fatal_if(adaptive && (!isPowerOf2(numSets) || sampleStride < 4 ||
+             !isPowerOf2(sampleStride) || numSets < sampleStride),
+             "ICP sampling requires power-of-two sets and stride >= 4");
     std::fill(accuracy.begin(), accuracy.end(), p.initial_accuracy);
+    stats.selectorValue.functor([this] { return selector; });
+    if (adaptive) {
+        for (unsigned set = 0; set < numSets; ++set) {
+            // This permutation preserves the number of leaders while
+            // spreading them across regular address strides. Multiplication
+            // by an odd constant and XOR shifts are invertible on set bits.
+            unsigned mixed = set ^ (set >> 4);
+            mixed = (mixed * 0x9e3779b1U) & (numSets - 1);
+            mixed ^= mixed >> 5;
+            const unsigned group = mixed & (sampleStride - 1);
+            if (group == 0) {
+                setRoles[set] = SetRole::LruLeader;
+            } else if (group == sampleStride - 1) {
+                setRoles[set] = SetRole::IcpLeader;
+            }
+        }
+    }
 }
 
 bool
@@ -89,6 +111,36 @@ ICP::train(unsigned predictor, bool useful) const
         counter = std::min(counter + 1, counterMax);
     } else if (counter) {
         --counter;
+    }
+}
+
+bool
+ICP::useIcp(unsigned set) const
+{
+    if (!adaptive || setRoles[set] == SetRole::IcpLeader) {
+        return true;
+    }
+    return setRoles[set] == SetRole::Follower && selector >= SelectorThreshold;
+}
+
+void
+ICP::trainSelector(unsigned set)
+{
+    if (!adaptive || setRoles[set] == SetRole::Follower) {
+        return;
+    }
+    const bool previous = selector >= SelectorThreshold;
+    if (setRoles[set] == SetRole::LruLeader) {
+        selector = std::min(selector + 1, SelectorMax);
+        ++stats.lruLeaderDemandFills;
+    } else {
+        if (selector) {
+            --selector;
+        }
+        ++stats.icpLeaderDemandFills;
+    }
+    if (previous != (selector >= SelectorThreshold)) {
+        ++stats.policySwitches;
     }
 }
 
@@ -188,11 +240,12 @@ ICP::notifyPrefetchFill(const std::shared_ptr<ReplacementData> &data,
 {
     auto &entry = *std::static_pointer_cast<ICPReplData>(data);
     if (entry.prefetched && demand_merged) {
+        trainSelector(entry.set);
         train(entry.predictor, true);
         ++stats.usefulPrefetches;
         ++stats.usefulBySource[entry.source];
         entry.prefetched = false;
-        position(entry, demoteOnFirstUse ? numWays - 1 : 0);
+        position(entry, demoteOnFirstUse && useIcp(entry.set) ? numWays - 1 : 0);
     }
 }
 
@@ -228,7 +281,7 @@ ICP::touch(const std::shared_ptr<ReplacementData> &data, const PacketPtr pkt)
         return;
     }
     if (isPrefetch(pkt)) {
-        if (accuracy[predictorOf(pkt)] >= threshold) {
+        if (!useIcp(entry.set) || accuracy[predictorOf(pkt)] >= threshold) {
             // An insertion rank must not demote a more recent line on a hit.
             position(entry, 0);
         } else {
@@ -241,7 +294,7 @@ ICP::touch(const std::shared_ptr<ReplacementData> &data, const PacketPtr pkt)
         ++stats.usefulPrefetches;
         ++stats.usefulBySource[entry.source];
         entry.prefetched = false;
-        if (demoteOnFirstUse) {
+        if (demoteOnFirstUse && useIcp(entry.set)) {
             position(entry, numWays - 1);
             return;
         }
@@ -259,6 +312,14 @@ void
 ICP::reset(const std::shared_ptr<ReplacementData> &data, const PacketPtr pkt)
 {
     auto &entry = *std::static_pointer_cast<ICPReplData>(data);
+    // Tag allocation normally observes the returning read response, whereas
+    // isDemand() classifies request commands. Eviction/writeback allocations
+    // and prefetch responses must not train the policy selector.
+    const bool demandFill = isDemand(pkt) ||
+        (pkt->isResponse() && pkt->isRead() && !isPrefetch(pkt));
+    if (demandFill) {
+        trainSelector(entry.set);
+    }
     entry.address = pkt->getBlockAddr(blockSize);
     entry.secure = pkt->isSecure();
     // A new residency supersedes the ghost record; never count it twice.
@@ -269,8 +330,16 @@ ICP::reset(const std::shared_ptr<ReplacementData> &data, const PacketPtr pkt)
     if (entry.prefetched) {
         entry.source = sourceOf(pkt);
         entry.predictor = predictorOf(pkt);
-        entry.predictedLow = accuracy[entry.predictor] < threshold;
-        rank = entry.predictedLow ? lowPriority : highPriority;
+        const bool icp = useIcp(entry.set);
+        entry.predictedLow = icp && accuracy[entry.predictor] < threshold;
+        rank = icp ? (entry.predictedLow ? lowPriority : highPriority) : 0;
+        if (adaptive && setRoles[entry.set] == SetRole::Follower) {
+            if (icp) {
+                ++stats.followerIcpPrefetchFills;
+            } else {
+                ++stats.followerLruPrefetchFills;
+            }
+        }
         ++stats.prefetchFills;
         ++stats.fillsBySource[entry.source];
         if (pcEntries && pkt->req->hasPC()) {
@@ -341,6 +410,12 @@ ICP::ICPStats::ICPStats(statistics::Group *parent)
       ADD_STAT(epfReplacements, "Unused prefetch records displaced from EPF"),
       ADD_STAT(epfSuperseded, "Unresolved EPF records retired by a new residency"),
       ADD_STAT(ignoredPrefetchHits, "Low-confidence prefetch hits not promoted"),
+      ADD_STAT(lruLeaderDemandFills, "Demand fills in LRU sampling sets"),
+      ADD_STAT(icpLeaderDemandFills, "Demand fills in ICP sampling sets"),
+      ADD_STAT(followerLruPrefetchFills, "Follower prefetches using LRU"),
+      ADD_STAT(followerIcpPrefetchFills, "Follower prefetches using ICP"),
+      ADD_STAT(policySwitches, "Changes in the follower policy selection"),
+      ADD_STAT(selectorValue, "Current LRU/ICP policy selector value"),
       ADD_STAT(fillsBySource, "Prefetch fills by source"),
       ADD_STAT(lowFillsBySource, "Low-priority prefetch fills by source"),
       ADD_STAT(usefulBySource, "Useful resident prefetches by source"),

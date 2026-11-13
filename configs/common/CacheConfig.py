@@ -435,5 +435,6 @@ def set_l2_replacement_policy(cache, options):
             high_priority=options.icp_high_priority,
             low_priority=options.icp_low_priority,
             demote_on_first_use=options.icp_demote_on_first_use,
+            adaptive=options.icp_adaptive,
             **geometry,
         )

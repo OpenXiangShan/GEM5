@@ -184,3 +184,5 @@ class ICPRP(BaseReplacementPolicy):
     epf_entries = Param.Unsigned(256, "EPF capacity; zero disables correction")
     epf_assoc = Param.Unsigned(4, "EPF associativity")
     demote_on_first_use = Param.Bool(False, "Enable ICP first-demand-use demotion")
+    adaptive = Param.Bool(False, "Choose LRU or ICP using sampled demand fills")
+    sample_stride = Param.Unsigned(32, "Sets per leader of each sampled policy")
