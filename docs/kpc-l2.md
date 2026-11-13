@@ -230,7 +230,12 @@ Dispatch commands and run metadata are retained in
 
 Both policies completed all 1094 checkpoints with no abort markers. All
 29 benchmarks have reported coverage 1.0. The performance result checks
-passed; workflow cleanup was still completing at the first score read.
+passed. Both final Actions conclusions are `failure`: the subsequent archive
+retention cleanup encountered NFS `Stale file handle` errors while deleting
+older run directories (including `20261028_211147_2174b82_idealkmhv3_run118`).
+Current-run data and scores remain readable, and the score artifact upload
+succeeded. This is an infrastructure cleanup failure, not a simulation or
+performance-check failure. No simulations were rerun for this reason.
 The LRU run remains in progress, so this is the complete KPC/XSDRRIP pair,
 not the final three-policy comparison.
 
