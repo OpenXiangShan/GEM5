@@ -108,5 +108,11 @@ class Scheduler(SimObject):
         "FMUL/FMA producers"
     )
 
+    enableFpDivSqrtPipelining = Param.Bool(
+        False,
+        "Pipeline scalar FP DIV/SQRT with fixed latencies by precision; "
+        "override FU descriptors while retaining shared issue/output ports",
+    )
+
     intRegfileBanks = Param.Int(1, "number of integer register file banks")
     enableSpMT = Param.Bool(False, "Enable SpMT mode")
