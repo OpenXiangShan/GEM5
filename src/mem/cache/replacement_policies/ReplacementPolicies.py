@@ -190,5 +190,3 @@ class KPCRP(BaseReplacementPolicy):
     slice_index = Param.Unsigned(0, "Index of this slice")
     promote_prefetch_hits = Param.Bool(
         False, "Promote PF hits; no path confidence exists in the XS prefetchers")
-    promote_writeback_hits = Param.Bool(
-        False, "Promote data-bearing writeback hits to RRPV 0 at L2")

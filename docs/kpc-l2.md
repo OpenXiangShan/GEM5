@@ -459,3 +459,50 @@ and `lbm/6382`. They compare with the already completed matching cases
 without promotion, with the same DRAMsim3, REF and 20M/20M instruction
 windows. A separate frozen executable protects provenance. No performance
 claim is made for this option until those results finish.
+
+### Writeback-hit results and candidate selection
+
+All six writeback-promotion cases passed NEMU difftest and final complete
+20M ROI checks. All four slices had the requested parameter enabled;
+recorded actual tag-hit promotions were nonzero, and executable hashes and
+committed source hashes were verified. Comparison uses the matching earlier
+case with promotion disabled and the same insertion parameter.
+
+| Checkpoint | Insertion RRPV | WB promotion off IPC | WB promotion on IPC | IPC change | Actual promotions |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| gcc_166_1439 | 2 | 0.785341 | 0.787731 | +0.304% | 207561 |
+| gcc_166_1439 | 0 | 0.790932 | 0.784769 | -0.779% | 205137 |
+| gcc_g23_6319 | 0 | 0.860348 | 0.848886 | -1.332% | 115855 |
+| milc_5841 | 0 | 1.044229 | 1.042441 | -0.171% | 596628 |
+| mcf_6753 | 0 | 0.736044 | 0.735140 | -0.123% | 5362406 |
+| lbm_6382 | 0 | 2.566000 | 2.566805 | +0.031% | 1184186 |
+
+Writeback-hit promotion does not explain the large gcc_166 regression.
+It improves the RRPV-2 case by only 0.304% and worsens the RRPV-0 case
+by 0.779%; gcc_g23 loses 1.332%. With RRPV 0 it also slightly worsens
+milc and mcf. The optional promotion parameter, branch and counter are
+removed from the candidate source. Commit `62fe4e89d1` and
+`writeback-promotion-implementation.patch` retain the tested experiment;
+`writeback-screen-results.json` retains all observations. The earlier
+writeback section describes that historical experiment, not a currently
+available parameter.
+
+The selected broader-validation candidate is corrected clean-writeback
+sampler training plus non-saturated insertion RRPV 0, with existing demand
+hit promotion and no prefetch/writeback-hit promotion. Saturated insertion
+remains RRPV 3. RRPV 0 is selected for complete-suite evaluation because it
+materially improves the two dominant milc regressions and gcc_g23, while
+its observed losses on representative gains are smaller. This is a local
+screening judgment, not a full-suite improvement claim. The implementation
+and compiled default remain RRPV 2 pending broader evidence.
+
+The proposed next comparison uses one new exact code SHA and two complete
+SPEC06 runs: corrected KPC at RRPV 2, and the same code at RRPV 0. This
+separates the semantic clean-writeback fix from insertion tuning. Existing
+LRU/XSDRRIP baselines retain 1094/1094 coverage, and their code and all
+configuration/observation-hook code have no differences from the initial
+tested commit. The local LRU control already reproduces every common
+performance statistic. There is no reason to repeat the original three
+runs. A proposed publication and exact dispatch-input record will be
+prepared separately; no later commit or additional full-suite dispatch
+has been published under the initial 60f9ac4ec2-only authorization.
