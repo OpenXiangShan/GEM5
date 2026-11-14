@@ -57,7 +57,8 @@ DRAMsim3::DRAMsim3(const Params &p) :
     write_cb(std::bind(&DRAMsim3::writeComplete,
                        this, 0, std::placeholders::_1)),
     wrapper(p.configFile, p.filePath, read_cb, write_cb),
-    retryReq(false), retryResp(false), startTick(0),
+    retryReq(false), retryReqAddr(0), retryReqIsWrite(false),
+    retryResp(false), startTick(0),
     nbrOutstandingReads(0), nbrOutstandingWrites(0),
     sendResponseEvent([this]{ sendResponse(); }, name()),
     tickEvent([this]{ tick(); }, name())
@@ -151,7 +152,7 @@ DRAMsim3::tick()
 
         // is the connected port waiting for a retry, if so check the
         // state and send a retry if conditions have changed
-        if (retryReq && nbrOutstanding() < wrapper.queueSize()) {
+        if (retryReq && wrapper.canAccept(retryReqAddr, retryReqIsWrite)) {
             retryReq = false;
             port.sendRetryReq();
         }
@@ -206,14 +207,8 @@ DRAMsim3::recvTimingReq(PacketPtr pkt)
 
     // if we cannot accept we need to send a retry once progress can
     // be made
-    bool outstanding_full = (nbrOutstanding() >= wrapper.queueSize());
-    // bool can_accept = (nbrOutstanding() < wrapper.queueSize()) &&
-    //                   wrapper.canAccept(pkt->getAddr(), pkt->isWrite());
-    bool wrapper_can_acc = true;
-    if (!outstanding_full) {
-        wrapper_can_acc = wrapper.canAccept(pkt->getAddr(), pkt->isWrite());
-    }
-    bool can_accept = !outstanding_full && wrapper_can_acc;
+    bool wrapper_can_acc = wrapper.canAccept(pkt->getAddr(), pkt->isWrite());
+    bool can_accept = wrapper_can_acc;
 
     DPRINTF(DRAMsim3, "Can accept: %i, outstanding: %u, queue size: %u, wrapper can acc: %i, is write: %i\n",
             can_accept, nbrOutstanding(), wrapper.queueSize(), wrapper_can_acc, pkt->isWrite());
@@ -258,6 +253,8 @@ DRAMsim3::recvTimingReq(PacketPtr pkt)
         return true;
     } else {
         retryReq = true;
+        retryReqAddr = pkt->getAddr();
+        retryReqIsWrite = pkt->isWrite();
         return false;
     }
 }
