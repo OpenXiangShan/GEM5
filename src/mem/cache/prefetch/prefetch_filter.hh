@@ -31,6 +31,9 @@ class PrefetchFilter
         Addr region_addr;    // region number (Vaddr[38:10] or Paddr[35:10] when paddr_valid)
         uint64_t region_bits; // which blocks in region should be prefetched (runtime width)
         uint64_t filter_bits; // which prefetch requests have been issued
+        uint64_t l1_bits;     // blocks whose destination is L1
+        uint64_t l2_bits;     // blocks whose destination is L2
+        uint64_t l3_bits;     // blocks whose destination is L3
         uint8_t alias_bits;   // Vaddr[13:12] for VIPT aliasing,not needed
         bool paddr_valid;     // true if region_addr is physical
         bool decr_mode;       // 1 if decrementing prefetch mode
@@ -39,7 +42,8 @@ class PrefetchFilter
         std::vector<std::unique_ptr<TriggerInfo>> bitTriggers;
 
         Entry()
-            : TaggedEntry(), region_addr(0), region_bits(0), filter_bits(0), alias_bits(0),
+            : TaggedEntry(), region_addr(0), region_bits(0), filter_bits(0),
+              l1_bits(0), l2_bits(0), l3_bits(0), alias_bits(0),
               paddr_valid(false), decr_mode(false), PFlevel(0),
               contextId(InvalidContextID) {}
 
@@ -48,6 +52,9 @@ class PrefetchFilter
               region_addr(other.region_addr),
               region_bits(other.region_bits),
               filter_bits(other.filter_bits),
+              l1_bits(other.l1_bits),
+              l2_bits(other.l2_bits),
+              l3_bits(other.l3_bits),
               alias_bits(other.alias_bits),
               paddr_valid(other.paddr_valid),
               decr_mode(other.decr_mode),
@@ -64,6 +71,9 @@ class PrefetchFilter
                 region_addr = other.region_addr;
                 region_bits = other.region_bits;
                 filter_bits = other.filter_bits;
+                l1_bits = other.l1_bits;
+                l2_bits = other.l2_bits;
+                l3_bits = other.l3_bits;
                 alias_bits = other.alias_bits;
                 paddr_valid = other.paddr_valid;
                 decr_mode = other.decr_mode;
@@ -131,7 +141,8 @@ class PrefetchFilter
     Entry* Insert(Addr region_addr = 0, uint64_t region_bits = 0, uint8_t alias_bits = 0,
       bool paddr_valid = false, bool decr_mode = false,
       bool is_secure = false, uint64_t PFlevel = 1,
-      const TriggerInfo *trigger = nullptr);
+      const TriggerInfo *trigger = nullptr, uint64_t l1_bits = 0,
+      uint64_t l2_bits = 0, uint64_t l3_bits = 0);
     // Get blocks still pending prefetch (region_bits & ~filter_bits)
     uint64_t pendingBlocks(Entry *e) const;
 
@@ -149,6 +160,9 @@ class PrefetchFilter
 
     void ensureTriggerStorage(Entry &e);
     void storeTriggersForBits(Entry &e, uint64_t bits, const TriggerInfo *trigger);
+    uint64_t pendingForLevel(const Entry &e, unsigned level) const;
+    uint64_t applyLevelBits(Entry &e, uint64_t incoming, unsigned level);
+    void refreshDebugPFLevel(Entry &e);
 
     // Compute region-hash tag as described by chisel:
     // low  = region_tag[BLK_ADDR_RAW_WIDTH-1:0]
