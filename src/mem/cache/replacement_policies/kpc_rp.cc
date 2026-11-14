@@ -74,7 +74,7 @@ KPCReplState::access(unsigned set, const PacketPtr pkt, bool prefetch)
 KPC::KPC(const Params &p)
   : Base(p), state(p.state), numSlices(p.num_slices),
     sliceIndex(p.slice_index), promotePrefetchHits(p.promote_prefetch_hits),
-    stats(this)
+    promoteWritebackHits(p.promote_writeback_hits), stats(this)
 {
     fatal_if(!numSlices || sliceIndex >= numSlices ||
              state->numSets % numSlices,
@@ -126,6 +126,13 @@ KPC::invalidate(const std::shared_ptr<ReplacementData> &data)
 void
 KPC::touch(const std::shared_ptr<ReplacementData> &data, const PacketPtr pkt)
 {
+    if (pkt && pkt->isWriteback()) {
+        if (promoteWritebackHits) {
+            ++stats.writebackPromotions;
+            touch(data);
+        }
+        return;
+    }
     if (pkt && (pkt->isEviction() || pkt->isStorePFTrain() ||
                 pkt->req->isCacheMaintenance())) {
         return;
@@ -242,6 +249,7 @@ KPC::KPCStats::KPCStats(statistics::Group *parent)
     ADD_STAT(prefetchInsertions1, "Prefetch insertions at RRPV 1"),
     ADD_STAT(prefetchInsertions2, "Prefetch insertions at RRPV 2"),
     ADD_STAT(prefetchInsertions3, "Prefetch insertions at RRPV 3"),
+    ADD_STAT(writebackPromotions, "Writeback tag-hit promotions to RRPV 0"),
     ADD_STAT(demandPromotions, "Demand hit promotions to RRPV 0"),
     ADD_STAT(prefetchPromotions, "Prefetch hit promotions to RRPV 0"),
     ADD_STAT(prefetchNoPromotion, "Prefetch hits without promotion")

@@ -390,3 +390,72 @@ regression against LRU. The comparison retains 20M warmup and 20M ROI,
 six workers, no prefetch-hit promotion, and a two-hour per-case timeout.
 Its manifest, selection rationale and outputs are under `screen-expanded`.
 The paper default remains RRPV 2 while this evaluation is pending.
+
+### Completed expanded screening
+
+All 13 expanded cases passed NEMU difftest, normal instruction-limit exit,
+final complete 20M ROI, frozen-executable hash and native-parameter checks.
+The runner's first attempt failed during argument parsing before simulation;
+those logs are retained under `screen-expanded-argparse-failure/`. The
+corrected runner reuses the previously validated command template, including
+memory deduplication and the exact warmup option. The successful results are
+separate and are recorded in `expanded-screen-results.json`.
+
+| Checkpoint | Corrected KPC RRPV 2 | RRPV 0 | IPC change |
+| --- | ---: | ---: | ---: |
+| milc_9643 | 0.986893 | 1.128169 | +14.315% |
+| mcf_6753 | 0.734250 | 0.736044 | +0.244% |
+| libquantum_69175 | 5.471455 | 5.459276 | -0.223% |
+| lbm_6382 | 2.593846 | 2.566000 | -1.074% |
+| soplex_ref_5312 | 2.759998 | 2.755375 | -0.168% |
+| sphinx3_157921 | 4.333400 | 4.303279 | -0.695% |
+| zeusmp_27787 | 3.504813 | 3.495314 | -0.271% |
+| leslie3d_18494 | 5.300985 | 5.349164 | +0.909% |
+
+RRPV 0 removes the large `milc/9643` regression (IPC 1.128169 versus LRU
+1.126472), but does not uniformly preserve the original gains. In these
+selected points it loses 1.074% on lbm and 0.695% on sphinx3 relative to
+corrected RRPV 2. The default remains RRPV 2. Neither the selected-point
+results nor a partial substitution into the original score establish a
+full-suite gain.
+
+### Writeback-hit investigation
+
+The remaining `gcc_166/1439` regression motivates a separate L2 experiment.
+`BaseSetAssoc::accessBlock` calls replacement `touch` only on a real tag
+hit. Current KPC ignores writeback hits; XSDRRIP gives non-prefetch release
+reuse RRPV 0. The benchmark has substantial clean-writeback traffic. Cache
+`Writeback*.hits` statistics include newly allocated writebacks because
+`BaseCache::access` records them as satisfied hits; they are not proof of
+actual tag-hit count. A replacement-policy counter must measure that event.
+
+The optional `KPCRP.promote_writeback_hits` experiment promotes data-bearing
+writeback tag hits to RRPV 0. It excludes no-data CleanEvict and preserves
+sampler training, insertion, prefetch-hit behavior and victim selection.
+It adds one scalar counter and constant work per affected hit. The default
+is false. Promoting a released line can preserve later demand reuse, but
+can also extend the lifetime of streaming stores. Validation will first
+check default-stat equivalence and NEMU smoke, then compare focused points
+with and without the option before selecting any broader candidate.
+
+The DRAMsim3 build, modified-region style, Python syntax and whitespace
+checks passed. All five 100K-instruction NEMU smoke cases passed. With
+writeback promotion disabled, RRPV 2 reproduces all 11,686 common system,
+inst and tick statistics, and RRPV 0 reproduces all 11,685 common values,
+against the previous executable. With the option enabled, sliced milc,
+sliced mcf and classic mcf report 92, 10,306 and 10,308 actual writeback
+promotions respectively. Evidence is in `writeback-promotion-validation.json`
+and `writeback-smoke-results.json`.
+
+The sliced-L2 native parameter is:
+
+```text
+--param=system.l2_wrappers[0].slices[:].inner_cache.replacement_policy.promote_writeback_hits=True
+```
+
+The six planned long-window cases use writeback promotion on: RRPV 0/2
+at `gcc_166/1439`, plus RRPV 0 at `gcc_g23/6319`, `milc/5841`, `mcf/6753`
+and `lbm/6382`. They compare with the already completed matching cases
+without promotion, with the same DRAMsim3, REF and 20M/20M instruction
+windows. A separate frozen executable protects provenance. No performance
+claim is made for this option until those results finish.

@@ -66,6 +66,7 @@ class KPC : public Base
     const unsigned numSlices;
     const unsigned sliceIndex;
     const bool promotePrefetchHits;
+    const bool promoteWritebackHits;
 
     mutable struct KPCStats : public statistics::Group
     {
@@ -78,6 +79,7 @@ class KPC : public Base
         statistics::Scalar prefetchInsertions1;
         statistics::Scalar prefetchInsertions2;
         statistics::Scalar prefetchInsertions3;
+        statistics::Scalar writebackPromotions;
         statistics::Scalar demandPromotions;
         statistics::Scalar prefetchPromotions;
         statistics::Scalar prefetchNoPromotion;
