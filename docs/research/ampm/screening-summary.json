@@ -1,0 +1,86 @@
+{
+  "source_sha": "8c3b7025b40a0daeb4a294ffd403c2b3983c85f5",
+  "dataset": "spec06-rva23-novec-gcc16-0.3c",
+  "points": 145,
+  "warmup_instructions": 20000000,
+  "total_instructions": 40000000,
+  "scope": "Complete standard 0.3c screening set, not full 1.0c confirmation. Fixed SRRIP uses uniform insertion RRPV 6; these gains do not establish a benefit of AMPM-conditioned adaptive insertion.",
+  "rows": [
+    {
+      "protocol": "default",
+      "insertion_mode": "drrip",
+      "promotion_mode": "map",
+      "execution": "CI",
+      "score_per_GHz": 24.181928698462684,
+      "delta_vs_controls_percent": {
+        "lru": -0.28678781602232695,
+        "xsdrrip": 0.030824909816762336
+      },
+      "wins_both": false,
+      "run_id": 43692388701,
+      "record": "strict-map-cov03.json"
+    },
+    {
+      "protocol": "default",
+      "insertion_mode": "srrip",
+      "promotion_mode": "map",
+      "execution": "CI",
+      "score_per_GHz": 24.271037367570568,
+      "delta_vs_controls_percent": {
+        "lru": 0.0806482037005729,
+        "xsdrrip": 0.39943130960504725
+      },
+      "wins_both": true,
+      "run_id": 43700266926,
+      "record": "strict-map-srrip-cov03.json"
+    },
+    {
+      "protocol": "real",
+      "insertion_mode": "drrip",
+      "promotion_mode": "map",
+      "execution": "CI",
+      "score_per_GHz": 22.6073586257549,
+      "delta_vs_controls_percent": {
+        "lru": -0.5468542633825124,
+        "xsdrrip": -0.07525013911469092
+      },
+      "wins_both": false,
+      "run_id": 43692377842,
+      "record": "strict-map-cov03.json"
+    },
+    {
+      "protocol": "real",
+      "insertion_mode": "srrip",
+      "promotion_mode": "map",
+      "execution": "CI",
+      "score_per_GHz": 22.674812544181545,
+      "delta_vs_controls_percent": {
+        "lru": -0.2501144057616256,
+        "xsdrrip": 0.22289685087644173
+      },
+      "wins_both": false,
+      "run_id": 43694686923,
+      "record": "strict-map-srrip-cov03.json"
+    },
+    {
+      "protocol": "real",
+      "insertion_mode": "srrip",
+      "promotion_mode": "line",
+      "execution": "local",
+      "score_per_GHz": 22.80308180227189,
+      "delta_vs_controls_percent": {
+        "lru": 0.3141612104023084,
+        "xsdrrip": 0.789848246733782
+      },
+      "wins_both": true,
+      "run_id": null,
+      "record": "line-srrip-cov03.json"
+    }
+  ],
+  "full_verification": {
+    "run_id": 43706618325,
+    "points": 1094,
+    "variant": "default XSComposite, fixed SRRIP3, map promotion",
+    "status": "pending"
+  }
+}

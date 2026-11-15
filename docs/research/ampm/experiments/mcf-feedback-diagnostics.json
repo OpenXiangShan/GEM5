@@ -1,0 +1,98 @@
+{
+  "lru": {
+    "ipc": 0.777068,
+    "l2_demand_misses": 1141379.0,
+    "firstUses": null,
+    "promotions": null,
+    "missingHints": null,
+    "followerBrripFills": null,
+    "followerSrripFills": null,
+    "leaderBrripDemandFills": null,
+    "leaderSrripDemandFills": null,
+    "selectors": null,
+    "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261113_095806_c7ba10ec02_idealkmhv3_run2134",
+    "l1d_avg_demand_miss_ticks": 6630.900622,
+    "l3_demand_misses": 2083.0,
+    "l2_mean_demand_miss_ticks": 9282.840389563853
+  },
+  "xsdrrip": {
+    "ipc": 0.774156,
+    "l2_demand_misses": 1163358.0,
+    "firstUses": null,
+    "promotions": null,
+    "missingHints": null,
+    "followerBrripFills": null,
+    "followerSrripFills": null,
+    "leaderBrripDemandFills": null,
+    "leaderSrripDemandFills": null,
+    "selectors": null,
+    "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261113_110442_c7ba10ec02_idealkmhv3_run2135",
+    "l1d_avg_demand_miss_ticks": 7179.858107,
+    "l3_demand_misses": 9605.0,
+    "l2_mean_demand_miss_ticks": 9799.274270688817
+  },
+  "demand": {
+    "ipc": 0.674996,
+    "l2_demand_misses": 1002783.0,
+    "firstUses": 315049.0,
+    "promotions": 2877737.0,
+    "missingHints": 590390.0,
+    "followerBrripFills": 1423849.0,
+    "followerSrripFills": 0.0,
+    "leaderBrripDemandFills": 35786.0,
+    "leaderSrripDemandFills": 37569.0,
+    "selectors": [
+      1020.0,
+      1021.0,
+      996.0,
+      1006.0
+    ],
+    "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261113_102019_c7ba10ec_idealkmhv3_run2136",
+    "l1d_avg_demand_miss_ticks": 8587.961349,
+    "l3_demand_misses": 93752.0,
+    "l2_mean_demand_miss_ticks": 15911.332829734847
+  },
+  "seed1": {
+    "ipc": 0.677293,
+    "l2_demand_misses": 1005183.0,
+    "firstUses": 313652.0,
+    "promotions": 2876770.0,
+    "missingHints": 589496.0,
+    "followerBrripFills": 1428054.0,
+    "followerSrripFills": 0.0,
+    "leaderBrripDemandFills": 34486.0,
+    "leaderSrripDemandFills": 36727.0,
+    "selectors": [
+      1020.0,
+      1007.0,
+      1016.0,
+      901.0
+    ],
+    "archive": "/tmp/apmp-local-cov03-seed1-v1",
+    "l1d_avg_demand_miss_ticks": 8592.367014,
+    "l3_demand_misses": 93152.0,
+    "l2_mean_demand_miss_ticks": 15835.05913251617
+  },
+  "all_alloc": {
+    "ipc": 0.757145,
+    "l2_demand_misses": 1032384.0,
+    "firstUses": 314790.0,
+    "promotions": 2831982.0,
+    "missingHints": 574014.0,
+    "followerBrripFills": 358204.0,
+    "followerSrripFills": 1075272.0,
+    "leaderBrripDemandFills": null,
+    "leaderSrripDemandFills": null,
+    "selectors": [
+      923.0,
+      483.0,
+      39.0,
+      118.0
+    ],
+    "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261113_043238_ffb2aa58_idealkmhv3_run2130",
+    "l1d_avg_demand_miss_ticks": 7083.888199,
+    "l3_demand_misses": 28372.0,
+    "l2_mean_demand_miss_ticks": 11047.635512561217
+  },
+  "comparison_note": "The all-allocation row uses historical ffb2aa58 source; demand-only/seed rows use c7ba10 source or its seed patch. Hint lifecycle fixes intervene, so this is not an exact-source feedback A/B. Null counters are unavailable, not measured zero."
+}

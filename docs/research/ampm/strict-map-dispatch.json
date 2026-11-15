@@ -1,0 +1,56 @@
+{
+  "real": {
+    "dispatched_at": "2026-11-15T07:59:57.546800+00:00",
+    "workflow_ref": "ampm-l2",
+    "fields": {
+      "note": "AMPM-strict-map-8c3b7025b4-real",
+      "configuration": "idealkmhv3.py",
+      "benchmark_type": "spec06-rva23-novec-gcc16-0.3c",
+      "specific_benchmarks": "",
+      "extra_args": "--l2-replacement-policy=ampm --ampm-insertion-mode=drrip --ampm-rrpv-bits=3 --ampm-promotion-mode=map --ampm-leader-seed=0 --enable-mem-dedup --warmup-insts-no-switch=20000000 --maxinsts=40000000 --l1d-hwp-type=AMPMPrefetcher --ampm-hint-source=prefetcher",
+      "gcbv_ref_so": "/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal-dedup/riscv64-nemu-interpreter-so",
+      "distributed_servers": "default",
+      "distributed_jobs_per_server": "32",
+      "branch": "8c3b7025b40a0daeb4a294ffd403c2b3983c85f5"
+    },
+    "dispatch_output": "https://github.com/OpenXiangShan/GEM5/actions/runs/43692377842\n",
+    "run": {
+      "conclusion": "success",
+      "createdAt": "2026-11-15T07:59:20Z",
+      "databaseId": 43692377842,
+      "displayTitle": "AMPM-strict-map-8c3b7025b4-real - idealkmhv3.py - spec06-rva23-novec-gcc16-0.3c - 8c3b7025b40a0daeb4a294ffd403c2b3983c85f5 - --l2-replacement-policy=ampm --ampm-insertion-mode=drrip --ampm-rrpv-bits=3 --ampm-promotion-mode=map --ampm-leader-seed=0 --enable-mem-dedup --warmup-insts-no-switch=20000000 --maxinsts=40000000 --l1d-hwp-type=AMPMPrefetcher --ampm-hint-source=prefetcher [distributed]",
+      "headBranch": "ampm-l2",
+      "headSha": "8c3b7025b40a0daeb4a294ffd403c2b3983c85f5",
+      "status": "completed",
+      "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/43692377842"
+    },
+    "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261115_160553_8c3b7025b4_idealkmhv3_run2174"
+  },
+  "default": {
+    "dispatched_at": "2026-11-15T08:00:09.489286+00:00",
+    "workflow_ref": "ampm-l2",
+    "fields": {
+      "note": "AMPM-strict-map-8c3b7025b4-default",
+      "configuration": "idealkmhv3.py",
+      "benchmark_type": "spec06-rva23-novec-gcc16-0.3c",
+      "specific_benchmarks": "",
+      "extra_args": "--l2-replacement-policy=ampm --ampm-insertion-mode=drrip --ampm-rrpv-bits=3 --ampm-promotion-mode=map --ampm-leader-seed=0 --enable-mem-dedup --warmup-insts-no-switch=20000000 --maxinsts=40000000 --ampm-hint-source=cache",
+      "gcbv_ref_so": "/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal-dedup/riscv64-nemu-interpreter-so",
+      "distributed_servers": "default",
+      "distributed_jobs_per_server": "32",
+      "branch": "8c3b7025b40a0daeb4a294ffd403c2b3983c85f5"
+    },
+    "dispatch_output": "https://github.com/OpenXiangShan/GEM5/actions/runs/43692388701\n",
+    "run": {
+      "conclusion": "success",
+      "createdAt": "2026-11-15T07:59:30Z",
+      "databaseId": 43692388701,
+      "displayTitle": "AMPM-strict-map-8c3b7025b4-default - idealkmhv3.py - spec06-rva23-novec-gcc16-0.3c - 8c3b7025b40a0daeb4a294ffd403c2b3983c85f5 - --l2-replacement-policy=ampm --ampm-insertion-mode=drrip --ampm-rrpv-bits=3 --ampm-promotion-mode=map --ampm-leader-seed=0 --enable-mem-dedup --warmup-insts-no-switch=20000000 --maxinsts=40000000 --ampm-hint-source=cache [distributed]",
+      "headBranch": "ampm-l2",
+      "headSha": "8c3b7025b40a0daeb4a294ffd403c2b3983c85f5",
+      "status": "completed",
+      "url": "https://github.com/OpenXiangShan/GEM5/actions/runs/43692388701"
+    },
+    "archive": "/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261115_163427_8c3b7025b4_idealkmhv3_run2175"
+  }
+}

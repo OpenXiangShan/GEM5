@@ -1,0 +1,130 @@
+[
+  {
+    "target": {
+      "point": "mcf_6753",
+      "checkpoint": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/mcf/6753/_6753_0.218742_memory_.zstd"
+    },
+    "argv": [
+      "/nfs/home/chenzhuo/.tmp/ampm-final-build/build/RISCV/gem5.fast",
+      "--outdir=/nfs/home/chenzhuo/.tmp/ampm-resume/srrip-map-targets-v1/mcf_6753",
+      "configs/example/idealkmhv3.py",
+      "--generic-rv-cpt=/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/mcf/6753/_6753_0.218742_memory_.zstd",
+      "--maxinsts=40000000",
+      "--warmup-insts-no-switch=20000000",
+      "--enable-mem-dedup",
+      "--l2-replacement-policy=ampm",
+      "--ampm-insertion-mode=srrip",
+      "--ampm-rrpv-bits=3",
+      "--ampm-promotion-mode=map",
+      "--l1d-hwp-type=AMPMPrefetcher",
+      "--ampm-hint-source=prefetcher"
+    ],
+    "ref": "/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal-dedup/riscv64-nemu-interpreter-so",
+    "source": {
+      "head": "8c3b7025b40a0daeb4a294ffd403c2b3983c85f5",
+      "binary_sha256": "1e38322c7e96417e5c5d07d3b0b075bf8f88689921cb2da8caf26d608b2b55fe"
+    },
+    "returncode": 0,
+    "elapsed_seconds": 1471.3560438156128,
+    "ipc": 0.775576,
+    "measured_instructions": 19999990.0,
+    "l3_demand_misses": 4623.0,
+    "complete": true
+  },
+  {
+    "target": {
+      "point": "milc_5841",
+      "checkpoint": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/milc/5841/_5841_0.085028_memory_.zstd"
+    },
+    "argv": [
+      "/nfs/home/chenzhuo/.tmp/ampm-final-build/build/RISCV/gem5.fast",
+      "--outdir=/nfs/home/chenzhuo/.tmp/ampm-resume/srrip-map-targets-v1/milc_5841",
+      "configs/example/idealkmhv3.py",
+      "--generic-rv-cpt=/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/milc/5841/_5841_0.085028_memory_.zstd",
+      "--maxinsts=40000000",
+      "--warmup-insts-no-switch=20000000",
+      "--enable-mem-dedup",
+      "--l2-replacement-policy=ampm",
+      "--ampm-insertion-mode=srrip",
+      "--ampm-rrpv-bits=3",
+      "--ampm-promotion-mode=map",
+      "--l1d-hwp-type=AMPMPrefetcher",
+      "--ampm-hint-source=prefetcher"
+    ],
+    "ref": "/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal-dedup/riscv64-nemu-interpreter-so",
+    "source": {
+      "head": "8c3b7025b40a0daeb4a294ffd403c2b3983c85f5",
+      "binary_sha256": "1e38322c7e96417e5c5d07d3b0b075bf8f88689921cb2da8caf26d608b2b55fe"
+    },
+    "returncode": 0,
+    "elapsed_seconds": 776.0763342380524,
+    "ipc": 0.976899,
+    "measured_instructions": 20000001.0,
+    "l3_demand_misses": 26810.0,
+    "complete": true
+  },
+  {
+    "target": {
+      "point": "omnetpp_18492",
+      "checkpoint": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/omnetpp/18492/_18492_0.313070_memory_.zstd"
+    },
+    "argv": [
+      "/nfs/home/chenzhuo/.tmp/ampm-final-build/build/RISCV/gem5.fast",
+      "--outdir=/nfs/home/chenzhuo/.tmp/ampm-resume/srrip-map-targets-v1/omnetpp_18492",
+      "configs/example/idealkmhv3.py",
+      "--generic-rv-cpt=/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/omnetpp/18492/_18492_0.313070_memory_.zstd",
+      "--maxinsts=40000000",
+      "--warmup-insts-no-switch=20000000",
+      "--enable-mem-dedup",
+      "--l2-replacement-policy=ampm",
+      "--ampm-insertion-mode=srrip",
+      "--ampm-rrpv-bits=3",
+      "--ampm-promotion-mode=map",
+      "--l1d-hwp-type=AMPMPrefetcher",
+      "--ampm-hint-source=prefetcher"
+    ],
+    "ref": "/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal-dedup/riscv64-nemu-interpreter-so",
+    "source": {
+      "head": "8c3b7025b40a0daeb4a294ffd403c2b3983c85f5",
+      "binary_sha256": "1e38322c7e96417e5c5d07d3b0b075bf8f88689921cb2da8caf26d608b2b55fe"
+    },
+    "returncode": 0,
+    "elapsed_seconds": 957.2566719055176,
+    "ipc": 1.495831,
+    "measured_instructions": 19999992.0,
+    "l3_demand_misses": 61680.0,
+    "complete": true
+  },
+  {
+    "target": {
+      "point": "sphinx3_39957",
+      "checkpoint": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/sphinx3/39957/_39957_0.094363_memory_.zstd"
+    },
+    "argv": [
+      "/nfs/home/chenzhuo/.tmp/ampm-final-build/build/RISCV/gem5.fast",
+      "--outdir=/nfs/home/chenzhuo/.tmp/ampm-resume/srrip-map-targets-v1/sphinx3_39957",
+      "configs/example/idealkmhv3.py",
+      "--generic-rv-cpt=/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/sphinx3/39957/_39957_0.094363_memory_.zstd",
+      "--maxinsts=40000000",
+      "--warmup-insts-no-switch=20000000",
+      "--enable-mem-dedup",
+      "--l2-replacement-policy=ampm",
+      "--ampm-insertion-mode=srrip",
+      "--ampm-rrpv-bits=3",
+      "--ampm-promotion-mode=map",
+      "--l1d-hwp-type=AMPMPrefetcher",
+      "--ampm-hint-source=prefetcher"
+    ],
+    "ref": "/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal-dedup/riscv64-nemu-interpreter-so",
+    "source": {
+      "head": "8c3b7025b40a0daeb4a294ffd403c2b3983c85f5",
+      "binary_sha256": "1e38322c7e96417e5c5d07d3b0b075bf8f88689921cb2da8caf26d608b2b55fe"
+    },
+    "returncode": 0,
+    "elapsed_seconds": 510.88048028945923,
+    "ipc": 3.6653,
+    "measured_instructions": 19999986.0,
+    "l3_demand_misses": 4567.0,
+    "complete": true
+  }
+]

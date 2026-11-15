@@ -1,0 +1,59 @@
+{
+  "status": "withdrawn",
+  "reason": "The probe tested missing request snapshots. Real-AMPM data demand requests already carry pre-access snapshots, including Init. This differs from the missing prefetch-fill origin hypothesis. The four full-phase probes were cancelled intentionally and are not performance results.",
+  "smokes": [
+    {
+      "mode": "control",
+      "argv": [
+        "/nfs/home/chenzhuo/.tmp/ampm-final-build/build/RISCV/gem5.unhinted-first-use-v1.fast",
+        "--outdir=/nfs/home/chenzhuo/.tmp/ampm-resume/unhinted-smoke-control",
+        "configs/example/idealkmhv3.py",
+        "--generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/gcb_test.zstd",
+        "--enable-mem-dedup",
+        "--maxinsts=100000",
+        "--warmup-insts-no-switch=0",
+        "--l2-replacement-policy=ampm",
+        "--l1d-hwp-type=AMPMPrefetcher",
+        "--ampm-hint-source=prefetcher"
+      ],
+      "source": {
+        "head": "8c3b7025b40a0daeb4a294ffd403c2b3983c85f5",
+        "runtime_patch_sha256": "fb2888564f545774fc0cfee4af0446651109a7f9429a9d73777a7e641e4c6167",
+        "binary_sha256": "4b1c1850f7a37fd15965a551f647ab0778b3265768e0b6e120835e759ca98ea7"
+      },
+      "ipc": 0.413009,
+      "fallback_suppressions": 0.0,
+      "unchanged_non_host_counters": 9887
+    },
+    {
+      "mode": "fallback",
+      "argv": [
+        "/nfs/home/chenzhuo/.tmp/ampm-final-build/build/RISCV/gem5.unhinted-first-use-v1.fast",
+        "--outdir=/nfs/home/chenzhuo/.tmp/ampm-resume/unhinted-smoke-fallback",
+        "configs/example/idealkmhv3.py",
+        "--generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/gcb_test.zstd",
+        "--enable-mem-dedup",
+        "--maxinsts=100000",
+        "--warmup-insts-no-switch=0",
+        "--l2-replacement-policy=ampm",
+        "--l1d-hwp-type=AMPMPrefetcher",
+        "--ampm-hint-source=prefetcher",
+        "--ampm-suppress-unhinted-first-hit"
+      ],
+      "source": {
+        "head": "8c3b7025b40a0daeb4a294ffd403c2b3983c85f5",
+        "runtime_patch_sha256": "fb2888564f545774fc0cfee4af0446651109a7f9429a9d73777a7e641e4c6167",
+        "binary_sha256": "4b1c1850f7a37fd15965a551f647ab0778b3265768e0b6e120835e759ca98ea7"
+      },
+      "ipc": 0.413009,
+      "fallback_suppressions": 0.0
+    }
+  ],
+  "cancelled_pids": [
+    1450697,
+    1450698,
+    1450699,
+    1450700
+  ],
+  "pinned_control_binary": "/nfs/home/chenzhuo/.tmp/ampm-final-build/build/RISCV/gem5.map-final-8c3b7025.fast"
+}
