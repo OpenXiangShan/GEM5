@@ -174,8 +174,13 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         help="Select fixed or adaptive PA-MAIP insertion")
     parser.add_argument("--ampm-rrpv-bits", type=int, default=3,
                         choices=[2, 3], help="UMOA evaluates 3-bit RRPV")
+    parser.add_argument("--ampm-promotion-mode", default="map",
+                        choices=["map", "line"],
+                        help="Use Table 2 map states or the L2 first-use bit")
     parser.add_argument("--ampm-promote-first-hit", action="store_true",
                         help="Disable PA-MAIP's first prefetch-use suppression")
+    parser.add_argument("--ampm-leader-seed", type=int, default=0,
+                        help="Shuffle leader sets; 0 keeps bit-pattern roles")
     parser.add_argument("--ampm-duel-demand-only", action="store_true",
                         help="Train insertion dueling on demand misses only")
     parser.add_argument("--ampm-protect-demand", action="store_true",

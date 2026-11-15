@@ -37,7 +37,7 @@ def configure_l2_replacement(args, system):
                 prefetcher.ampm.access_map_table_entries = str(args.ampm_map_entries)
                 prefetcher.ampm.access_map_table_assoc = args.ampm_map_assoc
                 prefetcher.ampm.replacement_hints = hints
-        for cache in caches:
+        for cache_index, cache in enumerate(caches):
             if args.l2_replacement_policy == "lru":
                 cache.replacement_policy = LRURP()
             elif args.l2_replacement_policy == "ampm":
@@ -45,8 +45,11 @@ def configure_l2_replacement(args, system):
                     hints=hints,
                     low_insert_period=args.ampm_low_insert_period,
                     suppress_first_hit=not args.ampm_promote_first_hit,
+                    map_state_promotion=args.ampm_promotion_mode == "map",
                     protect_demand=args.ampm_protect_demand,
-                    duel_demand_only=args.ampm_duel_demand_only)
+                    duel_demand_only=args.ampm_duel_demand_only,
+                    leader_seed=(args.ampm_leader_seed + cache_index
+                                 if args.ampm_leader_seed else 0))
                 policy = cache.replacement_policy
                 policy.insertion_mode = {
                     "srrip": 0, "brrip": 1, "drrip": 2,

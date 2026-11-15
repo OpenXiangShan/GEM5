@@ -1,0 +1,178 @@
+[
+  {
+    "benchmark": "sphinx3",
+    "returncode": 0,
+    "elapsed_seconds": 649.0899696350098,
+    "ipc": 3.358322,
+    "relative_pct": {
+      "paper": 0.1995145652793351,
+      "lru": -7.410017396866364
+    },
+    "measured_instructions": 19999988,
+    "slices": [
+      {
+        "slice": 0,
+        "selector": 566,
+        "leaderSrripFills": 2310,
+        "leaderBrripFills": 2024,
+        "leaderSrripDemandFills": 309,
+        "leaderBrripDemandFills": 296,
+        "followerSrripFills": 0,
+        "followerBrripFills": 64079
+      },
+      {
+        "slice": 1,
+        "selector": 500,
+        "leaderSrripFills": 2239,
+        "leaderBrripFills": 2052,
+        "leaderSrripDemandFills": 259,
+        "leaderBrripDemandFills": 299,
+        "followerSrripFills": 36438,
+        "followerBrripFills": 26627
+      },
+      {
+        "slice": 2,
+        "selector": 563,
+        "leaderSrripFills": 2248,
+        "leaderBrripFills": 2054,
+        "leaderSrripDemandFills": 337,
+        "leaderBrripDemandFills": 319,
+        "followerSrripFills": 0,
+        "followerBrripFills": 63627
+      },
+      {
+        "slice": 3,
+        "selector": 609,
+        "leaderSrripFills": 2251,
+        "leaderBrripFills": 2076,
+        "leaderSrripDemandFills": 359,
+        "leaderBrripDemandFills": 303,
+        "followerSrripFills": 0,
+        "followerBrripFills": 64137
+      }
+    ],
+    "command": {
+      "ref": "/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal-dedup/riscv64-nemu-interpreter-so",
+      "source": {
+        "head": "8ae79e677a91bead6f48f839bf569e2d42d54004",
+        "diff_sha256": "625a1cf19075b7a3e6ab37ae4911dd91d13f55409094c982b2abefacfd74b35c",
+        "binary_sha256": "4dd013d798bcea76f49a97dbb6ec4879f58e0f66b603efff47db1b1e0469646a"
+      },
+      "target": {
+        "workload": "sphinx3",
+        "point": "39957",
+        "weight": 0.0943629,
+        "ipc": {
+          "lru": 3.62709,
+          "paper": 3.351635
+        },
+        "relative_pct": -7.594380067767825,
+        "weighted_cpi_cost": 0.0021381437026906825,
+        "checkpoint": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/sphinx3/39957/_39957_0.094363_memory_.zstd"
+      },
+      "argv": [
+        "/tmp/apmp-build/build/RISCV/gem5.demand-duel-v1.fast",
+        "--outdir=/tmp/apmp-demand-duel-v1-sphinx3",
+        "configs/example/idealkmhv3.py",
+        "--generic-rv-cpt=/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/sphinx3/39957/_39957_0.094363_memory_.zstd",
+        "--enable-mem-dedup",
+        "--maxinsts=40000000",
+        "--warmup-insts-no-switch=20000000",
+        "--l2-replacement-policy=ampm",
+        "--ampm-insertion-mode=drrip",
+        "--ampm-rrpv-bits=3",
+        "--l1d-hwp-type=AMPMPrefetcher",
+        "--ampm-hint-source=prefetcher",
+        "--ampm-duel-demand-only"
+      ]
+    }
+  },
+  {
+    "benchmark": "milc",
+    "returncode": 0,
+    "elapsed_seconds": 964.7522487640381,
+    "ipc": 1.005224,
+    "relative_pct": {
+      "paper": -3.6415382093589743,
+      "lru": -13.782911721367297
+    },
+    "measured_instructions": 20000004,
+    "slices": [
+      {
+        "slice": 0,
+        "selector": 755,
+        "leaderSrripFills": 14850,
+        "leaderBrripFills": 14864,
+        "leaderSrripDemandFills": 5741,
+        "leaderBrripDemandFills": 5786,
+        "followerSrripFills": 0,
+        "followerBrripFills": 445782
+      },
+      {
+        "slice": 1,
+        "selector": 777,
+        "leaderSrripFills": 9629,
+        "leaderBrripFills": 9652,
+        "leaderSrripDemandFills": 2873,
+        "leaderBrripDemandFills": 2842,
+        "followerSrripFills": 0,
+        "followerBrripFills": 289683
+      },
+      {
+        "slice": 2,
+        "selector": 657,
+        "leaderSrripFills": 12852,
+        "leaderBrripFills": 12975,
+        "leaderSrripDemandFills": 373,
+        "leaderBrripDemandFills": 353,
+        "followerSrripFills": 0,
+        "followerBrripFills": 388068
+      },
+      {
+        "slice": 3,
+        "selector": 556,
+        "leaderSrripFills": 9097,
+        "leaderBrripFills": 9136,
+        "leaderSrripDemandFills": 316,
+        "leaderBrripDemandFills": 290,
+        "followerSrripFills": 0,
+        "followerBrripFills": 272173
+      }
+    ],
+    "command": {
+      "ref": "/nfs/home/share/gem5_ci/ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc/normal-dedup/riscv64-nemu-interpreter-so",
+      "source": {
+        "head": "8ae79e677a91bead6f48f839bf569e2d42d54004",
+        "diff_sha256": "625a1cf19075b7a3e6ab37ae4911dd91d13f55409094c982b2abefacfd74b35c",
+        "binary_sha256": "4dd013d798bcea76f49a97dbb6ec4879f58e0f66b603efff47db1b1e0469646a"
+      },
+      "target": {
+        "workload": "milc",
+        "point": "5841",
+        "weight": 0.0850275,
+        "ipc": {
+          "lru": 1.165922,
+          "paper": 1.043213
+        },
+        "relative_pct": -10.52463200797309,
+        "weighted_cpi_cost": 0.008578144137946246,
+        "checkpoint": "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/milc/5841/_5841_0.085028_memory_.zstd"
+      },
+      "argv": [
+        "/tmp/apmp-build/build/RISCV/gem5.demand-duel-v1.fast",
+        "--outdir=/tmp/apmp-demand-duel-v1-milc",
+        "configs/example/idealkmhv3.py",
+        "--generic-rv-cpt=/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/milc/5841/_5841_0.085028_memory_.zstd",
+        "--enable-mem-dedup",
+        "--maxinsts=40000000",
+        "--warmup-insts-no-switch=20000000",
+        "--l2-replacement-policy=ampm",
+        "--ampm-insertion-mode=drrip",
+        "--ampm-rrpv-bits=3",
+        "--l1d-hwp-type=AMPMPrefetcher",
+        "--ampm-hint-source=prefetcher",
+        "--ampm-duel-demand-only"
+      ]
+    }
+  }
+]

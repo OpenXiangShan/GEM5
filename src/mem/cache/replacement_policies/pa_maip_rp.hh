@@ -55,6 +55,7 @@ class PAMAIP : public Base
     AMPMHintTable *const hints;
     const unsigned lowInsertPeriod;
     const bool suppressFirstHit;
+    const bool mapStatePromotion;
     const bool protectDemand;
     const bool duelDemandOnly;
     const unsigned insertionMode;
@@ -73,6 +74,8 @@ class PAMAIP : public Base
         statistics::Scalar suppressedFirstUses;
         statistics::Scalar prefetchHits;
         statistics::Scalar promotions;
+        statistics::Scalar mapInitPromotions;
+        statistics::Scalar mapPrefetchSuppressions;
         statistics::Scalar fillConsumptions;
         statistics::Scalar missingHints;
         statistics::Scalar protectedDemandFills;

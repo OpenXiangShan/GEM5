@@ -1,0 +1,50 @@
+{
+  "status": "withdrawn",
+  "reason": "Too few eligible demand-history fills in the measured regions to support a general retention benefit. No improvement established against both controls.",
+  "mcf_4M_warmup_4M_measured": [
+    {
+      "priority": 0,
+      "returncode": 0,
+      "elapsed_seconds": 698.560329914093,
+      "ipc": 0.801666,
+      "measured_instructions": 3999989.0,
+      "eligible_fills": 3.0,
+      "active_in_roi": true
+    },
+    {
+      "priority": -1,
+      "returncode": 0,
+      "elapsed_seconds": 800.8633716106415,
+      "ipc": 0.803794,
+      "measured_instructions": 4000000.0,
+      "eligible_fills": 0.0,
+      "active_in_roi": false
+    },
+    {
+      "priority": 2,
+      "returncode": 0,
+      "elapsed_seconds": 823.0109512805939,
+      "ipc": 0.80544,
+      "measured_instructions": 4000012.0,
+      "eligible_fills": 2.0,
+      "active_in_roi": true
+    }
+  ],
+  "full_target_results": [
+    [
+      "sphinx3",
+      0,
+      0,
+      963.1189033985138,
+      101.0
+    ],
+    [
+      "sphinx3",
+      2,
+      0,
+      1133.5016028881073,
+      100.0
+    ]
+  ],
+  "patch_note": "Snapshot relative to c7ba10ec includes concurrent leader permutation and map-promotion work; retained for provenance, not a standalone option patch."
+}

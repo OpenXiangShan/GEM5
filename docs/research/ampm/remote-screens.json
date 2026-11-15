@@ -158,7 +158,8 @@
           "relative_overall_pct": {
             "lru": -0.2831543097087219,
             "xsdrrip": 0.03446998980067839
-          }
+          },
+          "promotion_semantics": "Persistent L2 first-use bit; stronger than Table 2 when map state is Init"
         }
       }
     },
@@ -316,7 +317,8 @@
           "relative_overall_pct": {
             "lru": -0.3139114785084218,
             "xsdrrip": 0.15879725413805446
-          }
+          },
+          "promotion_semantics": "Persistent L2 first-use bit; stronger than Table 2 when map state is Init"
         }
       }
     }

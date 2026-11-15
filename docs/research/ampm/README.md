@@ -8,7 +8,19 @@ implementation and checkout.
 
 ## Current verified result
 
-The complete paper configuration is adaptive **3-bit** PA-MAIP:
+**Promotion fidelity note:** all scores and fixed-commit CI runs recorded
+through `c7ba10ec02` use the persistent L2 first-use bit. Their adaptive
+3-bit insertion implements the paper's insertion rules, but their hit
+promotion is a stronger L2 adaptation: Table 2 promotes a demand hit whose
+map state is Init, even if its cache line remains marked unused-prefetch.
+The new default `--ampm-promotion-mode=map` implements that rule; select
+`--ampm-promotion-mode=line` to reproduce the earlier L2 adaptation on the
+current checkout. Historical commits and frozen snapshots retain their
+original implicit line mode. Strict map mode has four complete target diagnostics but no complete-suite
+score yet. The existing runs, including the run named
+“full-paper”, must be interpreted as insertion plus the line-bit adaptation.
+
+The complete insertion reference is adaptive **3-bit** PA-MAIP:
 
 ```sh
 --l2-replacement-policy=ampm --ampm-insertion-mode=drrip --ampm-rrpv-bits=3
@@ -184,7 +196,8 @@ existing requests. It omits the SRRIP/BRRIP selection used in the full
 PA-MAIP paper configuration. The corrected adaptive configuration is
 specified below. DRAM scheduling and complete MUMSC placement are outside
 scope. Earlier references here to a 'normal-IP column' and IP-Table bypass
-were incorrect: Table 2 has SRRIP and BRRIP columns, not IP classes.
+were incorrect: Table 2(a)/(b) tabulates demand/prefetch actions by map
+state. Its adjacent paragraph defines the SRRIP/BRRIP selector behavior.
 
 - Each core has one `AMPMHintTable` shared by all L2 slices: 256 entries,
   16 ways, 4 KiB zones and 64-byte lines. Four map states distinguish Init,
@@ -441,7 +454,7 @@ counter and response predicate need broader point validation before use
 in a final performance candidate.
 
 
-## Corrected adaptive paper configuration
+## Corrected adaptive insertion configuration
 
 A second check of the complete UMOA Section 3.3/Table 2 exposed an omission
 in the initial experiment: the paper selects SRRIP or BRRIP with set
@@ -621,3 +634,155 @@ Three real-Request regression cases cover same-block offsets, a remapped
 physical block and a virtual target. All 16 unit tests pass. The real-AMPM
 100K difftest smoke still issues 13 prefetches and records 13 hinted fills,
 with zero address mismatches in that smoke.
+
+
+## Matched demand-feedback screen
+
+The three new standard 0.3c workflows test exactly
+`c7ba10ec02747f8efae9c5f3289e6f5940305a32` with idealkmhv3, real L1D
+AMPM, the pinned normal-dedup REF, explicit 20M warmup / 40M total, all
+145 points and no benchmark subset. Default servers use 32 jobs/server.
+
+| Policy | Run | Last verified state |
+| --- | --- | --- |
+| LRU | 43318832369 | Created; queued |
+| XSDRRIP | 43318840832 | Created; in progress |
+| PA-MAIP with demand-only dueling | 43318848105 | Created; queued |
+
+`demand-feedback-dispatch.json` records all inputs, run IDs, fixed heads
+and creation states. No successful conclusion or performance gain is
+claimed yet. The local full-phase sphinx3 39957 demand-feedback result is
+IPC 3.358322 versus paper 3.351635, fixed SRRIP 3.615784 and LRU 3.627090.
+Three slices still prefer BRRIP; demand-only sampling does not recover the
+bulk of this point's regression. The milc reproduction completed with IPC 1.005224 versus paper
+1.043213 and LRU 1.165922; all slices favor BRRIP.
+`experiments/demand-dueling-targets.json` records both complete difftest
+runs and the leader feedback. These local results do not establish a
+suite-level benefit.
+
+
+## Leader-set representativeness probe
+
+An optional `--ampm-leader-seed=N` assigns the same exact leader/follower
+counts to a deterministic Fisher-Yates permutation. Zero retains the
+original bit-pattern roles. The nonzero base seed increments by slice;
+the two preselected families are 1..4 and 17..20. The xorshift generator is
+local to construction and does not consume any prefetcher random state.
+This models a different static selection of leader sets: it adds no
+per-line state or modeled access latency. Host construction/storage remain
+bounded by the number of cache sets, and set roles are still cached once
+when replacement entries are created.
+
+Both families are tested on the same milc/sphinx3 points with 20M warmup,
+40M total and demand-only feedback. Their purpose is to distinguish sample
+sensitivity from a general improvement, not to select a seed for each
+benchmark. The clean build, 18 unit tests and two difftest smokes passed;
+seed zero preserves all 9879 common non-host paper-smoke counters, and the
+seeded smoke verifies all four slice seeds and exact selector accounting.
+Full-phase results and the three fixed-commit CI conclusions remain pending.
+
+
+## Demand-history insertion probe
+
+The public paper text's Table 2(a) explicitly assigns mostly-distant
+insertion to demand requests whose prior map state is Init/Waiting or
+Prefetch; Access receives the longer-retention level. Thus a current
+first demand reference must not manufacture historical reuse. The
+implementation continues to carry the pre-access state snapshot.
+The SRRIP override of all insertion levels to 6 comes from the paragraph
+after Table 2, rather than from separate SRRIP/BRRIP table columns.
+
+The withdrawn history-insertion probe strengthened only Access/Reused
+snapshots to RRPV 0 or 2. All four full-phase target simulations exited
+normally, but milc had zero eligible measured fills and sphinx3 only
+100–101. An additional mcf probe (4M warmup / 4M measured) triggered only
+2–3 eligible fills; IPC was 0.803794 for the control, 0.801666 at priority
+0 and 0.805440 at priority 2. This does not establish a retention benefit.
+The runtime option is removed; `experiments/history-insertion-probe.*`
+preserves results and the source snapshot for reproducibility.
+
+
+## Corrected full-coverage paper run
+
+Run **43322954321** tests the complete adaptive 3-bit paper policy with
+the default XSComposite prefetchers and the L2 shadow map, at fixed commit
+`c7ba10ec02747f8efae9c5f3289e6f5940305a32`. It uses the full standard
+1.0c suite, explicit 20M/40M phases, the pinned normal-dedup REF, default
+servers and 32 jobs/server. LRU 43271285986 and XSDRRIP 43271296003 are the
+existing successful full-coverage controls; no full baseline is duplicated.
+Their REF, weights, effective prefetchers and geometry must be rechecked
+against this final archive before scoring the comparison. Local baseline
+invariance evidence for the common express-snoop fix remains above.
+`full-paper-dispatch.json` records the exact inputs and verified head.
+The run failed on 2026-11-13 at 07:16:41 UTC: the runner received a
+shutdown signal and the process exited 143. No complete archive was
+published; this is an infrastructure failure, not a scored policy result.
+This source uses line promotion, despite its historical run name.
+
+
+## Table 2 hit-promotion implementation
+
+`--ampm-promotion-mode=map` uses the immutable pre-access snapshot for
+cache hits: demand hits in Prefetched retain priority, while Init and
+Accessed/Reused promote to zero. A missing hint uses ordinary SRRIP hit
+promotion. Prefetch hits never promote. The map state controls suppression
+independently of the L2 line's first-use bit, including when an old map
+entry has been replaced. The bit remains useful for late-demand sampling
+and for the explicit line-mode adaptation. MSHR consumption does not
+manufacture a hit promotion at refill. `--ampm-promote-first-hit` remains
+an explicit ablation that disables suppression.
+
+Two new lifecycle tests cover forgetting an access map while a prefetched
+line remains cached, and a Prefetched map classification after line history
+has changed. All 20 logic/Request tests and three difftest smokes passed.
+Explicit line mode matches all 9,883 common non-host smoke counters of the
+previous line-mode binary. Four strict-map target runs completed with difftest:
+
+| Prefetcher | Point | Strict map IPC | Init promotions | Prefetched suppressions |
+| --- | --- | ---: | ---: | ---: |
+| Real AMPM | milc_5841 | 0.972351 | 231299 | 400971 |
+| Real AMPM | sphinx3_39957 | 3.404216 | 20994 | 202593 |
+| Default XSComposite | milc_5841 | 1.041065 | 2561 | 333650 |
+| Default XSComposite | sphinx3_39957 | 3.674093 | 27873 | 48411 |
+
+These are diagnostics, not complete-suite scores. Records are in
+`experiments/map-promotion-{targets,smokes}.json`. Earlier remote runs and
+the frozen 145-point local screen retain their original line-mode source.
+
+
+## Completed demand-feedback and leader-permutation screen
+
+All three fixed-commit remote runs succeeded: LRU 43318832369, XSDRRIP
+43318840832 and demand-only PA-MAIP 43318848105. The local seed1 screen
+also completed all 145 standard 0.3c points with zero aborts. The comparison
+helper verified complete markers, original weights, REF/checkpoint paths,
+prefetcher settings, phases and L2 geometry before processing all four.
+All PA-MAIP results in this table use the earlier line-promotion adaptation.
+
+| Policy | Score/GHz | Versus LRU | Versus XSDRRIP |
+| --- | ---: | ---: | ---: |
+| LRU | 22.73166772 | — | +0.4742% |
+| XSDRRIP | 22.62438351 | -0.4720% | — |
+| Demand-only PA-MAIP | 22.49135134 | -1.0572% | -0.5880% |
+| Demand-only + static seed1 | 22.52349355 | -0.9158% | -0.4459% |
+
+Demand-only feedback worsens the complete suite compared with the earlier
+all-allocation PA-MAIP result (22.66031041). Shuffling partially recovers
+sphinx3 and milc but does not beat either control. Neither option becomes a
+default. The worst seed1 benchmark regressions versus LRU are mcf (-8.76%),
+xalancbmk (-4.99%), milc (-4.58%) and sphinx3 (-2.70%). Exact scores,
+configuration and archive provenance are preserved in
+`experiments/demand-and-seed-cov03.json`. No improvement against both
+controls has been established; strict map mode still requires a complete
+matched-suite comparison.
+
+
+The final source builds cleanly in `~/.tmp/ampm-final-build`. All 20 tests,
+style checks, and five 100K difftest smokes pass. Map, line and the
+always-promote ablation each preserve all 9,887 common non-host counters
+of the preceding matching binary after removal of the inactive history
+option. LRU and XSDRRIP match 9,783 and 9,813 common counters of the pinned
+demand-dueling control binary. An older coupled-v3 smoke differs despite
+matching config.ini; it is not used as the final invariance reference.
+The pinned-reference hashes and commands are recorded in
+`experiments/final-{map,baseline}-validation.json`.

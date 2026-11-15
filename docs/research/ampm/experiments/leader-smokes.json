@@ -1,0 +1,79 @@
+[
+  {
+    "variant": "paper",
+    "command": [
+      "/tmp/apmp-build/build/RISCV/gem5.leader-permutation-v1.fast",
+      "--outdir=/tmp/apmp-leader-smoke-v1-paper",
+      "configs/example/idealkmhv3.py",
+      "--generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/gcb_test.zstd",
+      "--enable-mem-dedup",
+      "--maxinsts=100000",
+      "--warmup-insts-no-switch=0",
+      "--l2-replacement-policy=ampm",
+      "--l1d-hwp-type=AMPMPrefetcher",
+      "--ampm-hint-source=prefetcher"
+    ],
+    "source": {
+      "head": "c7ba10ec02747f8efae9c5f3289e6f5940305a32",
+      "diff_sha256": "d6a9807c11c1c727a8e651e46187ed20ac45f12803f96110eecac38dc54cabe7",
+      "binary_sha256": "21e48e5a0eaafbad5028c8e6220a7559090afe402f0c39bcaeefe64f68681de3"
+    },
+    "returncode": 0,
+    "ipc": 0.413009,
+    "unchanged_common_non_host_counters": 9879
+  },
+  {
+    "variant": "seed1",
+    "command": [
+      "/tmp/apmp-build/build/RISCV/gem5.leader-permutation-v1.fast",
+      "--outdir=/tmp/apmp-leader-smoke-v1-seed1",
+      "configs/example/idealkmhv3.py",
+      "--generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/gcb_test.zstd",
+      "--enable-mem-dedup",
+      "--maxinsts=100000",
+      "--warmup-insts-no-switch=0",
+      "--l2-replacement-policy=ampm",
+      "--l1d-hwp-type=AMPMPrefetcher",
+      "--ampm-hint-source=prefetcher",
+      "--ampm-leader-seed=1",
+      "--ampm-duel-demand-only"
+    ],
+    "source": {
+      "head": "c7ba10ec02747f8efae9c5f3289e6f5940305a32",
+      "diff_sha256": "d6a9807c11c1c727a8e651e46187ed20ac45f12803f96110eecac38dc54cabe7",
+      "binary_sha256": "21e48e5a0eaafbad5028c8e6220a7559090afe402f0c39bcaeefe64f68681de3"
+    },
+    "returncode": 0,
+    "ipc": 0.413009,
+    "samples": [
+      {
+        "slice": 0,
+        "seed": 1,
+        "srrip": 32.0,
+        "brrip": 34.0,
+        "selector": 510.0
+      },
+      {
+        "slice": 1,
+        "seed": 2,
+        "srrip": 39.0,
+        "brrip": 34.0,
+        "selector": 517.0
+      },
+      {
+        "slice": 2,
+        "seed": 3,
+        "srrip": 33.0,
+        "brrip": 35.0,
+        "selector": 510.0
+      },
+      {
+        "slice": 3,
+        "seed": 4,
+        "srrip": 35.0,
+        "brrip": 39.0,
+        "selector": 508.0
+      }
+    ]
+  }
+]

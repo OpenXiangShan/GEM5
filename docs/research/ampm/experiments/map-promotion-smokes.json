@@ -1,0 +1,79 @@
+[
+  {
+    "mode": "line",
+    "returncode": 0,
+    "source": {
+      "head": "c7ba10ec02747f8efae9c5f3289e6f5940305a32",
+      "diff_sha256": "3d248f504554037aa7a1e4969abca76ba0fe152939ce5249ee41c3fa4a9fcaea",
+      "binary_sha256": "882a695e866fa87209a276e3481612f212fe264fb84330a35097bd9347d824c1"
+    },
+    "argv": [
+      "/tmp/apmp-build/build/RISCV/gem5.map-promotion-v1.fast",
+      "--outdir=/tmp/apmp-map-promotion-smoke-v1-line",
+      "configs/example/idealkmhv3.py",
+      "--generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/gcb_test.zstd",
+      "--enable-mem-dedup",
+      "--maxinsts=100000",
+      "--warmup-insts-no-switch=0",
+      "--l2-replacement-policy=ampm",
+      "--l1d-hwp-type=AMPMPrefetcher",
+      "--ampm-hint-source=prefetcher",
+      "--ampm-promotion-mode=line"
+    ],
+    "ipc": 0.413009,
+    "map_init_promotions": 0.0,
+    "map_prefetch_suppressions": 0.0,
+    "unchanged_common_non_host_counters": 9883
+  },
+  {
+    "mode": "map",
+    "returncode": 0,
+    "source": {
+      "head": "c7ba10ec02747f8efae9c5f3289e6f5940305a32",
+      "diff_sha256": "3d248f504554037aa7a1e4969abca76ba0fe152939ce5249ee41c3fa4a9fcaea",
+      "binary_sha256": "882a695e866fa87209a276e3481612f212fe264fb84330a35097bd9347d824c1"
+    },
+    "argv": [
+      "/tmp/apmp-build/build/RISCV/gem5.map-promotion-v1.fast",
+      "--outdir=/tmp/apmp-map-promotion-smoke-v1-map",
+      "configs/example/idealkmhv3.py",
+      "--generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/gcb_test.zstd",
+      "--enable-mem-dedup",
+      "--maxinsts=100000",
+      "--warmup-insts-no-switch=0",
+      "--l2-replacement-policy=ampm",
+      "--l1d-hwp-type=AMPMPrefetcher",
+      "--ampm-hint-source=prefetcher",
+      "--ampm-promotion-mode=map"
+    ],
+    "ipc": 0.413009,
+    "map_init_promotions": 116.0,
+    "map_prefetch_suppressions": 71.0
+  },
+  {
+    "mode": "always",
+    "returncode": 0,
+    "source": {
+      "head": "c7ba10ec02747f8efae9c5f3289e6f5940305a32",
+      "diff_sha256": "3d248f504554037aa7a1e4969abca76ba0fe152939ce5249ee41c3fa4a9fcaea",
+      "binary_sha256": "882a695e866fa87209a276e3481612f212fe264fb84330a35097bd9347d824c1"
+    },
+    "argv": [
+      "/tmp/apmp-build/build/RISCV/gem5.map-promotion-v1.fast",
+      "--outdir=/tmp/apmp-map-promotion-smoke-v1-always",
+      "configs/example/idealkmhv3.py",
+      "--generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/gcb_test.zstd",
+      "--enable-mem-dedup",
+      "--maxinsts=100000",
+      "--warmup-insts-no-switch=0",
+      "--l2-replacement-policy=ampm",
+      "--l1d-hwp-type=AMPMPrefetcher",
+      "--ampm-hint-source=prefetcher",
+      "--ampm-promotion-mode=map",
+      "--ampm-promote-first-hit"
+    ],
+    "ipc": 0.413009,
+    "map_init_promotions": 0.0,
+    "map_prefetch_suppressions": 0.0
+  }
+]

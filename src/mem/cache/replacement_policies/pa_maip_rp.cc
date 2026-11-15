@@ -113,10 +113,12 @@ AMPMHintTable::recordPrefetchHint(uint8_t state)
 
 PAMAIP::PAMAIP(const Params &p)
   : Base(p), hints(p.hints), lowInsertPeriod(p.low_insert_period),
-    suppressFirstHit(p.suppress_first_hit), protectDemand(p.protect_demand),
+    suppressFirstHit(p.suppress_first_hit),
+    mapStatePromotion(p.map_state_promotion), protectDemand(p.protect_demand),
     duelDemandOnly(p.duel_demand_only),
     insertionMode(p.insertion_mode), maxRRPV(checkedRRPV(p)),
-    numWays(p.num_ways), dueling(p.insertion_mode == 2 ? p.num_sets : 4),
+    numWays(p.num_ways), dueling(p.insertion_mode == 2 ? p.num_sets : 4,
+                                p.insertion_mode == 2 ? p.leader_seed : 0),
     stats(this, maxRRPV + 1)
 {
     fatal_if(!hints || lowInsertPeriod == 0,
@@ -180,23 +182,31 @@ PAMAIP::touch(const std::shared_ptr<ReplacementData>& replacement_data,
     if ((!prefetch && !pkt->isDemand()) || pkt->req->isCacheMaintenance()) {
         return;
     }
-    if (!prefetch && data->unusedPrefetch && hints->isExternal()) {
-        pa_maip::State state = pa_maip::Init;
-        if (hints->getHint(pkt, state) && pa_maip::highPriority(state)) {
-            // AMPM has observed an earlier demand use absorbed by L1.
-            data->consumeDemand();
-        }
+    const bool use_map = mapStatePromotion && suppressFirstHit;
+    pa_maip::State state = pa_maip::Init;
+    const bool has_hint = hints->getHint(pkt, state);
+    if (!use_map && !prefetch && data->unusedPrefetch &&
+        hints->isExternal() && has_hint && pa_maip::highPriority(state)) {
+        // AMPM has observed an earlier demand use absorbed by L1.
+        data->consumeDemand();
     }
     if (prefetch) {
         stats.prefetchHits++;
     } else if (data->unusedPrefetch) {
         stats.firstUses++;
-        if (suppressFirstHit) {
+        if (use_map ? state == pa_maip::Prefetched : suppressFirstHit) {
             stats.suppressedFirstUses++;
         }
     }
-    if (data->touch(prefetch, suppressFirstHit)) {
+    const bool promoted = use_map ? data->touchMap(prefetch, state) :
+                                   data->touch(prefetch, suppressFirstHit);
+    if (promoted) {
         stats.promotions++;
+        if (use_map && state == pa_maip::Init) {
+            stats.mapInitPromotions++;
+        }
+    } else if (use_map && !prefetch && state == pa_maip::Prefetched) {
+        stats.mapPrefetchSuppressions++;
     }
 }
 
@@ -347,6 +357,10 @@ PAMAIP::PolicyStats::PolicyStats(statistics::Group *parent, unsigned levels)
     ADD_STAT(prefetchHits, statistics::units::Count::get(),
              "Prefetch hits that do not promote the line"),
     ADD_STAT(promotions, statistics::units::Count::get(), "Demand promotions"),
+    ADD_STAT(mapInitPromotions, statistics::units::Count::get(),
+             "Demand hits promoted with Init or missing map history"),
+    ADD_STAT(mapPrefetchSuppressions, statistics::units::Count::get(),
+             "Demand hits retaining priority for map state Prefetched"),
     ADD_STAT(fillConsumptions, statistics::units::Count::get(),
              "Prefetch first uses satisfied directly by a fill"),
     ADD_STAT(missingHints, statistics::units::Count::get(),

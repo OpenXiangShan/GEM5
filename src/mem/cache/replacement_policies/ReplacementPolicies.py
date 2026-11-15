@@ -185,9 +185,11 @@ class PAMAIPRP(BaseReplacementPolicy):
 
     hints = Param.AMPMHintTable('Shared AMPM access-state predictor')
     low_insert_period = Param.Unsigned(32, 'One long insertion per N distant fills')
-    suppress_first_hit = Param.Bool(True, 'Do not promote first demand use of prefetch')
+    suppress_first_hit = Param.Bool(True, 'Suppress demand hits classified as first prefetch use')
+    map_state_promotion = Param.Bool(True, 'Use Table 2 map states for hit promotion; false uses the L2 first-use bit')
     protect_demand = Param.Bool(False, 'Insert demand fills with immediate reuse priority')
     duel_demand_only = Param.Bool(False, 'Train insertion selection on demand misses, including late prefetches')
+    leader_seed = Param.Unsigned(0, 'Static leader-set permutation seed; zero keeps bit-pattern roles')
     num_bits = Param.Unsigned(3, 'RRPV bits; the UMOA evaluation uses three')
     insertion_mode = Param.Unsigned(2, '0: SRRIP, 1: BRRIP, 2: set dueling')
     num_sets = Param.Unsigned(0, 'Sets per L2 slice for insertion dueling')

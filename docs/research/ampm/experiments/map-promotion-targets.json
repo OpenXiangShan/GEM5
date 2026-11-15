@@ -1,0 +1,42 @@
+[
+  {
+    "protocol": "default",
+    "benchmark": "sphinx3",
+    "returncode": 0,
+    "elapsed_seconds": 1199.0527968406677,
+    "ipc": 3.674093,
+    "measured_instructions": 19999987.0,
+    "map_init_promotions": 27873.0,
+    "map_prefetch_suppressions": 48411.0
+  },
+  {
+    "protocol": "real",
+    "benchmark": "sphinx3",
+    "returncode": 0,
+    "elapsed_seconds": 1306.3552944660187,
+    "ipc": 3.404216,
+    "measured_instructions": 19999987.0,
+    "map_init_promotions": 20994.0,
+    "map_prefetch_suppressions": 202593.0
+  },
+  {
+    "protocol": "default",
+    "benchmark": "milc",
+    "returncode": 0,
+    "elapsed_seconds": 1400.3750083446503,
+    "ipc": 1.041065,
+    "measured_instructions": 20000004.0,
+    "map_init_promotions": 2561.0,
+    "map_prefetch_suppressions": 333650.0
+  },
+  {
+    "protocol": "real",
+    "benchmark": "milc",
+    "returncode": 0,
+    "elapsed_seconds": 1480.7975597381592,
+    "ipc": 0.972351,
+    "measured_instructions": 20000004.0,
+    "map_init_promotions": 231299.0,
+    "map_prefetch_suppressions": 400971.0
+  }
+]

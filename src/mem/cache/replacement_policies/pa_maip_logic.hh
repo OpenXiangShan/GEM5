@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace gem5
@@ -114,9 +115,10 @@ class Dueling
     unsigned lowBits = 0;
     unsigned mask = 0;
     unsigned selector = 512;
+    std::vector<Team> leaderTeams;
 
   public:
-    explicit Dueling(unsigned num_sets)
+    explicit Dueling(unsigned num_sets, uint32_t seed = 0)
     {
         assert(num_sets >= 4 && (num_sets & (num_sets - 1)) == 0);
         unsigned bits = 0;
@@ -125,11 +127,32 @@ class Dueling
         }
         lowBits = bits / 2;
         mask = (1U << lowBits) - 1;
+        if (seed) {
+            std::vector<Team> teams;
+            teams.reserve(num_sets);
+            for (unsigned set = 0; set < num_sets; ++set) {
+                teams.push_back(team(set));
+            }
+            // A static Fisher-Yates permutation preserves exact leader counts.
+            // Define the generator here for identical mappings on all hosts.
+            uint32_t random = seed;
+            for (unsigned remaining = num_sets; remaining > 1; --remaining) {
+                random ^= random << 13;
+                random ^= random >> 17;
+                random ^= random << 5;
+                std::swap(teams[remaining - 1], teams[random % remaining]);
+            }
+            leaderTeams = std::move(teams);
+        }
     }
 
     Team
     team(unsigned set) const
     {
+        if (!leaderTeams.empty()) {
+            assert(set < leaderTeams.size());
+            return leaderTeams[set];
+        }
         const unsigned low = set & mask;
         const unsigned high = (set >> lowBits) & mask;
         if (low == high) {
@@ -172,6 +195,22 @@ struct Line
         const bool first = unusedPrefetch;
         unusedPrefetch = false;
         return first;
+    }
+
+    // Table 2 uses map state rather than a persistent per-line first-use bit.
+    // A forgotten map entry is Init, whose demand hit receives reuse priority.
+    bool
+    touchMap(bool prefetch, State state)
+    {
+        if (prefetch) {
+            return false;
+        }
+        consumeDemand();
+        if (state == Prefetched) {
+            return false;
+        }
+        rrpv = 0;
+        return true;
     }
 
     // Return whether this hit promoted the line. MSHR consumption is recorded

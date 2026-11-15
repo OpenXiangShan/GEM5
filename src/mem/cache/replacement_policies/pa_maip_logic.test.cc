@@ -130,3 +130,61 @@ TEST(PAMAIPTest, DuelingSaturatesAndFollowersDoNotTrain)
     duel.sample(Dueling::Follower);
     EXPECT_EQ(duel.value(), 1023);
 }
+
+
+TEST(PAMAIPTest, ShuffledLeadersRemainBalancedAndDisjoint)
+{
+    for (unsigned seed : {1, 17}) {
+        Dueling duel(1024, seed);
+        unsigned srrip = 0, brrip = 0, followers = 0;
+        for (unsigned set = 0; set < 1024; ++set) {
+            switch (duel.team(set)) {
+              case Dueling::Srrip: srrip++; break;
+              case Dueling::Brrip: brrip++; break;
+              case Dueling::Follower: followers++; break;
+            }
+        }
+        EXPECT_EQ(srrip, 32);
+        EXPECT_EQ(brrip, 32);
+        EXPECT_EQ(followers, 960);
+    }
+}
+
+TEST(PAMAIPTest, LeaderPermutationIsReproducibleAndSeeded)
+{
+    Dueling regular(1024), first(1024, 1), repeated(1024, 1);
+    Dueling other(1024, 17);
+    unsigned regular_diff = 0, seed_diff = 0;
+    for (unsigned set = 0; set < 1024; ++set) {
+        EXPECT_EQ(first.team(set), repeated.team(set));
+        regular_diff += first.team(set) != regular.team(set);
+        seed_diff += first.team(set) != other.team(set);
+    }
+    EXPECT_GT(regular_diff, 0);
+    EXPECT_GT(seed_diff, 0);
+}
+
+
+TEST(PAMAIPTest, ForgottenPrefetchMapPromotesAnExistingCacheLine)
+{
+    AccessMap maps(1, 1, 4096, 64);
+    EXPECT_EQ(maps.access(0, false, true), Init);
+    Line line{6, true, true};
+    maps.access(4096, false, false);
+    const State previous = maps.access(0, false, false);
+    EXPECT_EQ(previous, Init);
+    EXPECT_TRUE(line.touchMap(false, previous));
+    EXPECT_EQ(line.rrpv, 0);
+    EXPECT_FALSE(line.unusedPrefetch);
+}
+
+TEST(PAMAIPTest, MapPrefetchStateSuppressesHitsIndependentlyOfLineHistory)
+{
+    Line line{6, true, false};
+    EXPECT_FALSE(line.touchMap(true, Accessed));
+    EXPECT_EQ(line.rrpv, 6);
+    EXPECT_FALSE(line.touchMap(false, Prefetched));
+    EXPECT_EQ(line.rrpv, 6);
+    EXPECT_TRUE(line.touchMap(false, Accessed));
+    EXPECT_EQ(line.rrpv, 0);
+}
