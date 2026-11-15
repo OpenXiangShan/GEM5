@@ -21,12 +21,21 @@ def configure_l2_replacement(args, system):
         ways = int(caches[0].assoc)
         sets = int(caches[0].size) // (ways * line_size)
         if choice == "kpc":
+            live_rrpv, hysteresis_bits = {
+                "paper": (2, 3),
+                "l2": (0, 4),
+            }[args.kpc_profile]
+            if args.kpc_live_rrpv is not None:
+                live_rrpv = args.kpc_live_rrpv
+            if args.kpc_hysteresis_bits is not None:
+                hysteresis_bits = args.kpc_hysteresis_bits
             state = KPCReplState(
                 num_sets=sets * len(caches),
                 num_ways=ways,
                 block_size=line_size,
                 sampled_sets=args.kpc_sampled_sets,
-                hysteresis_bits=args.kpc_hysteresis_bits,
+                live_rrpv=live_rrpv,
+                hysteresis_bits=hysteresis_bits,
             )
             # Parent the shared state before any policy can adopt it.
             setattr(system, f"kpc_repl_state{core}", state)

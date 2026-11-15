@@ -163,8 +163,13 @@ def addNoISAOptions(parser, configure_xiangshan=False):
         default="default", help="Override KMHV3 L2 replacement policy")
     parser.add_argument("--kpc-sampled-sets", type=int, default=64,
                         help="KPC true-LRU sample sets per core across slices")
-    parser.add_argument("--kpc-hysteresis-bits", type=int, default=3,
-                        help="KPC demand/prefetch hysteresis counter width")
+    parser.add_argument("--kpc-profile", choices=["paper", "l2"],
+                        default="paper", help="KPC live RRPV/counter width: "
+                        "paper uses 2/3, optional private-L2 profile uses 0/4")
+    parser.add_argument("--kpc-live-rrpv", type=int, choices=[0, 1, 2],
+                        default=None, help="Override KPC profile live RRPV")
+    parser.add_argument("--kpc-hysteresis-bits", type=int, default=None,
+                        help="Override KPC profile counter width")
     parser.add_argument("--kpc-promote-prefetch-hits", action="store_true",
                         help="KPC: promote prefetch hits without path confidence")
     parser.add_argument("--l2_size", type=str, default="1MB")

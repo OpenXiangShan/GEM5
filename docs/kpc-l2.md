@@ -1,5 +1,11 @@
 # KPC-R insertion at L2
 
+The paper profile remains the default (live RRPV 2, three-bit counters).
+An optional locally evaluated private-L2 profile is available with
+`--l2-replacement=kpc --kpc-profile=l2` (live RRPV 0, four-bit counters).
+See the final section for selected-point results and remaining regressions;
+full-suite superiority over LRU has not been established.
+
 ## References and source search
 
 CRP (*Cache Replacement Policies*, Jain and Lin, 2019), section 5.4.1,
@@ -76,9 +82,15 @@ Both `kmhv3.py` and `idealkmhv3.py`, with classic or sliced L2, accept:
 ```text
 --l2-replacement=default|lru|xs-drrip|kpc
 --kpc-sampled-sets=64
---kpc-hysteresis-bits=3
+--kpc-profile=paper|l2
+--kpc-live-rrpv=0|1|2
+--kpc-hysteresis-bits=<width>
 --kpc-promote-prefetch-hits
 ```
+
+`--kpc-profile` defaults to `paper` (live RRPV 2, three-bit counters);
+`l2` selects live RRPV 0 and four-bit counters. The live-RRPV and counter-
+width arguments are optional explicit overrides of the selected profile.
 
 `default` preserves the configuration's existing policy. Explicit `lru` and
 `xs-drrip` instantiate the original policies. All geometry is computed after
@@ -504,5 +516,309 @@ configuration/observation-hook code have no differences from the initial
 tested commit. The local LRU control already reproduces every common
 performance statistic. There is no reason to repeat the original three
 runs. A proposed publication and exact dispatch-input record will be
-prepared separately; no later commit or additional full-suite dispatch
-has been published under the initial 60f9ac4ec2-only authorization.
+prepared separately. This was the state before the subsequent user
+authorization and completed follow-up runs recorded below.
+
+## Complete follow-up results (2026-11-15)
+
+The two authorized complete SPEC06 follow-up runs both finished with
+Actions conclusion `success`. Both test source commit
+`98325cf6fa27bfcbf54b3ab2969980137009bb27`, with
+`configs/example/idealkmhv3.py`, `spec06-rva23-novec-gcc16-1.0c`,
+an empty benchmark subset, the default distributed servers and 32 jobs
+per server. Parameters are `--l2-replacement=kpc` and
+`--param=system.kpc_repl_state0.live_rrpv=2` or `=0`.
+
+| Setting | Run ID | Actual archive |
+| --- | --- | --- |
+| RRPV 2 | 43690309588 | `20261115_154936_98325cf6_idealkmhv3_run2172` |
+| RRPV 0 | 43690313051 | `20261115_155901_98325cf6_idealkmhv3_run2173` |
+
+Archives are under
+`/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-1.0c/`.
+The complete job logs and archive metadata independently match these run
+IDs, source SHA and parameter values. The workflow head is
+`33ada4244a0fbde4b2a049ac524ec1c5e9abb0da`; it is distinct from
+the tested source. The manual dispatch YAML hash matched the prepared
+proposal. Checkout logs explicitly report the intended tested SHA.
+Initial baseline runs used workflow head `24be168ad2ac878d3c6ac7b19aa6857fb07ef00a`;
+metadata, checkpoint set, REF release, source configuration and runtime
+model checks establish the comparison conditions rather than assuming
+that the workflow head equals the tested SHA.
+
+### Validation and scoring
+
+Each run contains exactly the same 1094 checkpoint directories as the
+existing LRU baseline, covering 29 benchmarks. Every checkpoint has a
+completed marker, `exit_status: 0`, and the maximum-instruction exit.
+Every `stats.txt` has two complete statistics blocks. The first block
+covers the 20M warmup and the second the final ROI. Due to the reset and
+stop boundaries within instruction groups, final ROI instruction counts
+range from 19,999,985 to 20,000,015; warmup plus ROI reaches the configured
+40M boundary within one group. The verifier checks both blocks and the
+combined count, rather than requiring exactly 20,000,000 in isolation.
+
+Every point's configuration was checked for the requested insertion
+RRPV, KPC replacement, disabled prefetch-hit promotion, absence of the
+rejected writeback-promotion option, 40M instruction stop, DRAMsim3 and
+memory deduplication. Frozen local binaries were preserved.
+
+The official shared `gem5_data_proc/run.py` pipeline completed with
+exit code 0 for both new runs. Its independently generated Int, FP and
+overall scores exactly reproduce the CI archive scores. All benchmark
+coverage values display as 1.000. The raw weight sums range from
+0.999743155 to 1.00000102 and match the original LRU baseline exactly;
+these pre-existing normalization differences are not missing points.
+The score CSV also contains three aggregate rows, which are excluded
+from the 29-benchmark coverage check.
+
+| Policy | Int at 3 GHz | FP at 3 GHz | Overall at 3 GHz | Overall vs LRU |
+| --- | ---: | ---: | ---: | ---: |
+| LRU baseline | 65.6911918 | 71.2669310 | 68.9045147 | +0.00000% |
+| XSDRRIP baseline | 65.7341348 | 70.9600189 | 68.7489974 | -0.22570% |
+| Initial KPC | 65.7300455 | 71.1136440 | 68.8344364 | -0.10170% |
+| Corrected KPC, RRPV 2 | 65.7237760 | 71.1127947 | 68.8312376 | -0.10635% |
+| Corrected KPC, RRPV 0 | 65.5964556 | 71.2374226 | 68.8466624 | -0.08396% |
+
+RRPV 0 improves overall score by 0.022410% over corrected RRPV 2 and
+0.017762% over initial KPC. It is 0.142060% above XSDRRIP and 0.083960%
+below LRU. Corrected RRPV 2 is 0.004647% below initial KPC; the semantic
+clean-writeback correction does not deliver a performance improvement
+in this suite.
+
+### Benefits, regressions and interpretation
+
+Relative to corrected RRPV 2, complete-benchmark speedups with RRPV 0 are:
+
+| Benchmark | Speedup |
+| --- | ---: |
+| milc | +4.3636% |
+| cactusADM | +0.3561% |
+| GemsFDTD | +0.2775% |
+| leslie3d | +0.2237% |
+| gcc | +0.0717% |
+| omnetpp | -0.4012% |
+| gobmk | -0.4611% |
+| soplex | -0.7479% |
+| lbm | -0.8699% |
+| xalancbmk | -1.0108% |
+
+The 29 benchmarks enter the overall geometric mean equally. Thus the
+milc gain is substantially offset by regressions elsewhere. In
+particular, the +14.71% screening result at `gcc_g23_6319` is not a
+complete-gcc speedup: gcc improves by only 0.0717% against corrected
+RRPV 2 and remains 0.3499% below LRU. `gcc_166_1439` still has IPC
+0.790932 versus LRU 0.880696, a 10.1924% regression. Promoting PF or
+writeback hits failed to address this residual regression in the
+controlled local experiments.
+
+The weighted milc cycle count falls from 10,806,108.54 to 10,354,286.07
+with RRPV 0. Its L2/L3 load-stall counters fall by 6.35%/6.71%, while
+L2 demand MSHR misses change by only -0.0683%. This supports a retention
+and service-timing explanation for much of the gain; it does not support
+explaining performance solely through a large miss-count reduction.
+These stall counters can overlap and must not be summed as an exact
+cycle attribution.
+
+For lbm, cycles rise by 0.8776%, L2 prefetches issued rise by 2.8087%,
+late prefetches rise by 4.1798%, and L1 read misses rise by 7.0580%,
+while L2 demand MSHR misses change by only -0.0513%. This is consistent
+with a traffic and timing tradeoff under stronger insertion protection.
+The aggregate counters do not uniquely identify the causal eviction
+sequence or prove bandwidth contention by themselves.
+
+### Final decision and limits
+
+Retain the clean-writeback sampler correction as a semantic fix.
+Retain RRPV 0 as the best measured optional KPC setting from this
+comparison, with saturated insertion still at RRPV 3. Keep the paper
+implementation default at RRPV 2: the measured RRPV-0 overall gain is
+small, workload dependent, and insufficient to establish superiority
+over LRU. These two runs establish the complete-suite comparison; the
+subsequent local tuning below adds no new complete-suite run. The rejected PF/WB-hit promotion directions remain
+rejected; the removed writeback option is not reintroduced.
+
+At this stage, implementation, baseline comparison and regression-driven
+validation had established the initial tradeoffs. There is
+evidence that the tested insertion and hit-promotion changes are
+limited by workload tradeoffs; this is not proof that every possible
+KPC extension is incapable of improving LRU. The subsequent local
+experiments below evaluate demand/PF insertion separation and a wider
+global feedback counter.
+
+Machine evidence is in
+`/nfs/home/chenzhuo/.tmp/kpc-l2-remote-20261114/`:
+`followup-performance-comparison.json`,
+`followup-rrpv2-validation.json`, `followup-rrpv0-validation.json`,
+`followup-rrpv2-log-validation.json`, `followup-rrpv0-log-validation.json`,
+`followup-*-complete-job.log`, and `proc/rrpv{2,0}/`.
+
+## Private-L2 feedback and insertion profile (2026-11-15)
+
+The completed 1094-point comparison leaves the best measured full-suite
+KPC setting (live RRPV 0, three-bit feedback) 0.083960% below LRU. This is
+a workload tradeoff, not a simulation failure: both corrected KPC runs
+completed successfully with full coverage. The following work investigates
+the remaining loss and provides an optional locally validated L2 profile.
+Its full-suite score has not been measured.
+
+### What the remaining regressions establish
+
+The independent sampler and real-cache replacement form a feedback loop:
+victim choices affect the subsequent demand/PF stream, that stream trains
+the global counters, and the counters select insertion priority for later
+fills. Consequently a small change in victim order can alter both the
+traffic and future predictions. Loss of recency information inside a
+four-value RRPV class is one observable limitation, but is not a complete
+explanation of the LRU gap.
+
+A timing-cache A/B/A/C/A reproduction gives four demand misses with the
+original fixed-way tie order and three with recency. However, broad
+recency loses 10.8949% at gcc_g23_6319 despite improving gcc166 and mcf.
+A second reproduction mixes an aged live line with a fresh predicted-dead
+line at RRPV 3: original order gives 19 misses, plain recency gives 20,
+and dead-first recency restores 19. The repaired microcase does not make
+the real candidate acceptable. Dead-first recency and recency restricted
+to all-zero-RRPV candidate sets still regress gcc_g23 by about 13%.
+
+All three candidate batches completed their nine 20M-warmup + 20M-ROI
+runs and passed parameter/ROI/hash checks. They are rejected, not shipped.
+The table uses IPC changes relative to the completed live-0/three-bit CI:
+
+| Point | Plain recency | Dead-first recency | Only all-zero ties |
+| --- | ---: | ---: | ---: |
+| gcc_g23_6319 | -10.8949% | -13.0293% | -13.1369% |
+| gcc_166_1439 | +9.0503% | -1.0400% | -0.5341% |
+| xalancbmk_562 | +3.5190% | +1.9142% | -0.0208% |
+| mcf_8771 | +23.7242% | +1.1645% | +0.1660% |
+
+A same-binary switch-off control reproduces the actual CI at gcc_g23
+(IPC 0.860348) and gcc166 (0.790932): every common system/inst/tick
+statistic in both warmup and ROI is identical. Therefore the candidate
+regressions are real consequences of policy changes, rather than an
+unmatched memory configuration or a changed reference model.
+
+The rejected plain-recency gcc166 result also illustrates the downstream
+coupling: IPC rises 9.05% while L2 demand misses increase 2.14% and L3
+demand misses decrease 52.31%. It would be incorrect to describe that
+result as an L2 miss-count reduction. In the failed gcc_g23 variants,
+PF insertion-at-3 counts grow from 351740 to 568190..621270, together
+with changed sampler training and traffic. This is evidence of feedback
+sensitivity, not proof that this one counter uniquely causes the slowdown.
+
+Separating demand and PF live insertion priorities did not help. All six
+three-point experiments passed functional/ROI validation, but both splits
+lose at every selected point relative to shared live RRPV 0:
+
+| Point | Demand 0 / PF 1 | Demand 1 / PF 0 |
+| --- | ---: | ---: |
+| gcc_g23_6319 | -13.0025% | -13.0395% |
+| gcc_166_1439 | -12.0074% | -1.1825% |
+| milc_5841 | -5.6258% | -1.4136% |
+
+The split parameter, tie-order implementations, and their extra per-line
+state/counters were removed after preserving exact source snapshots and
+binaries. No rejected mechanism remains in the published policy.
+
+### The supported coupled configuration
+
+Increasing the existing hysteresis width to four bits helps only with
+the appropriate insertion setting. At live RRPV 2, gcc166 loses 10.6066%
+against the previous live-2/three-bit setting. Thus changing counter width
+alone is rejected. At live RRPV 0, the four-bit setting preserves gcc_g23's
+previous gain and improves several residual regression points.
+
+Thirteen unique checkpoints were measured with the original 98325cf6fa
+C++ implementation, the same frozen binary, CI DDR4 DRAMsim3, pinned dedup
+NEMU reference, and 20M warmup plus 20M final ROI. The first three points
+screened the interaction; ten different points checked other regressions
+and earlier gains. Actual parameters, exit status, final ROI, binary and
+source hashes were verified for every point.
+
+| Point | IPC: live 0 / 4 bits | vs live 0 / 3 bits | vs live 2 / 3 bits | vs LRU |
+| --- | ---: | ---: | ---: | ---: |
+| gcc_g23_6319 | 0.870651 | +1.1975% | +16.0877% | +13.0661% |
+| gcc_166_1439 | 0.792423 | +0.1885% | +0.9018% | -10.0231% |
+| milc_5841 | 1.043350 | -0.0842% | +8.4018% | -0.9437% |
+| xalancbmk_562 | 2.397240 | +1.6171% | -0.6542% | -5.3872% |
+| mcf_8771 | 1.105810 | +7.7200% | -29.8217% | -21.2926% |
+| mcf_6753 | 0.740230 | +0.5687% | +0.8144% | -0.7814% |
+| milc_9643 | 1.128169 | +0.0000% | +14.3152% | +0.1506% |
+| soplex_ref_5312 | 2.755375 | +0.0000% | -0.1675% | -0.4479% |
+| lbm_6382 | 2.566000 | +0.0000% | -1.0735% | +0.2105% |
+| sphinx3_157921 | 4.303930 | +0.0151% | -0.6801% | -0.2135% |
+| zeusmp_27787 | 3.495314 | +0.0000% | -0.2710% | +0.2306% |
+| leslie3d_18494 | 5.349164 | +0.0000% | +0.9089% | -0.8451% |
+| libquantum_69175 | 5.459276 | +0.0000% | -0.2226% | +0.8307% |
+
+Relative to the best prior KPC setting, six points improve, six retain
+identical reported IPC, and milc5841 loses 0.0842%. The largest gains are
+mcf8771 (+7.7200%), xalancbmk562 (+1.6171%) and gcc_g23 (+1.1975%). These
+are selected-point effects, not complete-benchmark or full-suite gains.
+Remaining losses are substantial at individual points: gcc166 is still
+10.0231% below LRU and mcf8771 remains 21.2926% below LRU. The latter is
+also 29.8217% below paper-profile KPC at that point, an existing insertion
+tradeoff that wider counters only partly recover. The LRU gap is not
+claimed to be solved for every workload.
+
+### Published configuration and validation scope
+
+The paper configuration remains the default. Select the coupled private-L2
+profile explicitly:
+
+```text
+--l2-replacement=kpc --kpc-profile=l2
+```
+
+This sets live RRPV 0 and four-bit DGH/PGH counters. Saturated insertion
+remains RRPV 3, sampler selection/training is unchanged, and PF/WB hits
+retain their previous promotion semantics. The generic `KPCReplState`
+defaults remain live RRPV 2 and three-bit counters. There is no new C++
+replacement mechanism or extra per-line state in this change.
+
+Recover the original CLI behavior with either bare `--l2-replacement=kpc`
+or the explicit paper profile:
+
+```text
+--l2-replacement=kpc --kpc-profile=paper
+```
+
+Explicit `--kpc-live-rrpv` and `--kpc-hysteresis-bits` override the selected
+profile. The previous best complete-suite setting is reproduced by
+`--kpc-profile=paper --kpc-live-rrpv=0 --kpc-hysteresis-bits=3`.
+Avoid interpreting a width-only override as the tested coupled profile;
+live 2 / four bits has a measured severe gcc166 regression.
+
+This is an optional configuration for the evaluated single-core sliced
+idealkmhv3 L2. The 13 selected points do not establish full-suite
+superiority over LRU, or performance for other geometries/multicore.
+The full-suite scores earlier in this document still refer to the
+three-bit profiles at commit 98325cf6fa. No new full-suite CI was run for
+live 0 / four bits.
+
+The published CLI passed five short NEMU equivalence checks: explicit `l2`,
+bare KPC (`paper`), `l2` overridden to paper 2/3, LRU and XSDRRIP.
+Every common system/inst/tick statistic matched its respective reference
+exactly: 11685, 11686, 11686, 11631 and 11652 statistics respectively.
+The LRU/XSDRRIP checks also verified absence of KPC state.
+
+An additional gcc_g23 20M-warmup + 20M-ROI control exercised CLI-selected
+0/4 without SimObject parameter overrides. It reproduced the earlier
+0/4 experiment with zero differences in all 13463 warmup and 13067 ROI
+common system/inst/tick statistics (ROI IPC 0.870651). That long control
+used interim CLI defaults; the five published checks then verified the
+final optional-profile mapping and restored paper default. Configuration
+file hashes distinguish the interim and final interfaces.
+
+All final checks use the original frozen 98325cf6fa C++ binary, SHA256
+`6ccda7fdc20c940e896c280bb9c2cb8f9a204f7ff9d5d205a183187ff99d7ced`.
+C++ and model/test sources have no changes from that commit. Modified-region
+style, Python AST parsing and whitespace checks passed. Only the two common
+configuration files and this report change in the published commit.
+
+Detailed evidence under `/nfs/home/chenzhuo/.tmp/kpc-l2-remote-20261114/`
+includes `round4-hysteresis/validation.json`,
+`round4-hysteresis-expanded/validation.json`, and
+`round4-final-config/{selection.json,published-validation.json,default-long/validation.json}`.
+Rejected candidates retain their own source snapshots, frozen binaries,
+validation records and decisions in `round2-*` and `round3-split-insertion/`.
