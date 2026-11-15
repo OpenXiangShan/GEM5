@@ -1974,14 +1974,9 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
     }
 
     if (pkt->isEviction()) {
-        // We check for presence of block in above caches before issuing
-        // Writeback or CleanEvict to write buffer. Therefore the only
-        // possible cases can be of a CleanEvict packet coming from above
-        // encountering a Writeback generated in this cache peer cache and
-        // waiting in the write buffer. Cases of upper level peer caches
-        // generating CleanEvict and Writeback or simply CleanEvict and
-        // CleanEvict almost simultaneously will be caught by snoops sent out
-        // by crossbar.
+        // An eviction from above can meet a locally generated writeback
+        // waiting in the write buffer. Merge the residency information for
+        // a clean eviction, or let a dirty writeback replace the pending one.
         WriteQueueEntry *wb_entry = writeBuffer.findMatch(pkt->getAddr(),
                                                           pkt->isSecure());
         if (wb_entry) {
@@ -1990,15 +1985,16 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
             assert(wbPkt->isWriteback());
 
             if (pkt->isCleanEviction()) {
-                // The CleanEvict and WritebackClean snoops into other
-                // peer caches of the same level while traversing the
-                // crossbar. If a copy of the block is found, the
-                // packet is deleted in the crossbar. Hence, none of
-                // the other upper level caches connected to this
-                // cache have the block, so we can clear the
-                // BLOCK_CACHED flag in the Writeback if set and
-                // discard the CleanEvict by returning true.
-                wbPkt->clearBlockCached();
+                // A WritebackClean can reach us even when another upper
+                // cache still holds the block. Propagate its residency
+                // information so the pending writeback does not incorrectly
+                // clear the downstream snoop filter's holder bit. Keep the
+                // pending writeback's data, which may be dirty.
+                if (pkt->isBlockCached()) {
+                    wbPkt->setBlockCached();
+                } else {
+                    wbPkt->clearBlockCached();
+                }
 
                 // A clean evict does not need to access the data array
                 lat = calculateTagOnlyLatency(pkt->headerDelay, tag_latency);
