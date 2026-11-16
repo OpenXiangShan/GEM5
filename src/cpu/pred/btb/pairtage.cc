@@ -307,6 +307,7 @@ PairTAGE::trainFirstBlock(const LookupResult &lookup, const BTBEntry &exit,
         // longer holds once that target moves
         if (entry.block.targetPC != targetPC) {
             entry.b2Valid = false;
+            entry.confidence = 0;
         }
         entry.block.targetPC = targetPC;
         entry.useful = true;
@@ -390,11 +391,9 @@ PairTAGE::trainSecondBlock(const LiveEntryInfo &live, const BTBEntry &exit,
         }
         pairTageStats.trainSecondStrengthen++;
     } else {
-        // A wrong second block costs confidence; installing a missing one
-        // does not, since it was never predicted
-        if (entry.b2Valid && entry.confidence > 0) {
-            entry.confidence--;
-        }
+
+        // The entry now holds a different pair, clear confidence
+        entry.confidence = 0;
         entry.b2Valid = true;
         entry.block2 = PTAGEBlockInfo(exit, targetPC);
         entry.modelInfo.block2BranchSize = exit.valid ? exit.size : 0;

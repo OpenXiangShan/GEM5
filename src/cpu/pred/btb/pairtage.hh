@@ -357,10 +357,10 @@ class PairTAGE : public TimedBaseBTBPredictor
     static constexpr unsigned AllocRefusalWidth = 5;
     unsigned allocRefusals{0};
 
-    // Entry confidence rises when a strengthened first block is followed
-    // by a strengthened second block, and falls when a valid second block
-    // is wrong. An entry whose confidence saturates at confidenceSaturate
-    // is ready to emit both blocks in one cycle, when enableTwoTaken.
+    // Entry confidence rises when a strengthened first block is followed by a
+    // strengthened second block. It belongs to the pair the entry holds, so it
+    // is cleared whenever either block is replaced. An entry whose confidence
+    // saturates at confidenceSaturate is ready to trigger 2 taken prediction.
     const unsigned confidenceSaturate;
     const bool enableTwoTaken;
 
