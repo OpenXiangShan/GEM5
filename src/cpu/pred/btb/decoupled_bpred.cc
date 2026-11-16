@@ -380,6 +380,9 @@ DecoupledBPUWithBTB::requestNewPrediction(ThreadID tid)
         predsOfEachStage[i].predSource = i;
     }
 
+    // S1 always has the default fallthrough, even if all BTBs are disabled.
+    predsOfEachStage[0].valid = true;
+
     // Query each predictor component with current PC and history
     for (int i = 0; i < numComponents; i++) {
         components[i]->putPCHistory(thread.s0PC, thread.s0History, predsOfEachStage);  //s0History not used
@@ -407,12 +410,12 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     }
 
     // 2. Select the most accurate prediction (prioritize later stages)
-    // Initially assume stage 0 (UBTB) prediction
+    // S1 supplies a valid fallthrough when no later stage has a result.
     FullBTBPrediction *chosenPrediction = &predsOfEachStage[0];
 
     // Search from last stage to first for valid predictions
     for (int i = (int)numStages - 1; i >= 0; i--) {
-        if (!predsOfEachStage[i].btbEntries.empty()) {
+        if (predsOfEachStage[i].valid) {
             chosenPrediction = &predsOfEachStage[i];
             DPRINTF(Override, "Selected prediction from stage %d\n", i);
             break;
@@ -523,6 +526,10 @@ void
 DecoupledBPUWithBTB::fastTrainPredictors(ThreadID tid)
 {
     auto &s3Pred = threads[tid].predsOfEachStage[numStages - 1];
+
+    if (!s3Pred.valid) {
+        return;
+    }
 
     // Match RTL fastTrain: every valid S3 prediction is broadcast to the S1
     // predictors, even when the final result is fallthrough.

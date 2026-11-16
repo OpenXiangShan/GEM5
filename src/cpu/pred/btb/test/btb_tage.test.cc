@@ -316,6 +316,7 @@ TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
 TEST(FullBTBPredictionTest, KeepsConditionalPrefixAndTarget)
 {
     FullBTBPrediction pred;
+    pred.valid = true;
     pred.bbStart = 0x1000;
     pred.btbEntries = {
         createBTBEntry(0x1000, true, true, -1, 0x2000),
@@ -347,6 +348,7 @@ TEST(FullBTBPredictionTest, SharesFinalIndirectTargetWithTrainingAndHistory)
         stored.branch.isIndirect = true;
         stored.branch.isReturn = is_return;
         FullBTBPrediction early;
+        early.valid = true;
         early.bbStart = 0x1000;
         early.btbEntries = {stored};
 
@@ -363,6 +365,23 @@ TEST(FullBTBPredictionTest, SharesFinalIndirectTargetWithTrainingAndHistory)
         EXPECT_EQ(stored.branch.target, 0x2000);
         EXPECT_EQ(early.match(final, 64).second, OverrideReason::TARGET);
     }
+}
+
+TEST(FullBTBPredictionTest, ValidFallthroughKeepsConditionalHistoryPrefix)
+{
+    FullBTBPrediction pred;
+    pred.valid = true;
+    pred.bbStart = 0x1000;
+    pred.btbEntries = {
+        createBTBEntry(0x1000, true, true, -1, 0x2000),
+        createBTBEntry(0x1004, true, true, -1, 0x2004)
+    };
+    EXPECT_FALSE(pred.isTaken());
+    EXPECT_EQ(pred.getTarget(64), 0x1040);
+    EXPECT_EQ(pred.getGHistUpdate().shamt, 2);
+    EXPECT_FALSE(pred.getGHistUpdate().taken);
+    EXPECT_FALSE(pred.getPHistUpdate().taken);
+    EXPECT_EQ(pred.btbEntries.size(), 2);
 }
 
 TEST(FullBTBPredictionTest, KeepsBaseSnapshotAfterDirectionOverride)

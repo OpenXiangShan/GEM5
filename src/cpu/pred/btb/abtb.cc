@@ -277,9 +277,11 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         btbStats.S0Predmiss++;
     }
 
+    const bool selected_valid = selected_abtb_entries || stagePreds[0].valid;
     FillStageLoop(s) {
         DPRINTF(ABTB, "BTB: assigning prediction for stage %d\n", s);
         // Copy BTB entries to stage prediction
+        stagePreds[s].valid = selected_valid;
         stagePreds[s].btbEntries.clear();
         for (auto e : selected_entries) {
             auto pred_entry = e;

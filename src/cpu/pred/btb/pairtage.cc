@@ -519,6 +519,7 @@ void
 PairTAGE::fillPrediction(const PTAGEBlockInfo &block, uint8_t branchSize,
                          FullBTBPrediction &pred)
 {
+    pred.valid = true;
     pred.btbEntries.clear();
     pred.predTick = curTick();
 

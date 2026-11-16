@@ -160,6 +160,7 @@ UBTB::fillStagePredictions(const TickedUBTBEntry &entry, std::vector<FullBTBPred
         DPRINTF(UBTB, "UBTB: assigning prediction for stage %d\n", s);
 
         // Copy uBTB entries to stage prediction
+        stagePreds[s].valid = true;
         stagePreds[s].btbEntries.clear();
         // Set predictions for each branch
         stagePreds[s].predTick = curTick();

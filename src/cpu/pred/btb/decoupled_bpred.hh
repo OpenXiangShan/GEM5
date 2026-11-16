@@ -192,7 +192,7 @@ class DecoupledBPUWithBTB : public BPredUnit
      * @brief Generate final prediction from all stages
      *
      * Collects predictions from all stages and:
-     * - Selects the latest stage with branch candidates
+     * - Selects the latest valid stage, including fallthrough
      * - Generates necessary bubbles
      * - Updates prediction state
      */
@@ -217,7 +217,8 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void printFullBTBPrediction(const FullBTBPrediction &pred) {
         DPRINTF(DecoupleBP, "dumping FullBTBPrediction\n");
-        DPRINTF(DecoupleBP, "bbStart: %#lx, btbEntry:\n", pred.bbStart);
+        DPRINTF(DecoupleBP, "bbStart: %#lx, valid: %d, btbEntry:\n",
+                pred.bbStart, pred.valid);
         for (auto &e: pred.btbEntries) {
             printBTBEntry(e);
         }

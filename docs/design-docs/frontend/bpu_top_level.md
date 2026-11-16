@@ -235,6 +235,22 @@ BTB 顶层的控制状态与观察数据按以下边界组织：
 
 入队时先保存当前 history 和组件 metadata，再推进 PC/history、准备 ahead 信息，最后插入 FTQ。第二块在首块推进历史之后取得自己的 metadata。恢复时，`controlSquash()` 复用已分类的 `BranchInfo`，应用 RAS 修正后的目标再交给共享恢复入口；共享入口继续负责 FTQ 截断、history 恢复和重定向。
 
+### 预测结果的有效性与 fallthrough
+
+`FullBTBPrediction::valid` 表示本级已经给出结果，与候选分支数量分开。
+顶层选择最后一个有效级，因此 mBTB 查询完成但未命中时，空候选表示
+fallthrough，可以推翻 S1 的 taken 预测。方向预测器把所有条件分支预测为
+not-taken 时，仍保留这些候选，供 speculative history 记录条件分支前缀。
+
+S1 总有默认 fallthrough。uBTB 查询和 mBTB 查询完成后标记结果有效；
+ABTB 未命中继续沿用 uBTB 结果，PairTAGE 未命中保留已有结果，命中且
+预测 fallthrough 时清空候选并标记有效。PairTAGE 同拍提供的第二块使用
+相同的有效位语义。方向和目标修正不改变已有结果的有效性。
+
+每次请求与 squash 清理都重置有效位；无效级不能提前满足 override 比较，
+只有有效的最终级结果才能进入 S3 fast-train。这里表达的是 gem5 合并查询
+模型中的结果所有权；RTL 流水寄存器的 valid 还承担 fire/flush 握手职责。
+
 ## 12. 参考资料
 
 - 本目录阅读入口

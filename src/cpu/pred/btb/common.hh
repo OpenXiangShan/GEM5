@@ -477,6 +477,8 @@ struct PreparedUpdate
  */
 struct FullBTBPrediction
 {
+    // A completed prediction may be valid even with no branch candidates.
+    bool valid{false};
     ThreadID tid;
     uint8_t asidHash;
     Addr bbStart;
@@ -548,6 +550,10 @@ struct FullBTBPrediction
 
     std::pair<bool, OverrideReason> match(FullBTBPrediction &other, Addr predictWidth)
     {
+        // An absent stage result cannot satisfy an earlier override check.
+        if (!valid || !other.valid) {
+            return {false, OverrideReason::FALL_THRU};
+        }
         auto this_taken_entry = this->getTakenEntry();
         auto other_taken_entry = other.getTakenEntry();
         if (this_taken_entry.valid != other_taken_entry.valid) {

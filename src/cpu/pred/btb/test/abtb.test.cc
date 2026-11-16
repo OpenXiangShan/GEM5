@@ -94,6 +94,39 @@ protected:
     AheadBTB* bigAbtb;
 };
 
+TEST_F(ABTBTest, MissPreservesUbtbResultAndValidity)
+{
+    for (const bool taken : {false, true}) {
+        std::vector<FullBTBPrediction> predictions(3);
+        predictions[0].valid = true;
+        predictions[0].bbStart = 0x1000;
+        if (taken) {
+            BranchInfo branch;
+            branch.pc = 0x1004;
+            branch.target = 0x2000;
+            predictions[0].btbEntries.emplace_back(branch);
+        }
+        const auto expected = predictions[0];
+        abtb->putPCHistory(0x1000, boost::dynamic_bitset<>(8, 0), predictions);
+        for (auto &pred : predictions) {
+            EXPECT_TRUE(pred.valid);
+            EXPECT_EQ(pred.isTaken(), taken);
+            EXPECT_EQ(pred.getTakenEntry().branch.target,
+                      expected.getTakenEntry().branch.target);
+        }
+    }
+}
+
+TEST_F(ABTBTest, MissWithoutFallbackLeavesStageInvalid)
+{
+    std::vector<FullBTBPrediction> predictions(3);
+    abtb->putPCHistory(0x1000, boost::dynamic_bitset<>(8, 0), predictions);
+    for (const auto &pred : predictions) {
+        EXPECT_FALSE(pred.valid);
+        EXPECT_TRUE(pred.btbEntries.empty());
+    }
+}
+
 TEST_F(ABTBTest, BasicPredictionUpdateCycle){
     // Some constants
     // Stream A addresses
