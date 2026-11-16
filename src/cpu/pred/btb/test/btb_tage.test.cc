@@ -313,7 +313,7 @@ TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
     }
 }
 
-TEST(FullBTBPredictionTest, KeepsConditionalPrefixAndSeparatesTargets)
+TEST(FullBTBPredictionTest, KeepsConditionalPrefixAndTarget)
 {
     FullBTBPrediction pred;
     pred.bbStart = 0x1000;
@@ -323,22 +323,46 @@ TEST(FullBTBPredictionTest, KeepsConditionalPrefixAndSeparatesTargets)
         createBTBEntry(0x1008, true, true, 0, 0x0800),
         createBTBEntry(0x100c, true, true, 0, 0x200c)
     };
-    pred.btbEntries[2].predictedTarget = 0x4000;
-
     EXPECT_EQ(pred.getGHistUpdate().shamt, 3);
     EXPECT_TRUE(pred.getGHistUpdate().taken);
     EXPECT_EQ(pred.getBwHistUpdate().shamt, 3);
     EXPECT_TRUE(pred.getBwHistUpdate().taken);
     EXPECT_EQ(pred.getTakenEntry().pc, 0x1008);
     EXPECT_EQ(pred.getTakenEntry().getBranchInfo().target, 0x0800);
-    EXPECT_EQ(pred.getTarget(64), 0x4000);
-    EXPECT_EQ(pred.getPHistUpdate().target, 0x4000);
+    EXPECT_EQ(pred.getTarget(64), 0x0800);
+    EXPECT_EQ(pred.getPHistUpdate().target, 0x0800);
 
     auto later = pred;
-    later.btbEntries[2].predictedTarget = 0x5000;
+    later.btbEntries[2].target = 0x5000;
     EXPECT_EQ(pred.match(later, 64).second, OverrideReason::TARGET);
     later.btbEntries[2].taken = false;
     EXPECT_EQ(pred.match(later, 64).second, OverrideReason::CONTROL_ADDR);
+}
+
+TEST(FullBTBPredictionTest, SharesFinalIndirectTargetWithTrainingAndHistory)
+{
+    for (const bool is_return : {false, true}) {
+        SCOPED_TRACE(is_return);
+        auto stored = createBTBEntry(0x1008, false, true, 0, 0x2000);
+        stored.isIndirect = true;
+        stored.isReturn = is_return;
+        FullBTBPrediction early;
+        early.bbStart = 0x1000;
+        early.btbEntries = {stored};
+
+        auto final = early;
+        final.btbEntries.front().target = 0x3000;
+
+        const auto taken = final.getTakenEntry();
+        const BTBEntry training_entry(taken.getBranchInfo());
+        EXPECT_EQ(taken.target, 0x3000);
+        EXPECT_EQ(final.getTarget(64), 0x3000);
+        EXPECT_EQ(final.getPHistUpdate().target, 0x3000);
+        EXPECT_EQ(training_entry.target, 0x3000);
+        EXPECT_EQ(early.getTarget(64), 0x2000);
+        EXPECT_EQ(stored.target, 0x2000);
+        EXPECT_EQ(early.match(final, 64).second, OverrideReason::TARGET);
+    }
 }
 
 TEST(FullBTBPredictionTest, KeepsBaseSnapshotAfterDirectionOverride)
@@ -348,7 +372,7 @@ TEST(FullBTBPredictionTest, KeepsBaseSnapshotAfterDirectionOverride)
     ASSERT_TRUE(candidate.baseTaken);
     ASSERT_TRUE(candidate.baseStrong);
     candidate.taken = false;
-    candidate.predictedTarget = 0x3000;
+    candidate.target = 0x3000;
 
     FullBTBPrediction pred;
     pred.bbStart = 0x1000;
@@ -358,7 +382,8 @@ TEST(FullBTBPredictionTest, KeepsBaseSnapshotAfterDirectionOverride)
     EXPECT_EQ(pred.getTarget(64), pred.getFallThrough(64));
     EXPECT_TRUE(pred.btbEntries.front().baseTaken);
     EXPECT_TRUE(pred.btbEntries.front().baseStrong);
-    EXPECT_EQ(pred.btbEntries.front().getBranchInfo().target, 0x2000);
+    EXPECT_EQ(pred.btbEntries.front().getBranchInfo().target, 0x3000);
+    EXPECT_EQ(stored.target, 0x2000);
 }
 
 /**
@@ -1557,7 +1582,7 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesIndirectOverridePathHashSnap
     FullBTBPrediction pred;
     pred.btbEntries.push_back(entry);
     pred.btbEntries.back().taken = true;
-    pred.btbEntries.back().predictedTarget = indirectTarget;
+    pred.btbEntries.back().target = indirectTarget;
 
     tage->specUpdatePHist(pathHistoryA, pred, pred.getPHistUpdate());
     tage->checkFoldedHist(pathHistoryB, "indirect target override");
@@ -1584,7 +1609,7 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesReturnOverridePathHashSnapsh
     FullBTBPrediction pred;
     pred.btbEntries.push_back(entry);
     pred.btbEntries.back().taken = true;
-    pred.btbEntries.back().predictedTarget = returnTarget;
+    pred.btbEntries.back().target = returnTarget;
 
     tage->specUpdatePHist(pathHistoryA, pred, pred.getPHistUpdate());
     tage->checkFoldedHist(pathHistoryB, "return target override");

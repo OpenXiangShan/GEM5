@@ -154,6 +154,8 @@ class AheadBTB : public TimedBaseBTBPredictor
      */
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 #ifdef UNIT_TEST
+    void setUsingS3Pred(bool enabled) { usingS3Pred = enabled; }
+
     const std::vector<BTBEntry> &predictionStorageEntries(ThreadID tid = 0) const
     {
         return threadState(tid).meta->hit_entries;

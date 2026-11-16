@@ -1,6 +1,8 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <memory>
+
 #include "cpu/pred/btb/abtb.hh"
 
 namespace gem5
@@ -285,6 +287,58 @@ TEST_F(ABTBTest, AheadPipelineIsThreadIsolated){
     if (!pred_t0_test.btbEntries.empty()) {
         EXPECT_EQ(pred_t0_test.btbEntries[0].pc, t0BrPC);
         EXPECT_EQ(pred_t0_test.btbEntries[0].target, t0Target);
+    }
+}
+
+TEST_F(ABTBTest, S3TrainsFinalTargetWithoutChangingConditionalPrefix)
+{
+    for (const bool is_return : {false, true}) {
+        SCOPED_TRACE(is_return);
+        auto predictor = std::make_unique<AheadBTB>(16, 20, 4, 0);
+        constexpr Addr previous_pc = 0x1000;
+        constexpr Addr start_pc = 0x2000;
+        constexpr Addr cond_pc = 0x2004;
+        constexpr Addr indirect_pc = 0x2008;
+        constexpr Addr cond_target = 0x1800;
+        constexpr Addr old_target = 0x3000;
+        constexpr Addr final_target = 0x4000;
+
+        auto empty = makePrediction(start_pc, predictor.get());
+        auto stream = createStream(start_pc, empty, predictor.get());
+        stream.previousPCs.push(previous_pc);
+        updateABTB(stream, predictor.get(),
+                   makeBranchOutcome(true, cond_pc, cond_target, true));
+        auto indirect =
+            makeBranchOutcome(true, indirect_pc, old_target, false);
+        indirect.isIndirect = true;
+        indirect.isReturn = is_return;
+        updateABTB(stream, predictor.get(), indirect);
+
+        clearAheadPipeline(predictor.get(), 0);
+        makePrediction(previous_pc, predictor.get());
+        auto teacher = makePrediction(start_pc, predictor.get());
+        ASSERT_EQ(teacher.btbEntries.size(), 2);
+        ASSERT_EQ(teacher.btbEntries[0].pc, cond_pc);
+        ASSERT_EQ(teacher.btbEntries[1].pc, indirect_pc);
+        ASSERT_EQ(teacher.btbEntries[1].target, old_target);
+        teacher.btbEntries[0].taken = false;
+        teacher.btbEntries[1].target = final_target;
+        predictor->setUsingS3Pred(true);
+        predictor->updateUsingS3Pred(teacher, previous_pc);
+
+        clearAheadPipeline(predictor.get(), 0);
+        makePrediction(previous_pc, predictor.get());
+        auto updated = makePrediction(start_pc, predictor.get());
+        ASSERT_EQ(updated.btbEntries.size(), 2);
+        EXPECT_EQ(updated.btbEntries[0].target, cond_target);
+        EXPECT_FALSE(updated.btbEntries[0].taken);
+        EXPECT_EQ(updated.btbEntries[1].target, final_target);
+        EXPECT_EQ(updated.getTarget(64), final_target);
+        EXPECT_EQ(updated.btbEntries[1].isReturn, is_return);
+        const auto &stored = predictor->predictionStorageEntries();
+        ASSERT_EQ(stored.size(), 2);
+        EXPECT_EQ(stored[0].ctr, -1);
+        EXPECT_EQ(stored[1].target, final_target);
     }
 }
 

@@ -130,24 +130,22 @@ struct BTBEntry : BranchInfo
     }
 };
 
-/** A branch candidate, independent of BTB storage and replacement state. */
+/** A branch candidate whose target is refined in place by ITTAGE or RAS. */
 struct BranchPrediction : BranchInfo
 {
     bool valid{false};
     bool taken{false};
-    Addr predictedTarget{0}; // Selected target; inherited target is the BTB input.
     bool baseTaken{false};
     bool baseStrong{false};
     int source{-1};
 
     BranchPrediction() = default;
     BranchPrediction(const BranchInfo &branch)
-        : BranchInfo(branch), valid(true), predictedTarget(branch.target)
+        : BranchInfo(branch), valid(true)
     {}
     BranchPrediction(const BTBEntry &entry)
         : BranchInfo(entry), valid(entry.valid),
           taken(!entry.isCond || entry.ctr >= 0),
-          predictedTarget(entry.target),
           baseTaken(entry.ctr >= 0),
           baseStrong(std::abs(2 * entry.ctr + 1) == 5),
           source(entry.source)
@@ -532,7 +530,7 @@ struct FullBTBPrediction
         Addr target;
         const auto &entry = getTakenEntry();
         if (entry.valid) { // found a taken entry
-            target = entry.predictedTarget;
+            target = entry.target;
         } else {
             target = getFallThrough(predictWidth);
         }
@@ -612,7 +610,7 @@ struct FullBTBPrediction
         if (entry.valid) {
             update.taken = true;
             update.pc = entry.pc;
-            update.target = entry.predictedTarget;
+            update.target = entry.target;
         }
         return update;
     }

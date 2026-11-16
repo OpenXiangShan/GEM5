@@ -1083,7 +1083,6 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     // Extract branch prediction information
     bool taken = pred.isTaken();
     Addr fallThroughAddr = pred.getFallThrough(predictWidth);
-    Addr nextPC = pred.getTarget(predictWidth);
 
     entry.isHit = !pred.btbEntries.empty();
     entry.falseHit = false;
@@ -1094,7 +1093,6 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     // Set branch info for taken predictions
     if (taken) {
         entry.predBranchInfo = pred.getTakenEntry().getBranchInfo();
-        entry.predBranchInfo.target = nextPC; // Use final target (may not be from BTB)
     }
 
     // Record current history and prediction metadata

@@ -112,7 +112,7 @@ BTBRAS::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
     for (int i = getDelay(); i < stagePreds.size(); i++) {
         for (auto &entry : stagePreds[i].btbEntries) {
             if (entry.isIndirect && entry.isReturn) {
-                entry.predictedTarget = top.retAddr;
+                entry.target = top.retAddr;
             }
         }
     }
@@ -153,7 +153,7 @@ BTBRAS::specUpdateState(FullBTBPrediction &pred)
     assert(state.meta);
     // do push & pops on prediction
     auto takenEntry = pred.getTakenEntry();
-    DPRINTFR(RAS, "Do specUpdate for PC %lx pred target %lx ", pred.bbStart, pred.getTakenEntry().predictedTarget);
+    DPRINTFR(RAS, "Do specUpdate for PC %lx pred target %lx ", pred.bbStart, pred.getTakenEntry().target);
 
     if ((takenEntry.isCall || takenEntry.isReturn) &&
         inflightNearOverflow(state)) {

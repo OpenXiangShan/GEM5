@@ -925,7 +925,7 @@ TEST(BTBMGSCTest, SpecUpdatePHistUsesIndirectTargetOverride)
     FullBTBPrediction pred;
     pred.btbEntries = {entry};
     pred.btbEntries.back().taken = true;
-    pred.btbEntries.back().predictedTarget = indirectTarget;
+    pred.btbEntries.back().target = indirectTarget;
 
     boost::dynamic_bitset<> expected_phr = h.phr;
     pHistShiftIn(2, true, expected_phr, entry.pc, indirectTarget);
@@ -950,7 +950,7 @@ TEST(BTBMGSCTest, SpecUpdatePHistUsesReturnTargetOverride)
     FullBTBPrediction pred;
     pred.btbEntries = {entry};
     pred.btbEntries.back().taken = true;
-    pred.btbEntries.back().predictedTarget = returnTarget;
+    pred.btbEntries.back().target = returnTarget;
 
     boost::dynamic_bitset<> expected_phr = h.phr;
     pHistShiftIn(2, true, expected_phr, entry.pc, returnTarget);

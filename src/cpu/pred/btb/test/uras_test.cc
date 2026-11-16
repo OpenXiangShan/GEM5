@@ -71,7 +71,7 @@ public:
         for (int i = getDelay(); i < stagePreds.size(); i++) {
             for (auto &entry : stagePreds[i].btbEntries) {
                 if (entry.isReturn) {
-                    entry.predictedTarget = stack[sp].retAddr;
+                    entry.target = stack[sp].retAddr;
                 }
             }
         }
@@ -86,7 +86,7 @@ public:
         // do push & pops on prediction
         for (auto &entry : pred.btbEntries) {
             if (entry.isIndirect && entry.isReturn) {
-                entry.predictedTarget = stack[sp].retAddr;
+                entry.target = stack[sp].retAddr;
             }
         }
         auto takenSlot = pred.getTakenEntry();
@@ -297,7 +297,7 @@ TEST_F(URASTest, PutPCHistoryBasic) {
 
     // test return target for all stages
     for (int i = 0; i < stagePreds.size(); i++) {
-        EXPECT_EQ(stagePreds[i].getTakenEntry().predictedTarget, retAddr);
+        EXPECT_EQ(stagePreds[i].getTakenEntry().target, retAddr);
     }
     
     // verify meta is correctly saved
@@ -362,7 +362,7 @@ TEST_F(URASTest, SpecUpdateStateReturn) {
 
     // 验证：
     // 1. returnTarget应该是栈顶的地址
-    EXPECT_EQ(pred.getTakenEntry().predictedTarget, 0x2000);
+    EXPECT_EQ(pred.getTakenEntry().target, 0x2000);
     // 2. sp应该减少
     EXPECT_EQ(sp, 0);
 }
@@ -406,7 +406,7 @@ TEST_F(URASTest, SpecUpdateStateCallReturn) {
     // 1. sp应该回到初始位置
     EXPECT_EQ(sp, 0);
     // 2. returnTarget应该匹配call的下一条指令
-    EXPECT_EQ(pred2.getTakenEntry().predictedTarget, 0x1004);
+    EXPECT_EQ(pred2.getTakenEntry().target, 0x1004);
 }
 
 TEST_F(URASTest, SpecUpdateStatePopThenPush) {
@@ -428,7 +428,7 @@ TEST_F(URASTest, SpecUpdateStatePopThenPush) {
 
     uras->specUpdateState(pred);
 
-    EXPECT_EQ(pred.getTakenEntry().predictedTarget, 0x2004);
+    EXPECT_EQ(pred.getTakenEntry().target, 0x2004);
     EXPECT_EQ(sp, 2);
     EXPECT_EQ(stack[sp].retAddr, 0x3004);
 }

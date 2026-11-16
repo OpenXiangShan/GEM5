@@ -100,7 +100,7 @@ BTBuRAS::specUpdateState(FullBTBPrediction &pred)
     // do push & pops on prediction
     for (auto &entry : pred.btbEntries) {
         if (entry.isIndirect && entry.isReturn) {
-            entry.predictedTarget = stack[sp].retAddr;
+            entry.target = stack[sp].retAddr;
         }
     }
     auto takenSlot = pred.getTakenEntry();

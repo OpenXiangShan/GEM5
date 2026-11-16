@@ -33,7 +33,7 @@ class RASPopPushTest : public ::testing::Test
             stage.btbEntries.push_back(ret);
         }
         ras->putPCHistory(startAddr, history, stagePreds);
-        EXPECT_EQ(stagePreds[0].btbEntries.front().predictedTarget, expectedTarget);
+        EXPECT_EQ(stagePreds[0].btbEntries.front().target, expectedTarget);
     }
 
     FullBTBPrediction create_prediction(Addr pc, Addr target, bool isCall,

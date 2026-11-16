@@ -15,9 +15,11 @@ bubbles, and enqueues FetchTargets for instruction fetch.
 | `FetchTarget` | Prediction/history snapshots, component metadata and execution facts |
 
 `FullBTBPrediction::btbEntries` contains `BranchPrediction` objects ordered by PC.
-Each candidate carries `taken` and `predictedTarget`; there are no separate
-conditional-direction, indirect-target or RAS-target maps. Inherited `target`
-remains the original BTB destination for existing training and fallback users.
+Each candidate carries `taken` and a single `target`. BTB lookup initializes
+the target; ITTAGE or RAS refines it in place. ITTAGE falls back to its input
+candidate target on a miss. S3 fast-training of uBTB, AheadBTB and PairTAGE
+consumes the final candidate target, matching RTL fastTrain. Component-local
+BTB storage and prediction metadata retain their own snapshots.
 
 Candidates retain the not-taken conditional prefix up to the first taken branch.
 Direction history consumes that prefix; the selected next PC and path history

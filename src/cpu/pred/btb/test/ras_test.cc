@@ -80,7 +80,7 @@ protected:
             stage.btbEntries.push_back(ret);
         }
         ras->putPCHistory(startAddr, history, stagePreds);
-        EXPECT_EQ(stagePreds[0].btbEntries.front().predictedTarget, expectedTarget);
+        EXPECT_EQ(stagePreds[0].btbEntries.front().target, expectedTarget);
     }
 
     // Helper function to create the FTQ-owned prediction context.

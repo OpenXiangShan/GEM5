@@ -162,7 +162,7 @@ BTBITTAGE::lookupHelper(Addr startAddr, std::vector<BranchPrediction> &btbEntrie
                 target = base_target;
                 warn("no target found\n");
             }
-            btb_entry.predictedTarget = taken ? target : btb_entry.target;
+            btb_entry.target = taken ? target : base_target;
             DPRINTF(ITTAGE, "tage predict %#lx target %#lx\n", btb_entry.pc, target);
 
             // Update prediction statistics

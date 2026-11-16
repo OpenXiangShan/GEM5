@@ -117,7 +117,7 @@ findIndirectTarget(const std::vector<BranchPrediction> &entries, Addr pc)
             return entry.valid && entry.isIndirect && entry.pc == pc;
         });
     return it == entries.end() ? std::make_pair(false, Addr(0)) :
-                               std::make_pair(true, it->predictedTarget);
+                               std::make_pair(true, it->target);
 }
 
 /**

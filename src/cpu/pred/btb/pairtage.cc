@@ -539,7 +539,6 @@ PairTAGE::fillPrediction(const PTAGEBlockInfo &block, uint8_t branchSize,
     entry.size = branchSize;
     entry.taken = true;
     entry.baseTaken = true;
-    entry.predictedTarget = block.targetPC;
     entry.source = getComponentIdx();
 
     pred.btbEntries.push_back(entry);
