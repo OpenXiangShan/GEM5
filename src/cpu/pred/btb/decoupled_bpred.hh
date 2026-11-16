@@ -153,6 +153,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     std::vector<unsigned> resolveDequeueFailCounters;
     const unsigned resolveBlockThreshold;
 
+    const unsigned twoTakenMaxRunAhead;
+
     bool sharedFTQMode() const;
     unsigned activeFTQThreads() const;
     unsigned totalFTQEntries() const;
@@ -287,6 +289,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar ftqEntryEnqueued;
         statistics::Scalar secondBlockEnqueued;
         statistics::Scalar secondBlockFtqFull;
+        statistics::Scalar secondBlockRunAhead;
         statistics::Scalar ftqEntryCommitted;
         statistics::Scalar controlSquashFromDecode;
         statistics::Scalar controlSquashFromCommit;

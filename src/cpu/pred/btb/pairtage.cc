@@ -166,7 +166,7 @@ PairTAGE::putPCHistory(Addr startAddr, const bitset &history,
     const auto &ahead = threadAhead[tid];
     meta->noAnchor = !ahead.valid;
     if (!meta->noAnchor) {
-        meta->lookup = lookup(ahead.pc, ahead.history);
+        meta->lookup = lookup(ahead.pc, startAddr, ahead.history);
     }
 
     auto &live = predLiveEntryInfo[tid];
@@ -307,6 +307,7 @@ PairTAGE::trainFirstBlock(const LookupResult &lookup, const BTBEntry &exit,
         // longer holds once that target moves
         if (entry.block.targetPC != targetPC) {
             entry.b2Valid = false;
+            entry.confidence = 0;
         }
         entry.block.targetPC = targetPC;
         entry.useful = true;
@@ -390,11 +391,9 @@ PairTAGE::trainSecondBlock(const LiveEntryInfo &live, const BTBEntry &exit,
         }
         pairTageStats.trainSecondStrengthen++;
     } else {
-        // A wrong second block costs confidence; installing a missing one
-        // does not, since it was never predicted
-        if (entry.b2Valid && entry.confidence > 0) {
-            entry.confidence--;
-        }
+
+        // The entry now holds a different pair, clear confidence
+        entry.confidence = 0;
         entry.b2Valid = true;
         entry.block2 = PTAGEBlockInfo(exit, targetPC);
         entry.modelInfo.block2BranchSize = exit.valid ? exit.size : 0;
@@ -484,18 +483,19 @@ PairTAGE::getTag(Addr pc, unsigned t, uint64_t foldedHist,
 }
 
 PairTAGE::LookupResult
-PairTAGE::lookup(Addr pc, const ThreadHistoryState &history) const
+PairTAGE::lookup(Addr indexPC, Addr tagPC,
+                 const ThreadHistoryState &history) const
 {
     LookupResult result;
     result.tableIndexes.resize(numPredictors);
 
-    const unsigned bank = getBankId(pc);
+    const unsigned bank = getBankId(indexPC);
     for (unsigned t = 0; t < numPredictors; ++t) {
         auto &ti = result.tableIndexes[t];
         const Addr set =
-            getSetIndex(pc, t, history.indexFoldedHist[t].get());
+            getSetIndex(indexPC, t, history.indexFoldedHist[t].get());
         ti.index = getIndex(t, bank, set);
-        ti.tag = getTag(pc, t, history.tagFoldedHist[t].get(),
+        ti.tag = getTag(tagPC, t, history.tagFoldedHist[t].get(),
                         history.altTagFoldedHist[t].get());
 
         // Direct mapped: the one entry of the set is what an allocation

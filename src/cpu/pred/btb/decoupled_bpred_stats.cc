@@ -491,6 +491,8 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
              "second blocks enqueued in the same cycle as their first block"),
     ADD_STAT(secondBlockFtqFull, statistics::units::Count::get(),
              "second blocks dropped because the FTQ had no room left"),
+    ADD_STAT(secondBlockRunAhead, statistics::units::Count::get(),
+             "second blocks dropped because fetch had enough blocks queued"),
     ADD_STAT(ftqEntryCommitted, statistics::units::Count::get(),
              "the number of ftq entries committed"),
     ADD_STAT(controlSquashFromDecode, statistics::units::Count::get(),

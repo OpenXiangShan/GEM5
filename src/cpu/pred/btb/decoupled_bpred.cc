@@ -73,6 +73,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       smtFTQThreshold(p.smtFTQThreshold),
       ftq(p.numThreads, p.ftq_size),
       resolveBlockThreshold(p.resolveBlockThreshold),
+      twoTakenMaxRunAhead(p.twoTakenMaxRunAhead),
       dbpBtbStats(this, p.numStages, p.ftq_size, p.predictWidth, maxInstsNum, p.numThreads)
 {
     panic_if(numPredictingThreads == 0 ||
@@ -628,6 +629,15 @@ DecoupledBPUWithBTB::enqueueSecondBlock(ThreadID tid)
         return;
     }
 
+    // Not enqueue 2 Taken when FTQ has enough entries since the second block
+    // cause MPKI increase and no improvement in this circumstance.
+    assert(ftq.fetchId(tid) <= ftq.backId(tid) + 1);
+    const unsigned runAhead = ftq.backId(tid) + 1 - ftq.fetchId(tid);
+    if (twoTakenMaxRunAhead && runAhead > twoTakenMaxRunAhead) {
+        dbpBtbStats.secondBlockRunAhead++;
+        return;
+    }
+
     // Without room for both, the second block waits for the next cycle
     if (ftqFull(tid)) {
         dbpBtbStats.secondBlockFtqFull++;
@@ -640,6 +650,8 @@ DecoupledBPUWithBTB::enqueueSecondBlock(ThreadID tid)
                                              secondPred);
     }
 
+    // TODO: Currently the ABTB's ahead history is not updated for the second
+    // which maybe a expected behavior due to the physical timing constraints.
     FetchTarget entry = createFetchTargetEntry(tid, thread.s0PC, secondPred);
     thread.s0PC = secondPred.getTarget(predictWidth);
     updateHistoryForPrediction(entry, secondPred);
