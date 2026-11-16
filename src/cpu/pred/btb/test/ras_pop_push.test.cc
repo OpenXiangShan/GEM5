@@ -27,27 +27,27 @@ class RASPopPushTest : public ::testing::Test
         std::vector<FullBTBPrediction> stagePreds(4);
         BTBEntry ret;
         ret.valid = true;
-        ret.isIndirect = true;
-        ret.isReturn = true;
+        ret.branch.isIndirect = true;
+        ret.branch.isReturn = true;
         for (auto &stage : stagePreds) {
             stage.btbEntries.push_back(ret);
         }
         ras->putPCHistory(startAddr, history, stagePreds);
-        EXPECT_EQ(stagePreds[0].btbEntries.front().target, expectedTarget);
+        EXPECT_EQ(stagePreds[0].btbEntries.front().branch.target, expectedTarget);
     }
 
     FullBTBPrediction create_prediction(Addr pc, Addr target, bool isCall,
                                         bool isReturn) {
         BTBEntry entry;
         entry.valid = true;
-        entry.pc = pc;
-        entry.target = target;
-        entry.size = 4;
-        entry.isCond = false;
-        entry.isIndirect = isReturn;
-        entry.isDirect = !entry.isIndirect;
-        entry.isCall = isCall;
-        entry.isReturn = isReturn;
+        entry.branch.pc = pc;
+        entry.branch.target = target;
+        entry.branch.size = 4;
+        entry.branch.isCond = false;
+        entry.branch.isIndirect = isReturn;
+        entry.branch.isDirect = !entry.branch.isIndirect;
+        entry.branch.isCall = isCall;
+        entry.branch.isReturn = isReturn;
 
         FullBTBPrediction pred;
         pred.bbStart = pc;
@@ -70,15 +70,15 @@ class RASPopPushTest : public ::testing::Test
 
     BranchOutcome create_outcome(const BranchInfo &branch, bool taken = true) {
         BranchOutcome outcome;
-        outcome.pc = branch.pc;
-        outcome.target = branch.target;
+        outcome.branch.pc = branch.pc;
+        outcome.branch.target = branch.target;
         outcome.taken = taken;
-        outcome.isCond = branch.isCond;
-        outcome.isIndirect = branch.isIndirect;
-        outcome.isDirect = branch.isDirect;
-        outcome.isCall = branch.isCall;
-        outcome.isReturn = branch.isReturn;
-        outcome.size = branch.size;
+        outcome.branch.isCond = branch.isCond;
+        outcome.branch.isIndirect = branch.isIndirect;
+        outcome.branch.isDirect = branch.isDirect;
+        outcome.branch.isCall = branch.isCall;
+        outcome.branch.isReturn = branch.isReturn;
+        outcome.branch.size = branch.size;
         return outcome;
     }
 

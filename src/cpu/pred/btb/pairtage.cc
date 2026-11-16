@@ -293,7 +293,7 @@ PairTAGE::trainFirstBlock(const LookupResult &lookup, const BranchPrediction &ex
                           Addr targetPC)
 {
     const bool taken = exit.valid;
-    const Addr branchPC = exit.valid ? exit.pc : 0;
+    const Addr branchPC = exit.valid ? exit.branch.pc : 0;
     LiveEntryInfo live;
     live.nextPC = targetPC;
 
@@ -378,7 +378,7 @@ void
 PairTAGE::trainSecondBlock(const LiveEntryInfo &live, const BranchPrediction &exit,
                            Addr targetPC)
 {
-    const Addr branchPC = exit.valid ? exit.pc : 0;
+    const Addr branchPC = exit.valid ? exit.branch.pc : 0;
     PTAGEEntry entry = live.entry;
 
     // A second block naming the right exit is strengthened; anything else
@@ -396,7 +396,7 @@ PairTAGE::trainSecondBlock(const LiveEntryInfo &live, const BranchPrediction &ex
         entry.confidence = 0;
         entry.b2Valid = true;
         entry.block2 = PTAGEBlockInfo(exit, targetPC);
-        entry.modelInfo.block2BranchSize = exit.valid ? exit.size : 0;
+        entry.modelInfo.block2BranchSize = exit.valid ? exit.branch.size : 0;
         pairTageStats.trainSecondReplace++;
     }
 
@@ -529,14 +529,14 @@ PairTAGE::fillPrediction(const PTAGEBlockInfo &block, uint8_t branchSize,
 
     BranchPrediction entry;
     entry.valid = true;
-    entry.pc = block.branchPC;
-    entry.target = block.targetPC;
-    entry.isCond = block.isCond;
-    entry.isDirect = block.isDirect;
-    entry.isIndirect = block.isIndirect;
-    entry.isCall = block.isCall;
-    entry.isReturn = block.isReturn;
-    entry.size = branchSize;
+    entry.branch.pc = block.branchPC;
+    entry.branch.target = block.targetPC;
+    entry.branch.isCond = block.isCond;
+    entry.branch.isDirect = block.isDirect;
+    entry.branch.isIndirect = block.isIndirect;
+    entry.branch.isCall = block.isCall;
+    entry.branch.isReturn = block.isReturn;
+    entry.branch.size = branchSize;
     entry.taken = true;
     entry.baseTaken = true;
     entry.source = getComponentIdx();

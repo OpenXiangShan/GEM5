@@ -102,24 +102,24 @@ enum class HistoryType
 
 
 /**
- * @brief Branch Target Buffer entry extending BranchInfo with prediction metadata
+ * @brief Branch Target Buffer storage with shared branch facts and private state
  *
  * Contains branch information plus prediction state:
  * - Valid bit
  * - Counter for prediction
  * - Tag for BTB lookup
  */
-struct BTBEntry : BranchInfo
+struct BTBEntry
 {
+    BranchInfo branch;
     bool valid;
     int ctr;
     Addr tag;
     int source;//only use for countering the source of the entry
     // Addr offset; // retrived from lowest bits of pc
-    BTBEntry() : BranchInfo(), valid(false), ctr(0), tag(0), source(-1) {}
+    BTBEntry() : valid(false), ctr(0), tag(0), source(-1) {}
     BTBEntry(const BranchInfo &bi)
-        : BranchInfo(bi), valid(true), ctr(0), tag(0), source(-1) {}
-    BranchInfo getBranchInfo() { return BranchInfo(*this); }
+        : branch(bi), valid(true), ctr(0), tag(0), source(-1) {}
 
     int getsource() const {
         return source;
@@ -131,8 +131,9 @@ struct BTBEntry : BranchInfo
 };
 
 /** A branch candidate whose target is refined in place by ITTAGE or RAS. */
-struct BranchPrediction : BranchInfo
+struct BranchPrediction
 {
+    BranchInfo branch;
     bool valid{false};
     bool taken{false};
     bool baseTaken{false};
@@ -141,17 +142,15 @@ struct BranchPrediction : BranchInfo
 
     BranchPrediction() = default;
     BranchPrediction(const BranchInfo &branch)
-        : BranchInfo(branch), valid(true)
+        : branch(branch), valid(true)
     {}
     BranchPrediction(const BTBEntry &entry)
-        : BranchInfo(entry), valid(entry.valid),
-          taken(!entry.isCond || entry.ctr >= 0),
+        : branch(entry.branch), valid(entry.valid),
+          taken(!entry.branch.isCond || entry.ctr >= 0),
           baseTaken(entry.ctr >= 0),
           baseStrong(std::abs(2 * entry.ctr + 1) == 5),
           source(entry.source)
     {}
-
-    BranchInfo getBranchInfo() const { return *this; }
 };
 
 /**
@@ -301,7 +300,7 @@ struct FetchTarget
         predictedBranchPCs.reserve(entries.size());
         for (const auto &entry : entries) {
             if (entry.valid) {
-                predictedBranchPCs.push_back(entry.pc);
+                predictedBranchPCs.push_back(entry.branch.pc);
             }
         }
     }
@@ -466,7 +465,7 @@ struct PreparedUpdate
         const auto &primary = selected != sortedBranches.end() ?
             *selected : sortedBranches.back();
         return ControlFlowOutcome{
-            primary, primary.taken, primary.mispredicted, true
+            primary.branch, primary.taken, primary.mispredicted, true
         };
     }
 };
@@ -510,7 +509,7 @@ struct FullBTBPrediction
     {
         // Keep the not-taken prefix for speculative history updates.
         for (const auto &entry : btbEntries) {
-            if (entry.valid && (!entry.isCond || entry.taken)) {
+            if (entry.valid && (!entry.branch.isCond || entry.taken)) {
                 return entry;
             }
         }
@@ -530,7 +529,7 @@ struct FullBTBPrediction
         Addr target;
         const auto &entry = getTakenEntry();
         if (entry.valid) { // found a taken entry
-            target = entry.target;
+            target = entry.branch.target;
         } else {
             target = getFallThrough(predictWidth);
         }
@@ -539,7 +538,7 @@ struct FullBTBPrediction
 
     Addr getEnd(Addr predictWidth) {
         if (isTaken()) {
-            return getTakenEntry().getEnd();
+            return getTakenEntry().branch.getEnd();
         } else {
             return getFallThrough(predictWidth);
         }
@@ -547,7 +546,7 @@ struct FullBTBPrediction
 
 
     Addr controlAddr() {
-        return getTakenEntry().pc;
+        return getTakenEntry().branch.pc;
     }
 
     std::pair<bool, OverrideReason> match(FullBTBPrediction &other, Addr predictWidth)
@@ -581,7 +580,7 @@ struct FullBTBPrediction
             if (!entry.valid) {
                 continue;
             }
-            if (!entry.isCond) {
+            if (!entry.branch.isCond) {
                 break;
             }
             ++update.shamt;
@@ -598,7 +597,7 @@ struct FullBTBPrediction
         auto update = getGHistUpdate();
         if (update.taken) {
             const auto entry = getTakenEntry();
-            update.taken = entry.target < entry.pc;
+            update.taken = entry.branch.target < entry.branch.pc;
         }
         return update;
     }
@@ -609,8 +608,8 @@ struct FullBTBPrediction
         const auto &entry = getTakenEntry();
         if (entry.valid) {
             update.taken = true;
-            update.pc = entry.pc;
-            update.target = entry.target;
+            update.pc = entry.branch.pc;
+            update.target = entry.branch.target;
         }
         return update;
     }

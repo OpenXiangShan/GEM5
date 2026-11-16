@@ -435,7 +435,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
 
     if (predsOfEachStage[0].btbEntries.size() != 0) {
         for (auto entry : predsOfEachStage[0].btbEntries){
-            if (entry.isIndirect || entry.isDirect || entry.baseTaken) {
+            if (entry.branch.isIndirect || entry.branch.isDirect || entry.baseTaken) {
                 finalPred.s1Source = entry.source;
                 break;
             }
@@ -446,9 +446,9 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     bool na_s3_taken_but_have_cond = false;
 
     for (BranchPrediction entry : predsOfEachStage[2].btbEntries) {
-        if (entry.isDirect || entry.isIndirect || entry.baseTaken) {
+        if (entry.branch.isDirect || entry.branch.isIndirect || entry.baseTaken) {
             found_s3_taken = true;
-        }else if (entry.isCond){
+        }else if (entry.branch.isCond){
             //only use when there's no taken prediction in s3
             na_s3_taken_but_have_cond = true;
         }
@@ -457,11 +457,11 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     if (found_s3_taken) {
         auto pred_taken_entry = finalPred.getTakenEntry();
         if (pred_taken_entry.valid) {
-            if (pred_taken_entry.isReturn) {
+            if (pred_taken_entry.branch.isReturn) {
                 finalPred.s3Source = ras->getComponentIdx();
-            } else if (pred_taken_entry.isIndirect && ittage->tageHit(tid)) {
+            } else if (pred_taken_entry.branch.isIndirect && ittage->tageHit(tid)) {
                 finalPred.s3Source = ittage->getComponentIdx();
-            }else if (pred_taken_entry.isCond) {
+            }else if (pred_taken_entry.branch.isCond) {
                 finalPred.s3Source = tage->getComponentIdx();
             } else {
                 finalPred.s3Source = mbtb->getComponentIdx();
@@ -1092,7 +1092,7 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
 
     // Set branch info for taken predictions
     if (taken) {
-        entry.predBranchInfo = pred.getTakenEntry().getBranchInfo();
+        entry.predBranchInfo = pred.getTakenEntry().branch;
     }
 
     // Record current history and prediction metadata

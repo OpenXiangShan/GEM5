@@ -267,19 +267,19 @@ BTBTAGEUpperBound::notePredictionResult(
     std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs) const
 {
     btbEntry.taken = pred.taken;
-    tageInfoForMgscs[btbEntry.pc].tage_pred_taken = pred.taken;
-    tageInfoForMgscs[btbEntry.pc].tage_main_taken =
+    tageInfoForMgscs[btbEntry.branch.pc].tage_pred_taken = pred.taken;
+    tageInfoForMgscs[btbEntry.branch.pc].tage_main_taken =
         pred.mainInfo.found ? pred.mainInfo.taken() : false;
-    tageInfoForMgscs[btbEntry.pc].tage_pred_conf_high =
+    tageInfoForMgscs[btbEntry.branch.pc].tage_pred_conf_high =
         pred.mainInfo.found && abs(pred.mainInfo.entry.counter * 2 + 1) == 7;
-    tageInfoForMgscs[btbEntry.pc].tage_pred_conf_mid =
+    tageInfoForMgscs[btbEntry.branch.pc].tage_pred_conf_mid =
         pred.mainInfo.found &&
         (abs(pred.mainInfo.entry.counter * 2 + 1) < 7 &&
          abs(pred.mainInfo.entry.counter * 2 + 1) > 1);
-    tageInfoForMgscs[btbEntry.pc].tage_pred_conf_low =
+    tageInfoForMgscs[btbEntry.branch.pc].tage_pred_conf_low =
         !pred.mainInfo.found ||
         (abs(pred.mainInfo.entry.counter * 2 + 1) <= 1);
-    tageInfoForMgscs[btbEntry.pc].tage_pred_alt_diff =
+    tageInfoForMgscs[btbEntry.branch.pc].tage_pred_alt_diff =
         pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
 }
 
@@ -304,15 +304,15 @@ BTBTAGEUpperBound::putPCHistory(Addr startAddr, const bitset &history,
         stagePred.tageInfoForMgscs.clear();
 
         for (auto &btbEntry : stagePred.btbEntries) {
-            if (!(btbEntry.isCond && btbEntry.valid)) {
+            if (!(btbEntry.branch.isCond && btbEntry.valid)) {
                 continue;
             }
 
             BranchPredictionMeta branchMeta;
             auto pred = lookupExactPrediction(
-                btbEntry, btbEntry.baseTaken, ubMeta->historyWords, &branchMeta);
-            ubMeta->preds[btbEntry.pc] = pred;
-            ubMeta->branchMeta[btbEntry.pc] = branchMeta;
+                btbEntry.branch, btbEntry.baseTaken, ubMeta->historyWords, &branchMeta);
+            ubMeta->preds[btbEntry.branch.pc] = pred;
+            ubMeta->branchMeta[btbEntry.branch.pc] = branchMeta;
             tageStats.updateStatsWithTagePrediction(pred, true);
             notePredictionResult(btbEntry, pred, stagePred.tageInfoForMgscs);
         }
@@ -506,10 +506,10 @@ BTBTAGEUpperBound::update(
 
     bool hasStoredVsActualDiff = false;
     for (const auto &branch : update.branches) {
-        if (!branch.isCond) {
+        if (!branch.branch.isCond) {
             continue;
         }
-        auto btbEntry = BranchInfo(branch);
+        auto btbEntry = branch.branch;
         auto predIt = predMeta->preds.find(btbEntry.pc);
         auto metaIt = predMeta->branchMeta.find(btbEntry.pc);
         if (predIt == predMeta->preds.end() ||

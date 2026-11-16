@@ -217,7 +217,7 @@ MicroTAGE::generateSinglePrediction(const BranchPrediction &btb_entry,
                                  std::shared_ptr<TageMeta> predMeta,
                                  ThreadID tid,
                                  uint8_t asidHash) {
-    DPRINTF(UTAGE, "generateSinglePrediction for btbEntry: %#lx\n", btb_entry.pc);
+    DPRINTF(UTAGE, "generateSinglePrediction for btbEntry: %#lx\n", btb_entry.branch.pc);
     const auto &state = historyState(tid);
 
     bool provided = false;
@@ -225,7 +225,7 @@ MicroTAGE::generateSinglePrediction(const BranchPrediction &btb_entry,
 
     // Search from highest to lowest table for matches
     // Calculate branch position within the block (like RTL's cfiPosition)
-    unsigned position = getBranchIndexInBlock(btb_entry.pc, startPC);
+    unsigned position = getBranchIndexInBlock(btb_entry.branch.pc, startPC);
 
     for (int i = numPredictors - 1; i >= 0; --i) {
         // Calculate index and tag: use snapshot if provided, otherwise use current folded history
@@ -256,7 +256,7 @@ MicroTAGE::generateSinglePrediction(const BranchPrediction &btb_entry,
                 // Do not use LRU; keep logic simple and align with CBP-style replacement
 
                 DPRINTF(UTAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
-                    i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, btb_entry.pc, position);
+                    i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, btb_entry.branch.pc, position);
                 break;  // only one way can be matched, avoid multi-hit, TODO: RTL behavior?
             }
         }
@@ -269,7 +269,7 @@ MicroTAGE::generateSinglePrediction(const BranchPrediction &btb_entry,
             }
         } else {
             DPRINTF(UTAGE, "miss table %d[%lu] for tag %lu (with pos %u), btb_pc %#lx\n",
-                i, index, tag, position, btb_entry.pc);
+                i, index, tag, position, btb_entry.branch.pc);
         }
     }
 
@@ -279,11 +279,11 @@ MicroTAGE::generateSinglePrediction(const BranchPrediction &btb_entry,
 
     bool taken = provided ? main_taken : base_pred;
 
-    DPRINTF(UTAGE, "tage predict %#lx taken %d\n", btb_entry.pc, taken);
+    DPRINTF(UTAGE, "tage predict %#lx taken %d\n", btb_entry.branch.pc, taken);
     DPRINTF(UTAGE, "tage main provided %d ? main_taken %d : base_taken %d\n",
             provided, main_taken, base_pred);
 
-    return TagePrediction(btb_entry.pc, main_info, provided, taken, base_pred);
+    return TagePrediction(btb_entry.branch.pc, main_info, provided, taken, base_pred);
 }
 
 /**
@@ -301,10 +301,10 @@ MicroTAGE::lookupHelper(const Addr &startPC, std::vector<BranchPrediction> &btbE
     // Process each BTB entry to make predictions
     for (auto &btb_entry : btbEntries) {
         // Only predict for valid conditional branches
-        if (btb_entry.isCond && btb_entry.valid && isAbtbEntry(btb_entry)) {
+        if (btb_entry.branch.isCond && btb_entry.valid && isAbtbEntry(btb_entry)) {
             auto pred = generateSinglePrediction(btb_entry, startPC, nullptr,
                                                  tid, asidHash);
-            threadMeta[tid]->preds[btb_entry.pc] = pred;
+            threadMeta[tid]->preds[btb_entry.branch.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
             btb_entry.taken = pred.taken;
         }
@@ -409,7 +409,7 @@ MicroTAGE::refreshPredictionMeta(Addr startPC,
     meta->abtbEntries = getAbtbConditionalEntries(pred.btbEntries);
 
     for (const auto &btb_entry : meta->abtbEntries) {
-        meta->preds[btb_entry.pc] = generateSinglePrediction(
+        meta->preds[btb_entry.branch.pc] = generateSinglePrediction(
             btb_entry, startPC, nullptr, tid, pred.asidHash);
     }
 
@@ -432,7 +432,7 @@ MicroTAGE::getAbtbConditionalEntries(const std::vector<BranchPrediction> &btbEnt
 {
     std::vector<BranchPrediction> entries;
     for (const auto &entry : btbEntries) {
-        if (entry.valid && entry.isCond && isAbtbEntry(entry)) {
+        if (entry.valid && entry.branch.isCond && isAbtbEntry(entry)) {
             entries.push_back(entry);
         }
     }
@@ -448,21 +448,21 @@ MicroTAGE::prepareS3UpdateEntriesFromAbtbMeta(
     auto taken_entry = s3Pred.getTakenEntry();
 
     for (const auto &entry : abtbEntries) {
-        if (!entry.valid || !entry.isCond) {
+        if (!entry.valid || !entry.branch.isCond) {
             continue;
         }
 
-        if (taken_entry.valid && entry.pc > taken_entry.pc) {
+        if (taken_entry.valid && entry.branch.pc > taken_entry.branch.pc) {
             break;
         }
 
         const bool actual_taken =
-            taken_entry.valid && taken_entry.isCond &&
-            entry.pc == taken_entry.pc;
+            taken_entry.valid && taken_entry.branch.isCond &&
+            entry.branch.pc == taken_entry.branch.pc;
         entries.push_back(entry);
         entries.back().taken = actual_taken;
 
-        if (taken_entry.valid && entry.pc == taken_entry.pc) {
+        if (taken_entry.valid && entry.branch.pc == taken_entry.branch.pc) {
             break;
         }
     }
@@ -722,7 +722,7 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
     };
 
     // Calculate branch position within the block (like RTL's cfiPosition)
-    unsigned position = getBranchIndexInBlock(entry.pc, startPC);
+    unsigned position = getBranchIndexInBlock(entry.branch.pc, startPC);
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
         Addr newIndex = getTageIndex(
@@ -740,8 +740,8 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
             if (!cand.valid || (!cand.useful && weakish)) {
                 short newCounter = actual_taken ? 0 : -1;
                 DPRINTF(UTAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
-                        ti, newIndex, way, newTag, position, newCounter, entry.pc);
-                cand = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
+                        ti, newIndex, way, newTag, position, newCounter, entry.branch.pc);
+                cand = TageEntry(newTag, newCounter, entry.branch.pc); // u = 0 default
                 count_alloc_success();
                 allocated_table = ti;
                 allocated_index = newIndex;
@@ -928,14 +928,14 @@ MicroTAGE::trainEntries(const std::vector<TrainingEntry> &entries_to_update,
                     btb_entry, startPC, predMeta, tid, asidHash);
             }
 
-            auto pred_it = predMeta->preds.find(btb_entry.pc);
+            auto pred_it = predMeta->preds.find(btb_entry.branch.pc);
             if (pred_it != predMeta->preds.end()) {
                 return pred_it->second;
             }
 
             DPRINTF(UTAGE,
                     "%s: missing predMeta entry for pc %#lx, recompute with snapshot\n",
-                    context, btb_entry.pc);
+                    context, btb_entry.branch.pc);
             return generateSinglePrediction(
                 btb_entry, startPC, predMeta, tid, asidHash);
         };
@@ -1021,11 +1021,11 @@ MicroTAGE::trainResolvedEntries(
     std::vector<TrainingEntry> entries;
     entries.reserve(update.branches.size());
     for (const auto &branch : update.branches) {
-        if (!branch.isCond) {
+        if (!branch.branch.isCond) {
             continue;
         }
-        auto entry = BranchPrediction(branch);
-        auto pred = predMeta->preds.find(entry.pc);
+        auto entry = BranchPrediction(branch.branch);
+        auto pred = predMeta->preds.find(entry.branch.pc);
         if (pred == predMeta->preds.end()) {
             continue;
         }
@@ -1481,7 +1481,7 @@ void
 MicroTAGE::commitBranch(const PredictionUpdateContext &context,
                         const BranchOutcome &outcome)
 {
-    if (!outcome.isCond) {
+    if (!outcome.branch.isCond) {
         // tage only deals with conditional branches
         return;
     }
@@ -1491,7 +1491,7 @@ MicroTAGE::commitBranch(const PredictionUpdateContext &context,
         DPRINTF(UTAGE, "commitBranch: no prediction meta, skip\n");
         return;
     }
-    auto pc = outcome.pc;
+    auto pc = outcome.branch.pc;
     auto it = meta->preds.find(pc);
     bool pred_taken = false;
     bool pred_hit = false;

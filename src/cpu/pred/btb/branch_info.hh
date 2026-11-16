@@ -24,40 +24,30 @@ enum BranchType
     BR_DIRECT_RET=7
 };
 
-/** Shared branch classification. Conditional and direct may both be true. */
-struct BranchAttribute
+/** Branch identity, destination and classification shared by BPU records. */
+struct BranchInfo
 {
+    Addr pc = 0;
+    Addr target = 0;
+    uint8_t size = 0;
+    // Conditional and direct may both be true.
     bool isCond = false;
     bool isIndirect = false;
     bool isDirect = false;
     bool isCall = false;
     bool isReturn = false;
 
-    bool isUncond() const { return !isCond; }
-};
-
-/** Branch identity and destination, independent of prediction or execution. */
-struct BranchInfo : BranchAttribute
-{
-    Addr pc = 0;
-    Addr target = 0;
-    uint8_t size = 0;
-
     BranchInfo() = default;
-    BranchInfo(Addr pc, Addr target, const BranchAttribute &attribute,
-               uint8_t size)
-        : BranchAttribute(attribute), pc(pc), target(target), size(size)
-    {}
-
     BranchInfo(const Addr &control_pc, const Addr &target_pc,
                const StaticInstPtr &inst, unsigned size)
-        : BranchInfo(control_pc, target_pc,
-                     BranchAttribute{inst->isCondCtrl(), inst->isIndirectCtrl(),
-                         inst->isDirectCtrl(), inst->isCall(),
-                         inst->isReturn() && !inst->isNonSpeculative() &&
-                             !inst->isDirectCtrl()}, size)
+        : pc(control_pc), target(target_pc), size(size),
+          isCond(inst->isCondCtrl()), isIndirect(inst->isIndirectCtrl()),
+          isDirect(inst->isDirectCtrl()), isCall(inst->isCall()),
+          isReturn(inst->isReturn() && !inst->isNonSpeculative() &&
+                   !inst->isDirectCtrl())
     {}
 
+    bool isUncond() const { return !isCond; }
     Addr getEnd() const { return pc + size; }
     int getType() const {
         if (isCond) {
@@ -87,26 +77,6 @@ struct BranchInfo : BranchAttribute
                 }
             }
         }
-    }
-
-    bool operator < (const BranchInfo &other) const
-    {
-        return this->pc < other.pc;
-    }
-
-    bool operator == (const BranchInfo &other) const
-    {
-        return this->pc == other.pc;
-    }
-
-    bool operator > (const BranchInfo &other) const
-    {
-        return this->pc > other.pc;
-    }
-
-    bool operator != (const BranchInfo &other) const
-    {
-        return this->pc != other.pc;
     }
 };
 

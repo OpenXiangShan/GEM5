@@ -21,11 +21,12 @@ using FetchTargetId = uint64_t;
 
 /**
  * Actual execution facts for one dynamic control-flow instruction.
- * Inherited target is the branch destination even when a conditional falls
+ * branch.target is the branch destination even when a conditional falls
  * through; it is not necessarily the selected next PC.
  */
-struct BranchOutcome : BranchInfo
+struct BranchOutcome
 {
+    BranchInfo branch;
     ThreadID tid = 0;
     FetchTargetId ftqId = 0;
     InstSeqNum seqNum = 0;
@@ -35,10 +36,9 @@ struct BranchOutcome : BranchInfo
     BranchOutcome() = default;
     BranchOutcome(ThreadID tid, FetchTargetId ftqId, InstSeqNum seqNum,
                   const BranchInfo &branch, bool taken, bool mispredicted)
-        : BranchInfo(branch), tid(tid), ftqId(ftqId), seqNum(seqNum),
+        : branch(branch), tid(tid), ftqId(ftqId), seqNum(seqNum),
           taken(taken), mispredicted(mispredicted)
     {}
-
 };
 
 /** Actual committed contents of one complete FetchTarget. */

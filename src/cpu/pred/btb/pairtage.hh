@@ -67,12 +67,12 @@ class PairTAGE : public TimedBaseBTBPredictor
         // is valid, and falls through to targetPC otherwise.
         PTAGEBlockInfo(const BranchPrediction &exit, Addr targetPC)
             : directionCounter(exit.valid ? 0 : -1),
-              branchPC(exit.valid ? exit.pc : 0), targetPC(targetPC),
-              isCond(exit.valid && exit.isCond),
-              isDirect(exit.valid && exit.isDirect),
-              isIndirect(exit.valid && exit.isIndirect),
-              isCall(exit.valid && exit.isCall),
-              isReturn(exit.valid && exit.isReturn)
+              branchPC(exit.valid ? exit.branch.pc : 0), targetPC(targetPC),
+              isCond(exit.valid && exit.branch.isCond),
+              isDirect(exit.valid && exit.branch.isDirect),
+              isIndirect(exit.valid && exit.branch.isIndirect),
+              isCall(exit.valid && exit.branch.isCall),
+              isReturn(exit.valid && exit.branch.isReturn)
         {}
 
         bool taken() const { return directionCounter >= 0; }
@@ -123,7 +123,7 @@ class PairTAGE : public TimedBaseBTBPredictor
             : valid(true), b2Valid(false), tag(tag), useful(false),
               confidence(0), block(exit, targetPC)
         {
-            modelInfo.branchSize = exit.valid ? exit.size : 0;
+            modelInfo.branchSize = exit.valid ? exit.branch.size : 0;
         }
     };
 

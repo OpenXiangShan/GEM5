@@ -111,8 +111,8 @@ BTBRAS::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
     auto top = getTop_meta(tid);
     for (int i = getDelay(); i < stagePreds.size(); i++) {
         for (auto &entry : stagePreds[i].btbEntries) {
-            if (entry.isIndirect && entry.isReturn) {
-                entry.target = top.retAddr;
+            if (entry.branch.isIndirect && entry.branch.isReturn) {
+                entry.branch.target = top.retAddr;
             }
         }
     }
@@ -153,9 +153,9 @@ BTBRAS::specUpdateState(FullBTBPrediction &pred)
     assert(state.meta);
     // do push & pops on prediction
     auto takenEntry = pred.getTakenEntry();
-    DPRINTFR(RAS, "Do specUpdate for PC %lx pred target %lx ", pred.bbStart, pred.getTakenEntry().target);
+    DPRINTFR(RAS, "Do specUpdate for PC %lx pred target %lx ", pred.bbStart, pred.getTakenEntry().branch.target);
 
-    if ((takenEntry.isCall || takenEntry.isReturn) &&
+    if ((takenEntry.branch.isCall || takenEntry.branch.isReturn) &&
         inflightNearOverflow(state)) {
         rasStats.SpecUpdatesBlockedNearOverflow++;
         DPRINTF(RAS, "Block speculative RAS update near inflight overflow\n");
@@ -163,22 +163,22 @@ BTBRAS::specUpdateState(FullBTBPrediction &pred)
     }
 
     // RISC-V JALR PopAndPush has both flags set; pop first to retain the new return address.
-    if (takenEntry.isReturn) {
+    if (takenEntry.branch.isReturn) {
         // do pop
         pop(tid);
     }
-    if (takenEntry.isCall) {
-        Addr retAddr = takenEntry.pc + takenEntry.size;
+    if (takenEntry.branch.isCall) {
+        Addr retAddr = takenEntry.branch.pc + takenEntry.branch.size;
         push(tid, retAddr);
     }
-    if (takenEntry.isCall) {
-        DPRINTFR(RAS, "IsCall spec PC %lx\n", takenEntry.pc);
+    if (takenEntry.branch.isCall) {
+        DPRINTFR(RAS, "IsCall spec PC %lx\n", takenEntry.branch.pc);
     }
-    if (takenEntry.isReturn) {
-        DPRINTFR(RAS, "IsRet spec PC %lx\n", takenEntry.pc);
+    if (takenEntry.branch.isReturn) {
+        DPRINTFR(RAS, "IsRet spec PC %lx\n", takenEntry.branch.pc);
     }
     
-    if (takenEntry.isCall || takenEntry.isReturn)
+    if (takenEntry.branch.isCall || takenEntry.branch.isReturn)
         printStack("after specUpdateState", tid);
     DPRINTFR(RAS, "meta TOSR %lld TOSW %lld\n",
              static_cast<long long>(state.meta->TOSR),
@@ -532,13 +532,13 @@ void
 BTBRAS::commitBranch(const PredictionUpdateContext &context,
                      const BranchOutcome &outcome)
 {
-    if (!outcome.isReturn) {
+    if (!outcome.branch.isReturn) {
         // ras only cares about return instructions
         return;
     }
     auto meta = std::static_pointer_cast<RASMeta>(
         context.predMetas[getComponentIdx()]);
-    auto npc = outcome.target;
+    auto npc = outcome.branch.target;
     if (npc != meta->target) {
         rasStats.PredWrong++;
         if (meta->sctr) {

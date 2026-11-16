@@ -96,7 +96,7 @@ findCondTaken(const std::vector<BranchPrediction> &entries, Addr pc)
 {
     const auto it = std::find_if(entries.begin(), entries.end(),
         [pc](const auto &entry) {
-            return entry.valid && entry.isCond && entry.pc == pc;
+            return entry.valid && entry.branch.isCond && entry.branch.pc == pc;
         });
     return it == entries.end() ? std::make_pair(false, false) :
                                std::make_pair(true, it->taken);
@@ -114,10 +114,10 @@ findIndirectTarget(const std::vector<BranchPrediction> &entries, Addr pc)
 {
     const auto it = std::find_if(entries.begin(), entries.end(),
         [pc](const auto &entry) {
-            return entry.valid && entry.isIndirect && entry.pc == pc;
+            return entry.valid && entry.branch.isIndirect && entry.branch.pc == pc;
         });
     return it == entries.end() ? std::make_pair(false, Addr(0)) :
-                               std::make_pair(true, it->target);
+                               std::make_pair(true, it->branch.target);
 }
 
 /**
@@ -182,8 +182,8 @@ void verifyPrediction(const std::vector<FullBTBPrediction>& stagePreds,
     for (int i = delay; i < stagePreds.size(); i++) {
         ASSERT_EQ(stagePreds[i].btbEntries.size(), expectedEntries.size());
         for (size_t j = 0; j < expectedEntries.size(); j++) {
-            EXPECT_EQ(stagePreds[i].btbEntries[j].pc, expectedEntries[j].pc);
-            EXPECT_EQ(stagePreds[i].btbEntries[j].target, expectedEntries[j].target);
+            EXPECT_EQ(stagePreds[i].btbEntries[j].branch.pc, expectedEntries[j].pc);
+            EXPECT_EQ(stagePreds[i].btbEntries[j].branch.target, expectedEntries[j].target);
         }
     }
 }
@@ -277,7 +277,7 @@ TEST_F(BTBTest, TidPartitionKeepsSamePcEntriesIndependent) {
             startPC, boost::dynamic_bitset<>(8, 0), predictions);
 
         ASSERT_EQ(predictions[partitionedBtb.getDelay()].btbEntries.size(), 1);
-        EXPECT_EQ(predictions[partitionedBtb.getDelay()].btbEntries[0].target,
+        EXPECT_EQ(predictions[partitionedBtb.getDelay()].btbEntries[0].branch.target,
                   tid == 0 ? thread0Branch.target : thread1Branch.target);
     }
 }
@@ -321,10 +321,10 @@ TEST_F(BTBTest, PrivateVictimCachesKeepSamePcTargetsIndependent)
         const auto &predictedEntries = predictions[btb.getDelay()].btbEntries;
         ASSERT_EQ(predictedEntries.size(), entries.size());
         for (unsigned i = 0; i < entries.size(); ++i) {
-            EXPECT_EQ(entries[i].pc, startPC + i * 4);
+            EXPECT_EQ(entries[i].branch.pc, startPC + i * 4);
             const Addr expected = (tid == 0 ? 0x4000 : 0x3000) + i * 16;
-            EXPECT_EQ(entries[i].target, expected);
-            EXPECT_EQ(predictedEntries[i].target, expected);
+            EXPECT_EQ(entries[i].branch.target, expected);
+            EXPECT_EQ(predictedEntries[i].branch.target, expected);
         }
     }
 }
@@ -357,8 +357,8 @@ TEST_F(BTBTest, PrivateVictimCacheReplacementDoesNotEvictOtherThread)
             const auto entries = btb.getPredictedEntriesNoSideEffect(
                 pc, tid, 0);
             ASSERT_EQ(entries.size(), 1) << "tid=" << tid << " i=" << i;
-            EXPECT_EQ(entries[0].pc, pc);
-            EXPECT_EQ(entries[0].target,
+            EXPECT_EQ(entries[0].branch.pc, pc);
+            EXPECT_EQ(entries[0].branch.target,
                       0x10000 + tid * 0x10000 + i * 64);
         }
     }
@@ -474,14 +474,14 @@ TEST_F(BTBTest, ActualBranchAttributesReplaceExistingEntry)
         predictUpdateCycle(mbtb, start_pc, actual_branch, false);
     const auto &entries = predictions[mbtb->getDelay()].btbEntries;
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].pc, actual_branch.pc);
-    EXPECT_EQ(entries[0].target, actual_branch.target);
-    EXPECT_EQ(entries[0].size, actual_branch.size);
-    EXPECT_TRUE(entries[0].isCond);
-    EXPECT_TRUE(entries[0].isDirect);
-    EXPECT_FALSE(entries[0].isIndirect);
-    EXPECT_FALSE(entries[0].isCall);
-    EXPECT_FALSE(entries[0].isReturn);
+    EXPECT_EQ(entries[0].branch.pc, actual_branch.pc);
+    EXPECT_EQ(entries[0].branch.target, actual_branch.target);
+    EXPECT_EQ(entries[0].branch.size, actual_branch.size);
+    EXPECT_TRUE(entries[0].branch.isCond);
+    EXPECT_TRUE(entries[0].branch.isDirect);
+    EXPECT_FALSE(entries[0].branch.isIndirect);
+    EXPECT_FALSE(entries[0].branch.isCall);
+    EXPECT_FALSE(entries[0].branch.isReturn);
     EXPECT_EQ(entries[0].baseTaken, false);
     ASSERT_EQ(mbtb->predictionStorageEntries().size(), 1);
     EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, -1);
@@ -512,8 +512,8 @@ TEST_F(BTBTest, ActualBranchUpdatePreservesLiveCounter)
     EXPECT_EQ(entries[0].baseTaken, true);
     ASSERT_EQ(mbtb->predictionStorageEntries().size(), 1);
     EXPECT_EQ(mbtb->predictionStorageEntries()[0].ctr, 0);
-    EXPECT_EQ(entries[0].target, actual_branch.target);
-    EXPECT_EQ(entries[0].size, actual_branch.size);
+    EXPECT_EQ(entries[0].branch.target, actual_branch.target);
+    EXPECT_EQ(entries[0].branch.size, actual_branch.size);
 }
 
 // Test counter saturation behavior, for mBTB
@@ -643,17 +643,17 @@ TEST(PreparedUpdateTest, SortsAndKeepsActualBranches)
     auto branch_b = BTBEntry(createBranchInfo(0x1004, 0x2000, true));
 
     std::vector<BranchOutcome> events = {
-        createResolveEvent(0, 0, 2, branch_b, true, true),
-        createResolveEvent(0, 0, 1, branch_a, false, false)
+        createResolveEvent(0, 0, 2, branch_b.branch, true, true),
+        createResolveEvent(0, 0, 1, branch_a.branch, false, false)
     };
     PreparedUpdate update(events);
     ASSERT_EQ(update.branches.size(), 2);
-    EXPECT_EQ(update.branches[0].pc, branch_a.pc);
-    EXPECT_EQ(update.branches[1].pc, branch_b.pc);
+    EXPECT_EQ(update.branches[0].branch.pc, branch_a.branch.pc);
+    EXPECT_EQ(update.branches[1].branch.pc, branch_b.branch.pc);
     EXPECT_FALSE(update.branches[0].taken);
     EXPECT_TRUE(update.branches[1].taken);
     EXPECT_TRUE(update.branches[1].mispredicted);
-    EXPECT_EQ(update.branches[1].target, branch_b.target);
+    EXPECT_EQ(update.branches[1].branch.target, branch_b.branch.target);
 }
 
 TEST(PreparedUpdateTest, NotTakenBranchUsesActualBranchFacts)
@@ -673,9 +673,9 @@ TEST(PreparedUpdateTest, NotTakenBranchUsesActualBranchFacts)
     const auto update = createPreparedUpdate(target, actualBranch, false, true);
     ASSERT_EQ(update.branches.size(), 1);
     EXPECT_FALSE(update.branches[0].taken);
-    EXPECT_EQ(update.branches[0].target, 0x1008);
-    EXPECT_TRUE(update.branches[0].isCond);
-    EXPECT_FALSE(update.branches[0].isIndirect);
+    EXPECT_EQ(update.branches[0].branch.target, 0x1008);
+    EXPECT_TRUE(update.branches[0].branch.isCond);
+    EXPECT_FALSE(update.branches[0].branch.isIndirect);
 }
 
 TEST(PreparedUpdateTest, ResolveEventsOverrideStaleFtqOutcome)
@@ -706,11 +706,11 @@ TEST(PreparedUpdateTest, ResolveEventsOverrideStaleFtqOutcome)
     EXPECT_EQ(update.outcome.branch.pc, resolved_b.pc);
     ASSERT_EQ(update.branches.size(), 2);
     EXPECT_FALSE(update.branches[0].taken);
-    EXPECT_TRUE(update.branches[0].isCond);
-    EXPECT_FALSE(update.branches[0].isIndirect);
-    EXPECT_EQ(update.branches[0].target, resolved_a.target);
+    EXPECT_TRUE(update.branches[0].branch.isCond);
+    EXPECT_FALSE(update.branches[0].branch.isIndirect);
+    EXPECT_EQ(update.branches[0].branch.target, resolved_a.target);
     EXPECT_TRUE(update.branches[1].taken);
-    EXPECT_EQ(update.branches[1].target, 0x4000);
+    EXPECT_EQ(update.branches[1].branch.target, 0x4000);
 
 }
 
@@ -769,7 +769,7 @@ TEST(PreparedUpdateTest, KeepsUnpredictedActualBranches)
     auto update = createPreparedUpdate(target, branch, false, true);
 
     ASSERT_EQ(update.branches.size(), 1);
-    EXPECT_EQ(update.branches.front().pc, branch.pc);
+    EXPECT_EQ(update.branches.front().branch.pc, branch.pc);
     EXPECT_FALSE(update.branches.front().taken);
 }
 
@@ -794,7 +794,7 @@ TEST_F(BTBTest, UnpredictedTakenBranchAllocates)
     stage_preds.assign(4, FullBTBPrediction());
     mbtb->putPCHistory(start_pc, history, stage_preds);
     ASSERT_EQ(stage_preds[mbtb->getDelay()].btbEntries.size(), 1);
-    EXPECT_EQ(stage_preds[mbtb->getDelay()].btbEntries.front().pc,
+    EXPECT_EQ(stage_preds[mbtb->getDelay()].btbEntries.front().branch.pc,
               actual_branch.pc);
 }
 

@@ -7,7 +7,7 @@ bubbles, and enqueues FetchTargets for instruction fetch.
 
 | Type | Responsibility |
 |---|---|
-| `BranchAttribute` / `BranchInfo` | Shared classification, PC, destination and instruction size |
+| `BranchInfo` | Shared classification, PC, destination and instruction size |
 | `BTBEntry` | Component storage, including counter, tag and validity |
 | `BranchPrediction` | Candidate direction, final target, base direction/strength and source |
 | `FullBTBPrediction` | One stage's ordered candidates and TAGE information for MGSC |
@@ -15,8 +15,11 @@ bubbles, and enqueues FetchTargets for instruction fetch.
 | `FetchTarget` | Prediction/history snapshots, component metadata and execution facts |
 
 `FullBTBPrediction::btbEntries` contains `BranchPrediction` objects ordered by PC.
-Each candidate carries `taken` and a single `target`. BTB lookup initializes
-the target; ITTAGE or RAS refines it in place. ITTAGE falls back to its input
+The storage, prediction and execution records each contain a `BranchInfo branch`
+value; they do not inherit fields or comparison operators. `branch.pc` comparisons
+are explicit at identity lookups. Each candidate carries `taken` and a single
+`branch.target`. BTB lookup initializes the target; ITTAGE or RAS refines it in
+place. ITTAGE falls back to its input
 candidate target on a miss. S3 fast-training of uBTB, AheadBTB and PairTAGE
 consumes the final candidate target, matching RTL fastTrain. Component-local
 BTB storage and prediction metadata retain their own snapshots.

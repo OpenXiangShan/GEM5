@@ -2818,7 +2818,7 @@ Fetch::processResolveUpdates()
                 DPRINTF(Fetch,
                         "[tid:%i] Dropping resolved branch seq=%llu PC=%#lx "
                         "past squash cutoff=%llu\n",
-                        tid, resolved.seqNum, resolved.pc,
+                        tid, resolved.seqNum, resolved.branch.pc,
                         *resolveSquashCutoff[tid]);
             }
         }

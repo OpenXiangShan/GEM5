@@ -32,11 +32,11 @@ protected:
     BTBEntry createCallEntry(Addr pc, Addr target, unsigned size = 4) {
         BTBEntry entry;
         entry.valid = true;
-        entry.pc = pc;
-        entry.isCall = true;
-        entry.isReturn = false;
-        entry.size = size;
-        entry.target = target;
+        entry.branch.pc = pc;
+        entry.branch.isCall = true;
+        entry.branch.isReturn = false;
+        entry.branch.size = size;
+        entry.branch.target = target;
         return entry;
     }
 
@@ -44,11 +44,11 @@ protected:
     BTBEntry createReturnEntry(Addr pc, Addr target, unsigned size = 4) {
         BTBEntry entry;
         entry.valid = true;
-        entry.pc = pc;
-        entry.isCall = false;
-        entry.isReturn = true;
-        entry.size = size;
-        entry.target = target;
+        entry.branch.pc = pc;
+        entry.branch.isCall = false;
+        entry.branch.isReturn = true;
+        entry.branch.size = size;
+        entry.branch.target = target;
         return entry;
     }
 
@@ -74,8 +74,8 @@ protected:
         std::vector<FullBTBPrediction> stagePreds(4);
         BTBEntry ret;
         ret.valid = true;
-        ret.isIndirect = true;
-        ret.isReturn = true;
+        ret.branch.isIndirect = true;
+        ret.branch.isReturn = true;
         for (auto &stage : stagePreds) {
             stage.btbEntries.push_back(ret);
         }
@@ -102,15 +102,15 @@ protected:
 
     BranchOutcome createOutcome(const BranchInfo &branch, bool taken) {
         BranchOutcome outcome;
-        outcome.pc = branch.pc;
-        outcome.target = branch.target;
+        outcome.branch.pc = branch.pc;
+        outcome.branch.target = branch.target;
         outcome.taken = taken;
-        outcome.isCond = branch.isCond;
-        outcome.isIndirect = branch.isIndirect;
-        outcome.isDirect = branch.isDirect;
-        outcome.isCall = branch.isCall;
-        outcome.isReturn = branch.isReturn;
-        outcome.size = branch.size;
+        outcome.branch.isCond = branch.isCond;
+        outcome.branch.isIndirect = branch.isIndirect;
+        outcome.branch.isDirect = branch.isDirect;
+        outcome.branch.isCall = branch.isCall;
+        outcome.branch.isReturn = branch.isReturn;
+        outcome.branch.size = branch.size;
         return outcome;
     }
 

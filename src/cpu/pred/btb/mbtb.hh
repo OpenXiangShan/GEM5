@@ -182,14 +182,14 @@ class MBTB : public TimedBaseBTBPredictor
     }
 
     void printTickedBTBEntry(const TickedBTBEntry &e) {
-        printBTBEntry(e, e.tick);
+        printBTBEntry(e.branch, e.tick);
     }
 
     template<class Entry>
     void dumpBTBEntries(const std::vector<Entry> &es) {
         DPRINTF(BTB, "BTB entries:\n");
         for (const auto &entry : es) {
-            printBTBEntry(entry);
+            printBTBEntry(entry.branch);
         }
     }
 
@@ -348,11 +348,11 @@ class MBTB : public TimedBaseBTBPredictor
         Addr last = 0;
         bool misorder = false;
         for (auto &entry : es) {
-            if (entry.pc <= last) {
+            if (entry.branch.pc <= last) {
                 misorder = true;
                 break;
             }
-            last = entry.pc;
+            last = entry.branch.pc;
         }
         if (misorder) {
             panic("BTB entries are not in ascending order");

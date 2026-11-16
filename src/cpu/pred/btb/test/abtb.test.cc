@@ -38,12 +38,12 @@ makeBranchOutcome(bool taken, Addr brPc, Addr target, bool isCond,
                   int size = 4)
 {
     BranchOutcome outcome;
-    outcome.pc = brPc;
-    outcome.target = target;
+    outcome.branch.pc = brPc;
+    outcome.branch.target = target;
     outcome.taken = taken;
     outcome.mispredicted = false;
-    outcome.isCond = isCond;
-    outcome.size = size;
+    outcome.branch.isCond = isCond;
+    outcome.branch.size = size;
     return outcome;
 }
 
@@ -127,8 +127,8 @@ TEST_F(ABTBTest, BasicPredictionUpdateCycle){
     auto pred_B_test = makePrediction(startPC_B, abtb);
     EXPECT_EQ(pred_B_test.btbEntries.size(), 1);
     if (!pred_B_test.btbEntries.empty()) {
-        EXPECT_EQ(pred_B_test.btbEntries[0].pc, brPC_B);
-        EXPECT_EQ(pred_B_test.btbEntries[0].target, target_B);
+        EXPECT_EQ(pred_B_test.btbEntries[0].branch.pc, brPC_B);
+        EXPECT_EQ(pred_B_test.btbEntries[0].branch.target, target_B);
     }
 
 }
@@ -141,9 +141,9 @@ TEST_F(ABTBTest, ActualBranchAttributesReplaceExistingEntry)
     auto insert = createStream(start_pc, empty_pred, abtb);
     insert.previousPCs.push(previous_pc);
     auto old_branch = makeBranchOutcome(true, 0x2004, 0x3000, false);
-    old_branch.isIndirect = true;
-    old_branch.isCall = true;
-    old_branch.isReturn = true;
+    old_branch.branch.isIndirect = true;
+    old_branch.branch.isCall = true;
+    old_branch.branch.isReturn = true;
     updateABTB(insert, abtb, old_branch);
 
     clearAheadPipeline(abtb, 0);
@@ -153,8 +153,8 @@ TEST_F(ABTBTest, ActualBranchAttributesReplaceExistingEntry)
     auto stream = createStream(start_pc, old_pred, abtb);
     stream.previousPCs.push(previous_pc);
     auto actual_branch =
-        makeBranchOutcome(false, old_branch.pc, 0x4000, true, 2);
-    actual_branch.isDirect = true;
+        makeBranchOutcome(false, old_branch.branch.pc, 0x4000, true, 2);
+    actual_branch.branch.isDirect = true;
     updateABTB(stream, abtb, actual_branch);
 
     clearAheadPipeline(abtb, 0);
@@ -162,14 +162,14 @@ TEST_F(ABTBTest, ActualBranchAttributesReplaceExistingEntry)
     const auto prediction = makePrediction(start_pc, abtb);
     const auto &entries = prediction.btbEntries;
     ASSERT_EQ(entries.size(), 1);
-    EXPECT_EQ(entries[0].pc, actual_branch.pc);
-    EXPECT_EQ(entries[0].target, actual_branch.target);
-    EXPECT_EQ(entries[0].size, actual_branch.size);
-    EXPECT_TRUE(entries[0].isCond);
-    EXPECT_TRUE(entries[0].isDirect);
-    EXPECT_FALSE(entries[0].isIndirect);
-    EXPECT_FALSE(entries[0].isCall);
-    EXPECT_FALSE(entries[0].isReturn);
+    EXPECT_EQ(entries[0].branch.pc, actual_branch.branch.pc);
+    EXPECT_EQ(entries[0].branch.target, actual_branch.branch.target);
+    EXPECT_EQ(entries[0].branch.size, actual_branch.branch.size);
+    EXPECT_TRUE(entries[0].branch.isCond);
+    EXPECT_TRUE(entries[0].branch.isDirect);
+    EXPECT_FALSE(entries[0].branch.isIndirect);
+    EXPECT_FALSE(entries[0].branch.isCall);
+    EXPECT_FALSE(entries[0].branch.isReturn);
     EXPECT_EQ(entries[0].baseTaken, false);
     ASSERT_EQ(abtb->predictionStorageEntries().size(), 1);
     EXPECT_EQ(abtb->predictionStorageEntries()[0].ctr, -1);
@@ -198,8 +198,8 @@ TEST_F(ABTBTest, ActualBranchUpdatePreservesLiveCounter)
     updateABTB(stream, abtb, branch);
     auto actual_branch = branch;
     actual_branch.taken = false;
-    actual_branch.target = 0x4000;
-    actual_branch.size = 2;
+    actual_branch.branch.target = 0x4000;
+    actual_branch.branch.size = 2;
     updateABTB(stream, abtb, actual_branch);
 
     clearAheadPipeline(abtb, 0);
@@ -209,8 +209,8 @@ TEST_F(ABTBTest, ActualBranchUpdatePreservesLiveCounter)
     ASSERT_EQ(entries.size(), 1);
     EXPECT_EQ(entries[0].baseTaken, true);
     EXPECT_EQ(abtb->predictionStorageEntries()[0].ctr, 0);
-    EXPECT_EQ(entries[0].target, actual_branch.target);
-    EXPECT_EQ(entries[0].size, actual_branch.size);
+    EXPECT_EQ(entries[0].branch.target, actual_branch.branch.target);
+    EXPECT_EQ(entries[0].branch.size, actual_branch.branch.size);
 }
 
 TEST_F(ABTBTest, AliasAvoidance){
@@ -285,8 +285,8 @@ TEST_F(ABTBTest, AheadPipelineIsThreadIsolated){
 
     EXPECT_EQ(pred_t0_test.btbEntries.size(), 1);
     if (!pred_t0_test.btbEntries.empty()) {
-        EXPECT_EQ(pred_t0_test.btbEntries[0].pc, t0BrPC);
-        EXPECT_EQ(pred_t0_test.btbEntries[0].target, t0Target);
+        EXPECT_EQ(pred_t0_test.btbEntries[0].branch.pc, t0BrPC);
+        EXPECT_EQ(pred_t0_test.btbEntries[0].branch.target, t0Target);
     }
 }
 
@@ -310,19 +310,19 @@ TEST_F(ABTBTest, S3TrainsFinalTargetWithoutChangingConditionalPrefix)
                    makeBranchOutcome(true, cond_pc, cond_target, true));
         auto indirect =
             makeBranchOutcome(true, indirect_pc, old_target, false);
-        indirect.isIndirect = true;
-        indirect.isReturn = is_return;
+        indirect.branch.isIndirect = true;
+        indirect.branch.isReturn = is_return;
         updateABTB(stream, predictor.get(), indirect);
 
         clearAheadPipeline(predictor.get(), 0);
         makePrediction(previous_pc, predictor.get());
         auto teacher = makePrediction(start_pc, predictor.get());
         ASSERT_EQ(teacher.btbEntries.size(), 2);
-        ASSERT_EQ(teacher.btbEntries[0].pc, cond_pc);
-        ASSERT_EQ(teacher.btbEntries[1].pc, indirect_pc);
-        ASSERT_EQ(teacher.btbEntries[1].target, old_target);
+        ASSERT_EQ(teacher.btbEntries[0].branch.pc, cond_pc);
+        ASSERT_EQ(teacher.btbEntries[1].branch.pc, indirect_pc);
+        ASSERT_EQ(teacher.btbEntries[1].branch.target, old_target);
         teacher.btbEntries[0].taken = false;
-        teacher.btbEntries[1].target = final_target;
+        teacher.btbEntries[1].branch.target = final_target;
         predictor->setUsingS3Pred(true);
         predictor->updateUsingS3Pred(teacher, previous_pc);
 
@@ -330,15 +330,15 @@ TEST_F(ABTBTest, S3TrainsFinalTargetWithoutChangingConditionalPrefix)
         makePrediction(previous_pc, predictor.get());
         auto updated = makePrediction(start_pc, predictor.get());
         ASSERT_EQ(updated.btbEntries.size(), 2);
-        EXPECT_EQ(updated.btbEntries[0].target, cond_target);
+        EXPECT_EQ(updated.btbEntries[0].branch.target, cond_target);
         EXPECT_FALSE(updated.btbEntries[0].taken);
-        EXPECT_EQ(updated.btbEntries[1].target, final_target);
+        EXPECT_EQ(updated.btbEntries[1].branch.target, final_target);
         EXPECT_EQ(updated.getTarget(64), final_target);
-        EXPECT_EQ(updated.btbEntries[1].isReturn, is_return);
+        EXPECT_EQ(updated.btbEntries[1].branch.isReturn, is_return);
         const auto &stored = predictor->predictionStorageEntries();
         ASSERT_EQ(stored.size(), 2);
         EXPECT_EQ(stored[0].ctr, -1);
-        EXPECT_EQ(stored[1].target, final_target);
+        EXPECT_EQ(stored[1].branch.target, final_target);
     }
 }
 

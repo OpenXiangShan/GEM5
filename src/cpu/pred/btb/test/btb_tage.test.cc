@@ -37,9 +37,9 @@ namespace test
 BTBEntry createBTBEntry(Addr pc, bool isCond = true, bool valid = true,
                         int ctr = 0, Addr target = 0) {
     BTBEntry entry;
-    entry.pc = pc;
-    entry.target = target ? target : (pc + 4);
-    entry.isCond = isCond;
+    entry.branch.pc = pc;
+    entry.branch.target = target ? target : (pc + 4);
+    entry.branch.isCond = isCond;
     entry.valid = valid;
     entry.ctr = ctr;
     // Other fields are set to default
@@ -58,7 +58,7 @@ FetchTarget createStream(Addr startPC, const BTBEntry& entry,
                          std::shared_ptr<void> meta) {
     FetchTarget stream;
     stream.startPC = startPC;
-    stream.predBranchInfo = entry; // keep fields consistent
+    stream.predBranchInfo = entry.branch; // keep fields consistent
     stream.setPredictedBranches({entry});
     stream.predMetas[0] = meta;
     return stream;
@@ -68,7 +68,7 @@ BranchOutcome
 createBranchOutcome(const BTBEntry &entry, bool taken, bool mispredicted)
 {
     return BranchOutcome{
-        0, 0, 1, entry, taken, mispredicted
+        0, 0, 1, entry.branch, taken, mispredicted
     };
 }
 
@@ -145,7 +145,7 @@ void applyActualHistory(BTBTAGE* tage, boost::dynamic_bitset<>& history,
 {
     if (tage->usesPathHistory()) {
         if (taken) {
-            applyPathHistoryTaken(history, entry.pc, entry.target);
+            applyPathHistoryTaken(history, entry.branch.pc, entry.branch.target);
         }
     } else {
         applyOutcomeHistory(history, shamt, taken);
@@ -299,7 +299,7 @@ TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
         const auto bwhist = stream.getBwHistUpdateDuringSquash(
             c.squashPC, c.isCond, c.actualTaken, c.redirectPC);
         const auto phist = getActualPathUpdate(
-            c.resolvedEntry, c.squashPC, c.actualTaken, c.redirectPC);
+            c.resolvedEntry.branch, c.squashPC, c.actualTaken, c.redirectPC);
 
         EXPECT_EQ(ghist.shamt, c.expectedGHistShamt);
         EXPECT_EQ(ghist.taken, c.expectedGHistTaken);
@@ -327,13 +327,13 @@ TEST(FullBTBPredictionTest, KeepsConditionalPrefixAndTarget)
     EXPECT_TRUE(pred.getGHistUpdate().taken);
     EXPECT_EQ(pred.getBwHistUpdate().shamt, 3);
     EXPECT_TRUE(pred.getBwHistUpdate().taken);
-    EXPECT_EQ(pred.getTakenEntry().pc, 0x1008);
-    EXPECT_EQ(pred.getTakenEntry().getBranchInfo().target, 0x0800);
+    EXPECT_EQ(pred.getTakenEntry().branch.pc, 0x1008);
+    EXPECT_EQ(pred.getTakenEntry().branch.target, 0x0800);
     EXPECT_EQ(pred.getTarget(64), 0x0800);
     EXPECT_EQ(pred.getPHistUpdate().target, 0x0800);
 
     auto later = pred;
-    later.btbEntries[2].target = 0x5000;
+    later.btbEntries[2].branch.target = 0x5000;
     EXPECT_EQ(pred.match(later, 64).second, OverrideReason::TARGET);
     later.btbEntries[2].taken = false;
     EXPECT_EQ(pred.match(later, 64).second, OverrideReason::CONTROL_ADDR);
@@ -344,23 +344,23 @@ TEST(FullBTBPredictionTest, SharesFinalIndirectTargetWithTrainingAndHistory)
     for (const bool is_return : {false, true}) {
         SCOPED_TRACE(is_return);
         auto stored = createBTBEntry(0x1008, false, true, 0, 0x2000);
-        stored.isIndirect = true;
-        stored.isReturn = is_return;
+        stored.branch.isIndirect = true;
+        stored.branch.isReturn = is_return;
         FullBTBPrediction early;
         early.bbStart = 0x1000;
         early.btbEntries = {stored};
 
         auto final = early;
-        final.btbEntries.front().target = 0x3000;
+        final.btbEntries.front().branch.target = 0x3000;
 
         const auto taken = final.getTakenEntry();
-        const BTBEntry training_entry(taken.getBranchInfo());
-        EXPECT_EQ(taken.target, 0x3000);
+        const BTBEntry training_entry(taken.branch);
+        EXPECT_EQ(taken.branch.target, 0x3000);
         EXPECT_EQ(final.getTarget(64), 0x3000);
         EXPECT_EQ(final.getPHistUpdate().target, 0x3000);
-        EXPECT_EQ(training_entry.target, 0x3000);
+        EXPECT_EQ(training_entry.branch.target, 0x3000);
         EXPECT_EQ(early.getTarget(64), 0x2000);
-        EXPECT_EQ(stored.target, 0x2000);
+        EXPECT_EQ(stored.branch.target, 0x2000);
         EXPECT_EQ(early.match(final, 64).second, OverrideReason::TARGET);
     }
 }
@@ -372,7 +372,7 @@ TEST(FullBTBPredictionTest, KeepsBaseSnapshotAfterDirectionOverride)
     ASSERT_TRUE(candidate.baseTaken);
     ASSERT_TRUE(candidate.baseStrong);
     candidate.taken = false;
-    candidate.target = 0x3000;
+    candidate.branch.target = 0x3000;
 
     FullBTBPrediction pred;
     pred.bbStart = 0x1000;
@@ -382,8 +382,8 @@ TEST(FullBTBPredictionTest, KeepsBaseSnapshotAfterDirectionOverride)
     EXPECT_EQ(pred.getTarget(64), pred.getFallThrough(64));
     EXPECT_TRUE(pred.btbEntries.front().baseTaken);
     EXPECT_TRUE(pred.btbEntries.front().baseStrong);
-    EXPECT_EQ(pred.btbEntries.front().getBranchInfo().target, 0x3000);
-    EXPECT_EQ(stored.target, 0x2000);
+    EXPECT_EQ(pred.btbEntries.front().branch.target, 0x3000);
+    EXPECT_EQ(stored.branch.target, 0x2000);
 }
 
 /**
@@ -398,7 +398,7 @@ findCondTaken(const std::vector<BranchPrediction> &entries, Addr pc)
 {
     const auto it = std::find_if(entries.begin(), entries.end(),
         [pc](const auto &entry) {
-            return entry.valid && entry.isCond && entry.pc == pc;
+            return entry.valid && entry.branch.isCond && entry.branch.pc == pc;
         });
     return it == entries.end() ? std::make_pair(false, false) :
                                std::make_pair(true, it->taken);
@@ -426,7 +426,7 @@ bool predictTAGE(BTBTAGE* tage, Addr startPC,
 
     // Return prediction for first entry if exists
     if (!entries.empty()) {
-        auto result = findCondTaken(stagePreds[1].btbEntries, entries[0].pc);
+        auto result = findCondTaken(stagePreds[1].btbEntries, entries[0].branch.pc);
         bool found = result.first;
         bool taken = result.second;
         if (found) {
@@ -490,7 +490,7 @@ bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
         }
         // Recover from misprediction
         const auto path_update = getActualPathUpdate(
-            entry, entry.pc, actual_taken, entry.target);
+            entry.branch, entry.branch.pc, actual_taken, entry.branch.target);
         recoverSelectedHistory(tage, history, stream, 1, actual_taken,
                                path_update);
         applyActualHistory(tage, history, entry, 1, actual_taken);
@@ -856,7 +856,7 @@ TEST_F(BTBTAGETest, HistoryRecoveryCorrectness) {
     // Recover to pre-speculative state and update with correct outcome
     boost::dynamic_bitset<> recoveryHistory = originalHistory;
     const auto path_update = getActualPathUpdate(
-        entry, entry.pc, !predicted_taken, entry.target);
+        entry.branch, entry.branch.pc, !predicted_taken, entry.branch.target);
     recoverSelectedHistory(tage, recoveryHistory, stream, 1, !predicted_taken,
                            path_update);
 
@@ -1120,7 +1120,7 @@ TEST_F(BTBTAGETest, SetAssociativeConflictHandling) {
 
     // Get prediction for entry1
     bool pred1 = false;
-    auto result_entry1 = findCondTaken(stagePreds[1].btbEntries, entry1.pc);
+    auto result_entry1 = findCondTaken(stagePreds[1].btbEntries, entry1.branch.pc);
     if (result_entry1.first) {
         pred1 = result_entry1.second;
     }
@@ -1138,7 +1138,7 @@ TEST_F(BTBTAGETest, SetAssociativeConflictHandling) {
 
     // Get prediction for entry2
     bool pred2 = false;
-    auto result_entry2 = findCondTaken(stagePreds[1].btbEntries, entry2.pc);
+    auto result_entry2 = findCondTaken(stagePreds[1].btbEntries, entry2.branch.pc);
     if (result_entry2.first) {
         pred2 = result_entry2.second;
     }
@@ -1272,7 +1272,7 @@ TEST_F(BTBTAGETest, AllocationReplacesStrongNotUsefulEntry) {
     bool found = false;
     for (unsigned way = 0; way < tage->numWays[testTable]; way++) {
         if (tage->tageTable[testTable][testIndex][way].valid &&
-            tage->tageTable[testTable][testIndex][way].pc == newEntry.pc) {
+            tage->tageTable[testTable][testIndex][way].pc == newEntry.branch.pc) {
             found = true;
             break;
         }
@@ -1296,7 +1296,7 @@ TEST_F(BTBTAGETest, MissingPredictionMetaDoesNotTrain) {
     PreparedUpdate update({outcome});
     tage->update(PredictionUpdateContext(stream), update);
 
-    int table = findTableWithEntry(tage, 0x1000, newEntry.pc);
+    int table = findTableWithEntry(tage, 0x1000, newEntry.branch.pc);
     EXPECT_EQ(table, -1);
 }
 
@@ -1310,7 +1310,7 @@ TEST_F(BTBTAGETest, FinalPredictionWithoutTageMetaDoesNotTrain)
         createBTBEntry(0x1010, true, true, -1);
     FetchTarget stream;
     stream.startPC = 0x1000;
-    stream.predBranchInfo = finalEntry;
+    stream.predBranchInfo = finalEntry.branch;
     stream.setPredictedBranches({finalEntry});
     stream.predMetas[0] = meta;
 
@@ -1319,7 +1319,7 @@ TEST_F(BTBTAGETest, FinalPredictionWithoutTageMetaDoesNotTrain)
     tage->setTrainingStage(PredictorTrainingStage::Resolve);
     tage->update(PredictionUpdateContext(stream), update);
 
-    EXPECT_EQ(findTableWithEntry(tage, 0x1000, finalEntry.pc), -1);
+    EXPECT_EQ(findTableWithEntry(tage, 0x1000, finalEntry.branch.pc), -1);
 }
 
 TEST_F(BTBTAGETest, TargetMispredictDoesNotAllocateDirectionEntry)
@@ -1334,7 +1334,7 @@ TEST_F(BTBTAGETest, TargetMispredictDoesNotAllocateDirectionEntry)
         PredictionUpdateContext(stream),
         createPreparedUpdate(stream, entry, true, true));
 
-    EXPECT_EQ(findTableWithEntry(tage, 0x1000, entry.pc), -1);
+    EXPECT_EQ(findTableWithEntry(tage, 0x1000, entry.branch.pc), -1);
 }
 
 /**
@@ -1481,9 +1481,9 @@ TEST_F(BTBTAGEUpperBoundTest, ExactContextLookup) {
     boost::dynamic_bitset<> historyB(128, 0);
     historyB[0] = true;
 
-    ASSERT_TRUE(tage->insertExactEntry(3, entry.pc, historyA, 2));
-    EXPECT_TRUE(tage->hasExactEntry(3, entry.pc, historyA));
-    EXPECT_FALSE(tage->hasExactEntry(3, entry.pc, historyB));
+    ASSERT_TRUE(tage->insertExactEntry(3, entry.branch.pc, historyA, 2));
+    EXPECT_TRUE(tage->hasExactEntry(3, entry.branch.pc, historyA));
+    EXPECT_FALSE(tage->hasExactEntry(3, entry.branch.pc, historyB));
 
     bool predA = predictTAGE(tage, 0x1000, {entry}, historyA, stagePreds);
     bool predB = predictTAGE(tage, 0x1000, {entry}, historyB, stagePreds);
@@ -1495,12 +1495,12 @@ TEST_F(BTBTAGEUpperBoundTest, ExactContextLookup) {
 TEST_F(BTBTAGEUpperBoundTest, ProviderAltSelection) {
     BTBEntry entry = createBTBEntry(0x1000, true, true, -1);
 
-    ASSERT_TRUE(tage->insertExactEntry(3, entry.pc, history, 0));
-    ASSERT_TRUE(tage->insertExactEntry(1, entry.pc, history, -2));
+    ASSERT_TRUE(tage->insertExactEntry(3, entry.branch.pc, history, 0));
+    ASSERT_TRUE(tage->insertExactEntry(1, entry.branch.pc, history, -2));
 
     predictTAGE(tage, 0x1000, {entry}, history, stagePreds);
     auto meta = std::static_pointer_cast<BTBTAGE::TageMeta>(tage->getPredictionMeta());
-    auto pred = meta->preds[entry.pc];
+    auto pred = meta->preds[entry.branch.pc];
 
     EXPECT_EQ(pred.mainInfo.table, 3u);
     EXPECT_EQ(pred.altInfo.table, 1u);
@@ -1526,8 +1526,8 @@ TEST_F(BTBTAGEUpperBoundTest, AllocationUsesPredictionTimeHistory) {
         PredictionUpdateContext(stream),
         createPreparedUpdate(stream, entry, true, true));
 
-    EXPECT_TRUE(tage->hasExactEntry(0, entry.pc, historyA));
-    EXPECT_FALSE(tage->hasExactEntry(0, entry.pc, historyB));
+    EXPECT_TRUE(tage->hasExactEntry(0, entry.branch.pc, historyA));
+    EXPECT_FALSE(tage->hasExactEntry(0, entry.branch.pc, historyB));
 }
 
 TEST_F(BTBTAGEUpperBoundTest, MissingPredictionMetaDoesNotTrain) {
@@ -1545,16 +1545,16 @@ TEST_F(BTBTAGEUpperBoundTest, MissingPredictionMetaDoesNotTrain) {
     PreparedUpdate update({outcome});
     tage->update(PredictionUpdateContext(stream), update);
 
-    EXPECT_FALSE(tage->hasExactEntry(0, newEntry.pc, historyA));
+    EXPECT_FALSE(tage->hasExactEntry(0, newEntry.branch.pc, historyA));
 }
 
 TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesPathHashHistorySnapshot) {
     BTBEntry entry = createBTBEntry(0x1000, true, true, -1, 0x2000);
     boost::dynamic_bitset<> pathHistoryA(128, 0);
     boost::dynamic_bitset<> pathHistoryB(128, 0);
-    applyPathHistoryTaken(pathHistoryB, entry.pc, entry.target);
+    applyPathHistoryTaken(pathHistoryB, entry.branch.pc, entry.branch.target);
 
-    ASSERT_TRUE(tage->insertExactEntry(2, entry.pc, pathHistoryB, 2));
+    ASSERT_TRUE(tage->insertExactEntry(2, entry.branch.pc, pathHistoryB, 2));
 
     FullBTBPrediction pred;
     pred.btbEntries.push_back(entry);
@@ -1568,21 +1568,21 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesPathHashHistorySnapshot) {
 
 TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesIndirectOverridePathHashSnapshot) {
     BTBEntry entry = createBTBEntry(0x1000, true, true, -1, 0x2000);
-    entry.isIndirect = true;
+    entry.branch.isIndirect = true;
     const Addr indirectTarget = 0x3000;
 
-    ASSERT_NE(pathHash(entry.pc, entry.target), pathHash(entry.pc, indirectTarget));
+    ASSERT_NE(pathHash(entry.branch.pc, entry.branch.target), pathHash(entry.branch.pc, indirectTarget));
 
     boost::dynamic_bitset<> pathHistoryA(128, 0);
     boost::dynamic_bitset<> pathHistoryB(128, 0);
-    applyPathHistoryTaken(pathHistoryB, entry.pc, indirectTarget);
+    applyPathHistoryTaken(pathHistoryB, entry.branch.pc, indirectTarget);
 
-    ASSERT_TRUE(tage->insertExactEntry(2, entry.pc, pathHistoryB, 2));
+    ASSERT_TRUE(tage->insertExactEntry(2, entry.branch.pc, pathHistoryB, 2));
 
     FullBTBPrediction pred;
     pred.btbEntries.push_back(entry);
     pred.btbEntries.back().taken = true;
-    pred.btbEntries.back().target = indirectTarget;
+    pred.btbEntries.back().branch.target = indirectTarget;
 
     tage->specUpdatePHist(pathHistoryA, pred, pred.getPHistUpdate());
     tage->checkFoldedHist(pathHistoryB, "indirect target override");
@@ -1594,22 +1594,22 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesIndirectOverridePathHashSnap
 
 TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesReturnOverridePathHashSnapshot) {
     BTBEntry entry = createBTBEntry(0x1000, true, true, -1, 0x2000);
-    entry.isIndirect = true;
-    entry.isReturn = true;
+    entry.branch.isIndirect = true;
+    entry.branch.isReturn = true;
     const Addr returnTarget = 0x3400;
 
-    ASSERT_NE(pathHash(entry.pc, entry.target), pathHash(entry.pc, returnTarget));
+    ASSERT_NE(pathHash(entry.branch.pc, entry.branch.target), pathHash(entry.branch.pc, returnTarget));
 
     boost::dynamic_bitset<> pathHistoryA(128, 0);
     boost::dynamic_bitset<> pathHistoryB(128, 0);
-    applyPathHistoryTaken(pathHistoryB, entry.pc, returnTarget);
+    applyPathHistoryTaken(pathHistoryB, entry.branch.pc, returnTarget);
 
-    ASSERT_TRUE(tage->insertExactEntry(2, entry.pc, pathHistoryB, 2));
+    ASSERT_TRUE(tage->insertExactEntry(2, entry.branch.pc, pathHistoryB, 2));
 
     FullBTBPrediction pred;
     pred.btbEntries.push_back(entry);
     pred.btbEntries.back().taken = true;
-    pred.btbEntries.back().target = returnTarget;
+    pred.btbEntries.back().branch.target = returnTarget;
 
     tage->specUpdatePHist(pathHistoryA, pred, pred.getPHistUpdate());
     tage->checkFoldedHist(pathHistoryB, "return target override");
@@ -1623,7 +1623,7 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, RecoverPHistUsesTakenControlPath) {
     BTBEntry entry = createBTBEntry(0x1000, false, true, -1, 0x2040);
     boost::dynamic_bitset<> pathHistoryBefore(128, 0);
     boost::dynamic_bitset<> pathHistoryAfter(128, 0);
-    applyPathHistoryTaken(pathHistoryAfter, entry.pc, entry.target);
+    applyPathHistoryTaken(pathHistoryAfter, entry.branch.pc, entry.branch.target);
 
     FullBTBPrediction pred;
     pred.btbEntries.push_back(entry);
@@ -1632,14 +1632,14 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, RecoverPHistUsesTakenControlPath) {
 
     FetchTarget stream = createStream(0x1000, entry, meta);
 
-    const auto ghist = stream.getGHistUpdateDuringSquash(entry.pc, false, true);
+    const auto ghist = stream.getGHistUpdateDuringSquash(entry.branch.pc, false, true);
     const auto phist = getActualPathUpdate(
-        entry, entry.pc, true, entry.target);
+        entry.branch, entry.branch.pc, true, entry.branch.target);
     EXPECT_EQ(ghist.shamt, 0);
     EXPECT_FALSE(ghist.taken);
     EXPECT_TRUE(phist.taken);
-    EXPECT_EQ(phist.pc, entry.pc);
-    EXPECT_EQ(phist.target, entry.target);
+    EXPECT_EQ(phist.pc, entry.branch.pc);
+    EXPECT_EQ(phist.target, entry.branch.target);
 
     tage->recoverPHist(
         pathHistoryBefore, HistoryRecoveryContext(stream), phist);

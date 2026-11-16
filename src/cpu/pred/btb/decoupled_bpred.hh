@@ -219,8 +219,8 @@ class DecoupledBPUWithBTB : public BPredUnit
         DPRINTF(BTB,
             "Branch candidate: valid %d, pc:%#lx, size:%d, taken:%d, "
             "target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
-            e.valid, e.pc, e.size, e.taken, e.target, e.isCond, e.isIndirect,
-            e.isCall, e.isReturn);
+            e.valid, e.branch.pc, e.branch.size, e.taken, e.branch.target, e.branch.isCond, e.branch.isIndirect,
+            e.branch.isCall, e.branch.isReturn);
     }
 
     void printFullBTBPrediction(const FullBTBPrediction &pred) {

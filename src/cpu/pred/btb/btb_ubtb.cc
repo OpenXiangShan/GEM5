@@ -142,7 +142,7 @@ UBTB::PredStatistics(const TickedUBTBEntry entry, Addr startAddr)
 {
     if (entry.valid) {
         Addr mbtb_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
-        assert(entry.pc >= startAddr && entry.pc < mbtb_end);
+        assert(entry.branch.pc >= startAddr && entry.branch.pc < mbtb_end);
         DPRINTF(UBTB, "UBTB: lookup hit: \n");
         ubtbStats.predHit += 1;
         printTickedUBTBEntry(entry);
@@ -220,7 +220,7 @@ UBTB::lookup(Addr startAddr, ThreadID tid, uint8_t asidHash)
     auto it = std::find_if(rangeBegin, rangeEnd,
                            [current_tag, startAddr, block_end](const TickedUBTBEntry &way) {
                                return way.valid && way.tag == current_tag &&
-                                      way.pc >= startAddr && way.pc < block_end;
+                                      way.branch.pc >= startAddr && way.branch.pc < block_end;
                            });
 
     if (it != rangeEnd) {
@@ -228,7 +228,7 @@ UBTB::lookup(Addr startAddr, ThreadID tid, uint8_t asidHash)
         auto duplicate = std::find_if(std::next(it), rangeEnd,
                                       [current_tag, startAddr, block_end](const TickedUBTBEntry &way) {
             return way.valid && way.tag == current_tag &&
-                   way.pc >= startAddr && way.pc < block_end;
+                   way.branch.pc >= startAddr && way.branch.pc < block_end;
         });
         if (duplicate != rangeEnd) {
             DPRINTF(UBTB, "UBTB: Multiple hits found in uBTB for the same tag %#lx\n", current_tag);
@@ -260,8 +260,8 @@ UBTB::lookupNoSideEffect(Addr startAddr, ThreadID tid,
                            [current_tag, startAddr, block_end]
                            (const TickedUBTBEntry &way) {
                                return way.valid && way.tag == current_tag &&
-                                      way.pc >= startAddr &&
-                                      way.pc < block_end;
+                                      way.branch.pc >= startAddr &&
+                                      way.branch.pc < block_end;
                            });
 
     return it != range_end ? *it : TickedUBTBEntry();
@@ -275,7 +275,7 @@ UBTB::replaceOldEntry(UBTBIter oldEntryIter, const BTBEntry &newTakenEntry,
     assert(newTakenEntry.valid);
     TickedUBTBEntry newEntry = TickedUBTBEntry(newTakenEntry, curTick());
     // important! this is so that target set by RAS or ITTAGE is used
-    newEntry.target = newTakenEntry.target;
+    newEntry.branch.target = newTakenEntry.branch.target;
     newEntry.ctr = 0; // have a bug here:ubtb will accept ctr from mbtb, reset it to 0 at here
     // important: update tag (mbtb and ubtb have different tags, even diffferent tag length)
     newEntry.tag = getTag(startAddr, asidHash);
@@ -291,7 +291,7 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
     }
 
     auto prediction = s3Pred.getTakenEntry();
-    BTBEntry takenEntry(prediction.getBranchInfo());
+    BTBEntry takenEntry(prediction.branch);
     takenEntry.valid = prediction.valid;
     if (takenEntry.valid) {
         ubtbStats.s3UpdateHits++;
@@ -360,7 +360,8 @@ void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry,
         } else if (oldEntryIter != ubtb.end() && takenEntry.valid) {
             ubtbStats.s1Hits3Taken++;
             // both S0 and S3 predict taken
-            if (oldEntryIter->pc != takenEntry.pc || oldEntryIter->target != takenEntry.target) {
+            if (oldEntryIter->branch.pc != takenEntry.branch.pc ||
+                oldEntryIter->branch.target != takenEntry.branch.target) {
                 // S0 and S3 predict different branch instruction
                 updateUCtr(oldEntryIter->uctr, false);
                 if (oldEntryIter->uctr == 0) {
@@ -399,14 +400,14 @@ UBTB::update(
     oldEntryIter = meta->hit_entry.valid ?
                     std::find_if(rangeBegin, rangeEnd, [oldtag, startAddr, block_end](const TickedUBTBEntry &e) {
                         return e.valid && e.tag == oldtag &&
-                               e.pc >= startAddr && e.pc < block_end;
+                               e.branch.pc >= startAddr && e.branch.pc < block_end;
                     }) : rangeEnd;
     if (oldEntryIter == rangeEnd) {
         oldEntryIter = ubtb.end();
     }
 
     if (actualTaken) {
-        if (!pred_hit_entry.valid || pred_hit_entry != actualBranch) {
+        if (!pred_hit_entry.valid || pred_hit_entry.branch.pc != actualBranch.pc) {
             DPRINTF(UBTB, "update miss detected, pc %#lx, predTick %lu\n",
                     actualBranch.pc, stream.predTick);
             ubtbStats.updateMiss++;
@@ -430,11 +431,11 @@ UBTB::commitBranch(const PredictionUpdateContext &context,
     auto meta = std::static_pointer_cast<UBTBMeta>(
         context.predMetas[getComponentIdx()]);
     auto &hit_entry = meta->hit_entry;
-    auto pc = outcome.pc;
-    auto npc = outcome.target;
-    bool this_branch_hit = hit_entry.pc == pc;
+    auto pc = outcome.branch.pc;
+    auto npc = outcome.branch.target;
+    bool this_branch_hit = hit_entry.branch.pc == pc;
 
-    bool this_branch_taken = outcome.taken || !outcome.isCond;
+    bool this_branch_taken = outcome.taken || !outcome.branch.isCond;
     Addr this_branch_target = npc;
     if (this_branch_hit) {
         ubtbStats.allBranchHits++;
@@ -443,7 +444,7 @@ UBTB::commitBranch(const PredictionUpdateContext &context,
         } else {
             ubtbStats.allBranchHitNotTakens++;
         }
-        if (outcome.isCond) {
+        if (outcome.branch.isCond) {
             ubtbStats.condHits++;
             if (this_branch_taken) {
                 ubtbStats.condHitTakens++;
@@ -458,22 +459,22 @@ UBTB::commitBranch(const PredictionUpdateContext &context,
                 ubtbStats.condPredWrong++;
             }
         }
-        if (!outcome.isCond) {
+        if (!outcome.branch.isCond) {
             ubtbStats.uncondHits++;
         }
-        if (outcome.isIndirect) {
+        if (outcome.branch.isIndirect) {
             ubtbStats.indirectHits++;
-            Addr pred_target = hit_entry.target;
+            Addr pred_target = hit_entry.branch.target;
             if (pred_target == this_branch_target) {
                 ubtbStats.indirectPredCorrect++;
             } else {
                 ubtbStats.indirectPredWrong++;
             }
         }
-        if (outcome.isCall) {
+        if (outcome.branch.isCall) {
             ubtbStats.callHits++;
         }
-        if (outcome.isReturn) {
+        if (outcome.branch.isReturn) {
             ubtbStats.returnHits++;
         }
     } else {
@@ -483,7 +484,7 @@ UBTB::commitBranch(const PredictionUpdateContext &context,
         } else {
             ubtbStats.allBranchMissNotTakens++;
         }
-        if (outcome.isCond) {
+        if (outcome.branch.isCond) {
             ubtbStats.condMisses++;
             if (this_branch_taken) {
                 ubtbStats.condMissTakens++;
@@ -493,17 +494,17 @@ UBTB::commitBranch(const PredictionUpdateContext &context,
                 ubtbStats.condPredCorrect++;
             }
         }
-        if (!outcome.isCond) {
+        if (!outcome.branch.isCond) {
             ubtbStats.uncondMisses++;
         }
-        if (outcome.isIndirect) {
+        if (outcome.branch.isIndirect) {
             ubtbStats.indirectMisses++;
             ubtbStats.indirectPredWrong++;
         }
-        if (outcome.isCall) {
+        if (outcome.branch.isCall) {
             ubtbStats.callMisses++;
         }
-        if (outcome.isReturn) {
+        if (outcome.branch.isReturn) {
             ubtbStats.returnMisses++;
         }
     }
