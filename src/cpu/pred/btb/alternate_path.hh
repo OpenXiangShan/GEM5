@@ -19,6 +19,7 @@ struct AlternatePrediction
 {
     FetchTarget target;
     FullBTBPrediction prediction;
+    Addr nextPC = 0;
     // The query could not acquire modeled frontend resources this cycle.
     bool resourceBlocked = false;
 };

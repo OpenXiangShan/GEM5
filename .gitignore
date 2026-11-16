@@ -78,3 +78,33 @@ microbench/dramsim3*
 *.log
 *.gz
 *.zstd
+
+# Compiled objects, libraries, and executables
+*.o
+*.os
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.d
+gem5.opt
+gem5.debug
+gem5.fast
+*.test.opt
+*.test.debug
+*.test.fast
+
+# Build and Python caches
+.sconsign*
+.sconf_temp/
+__pycache__/
+*.pyo
+
+# Local SPEC simulation results and result symlinks
+/spec06_*
+/spec_all/
+
+# Local APF oracle experiment and test scripts
+/util/apf/*oracle*.py

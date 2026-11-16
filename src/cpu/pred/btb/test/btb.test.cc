@@ -194,6 +194,42 @@ void verifyPrediction(const std::vector<FullBTBPrediction>& stagePreds,
     }
 }
 
+TEST(BTBResourceTest, PrimaryLookupBlocksOnlyOverlappingBanks)
+{
+    MBTB btb(2048, 20, 4, 1);
+    std::vector<FullBTBPrediction> predictions(4);
+    btb.beginResourceCycle();
+    btb.putPCHistory(0x1000, boost::dynamic_bitset<>(8), predictions);
+
+    EXPECT_FALSE(btb.tryReserveShadow(0x1000));
+    EXPECT_FALSE(btb.tryReserveShadow(0x1020));
+    EXPECT_TRUE(btb.tryReserveShadow(0x1040));
+}
+
+TEST(BTBResourceTest, ShadowReleasePreservesOtherReservations)
+{
+    MBTB btb(2048, 20, 4, 1);
+    btb.beginResourceCycle();
+    ASSERT_TRUE(btb.tryReserveShadow(0x1000));
+    ASSERT_TRUE(btb.tryReserveShadow(0x1040));
+    btb.releaseShadow(0x1000);
+
+    EXPECT_FALSE(btb.tryReserveShadow(0x1040));
+    EXPECT_TRUE(btb.tryReserveShadow(0x1000));
+}
+
+TEST(BTBResourceTest, NextCycleClearsReservations)
+{
+    MBTB btb(2048, 20, 4, 1);
+    btb.beginResourceCycle();
+    btb.reservePrimaryAccess(0x1000);
+    ASSERT_TRUE(btb.tryReserveShadow(0x1040));
+    btb.beginResourceCycle();
+
+    EXPECT_TRUE(btb.tryReserveShadow(0x1000));
+    EXPECT_TRUE(btb.tryReserveShadow(0x1040));
+}
+
 // Test fixture for BTB tests
 class BTBTest : public ::testing::Test {
 protected:

@@ -150,6 +150,13 @@ Fetch::readAPFBytes(Addr pc, uint32_t &bits)
 void
 Fetch::generateAPF(AlternatePathContext &path)
 {
+    const auto finishCycle = [&](unsigned stop = 0, bool done = false) {
+        ++path.cycles;
+        path.ready = cpu->clockEdge(apfFetchLatency);
+        path.complete = done || path.cycles >= apfGenerationCycles;
+        if (path.complete)
+            ++apfStats->stops[stop];
+    };
     if (!path.blockPrediction) {
         path.blockStart = path.predictor;
         auto prediction = dbpbtb->predictAlternate(
@@ -160,12 +167,7 @@ Fetch::generateAPF(AlternatePathContext &path)
         ++apfStats->predictorQueries;
         if (prediction.resourceBlocked) {
             ++apfStats->predictorResourceBlocked;
-            ++path.cycles;
-            path.ready = cpu->clockEdge(apfFetchLatency);
-            if (path.cycles >= apfGenerationCycles) {
-                path.complete = true;
-                ++apfStats->stops[0];
-            }
+            finishCycle();
             return;
         }
         path.blockPrediction = std::move(prediction);
@@ -185,12 +187,7 @@ Fetch::generateAPF(AlternatePathContext &path)
     apfStats->decodeGranted += decodeGrant;
     if (!decodeGrant) {
         ++apfStats->decodeBlockedCycles;
-        ++path.cycles;
-        path.ready = cpu->clockEdge(apfFetchLatency);
-        if (path.cycles >= apfGenerationCycles) {
-            path.complete = true;
-            ++apfStats->stops[0];
-        }
+        finishCycle();
         return;
     }
     if (decodeGrant < apfWidth)
@@ -305,15 +302,13 @@ Fetch::generateAPF(AlternatePathContext &path)
         // Rebuild the endpoint from the block's starting history, not the
         // previous cycle's prefix: otherwise older branches shift in twice.
         auto prefixState = path.blockStart;
-        dbpbtb->advanceAlternate(prefixState, prediction, path.pc.instAddr());
+        prediction.nextPC = path.pc.instAddr();
+        dbpbtb->advanceAlternate(prefixState, prediction);
         path.predictor = std::move(prefixState);
-        if (path.blockIndex == path.predictions.size()) {
+        if (path.blockIndex == path.predictions.size())
             path.predictions.push_back(std::move(prediction));
-            path.nextPCs.push_back(path.pc.instAddr());
-        } else {
+        else
             path.predictions[path.blockIndex] = std::move(prediction);
-            path.nextPCs[path.blockIndex] = path.pc.instAddr();
-        }
         DPRINTF(APF, "APF prefix source %lu:%#lx block %u uops %u "
                 "start %#lx end %#lx\n", path.source.ftqId,
                 path.source.branch.pc, path.blockIndex,
@@ -321,14 +316,9 @@ Fetch::generateAPF(AlternatePathContext &path)
                 path.predictions.back().target.startPC, path.pc.instAddr());
         apfStats->generatedUops += count;
     }
-    ++path.cycles;
-    path.ready = cpu->clockEdge(apfFetchLatency);
     if (!stop && path.branches >= apfBranchEntries)
         stop = 4;
-    path.complete = stop || count == 0 || path.uops.size() >= apfBufferUops ||
-                    path.cycles >= apfGenerationCycles;
-    if (path.complete)
-        apfStats->stops[stop]++;
+    finishCycle(stop, stop || count == 0 || path.uops.size() >= apfBufferUops);
     if (path.complete || path.pc.instAddr() >= blockEnd ||
         (count && path.uops.back().taken)) {
         path.blockPrediction.reset();
@@ -524,8 +514,7 @@ Fetch::promoteAPF()
             return;
         }
         const auto index = path.promotedPredictions;
-        const auto id = dbpbtb->promoteAlternate(path.predictions[index],
-                                               path.nextPCs[index]);
+        const auto id = dbpbtb->promoteAlternate(path.predictions[index]);
         if (index == 0) {
             ++apfStats->recovered;
             if (!path.complete)

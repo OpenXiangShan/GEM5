@@ -165,6 +165,7 @@ MBTB::tickStart()
 
 void
 MBTB::tick() {}
+#endif
 
 void
 MBTB::beginResourceCycle()
@@ -205,6 +206,7 @@ MBTB::releaseShadow(Addr startAddr)
     resourceBanksBusy &= ~lookupBankMask(startAddr);
 }
 
+#ifndef UNIT_TEST
 void
 MBTB::setTrace()
 {

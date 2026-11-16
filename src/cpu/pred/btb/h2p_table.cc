@@ -9,8 +9,7 @@ namespace gem5::branch_prediction::btb_pred
 H2PTable::H2PTable(unsigned entries, unsigned lineBytes, unsigned ways,
                    unsigned branchesPerEntry, unsigned counterBits,
                    unsigned counterThreshold)
-    : numEntries(entries), lineBytes(lineBytes), numWays(ways),
-      branchesPerEntry(branchesPerEntry),
+    : numEntries(entries), lineBytes(lineBytes),
       counterMax(counterBits >= 1 && counterBits <= 8 ?
                  (1u << counterBits) - 1 : 0),
       counterThreshold(counterThreshold),
@@ -35,7 +34,7 @@ H2PTable::H2PTable(unsigned entries, unsigned lineBytes, unsigned ways,
     }
     table.resize(numSets);
     for (auto &set : table) {
-        set.resize(numWays);
+        set.resize(ways);
         for (auto &line : set)
             line.branches.resize(branchesPerEntry);
     }
@@ -80,7 +79,6 @@ H2PTable::lookup(Addr pc)
     line->lastUse = useClock;
     for (auto &branch : line->branches) {
         if (branch.valid && branch.pc == pc) {
-            branch.lastUse = useClock;
             return {branch.counter >= counterThreshold, true};
         }
     }
@@ -111,7 +109,6 @@ H2PTable::trainMispred(Addr pc, bool allowAllocate)
             if (branch.valid && branch.pc == pc) {
                 branch.counter = std::min<unsigned>(
                     counterMax, unsigned(branch.counter) + 1);
-                branch.lastUse = useClock;
                 result.incremented = true;
                 return result;
             }
@@ -152,20 +149,13 @@ H2PTable::trainMispred(Addr pc, bool allowAllocate)
     }
 
     line->lastUse = useClock;
-    auto *slot = &line->branches[0];
-    bool hasFreeSlot = false;
-    for (auto &branch : line->branches) {
-        if (!branch.valid || branch.counter == 0) {
-            slot = &branch;
-            hasFreeSlot = true;
-            break;
-        }
-    }
-    if (!hasFreeSlot) {
+    auto slot = std::find_if(line->branches.begin(), line->branches.end(),
+        [](const auto &branch) { return !branch.valid || branch.counter == 0; });
+    if (slot == line->branches.end()) {
         result.dropped = true;
         return result;
     }
-    *slot = BranchEntry{pc, 1, true, useClock};
+    *slot = BranchEntry{pc, 1, true};
     result.allocated = true;
     return result;
 }

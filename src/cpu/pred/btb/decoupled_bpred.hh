@@ -166,7 +166,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     const unsigned h2pMinProviderTable;
     const bool enableAPFMTBResourceConflict;
     const bool enableAPFTAGEResourceConflict;
-    const unsigned h2pTableEntries;
     const uint64_t h2pAgeInsts;
 
     H2PTable h2pTable;
@@ -182,8 +181,10 @@ class DecoupledBPUWithBTB : public BPredUnit
     unsigned logicalMaxFTQEntries(ThreadID tid) const;
     unsigned logicalFreeFTQEntries(ThreadID tid) const;
     bool ftqFull(ThreadID tid) const;
-    H2PTable::LookupResult lookupH2P(Addr pc);
+    void classifyH2PBranches(FetchTarget &target,
+                            FullBTBPrediction &prediction);
     void trainH2P(const BranchOutcome &branch, const FetchTarget &target);
+    void applyAlternatePrediction(AlternatePrediction &prediction);
 
     bool isThreadActive(ThreadID tid) const;
     bool canStartPrediction(ThreadID tid) const;
@@ -414,10 +415,9 @@ class DecoupledBPUWithBTB : public BPredUnit
                                           Addr pc);
     bool tryReserveAlternateResources(Addr pc);
     void advanceAlternate(AlternateCheckpoint &state,
-                          AlternatePrediction &prediction, Addr nextPC);
+                          AlternatePrediction &prediction);
     bool canPromoteAlternate(unsigned targets) const;
-    FetchTargetId promoteAlternate(AlternatePrediction &prediction,
-                                   Addr nextPC);
+    FetchTargetId promoteAlternate(AlternatePrediction &prediction);
 
     void squash(const InstSeqNum &squashed_sn, ThreadID tid)
     {

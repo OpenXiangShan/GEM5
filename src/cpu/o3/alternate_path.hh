@@ -1,7 +1,6 @@
 #ifndef __CPU_O3_ALTERNATE_PATH_HH__
 #define __CPU_O3_ALTERNATE_PATH_HH__
 
-#include <deque>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -36,7 +35,6 @@ struct AlternatePathContext
     unsigned blockFirstUop = 0;
     unsigned blockIndex = 0;
     std::vector<branch_prediction::btb_pred::AlternatePrediction> predictions;
-    std::vector<Addr> nextPCs;
     std::vector<BufferedUop> uops;
     RiscvISA::PCState pc;
     Addr startPC = 0;

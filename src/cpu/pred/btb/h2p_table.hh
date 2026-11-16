@@ -16,7 +16,6 @@ class H2PTable
     static constexpr unsigned LineBytes = 32;
     static constexpr unsigned Ways = 2;
     static constexpr unsigned BranchesPerLine = 2;
-    static constexpr unsigned CounterMax = 7;
 
     struct LookupResult
     {
@@ -51,7 +50,6 @@ class H2PTable
         Addr pc = 0;
         uint8_t counter = 0;
         bool valid = false;
-        uint64_t lastUse = 0;
     };
 
     struct SetEntry
@@ -64,8 +62,6 @@ class H2PTable
 
     const unsigned numEntries;
     const unsigned lineBytes;
-    const unsigned numWays;
-    const unsigned branchesPerEntry;
     const unsigned counterMax;
     const unsigned counterThreshold;
     const unsigned numSets;
