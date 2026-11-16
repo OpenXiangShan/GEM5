@@ -66,29 +66,17 @@ class RiscvTLB(BaseTLB):
     cxx_class = 'gem5::RiscvISA::TLB'
     cxx_header = 'arch/riscv/tlb.hh'
 
-    #size = Param.Int(2048, "TLB size")
-    #size = Param.Int(64, "TLB size")
-    #size = Param.Int(256, "TLB size")
     is_dtlb = Param.Bool(False, "the tlb is dtlb")
     is_L1tlb = Param.Bool(True,"the tlb is l1tlb")
     #the tlb has private l2tlb
     is_stage2 = Param.Bool(False,"the tlb is private l2tlb")
-    #is_stage2 = Param.Bool(True,"the tlb is private l2tlb")
     is_the_sharedL2 = Param.Bool(False,"the tlb is shared l2tlb")
     size = Param.Int(48, "TLB size")
-    #size = Param.Int(36, "TLB size")
-    #l2tlb_l1_size = Param.Int(8, "l2TLB_l1 size")
-    #l2tlb_l2_size = Param.Int(32, "l2TLB_l2 size")
-    #l2tlb_l3_size = Param.Int(256, "l2TLB_l3 size")
-    #l2tlb_sp_size = Param.Int(16, "l2TLB_sp size")
-    l2tlb_l1_size = Param.Int(16, "l2TLB_l1 size")
-    #l2tlb_l2_size = Param.Int(64, "l2TLB_l2 size")
+    l2tlb_l1_size = Param.Int(8, "l2TLB_l1 size")
     l2tlb_l2_size = Param.Int(16, "l2TLB_l2 size")
-    #l2tlb_l3_size = Param.Int(512, "l2TLB_l3 size")
     l2tlb_l3_size = Param.Int(16, "l2TLB_l3 size")
-    l2tlb_l0_size = Param.Int(128, "l2TLB_l0 size")
+    l2tlb_l0_size = Param.Int(256, "l2TLB_l0 size")
     l2tlb_sp_size = Param.Int(16, "l2TLB_sp size")
-    l2tlb_line_size = Param.Int(8, "l2TLB_line size")
     enable_l1_direct_compression = Param.Bool(
         False, "enable L1 direct one-stage TLB compression")
     regulation_num = Param.Int(70000, "train nextline num")
