@@ -114,8 +114,10 @@ InstructionQueue::MdpAddrReplayLdInst::MdpAddrReplayLdInst(
 }
 
 InstructionQueue::MdpAddrReplayLdInst::MdpAddrReplayLdInst(
-    const DynInstPtr &inst, size_t required_store_completed_idx)
-    : inst(inst), pipeDone(false), strict(true),
+    const DynInstPtr &inst, size_t required_store_completed_idx,
+    InstSeqNum store_seq_num)
+    : inst(inst), pipeDone(false), earlyStoreSeqNum(store_seq_num),
+      strict(true),
       requiredStoreCompletedIdx(required_store_completed_idx)
 {
 }
@@ -403,6 +405,7 @@ InstructionQueue::resetState()
     deferredMemInsts.clear();
     cacheMissLdInsts.clear();
     stlfFailLdInsts.clear();
+    storeReplayWakeups.clear();
     for (auto &replay_ld_insts : mdpAddrReplayLdInsts) {
         replay_ld_insts.clear();
     }
@@ -446,7 +449,8 @@ InstructionQueue::isDrained() const
     bool drained = scheduler->isDrained() &&
                    instsToExecute.empty() && deferredFpReads.empty() &&
                    wbOutstanding == 0;
-    drained = drained && !hasPhysicalSQFullReplayInsts();
+    drained = drained && !hasPhysicalSQFullReplayInsts() &&
+              storeReplayWakeups.empty();
     for (ThreadID tid = 0; tid < numThreads; ++tid)
         drained = drained && memDepUnit[tid].isDrained();
 
@@ -459,6 +463,7 @@ InstructionQueue::drainSanityCheck() const
     assert(instsToExecute.empty());
     assert(deferredFpReads.empty());
     assert(!hasPhysicalSQFullReplayInsts());
+    assert(storeReplayWakeups.empty());
     for (ThreadID tid = 0; tid < numThreads; ++tid)
         memDepUnit[tid].drainSanityCheck();
 }
@@ -648,6 +653,8 @@ InstructionQueue::scheduleReadyInsts()
     DPRINTF(IQ, "Attempting to schedule ready instructions from "
             "the IQ.\n");
 
+    processStoreReplayWakeups();
+
     IssueStruct *i2e_info = issueToExecuteQueue->access(0);
 
     DynInstPtr mem_inst;
@@ -753,7 +760,7 @@ InstructionQueue::scheduleReadyInsts()
     // removed from the code below.
     if (total_issued || !retryMemInsts.empty() || !deferredMemInsts.empty() ||
        !cacheMissLdInsts.empty() || !stlfFailLdInsts.empty() ||
-       hasMdpAddrReplayInsts()) {
+       hasMdpAddrReplayInsts() || !storeReplayWakeups.empty()) {
         cpu->activityThisCycle();
     } else {
         DPRINTF(IQ, "Not able to schedule any instructions.\n");
@@ -993,6 +1000,17 @@ InstructionQueue::stlfFailLdReplay(const DynInstPtr &deferred_inst, const InstSe
     DPRINTF(IQ, "Load[sn:%llu] unable to forward from data unready store[sn:%llu],"
             " insert to Replay Queue\n", deferred_inst->seqNum, store_seq_num);
     stlfFailLdInsts.emplace_back(deferred_inst, store_seq_num, false);
+    auto &wait = stlfFailLdInsts.back();
+    // C_FF can bypass blocking when enqueued in the visible STD pulse cycle.
+    for (const auto &hint : storeReplayWakeups) {
+        if (hint.visibleTick == curTick() && hint.data &&
+            !hint.store->isSquashed() &&
+            hint.store->threadNumber == deferred_inst->threadNumber &&
+            hint.store->seqNum == store_seq_num) {
+            wait.earlyReady = true;
+            break;
+        }
+    }
 }
 
 void
@@ -1065,7 +1083,7 @@ InstructionQueue::getSTLFFailInstToExecute()
 {
     for (auto it = stlfFailLdInsts.begin(); it != stlfFailLdInsts.end();
          ++it) {
-        if ((*it).resolved || (*it).inst->isSquashed()) {
+        if ((*it).resolved || (*it).earlyReady || (*it).inst->isSquashed()) {
             DPRINTF(IQ, "STDFwdFailed load inst [sn:%llu] PC %s is ready to "
                     "execute\n", (*it).inst->seqNum, (*it).inst->pcState());
             DynInstPtr mem_inst = std::move((*it).inst);
@@ -1094,6 +1112,70 @@ InstructionQueue::resolveSTLFFailInst(const InstSeqNum &store_seq_num)
 }
 
 void
+InstructionQueue::notifyStoreIssue(const DynInstPtr &inst, Cycles delay)
+{
+    if (inst->isSquashed() ||
+        !(inst->isSplitStoreAddr() || inst->isSplitStoreData())) {
+        return;
+    }
+    const bool data = inst->isSplitStoreData();
+    const Tick visible = cpu->clockEdge(delay);
+    storeReplayWakeups.push_back({inst, visible, data});
+}
+
+void
+InstructionQueue::processStoreReplayWakeups()
+{
+    for (auto it = storeReplayWakeups.begin();
+         it != storeReplayWakeups.end();) {
+        if (it->store->isSquashed() || it->visibleTick < curTick()) {
+            it = storeReplayWakeups.erase(it);
+            continue;
+        }
+        if (it->visibleTick > curTick()) {
+            ++it;
+            continue;
+        }
+        const auto &store = it->store;
+        if (it->data) {
+            for (auto &wait : stlfFailLdInsts) {
+                if (!wait.earlyReady && !wait.resolved &&
+                    !wait.inst->isSquashed() &&
+                    wait.inst->threadNumber == store->threadNumber &&
+                    wait.storeSeqNum == store->seqNum) {
+                    wait.earlyReady = true;
+                }
+            }
+        } else if (storeQueueWriteReady(store)) {
+            // RTL ignores address hints outside the physical SQ window.
+            for (auto &wait : mdpAddrReplayLdInsts[store->threadNumber]) {
+                if (!wait.earlyReady && !wait.inst->isSquashed() &&
+                    wait.earlyStoreSeqNum == store->seqNum) {
+                    wait.earlyReady = true;
+                }
+            }
+        }
+        ++it;
+    }
+
+    for (auto &waits : mdpAddrReplayLdInsts) {
+        for (auto it = waits.begin(); it != waits.end();) {
+            if (it->inst->isSquashed()) {
+                it = waits.erase(it);
+                continue;
+            }
+            if (it->earlyReady && it->pipeDone) {
+                assert(!it->inst->inPipe());
+                it->inst->issueQue->retryMem(it->inst);
+                it = waits.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+}
+
+void
 InstructionQueue::mdpAddrReplayRegister(
     const DynInstPtr &load_inst, const std::vector<InstSeqNum> &store_seq_nums)
 {
@@ -1114,11 +1196,15 @@ InstructionQueue::mdpAddrReplayRegister(
     DPRINTF(IQ, "Load[sn:%llu] MDP addr replay register, wait %lu stores\n",
             load_inst->seqNum, store_seq_nums.size());
     replay_ld_insts.emplace_back(load_inst, store_seq_nums);
+    // RTL carries one blockSqIdx; use the youngest unresolved prediction.
+    replay_ld_insts.back().earlyStoreSeqNum =
+        *std::max_element(store_seq_nums.begin(), store_seq_nums.end());
 }
 
 void
 InstructionQueue::mdpAddrReplayRegisterStrict(const DynInstPtr &load_inst,
-                                             size_t required_store_completed_idx)
+                                             size_t required_store_completed_idx,
+                                             InstSeqNum store_seq_num)
 {
     if (!enableReplayBasedMDP || !load_inst || load_inst->isSquashed()) {
         return;
@@ -1134,7 +1220,8 @@ InstructionQueue::mdpAddrReplayRegisterStrict(const DynInstPtr &load_inst,
 
     DPRINTF(IQ, "Load[sn:%llu] MDP strict addr replay register, wait storeCompletedIdx >= %lu\n",
             load_inst->seqNum, required_store_completed_idx);
-    replay_ld_insts.emplace_back(load_inst, required_store_completed_idx);
+    replay_ld_insts.emplace_back(load_inst, required_store_completed_idx,
+                                 store_seq_num);
 }
 
 void
@@ -1322,6 +1409,10 @@ InstructionQueue::doSquash(ThreadID tid)
     squashInfo.squashSn  = squashedSeqNum[tid];
     scheduler->doSquash(squashInfo);
 
+    storeReplayWakeups.remove_if([&](const auto &hint) {
+        return hint.store->threadNumber == tid &&
+               hint.store->seqNum > squashedSeqNum[tid];
+    });
     auto &replay_ld_insts = mdpAddrReplayLdInsts[tid];
     for (auto it = replay_ld_insts.begin(); it != replay_ld_insts.end();) {
         if (!it->inst || it->inst->seqNum > squashedSeqNum[tid]) {

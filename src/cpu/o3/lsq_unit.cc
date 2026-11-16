@@ -3677,7 +3677,10 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                         load_inst->seqNum, storeCompletedIdx, required);
                 load_inst->setMdpAddrReplay();
                 loadSetReplay(load_inst, request, true);
-                iewStage->mdpAddrReplayRegisterStrict(load_inst, required);
+                const auto &blocker = storeQueue[required].instruction();
+                assert(blocker && blocker->threadNumber == lsqID);
+                iewStage->mdpAddrReplayRegisterStrict(load_inst, required,
+                                                     blocker->seqNum);
                 return NoFault;
             }
         } else {
