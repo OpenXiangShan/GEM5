@@ -1676,7 +1676,8 @@ BaseCache::hasOtherIcacheCopy(const CacheBlk *blk) const
         tags->regenerateBlkAddr(blk);
     for (auto *entry : tags->getIndexingPolicy()->getPossibleEntries(addr)) {
         const auto *other = static_cast<CacheBlk *>(entry);
-        if (other != blk && other->matchTag(blk->getTag(), blk->isSecure()))
+        if (other != blk &&
+            other->matchTag(tags->extractTag(addr), blk->isSecure()))
             return true;
     }
     return false;
@@ -1729,7 +1730,16 @@ BaseCache::fillIcachePartitions(MSHR *mshr, PacketPtr pkt,
         copy.setHasSharers();
         copy.headerDelay = pkt->headerDelay;
         copy.payloadDelay = pkt->payloadDelay;
-        handleFill(&copy, tags->findBlock(&copy), writebacks, true);
+        CacheBlk *other = tags->findBlock(&copy);
+        if (!other)
+            other = allocateBlock(&copy, writebacks);
+        // A secondary copy must not borrow the shared tempBlock: the primary
+        // fill may already be using it, and only the primary block is retired
+        // after servicing this MSHR. The merged response still serves this
+        // hart when its way group has no replaceable entry.
+        if (!other)
+            continue;
+        handleFill(&copy, other, writebacks, true);
         ++stats.icachePartitionExtraFills;
     }
 }
@@ -1749,16 +1759,17 @@ BaseCache::handleEvictions(std::vector<CacheBlk*> &evict_blks,
 
             const MSHR* mshr =
                 mshrQueue.findMatch(regenerateBlkAddr(blk), blk->isSecure());
-            // A miss in one hart's way group may coexist with a clean
-            // copy in the other group. Evicting that copy is safe: the shared
-            // read MSHR still owns its response and will allocate on fill.
-            if (mshr && !(tags->hasThreadPartitions() &&
-                          !blk->isSet(CacheBlk::DirtyBit) &&
-                          !mshr->needsWritable() && !mshr->isCleaning())) {
-                // Must be an outstanding upgrade or clean request on a block
-                // we're about to replace
-                assert((!blk->isSet(CacheBlk::WritableBit) &&
-                    mshr->needsWritable()) || mshr->isCleaning());
+            if (mshr) {
+                // A partition miss may coexist with the other hart's clean
+                // resident copy. Keep that copy pinned until its physical-line
+                // MSHR finishes, just as classic cache pins upgrade targets.
+                // Otherwise a CleanEvict can clear the snoop-filter holder
+                // after its ReadResp arrives but before the L1 sees the fill.
+                assert((tags->hasThreadPartitions() && isReadOnly &&
+                        !blk->isSet(CacheBlk::DirtyBit) &&
+                        !mshr->needsWritable()) ||
+                       (!blk->isSet(CacheBlk::WritableBit) &&
+                        mshr->needsWritable()) || mshr->isCleaning());
                 return false;
             }
         }

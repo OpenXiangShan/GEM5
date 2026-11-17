@@ -24,6 +24,11 @@ allocate a copy for each requesting hart. Snoop invalidation and downgrade
 reach both copies; evicting one copy does not evict the L1's snoop-filter entry
 while another copy remains. This probe supports a single SMT2 CPU with context
 IDs 0/1, BaseSetAssoc tags, and no ICache hardware prefetcher or clean writebacks.
+As in classic cache, a resident line is pinned while a same-physical-line
+MSHR is outstanding. This also covers a miss in the other hart's way group:
+an eviction must not clear the snoop-filter holder between the downstream
+response and the L1 fill. An extra hart-owned copy is skipped if its way group
+has no replaceable entry; it never borrows the primary fill's temporary block.
 
 The bank probe uses the hit block's resident way and physical set after tag
 lookup. Overlapping banks in the same way at different sets cannot read in
