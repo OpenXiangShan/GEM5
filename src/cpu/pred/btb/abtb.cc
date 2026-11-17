@@ -198,12 +198,12 @@ AheadBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startA
     // Sort by instruction order
     std::sort(processed_entries.begin(), processed_entries.end(), 
              [](const BTBEntry &a, const BTBEntry &b) {
-                 return a.pc < b.pc;
+                 return a.branch.pc < b.branch.pc;
              });
 
     auto it = std::remove_if(processed_entries.begin(), processed_entries.end(),
                            [startAddr](const BTBEntry &e) {
-                               return e.pc < startAddr;
+                               return e.branch.pc < startAddr;
                            });
     processed_entries.erase(it, processed_entries.end());
 
@@ -211,7 +211,7 @@ AheadBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startA
                     ~mask(floorLog2(predictWidth) - 1);
     it = std::remove_if(processed_entries.begin(), processed_entries.end(),
                         [abtb_end](const BTBEntry &e) {
-                            return e.pc >= abtb_end;
+                            return e.branch.pc >= abtb_end;
                         });
     processed_entries.erase(it, processed_entries.end());
 
@@ -241,7 +241,7 @@ AheadBTB::processEntriesNoSideEffect(const std::vector<TickedBTBEntry>& entries,
     auto processed_entries = entries;
     std::sort(processed_entries.begin(), processed_entries.end(),
              [](const BTBEntry &a, const BTBEntry &b) {
-                 return a.pc < b.pc;
+                 return a.branch.pc < b.branch.pc;
              });
     return processed_entries;
 }
@@ -257,14 +257,14 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
                                     std::vector<FullBTBPrediction>& stagePreds)
 {    // S0 prediction source statistic is tracked by AheadBTB
     // AheadBTB always has aheadPipelinedStages > 0
-    std::vector<TickedBTBEntry> selected_entries;
+    std::vector<BranchPrediction> selected_entries;
     bool selected_abtb_entries = false;
 
     if (!entries.empty()) {
         // RTL S1 arbitration gives ABTB exclusive priority once ABTB is valid.
         // If these entries later predict not-taken, S1 falls through instead of
         // falling back to an earlier uBTB taken prediction.
-        selected_entries = entries;
+        selected_entries.assign(entries.begin(), entries.end());
         selected_abtb_entries = true;
         btbStats.S0PredUseABTB++;
     } else if (stagePreds[0].btbEntries.size() > 0) {
@@ -272,7 +272,7 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         btbStats.S0PredUseUBTB++;
         const auto &ubtb_pred_entry = stagePreds[0].btbEntries[0];
         assert(ubtb_pred_entry.valid);
-        selected_entries.push_back(TickedBTBEntry(ubtb_pred_entry, curTick()));
+        selected_entries.push_back(ubtb_pred_entry);
     } else {
         btbStats.S0Predmiss++;
     }
@@ -282,7 +282,7 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         // Copy BTB entries to stage prediction
         stagePreds[s].btbEntries.clear();
         for (auto e : selected_entries) {
-            auto pred_entry = BTBEntry(e);
+            auto pred_entry = e;
             if (selected_abtb_entries) {
                 pred_entry.source = getComponentIdx();
             }
@@ -292,27 +292,8 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         dumpBTBEntries(stagePreds[s].btbEntries);
 
         stagePreds[s].predTick = curTick();
-        stagePreds[s].condTakens.clear();
-        stagePreds[s].indirectTargets.clear();
     }
 
-    // Set predictions for each branch
-    for (auto &e : selected_entries) {
-        assert(e.valid);
-        if (e.isCond) {
-            FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.ctr >= 0});
-        } else if (e.isIndirect) {
-            // Set predicted target for indirect branches
-            DPRINTF(ABTB, "setting indirect target for pc %#lx to %#lx\n", e.pc, e.target);
-
-            FillStageLoop(s) stagePreds[s].indirectTargets.push_back({e.pc, e.target});
-
-            if (e.isReturn) {
-                FillStageLoop(s) stagePreds[s].returnTarget = e.target;
-            }
-            break;
-        }
-    }
 
 }
 
@@ -569,7 +550,7 @@ AheadBTB::processOldEntries(const std::vector<BTBEntry>& hit_entries,
     DPRINTF(ABTB, "old_entries.size(): %lu\n", old_entries.size());
     //dumpBTBEntries(old_entries);
     auto remove_it = std::remove_if(old_entries.begin(), old_entries.end(),
-        [end_inst_pc](const BTBEntry &e) { return e.pc > end_inst_pc; });
+        [end_inst_pc](const BTBEntry &e) { return e.branch.pc > end_inst_pc; });
     old_entries.erase(remove_it, old_entries.end());
     DPRINTF(ABTB, "after removing not executed insts, old_entries.size(): %lu\n", old_entries.size());
     //dumpBTBEntries(old_entries);
@@ -589,7 +570,7 @@ AheadBTB::checkPredictionHit(
 {
     bool pred_branch_hit = false;
     for (auto &e : meta->hit_entries) {
-        if (update.outcome.valid && update.outcome.branch == e) {
+        if (update.outcome.valid && update.outcome.branch.pc == e.branch.pc) {
             pred_branch_hit = true;
             break;
         }
@@ -620,7 +601,7 @@ AheadBTB::updateBTBEntry(
     bool found = false;
     auto it = btb[btb_idx].begin();
     for (; it != btb[btb_idx].end(); it++) {
-        if (*it == entry) {
+        if (it->branch.pc == entry.branch.pc) {
             found = true;
             break;
         }
@@ -629,7 +610,7 @@ AheadBTB::updateBTBEntry(
     auto entry_to_write = entry;
     entry_to_write.tag = btb_tag;   // update tag after found it!
     // Keep a newly allocated conditional weakly taken, matching RTL.
-    if (entry_to_write.isCond) {
+    if (entry_to_write.branch.isCond) {
         if (found) {
             entry_to_write.ctr = it->ctr;
             updateCtr(entry_to_write.ctr, actual_taken);
@@ -638,8 +619,8 @@ AheadBTB::updateBTBEntry(
         }
     }
     // update indirect target if necessary
-    if (entry_to_write.isIndirect && actual_taken) {
-        entry_to_write.target = actual_target;
+    if (entry_to_write.branch.isIndirect && actual_taken) {
+        entry_to_write.branch.target = actual_target;
     }
     auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
     if (found) {
@@ -648,8 +629,8 @@ AheadBTB::updateBTBEntry(
 #ifndef UNIT_TEST
         if (enableDB) {
             BTBTrace rec;
-            rec.set(ticked_entry.pc, ticked_entry.getType(),
-                ticked_entry.target, btb_idx, Mode::WRITE, 1);
+            rec.set(ticked_entry.branch.pc, ticked_entry.branch.getType(),
+                ticked_entry.branch.target, btb_idx, Mode::WRITE, 1);
             btbTrace->write_record(rec);
         }
 #endif
@@ -664,8 +645,8 @@ AheadBTB::updateBTBEntry(
 #ifndef UNIT_TEST
         if (enableDB) {
             BTBTrace rec;
-            rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
-                    entry_in_btb_now->target, btb_idx, Mode::EVICT, 0);
+            rec.set(entry_in_btb_now->branch.pc, entry_in_btb_now->branch.getType(),
+                    entry_in_btb_now->branch.target, btb_idx, Mode::EVICT, 0);
                 btbTrace->write_record(rec);
         }
 #endif
@@ -676,13 +657,13 @@ AheadBTB::updateBTBEntry(
         }
         btbStats.updateReplace++;
         DPRINTF(ABTB, "BTB: Replacing entry with tag %#lx, pc %#lx in set %#lx\n",
-                entry_in_btb_now->tag, entry_in_btb_now->pc, btb_idx);
+                entry_in_btb_now->tag, entry_in_btb_now->branch.pc, btb_idx);
         *entry_in_btb_now = ticked_entry;
 #ifndef UNIT_TEST
         if (enableDB) {
             BTBTrace rec;
-            rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
-                entry_in_btb_now->target, btb_idx, Mode::WRITE, 0);
+            rec.set(entry_in_btb_now->branch.pc, entry_in_btb_now->branch.getType(),
+                entry_in_btb_now->branch.target, btb_idx, Mode::WRITE, 0);
             btbTrace->write_record(rec);
         }
 #endif
@@ -710,7 +691,7 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
         return;
     }
 
-    Addr end_inst_pc = s3Pred.isTaken() ? s3Pred.getTakenEntry().pc :
+    Addr end_inst_pc = s3Pred.isTaken() ? s3Pred.getTakenEntry().branch.pc :
                             (s3Pred.bbStart + predictWidth) &
                                 ~mask(floorLog2(predictWidth) - 1);
     auto old_entries = processOldEntries(state.lastPredEntries, end_inst_pc);
@@ -728,9 +709,9 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
         entry.source = getComponentIdx();
 
         const auto taken_entry = s3Pred.getTakenEntry();
-        const bool entry_taken = s3Pred.isTaken() && taken_entry.pc == entry.pc;
+        const bool entry_taken = s3Pred.isTaken() && taken_entry.branch.pc == entry.branch.pc;
         updateBTBEntry(
-            btb_idx, btb_tag, entry, entry_taken, taken_entry.target);
+            btb_idx, btb_tag, entry, entry_taken, taken_entry.branch.target);
     }
 }
 std::vector<BTBEntry>
@@ -743,16 +724,16 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
     // we need to check if the new entry already exists in uBTB
     bool pred_branch_hit = false;
     for (auto &e: old_entries) {
-        if (s3Pred.getTakenEntry() == e) {
+        if (s3Pred.getTakenEntry().branch.pc == e.branch.pc) {
             pred_branch_hit = true;
             break;
         }
     }
     if (!pred_branch_hit&& s3Pred.isTaken()) {
-        new_entry = s3Pred.getTakenEntry();
+        new_entry = BTBEntry(s3Pred.getTakenEntry().branch);
         new_entry.valid = true;
 
-        if (new_entry.isCond) {
+        if (new_entry.branch.isCond) {
             new_entry.ctr = 0;
         }
         all_entries.push_back(new_entry);
@@ -802,15 +783,15 @@ AheadBTB::update(
         auto hit = std::find_if(
             meta->hit_entries.begin(), meta->hit_entries.end(),
             [&branch](const BTBEntry &entry) {
-                return entry.pc == branch.pc;
+                return entry.branch.pc == branch.branch.pc;
             });
         if (hit == meta->hit_entries.end() && !branch.taken) {
             continue;
         }
 
-        BTBEntry entry(makeBranchInfo(branch));
+        BTBEntry entry(branch.branch);
         entry.source = getComponentIdx();
-        updateBTBEntry(btb_idx, btb_tag, entry, branch.taken, branch.target);
+        updateBTBEntry(btb_idx, btb_tag, entry, branch.taken, branch.branch.target);
     }
 }
 
@@ -849,18 +830,18 @@ AheadBTB::commitBranch(const PredictionUpdateContext &context,
     auto meta = std::static_pointer_cast<BTBMeta>(
         context.predMetas[getComponentIdx()]);
     auto &hit_entries = meta->hit_entries;
-    auto pc = outcome.pc;
-    auto npc = outcome.target;
+    auto pc = outcome.branch.pc;
+    auto npc = outcome.branch.target;
     bool this_branch_hit = false;
     auto entry = BTBEntry();
     for (auto e : hit_entries) {
-        if (e.pc == pc) {
+        if (e.branch.pc == pc) {
             this_branch_hit = true;
             entry = e;
             break;
         }
     }
-    bool this_branch_taken = outcome.taken || !outcome.isCond;
+    bool this_branch_taken = outcome.taken || !outcome.branch.isCond;
     Addr this_branch_target = npc;
     if (this_branch_hit) {
         btbStats.allBranchHits++;
@@ -869,7 +850,7 @@ AheadBTB::commitBranch(const PredictionUpdateContext &context,
         } else {
             btbStats.allBranchHitNotTakens++;
         }
-        if (outcome.isCond) {
+        if (outcome.branch.isCond) {
             btbStats.condHits++;
             if (this_branch_taken) {
                 btbStats.condHitTakens++;
@@ -883,22 +864,22 @@ AheadBTB::commitBranch(const PredictionUpdateContext &context,
                     btbStats.condPredWrong++;
                 }
         }
-        if (!outcome.isCond) {
+        if (!outcome.branch.isCond) {
             btbStats.uncondHits++;
         }
-        if (outcome.isIndirect) {
+        if (outcome.branch.isIndirect) {
             btbStats.indirectHits++;
-            Addr pred_target = entry.target;
+            Addr pred_target = entry.branch.target;
             if (pred_target == this_branch_target) {
                 btbStats.indirectPredCorrect++;
             } else {
                 btbStats.indirectPredWrong++;
             }
         }
-        if (outcome.isCall) {
+        if (outcome.branch.isCall) {
             btbStats.callHits++;
         }
-        if (outcome.isReturn) {
+        if (outcome.branch.isReturn) {
             btbStats.returnHits++;
         }
     } else {
@@ -908,7 +889,7 @@ AheadBTB::commitBranch(const PredictionUpdateContext &context,
         } else {
             btbStats.allBranchMissNotTakens++;
         }
-        if (outcome.isCond) {
+        if (outcome.branch.isCond) {
             btbStats.condMisses++;
             if (this_branch_taken) {
                 btbStats.condMissTakens++;
@@ -918,17 +899,17 @@ AheadBTB::commitBranch(const PredictionUpdateContext &context,
                 btbStats.condPredCorrect++;
             }
         }
-        if (!outcome.isCond) {
+        if (!outcome.branch.isCond) {
             btbStats.uncondMisses++;
         }
-        if (outcome.isIndirect) {
+        if (outcome.branch.isIndirect) {
             btbStats.indirectMisses++;
             btbStats.indirectPredWrong++;
         }
-        if (outcome.isCall) {
+        if (outcome.branch.isCall) {
             btbStats.callMisses++;
         }
-        if (outcome.isReturn) {
+        if (outcome.branch.isReturn) {
             btbStats.returnMisses++;
         }
     }

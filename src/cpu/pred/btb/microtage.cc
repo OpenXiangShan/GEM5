@@ -212,12 +212,12 @@ MicroTAGE::tickStart() {}
  * @return TagePrediction containing main and alternative predictions
  */
 MicroTAGE::TagePrediction
-MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
+MicroTAGE::generateSinglePrediction(const BranchPrediction &btb_entry,
                                  const Addr &startPC,
                                  std::shared_ptr<TageMeta> predMeta,
                                  ThreadID tid,
                                  uint8_t asidHash) {
-    DPRINTF(UTAGE, "generateSinglePrediction for btbEntry: %#lx\n", btb_entry.pc);
+    DPRINTF(UTAGE, "generateSinglePrediction for btbEntry: %#lx\n", btb_entry.branch.pc);
     const auto &state = historyState(tid);
 
     bool provided = false;
@@ -225,7 +225,7 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
     // Search from highest to lowest table for matches
     // Calculate branch position within the block (like RTL's cfiPosition)
-    unsigned position = getBranchIndexInBlock(btb_entry.pc, startPC);
+    unsigned position = getBranchIndexInBlock(btb_entry.branch.pc, startPC);
 
     for (int i = numPredictors - 1; i >= 0; --i) {
         // Calculate index and tag: use snapshot if provided, otherwise use current folded history
@@ -256,7 +256,7 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                 // Do not use LRU; keep logic simple and align with CBP-style replacement
 
                 DPRINTF(UTAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
-                    i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, btb_entry.pc, position);
+                    i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, btb_entry.branch.pc, position);
                 break;  // only one way can be matched, avoid multi-hit, TODO: RTL behavior?
             }
         }
@@ -269,21 +269,21 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
             }
         } else {
             DPRINTF(UTAGE, "miss table %d[%lu] for tag %lu (with pos %u), btb_pc %#lx\n",
-                i, index, tag, position, btb_entry.pc);
+                i, index, tag, position, btb_entry.branch.pc);
         }
     }
 
     // Generate final prediction
     bool main_taken = main_info.taken();
-    bool base_pred = btb_entry.ctr >= 0;
+    bool base_pred = btb_entry.baseTaken;
 
     bool taken = provided ? main_taken : base_pred;
 
-    DPRINTF(UTAGE, "tage predict %#lx taken %d\n", btb_entry.pc, taken);
+    DPRINTF(UTAGE, "tage predict %#lx taken %d\n", btb_entry.branch.pc, taken);
     DPRINTF(UTAGE, "tage main provided %d ? main_taken %d : base_taken %d\n",
             provided, main_taken, base_pred);
 
-    return TagePrediction(btb_entry.pc, main_info, provided, taken, base_pred);
+    return TagePrediction(btb_entry.branch.pc, main_info, provided, taken, base_pred);
 }
 
 /**
@@ -294,20 +294,19 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
  * @return Map of branch PC addresses to their predicted outcomes
  */
 void
-MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
-                        CondTakens& results, ThreadID tid, uint8_t asidHash)
+MicroTAGE::lookupHelper(const Addr &startPC, std::vector<BranchPrediction> &btbEntries, ThreadID tid, uint8_t asidHash)
 {
     DPRINTF(UTAGE, "lookupHelper startAddr: %#lx\n", startPC);
 
     // Process each BTB entry to make predictions
     for (auto &btb_entry : btbEntries) {
         // Only predict for valid conditional branches
-        if (btb_entry.isCond && btb_entry.valid) {
+        if (btb_entry.branch.isCond && btb_entry.valid && isAbtbEntry(btb_entry)) {
             auto pred = generateSinglePrediction(btb_entry, startPC, nullptr,
                                                  tid, asidHash);
-            threadMeta[tid]->preds[btb_entry.pc] = pred;
+            threadMeta[tid]->preds[btb_entry.branch.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
-            results.push_back({btb_entry.pc, pred.taken});
+            btb_entry.taken = pred.taken;
         }
     }
 }
@@ -378,21 +377,7 @@ MicroTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTB
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
         auto &stage_pred = stagePreds[s];
-        auto abtb_entries = getAbtbConditionalEntries(stage_pred.btbEntries);
-        if (abtb_entries.empty()) {
-            continue;
-        }
-        for (const auto &entry : abtb_entries) {
-            stage_pred.condTakens.erase(
-                std::remove_if(stage_pred.condTakens.begin(),
-                               stage_pred.condTakens.end(),
-                               [&entry](const auto &taken) {
-                                   return taken.first == entry.pc;
-                               }),
-                stage_pred.condTakens.end());
-        }
-        lookupHelper(startPC, abtb_entries, stage_pred.condTakens,
-                     tid, asidHash);
+        lookupHelper(startPC, stage_pred.btbEntries, tid, asidHash);
     }
 
 }
@@ -424,7 +409,7 @@ MicroTAGE::refreshPredictionMeta(Addr startPC,
     meta->abtbEntries = getAbtbConditionalEntries(pred.btbEntries);
 
     for (const auto &btb_entry : meta->abtbEntries) {
-        meta->preds[btb_entry.pc] = generateSinglePrediction(
+        meta->preds[btb_entry.branch.pc] = generateSinglePrediction(
             btb_entry, startPC, nullptr, tid, pred.asidHash);
     }
 
@@ -432,7 +417,7 @@ MicroTAGE::refreshPredictionMeta(Addr startPC,
 }
 
 bool
-MicroTAGE::isAbtbEntry(const BTBEntry &entry) const
+MicroTAGE::isAbtbEntry(const BranchPrediction &entry) const
 {
 #ifdef UNIT_TEST
     if (abtbComponentIdx < 0) {
@@ -442,43 +427,42 @@ MicroTAGE::isAbtbEntry(const BTBEntry &entry) const
     return abtbComponentIdx >= 0 && entry.source == abtbComponentIdx;
 }
 
-std::vector<BTBEntry>
-MicroTAGE::getAbtbConditionalEntries(const std::vector<BTBEntry> &btbEntries) const
+std::vector<BranchPrediction>
+MicroTAGE::getAbtbConditionalEntries(const std::vector<BranchPrediction> &btbEntries) const
 {
-    std::vector<BTBEntry> entries;
+    std::vector<BranchPrediction> entries;
     for (const auto &entry : btbEntries) {
-        if (entry.valid && entry.isCond && isAbtbEntry(entry)) {
+        if (entry.valid && entry.branch.isCond && isAbtbEntry(entry)) {
             entries.push_back(entry);
         }
     }
     return entries;
 }
 
-std::vector<BTBEntry>
+std::vector<BranchPrediction>
 MicroTAGE::prepareS3UpdateEntriesFromAbtbMeta(
-    const std::vector<BTBEntry> &abtbEntries,
-    FullBTBPrediction &s3Pred,
-    CondTakens &teacherCondTakens)
+    const std::vector<BranchPrediction> &abtbEntries,
+    FullBTBPrediction &s3Pred)
 {
-    std::vector<BTBEntry> entries;
+    std::vector<BranchPrediction> entries;
     auto taken_entry = s3Pred.getTakenEntry();
 
     for (const auto &entry : abtbEntries) {
-        if (!entry.valid || !entry.isCond) {
+        if (!entry.valid || !entry.branch.isCond) {
             continue;
         }
 
-        if (taken_entry.valid && entry.pc > taken_entry.pc) {
+        if (taken_entry.valid && entry.branch.pc > taken_entry.branch.pc) {
             break;
         }
 
         const bool actual_taken =
-            taken_entry.valid && taken_entry.isCond &&
-            entry.pc == taken_entry.pc;
+            taken_entry.valid && taken_entry.branch.isCond &&
+            entry.branch.pc == taken_entry.branch.pc;
         entries.push_back(entry);
-        teacherCondTakens.push_back({entry.pc, actual_taken});
+        entries.back().taken = actual_taken;
 
-        if (taken_entry.valid && entry.pc == taken_entry.pc) {
+        if (taken_entry.valid && entry.branch.pc == taken_entry.branch.pc) {
             break;
         }
     }
@@ -496,7 +480,7 @@ MicroTAGE::prepareS3UpdateEntriesFromAbtbMeta(
  * @return true if need to allocate new entry
  */
 bool
-MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
+MicroTAGE::updatePredictorStateAndCheckAllocation(const BranchPrediction &entry,
                              bool actual_taken,
                              const TagePrediction &pred,
                              bool control_mispred) {
@@ -505,7 +489,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     auto &main_info = pred.mainInfo;
     bool used_base = !pred.mainprovided;
     // Use base table instead of entry.ctr for fallback prediction
-    bool base_taken = entry.ctr >= 0;
+    bool base_taken = entry.baseTaken;
 
     // Update use_alt_on_na when provider is weak (0 or -1)
     if (main_info.found) {
@@ -535,22 +519,11 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 
         // Update useful bit based on several conditions
         bool main_is_correct = main_info.taken() == actual_taken;
-        bool base_is_correct_and_strong =
-                                     (base_taken == actual_taken) &&
-                                     (abs(2 * entry.ctr + 1) == 5);
-
-        // a. Special reset (humility mechanism)
-        if (base_is_correct_and_strong && main_is_correct) {
-            way.useful = 0;
-            DPRINTF(TAGEUseful, "useful bit reset to 0 due to humility rule\n");
-        } else if (main_info.taken() != base_taken) {
-            // b. Original logic to set useful bit high
-            if (main_is_correct) {
-                way.useful = 1;
-            }
+        if (main_info.taken() != base_taken && main_is_correct) {
+            way.useful = 1;
         }
 
-        // c. Reset u on counter sign flip (becomes weak)
+        // Reset useful when the provider counter becomes weak.
         if (way.counter == 0 || way.counter == -1) {
             way.useful = 0;
             DPRINTF(TAGEUseful, "useful bit reset to 0 due to weak counter\n");
@@ -592,7 +565,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 }
 
 bool
-MicroTAGE::updatePredictorStateAndCheckAllocationS3(const BTBEntry &entry,
+MicroTAGE::updatePredictorStateAndCheckAllocationS3(const BranchPrediction &entry,
                              bool actual_taken,
                              const TagePrediction &pred) {
     // Mirror the normal update path, but interpret mismatch against the S3 teacher
@@ -605,7 +578,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocationS3(const BTBEntry &entry,
     if (!main_info.found || used_base) {
         tageStats.s3UpdateUseAlt++;
     }
-    bool base_taken = entry.ctr >= 0;
+    bool base_taken = entry.baseTaken;
 
     if (main_info.found) {
         bool main_weak = (main_info.entry.counter == 0 || main_info.entry.counter == -1);
@@ -629,17 +602,8 @@ MicroTAGE::updatePredictorStateAndCheckAllocationS3(const BTBEntry &entry,
         updateCounter(actual_taken, 3, way.counter);
 
         bool main_is_correct = main_info.taken() == actual_taken;
-        bool base_is_correct_and_strong =
-                                     (base_taken == actual_taken) &&
-                                     (abs(2 * entry.ctr + 1) == 5);
-
-        if (base_is_correct_and_strong && main_is_correct) {
-            way.useful = 0;
-            DPRINTF(TAGEUseful, "useful bit reset to 0 due to humility rule\n");
-        } else if (main_info.taken() != base_taken) {
-            if (main_is_correct) {
-                way.useful = 1;
-            }
+        if (main_info.taken() != base_taken && main_is_correct) {
+            way.useful = 1;
         }
 
         if (way.counter == 0 || way.counter == -1) {
@@ -691,7 +655,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocationS3(const BTBEntry &entry,
  */
 bool
 MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
-                                 const BTBEntry &entry,
+                                 const BranchPrediction &entry,
                                  bool actual_taken,
                                  unsigned start_table,
                                  std::shared_ptr<TageMeta> meta,
@@ -738,7 +702,7 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
     };
 
     // Calculate branch position within the block (like RTL's cfiPosition)
-    unsigned position = getBranchIndexInBlock(entry.pc, startPC);
+    unsigned position = getBranchIndexInBlock(entry.branch.pc, startPC);
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
         Addr newIndex = getTageIndex(
@@ -756,8 +720,8 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
             if (!cand.valid || (!cand.useful && weakish)) {
                 short newCounter = actual_taken ? 0 : -1;
                 DPRINTF(UTAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
-                        ti, newIndex, way, newTag, position, newCounter, entry.pc);
-                cand = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
+                        ti, newIndex, way, newTag, position, newCounter, entry.branch.pc);
+                cand = TageEntry(newTag, newCounter, entry.branch.pc); // u = 0 default
                 count_alloc_success();
                 allocated_table = ti;
                 allocated_index = newIndex;
@@ -914,18 +878,13 @@ MicroTAGE::updateUsingS3Pred(FullBTBPrediction &s3Pred)
     const Addr startAddr = s3Pred.bbStart;
     // Only train the conditional prefix that remains reachable under the
     // final-stage teacher prediction for this fetch block.
-    CondTakens teacher_cond_takens;
     auto btb_entries = prepareS3UpdateEntriesFromAbtbMeta(
-        predMeta->abtbEntries, s3Pred, teacher_cond_takens);
+        predMeta->abtbEntries, s3Pred);
     std::vector<TrainingEntry> entries_to_update;
     entries_to_update.reserve(btb_entries.size());
     for (const auto &entry : btb_entries) {
-        Addr branch_pc = entry.pc;
-        auto teacher_it = CondTakens_find(teacher_cond_takens, branch_pc);
-        const bool actual_taken =
-            teacher_it != teacher_cond_takens.end() && teacher_it->second;
         entries_to_update.push_back(
-            TrainingEntry{entry, actual_taken, false});
+            TrainingEntry{entry, entry.taken, false});
     }
     trainEntries(entries_to_update, predMeta, startAddr, tid, s3Pred.asidHash,
                  TrainingMode::S3Update);
@@ -943,20 +902,20 @@ MicroTAGE::trainEntries(const std::vector<TrainingEntry> &entries_to_update,
     bool utage_hit = false;
     const char *context = isS3Update ? "S3 teacher-update" : "update";
     auto get_prediction_for_training =
-        [&](const BTBEntry &btb_entry) -> TagePrediction {
+        [&](const BranchPrediction &btb_entry) -> TagePrediction {
             if (updateOnRead) {
                 return generateSinglePrediction(
                     btb_entry, startPC, predMeta, tid, asidHash);
             }
 
-            auto pred_it = predMeta->preds.find(btb_entry.pc);
+            auto pred_it = predMeta->preds.find(btb_entry.branch.pc);
             if (pred_it != predMeta->preds.end()) {
                 return pred_it->second;
             }
 
             DPRINTF(UTAGE,
                     "%s: missing predMeta entry for pc %#lx, recompute with snapshot\n",
-                    context, btb_entry.pc);
+                    context, btb_entry.branch.pc);
             return generateSinglePrediction(
                 btb_entry, startPC, predMeta, tid, asidHash);
         };
@@ -1042,15 +1001,15 @@ MicroTAGE::trainResolvedEntries(
     std::vector<TrainingEntry> entries;
     entries.reserve(update.branches.size());
     for (const auto &branch : update.branches) {
-        if (!branch.isCond) {
+        if (!branch.branch.isCond) {
             continue;
         }
-        auto entry = BTBEntry(makeBranchInfo(branch));
-        auto pred = predMeta->preds.find(entry.pc);
+        auto entry = BranchPrediction(branch.branch);
+        auto pred = predMeta->preds.find(entry.branch.pc);
         if (pred == predMeta->preds.end()) {
             continue;
         }
-        entry.ctr = pred->second.basePred ? 0 : -1;
+        entry.baseTaken = pred->second.basePred;
         entries.push_back(TrainingEntry{
             entry, branch.taken, branch.mispredicted});
     }
@@ -1501,7 +1460,7 @@ void
 MicroTAGE::commitBranch(const PredictionUpdateContext &context,
                         const BranchOutcome &outcome)
 {
-    if (!outcome.isCond) {
+    if (!outcome.branch.isCond) {
         // tage only deals with conditional branches
         return;
     }
@@ -1511,7 +1470,7 @@ MicroTAGE::commitBranch(const PredictionUpdateContext &context,
         DPRINTF(UTAGE, "commitBranch: no prediction meta, skip\n");
         return;
     }
-    auto pc = outcome.pc;
+    auto pc = outcome.branch.pc;
     auto it = meta->preds.find(pc);
     bool pred_taken = false;
     bool pred_hit = false;

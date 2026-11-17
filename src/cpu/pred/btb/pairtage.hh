@@ -65,14 +65,14 @@ class PairTAGE : public TimedBaseBTBPredictor
 
         // A new block, weak in its direction. It leaves at exit when exit
         // is valid, and falls through to targetPC otherwise.
-        PTAGEBlockInfo(const BTBEntry &exit, Addr targetPC)
+        PTAGEBlockInfo(const BranchPrediction &exit, Addr targetPC)
             : directionCounter(exit.valid ? 0 : -1),
-              branchPC(exit.valid ? exit.pc : 0), targetPC(targetPC),
-              isCond(exit.valid && exit.isCond),
-              isDirect(exit.valid && exit.isDirect),
-              isIndirect(exit.valid && exit.isIndirect),
-              isCall(exit.valid && exit.isCall),
-              isReturn(exit.valid && exit.isReturn)
+              branchPC(exit.valid ? exit.branch.pc : 0), targetPC(targetPC),
+              isCond(exit.valid && exit.branch.isCond),
+              isDirect(exit.valid && exit.branch.isDirect),
+              isIndirect(exit.valid && exit.branch.isIndirect),
+              isCall(exit.valid && exit.branch.isCall),
+              isReturn(exit.valid && exit.branch.isReturn)
         {}
 
         bool taken() const { return directionCounter >= 0; }
@@ -119,11 +119,11 @@ class PairTAGE : public TimedBaseBTBPredictor
         {}
 
         // A new allocate entry holding one block, weak in its direction
-        PTAGEEntry(Addr tag, const BTBEntry &exit, Addr targetPC)
+        PTAGEEntry(Addr tag, const BranchPrediction &exit, Addr targetPC)
             : valid(true), b2Valid(false), tag(tag), useful(false),
               confidence(0), block(exit, targetPC)
         {
-            modelInfo.branchSize = exit.valid ? exit.size : 0;
+            modelInfo.branchSize = exit.valid ? exit.branch.size : 0;
         }
     };
 
@@ -367,10 +367,10 @@ class PairTAGE : public TimedBaseBTBPredictor
     // Train the first block of the looked-up entry, and return the entry
     // it was trained into, invalid when it is not written
     LiveEntryInfo trainFirstBlock(const LookupResult &lookup,
-                                  const BTBEntry &exit, Addr targetPC);
+                                  const BranchPrediction &exit, Addr targetPC);
 
     // Train the second block of the entry its first block was trained into
-    void trainSecondBlock(const LiveEntryInfo &live, const BTBEntry &exit,
+    void trainSecondBlock(const LiveEntryInfo &live, const BranchPrediction &exit,
                           Addr targetPC);
 
     struct PairTAGEStats : public statistics::Group

@@ -28,22 +28,20 @@ makeBranchOutcome(const DynInstPtr &inst)
     const Addr resolved_target = is_direct ?
         inst->branchTarget()->instAddr() : actual_next->instAddr();
 
+    branch_prediction::btb_pred::BranchInfo branch;
+    branch.pc = inst->getPC();
+    branch.target = resolved_target;
+    branch.size = static_cast<uint8_t>(inst->getInstBytes());
+    branch.isCond = inst->isCondCtrl();
+    branch.isIndirect = inst->isIndirectCtrl();
+    branch.isDirect = is_direct;
+    branch.isCall = inst->isCall();
+    branch.isReturn = inst->isReturn() &&
+        !inst->staticInst->isNonSpeculative() && !is_direct;
+
     return branch_prediction::btb_pred::BranchOutcome{
-        inst->threadNumber,
-        inst->getFtqId(),
-        inst->seqNum,
-        inst->getPC(),
-        resolved_target,
-        inst->isUncondCtrl() || inst->branching(),
-        inst->mispredicted(),
-        inst->isCondCtrl(),
-        inst->isIndirectCtrl(),
-        is_direct,
-        inst->isCall(),
-        inst->isReturn() &&
-            !inst->staticInst->isNonSpeculative() &&
-            !is_direct,
-        static_cast<uint8_t>(inst->getInstBytes())
+        inst->threadNumber, inst->getFtqId(), inst->seqNum, branch,
+        inst->isUncondCtrl() || inst->branching(), inst->mispredicted()
     };
 }
 

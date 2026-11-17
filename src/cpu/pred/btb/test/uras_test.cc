@@ -69,7 +69,11 @@ public:
         auto &sp = specSp;
         assert(getDelay() < stagePreds.size());
         for (int i = getDelay(); i < stagePreds.size(); i++) {
-            stagePreds[i].returnTarget = stack[sp].retAddr;
+            for (auto &entry : stagePreds[i].btbEntries) {
+                if (entry.branch.isReturn) {
+                    entry.branch.target = stack[sp].retAddr;
+                }
+            }
         }
         meta.sp = sp;
         meta.tos = stack[sp];
@@ -80,15 +84,19 @@ public:
         auto &stack = specStack;
         auto &sp = specSp;
         // do push & pops on prediction
-        pred.returnTarget = stack[sp].retAddr;
+        for (auto &entry : pred.btbEntries) {
+            if (entry.branch.isIndirect && entry.branch.isReturn) {
+                entry.branch.target = stack[sp].retAddr;
+            }
+        }
         auto takenSlot = pred.getTakenEntry();
-        if (takenSlot.isReturn) { // return inst, pop retAddr from spec stack
+        if (takenSlot.branch.isReturn) { // return inst, pop retAddr from spec stack
             // do pop
             auto retAddr = stack[sp].retAddr;
             pop(stack, sp);
         }
-        if (takenSlot.isCall) { // call inst, push retAddr to spec stack
-            Addr retAddr = takenSlot.pc + takenSlot.size;
+        if (takenSlot.branch.isCall) { // call inst, push retAddr to spec stack
+            Addr retAddr = takenSlot.branch.pc + takenSlot.branch.size;
             push(retAddr, stack, sp);
         }
     }
@@ -276,12 +284,20 @@ TEST_F(URASTest, PutPCHistoryBasic) {
     // push an address to the stack
     uras->push(retAddr, stack, sp);
     
+    BTBEntry ret;
+    ret.valid = true;
+    ret.branch.isIndirect = true;
+    ret.branch.isReturn = true;
+    for (auto &stage : stagePreds) {
+        stage.btbEntries.push_back(ret);
+    }
+
     // call putPCHistory
     uras->putPCHistory(startAddr, history, stagePreds);
 
     // test return target for all stages
     for (int i = 0; i < stagePreds.size(); i++) {
-        EXPECT_EQ(stagePreds[i].returnTarget, retAddr);
+        EXPECT_EQ(stagePreds[i].getTakenEntry().branch.target, retAddr);
     }
     
     // verify meta is correctly saved
@@ -300,10 +316,10 @@ TEST_F(URASTest, SpecUpdateStateCall) {
     // Setup a call instruction in BTBEntry
     BTBEntry callEntry;
     callEntry.valid = true;
-    callEntry.pc = 0x1000;
-    callEntry.isCall = true;
-    callEntry.size = 4;
-    callEntry.target = 0x2000;  // 目标地址
+    callEntry.branch.pc = 0x1000;
+    callEntry.branch.isCall = true;
+    callEntry.branch.size = 4;
+    callEntry.branch.target = 0x2000;  // 目标地址
     pred.btbEntries.push_back(callEntry);
     
     // 初始状态检查
@@ -335,9 +351,10 @@ TEST_F(URASTest, SpecUpdateStateReturn) {
     // Setup a return instruction in BTBEntry
     BTBEntry retEntry;
     retEntry.valid = true;
-    retEntry.pc = 0x1000;
-    retEntry.isReturn = true;
-    retEntry.target = 0x2000;
+    retEntry.branch.pc = 0x1000;
+    retEntry.branch.isIndirect = true;
+    retEntry.branch.isReturn = true;
+    retEntry.branch.target = 0x2000;
     pred.btbEntries.push_back(retEntry);
     
     // 执行 specUpdateState
@@ -345,7 +362,7 @@ TEST_F(URASTest, SpecUpdateStateReturn) {
 
     // 验证：
     // 1. returnTarget应该是栈顶的地址
-    EXPECT_EQ(pred.returnTarget, 0x2000);
+    EXPECT_EQ(pred.getTakenEntry().branch.target, 0x2000);
     // 2. sp应该减少
     EXPECT_EQ(sp, 0);
 }
@@ -359,10 +376,10 @@ TEST_F(URASTest, SpecUpdateStateCallReturn) {
     
     BTBEntry callEntry;
     callEntry.valid = true;
-    callEntry.pc = 0x1000;
-    callEntry.isCall = true;
-    callEntry.size = 4;
-    callEntry.target = 0x2000;
+    callEntry.branch.pc = 0x1000;
+    callEntry.branch.isCall = true;
+    callEntry.branch.size = 4;
+    callEntry.branch.target = 0x2000;
     pred1.btbEntries.push_back(callEntry);
     
     // 执行 call 的 specUpdateState
@@ -374,9 +391,10 @@ TEST_F(URASTest, SpecUpdateStateCallReturn) {
     
     BTBEntry retEntry;
     retEntry.valid = true;
-    retEntry.pc = 0x2000;
-    retEntry.isReturn = true;
-    retEntry.target = 0x1004;  // 返回到call的下一条指令
+    retEntry.branch.pc = 0x2000;
+    retEntry.branch.isIndirect = true;
+    retEntry.branch.isReturn = true;
+    retEntry.branch.target = 0x1004;  // 返回到call的下一条指令
     pred2.btbEntries.push_back(retEntry);
     
     // 执行 return 的 specUpdateState
@@ -388,7 +406,7 @@ TEST_F(URASTest, SpecUpdateStateCallReturn) {
     // 1. sp应该回到初始位置
     EXPECT_EQ(sp, 0);
     // 2. returnTarget应该匹配call的下一条指令
-    EXPECT_EQ(pred2.returnTarget, 0x1004);
+    EXPECT_EQ(pred2.getTakenEntry().branch.target, 0x1004);
 }
 
 TEST_F(URASTest, SpecUpdateStatePopThenPush) {
@@ -401,15 +419,16 @@ TEST_F(URASTest, SpecUpdateStatePopThenPush) {
     pred.bbStart = 0x3000;
     BTBEntry entry;
     entry.valid = true;
-    entry.pc = 0x3000;
-    entry.size = 4;
-    entry.isCall = true;
-    entry.isReturn = true;
+    entry.branch.pc = 0x3000;
+    entry.branch.size = 4;
+    entry.branch.isCall = true;
+    entry.branch.isIndirect = true;
+    entry.branch.isReturn = true;
     pred.btbEntries.push_back(entry);
 
     uras->specUpdateState(pred);
 
-    EXPECT_EQ(pred.returnTarget, 0x2004);
+    EXPECT_EQ(pred.getTakenEntry().branch.target, 0x2004);
     EXPECT_EQ(sp, 2);
     EXPECT_EQ(stack[sp].retAddr, 0x3004);
 }

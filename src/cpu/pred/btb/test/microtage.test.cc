@@ -25,10 +25,10 @@ makeCondEntry(Addr pc, int ctr = -1)
 {
     BTBEntry entry;
     entry.valid = true;
-    entry.pc = pc;
-    entry.target = pc + 4;
-    entry.size = 4;
-    entry.isCond = true;
+    entry.branch.pc = pc;
+    entry.branch.target = pc + 4;
+    entry.branch.size = 4;
+    entry.branch.isCond = true;
     entry.ctr = ctr;
     return entry;
 }
@@ -37,29 +37,28 @@ BranchOutcome
 makeBranchOutcome(const BTBEntry &entry, bool taken, bool mispredicted)
 {
     BranchOutcome outcome;
-    outcome.pc = entry.pc;
-    outcome.target = entry.target;
+    outcome.branch = entry.branch;
     outcome.taken = taken;
     outcome.mispredicted = mispredicted;
-    outcome.isCond = entry.isCond;
-    outcome.isIndirect = entry.isIndirect;
-    outcome.isDirect = entry.isDirect;
-    outcome.isCall = entry.isCall;
-    outcome.isReturn = entry.isReturn;
-    outcome.size = entry.size;
     return outcome;
 }
 
 FullBTBPrediction
 makeStagePred(Addr start_pc, const std::vector<BTBEntry> &entries,
-              const CondTakens &cond_takens)
+              const std::vector<std::pair<Addr, bool>> &directions)
 {
     FullBTBPrediction pred;
     pred.tid = 0;
     pred.asidHash = 0;
     pred.bbStart = start_pc;
-    pred.btbEntries = entries;
-    pred.condTakens = cond_takens;
+    pred.btbEntries.assign(entries.begin(), entries.end());
+    for (auto &entry : pred.btbEntries) {
+        for (const auto &direction : directions) {
+            if (entry.branch.pc == direction.first) {
+                entry.taken = direction.second;
+            }
+        }
+    }
     return pred;
 }
 
@@ -92,9 +91,7 @@ class MicroTAGES3UpdateTest : public ::testing::Test
         stage_preds[0].bbStart = start_pc;
         stage_preds[0].btbEntries = {entry};
         predictor->putPCHistory(start_pc, boost::dynamic_bitset<>(64), stage_preds);
-        Addr branch_pc = entry.pc;
-        auto it = CondTakens_find(stage_preds[0].condTakens, branch_pc);
-        return it != stage_preds[0].condTakens.end() && it->second;
+        return stage_preds[0].btbEntries.front().taken;
     }
 
     std::unique_ptr<MicroTAGE> tage;
@@ -103,7 +100,7 @@ class MicroTAGES3UpdateTest : public ::testing::Test
 TEST_F(MicroTAGES3UpdateTest, FunctionalUpdateBypassedWhenUsingS3Pred)
 {
     BTBEntry entry = makeCondEntry(0x1000, -1);
-    FullBTBPrediction seed = makeStagePred(0x1000, {entry}, {{entry.pc, false}});
+    FullBTBPrediction seed = makeStagePred(0x1000, {entry}, {{entry.branch.pc, false}});
     primePrediction(tage.get(), seed);
 
     FetchTarget stream;
@@ -120,11 +117,11 @@ TEST_F(MicroTAGES3UpdateTest, FunctionalUpdateBypassedWhenUsingS3Pred)
 TEST_F(MicroTAGES3UpdateTest, LearnsFromS3TeacherDirection)
 {
     BTBEntry entry = makeCondEntry(0x1000, -1);
-    FullBTBPrediction seed = makeStagePred(0x1000, {entry}, {{entry.pc, false}});
+    FullBTBPrediction seed = makeStagePred(0x1000, {entry}, {{entry.branch.pc, false}});
     primePrediction(tage.get(), seed);
     bool before = predictTaken(tage.get(), 0x1000, entry);
 
-    FullBTBPrediction teacher = makeStagePred(0x1000, {entry}, {{entry.pc, true}});
+    FullBTBPrediction teacher = makeStagePred(0x1000, {entry}, {{entry.branch.pc, true}});
     tage->updateUsingS3Pred(teacher);
 
     bool after = predictTaken(tage.get(), 0x1000, entry);
@@ -135,10 +132,10 @@ TEST_F(MicroTAGES3UpdateTest, LearnsFromS3TeacherDirection)
 TEST_F(MicroTAGES3UpdateTest, S3NoHitStatsMirrorPredictionAccounting)
 {
     BTBEntry entry = makeCondEntry(0x1800, -1);
-    FullBTBPrediction seed = makeStagePred(0x1800, {entry}, {{entry.pc, false}});
+    FullBTBPrediction seed = makeStagePred(0x1800, {entry}, {{entry.branch.pc, false}});
     primePrediction(tage.get(), seed);
 
-    FullBTBPrediction teacher = makeStagePred(0x1800, {entry}, {{entry.pc, true}});
+    FullBTBPrediction teacher = makeStagePred(0x1800, {entry}, {{entry.branch.pc, true}});
     tage->updateUsingS3Pred(teacher);
 
     EXPECT_EQ(tage->tageStats.s3UpdateEntries, 1ULL);
@@ -153,11 +150,11 @@ TEST_F(MicroTAGES3UpdateTest, StopsTrainingAfterFirstTakenControl)
     BTBEntry first = makeCondEntry(0x1000, -1);
     BTBEntry second = makeCondEntry(0x1004, -1);
     FullBTBPrediction seed = makeStagePred(0x1000, {first, second},
-                                           {{first.pc, false}, {second.pc, false}});
+                                           {{first.branch.pc, false}, {second.branch.pc, false}});
     primePrediction(tage.get(), seed);
 
     FullBTBPrediction teacher = makeStagePred(0x1000, {first, second},
-                                              {{first.pc, true}, {second.pc, true}});
+                                              {{first.branch.pc, true}, {second.branch.pc, true}});
     tage->updateUsingS3Pred(teacher);
 
     EXPECT_TRUE(predictTaken(tage.get(), 0x1000, first));
@@ -174,7 +171,7 @@ TEST_F(MicroTAGES3UpdateTest, MissingPredictionMetaSkipsSafely)
 TEST_F(MicroTAGES3UpdateTest, S3AllocationCountersStaySplitFromNormalUpdateCounters)
 {
     BTBEntry entry = makeCondEntry(0x3000, -1);
-    FullBTBPrediction seed = makeStagePred(0x3000, {entry}, {{entry.pc, false}});
+    FullBTBPrediction seed = makeStagePred(0x3000, {entry}, {{entry.branch.pc, false}});
     primePrediction(tage.get(), seed);
 
     auto meta = tage->threadMeta[0];
@@ -196,7 +193,7 @@ TEST_F(MicroTAGES3UpdateTest, S3AllocationCountersStaySplitFromNormalUpdateCount
 TEST_F(MicroTAGES3UpdateTest, S3AllocationFailureAndResetCountersStaySplit)
 {
     BTBEntry entry = makeCondEntry(0x3800, -1);
-    FullBTBPrediction seed = makeStagePred(0x3800, {entry}, {{entry.pc, false}});
+    FullBTBPrediction seed = makeStagePred(0x3800, {entry}, {{entry.branch.pc, false}});
     primePrediction(tage.get(), seed);
 
     auto meta = tage->threadMeta[0];
@@ -207,7 +204,7 @@ TEST_F(MicroTAGES3UpdateTest, S3AllocationFailureAndResetCountersStaySplit)
         seed.bbStart, blocked_table, meta->indexFoldedHist[blocked_table].get(),
         seed.asidHash);
     auto &blocked_way = tage->tageTable[blocked_table][blocked_index][0];
-    blocked_way = MicroTAGE::TageEntry(0x55, 3, entry.pc);
+    blocked_way = MicroTAGE::TageEntry(0x55, 3, entry.branch.pc);
     blocked_way.useful = true;
 
     tage->usefulResetCnt = 255;

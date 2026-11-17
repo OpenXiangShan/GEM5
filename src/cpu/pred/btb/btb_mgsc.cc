@@ -412,12 +412,12 @@ BTBMGSC::calculateWeightScaleDiff(int total_sum, int scale_percsum, int percsum)
  * @return TagePrediction containing main and alternative predictions
  */
 BTBMGSC::MgscPrediction
-BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC,
+BTBMGSC::generateSinglePrediction(const BranchPrediction &btb_entry, const Addr &startPC,
                                   const TageInfoForMGSC &tage_info,
                                   ThreadID tid, uint8_t asidHash)
 {
     DPRINTF(MGSC, "generateSinglePrediction for btbEntry: %#lx\n",
-            btb_entry.pc);
+            btb_entry.branch.pc);
     const auto &state = historyState(tid);
 
     // Calculate indices for all tables
@@ -462,28 +462,28 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
                                     tid);
     }
 
-    int bw_percsum = enableBwTable ? calculatePercsum(bwTable, bwIndex, bwTableNum, btb_entry.pc) : 0;
-    int bw_weight = findWeight(bwWeightTable, btb_entry.pc, asidHash);
+    int bw_percsum = enableBwTable ? calculatePercsum(bwTable, bwIndex, bwTableNum, btb_entry.branch.pc) : 0;
+    int bw_weight = findWeight(bwWeightTable, btb_entry.branch.pc, asidHash);
     int bw_scaled_percsum = calculateScaledPercsum(bw_weight, bw_percsum);
 
-    int l_percsum = enableLTable ? calculatePercsum(lTable, lIndex, lTableNum, btb_entry.pc) : 0;
-    int l_weight = findWeight(lWeightTable, btb_entry.pc, asidHash);
+    int l_percsum = enableLTable ? calculatePercsum(lTable, lIndex, lTableNum, btb_entry.branch.pc) : 0;
+    int l_weight = findWeight(lWeightTable, btb_entry.branch.pc, asidHash);
     int l_scaled_percsum = calculateScaledPercsum(l_weight, l_percsum);
 
-    int i_percsum = enableITable ? calculatePercsum(iTable, iIndex, iTableNum, btb_entry.pc) : 0;
-    int i_weight = findWeight(iWeightTable, btb_entry.pc, asidHash);
+    int i_percsum = enableITable ? calculatePercsum(iTable, iIndex, iTableNum, btb_entry.branch.pc) : 0;
+    int i_weight = findWeight(iWeightTable, btb_entry.branch.pc, asidHash);
     int i_scaled_percsum = calculateScaledPercsum(i_weight, i_percsum);
 
-    int g_percsum = enableGTable ? calculatePercsum(gTable, gIndex, gTableNum, btb_entry.pc) : 0;
-    int g_weight = findWeight(gWeightTable, btb_entry.pc, asidHash);
+    int g_percsum = enableGTable ? calculatePercsum(gTable, gIndex, gTableNum, btb_entry.branch.pc) : 0;
+    int g_weight = findWeight(gWeightTable, btb_entry.branch.pc, asidHash);
     int g_scaled_percsum = calculateScaledPercsum(g_weight, g_percsum);
 
-    int p_percsum = enablePTable ? calculatePercsum(pTable, pIndex, pTableNum, btb_entry.pc) : 0;
-    int p_weight = findWeight(pWeightTable, btb_entry.pc, asidHash);
+    int p_percsum = enablePTable ? calculatePercsum(pTable, pIndex, pTableNum, btb_entry.branch.pc) : 0;
+    int p_weight = findWeight(pWeightTable, btb_entry.branch.pc, asidHash);
     int p_scaled_percsum = calculateScaledPercsum(p_weight, p_percsum);
 
-    int bias_percsum = enableBiasTable ? calculatePercsum(biasTable, biasIndex, biasTableNum, btb_entry.pc) : 0;
-    int bias_weight = findWeight(biasWeightTable, btb_entry.pc, asidHash);
+    int bias_percsum = enableBiasTable ? calculatePercsum(biasTable, biasIndex, biasTableNum, btb_entry.branch.pc) : 0;
+    int bias_weight = findWeight(biasWeightTable, btb_entry.branch.pc, asidHash);
     int bias_scaled_percsum = calculateScaledPercsum(bias_weight, bias_percsum);
 
     // Calculate total sum of all weighted percsums
@@ -493,7 +493,7 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     // Find thresholds
     // pc-indexed threshold table (only if enabled)
     int p_update_thres =
-        enablePCThreshold ? findThreshold(pUpdateThreshold, btb_entry.pc, asidHash) : 0;
+        enablePCThreshold ? findThreshold(pUpdateThreshold, btb_entry.branch.pc, asidHash) : 0;
 
     int total_thres = (updateThreshold / 8) + p_update_thres;
     // Threshold is used as a confidence gate; avoid negative values which
@@ -531,9 +531,9 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     bool p_weight_scale_diff = calculateWeightScaleDiff(total_sum, p_scaled_percsum, p_percsum);
     bool bias_weight_scale_diff = calculateWeightScaleDiff(total_sum, bias_scaled_percsum, bias_percsum);
 
-    DPRINTF(MGSC, "sc predict %#lx taken %d\n", btb_entry.pc, taken);
+    DPRINTF(MGSC, "sc predict %#lx taken %d\n", btb_entry.branch.pc, taken);
 
-    return MgscPrediction(btb_entry.pc, total_sum, use_sc_pred, taken, tage_info.tage_pred_taken,
+    return MgscPrediction(btb_entry.branch.pc, total_sum, use_sc_pred, taken, tage_info.tage_pred_taken,
                           tage_info.tage_pred_conf_high, tage_info.tage_pred_conf_mid, tage_info.tage_pred_conf_low,
                           total_thres, bwIndex, lIndex, iIndex, gIndex, pIndex, biasIndex, bw_weight_scale_diff,
                           l_weight_scale_diff, i_weight_scale_diff, g_weight_scale_diff, p_weight_scale_diff,
@@ -548,29 +548,29 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
  * @return Map of branch PC addresses to their predicted outcomes
  */
 void
-BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
+BTBMGSC::lookupHelper(const Addr &startPC, std::vector<BranchPrediction> &btbEntries,
                       const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
-                      CondTakens &results, ThreadID tid, uint8_t asidHash)
+                      ThreadID tid, uint8_t asidHash)
 {
     DPRINTF(MGSC, "lookupHelper startAddr: %#lx\n", startPC);
 
     // Process each BTB entry to make predictions
     for (auto &btb_entry : btbEntries) {
         // Only predict for valid conditional branches
-        if (btb_entry.isCond && btb_entry.valid) {
-            auto tage_info = tageInfoForMgscs.find(btb_entry.pc);
+        if (btb_entry.branch.isCond && btb_entry.valid) {
+            auto tage_info = tageInfoForMgscs.find(btb_entry.branch.pc);
             panic_if(tage_info == tageInfoForMgscs.end() && !allowMissingTageInfo,
                      "MGSC missing TAGE info for conditional branch pc %#lx "
                      "startPC %#lx tid %u asidHash %#x",
-                     btb_entry.pc, startPC, static_cast<unsigned>(tid),
+                     btb_entry.branch.pc, startPC, static_cast<unsigned>(tid),
                      static_cast<unsigned>(asidHash));
 
             const TageInfoForMGSC missing_tage_info;
             const auto &info =
                 tage_info != tageInfoForMgscs.end() ? tage_info->second : missing_tage_info;
             auto pred = generateSinglePrediction(btb_entry, startPC, info, tid, asidHash);
-            threadMeta[tid]->preds[btb_entry.pc] = pred;
-            results.push_back({btb_entry.pc, pred.taken});
+            threadMeta[tid]->preds[btb_entry.branch.pc] = pred;
+            btb_entry.taken = pred.taken;
         }
     }
 }
@@ -615,9 +615,8 @@ BTBMGSC::putPCHistory(Addr stream_start, const boost::dynamic_bitset<> &history,
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
         auto &stage_pred = stagePreds[s];
-        stage_pred.condTakens.clear();
         lookupHelper(stream_start, stage_pred.btbEntries,
-                     stage_pred.tageInfoForMgscs, stage_pred.condTakens, tid,
+                     stage_pred.tageInfoForMgscs, tid,
                      asidHash);
     }
 }
@@ -652,16 +651,16 @@ BTBMGSC::refreshPredictionMeta(Addr startAddr,
     meta->indexPFoldedHist = state.indexPFoldedHist;
 
     for (const auto &btb_entry : pred.btbEntries) {
-        if (!(btb_entry.isCond && btb_entry.valid)) {
+        if (!(btb_entry.branch.isCond && btb_entry.valid)) {
             continue;
         }
 
-        auto tage_info = pred.tageInfoForMgscs.find(btb_entry.pc);
+        auto tage_info = pred.tageInfoForMgscs.find(btb_entry.branch.pc);
         if (tage_info == pred.tageInfoForMgscs.end()) {
             continue;
         }
 
-        meta->preds[btb_entry.pc] =
+        meta->preds[btb_entry.branch.pc] =
             generateSinglePrediction(btb_entry, startAddr, tage_info->second,
                                      pred.tid, pred.asidHash);
     }
@@ -986,18 +985,18 @@ BTBMGSC::update(
 
     // Process each BTB entry
     for (const auto &branch : update.branches) {
-        if (!branch.isCond) {
+        if (!branch.branch.isCond) {
             continue;
         }
         const bool actual_taken = branch.taken;
-        auto pred_it = preds.find(branch.pc);
+        auto pred_it = preds.find(branch.branch.pc);
 
         if (pred_it == preds.end()) {
             continue;
         }
 
         // Update predictor state and check if need to allocate new entry
-        updateSinglePredictor(branch.pc, actual_taken, pred_it->second, stream);
+        updateSinglePredictor(branch.branch.pc, actual_taken, pred_it->second, stream);
     }
 
     DPRINTF(MGSC, "end update\n");
@@ -1486,13 +1485,13 @@ void
 BTBMGSC::commitBranch(const PredictionUpdateContext &context,
                       const BranchOutcome &outcome)
 {
-    if (!outcome.isCond) {
+    if (!outcome.branch.isCond) {
         // tage olnly deals with conditional branches
         return;
     }
     auto meta = std::static_pointer_cast<MgscMeta>(
         context.predMetas[getComponentIdx()]);
-    auto pc = outcome.pc;
+    auto pc = outcome.branch.pc;
     auto pred_it = meta->preds.find(pc);
     bool pred_hit = false;
     bool sc_taken = false;

@@ -77,7 +77,7 @@ BTBuRAS::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
     auto &sp = specSp;
     assert(getDelay() < stagePreds.size());
     for (int i = getDelay(); i < stagePreds.size(); i++) {
-        //stagePreds[i].returnTarget = stack[sp].retAddr;
+
     }
     meta.sp = sp;
     meta.tos = stack[sp];
@@ -98,12 +98,16 @@ BTBuRAS::specUpdateState(FullBTBPrediction &pred)
     auto &stack = specStack;
     auto &sp = specSp;
     // do push & pops on prediction
-    pred.returnTarget = stack[sp].retAddr;
+    for (auto &entry : pred.btbEntries) {
+        if (entry.branch.isIndirect && entry.branch.isReturn) {
+            entry.branch.target = stack[sp].retAddr;
+        }
+    }
     auto takenSlot = pred.getTakenEntry();
     // RISC-V JALR PopAndPush has both flags set; pop first to retain the new return address.
-    if (takenSlot.isReturn) {
+    if (takenSlot.branch.isReturn) {
         if (enableDB) {
-            SpecRASTrace rec(When::SPECULATIVE, RAS_OP::POP, pred.bbStart, takenSlot.pc,
+            SpecRASTrace rec(When::SPECULATIVE, RAS_OP::POP, pred.bbStart, takenSlot.branch.pc,
                 stack[sp].retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
             specRasTrace->write_record(rec);
         }
@@ -112,10 +116,10 @@ BTBuRAS::specUpdateState(FullBTBPrediction &pred)
         DPRINTF(URAS, "spec stack pop at pc 0x%llx target %llx\n", pred.bbStart, retAddr);
         pop(stack, sp);
     }
-    if (takenSlot.isCall) {
-        Addr retAddr = takenSlot.pc + takenSlot.size;
+    if (takenSlot.branch.isCall) {
+        Addr retAddr = takenSlot.branch.pc + takenSlot.branch.size;
         if (enableDB) {
-            SpecRASTrace rec(When::SPECULATIVE, RAS_OP::PUSH, pred.bbStart, takenSlot.pc,
+            SpecRASTrace rec(When::SPECULATIVE, RAS_OP::PUSH, pred.bbStart, takenSlot.branch.pc,
                 retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
             specRasTrace->write_record(rec);
         }
@@ -183,24 +187,24 @@ BTBuRAS::update(
     printStack("before update", stack, sp);
     const auto &takenSlot = update.outcome.branch;
     if (update.outcome.valid && update.outcome.taken &&
-        (takenSlot.isReturn || takenSlot.isCall)) {
+        (takenSlot.branch.isReturn || takenSlot.branch.isCall)) {
         auto meta_ptr = std::static_pointer_cast<uRASMeta>(entry.predMetas[getComponentIdx()]);
         auto pred_sp = meta_ptr->sp;
         auto pred_tos = meta_ptr->tos;
         const auto miss = update.outcome.controlMispred;
         // RISC-V JALR PopAndPush has both flags set; pop first to retain the new return address.
-        if (takenSlot.isReturn) {
+        if (takenSlot.branch.isReturn) {
             if (enableDB) {
-                NonSpecRASTrace rec(RAS_OP::POP, entry.startPC, takenSlot.pc, takenSlot.target,
+                NonSpecRASTrace rec(RAS_OP::POP, entry.startPC, takenSlot.branch.pc, takenSlot.branch.target,
                     pred_sp, pred_tos.retAddr, pred_tos.ctr, sp, stack[sp].retAddr, stack[sp].ctr, miss);
                 nonSpecRasTrace->write_record(rec);
             }
             pop(stack, sp);
         }
-        if (takenSlot.isCall) {
-            Addr retAddr = takenSlot.pc + takenSlot.size;
+        if (takenSlot.branch.isCall) {
+            Addr retAddr = takenSlot.branch.pc + takenSlot.branch.size;
             if (enableDB) {
-                NonSpecRASTrace rec(RAS_OP::PUSH, entry.startPC, takenSlot.pc, retAddr,
+                NonSpecRASTrace rec(RAS_OP::PUSH, entry.startPC, takenSlot.branch.pc, retAddr,
                     pred_sp, pred_tos.retAddr, pred_tos.ctr, sp, stack[sp].retAddr, stack[sp].ctr, miss);
                 nonSpecRasTrace->write_record(rec);
             }

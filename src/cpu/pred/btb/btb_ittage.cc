@@ -101,15 +101,14 @@ void
 BTBITTAGE::tick() {}
 
 void
-BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
-                        IndirectTargets& results, ThreadID tid, uint8_t asidHash)
+BTBITTAGE::lookupHelper(Addr startAddr, std::vector<BranchPrediction> &btbEntries, ThreadID tid, uint8_t asidHash)
 {
     (void)asidHash;
     DPRINTF(ITTAGE, "lookupHelper startAddr: %#lx\n", startAddr);
     std::vector<TagePrediction> preds;
     for (auto &btb_entry : btbEntries) {
-        if (btb_entry.isIndirect && !btb_entry.isReturn && btb_entry.valid) {
-            DPRINTF(ITTAGE, "lookupHelper btbEntry: %#lx\n", btb_entry.pc);
+        if (btb_entry.branch.isIndirect && !btb_entry.branch.isReturn && btb_entry.valid) {
+            DPRINTF(ITTAGE, "lookupHelper btbEntry: %#lx\n", btb_entry.branch.pc);
             bool provided = false;
             bool alt_provided = false;
 
@@ -118,9 +117,11 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
             for (int i = numPredictors - 1; i >= 0; --i) {
                 auto &way = lookupEntries[i];
                 // TODO: count alias hit (offset match but pc differs)
-                bool match = way.valid && lookupTags[i] == way.tag && btb_entry.pc == way.pc;
-                DPRINTF(ITTAGE, "hit %d, table %d, index %d, lookup tag %d, tag %d, useful %d, btb_pc %#lx, entry_pc %#lx\n",
-                    match, i, lookupIndices[i], lookupTags[i], way.tag, way.useful, btb_entry.pc, way.pc);
+                bool match = way.valid && lookupTags[i] == way.tag &&
+                    btb_entry.branch.pc == way.pc;
+                DPRINTF(ITTAGE, "hit %d, table %d, index %d, lookup tag %d, "
+                    "tag %d, useful %d, btb_pc %#lx, entry_pc %#lx\n",
+                    match, i, lookupIndices[i], lookupTags[i], way.tag, way.useful, btb_entry.branch.pc, way.pc);
 
                 if (match) {
                     if (!provided) {
@@ -137,7 +138,7 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
             Addr main_target = main_info.entry.target;
             Addr alt_target = alt_info.entry.target;
 
-            Addr base_target = btb_entry.target;
+            Addr base_target = btb_entry.branch.target;
             bool base_as_alt = false;
 
 
@@ -163,10 +164,8 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
                 target = base_target;
                 warn("no target found\n");
             }
-            if (taken) {
-                results.push_back({btb_entry.pc, target});
-            }
-            DPRINTF(ITTAGE, "tage predict %#lx target %#lx\n", btb_entry.pc, target);
+            btb_entry.branch.target = taken ? target : base_target;
+            DPRINTF(ITTAGE, "tage predict %#lx target %#lx\n", btb_entry.branch.pc, target);
 
             // Update prediction statistics
             if (!provided) {
@@ -179,8 +178,8 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
                 ittageStats.predTableHits.sample(main_info.table, 1);
             }
             // Note: predTargetHit will be updated in the update phase when we know the actual target
-            TagePrediction pred(btb_entry.pc, main_info, alt_info, use_alt, main_target);
-            threadMeta[tid]->preds[btb_entry.pc] = pred;
+            TagePrediction pred(btb_entry.branch.pc, main_info, alt_info, use_alt, main_target);
+            threadMeta[tid]->preds[btb_entry.branch.pc] = pred;
         }
     }
 }
@@ -230,9 +229,8 @@ BTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
 
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         auto &stage_pred = stagePreds[s];
-        stage_pred.indirectTargets.clear();
         lookupHelper(stream_start, stage_pred.btbEntries,
-                     stage_pred.indirectTargets, tid, asidHash);
+                     tid, asidHash);
     }
     DPRINTF(ITTAGE, "putPCHistory end\n");
     debugFlag = false;
@@ -279,7 +277,7 @@ BTBITTAGE::refreshPredictionMeta(Addr stream_start,
     meta->usefulMask = std::move(useful_mask);
 
     for (const auto &btb_entry : pred.btbEntries) {
-        if (!(btb_entry.isIndirect && !btb_entry.isReturn && btb_entry.valid)) {
+        if (!(btb_entry.branch.isIndirect && !btb_entry.branch.isReturn && btb_entry.valid)) {
             continue;
         }
 
@@ -290,7 +288,7 @@ BTBITTAGE::refreshPredictionMeta(Addr stream_start,
         for (int i = numPredictors - 1; i >= 0; --i) {
             auto &way = lookupEntries[i];
             bool match = way.valid && lookupTags[i] == way.tag &&
-                btb_entry.pc == way.pc;
+                btb_entry.branch.pc == way.pc;
             if (match) {
                 if (!provided) {
                     main_info = TageTableInfo(true, way, i, lookupIndices[i],
@@ -309,8 +307,8 @@ BTBITTAGE::refreshPredictionMeta(Addr stream_start,
         bool use_alt_provider = main_weak && alt_provided;
         bool use_base = !provided || (provided && main_weak && !alt_provided);
         bool use_alt = use_alt_provider || use_base;
-        meta->preds[btb_entry.pc] = TagePrediction(
-            btb_entry.pc, main_info, alt_info, use_alt, main_info.entry.target);
+        meta->preds[btb_entry.branch.pc] = TagePrediction(
+            btb_entry.branch.pc, main_info, alt_info, use_alt, main_info.entry.target);
     }
 }
 
@@ -335,17 +333,17 @@ BTBITTAGE::update(
     
     // update each branch
     for (const auto &branch : update.branches) {
-        if (!(branch.isIndirect && !branch.isReturn)) {
+        if (!(branch.branch.isIndirect && !branch.branch.isReturn)) {
             continue;
         }
-        const auto btb_entry = BTBEntry(makeBranchInfo(branch));
-        auto pred_it = preds.find(btb_entry.pc);
+        const auto btb_entry = BranchPrediction(branch.branch);
+        auto pred_it = preds.find(btb_entry.branch.pc);
         TagePrediction pred;
         if (pred_it != preds.end()) {
             pred = pred_it->second;
         }
         bool mispred = branch.mispredicted;
-        Addr exe_target = branch.target;
+        Addr exe_target = branch.branch.target;
         auto &main_info = pred.mainInfo;
 
         // Update misprediction statistics
@@ -475,7 +473,7 @@ BTBITTAGE::update(
                     if (allocate[ti - startTable]) {
                         DPRINTF(ITTAGE, "found allocatable entry, table %d, index %d, tag %d, counter %d\n",
                             ti, newIndex, newTag, 2);
-                        newEntry = TageEntry(newTag, exe_target, 2, btb_entry.pc);
+                        newEntry = TageEntry(newTag, exe_target, 2, btb_entry.branch.pc);
                         ittageStats.updateAllocSuccess++;
                         break; // allocate only 1 entry
                     }
@@ -705,14 +703,14 @@ void
 BTBITTAGE::commitBranch(const PredictionUpdateContext &context,
                         const BranchOutcome &outcome)
 {
-    if (!(outcome.isIndirect && !outcome.isReturn)) {
+    if (!(outcome.branch.isIndirect && !outcome.branch.isReturn)) {
         // ittage only cares about indirect non-return branches
         return;
     }
     auto meta = std::static_pointer_cast<TageMeta>(
         context.predMetas[getComponentIdx()]);
-    auto pc = outcome.pc;
-    auto npc = outcome.target;
+    auto pc = outcome.branch.pc;
+    auto npc = outcome.branch.target;
     auto pred_it = meta->preds.find(pc);
     bool this_branch_hit = false;
     Addr pred_npc;
@@ -720,7 +718,7 @@ BTBITTAGE::commitBranch(const PredictionUpdateContext &context,
         this_branch_hit = true;
         pred_npc = (pred_it->second).target;
     }
-    bool iscalled = outcome.isCall;
+    bool iscalled = outcome.branch.isCall;
 
      // Update commit statistics
     if (this_branch_hit) {

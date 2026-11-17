@@ -23,11 +23,11 @@ BTBEntry
 makeCondBTBEntry(Addr pc)
 {
     BTBEntry entry;
-    entry.pc = pc;
-    entry.target = pc + 4;
-    entry.isCond = true;
+    entry.branch.pc = pc;
+    entry.branch.target = pc + 4;
+    entry.branch.isCond = true;
     entry.valid = true;
-    entry.size = 4;
+    entry.branch.size = 4;
     return entry;
 }
 
@@ -35,16 +35,9 @@ BranchOutcome
 makeBranchOutcome(const BTBEntry &entry, bool taken, bool mispredicted)
 {
     BranchOutcome outcome;
-    outcome.pc = entry.pc;
-    outcome.target = entry.target;
+    outcome.branch = entry.branch;
     outcome.taken = taken;
     outcome.mispredicted = mispredicted;
-    outcome.isCond = entry.isCond;
-    outcome.isIndirect = entry.isIndirect;
-    outcome.isDirect = entry.isDirect;
-    outcome.isCall = entry.isCall;
-    outcome.isReturn = entry.isReturn;
-    outcome.size = entry.size;
     return outcome;
 }
 
@@ -103,13 +96,14 @@ setAllTableCountersForPc(BTBMGSC &mgsc, Addr start_pc, Addr branch_pc, const Tag
 }
 
 std::pair<bool, bool>
-findCondTaken(const CondTakens &condTakens, Addr pc)
+findCondTaken(const std::vector<BranchPrediction> &entries, Addr pc)
 {
-    auto it = CondTakens_find(condTakens, pc);
-    if (it == condTakens.end()) {
-        return {false, false};
-    }
-    return {true, it->second};
+    const auto it = std::find_if(entries.begin(), entries.end(),
+        [pc](const auto &entry) {
+            return entry.valid && entry.branch.isCond && entry.branch.pc == pc;
+        });
+    return it == entries.end() ? std::make_pair(false, false) :
+                               std::make_pair(true, it->taken);
 }
 
 void
@@ -247,7 +241,7 @@ struct MgscHarness
             pred.bbStart = start_pc;
             pred.btbEntries = {entry};
             pred.tageInfoForMgscs.clear();
-            pred.tageInfoForMgscs[entry.pc] = tage_info;
+            pred.tageInfoForMgscs[entry.branch.pc] = tage_info;
         }
 
         // Prediction
@@ -259,7 +253,7 @@ struct MgscHarness
         mgsc.putPCHistory(start_pc, ghr, stage_preds);
         auto meta = mgsc.getPredictionMeta();
 
-        auto [found, pred_taken] = findCondTaken(stage_preds[1].condTakens, entry.pc);
+        auto [found, pred_taken] = findCondTaken(stage_preds[1].btbEntries, entry.branch.pc);
         EXPECT_TRUE(found);
 
         // Snapshot per-branch MGSC prediction info (indexes/percsums/thresholds).
@@ -267,7 +261,7 @@ struct MgscHarness
         result.predicted_taken = pred_taken;
         {
             const auto &preds = BTBMGSC::TestAccess::preds(mgsc);
-            auto it = preds.find(entry.pc);
+            auto it = preds.find(entry.branch.pc);
             EXPECT_NE(it, preds.end());
             if (it != preds.end()) {
                 result.mgsc_pred = it->second;
@@ -319,12 +313,12 @@ struct MgscHarness
             PathHistoryUpdate actual_phist;
             actual_phist.taken = actual_taken;
             if (actual_phist.taken) {
-                actual_phist.pc = entry.pc;
-                actual_phist.target = entry.target;
+                actual_phist.pc = entry.branch.pc;
+                actual_phist.target = entry.branch.target;
             }
             mgsc.recoverPHist(phr, context, actual_phist);
 
-            bool actual_bw_taken = actual_taken && (entry.target < entry.pc);
+            bool actual_bw_taken = actual_taken && (entry.branch.target < entry.branch.pc);
             const DirectionHistoryUpdate actual_bwhist{
                 bwhist.shamt, actual_bw_taken};
             mgsc.recoverBwHist(bwhr, context, actual_bwhist);
@@ -370,8 +364,8 @@ TEST(BTBMGSCTest, CanConstructAndCreateMetaOnEmptyInput)
 
     auto meta = mgsc.getPredictionMeta();
     EXPECT_NE(meta, nullptr);
-    EXPECT_TRUE(stage_preds[0].condTakens.empty());
-    EXPECT_TRUE(stage_preds[1].condTakens.empty());
+    EXPECT_TRUE(stage_preds[0].btbEntries.empty());
+    EXPECT_TRUE(stage_preds[1].btbEntries.empty());
 }
 
 TEST(BTBMGSCTest, GateHighConfUsesSCWhenStrong)
@@ -402,7 +396,7 @@ TEST(BTBMGSCTest, GateHighConfUsesSCWhenStrong)
 
     mgsc.putPCHistory(start_pc, history, stage_preds);
 
-    auto [found, taken] = findCondTaken(stage_preds[1].condTakens, branch_pc);
+    auto [found, taken] = findCondTaken(stage_preds[1].btbEntries, branch_pc);
     ASSERT_TRUE(found);
     EXPECT_TRUE(taken); // overridden by SC
 
@@ -440,7 +434,7 @@ TEST(BTBMGSCTest, GateHighConfBypassWhenWeak)
 
     mgsc.putPCHistory(start_pc, history, stage_preds);
 
-    auto [found, taken] = findCondTaken(stage_preds[1].condTakens, branch_pc);
+    auto [found, taken] = findCondTaken(stage_preds[1].btbEntries, branch_pc);
     ASSERT_TRUE(found);
     EXPECT_FALSE(taken); // fall back to tage_pred_taken
 
@@ -480,7 +474,7 @@ TEST(BTBMGSCTest, ForceUseSCOverridesTage)
 
     mgsc.putPCHistory(start_pc, history, stage_preds);
 
-    auto [found, taken] = findCondTaken(stage_preds[1].condTakens, branch_pc);
+    auto [found, taken] = findCondTaken(stage_preds[1].btbEntries, branch_pc);
     ASSERT_TRUE(found);
     EXPECT_FALSE(taken);
 
@@ -610,7 +604,7 @@ TEST(BTBMGSCTest, BwTableLearnsAlternatingPatternOnBackwardBranches)
     const Addr start_pc = 0x1000;
     const Addr branch_pc = 0x1000;
     auto entry = makeCondBTBEntry(branch_pc);
-    entry.target = branch_pc - 4; // backward branch so bw_taken == taken
+    entry.branch.target = branch_pc - 4; // backward branch so bw_taken == taken
 
     const TageInfoForMGSC tage_info(
         /*tage_pred_taken=*/false,
@@ -655,7 +649,7 @@ TEST(BTBMGSCTest, ITableLearnsFixedTripCountLoop)
     const Addr start_pc = 0x1000;
     const Addr branch_pc = 0x1000;
     auto entry = makeCondBTBEntry(branch_pc);
-    entry.target = branch_pc - 4; // backward loop branch
+    entry.branch.target = branch_pc - 4; // backward loop branch
 
     const TageInfoForMGSC tage_info(
         /*tage_pred_taken=*/false,
@@ -773,7 +767,7 @@ TEST(BTBMGSCTest, MissingTageInfoUsesDefaultFallbackContext)
 
     h.mgsc.putPCHistory(start_pc, history, stage_preds);
 
-    auto [found, taken] = findCondTaken(stage_preds[1].condTakens, branch_pc);
+    auto [found, taken] = findCondTaken(stage_preds[1].btbEntries, branch_pc);
     ASSERT_TRUE(found);
     EXPECT_TRUE(taken);
 
@@ -885,7 +879,7 @@ TEST(BTBMGSCTest, PTableLearnsOutcomeFromPreviousTakenBranchTarget)
 
     for (int i = 0; i < iters; ++i) {
         bool use_target0 = (i % 2) == 0;
-        entry_a.target = use_target0 ? target0 : target1;
+        entry_a.branch.target = use_target0 ? target0 : target1;
 
         // Step A: always taken so path history is updated with its (pc,target) hash.
         (void)h.step(start_pc_a, entry_a, tage_info, /*actual_taken=*/true);
@@ -915,19 +909,19 @@ TEST(BTBMGSCTest, SpecUpdatePHistUsesIndirectTargetOverride)
     MgscHarness h;
 
     BTBEntry entry = makeCondBTBEntry(0x1000);
-    entry.isIndirect = true;
-    entry.target = 0x2000;
+    entry.branch.isIndirect = true;
+    entry.branch.target = 0x2000;
     const Addr indirectTarget = 0x3000;
 
-    ASSERT_NE(pathHash(entry.pc, entry.target), pathHash(entry.pc, indirectTarget));
+    ASSERT_NE(pathHash(entry.branch.pc, entry.branch.target), pathHash(entry.branch.pc, indirectTarget));
 
     FullBTBPrediction pred;
     pred.btbEntries = {entry};
-    pred.condTakens.push_back({entry.pc, true});
-    pred.indirectTargets.push_back({entry.pc, indirectTarget});
+    pred.btbEntries.back().taken = true;
+    pred.btbEntries.back().branch.target = indirectTarget;
 
     boost::dynamic_bitset<> expected_phr = h.phr;
-    pHistShiftIn(2, true, expected_phr, entry.pc, indirectTarget);
+    pHistShiftIn(2, true, expected_phr, entry.branch.pc, indirectTarget);
 
     h.mgsc.specUpdatePHist(h.phr, pred, pred.getPHistUpdate());
     h.mgsc.checkFoldedHist(h.ghr, expected_phr, h.lhr,
@@ -939,20 +933,20 @@ TEST(BTBMGSCTest, SpecUpdatePHistUsesReturnTargetOverride)
     MgscHarness h;
 
     BTBEntry entry = makeCondBTBEntry(0x1000);
-    entry.isIndirect = true;
-    entry.isReturn = true;
-    entry.target = 0x2000;
+    entry.branch.isIndirect = true;
+    entry.branch.isReturn = true;
+    entry.branch.target = 0x2000;
     const Addr returnTarget = 0x3400;
 
-    ASSERT_NE(pathHash(entry.pc, entry.target), pathHash(entry.pc, returnTarget));
+    ASSERT_NE(pathHash(entry.branch.pc, entry.branch.target), pathHash(entry.branch.pc, returnTarget));
 
     FullBTBPrediction pred;
     pred.btbEntries = {entry};
-    pred.condTakens.push_back({entry.pc, true});
-    pred.returnTarget = returnTarget;
+    pred.btbEntries.back().taken = true;
+    pred.btbEntries.back().branch.target = returnTarget;
 
     boost::dynamic_bitset<> expected_phr = h.phr;
-    pHistShiftIn(2, true, expected_phr, entry.pc, returnTarget);
+    pHistShiftIn(2, true, expected_phr, entry.branch.pc, returnTarget);
 
     h.mgsc.specUpdatePHist(h.phr, pred, pred.getPHistUpdate());
     h.mgsc.checkFoldedHist(h.ghr, expected_phr, h.lhr,

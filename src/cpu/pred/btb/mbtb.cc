@@ -198,13 +198,13 @@ MBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startAddr)
     // Sort by instruction order
     std::sort(processed_entries.begin(), processed_entries.end(), 
              [](const BTBEntry &a, const BTBEntry &b) {
-                 return a.pc < b.pc;
+                 return a.branch.pc < b.branch.pc;
              });
     
     // Remove entries before the start PC
     auto it = std::remove_if(processed_entries.begin(), processed_entries.end(),
                            [startAddr](const BTBEntry &e) {
-                               return e.pc < startAddr;
+                               return e.branch.pc < startAddr;
                            });
     processed_entries.erase(it, processed_entries.end());
 
@@ -212,7 +212,7 @@ MBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startAddr)
     Addr mbtb_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
     it = std::remove_if(processed_entries.begin(), processed_entries.end(),
                         [mbtb_end](const BTBEntry &e) {
-                            return e.pc >= mbtb_end;
+                            return e.branch.pc >= mbtb_end;
                         });
     processed_entries.erase(it, processed_entries.end());
 
@@ -242,19 +242,19 @@ MBTB::processEntriesNoSideEffect(const std::vector<TickedBTBEntry>& entries,
 
     std::sort(processed_entries.begin(), processed_entries.end(),
              [](const BTBEntry &a, const BTBEntry &b) {
-                 return a.pc < b.pc;
+                 return a.branch.pc < b.branch.pc;
              });
 
     auto it = std::remove_if(processed_entries.begin(), processed_entries.end(),
                            [startAddr](const BTBEntry &e) {
-                               return e.pc < startAddr;
+                               return e.branch.pc < startAddr;
                            });
     processed_entries.erase(it, processed_entries.end());
 
     Addr mbtb_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
     it = std::remove_if(processed_entries.begin(), processed_entries.end(),
                         [mbtb_end](const BTBEntry &e) {
-                            return e.pc >= mbtb_end;
+                            return e.branch.pc >= mbtb_end;
                         });
     processed_entries.erase(it, processed_entries.end());
 
@@ -283,30 +283,9 @@ MBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         if (s == getDelay()) dumpBTBEntries(stagePreds[s].btbEntries);
 
         stagePreds[s].predTick = curTick();
-        stagePreds[s].condTakens.clear();
-        stagePreds[s].indirectTargets.clear();
     }
 
-    // Set predictions for each branch
-    for (auto &e : entries) {
-        assert(e.valid);
-        if (e.isCond) {
-            // TODO: a performance bug here, mbtb should not update condTakens!
 
-            FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.ctr >= 0});
-
-        } else if (e.isIndirect) {
-            // Set predicted target for indirect branches
-            DPRINTF(BTB, "setting indirect target for pc %#lx to %#lx\n", e.pc, e.target);
-
-            FillStageLoop(s) stagePreds[s].indirectTargets.push_back({e.pc, e.target});
-
-            if (e.isReturn) {
-                FillStageLoop(s) stagePreds[s].returnTarget = e.target;
-            }
-            break;
-        }
-    }
 }
 
 /**
@@ -349,14 +328,14 @@ MBTB::putPCHistory(Addr startAddr,
     updatePredictionMeta(processed_entries, stagePreds);
 }
 
-std::vector<BTBEntry>
+std::vector<BranchPrediction>
 MBTB::getPredictedEntriesNoSideEffect(Addr startAddr, ThreadID tid,
                                       uint8_t asidHash) const
 {
     auto found_entries = lookupNoSideEffect(startAddr, tid, asidHash);
     auto processed_entries = processEntriesNoSideEffect(found_entries, startAddr);
 
-    std::vector<BTBEntry> entries;
+    std::vector<BranchPrediction> entries;
     entries.reserve(processed_entries.size());
     for (const auto &entry : processed_entries) {
         entries.emplace_back(entry);
@@ -485,7 +464,7 @@ MBTB::lookup(Addr block_pc, ThreadID tid, uint8_t asidHash,
     // Sort entries by PC order
     std::sort(res.begin(), res.end(),
              [](const TickedBTBEntry &a, const TickedBTBEntry &b) {
-                 return a.pc < b.pc;
+                 return a.branch.pc < b.branch.pc;
              });
 
     DPRINTF(BTB, "MBTB: Half-aligned lookup results:\n");
@@ -517,7 +496,7 @@ MBTB::lookupNoSideEffect(Addr block_pc, ThreadID tid,
 
     std::sort(res.begin(), res.end(),
              [](const TickedBTBEntry &a, const TickedBTBEntry &b) {
-                 return a.pc < b.pc;
+                 return a.branch.pc < b.branch.pc;
              });
 
     return res;
@@ -534,7 +513,7 @@ MBTB::checkPredictionHit(
 {
     bool pred_branch_hit = false;
     for (auto &e : meta->hit_entries) {
-        if (update.outcome.valid && update.outcome.branch == e) {
+        if (update.outcome.valid && update.outcome.branch.pc == e.branch.pc) {
             pred_branch_hit = true;
             break;
         }
@@ -565,19 +544,19 @@ MBTB::updateBTBEntry(
 {
     btbStats.updateTotal++;
     // Select SRAM based on entry PC's 32B-aligned address
-    Addr alignedPC = entry.pc & ~(blockSize - 1);
+    Addr alignedPC = entry.branch.pc & ~(blockSize - 1);
     int sram_id = getSRAMId(alignedPC);
     auto& target_sram = (sram_id == 0) ? sram0 : sram1;
     auto& target_mru = (sram_id == 0) ? mru0 : mru1;
     
     // Calculate index and tag for this entry
-    Addr btb_idx = getIndex(entry.pc, stream.asidHash, stream.tid);
+    Addr btb_idx = getIndex(entry.branch.pc, stream.asidHash, stream.tid);
 
     // Look for matching entry in the target SRAM
     bool found = false;
     auto it = target_sram[btb_idx].begin();
     for (; it != target_sram[btb_idx].end(); it++) {
-        if (*it == entry) {
+        if (it->branch.pc == entry.branch.pc) {
             found = true;
             break;
         }
@@ -588,7 +567,7 @@ MBTB::updateBTBEntry(
     auto &victimCache = victimCaches[stream.tid];
     for (unsigned i = 0; i < victimCache.size(); ++i) {
         auto &vc_entry = victimCache[i];
-        if (vc_entry.valid && vc_entry.pc == entry.pc) {
+        if (vc_entry.valid && vc_entry.branch.pc == entry.branch.pc) {
             found_in_vc = true;
             vc_idx = i;
             break;
@@ -631,9 +610,9 @@ MBTB::buildUpdatedEntry(const BTBEntry &entry,
     // Execution facts replace old attributes; only the live counter survives.
     auto entry_to_write = entry;
     // Always recalculate tag based on the actual PC being written
-    entry_to_write.tag = getTag(entry_to_write.pc, stream.asidHash);
+    entry_to_write.tag = getTag(entry_to_write.branch.pc, stream.asidHash);
     // Keep a newly allocated conditional weakly taken, matching RTL.
-    if (entry_to_write.isCond) {
+    if (entry_to_write.branch.isCond) {
         if (existing_entry) {
             entry_to_write.ctr = existing_entry->ctr;
             updateCtr(entry_to_write.ctr, actual_taken);
@@ -643,8 +622,8 @@ MBTB::buildUpdatedEntry(const BTBEntry &entry,
     }
 
     // Update indirect target if necessary
-    if (entry_to_write.isIndirect && actual_taken) {
-        entry_to_write.target = actual_target;
+    if (entry_to_write.branch.isIndirect && actual_taken) {
+        entry_to_write.branch.target = actual_target;
     }
     return entry_to_write;
 }
@@ -656,7 +635,7 @@ MBTB::updateExistingInSRAMSet(Addr btb_idx,
                               const TickedBTBEntry &ticked_entry,
                               ThreadID tid)
 {
-    if (it_found->target != ticked_entry.target) {
+    if (it_found->branch.target != ticked_entry.branch.target) {
         btbStats.updateFixTarget++;
     }
     // Update existing entry
@@ -664,8 +643,8 @@ MBTB::updateExistingInSRAMSet(Addr btb_idx,
 #ifndef UNIT_TEST
     if (enableDB) {
         BTBTrace rec;
-        rec.set(ticked_entry.pc, ticked_entry.getType(),
-                ticked_entry.target, btb_idx, Mode::WRITE, 1);
+        rec.set(ticked_entry.branch.pc, ticked_entry.branch.getType(),
+                ticked_entry.branch.target, btb_idx, Mode::WRITE, 1);
         btbTrace->write_record(rec);
     }
 #endif
@@ -673,8 +652,8 @@ MBTB::updateExistingInSRAMSet(Addr btb_idx,
     std::make_heap(heap.begin(), heap.end(), older());
 
     // Ensure single source of truth: remove duplicate from victim cache if any
-    if (eraseFromVictimCacheByPC(ticked_entry.pc, ticked_entry.tag, tid)) {
-        DPRINTF(BTB, "BTB: removed duplicate from VC after SRAM update, pc %#lx\n", ticked_entry.pc);
+    if (eraseFromVictimCacheByPC(ticked_entry.branch.pc, ticked_entry.tag, tid)) {
+        DPRINTF(BTB, "BTB: removed duplicate from VC after SRAM update, pc %#lx\n", ticked_entry.branch.pc);
     }
 }
 
@@ -693,8 +672,8 @@ MBTB::replaceOldestInSRAMSet(int sram_id,
 #ifndef UNIT_TEST
     if (enableDB) {
         BTBTrace rec;
-        rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
-                entry_in_btb_now->target, btb_idx, Mode::EVICT, 0);
+        rec.set(entry_in_btb_now->branch.pc, entry_in_btb_now->branch.getType(),
+                entry_in_btb_now->branch.target, btb_idx, Mode::EVICT, 0);
         btbTrace->write_record(rec);
     }
 #endif
@@ -708,21 +687,21 @@ MBTB::replaceOldestInSRAMSet(int sram_id,
     }
     btbStats.updateReplace++;
     DPRINTF(BTB, "BTB: Replacing entry with tag %#lx, pc %#lx in set %#lx\n",
-            entry_in_btb_now->tag, entry_in_btb_now->pc, btb_idx);
+            entry_in_btb_now->tag, entry_in_btb_now->branch.pc, btb_idx);
     *entry_in_btb_now = ticked_entry;
 #ifndef UNIT_TEST
     if (enableDB) {
         BTBTrace rec;
-        rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
-                entry_in_btb_now->target, btb_idx, Mode::WRITE, 0);
+        rec.set(entry_in_btb_now->branch.pc, entry_in_btb_now->branch.getType(),
+                entry_in_btb_now->branch.target, btb_idx, Mode::WRITE, 0);
         btbTrace->write_record(rec);
     }
 #endif
     std::make_heap(heap.begin(), heap.end(), older());
 
     // Ensure single source of truth: remove duplicate from victim cache if any
-    if (eraseFromVictimCacheByPC(ticked_entry.pc, ticked_entry.tag, tid)) {
-        DPRINTF(BTB, "BTB: removed duplicate from VC after SRAM replace, pc %#lx\n", ticked_entry.pc);
+    if (eraseFromVictimCacheByPC(ticked_entry.branch.pc, ticked_entry.tag, tid)) {
+        DPRINTF(BTB, "BTB: removed duplicate from VC after SRAM replace, pc %#lx\n", ticked_entry.branch.pc);
     }
 }
 
@@ -761,23 +740,23 @@ MBTB::update(
         auto hit = std::find_if(
             meta->hit_entries.begin(), meta->hit_entries.end(),
             [&branch](const BTBEntry &entry) {
-                return entry.pc == branch.pc;
+                return entry.branch.pc == branch.branch.pc;
             });
         if (hit == meta->hit_entries.end() && !branch.taken) {
             continue;
         }
 
-        BTBEntry entry(makeBranchInfo(branch));
+        BTBEntry entry(branch.branch);
         entry.source = getComponentIdx();
         if (hit == meta->hit_entries.end()) {
             btbStats.newEntry++;
-            if (branch.isCond) {
+            if (branch.branch.isCond) {
                 btbStats.newEntryWithCond++;
             } else {
                 btbStats.newEntryWithUncond++;
             }
         }
-        updateBTBEntry(entry, branch.taken, branch.target, stream);
+        updateBTBEntry(entry, branch.taken, branch.branch.target, stream);
     }
 }
 
@@ -794,13 +773,13 @@ MBTB::lookupVictimCache(Addr block_pc, ThreadID tid, uint8_t asidHash)
     for (auto &entry : victimCaches[tid]) {
         if (!entry.valid) continue;
 
-        Addr entryAlignedPC = entry.pc & ~(blockSize - 1);
+        Addr entryAlignedPC = entry.branch.pc & ~(blockSize - 1);
         // Check if this entry is in either of the two 32B blocks we're looking for
         if (entryAlignedPC == alignedPC || entryAlignedPC == (alignedPC + blockSize)) {
-            Addr current_tag = getTag(entry.pc, asidHash);
+            Addr current_tag = getTag(entry.branch.pc, asidHash);
             if (entry.tag == current_tag) {
                 results.push_back(entry);
-                DPRINTF(BTB, "Victim cache hit for pc %#lx\n", entry.pc);
+                DPRINTF(BTB, "Victim cache hit for pc %#lx\n", entry.branch.pc);
                 // refresh LRU timestamp on hit
                 entry.tick = curTick();
             }
@@ -822,9 +801,9 @@ MBTB::lookupVictimCacheNoSideEffect(Addr block_pc, ThreadID tid,
             continue;
         }
 
-        Addr entryAlignedPC = entry.pc & ~(blockSize - 1);
+        Addr entryAlignedPC = entry.branch.pc & ~(blockSize - 1);
         if (entryAlignedPC == alignedPC || entryAlignedPC == (alignedPC + blockSize)) {
-            Addr current_tag = getTag(entry.pc, asidHash);
+            Addr current_tag = getTag(entry.branch.pc, asidHash);
             if (entry.tag == current_tag) {
                 results.push_back(entry);
             }
@@ -847,7 +826,7 @@ MBTB::eraseFromVictimCacheByPC(Addr pc, Addr tag, ThreadID tid)
     bool erased = false;
     for (unsigned cacheTid = firstTid; cacheTid < endTid; ++cacheTid) {
         for (auto &entry : victimCaches[cacheTid]) {
-            if (entry.valid && entry.pc == pc && entry.tag == tag) {
+            if (entry.valid && entry.branch.pc == pc && entry.tag == tag) {
                 entry.valid = false;
                 erased = true;
                 break;
@@ -866,7 +845,7 @@ MBTB::insertVictimCache(const TickedBTBEntry& evicted_entry, ThreadID tid)
 
     // 1) If same PC exists, update and refresh tick
     for (auto &entry : victimCache) {
-        if (entry.valid && entry.pc == evicted_entry.pc) {
+        if (entry.valid && entry.branch.pc == evicted_entry.branch.pc) {
             entry = evicted_entry;
             entry.tick = curTick();
             return;
@@ -891,7 +870,7 @@ MBTB::insertVictimCache(const TickedBTBEntry& evicted_entry, ThreadID tid)
         }
     }
     DPRINTF(BTB, "LRU replace in victim cache, evict pc %#lx with pc %#lx\n",
-            lru_it->pc, evicted_entry.pc);
+            lru_it->branch.pc, evicted_entry.branch.pc);
     *lru_it = evicted_entry;
     lru_it->tick = curTick();
 }
@@ -905,18 +884,18 @@ MBTB::commitBranch(const PredictionUpdateContext &context,
     auto meta = std::static_pointer_cast<BTBMeta>(
         context.predMetas[getComponentIdx()]);
     auto &hit_entries = meta->hit_entries;
-    auto pc = outcome.pc;
-    auto npc = outcome.target;
+    auto pc = outcome.branch.pc;
+    auto npc = outcome.branch.target;
     bool this_branch_hit = false;
     auto entry = BTBEntry();
     for (auto e : hit_entries) {
-        if (e.pc == pc) {
+        if (e.branch.pc == pc) {
             this_branch_hit = true;
             entry = e;
             break;
         }
     }
-    bool this_branch_taken = outcome.taken || !outcome.isCond;
+    bool this_branch_taken = outcome.taken || !outcome.branch.isCond;
     Addr this_branch_target = npc;
     if (this_branch_hit) {
         btbStats.allBranchHits++;
@@ -925,7 +904,7 @@ MBTB::commitBranch(const PredictionUpdateContext &context,
         } else {
             btbStats.allBranchHitNotTakens++;
         }
-        if (outcome.isCond) {
+        if (outcome.branch.isCond) {
             btbStats.condHits++;
             if (this_branch_taken) {
                 btbStats.condHitTakens++;
@@ -941,22 +920,22 @@ MBTB::commitBranch(const PredictionUpdateContext &context,
             }
 
         }
-        if (!outcome.isCond) {
+        if (!outcome.branch.isCond) {
             btbStats.uncondHits++;
         }
-        if (outcome.isIndirect) {
+        if (outcome.branch.isIndirect) {
             btbStats.indirectHits++;
-            Addr pred_target = entry.target;
+            Addr pred_target = entry.branch.target;
             if (pred_target == this_branch_target) {
                 btbStats.indirectPredCorrect++;
             } else {
                 btbStats.indirectPredWrong++;
             }
         }
-        if (outcome.isCall) {
+        if (outcome.branch.isCall) {
             btbStats.callHits++;
         }
-        if (outcome.isReturn) {
+        if (outcome.branch.isReturn) {
             btbStats.returnHits++;
         }
     } else {
@@ -966,7 +945,7 @@ MBTB::commitBranch(const PredictionUpdateContext &context,
         } else {
             btbStats.allBranchMissNotTakens++;
         }
-        if (outcome.isCond) {
+        if (outcome.branch.isCond) {
             btbStats.condMisses++;
             if (this_branch_taken) {
                 btbStats.condMissTakens++;
@@ -977,17 +956,17 @@ MBTB::commitBranch(const PredictionUpdateContext &context,
                 btbStats.condPredCorrect++;
             }
         }
-        if (!outcome.isCond) {
+        if (!outcome.branch.isCond) {
             btbStats.uncondMisses++;
         }
-        if (outcome.isIndirect) {
+        if (outcome.branch.isIndirect) {
             btbStats.indirectMisses++;
             btbStats.indirectPredWrong++;
         }
-        if (outcome.isCall) {
+        if (outcome.branch.isCall) {
             btbStats.callMisses++;
         }
-        if (outcome.isReturn) {
+        if (outcome.branch.isReturn) {
             btbStats.returnMisses++;
         }
     }
