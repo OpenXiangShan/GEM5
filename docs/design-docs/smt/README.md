@@ -92,29 +92,32 @@ flowchart TD
 
 ## 4. 分支预测与前端命名空间
 
-FS-SMT 中，不同线程可能运行在相同或不同地址空间。PC 本身不足以同时表达 control-flow history 和地址空间身份。
+FS-SMT 中，hardware thread 身份与地址空间身份是两个不同概念。当前
+`smt_idealkmhv3.py` 将主要预测表按 `tid` 分区，各线程在自己的存储中使用
+PC 和历史生成 index/tag，不再混入 ASID hash。
 
-预测路径因此采用两层区分：
+这一规则统一用于 uBTB、aBTB、mBTB、MicroTAGE、TAGE、ITTAGE 和 MGSC。
+历史、RAS、预测 metadata 和恢复边界仍按线程维护。TID 分区负责区分同时运行的
+硬件线程；同一线程切换地址空间时，预测状态可以继续复用并重新学习。BPU 的这一
+选择不改变 MMU/TLB 的 ASID 处理，也不提供跨地址空间的预测状态隔离保证。
 
-1. `BTBTAGE`、`ITTAGE`、`MicroTAGE`、`MGSC` 和 `RAS` 等历史或状态按 `tid` 保存。
-2. BTB/TAGE 类结构的 tag 或 index 注入从 `satp` 提取并折叠得到的 ASID hash。
-
-per-thread history 避免两个线程互相改写控制流上下文。ASID hash 用于降低不同地址空间中相同 PC 的结构 alias，但 hash 不是完整 ASID，不能把它理解为绝对隔离。
-
-预测结果、FTQ entry 和训练 stream 都继续携带 `tid` 与 `asidHash`。这样 lookup、发布和 update 使用同一命名上下文。
+共享预测表模式保留现有 ASID hash，以维持该模式的查询与训练行为。因此预测结果、
+FTQ entry 和训练 context 仍携带 `asidHash`，由各组件的存储模式决定是否使用。
+混合配置中的组件可以独立选择是否分区。
 
 关键不变量：
 
-- history 的 owner 是 thread
-- BTB 命名空间至少包含 PC 和折叠后的地址空间信息
-- prediction、resolve 和 update 不能在传播中丢失 `tid` 或 `asidHash`
+- history、metadata 和 recovery 的 owner 是 thread。
+- TID 分区表的查询、训练及替换使用同一线程的存储范围，ASID 不改变其 index/tag。
+- 共享表的预测与更新继续使用预测时保存的 ASID hash。
 
 主要代码入口：
 
-- `src/cpu/pred/btb/decoupled_bpred.cc`：提取 ASID hash，并把它放入预测与训练路径
-- `src/cpu/pred/btb/common.hh`：ASID hash folding、tag injection 和 index xor
-- `src/cpu/pred/btb/btb_tage.cc`、`btb_ittage.cc`、`microtage.cc`、`btb_mgsc.cc`：per-thread state 与 ASID-aware lookup/update
-- `src/cpu/pred/btb/ras.cc`：per-thread RAS 状态
+- `src/cpu/pred/btb/timed_base_pred.hh`：TID 分区和 ASID 使用规则。
+- `src/cpu/pred/btb/decoupled_bpred.cc`：为共享模式提取并传递 ASID hash。
+- `src/cpu/pred/btb/common.hh`：共享模式使用的 ASID hash folding、tag injection 和 index xor。
+- `src/cpu/pred/btb/btb_tage.cc`、`btb_ittage.cc`、`microtage.cc`、`btb_mgsc.cc`：按存储模式生成 index/tag。
+- `src/cpu/pred/btb/ras.cc`：per-thread RAS 状态。
 
 ## 5. Fetch：线程本地状态与压力反馈
 
@@ -270,13 +273,13 @@ gem5 与 reference 的 store 可见时点可能存在短窗口差异。实现保
 1. 所有 recovery 边界都同时包含 thread 身份和 sequence/version 边界。
 2. 共享 queue 的准入同时满足 core-wide 总容量和 per-thread policy。
 3. per-thread pressure 只阻塞目标线程，除非真实共享带宽已耗尽。
-4. predictor lookup 与 update 使用一致的 `tid` 和地址空间命名信息。
+4. predictor lookup 与 update 使用一致的 `tid`；只有共享存储混入保存的 ASID hash。
 5. Store Buffer 的物理共享不扩大 forwarding 范围；跨线程可见性通过 completion event 和 replay 维护。
 6. difftest 的兼容逻辑不掩盖模型内部的 ordering 或 visibility 错误。
 
 当前设计仍包含明确取舍：
 
-- ASID 使用折叠 hash，降低 alias 而非完全消除 alias。
+- TID 分区 BPU 不使用 ASID；共享模式的 ASID hash 只降低 alias，不保证完全隔离。
 - Dynamic 策略提高利用率，但可能增加线程间干扰。
 - Partitioned 策略改善隔离，但会留下暂时不可复用的容量。
 - DynamicBorrowing 依赖 donor 判定和 hold/reserve 参数，公平性与利用率需要用统计数据验证。
@@ -292,5 +295,5 @@ gem5 与 reference 的 store 可见时点可能存在短窗口差异。实现保
 4. `src/cpu/o3/fetch.cc`、`iew.cc`、`commit.cc`：周期级线程仲裁和压力传播。
 5. `src/cpu/o3/rob.cc`、`issue_queue.cc`：共享后端结构的 ownership 与容量规则。
 6. `src/cpu/o3/lsq.cc`、`lsq_unit.cc`：容量、ordering、visibility 和 request lifetime。
-7. `src/cpu/pred/btb/`：per-thread predictor state 与 ASID-aware 命名空间。
+7. `src/cpu/pred/btb/`：per-thread predictor state、TID 分区和共享模式的 ASID 命名空间。
 8. `configs/common/FSConfig.py`、`src/dev/riscv/hart_ctrl.cc`、`src/cpu/base.cc`：FS bring-up 与验证闭环。

@@ -235,7 +235,8 @@ class UBTB : public TimedBaseBTBPredictor
      */
     inline Addr getTag(Addr startPC, uint8_t asidHash) const {
         Addr baseTag = (startPC >> 1) & tagMask;
-        return injectAsidHashIntoTag(baseTag, tagBits, asidHash);
+        return injectAsidHashIntoTag(
+            baseTag, tagBits, storageAsidHash(asidHash));
     }
 
     void updateUCtr(unsigned &ctr, bool inc) {

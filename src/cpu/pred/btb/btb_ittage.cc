@@ -514,7 +514,7 @@ BTBITTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHis
 
     // XOR all components
     return injectAsidHashIntoTag((pcBits ^ foldedHist ^ altTagBits) & mask,
-                                 tableTagBits[t], asidHash);
+                                 tableTagBits[t], storageAsidHash(asidHash));
 }
 
 Addr
@@ -535,7 +535,7 @@ BTBITTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist,
     // Extract lower bits of PC and XOR with folded history
     uint64_t pcBits = (pc >> floorLog2(blockSize));
     Addr localIndex = xorAsidHashIntoIndex(
-        (pcBits ^ foldedHist) & mask, localIndexBits, asidHash);
+        (pcBits ^ foldedHist) & mask, localIndexBits, storageAsidHash(asidHash));
     return partitionIndex(localIndex, tableSizes[t], tid);
 }
 
