@@ -1068,101 +1068,6 @@ LSQUnit::checkSnoop(PacketPtr pkt)
     return;
 }
 
-namespace
-{
-
-bool
-overlapsVisibleStore(const o3::LSQ::LSQRequest *load_req, Addr store_paddr,
-                     const std::vector<bool> &store_byte_enable)
-{
-    if (!load_req) {
-        return false;
-    }
-
-    for (size_t req_idx = 0; req_idx < load_req->numReqs(); ++req_idx) {
-        const auto req = load_req->req(req_idx);
-        if (!req->hasPaddr()) {
-            continue;
-        }
-
-        const Addr load_start = req->getPaddr();
-        const Addr load_end = load_start + req->getSize();
-        for (size_t byte_idx = 0; byte_idx < store_byte_enable.size();
-             ++byte_idx) {
-            if (!store_byte_enable[byte_idx]) {
-                continue;
-            }
-
-            const Addr byte_addr = store_paddr + byte_idx;
-            if (byte_addr >= load_start && byte_addr < load_end) {
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
-
-} // anonymous namespace
-
-void
-LSQUnit::checkLocalStoreVisible(Addr store_paddr,
-                                const std::vector<bool> &store_byte_enable)
-{
-    if (loadQueue.empty()) {
-        return;
-    }
-
-    const Addr block_addr = store_paddr & cacheBlockMask;
-    DynInstPtr oldest_violator = memDepViolator;
-
-    for (auto it = loadQueue.begin(); it != loadQueue.end(); ++it) {
-        DynInstPtr ld_inst = it->instruction();
-        if (!ld_inst || ld_inst->isSquashed() || ld_inst->needReplay() ||
-            !ld_inst->effAddrValid() || ld_inst->strictlyOrdered()) {
-            continue;
-        }
-
-        LSQRequest *request = it->request();
-        // Replay/cancel paths can leave the dyninst carrying a stale
-        // savedRequest pointer after the active LQ request has been replaced
-        // or dropped. Only the current queue entry request is safe here.
-        if (!request || !request->isCacheBlockHit(block_addr, cacheBlockMask)) {
-            continue;
-        }
-        if (!overlapsVisibleStore(request, store_paddr, store_byte_enable)) {
-            continue;
-        }
-        if (ld_inst->memReqFlags & Request::LLSC) {
-            ld_inst->tcBase()->getIsaPtr()->handleLockedSnoopHit(ld_inst.get());
-        }
-
-        if (ld_inst->isExecuted()) {
-            DPRINTF(LSQUnit,
-                    "Local visible store ignores already executed load "
-                    "[sn:%lli] on addr %#x\n",
-                    ld_inst->seqNum, store_paddr);
-            continue;
-        }
-
-        ld_inst->hitExternalSnoop(true);
-        ld_inst->possibleLoadViolation(true);
-        DPRINTF(LSQUnit,
-                "Local visible store replays not-yet-executed load [sn:%lli] "
-                "on addr %#x\n",
-                ld_inst->seqNum, store_paddr);
-        ld_inst->setNukeReplay();
-        loadSetReplay(ld_inst, request, true);
-    }
-
-    if (oldest_violator &&
-        (!memDepViolator || oldest_violator->seqNum < memDepViolator->seqNum)) {
-        memDepViolator = oldest_violator;
-        cpu->activityThisCycle();
-        iewStage->SquashCheckAfterExe(oldest_violator);
-    }
-}
-
 Fault
 LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
         const DynInstPtr& inst)
@@ -3141,9 +3046,13 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
         if (!store_inst->isAtomic()) {
             cpu->consumeSyncVisibleStoreReplay(lsqID);
         }
-        lsq->notifyOtherThreadsStoreVisible(lsqID,
-            request->mainReq()->getPaddr(),
-            request->mainReq()->getByteEnable());
+        // Split stores have no main packet. Check each fragment so an
+        // early L1 notification is neither lost nor repeated at completion.
+        for (auto *pkt : request->_packets) {
+            if (!pkt->localWriteSnoopSent()) {
+                lsq->notifyOtherThreadsStoreVisible(lsqID, pkt->getAddr());
+            }
+        }
     }
 
     if (!system->params().golden_mem_at_write && !from_sbuffer &&
@@ -3293,6 +3202,9 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
             bank_conflict = true;
             ret = false;
         }
+        // A hit can update the cache synchronously inside sendTimingReq().
+        // Publish the LSQ owner before entering the cache, including AMO/SC.
+        data_pkt->setLSQPtr(lsq);
         if (!bank_conflict && !dcachePort->sendTimingReq(data_pkt)) {
             ret = false;
             mshr_used = data_pkt->mshrArbFailed();

@@ -1104,8 +1104,8 @@ class LSQ
                                                      ThreadID load_tid) const;
     StoreBufferEntry *find_inflight_store_buffer_entry(
         Addr block_paddr, ThreadID load_tid, int byte_idx = -1) const;
-    void notifyOtherThreadsStoreVisible(ThreadID tid, Addr store_paddr,
-                                        const std::vector<bool> &byte_enable);
+    bool hasMultipleThreads() const { return numThreads > 1; }
+    void notifyOtherThreadsStoreVisible(ThreadID tid, Addr store_paddr);
 
     /** Returns the number of stores a specific thread has to write back. */
     int numStoresToSbuffer(ThreadID tid);

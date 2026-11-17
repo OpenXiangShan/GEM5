@@ -669,6 +669,9 @@ class BaseCache : public ClockedObject, public CacheAccessor
     bool dcacheMainPipeEffectiveMSHRFull() const;
     bool dcacheMainPipeCanPrefetch() const;
     void registerDcacheMainPipeLSQ(o3::LSQ *lsq);
+
+    /** Notify sibling harts when a successful L1 write changes their data. */
+    void notifyLocalWrite(PacketPtr pkt);
     void holdDcacheMainPipeMSHRCredit();
     void scheduleDcacheMainPipeMSHRCreditRelease(Tick tick);
     void releaseDcacheMainPipeMSHRCredit();
