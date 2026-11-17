@@ -275,6 +275,7 @@ MBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
     FillStageLoop(s) {
         DPRINTF(BTB, "BTB: assigning prediction for stage %d\n", s);
         // Copy BTB entries to stage prediction
+        stagePreds[s].valid = true;
         stagePreds[s].btbEntries.clear();
         for (auto e : entries) {
             stagePreds[s].btbEntries.push_back(BTBEntry(e));

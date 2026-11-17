@@ -220,9 +220,51 @@ TEST_F(BTBTest, EmptyPrediction) {
     
     // Check predictions for all stages
     for (int i = 0; i < stagePreds.size(); i++) {
+        EXPECT_EQ(stagePreds[i].valid, i >= mbtb->getDelay());
         EXPECT_TRUE(stagePreds[i].btbEntries.empty());
         EXPECT_FALSE(stagePreds[i].isTaken());
     }
+}
+
+TEST_F(BTBTest, CompletedMissOverridesEarlierTakenPrediction)
+{
+    constexpr Addr start_pc = 0x1000;
+    std::vector<FullBTBPrediction> predictions(4);
+    for (auto &pred : predictions) {
+        pred.bbStart = start_pc;
+    }
+    predictions[0].valid = true;
+    predictions[0].btbEntries.emplace_back(
+        createBranchInfo(start_pc + 4, 0x2000));
+    auto earlier = predictions[0];
+
+    mbtb->putPCHistory(start_pc, boost::dynamic_bitset<>(8, 0), predictions);
+
+    EXPECT_TRUE(predictions[0].isTaken());
+    for (unsigned stage = mbtb->getDelay(); stage < predictions.size();
+         ++stage) {
+        auto &pred = predictions[stage];
+        EXPECT_TRUE(pred.valid);
+        EXPECT_TRUE(pred.btbEntries.empty());
+        EXPECT_FALSE(pred.isTaken());
+        EXPECT_EQ(pred.getTarget(64), 0x1040);
+        EXPECT_FALSE(pred.match(predictions[0], 64).first);
+        EXPECT_EQ(pred.match(predictions[0], 64).second,
+                  OverrideReason::FALL_THRU);
+    }
+    EXPECT_EQ(predictions[0].getTarget(64), earlier.getTarget(64));
+}
+
+TEST(FullBTBPredictionTest, AbsentStageCannotMatchValidFallthrough)
+{
+    FullBTBPrediction absent;
+    FullBTBPrediction fallthrough;
+    fallthrough.valid = true;
+    EXPECT_FALSE(absent.match(fallthrough, 64).first);
+    EXPECT_FALSE(fallthrough.match(absent, 64).first);
+    EXPECT_TRUE(fallthrough.match(fallthrough, 64).first);
+    fallthrough = FullBTBPrediction();
+    EXPECT_FALSE(fallthrough.valid);
 }
 
 // Interleaved SMT predictions must retain each thread's metadata until the
