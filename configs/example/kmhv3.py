@@ -266,7 +266,7 @@ def setKmhV3Params(args, system):
         system.l3.prefetch_can_offload = False
         system.l3.num_slices = 4
 
-if __name__ == '__m5_main__':
+def main(configure_args=None, configure_system=None):
     FutureClass = None
 
     args = xiangshan_system_init()
@@ -284,6 +284,9 @@ if __name__ == '__m5_main__':
     args.cdp_use_accuracy_dependent_alignment = False
     args.cdp_use_sv48 = True
 
+    if configure_args is not None:
+        configure_args(args)
+
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)
 
@@ -292,9 +295,15 @@ if __name__ == '__m5_main__':
         configure_xiangshan_linux_workload(test_sys, args)
     # Set ideal parameters here with the highest priority, over command-line arguments
     setKmhV3Params(args, test_sys)
+    if configure_system is not None:
+        configure_system(args, test_sys)
 
     root = Root(full_system=True, system=test_sys)
     if maybe_handle_solver_runtime(root, args):
         sys.exit(0)
 
     Simulation.run_vanilla(args, root, test_sys, FutureClass)
+
+
+if __name__ == "__m5_main__":
+    main()
