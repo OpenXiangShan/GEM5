@@ -2,7 +2,6 @@
 #define __CPU_PRED_BTB_STREAM_STRUCT_HH__
 
 #include <algorithm>
-#include <cstdlib>
 #include <queue>
 #include <string>
 
@@ -137,7 +136,6 @@ struct BranchPrediction
     bool valid{false};
     bool taken{false};
     bool baseTaken{false};
-    bool baseStrong{false};
     int source{-1};
 
     BranchPrediction() = default;
@@ -148,7 +146,6 @@ struct BranchPrediction
         : branch(entry.branch), valid(entry.valid),
           taken(!entry.branch.isCond || entry.ctr >= 0),
           baseTaken(entry.ctr >= 0),
-          baseStrong(std::abs(2 * entry.ctr + 1) == 5),
           source(entry.source)
     {}
 };

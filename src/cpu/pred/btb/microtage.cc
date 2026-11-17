@@ -519,22 +519,11 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BranchPrediction &entry,
 
         // Update useful bit based on several conditions
         bool main_is_correct = main_info.taken() == actual_taken;
-        bool base_is_correct_and_strong =
-                                     (base_taken == actual_taken) &&
-                                     (entry.baseStrong);
-
-        // a. Special reset (humility mechanism)
-        if (base_is_correct_and_strong && main_is_correct) {
-            way.useful = 0;
-            DPRINTF(TAGEUseful, "useful bit reset to 0 due to humility rule\n");
-        } else if (main_info.taken() != base_taken) {
-            // b. Original logic to set useful bit high
-            if (main_is_correct) {
-                way.useful = 1;
-            }
+        if (main_info.taken() != base_taken && main_is_correct) {
+            way.useful = 1;
         }
 
-        // c. Reset u on counter sign flip (becomes weak)
+        // Reset useful when the provider counter becomes weak.
         if (way.counter == 0 || way.counter == -1) {
             way.useful = 0;
             DPRINTF(TAGEUseful, "useful bit reset to 0 due to weak counter\n");
@@ -613,17 +602,8 @@ MicroTAGE::updatePredictorStateAndCheckAllocationS3(const BranchPrediction &entr
         updateCounter(actual_taken, 3, way.counter);
 
         bool main_is_correct = main_info.taken() == actual_taken;
-        bool base_is_correct_and_strong =
-                                     (base_taken == actual_taken) &&
-                                     (entry.baseStrong);
-
-        if (base_is_correct_and_strong && main_is_correct) {
-            way.useful = 0;
-            DPRINTF(TAGEUseful, "useful bit reset to 0 due to humility rule\n");
-        } else if (main_info.taken() != base_taken) {
-            if (main_is_correct) {
-                way.useful = 1;
-            }
+        if (main_info.taken() != base_taken && main_is_correct) {
+            way.useful = 1;
         }
 
         if (way.counter == 0 || way.counter == -1) {
@@ -1030,7 +1010,6 @@ MicroTAGE::trainResolvedEntries(
             continue;
         }
         entry.baseTaken = pred->second.basePred;
-        entry.baseStrong = false;
         entries.push_back(TrainingEntry{
             entry, branch.taken, branch.mispredicted});
     }

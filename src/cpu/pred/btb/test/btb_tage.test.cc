@@ -367,10 +367,9 @@ TEST(FullBTBPredictionTest, SharesFinalIndirectTargetWithTrainingAndHistory)
 
 TEST(FullBTBPredictionTest, KeepsBaseSnapshotAfterDirectionOverride)
 {
-    const auto stored = createBTBEntry(0x1000, true, true, 2, 0x2000);
+    const auto stored = createBTBEntry(0x1000, true, true, 1, 0x2000);
     BranchPrediction candidate(stored);
     ASSERT_TRUE(candidate.baseTaken);
-    ASSERT_TRUE(candidate.baseStrong);
     candidate.taken = false;
     candidate.branch.target = 0x3000;
 
@@ -381,7 +380,6 @@ TEST(FullBTBPredictionTest, KeepsBaseSnapshotAfterDirectionOverride)
     EXPECT_EQ(pred.getGHistUpdate().shamt, 1);
     EXPECT_EQ(pred.getTarget(64), pred.getFallThrough(64));
     EXPECT_TRUE(pred.btbEntries.front().baseTaken);
-    EXPECT_TRUE(pred.btbEntries.front().baseStrong);
     EXPECT_EQ(pred.btbEntries.front().branch.target, 0x3000);
     EXPECT_EQ(stored.branch.target, 0x2000);
 }
