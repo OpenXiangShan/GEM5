@@ -1129,6 +1129,9 @@ class Fetch
 
     /** Maximum number of threads that may start an FTQ fetch each cycle. */
     const unsigned numFetchTargetThreads;
+    const unsigned smtFetchMaxBytes;
+    ThreadID budgetRetryTid = InvalidThreadID;
+    unsigned fetchBlockBytes(ThreadID tid) const;
 
     /** Optional RISC-V predecode owner, disabled by default. */
     bool enablePredecode;
@@ -1342,6 +1345,7 @@ class Fetch
         statistics::Scalar fetchTargetThreadNotReady;
         /** Prepared FTQ heads whose cache request could not be started. */
         statistics::Scalar fetchTargetRequestBlocked;
+        statistics::Scalar smtFetchByteBudgetStalls;
         /** Predicted-taken FTQ boundaries considered for limited two-fetch. */
         statistics::Scalar twoFetchAttempts;
         /** FTQ boundaries crossed using the current fetch buffer. */

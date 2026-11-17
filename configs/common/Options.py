@@ -255,6 +255,12 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         help="use external port for SystemC TLM cosimulation")
 
 def addCommonOptions(parser, configure_xiangshan=False):
+    parser.add_argument('--smt-ifu-64b', action='store_true',
+                        help='Limit combined SMT FetchBlock bytes to 64 per cycle')
+    parser.add_argument('--smt-icache-partition', action='store_true',
+                        help='Give each hart two fixed ways of the 64KB ICache')
+    parser.add_argument('--smt-icache-banks', action='store_true',
+                        help='Model 8B ICache data bank/way/set read contention')
     # start by adding the base options that do not assume an ISA
     addNoISAOptions(parser,configure_xiangshan=configure_xiangshan)
 

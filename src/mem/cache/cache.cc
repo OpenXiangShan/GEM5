@@ -1022,8 +1022,10 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
             // should not invalidate the block, so check if the
             // invalidation should be discarded
             if (is_invalidate || mshr->hasPostInvalidate()) {
+                snoopIcacheCopies(pkt->getAddr(), pkt->isSecure(), blk, true, false);
                 invalidateBlock(blk);
             } else if (mshr->hasPostDowngrade()) {
+                snoopIcacheCopies(pkt->getAddr(), pkt->isSecure(), blk, false, true);
                 blk->clearCoherenceBits(CacheBlk::WritableBit);
             }
         }
@@ -1077,6 +1079,13 @@ Cache::sendHintViaMSHRTargets(MSHR *mshr, const PacketPtr pkt)
 PacketPtr
 Cache::evictBlock(CacheBlk *blk)
 {
+    // The snoop filter tracks this L1 as a whole. Evicting just one hart's
+    // duplicate must not announce that the entire L1 dropped the line.
+    if (hasOtherIcacheCopy(blk)) {
+        assert(!blk->isSet(CacheBlk::DirtyBit));
+        invalidateBlock(blk);
+        return nullptr;
+    }
     PacketPtr pkt = (blk->isSet(CacheBlk::DirtyBit) || writebackClean) ?
         writebackBlk(blk) : cleanEvictBlk(blk);
 
@@ -1184,6 +1193,8 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
     // responds in atomic mode, so remember a few things about the
     // original packet up front
     bool invalidate = pkt->isInvalidate();
+    snoopIcacheCopies(pkt->getAddr(), pkt->isSecure(), blk, invalidate,
+                      pkt->isRead() && !pkt->req->isUncacheable());
     [[maybe_unused]] bool needs_writable = pkt->needsWritable();
 
     // at the moment we could get an uncacheable write which does not

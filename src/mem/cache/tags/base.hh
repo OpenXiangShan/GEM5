@@ -197,6 +197,11 @@ class BaseTags : public ClockedObject
      * @return Pointer to the cache block.
      */
     virtual CacheBlk *findBlock(Addr addr, bool is_secure) const;
+    virtual CacheBlk *findBlock(const PacketPtr pkt) const
+    {
+        return findBlock(pkt->getAddr(), pkt->isSecure());
+    }
+    virtual bool hasThreadPartitions() const { return false; }
 
     /**
      * Find a block given set and way.

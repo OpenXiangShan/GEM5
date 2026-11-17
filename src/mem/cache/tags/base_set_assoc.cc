@@ -53,10 +53,14 @@ namespace gem5
 {
 
 BaseSetAssoc::BaseSetAssoc(const Params &p)
-    :BaseTags(p), allocAssoc(p.assoc), blks(p.size / p.block_size),
+    :BaseTags(p), allocAssoc(p.assoc), smtWayPartition(p.smt_way_partition),
+     blks(p.size / p.block_size),
      sequentialAccess(p.sequential_access),
      replacementPolicy(p.replacement_policy)
 {
+    fatal_if(smtWayPartition &&
+             (p.size != 65536 || p.assoc != 4 || p.block_size != 64),
+             "SMT ICache partition requires 64KB, 4-way, 64B lines");
     // There must be a indexing policy
     fatal_if(!p.indexing_policy, "An indexing policy is required");
 
@@ -64,6 +68,44 @@ BaseSetAssoc::BaseSetAssoc(const Params &p)
     if (blkSize < 4 || !isPowerOf2(blkSize)) {
         fatal("Block size must be at least 4 and a power of 2");
     }
+}
+
+CacheBlk *
+BaseSetAssoc::findBlock(const PacketPtr pkt) const
+{
+    if (!smtWayPartition || !pkt->req->hasContextId())
+        return findBlock(pkt->getAddr(), pkt->isSecure());
+    const auto tid = pkt->req->contextId();
+    fatal_if(tid < 0 || tid > 1, "SMT way partition requires context IDs 0/1");
+    const unsigned first_way = tid * 2;
+    for (auto *entry : indexingPolicy->getPossibleEntries(pkt->getAddr())) {
+        auto *blk = static_cast<CacheBlk *>(entry);
+        if (blk->getWay() >= first_way && blk->getWay() < first_way + 2 &&
+            blk->matchTag(extractTag(pkt->getAddr()), pkt->isSecure())) {
+            blk->setHitWay(blk->getWay());
+            return blk;
+        }
+    }
+    return nullptr;
+}
+
+CacheBlk *
+BaseSetAssoc::findVictim(PacketPtr pkt, bool is_secure, std::size_t size,
+                         std::vector<CacheBlk *> &evict_blks)
+{
+    if (!smtWayPartition)
+        return findVictim(pkt->getAddr(), is_secure, size, evict_blks);
+    fatal_if(!pkt->req->hasContextId(), "Partitioned ICache fill needs a hart");
+    const auto tid = pkt->req->contextId();
+    fatal_if(tid < 0 || tid > 1, "SMT way partition requires context IDs 0/1");
+    std::vector<ReplaceableEntry *> entries;
+    for (auto *entry : indexingPolicy->getPossibleEntries(pkt->getAddr())) {
+        if (entry->getWay() >= tid * 2 && entry->getWay() < tid * 2 + 2)
+            entries.push_back(entry);
+    }
+    auto *victim = static_cast<CacheBlk *>(replacementPolicy->getVictim(entries));
+    evict_blks.push_back(victim);
+    return victim;
 }
 
 void

@@ -86,6 +86,20 @@ def setDualFrontendProbeParams(system):
         cpu.branchPred.pairtage.enableTwoTaken = False
 
 
+def setIfuConstraintParams(args, system):
+    for cpu in system.cpu:
+        cpu.smtFetchMaxBytes = 64 if args.smt_ifu_64b else 0
+        cpu.icache.icache_data_banks = args.smt_icache_banks
+        cpu.icache.tags.smt_way_partition = args.smt_icache_partition
+        if args.smt_icache_partition:
+            # Context IDs identify the two fixed way groups. Keep the shared
+            # Cache, MSHRs, ports, and downstream connection intact.
+            assert len(system.cpu) == 1 and int(cpu.numThreads) == 2
+            assert int(cpu.icache.size) == 65536
+            assert int(cpu.icache.assoc) == 4
+            assert cpu.icache.tags.type == 'BaseSetAssoc'
+
+
 def setTidPartitionedPredictorParams(system):
     for cpu in system.cpu:
         # RTL-oriented capacity model: large predictor tables are split into
@@ -134,6 +148,7 @@ if __name__ == '__m5_main__':
     setSharedLSQParams(args, test_sys)
     setDualFrontendProbeParams(test_sys)
     setTidPartitionedPredictorParams(test_sys)
+    setIfuConstraintParams(args, test_sys)
 
     root = Root(full_system=True, system=test_sys)
 

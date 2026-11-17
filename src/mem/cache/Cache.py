@@ -98,6 +98,8 @@ class BaseCache(ClockedObject):
     # python configs, e.g. only enable for DCache.
     mshr_alloc_per_cycle = Param.Int(-1,
         "Max number of MSHR allocations/merges allowed per cycle; -1 = unlimited")
+    icache_data_banks = Param.Bool(False,
+        "Model eight 8B data banks per way in a read-only 64B-line L1")
     hit_under_block = Param.Bool(False,
         "Serve clean read hits while cache is blocked (MSHR-exhausted / "
         "downstream backpressure); misses still NAK+retry.")

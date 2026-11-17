@@ -193,6 +193,12 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       Prefetch_CanOffload(p.prefetch_can_offload)
 {
     hitUnderBlock = p.hit_under_block;
+    icacheDataBanks = p.icache_data_banks;
+    fatal_if((icacheDataBanks || tags->hasThreadPartitions()) &&
+             (!isReadOnly || cacheLevel != 1 || blkSize != 64 || compressor),
+             "SMT ICache constraints require an uncompressed read-only 64B L1");
+    fatal_if(tags->hasThreadPartitions() && (prefetcher || writebackClean),
+             "Partitioned ICache requires no hardware prefetcher/clean writebacks");
 
     // the MSHR queue has no reserve entries as we check the MSHR
     // queue on every single allocation, whereas the write queue has
@@ -686,7 +692,7 @@ BaseCache::probeHit(const PacketPtr pkt) const
         return false;          // always forwarded, not a hit
     if (pkt->isEviction())
         return false;          // writeback/clean-evict path, not a read hit
-    CacheBlk *blk = tags->findBlock(pkt->getAddr(), pkt->isSecure());
+    CacheBlk *blk = tags->findBlock(pkt);
     return blk && blk->isSet(CacheBlk::ReadableBit);
 }
 
@@ -747,7 +753,7 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         // Now that the write is here, mark it accessible again, so the
         // write will succeed.  LockedRMWReadReq brings the block in in
         // exclusive mode, so we know it was previously writable.
-        CacheBlk *blk = tags->findBlock(pkt->getAddr(), pkt->isSecure());
+        CacheBlk *blk = tags->findBlock(pkt);
         assert(blk && blk->isValid());
         assert(!blk->isSet(CacheBlk::WritableBit) &&
                !blk->isSet(CacheBlk::ReadableBit));
@@ -1103,7 +1109,7 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     // the response is an invalidation
     assert(doFastWriteline ? !mshr->wasWholeLineWrite || pkt->isInvalidate() : true);
 
-    CacheBlk *blk = tags->findBlock(pkt->getAddr(), pkt->isSecure());
+    CacheBlk *blk = tags->findBlock(pkt);
     o3::LSQ *dcache_refill_lsq = nullptr;
     Addr dcache_refill_addr = 0;
     bool dcache_refill_need_data_read = false;
@@ -1175,6 +1181,10 @@ BaseCache::recvTimingResp(PacketPtr pkt)
         }
     }
 
+    if (is_fill && !is_error && pkt->isRead() &&
+        !pkt->isInvalidate() && !mshr->hasPostInvalidate()) {
+        fillIcachePartitions(mshr, pkt, writebacks);
+    }
     serviceMSHRTargets(mshr, pkt, blk);
 
     bool dcache_refill_notified = false;
@@ -1641,6 +1651,89 @@ BaseCache::getNextQueueEntry()
     return nullptr;
 }
 
+Cycles
+BaseCache::reserveIcacheBanks(PacketPtr pkt, CacheBlk *blk, Cycles lat)
+{
+    const int predicted_bytes = pkt->req->getIcacheFetchBytes();
+    const unsigned bytes = predicted_bytes < 0 ? pkt->getSize() :
+        std::min<unsigned>(predicted_bytes, pkt->getSize());
+    const auto mask = icache_banks::bankMask(pkt->getAddr(), bytes);
+    const auto delay = icacheBankReads.reserve(
+        curCycle(), curCycle() + lat, blk->getWay(), blk->getSet(), mask);
+    if (delay) {
+        ++stats.icacheBankDelayedReads;
+        stats.icacheBankDelayCycles += delay;
+    }
+    return Cycles(delay);
+}
+
+bool
+BaseCache::hasOtherIcacheCopy(const CacheBlk *blk) const
+{
+    if (!tags->hasThreadPartitions())
+        return false;
+    const auto addr = blk == tempBlock ? tempBlock->getAddr() :
+        tags->regenerateBlkAddr(blk);
+    for (auto *entry : tags->getIndexingPolicy()->getPossibleEntries(addr)) {
+        const auto *other = static_cast<CacheBlk *>(entry);
+        if (other != blk && other->matchTag(blk->getTag(), blk->isSecure()))
+            return true;
+    }
+    return false;
+}
+
+void
+BaseCache::snoopIcacheCopies(Addr addr, bool secure, CacheBlk *except,
+                            bool invalidate, bool downgrade)
+{
+    if (!tags->hasThreadPartitions())
+        return;
+    for (auto *entry : tags->getIndexingPolicy()->getPossibleEntries(addr)) {
+        auto *other = static_cast<CacheBlk *>(entry);
+        if (other == except || !other->matchTag(tags->extractTag(addr), secure))
+            continue;
+        if (invalidate)
+            invalidateBlock(other);
+        else if (downgrade)
+            other->clearCoherenceBits(CacheBlk::WritableBit);
+    }
+}
+
+void
+BaseCache::fillIcachePartitions(MSHR *mshr, PacketPtr pkt,
+                               PacketList &writebacks)
+{
+    if (!tags->hasThreadPartitions() || !mshr->allocOnFill())
+        return;
+    // Physical-line MSHRs remain shared. A merged cross-hart miss needs one
+    // resident copy in each requesting hart's fixed way group.
+    bool filled[2] = {};
+    fatal_if(!pkt->req->hasContextId() || pkt->req->contextId() < 0 ||
+             pkt->req->contextId() > 1,
+             "Partitioned fill needs context IDs 0/1");
+    filled[pkt->req->contextId()] = true;
+    for (const auto &target : mshr->copyServiceableTargets(pkt)) {
+        const auto &req = target.pkt->req;
+        if (!req->isInstFetch() || !req->hasContextId())
+            continue;
+        const auto tid = req->contextId();
+        fatal_if(tid < 0 || tid > 1, "Partitioned fill needs context IDs 0/1");
+        if (filled[tid])
+            continue;
+        filled[tid] = true;
+        // Keep response flags/data, changing only the owner used for tags.
+        auto copy_req = std::make_shared<Request>(*pkt->req);
+        copy_req->setContext(tid);
+        Packet copy(copy_req, pkt->cmd, blkSize);
+        copy.dataStatic(pkt->getPtr<uint8_t>());
+        copy.setHasSharers();
+        copy.headerDelay = pkt->headerDelay;
+        copy.payloadDelay = pkt->payloadDelay;
+        handleFill(&copy, tags->findBlock(&copy), writebacks, true);
+        ++stats.icachePartitionExtraFills;
+    }
+}
+
 bool
 BaseCache::handleEvictions(std::vector<CacheBlk*> &evict_blks,
     PacketList &writebacks, bool *evicted_dirty)
@@ -1656,7 +1749,12 @@ BaseCache::handleEvictions(std::vector<CacheBlk*> &evict_blks,
 
             const MSHR* mshr =
                 mshrQueue.findMatch(regenerateBlkAddr(blk), blk->isSecure());
-            if (mshr) {
+            // A miss in one hart's way group may coexist with a clean
+            // copy in the other group. Evicting that copy is safe: the shared
+            // read MSHR still owns its response and will allocate on fill.
+            if (mshr && !(tags->hasThreadPartitions() &&
+                          !blk->isSet(CacheBlk::DirtyBit) &&
+                          !mshr->needsWritable() && !mshr->isCleaning())) {
                 // Must be an outstanding upgrade or clean request on a block
                 // we're about to replace
                 assert((!blk->isSet(CacheBlk::WritableBit) &&
@@ -2252,6 +2350,8 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         if (pkt->isRead() || pkt->isWrite()) {
             // Read and Write can succeed after the data block is ready if Cache Hit
             lat = calculateAccessLatency(blk, pkt->headerDelay, tag_latency);
+            if (icacheDataBanks && pkt->req->isInstFetch())
+                lat += reserveIcacheBanks(pkt, blk, lat);
 
             // When a block is compressed, it must first be decompressed
             // before being read. This adds to the access latency.
@@ -2797,7 +2897,7 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
         }
     }
 
-    CacheBlk *blk = tags->findBlock(mshr->blkAddr, mshr->isSecure);
+    CacheBlk *blk = tags->findBlock(tgt_pkt);
 
     // either a prefetch that is not present upstream, or a normal
     // MSHR request, proceed to get the packet to send downstream
@@ -3195,6 +3295,12 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of cycles blocked by no MSHR entries"),
     ADD_STAT(hitUnderBlockServed, statistics::units::Count::get(),
              "clean read hits served while cache blocked (hit-under-blocked)"),
+    ADD_STAT(icacheBankDelayedReads, statistics::units::Count::get(),
+             "ICache line reads delayed by bank/way/set contention"),
+    ADD_STAT(icacheBankDelayCycles, statistics::units::Cycle::get(),
+             "Sum of extra cycles from ICache data bank read contention"),
+    ADD_STAT(icachePartitionExtraFills, statistics::units::Count::get(),
+             "Extra hart-owned copies allocated for merged instruction misses"),
     ADD_STAT(bytesRecvPerCycle, statistics::units::Ratio::get(),
              "average bandwidth receiving data from lower cache."),
     ADD_STAT(replacements, statistics::units::Count::get(),

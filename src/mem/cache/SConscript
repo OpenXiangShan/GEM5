@@ -41,6 +41,8 @@ Source('noncoherent_cache.cc')
 Source('write_queue.cc')
 Source('write_queue_entry.cc')
 
+GTest('icache_banks.test', 'icache_banks.test.cc')
+
 DebugFlag('Cache')
 DebugFlag('CacheComp')
 DebugFlag('CachePort')

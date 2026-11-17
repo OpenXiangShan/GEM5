@@ -77,6 +77,9 @@ class BaseSetAssoc(BaseTags):
     cxx_header = "mem/cache/tags/base_set_assoc.hh"
     cxx_class = 'gem5::BaseSetAssoc'
 
+    smt_way_partition = Param.Bool(False,
+        "SMT2: fixed 2-way groups in a shared 64KB/4-way ICache")
+
     # Get the cache associativity
     assoc = Param.Int(Parent.assoc, "associativity")
 

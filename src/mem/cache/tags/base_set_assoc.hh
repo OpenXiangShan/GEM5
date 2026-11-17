@@ -77,6 +77,7 @@ class BaseSetAssoc : public BaseTags
   protected:
     /** The allocatable associativity of the cache (alloc mask). */
     unsigned allocAssoc;
+    const bool smtWayPartition;
 
     /** The cache blocks. */
     std::vector<CacheBlk> blks;
@@ -105,6 +106,11 @@ class BaseSetAssoc : public BaseTags
      * Initialize blocks as CacheBlk instances.
      */
     void tagsInit() override;
+    using BaseTags::findBlock;
+    CacheBlk *findBlock(const PacketPtr pkt) const override;
+    bool hasThreadPartitions() const override { return smtWayPartition; }
+    CacheBlk *findVictim(PacketPtr pkt, bool is_secure, std::size_t size,
+                         std::vector<CacheBlk *> &evict_blks) override;
 
     /**
      * This function updates the tags when a block is invalidated. It also
@@ -126,18 +132,18 @@ class BaseSetAssoc : public BaseTags
      */
     CacheBlk* accessBlock(const PacketPtr pkt, Cycles &lat) override
     {
-        CacheBlk *blk = findBlock(pkt->getAddr(), pkt->isSecure());
+        CacheBlk *blk = findBlock(pkt);
 
         // Access all tags in parallel, hence one in each way.  The data side
         // either accesses all blocks in parallel, or one block sequentially on
         // a hit.  Sequential access with a miss doesn't access data.
-        stats.tagAccesses += allocAssoc;
+        stats.tagAccesses += smtWayPartition ? allocAssoc / 2 : allocAssoc;
         if (sequentialAccess) {
             if (blk != nullptr) {
                 stats.dataAccesses += 1;
             }
         } else {
-            stats.dataAccesses += allocAssoc;
+            stats.dataAccesses += smtWayPartition ? allocAssoc / 2 : allocAssoc;
         }
 
         // If a cache hit

@@ -338,6 +338,8 @@ class BaseO3CPU(BaseCPU):
     smtNumFetchTargetThreads = Param.Unsigned(
         1, "Maximum number of distinct SMT threads starting an FTQ fetch "
            "per cycle")
+    smtFetchMaxBytes = Param.Unsigned(
+        0, "Combined SMT FetchBlock byte budget per cycle; 0 disables")
     smtNumPreDispatchThreads = Param.Unsigned(
         1, "Maximum number of distinct SMT threads advanced per cycle from "
            "the fetch queue through decode, rename, dispatch, and ROB insert")

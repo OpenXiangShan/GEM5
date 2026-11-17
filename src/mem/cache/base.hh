@@ -65,6 +65,7 @@
 #include "debug/CacheTrace.hh"
 #include "enums/Clusivity.hh"
 #include "mem/cache/cache_blk.hh"
+#include "mem/cache/icache_banks.hh"
 #include "mem/cache/cache_probe_arg.hh"
 #include "mem/cache/compressors/base.hh"
 #include "mem/cache/mshr_queue.hh"
@@ -1293,6 +1294,9 @@ class BaseCache : public ClockedObject, public CacheAccessor
         statistics::Scalar noMshrBlockedCycles;
         /** Clean read hits served while the cache was blocked (hit-under-blocked). */
         statistics::Scalar hitUnderBlockServed;
+        statistics::Scalar icacheBankDelayedReads;
+        statistics::Scalar icacheBankDelayCycles;
+        statistics::Scalar icachePartitionExtraFills;
 
         /** The average bandwidth receiving data from lower cache. */
         statistics::Formula bytesRecvPerCycle;
@@ -1681,6 +1685,17 @@ public:
 
     /** Read-only hit probe (no LRU/writeback side effects) for hit-under-blocked. */
     bool probeHit(const PacketPtr pkt) const;
+
+  protected:
+    bool icacheDataBanks = false;
+    icache_banks::ReadScheduler icacheBankReads;
+    Cycles reserveIcacheBanks(PacketPtr pkt, CacheBlk *blk, Cycles lat);
+    bool hasOtherIcacheCopy(const CacheBlk *blk) const;
+    void snoopIcacheCopies(Addr addr, bool secure, CacheBlk *except,
+                           bool invalidate, bool downgrade);
+    void fillIcachePartitions(MSHR *mshr, PacketPtr pkt, PacketList &writebacks);
+
+  public:
     void incHitUnderBlockServed() { stats.hitUnderBlockServed++; }
 
     // CacheAccessor overrided function

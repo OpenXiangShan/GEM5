@@ -539,6 +539,9 @@ class Request
 
     /** The context ID (for statistics, locks, and wakeups). */
     ContextID _contextId = InvalidContextID;
+    // -1 means no FetchBlock metadata (use the packet range). Zero means
+    // decoder guard bytes only; they do not occupy predicted data banks.
+    int _icacheFetchBytes = -1;
 
     /** program counter of initiating access; for tracing/debugging */
     Addr _pc = MaxAddr;
@@ -620,6 +623,7 @@ class Request
           _time(other._time),
           _taskId(other._taskId), _vaddr(other._vaddr),
           _extraData(other._extraData), _contextId(other._contextId),
+          _icacheFetchBytes(other._icacheFetchBytes),
           _pc(other._pc), _reqInstSeqNum(other._reqInstSeqNum),
           _xsMetadata(other._xsMetadata),
           _localAccessor(other._localAccessor),
@@ -647,6 +651,9 @@ class Request
         assert(mgmt_req->isMemMgmt());
         return mgmt_req;
     }
+
+    void setIcacheFetchBytes(unsigned bytes) { _icacheFetchBytes = bytes; }
+    int getIcacheFetchBytes() const { return _icacheFetchBytes; }
 
     bool isMisalignedFetch()
     {

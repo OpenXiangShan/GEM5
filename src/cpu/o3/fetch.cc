@@ -117,6 +117,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       numThreads(params.numThreads),
       numFetchingThreads(params.smtNumFetchingThreads),
       numFetchTargetThreads(params.smtNumFetchTargetThreads),
+      smtFetchMaxBytes(params.smtFetchMaxBytes),
       enablePredecode(params.enablePredecode),
       icachePort(this, _cpu),
       finishTranslationEvents(), fetchStats(_cpu, this),
@@ -167,6 +168,9 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
              "aggregate SMT decode width (%u * %u) exceeds MaxWidth (%u)",
              decodeWidth, numPreDispatchThreads, MaxWidth);
 
+    fatal_if(smtFetchMaxBytes &&
+             (smtFetchMaxBytes != 64 || numThreads != 2 || enableTwoFetch),
+             "SMT IFU byte budget requires SMT2, 64B and no same-hart 2fetch");
     finishTranslationEvents.reserve(numThreads);
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         finishTranslationEvents.emplace_back(
@@ -442,6 +446,8 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Selected FTQ heads whose thread state could not start a fetch"),
     ADD_STAT(fetchTargetRequestBlocked, statistics::units::Count::get(),
              "Prepared FTQ heads whose cache request could not be started"),
+    ADD_STAT(smtFetchByteBudgetStalls, statistics::units::Count::get(),
+             "FTQ fetches deferred by the combined SMT byte budget"),
     ADD_STAT(twoFetchAttempts, statistics::units::Count::get(),
              "Predicted-taken FTQ boundaries considered for limited two-fetch"),
     ADD_STAT(twoFetchSuccesses, statistics::units::Count::get(),
@@ -757,6 +763,8 @@ Fetch::startupStage()
 void
 Fetch::clearStates(ThreadID tid)
 {
+    if (budgetRetryTid == tid)
+        budgetRetryTid = InvalidThreadID;
     clearResolveQueue(tid);
     setThreadStatus(tid, Running);
     set(threads[tid].fetchpc, cpu->pcState(tid));
@@ -796,6 +804,7 @@ Fetch::clearStates(ThreadID tid)
 void
 Fetch::resetStage()
 {
+    budgetRetryTid = InvalidThreadID;
     numInst = 0;
     interruptPending = false;
     for (auto *pkt : retryPkt) {
@@ -860,6 +869,20 @@ Fetch::resetStage()
     }
 }
 
+unsigned
+Fetch::fetchBlockBytes(ThreadID tid) const
+{
+    const auto prediction = dbpbtb->ftqFetchBlock(tid);
+    Addr end = prediction.endPC;
+    if (prediction.taken && prediction.controlPC >= prediction.startPC &&
+        prediction.controlPC < end &&
+        (prediction.controlSize == 2 || prediction.controlSize == 4)) {
+        end = std::min(end, prediction.controlPC + prediction.controlSize);
+    }
+    assert(end > prediction.startPC);
+    return end - prediction.startPC;
+}
+
 bool
 Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
 {
@@ -888,6 +911,8 @@ Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
     first_mem_req->taskId(cpu->taskId());
     first_mem_req->setMisalignedFetch();
     first_mem_req->setReqNum(1);
+    const unsigned valid_bytes = fetchBlockBytes(tid);
+    first_mem_req->setIcacheFetchBytes(std::min(valid_bytes, fetchSize));
 
     threads[tid].cacheReq.addRequest(first_mem_req); // packet will be created later
 
@@ -915,6 +940,9 @@ Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
     second_mem_req->taskId(cpu->taskId());
     second_mem_req->setMisalignedFetch();
     second_mem_req->setReqNum(2);
+    const unsigned first_bytes = first_mem_req->getSize();
+    second_mem_req->setIcacheFetchBytes(
+        valid_bytes > first_bytes ? valid_bytes - first_bytes : 0);
 
     threads[tid].cacheReq.addRequest(second_mem_req);  // Add second request to cache request
 
@@ -3310,6 +3338,17 @@ Fetch::getEligibleFetchTargetTid(
         }
     }
 
+    // A byte-budget loser gets the next first selection if it is still
+    // eligible. Selecting both heads otherwise advances RR back to the same
+    // first hart, which can starve the second hart on repeated >64B pairs.
+    if (smtFetchMaxBytes && record_redirect_skips &&
+        budgetRetryTid != InvalidThreadID) {
+        const ThreadID retry_tid = budgetRetryTid;
+        budgetRetryTid = InvalidThreadID;
+        if (eligible[retry_tid] && dbpbtb->ftqHasFetching(retry_tid))
+            return retry_tid;
+    }
+
     unsigned skipped = 0;
     // Use fetch-queue-aware scheduling: prioritize threads with fewer queue
     // entries.
@@ -3384,6 +3423,7 @@ Fetch::fetch(bool &status_change)
 
     std::array<bool, MaxThreads> attempted{};
     unsigned fetch_targets_started = 0;
+    unsigned fetch_bytes_started = 0;
     bool fetch_attempted = false;
 
     // This loop widens only FTQ-to-I-cache target selection. Instruction
@@ -3410,12 +3450,28 @@ Fetch::fetch(bool &status_change)
             continue;
         }
 
+        if (smtFetchMaxBytes && threads[tid].valid) {
+            fetch_attempted = true;
+            ++fetchStats.fetchTargetRequestBlocked;
+            continue;
+        }
+        const unsigned block_bytes = smtFetchMaxBytes ?
+            fetchBlockBytes(tid) : 0;
+        fatal_if(smtFetchMaxBytes && block_bytes > smtFetchMaxBytes,
+                 "Single SMT FetchBlock exceeds the configured 64B budget");
+        if (smtFetchMaxBytes &&
+            fetch_bytes_started + block_bytes > smtFetchMaxBytes) {
+            ++fetchStats.smtFetchByteBudgetStalls;
+            budgetRetryTid = tid;
+            continue;
+        }
         fetch_attempted = true;
         if (!sendNextCacheRequest(tid, *threads[tid].fetchpc)) {
             fetchStats.fetchTargetRequestBlocked++;
             continue;
         }
 
+        fetch_bytes_started += block_bytes;
         fetch_targets_started++;
         fetchStats.fetchTargetsStartedByThread[tid]++;
     }
