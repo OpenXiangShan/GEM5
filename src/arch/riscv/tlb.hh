@@ -120,6 +120,8 @@ class TLB : public BaseTLB
 
     Walker *walker;
 
+    uint64_t translationGen = 0;
+
     struct TlbStats : public statistics::Group
     {
         TlbStats(statistics::Group *parent);
@@ -196,6 +198,54 @@ class TLB : public BaseTLB
     PMAChecker *pma;
     PMP *pmp;
     ArchDBer *archDBer;
+
+    struct TranslationContext
+    {
+        /** Generation of the hart-shared L2 TLB at capture time. */
+        uint64_t gen = 0;
+        bool twoStage = false;
+        /** Page-table root and ASID/VMID the translation started under. */
+        SATP satp;     // direct translations
+        SATP vsatp;    // two-stage: VS root and guest ASID
+        HGATP hgatp;   // two-stage: G root and VMID
+        STATUS status;
+        VSSTATUS vsstatus;
+        PrivilegeMode pmode = PrivilegeMode::PRV_M;
+        int virt = 0;
+
+        TranslationContext()
+            : satp(0), vsatp(0), hgatp(0), status(0), vsstatus(0)
+        {}
+
+        bool operator==(const TranslationContext &o) const;
+        bool operator!=(const TranslationContext &o) const
+        {
+            return !(*this == o);
+        }
+    };
+
+    /** Snapshot of the context `req` is currently translated under. */
+    TranslationContext captureTranslationContext(ThreadContext *tc,
+                                                 const RequestPtr &req,
+                                                 BaseMMU::Mode mode);
+    /** True while `ctx` still describes the live translation state. */
+    bool translationContextValid(const TranslationContext &ctx,
+                                 ThreadContext *tc, const RequestPtr &req,
+                                 BaseMMU::Mode mode);
+
+    void effectiveTwoStagePriv(ThreadContext *tc, const RequestPtr &req,
+                               BaseMMU::Mode mode, int &virt,
+                               PrivilegeMode &pmode);
+
+    static TlbEntry buildAllStageEntry(Addr vaddr, Addr gpaddr, Addr hpa,
+                                       const StageLeaf &vs_leaf,
+                                       const StageLeaf &g_leaf,
+                                       uint16_t asid, uint16_t vmid);
+
+    /** Current value of the hart-shared invalidation generation. */
+    uint64_t getTranslationGen() const { return translationGen; }
+    /** Invalidate every translation result captured before this call. */
+    void advanceTranslationGen() { translationGen++; }
 
   public:
     typedef RiscvTLBParams Params;
@@ -351,6 +401,8 @@ class TLB : public BaseTLB
 
   private:
     uint64_t nextSeq() { return ++lruSeq; }
+    /** The L2 TLB this TLB's walkers share (ourselves when isStage2). */
+    TLB *sharedL2() { return isStage2 ? this : static_cast<TLB *>(nextLevel()); }
     void updateL2TLBSeq(TlbEntryTrie *Trie_l2, Addr vpn, Addr step,
                         uint16_t asid, uint8_t translateMode,
                         unsigned prefix_width);
@@ -368,6 +420,8 @@ class TLB : public BaseTLB
     void l2tlbRemoveIn(EntryList *List, TlbEntryTrie *Trie_l2,std::vector<TlbEntry>&tlb,size_t idx, int choose);
     void l2TLBRemove(size_t idx, int choose);
     bool hasTwoStageTranslation(ThreadContext *tc, const RequestPtr &req, BaseMMU::Mode mode);
+    bool useTwoStageRoute(ThreadContext *tc, const RequestPtr &req,
+                          BaseMMU::Mode mode);
     MMUMode isaMMUCheck(ThreadContext *tc, Addr vaddr, BaseMMU::Mode mode);
 
     Fault translate(const RequestPtr &req, ThreadContext *tc,
@@ -376,10 +430,11 @@ class TLB : public BaseTLB
     Fault doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
                       BaseMMU::Translation *translation, BaseMMU::Mode mode,
                       bool &delayed, bool from_miss_queue = false);
-    std::pair<int, Fault> checkHL1Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation *translation,
+    std::pair<int, Fault> checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                                       BaseMMU::Mode mode);
-    std::pair<int, Fault> checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation *translation,
-                                      BaseMMU::Mode mode, int l1tlbtype);
+    std::pair<bool, Fault> prepareTwoStageL2(const RequestPtr &req, ThreadContext *tc,
+                                             BaseMMU::Translation *translation,
+                                             BaseMMU::Mode mode);
     Fault doTranslate(const RequestPtr &req, ThreadContext *tc,
                       BaseMMU::Translation *translation, BaseMMU::Mode mode,
                       bool &delayed, bool from_miss_queue = false);

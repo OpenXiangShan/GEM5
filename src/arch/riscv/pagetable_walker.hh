@@ -189,6 +189,12 @@ namespace RiscvISA
             bool GstageFault;
             bool tlbHit;
             PTESv39 tlbHitPte;
+            StageLeaf vsLeaf;
+            StageLeaf gLeaf;
+            TLB::TranslationContext walkContext;
+            bool resultStale;
+            bool finishing;
+
             Request::Flags tlbflags;
             bool waitingForPtwLevel;
             int reservedPtwLevel;
@@ -212,7 +218,9 @@ namespace RiscvISA
                 finishDefaultTranslate(false), preHitInPtw(false), fromPre(false),
                 fromBackPre(false),virt(0),translateMode(0),inGstage(false),finishGVA(false),
                 gpaddrMode(0),finishGPA(false),GstageFault(false),
-                tlbHit(false),tlbHitPte(0),tlbflags(Request::PHYSICAL),
+                tlbHit(false),tlbHitPte(0),
+                vsLeaf(), gLeaf(), walkContext(), resultStale(false), finishing(false),
+                tlbflags(Request::PHYSICAL),
                 waitingForPtwLevel(false), reservedPtwLevel(-1),
                 blockedPtwLevel(-1), blockedPtwRead(0), blockedPtwReadSize(0),
                 blockedPtwFlags(Request::PHYSICAL)
@@ -284,10 +292,9 @@ namespace RiscvISA
 
               BaseMMU::Translation *translation;
               BaseMMU::Mode mode;
-              Addr Paddr;
-              TlbEntry *entry;
-              TlbEntry *entryVsstage;
-              TlbEntry *entryGstage;
+              Addr paddr;
+              TlbEntry entry;
+              TLB::TranslationContext context;
         };
         std::list<L2TlbState> L2TLBrequestors;
 
@@ -337,9 +344,10 @@ namespace RiscvISA
 
         void doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc,
                                 BaseMMU::Translation *translation,
-                                BaseMMU::Mode mode, Addr Paddr,
-                                TlbEntry *entry,TlbEntry *entryVsstage,
-                                TlbEntry *entryGstage,int delaytick);
+                                BaseMMU::Mode mode, Addr paddr,
+                                const TlbEntry &entry, uint8_t translateMode,
+                                const TLB::TranslationContext &context,
+                                int delaytick);
 
 
 
