@@ -40,15 +40,15 @@ class MBTBCapacityTest : public ::testing::TestWithParam<unsigned>
         stream.predMetas[0] = btb.getPredictionMeta(tid);
         stream.setPredictedBranches(predictions[btb.getDelay()].btbEntries);
 
-        BranchOutcome branch;
-        branch.tid = tid;
-        branch.pc = pc;
-        branch.target = target;
-        branch.taken = true;
-        branch.isCond = true;
-        branch.size = 4;
+        BranchOutcome outcome;
+        outcome.tid = tid;
+        outcome.branch.pc = pc;
+        outcome.branch.target = target;
+        outcome.taken = true;
+        outcome.branch.isCond = true;
+        outcome.branch.size = 4;
         btb.update(PredictionUpdateContext(stream),
-                   PreparedUpdate(std::vector<BranchOutcome>{branch}));
+                   PreparedUpdate(std::vector<BranchOutcome>{outcome}));
     }
 
     void
@@ -57,9 +57,11 @@ class MBTBCapacityTest : public ::testing::TestWithParam<unsigned>
         const auto entries = btb.getPredictedEntriesNoSideEffect(
             pc, tid, GetParam());
         const auto it = std::find_if(entries.begin(), entries.end(),
-            [pc](const BTBEntry &entry) { return entry.pc == pc; });
+            [pc](const BranchPrediction &entry) {
+                return entry.branch.pc == pc;
+            });
         ASSERT_NE(it, entries.end()) << "pc=" << pc << " tid=" << tid;
-        EXPECT_EQ(it->target, target);
+        EXPECT_EQ(it->branch.target, target);
 
         std::vector<FullBTBPrediction> predictions(4);
         for (auto &pred : predictions) {
@@ -69,9 +71,11 @@ class MBTBCapacityTest : public ::testing::TestWithParam<unsigned>
         btb.putPCHistory(pc, boost::dynamic_bitset<>(8, 0), predictions);
         const auto &predicted = predictions[btb.getDelay()].btbEntries;
         const auto pred = std::find_if(predicted.begin(), predicted.end(),
-            [pc](const BTBEntry &entry) { return entry.pc == pc; });
+            [pc](const BranchPrediction &entry) {
+                return entry.branch.pc == pc;
+            });
         ASSERT_NE(pred, predicted.end()) << "pc=" << pc << " tid=" << tid;
-        EXPECT_EQ(pred->target, target);
+        EXPECT_EQ(pred->branch.target, target);
     }
 
     void
@@ -157,10 +161,16 @@ TEST_P(MBTBCapacityTest, TagsStartAboveTheSramLocalIndex)
             std::vector<Addr> tags;
             for (Addr pc : pcs) {
                 train(btb, pc, pc + 0x400000, tid);
-                const auto entries = btb.getPredictedEntriesNoSideEffect(
-                    pc, tid, GetParam());
+                std::vector<FullBTBPrediction> predictions(4);
+                for (auto &pred : predictions) {
+                    pred.tid = tid;
+                    pred.asidHash = GetParam();
+                }
+                btb.putPCHistory(pc, boost::dynamic_bitset<>(8, 0),
+                                 predictions);
+                const auto &entries = btb.predictionStorageEntries(tid);
                 ASSERT_FALSE(entries.empty());
-                ASSERT_EQ(entries.front().pc, pc);
+                ASSERT_EQ(entries.front().branch.pc, pc);
                 tags.push_back(entries.front().tag);
             }
             // Neither the SRAM bit nor the highest local-index bit belongs
@@ -196,7 +206,9 @@ TEST_P(MBTBCapacityTest, FourWayConflictsStillEvict)
             const auto entries = btb.getPredictedEntriesNoSideEffect(
                 pc, 0, GetParam());
             resident += std::count_if(entries.begin(), entries.end(),
-                [pc](const BTBEntry &entry) { return entry.pc == pc; });
+                [pc](const BranchPrediction &entry) {
+                    return entry.branch.pc == pc;
+                });
         }
         EXPECT_EQ(resident, Ways);
     }
