@@ -247,7 +247,7 @@ M4 端点由 `IQ id * 8 + port` 生成，当前与输出端口一一对应。同
 
 ## 7. 当前配置与统计
 
-[FuncScheduler.py](../../../src/cpu/o3/FuncScheduler.py) 中通用 `Scheduler.enableFpSpecWakeup` 默认是 false；[kmhv3.py](../../../configs/example/kmhv3.py) 在选定普通或 SpMT Scheduler 后显式赋值 true。
+[FuncScheduler.py](../../../src/cpu/o3/FuncScheduler.py) 中通用 `Scheduler.enableFpSpecWakeup` 默认是 true；[kmhv3.py](../../../configs/example/kmhv3.py) 的普通和 SpMT Scheduler 均继承该默认值。
 
 原 `FP_ALU` 的 `FloatMult` 执行延迟统一为 3，所有复用该类的配置均使用这个值；`FP_MAC` 的 `FloatMultAcc` 为 4。该配置独立于推测唤醒参数；通过通用参数覆盖关闭唤醒不会恢复四周期 FMUL。
 
