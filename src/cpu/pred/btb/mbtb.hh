@@ -205,9 +205,7 @@ class MBTB : public TimedBaseBTBPredictor
   private:
     /** Returns the index into the BTB, based on the branch's PC.
      *  The index is calculated as: (pc >> idxShiftAmt) & idxMask
-     *  where idxShiftAmt is:
-     *  - log2(blockSize) if aligned to blockSize
-     *  - 1 if not aligned to blockSize
+     *  where idxShiftAmt is log2(blockSize) + log2(numSRAM).
      *  @param inst_PC The branch to look up.
      *  @return Returns the index into the BTB.
      */
@@ -383,7 +381,7 @@ class MBTB : public TimedBaseBTBPredictor
     /** Dual SRAM BTB structure:
      *  - Two independent 4-way SRAMs (sram0 and sram1)
      *  - Each SRAM organized as numSets sets with 4 ways
-     *  - Total size = numSets * 4 * 2 = numEntries (same as before)
+     *  - Total size = numSets * numWays * numSRAM = numEntries (same as before)
      *  - SRAM selection based on 32B-aligned PC[5]
      */
     std::vector<BTBSet> sram0, sram1;
@@ -405,15 +403,17 @@ class MBTB : public TimedBaseBTBPredictor
     unsigned victimCacheSize;
 
     /** BTB configuration parameters */
+    // Fixed dual-SRAM organization for half-align, do not change numSRAM
+    static constexpr unsigned numSRAM = 2;
     unsigned numEntries;    // Total number of entries
     unsigned numWays;       // Number of ways per SRAM (4 for dual-SRAM)
-    unsigned numSets;       // Number of sets per SRAM (numEntries/numWays/2)
-    
+    unsigned numSets;       // Number of sets per SRAM (numEntries/numWays/numSRAM)
+
     /** SRAM selection helper function */
     inline int getSRAMId(Addr pc) const {
         // Use the bit after block offset to select SRAM
         // For 32B blocks: bit 5 selects SRAM (blockSize=32, log2(32)=5)
-        return ((pc >> floorLog2(blockSize)) & 1);
+        return (pc >> floorLog2(blockSize)) & (numSRAM - 1);
     }
 
 #ifdef UNIT_TEST

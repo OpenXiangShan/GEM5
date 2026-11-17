@@ -87,12 +87,12 @@ MBTB::MBTB(const Params &p)
     // MBTB doesn't support ahead-pipelined stages
 #endif
     // Calculate shift amounts for index calculation
-    // MBTB is always half-aligned: | tag | idx | block offset | instShiftAmt
-    idxShiftAmt = floorLog2(blockSize);
+    // MBTB is always half-aligned: | tag | idx | SRAM | block offset | instShiftAmt
+    idxShiftAmt = floorLog2(blockSize) + floorLog2(numSRAM);
 
-    // For dual SRAM: each SRAM has numWays/2 ways, total still numWays*2
-    assert(numEntries % (numWays * 2) == 0);
-    numSets = numEntries / (numWays * 2); // Each SRAM has numSets sets
+    // For dual SRAM: each SRAM has numWays ways, total still numWays*numSRAM
+    assert(numEntries % (numWays * numSRAM) == 0);
+    numSets = numEntries / (numWays * numSRAM); // Each SRAM has numSets sets
 
     if (!isPowerOf2(numEntries)) {
         fatal("BTB entries is not a power of 2!");
@@ -128,7 +128,7 @@ MBTB::MBTB(const Params &p)
         std::make_heap(mru1[i].begin(), mru1[i].end(), older());
     }
 
-    // | tag | idx | block offset | instShiftAmt
+    // | tag | idx | SRAM | block offset | instShiftAmt
     idxMask = numSets - 1;
 
     tagMask = (1UL << tagBits) - 1;
@@ -1047,7 +1047,7 @@ MBTB::BTBStats::BTBStats(statistics::Group* parent, int numWays) :
 void
 MBTB::BTBStats::init(int numWays)
 {
-    predHitCount.init(0, numWays * 2, 1);
+    predHitCount.init(0, numWays * numSRAM, 1);
 }
 
 // Close conditional namespace wrapper for testing
