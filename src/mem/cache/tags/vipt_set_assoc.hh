@@ -87,6 +87,8 @@ class VIPTSetAssoc : public BaseSetAssoc
      */
     VIPTSetAssoc(const Params &p);
 
+    using BaseSetAssoc::findBlock;
+
     /**
      * Destructor
      */

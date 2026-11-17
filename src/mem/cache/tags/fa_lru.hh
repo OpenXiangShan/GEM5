@@ -197,6 +197,7 @@ class FALRU : public BaseTags
      * @param asid The address space ID.
      * @return Pointer to the cache block.
      */
+    using BaseTags::findBlock;
     CacheBlk* findBlock(Addr addr, bool is_secure) const override;
 
     /**
