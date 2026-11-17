@@ -139,18 +139,33 @@ def setKmhV3IdealParams(args, system):
         # value predictor
         if args.enable_vp:
             vp_type = getattr(args, "vp_type", "vtage")
+            # All composable predictors, in the canonical order. This order
+            # defines the child indices and the tie-break order for confidence
+            # arbitration; the fixed-priority order comes from the arbiter's
+            # own predictor-type table.
+            all_types = [
+                "ideal-constant",
+                "estride",
+                "vtage",
+                "egdiff",
+            ]
             if vp_type == "all":
-                # Order defines the child indices and the tie-break order for
-                # confidence arbitration; the fixed-priority order comes from
-                # the arbiter's own predictor-type table.
-                predictor_types = [
-                    "ideal-constant",
-                    "estride",
-                    "vtage",
-                    "egdiff",
-                ]
+                predictor_types = all_types
             else:
-                predictor_types = [vp_type]
+                requested = [kind.strip() for kind in vp_type.split(",")]
+                requested = [kind for kind in requested if kind]
+                unknown = [kind for kind in requested
+                           if kind not in all_types]
+                if unknown:
+                    fatal("unsupported value predictor type(s) in "
+                          "--vp-type=%s: %s (valid names: %s)" %
+                          (vp_type, ", ".join(unknown), ", ".join(all_types)))
+                if not requested:
+                    fatal("--vp-type=%s selects no value predictor" % vp_type)
+                # Keep the canonical order so child indices do not depend on
+                # how the subset was typed on the command line.
+                predictor_types = [kind for kind in all_types
+                                   if kind in requested]
 
             predictors = [
                 make_value_predictor(kind) for kind in predictor_types
