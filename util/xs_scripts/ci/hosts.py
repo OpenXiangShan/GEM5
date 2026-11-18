@@ -1,7 +1,10 @@
-"""SSH transport and idle-core discovery on the shared CI pool."""
+"""SSH transport and resource probes on the shared CI pool."""
 import re
 import shlex
 import subprocess
+
+MEMORY_RESERVED_ABS = 64 * 1024**3
+MEMORY_RESERVED_RATIO = 0.1
 
 # SSH stdin is a lifetime pipe, not simulator input. Run this on the worker
 # so losing the launcher never requires a second SSH connection to clean up.
@@ -180,3 +183,54 @@ def probe_idle_cpus(
         )
     except (OSError, subprocess.TimeoutExpired, ValueError) as error:
         return None, f"idle probe failed: {error}"
+
+
+def probe_memory(server_name, ssh_config, ssh_options, ssh_user, timeout=10):
+    command = ["cat", "/proc/meminfo"]
+    if server_name != "local":
+        command = build_ssh_command(
+            make_ssh_target(server_name, ssh_user),
+            command,
+            ssh_config,
+            ssh_options,
+            ["BatchMode=yes", "ConnectionAttempts=1"],
+        )
+    try:
+        result = subprocess.run(
+            command,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=timeout,
+            check=True,
+        )
+    except subprocess.CalledProcessError as error:
+        return (
+            False,
+            f"memory probe exited {error.returncode}: {error.stderr.strip()}",
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return False, f"memory probe failed: {error}"
+
+    fields = dict(
+        re.findall(
+            r"^(MemTotal|MemAvailable):\s+(\d+) kB\s*$",
+            result.stdout,
+            re.MULTILINE,
+        )
+    )
+    if "MemTotal" not in fields or "MemAvailable" not in fields:
+        return False, "memory probe missing valid MemTotal or MemAvailable"
+    total = int(fields["MemTotal"]) * 1024
+    available = int(fields["MemAvailable"]) * 1024
+    if total <= 0 or available > total:
+        return False, "memory probe returned invalid MemTotal or MemAvailable"
+
+    reserve = max(total * MEMORY_RESERVED_RATIO, MEMORY_RESERVED_ABS)
+    detail = (
+        f"MemAvailable={available / 1024**3:.2f} GiB, "
+        f"MemTotal={total / 1024**3:.2f} GiB, "
+        f"require>{reserve / 1024**3:.2f} GiB"
+    )
+    return available > reserve, detail
