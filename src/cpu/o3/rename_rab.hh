@@ -6,7 +6,9 @@
 #define __CPU_O3_RENAME_RAB_HH__
 
 #include <cassert>
+#include <deque>
 
+#include "cpu/inst_seq.hh"
 #include "cpu/reg_class.hh"
 
 namespace gem5
@@ -14,13 +16,12 @@ namespace gem5
 namespace o3
 {
 
-/** Capacity accounting for the charged mappings in Rename's history buffer. */
+/** Single-thread RAB: ROB enqueue order and registered capacity grants. */
 class RenameRAB
 {
   public:
-    enum class Admission { Ready, Full, Oversized };
-
-    explicit RenameRAB(unsigned capacity) : numEntries(capacity) {}
+    RenameRAB(unsigned capacity, unsigned width)
+        : numEntries(capacity), renameWidth(width) {}
 
     /** Classify destinations independently of physical register allocation. */
     static bool
@@ -40,40 +41,57 @@ class RenameRAB
         }
     }
 
-    /** Check an entire bundle without reserving or consuming any entries. */
-    Admission
-    check(unsigned demand) const
+    /** Sample after ROB enqueue, before this cycle's commit/squash releases. */
+    void
+    latchAdmission()
     {
-        // Zero disables admission checks without disabling occupancy tracking.
-        if (numEntries == 0)
-            return Admission::Ready;
-        if (demand > numEntries)
-            return Admission::Oversized;
-        assert(numOccupied <= numEntries);
-        return demand <= numEntries - numOccupied ?
-            Admission::Ready : Admission::Full;
+        enqueueGrant = !numEntries || occupancy() <= numEntries - renameWidth;
+        dispatchGrant = !numEntries ||
+            occupancy() <= numEntries - 2 * renameWidth;
+    }
+
+    bool canEnqueue() const { return enqueueGrant; }
+    bool canDispatch() const { return dispatchGrant; }
+
+    bool
+    fitsWritePorts(unsigned preceding, unsigned mappings, bool first) const
+    {
+        const unsigned total = preceding + mappings;
+        return !numEntries || ((first || total <= renameWidth) &&
+                               total <= numEntries - occupancy());
     }
 
     void
-    allocate()
+    enqueue(InstSeqNum seq, unsigned mappings)
     {
-        assert(check(1) == Admission::Ready);
-        ++numOccupied;
+        assert(entries.empty() || entries.back() <= seq);
+        assert(!numEntries || mappings <= numEntries - occupancy());
+        entries.insert(entries.end(), mappings, seq);
     }
 
     void
-    release()
+    commitThrough(InstSeqNum seq)
     {
-        assert(numOccupied > 0);
-        --numOccupied;
+        while (!entries.empty() && entries.front() <= seq)
+            entries.pop_front();
     }
 
-    unsigned occupancy() const { return numOccupied; }
+    void
+    squashAfter(InstSeqNum seq)
+    {
+        while (!entries.empty() && entries.back() > seq)
+            entries.pop_back();
+    }
+
+    unsigned occupancy() const { return entries.size(); }
     unsigned capacity() const { return numEntries; }
 
   private:
     const unsigned numEntries;
-    unsigned numOccupied = 0;
+    const unsigned renameWidth;
+    std::deque<InstSeqNum> entries;
+    bool enqueueGrant = true;
+    bool dispatchGrant = true;
 };
 
 } // namespace o3

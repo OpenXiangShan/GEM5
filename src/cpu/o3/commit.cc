@@ -2603,11 +2603,32 @@ Commit::moveInstsToBuffer()
         rob->setBorrowingDonor(i, donor, this);
     }
 
+    const auto &rab = cpu->getRename()->getRAB();
+    unsigned rab_window = std::min<unsigned>(renameWidth, fixedbuffer[0].size());
+    const unsigned input_window = rab_window;
+    if (rab.capacity()) {
+        // A gem5 DynInst can represent several RTL destination writes. Keep
+        // the oldest prefix within the write width. An indivisible wider
+        // instruction can go alone when its mappings physically fit.
+        unsigned writes = 0;
+        for (unsigned pos = 0; pos < input_window; ++pos) {
+            const auto &inst = fixedbuffer[0][pos];
+            const unsigned cost = inst->isSquashed() ? 0 : inst->rabMappings;
+            fatal_if(cost > rab.capacity(),
+                     "Instruction needs %u RAB entries, capacity is %u",
+                     cost, rab.capacity());
+            if (!rab.fitsWritePorts(writes, cost, pos == 0)) {
+                rab_window = pos;
+                break;
+            }
+            writes += cost;
+        }
+    }
+
     // Hybrid is single-threaded. The plan lives only for this invocation:
     // failed admission leaves the window intact and retries reclassify it.
     // Count positions before filtering squash marks; never refill the window.
-    const unsigned hybrid_window = rob->isHybrid() ?
-        std::min<unsigned>(fixedbuffer[0].size(), renameWidth) : 0;
+    const unsigned hybrid_window = rob->isHybrid() ? rab_window : 0;
     std::vector<DynInstPtr> hybrid_insts;
     ROB::HybridPlan hybrid_plan;
     if (rob->isHybrid()) {
@@ -2633,13 +2654,18 @@ Commit::moveInstsToBuffer()
     for (int i = 0; i < numThreads; i++) {
         bool robblock = commitStatus[i] == ROBSquashing ||
                         commitStatus[i] == TrapPending;
-        const unsigned allocation = rob->isHybrid() ? hybrid_plan.size() :
+        const unsigned window = i == 0 ? rab_window :
             std::min<unsigned>(fixedbuffer[i].size(), renameWidth);
-        bool block = !rob->canAllocate(i, allocation) || robblock;
+        const unsigned allocation = rob->isHybrid() ? hybrid_plan.size() : window;
+        const bool rab_block = rab.capacity() && !fixedbuffer[i].empty() &&
+            (!rab.canEnqueue() || !window);
+        bool block = !rob->canAllocate(i, allocation) || robblock || rab_block;
         bool active = !block && !fixedbuffer[i].empty();
         StallReason block_reason = StallReason::NoStall;
         if (robblock) {
             block_reason = squashCauseToStallReason(curSquashCause[i]);
+        } else if (rab_block) {
+            block_reason = StallReason::RABFull;
         } else if (block) {
             if (auto *dip = cpu->getDip()) {
                 dip->upstreamStall(Dip::ROB);
@@ -2697,7 +2723,7 @@ Commit::moveInstsToBuffer()
     }
 
     for (const ThreadID tid : selected_tids) {
-        const unsigned insts_to_process =
+        const unsigned insts_to_process = tid == 0 ? rab_window :
             std::min<unsigned>(fixedbuffer[tid].size(), renameWidth);
         const unsigned required_groups = rob->isHybrid() ?
             hybrid_plan.size() : insts_to_process;
@@ -2747,7 +2773,8 @@ Commit::moveInstsToBuffer()
 
         if (!fixedbuffer[tid].empty()) {
             stallSig->blockIEW[tid] = true;
-            stallSig->iewBlockReason[tid] = StallReason::OtherFragStall;
+            stallSig->iewBlockReason[tid] = rab_window < input_window ?
+                StallReason::RABFull : StallReason::OtherFragStall;
             DPRINTF(Commit,
                     "Not all instructions from Rename stage could be "
                     "processed, blocking thread %i\n", tid);

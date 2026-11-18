@@ -209,6 +209,9 @@ class Rename
      */
     void tick();
 
+    const RenameRAB &getRAB() const { return rab; }
+    void enqueueRAB(const DynInstPtr &inst);
+
     void markTeaStoreQueueStall(ThreadID tid);
 
     /** Debugging function used to dump history buffer of renamings. */
@@ -225,13 +228,8 @@ class Rename
      */
     unsigned renameInsts(ThreadID tid, unsigned max_insts);
 
-    /** Checks if the rename map can rename all the given number of instructions this cycle. */
+    /** Check physical register space for this rename bundle. */
     bool canRename(ThreadID tid);
-
-    /** Check the entire single-thread bundle against RAB capacity. */
-    bool canRenameRAB(ThreadID tid) const;
-    /** Count a RAB capacity stall at most once per cycle. */
-    void recordRABFull();
 
     /** Whether any non-squashed, buffered instruction for this thread still
      *  needs a new physical register this cycle. Used to decide whether the
@@ -278,10 +276,9 @@ class Rename
     {
         RenameHistory(InstSeqNum _instSeqNum, const RegId& _archReg,
                       VirtRegId _newPhysReg,
-                      VirtRegId _prevPhysReg, bool _occupiesRABEntry)
+                      VirtRegId _prevPhysReg)
             : instSeqNum(_instSeqNum), archReg(_archReg),
-              newPhysReg(_newPhysReg), prevPhysReg(_prevPhysReg),
-              occupiesRABEntry(_occupiesRABEntry)
+              newPhysReg(_newPhysReg), prevPhysReg(_prevPhysReg)
         {
         }
 
@@ -294,8 +291,6 @@ class Rename
         /** The old physical register that the arch. register was renamed to.
          */
         VirtRegId prevPhysReg;
-        /** Whether this history record consumes single-thread RAB space. */
-        bool occupiesRABEntry;
     };
 
     /** A per-thread list of all destination register renames, used to either
@@ -465,11 +460,6 @@ class Rename
         void resetStats() override;
 
         Rename &owner;
-        statistics::Scalar rabAllocatedEntries;
-        statistics::Scalar rabCommittedEntries;
-        statistics::Scalar rabSquashedEntries;
-        statistics::Scalar rabFullCycles;
-        statistics::Value rabOccupancy;
         statistics::Scalar rabPeakOccupancy;
 
         /** Stat for total number of cycles spent squashing. */
@@ -559,7 +549,6 @@ class Rename
     /** Set within tick() when any thread stalls on RegFull this cycle;
      *  used to avoid double-incrementing stallEvents[RegFull]. */
     bool regFullThisCycle{false};
-    bool rabFullThisCycle{false};
 
     void setAllStalls(ThreadID tid, StallReason renameStall);
 

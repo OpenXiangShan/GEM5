@@ -1074,6 +1074,9 @@ class DynInst : public ExecContext, public RefCounted
     /** Returns the number of destination registers. */
     size_t numDestRegs() const { return numDests(); }
 
+    // Computed at rename; charged only if the ROB accepts this instruction.
+    unsigned rabMappings = 0;
+
     size_t
     numDestRegs(RegClassType type) const
     {

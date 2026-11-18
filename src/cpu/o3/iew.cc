@@ -1661,7 +1661,9 @@ IEW::dispatchInsts()
         bool rename_block = stallSig->blockIEW[i] || ldst_block;
         // LDST queue reservation gates new rename input, but the already
         // buffered tail must still drain through per-instruction LSQ checks.
-        bool active = !stallSig->blockIEW[i] && !fixedbuffer[i].empty();
+        bool active = (!stallSig->blockIEW[i] ||
+                       stallSig->iewBlockReason[i] == StallReason::RABFull) &&
+                      !fixedbuffer[i].empty();
         StallReason block_reason = StallReason::NoStall;
         if (stallSig->blockIEW[i]) {
             block_reason = stallSig->iewBlockReason[i];
@@ -1712,9 +1714,22 @@ IEW::dispatchInsts()
         for (const ThreadID tid : selected_tids) {
             DPRINTF(IEW, "Processing [tid:%i]\n", tid);
             blockReason = StallReason::NoStall;
+            unsigned width = renameWidth;
+            if (stallSig->iewBlockReason[tid] == StallReason::RABFull) {
+                // Drain older ROB residents so they can execute and release
+                // space. Do not send the rejected ROB input to the scheduler.
+                width = 0;
+                for (const auto &inst : fixedbuffer[tid]) {
+                    if (!inst->isInROB() && !inst->isSquashed())
+                        break;
+                    if (!inst->isSquashed() && ++width == renameWidth)
+                        break;
+                }
+                blockReason = StallReason::RABFull;
+            }
             const unsigned dispatched = enableDispatchStage ?
-                classifyInstToDispQue(tid, renameWidth, dispatched_total) :
-                dispatchInstFromRename(tid, renameWidth, dispatched_total);
+                classifyInstToDispQue(tid, width, dispatched_total) :
+                dispatchInstFromRename(tid, width, dispatched_total);
             dispatched_total += dispatched;
             threads_dispatched += dispatched != 0;
 

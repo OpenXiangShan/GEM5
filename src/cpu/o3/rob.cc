@@ -554,6 +554,8 @@ ROB::insertInstWithGroup(const DynInstPtr &inst, bool new_group)
     tail--;
 
     inst->setInROB();
+    if (inst->rabMappings)
+        cpu->getRename()->enqueueRAB(inst);
     if (auto *tea = cpu->getTea()) {
         tea->allocate(inst);
     }
