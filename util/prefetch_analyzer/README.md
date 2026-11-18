@@ -46,6 +46,7 @@ python3 util/prefetch_analyzer/analyze.py /path/to/on/m5out \
 | `demands.csv` | One row per accepted L1 cache request; replay count, completion latency and classification |
 | `prefetches.csv` | Candidate/request identities, lifecycle times and alias edges |
 | `pcs.csv` | PC × cache × address space × ContextID × security-domain patterns and latency ranking |
+| `sources.csv`, `source-drops.csv`, `stages.csv` | Origin-source outcomes, drop-event counts and observed phase intervals with P50/P90/P99; incomplete phases are excluded, not zero-filled |
 | `pc-comparison.csv` | Paired per-PC miss and observed request-wait changes per retired instruction; compares control first, otherwise baseline |
 | `performance.csv` | Cycles, retired instructions, IPC, misses, issued bytes and workload weight for existing performance workflows |
 | `events.sqlite`, `timeline.csv` | Complete facts and selected timelines |
