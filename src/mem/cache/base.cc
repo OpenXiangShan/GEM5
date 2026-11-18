@@ -58,6 +58,7 @@
 #include "base/types.hh"
 #include "cpu/golden_global_mem.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/lsq.hh"
 #include "debug/ArchDB.hh"
 #include "debug/Cache.hh"
@@ -594,6 +595,12 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 // delay of the xbar.
                 mshr->allocateTarget(pkt, forward_time, order++,
                                      allocOnFill(pkt->cmd));
+                if (blocked == (1 << Blocked_NoMSHRs) &&
+                    cacheLevel == 1 && !isReadOnly && pkt->cmd == MemCmd::ReadReq) {
+                    DPRINTF(Cache, "Full MSHR queue: added read target for %#lx "
+                            "targets=%d limit=%d\n", pkt->getAddr(),
+                            mshr->getNumTargets(), numTarget);
+                }
                 if (mshr->getNumTargets() >= numTarget) {
                     noTargetMSHR = mshr;
                     setBlocked(Blocked_NoTargets);
@@ -3562,6 +3569,28 @@ BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
             cache.tryAccessTag(pkt)) {
             cache.incHitUnderBlockServed();
             return true;
+        }
+        // Entry capacity and target capacity are distinct. An ordinary L1D
+        // load may join a live read miss if only entry allocation is blocked.
+        // The normal timing path still checks tag ports, aliases, write-buffer
+        // conflicts, and per-cycle MSHR arbitration.
+        if (cache.simulateDcacheRefill && cache.cacheLevel == 1 &&
+            !cache.isReadOnly && cache.blocked == (1 << Blocked_NoMSHRs) &&
+            pkt->cmd == MemCmd::ReadReq && !pkt->req->isCacheMaintenance() &&
+            !pkt->needsWritable()) {
+            auto *load = dynamic_cast<o3::LSQ::LSQRequest *>(pkt->senderState);
+            auto *entry = cache.mshrQueue.findMatch(
+                pkt->getBlockAddr(cache.blkSize), pkt->isSecure());
+            if (load && load->isNormalLd() &&
+                !load->instruction()->isDataPrefetch() &&
+                entry && entry->allocOnFill() && !entry->isForward &&
+                !entry->needsWritable() && !entry->hasLockedRMWReadTarget() &&
+                !(entry->inService &&
+                  (entry->hasPostInvalidate() || entry->hasPostDowngrade())) &&
+                entry->getNumTargets() < cache.numTarget &&
+                !cache.probeHit(pkt) && cache.tryAccessTag(pkt)) {
+                return true;
+            }
         }
         mustSendRetry = true;
         return false;
