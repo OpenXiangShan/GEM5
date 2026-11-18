@@ -110,7 +110,7 @@ class SDBPRP(BaseReplacementPolicy):
     crc_live_update = Param.Bool(True, "Halve odd tables on live training")
     enable_bypass = Param.Bool(False, "Bypass predicted-dead data refills (L2 only)")
     split_prefetch_sources = Param.Bool(
-        False, "Observer-only independent banks per L1/L2 prefetch algorithm"
+        False, "Independent banks per L1/L2 prefetch algorithm"
     )
     observation_only = Param.Bool(
         False,

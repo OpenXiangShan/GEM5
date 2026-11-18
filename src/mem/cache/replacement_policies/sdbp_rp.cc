@@ -62,8 +62,6 @@ SDBP::SDBP(const Params &p)
       splitPrefetchSources(p.split_prefetch_sources),
       stats(this, p.split_prefetch_sources)
 {
-    fatal_if(splitPrefetchSources && !observationOnly,
-             "%s: source splitting requires observation-only SDBP", name());
     fatal_if(observationOnly && enableBypass,
              "%s: observation-only SDBP cannot bypass fills", name());
     fatal_if(observationOnly && l1CopyProtection,
@@ -72,11 +70,12 @@ SDBP::SDBP(const Params &p)
         "%s: SDBP num_sets=%u sampler_sets=%u half_set_bits=%u "
         "sampler_assoc=%u sampler_dead_first=%d sampler_protect_youngest=%u "
         "sampler_demand_pc_only=%d "
-        "l1_copy_protection=%d bypass=%d observation_only=%d",
+        "l1_copy_protection=%d bypass=%d observation_only=%d "
+        "split_prefetch_sources=%d",
         name(), core.numSets(), core.samplerSets(), core.halfBits(),
         p.sampler_assoc, p.sampler_dead_first, p.sampler_protect_youngest,
         p.sampler_demand_pc_only, l1CopyProtection, enableBypass,
-        observationOnly);
+        observationOnly, splitPrefetchSources);
 }
 
 void

@@ -69,7 +69,7 @@ def add_sdbp_options(parser):
         "--sdbp-split-prefetch-sources",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="Observer-only predictor banks per prefetch level and algorithm",
+        help="Independent SDBP predictor banks per prefetch level and algorithm",
     )
 
 
@@ -108,9 +108,9 @@ def configure_sdbp(args, system):
 
     if (
         args.sdbp_split_prefetch_sources
-        and args.l2_replacement_policy != "lru-sdbp"
+        and args.l2_replacement_policy not in ("sdbp", "lru-sdbp")
     ):
-        raise ValueError("Splitting prefetch sources requires lru-sdbp")
+        raise ValueError("Splitting prefetch sources requires sdbp or lru-sdbp")
     if args.l2_replacement_policy != "default":
         if not args.l2cache:
             raise ValueError("--l2-replacement-policy requires --l2cache")

@@ -768,6 +768,100 @@ TEST_F(SDBPInterface, FullCacheObserverResetStatsPreservesPendingAndPredictor)
     EXPECT_EQ(stat(policy, "fullCachePredictions"), 1);
 }
 
+TEST_F(SDBPInterface, SplitActiveSamplerPredictionsSelectDeadVictim)
+{
+    auto params = testParams();
+    params.split_prefetch_sources = true;
+    params.sampler_assoc = 1;
+    SDBP policy(params);
+    auto berti = sourcedPacket(Request::L2RequestSource::L1Prefetch, 0x1000);
+    berti->req->setXsMetadata(Request::XsMetadata(enums::Berti));
+    auto lldp = sourcedPacket(Request::L2RequestSource::L1Prefetch, 0x1000);
+    lldp->req->setPFSource(enums::LLDP);
+    auto l2 = sourcedPacket(Request::L2RequestSource::L2Prefetch, 0x1000);
+    l2->req->setPFSource(enums::Berti);
+    auto demand = sourcedPacket(Request::L2RequestSource::L1Demand, 0x1000);
+    demand->req->setPFSource(enums::Berti);
+    // Only sampled evictions, not real-cache replacements, train active SDBP.
+    for (unsigned tag = 1; tag <= 4; ++tag)
+        policy.observeFill(berti.get(), 0, tag);
+    const unsigned bank = 1 + enums::Berti;
+    EXPECT_EQ(sourceStat(policy, "deadTrainingBySource", bank), 3);
+    EXPECT_EQ(stat(policy, "samplerAccesses"), 4);
+    ReplaceableEntry live, dead;
+    live.replacementData = policy.instantiateEntry();
+    dead.replacementData = policy.instantiateEntry();
+    for (auto *pkt : {lldp.get(), l2.get(), demand.get()}) {
+        policy.reset(live.replacementData, pkt);
+        EXPECT_EQ(SDBP::victimClass(live.replacementData), 1);
+    }
+    policy.reset(dead.replacementData, berti.get());
+    EXPECT_EQ(SDBP::victimClass(dead.replacementData), 2);
+    EXPECT_EQ(policy.getVictim(ReplacementCandidates{&live, &dead}), &dead);
+    EXPECT_EQ(stat(policy, "nonLruDeadVictims"), 1);
+    EXPECT_EQ(sourceStat(policy, "deadPredictionsBySource", bank), 1);
+    // L1 protection still applies to a source-specific dead prediction.
+    policy.setL1CopyProbe([&](const ReplaceableEntry *entry) {
+        return entry == &dead;
+    });
+    EXPECT_EQ(policy.getVictim(ReplacementCandidates{&live, &dead}), &live);
+    EXPECT_EQ(stat(policy, "l1CopyProtectedDead"), 1);
+    policy.notifyReplacementEviction(dead.replacementData);
+    policy.invalidate(dead.replacementData);
+    EXPECT_EQ(stat(policy, "deadTraining"), 3);
+    EXPECT_EQ(stat(policy, "fullCacheResolved"), 0);
+    policy.touch(live.replacementData, berti.get());
+    EXPECT_EQ(SDBP::victimClass(live.replacementData), 2);
+    policy.touch(live.replacementData, demand.get());
+    EXPECT_EQ(SDBP::victimClass(live.replacementData), 1);
+}
+
+TEST_F(SDBPInterface, SplitActiveSamplerTrainsPreviousAlgorithmAndLevel)
+{
+    auto params = testParams();
+    params.split_prefetch_sources = true;
+    params.sampler_assoc = 1;
+    SDBP policy(params);
+    auto berti = sourcedPacket(Request::L2RequestSource::L1Prefetch, 0x1000);
+    berti->req->setPFSource(enums::Berti);
+    auto lldp = sourcedPacket(Request::L2RequestSource::L2Prefetch, 0x2000);
+    lldp->req->setPFSource(enums::LLDP);
+    auto demand = sourcedPacket(Request::L2RequestSource::L1Demand, 0x3000);
+    policy.observeFill(berti.get(), 0, 1);
+    policy.observe(lldp.get(), 0, 1, true);
+    policy.observeFill(demand.get(), 0, 2);
+    const unsigned b = 1 + enums::Berti;
+    const unsigned l = 1 + NUM_PF_SOURCES + enums::LLDP;
+    EXPECT_EQ(sourceStat(policy, "liveTrainingBySource", b), 1);
+    EXPECT_EQ(sourceStat(policy, "liveTrainingBySource", l), 0);
+    EXPECT_EQ(sourceStat(policy, "deadTrainingBySource", b), 0);
+    EXPECT_EQ(sourceStat(policy, "deadTrainingBySource", l), 1);
+    EXPECT_EQ(sourceStat(policy, "deadTrainingBySource", 0), 0);
+    // A real-cache access to an unsampled set must not train any bank.
+    policy.observeFill(berti.get(), 1, 3);
+    EXPECT_EQ(stat(policy, "samplerAccesses"), 3);
+    EXPECT_EQ(stat(policy, "fullCachePredictions"), 0);
+}
+
+TEST_F(SDBPInterface, SplitActiveInvalidAlgorithmSharesNoneBank)
+{
+    auto params = testParams();
+    params.split_prefetch_sources = true;
+    params.sampler_assoc = 1;
+    SDBP policy(params);
+    auto pf = sourcedPacket(Request::L2RequestSource::L2Prefetch, 0x1000);
+    pf->req->setPFSource(static_cast<PrefetchSourceType>(NUM_PF_SOURCES + 9));
+    for (unsigned tag = 1; tag <= 4; ++tag)
+        policy.observeFill(pf.get(), 0, tag);
+    pf->req->setPFSource(enums::PF_NONE);
+    auto data = policy.instantiateEntry();
+    policy.reset(data, pf.get());
+    EXPECT_EQ(SDBP::victimClass(data), 2);
+    const unsigned bank = 1 + NUM_PF_SOURCES + enums::PF_NONE;
+    EXPECT_EQ(sourceStat(policy, "deadTrainingBySource", bank), 3);
+    EXPECT_EQ(sourceStat(policy, "deadPredictionsBySource", bank), 1);
+}
+
 TEST_F(SDBPInterface, SplitObserverIsolatesAlgorithmsLevelsAndDemand)
 {
     auto params = observerParams();

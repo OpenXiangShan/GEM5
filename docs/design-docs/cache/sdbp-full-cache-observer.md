@@ -20,8 +20,8 @@ Add `--sdbp-split-prefetch-sources` to `--l2-replacement-policy=lru-sdbp`
 to replace the two coarse prefetch banks with independent banks per
 **level and algorithm**. Demand retains its own bank. Each bank retains the
 same three hashes, 4096 counters per hash, two-bit counters, threshold 8,
-PC signature, and live/dead updates. The option defaults off and is rejected
-for active SDBP or other replacement policies.
+PC signature, and live/dead updates. The option defaults off and also works
+with active `--l2-replacement-policy=sdbp`; other policies reject it.
 
 The algorithm is `Request::getPFSource()`, synchronized by `setPFSource()`
 and `setXsMetadata()`. It survives packet/coherence command conversion.
@@ -40,9 +40,20 @@ With 16 algorithm IDs including `PF_NONE`, there are 33 banks per L2 slice.
 Their counter storage is logically 99 KiB per slice versus 9 KiB for three
 coarse banks (the simulator uses one host byte per counter). This experiment
 measures source separation with unchanged per-bank capacity, **not equal
-total storage**. It still uses the full LRU cache for training and cannot
-establish active-SDBP speedup on its own. All outcome definitions below
-remain unchanged.
+total storage**. In observer mode it still uses the full LRU cache for
+training and cannot establish active-SDBP speedup on its own. All observer
+outcome definitions below remain unchanged.
+
+Active SDBP keeps its single shared sampler (128 sets, 8 ways by default).
+Each sampler entry stores the detailed source alongside its PC signature.
+A sampler hit trains the previous source live; a sampler eviction trains the
+victim source dead. It then stores the incoming source and signature. Real
+cache fills and eligible touches query the corresponding bank to set the
+line's dead bit, which participates in existing dead-first victim selection
+and L1-copy protection. Full-cache observer training is disabled in this mode;
+splitting does not add sampler sets or ways, change bypass behavior, or
+change the LRU fallback. Performance must be measured separately with active
+SDBP and matching cache capacity.
 
 ## Outcome definitions
 

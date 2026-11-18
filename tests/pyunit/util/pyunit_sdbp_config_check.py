@@ -49,8 +49,8 @@ class SDBPConfigTest(unittest.TestCase):
                     )
 
     def test_options_reach_all_cores_and_slices(self):
-        for classic, l1, dead, bypass, demand_pc_only in itertools.product(
-            (False, True), repeat=5
+        for classic, l1, dead, bypass, demand_pc_only, split in itertools.product(
+            (False, True), repeat=6
         ):
             for guard in (0, 1, 2, 3, 8):
                 with self.subTest(
@@ -65,6 +65,8 @@ class SDBPConfigTest(unittest.TestCase):
                         "--l2-replacement-policy=sdbp",
                         f"--sdbp-sampler-protect-youngest={guard}",
                     ]
+                    if split:
+                        flags.append("--sdbp-split-prefetch-sources")
                     if not l1:
                         flags.append("--no-sdbp-l1-copy-protection")
                     if not dead:
@@ -107,6 +109,10 @@ class SDBPConfigTest(unittest.TestCase):
                         for cache in group:
                             policy = cache.replacement_policy
                             self.assertEqual(policy.type, "SDBPRP")
+                            self.assertFalse(bool(policy.observation_only))
+                            self.assertEqual(
+                                bool(policy.split_prefetch_sources), split
+                            )
                             self.assertEqual(int(policy.num_sets), 512)
                             self.assertEqual(
                                 bool(policy.l1_copy_protection), l1
@@ -129,8 +135,8 @@ class SDBPConfigTest(unittest.TestCase):
                                 [cpu.icache, cpu.dcache] if l1 else [],
                             )
 
-    def test_source_splitting_requires_observer(self):
-        for policy in ("default", "lru", "sdbp"):
+    def test_source_splitting_requires_sdbp(self):
+        for policy in ("default", "lru"):
             args = self.parser().parse_args([
                 f"--l2-replacement-policy={policy}",
                 "--sdbp-split-prefetch-sources",
