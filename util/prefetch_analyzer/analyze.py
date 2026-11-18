@@ -12,6 +12,7 @@ from correlate import compare_pcs, ratio, summarize
 from parse_trace import address, digest, export_csv, line_address, load_trace, require
 from report import write_report
 from stages import source_analysis
+from symbolize import symbolize_pcs
 
 
 def read_stats(path, cpu):
@@ -344,9 +345,15 @@ def main():
     parser.add_argument(
         "--line", help="Select a physical or context-qualified virtual line for the timeline"
     )
+    parser.add_argument("--elf", type=Path, help="Matching workload ELF for PC symbols")
+    parser.add_argument(
+        "--addr2line", default="riscv64-linux-gnu-addr2line", help="Symbol resolver executable"
+    )
     args = parser.parse_args()
     require(math.isfinite(args.weight) and args.weight > 0, "Weight must be finite and positive")
     db, summary, pcs = analyze_run(args.run, args.output, args.cpu, args.weight)
+    if args.elf:
+        summary["symbolization"] = symbolize_pcs(pcs, args.elf, args.addr2line)
     runs = {"candidate": summary}
     pc_runs = {"candidate": pcs}
     for label, path in (("baseline", args.baseline), ("control", args.control)):
@@ -354,6 +361,8 @@ def main():
             other_db, other, other_pcs = analyze_run(
                 path, args.output / label, args.cpu, args.weight
             )
+            if args.elf:
+                other["symbolization"] = symbolize_pcs(other_pcs, args.elf, args.addr2line)
             (args.output / label / "summary.json").write_text(json.dumps(other, indent=2) + "\n")
             other_db.close()
             runs[label] = other

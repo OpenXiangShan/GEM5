@@ -49,6 +49,12 @@ def write_report(output, summary, pcs, timeline, runs, pc_deltas):
         "PC 的累计请求延迟会重叠，仅用于热点排序，不能相加为 CPU 停顿或 IPC 收益。Stride 规律来自同一地址空间及 ContextID 的实际地址序列。",
         "时间线嵌入最多 2,000 条事实，所选对象的完整事件在 timeline.csv，全部事实在 events.sqlite；用 --pc / --line 可生成指定对象的预览。",
     ]
+    if "symbolization" in summary:
+        symbols = summary["symbolization"]
+        limitations.append(
+            f"PC 符号来自显式指定 ELF：{symbols['elf']}，SHA256 {symbols['sha256']}。"
+            "缺少调试信息或不属于该 ELF 的地址保留未知；ELF 必须匹配当前工作负载。"
+        )
     audit = summary.get("counter_reconciliation", {})
     limitations.append(
         f"原生 Counter 核对：{audit.get('status', 'not_checked')}，{len(audit.get('checks', []))} 项；详见 audit.json。"
@@ -177,7 +183,7 @@ def write_report(output, summary, pcs, timeline, runs, pc_deltas):
     for pc in pcs[:30]:
         main = max(pc["failures"], key=pc["failures"].get, default="")
         lines.append(
-            f"| {pc['pc']} | {pc['cache']} / {pc['context_id']} | {pc['misses']} | "
+            f"| {pc['pc']} {pc.get('function') or ''} | {pc['cache']} / {pc['context_id']} | {pc['misses']} | "
             f"{main} | {pc['pattern']} | {pc['suggestion']} |"
         )
     lines += ["", "## 口径与边界", ""] + ["- " + text for text in limitations]
