@@ -969,8 +969,6 @@ def poll_jobs(
     marker_timeout: float,
     launch_retries: int,
     launch_retry_delay: float,
-    finished: int,
-    total: int,
 ) -> tuple[int, int, list[ScheduledWorkload]]:
     completed = 0
     failed = 0
@@ -1002,8 +1000,7 @@ def poll_jobs(
                 completed += 1
                 print(
                     f"[done] {job.workload.name} on {server.name} "
-                    f"elapsed={elapsed:.1f}s "
-                    f"finished={finished + completed + failed}/{total}",
+                    f"elapsed={elapsed:.1f}s",
                     flush=True,
                 )
             else:
@@ -1043,8 +1040,7 @@ def poll_jobs(
                 print(
                     f"[fail] {job.workload.name} on {server.name} "
                     f"exit={result} attempt={job.attempt}/{launch_retries + 1} "
-                    f"elapsed={elapsed:.1f}s log={job.work_dir / 'log.txt'} "
-                    f"finished={finished + completed + failed}/{total}",
+                    f"elapsed={elapsed:.1f}s",
                     flush=True,
                 )
         server.pending = still_pending
@@ -1125,11 +1121,7 @@ def run_scheduler(
                 ),
             )
             failed += 1
-            print(
-                f"[fail] {workload.name} checkpoint: {exc} "
-                f"log={work_dir / 'log.txt'} finished={failed}/{total}",
-                flush=True,
-            )
+            print(f"[fail] {workload.name} checkpoint: {exc}", flush=True)
             continue
         pending_workloads.append(ScheduledWorkload(workload))
 
@@ -1140,8 +1132,6 @@ def run_scheduler(
                 marker_timeout=marker_timeout,
                 launch_retries=launch_retries,
                 launch_retry_delay=launch_retry_delay,
-                finished=completed + failed + skipped,
-                total=total,
             )
             completed += new_completed
             failed += new_failed
@@ -1173,11 +1163,7 @@ def run_scheduler(
                 completed_marker = work_dir / "completed"
                 if completed_marker.exists() and not force:
                     skipped += 1
-                    print(
-                        f"[skip] {workload.name} already completed "
-                        f"finished={completed + failed + skipped}/{total}",
-                        flush=True,
-                    )
+                    print(f"[skip] {workload.name} already completed", flush=True)
                     continue
                 clear_stale_markers(work_dir, force=force)
 
@@ -1215,7 +1201,7 @@ def run_scheduler(
                 if scheduled.attempt == 1:
                     print(
                         f"[start] {workload.name} on {server.name} "
-                        f"assigned={first_launches + skipped}/{total}",
+                        f"({first_launches}/{total})",
                         flush=True,
                     )
                 else:

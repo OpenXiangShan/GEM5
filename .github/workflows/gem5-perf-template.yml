@@ -41,6 +41,10 @@ on:
         type: boolean
         description: "Whether to check result (failed ckpts)"
         default: true
+      checkpoint_progress:
+        type: boolean
+        default: false
+        description: "Show perf-trigger-style checkpoint progress instead of launcher output."
       pr_sha:
         required: false
         type: string
@@ -242,6 +246,7 @@ jobs:
           SPECIFIC_BENCHMARKS_INPUT: ${{ inputs.specific_benchmarks }}
           EXTRA_GEM5_ARGS_RAW: ${{ inputs.extra_args }}
           CHECKPOINT_LIST: ${{ steps.archive.outputs.target_dir }}/checkpoints.lst
+          CHECKPOINT_PROGRESS: ${{ inputs.checkpoint_progress }}
           CHECKPOINT_ROOT_NODE: ${{ steps.config.outputs.checkpoint_root_node }}
           DISTRIBUTED_SERVERS: ${{ steps.archive.outputs.distributed_servers }}
           DISTRIBUTED_JOBS_PER_SERVER: ${{ inputs.distributed_jobs_per_server }}
@@ -253,6 +258,9 @@ jobs:
           # A nonempty trace format selects trace replay.
           TRACE_FORMAT: ${{ steps.config.outputs.trace_format }}
         run: |
+          if [[ "$CHECKPOINT_PROGRESS" == true ]]; then
+            unset LD_PRELOAD
+          fi
           mkdir -p "$PERF_ARCHIVE_DIR"
           cd "$PERF_ARCHIVE_DIR"
 
@@ -303,14 +311,83 @@ jobs:
             fi
           fi
 
+          run_sim() {
+            if [[ "$CHECKPOINT_PROGRESS" != true ]]; then
+              "$@"
+              return
+            fi
+
+            python3 - "$CHECKPOINT_LIST" "$SPECIFIC_BENCHMARKS_INPUT" "$@" <<'PY'
+          import logging
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          from tqdm import tqdm
+          from tqdm.contrib.logging import logging_redirect_tqdm
+
+          listing, filters, *command = sys.argv[1:]
+          tokens = [token.strip().lower() for token in filters.split(",") if token.strip()]
+          names = [line.split()[0] for line in Path(listing).read_text().splitlines()
+                   if line.strip() and (not tokens or any(token in line.lower() for token in tokens))]
+          root = Path("spec_all")
+          launcher_log = Path("launcher.log")
+          already_done = {name for name in names if (root / name / "completed").is_file()}
+          logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+          logging.info("Start Running %d checkpoints", len(names))
+
+          assigned, finished = set(), set()
+          with (
+              launcher_log.open("a") as output,
+              subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT) as proc,
+              tqdm(total=len(names), desc="  Assign", miniters=1) as assign_bar,
+              tqdm(total=len(names), desc="Complete", miniters=1) as complete_bar,
+              logging_redirect_tqdm(),
+          ):
+              while True:
+                  status = proc.poll()
+                  for name in names:
+                      if name in finished:
+                          continue
+                      work = root / name
+                      done = (work / "completed").is_file()
+                      failed = (work / "abort").is_file()
+                      if name not in assigned and (done or failed or (work / "running").is_file()):
+                          if name in already_done:
+                              logging.info("Checkpoint %s already completed, skipping assignment", name)
+                          else:
+                              logging.info("Started gcpt %s", name)
+                          assigned.add(name)
+                          assign_bar.update(1)
+                          if len(assigned) == len(names):
+                              logging.info("All checkpoints assigned, waiting for completion...")
+                      if done or failed:
+                          if done and name not in already_done:
+                              logging.info("%s finished successfully", name)
+                          elif failed:
+                              logging.error("%s failed (log: %s)", name, work / "log.txt")
+                          finished.add(name)
+                          complete_bar.update(1)
+                  if status is not None:
+                      break
+                  try:
+                      proc.wait(timeout=2)
+                  except subprocess.TimeoutExpired:
+                      pass
+          if status and status != 75:
+              logging.error("Launcher exits with code %d (log: %s)", status, launcher_log.resolve())
+          sys.exit(status if status >= 0 else 128 - status)
+          PY
+          }
+
           run_local_parallel() {
             if [[ -n "$TRACE_FORMAT" ]]; then
-              bash "$GEM5_HOME/util/xs_scripts/trace/parallel_trace_sim.sh" \
+              run_sim bash "$GEM5_HOME/util/xs_scripts/trace/parallel_trace_sim.sh" \
                 "$CONFIG_PATH" "$CHECKPOINT_LIST" "$CHECKPOINT_ROOT_NODE" \
                 spec_all "$SPECIFIC_BENCHMARKS_INPUT" "$extra_args"
             else
               echo "Using local parallel_sim.sh runner"
-              bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
+              run_sim bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
                 "$CHECKPOINT_LIST" \
                 "$CHECKPOINT_ROOT_NODE" \
                 spec_all \
@@ -323,7 +400,7 @@ jobs:
           if [ -n "$distributed_servers" ]; then
             echo "Using distributed gem5 runner on servers: $distributed_servers"
             distributed_status=0
-            python3 "$GEM5_HOME/util/xs_scripts/distributed_sim.py" \
+            run_sim python3 "$GEM5_HOME/util/xs_scripts/distributed_sim.py" \
               --servers "$distributed_servers" \
               --jobs-per-server "$DISTRIBUTED_JOBS_PER_SERVER" \
               --require-idle-cpus "$DISTRIBUTED_REQUIRE_IDLE_CPUS" \

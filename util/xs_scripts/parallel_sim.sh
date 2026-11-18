@@ -39,9 +39,10 @@ if [[ -z "$4" ]]; then   # $1 is not set
     print_help
 fi
 
+set -x
+
 script_dir=$(dirname -- "$( readlink -f -- "$0"; )")
 source "$script_dir/common.sh"
-source "$script_dir/parallel_progress.sh"
 
 # Detect if first parameter is a script (.sh) or config file (.py)
 first_param="$1"
@@ -96,10 +97,16 @@ export log_file='log.txt'
 export ds=$(pwd)  # data storage. It is specific for BOSC machines, you can ignore it
 export full_work_dir=$ds/$tag # work dir wheter stats data stored
 mkdir -p $full_work_dir
+ln -sf $full_work_dir .  # optional, you can customize it yourself
 
 declare -a filtered_workloads=()
 
 function apply_benchmark_filter() {
+    if [ -z "${benchmark_filters//[[:space:],]/}" ]; then
+        echo "No benchmark filter provided, run all workloads."
+        return
+    fi
+
     mapfile -t filtered_workloads < <(awk -v filters="$benchmark_filters" '
         BEGIN {
             n = split(filters, raw_filters, ",")
@@ -115,7 +122,6 @@ function apply_benchmark_filter() {
         }
         /^[[:space:]]*$/ { next }
         {
-            if (!valid) { print; next }
             lower_line = tolower($0)
             for (i = 1; i <= valid; i++) {
                 if (index(lower_line, patterns[i]) > 0) {
@@ -126,10 +132,14 @@ function apply_benchmark_filter() {
         }
     ' "$workload_list")
 
-    if [ "${#filtered_workloads[@]}" -eq 0 ]; then
+    local selected_count
+    selected_count="${#filtered_workloads[@]}"
+    if [ "$selected_count" -eq 0 ]; then
         echo "Error: benchmark_filters '$benchmark_filters' matched no workloads in '$workload_list'"
         exit 1
     fi
+
+    echo "Applied benchmark filters: '$benchmark_filters' -> $selected_count workloads selected."
 }
 
 check() {
@@ -155,6 +165,12 @@ function run() {
 
     cd $2  # work_dir
 
+    if test -f "completed"; then
+        echo "Already completed; skip $1"
+        return
+    fi
+
+
     rm -f abort
     rm -f completed
 
@@ -176,6 +192,8 @@ function run() {
 }
 
 function prepare_env() {
+    set -x
+    echo "prepare_env $@"
     all_args=("$@")
     task=${all_args[0]}
     task_path=${all_args[1]}
@@ -188,7 +206,10 @@ function prepare_env() {
             break
         fi
     done
+    echo $checkpoint
+
     export work_dir=$full_work_dir/$task
+    echo $work_dir
     mkdir -p $work_dir
 }
 
@@ -203,7 +224,7 @@ function arg_wrapper() {
     dw=${args[4]}
     sample=${args[5]}
 
-    run_slice "$task" "$checkpoint" "$work_dir"
+    run $checkpoint $work_dir >$work_dir/$log_file 2>&1
 }
 
 
@@ -214,5 +235,15 @@ export -f prepare_env
 
 # xsgem5_para_jobs define in docker compose
 num_threads=${xsgem5_para_jobs:-63}
+function parallel_run() {
+    # We use gnu parallel to control the parallelism.
+    # If your server has 32 core and 64 SMT threads, we suggest to run with no more than 32 threads.
+    if [ "${#filtered_workloads[@]}" -gt 0 ]; then
+        printf '%s\n' "${filtered_workloads[@]}" | parallel -a - -j $num_threads arg_wrapper {}
+    else
+        cat "$workload_list" | parallel -a - -j $num_threads arg_wrapper {}
+    fi
+}
+
 apply_benchmark_filter
-run_parallel_with_progress "${filtered_workloads[@]}"
+parallel_run
