@@ -429,11 +429,9 @@ def _configure_pf_buffer(prefetcher, pf_buffer_enabled):
         prefetcher.use_pf_buffer = pf_buffer_enabled
 
 def _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled):
-    # These controls are disabled when the pf-buffer handles filtering.
+    # The prediction buffer supplies training independently of prefetch hits.
     if hasattr(prefetcher, 'prefetch_train'):
         prefetcher.prefetch_train = not pf_buffer_enabled
-    if hasattr(prefetcher, 'queue_filter'):
-        prefetcher.queue_filter = not pf_buffer_enabled
 
 def _register_prefetcher_tlb(prefetcher, cpu):
     if cpu != NULL:
