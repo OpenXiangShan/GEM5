@@ -96,6 +96,24 @@ def write_report(output, summary, pcs, timeline, runs, pc_deltas):
         for row in comparison
     )
     notes = "".join("<li>" + html.escape(text) + "</li>" for text in limitations)
+    source_rows = "".join(
+        "<tr>"
+        + "".join(
+            f"<td>{html.escape(display(row[key]))}</td>"
+            for key in ("cache", "source", "candidates", "aliases", "sent", "useful", "censored")
+        )
+        + "</tr>"
+        for row in summary["source_analysis"]["sources"]
+    )
+    stage_rows = "".join(
+        "<tr>"
+        + "".join(
+            f"<td>{html.escape(display(row[key]))}</td>"
+            for key in ("cache", "source", "stage", "samples", "mean_ticks", "p90_ticks")
+        )
+        + "</tr>"
+        for row in summary["source_analysis"]["phases"]
+    )
     delta_rows = "".join(
         "<tr>"
         + "".join(
@@ -120,6 +138,8 @@ def write_report(output, summary, pcs, timeline, runs, pc_deltas):
     page = Path(__file__).with_name("report_template.html").read_text()
     page = (
         page.replace("__PC_DELTAS__", delta_rows)
+        .replace("__SOURCES__", source_rows)
+        .replace("__STAGES__", stage_rows)
         .replace("__CARDS__", cards)
         .replace("__COMPARISON__", table)
         .replace("__NOTES__", notes)

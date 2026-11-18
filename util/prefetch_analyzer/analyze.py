@@ -11,6 +11,7 @@ from pathlib import Path
 from correlate import compare_pcs, ratio, summarize
 from parse_trace import address, digest, export_csv, line_address, load_trace, require
 from report import write_report
+from stages import source_analysis
 
 
 def read_stats(path, cpu):
@@ -191,6 +192,46 @@ def analyze_run(path, output, cpu, weight):
     )
     summary["observation_ticks"] = [begin, end]
     summary["counter_reconciliation"] = reconcile_counters(db, summary)
+    summary["source_analysis"] = source_analysis(db)
+    for name, rows, columns in (
+        (
+            "sources",
+            summary["source_analysis"]["sources"],
+            [
+                "cache",
+                "source",
+                "candidates",
+                "aliases",
+                "sent",
+                "useful",
+                "censored",
+                "accuracy_observed",
+            ],
+        ),
+        (
+            "source-drops",
+            summary["source_analysis"]["drop_events"],
+            ["cache", "source", "reason", "events"],
+        ),
+        (
+            "stages",
+            summary["source_analysis"]["phases"],
+            [
+                "cache",
+                "source",
+                "stage",
+                "samples",
+                "mean_ticks",
+                "p50_ticks",
+                "p90_ticks",
+                "p99_ticks",
+            ],
+        ),
+    ):
+        with (output / (name + ".csv")).open("w", newline="") as stream:
+            writer = csv.DictWriter(stream, fieldnames=columns)
+            writer.writeheader()
+            writer.writerows(rows)
     return db, summary, pcs
 
 

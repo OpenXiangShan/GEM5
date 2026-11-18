@@ -295,6 +295,55 @@ class AnalyzerTests(unittest.TestCase):
             [r[0] for r in db.execute("SELECT trained FROM demands ORDER BY request_id")], [1, 0]
         )
 
+    def test_source_attribution_aliases_and_observed_phase_samples(self):
+        from stages import source_analysis
+
+        trace = Trace()
+        # One request generated at L2, then accepted and used at L1.
+        trace.candidate(10, 10, "0x2000", cache="system.l2", source=12)
+        trace.sent(10, "0x2000", tick=30)
+        trace.fill(10, "0x2000", tick=50)
+        trace.add(100, "PF_FIRST_USE", pf=10, pa="0x2000", ready_tick=55)
+        # Another source aliases it: retain its drop, but never credit a send.
+        trace.candidate(12, 11, "0x2000", source=3)
+        trace.add(12, "PF_ALIAS", pf=11, pa="0x2000", related_id=10)
+        trace.add(12, "PF_DROP", pf=11, pa="0x2000", reason="queue_duplicate")
+        trace.candidate(20, 20, "0x3000", cache="system.l2", source=12)
+        trace.sent(20, "0x3000", tick=50)  # no observed fill/use
+        trace.candidate(30, 30, "0x4000", cache="system.l2", source=12)
+        trace.add(35, "PF_DROP", pf=30, pa="0x4000", reason="prediction_buffer_full")
+        db, summary, pcs = self.analyze(trace)
+        analysis = source_analysis(db)
+        sources = {(r["cache"], r["source"]): r for r in analysis["sources"]}
+        l2 = sources[("system.l2", 12)]
+        self.assertEqual(
+            (l2["candidates"], l2["sent"], l2["useful"], l2["censored"]), (3, 2, 1, 1)
+        )
+        alias = sources[("system.cpu.dcache", 3)]
+        self.assertEqual((alias["candidates"], alias["aliases"], alias["sent"]), (1, 1, 0))
+        self.assertIsNone(alias["accuracy_observed"])
+        drops = {
+            (r["cache"], r["source"], r["reason"]): r["events"] for r in analysis["drop_events"]
+        }
+        self.assertEqual(drops[("system.cpu.dcache", 3, "queue_duplicate")], 1)
+        self.assertEqual(drops[("system.l2", 12, "prediction_buffer_full")], 1)
+        phases = {r["stage"]: r for r in analysis["phases"]}
+        prediction = phases["prediction_to_enqueue"]
+        self.assertEqual(
+            (
+                prediction["samples"],
+                prediction["mean_ticks"],
+                prediction["p50_ticks"],
+                prediction["p90_ticks"],
+            ),
+            (2, 23, 18, 28),
+        )
+        ready = phases["accept_to_first_ready"]
+        self.assertEqual(
+            (ready["cache"], ready["source"], ready["samples"], ready["p99_ticks"]),
+            ("system.l2", 12, 1, 25),
+        )
+
     def test_open_trace_is_rejected(self):
         path = Path(self.temp.name) / "open.csv"
         Trace().write(path, closed=False)
