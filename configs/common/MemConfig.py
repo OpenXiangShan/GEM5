@@ -34,6 +34,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import m5.objects
+from m5.util import convert
 from common import ObjectList
 from common import HMC
 
@@ -223,6 +224,21 @@ def config_mem(options, system):
                 # Enable low-power DRAM states if option is set
                 if issubclass(intf, m5.objects.DRAMInterface):
                     dram_intf.enable_dram_powerdown = opt_dram_powerdown
+
+                if issubclass(intf, m5.objects.SimpleMemory):
+                    for option, parameter in (
+                        ("simple_memory_latency", "latency"),
+                        ("simple_memory_latency_var", "latency_var"),
+                        ("simple_memory_bandwidth", "bandwidth"),
+                    ):
+                        value = getattr(options, option, None)
+                        if value is not None:
+                            if parameter == "bandwidth":
+                                # Preserve SI units such as GB/s when the
+                                # legacy MemoryBandwidth parser uses binary.
+                                value = "{}B/s".format(convert.toMetricFloat(
+                                    value, "memory bandwidth", "B/s"))
+                            setattr(dram_intf, parameter, value)
 
                 if opt_elastic_trace_en:
                     dram_intf.latency = '1ns'

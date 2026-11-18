@@ -122,6 +122,15 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--mem-type", default="DRAMsim3",
                         choices=ObjectList.mem_list.get_names(),
                         help="type of memory to use")
+    parser.add_argument(
+        "--simple-memory-latency", type=str, default=None,
+        help="Override SimpleMemory request latency (for example, 72.5ns)")
+    parser.add_argument(
+        "--simple-memory-latency-var", type=str, default=None,
+        help="Override SimpleMemory latency variance (for example, 0ns)")
+    parser.add_argument(
+        "--simple-memory-bandwidth", type=str, default=None,
+        help="Override bandwidth per SimpleMemory instance (for example, 40GB/s)")
     parser.add_argument("--mem-channels", type=int, default=1,
                         help="number of memory channels")
     parser.add_argument("--mem-ranks", type=int, default=None,
