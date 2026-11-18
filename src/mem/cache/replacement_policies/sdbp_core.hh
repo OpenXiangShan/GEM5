@@ -6,7 +6,6 @@
 #ifndef __MEM_CACHE_REPLACEMENT_POLICIES_SDBP_CORE_HH__
 #define __MEM_CACHE_REPLACEMENT_POLICIES_SDBP_CORE_HH__
 
-#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -29,6 +28,7 @@ class SDBPCore
         bool samplerDeadFirst = true;
         bool samplerDemandPcOnly = false;
         unsigned samplerProtectYoungest = 0;
+        unsigned requestTypes = 3;
         unsigned predictorTables = 3;
         unsigned predictorEntries = 4096;
         unsigned counterBits = 2;
@@ -43,7 +43,7 @@ class SDBPCore
         bool crcLiveUpdate = true;
     };
 
-    enum class RequestType : uint8_t
+    enum class RequestType : uint16_t
     {
         Demand,
         L1Prefetch,
@@ -100,7 +100,7 @@ class SDBPCore
     unsigned matchBits = 0;
     unsigned counterMax = 0;
     uint64_t sequence = 0;
-    std::array<std::vector<std::vector<uint8_t>>, NumRequestTypes> tables;
+    std::vector<std::vector<std::vector<uint8_t>>> tables;
     std::vector<std::vector<Entry>> sampler;
 };
 

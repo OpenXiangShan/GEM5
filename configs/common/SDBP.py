@@ -65,6 +65,12 @@ def add_sdbp_options(parser):
         default="xor_fold",
     )
     parser.add_argument("--sdbp-pc-shift", type=int, default=1)
+    parser.add_argument(
+        "--sdbp-split-prefetch-sources",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Observer-only predictor banks per prefetch level and algorithm",
+    )
 
 
 def configure_sdbp(args, system):
@@ -95,10 +101,16 @@ def configure_sdbp(args, system):
                     args.sdbp_enable_bypass and not observation_only
                 ),
                 observation_only=observation_only,
+                split_prefetch_sources=args.sdbp_split_prefetch_sources,
                 pc_hash_type=args.sdbp_pc_hash_type,
                 pc_shift=args.sdbp_pc_shift,
             )
 
+    if (
+        args.sdbp_split_prefetch_sources
+        and args.l2_replacement_policy != "lru-sdbp"
+    ):
+        raise ValueError("Splitting prefetch sources requires lru-sdbp")
     if args.l2_replacement_policy != "default":
         if not args.l2cache:
             raise ValueError("--l2-replacement-policy requires --l2cache")

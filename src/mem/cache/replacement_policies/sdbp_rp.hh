@@ -77,7 +77,7 @@ class SDBP : public Base
     static bool isDemand(const PacketPtr pkt);
     static bool hasPc(const PacketPtr pkt);
     static Addr requestPc(const PacketPtr pkt);
-    static SDBPCore::RequestType requestType(const PacketPtr pkt);
+    SDBPCore::RequestType requestType(const PacketPtr pkt) const;
     void sample(const PacketPtr pkt, unsigned set, Addr tag);
     bool predict(const PacketPtr pkt) const;
     void updateLine(const std::shared_ptr<ReplacementData> &data,
@@ -91,6 +91,7 @@ class SDBP : public Base
     const bool enableBypass;
     const bool l1CopyProtection;
     const bool observationOnly;
+    const bool splitPrefetchSources;
     bool bound = false;
     L1CopyProbe l1CopyProbe;
     mutable uint64_t sequence = 0;
@@ -98,7 +99,7 @@ class SDBP : public Base
 
     struct SDBPStats : statistics::Group
     {
-        explicit SDBPStats(statistics::Group *parent);
+        SDBPStats(statistics::Group *parent, bool split_sources);
         statistics::Scalar lookups;
         statistics::Scalar eligibleAccesses;
         statistics::Scalar excludedAccesses;

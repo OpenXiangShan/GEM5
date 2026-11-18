@@ -109,6 +109,9 @@ class SDBPRP(BaseReplacementPolicy):
     table_hash_seeds = VectorParam.UInt64([], "Distinct per-table hash seeds")
     crc_live_update = Param.Bool(True, "Halve odd tables on live training")
     enable_bypass = Param.Bool(False, "Bypass predicted-dead data refills (L2 only)")
+    split_prefetch_sources = Param.Bool(
+        False, "Observer-only independent banks per L1/L2 prefetch algorithm"
+    )
     observation_only = Param.Bool(
         False,
         "Use full-cache line metadata for SDBP training while retaining LRU victims",

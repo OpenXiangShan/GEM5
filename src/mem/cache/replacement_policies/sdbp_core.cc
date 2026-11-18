@@ -70,6 +70,8 @@ SDBPCore::SDBPCore(const Config &config) : cfg(config)
                 "sampler_num must be a power of two in [2, num_sets]");
         require(cfg.samplerAssoc >= 1, "sampler_assoc must be positive");
     }
+    require(cfg.requestTypes >= NumRequestTypes && cfg.requestTypes <= 65536,
+            "request_types must fit RequestType and include the coarse banks");
     require(cfg.predictorTables >= 1 && cfg.predictorTables <= 32, "predictor_tables must be in [1, 32]");
     require(powerOfTwo(cfg.predictorEntries) && cfg.predictorEntries >= 2,
             "predictor_entries must be a power of two >= 2");
@@ -104,6 +106,7 @@ SDBPCore::SDBPCore(const Config &config) : cfg(config)
             ++halfSetBits;
         matchBits = set_bits - halfSetBits;
     }
+    tables.resize(cfg.requestTypes);
     for (auto &bank : tables) {
         bank.assign(cfg.predictorTables,
                     std::vector<uint8_t>(cfg.predictorEntries, 0));
@@ -160,7 +163,7 @@ unsigned
 SDBPCore::confidence(uint64_t signature, RequestType type) const
 {
     const auto source = static_cast<unsigned>(type);
-    assert(source < NumRequestTypes);
+    assert(source < tables.size());
     unsigned sum = 0;
     for (unsigned t = 0; t < cfg.predictorTables; ++t)
         sum += tables[source][t][index(signature, t)];
@@ -177,7 +180,7 @@ void
 SDBPCore::train(uint64_t signature, bool dead, RequestType type)
 {
     const auto source = static_cast<unsigned>(type);
-    assert(source < NumRequestTypes);
+    assert(source < tables.size());
     for (unsigned t = 0; t < cfg.predictorTables; ++t) {
         auto &counter = tables[source][t][index(signature, t)];
         if (dead) {

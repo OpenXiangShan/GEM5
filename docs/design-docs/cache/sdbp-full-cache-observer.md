@@ -14,6 +14,36 @@ threshold, and independent source banks. No independent sampler is allocated;
 the complete real L2 residency supplies training outcomes, without partial-tag
 aliasing or sampled-set restrictions. Predictor-counter aliasing remains.
 
+## Optional banks per prefetch algorithm
+
+Add `--sdbp-split-prefetch-sources` to `--l2-replacement-policy=lru-sdbp`
+to replace the two coarse prefetch banks with independent banks per
+**level and algorithm**. Demand retains its own bank. Each bank retains the
+same three hashes, 4096 counters per hash, two-bit counters, threshold 8,
+PC signature, and live/dead updates. The option defaults off and is rejected
+for active SDBP or other replacement policies.
+
+The algorithm is `Request::getPFSource()`, synchronized by `setPFSource()`
+and `setXsMetadata()`. It survives packet/coherence command conversion.
+The L1/L2 level uses the existing L2 request-origin classification. Demand
+ignores any leftover prefetch metadata. Missing or malformed algorithm IDs
+map to the explicit `PF_NONE` group. Both the stored prediction source and
+initial fill source retain this detailed ID across subsequent accesses,
+eviction, invalidation, transfers, and statistics resets.
+
+Statistics use `l1Demand`, `l1Prefetch_<algorithm>` and
+`l2Prefetch_<algorithm>`. The report utility also reconstructs the coarse
+L1/L2 and combined-prefetch groups by summing confusion counts before ratios.
+Zero-count algorithm groups can be omitted by gem5's `nozero` flag.
+
+With 16 algorithm IDs including `PF_NONE`, there are 33 banks per L2 slice.
+Their counter storage is logically 99 KiB per slice versus 9 KiB for three
+coarse banks (the simulator uses one host byte per counter). This experiment
+measures source separation with unchanged per-bank capacity, **not equal
+total storage**. It still uses the full LRU cache for training and cannot
+establish active-SDBP speedup on its own. All outcome definitions below
+remain unchanged.
+
 ## Outcome definitions
 
 A prediction describes the interval after an eligible fill or access until the

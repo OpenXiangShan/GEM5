@@ -47,6 +47,7 @@ testParams(bool bypass = false, unsigned threshold = 8)
     p.crc_live_update = true;
     p.enable_bypass = bypass;
     p.observation_only = false;
+    p.split_prefetch_sources = false;
     return p;
 }
 
@@ -647,10 +648,12 @@ TEST_F(SDBPInterface, FullCacheObserverCensorsExternalInvalidation)
     EXPECT_EQ(sourceStat(policy, "fullCacheCensoredBySource", 0), 1);
 }
 
-TEST_F(SDBPInterface, FullCacheObserverVictimMatchesLruDespiteDeadPrediction)
+void
+checkObserverVictims(bool split_sources)
 {
     auto params = testParams(false, 0);
     params.observation_only = true;
+    params.split_prefetch_sources = split_sources;
     params.l1_copy_protection = false;
     SDBP policy(params);
     LRURPParams lru_params;
@@ -699,6 +702,16 @@ TEST_F(SDBPInterface, FullCacheObserverVictimMatchesLruDespiteDeadPrediction)
     lru.invalidate(lru_data[1]);
     EXPECT_EQ(policy.getVictim(observer_candidates), &observer_entries[1]);
     EXPECT_EQ(lru.getVictim(lru_candidates), &lru_entries[1]);
+}
+
+TEST_F(SDBPInterface, FullCacheObserverVictimMatchesLruDespiteDeadPrediction)
+{
+    checkObserverVictims(false);
+}
+
+TEST_F(SDBPInterface, SplitObserverVictimMatchesLruDespiteDeadPrediction)
+{
+    checkObserverVictims(true);
 }
 
 TEST_F(SDBPInterface, FullCacheObserverTrainsRealLinesAndScoresLivePredictions)
@@ -753,6 +766,76 @@ TEST_F(SDBPInterface, FullCacheObserverResetStatsPreservesPendingAndPredictor)
     EXPECT_EQ(stat(policy, "fullCachePending"), 0);
     EXPECT_EQ(stat(policy, "fullCacheResolved"), 2);
     EXPECT_EQ(stat(policy, "fullCachePredictions"), 1);
+}
+
+TEST_F(SDBPInterface, SplitObserverIsolatesAlgorithmsLevelsAndDemand)
+{
+    auto params = observerParams();
+    params.split_prefetch_sources = true;
+    SDBP policy(params);
+    auto data = policy.instantiateEntry();
+    auto berti = sourcedPacket(Request::L2RequestSource::L1Prefetch, 0x1000);
+    berti->req->setXsMetadata(Request::XsMetadata(enums::Berti));
+    auto lldp = sourcedPacket(Request::L2RequestSource::L1Prefetch, 0x1000);
+    lldp->req->setXsMetadata(Request::XsMetadata(enums::LLDP));
+    auto l2 = sourcedPacket(Request::L2RequestSource::L2Prefetch, 0x1000);
+    l2->req->setPFSource(enums::Berti);
+    auto demand = sourcedPacket(Request::L2RequestSource::L1Demand, 0x1000);
+    // Even stale prefetch metadata on demand cannot select a prefetch bank.
+    demand->req->setPFSource(enums::Berti);
+    for (unsigned i = 0; i < 3; ++i) {
+        policy.reset(data, berti.get());
+        policy.notifyReplacementEviction(data);
+        policy.invalidate(data);
+    }
+    for (auto *pkt : {lldp.get(), l2.get(), demand.get()}) {
+        policy.reset(data, pkt);
+        EXPECT_EQ(SDBP::victimClass(data), 1);
+        policy.invalidate(data);
+    }
+    policy.reset(data, berti.get());
+    EXPECT_EQ(SDBP::victimClass(data), 2);
+    policy.touch(data, lldp.get());
+    EXPECT_EQ(SDBP::victimClass(data), 1);
+    policy.notifyReplacementEviction(data);
+    policy.invalidate(data);
+    const unsigned b = 1 + enums::Berti;
+    const unsigned l = 1 + enums::LLDP;
+    EXPECT_EQ(sourceStat(policy, "fullCacheDeadFalsePositiveBySource", b), 1);
+    EXPECT_EQ(sourceStat(policy, "fullCacheLiveFalseNegativeBySource", b), 3);
+    EXPECT_EQ(sourceStat(policy, "liveTrainingBySource", b), 1);
+    EXPECT_EQ(sourceStat(policy, "deadTrainingBySource", l), 1);
+    EXPECT_EQ(stat(policy, "samplerAccesses"), 0);
+    EXPECT_EQ(stat(policy, "fullCachePending"), 0);
+}
+
+TEST_F(SDBPInterface, SplitObserverCarriesAndCensorsOriginalSource)
+{
+    auto params = observerParams(0);
+    params.split_prefetch_sources = true;
+    SDBP policy(params);
+    auto data = policy.instantiateEntry();
+    auto pf = sourcedPacket(Request::L2RequestSource::L2Prefetch, 0x1000);
+    pf->req->setPFSource(enums::LLDP);
+    auto demand = sourcedPacket(Request::L2RequestSource::L1Demand, 0x1000);
+    const unsigned source = 1 + NUM_PF_SOURCES + enums::LLDP;
+    policy.reset(data, pf.get());
+    policy.resetStats();
+    EXPECT_EQ(sourceStat(policy, "fullCacheCarriedInBySource", source), 1);
+    EXPECT_EQ(sourceStat(policy, "fullCachePrefetchCarriedInBySource", source), 1);
+    policy.touch(data, demand.get());
+    EXPECT_EQ(sourceStat(policy, "fullCacheDeadFalsePositiveBySource", source), 1);
+    EXPECT_EQ(sourceStat(policy, "fullCachePrefetchDemandUsesBySource", source), 1);
+    policy.invalidate(data);
+    EXPECT_EQ(sourceStat(policy, "fullCacheCensoredBySource", 0), 1);
+    EXPECT_EQ(stat(policy, "fullCachePending"), 0);
+    // PF_NONE includes missing/invalid IDs without losing lifecycle counts.
+    pf->req->setPFSource(static_cast<PrefetchSourceType>(NUM_PF_SOURCES + 9));
+    policy.reset(data, pf.get());
+    policy.invalidate(data);
+    const unsigned unknown = 1 + NUM_PF_SOURCES + enums::PF_NONE;
+    EXPECT_EQ(sourceStat(policy, "fullCacheCensoredBySource", unknown), 1);
+    EXPECT_EQ(sourceStat(policy, "fullCachePrefetchUnusedInvalidationsBySource", unknown), 1);
 }
 
 TEST_F(SDBPInterface, FullCacheObserverLocalPrefetchDoesNotRefreshLru)
