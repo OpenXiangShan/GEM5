@@ -585,9 +585,11 @@ CoherentXBar::recvTimingSnoopReq(PacketPtr pkt, PortID mem_side_port_id)
     // Keep that packet's flags intact: the parent still owns request/response
     // routing. Responses created above use this crossbar's existing
     // forward-as-snoop route, not a new local demand response.
-    panic_if(!pkt->isExpressSnoop() &&
-                 (!acceptParentSnoops || !pkt->isRequest() ||
-                  !pkt->needsResponse()),
+    // A parent without a snoop filter also broadcasts evictions to
+    // check for a cached copy; these requests do not claim a response.
+    const bool parent_broadcast = acceptParentSnoops && pkt->isRequest() &&
+        (pkt->needsResponse() || pkt->isEviction());
+    panic_if(!pkt->isExpressSnoop() && !parent_broadcast,
              "%s: unexpected non-express snoop from %s", name(),
              memSidePorts[mem_side_port_id]->name());
 

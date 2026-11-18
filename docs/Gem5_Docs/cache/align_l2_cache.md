@@ -215,7 +215,7 @@ Snoop 请求（如 `ReadSnoop`、`Invalidate`）是缓存一致性协议的基�
 
 ### 2.3 真双核的跨核 Snoop 转发
 
-两个核各自拥有私有 L1/L2 时，共享的父级交叉开关会使用原始普通请求（例如取指的 `ReadSharedReq`）探测另一个核的 L2。旧的内部交叉开关只接受 express snoop，因此会在启动时触发断言。只有 aligned L2 的内部交叉开关启用 `accept_parent_snoops`；它保留请求原有标记，由父级负责请求的路由。
+两个核各自拥有私有 L1/L2 时，共享的父级交叉开关会使用原始普通请求（例如取指的 `ReadSharedReq`）探测另一个核的 L2。旧的内部交叉开关只接受 express snoop，因此会在启动时触发断言。只有 aligned L2 的内部交叉开关启用 `accept_parent_snoops`；它保留请求原有标记，由父级负责请求的路由。父级未配置 snoop filter 时，也会广播不需要返回响应的 eviction（如 `WritebackDirty`）；此类请求用于查询是否仍有缓存副本，不创建响应路由。
 
 - 父级暂时拒绝同步转发的 snoop 响应时，内部交叉开关恢复包的时延、保留响应路由，且不提前更新 snoop filter。wrapper 将 retry 转给原发送方，成功后才清理路由并更新 filter。
 - 延期的 snoop 重放时，如果上级缓存已声明负责响应，下级不再声明第二次响应，但仍处理降级或失效。
