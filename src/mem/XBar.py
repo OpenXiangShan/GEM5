@@ -122,6 +122,11 @@ class CoherentXBar(BaseXBar):
     # forwarded after a specific latency.
     snoop_response_latency = Param.Cycles("Snoop response latency")
 
+    # An internal slice interconnect can receive ordinary snoop broadcasts
+    # directly from a parent coherent interconnect, without a cache between.
+    accept_parent_snoops = Param.Bool(False,
+        "Accept ordinary parent-interconnect snoops on memory-side ports")
+
     # An optional snoop filter
     snoop_filter = Param.SnoopFilter(NULL, "Selected snoop filter")
 

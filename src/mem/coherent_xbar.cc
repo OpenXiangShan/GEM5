@@ -64,6 +64,7 @@ CoherentXBar::CoherentXBar(const CoherentXBarParams &p)
       maxRoutingTableSizeCheck(p.max_routing_table_size),
       pointOfCoherency(p.point_of_coherency),
       pointOfUnification(p.point_of_unification),
+      acceptParentSnoops(p.accept_parent_snoops),
       hintWakeUpAheadCycles(p.hint_wakeup_ahead_cycles),
 
       ADD_STAT(snoops, statistics::units::Count::get(), "Total snoops"),
@@ -578,8 +579,17 @@ CoherentXBar::recvTimingSnoopReq(PacketPtr pkt, PortID mem_side_port_id)
     snoops++;
     snoopTraffic += pkt_size;
 
-    // we should only see express snoops from caches
-    assert(pkt->isExpressSnoop());
+    // Cache-originated coherence broadcasts are express. A transparent
+    // slice interconnect may instead be connected directly to a parent
+    // crossbar, which snoops its ordinary request packet before forwarding.
+    // Keep that packet's flags intact: the parent still owns request/response
+    // routing. Responses created above use this crossbar's existing
+    // forward-as-snoop route, not a new local demand response.
+    panic_if(!pkt->isExpressSnoop() &&
+                 (!acceptParentSnoops || !pkt->isRequest() ||
+                  !pkt->needsResponse()),
+             "%s: unexpected non-express snoop from %s", name(),
+             memSidePorts[mem_side_port_id]->name());
 
     // set the packet header and payload delay, for now use forward latency
     // @todo Assess the choice of latency further
@@ -685,6 +695,8 @@ CoherentXBar::recvTimingSnoopResp(PacketPtr pkt, PortID cpu_side_port_id)
         clockPeriod();
 
     // set the packet header and payload delay
+    const Tick old_header_delay = pkt->headerDelay;
+    const Tick old_payload_delay = pkt->payloadDelay;
     calcPacketTiming(pkt, xbar_delay);
 
     // determine how long to be crossbar layer is busy
@@ -696,18 +708,27 @@ CoherentXBar::recvTimingSnoopResp(PacketPtr pkt, PortID cpu_side_port_id)
         // e.g. coming from the L1 and going to the L2, and it should
         // be forwarded as a snoop response
 
+        // A parent crossbar can reject this response while its response
+        // layer is busy. Preserve the route and filter state on failure;
+        // the source retains the packet until recvRetrySnoopResp arrives.
+        // The peer may take ownership on success, so snapshot only the
+        // filter metadata used after the call (no payload is copied).
+        const Packet filter_pkt(pkt, false, false);
+        if (!memSidePorts[dest_port_id]->sendTimingSnoopResp(pkt)) {
+            pkt->headerDelay = old_header_delay;
+            pkt->payloadDelay = old_payload_delay;
+            DPRINTF(CoherentXBar, "%s: src %s packet %s SNOOP RETRY\n",
+                    __func__, src_port->name(), pkt->print());
+            snoopLayers[dest_port_id]->failedTiming(src_port, nextCycle());
+            return false;
+        }
         if (snoopFilter) {
-            // update the probe filter so that it can properly track the line
-            snoopFilter->updateSnoopForward(pkt,
+            snoopFilter->updateSnoopForward(&filter_pkt,
                             *cpuSidePorts[cpu_side_port_id],
                             *memSidePorts[dest_port_id]);
         }
-
-        [[maybe_unused]] bool success =
-            memSidePorts[dest_port_id]->sendTimingSnoopResp(pkt);
         pktCount[cpu_side_port_id][dest_port_id]++;
         pktSize[cpu_side_port_id][dest_port_id] += pkt_size;
-        assert(success);
 
         snoopLayers[dest_port_id]->succeededTiming(packetFinishTime);
     } else {

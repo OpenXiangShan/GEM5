@@ -199,6 +199,10 @@ class CoherentXBar : public BaseXBar
 
         void recvRangeChange() override { xbar.recvRangeChange(id); }
         void recvReqRetry() override { xbar.recvReqRetry(id); }
+        void recvRetrySnoopResp() override
+        {
+            xbar.snoopLayers[id]->recvRetry();
+        }
 
     };
 
@@ -313,6 +317,7 @@ class CoherentXBar : public BaseXBar
 
     /** Is this crossbar the point of unification? **/
     const bool pointOfUnification;
+    const bool acceptParentSnoops;
 
     /** How many Cycles to send Hint in advance with TimingResp.*/
     const Cycles hintWakeUpAheadCycles;

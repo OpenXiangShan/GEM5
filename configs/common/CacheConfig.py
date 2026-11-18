@@ -132,7 +132,8 @@ def config_aligned_l2(options, system, l2_cache_class):
                                                     header_latency = 0,
                                                     snoop_response_latency = 0,
                                                     snoop_filter = SnoopFilter(lookup_latency = 0),
-                                                    point_of_unification = True)
+                                                    point_of_unification = True,
+                                                    accept_parent_snoops = True)
         # Create the L2 cache slice, which contains the pipeline logic
         system.l2_wrappers[i].slices = [L2CacheSlice(clk_domain=system.cpu_clk_domain)
                                         for _ in range(num_l2_slices)]

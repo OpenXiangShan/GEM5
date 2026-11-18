@@ -208,9 +208,11 @@ SnoopFilter::lookupSnoop(Packet* cpkt)
     if (!is_hit)
         return snoopDown(lookupLatency);
 
-    // If pf snoop hits, we always want to keep the hit block in upper level caches and suppress the pf req.
-
-    if (is_hit && cpkt->req->isPrefetch()) {
+    // Only a HardPFReq probe may be answered with presence alone. A
+    // prefetch-origin ReadSharedReq or ReadExReq is a normal coherence
+    // transaction: returning presence instead of probing can leave a dirty
+    // owner unobserved and let lower memory supply stale data.
+    if (cpkt->cmd == MemCmd::HardPFReq) {
         cpkt->setBlockCached();
         DPRINTF(SnoopFilter, "%s: Suppress snoop from prefetch: %s, and mark it as cached\n", __func__,
                 cpkt->print());

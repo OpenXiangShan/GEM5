@@ -1317,6 +1317,19 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
             name());
     }
 
+    // A deferred MSHR promised a future response, but by the time its
+    // snoop is replayed an upper cache may own the freshest copy and have
+    // claimed that response. Forwarding above has already copied that claim
+    // into pkt. Do not create a second response from this cache merely
+    // because the deferring MSHR was originally the ordering point. The
+    // upper response follows the existing forward-as-snoop route; local
+    // downgrade/invalidation still takes effect below.
+    if (pkt->cacheResponding()) {
+        DPRINTF(Cache, "Snoop response delegated to upper cache for %#x\n",
+                pkt->getAddr());
+        respond = false;
+    }
+
     // Invalidate any prefetch's from below that would strip write permissions
     // MemCmd::HardPFReq is only observed by upstream caches.  After missing
     // above and in it's own cache, a new MemCmd::ReadReq is created that

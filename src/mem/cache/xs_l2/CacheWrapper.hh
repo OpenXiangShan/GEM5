@@ -53,6 +53,9 @@ class CacheWrapper : public ClockedObject
         void recvReqRetry() override {
           return owner->memSidePortRecvReqRetry();
         }
+        void recvRetrySnoopResp() override {
+          owner->inner_mem_port.sendRetrySnoopResp();
+        }
         void recvTimingSnoopReq(PacketPtr pkt) override {
           return owner->memSidePortRecvTimingSnoopReq(pkt);
         }
@@ -82,6 +85,9 @@ class CacheWrapper : public ClockedObject
         }
         void recvReqRetry() override {
           return owner->innerCpuPortRecvReqRetry();
+        }
+        void recvRetrySnoopResp() override {
+          owner->cpu_side_port.sendRetrySnoopResp();
         }
         void recvTimingSnoopReq(PacketPtr pkt) override {
           return owner->innerCpuPortRecvTimingSnoopReq(pkt);
