@@ -13,6 +13,52 @@ import plot_tea
 from pc_symbols import objdump_tool, profile_elfs
 
 
+def add_state_breakdown(raw, cpu, lines, figures, output, plots, symbol_args):
+    if raw.is_file():
+        with raw.open(newline="") as source:
+            has_state = "state" in next(csv.reader(source), ())
+    else:
+        has_state = False
+    if not has_state:
+        lines.extend([
+            "PC-by-state breakdown unavailable (requires raw TEA CSV "
+            "with sampled state).", "",
+        ])
+        return
+
+    stalled, total = plot_tea.read_pcs(raw, "Stalled")
+    visible = sum(weight for _, weight in stalled)
+    lines.extend([
+        "#### Top Stalled PCs", "",
+        f"Finalized weight with a PC: {visible:g} of {total:g} "
+        "Stalled sample weight (all threads and resolutions).", "",
+    ])
+    if not stalled:
+        lines.extend(["No finalized Stalled samples with a PC.", ""])
+        return
+
+    lines.extend([
+        "| PC | Finalized weight | Share of all Stalled weight |",
+        "| --- | ---: | ---: |",
+    ])
+    for pc, weight in stalled[:15]:
+        share = 100 * weight / total
+        lines.append(f"| `{pc}` | {weight:g} | {share:.2f}% |")
+    lines.append("")
+    if plots:
+        pc = stalled[0][0]
+        for view, caption, options in (
+            ("state-pcs", "Top Stalled PCs", symbol_args),
+            ("state-psv", f"Sampled states and PSV at {pc}", ["--pc", pc]),
+        ):
+            image = output / cpu / f"tea-{view}.png"
+            command = [
+                sys.executable, str(Path(plot_tea.__file__)), str(raw),
+                "--cpu", cpu, "--view", view, "-o", str(image), *options,
+            ]
+            figures.append((f"{cpu} {caption}", image, command))
+
+
 def generate(folder, output, elfs=(), objdump=None, plots=False):
     config = configparser.ConfigParser(interpolation=None)
     config.read(folder / "config.ini")
@@ -200,6 +246,8 @@ def generate(folder, output, elfs=(), objdump=None, plots=False):
                     "",
                 ]
             )
+            raw = folder / f"{cpu}.tea.csv"
+            add_state_breakdown(raw, cpu, lines, figures, output, plots, symbol_args)
             if plots:
                 image = output / cpu / "tea.png"
                 figures.append(
@@ -219,7 +267,7 @@ def generate(folder, output, elfs=(), objdump=None, plots=False):
                         ],
                     )
                 )
-                pc_rows, _ = plot_tea.read_pcs(folder / f"{cpu}.tea.csv")
+                pc_rows = plot_tea.read_pcs(raw)[0] if raw.is_file() else []
                 if pc_rows:
                     image = output / cpu / "tea-pcs.png"
                     figures.append(

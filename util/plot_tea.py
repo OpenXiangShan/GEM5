@@ -121,21 +121,36 @@ def plot(rows, output, title):
     plt.close(fig)
 
 
-def read_pcs(path):
-    """Rank finalized attributed PCs; the denominator includes all resolutions."""
+def sample_rows(reader):
+    for row in reader:
+        weight = float(row["sample_weight"])
+        if not math.isfinite(weight) or weight < 0:
+            raise ValueError("TEA sample weights must be finite and nonnegative")
+        if weight:
+            pc = hex(int(row["pc"], 16)) if row["pc"] else None
+            yield pc, int(row["psv"]), row.get("state"), weight
+
+
+def require_state(reader):
+    if "state" not in (reader.fieldnames or ()):
+        raise ValueError("raw TEA CSV has no sampled state column")
+
+
+def read_pcs(path, state=None):
+    """Rank finalized PCs relative to all weight in the chosen population."""
     pcs = Counter()
     total = 0.0
     with path.open(newline="") as source:
-        for row in csv.DictReader(source):
-            weight = float(row["sample_weight"])
-            if not math.isfinite(weight) or weight < 0:
-                raise ValueError(
-                    "TEA sample weights must be finite and nonnegative"
-                )
+        reader = csv.DictReader(source)
+        if state:
+            require_state(reader)
+        for pc, psv, sampled_state, weight in sample_rows(reader):
+            if state and sampled_state != state:
+                continue
             total += weight
-            if int(row["psv"]) >= 0 and row["pc"]:
-                pcs[hex(int(row["pc"], 16))] += weight
-    if total <= 0:
+            if psv >= 0 and pc:
+                pcs[pc] += weight
+    if total <= 0 and state is None:
         raise ValueError("no TEA samples")
     return (
         sorted(pcs.items(), key=lambda item: (-item[1], int(item[0], 16))),
@@ -143,13 +158,79 @@ def read_pcs(path):
     )
 
 
-def plot_pcs(path, output, cpu, top, elfs, objdump):
+RESOLUTIONS = {-1: "Cancelled", -2: "Pending", -3: "Unresolved"}
+COLUMNS = EVENTS + ("No event",) + tuple(RESOLUTIONS.values())
+
+
+def pc_events(path, selected_pc):
+    totals = Counter()
+    counts = Counter()
+    with path.open(newline="") as source:
+        reader = csv.DictReader(source)
+        require_state(reader)
+        for pc, psv, state, weight in sample_rows(reader):
+            if pc != selected_pc:
+                continue
+            if state not in STATES:
+                raise ValueError(f"unknown TEA state: {state}")
+            totals[state] += weight
+            if psv < 0:
+                if psv not in RESOLUTIONS:
+                    raise ValueError(f"unknown TEA resolution: {psv}")
+                counts[state, RESOLUTIONS[psv]] += weight
+            elif psv == 0:
+                counts[state, "No event"] += weight
+            else:
+                if psv >> len(EVENTS):
+                    raise ValueError(f"unknown TEA event bits in PSV: {psv}")
+                for bit, event in enumerate(EVENTS):
+                    if psv & (1 << bit):
+                        counts[state, event] += weight
+    if not totals:
+        raise ValueError(f"no TEA samples for PC {selected_pc}")
+    return totals, counts
+
+
+def plot_pc_events(path, output, cpu, pc):
     import matplotlib
 
     matplotlib.use("Agg")
     from matplotlib import pyplot as plt
 
-    rows, total = read_pcs(path)
+    totals, counts = pc_events(path, pc)
+    matrix = [
+        [
+            100 * counts[state, col] / totals[state] if totals[state] else math.nan
+            for col in COLUMNS
+        ]
+        for state in STATES
+    ]
+    fig, ax = plt.subplots(figsize=(13, 4))
+    heat = ax.imshow(matrix, aspect="auto", cmap="Blues", vmin=0, vmax=100)
+    for i, row in enumerate(matrix):
+        for j, value in enumerate(row):
+            if value > 0:
+                ax.text(j, i, f"{value:.1f}", ha="center", va="center",
+                        color="white" if value > 55 else "black")
+    ax.set_facecolor("#dedede")
+    ax.set_xticks(range(len(COLUMNS)), COLUMNS, rotation=45, ha="right")
+    ax.set_yticks(range(len(STATES)), [f"{s} (w={totals[s]:g})" for s in STATES])
+    ax.set_title(f"{cpu} · {pc} · PSV by sampled state")
+    ax.set_xlabel("Percent of row weight · event bits overlap · gray = no samples")
+    fig.colorbar(heat, ax=ax, label="%")
+    fig.tight_layout()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_pcs(path, output, cpu, top, elfs, objdump, state=None):
+    import matplotlib
+
+    matplotlib.use("Agg")
+    from matplotlib import pyplot as plt
+
+    rows, total = read_pcs(path, state)
     rows = rows[:top]
     if not rows:
         raise ValueError("no finalized attributed TEA PC samples")
@@ -170,9 +251,10 @@ def plot_pcs(path, output, cpu, top, elfs, objdump):
         fontsize=9,
     )
     ax.invert_yaxis()
-    ax.set_title(f"{cpu}: TEA finalized PC sample weights (all states)")
+    population = state or "all states"
+    ax.set_title(f"{cpu}: TEA finalized PC sample weights ({population})")
     ax.set_xlabel(
-        "Share of all TEA samples (%); pending/cancelled/unresolved excluded from PCs"
+        f"Share of TEA sample weight ({population}, including all resolutions) [%]"
     )
     ax.spines[["top", "right"]].set_visible(False)
     fig.tight_layout()
@@ -187,7 +269,7 @@ def main():
         "inputs",
         type=Path,
         nargs="+",
-        help="stats.txt files (last block) or summary CSVs (see TEA guide)",
+        help="stats.txt, summary CSVs for overview, or a raw TEA CSV for PC views",
     )
     parser.add_argument(
         "-o",
@@ -207,8 +289,11 @@ def main():
         help="display labels, one per plotted row",
     )
     parser.add_argument(
-        "--view", choices=("overview", "pcs"), default="overview"
+        "--view", choices=("overview", "pcs", "state-pcs", "state-psv"), default="overview"
     )
+    parser.add_argument("--state", choices=STATES, help="state-pcs filter (default: Stalled)")
+    parser.add_argument("--pc", type=lambda value: hex(int(value, 16)),
+                        help="hexadecimal PC for state-psv")
     parser.add_argument("--top", type=int, default=15)
     parser.add_argument(
         "--elf",
@@ -224,16 +309,23 @@ def main():
     args = parser.parse_args()
     if args.top <= 0:
         parser.error("--top must be positive")
-    if args.view == "pcs":
+    if args.state and args.view != "state-pcs":
+        parser.error("--state requires --view state-pcs")
+    if (args.pc is not None) != (args.view == "state-psv"):
+        parser.error("--pc and --view state-psv must be used together")
+    if args.view != "overview":
         if len(args.inputs) != 1:
-            parser.error("--view pcs requires one stats.txt or raw TEA CSV")
+            parser.error(f"--view {args.view} requires one stats.txt or raw TEA CSV")
         path = args.inputs[0]
         if path.suffix != ".csv":
             path = path.parent / f"{args.cpu}.tea.csv"
         try:
-            plot_pcs(
-                path, args.output, args.cpu, args.top, args.elf, args.objdump
-            )
+            if args.view == "state-psv":
+                plot_pc_events(path, args.output, args.cpu, args.pc)
+            else:
+                state = (args.state or "Stalled") if args.view == "state-pcs" else None
+                plot_pcs(path, args.output, args.cpu, args.top, args.elf,
+                         args.objdump, state)
         except (
             OSError,
             KeyError,
