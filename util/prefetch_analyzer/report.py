@@ -35,7 +35,7 @@ def write_report(output, summary, pcs, timeline, runs, pc_deltas):
         ("Demand 平均延迟 / tick", demand["mean_latency_ticks"], False),
         ("未完成 Demand", demand["right_censored"], False),
         ("命中但预取晚于端口到达", demand["late_prefetch_hits"], False),
-        ("未使用且已驱逐的预取", pf["unused_evicted_requests"], False),
+        ("全部已观察副本驱逐且未使用的预取", pf["unused_evicted_requests"], False),
         ("右截断的已发送预取", pf["right_censored_sent_requests"], False),
     ]
     limitations = [
@@ -43,6 +43,7 @@ def write_report(output, summary, pcs, timeline, runs, pc_deltas):
         "No Prediction 表示本 ROI 内、该请求到达前未见对应候选；ROI 之前的历史不作推断。候选以 PA+安全域或 VA+地址空间标识+ContextID+安全域关联，并区分发起者与缓存。",
         "Accuracy 的分母是实际下游接受的唯一请求；窗口结束仍未使用的请求属于截断，不能直接当 Unused。不同层级的流量单独输出。",
         "Coverage 使用 Prefetch-Off 的每退休指令 Miss 数作为分母，表示净 Miss 减少；可为负。它包含污染等反向效应，不能声称逐条恢复了相同动态 Miss。",
+        "请求级有用、未使用驱逐、右截断互斥；只有全部已观察副本已驱逐、没有未完成发送且从未使用，才计为未使用驱逐。边界历史不完整时保守保留为截断。",
         "填充到达和 cache line ready 是不同时间点。下层填充不等于 L1 命中；权限或一致性导致的 Miss 单独列出。",
         "Pollution 仅凭一次驱逐不能确证，本报告不把驱逐或 Unused 自动归因为污染。需结合配对 Off 轨迹、受害 line 与性能证据继续验证。",
         "PC 的累计请求延迟会重叠，仅用于热点排序，不能相加为 CPU 停顿或 IPC 收益。Stride 规律来自同一地址空间及 ContextID 的实际地址序列。",
@@ -100,7 +101,16 @@ def write_report(output, summary, pcs, timeline, runs, pc_deltas):
         "<tr>"
         + "".join(
             f"<td>{html.escape(display(row[key]))}</td>"
-            for key in ("cache", "source", "candidates", "aliases", "sent", "useful", "censored")
+            for key in (
+                "cache",
+                "source",
+                "candidates",
+                "aliases",
+                "sent",
+                "useful",
+                "unused_evicted",
+                "censored",
+            )
         )
         + "</tr>"
         for row in summary["source_analysis"]["sources"]

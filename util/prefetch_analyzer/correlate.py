@@ -37,7 +37,7 @@ def reconstruct(db):
             max(CASE WHEN event='PF_CANDIDATE' THEN source END) AS source,
             max(CASE WHEN event='PF_CANDIDATE' THEN request_id END) AS trigger_id,
             max(CASE WHEN event='PF_CANDIDATE' THEN va_line END) AS va_line,
-            NULL AS pa_line, NULL AS alias_id
+            NULL AS pa_line, NULL AS alias_id, 0 AS unused_evicted
         FROM events WHERE prefetch_id>0 GROUP BY prefetch_id;
         CREATE UNIQUE INDEX pf_id ON prefetches(id);
         UPDATE prefetches SET pa_line=(SELECT pa_line FROM events
@@ -46,6 +46,23 @@ def reconstruct(db):
         UPDATE prefetches SET alias_id=(SELECT related_id FROM events
             WHERE prefetch_id=prefetches.id AND event='PF_ALIAS'
             ORDER BY tick,"order" LIMIT 1);
+        CREATE TEMP TABLE copy_state AS
+        SELECT prefetch_id AS id,cache,
+            max(CASE WHEN event IN ('PF_SEND_ACCEPT','PF_SNOOP_ACCEPT') THEN "order" END) AS sent,
+            max(CASE WHEN event='PF_FILL' THEN "order" END) AS filled,
+            max(CASE WHEN event='PF_EVICT' THEN "order" END) AS evicted
+        FROM events WHERE prefetch_id>0 AND event IN
+            ('PF_SEND_ACCEPT','PF_SNOOP_ACCEPT','PF_FILL','PF_EVICT')
+        GROUP BY prefetch_id,cache;
+        CREATE INDEX copy_id ON copy_state(id);
+        UPDATE prefetches SET unused_evicted=1
+        WHERE send_tick IS NOT NULL AND use_tick IS NULL
+            AND EXISTS(SELECT 1 FROM copy_state c WHERE c.id=prefetches.id
+                       AND c.filled IS NOT NULL)
+            AND NOT EXISTS(SELECT 1 FROM copy_state c WHERE c.id=prefetches.id
+                AND (c.filled IS NULL OR c.evicted IS NULL OR c.evicted<c.filled
+                     OR c.sent>c.filled));
+        DROP TABLE copy_state;
         CREATE INDEX pf_pa ON prefetches(pa_line,secure,requestor_id,candidate_tick);
         CREATE INDEX pf_va ON prefetches(va_line,secure,context_id,address_space,requestor_id,candidate_tick);
         CREATE TABLE demands AS
@@ -145,12 +162,21 @@ def classify_miss(db, demand, roi_begin):
         if candidate["alias_id"] and pf["pa_line"] and pf["pa_line"] != demand["pa_line"]:
             evidence.append(("dropped", "alias_different_physical_line", candidate["id"]))
             continue
+        # Choose the demand cache when observed, otherwise the nearest filled
+        # level. An eviction of another copy cannot invalidate this one.
+        fill = db.execute(
+            """SELECT cache,ready_tick FROM events WHERE event='PF_FILL'
+            AND prefetch_id=? AND (tick<? OR (tick=? AND "order"<?))
+            ORDER BY (cache=?) DESC,level,tick DESC,"order" DESC LIMIT 1""",
+            (pid, tick, tick, order, demand["cache"]),
+        ).fetchone()
+        copy_cache = fill["cache"] if fill else demand["cache"]
         # Do not use an eviction/drop after the demand to explain the miss.
         evict = db.execute(
             """SELECT result,reason,tick,"order" AS event_order FROM events WHERE event='PF_EVICT'
-            AND prefetch_id=? AND (tick<? OR (tick=? AND "order"<?))
+            AND prefetch_id=? AND cache=? AND (tick<? OR (tick=? AND "order"<?))
             ORDER BY tick DESC,"order" DESC LIMIT 1""",
-            (pid, tick, tick, order),
+            (pid, copy_cache, tick, tick, order),
         ).fetchone()
         if evict:
             if prior and (evict["tick"], evict["event_order"]) <= (
@@ -177,13 +203,10 @@ def classify_miss(db, demand, roi_begin):
                 continue
             evidence.append(("dropped", drop["reason"], pid))
             continue
-        if pf["ready_tick"] is not None and pf["ready_tick"] <= tick:
-            fill = db.execute(
-                """SELECT cache FROM events WHERE event='PF_FILL'
-                AND prefetch_id=? ORDER BY tick,"order" LIMIT 1""",
-                (pid,),
-            ).fetchone()
-            if fill[0] == demand["cache"]:
+        if fill:
+            if fill["ready_tick"] is not None and fill["ready_tick"] > tick:
+                return "late", "memory_or_fill", pid
+            if fill["cache"] == demand["cache"]:
                 return "resident_but_miss", "permissions_or_cache_state", pid
             return "lower_level_only", "filled_below_l1", pid
         if pf["send_tick"] is not None and pf["send_tick"] <= tick:
@@ -243,10 +266,9 @@ def prefetch_metrics(db, block_size):
         AND EXISTS(SELECT 1 FROM events e WHERE e.prefetch_id=p.id
         AND e.event='PF_FIRST_USE' AND e.result='hit'
         AND coalesce(e.ready_tick,p.ready_tick)<=coalesce(e.arrival_tick,e.tick))""")
-    unused = scalar("""SELECT count(DISTINCT prefetch_id) FROM events WHERE
-        event='PF_EVICT' AND result='unused'""")
+    unused = scalar("SELECT count(*) FROM prefetches WHERE unused_evicted=1")
     censored = scalar("""SELECT count(*) FROM prefetches WHERE send_tick IS NOT NULL
-        AND use_tick IS NULL AND evict_tick IS NULL""")
+        AND use_tick IS NULL AND unused_evicted=0""")
     return {
         "event_counts": counts,
         "candidates": counts.get("PF_CANDIDATE", 0),

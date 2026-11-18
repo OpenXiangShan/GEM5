@@ -204,6 +204,7 @@ def analyze_run(path, output, cpu, weight):
                 "aliases",
                 "sent",
                 "useful",
+                "unused_evicted",
                 "censored",
                 "accuracy_observed",
             ],
@@ -466,6 +467,15 @@ def main():
                 ).fetchone()[0],
                 "miss_categories_conserve": sum(summary["demand"]["failures"].values())
                 == summary["demand"]["misses"],
+                "prefetch_outcomes_conserve": summary["prefetch"]["sent_requests"]
+                == sum(
+                    summary["prefetch"][key]
+                    for key in (
+                        "useful_requests",
+                        "unused_evicted_requests",
+                        "right_censored_sent_requests",
+                    )
+                ),
             },
             indent=2,
         )

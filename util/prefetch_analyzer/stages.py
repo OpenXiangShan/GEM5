@@ -11,7 +11,8 @@ def source_analysis(db):
         sum(alias_id IS NOT NULL) AS aliases,
         sum(send_tick IS NOT NULL) AS sent,
         sum(send_tick IS NOT NULL AND use_tick IS NOT NULL) AS useful,
-        sum(send_tick IS NOT NULL AND use_tick IS NULL AND evict_tick IS NULL) AS censored
+        sum(unused_evicted) AS unused_evicted,
+        sum(send_tick IS NOT NULL AND use_tick IS NULL AND unused_evicted=0) AS censored
         FROM prefetches WHERE candidate_tick IS NOT NULL GROUP BY origin_cache,source
         ORDER BY origin_cache,source""")
     ]
