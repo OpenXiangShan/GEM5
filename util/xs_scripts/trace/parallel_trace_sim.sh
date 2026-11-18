@@ -3,7 +3,7 @@
 # Trace-only parallel driver for XiangShan + trace inputs (ChampSim / CBP2025).
 #
 # 目标：
-#   - 保持公用 util/xs_scripts/parallel_sim.sh 原样不动；
+#   - 与 util/xs_scripts/parallel_sim.sh 共用切片进度日志；
 #   - 在本脚本中复现之前为 trace 实验量身定制的增强能力：
 #       1) 支持通过 XSGEM5_WORK_ROOT 指定批跑工作根目录；
 #       2) 支持 .gz/.zstd/.xz 后缀的 checkpoint/trace 文件匹配；
@@ -29,15 +29,15 @@ if [[ -z "${4:-}" ]]; then
     print_help
 fi
 
-set -x
-
 TRACE_FORMAT=${TRACE_FORMAT:-champsim}
 export TRACE_FORMAT
 
+script_dir=$(dirname "$(readlink -f "$0")")
+source "$script_dir/../parallel_progress.sh"
 export arch_script=$(realpath "$1")
 # Match parallel_sim.sh: accept a config directly or an existing wrapper.
 if [[ "${arch_script}" == *.py ]]; then
-    source "$(dirname "$(readlink -f "$0")")/../common.sh"
+    source "$script_dir/../common.sh"
 fi
 export workload_list=$(realpath "$2")
 export cpt_dir=$(realpath "$3")
@@ -105,11 +105,6 @@ function run() {
 
     cd "$2"  # work_dir
 
-    if [[ -f "completed" ]]; then
-        echo "Already completed; skip $1"
-        return
-    fi
-
     rm -f abort completed
     touch running
 
@@ -129,9 +124,6 @@ function run() {
 }
 
 function prepare_env() {
-    set -x
-    echo "prepare_env $@"
-
     # workload 行字段：
     #   name path/to/trace_prefix skip fw dw sample
     # 这里只使用 name 与 path，其余字段在 arg_wrapper 中处理。
@@ -167,10 +159,7 @@ function prepare_env() {
     if [[ -n "${checkpoint}" && ! -f "${checkpoint}" ]]; then
         checkpoint=""
     fi
-    echo "${checkpoint}"
-
     export work_dir="${full_work_dir}/${task}"
-    echo "${work_dir}"
     mkdir -p "${work_dir}"
 }
 
@@ -200,7 +189,7 @@ function arg_wrapper() {
     local total=$((warmup + sample))
 
     XS_MAX_INSTS="${total}" XS_WARMUP_INSTS_NO_SWITCH="${warmup}" \
-        run "${checkpoint}" "${work_dir}" >"${work_dir}/${log_file}" 2>&1
+        run_slice "$task" "$checkpoint" "$work_dir"
 }
 
 export -f check
@@ -211,11 +200,4 @@ export -f prepare_env
 # xsgem5_para_jobs define in docker compose
 num_threads=${xsgem5_para_jobs:-63}
 
-function parallel_run() {
-    # 使用 gnu parallel 控制并行度。
-    # 每行 workload 作为单个参数传递给 arg_wrapper（用 "{}" 保持整行不被 shell 拆分）。
-    printf '%s\n' "${selected_workloads[@]}" | \
-        parallel -a - -j "${num_threads}" arg_wrapper "{}"
-}
-
-parallel_run
+run_parallel_with_progress "${selected_workloads[@]}"
