@@ -254,7 +254,7 @@ class KMHV3Scheduler(Scheduler):
                       rp=[FpRD(6,0), FpRD(7,0), FpRD(8,0)])
         ]),
         IssueQue(name='fpIQ3', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()],
+            IssuePort(fu=[FP_ALU(), FP_MAC(), FP_SLOW()],
                       rp=[FpRD(9,0), FpRD(10,0), FpRD(11,0)])
         ]),
     ]
