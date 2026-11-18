@@ -2275,14 +2275,16 @@ Scheduler::specWakeUpFromDiv(const DynInstPtr& inst, uint32_t latency)
     }
 
     assert(latency > 0);
+    // FU latency includes the current AtFU cycle.
+    const uint32_t cyclesToBypass = latency - 1;
     auto from_issue_queue = inst->issueQue;
-    // Native result availability is AtFU + latency - 1 cycles.
-    const Tick dataTick = cpu->clockEdge(Cycles(latency - 1));
+    const Tick dataTick = cpu->clockEdge(Cycles(cyclesToBypass));
     for (auto to : wakeMatrix[from_issue_queue->getId()]) {
         // Consumers must reach the bypass check no earlier than the result.
         const uint32_t lead = std::min(2, to->getIssueStages());
         // Clamp short latencies to this cycle without unsigned underflow.
-        const uint32_t wakeDelay = latency > lead + 1 ? latency - lead - 1 : 0;
+        const uint32_t wakeDelay =
+            cyclesToBypass > lead ? cyclesToBypass - lead : 0;
         const Tick wakeTick = cpu->clockEdge(Cycles(wakeDelay));
         DPRINTF(Schedule,
                 "[sn:%llu] div wakeup to %s, latency %u, lead %u, "
