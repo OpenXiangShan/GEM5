@@ -167,6 +167,7 @@ class LSQ
         const int index;
         ThreadID tid;
         InstSeqNum seqNum = 0;
+        RequestPtr analysisOrigin;
         Addr blockVaddr;
         Addr blockPaddr;
         std::vector<uint8_t> blockDatas;

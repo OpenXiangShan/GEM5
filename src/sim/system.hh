@@ -75,6 +75,8 @@ class BaseRemoteGDB;
 class KvmVM;
 class ThreadContext;
 
+class PrefetchTrace;
+
 class System : public SimObject, public PCEventScope
 {
   private:
@@ -623,6 +625,8 @@ class System : public SimObject, public PCEventScope
     // STATIC GLOBAL SYSTEM LIST
     //
     ////////////////////////////////////////////
+
+    PrefetchTrace *prefetchTrace = nullptr;
 
     static std::vector<System *> systemList;
     static int numSystemsRunning;

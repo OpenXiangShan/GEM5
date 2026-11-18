@@ -71,6 +71,7 @@
 #include "mem/cache/compressors/base.hh"
 #include "mem/cache/mshr.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
+#include "mem/cache/prefetch/prefetch_trace.hh"
 #include "mem/cache/queue_entry.hh"
 #include "mem/cache/tags/compressed_tags.hh"
 #include "mem/cache/tags/super_blk.hh"
@@ -94,7 +95,11 @@ BaseCache::SendTimingRespEvent::SendTimingRespEvent(BaseCache* cache, PacketPtr 
 void
 BaseCache::SendTimingRespEvent::process()
 {
-    cache->cpuSidePort.sendTimingResp(pkt);
+    const bool trace = cache->traceDemandEligible(pkt);
+    const RequestPtr req = trace ? pkt->req : nullptr;
+    const bool write = trace && pkt->isWrite();
+    if (cache->cpuSidePort.sendTimingResp(pkt) && trace)
+        cache->traceDemandComplete(req, write);
 }
 
 const char*
@@ -129,10 +134,61 @@ BaseCache::CacheResponsePort::CacheResponsePort(const std::string &_name,
                                           const std::string &_label)
     : QueuedResponsePort(_name, queue),
       cache{_cache},
-      queue(_cache, *this, true, _label),
+      queue(_cache, *this, _label),
       blocked(false), mustSendRetry(false),
       sendRetryEvent([this]{ processSendRetry(); }, _name)
 {
+}
+
+bool
+BaseCache::TraceRespPacketQueue::sendTiming(PacketPtr pkt)
+{
+    const bool trace = cache.traceDemandEligible(pkt);
+    const RequestPtr req = trace ? pkt->req : nullptr;
+    const bool write = trace && pkt->isWrite();
+    const bool accepted = RespPacketQueue::sendTiming(pkt);
+    if (accepted && trace)
+        cache.traceDemandComplete(req, write);
+    return accepted;
+}
+
+bool
+BaseCache::traceDemandEligible(PacketPtr pkt) const
+{
+    return system->prefetchTrace && cacheLevel == 1 && !isReadOnly &&
+        !pkt->req->isInstFetch() && (pkt->isRead() || pkt->isWrite()) &&
+        !pkt->isStorePFTrain() && !pkt->cmd.isHWPrefetch() &&
+        !pkt->cmd.isSWPrefetch() && !pkt->isEviction() &&
+        !pkt->req->isCacheMaintenance();
+}
+
+void
+BaseCache::traceDemandArrival(PacketPtr pkt)
+{
+    if (!traceDemandEligible(pkt) || pkt->req->analysisArrivalTick != MaxTick)
+        return;
+    pkt->req->analysisArrivalTick = curTick();
+    system->prefetchTrace->requestId(pkt->req);
+    system->prefetchTrace->packet("DEMAND_ARRIVE", *this, cacheLevel, pkt);
+}
+
+void
+BaseCache::traceDemandAccess(PacketPtr pkt, bool hit)
+{
+    if (!traceDemandEligible(pkt)) return;
+    const bool retry = pkt->mshrArbFailed() || pkt->mshrAliasFailed() ||
+        pkt->isHitInWriteBuffer() || pkt->sbufferMergeFailed;
+    system->prefetchTrace->packet("DEMAND_ACCESS", *this, cacheLevel, pkt,
+        retry ? "replay" : "", 0, hit ? "hit" : retry ? "miss_retry" : "miss");
+}
+
+void
+BaseCache::traceDemandComplete(const RequestPtr &req, bool write)
+{
+    PrefetchTrace::Record r{"DEMAND_COMPLETE", name(), cacheLevel,
+                            clockPeriod(), req};
+    r.op = write ? "store" : "load";
+    system->prefetchTrace->emit(r);
 }
 
 BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
@@ -592,6 +648,12 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 // buffer and to schedule an event to the queued
                 // port and also takes into account the additional
                 // delay of the xbar.
+                if (system->prefetchTrace && pkt->isDemand() &&
+                    mshr->hasFromPref()) {
+                    system->prefetchTrace->packet("DEMAND_MERGE", *this,
+                        cacheLevel, pkt, "prefetch_mshr",
+                        mshr->getTarget()->pkt->req->analysisPrefetchId);
+                }
                 mshr->allocateTarget(pkt, forward_time, order++,
                                      allocOnFill(pkt->cmd));
                 if (mshr->getNumTargets() >= numTarget) {
@@ -755,6 +817,9 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         blk->setCoherenceBits(CacheBlk::WritableBit);
     }
 
+    if (traceDemandEligible(pkt))
+        system->prefetchTrace->requestId(pkt->req);
+
     Cycles lat;
     CacheBlk *blk = nullptr;
     bool satisfied = false;
@@ -843,6 +908,11 @@ BaseCache::recvTimingReq(PacketPtr pkt)
             pkt->req->setPFDepth(blk->getXsMetadata().prefetchDepth);
         }
         DPRINTF(Cache, "Before hit notify, pkt has data: %i\n", pkt->hasData());
+        traceDemandAccess(pkt,
+            !(pkt->isLLSC() && pkt->isWrite() && !blk));
+        if (system->prefetchTrace && pkt->isDemand() &&
+            !pkt->req->isPrefetch())
+            system->prefetchTrace->use(*this, cacheLevel, pkt, "hit");
         ppHit->notify(pkt);
 
         bool first_acc_after_pf = false;
@@ -929,6 +999,7 @@ BaseCache::recvTimingReq(PacketPtr pkt)
 
         handleTimingReqMiss(pkt, blk, forward_time, request_time);
 
+        traceDemandAccess(pkt, false);
         ppMiss->notify(pkt);
     }
 
@@ -1145,6 +1216,12 @@ BaseCache::recvTimingResp(PacketPtr pkt)
                 PrefetchSourceType::PF_NONE,
             &dcache_refill_need_data_read);
         assert(blk != nullptr);
+        // A squashed prefetch can leave the MSHR's flag set while a
+        // merged demand continues. Record only an actual prefetch response.
+        if (system->prefetchTrace && pkt->req->analysisPrefetchId) {
+            system->prefetchTrace->fill(*this, cacheLevel, pkt,
+                pkt->req, mshr->hasFromCPU(), blk->getWhenReady());
+        }
         if (prefetcher) {
             prefetcher->notifyCachelineRefill(pkt->getAddr(), pkt->isSecure());
         }
@@ -1590,6 +1667,9 @@ BaseCache::getNextQueueEntry()
             if (tags->findBlock(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in cache, "
                         "dropped.\n", pf_addr);
+                if (system->prefetchTrace)
+                    system->prefetchTrace->packet("PF_DROP", *this,
+                        cacheLevel, pkt, "cache_hit");
                 prefetcher->pfHitInCache(pf_type);
                 if (pf_type == PrefetchSourceType::SStream)
                     prefetcher->streamPflate();
@@ -1598,6 +1678,9 @@ BaseCache::getNextQueueEntry()
             } else if (mshrQueue.findMatch(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in a MSHR, "
                         "dropped.\n", pf_addr);
+                if (system->prefetchTrace)
+                    system->prefetchTrace->packet("PF_DROP", *this,
+                        cacheLevel, pkt, "mshr_hit");
                 prefetcher->pfHitInMSHR(pf_type);
                 if (pf_type == PrefetchSourceType::SStream)
                     prefetcher->streamPflate();
@@ -1606,6 +1689,9 @@ BaseCache::getNextQueueEntry()
             } else if (writeBuffer.findMatch(pf_addr, pkt->isSecure())) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in the "
                         "Write Buffer, dropped.\n", pf_addr);
+                if (system->prefetchTrace)
+                    system->prefetchTrace->packet("PF_DROP", *this,
+                        cacheLevel, pkt, "write_buffer_hit");
                 prefetcher->pfHitInWB(pf_type);
                 if (pf_type == PrefetchSourceType::SStream)
                     prefetcher->streamPflate();
@@ -2569,6 +2655,9 @@ BaseCache::allocateBlock(
 void
 BaseCache::invalidateBlock(CacheBlk *blk)
 {
+    if (system->prefetchTrace && blk->isValid())
+        system->prefetchTrace->evict(*this, cacheLevel,
+            regenerateBlkAddr(blk), blk->isSecure(), "invalidation");
     static uint64_t _inval_cnt{0};
     // notify prefetcher to send some info to lower level per 128 cache invalidations
     if ((_inval_cnt++ % 128) == 127) {
@@ -2854,6 +2943,9 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
     }
 
     if (!memSidePort.sendTimingReq(pkt)) {
+        if (system->prefetchTrace && tgt_pkt->req->analysisPrefetchId)
+            system->prefetchTrace->packet("PF_SEND_RETRY", *this,
+                cacheLevel, tgt_pkt, "downstream_backpressure");
         // we are awaiting a retry, but we
         // delete the packet and will be creating a new packet
         // when we get the opportunity
@@ -2866,6 +2958,9 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
         // it gets retried
         return true;
     } else {
+        if (system->prefetchTrace && tgt_pkt->req->analysisPrefetchId)
+            system->prefetchTrace->packet("PF_SEND_ACCEPT", *this,
+                cacheLevel, tgt_pkt);
         // As part of the call to sendTimingReq the packet is
         // forwarded to all neighbouring caches (and any caches
         // above them) as a snoop. Thus at this point we know if
@@ -3619,6 +3714,7 @@ bool
 BaseCache::CpuSidePort::recvTimingReq(PacketPtr pkt)
 {
     assert(pkt->isRequest());
+    cache.traceDemandArrival(pkt);
 
     if (cache.system->bypassCaches()) {
         // Just forward the packet if caches are disabled.

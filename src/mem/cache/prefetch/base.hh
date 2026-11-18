@@ -846,6 +846,7 @@ class Base : public ClockedObject
 
     /** Pointr to the parent cache. */
     CacheAccessor* cache = nullptr;
+    std::string traceCacheName;
 
     /** Pointer to the parent system. */
     System* system = nullptr;

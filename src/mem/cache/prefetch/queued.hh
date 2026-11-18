@@ -76,6 +76,7 @@ class Queued : public Base
         int depth=0;
         PrefetchSourceType pfSource;
         PFTriggerInfo pf_trigger_info{};
+        mutable uint64_t traceId = 0;
         PrefetchCmd(Addr a, int32_t p) : addr(a), priority(p), isVA(true), isBOP(false)
         {
             panic("PrefetchCmd: no source specified");
@@ -115,6 +116,7 @@ class Queued : public Base
         RequestPtr translationRequest;
         ThreadContext *tc;
         bool ongoingTranslation;
+        uint64_t traceId = 0;
 
         /**
          * Constructor
@@ -179,6 +181,14 @@ class Queued : public Base
          */
         void startTranslation(BaseTLB *tlb);
     };
+
+    void traceCandidate(const AddrPriority &cmd, PacketPtr trigger);
+    void traceCommandDrop(const AddrPriority &cmd, PacketPtr trigger,
+                          const char *reason);
+    void traceDeferred(const char *event, const DeferredPacket &dp,
+                       const char *reason = "", uint64_t related = 0);
+    uint64_t traceQueuedId(const std::list<DeferredPacket> &queue,
+                           const PrefetchInfo &pfi) const;
 
     std::list<DeferredPacket> pfq;
     std::list<DeferredPacket> pfqMissingTranslation;
@@ -507,14 +517,7 @@ class Queued : public Base
     std::list<AddrPriority> PFRequestBuffer;
     const int max_pf_buffer_size{8};
     //here we implement a buffer that drop the pf requests when the buffer is full
-    virtual void InsertPFRequestToBuffer(const AddrPriority &addr_prio) {
-        if (PFRequestBuffer.size() < max_pf_buffer_size) {
-            PFRequestBuffer.push_back(addr_prio);
-        }else{
-            PFRequestBuffer.pop_front();
-            PFRequestBuffer.push_back(addr_prio);
-        }
-    };
+    virtual void InsertPFRequestToBuffer(const AddrPriority &addr_prio);
     /** Event to handle the delay queue processing */
     void PFSendEventWrapper();
     EventFunctionWrapper PFReqSendEvent;

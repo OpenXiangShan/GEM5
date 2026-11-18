@@ -296,6 +296,16 @@ class BaseCache : public ClockedObject, public CacheAccessor
      * incoming requests. If blocked, the port will issue a retry once
      * unblocked.
      */
+    class TraceRespPacketQueue : public RespPacketQueue
+    {
+        BaseCache &cache;
+      public:
+        TraceRespPacketQueue(BaseCache &c, ResponsePort &port,
+                             const std::string &label)
+            : RespPacketQueue(c, port, true, label), cache(c) {}
+        bool sendTiming(PacketPtr pkt) override;
+    };
+
     class CacheResponsePort : public QueuedResponsePort
     {
 
@@ -317,7 +327,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
         BaseCache& cache;
 
         /** A normal packet queue used to store responses. */
-        RespPacketQueue queue;
+        TraceRespPacketQueue queue;
 
         bool blocked;
 
@@ -1684,12 +1694,18 @@ public:
 
     /** Read-only hit probe (no LRU/writeback side effects) for hit-under-blocked. */
     bool probeHit(const PacketPtr pkt) const;
+
+    bool traceDemandEligible(PacketPtr pkt) const;
+    void traceDemandArrival(PacketPtr pkt);
+    void traceDemandAccess(PacketPtr pkt, bool hit);
+    void traceDemandComplete(const RequestPtr &req, bool write);
     void incHitUnderBlockServed() { stats.hitUnderBlockServed++; }
 
     // CacheAccessor overrided function
 
     bool inCache(Addr addr, bool is_secure) const override { return tags->findBlock(addr, is_secure); }
 
+    std::string cacheName() const override { return name(); }
     unsigned level() const override { return cacheLevel; }
 
     bool hasBeenPrefetched(Addr addr, bool is_secure) const override

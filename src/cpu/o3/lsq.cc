@@ -3735,6 +3735,7 @@ LSQ::SbufferRequest::addReq(Addr blockVaddr, Addr blockPaddr, const std::vector<
         cpu->dataRequestorId());
     req->setContext(cpu->getContext(_port.lsqID)->contextId());
     req->setReqInstSeqNum(sbuffer_entry->seqNum);
+    req->analysisOrigin = sbuffer_entry->analysisOrigin;
     req->setByteEnable(byteEnable);
 
     _reqs.push_back(req);

@@ -1,6 +1,8 @@
 #include "mem/cache/prefetch/forwarder.hh"
 
+#include "mem/cache/prefetch/prefetch_trace.hh"
 #include "mem/packet.hh"
+#include "sim/system.hh"
 
 namespace gem5
 {
@@ -133,9 +135,15 @@ PrefetcherForwarder::recvPrefetchFromCache(const PacketPtr &pkt)
 {
     if (real_pf && !real_pf->ownsPrefetchRequest(pkt) &&
         !real_pf->admitIncomingPrefetchPacket(pkt)) {
+        if (system->prefetchTrace)
+            system->prefetchTrace->packet("PF_DROP", *this, cache->level(),
+                pkt, "admission_control");
         delete pkt;
         return;
     }
+    if (system->prefetchTrace)
+        system->prefetchTrace->packet("PF_FORWARD_ACCEPT", *this,
+            cache->level(), pkt);
     prefetch_queue.push(pkt);
 }
 
@@ -147,6 +155,8 @@ PrefetcherForwarder::getPacket()
     }
     PacketPtr pkt = prefetch_queue.front();
     prefetch_queue.pop();
+    if (system->prefetchTrace)
+        system->prefetchTrace->packet("PF_FORWARD_DEQUEUE", *this, cache->level(), pkt);
     if (real_pf) {
         real_pf->recordIssuedPrefetchStats(pkt);
     }

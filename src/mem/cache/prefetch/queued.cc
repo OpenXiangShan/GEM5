@@ -50,6 +50,7 @@
 #include "debug/HWPrefetchOther.hh"
 #include "debug/HWPrefetchQueue.hh"
 #include "mem/cache/base.hh"
+#include "mem/cache/prefetch/prefetch_trace.hh"
 #include "mem/request.hh"
 #include "params/QueuedPrefetcher.hh"
 
@@ -111,6 +112,79 @@ quantizePercentAboveMin(unsigned pct, unsigned min_pct, unsigned quantum)
 } // namespace
 
 void
+Queued::traceCandidate(const AddrPriority &cmd, PacketPtr trigger)
+{
+    auto *trace = system ? system->prefetchTrace : nullptr;
+    if (!trace || cmd.traceId) return;
+    cmd.traceId = trace->newId();
+    ::gem5::PrefetchTrace::Record r{"PF_CANDIDATE", name(), cache->level(),
+                            clockPeriod(), trigger->req, traceCacheName};
+    r.prefetchId = cmd.traceId;
+    r.targetAddress = true;
+    if (useVirtualAddresses || cmd.forceTranslation) r.va = cmd.addr;
+    else r.pa = cmd.addr;
+    r.source = cmd.pfSource;
+    r.op = "prefetch";
+    trace->emit(r);
+}
+
+void
+Queued::traceCommandDrop(const AddrPriority &cmd, PacketPtr trigger,
+                         const char *reason)
+{
+    auto *trace = system ? system->prefetchTrace : nullptr;
+    if (!trace || !trace->active()) return;
+    ::gem5::PrefetchTrace::Record r{"PF_DROP", name(), cache->level(),
+                            clockPeriod(), trigger->req, traceCacheName};
+    r.prefetchId = cmd.traceId;
+    r.targetAddress = true;
+    if (useVirtualAddresses || cmd.forceTranslation) r.va = cmd.addr;
+    else r.pa = cmd.addr;
+    r.source = cmd.pfSource;
+    r.reason = reason;
+    r.op = "prefetch";
+    trace->emit(r);
+}
+
+void
+Queued::traceDeferred(const char *event, const DeferredPacket &dp,
+                      const char *reason, uint64_t related)
+{
+    auto *trace = system ? system->prefetchTrace : nullptr;
+    if (!trace || !trace->active()) return;
+    RequestPtr req = dp.pkt ? dp.pkt->req : dp.translationRequest;
+    ::gem5::PrefetchTrace::Record r{event, name(), cache->level(), clockPeriod(), req, traceCacheName};
+    r.prefetchId = dp.traceId;
+    r.relatedId = related;
+    r.source = dp.pfInfo.getXsMetadata().prefetchSource;
+    r.reason = reason;
+    r.op = "prefetch";
+    trace->emit(r);
+}
+
+uint64_t
+Queued::traceQueuedId(const std::list<DeferredPacket> &queue,
+                      const PrefetchInfo &pfi) const
+{
+    for (const auto &dp : queue)
+        if (dp.pfInfo.sameAddr(pfi)) return dp.traceId;
+    return 0;
+}
+
+void
+Queued::InsertPFRequestToBuffer(const AddrPriority &addr_prio)
+{
+    AddrPriority cmd = addr_prio;
+    traceCandidate(cmd, cmd.pf_trigger_info.pkt);
+    if (PFRequestBuffer.size() >= max_pf_buffer_size) {
+        const auto &old = PFRequestBuffer.front();
+        traceCommandDrop(old, old.pf_trigger_info.pkt, "prediction_buffer_full");
+        PFRequestBuffer.pop_front();
+    }
+    PFRequestBuffer.push_back(cmd);
+}
+
+void
 Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID requestor_id, bool tag_prefetch, Tick t,
                                   PrefetchSourceType pf_src, int prf_depth)
 {
@@ -136,6 +210,7 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID req
         }
     }
 
+    req->analysisPrefetchId = traceId;
     req->setFlags(Request::PREFETCH);
     const PrefetchSourceType safe_pf_src =
         owner->sanitizePfControlSourceType(pf_src);
@@ -828,7 +903,9 @@ Queued::admitPfControlDeferredPacket(const DeferredPacket &dpp)
     } else {
         source = dpp.pfInfo.getXsMetadata().prefetchSource;
     }
-    return admitPfControlCandidate(source);
+    const bool admitted = admitPfControlCandidate(source);
+    if (!admitted) traceDeferred("PF_DROP", dpp, "admission_control");
+    return admitted;
 }
 
 void
@@ -973,6 +1050,7 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
                         blockAddress(itr->pfInfo.getAddr()));
                 late_in_pfq = true;  // hit in pf queue
                 late_pfq_src = itr->pfInfo.getXsMetadata().prefetchSource;
+                traceDeferred("PF_DROP", *itr, "demand_squash");
                 delete itr->pkt;
                 itr = pfq.erase(itr);
                 statsQueued.pfRemovedDemand++;
@@ -1005,6 +1083,9 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
         } 
         return;
     }
+    for (auto &candidate : addresses)
+        traceCandidate(candidate, pkt);
+
     // Get the maximu number of prefetches that we are allowed to generate
     size_t max_pfs = getMaxPermittedPrefetches(addresses.size());
 
@@ -1028,6 +1109,7 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
             if (shouldPfControlAdmitLocally(
                     addr_prio.pfahead, addr_prio.pfahead_host) &&
                 !admitPfControlCandidate(addr_prio.pfSource)) {
+                traceCommandDrop(addr_prio, pkt, "admission_control");
                 continue;
             }
             addr_prio.pfSource =
@@ -1035,15 +1117,26 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
             PrefetchInfo new_pfi(pfi, addr_prio.addr);
             new_pfi.setXsMetadata(Request::XsMetadata(addr_prio.pfSource,addr_prio.depth));
             statsQueued.pfIdentified++;
+            if (system->prefetchTrace) {
+                ::gem5::PrefetchTrace::Record r{"PF_IDENTIFIED", name(),
+                    cache->level(), clockPeriod(), pkt->req, traceCacheName};
+                r.prefetchId = addr_prio.traceId;
+                r.targetAddress = true;
+                system->prefetchTrace->emit(r);
+            }
             DPRINTF(HWPrefetch, "Found a pf candidate addr: %#x, "
                     "inserting into prefetch queue.\n", new_pfi.getAddr());
             // Create and insert the request
             insert(pkt, new_pfi, addr_prio);
             num_pfs += 1;
             if (num_pfs == max_pfs) {
+                for (auto *remaining = &addr_prio + 1;
+                     remaining != addresses.data() + addresses.size(); ++remaining)
+                    traceCommandDrop(*remaining, pkt, "throttle");
                 break;
             }
         } else {
+            traceCommandDrop(addr_prio, pkt, "page_crossing_no_tlb");
             DPRINTF(HWPrefetch, "Ignoring page crossing prefetch.\n");
         }
     }
@@ -1055,6 +1148,9 @@ Queued::PFSendEventWrapper()
     GetPFRequestsFromBuffer(addresses);
 
     // there may be more than 1 req in addresses because we are trying to allow max 1 PF to every cache level
+    for (auto &candidate : addresses)
+        traceCandidate(candidate, candidate.pf_trigger_info.pkt);
+
     // assert(addresses.size()==1);
     // Get the maximu number of prefetches that we are allowed to generate
     size_t max_pfs = getMaxPermittedPrefetches(addresses.size());
@@ -1083,6 +1179,7 @@ Queued::PFSendEventWrapper()
             if (shouldPfControlAdmitLocally(
                     addr_prio.pfahead, addr_prio.pfahead_host) &&
                 !admitPfControlCandidate(addr_prio.pfSource)) {
+                traceCommandDrop(addr_prio, pkt, "admission_control");
                 continue;
             }
             addr_prio.pfSource =
@@ -1090,14 +1187,25 @@ Queued::PFSendEventWrapper()
             PrefetchInfo new_pfi(pfi, addr_prio.addr);
             new_pfi.setXsMetadata(Request::XsMetadata(addr_prio.pfSource,addr_prio.depth));
             statsQueued.pfIdentified++;
+            if (system->prefetchTrace) {
+                ::gem5::PrefetchTrace::Record r{"PF_IDENTIFIED", name(),
+                    cache->level(), clockPeriod(), pkt->req, traceCacheName};
+                r.prefetchId = addr_prio.traceId;
+                r.targetAddress = true;
+                system->prefetchTrace->emit(r);
+            }
             DPRINTF(HWPrefetch, "Found a pf candidate addr: %#x, "
                     "inserting into prefetch queue.\n", new_pfi.getAddr());
             insert(pkt, new_pfi, addr_prio);
             num_pfs += 1;
             if (num_pfs == max_pfs) {
+                for (auto *remaining = &addr_prio + 1;
+                     remaining != addresses.data() + addresses.size(); ++remaining)
+                    traceCommandDrop(*remaining, pkt, "throttle");
                 break;
             }
         } else {
+            traceCommandDrop(addr_prio, pkt, "page_crossing_no_tlb");
             DPRINTF(HWPrefetch, "Ignoring page crossing prefetch.\n");
         }
     }
@@ -1138,6 +1246,7 @@ Queued::getPacket()
     }
 
     PacketPtr pkt = pfq.front().pkt;
+    traceDeferred("PF_DEQUEUE", pfq.front());
     if (pfq.front().pfahead) {
         prefetchStats.pfaheadProcess++;
     }
@@ -1363,13 +1472,16 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
                     it->translationRequest->getVaddr(),
                     it->translationRequest->getPaddr());
             Addr target_paddr = it->translationRequest->getPaddr();
+            traceDeferred("PF_TRANSLATE", *it, "success");
             // check if this prefetch is already redundant
             if (cacheSnoop && queueFilter && (inCache(target_paddr, it->pfInfo.isSecure()) ||
                         inMissQueue(target_paddr, it->pfInfo.isSecure()))) {
+                traceDeferred("PF_DROP", *it, "cache_or_mshr_hit");
                 statsQueued.pfInCache++;
                 DPRINTF(HWPrefetch, "Dropping redundant in "
                         "cache/MSHR prefetch addr:%#x\n", target_paddr);
             } else if (!system->isMemAddr(target_paddr)) {
+                traceDeferred("PF_DROP", *it, "non_memory_address");
                 DPRINTF(HWPrefetch, "wrong paddr of prefetch:%#x\n", target_paddr);
 
             } else {
@@ -1379,6 +1491,7 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
                 addToQueue(pfq, *it);
             }
         } else {
+            traceDeferred("PF_DROP", *it, "translation_fault");
             DPRINTF(HWPrefetch, "%s Translation of vaddr %#x failed, dropping "
                     "prefetch request %#x \n", tlb->name(),
                     it->translationRequest->getVaddr());
@@ -1470,12 +1583,33 @@ Queued::createPrefetchRequest(Addr addr, PrefetchInfo const &pfi, PacketPtr pkt,
 void
 Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &addr_prio)
 {
+    traceCandidate(addr_prio, pkt);
     int32_t priority = addr_prio.priority;
     if (queueFilter) {
         if (alreadyInQueue(pfq, new_pfi, priority)) {
+            if (system->prefetchTrace) {
+                ::gem5::PrefetchTrace::Record r{"PF_ALIAS", name(), cache->level(),
+                    clockPeriod(), pkt->req, traceCacheName};
+                r.prefetchId = addr_prio.traceId;
+                r.relatedId = traceQueuedId(pfq, new_pfi);
+                r.targetAddress = true;
+                r.reason = "queue_duplicate";
+                system->prefetchTrace->emit(r);
+            }
+            traceCommandDrop(addr_prio, pkt, "queue_duplicate");
             return;
         }
         if (alreadyInQueue(pfqMissingTranslation, new_pfi, priority)) {
+            if (system->prefetchTrace) {
+                ::gem5::PrefetchTrace::Record r{"PF_ALIAS", name(), cache->level(),
+                    clockPeriod(), pkt->req, traceCacheName};
+                r.prefetchId = addr_prio.traceId;
+                r.relatedId = traceQueuedId(pfqMissingTranslation, new_pfi);
+                r.targetAddress = true;
+                r.reason = "queue_duplicate";
+                system->prefetchTrace->emit(r);
+            }
+            traceCommandDrop(addr_prio, pkt, "queue_duplicate");
             return;
         }
     }
@@ -1502,8 +1636,10 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
     bool has_target_pa = false;
     RequestPtr translation_req = nullptr;
     if (addr_prio.forceTranslation) {
-        if (!tlb || !pkt->req->hasContextId() || !pkt->req->hasVaddr())
+        if (!tlb || !pkt->req->hasContextId() || !pkt->req->hasVaddr()) {
+            traceCommandDrop(addr_prio, pkt, "translation_context_missing");
             return;
+        }
         translation_req = createPrefetchRequest(new_pfi.getAddr(), new_pfi,
             pkt, addr_prio.pfSource, addr_prio.depth);
     } else if (samePage(orig_addr, new_pfi.getAddr())) {
@@ -1522,6 +1658,7 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
 
         // ContextID is needed for translation
         if (!pkt->req->hasContextId()) {
+            traceCommandDrop(addr_prio, pkt, "translation_context_missing");
             return;
         }
         if (useVirtualAddresses) {
@@ -1537,24 +1674,36 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
         } else {
             // Using PA for training but the request does not have a VA,
             // unable to process this page crossing prefetch.
+            traceCommandDrop(addr_prio, pkt, "translation_va_missing");
             return;
         }
     }
     if (has_target_pa && cacheSnoop && queueFilter &&
             (inCache(target_paddr, new_pfi.isSecure()) ||
             inMissQueue(target_paddr, new_pfi.isSecure()))) {
+        traceCommandDrop(addr_prio, pkt, "cache_or_mshr_hit");
+        if (system->prefetchTrace) {
+            ::gem5::PrefetchTrace::Record r{"PF_RESOLVE", name(), cache->level(),
+                clockPeriod(), pkt->req, traceCacheName};
+            r.prefetchId = addr_prio.traceId;
+            r.targetAddress = true;
+            r.pa = target_paddr;
+            system->prefetchTrace->emit(r);
+        }
         statsQueued.pfInCache++;
         DPRINTF(HWPrefetch, "Dropping redundant in "
                 "cache/MSHR prefetch addr:%#x\n", target_paddr);
         return;
     }
     if (has_target_pa && !system->isMemAddr(target_paddr)) {
+        traceCommandDrop(addr_prio, pkt, "non_memory_address");
         DPRINTF(HWPrefetch, "wrong paddr of prefetch:%#x\n", target_paddr);
         return;
     }
 
     /* Create the packet and find the spot to insert it */
     DeferredPacket dpp(this, new_pfi, 0, priority);
+    dpp.traceId = addr_prio.traceId;
     dpp.pfahead = addr_prio.pfahead;
     dpp.pfahead_host = addr_prio.pfahead_host;
     if (dpp.pfahead) {
@@ -1592,6 +1741,7 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
         // if found the dpp is pfahead marked
         // send it to next level pfq
         if (hasHintDownStream() && dpp.pfahead && (dpp.pfahead_host > cache->level())) {
+            traceDeferred("PF_OFFLOAD", dpp, "prefetch_ahead");
             hintDownStream->rxHint(&dpp);
             prefetchStats.pfaheadOffloaded++;
             DPRINTF(HWPrefetchOther,
@@ -1636,6 +1786,8 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
         }
         DPRINTF(HWPrefetch, "%s full (sz=%lu), removing lowest priority oldest packet, addr: %#x\n", queue_name,
                 queue.size(), it->pfInfo.getAddr());
+        traceDeferred("PF_DROP", *it,
+            &queue == &pfq ? "queue_full" : "translation_queue_full");
         statsQueued.pfRemovedFull_srcs[it->pfInfo.getXsMetadata().prefetchSource]++;
 
         if (&queue == &pfq || !it->ongoingTranslation){
@@ -1678,6 +1830,8 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
         }
     }
 
+    traceDeferred("PF_ENQUEUE", dpp,
+        &queue == &pfq ? "ready_queue" : "translation_queue");
     if (debug::HWPrefetchQueue)
         printQueue(queue);
 }
@@ -1701,6 +1855,7 @@ Queued::offloadToDownStream()
             assert(dpp_it->pkt != nullptr);
             DPRINTF(HWPrefetch, "Offload prefetch for %#x.\n", dpp_it->pkt->getAddr());
             // down stream must copy it instead of store its pointer
+            traceDeferred("PF_OFFLOAD", *dpp_it, "resource_pressure");
             hintDownStream->rxHint(&(*dpp_it));
             dpp_it = pfq.erase(dpp_it);
         } else {

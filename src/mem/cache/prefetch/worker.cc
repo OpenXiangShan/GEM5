@@ -40,6 +40,7 @@ WorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
         (ptr->pfInfo.getXsMetadata().prefetchSource == PrefetchSourceType::SStream)) {
         Addr filter_key = sharedFilterKey(ptr->pfInfo, ptr->pfInfo.getAddr());
         if (pfLRUFilter.contains(filter_key)) {
+            traceDeferred("PF_DROP", *ptr, "offload_recent_filter");
             DPRINTF(WorkerPref,
                     "Worker: offload: [%lx, %d] skip recently in "
                     "localBuffer\n",
@@ -49,6 +50,7 @@ WorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
         pfLRUFilter.insert(filter_key, 0);
     }
 
+    traceDeferred("PF_OFFLOAD_ACCEPT", *ptr);
     workerStats.hintsReceived++;
 
     DPRINTF(WorkerPref, "Worker: put [%lx, %d] into localBuffer(size:%lu)\n", ptr->pfInfo.getAddr(), ptr->pfahead_host,
@@ -75,11 +77,17 @@ WorkerPrefetcher::transfer()
         };
         if (queueFilter) {
             if (alreadyInQueue(pfq, dpp_it->pfInfo, dpp_it->priority)) {
+                traceDeferred("PF_ALIAS", *dpp_it, "queue_duplicate",
+                    traceQueuedId(pfq, dpp_it->pfInfo));
+                traceDeferred("PF_DROP", *dpp_it, "queue_duplicate");
                 drop_local_packet();
                 DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getAddr(),
                         dpp_it->pfahead_host);
             } else if (alreadyInQueue(pfqMissingTranslation, dpp_it->pfInfo,
                                       dpp_it->priority)) {
+                traceDeferred("PF_ALIAS", *dpp_it, "queue_duplicate",
+                    traceQueuedId(pfqMissingTranslation, dpp_it->pfInfo));
+                traceDeferred("PF_DROP", *dpp_it, "queue_duplicate");
                 drop_local_packet();
                 DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getAddr(),
                         dpp_it->pfahead_host);

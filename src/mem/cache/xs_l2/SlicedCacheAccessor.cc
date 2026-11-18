@@ -18,6 +18,12 @@ SlicedCacheAccessor::inCache(Addr addr, bool is_secure) const
     return getSlice(addr)->inCache(addr, is_secure);
 }
 
+std::string
+SlicedCacheAccessor::cacheName() const
+{
+    return l2_wrapper->name();
+}
+
 unsigned
 SlicedCacheAccessor::level() const
 {

@@ -28,6 +28,9 @@
 
 Import('*')
 
+SimObject('PrefetchTrace.py', sim_objects=['PrefetchTrace'])
+Source('prefetch_trace.cc')
+
 SimObject('Prefetcher.py', sim_objects=[
     'CMCPrefetcher', 'BasePrefetcher', 'MultiPrefetcher', 'QueuedPrefetcher',
     'XSCompositePrefetcher', 'XSStridePrefetcher','OptPrefetcher','XsStreamPrefetcher',

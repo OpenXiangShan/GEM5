@@ -2805,6 +2805,19 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
         int v_mode = tc->readMiscReg(MISCREG_VIRMODE);
         bool two_stage_translation = false;
         STATUS status = tc->readMiscReg(MISCREG_STATUS);
+        if (tc->getSystemPtr()->prefetchTrace) {
+            int trace_virt = v_mode;
+            if (mode != BaseMMU::Execute && status.mprv)
+                trace_virt = status.mpv && pmode != PrivilegeMode::PRV_M;
+            if (mode != BaseMMU::Execute && req->get_h_inst())
+                trace_virt = 1;
+            const bool physical = (req->getFlags() & Request::PHYSICAL) ||
+                pmode == PrivilegeMode::PRV_M || satp.mode == AddrXlateMode::BARE;
+            req->analysisAddressSpaceMode = 1;
+            req->analysisAddressSpace = {
+                satp, vsatp, hgatp, sharedL2()->getTranslationGen(),
+                static_cast<uint64_t>(trace_virt) | (uint64_t(physical) << 1)};
+        }
 
         if ((pmode == PrivilegeMode::PRV_M || satp.mode == AddrXlateMode::BARE))
             req->setFlags(Request::PHYSICAL);
@@ -2878,6 +2891,10 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
             return std::make_shared<GenericPageTableFault>(req->getVaddr());
 
         Process * p = tc->getProcessPtr();
+        if (tc->getSystemPtr()->prefetchTrace) {
+            req->analysisAddressSpaceMode = 2;
+            req->analysisAddressSpace = {p->pid(), 0, 0, 0, 0};
+        }
 
         Fault fault = p->pTable->translate(req);
         if (fault != NoFault)
