@@ -34,6 +34,8 @@ python3 util/prefetch_analyzer/analyze.py /path/to/on/m5out \
   --pc 0x80001234 --line 0x123400 --output /path/to/new-pc-analysis
 ```
 
+Add `--elf /path/to/matching-workload.elf` to resolve PC functions and source locations in `pcs.csv` and the searchable HTML table. The report records the ELF path and SHA256. `--addr2line` selects the resolver (default `riscv64-linux-gnu-addr2line`); this optional feature needs that binutils executable. Addresses outside the supplied ELF and absent debug information remain unknown. Paired runs must use the same workload ELF.
+
 `--pc` and `--line` together form an intersection. `--line` can select a PA or VA; virtual address matching during attribution requires the exact address-space identity, ContextID and security domain. A known physical address takes precedence over an equal VA. The report displays those fields so coincident VAs can be distinguished. The HTML embeds a bounded 2,000-event preview; `timeline.csv` contains every event in the requested selection and `events.sqlite` retains every normalized input event.
 
 ## Read the results
