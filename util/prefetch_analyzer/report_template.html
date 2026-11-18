@@ -16,7 +16,7 @@ svg{background:white;border:1px solid #dce3ed;border-radius:6px;width:100%}a{col
 Alias 不增加实际发送，边界未见候选的请求不进入此表。Drop 为事件次数，见
 <a href="source-drops.csv">按来源丢弃原因</a>。</p>
 <div class="scroll"><table id="sources"><thead><tr><th>生成 Cache</th><th>Source</th>
-<th>候选</th><th>Alias</th><th>实际发送</th><th>有用</th><th>右截断</th></tr></thead>
+<th>候选</th><th>Alias</th><th>实际发送</th><th>有用</th><th>未使用驱逐</th><th>右截断</th></tr></thead>
 <tbody>__SOURCES__</tbody></table></div>
 <h2>预取阶段时间</h2><p class="muted">单位 tick；仅统计已观察到两个端点的非 Alias 请求。
 first_ready 是最早缓存层 ready，不代表 L1 ready；offload 路径可跨层。

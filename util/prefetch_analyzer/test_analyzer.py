@@ -344,6 +344,79 @@ class AnalyzerTests(unittest.TestCase):
             ("system.l2", 12, 1, 25),
         )
 
+    def test_multilevel_request_outcomes_partition_sent_requests(self):
+        trace = Trace()
+        # Evicting L3 does not make a still-resident L1 copy unused.
+        for pf, pa in [(10, "0x2000"), (20, "0x3000"), (30, "0x4000")]:
+            trace.candidate(10, pf, pa)
+            trace.sent(pf, pa)
+            trace.add(30, "PF_FILL", pf=pf, pa=pa, cache="system.l3", level=3, ready_tick=35)
+            trace.add(
+                31,
+                "PF_EVICT",
+                pf=pf,
+                pa=pa,
+                cache="system.l3",
+                level=3,
+                result="unused",
+                reason="invalidation",
+            )
+            trace.fill(pf, pa)
+        trace.add(100, "PF_FIRST_USE", pf=10, pa="0x2000", ready_tick=45)
+        trace.add(60, "PF_EVICT", pf=30, pa="0x4000", result="unused", reason="replacement")
+        # This eviction belongs to a request sent before the observation window.
+        trace.add(60, "PF_EVICT", pf=40, pa="0x5000", result="unused", reason="replacement")
+        # A pending accepted hop cannot be closed by eviction of another copy.
+        trace.candidate(10, 50, "0x6000")
+        trace.sent(50, "0x6000")
+        trace.add(30, "PF_FILL", pf=50, pa="0x6000", cache="system.l3", level=3, ready_tick=35)
+        trace.add(
+            31,
+            "PF_EVICT",
+            pf=50,
+            pa="0x6000",
+            cache="system.l3",
+            level=3,
+            result="unused",
+            reason="invalidation",
+        )
+        db, summary, pcs = self.analyze(trace)
+        pf = summary["prefetch"]
+        self.assertEqual(
+            (
+                pf["sent_requests"],
+                pf["useful_requests"],
+                pf["unused_evicted_requests"],
+                pf["right_censored_sent_requests"],
+            ),
+            (4, 1, 1, 2),
+        )
+
+    def test_other_cache_eviction_does_not_invalidate_a_live_copy(self):
+        trace = Trace()
+        trace.candidate(10, 10, "0x2000", cache="system.l2", level=2)
+        trace.sent(10, "0x2000")
+        trace.add(30, "PF_FILL", pf=10, pa="0x2000", cache="system.l3", level=3, ready_tick=35)
+        trace.add(
+            31,
+            "PF_EVICT",
+            pf=10,
+            pa="0x2000",
+            cache="system.l3",
+            level=3,
+            result="unused",
+            reason="invalidation",
+        )
+        trace.add(40, "PF_FILL", pf=10, pa="0x2000", cache="system.l2", level=2, ready_tick=45)
+        trace.demand(100, 1, "0x2000")
+        trace.candidate(10, 20, "0x3000")
+        trace.sent(20, "0x3000")
+        trace.add(30, "PF_FILL", pf=20, pa="0x3000", cache="system.l3", level=3, ready_tick=35)
+        trace.fill(20, "0x3000", tick=98)  # L1 ready only at 103
+        trace.demand(100, 2, "0x3000")
+        db, summary, pcs = self.analyze(trace)
+        self.assertEqual(summary["demand"]["failures"], {"lower_level_only": 1, "late": 1})
+
     def test_open_trace_is_rejected(self):
         path = Path(self.temp.name) / "open.csv"
         Trace().write(path, closed=False)
