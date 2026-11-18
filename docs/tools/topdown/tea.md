@@ -400,8 +400,8 @@ ST_L1 marking; and macroPSV from a partially retired RVV instruction may carry
 into the exception handler. Cross-check these cases with existing Topdown
 counters and instruction traces.
 
-## State-preserving Raw Analysis
+## State Preservation and Analysis Tools
 
-See [TEA State Preservation and Audited Analysis](tea-analysis.md) for the
-producer change, raw TEA/DIP budget checks, weighted PC selection, executable
-ELF validation, exact configuration pairing, and targeted regression command.
+See [TEA Analysis Tools](tea-analysis.md) for sampled-state export, experiment
+identity checks, weighted subset summaries, Schedule trace analysis, and the
+targeted regression commands.
