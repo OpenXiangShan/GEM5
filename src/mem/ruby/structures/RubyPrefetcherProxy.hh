@@ -61,6 +61,8 @@ class RubyPrefetcherProxy : public CacheAccessor, public Named
 {
   public:
 
+    std::string cacheName() const override { return name(); }
+
     RubyPrefetcherProxy(AbstractController* parent,
                         prefetch::Base* prefetcher,
                         MessageBuffer *pf_queue);

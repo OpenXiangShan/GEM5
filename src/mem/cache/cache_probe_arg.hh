@@ -53,6 +53,9 @@ namespace gem5
  */
 struct CacheAccessor
 {
+    /** Owning cache identity, including wrappers with separate accessors. */
+    virtual std::string cacheName() const = 0;
+
     /** Determine if address is in cache */
     virtual bool inCache(Addr addr, bool is_secure) const = 0;
 

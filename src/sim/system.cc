@@ -203,6 +203,7 @@ System::System(const Params &p)
 {
     panic_if(!workload, "No workload set for system %s "
             "(could use StubWorkload?).", name());
+    prefetchTrace = p.prefetch_trace;
     workload->setSystem(this);
 
     // add self to global system list

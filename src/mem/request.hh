@@ -49,6 +49,7 @@
 #define __MEM_REQUEST_HH__
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <functional>
@@ -581,6 +582,17 @@ class Request
 
   public:
 
+    // Host-only trace identities. Zero when tracing is disabled.
+    uint64_t analysisRequestId = 0;
+    uint64_t analysisPrefetchId = 0;
+    // Exact translation namespace: SATP/VSATP/HGATP, invalidation generation,
+    // and virtualization mode. SE uses its process ID instead.
+    uint8_t analysisAddressSpaceMode = 0;
+    std::array<uint64_t, 5> analysisAddressSpace{};
+    RequestPtr analysisOrigin;
+    Tick analysisArrivalTick = MaxTick;
+
+
     /**
      * Minimal constructor. No fields are initialized. (Note that
      *  _flags and privateFlags are cleared by Flags default
@@ -623,6 +635,12 @@ class Request
           _pc(other._pc), _reqInstSeqNum(other._reqInstSeqNum),
           _xsMetadata(other._xsMetadata),
           _localAccessor(other._localAccessor),
+          analysisRequestId(other.analysisRequestId),
+          analysisPrefetchId(other.analysisPrefetchId),
+          analysisAddressSpaceMode(other.analysisAddressSpaceMode),
+          analysisAddressSpace(other.analysisAddressSpace),
+          analysisOrigin(other.analysisOrigin),
+          analysisArrivalTick(other.analysisArrivalTick),
           translateDelta(other.translateDelta),
           accessDelta(other.accessDelta), depth(other.depth)
     {
