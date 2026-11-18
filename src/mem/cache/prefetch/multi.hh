@@ -60,7 +60,9 @@ class Multi : public Base
     void setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsigned blk_size) override;
     void addTLB(BaseTLB* _t, bool functional) override;
     bool hasPendingPacket() override;
+    PacketPtr peekPacket() const override;
     PacketPtr getPacket() override;
+    void setMainPipeReadyCallback(std::function<void(Tick)> callback) override;
     Tick nextPrefetchReadyTime() const override;
     lldp::Hint loadTrain(const PacketPtr &pkt, bool miss) override;
     void hintData(const lldp::Hint &hint, const PacketPtr &demand,

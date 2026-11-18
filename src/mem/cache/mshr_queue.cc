@@ -46,6 +46,7 @@
 
 #include <cassert>
 
+#include "debug/DcacheMainPipePrefetch.hh"
 #include "debug/MSHR.hh"
 #include "mem/cache/mshr.hh"
 #include "sim/cur_tick.hh"
@@ -60,8 +61,76 @@ MSHRQueue::MSHRQueue(const std::string &_label,
       demandReserve(demand_reserve),
       occupancyStartTick(curTick()),
       occupancyLastUpdate(curTick()),
-      occupancyEntryTicks(0)
+      occupancyEntryTicks(0),
+      heldOccupancyEntryTicks(0)
 {}
+
+void
+MSHRQueue::enableIndexedPrefetchReserve(unsigned reserved_entries)
+{
+    panic_if(reserved_entries > static_cast<unsigned>(numEntries - numReserve),
+             "MainPipe demand reserve %u exceeds MSHR capacity %d",
+             reserved_entries, numEntries - numReserve);
+    mainPipeDemandReserve = reserved_entries;
+    indexedPrefetchReserve = true;
+}
+
+bool
+MSHRQueue::availableForMainPipe(const MSHR *entry, bool prefetch) const
+{
+    const auto index = entry - entries.data();
+    return !refillHeldEntries.count(const_cast<MSHR *>(entry)) &&
+        (!prefetch || index >= mainPipeDemandReserve);
+}
+
+bool
+MSHRQueue::canMainPipePrefetch() const
+{
+    assert(indexedPrefetchReserve);
+    return std::any_of(freeList.begin(), freeList.end(),
+        [this](const MSHR *entry) { return availableForMainPipe(entry, true); });
+}
+
+void
+MSHRQueue::holdRefillEntry(MSHR *entry)
+{
+    if (indexedPrefetchReserve) {
+        updateOccupancyStats(curTick());
+        const bool inserted = refillHeldEntries.insert(entry).second;
+        panic_if(!inserted, "MSHR refill credit held twice");
+        DPRINTF(DcacheMainPipePrefetch, "MainPipe MSHR hold id=%d\n",
+                entry - entries.data());
+    }
+}
+
+void
+MSHRQueue::releaseRefillEntry(MSHR *entry)
+{
+    if (indexedPrefetchReserve) {
+        updateOccupancyStats(curTick());
+        const auto removed = refillHeldEntries.erase(entry);
+        panic_if(removed != 1, "Unknown held MSHR refill credit");
+        DPRINTF(DcacheMainPipePrefetch, "MainPipe MSHR release id=%d\n",
+                entry - entries.data());
+    }
+}
+
+unsigned
+MSHRQueue::heldOnlyEntryCount() const
+{
+    if (refillHeldEntries.empty())
+        return 0;
+
+    // A response holds its slot immediately before classic deallocation.
+    // Count the union so even that transient overlap is not charged twice.
+    const size_t overlap = std::count_if(
+        allocatedList.begin(), allocatedList.end(),
+        [this](const MSHR *entry) {
+            return refillHeldEntries.count(const_cast<MSHR *>(entry));
+        });
+    assert(overlap <= refillHeldEntries.size());
+    return refillHeldEntries.size() - overlap;
+}
 
 void
 MSHRQueue::updateOccupancyStats(Tick now)
@@ -69,6 +138,9 @@ MSHRQueue::updateOccupancyStats(Tick now)
     if (now > occupancyLastUpdate) {
         occupancyEntryTicks +=
             static_cast<Counter>(allocated) *
+            static_cast<Counter>(now - occupancyLastUpdate);
+        heldOccupancyEntryTicks +=
+            static_cast<Counter>(heldOnlyEntryCount()) *
             static_cast<Counter>(now - occupancyLastUpdate);
     }
     occupancyLastUpdate = now;
@@ -79,9 +151,26 @@ MSHRQueue::allocate(Addr blk_addr, unsigned blk_size, PacketPtr pkt,
                     Tick when_ready, Counter order, bool alloc_on_fill)
 {
     assert(!freeList.empty());
-    MSHR *mshr = freeList.front();
+    auto selected = freeList.begin();
+    if (indexedPrefetchReserve) {
+        selected = freeList.end();
+        for (auto it = freeList.begin(); it != freeList.end(); ++it) {
+            if (availableForMainPipe(*it, pkt->cmd == MemCmd::HardPFReq) &&
+                (selected == freeList.end() || *it < *selected))
+                selected = it;
+        }
+        panic_if(selected == freeList.end(),
+                 "No eligible MainPipe MSHR for %s", pkt->print());
+    }
+    MSHR *mshr = *selected;
+    if (indexedPrefetchReserve) {
+        DPRINTF(DcacheMainPipePrefetch,
+                "MainPipe MSHR allocate id=%d prefetch=%d held=%d\n",
+                mshr - entries.data(), pkt->cmd == MemCmd::HardPFReq,
+                refillHeldEntries.size());
+    }
     assert(mshr->getNumTargets() == 0);
-    freeList.pop_front();
+    freeList.erase(selected);
 
     DPRINTF(MSHR, "Allocating new MSHR. Number in use will be %lu/%lu\n",
             allocatedList.size() + 1, numEntries);
@@ -101,6 +190,10 @@ MSHRQueue::deallocate(MSHR* mshr)
 
     DPRINTF(MSHR, "Deallocating all targets: %s", mshr->print());
     updateOccupancyStats(curTick());
+    if (indexedPrefetchReserve) {
+        DPRINTF(DcacheMainPipePrefetch, "MainPipe MSHR free id=%d\n",
+                mshr - entries.data());
+    }
     Queue<MSHR>::deallocate(mshr);
     DPRINTF(MSHR, "MSHR deallocated. Number in use: %lu/%lu\n",
             allocatedList.size(), numEntries);
@@ -112,6 +205,7 @@ MSHRQueue::resetOccupancyStats(Tick now)
     occupancyStartTick = now;
     occupancyLastUpdate = now;
     occupancyEntryTicks = 0;
+    heldOccupancyEntryTicks = 0;
 }
 
 Counter
@@ -123,6 +217,15 @@ MSHRQueue::getOccupancyEntryTicks(Tick now) const
             static_cast<Counter>(now - occupancyLastUpdate);
     }
     return total;
+}
+
+Counter
+MSHRQueue::getHeldOccupancyEntryTicks(Tick now) const
+{
+    return heldOccupancyEntryTicks +
+        static_cast<Counter>(heldOnlyEntryCount()) *
+        static_cast<Counter>(now > occupancyLastUpdate ?
+                             now - occupancyLastUpdate : 0);
 }
 
 Tick

@@ -383,6 +383,12 @@ class Queued : public Base
                                    std::vector<AddrPriority> &addresses) = 0;
     virtual void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
                                    PrefetchSourceType source, bool miss_repeat);
+    PacketPtr peekPacket() const override
+    {
+        return !pfq.empty() && pfq.front().tick <= curTick() ?
+            pfq.front().pkt : nullptr;
+    }
+
     PacketPtr getPacket() override;
 
     bool hasPendingPacket() override;

@@ -46,6 +46,7 @@
 #define __MEM_CACHE_MSHR_QUEUE_HH__
 
 #include <string>
+#include <unordered_set>
 
 #include "base/types.hh"
 #include "mem/cache/mshr.hh"
@@ -67,6 +68,12 @@ class MSHRQueue : public Queue<MSHR>
      * Prevent prefetcher from taking all mshr entries
      */
     const int demandReserve;
+    bool indexedPrefetchReserve = false;
+    /** Actual demand-only entry count, without the legacy gate's +1. */
+    unsigned mainPipeDemandReserve = 0;
+    std::unordered_set<MSHR *> refillHeldEntries;
+    bool availableForMainPipe(const MSHR *entry, bool prefetch) const;
+
 
     /** Tick at which the current occupancy accounting window starts. */
     Tick occupancyStartTick;
@@ -74,6 +81,10 @@ class MSHRQueue : public Queue<MSHR>
     Tick occupancyLastUpdate;
     /** Time integral of allocated-entry count over the accounting window. */
     Counter occupancyEntryTicks;
+    /** Integral of held refill slots not also present in allocatedList. */
+    Counter heldOccupancyEntryTicks;
+
+    unsigned heldOnlyEntryCount() const;
 
     void updateOccupancyStats(Tick now);
 
@@ -119,8 +130,19 @@ class MSHRQueue : public Queue<MSHR>
     /** Return accumulated entry*tick integral up to @p now. */
     Counter getOccupancyEntryTicks(Tick now) const;
 
+    /** Held-only refill entry*ticks over the same accounting window. */
+    Counter getHeldOccupancyEntryTicks(Tick now) const;
+
     /** Return elapsed ticks in the current occupancy accounting window. */
     Tick getOccupancyElapsedTicks(Tick now) const;
+
+    // RTL reserves low-numbered entries for demand, rather than always
+    // leaving that many entries empty. Keep returned fills unavailable until
+    // their fake MainPipe completion, including the identity of the slot.
+    void enableIndexedPrefetchReserve(unsigned reserved_entries);
+    void holdRefillEntry(MSHR *entry);
+    void releaseRefillEntry(MSHR *entry);
+    bool canMainPipePrefetch() const;
 
     int getNumEntries() const
     {

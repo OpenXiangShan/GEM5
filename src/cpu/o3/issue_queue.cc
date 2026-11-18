@@ -26,6 +26,7 @@
 #include "cpu/o3/inst_queue.hh"
 #include "cpu/reg_class.hh"
 #include "debug/Counters.hh"
+#include "debug/DcacheMainPipePrefetch.hh"
 #include "debug/Dispatch.hh"
 #include "debug/EgDiff.hh"
 #include "debug/Schedule.hh"
@@ -916,6 +917,11 @@ IssueQue::issueToFu()
             // Loads selected here enter loadpipe S0 next cycle, so block on
             // the mainpipe tag-write state predicted for that admission point.
             if (scheduler->lsq->willDcacheRefillTagWriteNextCycle()) {
+                if (scheduler->lsq->usesDcacheLoadTagModel()) {
+                    DPRINTF(DcacheMainPipePrefetch,
+                            "LoadTag issue_hold lane=%d tid=%d sn=%llu\n",
+                            loadPipeId, inst->threadNumber, inst->seqNum);
+                }
                 incTagRefillBlockStats = true;
                 break;
             }
@@ -947,6 +953,11 @@ IssueQue::issueToFu()
         bool blockLoad = inst->isLoad() &&
             scheduler->lsq->willDcacheRefillTagWriteNextCycle();
         if (blockLoad) {
+            if (scheduler->lsq->usesDcacheLoadTagModel()) {
+                DPRINTF(DcacheMainPipePrefetch,
+                        "LoadTag issue_hold lane=%d tid=%d sn=%llu\n",
+                        loadPipeId, inst->threadNumber, inst->seqNum);
+            }
             incTagRefillBlockStats = true;
         }
 

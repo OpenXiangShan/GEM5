@@ -92,6 +92,12 @@ class BaseCache(ClockedObject):
 
     mshrs = Param.Unsigned("Number of MSHRs (max outstanding requests)")
     demand_mshr_reserve = Param.Unsigned(1, "MSHRs reserved for demand access")
+    model_dcache_loadpipe_tag = Param.Bool(True,
+        "Model scheduler-identified LoadPipe tag interfaces and MainPipe "
+        "tag-write backpressure on the L1D fake MainPipe path")
+    mainpipe_demand_mshr_reserve = Param.Unsigned(2,
+        "Low-numbered MSHR entries reserved for demand on the L1D fake "
+        "MainPipe path; independent of the legacy prefetch occupancy gate")
     tgts_per_mshr = Param.Unsigned("Max number of accesses per MSHR")
     # Per-cycle limit for MSHR arbitration (allocations or target merges).
     # -1 means unlimited (no arbitration limit). Set per cache instance in
@@ -162,7 +168,9 @@ class BaseCache(ClockedObject):
 
     cache_level = Param.Unsigned(0, "Cache level (L1 is 1, L2 is 2, etc.)")
 
-    tag_load_read_ports = Param.Unsigned(3, "Total tag read ports for load/prefetcher(in L1 Cache)")
+    tag_load_read_ports = Param.Unsigned(3,
+        "Legacy L1 read-query budget; scheduler-identified LoadPipe queries "
+        "bypass it when model_dcache_loadpipe_tag is enabled")
 
     num_slices = Param.Int(-1, "slice number (-1 is disable)")
 

@@ -60,3 +60,5 @@ DebugFlag('HWPrefetchQueue')
 CompoundFlag('CacheAll', ['Cache', 'CacheComp', 'CachePort', 'CacheRepl',
                           'CacheVerbose', 'HWPrefetch', 'MSHR'])
 
+
+DebugFlag('DcacheMainPipePrefetch')

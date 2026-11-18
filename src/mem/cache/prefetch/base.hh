@@ -1041,6 +1041,20 @@ class Base : public ClockedObject
         packetReady = std::move(callback);
     }
 
+    // Observe the next ready packet without dequeueing or changing arbitration.
+    virtual PacketPtr peekPacket() const
+    {
+        panic("%s does not support L1D MainPipe prefetch peek", name());
+    }
+
+    // Only L1D MainPipe installs this notification. Other cache scheduling is
+    // unchanged, including the existing LLDP packetReady sideband.
+    std::function<void(Tick)> mainPipeReady;
+    virtual void setMainPipeReadyCallback(std::function<void(Tick)> callback)
+    {
+        mainPipeReady = std::move(callback);
+    }
+
     virtual PacketPtr getPacket() = 0;
 
     virtual bool hasPendingPacket() = 0;

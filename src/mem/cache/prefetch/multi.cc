@@ -121,6 +121,28 @@ Multi::hasPendingPacket()
     return false;
 }
 
+void
+Multi::setMainPipeReadyCallback(std::function<void(Tick)> callback)
+{
+    Base::setMainPipeReadyCallback(callback);
+    for (auto *pf : prefetchers)
+        pf->setMainPipeReadyCallback(callback);
+}
+
+PacketPtr
+Multi::peekPacket() const
+{
+    if (prefetchers.empty())
+        return nullptr;
+    unsigned turn = (lastChosenPf + 1) % prefetchers.size();
+    for (unsigned i = 0; i < prefetchers.size(); ++i) {
+        if (prefetchers[turn]->nextPrefetchReadyTime() <= curTick())
+            return prefetchers[turn]->peekPacket();
+        turn = (turn + 1) % prefetchers.size();
+    }
+    return nullptr;
+}
+
 PacketPtr
 Multi::getPacket()
 {
