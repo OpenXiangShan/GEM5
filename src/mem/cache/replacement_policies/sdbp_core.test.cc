@@ -66,6 +66,28 @@ TEST(SDBPCore, FullCacheModeDisablesIndependentSampler)
     EXPECT_EQ(core.confidence(core.signature(0x1000)), 0);
 }
 
+TEST(SDBPCore, ExpandedBanksUseThreeIndependentHashes)
+{
+    SDBPCore::Config cfg;
+    cfg.requestTypes = 33;
+    cfg.enableSampler = false;
+    SDBPCore core(cfg);
+    const auto source = static_cast<SDBPCore::RequestType>(32);
+    core.train(42, true, source);
+    EXPECT_EQ(core.confidence(42, source), 3);
+    core.train(42, true, source);
+    EXPECT_EQ(core.confidence(42, source), 6);
+    EXPECT_FALSE(core.predict(42, source));
+    core.train(42, true, source);
+    EXPECT_EQ(core.confidence(42, source), 9);
+    EXPECT_TRUE(core.predict(42, source));
+    for (unsigned other = 0; other < 32; ++other)
+        EXPECT_EQ(core.confidence(42,
+            static_cast<SDBPCore::RequestType>(other)), 0);
+    core.train(42, false, source);
+    EXPECT_EQ(core.confidence(42, source), 5);
+}
+
 TEST(SDBPCore, CounterSaturationAndCrcLiveUpdate)
 {
     SDBPCore core{SDBPCore::Config()};

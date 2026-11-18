@@ -40,6 +40,7 @@ class SDBPConfigTest(unittest.TestCase):
         self.assertFalse(args.sdbp_sampler_demand_pc_only)
         self.assertEqual(args.sdbp_sampler_protect_youngest, 0)
         self.assertFalse(args.sdbp_enable_bypass)
+        self.assertFalse(args.sdbp_split_prefetch_sources)
         with contextlib.redirect_stderr(io.StringIO()):
             for value in ("-1", "1.5"):
                 with self.assertRaises(SystemExit):
@@ -128,11 +129,21 @@ class SDBPConfigTest(unittest.TestCase):
                                 [cpu.icache, cpu.dcache] if l1 else [],
                             )
 
+    def test_source_splitting_requires_observer(self):
+        for policy in ("default", "lru", "sdbp"):
+            args = self.parser().parse_args([
+                f"--l2-replacement-policy={policy}",
+                "--sdbp-split-prefetch-sources",
+            ])
+            with self.assertRaises(ValueError):
+                MODULE.configure_sdbp(args, SimpleNamespace())
+
     def test_observer_keeps_lru_and_disables_policy_actions(self):
-        for classic in (False, True):
-            args = self.parser().parse_args(
-                ["--l2-replacement-policy=lru-sdbp"]
-            )
+        for classic, split in itertools.product((False, True), repeat=2):
+            flags = ["--l2-replacement-policy=lru-sdbp"]
+            if split:
+                flags.append("--sdbp-split-prefetch-sources")
+            args = self.parser().parse_args(flags)
             args.l2cache = args.caches = True
             args.classic_l2 = classic
             caches = [Cache(size="256KiB", assoc=8) for _ in range(4)]
@@ -150,6 +161,8 @@ class SDBPConfigTest(unittest.TestCase):
             for cache in caches[:1] if classic else caches:
                 policy = cache.replacement_policy
                 self.assertTrue(bool(policy.observation_only))
+                self.assertEqual(bool(policy.split_prefetch_sources), split)
+                self.assertEqual(int(policy.predictor_tables), 3)
                 self.assertFalse(bool(policy.enable_bypass))
                 self.assertFalse(bool(policy.l1_copy_protection))
                 self.assertEqual(list(cache.sdbp_l1_caches), [])

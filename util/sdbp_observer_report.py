@@ -127,19 +127,53 @@ def report(stats):
     if not prefixes:
         raise ValueError("No full-cache SDBP observer statistics found")
 
-    def groups(selected):
-        return {
-            **{
-                source: summarize(stats, selected, (source,))
-                for source in SOURCES
-            },
-            "prefetch": summarize(stats, selected, SOURCES[1:]),
-            "all": summarize(stats, selected, SOURCES),
+    detailed = sorted(
+        {
+            key.split("::", 1)[1]
+            for key in stats
+            if any(key.startswith(f"{prefix}.fullCache") for prefix in prefixes)
+            and "::" in key
+            and key.split("::", 1)[1].startswith(
+                ("l1Prefetch_", "l2Prefetch_")
+            )
         }
+    )
+    sources = ("l1Demand", *detailed) if detailed else SOURCES
+
+    def groups(selected):
+        result = {
+            source: summarize(stats, selected, (source,))
+            for source in sources
+        }
+        if detailed:
+            for level in SOURCES[1:]:
+                result[level] = summarize(
+                    stats,
+                    selected,
+                    tuple(
+                        source for source in detailed
+                        if source.startswith(level + "_")
+                    ),
+                )
+            algorithms = sorted({source.split("_", 1)[1] for source in detailed})
+            for algorithm in algorithms:
+                result["prefetch_" + algorithm] = summarize(
+                    stats,
+                    selected,
+                    tuple(
+                        source for source in detailed
+                        if source.split("_", 1)[1] == algorithm
+                    ),
+                )
+        result["prefetch"] = summarize(stats, selected, sources[1:])
+        result["all"] = summarize(stats, selected, sources)
+        return result
 
     return {
         "label": "next eligible demand/prefetch reuse before LRU replacement",
         "positive_class": "dead",
+        "source_layout": "level_and_algorithm" if detailed else "level",
+        "empty_sources": "Zero-count sources may be omitted by gem5 nozero",
         "grouping": "source of the stored prediction, not the reusing request",
         "aggregate": groups(prefixes),
         "policies": {prefix: groups((prefix,)) for prefix in prefixes},

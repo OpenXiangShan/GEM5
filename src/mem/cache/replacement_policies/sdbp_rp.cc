@@ -32,6 +32,8 @@ makeCore(const SDBPRPParams &p)
     cfg.samplerDeadFirst = p.sampler_dead_first;
     cfg.samplerDemandPcOnly = p.sampler_demand_pc_only;
     cfg.samplerProtectYoungest = p.sampler_protect_youngest;
+    cfg.requestTypes = p.split_prefetch_sources ?
+        1 + 2 * NUM_PF_SOURCES : SDBPCore::NumRequestTypes;
     cfg.predictorTables = p.predictor_tables;
     cfg.predictorEntries = p.predictor_entries;
     cfg.counterBits = p.counter_bits;
@@ -56,8 +58,12 @@ makeCore(const SDBPRPParams &p)
 SDBP::SDBP(const Params &p)
     : Base(p), core(makeCore(p)), enableBypass(p.enable_bypass),
       l1CopyProtection(p.l1_copy_protection),
-      observationOnly(p.observation_only), stats(this)
+      observationOnly(p.observation_only),
+      splitPrefetchSources(p.split_prefetch_sources),
+      stats(this, p.split_prefetch_sources)
 {
+    fatal_if(splitPrefetchSources && !observationOnly,
+             "%s: source splitting requires observation-only SDBP", name());
     fatal_if(observationOnly && enableBypass,
              "%s: observation-only SDBP cannot bypass fills", name());
     fatal_if(observationOnly && l1CopyProtection,
@@ -161,17 +167,25 @@ SDBP::isDemand(const PacketPtr pkt)
 }
 
 SDBPCore::RequestType
-SDBP::requestType(const PacketPtr pkt)
+SDBP::requestType(const PacketPtr pkt) const
 {
     if (!isPrefetch(pkt))
         return SDBPCore::RequestType::Demand;
     const auto source = pkt->req->l2RequestSource();
-    if (source == Request::L2RequestSource::L2Prefetch ||
+    const bool l2 = source == Request::L2RequestSource::L2Prefetch ||
         (source == Request::L2RequestSource::Unclassified &&
-         pkt->cmd.isHWPrefetch())) {
-        return SDBPCore::RequestType::L2Prefetch;
+         pkt->cmd.isHWPrefetch());
+    if (!splitPrefetchSources) {
+        return l2 ? SDBPCore::RequestType::L2Prefetch :
+                    SDBPCore::RequestType::L1Prefetch;
     }
-    return SDBPCore::RequestType::L1Prefetch;
+    // Request metadata survives coherence command conversion and forwarding.
+    // Missing or malformed source identifiers share the explicit PF_NONE bank.
+    unsigned algorithm = pkt->req->getPFSource();
+    if (algorithm >= NUM_PF_SOURCES)
+        algorithm = enums::PF_NONE;
+    return static_cast<SDBPCore::RequestType>(
+        1 + (l2 ? NUM_PF_SOURCES : 0) + algorithm);
 }
 
 bool
@@ -606,7 +620,7 @@ SDBP::censorPrediction(SDBPReplData &entry)
     entry.signatureValid = false;
 }
 
-SDBP::SDBPStats::SDBPStats(statistics::Group *parent)
+SDBP::SDBPStats::SDBPStats(statistics::Group *parent, bool split_sources)
     : statistics::Group(parent),
       ADD_STAT(lookups, "Tag lookups observed by SDBP"),
       ADD_STAT(eligibleAccesses, "Eligible lookups carrying a PC"),
@@ -726,11 +740,23 @@ SDBP::SDBPStats::SDBPStats(statistics::Group *parent)
                          &fullCachePrefetchDemandUsesBySource,
                          &fullCachePrefetchUnusedEvictionsBySource,
                          &fullCachePrefetchUnusedInvalidationsBySource}) {
-        vector->init(SDBPCore::NumRequestTypes);
+        vector->init(split_sources ? 1 + 2 * NUM_PF_SOURCES :
+                                    SDBPCore::NumRequestTypes);
         vector->flags(statistics::total | statistics::nozero);
         vector->subname(0, "l1Demand");
-        vector->subname(1, "l1Prefetch");
-        vector->subname(2, "l2Prefetch");
+        if (split_sources) {
+            for (unsigned level = 0; level < 2; ++level) {
+                for (unsigned algorithm = 0; algorithm < NUM_PF_SOURCES;
+                     ++algorithm) {
+                    vector->subname(1 + level * NUM_PF_SOURCES + algorithm,
+                        std::string(level ? "l2Prefetch_" : "l1Prefetch_") +
+                        prefetchSourceTypeName(algorithm));
+                }
+            }
+        } else {
+            vector->subname(1, "l1Prefetch");
+            vector->subname(2, "l2Prefetch");
+        }
     }
 }
 

@@ -53,8 +53,17 @@ Source('xs_drrip_rp.cc')
 
 GTest('replaceable_entry.test', 'replaceable_entry.test.cc')
 GTest('sdbp_core.test', 'sdbp_core.test.cc', 'sdbp_core.cc')
+# Unit tests need enum names without the simulator's Python registration.
+enum_env = env.Clone()
+enum_env.AppendENVPath('PYTHONPATH', Dir('#build_tools').abspath)
+prefetch_source_names = enum_env.Command(
+    'sdbp_test_enums/PrefetchSourceType.cc',
+    [Dir(env['BUILDDIR']).File('gem5py_m5'),
+     File('#build_tools/enum_cc.py')],
+    '"${SOURCES[0]}" "${SOURCES[1]}" m5.objects.Request "${TARGET}" false')
 GTest('sdbp_rp.test', 'sdbp_rp.test.cc', 'sdbp_core.cc', 'sdbp_rp.cc',
       'lru_rp.cc',
+      prefetch_source_names[0],
       '../../../base/stats/group.cc', '../../../base/stats/info.cc',
       '../../../base/stats/storage.cc', '../../../base/statistics.cc',
       '../../../base/time.cc', '../../../base/hostinfo.cc',
