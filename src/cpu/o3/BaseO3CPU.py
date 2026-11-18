@@ -300,6 +300,9 @@ class BaseO3CPU(BaseCPU):
         "Exclusive maximum SQ distance for a PHAST second target; 0 uses half of the virtual SQ capacity")
 
     BankConflictCheck = Param.Bool(True, "open Bank conflict check")
+    enableCachedScalarUnaligned = Param.Bool(
+        False, "Allow ordinary scalar unaligned accesses to cacheable memory"
+    )
     sbufferBankWriteAccurately = Param.Bool(False, "Sbuffer write to memory with bank conflict check")
     DcacheBankBytes = Param.Unsigned(
         2,

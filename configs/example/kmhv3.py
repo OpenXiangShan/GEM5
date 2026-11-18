@@ -162,6 +162,7 @@ def setKmhV3Params(args, system):
         cpu.EnableLdMissReplay = True
         cpu.EnablePipeNukeCheck = True
         cpu.BankConflictCheck = True
+        cpu.enableCachedScalarUnaligned = True
         cpu.sbufferBankWriteAccurately = True
         cpu.vectorMemCompletionDelay = 3
 

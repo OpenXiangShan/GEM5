@@ -641,6 +641,7 @@ class LSQ
         }
 
         void sendFragmentToTranslation(int i);
+        Fault scalarUncacheableAlignmentFault(const RequestPtr &request) const;
         bool
         isComplete()
         {
@@ -1539,6 +1540,7 @@ class LSQ
     ThreadID nextStoreBufferInsertTid  = 0;
 
     bool enableBankConflictCheck;
+    const bool enableCachedScalarUnaligned;
     bool sbufferBankWriteAccurately;
 
     const unsigned dcacheSetBits;

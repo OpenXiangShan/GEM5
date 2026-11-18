@@ -635,6 +635,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       maxStoreBufferEntriesAcceptedFromSQPerCycle(
           params.MaxStoreBufferEntriesAcceptedFromSQPerCycle),
       enableBankConflictCheck(params.BankConflictCheck),
+      enableCachedScalarUnaligned(params.enableCachedScalarUnaligned),
       sbufferBankWriteAccurately(params.sbufferBankWriteAccurately),
       dcacheSetBits(params.DcacheSetBits),
       dcacheSetDivNum(params.DcacheSetDivNum),
@@ -3346,8 +3347,13 @@ LSQ::isMisaligned(const DynInstPtr& inst, Addr vaddr, int size)
 {
     auto code = inst->isLoad() ? RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED
                                               : RiscvISA::ExceptionCode::STORE_ADDR_MISALIGNED;
-    if (!inst->isVector() && size > 1 &&
-        vaddr % size != 0) {
+    // Cached ordinary scalar accesses may be unaligned on Kunminghu V3.
+    // AMO and LR/SC must still trap before any memory operation. PMA-specific
+    // restrictions for ordinary accesses are checked after translation.
+    if (!inst->isVector() && size > 1 && vaddr % size != 0 &&
+        (!enableCachedScalarUnaligned || inst->staticInst->isFusion() ||
+         inst->isAtomic() || inst->isLoadReserved() ||
+         inst->isStoreConditional())) {
         if (inst->staticInst->isFusion()) {
             auto fusedInst = dynamic_cast<RiscvISA::FusionInst*>(inst->staticInst.get());
             if (fusedInst->correctMisalign(vaddr)) {
@@ -3492,10 +3498,27 @@ LSQ::SingleDataRequest::~SingleDataRequest(){
     singleList.remove(this);
 }
 
+Fault
+LSQ::LSQRequest::scalarUncacheableAlignmentFault(const RequestPtr &request) const
+{
+    if (!_port.getLsq()->enableCachedScalarUnaligned ||
+        _inst->isVector() || _inst->staticInst->isFusion() ||
+        _size <= 1 || _addr % _size == 0 ||
+        (!request->isUncacheable() && !request->isStrictlyOrdered()))
+        return NoFault;
+    using Code = RiscvISA::ExceptionCode;
+    const auto code = request->isStrictlyOrdered() ?
+        (isLoad() ? Code::LOAD_ACCESS : Code::STORE_ACCESS) :
+        (isLoad() ? Code::LOAD_ADDR_MISALIGNED : Code::STORE_ADDR_MISALIGNED);
+    return std::make_shared<RiscvISA::AddressFault>(_addr, 0, code);
+}
+
 void
-LSQ::SingleDataRequest::finish(const Fault &fault, const RequestPtr &request,
+LSQ::SingleDataRequest::finish(const Fault &translation_fault, const RequestPtr &request,
         gem5::ThreadContext* tc, BaseMMU::Mode mode)
 {
+    const Fault fault = translation_fault == NoFault ?
+        scalarUncacheableAlignmentFault(request) : translation_fault;
     _fault.push_back(fault);
     numInTranslationFragments = 0;
     numTranslatedFragments = 1;
@@ -3555,12 +3578,14 @@ LSQ::SplitDataRequest::~SplitDataRequest()
 }
 
 void
-LSQ::SplitDataRequest::finish(const Fault &fault, const RequestPtr &req,
+LSQ::SplitDataRequest::finish(const Fault &translation_fault, const RequestPtr &req,
         gem5::ThreadContext* tc, BaseMMU::Mode mode)
 {
     int i;
     for (i = 0; i < _reqs.size() && _reqs[i] != req; i++);
     assert(i < _reqs.size());
+    const Fault fault = translation_fault == NoFault ?
+        scalarUncacheableAlignmentFault(req) : translation_fault;
     _fault[i] = fault;
 
     numInTranslationFragments--;
