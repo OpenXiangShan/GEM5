@@ -510,6 +510,21 @@ class AnalyzerTests(unittest.TestCase):
                             and row["accuracy_observed"] == 1.0
                             for row in result["outcomes"]))
 
+    def test_arbitration_retains_a_competing_prefetch_mshr(self):
+        from analyze import export_timeline
+
+        trace = Trace()
+        trace.candidate(10, 10, "0x1000")
+        trace.candidate(11, 20, "0x3000")
+        trace.add(20, "CACHE_ARB", req=1020, pf=20, related_id=10,
+                  pa="0x3000", reason="ready_demand_before_prefetch")
+        db, _, _ = self.analyze(trace)
+        timeline = export_timeline(db, Path(self.temp.name), prefetch_id=10)
+        competing = [row for row in timeline["events"]
+                     if row["prefetch_id"] == 20]
+        self.assertEqual([row["event"] for row in competing], ["CACHE_ARB"])
+        self.assertEqual(competing[0]["related_id"], 10)
+
     def test_prefetch_id_timeline_follows_aliases_and_demand_consumers(self):
         from analyze import export_timeline
 

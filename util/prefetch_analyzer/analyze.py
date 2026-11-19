@@ -396,6 +396,7 @@ def export_timeline(
     parameters = params * 4
     selection = """SELECT * FROM events WHERE
         prefetch_id IN (SELECT id FROM selected_pf) OR
+        (event='CACHE_ARB' AND related_id IN (SELECT id FROM selected_pf)) OR
         (prefetch_id=0 AND request_id IN (SELECT id FROM selected_requests))"""
     query = cte + selection + ' ORDER BY tick,"order"'
     export_csv(db, query, output / "timeline.csv", parameters)
