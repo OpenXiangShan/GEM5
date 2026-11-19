@@ -269,6 +269,8 @@ class TLB : public BaseTLB
 
     void flushAll() override;
     void demapPage(Addr vaddr, uint64_t asn) override;
+    void demapLocal(Addr vaddr, uint64_t asid);
+    void flushLocal();
     void demapPageL2(Addr vaddr,uint64_t asn);
 
     Fault checkPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr, BaseMMU::Mode mode, PTE pte,
@@ -402,7 +404,8 @@ class TLB : public BaseTLB
   private:
     uint64_t nextSeq() { return ++lruSeq; }
     /** The L2 TLB this TLB's walkers share (ourselves when isStage2). */
-    TLB *sharedL2() { return isStage2 ? this : static_cast<TLB *>(nextLevel()); }
+    TLB *sharedL2() { return (isStage2 || isTheSharedL2) ?
+            this : static_cast<TLB *>(nextLevel()); }
     void updateL2TLBSeq(TlbEntryTrie *Trie_l2, Addr vpn, Addr step,
                         uint16_t asid, uint8_t translateMode,
                         unsigned prefix_width);

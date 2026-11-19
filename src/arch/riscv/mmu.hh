@@ -53,12 +53,70 @@ namespace RiscvISA {
 
 class MMU : public BaseMMU
 {
+  private:
+    TLB *const stb;
+    TLB *const ptb;
+    TLB *const sharedL2;
+
+    TLB *
+    selectL1(const RequestPtr &req, Mode mode) const
+    {
+        if (mode == Write && stb && !req->isLLSC() && !req->isAtomic())
+            return stb;
+        return static_cast<TLB *>(getTlb(mode));
+    }
+
+    template<class F>
+    void forEachL1(F visit)
+    {
+        for (auto *tlb : {static_cast<TLB *>(itb), static_cast<TLB *>(dtb),
+                          stb, ptb}) {
+            if (tlb)
+                visit(*tlb);
+        }
+    }
+
   public:
     PMAChecker *pma;
 
     MMU(const RiscvMMUParams &p)
-      : BaseMMU(p), pma(p.pma_checker)
+      : BaseMMU(p), stb(p.stb), ptb(p.ptb), sharedL2(p.l2_shared),
+        pma(p.pma_checker)
     {}
+
+    void demapPage(Addr vaddr, uint64_t asid) override
+    {
+        forEachL1([&](TLB &tlb) { tlb.demapLocal(vaddr, asid); });
+        sharedL2->demapPageL2(vaddr, asid);
+    }
+
+    void flushAll() override
+    {
+        forEachL1([](TLB &tlb) { tlb.flushLocal(); });
+        sharedL2->flushAll();
+    }
+
+    Fault translateAtomic(const RequestPtr &req, ThreadContext *tc,
+                          Mode mode) override
+    {
+        return selectL1(req, mode)->translateAtomic(req, tc, mode);
+    }
+
+    void translateTiming(const RequestPtr &req, ThreadContext *tc,
+                         Translation *translation, Mode mode) override
+    {
+        auto *tlb = selectL1(req, mode);
+        if (functional)
+            tlb->translateFunctional(req, tc, translation, mode);
+        else
+            tlb->translateTiming(req, tc, translation, mode);
+    }
+
+    Fault translateFunctional(const RequestPtr &req, ThreadContext *tc,
+                              Mode mode) override
+    {
+        return selectL1(req, mode)->translateFunctional(req, tc, mode);
+    }
 
     TranslationGenPtr
     translateFunctional(Addr start, Addr size, ThreadContext *tc,
@@ -97,14 +155,12 @@ class MMU : public BaseMMU
 
     void
     setOldPriv(ThreadContext *tc) override {
-      static_cast<TLB*>(dtb)->setOldPriv(tc);
-      static_cast<TLB*>(itb)->setOldPriv(tc);
+      forEachL1([&](TLB &tlb) { tlb.setOldPriv(tc); });
     }
 
     void
     useNewPriv(ThreadContext *tc) override {
-      static_cast<TLB*>(dtb)->useNewPriv(tc);
-      static_cast<TLB*>(itb)->useNewPriv(tc);
+      forEachL1([&](TLB &tlb) { tlb.useNewPriv(tc); });
     }
 };
 

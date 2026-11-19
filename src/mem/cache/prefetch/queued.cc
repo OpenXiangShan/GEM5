@@ -165,6 +165,9 @@ Queued::DeferredPacket::startTranslation(BaseTLB *tlb)
     assert(translationRequest != nullptr);
     if (!ongoingTranslation) {
         ongoingTranslation = true;
+        DPRINTFS(HWPrefetch, owner, "VA translation %s vaddr %#x target %s\n",
+                prefetchSourceTypeName(translationRequest->getPFSource()),
+                translationRequest->getVaddr(), tlb->name());
         // Prefetchers only operate in Timing mode
         if (owner->functionalTLB) {
             tlb->translateFunctional(translationRequest, tc, this, BaseMMU::Read);
@@ -236,6 +239,7 @@ Queued::Queued(const QueuedPrefetcherParams &p)
       pfControlWindowCandidatesBySource{},
       pfControlWindowAdmittedBySource{},
       pfControlCurrentAdmitPctBySource{},
+      prefetchTlb(p.prefetch_tlb),
       tlbReqEvent(
           [this]{ processMissingTranslations(queueSize); },
           name()),
@@ -1317,6 +1321,13 @@ Queued::QueuedStats::QueuedStats(statistics::Group *parent)
 }
 
 
+bool
+Queued::usePrefetchTlb(PrefetchSourceType source) const
+{
+    return source == SPht || source == Berti || source == CDP ||
+           source == DespacitoStream;
+}
+
 void
 Queued::processMissingTranslations(unsigned max)
 {
@@ -1327,7 +1338,12 @@ Queued::processMissingTranslations(unsigned max)
         // Increase the iterator first because dp.startTranslation can end up
         // calling finishTranslation, which will erase "it"
         it++;
-        dp.startTranslation(tlb);
+        // Use the producer on the actual VA candidate, not the target cache.
+        // A PA hint never enters this missing-translation queue.
+        BaseTLB *target = prefetchTlb &&
+            usePrefetchTlb(dp.translationRequest->getPFSource()) ?
+            prefetchTlb : tlb;
+        dp.startTranslation(target);
         count += 1;
     }
 }
@@ -1358,8 +1374,8 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
     }
     if (!in_squash){
         if (!failed) {
-            DPRINTF(HWPrefetch, "%s Translation of vaddr %#x succeeded: "
-                    "paddr %#x \n", tlb->name(),
+            DPRINTF(HWPrefetch, "Translation of vaddr %#x succeeded: "
+                    "paddr %#x \n",
                     it->translationRequest->getVaddr(),
                     it->translationRequest->getPaddr());
             Addr target_paddr = it->translationRequest->getPaddr();
@@ -1379,8 +1395,8 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
                 addToQueue(pfq, *it);
             }
         } else {
-            DPRINTF(HWPrefetch, "%s Translation of vaddr %#x failed, dropping "
-                    "prefetch request %#x \n", tlb->name(),
+            DPRINTF(HWPrefetch, "Translation of vaddr %#x failed, dropping "
+                    "prefetch request %#x \n",
                     it->translationRequest->getVaddr());
         }
         pfqMissingTranslation.erase(it);
