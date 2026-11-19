@@ -3669,9 +3669,10 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         !request->mainReq()->isLLSC()) {
         if (load_inst->mdpPredStrictWait) {
             // Strict wait: all prior store addresses must be ready.
-            if (load_inst->sqIt.idx() > storeCompletedIdx + 1) {
-                const size_t required =
-                    load_inst->sqIt.idx() ? (load_inst->sqIt.idx() - 1) : 0;
+            // SQ offload can move the head before storeCompletedIdx is updated.
+            const size_t sq_end = load_inst->sqIt.idx();
+            if (storeQueue.head() < sq_end && storeCompletedIdx + 1 < sq_end) {
+                const size_t required = sq_end - 1;
                 DPRINTF(LoadPipeline,
                         "Load[sn:%llu] MDP strict wait, storeCompletedIdx=%lu, required>=%lu\n",
                         load_inst->seqNum, storeCompletedIdx, required);
