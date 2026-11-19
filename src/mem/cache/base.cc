@@ -1495,6 +1495,7 @@ BaseCache::cmpAndSwap(CacheBlk *blk, PacketPtr pkt)
             system->getGoldenMemManager()->updateGoldenMem(
                 pkt->getAddr(), blk_data, ~0ULL, pkt->getSize());
         }
+        notifyLocalWrite(pkt);
         DPRINTF(CacheVerbose, "CAS instruction Write to addr %#x size %lu\n",
                 pkt->getAddr(), pkt->getSize());
         for (int i = 0; i < pkt->getSize(); i++) {
@@ -1811,6 +1812,31 @@ BaseCache::updateCompressionData(CacheBlk *&blk, const uint64_t* data,
 }
 
 void
+BaseCache::notifyLocalWrite(PacketPtr pkt)
+{
+    auto *lsq = pkt->getLSQPtr();
+    if (cacheLevel != 1 || isReadOnly || !forwardSnoops || !lsq ||
+        !lsq->hasMultipleThreads() || !pkt->req->hasContextId()) {
+        return;
+    }
+
+    // Publish at the data update, before another access can observe the new
+    // value. Waiting for the store response leaves a RAR detection window.
+    auto req = std::make_shared<Request>(
+        pkt->getBlockAddr(blkSize), blkSize,
+        pkt->isSecure() ? Request::SECURE : Request::Flags{},
+        pkt->req->requestorId());
+    req->setContext(pkt->req->contextId());
+    Packet snoop(req, MemCmd::InvalidateReq);
+    snoop.setExpressSnoop();
+    snoop.setLocalWriteSnoop();
+    DPRINTF(Cache, "Local write snoop: context=%u addr=%#lx\n",
+            req->contextId(), snoop.getAddr());
+    cpuSidePort.sendTimingSnoopReq(&snoop);
+    pkt->setLocalWriteSnoopSent();
+}
+
+void
 BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
 {
     assert(pkt->isRequest());
@@ -1855,6 +1881,7 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
 
             // execute AMO operation
             (*(pkt->getAtomicOp()))(blk_data);
+            notifyLocalWrite(pkt);
 
             if (update_golden) {
                 system->getGoldenMemManager()->updateGoldenMem(
@@ -1893,6 +1920,7 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
                     pkt->getAddr(), blk->data + pkt->getOffset(blkSize),
                     pkt->req->getByteEnable(), pkt->getSize());
             }
+            notifyLocalWrite(pkt);
         }
         // Always mark the line as dirty (and thus transition to the
         // Modified state) even if we are a failed StoreCond so we

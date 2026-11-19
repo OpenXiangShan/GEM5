@@ -2377,8 +2377,6 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
                     violator->pcState(), violator->seqNum,
                     inst->pcState(), inst->seqNum, inst->physEffAddr);
 
-            violator->setProducerStorePC(inst->pcState().instAddr());
-
             const bool raw_mdp_violation =
                 (inst->isStore() || inst->isAtomic()) &&
                 // Once a load has a deferred RAW violation, keep all
@@ -2387,6 +2385,9 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
                 // LSQUnit::checkViolations().
                 (violator->memDepInfo.violationPending ||
                  violator->memDepInfo.violatingStoreSeqNum == inst->seqNum);
+            if (raw_mdp_violation) {
+                violator->setProducerStorePC(inst->pcState().instAddr());
+            }
             if (mdpViolationAtCommit && raw_mdp_violation) {
                 if (!violator->memDepInfo.violationPending) {
                     // Preserve the first concrete producer observed before
@@ -2404,14 +2405,14 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
             } else {
                 fetchRedirect[tid] = true;
 
-                // Tell the instruction queue that a violation has occured.
-                if (instQueue.usesPHAST(tid)) {
+                // RAR recovery has no producer store to train the MDP.
+                if (raw_mdp_violation && instQueue.usesPHAST(tid)) {
                     auto &mdp_history =
                         cpu->getDecode()->getBranchHistory(tid);
                     instQueue.violation(inst->seqNum,
                                         inst->pcState().instAddr(),
                                         violator, mdp_history);
-                } else if (enableStoreSetTrain) {
+                } else if (raw_mdp_violation && enableStoreSetTrain) {
                     auto &mdp_history =
                         cpu->getCommit()->getBranchHistory(tid);
                     instQueue.violation(inst->seqNum,

@@ -2100,9 +2100,10 @@ LSQ::completeSbufferEvict(PacketPtr pkt)
 {
     auto request = dynamic_cast<SbufferRequest *>(pkt->senderState);
     cpu->consumeSyncVisibleStoreReplay(request->sbuffer_entry->tid);
-    notifyOtherThreadsStoreVisible(request->sbuffer_entry->tid,
-                                   request->mainReq()->getPaddr(),
-                                   request->mainReq()->getByteEnable());
+    if (!pkt->localWriteSnoopSent()) {
+        notifyOtherThreadsStoreVisible(request->sbuffer_entry->tid,
+                                       request->mainReq()->getPaddr());
+    }
     if (!cpu->system->params().golden_mem_at_write &&
         cpu->goldenMemManager() &&
         cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
@@ -2359,6 +2360,12 @@ LSQ::recvTimingSnoopReq(PacketPtr pkt)
         DPRINTF(LSQ, "received invalidation for addr:%#x\n",
                 pkt->getAddr());
         for (ThreadID tid = 0; tid < numThreads; tid++) {
+            // A local write changes the version seen by sibling harts. Its
+            // own hart retains normal SQ/SBuffer ordering and forwarding.
+            if (pkt->isLocalWriteSnoop() &&
+                pkt->req->contextId() == cpu->getContext(tid)->contextId()) {
+                continue;
+            }
             thread[tid].checkSnoop(pkt);
         }
     } else if (pkt->req && pkt->req->isTlbiExtSync()) {
@@ -3201,35 +3208,22 @@ LSQ::find_inflight_store_buffer_entry(Addr block_paddr, ThreadID load_tid,
 }
 
 void
-LSQ::notifyOtherThreadsStoreVisible(ThreadID tid, Addr store_paddr,
-                                    const std::vector<bool> &byte_enable)
+LSQ::notifyOtherThreadsStoreVisible(ThreadID tid, Addr store_paddr)
 {
-    if (numThreads <= 1) {
+    if (!hasMultipleThreads()) {
         return;
     }
 
-    Request::Flags flags;
+    // Backstop for memory systems that do not emit L1-local write snoops.
     const Addr cache_block_mask =
         ~((static_cast<Addr>(cpu->cacheLineSize())) - 1);
-    RequestPtr req = std::make_shared<Request>(
-        store_paddr & cache_block_mask, cpu->cacheLineSize(), flags,
-        cpu->dataRequestorId());
+    auto req = std::make_shared<Request>(
+        store_paddr & cache_block_mask, cpu->cacheLineSize(),
+        Request::Flags{}, cpu->dataRequestorId());
+    req->setContext(cpu->getContext(tid)->contextId());
     Packet pkt(req, MemCmd::InvalidateReq);
-
-    for (ThreadID context_id = 0; context_id < numThreads; ++context_id) {
-        gem5::ThreadContext *tc = cpu->getContext(context_id);
-        bool no_squash = cpu->thread[context_id]->noSquashFromTC;
-        cpu->thread[context_id]->noSquashFromTC = true;
-        tc->getIsaPtr()->handleLockedSnoop(&pkt, cache_block_mask);
-        cpu->thread[context_id]->noSquashFromTC = no_squash;
-    }
-
-    for (ThreadID other_tid = 0; other_tid < numThreads; ++other_tid) {
-        if (other_tid == tid) {
-            continue;
-        }
-        thread[other_tid].checkLocalStoreVisible(store_paddr, byte_enable);
-    }
+    pkt.setLocalWriteSnoop();
+    recvTimingSnoopReq(&pkt);
 }
 
 int
@@ -4244,7 +4238,6 @@ LSQ::SingleDataRequest::sendPacketToCache()
     bool success = lsqUnit()->trySendPacket(isLoad(), _packets.at(0), bank_conflict,
                                             tag_read_fail, mshr_used, mshr_alias_fail, hit_in_write_buffer);
     if (success) {
-        _packets[0]->setLSQPtr(lsqUnit()->getLsq());
         if (isLoad()) {
             assert(lsqUnit()->inflightLoads.size() < lsqUnit()->numLoads() + 4);
             lsqUnit()->inflightLoads.emplace_back(this);
@@ -4324,7 +4317,6 @@ LSQ::SplitDataRequest::sendPacketToCache()
                 static_cast<unsigned long long>(_packets.size()));
 
         if (success) {
-            pkt->setLSQPtr(lsqUnit()->getLsq());
             _numOutstandingPackets++;
         } else {
             break;
