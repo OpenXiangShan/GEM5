@@ -1208,6 +1208,15 @@ BaseCPU::stepReference(RefProxy &ref)
         }
     };
 
+    if (diffInfo.amo) {
+        // NEMU executes the same RMW on its serialization-time input, then
+        // keeps its own post-operation memory image for subsequent instructions.
+        ref.memcpy(diffInfo.physEffAddr, diffInfo.amo->before.data(),
+                   diffInfo.effSize, DIFFTEST_TO_REF);
+        ref.exec(1);
+        return;
+    }
+
     const auto *snapshot = diffInfo.loadSnapshot;
     if (!snapshot) {
         step();
@@ -1254,7 +1263,8 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
 
     int diff_at = DiffAt::NoneDiff;
     bool npc_match = false;
-    bool is_mmio = diffInfo.curInstStrictOrdered;
+    // An observed PMEM atomic can also be strictly ordered (uncached).
+    bool is_mmio = diffInfo.curInstStrictOrdered && !diffInfo.amo;
 
     if (diffInfo.inst->isStoreConditional()) {
         diffAllStates->proxy->uarchstatus_cpy(&diffAllStates->diff.sync, DIFFTEST_TO_REF);
@@ -1315,6 +1325,21 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                     diffAllStates->diff.npc);
             if (diffAllStates->diff.npc == gem5_pc) {
                 npc_match = true;
+            }
+        }
+    }
+    if (diffInfo.amo && !diff_at) {
+        AmoDifftestData::Bytes expected;
+        diffAllStates->proxy->memcpy(diffInfo.physEffAddr, expected.data(),
+                                     diffInfo.effSize, DIFFTEST_TO_DUT);
+        for (size_t i = 0; i < diffInfo.effSize; ++i) {
+            if (expected[i] != diffInfo.amo->after[i]) {
+                diffMsg << csprintf("AMO memory diff at pc %#lx addr %#lx: "
+                                    "REF %#x, GEM5 %#x\n", gem5_pc,
+                                    diffInfo.physEffAddr + i, expected[i],
+                                    diffInfo.amo->after[i]);
+                diff_at = ValueDiff;
+                break;
             }
         }
     }
@@ -1792,7 +1817,8 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
 
             // 128-bit AMO (amocas.q): handle both dest regs as a pair
             // at dest_idx=0, then skip dest_idx=1 to handle the 128bit result as one pair.
-            if (diffInfo.effSize > 8 && diffInfo.inst->isAtomic() &&
+            if (!diffInfo.amo && diffInfo.effSize > 8 &&
+                diffInfo.inst->isAtomic() &&
                 dest_idx == 0 && diffInfo.inst->numDestRegs() >= 2) {
 
                 // high 64bit of 128bit AMO load
@@ -1895,7 +1921,8 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                                         diffInfo.physEffAddr, diffInfo.effSize);
                 }
 
-                if (system->multiContextDifftest() && diffInfo.inst->isAtomic() &&
+                if (!diffInfo.amo && system->multiContextDifftest() &&
+                    diffInfo.inst->isAtomic() &&
                     _goldenMemManager->inPmem(diffInfo.physEffAddr,
                                               diffInfo.effSize) &&
                     diffInfo.effSize <= sizeof(gem5_val) &&

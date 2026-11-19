@@ -46,10 +46,12 @@
 #include <array>
 #include <deque>
 #include <list>
+#include <memory>
 #include <string>
 
 #include "base/refcnt.hh"
 #include "base/types.hh"
+#include "cpu/golden_global_mem.hh"
 #include "cpu/inst_seq.hh"
 #include "mem/lldp.hh"
 
@@ -66,6 +68,8 @@ class XsDynInstMeta : public RefCounted
     Addr instAddr;
     InstSeqNum seqNum;
 
+    // Owned by the instruction from Classic RMW serialization to retirement.
+    std::unique_ptr<AmoDifftestData> difftestAmo;
     lldp::Chain lldpChain;
     int64_t lldpLoadImm{0};
     ContextID lldpContext{InvalidContextID};

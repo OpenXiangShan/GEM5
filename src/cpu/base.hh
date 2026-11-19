@@ -788,6 +788,7 @@ class BaseCPU : public ClockedObject
         gem5::Addr physEffAddr;
         gem5::Addr effSize;
         const ScalarLoadSnapshot *loadSnapshot = nullptr;
+        AmoDifftestData *amo = nullptr;
         const uint8_t *legacyLoadData = nullptr;
         uint8_t amoOldGoldenValue[16];
         // Register address causing difftest error
