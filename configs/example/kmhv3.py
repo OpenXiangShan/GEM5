@@ -239,6 +239,7 @@ def setKmhV3Params(args, system):
                 l2_wrapper.dir_sram_banks = 1
                 l2_wrapper.pipe_dir_write_stage = 3
                 l2_wrapper.dir_read_bypass = False
+                l2_wrapper.xbar.snoop_filter.max_capacity = '16MB'
                 for j in range(args.l2_slices):
                     inner_cache = l2_wrapper.slices[j].inner_cache
                     inner_cache.wpu = NULL
@@ -246,9 +247,11 @@ def setKmhV3Params(args, system):
                     inner_cache.prefetch_can_offload = False
                     inner_cache.demand_mshrs_before_prefetches = True
                     inner_cache.demand_reads_before_evictions = True
-                    # Each slice: 512KB, 8-way, 64B line, 1024 sets.
+                    sets_per_slice = inner_cache.size // (
+                        system.cache_line_size * inner_cache.assoc)
                     inner_cache.replacement_policy = XSDRRIPRP(
-                        mode=2, num_sets=1024, ignore_prefetch_touches=True)
+                        mode=2, num_sets=sets_per_slice,
+                        ignore_prefetch_touches=True)
             system.tol2bus_list[i].forward_latency = 0
             system.tol2bus_list[i].response_latency = 1
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1
@@ -278,7 +281,7 @@ if __name__ == '__m5_main__':
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3
     args.bp_type = 'DecoupledBPUWithBTB'
-    args.l2_size = '2MB'
+    args.l2_size = '2MB' if args.classic_l2 else '8MB'
     args.l3_size = '32MB'
     args.kmh_align = True   # align prefetcher in RTL, spec06 decrease 1 score
     args.cdp_use_dynamic_degree = False
