@@ -201,6 +201,34 @@ class AnalyzerTests(unittest.TestCase):
         self.assertEqual(audit["status"], "mismatch")
         self.assertEqual(audit["checks"][0]["trace"], 0)
 
+    def test_arbitration_counters_match_actor_and_selection_reason(self):
+        from analyze import reconcile_counters
+
+        trace = Trace()
+        owner = "system.l2"
+        trace.add(10, "CACHE_ARB", actor=owner,
+                  reason="ready_demand_before_prefetch")
+        trace.add(11, "CACHE_ARB", actor=owner,
+                  reason="demand_read_before_eviction")
+        trace.add(12, "CACHE_ARB", actor="other",
+                  reason="ready_demand_before_prefetch")
+        db, summary, _ = self.analyze(trace)
+        summary.update(
+            trace_matches_stats_window=True,
+            config={"entries": {}},
+            stats={"native_counters": {
+                owner + ".demandMshrPrioritySelections": 1,
+                owner + ".demandReadEvictionSelections": 1,
+            }},
+        )
+        audit = reconcile_counters(db, summary)
+        self.assertEqual(audit["status"], "equal")
+        self.assertEqual(len(audit["checks"]), 2)
+        summary["stats"]["native_counters"][
+            owner + ".demandMshrPrioritySelections"
+        ] = 2
+        self.assertEqual(reconcile_counters(db, summary)["status"], "mismatch")
+
     def test_direct_dtlb_counters_require_scope_metadata(self):
         from analyze import reconcile_counters
 

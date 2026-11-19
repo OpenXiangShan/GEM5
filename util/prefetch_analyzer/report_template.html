@@ -85,6 +85,10 @@ const eventNames = {
     DEMAND_ARRIVE: '需求到达端口', DEMAND_ACCESS: '需求查询 Cache',
     DEMAND_COMPLETE: 'CPU 接收响应', DEMAND_MERGE: '需求合入预取 MSHR'
 };
+const reasonNames = {
+    ready_demand_before_prefetch: '选择就绪需求，纯预取 MSHR 继续等待',
+    demand_read_before_eviction: '先服务需求读，再处理普通驱逐'
+};
 function sourceName(source) {
     return data.sourceNames[source] || (source === null ? '未知来源' : 'Source ' + source);
 }
@@ -172,7 +176,8 @@ function timeline() {
         cell(tr, `${event.vaddr || '—'} / ${event.paddr || '—'}`);
         cell(tr, `${event.context_id ?? 'unknown'} / ${event.address_space || 'unknown'}`);
         cell(tr, queueState(event));
-        cell(tr, `${event.result || ''} / ${event.reason || ''}` +
+        const reason = reasonNames[event.reason];
+        cell(tr, `${event.result || ''} / ${reason ? reason + ' (' + event.reason + ')' : event.reason || ''}` +
             (event.ready_tick !== null ? ' / ready ' + event.ready_tick : ''));
         body.append(tr);
     });

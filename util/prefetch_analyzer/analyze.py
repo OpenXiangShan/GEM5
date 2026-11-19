@@ -64,6 +64,8 @@ def read_stats(path, cpu):
                     ".l1InitialLookupMisses",
                     ".readprefetchHits",
                     ".readprefetchMisses",
+                    ".demandMshrPrioritySelections",
+                    ".demandReadEvictionSelections",
                 )
             )
         },
@@ -84,6 +86,12 @@ def reconcile_counters(db, summary):
         and config.get(key.removesuffix(".cache_level") + ".is_read_only") == "false"
     }
     mappings = {
+        "demandMshrPrioritySelections": (
+            "actor", "CACHE_ARB", "reason=?", ("ready_demand_before_prefetch",),
+        ),
+        "demandReadEvictionSelections": (
+            "actor", "CACHE_ARB", "reason=?", ("demand_read_before_eviction",),
+        ),
         "pfDequeued": ("actor", "PF_DEQUEUE", "1", ()),
         "pfIdentified": ("actor", "PF_IDENTIFIED", "1", ()),
         "pfRemovedFull": (
