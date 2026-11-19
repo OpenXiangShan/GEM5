@@ -68,6 +68,11 @@ def add_sdbp_options(parser):
         "--sdbp-drop-dead-l2-prefetch", action="store_true",
         help="Skip L2 allocation for predicted-dead local prefetch fills",
     )
+    parser.add_argument(
+        "--sdbp-l2-prefetch-drop-threshold", type=nonnegative_int,
+        help="Minimum confidence for dropping a local L2 prefetch "
+             "(defaults to the dead threshold)",
+    )
     parser.add_argument("--sdbp-pc-shift", type=int, default=1)
     parser.add_argument(
         "--sdbp-split-prefetch-sources",
@@ -105,6 +110,11 @@ def configure_sdbp(args, system):
                     args.sdbp_enable_bypass and not observation_only
                 ),
                 drop_dead_l2_prefetch=args.sdbp_drop_dead_l2_prefetch,
+                l2_prefetch_drop_threshold=(
+                    args.sdbp_dead_threshold
+                    if args.sdbp_l2_prefetch_drop_threshold is None
+                    else args.sdbp_l2_prefetch_drop_threshold
+                ),
                 observation_only=observation_only,
                 split_prefetch_sources=args.sdbp_split_prefetch_sources,
                 pc_hash_type=args.sdbp_pc_hash_type,

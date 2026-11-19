@@ -63,6 +63,8 @@ class SDBPCore
     };
 
     explicit SDBPCore(const Config &config);
+    unsigned deadThreshold() const { return cfg.deadThreshold; }
+    unsigned maxConfidence() const { return cfg.predictorTables * counterMax; }
     unsigned numSets() const { return cfg.numSets; }
     unsigned samplerSets() const { return cfg.enableSampler ? 1U << halfSetBits : 0; }
     unsigned halfBits() const { return halfSetBits; }

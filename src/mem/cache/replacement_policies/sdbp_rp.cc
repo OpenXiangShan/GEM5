@@ -58,11 +58,16 @@ makeCore(const SDBPRPParams &p)
 SDBP::SDBP(const Params &p)
     : Base(p), core(makeCore(p)), enableBypass(p.enable_bypass),
       dropDeadL2Prefetch(p.drop_dead_l2_prefetch),
+      dropThreshold(p.l2_prefetch_drop_threshold),
       l1CopyProtection(p.l1_copy_protection),
       observationOnly(p.observation_only),
       splitPrefetchSources(p.split_prefetch_sources),
       stats(this, p.split_prefetch_sources)
 {
+    fatal_if(dropDeadL2Prefetch && (dropThreshold < core.deadThreshold() ||
+             dropThreshold > core.maxConfidence()),
+             "%s: prefetch drop threshold must be in [%u, %u]", name(),
+             core.deadThreshold(), core.maxConfidence());
     fatal_if(observationOnly && enableBypass,
              "%s: observation-only SDBP cannot bypass fills", name());
     fatal_if(observationOnly && l1CopyProtection,
@@ -270,8 +275,17 @@ SDBP::dropL2PrefetchFill(const PacketPtr pkt, unsigned set, Addr tag)
 {
     if (!dropDeadL2Prefetch || observationOnly ||
         !pkt || !pkt->req || !pkt->isResponse() || !isPrefetch(pkt) ||
-        pkt->req->l2RequestSource() != Request::L2RequestSource::L2Prefetch ||
-        !predict(pkt)) {
+        pkt->req->l2RequestSource() != Request::L2RequestSource::L2Prefetch) {
+        return false;
+    }
+
+    unsigned confidence = 0;
+    const bool dead = predict(pkt, &confidence);
+    if (!dead || confidence < dropThreshold) {
+        // Reuse the admission decision when installing the line. Training
+        // this refill in a sampled set can change its counters before reset.
+        if (dropThreshold > core.deadThreshold())
+            pkt->sdbpFillDead = dead;
         return false;
     }
 
@@ -342,7 +356,7 @@ SDBP::transferEntry(const std::shared_ptr<ReplacementData> &src_data,
 }
 
 bool
-SDBP::predict(const PacketPtr pkt) const
+SDBP::predict(const PacketPtr pkt, unsigned *confidence) const
 {
     if (!eligible(pkt) || !hasPc(pkt))
         return false;
@@ -351,7 +365,10 @@ SDBP::predict(const PacketPtr pkt) const
     ++stats.predictionQueries;
     ++stats.predictionQueriesBySource[source];
     const auto signature = core.signature(requestPc(pkt));
-    const bool dead = core.predict(signature, type);
+    const unsigned sum = core.confidence(signature, type);
+    if (confidence)
+        *confidence = sum;
+    const bool dead = sum >= core.deadThreshold();
     if (dead) {
         ++stats.deadPredictions;
         ++stats.deadPredictionsBySource[source];
@@ -360,7 +377,7 @@ SDBP::predict(const PacketPtr pkt) const
             "predict addr=%#x pc=%#x source=%u signature=%#x "
             "confidence=%u dead=%d\n",
             pkt->getAddr(), requestPc(pkt), source, signature,
-            core.confidence(signature, type), dead);
+            sum, dead);
     return dead;
 }
 
@@ -425,6 +442,9 @@ SDBP::reset(const std::shared_ptr<ReplacementData> &data, const PacketPtr pkt)
         }
         if (eligible(pkt) && hasPc(pkt))
             startPrediction(entry, pkt);
+    } else if (pkt && pkt->sdbpFillDead.has_value()) {
+        entry.dead = *pkt->sdbpFillDead;
+        pkt->sdbpFillDead.reset();
     } else {
         entry.dead = predict(pkt);
     }

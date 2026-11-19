@@ -80,7 +80,7 @@ class SDBP : public Base
     static Addr requestPc(const PacketPtr pkt);
     SDBPCore::RequestType requestType(const PacketPtr pkt) const;
     void sample(const PacketPtr pkt, unsigned set, Addr tag);
-    bool predict(const PacketPtr pkt) const;
+    bool predict(const PacketPtr pkt, unsigned *confidence = nullptr) const;
     void updateLine(const std::shared_ptr<ReplacementData> &data,
                     const PacketPtr pkt, bool updateRecency);
     void startPrediction(SDBPReplData &entry, const PacketPtr pkt);
@@ -91,6 +91,7 @@ class SDBP : public Base
     SDBPCore core;
     const bool enableBypass;
     const bool dropDeadL2Prefetch;
+    const unsigned dropThreshold;
     const bool l1CopyProtection;
     const bool observationOnly;
     const bool splitPrefetchSources;

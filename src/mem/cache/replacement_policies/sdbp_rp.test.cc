@@ -38,6 +38,7 @@ testParams(bool bypass = false, unsigned threshold = 8)
     p.predictor_entries = 4096;
     p.counter_bits = 2;
     p.dead_threshold = threshold;
+    p.l2_prefetch_drop_threshold = threshold;
     p.partial_tag_bits = 15;
     p.partial_pc_bits = 15;
     p.pc_shift = 1;
@@ -783,6 +784,7 @@ TEST_F(SDBPInterface, DropOnlyDeadLocalPrefetchFillsAndKeepSampling)
     EXPECT_TRUE(policy.dropL2PrefetchFill(pf.get(), 0, 1));
     EXPECT_EQ(stat(policy, "samplerAccesses"), 1);
     params.dead_threshold = 8;
+    params.l2_prefetch_drop_threshold = 8;
     SDBP cold(params);
     EXPECT_FALSE(cold.dropL2PrefetchFill(pf.get(), 0, 1));
 
@@ -791,6 +793,40 @@ TEST_F(SDBPInterface, DropOnlyDeadLocalPrefetchFillsAndKeepSampling)
     pf->req->setL2RequestSource(Request::L2RequestSource::L2Prefetch);
     pf->setSamplerDemand();
     EXPECT_FALSE(policy.dropL2PrefetchFill(pf.get(), 0, 1));
+    EXPECT_EQ(stat(policy, "droppedL2PrefetchFills"), 1);
+}
+
+TEST_F(SDBPInterface, MarkAtEightAndDropAtNine)
+{
+    auto params = testParams();
+    params.split_prefetch_sources = true;
+    params.drop_dead_l2_prefetch = true;
+    params.l2_prefetch_drop_threshold = 9;
+    params.sampler_assoc = 1;
+    params.predictor_entries = 2;
+    SDBP policy(params);
+    const auto source = Request::L2RequestSource::L2Prefetch;
+    auto pf = sourcedPacket(source, 0x1000);
+    auto alias = sourcedPacket(source, 0x1004);
+    pf->makeResponse();
+    // The alias shares tables 0 and 2. Two dead updates for pf and one
+    // for the alias produce [3, 2, 3] at pf's signature.
+    policy.observeFill(pf.get(), 0, 1);
+    policy.observeFill(pf.get(), 0, 2);
+    policy.observeFill(alias.get(), 0, 3);
+    policy.observeFill(pf.get(), 0, 4);
+    EXPECT_FALSE(policy.dropL2PrefetchFill(pf.get(), 0, 4));
+    // A sampled reuse lowers the counters before the real block is marked.
+    policy.observeFill(pf.get(), 0, 4);
+    auto line = policy.instantiateEntry();
+    policy.reset(line, pf.get());
+    EXPECT_EQ(SDBP::victimClass(line), 2);
+    EXPECT_FALSE(policy.dropL2PrefetchFill(pf.get(), 0, 5));
+    policy.observeFill(pf.get(), 0, 5);
+    policy.reset(line, pf.get());
+    EXPECT_EQ(SDBP::victimClass(line), 1);
+    policy.observeFill(pf.get(), 0, 6);
+    EXPECT_TRUE(policy.dropL2PrefetchFill(pf.get(), 0, 7));
     EXPECT_EQ(stat(policy, "droppedL2PrefetchFills"), 1);
 }
 

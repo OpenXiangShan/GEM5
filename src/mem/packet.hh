@@ -51,6 +51,7 @@
 #include <cassert>
 #include <initializer_list>
 #include <list>
+#include <optional>
 
 #include "base/addr_range.hh"
 #include "base/cast.hh"
@@ -593,6 +594,8 @@ class Packet : public Printable
     // L2-dead refill, or its L1 eviction: carry data past L2 to L3.
     // Snoop copies deliberately do not inherit this local routing hint.
     bool bypassL2 = false;
+    // Local L2 fill prediction captured before sampler training.
+    std::optional<bool> sdbpFillDead;
 
     // Prepared ordinary-read MSHR; packet and snoop copies start false.
     bool writableFillExpected = false;
