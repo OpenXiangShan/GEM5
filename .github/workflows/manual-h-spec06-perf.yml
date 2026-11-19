@@ -14,18 +14,18 @@ on:
         description: 'Choose Kunminghu configuration'
         required: true
         type: choice
-        default: 'idealkmhv3.py'
+        default: 'kmhv3.py'
         options:
           - 'kmhv2.py'
           - 'kmhv3.py'
           - 'idealkmhv3.py'
       coverage_type:
-        description: 'H SPEC06 checkpoint coverage type'
+        description: '0822 H SPEC06 checkpoint coverage (0.3c: regression subset; 1.0c: full set)'
         required: true
         type: choice
-        default: 'h-spec06-1.0c'
+        default: 'h-spec06-0.3c'
         options:
-          - 'h-spec06-0.5c'
+          - 'h-spec06-0.3c'
           - 'h-spec06-1.0c'
       specific_benchmarks:
         description: 'Specific benchmarks to run (comma-separated, for example "mcf,gcc"); leave empty to run the selected coverage set'
@@ -33,7 +33,7 @@ on:
         type: string
         default: ''
       extra_args:
-        description: 'Extra gem5 args. H checkpoint, NEMU ref, restorer, maxinst and DRAMSim3 arguments are fixed by this workflow.'
+        description: 'Extra gem5 args. H checkpoint, NEMU ref, restorer, memory size, maxinst and DRAMSim3 arguments are fixed by this workflow.'
         required: false
         type: string
         default: ''
