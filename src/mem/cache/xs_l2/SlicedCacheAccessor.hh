@@ -24,6 +24,7 @@ public:
     {}
 
     bool inCache(Addr addr, bool is_secure) const override;
+    std::string cacheName() const override;
     unsigned level() const override;
     bool hasBeenPrefetched(Addr addr, bool is_secure) const override;
     bool hasBeenPrefetched(Addr addr, bool is_secure, RequestorID requestor) const override;

@@ -321,6 +321,29 @@ def addCommonOptions(parser, configure_xiangshan=False):
                         Force all hardware prefetchers to disable their
                         optional prefetch buffer (QueuedPrefetcher.use_pf_buffer).""")
 
+    parser.add_argument(
+        "--prefetch-trace",
+        metavar="FILE",
+        help="Record demand and prefetch facts to FILE in m5out",
+    )
+    parser.add_argument(
+        "--prefetch-trace-start",
+        type=int,
+        default=0,
+        help="Inclusive trace start tick",
+    )
+    parser.add_argument(
+        "--prefetch-trace-end",
+        type=int,
+        default=m5.MaxTick,
+        help="Exclusive trace end tick",
+    )
+    parser.add_argument(
+        "--prefetch-trace-after-warmup",
+        action="store_true",
+        help="Start trace at first statistics reset after tick 0",
+    )
+
     parser.add_argument("--cpu-clock", action="store", type=str,
                         default='3GHz',
                         help="Clock for blocks running at CPU speed")

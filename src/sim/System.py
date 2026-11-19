@@ -53,6 +53,10 @@ class System(SimObject):
     cxx_header = "sim/system.hh"
     cxx_class = 'gem5::System'
 
+    prefetch_trace = Param.PrefetchTrace(
+        NULL, "Optional prefetch fact recorder"
+    )
+
     system_port = RequestPort("System port")
 
     cxx_exports = [

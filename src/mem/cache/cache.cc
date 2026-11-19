@@ -60,6 +60,7 @@
 #include "mem/cache/base.hh"
 #include "mem/cache/cache_blk.hh"
 #include "mem/cache/mshr.hh"
+#include "mem/cache/prefetch/prefetch_trace.hh"
 #include "mem/cache/tags/base.hh"
 #include "mem/cache/write_queue_entry.hh"
 #include "mem/request.hh"
@@ -768,12 +769,15 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
         initial_tgt = nullptr;
     }
 
+    const bool trace_from_prefetch = mshr->hasFromPref();
     MSHR::TargetList targets = mshr->extractServiceableTargets(pkt);
     for (auto &target: targets) {
         Packet *tgt_pkt = target.pkt;
         switch (target.source) {
           case MSHR::Target::FromCPU:
             from_core = true;
+            if (system->prefetchTrace && !is_error && trace_from_prefetch)
+                system->prefetchTrace->use(*this, level(), tgt_pkt, "late");
             if (prefetcher && target.lldpHint.valid && !is_error) {
                 const uint8_t *line = nullptr;
                 unsigned bytes = 0;
@@ -1007,9 +1011,15 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
         blk->setXsMetadata(pkt->req->getXsMetadata());
         DPRINTF(Cache, "Marking block as prefetched from prefetcher %i\n", blk->getXsMetadata().prefetchSource);
         stats.pfOnlyFill++;  // Pure prefetch fill (no demand merge)
+        if (system->prefetchTrace)
+            system->prefetchTrace->packet("PF_FILL_CLASSIFY", *this,
+                level(), pkt, "", 0, "pure");
     } else if (blk && from_core && from_pref) {
         // Prefetch was merged with demand - won't be marked as prefetched
         stats.pfMergedWithDemand++;
+        if (system->prefetchTrace)
+            system->prefetchTrace->packet("PF_FILL_CLASSIFY", *this,
+                level(), pkt, "", 0, "merged");
         DPRINTF(Cache, "Prefetch merged with demand for %#lx - not marking as prefetched\n",
                 blk->getTag());
     }
@@ -1077,6 +1087,9 @@ Cache::sendHintViaMSHRTargets(MSHR *mshr, const PacketPtr pkt)
 PacketPtr
 Cache::evictBlock(CacheBlk *blk)
 {
+    if (system->prefetchTrace)
+        system->prefetchTrace->evict(*this, level(),
+            regenerateBlkAddr(blk), blk->isSecure(), "replacement");
     PacketPtr pkt = (blk->isSet(CacheBlk::DirtyBit) || writebackClean) ?
         writebackBlk(blk) : cleanEvictBlk(blk);
 
@@ -1610,6 +1623,9 @@ Cache::sendMSHRQueuePacket(MSHR* mshr)
         // prefetchSquash first may result in the MSHR being
         // prematurely deallocated.
         if (snoop_pkt.cacheResponding()) {
+            if (system->prefetchTrace)
+                system->prefetchTrace->packet("PF_SNOOP_ACCEPT", *this,
+                    level(), tgt_pkt, "upstream_cache_response");
             [[maybe_unused]] auto r = outstandingSnoop.insert(snoop_pkt.req);
             assert(r.second);
 
@@ -1625,6 +1641,9 @@ Cache::sendMSHRQueuePacket(MSHR* mshr)
         }
 
         if (snoop_pkt.isBlockCached()) {
+            if (system->prefetchTrace)
+                system->prefetchTrace->packet("PF_DROP", *this,
+                    level(), tgt_pkt, "upstream_cache_hit");
             DPRINTF(Cache, "Block present, prefetch squashed by cache.  "
                     "Deallocating mshr target %#x.\n",
                     mshr->blkAddr);

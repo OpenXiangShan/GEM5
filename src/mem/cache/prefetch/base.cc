@@ -51,6 +51,7 @@
 #include "base/intmath.hh"
 #include "debug/HWPrefetch.hh"
 #include "mem/cache/base.hh"
+#include "mem/cache/prefetch/prefetch_trace.hh"
 #include "params/BasePrefetcher.hh"
 #include "sim/system.hh"
 
@@ -244,6 +245,8 @@ Base::setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsign
     system = sys;
     probeManager = pm;
     cache = _cache;
+    if (system->prefetchTrace)
+        traceCacheName = cache->cacheName();
 
     // If the cache has a different block size from the system's, save it
     blkSize = blk_size;
@@ -473,6 +476,10 @@ Base::nofityHitToDownStream(const PacketPtr &pkt)
 void
 Base::probeNotify(const PacketPtr &pkt, bool miss)
 {
+    if (system->prefetchTrace)
+        system->prefetchTrace->packet("PF_OBSERVE", *this,
+            cache->level(), pkt, "", 0, miss ? "miss" : "hit",
+            traceCacheName);
     DPRINTF(HWPrefetch, "ProbeNotify: %s for %s\n", miss ? "miss" : "hit",
             pkt->print());
     // Don't notify prefetcher on SWPrefetch, HWPrefetch, cache maintenance
@@ -575,6 +582,9 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
                 pfi.setEverPrefetched(everPrefetched);
                 pfi.setPfFirstHit(pfFirstHit);
                 pfi.setPfHit(pfHit);
+                if (system->prefetchTrace)
+                    system->prefetchTrace->packet("PF_TRAIN", *this,
+                        cache->level(), pkt, "accepted", 0, "", traceCacheName);
                 notify(pkt, pfi);
             }
         } else {
@@ -663,6 +673,12 @@ Base::flushCurrentCycleRequests()
         Addr block_key = contextKey(blockAddr, context_id);
 
         if (trainingBufferBlockAddrs.count(block_key) > 0) {
+            if (system->prefetchTrace) {
+                ::gem5::PrefetchTrace::Record r{"PF_TRAIN_DROP", name(), cache->level(),
+                    clockPeriod(), req.req, traceCacheName};
+                r.reason = "training_duplicate";
+                system->prefetchTrace->emit(r);
+            }
             DPRINTF(HWPrefetch,
                     "  TrainFilter: Drop [%s%lu, %#x, ctx=%d] - in buffer\n",
                     req.isLoad ? "L" : "S", req.seqNum, blockAddr,
@@ -681,6 +697,12 @@ Base::flushCurrentCycleRequests()
         }
 
         if (trainingBuffer.size() >= trainingBufferSize) {
+            if (system->prefetchTrace) {
+                ::gem5::PrefetchTrace::Record r{"PF_TRAIN_DROP", name(), cache->level(),
+                    clockPeriod(), req.req, traceCacheName};
+                r.reason = "training_buffer_full";
+                system->prefetchTrace->emit(r);
+            }
             DPRINTF(HWPrefetch,
                     "  TrainFilter: Drop [%s%lu, %#x, ctx=%d] - buffer full\n",
                     req.isLoad ? "L" : "S", req.seqNum, blockAddr,
@@ -747,6 +769,9 @@ Base::processTraining()
     pfi.setEverPrefetched(req.everPrefetched);
     pfi.setPfFirstHit(req.pfFirstHit);
     pfi.setPfHit(req.pfHit);
+    if (system->prefetchTrace)
+        system->prefetchTrace->packet("PF_TRAIN", *this, cache->level(),
+            temp_pkt, "accepted", 0, "", traceCacheName);
     notify(temp_pkt, pfi);
 
     delete temp_pkt;
@@ -795,6 +820,9 @@ Base::coreDirectAddrNotify(const PacketPtr& pkt)
     pfi.setPfFirstHit(false);
     pfi.setPfHit(false);
     pfi.setStorePftrain(true);
+    if (system->prefetchTrace)
+        system->prefetchTrace->packet("PF_TRAIN", *this, cache->level(),
+            pkt, "accepted", 0, "", traceCacheName);
     notify(pkt, pfi);
 }
 

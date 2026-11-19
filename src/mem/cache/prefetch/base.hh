@@ -113,7 +113,7 @@ class Base : public ClockedObject
   public:
     struct PFtriggerInfo{
         PacketPtr pkt;
-        std::unique_ptr<PrefetchInfo_old> pfi_old; 
+        std::unique_ptr<PrefetchInfo_old> pfi_old;
         PrefetchSourceType pfSourceType;
         PFtriggerInfo() : pkt(nullptr), pfi_old(nullptr), pfSourceType(PrefetchSourceType::PF_NONE) {}
         PFtriggerInfo(PacketPtr p, const PrefetchInfo &a)
@@ -678,7 +678,7 @@ class Base : public ClockedObject
         PrefetchInfo_old(PrefetchInfo_old const &other);
 
         PrefetchInfo_old(PrefetchInfo const &pfi);
-        
+
         ~PrefetchInfo_old()
         {
             delete[] data;
@@ -846,6 +846,7 @@ class Base : public ClockedObject
 
     /** Pointr to the parent cache. */
     CacheAccessor* cache = nullptr;
+    std::string traceCacheName;
 
     /** Pointer to the parent system. */
     System* system = nullptr;

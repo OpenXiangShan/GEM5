@@ -2228,6 +2228,8 @@ LSQUnit::triggerStorePFTrain(int sq_idx)
     RequestPtr req =
         std::make_shared<Request>(vaddr, 1, Request::STORE_PF_TRAIN, inst->requestorId(), pc, inst->contextId());
     req->setPaddr(inst->physEffAddr);
+    if (cpu->system->prefetchTrace)
+        req->analysisOrigin = storeQueue[sq_idx].request()->req();
 
     // create packet
     PacketPtr pkt = Packet::createPFtrain(req);
@@ -2659,7 +2661,7 @@ LSQUnit::offloadToStoreBuffer(uint32_t max_entries, std::vector<bool>& offload_f
                 assert(offset + req->getSize() <= storeWBIt->size());
                 bool success = insertStoreBuffer(
                     vaddr, paddr, (uint8_t *)storeWBIt->data() + offset,
-                    req->getSize(), req->getByteEnable(), inst->seqNum);
+                    req->getSize(), req->getByteEnable(), inst->seqNum, req);
                 if (success) {
                     request->_numOutstandingPackets++;
                 } else {
@@ -2690,7 +2692,8 @@ LSQUnit::offloadToStoreBuffer(uint32_t max_entries, std::vector<bool>& offload_f
             }
             bool success = insertStoreBuffer(
                 vaddr, paddr, data, request->_size,
-                request->mainReq()->getByteEnable(), inst->seqNum);
+                request->mainReq()->getByteEnable(), inst->seqNum,
+                request->mainReq());
             if (!success) {
                 offload_fail[lsqID] = true;
                 break;
@@ -2706,7 +2709,7 @@ LSQUnit::offloadToStoreBuffer(uint32_t max_entries, std::vector<bool>& offload_f
 bool
 LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas,
                            uint64_t size, const std::vector<bool>& mask,
-                           InstSeqNum store_seq)
+                           InstSeqNum store_seq, const RequestPtr &origin)
 {
     auto &storeBuffer = lsq->getStoreBuffer();
     // access range must in a cache block
@@ -2767,6 +2770,13 @@ LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas,
         storeBuffer.insert(entry);
         DPRINTF(StoreBuffer, "Create new entry[%#x] for addr %#x\n",
                 blockPaddr, paddr);
+    }
+    if (cpu->system->prefetchTrace) {
+        auto *target = storeBuffer.get(lsqID, blockPaddr);
+        if (target->evictionInProgress() && target->vice)
+            target = target->vice;
+        if (target->seqNum == store_seq)
+            target->analysisOrigin = origin;
     }
     DPRINTF(
         StoreBuffer,
