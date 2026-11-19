@@ -167,7 +167,6 @@ TLB::TLB(const Params &p) :
             freeList.push_back(&tlb[x]);
         }
         walker = p.walker;
-        walker->setTLB(this);
         TLB *l2tlb;
         if (isStage2) {
             l2tlb = this;
@@ -692,7 +691,7 @@ TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update,uint8_t transla
             entry, translateMode);
         if (merged_entry) {
             if (walker)
-                walker->notifyTlbRefillHint(*merged_entry, translateMode);
+                walker->notifyTlbRefillHint(*this, *merged_entry, translateMode);
             return merged_entry;
         }
     }
@@ -731,7 +730,7 @@ TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update,uint8_t transla
             newEntry->vaddr = vpn;
             newEntry->lruSeq = nextSeq();
             if (walker)
-                walker->notifyTlbRefillHint(*newEntry, translateMode);
+                walker->notifyTlbRefillHint(*this, *newEntry, translateMode);
             return newEntry;
         }
     }
@@ -780,7 +779,7 @@ TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update,uint8_t transla
         }
 
         if (walker)
-            walker->notifyTlbRefillHint(*newEntry, translateMode);
+            walker->notifyTlbRefillHint(*this, *newEntry, translateMode);
         return newEntry;
     }
 
@@ -805,7 +804,7 @@ TLB::insert(Addr vpn, const TlbEntry &entry,bool squashed_update,uint8_t transla
     stats.ALLInsert++;
     allUsed++;
     if (walker)
-        walker->notifyTlbRefillHint(*newEntry, translateMode);
+        walker->notifyTlbRefillHint(*this, *newEntry, translateMode);
     return newEntry;
 }
 
@@ -978,12 +977,7 @@ TlbEntry *
 TLB::L2TLBInsert(Addr vpn, const TlbEntry &entry, int level, int choose, int sign, bool squashed_update,
                  uint8_t translateMode)
 {
-    TLB *l2tlb;
-    if (isStage2) {
-        l2tlb = this;
-    } else {
-        l2tlb = static_cast<TLB *>(nextLevel());
-    }
+    TLB *l2tlb = sharedL2();
 
     TlbEntry *newEntry = nullptr;
     DPRINTF(TLB, "choose %d vpn %#x entry->vaddr %#x\n", choose, vpn, entry.vaddr);
@@ -1000,73 +994,29 @@ TLB::L2TLBInsert(Addr vpn, const TlbEntry &entry, int level, int choose, int sig
 void
 TLB::demapPage(Addr vpn, uint64_t asid)
 {
-    DPRINTF(TLBGPre, "flush(vpn=%#x, asid=%#x)\n", vpn, asid);
+    demapLocal(vpn, asid);
+    sharedL2()->demapPageL2(vpn, asid);
+}
+
+void
+TLB::demapLocal(Addr vpn, uint64_t asid)
+{
     asid &= 0xFFFF;
+    DPRINTF(TLB, "L1 demap(vpn=%#x, asid=%#x)\n", vpn, asid);
 
-    size_t i;
-
-    TLB *l2tlb;
-    if (isStage2) {
-        l2tlb = this;
-    } else {
-        l2tlb = static_cast<TLB *>(nextLevel());
-    }
-
-    if ((l2tlb == nullptr) && (!isStage2))
-        panic("l2tlb is fault\n");
-
-    l2tlb->advanceTranslationGen();
-
-    auto vaddrMatches = [vpn](const TlbEntry &entry) {
-        if (entry.isCompressed && entry.translateMode == direct) {
-            return tlbKeyComparablePageBase(vpn, entry.logBytes) ==
-                   tlbKeyComparablePageBase(entry.vaddr, entry.logBytes);
-        }
-        const Addr entry_mask = ~(entry.size() - 1);
-        return (vpn & entry_mask) == (entry.vaddr & entry_mask);
-    };
-
-    if (vpn == 0 && asid == 0) {
-        flushAll();
-        if (!isStage2) {
-            l2tlb->flushAll();
-        }
-
-    }
-
-    else {
-        DPRINTF(TLB, "flush(vpn=%#x, asid=%#x)\n", vpn, asid);
-        DPRINTF(TLB, "l1tlb flush(vpn=%#x, asid=%#x)\n", vpn, asid);
-        if (vpn != 0 && asid != 0) {
-            for (i = 0; i < size; i++) {
-                if (!tlb[i].trieHandle)
-                    continue;
-                if (vaddrMatches(tlb[i]) && tlb[i].asid == asid) {
-                    remove(i);
-                    continue;
-                }
-                if (tlb[i].trieHandle) {
-                    Addr mask = ~(tlb[i].size() - 1);
-                    if ((vpn & mask) == (tlb[i].gpaddr & mask) &&
-                        tlb[i].vmid == asid)
-                        remove(i);
-                }
-            }
-            l2tlb->demapPageL2(vpn, asid);
-        } else {
-            for (i = 0; i < size; i++) {
-                if (tlb[i].trieHandle) {
-                    if ((vpn == 0 || vaddrMatches(tlb[i])) &&
-                        (asid == 0 || tlb[i].asid == asid))
-                        remove(i);
-                }
-                if (tlb[i].trieHandle) {
-                    Addr mask = ~(tlb[i].size() - 1);
-                    if ((vpn == 0 || (vpn & mask) == (tlb[i].gpaddr & mask)) && (asid == 0 || tlb[i].vmid == asid))
-                        remove(i);
-                }
-            }
-            l2tlb->demapPageL2(vpn, asid);
+    for (size_t i = 0; i < size; i++) {
+        const auto &entry = tlb[i];
+        if (!entry.trieHandle)
+            continue;
+        const Addr mask = ~(entry.size() - 1);
+        const bool vaMatch = entry.isCompressed && entry.translateMode == direct ?
+            tlbKeyComparablePageBase(vpn, entry.logBytes) ==
+            tlbKeyComparablePageBase(entry.vaddr, entry.logBytes) :
+            (vpn & mask) == (entry.vaddr & mask);
+        if (((vpn == 0 || vaMatch) && (asid == 0 || entry.asid == asid)) ||
+            ((vpn == 0 || (vpn & mask) == (entry.gpaddr & mask)) &&
+             (asid == 0 || entry.vmid == asid))) {
+            remove(i);
         }
     }
 }
@@ -1075,6 +1025,10 @@ void
 TLB::demapPageL2(Addr vpn, uint64_t asid)
 {
     asid &= 0xFFFF;
+    if (vpn == 0 && asid == 0) {
+        flushAll();
+        return;
+    }
     advanceTranslationGen();
     std::vector<Addr> vpn_vec;
     Addr vpnl2l3 = (vpn >> (PageShift + 3 * LEVEL_BITS))
@@ -1176,23 +1130,27 @@ TLB::demapPageL2(Addr vpn, uint64_t asid)
 }
 
 void
+TLB::flushLocal()
+{
+    for (size_t i = 0; i < size; i++) {
+        if (tlb[i].trieHandle)
+            remove(i);
+    }
+}
+
+void
 TLB::flushAll()
 {
-    size_t i;
-    if (is_L1tlb)
-        sharedL2()->advanceTranslationGen();
-    if (isStage2 || isTheSharedL2)
-        advanceTranslationGen();
     if (is_L1tlb) {
-        for (i = 0; i < size; i++) {
-            if (tlb[i].trieHandle)
-                remove(i);
-        }
+        flushLocal();
+        if (sharedL2() != this)
+            sharedL2()->advanceTranslationGen();
     }
     if (isStage2 || isTheSharedL2) {
+        advanceTranslationGen();
         for (int i_type = 0; i_type < L2PageTypeNum; i_type++) {
             const unsigned ptesPerEntry = l2tlbPtesPerEntry(i_type + 1);
-            for (i = 0; i < l2TlbSize[i_type] * ptesPerEntry; i += ptesPerEntry) {
+            for (size_t i = 0; i < l2TlbSize[i_type] * ptesPerEntry; i += ptesPerEntry) {
                 if ((l2Tlb[i_type] + i)->trieHandle) {
                     l2TLBRemove(i, i_type + 1);
                 }
@@ -1893,7 +1851,7 @@ TLB::sendPreHitOnHitRequest(TlbEntry *e_pre_1, TlbEntry *e_pre_2, const RequestP
     Fault pre_fault = L2TLBCheck(e_pre->pte, check_level, status, pmode, pre_block, mode, req, forward, !forward);
     if ((pre_fault == NoFault) && (!hitInSp) && pre_precision) {
         DPRINTF(TLBGPre, "pre_vaddr %#x\n", pre_block);
-        walker->start(e_pre->pte.ppn, tc, translation, req, mode, forward, !forward, check_level - 1, true,
+        walker->start(*this, e_pre->pte.ppn, tc, translation, req, mode, forward, !forward, check_level - 1, true,
                       e_pre->asid);
     }
 }
@@ -1909,7 +1867,7 @@ TLB::L2TLBSendRequest(Fault fault, TlbEntry *e_l2tlb, const RequestPtr &req,
     if (hitInSp) {
         if (fault == NoFault) {
             paddr = e_l2tlb->paddr << PageShift | (vaddr & mask(e_l2tlb->logBytes));
-            walker->doL2TLBHitSchedule(req, tc, translation, mode, paddr, *e_l2tlb,
+            walker->doL2TLBHitSchedule(*this, req, tc, translation, mode, paddr, *e_l2tlb,
                                        direct, captureTranslationContext(tc, req, mode), 1);
             delayed = true;
             return std::make_pair(true, fault);
@@ -1917,17 +1875,17 @@ TLB::L2TLBSendRequest(Fault fault, TlbEntry *e_l2tlb, const RequestPtr &req,
     } else {
         if (translation != nullptr && !from_miss_queue && !is_prefetch &&
             walker->hasPendingPtwMiss()) {
-            walker->enqueuePtwMiss(tc, translation, req, mode, false);
+            walker->enqueuePtwMiss(*this, tc, translation, req, mode, false);
             delayed = true;
             return std::make_pair(true, fault);
         }
         if (translation != nullptr &&
             !walker->canStartPtwLevel(level, false, false, is_prefetch)) {
-            walker->enqueuePtwMiss(tc, translation, req, mode, from_miss_queue);
+            walker->enqueuePtwMiss(*this, tc, translation, req, mode, from_miss_queue);
             delayed = true;
             return std::make_pair(true, fault);
         }
-        fault = walker->start(e_l2tlb->pte.ppn, tc, translation, req, mode,
+        fault = walker->start(*this, e_l2tlb->pte.ppn, tc, translation, req, mode,
                               false, false, level, true, e_l2tlb->asid);
         if (translation != nullptr || fault != NoFault) {
             delayed = true;
@@ -2160,7 +2118,9 @@ TLB::prepareTwoStageL2(const RequestPtr &req, ThreadContext *tc, BaseMMU::Transl
         nullptr :
         lookupSingleStageL2(l2tlb, vaddr, vsatp.asid, mode, vsstage, vsatp.mode);
     if (!e_vs) {
-        req->setTwoPtwWalk(false, PTW_TOP_LEVEL(vsatp.mode), PTW_TOP_LEVEL(hgatp.mode),
+        // A G-only miss starts at the HGATP level, not the absent VS level.
+        req->setTwoPtwWalk(vsatp.mode == AddrXlateMode::BARE,
+                           PTW_TOP_LEVEL(vsatp.mode), PTW_TOP_LEVEL(hgatp.mode),
                            0, false);
         req->setgPaddr(0);
         return std::make_pair(false, NoFault);
@@ -2216,7 +2176,7 @@ TLB::prepareTwoStageL2(const RequestPtr &req, ThreadContext *tc, BaseMMU::Transl
         TlbEntry final_entry =
             buildAllStageEntry(vaddr, gpa, hpa, vs_leaf, g_leaf, vsatp.asid,
                                hgatp.vmid);
-        walker->doL2TLBHitSchedule(req, tc, translation, mode, hpa, final_entry,
+        walker->doL2TLBHitSchedule(*this, req, tc, translation, mode, hpa, final_entry,
                                    allstage, captureTranslationContext(tc, req, mode), 4);
         return std::make_pair(true, NoFault);
     }
@@ -2335,7 +2295,7 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
         }
         if (translation != nullptr && !from_miss_queue && !is_prefetch &&
             walker->hasPendingPtwMiss()) {
-            walker->enqueuePtwMiss(tc, translation, req, mode, false);
+            walker->enqueuePtwMiss(*this, tc, translation, req, mode, false);
             delayed = true;
             return fault;
         }
@@ -2344,13 +2304,13 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
         if (translation != nullptr &&
             !walker->canStartPtwLevel(walk_level, false, false,
                                       is_prefetch)) {
-            walker->enqueuePtwMiss(tc, translation, req, mode,
+            walker->enqueuePtwMiss(*this, tc, translation, req, mode,
                                    from_miss_queue);
             delayed = true;
             return fault;
         }
         DPRINTFR(TLB, "doTwoStageTranslate: walker start\n");
-        fault = walker->start(0, tc, translation, req, mode, false, false, 0, false, 0);
+        fault = walker->start(*this, 0, tc, translation, req, mode, false, false, 0, false, 0);
         if (translation != nullptr || fault != NoFault) {
             delayed = true;
             return fault;
@@ -2481,7 +2441,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 if (fault == NoFault) {
                     paddr = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
                     DPRINTF(TLBVerbosel2, "vaddr %#x,paddr %#x,pc %#x\n", vaddr, paddr, req->getPC());
-                    walker->doL2TLBHitSchedule(req, tc, translation, mode, paddr,
+                    walker->doL2TLBHitSchedule(*this, req, tc, translation, mode, paddr,
                                                *e[L_L2L0], direct,
                                                captureTranslationContext(tc, req, mode), 1);
                     DPRINTF(TLBVerbosel2, "finish Schedule\n");
@@ -2593,18 +2553,18 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             int walk_level = satp.mode == AddrXlateMode::SV48 ? 3 : 2;
             if (translation != nullptr && !from_miss_queue && !is_prefetch &&
                 walker->hasPendingPtwMiss()) {
-                walker->enqueuePtwMiss(tc, translation, req, mode, false);
+                walker->enqueuePtwMiss(*this, tc, translation, req, mode, false);
                 delayed = true;
                 return fault;
             }
             if (translation != nullptr &&
                 !walker->canStartPtwLevel(walk_level, false, false,
                                           is_prefetch)) {
-                walker->enqueuePtwMiss(tc, translation, req, mode, from_miss_queue);
+                walker->enqueuePtwMiss(*this, tc, translation, req, mode, from_miss_queue);
                 delayed = true;
                 return fault;
             }
-            fault = walker->start(0, tc, translation, req, mode, false, false, walk_level, false, 0);
+            fault = walker->start(*this, 0, tc, translation, req, mode, false, false, walk_level, false, 0);
             DPRINTF(TLB, "finish start\n");
             if (translation != nullptr || fault != NoFault) {
                 // This gets ignored in atomic mode.
@@ -2974,7 +2934,7 @@ TLB::translateFunctional(const RequestPtr &req, ThreadContext *tc,
             unsigned logBytes;
             configFunctional(req, tc, mode);
             Fault fault = walker->startFunctional(
-                    req, tc, paddr, logBytes, mode);
+                    *this, req, tc, paddr, logBytes, mode);
             if (fault != NoFault)
                 return fault;
 

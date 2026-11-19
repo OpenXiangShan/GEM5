@@ -438,6 +438,9 @@ def _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled):
 def _register_prefetcher_tlb(prefetcher, cpu):
     if cpu != NULL:
         prefetcher.registerTLB(cpu.mmu.dtb, cpu.mmu.functional)
+        if isinstance(prefetcher, QueuedPrefetcher) and getattr(
+                cpu.mmu, 'ptb', NULL) != NULL:
+            prefetcher.prefetch_tlb = cpu.mmu.ptb
 
 def _configure_xs_composite_common(prefetcher, options):
     # Keep only option/profile-dependent overrides here. Stable model defaults

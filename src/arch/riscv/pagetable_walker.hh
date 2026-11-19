@@ -85,6 +85,8 @@ namespace RiscvISA
         friend class WalkerPort;
         WalkerPort port;
 
+        bool portBlocked = false;
+
         // State to track each walk of the page table
         class WalkerState
         {
@@ -136,6 +138,7 @@ namespace RiscvISA
 
           protected:
             Walker *walker;
+            TLB *source = nullptr;
             RequestPtr mainReq;  // req is renamed to main req
             State state;
             State nextState;
@@ -227,7 +230,7 @@ namespace RiscvISA
             {
                 requestors.emplace_back(nullptr, _req, _translation);
             }
-            void initState(ThreadContext *_tc, const RequestPtr &_req,BaseMMU::Mode _mode,
+            void initState(TLB &source, ThreadContext *_tc, const RequestPtr &_req,BaseMMU::Mode _mode,
                            bool _isTiming = false, bool _from_forward_pre_req = false,
                            bool _from_back_pre_req = false);
 
@@ -287,6 +290,8 @@ namespace RiscvISA
 
         struct L2TlbState
         {
+              TLB *source;
+              Tick readyTick;
               RequestPtr req;
               ThreadContext *tc;
 
@@ -300,6 +305,7 @@ namespace RiscvISA
 
         struct MissQueueEntry
         {
+            TLB *source;
             ThreadContext *tc;
             BaseMMU::Translation *translation;
             RequestPtr req;
@@ -336,13 +342,13 @@ namespace RiscvISA
 
       public:
         // Kick off the state machine.
-        Fault start(Addr ppn, ThreadContext *_tc,
+        Fault start(TLB &source, Addr ppn, ThreadContext *_tc,
                     BaseMMU::Translation *translation, const RequestPtr &req,
                     BaseMMU::Mode mode, bool from_forward_pre_req = false,
                     bool frm_back_pre_req = false, int f_level = 2,
                     bool from_l2tlb = false, Addr asid = 0);
 
-        void doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc,
+        void doL2TLBHitSchedule(TLB &source, const RequestPtr &req, ThreadContext *tc,
                                 BaseMMU::Translation *translation,
                                 BaseMMU::Mode mode, Addr paddr,
                                 const TlbEntry &entry, uint8_t translateMode,
@@ -351,7 +357,7 @@ namespace RiscvISA
 
 
 
-        std::pair<bool, Fault> tryCoalesce(ThreadContext *_tc,
+        std::pair<bool, Fault> tryCoalesce(TLB &source, ThreadContext *_tc,
                                            BaseMMU::Translation *translation,
                                            const RequestPtr &req,
                                            BaseMMU::Mode mode, bool from_l2tlb,
@@ -360,14 +366,12 @@ namespace RiscvISA
 
         // Fault perm_check ();
 
-        Fault startFunctional(RequestPtr req, ThreadContext * _tc, Addr &addr,
+        Fault startFunctional(TLB &source, RequestPtr req, ThreadContext * _tc, Addr &addr,
                 unsigned &logBytes, BaseMMU::Mode mode);
         Port &getPort(const std::string &if_name,
                       PortID idx=InvalidPortID) override;
       protected:
-        // The TLB we're supposed to load.
-        TLB * tlb;
-        TLB * l2tlb;
+        TLB *l2tlb = nullptr;
         System * sys;
         PMAChecker * pma;
         PMP * pmp;
@@ -433,24 +437,21 @@ namespace RiscvISA
         bool canStartPtwLevel(int level, bool from_forward_pre_req,
                               bool from_back_pre_req,
                               bool is_prefetch);
-        bool enqueuePtwMiss(ThreadContext *tc, BaseMMU::Translation *translation,
+        bool enqueuePtwMiss(TLB &source, ThreadContext *tc, BaseMMU::Translation *translation,
                             const RequestPtr &req, BaseMMU::Mode mode, bool front = false);
         bool hasPendingPtwMiss() const
         {
             return !ptwMissQueue.empty() || !ptwMissQueueWaiters.empty();
         }
-        void notifyTlbRefillHint(const TlbEntry &entry, uint8_t translateMode);
+        void notifyTlbRefillHint(const TLB &source, const TlbEntry &entry, uint8_t translateMode);
         void retryPtwMissQueue();
         //bool pre_ptw;
 
       public:
 
-        void setTLB(TLB * _tlb)
-        {
-            tlb = _tlb;
-        }
         void setL2TLB(TLB * _l2tlb)
         {
+            assert(!l2tlb || l2tlb == _l2tlb);
             l2tlb = _l2tlb;
         }
 
@@ -458,7 +459,7 @@ namespace RiscvISA
 
         Walker(const Params &params) :
             ClockedObject(params), port(name() + ".port", this),
-            funcState(this, NULL, NULL, true), stats(this), tlb(NULL),
+            funcState(this, NULL, NULL, true), stats(this),
             sys(params.system),
             pma(params.pma_checker),
             pmp(params.pmp),

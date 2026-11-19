@@ -162,6 +162,7 @@ class PrefetcherForwarder(BasePrefetcher):
 
 
 class QueuedPrefetcher(BasePrefetcher):
+    prefetch_tlb = Param.BaseTLB(NULL, "Optional L1 for selected VA producers")
     type = "QueuedPrefetcher"
     abstract = True
     cxx_class = 'gem5::prefetch::Queued'

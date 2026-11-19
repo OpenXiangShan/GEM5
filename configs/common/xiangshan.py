@@ -449,6 +449,9 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
     # For now, assign all the CPUs to the same clock domain
     test_sys.cpu = [TestCPUClass(clk_domain=test_sys.cpu_clk_domain, cpu_id=i)
                     for i in range(np)]
+    if getattr(args, 'split_l1_dtlb', False):
+        for cpu in test_sys.cpu:
+            cpu.mmu.splitDataTLB(args.enable_l1_direct_compression)
     # Configure MMU for trace-aware FS mode
     if args.smt:
         test_sys.multi_thread = True
@@ -935,6 +938,10 @@ def xiangshan_system_init(*, smt=False):
         action="store_true",
         default=False,
         help="Use BTBTAGEUpperBound in kmhv3 instead of the default BTBTAGE",
+    )
+    parser.add_argument(
+        "--split-l1-dtlb", action="store_true",
+        help="Separate load, store and prefetch L1 DTLBs",
     )
     parser.add_argument(
         "--disable-l1-direct-compression",

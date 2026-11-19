@@ -48,7 +48,10 @@ class RiscvMMU(BaseMMU):
     cxx_class = 'gem5::RiscvISA::MMU'
     cxx_header = 'arch/riscv/mmu.hh'
 
-    l2_shared = RiscvTLBL2(entry_type="unified")
+    l2_shared = Param.RiscvTLB(RiscvTLBL2(entry_type="unified"),
+                               "Shared second-level TLB")
+    stb = Param.RiscvTLB(NULL, "Optional store L1 TLB")
+    ptb = Param.RiscvTLB(NULL, "Optional prefetch L1 TLB")
 
     itb = RiscvTLB(entry_type="instruction",
     next_level=Parent.l2_shared)
@@ -56,6 +59,17 @@ class RiscvMMU(BaseMMU):
                    next_level=Parent.l2_shared, is_dtlb=True)
     pma_checker = Param.PMAChecker(PMAChecker(), "PMA Checker")
     pmp = Param.PMP(PMP(), "Physical Memory Protection Unit")
+
+    def splitDataTLB(self, compression):
+        for name in ('stb', 'ptb'):
+            peer = RiscvTLB(
+                entry_type="data", is_dtlb=True, walker=NULL,
+                next_level=Parent.l2_shared,
+                is_open_nextline=Parent.dtb.is_open_nextline,
+                regulation_num=Parent.dtb.regulation_num,
+                enable_l1_direct_compression=compression)
+            peer.walker = self.dtb.walker
+            setattr(self, name, peer)
 
     @classmethod
     def walkerPorts(cls):

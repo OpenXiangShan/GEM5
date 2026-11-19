@@ -175,7 +175,8 @@ RemoteGDB::acc(Addr va, size_t len)
             satp.mode != AddrXlateMode::BARE) {
             Walker *walker = mmu->getDataWalker();
             Fault fault = walker->startFunctional(
-                nullptr, context(), paddr, logBytes, BaseMMU::Read);
+                *static_cast<TLB *>(mmu->dtb), nullptr, context(), paddr,
+                logBytes, BaseMMU::Read);
             if (fault != NoFault)
                 return false;
         }

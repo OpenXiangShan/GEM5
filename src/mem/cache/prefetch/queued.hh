@@ -323,6 +323,7 @@ class Queued : public Base
     std::array<uint64_t, NUM_PF_SOURCES> pfControlWindowAdmittedBySource;
     std::array<unsigned, NUM_PF_SOURCES> pfControlCurrentAdmitPctBySource;
 
+    BaseTLB *const prefetchTlb;
     EventFunctionWrapper tlbReqEvent;
 
     struct QueuedStats : public statistics::Group
@@ -413,6 +414,8 @@ class Queued : public Base
      * @param max maximum number of translations to perform
      */
     void processMissingTranslations(unsigned max);
+
+    virtual bool usePrefetchTlb(PrefetchSourceType source) const;
 
     /**
      * Indicates that the translation of the address of the provided  deferred

@@ -60,6 +60,13 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     void notifyFill(const PacketPtr &pkt) override;
     void notifyIns(int ins_num) override { cdp->notifyIns(ins_num); }
 
+  protected:
+    bool usePrefetchTlb(PrefetchSourceType source) const override
+    {
+        return source == HWP_BOP || source == CMC ||
+               Queued::usePrefetchTlb(source);
+    }
+
   private:
     CDP* cdp;
     BOP* largeBOP;
