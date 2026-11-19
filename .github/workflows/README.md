@@ -179,7 +179,11 @@ workflow 的并行 runner 传递。
 
 #### 4. 其他测试
 - `gem5-vector.yml` - RVV 扩展测试
-- `gem5-ideal-btb-perf-weekly.yml` - 定时任务（每周四），包含 GCC16 SPEC06 align 与 ideal 回归、SPEC17 align 回归、XSCC SPEC06 align 回归、SPEC26 align 回归、SPEC06/SPEC17 SMT 回归，以及 GCC12 `idealkmhv3.py` 动态预取回归；SPEC17/SPEC26 ideal job 暂时注释保留
+- `gem5-ideal-btb-perf-weekly.yml` - 定时任务（每周四），包含 GCC16 SPEC06、XSCC SPEC06、SPEC17、SPEC26 的 align/ideal 回归，SPEC06/SPEC17 SMT 回归，GCC12 `idealkmhv3.py` 动态预取回归，以及 Google/CBP trace 回归。
+
+Weekly 的所有仿真项目统一使用默认 SSH 节点池，每个 job 每台机器最多同时运行 32 个切片。
+调度器保留启动时的 CPU 空闲筛选，每次派发前要求 `MemAvailable > max(总内存 × 10%, 20 GiB)`。
+内存不足或内存探测失败时跳过该机，至少 60 秒后重试。
 
 ---
 

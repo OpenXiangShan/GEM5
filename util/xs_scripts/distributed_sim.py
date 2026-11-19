@@ -32,6 +32,9 @@ DEFAULT_MARKER_TIMEOUT_SEC = 30.0
 DEFAULT_LAUNCH_RETRIES = 2
 DEFAULT_LAUNCH_RETRY_DELAY_SEC = 20.0
 DEFAULT_LAUNCH_INTERVAL_SEC = 0.2
+MEMORY_RESERVED_ABS = 20 * 1024**3
+MEMORY_RESERVED_RATIO = 0.1
+MEMORY_RETRY_DELAY_SEC = 60.0
 NO_ELIGIBLE_SERVERS_EXIT_CODE = 75
 ENV_KEY_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
@@ -53,6 +56,7 @@ class ServerState:
     pending: list["PendingJob"]
     idle_cpus: int | None = None
     idle_probe_error: str = ""
+    memory_retry_at: float = 0.0
 
 
 @dataclass
@@ -846,6 +850,60 @@ def probe_idle_cpus(
     )
 
 
+def probe_memory(
+    server_name: str,
+    ssh_config: str,
+    ssh_options: list[str],
+    ssh_user: str,
+) -> tuple[bool, str]:
+    try:
+        result = run_host_command(
+            server_name=server_name,
+            command=["cat", "/proc/meminfo"],
+            ssh_config=ssh_config,
+            ssh_options=ssh_options,
+            ssh_user=ssh_user,
+            timeout=10.0,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "memory probe timed out after 10s"
+    except OSError as exc:
+        return False, f"memory probe failed: {_compact_message(str(exc))}"
+
+    if result.returncode != 0:
+        detail = _compact_message(
+            result.stderr.decode(errors="replace")
+            or result.stdout.decode(errors="replace")
+            or "no output"
+        )
+        return (
+            False,
+            f"memory probe failed: exit={result.returncode}, {detail}",
+        )
+
+    fields = dict(
+        re.findall(
+            r"^(MemTotal|MemAvailable):\s+(\d+) kB\s*$",
+            result.stdout.decode(errors="replace"),
+            re.MULTILINE,
+        )
+    )
+    if "MemTotal" not in fields or "MemAvailable" not in fields:
+        return False, "memory probe missing valid MemTotal or MemAvailable"
+    total = int(fields["MemTotal"]) * 1024
+    available = int(fields["MemAvailable"]) * 1024
+    if total <= 0 or available > total:
+        return False, "memory probe returned invalid MemTotal or MemAvailable"
+
+    reserve = max(total * MEMORY_RESERVED_RATIO, MEMORY_RESERVED_ABS)
+    detail = (
+        f"MemAvailable={available / 1024**3:.2f} GiB, "
+        f"MemTotal={total / 1024**3:.2f} GiB, "
+        f"require>{reserve / 1024**3:.2f} GiB"
+    )
+    return available > reserve, detail
+
+
 def filter_servers_by_idle(
     servers: list[ServerState],
     require_idle_cpus: int,
@@ -1064,11 +1122,34 @@ def abort_pending_jobs(servers: list[ServerState], message: str) -> None:
                 mark_launcher_failure(job, message)
 
 
-def select_server(servers: list[ServerState], jobs_per_server: int) -> ServerState | None:
+def select_server(
+    servers: list[ServerState],
+    jobs_per_server: int,
+    ssh_config: str,
+    ssh_options: list[str],
+    ssh_user: str,
+) -> ServerState | None:
     available = [server for server in servers if len(server.pending) < jobs_per_server]
-    if not available:
-        return None
-    return min(available, key=lambda server: (len(server.pending), server.name))
+    for server in sorted(
+        available, key=lambda server: (len(server.pending), server.name)
+    ):
+        if time.time() < server.memory_retry_at:
+            continue
+        enough_memory, detail = probe_memory(
+            server_name=server.name,
+            ssh_config=ssh_config,
+            ssh_options=ssh_options,
+            ssh_user=ssh_user,
+        )
+        if enough_memory:
+            return server
+        server.memory_retry_at = time.time() + MEMORY_RETRY_DELAY_SEC
+        print(
+            f"[memory-skip] {server.name}: {detail}; "
+            f"retry in {_format_seconds(MEMORY_RETRY_DELAY_SEC)}",
+            flush=True,
+        )
+    return None
 
 
 def run_scheduler(
@@ -1139,10 +1220,6 @@ def run_scheduler(
 
             launched_this_round = False
             while pending_workloads:
-                server = select_server(servers, jobs_per_server)
-                if server is None:
-                    break
-
                 now = time.time()
                 ready_index = next(
                     (
@@ -1154,17 +1231,28 @@ def run_scheduler(
                 )
                 if ready_index < 0:
                     break
-                if last_launch_at and now - last_launch_at < launch_interval:
-                    break
-
-                scheduled = pending_workloads.pop(ready_index)
+                scheduled = pending_workloads[ready_index]
                 workload = scheduled.workload
                 work_dir = full_work_dir / workload.name
                 completed_marker = work_dir / "completed"
                 if completed_marker.exists() and not force:
+                    pending_workloads.pop(ready_index)
                     skipped += 1
                     print(f"[skip] {workload.name} already completed", flush=True)
                     continue
+                if last_launch_at and now - last_launch_at < launch_interval:
+                    break
+                server = select_server(
+                    servers,
+                    jobs_per_server,
+                    ssh_config,
+                    ssh_options,
+                    ssh_user,
+                )
+                if server is None:
+                    break
+
+                pending_workloads.pop(ready_index)
                 clear_stale_markers(work_dir, force=force)
 
                 checkpoint = checkpoint_by_workload[workload]
@@ -1217,10 +1305,9 @@ def run_scheduler(
                     sleep_for = poll_interval
                     if pending_workloads:
                         next_ready = min(item.ready_at for item in pending_workloads)
-                        sleep_for = min(
-                            sleep_for,
-                            max(next_ready - time.time(), 0.0),
-                        )
+                        now = time.time()
+                        if next_ready > now:
+                            sleep_for = min(sleep_for, next_ready - now)
                     if last_launch_at:
                         launch_delay = launch_interval - (time.time() - last_launch_at)
                         if launch_delay > 0:
