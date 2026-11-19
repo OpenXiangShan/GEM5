@@ -227,3 +227,54 @@ describes only that window.
 In stages.csv, prediction_to_first_ready uses candidate and first-ready
 timestamps from the same non-alias request. Its percentiles cover requests
 with both endpoints, across all observed cache levels.
+
+### Is a short window representative of its parent slice?
+
+Run `analyze.py` separately for each short and full window with the same
+control (or Off baseline). Then run:
+
+```sh
+python3 util/prefetch_analyzer/compare_windows.py windows-input.json --output window-review
+```
+
+Example manifest for one benchmark and one optimization:
+
+```json
+{
+  "benchmark": "leslie3d",
+  "experiment": "queue filter vs original",
+  "reference": "control",
+  "slices": [{
+    "checkpoint": "leslie3d_18494",
+    "weight": 0.15,
+    "full": {"report": "reports/full", "start": 20000000, "end": 40000000, "warmup": 20000000},
+    "short": [{"report": "reports/short", "start": 30000000, "end": 31000000, "warmup": 1000000}]
+  }]
+}
+```
+
+Paths are relative to the manifest. Supply actual checkpoint-relative retired
+instruction boundaries [start,end) and the number of warmup instructions
+immediately preceding each ROI. Specify the same binary, checkpoint lineage
+and pair of variants for all windows in a slice. These identities and the
+start offsets come from the experiment runner; gem5 tick numbers alone do
+not establish them. Both arms must retire exactly end-start instructions.
+For multiple points, provide the original benchmark-level instruction
+weights, including full runs without short windows (empty short list).
+
+Open windows.html for per-window IPC direction and magnitude, signed residual
+MPKI differences, and overlap of top PCs ranked by absolute change in request
+wait per instruction. These waits can overlap. The JSON retains the compound
+PC identity, rank-set membership and both cohorts' counter audit statuses.
+An absent PC value means no nonzero observed delta for that key. Read very
+small sign changes alongside the percentage-point gap. A benchmark speedup
+is emitted only at complete weight coverage, from the ratio of weighted full
+reference and candidate CPIs. Short windows never add profile weight.
+
+For a production run with no trace, replace a window's `"report"` with
+`"stats_pair": {"control": "reference/m5out", "candidate": "modified/m5out"}`
+(use the key `baseline` for an Off reference). Both directories must contain
+stats.txt and config.ini. The last complete stats block, selected CPU
+(optional window field `cpu`, default system.cpu), retired-count check and
+non-prefetch configuration check apply. Such a window contributes to the
+performance comparison; its trace-derived evidence is marked unavailable.
