@@ -36,8 +36,16 @@
 #ifndef __MEM_CACHE_PREFETCH_BOP_HH__
 #define __MEM_CACHE_PREFETCH_BOP_HH__
 
+#include <cstdint>
+#include <deque>
+#include <list>
 #include <queue>
 #include <set>
+#include <string>
+#include <unordered_set>
+#include <utility>
+#include <vector>
+
 #include <boost/compute/detail/lru_cache.hpp>
 
 #include "base/sat_counter.hh"
@@ -164,6 +172,62 @@ class BOP : public Queued
         unsigned int bestScore;
         /** Current round */
         unsigned int round;
+        const bool issueGateEnable;
+        const unsigned issueConfThreshold;
+        uint8_t issueConfidence;
+
+        struct StudentOffsetEntry
+        {
+            int64_t offset;
+            double conf;
+            uint32_t lastPhaseCov;
+            uint32_t curPhaseCov;
+
+            explicit StudentOffsetEntry(int64_t offset_)
+                : offset(offset_), conf(0.0), lastPhaseCov(0), curPhaseCov(0)
+            {}
+        };
+
+        /** Teacher-student coverage learner parameters */
+        const bool enableStudentCover;
+        const unsigned studentPoolSize;
+        const double studentConfAlpha;
+        const double studentCovThreshold;
+        const bool studentLargeOffsetPriorityEnable;
+        const double studentLargeOffsetPriorityCoeff;
+        const unsigned studentTeacherTopN;
+        const unsigned studentFilterEntries;
+        const unsigned studentHashCount;
+        const std::string studentHashMode;
+        const unsigned studentHashAddrBits;
+        const bool studentDelayQueueEnabled;
+        const unsigned studentDelayQueueSize;
+        const Tick studentDelayTicks;
+
+        struct StudentDelayQueueEntry
+        {
+            Tick readyTick;
+            std::vector<unsigned int> filterIndexes;
+            uint64_t mask;
+
+            StudentDelayQueueEntry(
+                Tick ready_tick,
+                std::vector<unsigned int> filter_indexes,
+                uint64_t bit_mask)
+                : readyTick(ready_tick),
+                  filterIndexes(std::move(filter_indexes)),
+                  mask(bit_mask)
+            {}
+        };
+
+        std::vector<StudentOffsetEntry> studentPool;
+        std::vector<uint64_t> studentFilterBits;
+        std::deque<StudentDelayQueueEntry> studentDelayQueue;
+        std::unordered_set<Addr> studentExactSeen;
+        int64_t studentSelectedOffset;
+        bool studentSelectedValid;
+        bool studentSelectedEnable;
+        uint32_t studentPhaseTrainCount;
 
         std::list<OffsetListEntry>::iterator getBestOffsetIter();
 
@@ -210,6 +274,30 @@ class BOP : public Queued
             round and update the best offset if found */
         bool bestOffsetLearning(Addr hashed_addr, bool late, const PrefetchInfo &pfi);
 
+        void studentObserveTrainAddr(Addr addr);
+        void studentOnTeacherPhaseEnd(int64_t teacher_best_offset);
+        bool studentInsertTeacherBest(int64_t offset);
+        int64_t studentSelectIssueOffset(int64_t teacher_best_offset) const;
+        bool studentShouldIssue() const;
+        bool issueGateAllowsIssue() const;
+        void updateIssueConfidence(bool teacher_disabled);
+        bool studentUseOracleMode() const;
+        void studentClearPhaseState();
+        void studentDrainDelayQueue(Tick now);
+        void studentEnqueuePrediction(Addr train_addr, size_t bit_idx,
+            int64_t offset);
+        void studentInsertFilterMask(
+            const std::vector<unsigned int> &indexes, uint64_t mask);
+        std::vector<unsigned int> studentHashIndexes(Addr line_addr) const;
+        bool studentPoolAllSameSign() const;
+        bool studentIntermediateOffsetsMatchSlope(size_t best_idx,
+            size_t worst_idx, uint32_t best_cov, uint32_t worst_cov) const;
+        size_t studentPickBestIndex() const;
+        size_t studentPickWorstIndex() const;
+        size_t studentPickEvictIndex() const;
+        bool studentShouldPreferLargeOffset(size_t best_idx, size_t worst_idx,
+            uint32_t best_cov, uint32_t worst_cov) const;
+
         unsigned missCount{0};
 
         bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
@@ -217,9 +305,24 @@ class BOP : public Queued
 
         struct BopStats : public statistics::Group
         {
-            BopStats(statistics::Group *parent);
+            BopStats(statistics::Group *parent, unsigned student_pool_size,
+                unsigned student_delay_queue_size);
             statistics::Distribution issuedOffsetDist;
+            statistics::Distribution teacherInjectedOffsetDist;
+            statistics::Distribution studentSelectedOffsetDist;
+            statistics::Distribution studentPoolOccupancyDist;
+            statistics::Distribution studentCovRatioPctDist;
+            statistics::Distribution studentWorstCovRatioPctDist;
+            statistics::Distribution studentDelayQueueOccupancyDist;
             statistics::Scalar learnOffsetCount;
+            statistics::Scalar teacherInjectedCount;
+            statistics::Scalar studentPhaseCount;
+            statistics::Scalar studentIssueCount;
+            statistics::Scalar studentFallbackCount;
+            statistics::Scalar studentLargeOffsetPriorityCount;
+            statistics::Scalar studentDelayQueueInsertCount;
+            statistics::Scalar studentDelayQueueDrainCount;
+            statistics::Scalar studentDelayQueueFullDropCount;
             statistics::Scalar throttledCount;
         } stats;
 
