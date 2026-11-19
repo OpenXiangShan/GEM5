@@ -39,11 +39,7 @@ jobs:
         run: |
           set -euo pipefail
           ulimit -c 0
-          bundle=/nfs/home/share/gem5_ci/checkpoints/rvwmo-litmus/rvwmo-975a9a66.tar.gz
-          echo "4ada5c990b042df67020feabe9666ab4e4579d496bfde111cd4aa301b8100dbf  $bundle" | sha256sum -c -
-          corpus=$(mktemp -d "$RUNNER_TEMP/rvwmo.XXXXXX")
-          trap 'rm -rf "$corpus"' EXIT
-          tar -xzf "$bundle" -C "$corpus"
+          corpus=/nfs/home/share/gem5_ci/checkpoints/rvwmo-litmus/rvwmo-975a9a66
           python3 .github/scripts/weekly_rvwmo.py build/RISCV/gem5.opt "$corpus"
 
   align_test_spec06:
