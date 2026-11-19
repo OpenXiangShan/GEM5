@@ -13,6 +13,46 @@ on:
         default: ''
 
 jobs:
+  rvwmo_litmus:
+    if: ${{ !inputs.jobs || contains(format(',{0},', inputs.jobs), ',rvwmo_litmus,') }}
+    runs-on: [self-hosted, node]
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/build-dramsim
+      - name: Build GEM5 opt
+        run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+      - uses: actions/checkout@v7
+        with:
+          repository: OpenXiangShan/litmus-tests-riscv
+          ref: 975a9a66b9d1bc55db30adbe03a7d0ee6c8a313f
+          path: litmus-tests-riscv
+          sparse-checkout: platforms/xs-gem5
+          persist-credentials: false
+      - name: Run RVWMO litmus tests on SMT and SpMT
+        env:
+          PYTHONPATH: litmus-tests-riscv/platforms/xs-gem5
+        run: |
+          set -euo pipefail
+          ulimit -c 0
+          bundle=/nfs/home/share/gem5_ci/checkpoints/rvwmo-litmus/rvwmo-975a9a66.tar.gz
+          echo "4ada5c990b042df67020feabe9666ab4e4579d496bfde111cd4aa301b8100dbf  $bundle" | sha256sum -c -
+          corpus=$(mktemp -d "$RUNNER_TEMP/rvwmo.XXXXXX")
+          trap 'rm -rf "$corpus"' EXIT
+          tar -xzf "$bundle" -C "$corpus"
+          python3 .github/scripts/weekly_rvwmo.py build/RISCV/gem5.opt "$corpus"
+      - name: Upload failing simulator logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rvwmo-failures
+          path: rvwmo-failures/
+          if-no-files-found: ignore
+
   align_test_spec06:
     if: ${{ !inputs.jobs || contains(format(',{0},', inputs.jobs), ',align_test_spec06,') }}
     uses: ./.github/workflows/gem5-perf-template.yml
@@ -120,6 +160,7 @@ jobs:
       extra_args: "--dramsim3-ini=$GEM5_HOME/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_8ch.ini --enable-dynamic-pf=True"
 
   trace_test_google:
+    if: ${{ !inputs.jobs || contains(format(',{0},', inputs.jobs), ',trace_test_google,') }}
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/kmhv3.py
@@ -127,6 +168,7 @@ jobs:
       timeout_minutes: 720
 
   trace_test_cbp:
+    if: ${{ !inputs.jobs || contains(format(',{0},', inputs.jobs), ',trace_test_cbp,') }}
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/kmhv3.py
