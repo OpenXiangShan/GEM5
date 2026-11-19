@@ -1,0 +1,62 @@
+[
+  {
+    "name": "omnetpp_18492",
+    "workload": "omnetpp",
+    "weight": 0.313070,
+    "result_dir": "/tmp/ts_bop_degree_omnetpp_18492_full"
+  },
+  {
+    "name": "cactusADM_163",
+    "workload": "cactusADM",
+    "weight": 0.560381,
+    "result_dir": "/tmp/ts_bop_degree_full_cactusADM_163"
+  },
+  {
+    "name": "mcf_12886",
+    "workload": "mcf",
+    "weight": 0.149435,
+    "result_dir": "/tmp/ts_bop_degree_full_mcf_12886_rrcount"
+  },
+  {
+    "name": "milc_28462",
+    "workload": "milc",
+    "weight": 0.074958,
+    "result_dir": "/tmp/ts_bop_degree_full_milc_28462"
+  },
+  {
+    "name": "bwaves_13153",
+    "workload": "bwaves",
+    "weight": 0.720160,
+    "result_dir": "/tmp/ts_bop_degree_full_bwaves_13153"
+  },
+  {
+    "name": "astar_biglakes_6185",
+    "workload": "astar",
+    "weight": 0.171593,
+    "result_dir": "/tmp/ts_bop_degree_full_astar_biglakes_6185"
+  },
+  {
+    "name": "leslie3d_18494",
+    "workload": "leslie3d",
+    "weight": 0.181792,
+    "result_dir": "/tmp/ts_bop_degree_full_leslie3d_18494"
+  },
+  {
+    "name": "mcf_6753",
+    "workload": "mcf",
+    "weight": 0.218742,
+    "result_dir": "/tmp/ts_bop_degree_full_mcf_6753_rrcount"
+  },
+  {
+    "name": "gcc_200_5108",
+    "workload": "gcc_200",
+    "weight": 0.143446,
+    "result_dir": "/tmp/ts_bop_degree_full_gcc_200_5108"
+  },
+  {
+    "name": "milc_30106",
+    "workload": "milc",
+    "weight": 0.085219,
+    "result_dir": "/tmp/ts_bop_degree_full_milc_30106_rrcount"
+  }
+]

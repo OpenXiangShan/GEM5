@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1420" height="630" viewBox="0 0 1420 630" role="img">
+<style>
+  text { font-family: Arial, sans-serif; fill: #172033; }
+  .title { font-size: 20px; font-weight: 500; }
+  .subtitle { font-size: 12px; fill: #667085; }
+  .label { font-size: 12px; }
+  .small { font-size: 11px; fill: #667085; }
+  .axis { stroke: #d9dee8; stroke-width: 1; }
+</style>
+<rect width="1420" height="630" fill="#ffffff"/>
+<text x="24.0" y="30.0" class="title" text-anchor="start">Teacher parameters: local coverage / traffic trade-off</text>
+<text x="24.0" y="51.0" class="subtitle" text-anchor="start">All gray points are scanned parameter pairs; colored points mark the baseline and key frontier points.</text>
+<rect x="24.0" y="68.0" width="13.0" height="13.0" fill="#d1495b"/>
+<text x="43.0" y="79.0" class="small" text-anchor="start">R50/S31</text>
+<rect x="149.0" y="68.0" width="13.0" height="13.0" fill="#f28e2b"/>
+<text x="168.0" y="79.0" class="small" text-anchor="start">R60/S16</text>
+<rect x="274.0" y="68.0" width="13.0" height="13.0" fill="#00a676"/>
+<text x="293.0" y="79.0" class="small" text-anchor="start">R50/S16</text>
+<rect x="399.0" y="68.0" width="13.0" height="13.0" fill="#8f5bb7"/>
+<text x="418.0" y="79.0" class="small" text-anchor="start">R60/S22</text>
+<rect x="524.0" y="68.0" width="13.0" height="13.0" fill="#4e79a7"/>
+<text x="543.0" y="79.0" class="small" text-anchor="start">R55/S18</text>
+<rect x="649.0" y="68.0" width="13.0" height="13.0" fill="#3448c5"/>
+<text x="668.0" y="79.0" class="small" text-anchor="start">Dual BOP</text>
+<text x="65.0" y="120.0" class="label" text-anchor="start">Checkpoint-weighted</text>
+<line x1="123.0" y1="152.0" x2="123.0" y2="500.0" class="axis"/>
+<line x1="123.0" y1="500.0" x2="663.0" y2="500.0" class="axis"/>
+<text x="123.0" y="520.0" class="small" text-anchor="middle">1.31</text>
+<text x="115.0" y="504.0" class="small" text-anchor="end">72.4%</text>
+<line x1="231.0" y1="152.0" x2="231.0" y2="500.0" class="axis"/>
+<line x1="123.0" y1="430.4" x2="663.0" y2="430.4" class="axis"/>
+<text x="231.0" y="520.0" class="small" text-anchor="middle">1.43</text>
+<text x="115.0" y="434.4" class="small" text-anchor="end">73.3%</text>
+<line x1="339.0" y1="152.0" x2="339.0" y2="500.0" class="axis"/>
+<line x1="123.0" y1="360.8" x2="663.0" y2="360.8" class="axis"/>
+<text x="339.0" y="520.0" class="small" text-anchor="middle">1.55</text>
+<text x="115.0" y="364.8" class="small" text-anchor="end">74.2%</text>
+<line x1="447.0" y1="152.0" x2="447.0" y2="500.0" class="axis"/>
+<line x1="123.0" y1="291.2" x2="663.0" y2="291.2" class="axis"/>
+<text x="447.0" y="520.0" class="small" text-anchor="middle">1.67</text>
+<text x="115.0" y="295.2" class="small" text-anchor="end">75.1%</text>
+<line x1="555.0" y1="152.0" x2="555.0" y2="500.0" class="axis"/>
+<line x1="123.0" y1="221.6" x2="663.0" y2="221.6" class="axis"/>
+<text x="555.0" y="520.0" class="small" text-anchor="middle">1.78</text>
+<text x="115.0" y="225.6" class="small" text-anchor="end">76.0%</text>
+<line x1="663.0" y1="152.0" x2="663.0" y2="500.0" class="axis"/>
+<line x1="123.0" y1="152.0" x2="663.0" y2="152.0" class="axis"/>
+<text x="663.0" y="520.0" class="small" text-anchor="middle">1.90</text>
+<text x="115.0" y="156.0" class="small" text-anchor="end">76.9%</text>
+<text x="123.0" y="142.0" class="small" text-anchor="start">local coverage</text>
+<text x="393.0" y="543.0" class="small" text-anchor="middle">local sent / demand</text>
+<circle cx="209.3" cy="415.9" r="6" fill="#00a676" fill-opacity="1" stroke="#ffffff" stroke-width="1"/>
+<circle cx="226.0" cy="425.8" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="175.3" cy="440.5" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="204.6" cy="449.3" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="201.6" cy="459.4" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="233.2" cy="466.3" r="6" fill="#d1495b" fill-opacity="1" stroke="#ffffff" stroke-width="1"/>
+<circle cx="251.6" cy="333.1" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="275.0" cy="333.9" r="6" fill="#4e79a7" fill-opacity="1" stroke="#ffffff" stroke-width="1"/>
+<circle cx="223.1" cy="332.6" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="242.6" cy="353.7" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="274.0" cy="360.2" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="257.2" cy="307.4" r="6" fill="#f28e2b" fill-opacity="1" stroke="#ffffff" stroke-width="1"/>
+<circle cx="287.5" cy="327.2" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="232.7" cy="341.7" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="248.2" cy="325.0" r="6" fill="#8f5bb7" fill-opacity="1" stroke="#ffffff" stroke-width="1"/>
+<circle cx="282.6" cy="331.7" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="610.7" cy="185.7" r="7" fill="#3448c5" stroke="#ffffff" stroke-width="1.5"/>
+<text x="618.7" y="176.7" class="small" text-anchor="start">Dual BOP</text>
+<text x="760.0" y="120.0" class="label" text-anchor="start">Access-weighted</text>
+<line x1="818.0" y1="152.0" x2="818.0" y2="500.0" class="axis"/>
+<line x1="818.0" y1="500.0" x2="1358.0" y2="500.0" class="axis"/>
+<text x="818.0" y="520.0" class="small" text-anchor="middle">1.35</text>
+<text x="810.0" y="504.0" class="small" text-anchor="end">55.7%</text>
+<line x1="926.0" y1="152.0" x2="926.0" y2="500.0" class="axis"/>
+<line x1="818.0" y1="430.4" x2="1358.0" y2="430.4" class="axis"/>
+<text x="926.0" y="520.0" class="small" text-anchor="middle">1.43</text>
+<text x="810.0" y="434.4" class="small" text-anchor="end">57.7%</text>
+<line x1="1034.0" y1="152.0" x2="1034.0" y2="500.0" class="axis"/>
+<line x1="818.0" y1="360.8" x2="1358.0" y2="360.8" class="axis"/>
+<text x="1034.0" y="520.0" class="small" text-anchor="middle">1.50</text>
+<text x="810.0" y="364.8" class="small" text-anchor="end">59.7%</text>
+<line x1="1142.0" y1="152.0" x2="1142.0" y2="500.0" class="axis"/>
+<line x1="818.0" y1="291.2" x2="1358.0" y2="291.2" class="axis"/>
+<text x="1142.0" y="520.0" class="small" text-anchor="middle">1.58</text>
+<text x="810.0" y="295.2" class="small" text-anchor="end">61.7%</text>
+<line x1="1250.0" y1="152.0" x2="1250.0" y2="500.0" class="axis"/>
+<line x1="818.0" y1="221.6" x2="1358.0" y2="221.6" class="axis"/>
+<text x="1250.0" y="520.0" class="small" text-anchor="middle">1.65</text>
+<text x="810.0" y="225.6" class="small" text-anchor="end">63.7%</text>
+<line x1="1358.0" y1="152.0" x2="1358.0" y2="500.0" class="axis"/>
+<line x1="818.0" y1="152.0" x2="1358.0" y2="152.0" class="axis"/>
+<text x="1358.0" y="520.0" class="small" text-anchor="middle">1.73</text>
+<text x="810.0" y="156.0" class="small" text-anchor="end">65.7%</text>
+<text x="818.0" y="142.0" class="small" text-anchor="start">local coverage</text>
+<text x="1088.0" y="543.0" class="small" text-anchor="middle">local sent / demand</text>
+<circle cx="876.4" cy="450.7" r="6" fill="#00a676" fill-opacity="1" stroke="#ffffff" stroke-width="1"/>
+<circle cx="874.6" cy="453.0" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="870.3" cy="456.0" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="888.0" cy="466.3" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="889.9" cy="464.7" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="893.6" cy="465.2" r="6" fill="#d1495b" fill-opacity="1" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1223.1" cy="242.2" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1210.4" cy="241.0" r="6" fill="#4e79a7" fill-opacity="1" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1215.0" cy="243.3" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1204.1" cy="245.3" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1220.9" cy="248.5" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1293.4" cy="185.7" r="6" fill="#f28e2b" fill-opacity="1" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1305.7" cy="191.9" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1292.4" cy="192.6" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1288.8" cy="188.7" r="6" fill="#8f5bb7" fill-opacity="1" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1296.5" cy="189.3" r="3.5" fill="#aab2bf" fill-opacity="0.65" stroke="#ffffff" stroke-width="1"/>
+<circle cx="902.0" cy="359.8" r="7" fill="#3448c5" stroke="#ffffff" stroke-width="1.5"/>
+<text x="910.0" y="350.8" class="small" text-anchor="start">Dual BOP</text>
+</svg>

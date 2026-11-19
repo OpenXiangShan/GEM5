@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1380" height="508" viewBox="0 0 1380 508" role="img">
+<style>
+  text { font-family: Arial, sans-serif; fill: #172033; }
+  .title { font-size: 20px; font-weight: 500; }
+  .subtitle { font-size: 12px; fill: #667085; }
+  .label { font-size: 12px; }
+  .small { font-size: 11px; fill: #667085; }
+  .axis { stroke: #d9dee8; stroke-width: 1; }
+</style>
+<rect width="1380" height="508" fill="#ffffff"/>
+<text x="24.0" y="30.0" class="title" text-anchor="start">Merged VBOP Teacher parameter sweep</text>
+<text x="24.0" y="51.0" class="subtitle" text-anchor="start">Cell labels are local coverage deltas versus R50/S31 after the shared filter, FIFOs, and 3:1 arbiter.</text>
+<text x="40.0" y="82.0" class="label" text-anchor="start">Checkpoint-weighted local coverage</text>
+<text x="194.0" y="93.0" class="small" text-anchor="middle">S12</text>
+<text x="312.0" y="93.0" class="small" text-anchor="middle">S20</text>
+<text x="430.0" y="93.0" class="small" text-anchor="middle">S31</text>
+<text x="548.0" y="93.0" class="small" text-anchor="middle">S40</text>
+<text x="123.0" y="134.0" class="small" text-anchor="end">R30</text>
+<rect x="137.0" y="107.0" width="114.0" height="44.0" fill="#efcacb"/>
+<text x="194.0" y="134.0" class="label" text-anchor="middle">-3.68 pp</text>
+<rect x="255.0" y="107.0" width="114.0" height="44.0" fill="#f0ccce"/>
+<text x="312.0" y="134.0" class="label" text-anchor="middle">-3.28 pp</text>
+<rect x="373.0" y="107.0" width="114.0" height="44.0" fill="#f2f4f7"/>
+<text x="430.0" y="134.0" class="small" text-anchor="middle">n/a</text>
+<rect x="491.0" y="107.0" width="114.0" height="44.0" fill="#f2f4f7"/>
+<text x="548.0" y="134.0" class="small" text-anchor="middle">n/a</text>
+<text x="123.0" y="182.0" class="small" text-anchor="end">R33</text>
+<rect x="137.0" y="155.0" width="114.0" height="44.0" fill="#f2f4f7"/>
+<text x="194.0" y="182.0" class="small" text-anchor="middle">n/a</text>
+<rect x="255.0" y="155.0" width="114.0" height="44.0" fill="#f2f4f7"/>
+<text x="312.0" y="182.0" class="small" text-anchor="middle">n/a</text>
+<rect x="373.0" y="155.0" width="114.0" height="44.0" fill="#f1cfd1"/>
+<text x="430.0" y="182.0" class="label" text-anchor="middle">-2.89 pp</text>
+<rect x="491.0" y="155.0" width="114.0" height="44.0" fill="#f2f4f7"/>
+<text x="548.0" y="182.0" class="small" text-anchor="middle">n/a</text>
+<text x="123.0" y="230.0" class="small" text-anchor="end">R40</text>
+<rect x="137.0" y="203.0" width="114.0" height="44.0" fill="#f3d7d9"/>
+<text x="194.0" y="230.0" class="label" text-anchor="middle">-1.75 pp</text>
+<rect x="255.0" y="203.0" width="114.0" height="44.0" fill="#f4d9da"/>
+<text x="312.0" y="230.0" class="label" text-anchor="middle">-1.52 pp</text>
+<rect x="373.0" y="203.0" width="114.0" height="44.0" fill="#f3d9da"/>
+<text x="430.0" y="230.0" class="label" text-anchor="middle">-1.60 pp</text>
+<rect x="491.0" y="203.0" width="114.0" height="44.0" fill="#f3d9da"/>
+<text x="548.0" y="230.0" class="label" text-anchor="middle">-1.58 pp</text>
+<text x="123.0" y="278.0" class="small" text-anchor="end">R50</text>
+<rect x="137.0" y="251.0" width="114.0" height="44.0" fill="#f6e2e2"/>
+<text x="194.0" y="278.0" class="label" text-anchor="middle">-0.34 pp</text>
+<rect x="255.0" y="251.0" width="114.0" height="44.0" fill="#dbede4"/>
+<text x="312.0" y="278.0" class="label" text-anchor="middle">+0.33 pp</text>
+<rect x="373.0" y="251.0" width="114.0" height="44.0" fill="#deeee6"/>
+<rect x="373.0" y="251.0" width="114.0" height="44.0" fill="none" stroke="#111827" stroke-width="2"/>
+<text x="430.0" y="278.0" class="label" text-anchor="middle">+0.00 pp</text>
+<rect x="491.0" y="251.0" width="114.0" height="44.0" fill="#dcede4"/>
+<text x="548.0" y="278.0" class="label" text-anchor="middle">+0.30 pp</text>
+<text x="123.0" y="326.0" class="small" text-anchor="end">R65</text>
+<rect x="137.0" y="299.0" width="114.0" height="44.0" fill="#cae4d7"/>
+<text x="194.0" y="326.0" class="label" text-anchor="middle">+2.27 pp</text>
+<rect x="255.0" y="299.0" width="114.0" height="44.0" fill="#cbe4d8"/>
+<text x="312.0" y="326.0" class="label" text-anchor="middle">+2.17 pp</text>
+<rect x="373.0" y="299.0" width="114.0" height="44.0" fill="#cbe5d8"/>
+<text x="430.0" y="326.0" class="label" text-anchor="middle">+2.15 pp</text>
+<rect x="491.0" y="299.0" width="114.0" height="44.0" fill="#cbe4d8"/>
+<text x="548.0" y="326.0" class="label" text-anchor="middle">+2.18 pp</text>
+<text x="123.0" y="374.0" class="small" text-anchor="end">R80</text>
+<rect x="137.0" y="347.0" width="114.0" height="44.0" fill="#cbe4d8"/>
+<text x="194.0" y="374.0" class="label" text-anchor="middle">+2.21 pp</text>
+<rect x="255.0" y="347.0" width="114.0" height="44.0" fill="#cae4d7"/>
+<text x="312.0" y="374.0" class="label" text-anchor="middle">+2.35 pp</text>
+<rect x="373.0" y="347.0" width="114.0" height="44.0" fill="#c7e2d5"/>
+<text x="430.0" y="374.0" class="label" text-anchor="middle">+2.67 pp</text>
+<rect x="491.0" y="347.0" width="114.0" height="44.0" fill="#cce5d8"/>
+<text x="548.0" y="374.0" class="label" text-anchor="middle">+2.11 pp</text>
+<text x="371.0" y="417.0" class="small" text-anchor="middle">baseline 72.84%</text>
+<text x="720.0" y="82.0" class="label" text-anchor="start">Access-weighted local coverage</text>
+<text x="874.0" y="93.0" class="small" text-anchor="middle">S12</text>
+<text x="992.0" y="93.0" class="small" text-anchor="middle">S20</text>
+<text x="1110.0" y="93.0" class="small" text-anchor="middle">S31</text>
+<text x="1228.0" y="93.0" class="small" text-anchor="middle">S40</text>
+<text x="803.0" y="134.0" class="small" text-anchor="end">R30</text>
+<rect x="817.0" y="107.0" width="114.0" height="44.0" fill="#ce5d62"/>
+<text x="874.0" y="134.0" class="label" text-anchor="middle">-18.78 pp</text>
+<rect x="935.0" y="107.0" width="114.0" height="44.0" fill="#cf5f63"/>
+<text x="992.0" y="134.0" class="label" text-anchor="middle">-18.50 pp</text>
+<rect x="1053.0" y="107.0" width="114.0" height="44.0" fill="#f2f4f7"/>
+<text x="1110.0" y="134.0" class="small" text-anchor="middle">n/a</text>
+<rect x="1171.0" y="107.0" width="114.0" height="44.0" fill="#f2f4f7"/>
+<text x="1228.0" y="134.0" class="small" text-anchor="middle">n/a</text>
+<text x="803.0" y="182.0" class="small" text-anchor="end">R33</text>
+<rect x="817.0" y="155.0" width="114.0" height="44.0" fill="#f2f4f7"/>
+<text x="874.0" y="182.0" class="small" text-anchor="middle">n/a</text>
+<rect x="935.0" y="155.0" width="114.0" height="44.0" fill="#f2f4f7"/>
+<text x="992.0" y="182.0" class="small" text-anchor="middle">n/a</text>
+<rect x="1053.0" y="155.0" width="114.0" height="44.0" fill="#d36c71"/>
+<text x="1110.0" y="182.0" class="label" text-anchor="middle">-16.63 pp</text>
+<rect x="1171.0" y="155.0" width="114.0" height="44.0" fill="#f2f4f7"/>
+<text x="1228.0" y="182.0" class="small" text-anchor="middle">n/a</text>
+<text x="803.0" y="230.0" class="small" text-anchor="end">R40</text>
+<rect x="817.0" y="203.0" width="114.0" height="44.0" fill="#e0989b"/>
+<text x="874.0" y="230.0" class="label" text-anchor="middle">-10.54 pp</text>
+<rect x="935.0" y="203.0" width="114.0" height="44.0" fill="#e0999c"/>
+<text x="992.0" y="230.0" class="label" text-anchor="middle">-10.40 pp</text>
+<rect x="1053.0" y="203.0" width="114.0" height="44.0" fill="#e0999c"/>
+<text x="1110.0" y="230.0" class="label" text-anchor="middle">-10.47 pp</text>
+<rect x="1171.0" y="203.0" width="114.0" height="44.0" fill="#e0999c"/>
+<text x="1228.0" y="230.0" class="label" text-anchor="middle">-10.47 pp</text>
+<text x="803.0" y="278.0" class="small" text-anchor="end">R50</text>
+<rect x="817.0" y="251.0" width="114.0" height="44.0" fill="#f7e4e4"/>
+<text x="874.0" y="278.0" class="label" text-anchor="middle">-0.06 pp</text>
+<rect x="935.0" y="251.0" width="114.0" height="44.0" fill="#dcede5"/>
+<text x="992.0" y="278.0" class="label" text-anchor="middle">+0.26 pp</text>
+<rect x="1053.0" y="251.0" width="114.0" height="44.0" fill="#deeee6"/>
+<rect x="1053.0" y="251.0" width="114.0" height="44.0" fill="none" stroke="#111827" stroke-width="2"/>
+<text x="1110.0" y="278.0" class="label" text-anchor="middle">+0.00 pp</text>
+<rect x="1171.0" y="251.0" width="114.0" height="44.0" fill="#ddeee6"/>
+<text x="1228.0" y="278.0" class="label" text-anchor="middle">+0.10 pp</text>
+<text x="803.0" y="326.0" class="small" text-anchor="end">R65</text>
+<rect x="817.0" y="299.0" width="114.0" height="44.0" fill="#90c6ac"/>
+<text x="874.0" y="326.0" class="label" text-anchor="middle">+8.90 pp</text>
+<rect x="935.0" y="299.0" width="114.0" height="44.0" fill="#91c7ac"/>
+<text x="992.0" y="326.0" class="label" text-anchor="middle">+8.83 pp</text>
+<rect x="1053.0" y="299.0" width="114.0" height="44.0" fill="#91c7ac"/>
+<text x="1110.0" y="326.0" class="label" text-anchor="middle">+8.85 pp</text>
+<rect x="1171.0" y="299.0" width="114.0" height="44.0" fill="#91c7ac"/>
+<text x="1228.0" y="326.0" class="label" text-anchor="middle">+8.86 pp</text>
+<text x="803.0" y="374.0" class="small" text-anchor="end">R80</text>
+<rect x="817.0" y="347.0" width="114.0" height="44.0" fill="#89c3a6"/>
+<text x="874.0" y="374.0" class="label" text-anchor="middle">+9.75 pp</text>
+<rect x="935.0" y="347.0" width="114.0" height="44.0" fill="#89c3a6"/>
+<text x="992.0" y="374.0" class="label" text-anchor="middle">+9.76 pp</text>
+<rect x="1053.0" y="347.0" width="114.0" height="44.0" fill="#88c2a5"/>
+<text x="1110.0" y="374.0" class="label" text-anchor="middle">+9.89 pp</text>
+<rect x="1171.0" y="347.0" width="114.0" height="44.0" fill="#8ac3a7"/>
+<text x="1228.0" y="374.0" class="label" text-anchor="middle">+9.67 pp</text>
+<text x="1051.0" y="417.0" class="small" text-anchor="middle">baseline 56.65%</text>
+</svg>

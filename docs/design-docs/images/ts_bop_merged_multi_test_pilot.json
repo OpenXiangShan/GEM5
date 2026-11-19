@@ -1,0 +1,2481 @@
+{
+  "aggregate": {
+    "dual_current": {
+      "generated_per_demand": {
+        "access_weighted": 2.0,
+        "checkpoint_weighted": 2.0
+      },
+      "ideal_coverage": {
+        "access_weighted": 0.655910616115164,
+        "checkpoint_weighted": 0.7133352009724877
+      },
+      "local_coverage": {
+        "access_weighted": 0.6555473583294635,
+        "checkpoint_weighted": 0.7132128453891502
+      },
+      "local_sent_per_demand": {
+        "access_weighted": 1.9712502059709094,
+        "checkpoint_weighted": 1.9691390462142637
+      }
+    },
+    "merged_d2": {
+      "generated_per_demand": {
+        "access_weighted": 2.0,
+        "checkpoint_weighted": 2.0
+      },
+      "ideal_coverage": {
+        "access_weighted": 0.5969973186332519,
+        "checkpoint_weighted": 0.6496092866279544
+      },
+      "local_coverage": {
+        "access_weighted": 0.5935501145947242,
+        "checkpoint_weighted": 0.6474994224804714
+      },
+      "local_sent_per_demand": {
+        "access_weighted": 1.6105464595473133,
+        "checkpoint_weighted": 1.490990725522994
+      }
+    },
+    "mixed_v2p2_n1_r50_s31": {
+      "generated_per_demand": {
+        "access_weighted": 2.0,
+        "checkpoint_weighted": 2.0
+      },
+      "ideal_coverage": {
+        "access_weighted": 0.63326505085609,
+        "checkpoint_weighted": 0.6941499615535791
+      },
+      "local_coverage": {
+        "access_weighted": 0.6313307967703762,
+        "checkpoint_weighted": 0.6926811305218137
+      },
+      "local_sent_per_demand": {
+        "access_weighted": 1.8212490824932217,
+        "checkpoint_weighted": 1.8128892713453677
+      }
+    },
+    "mixed_v2p2_n2_r25_s31": {
+      "generated_per_demand": {
+        "access_weighted": 1.997447833186033,
+        "checkpoint_weighted": 1.9958290214128611
+      },
+      "ideal_coverage": {
+        "access_weighted": 0.6483795706817262,
+        "checkpoint_weighted": 0.7147340769997395
+      },
+      "local_coverage": {
+        "access_weighted": 0.646098910975628,
+        "checkpoint_weighted": 0.713118542919315
+      },
+      "local_sent_per_demand": {
+        "access_weighted": 1.832631783932771,
+        "checkpoint_weighted": 1.81300215865891
+      }
+    },
+    "mixed_v2p2_n2_r50_s31": {
+      "generated_per_demand": {
+        "access_weighted": 2.0,
+        "checkpoint_weighted": 2.0
+      },
+      "ideal_coverage": {
+        "access_weighted": 0.6339484997827943,
+        "checkpoint_weighted": 0.6966595725524793
+      },
+      "local_coverage": {
+        "access_weighted": 0.6314749764069686,
+        "checkpoint_weighted": 0.6948189882676755
+      },
+      "local_sent_per_demand": {
+        "access_weighted": 1.8319520799316926,
+        "checkpoint_weighted": 1.8172404129832231
+      }
+    },
+    "mixed_v2p2_n4_r13_s31": {
+      "generated_per_demand": {
+        "access_weighted": 1.6676397231750977,
+        "checkpoint_weighted": 1.6793796991956667
+      },
+      "ideal_coverage": {
+        "access_weighted": 0.6103124016957023,
+        "checkpoint_weighted": 0.6812163142873926
+      },
+      "local_coverage": {
+        "access_weighted": 0.6077939392123672,
+        "checkpoint_weighted": 0.679598308696332
+      },
+      "local_sent_per_demand": {
+        "access_weighted": 1.527330467216921,
+        "checkpoint_weighted": 1.529531877338263
+      }
+    },
+    "mixed_v2p2_n4_r25_s31": {
+      "generated_per_demand": {
+        "access_weighted": 1.9553043126563507,
+        "checkpoint_weighted": 1.9269543221753482
+      },
+      "ideal_coverage": {
+        "access_weighted": 0.6513137199095226,
+        "checkpoint_weighted": 0.7254289474521826
+      },
+      "local_coverage": {
+        "access_weighted": 0.6474732986802882,
+        "checkpoint_weighted": 0.7223237333480288
+      },
+      "local_sent_per_demand": {
+        "access_weighted": 1.7978376799436764,
+        "checkpoint_weighted": 1.7596890802474048
+      }
+    },
+    "mixed_v2p2_n4_r50_s31": {
+      "generated_per_demand": {
+        "access_weighted": 2.0,
+        "checkpoint_weighted": 2.0
+      },
+      "ideal_coverage": {
+        "access_weighted": 0.6322557933999431,
+        "checkpoint_weighted": 0.6973869206164629
+      },
+      "local_coverage": {
+        "access_weighted": 0.6280390071453181,
+        "checkpoint_weighted": 0.6944243013860774
+      },
+      "local_sent_per_demand": {
+        "access_weighted": 1.8302425213835254,
+        "checkpoint_weighted": 1.8127090280351739
+      }
+    },
+    "partition_v2p2_all_delay_n1_r50_s31": {
+      "generated_per_demand": {
+        "access_weighted": 2.0,
+        "checkpoint_weighted": 2.0
+      },
+      "ideal_coverage": {
+        "access_weighted": 0.589925026588972,
+        "checkpoint_weighted": 0.6499472038249839
+      },
+      "local_coverage": {
+        "access_weighted": 0.5880806507182768,
+        "checkpoint_weighted": 0.6485091399652873
+      },
+      "local_sent_per_demand": {
+        "access_weighted": 1.8183411477448057,
+        "checkpoint_weighted": 1.8029851682289808
+      }
+    }
+  },
+  "checkpoints": [
+    {
+      "marker": {
+        "access_seq": 495140,
+        "tick": 4606168221
+      },
+      "measurement_accesses": 200000,
+      "name": "omnetpp_18492",
+      "replayed_accesses": 695140,
+      "result_dir": "/tmp/ts_bop_degree_omnetpp_18492_full",
+      "schemes": {
+        "dual_current": {
+          "local_metrics": {
+            "accepted_count": 395777,
+            "coverage": 0.609615,
+            "covered_by_rank": {
+              "0": 121923
+            },
+            "covered_by_role": {
+              "extra": 64411,
+              "primary": 57512
+            },
+            "covered_count": 121923,
+            "covered_with_min_lead_cycles": {
+              "0": 121923,
+              "16": 119266,
+              "32": 118512,
+              "64": 117850,
+              "128": 117041,
+              "256": 115190
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 117856,
+              "primary": 127092
+            },
+            "duplicate_sent_count": 244948,
+            "enqueued_by_role": {
+              "extra": 195777,
+              "primary": 200000
+            },
+            "fifo_late_by_role": {
+              "extra": 3231,
+              "primary": 8
+            },
+            "fifo_late_demand_count": 3239,
+            "generated_count": 400000,
+            "queue_delay_cycles_max": {
+              "extra": 17,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 3.113599215429879,
+              "primary": 1.0031050155250776
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 609568,
+              "primary": 200620
+            },
+            "recent_filtered_by_role": {},
+            "sent_by_role": {
+              "extra": 195776,
+              "primary": 199999
+            }
+          },
+          "metrics": {
+            "accepted_count": 395777,
+            "coverage": 0.609075,
+            "covered_by_bop": {
+              "PBOP": 57848,
+              "VBOP": 63967
+            },
+            "covered_by_rank": {
+              "0": 121815
+            },
+            "covered_count": 121815,
+            "demand_count": 200000,
+            "duplicate_count": 244945,
+            "generated_count": 400000
+          }
+        },
+        "merged_d2": {
+          "local_metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.50326,
+            "covered_by_rank": {
+              "0": 51898,
+              "1": 48754
+            },
+            "covered_by_role": {
+              "extra": 48754,
+              "primary": 51898
+            },
+            "covered_count": 100652,
+            "covered_with_min_lead_cycles": {
+              "0": 100652,
+              "16": 100538,
+              "32": 100462,
+              "64": 100376,
+              "128": 100248,
+              "256": 99484
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {
+              "extra": 1604
+            },
+            "duplicate_sent_by_role": {
+              "extra": 97428,
+              "primary": 116133
+            },
+            "duplicate_sent_count": 213561,
+            "enqueued_by_role": {
+              "extra": 193127,
+              "primary": 176965
+            },
+            "fifo_late_by_role": {
+              "extra": 16,
+              "primary": 13
+            },
+            "fifo_late_demand_count": 29,
+            "generated_count": 400000,
+            "queue_delay_cycles_max": {
+              "extra": 11,
+              "primary": 8
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.4194296216622635,
+              "primary": 1.3765546859548499
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 463374,
+              "primary": 243602
+            },
+            "recent_filtered_by_role": {
+              "extra": 6873,
+              "primary": 23035
+            },
+            "sent_by_role": {
+              "extra": 191522,
+              "primary": 176965
+            }
+          },
+          "metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.50422,
+            "covered_by_bop": {
+              "MergedVBOP": 100844
+            },
+            "covered_by_rank": {
+              "0": 51186,
+              "1": 49658
+            },
+            "covered_count": 100844,
+            "demand_count": 200000,
+            "duplicate_count": 244531,
+            "generated_count": 400000
+          },
+          "phase": {
+            "average_best_score": 9.756756756756756,
+            "average_rounds": 50.0,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 37,
+            "tests_per_access": 0.0,
+            "two_family_winner_fraction": 0.0
+          }
+        },
+        "mixed_v2p2_n1_r50_s31": {
+          "local_metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.596485,
+            "covered_by_rank": {
+              "0": 60405,
+              "1": 58892
+            },
+            "covered_by_role": {
+              "extra": 58892,
+              "primary": 60405
+            },
+            "covered_count": 119297,
+            "covered_with_min_lead_cycles": {
+              "0": 119297,
+              "16": 116474,
+              "32": 115783,
+              "64": 115148,
+              "128": 114421,
+              "256": 112674
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {
+              "extra": 1423
+            },
+            "duplicate_sent_by_role": {
+              "extra": 109747,
+              "primary": 111164
+            },
+            "duplicate_sent_count": 220911,
+            "enqueued_by_role": {
+              "extra": 183617,
+              "primary": 187498
+            },
+            "fifo_late_by_role": {
+              "extra": 1441,
+              "primary": 985
+            },
+            "fifo_late_demand_count": 2426,
+            "generated_count": 400000,
+            "queue_delay_cycles_max": {
+              "extra": 11,
+              "primary": 9
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.451985246495494,
+              "primary": 1.3687685669637382
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 446737,
+              "primary": 256640
+            },
+            "recent_filtered_by_role": {
+              "extra": 16383,
+              "primary": 12502
+            },
+            "sent_by_role": {
+              "extra": 182194,
+              "primary": 187497
+            }
+          },
+          "metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.59746,
+            "covered_by_bop": {
+              "mixed_v2p2_n1_r50_s31": 119492
+            },
+            "covered_by_rank": {
+              "0": 60137,
+              "1": 59355
+            },
+            "covered_count": 119492,
+            "demand_count": 200000,
+            "duplicate_count": 250286,
+            "generated_count": 400000
+          },
+          "phase": {
+            "average_best_score": 9.756756756756756,
+            "average_rounds": 50.0,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 37,
+            "tests_per_access": 1.0,
+            "two_family_winner_fraction": 1.0
+          }
+        },
+        "mixed_v2p2_n2_r25_s31": {
+          "local_metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.61068,
+            "covered_by_rank": {
+              "0": 69036,
+              "1": 53100
+            },
+            "covered_by_role": {
+              "extra": 53100,
+              "primary": 69036
+            },
+            "covered_count": 122136,
+            "covered_with_min_lead_cycles": {
+              "0": 122136,
+              "16": 118981,
+              "32": 118073,
+              "64": 117308,
+              "128": 116407,
+              "256": 114298
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {
+              "extra": 1424
+            },
+            "duplicate_sent_by_role": {
+              "extra": 104500,
+              "primary": 110371
+            },
+            "duplicate_sent_count": 214871,
+            "enqueued_by_role": {
+              "extra": 182428,
+              "primary": 189205
+            },
+            "fifo_late_by_role": {
+              "extra": 1072,
+              "primary": 1417
+            },
+            "fifo_late_demand_count": 2489,
+            "generated_count": 400000,
+            "queue_delay_cycles_max": {
+              "extra": 12,
+              "primary": 9
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.466296138738032,
+              "primary": 1.370249200602521
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 446407,
+              "primary": 259258
+            },
+            "recent_filtered_by_role": {
+              "extra": 17572,
+              "primary": 10795
+            },
+            "sent_by_role": {
+              "extra": 181003,
+              "primary": 189205
+            }
+          },
+          "metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.610735,
+            "covered_by_bop": {
+              "mixed_v2p2_n2_r25_s31": 122147
+            },
+            "covered_by_rank": {
+              "0": 67326,
+              "1": 54821
+            },
+            "covered_count": 122147,
+            "demand_count": 200000,
+            "duplicate_count": 243613,
+            "generated_count": 400000
+          },
+          "phase": {
+            "average_best_score": 5.26530612244898,
+            "average_rounds": 25.0,
+            "issue_enabled_fraction": 0.9727891156462585,
+            "phase_count": 147,
+            "tests_per_access": 1.999265,
+            "two_family_winner_fraction": 0.9931972789115646
+          }
+        },
+        "mixed_v2p2_n2_r50_s31": {
+          "local_metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.59527,
+            "covered_by_rank": {
+              "0": 65617,
+              "1": 53437
+            },
+            "covered_by_role": {
+              "extra": 53437,
+              "primary": 65617
+            },
+            "covered_count": 119054,
+            "covered_with_min_lead_cycles": {
+              "0": 119054,
+              "16": 116489,
+              "32": 115854,
+              "64": 115312,
+              "128": 114622,
+              "256": 112697
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {
+              "extra": 1345
+            },
+            "duplicate_sent_by_role": {
+              "extra": 105471,
+              "primary": 112405
+            },
+            "duplicate_sent_count": 217876,
+            "enqueued_by_role": {
+              "extra": 181260,
+              "primary": 188833
+            },
+            "fifo_late_by_role": {
+              "extra": 1140,
+              "primary": 1369
+            },
+            "fifo_late_demand_count": 2509,
+            "generated_count": 400000,
+            "queue_delay_cycles_max": {
+              "extra": 12,
+              "primary": 9
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.456949114859795,
+              "primary": 1.372002626673445
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 442042,
+              "primary": 259078
+            },
+            "recent_filtered_by_role": {
+              "extra": 18740,
+              "primary": 11167
+            },
+            "sent_by_role": {
+              "extra": 179915,
+              "primary": 188832
+            }
+          },
+          "metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.59709,
+            "covered_by_bop": {
+              "mixed_v2p2_n2_r50_s31": 119418
+            },
+            "covered_by_rank": {
+              "0": 64631,
+              "1": 54787
+            },
+            "covered_count": 119418,
+            "demand_count": 200000,
+            "duplicate_count": 245881,
+            "generated_count": 400000
+          },
+          "phase": {
+            "average_best_score": 9.716216216216216,
+            "average_rounds": 50.0,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 74,
+            "tests_per_access": 2.0,
+            "two_family_winner_fraction": 1.0
+          }
+        },
+        "mixed_v2p2_n4_r13_s31": {
+          "local_metrics": {
+            "accepted_count": 310185,
+            "coverage": 0.52679,
+            "covered_by_rank": {
+              "0": 57428,
+              "1": 47930
+            },
+            "covered_by_role": {
+              "extra": 47930,
+              "primary": 57428
+            },
+            "covered_count": 105358,
+            "covered_with_min_lead_cycles": {
+              "0": 105358,
+              "16": 102394,
+              "32": 101566,
+              "64": 100942,
+              "128": 100188,
+              "256": 98705
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {
+              "extra": 1105
+            },
+            "duplicate_sent_by_role": {
+              "extra": 72699,
+              "primary": 76152
+            },
+            "duplicate_sent_count": 148851,
+            "enqueued_by_role": {
+              "extra": 141110,
+              "primary": 143842
+            },
+            "fifo_late_by_role": {
+              "extra": 1096,
+              "primary": 1352
+            },
+            "fifo_late_demand_count": 2448,
+            "generated_count": 310185,
+            "queue_delay_cycles_max": {
+              "extra": 11,
+              "primary": 9
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.4456229822005087,
+              "primary": 1.3670763754675268
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 342397,
+              "primary": 196643
+            },
+            "recent_filtered_by_role": {
+              "extra": 13805,
+              "primary": 11428
+            },
+            "sent_by_role": {
+              "extra": 140004,
+              "primary": 143842
+            }
+          },
+          "metrics": {
+            "accepted_count": 310185,
+            "coverage": 0.528185,
+            "covered_by_bop": {
+              "mixed_v2p2_n4_r13_s31": 105637
+            },
+            "covered_by_rank": {
+              "0": 56742,
+              "1": 48895
+            },
+            "covered_count": 105637,
+            "demand_count": 200000,
+            "duplicate_count": 172862,
+            "generated_count": 310185
+          },
+          "phase": {
+            "average_best_score": 3.267730496453901,
+            "average_rounds": 13.0,
+            "issue_enabled_fraction": 0.6790780141843972,
+            "phase_count": 564,
+            "tests_per_access": 3.99154,
+            "two_family_winner_fraction": 0.9929078014184397
+          }
+        },
+        "mixed_v2p2_n4_r25_s31": {
+          "local_metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.5899,
+            "covered_by_rank": {
+              "0": 67209,
+              "1": 50771
+            },
+            "covered_by_role": {
+              "extra": 50771,
+              "primary": 67209
+            },
+            "covered_count": 117980,
+            "covered_with_min_lead_cycles": {
+              "0": 117980,
+              "16": 115007,
+              "32": 114263,
+              "64": 113503,
+              "128": 112678,
+              "256": 110739
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {
+              "extra": 1419
+            },
+            "duplicate_sent_by_role": {
+              "extra": 99205,
+              "primary": 111673
+            },
+            "duplicate_sent_count": 210878,
+            "enqueued_by_role": {
+              "extra": 180697,
+              "primary": 190644
+            },
+            "fifo_late_by_role": {
+              "extra": 1149,
+              "primary": 1498
+            },
+            "fifo_late_demand_count": 2647,
+            "generated_count": 400000,
+            "queue_delay_cycles_max": {
+              "extra": 12,
+              "primary": 9
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.4702666822849557,
+              "primary": 1.3690910807578522
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 442862,
+              "primary": 261009
+            },
+            "recent_filtered_by_role": {
+              "extra": 19303,
+              "primary": 9356
+            },
+            "sent_by_role": {
+              "extra": 179277,
+              "primary": 190644
+            }
+          },
+          "metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.59413,
+            "covered_by_bop": {
+              "mixed_v2p2_n4_r25_s31": 118826
+            },
+            "covered_by_rank": {
+              "0": 66073,
+              "1": 52753
+            },
+            "covered_count": 118826,
+            "demand_count": 200000,
+            "duplicate_count": 238779,
+            "generated_count": 400000
+          },
+          "phase": {
+            "average_best_score": 5.184300341296928,
+            "average_rounds": 25.0,
+            "issue_enabled_fraction": 0.962457337883959,
+            "phase_count": 293,
+            "tests_per_access": 3.995605,
+            "two_family_winner_fraction": 1.0
+          }
+        },
+        "mixed_v2p2_n4_r50_s31": {
+          "local_metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.583885,
+            "covered_by_rank": {
+              "0": 66111,
+              "1": 50666
+            },
+            "covered_by_role": {
+              "extra": 50666,
+              "primary": 66111
+            },
+            "covered_count": 116777,
+            "covered_with_min_lead_cycles": {
+              "0": 116777,
+              "16": 113761,
+              "32": 113024,
+              "64": 112304,
+              "128": 111463,
+              "256": 109435
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {
+              "extra": 1414
+            },
+            "duplicate_sent_by_role": {
+              "extra": 102612,
+              "primary": 115209
+            },
+            "duplicate_sent_count": 217821,
+            "enqueued_by_role": {
+              "extra": 178447,
+              "primary": 193264
+            },
+            "fifo_late_by_role": {
+              "extra": 1464,
+              "primary": 1279
+            },
+            "fifo_late_demand_count": 2743,
+            "generated_count": 400000,
+            "queue_delay_cycles_max": {
+              "extra": 14,
+              "primary": 9
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.492718830493922,
+              "primary": 1.3714607997350774
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 441291,
+              "primary": 265054
+            },
+            "recent_filtered_by_role": {
+              "extra": 21553,
+              "primary": 6736
+            },
+            "sent_by_role": {
+              "extra": 177032,
+              "primary": 193264
+            }
+          },
+          "metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.589615,
+            "covered_by_bop": {
+              "mixed_v2p2_n4_r50_s31": 117923
+            },
+            "covered_by_rank": {
+              "0": 65694,
+              "1": 52229
+            },
+            "covered_count": 117923,
+            "demand_count": 200000,
+            "duplicate_count": 244783,
+            "generated_count": 400000
+          },
+          "phase": {
+            "average_best_score": 9.73469387755102,
+            "average_rounds": 50.0,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 147,
+            "tests_per_access": 3.99853,
+            "two_family_winner_fraction": 1.0
+          }
+        },
+        "partition_v2p2_all_delay_n1_r50_s31": {
+          "local_metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.55189,
+            "covered_by_rank": {
+              "0": 62393,
+              "1": 47985
+            },
+            "covered_by_role": {
+              "extra": 47985,
+              "primary": 62393
+            },
+            "covered_count": 110378,
+            "covered_with_min_lead_cycles": {
+              "0": 110378,
+              "16": 109087,
+              "32": 108703,
+              "64": 108341,
+              "128": 107937,
+              "256": 106375
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {
+              "extra": 1471
+            },
+            "duplicate_sent_by_role": {
+              "extra": 102285,
+              "primary": 121280
+            },
+            "duplicate_sent_count": 223565,
+            "enqueued_by_role": {
+              "extra": 181830,
+              "primary": 195606
+            },
+            "fifo_late_by_role": {
+              "extra": 918,
+              "primary": 338
+            },
+            "fifo_late_demand_count": 1256,
+            "generated_count": 400000,
+            "queue_delay_cycles_max": {
+              "extra": 11,
+              "primary": 9
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.545051813327863,
+              "primary": 1.3748472687303495
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 459023,
+              "primary": 268927
+            },
+            "recent_filtered_by_role": {
+              "extra": 18170,
+              "primary": 4394
+            },
+            "sent_by_role": {
+              "extra": 180359,
+              "primary": 195605
+            }
+          },
+          "metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.55381,
+            "covered_by_bop": {
+              "PartitionedV2P2_independent": 110762
+            },
+            "covered_by_rank": {
+              "0": 60379,
+              "1": 50383
+            },
+            "covered_count": 110762,
+            "demand_count": 200000,
+            "duplicate_count": 246957,
+            "generated_count": 400000
+          },
+          "phase": {
+            "average_best_score": 9.756756756756756,
+            "average_rounds": 50.0,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 37,
+            "tests_per_access": 0.0,
+            "two_family_winner_fraction": 1.0
+          }
+        }
+      },
+      "weight": 0.31307,
+      "workload": "omnetpp"
+    },
+    {
+      "marker": {
+        "access_seq": 57242,
+        "tick": 3028149819
+      },
+      "measurement_accesses": 200000,
+      "name": "bwaves_13153",
+      "replayed_accesses": 257242,
+      "result_dir": "/tmp/ts_bop_degree_full_bwaves_13153",
+      "schemes": {
+        "dual_current": {
+          "local_metrics": {
+            "accepted_count": 392972,
+            "coverage": 0.798595,
+            "covered_by_rank": {
+              "0": 159719
+            },
+            "covered_by_role": {
+              "extra": 58101,
+              "primary": 101618
+            },
+            "covered_count": 159719,
+            "covered_with_min_lead_cycles": {
+              "0": 159719,
+              "16": 159719,
+              "32": 159714,
+              "64": 158738,
+              "128": 138682,
+              "256": 126089
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 105648,
+              "primary": 13330
+            },
+            "duplicate_sent_count": 118978,
+            "enqueued_by_role": {
+              "extra": 192972,
+              "primary": 200000
+            },
+            "fifo_late_by_role": {
+              "extra": 1
+            },
+            "fifo_late_demand_count": 1,
+            "generated_count": 400000,
+            "queue_delay_cycles_max": {
+              "extra": 15,
+              "primary": 3
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.7412253654694227,
+              "primary": 0.8754893774468873
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 528977,
+              "primary": 175097
+            },
+            "recent_filtered_by_role": {},
+            "sent_by_role": {
+              "extra": 192971,
+              "primary": 199999
+            }
+          },
+          "metrics": {
+            "accepted_count": 392972,
+            "coverage": 0.798575,
+            "covered_by_bop": {
+              "PBOP": 58091,
+              "VBOP": 101624
+            },
+            "covered_by_rank": {
+              "0": 159715
+            },
+            "covered_count": 159715,
+            "demand_count": 200000,
+            "duplicate_count": 118983,
+            "generated_count": 400000
+          }
+        },
+        "merged_d2": {
+          "local_metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.73664,
+            "covered_by_rank": {
+              "0": 53778,
+              "1": 93550
+            },
+            "covered_by_role": {
+              "extra": 93550,
+              "primary": 53778
+            },
+            "covered_count": 147328,
+            "covered_with_min_lead_cycles": {
+              "0": 147328,
+              "16": 147328,
+              "32": 147328,
+              "64": 147328,
+              "128": 147324,
+              "256": 145488
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {
+              "extra": 391
+            },
+            "duplicate_sent_by_role": {
+              "extra": 5222,
+              "primary": 7174
+            },
+            "duplicate_sent_count": 12396,
+            "enqueued_by_role": {
+              "extra": 157764,
+              "primary": 100073
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 400000,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.539717740654369,
+              "primary": 1.1361519705811816
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 242310,
+              "primary": 113697
+            },
+            "recent_filtered_by_role": {
+              "extra": 42236,
+              "primary": 99927
+            },
+            "sent_by_role": {
+              "extra": 157373,
+              "primary": 100072
+            }
+          },
+          "metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.737465,
+            "covered_by_bop": {
+              "MergedVBOP": 147493
+            },
+            "covered_by_rank": {
+              "0": 53767,
+              "1": 93726
+            },
+            "covered_count": 147493,
+            "demand_count": 200000,
+            "duplicate_count": 154590,
+            "generated_count": 400000
+          },
+          "phase": {
+            "average_best_score": 23.10810810810811,
+            "average_rounds": 50.0,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 37,
+            "tests_per_access": 0.0,
+            "two_family_winner_fraction": 0.0
+          }
+        },
+        "mixed_v2p2_n1_r50_s31": {
+          "local_metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.780775,
+            "covered_by_rank": {
+              "0": 56460,
+              "1": 99695
+            },
+            "covered_by_role": {
+              "extra": 99695,
+              "primary": 56460
+            },
+            "covered_count": 156155,
+            "covered_with_min_lead_cycles": {
+              "0": 156155,
+              "16": 156155,
+              "32": 156155,
+              "64": 156154,
+              "128": 153292,
+              "256": 138614
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {
+              "extra": 1027
+            },
+            "duplicate_sent_by_role": {
+              "extra": 6773,
+              "primary": 78013
+            },
+            "duplicate_sent_count": 84786,
+            "enqueued_by_role": {
+              "extra": 190793,
+              "primary": 169534
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 400000,
+            "queue_delay_cycles_max": {
+              "extra": 9,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.122625352409559,
+              "primary": 1.201636259607274
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 402800,
+              "primary": 203717
+            },
+            "recent_filtered_by_role": {
+              "extra": 9207,
+              "primary": 30466
+            },
+            "sent_by_role": {
+              "extra": 189765,
+              "primary": 169533
+            }
+          },
+          "metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.781815,
+            "covered_by_bop": {
+              "mixed_v2p2_n1_r50_s31": 156363
+            },
+            "covered_by_rank": {
+              "0": 53937,
+              "1": 102426
+            },
+            "covered_count": 156363,
+            "demand_count": 200000,
+            "duplicate_count": 124791,
+            "generated_count": 400000
+          },
+          "phase": {
+            "average_best_score": 23.10810810810811,
+            "average_rounds": 50.0,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 37,
+            "tests_per_access": 1.0,
+            "two_family_winner_fraction": 1.0
+          }
+        },
+        "mixed_v2p2_n2_r25_s31": {
+          "local_metrics": {
+            "accepted_count": 398637,
+            "coverage": 0.808835,
+            "covered_by_rank": {
+              "0": 66667,
+              "1": 95100
+            },
+            "covered_by_role": {
+              "extra": 95100,
+              "primary": 66667
+            },
+            "covered_count": 161767,
+            "covered_with_min_lead_cycles": {
+              "0": 161767,
+              "16": 161767,
+              "32": 161763,
+              "64": 160807,
+              "128": 136939,
+              "256": 124852
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {
+              "extra": 988
+            },
+            "duplicate_sent_by_role": {
+              "extra": 7220,
+              "primary": 73941
+            },
+            "duplicate_sent_count": 81161,
+            "enqueued_by_role": {
+              "extra": 187030,
+              "primary": 170639
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 398637,
+            "queue_delay_cycles_max": {
+              "extra": 9,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.1292188281077826,
+              "primary": 1.200699726907254
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 396122,
+              "primary": 204885
+            },
+            "recent_filtered_by_role": {
+              "extra": 11607,
+              "primary": 29361
+            },
+            "sent_by_role": {
+              "extra": 186041,
+              "primary": 170638
+            }
+          },
+          "metrics": {
+            "accepted_count": 398637,
+            "coverage": 0.810005,
+            "covered_by_bop": {
+              "mixed_v2p2_n2_r25_s31": 162001
+            },
+            "covered_by_rank": {
+              "0": 61708,
+              "1": 100293
+            },
+            "covered_count": 162001,
+            "demand_count": 200000,
+            "duplicate_count": 122309,
+            "generated_count": 398637
+          },
+          "phase": {
+            "average_best_score": 12.748299319727892,
+            "average_rounds": 25.0,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 147,
+            "tests_per_access": 1.999265,
+            "two_family_winner_fraction": 1.0
+          }
+        },
+        "mixed_v2p2_n2_r50_s31": {
+          "local_metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.78582,
+            "covered_by_rank": {
+              "0": 56057,
+              "1": 101107
+            },
+            "covered_by_role": {
+              "extra": 101107,
+              "primary": 56057
+            },
+            "covered_count": 157164,
+            "covered_with_min_lead_cycles": {
+              "0": 157164,
+              "16": 157164,
+              "32": 157164,
+              "64": 157164,
+              "128": 151834,
+              "256": 137624
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {
+              "extra": 1046
+            },
+            "duplicate_sent_by_role": {
+              "extra": 5572,
+              "primary": 79347
+            },
+            "duplicate_sent_count": 84919,
+            "enqueued_by_role": {
+              "extra": 190733,
+              "primary": 169404
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 400000,
+            "queue_delay_cycles_max": {
+              "extra": 9,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.1198348850205075,
+              "primary": 1.202310466756787
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 402103,
+              "primary": 203675
+            },
+            "recent_filtered_by_role": {
+              "extra": 9267,
+              "primary": 30596
+            },
+            "sent_by_role": {
+              "extra": 189686,
+              "primary": 169403
+            }
+          },
+          "metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.78695,
+            "covered_by_bop": {
+              "mixed_v2p2_n2_r50_s31": 157390
+            },
+            "covered_by_rank": {
+              "0": 53058,
+              "1": 104332
+            },
+            "covered_count": 157390,
+            "demand_count": 200000,
+            "duplicate_count": 125097,
+            "generated_count": 400000
+          },
+          "phase": {
+            "average_best_score": 23.84931506849315,
+            "average_rounds": 50.0,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 73,
+            "tests_per_access": 2.0,
+            "two_family_winner_fraction": 1.0
+          }
+        },
+        "mixed_v2p2_n4_r13_s31": {
+          "local_metrics": {
+            "accepted_count": 343555,
+            "coverage": 0.790575,
+            "covered_by_rank": {
+              "0": 91173,
+              "1": 66942
+            },
+            "covered_by_role": {
+              "extra": 66942,
+              "primary": 91173
+            },
+            "covered_count": 158115,
+            "covered_with_min_lead_cycles": {
+              "0": 158115,
+              "16": 158115,
+              "32": 158106,
+              "64": 156886,
+              "128": 127563,
+              "256": 113656
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {
+              "extra": 773
+            },
+            "duplicate_sent_by_role": {
+              "extra": 7411,
+              "primary": 50044
+            },
+            "duplicate_sent_count": 57455,
+            "enqueued_by_role": {
+              "extra": 136406,
+              "primary": 175090
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 343555,
+            "queue_delay_cycles_max": {
+              "extra": 9,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.1326014509850184,
+              "primary": 1.1502892814511476
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 289249,
+              "primary": 201403
+            },
+            "recent_filtered_by_role": {
+              "extra": 7149,
+              "primary": 24910
+            },
+            "sent_by_role": {
+              "extra": 135632,
+              "primary": 175089
+            }
+          },
+          "metrics": {
+            "accepted_count": 343555,
+            "coverage": 0.79122,
+            "covered_by_bop": {
+              "mixed_v2p2_n4_r13_s31": 158244
+            },
+            "covered_by_rank": {
+              "0": 89675,
+              "1": 68569
+            },
+            "covered_count": 158244,
+            "demand_count": 200000,
+            "duplicate_count": 89722,
+            "generated_count": 343555
+          },
+          "phase": {
+            "average_best_score": 7.415630550621669,
+            "average_rounds": 13.0,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 563,
+            "tests_per_access": 3.991555,
+            "two_family_winner_fraction": 1.0
+          }
+        },
+        "mixed_v2p2_n4_r25_s31": {
+          "local_metrics": {
+            "accepted_count": 376130,
+            "coverage": 0.83275,
+            "covered_by_rank": {
+              "0": 85053,
+              "1": 81497
+            },
+            "covered_by_role": {
+              "extra": 81497,
+              "primary": 85053
+            },
+            "covered_count": 166550,
+            "covered_with_min_lead_cycles": {
+              "0": 166550,
+              "16": 165892,
+              "32": 160215,
+              "64": 126241,
+              "128": 117478,
+              "256": 96918
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {
+              "extra": 909
+            },
+            "duplicate_sent_by_role": {
+              "extra": 9077,
+              "primary": 63696
+            },
+            "duplicate_sent_count": 72773,
+            "enqueued_by_role": {
+              "extra": 166068,
+              "primary": 174647
+            },
+            "fifo_late_by_role": {
+              "primary": 61
+            },
+            "fifo_late_demand_count": 61,
+            "generated_count": 376130,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.143438404436963,
+              "primary": 1.1787100763830836
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 354006,
+              "primary": 205857
+            },
+            "recent_filtered_by_role": {
+              "extra": 10062,
+              "primary": 25353
+            },
+            "sent_by_role": {
+              "extra": 165158,
+              "primary": 174646
+            }
+          },
+          "metrics": {
+            "accepted_count": 376130,
+            "coverage": 0.834805,
+            "covered_by_bop": {
+              "mixed_v2p2_n4_r25_s31": 166961
+            },
+            "covered_by_rank": {
+              "0": 82007,
+              "1": 84954
+            },
+            "covered_count": 166961,
+            "demand_count": 200000,
+            "duplicate_count": 108119,
+            "generated_count": 376130
+          },
+          "phase": {
+            "average_best_score": 12.710884353741497,
+            "average_rounds": 25.0,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 294,
+            "tests_per_access": 3.99559,
+            "two_family_winner_fraction": 1.0
+          }
+        },
+        "mixed_v2p2_n4_r50_s31": {
+          "local_metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.79101,
+            "covered_by_rank": {
+              "0": 61507,
+              "1": 96695
+            },
+            "covered_by_role": {
+              "extra": 96695,
+              "primary": 61507
+            },
+            "covered_count": 158202,
+            "covered_with_min_lead_cycles": {
+              "0": 158202,
+              "16": 158202,
+              "32": 158202,
+              "64": 158202,
+              "128": 149099,
+              "256": 134516
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {
+              "extra": 1016
+            },
+            "duplicate_sent_by_role": {
+              "extra": 8216,
+              "primary": 72969
+            },
+            "duplicate_sent_count": 81185,
+            "enqueued_by_role": {
+              "extra": 190357,
+              "primary": 167726
+            },
+            "fifo_late_by_role": {
+              "primary": 1
+            },
+            "fifo_late_demand_count": 1,
+            "generated_count": 400000,
+            "queue_delay_cycles_max": {
+              "extra": 9,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.1086141333051653,
+              "primary": 1.2030526158891042
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 399245,
+              "primary": 201782
+            },
+            "recent_filtered_by_role": {
+              "extra": 9643,
+              "primary": 32274
+            },
+            "sent_by_role": {
+              "extra": 189340,
+              "primary": 167725
+            }
+          },
+          "metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.792015,
+            "covered_by_bop": {
+              "mixed_v2p2_n4_r50_s31": 158403
+            },
+            "covered_by_rank": {
+              "0": 58696,
+              "1": 99707
+            },
+            "covered_count": 158403,
+            "demand_count": 200000,
+            "duplicate_count": 123389,
+            "generated_count": 400000
+          },
+          "phase": {
+            "average_best_score": 23.561643835616437,
+            "average_rounds": 49.986301369863014,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 146,
+            "tests_per_access": 3.99853,
+            "two_family_winner_fraction": 1.0
+          }
+        },
+        "partition_v2p2_all_delay_n1_r50_s31": {
+          "local_metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.735645,
+            "covered_by_rank": {
+              "0": 47355,
+              "1": 99774
+            },
+            "covered_by_role": {
+              "extra": 99774,
+              "primary": 47355
+            },
+            "covered_count": 147129,
+            "covered_with_min_lead_cycles": {
+              "0": 147129,
+              "16": 147129,
+              "32": 147129,
+              "64": 147128,
+              "128": 147128,
+              "256": 147127
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {
+              "extra": 992
+            },
+            "duplicate_sent_by_role": {
+              "extra": 7150,
+              "primary": 74536
+            },
+            "duplicate_sent_count": 81686,
+            "enqueued_by_role": {
+              "extra": 190802,
+              "primary": 164314
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 400000,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.07422724949818,
+              "primary": 1.2030393212953328
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 393707,
+              "primary": 197675
+            },
+            "recent_filtered_by_role": {
+              "extra": 9198,
+              "primary": 35686
+            },
+            "sent_by_role": {
+              "extra": 189809,
+              "primary": 164313
+            }
+          },
+          "metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.73653,
+            "covered_by_bop": {
+              "PartitionedV2P2_independent": 147306
+            },
+            "covered_by_rank": {
+              "0": 46969,
+              "1": 100337
+            },
+            "covered_count": 147306,
+            "demand_count": 200000,
+            "duplicate_count": 126913,
+            "generated_count": 400000
+          },
+          "phase": {
+            "average_best_score": 23.10810810810811,
+            "average_rounds": 50.0,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 37,
+            "tests_per_access": 0.0,
+            "two_family_winner_fraction": 1.0
+          }
+        }
+      },
+      "weight": 0.72016,
+      "workload": "bwaves"
+    },
+    {
+      "marker": {
+        "access_seq": 88201,
+        "tick": 2741988600
+      },
+      "measurement_accesses": 134056,
+      "name": "gcc_200_5108",
+      "replayed_accesses": 222257,
+      "result_dir": "/tmp/ts_bop_degree_full_gcc_200_5108",
+      "schemes": {
+        "dual_current": {
+          "local_metrics": {
+            "accepted_count": 264015,
+            "coverage": 0.5106597242943247,
+            "covered_by_rank": {
+              "0": 68457
+            },
+            "covered_by_role": {
+              "extra": 46488,
+              "primary": 21969
+            },
+            "covered_count": 68457,
+            "covered_with_min_lead_cycles": {
+              "0": 68457,
+              "16": 65964,
+              "32": 64387,
+              "64": 61407,
+              "128": 57688,
+              "256": 53603
+            },
+            "demand_count": 134056,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 65138,
+              "primary": 85428
+            },
+            "duplicate_sent_count": 150566,
+            "enqueued_by_role": {
+              "extra": 129959,
+              "primary": 134056
+            },
+            "fifo_late_by_role": {
+              "extra": 430
+            },
+            "fifo_late_demand_count": 430,
+            "generated_count": 268112,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 3
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.254359100632512,
+              "primary": 1.0191563164372832
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 292972,
+              "primary": 136623
+            },
+            "recent_filtered_by_role": {},
+            "sent_by_role": {
+              "extra": 129958,
+              "primary": 134055
+            }
+          },
+          "metrics": {
+            "accepted_count": 264015,
+            "coverage": 0.5129423524497225,
+            "covered_by_bop": {
+              "PBOP": 46727,
+              "VBOP": 22036
+            },
+            "covered_by_rank": {
+              "0": 68763
+            },
+            "covered_count": 68763,
+            "demand_count": 134056,
+            "duplicate_count": 150600,
+            "generated_count": 268112
+          }
+        },
+        "merged_d2": {
+          "local_metrics": {
+            "accepted_count": 268112,
+            "coverage": 0.5147774064570031,
+            "covered_by_rank": {
+              "0": 37250,
+              "1": 31759
+            },
+            "covered_by_role": {
+              "extra": 31759,
+              "primary": 37250
+            },
+            "covered_count": 69009,
+            "covered_with_min_lead_cycles": {
+              "0": 69009,
+              "16": 67122,
+              "32": 65806,
+              "64": 63107,
+              "128": 59425,
+              "256": 54044
+            },
+            "demand_count": 134056,
+            "dropped_by_role": {
+              "extra": 6
+            },
+            "duplicate_sent_by_role": {
+              "extra": 67353,
+              "primary": 62049
+            },
+            "duplicate_sent_count": 129402,
+            "enqueued_by_role": {
+              "extra": 118957,
+              "primary": 115241
+            },
+            "fifo_late_by_role": {
+              "extra": 23,
+              "primary": 48
+            },
+            "fifo_late_demand_count": 71,
+            "generated_count": 268112,
+            "queue_delay_cycles_max": {
+              "extra": 8,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.8505338377469525,
+              "primary": 1.2715289829920167
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 220121,
+              "primary": 146531
+            },
+            "recent_filtered_by_role": {
+              "extra": 15099,
+              "primary": 18815
+            },
+            "sent_by_role": {
+              "extra": 118950,
+              "primary": 115240
+            }
+          },
+          "metrics": {
+            "accepted_count": 268112,
+            "coverage": 0.5258474070537685,
+            "covered_by_bop": {
+              "MergedVBOP": 70493
+            },
+            "covered_by_rank": {
+              "0": 36705,
+              "1": 33788
+            },
+            "covered_count": 70493,
+            "demand_count": 134056,
+            "duplicate_count": 161286,
+            "generated_count": 268112
+          },
+          "phase": {
+            "average_best_score": 10.541666666666666,
+            "average_rounds": 50.0,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 24,
+            "tests_per_access": 0.0,
+            "two_family_winner_fraction": 0.0
+          }
+        },
+        "mixed_v2p2_n1_r50_s31": {
+          "local_metrics": {
+            "accepted_count": 268112,
+            "coverage": 0.46035984961508625,
+            "covered_by_rank": {
+              "0": 37170,
+              "1": 24544
+            },
+            "covered_by_role": {
+              "extra": 24544,
+              "primary": 37170
+            },
+            "covered_count": 61714,
+            "covered_with_min_lead_cycles": {
+              "0": 61714,
+              "16": 60670,
+              "32": 59879,
+              "64": 58302,
+              "128": 55756,
+              "256": 51728
+            },
+            "demand_count": 134056,
+            "dropped_by_role": {
+              "extra": 4
+            },
+            "duplicate_sent_by_role": {
+              "extra": 80962,
+              "primary": 62350
+            },
+            "duplicate_sent_count": 143312,
+            "enqueued_by_role": {
+              "extra": 125652,
+              "primary": 118014
+            },
+            "fifo_late_by_role": {
+              "primary": 178
+            },
+            "fifo_late_demand_count": 178,
+            "generated_count": 268112,
+            "queue_delay_cycles_max": {
+              "extra": 8,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.8698337405588672,
+              "primary": 1.2852821299348376
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 234939,
+              "primary": 151680
+            },
+            "recent_filtered_by_role": {
+              "extra": 8404,
+              "primary": 16042
+            },
+            "sent_by_role": {
+              "extra": 125647,
+              "primary": 118013
+            }
+          },
+          "metrics": {
+            "accepted_count": 268112,
+            "coverage": 0.4650593781703169,
+            "covered_by_bop": {
+              "mixed_v2p2_n1_r50_s31": 62344
+            },
+            "covered_by_rank": {
+              "0": 37853,
+              "1": 24491
+            },
+            "covered_count": 62344,
+            "demand_count": 134056,
+            "duplicate_count": 166580,
+            "generated_count": 268112
+          },
+          "phase": {
+            "average_best_score": 10.541666666666666,
+            "average_rounds": 50.0,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 24,
+            "tests_per_access": 1.0,
+            "two_family_winner_fraction": 1.0
+          }
+        },
+        "mixed_v2p2_n2_r25_s31": {
+          "local_metrics": {
+            "accepted_count": 268112,
+            "coverage": 0.4561526526227845,
+            "covered_by_rank": {
+              "0": 41096,
+              "1": 20054
+            },
+            "covered_by_role": {
+              "extra": 20054,
+              "primary": 41096
+            },
+            "covered_count": 61150,
+            "covered_with_min_lead_cycles": {
+              "0": 61150,
+              "16": 59606,
+              "32": 58452,
+              "64": 55889,
+              "128": 52776,
+              "256": 49327
+            },
+            "demand_count": 134056,
+            "dropped_by_role": {
+              "extra": 5
+            },
+            "duplicate_sent_by_role": {
+              "extra": 82652,
+              "primary": 61555
+            },
+            "duplicate_sent_count": 144207,
+            "enqueued_by_role": {
+              "extra": 129316,
+              "primary": 122532
+            },
+            "fifo_late_by_role": {
+              "extra": 46,
+              "primary": 367
+            },
+            "fifo_late_demand_count": 413,
+            "generated_count": 268112,
+            "queue_delay_cycles_max": {
+              "extra": 8,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.8946871858324956,
+              "primary": 1.2972880332324066
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 245002,
+              "primary": 158958
+            },
+            "recent_filtered_by_role": {
+              "extra": 4740,
+              "primary": 11524
+            },
+            "sent_by_role": {
+              "extra": 129310,
+              "primary": 122531
+            }
+          },
+          "metrics": {
+            "accepted_count": 268112,
+            "coverage": 0.4634108133914185,
+            "covered_by_bop": {
+              "mixed_v2p2_n2_r25_s31": 62123
+            },
+            "covered_by_rank": {
+              "0": 42345,
+              "1": 19778
+            },
+            "covered_count": 62123,
+            "demand_count": 134056,
+            "duplicate_count": 159366,
+            "generated_count": 268112
+          },
+          "phase": {
+            "average_best_score": 6.171717171717172,
+            "average_rounds": 25.0,
+            "issue_enabled_fraction": 0.9191919191919192,
+            "phase_count": 99,
+            "tests_per_access": 1.9992615026556066,
+            "two_family_winner_fraction": 1.0
+          }
+        },
+        "mixed_v2p2_n2_r50_s31": {
+          "local_metrics": {
+            "accepted_count": 268112,
+            "coverage": 0.4552202064808737,
+            "covered_by_rank": {
+              "0": 39960,
+              "1": 21065
+            },
+            "covered_by_role": {
+              "extra": 21065,
+              "primary": 39960
+            },
+            "covered_count": 61025,
+            "covered_with_min_lead_cycles": {
+              "0": 61025,
+              "16": 60045,
+              "32": 59146,
+              "64": 57287,
+              "128": 54103,
+              "256": 49633
+            },
+            "demand_count": 134056,
+            "dropped_by_role": {
+              "extra": 5
+            },
+            "duplicate_sent_by_role": {
+              "extra": 80599,
+              "primary": 64188
+            },
+            "duplicate_sent_count": 144787,
+            "enqueued_by_role": {
+              "extra": 128515,
+              "primary": 122021
+            },
+            "fifo_late_by_role": {
+              "primary": 246
+            },
+            "fifo_late_demand_count": 246,
+            "generated_count": 268112,
+            "queue_delay_cycles_max": {
+              "extra": 8,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.8961006622104288,
+              "primary": 1.2913620717915095
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 243666,
+              "primary": 157572
+            },
+            "recent_filtered_by_role": {
+              "extra": 5541,
+              "primary": 12035
+            },
+            "sent_by_role": {
+              "extra": 128509,
+              "primary": 122020
+            }
+          },
+          "metrics": {
+            "accepted_count": 268112,
+            "coverage": 0.46067315151876825,
+            "covered_by_bop": {
+              "mixed_v2p2_n2_r50_s31": 61756
+            },
+            "covered_by_rank": {
+              "0": 40347,
+              "1": 21409
+            },
+            "covered_count": 61756,
+            "demand_count": 134056,
+            "duplicate_count": 161200,
+            "generated_count": 268112
+          },
+          "phase": {
+            "average_best_score": 10.387755102040817,
+            "average_rounds": 50.0,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 49,
+            "tests_per_access": 2.0,
+            "two_family_winner_fraction": 1.0
+          }
+        },
+        "mixed_v2p2_n4_r13_s31": {
+          "local_metrics": {
+            "accepted_count": 236873,
+            "coverage": 0.45595124425613176,
+            "covered_by_rank": {
+              "0": 42139,
+              "1": 18984
+            },
+            "covered_by_role": {
+              "extra": 18984,
+              "primary": 42139
+            },
+            "covered_count": 61123,
+            "covered_with_min_lead_cycles": {
+              "0": 61123,
+              "16": 59849,
+              "32": 58412,
+              "64": 55718,
+              "128": 51705,
+              "256": 47206
+            },
+            "demand_count": 134056,
+            "dropped_by_role": {
+              "extra": 3
+            },
+            "duplicate_sent_by_role": {
+              "extra": 75231,
+              "primary": 53792
+            },
+            "duplicate_sent_count": 129023,
+            "enqueued_by_role": {
+              "extra": 113186,
+              "primary": 107931
+            },
+            "fifo_late_by_role": {
+              "primary": 132
+            },
+            "fifo_late_demand_count": 132,
+            "generated_count": 236873,
+            "queue_delay_cycles_max": {
+              "extra": 8,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.8585905886094962,
+              "primary": 1.2644189343191483
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 210359,
+              "primary": 136470
+            },
+            "recent_filtered_by_role": {
+              "extra": 3831,
+              "primary": 11925
+            },
+            "sent_by_role": {
+              "extra": 113182,
+              "primary": 107931
+            }
+          },
+          "metrics": {
+            "accepted_count": 236873,
+            "coverage": 0.46294086053589545,
+            "covered_by_bop": {
+              "mixed_v2p2_n4_r13_s31": 62060
+            },
+            "covered_by_rank": {
+              "0": 43011,
+              "1": 19049
+            },
+            "covered_count": 62060,
+            "demand_count": 134056,
+            "duplicate_count": 143834,
+            "generated_count": 236873
+          },
+          "phase": {
+            "average_best_score": 3.9656084656084656,
+            "average_rounds": 13.0,
+            "issue_enabled_fraction": 0.7566137566137566,
+            "phase_count": 378,
+            "tests_per_access": 3.991540848600585,
+            "two_family_winner_fraction": 0.9867724867724867
+          }
+        },
+        "mixed_v2p2_n4_r25_s31": {
+          "local_metrics": {
+            "accepted_count": 268112,
+            "coverage": 0.4569508265202602,
+            "covered_by_rank": {
+              "0": 40281,
+              "1": 20976
+            },
+            "covered_by_role": {
+              "extra": 20976,
+              "primary": 40281
+            },
+            "covered_count": 61257,
+            "covered_with_min_lead_cycles": {
+              "0": 61257,
+              "16": 60211,
+              "32": 59359,
+              "64": 57920,
+              "128": 55406,
+              "256": 51034
+            },
+            "demand_count": 134056,
+            "dropped_by_role": {
+              "extra": 5
+            },
+            "duplicate_sent_by_role": {
+              "extra": 80516,
+              "primary": 62025
+            },
+            "duplicate_sent_count": 142541,
+            "enqueued_by_role": {
+              "extra": 129119,
+              "primary": 121308
+            },
+            "fifo_late_by_role": {
+              "primary": 178
+            },
+            "fifo_late_demand_count": 178,
+            "generated_count": 268112,
+            "queue_delay_cycles_max": {
+              "extra": 8,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.894511009735658,
+              "primary": 1.2920499884591288
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 244606,
+              "primary": 156736
+            },
+            "recent_filtered_by_role": {
+              "extra": 4937,
+              "primary": 12748
+            },
+            "sent_by_role": {
+              "extra": 129113,
+              "primary": 121308
+            }
+          },
+          "metrics": {
+            "accepted_count": 268112,
+            "coverage": 0.46287372441367786,
+            "covered_by_bop": {
+              "mixed_v2p2_n4_r25_s31": 62051
+            },
+            "covered_by_rank": {
+              "0": 40895,
+              "1": 21156
+            },
+            "covered_count": 62051,
+            "demand_count": 134056,
+            "duplicate_count": 159174,
+            "generated_count": 268112
+          },
+          "phase": {
+            "average_best_score": 6.260204081632653,
+            "average_rounds": 25.0,
+            "issue_enabled_fraction": 0.9387755102040817,
+            "phase_count": 196,
+            "tests_per_access": 3.9956137733484516,
+            "two_family_winner_fraction": 1.0
+          }
+        },
+        "mixed_v2p2_n4_r50_s31": {
+          "local_metrics": {
+            "accepted_count": 268112,
+            "coverage": 0.45077430327624274,
+            "covered_by_rank": {
+              "0": 38794,
+              "1": 21635
+            },
+            "covered_by_role": {
+              "extra": 21635,
+              "primary": 38794
+            },
+            "covered_count": 60429,
+            "covered_with_min_lead_cycles": {
+              "0": 60429,
+              "16": 59596,
+              "32": 58973,
+              "64": 57525,
+              "128": 55477,
+              "256": 52002
+            },
+            "demand_count": 134056,
+            "dropped_by_role": {
+              "extra": 3
+            },
+            "duplicate_sent_by_role": {
+              "extra": 81500,
+              "primary": 63155
+            },
+            "duplicate_sent_count": 144655,
+            "enqueued_by_role": {
+              "extra": 129061,
+              "primary": 121034
+            },
+            "fifo_late_by_role": {
+              "extra": 2,
+              "primary": 245
+            },
+            "fifo_late_demand_count": 247,
+            "generated_count": 268112,
+            "queue_delay_cycles_max": {
+              "extra": 9,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.895046374857621,
+              "primary": 1.2867458730604624
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 244569,
+              "primary": 155740
+            },
+            "recent_filtered_by_role": {
+              "extra": 4995,
+              "primary": 13022
+            },
+            "sent_by_role": {
+              "extra": 129057,
+              "primary": 121034
+            }
+          },
+          "metrics": {
+            "accepted_count": 268112,
+            "coverage": 0.4575252133436773,
+            "covered_by_bop": {
+              "mixed_v2p2_n4_r50_s31": 61334
+            },
+            "covered_by_rank": {
+              "0": 39890,
+              "1": 21444
+            },
+            "covered_count": 61334,
+            "demand_count": 134056,
+            "duplicate_count": 161884,
+            "generated_count": 268112
+          },
+          "phase": {
+            "average_best_score": 10.828282828282829,
+            "average_rounds": 50.0,
+            "issue_enabled_fraction": 0.98989898989899,
+            "phase_count": 99,
+            "tests_per_access": 3.9985230053112133,
+            "two_family_winner_fraction": 1.0
+          }
+        },
+        "partition_v2p2_all_delay_n1_r50_s31": {
+          "local_metrics": {
+            "accepted_count": 268112,
+            "coverage": 0.42192068986095366,
+            "covered_by_rank": {
+              "0": 31560,
+              "1": 25001
+            },
+            "covered_by_role": {
+              "extra": 25001,
+              "primary": 31560
+            },
+            "covered_count": 56561,
+            "covered_with_min_lead_cycles": {
+              "0": 56561,
+              "16": 56392,
+              "32": 56156,
+              "64": 55564,
+              "128": 54015,
+              "256": 50598
+            },
+            "demand_count": 134056,
+            "dropped_by_role": {
+              "extra": 7
+            },
+            "duplicate_sent_by_role": {
+              "extra": 80315,
+              "primary": 65317
+            },
+            "duplicate_sent_count": 145632,
+            "enqueued_by_role": {
+              "extra": 124910,
+              "primary": 116109
+            },
+            "fifo_late_by_role": {
+              "primary": 7
+            },
+            "fifo_late_demand_count": 7,
+            "generated_count": 268112,
+            "queue_delay_cycles_max": {
+              "extra": 8,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.8659428992329987,
+              "primary": 1.2721948530678333
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 233060,
+              "primary": 147712
+            },
+            "recent_filtered_by_role": {
+              "extra": 9146,
+              "primary": 17947
+            },
+            "sent_by_role": {
+              "extra": 124902,
+              "primary": 116108
+            }
+          },
+          "metrics": {
+            "accepted_count": 268112,
+            "coverage": 0.42508354717431523,
+            "covered_by_bop": {
+              "PartitionedV2P2_independent": 56985
+            },
+            "covered_by_rank": {
+              "0": 31562,
+              "1": 25423
+            },
+            "covered_count": 56985,
+            "demand_count": 134056,
+            "duplicate_count": 172102,
+            "generated_count": 268112
+          },
+          "phase": {
+            "average_best_score": 10.541666666666666,
+            "average_rounds": 50.0,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 24,
+            "tests_per_access": 0.0,
+            "two_family_winner_fraction": 1.0
+          }
+        }
+      },
+      "weight": 0.143446,
+      "workload": "gcc_200"
+    }
+  ],
+  "configs": [
+    {
+      "round_max": 50,
+      "score_max": 31,
+      "tests_per_access": 1
+    },
+    {
+      "round_max": 25,
+      "score_max": 31,
+      "tests_per_access": 2
+    },
+    {
+      "round_max": 50,
+      "score_max": 31,
+      "tests_per_access": 2
+    },
+    {
+      "round_max": 13,
+      "score_max": 31,
+      "tests_per_access": 4
+    },
+    {
+      "round_max": 25,
+      "score_max": 31,
+      "tests_per_access": 4
+    },
+    {
+      "round_max": 50,
+      "score_max": 31,
+      "tests_per_access": 4
+    }
+  ],
+  "definition": "Quick open-loop replay of one merged Teacher testing N consecutive offsets per access. The Teacher emits the highest positive-score winner from each historical family into a strict 2+2 Student pool. The Student uses one shared filter/phase; PBOP-family predictions are immediately visible while VBOP-family predictions use the 300-cycle delay queue.",
+  "manifest": "util/ts_bop_degree/checkpoints.json",
+  "max_measurement_accesses": 200000,
+  "resource_config": {
+    "extra_fifo_size": 4,
+    "extra_slots": 1,
+    "name": "f256_p8e4_3to1",
+    "primary_fifo_size": 8,
+    "primary_slots": 3,
+    "recent_filter_entries": 256,
+    "role_mode": "rank",
+    "strict_primary": false
+  }
+}

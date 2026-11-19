@@ -58,6 +58,8 @@ class ArchDBer(SimObject):
     dump_l3_evict_trace = Param.Bool(False, "Dump l3 evict trace")
     dump_l1_miss_trace = Param.Bool(False, "Dump l1 miss trace")
     dump_bop_train_trace = Param.Bool(False, "Dump bop train trace")
+    dump_l2_access_trace = Param.Bool(False, "Dump accepted L2 demand access trace")
+    dump_bop_input_trace = Param.Bool(False, "Dump L2 VBOP/PBOP input trace")
     dump_sms_train_trace = Param.Bool(False, "Dump sms train trace")
     dump_stride_train_trace = Param.Bool(False, "Dump stride train trace")
     dump_despacito_train_trace = Param.Bool(False, "Dump despacito train trace")

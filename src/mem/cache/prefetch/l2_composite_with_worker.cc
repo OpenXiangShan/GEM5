@@ -79,12 +79,53 @@ L2CompositeWithWorkerPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std:
         cdp->calculatePrefetch(pfi, addresses);
     }
     if (enableBOP) {
-        largeBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
-        smallBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
+        const bool bop_late = late &&
+            pf_source == PrefetchSourceType::HWP_BOP;
+        const Addr pc = pfi.hasPC() ? pfi.getPC() : 0;
+        const uint64_t context_id = pfi.hasContextId() ?
+            pfi.contextId() : 0;
+        if (archDBer && archDBer->dumpBopInputTrace &&
+            activeAccessSeq != 0) {
+            archDBer->bopInputTraceWrite(
+                activeAccessSeq, curTick(), "VBOP", pfi.getAddr(),
+                largeBOP->getRRInsertCount(), pfi.isCacheMiss(), bop_late,
+                static_cast<int>(pf_source), pc, pfi.hasPC(), context_id,
+                pfi.hasContextId());
+        }
+        largeBOP->calculatePrefetch(pfi, addresses, bop_late);
+        if (archDBer && archDBer->dumpBopInputTrace &&
+            activeAccessSeq != 0) {
+            archDBer->bopInputTraceWrite(
+                activeAccessSeq, curTick(), "PBOP", pfi.getAddr(),
+                smallBOP->getRRInsertCount(), pfi.isCacheMiss(), bop_late,
+                static_cast<int>(pf_source), pc, pfi.hasPC(), context_id,
+                pfi.hasContextId());
+        }
+        smallBOP->calculatePrefetch(pfi, addresses, bop_late);
     }
     if (enableDespacitoStream) {
         despacitoStream->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::DespacitoStream);
     }
+}
+
+std::pair<bool, PrefetchSourceType>
+L2CompositeWithWorkerPrefetcher::probeLateInPFQ(
+    const PrefetchInfo &pfi) const
+{
+    if (!queueSquash) {
+        return {false, PrefetchSourceType::PF_NONE};
+    }
+
+    const PrefetchInfo block_pfi(pfi, blockAddress(pfi.getAddr()));
+    bool late = false;
+    PrefetchSourceType source = PrefetchSourceType::PF_NONE;
+    for (const auto &entry : pfq) {
+        if (entry.pfInfo.sameAddr(block_pfi)) {
+            late = true;
+            source = entry.pfInfo.getXsMetadata().prefetchSource;
+        }
+    }
+    return {late, source};
 }
 
 void
@@ -110,8 +151,38 @@ L2CompositeWithWorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
 void
 L2CompositeWithWorkerPrefetcher::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
 {
+    const bool trace_enabled = archDBer &&
+        (archDBer->dumpL2AccessTrace || archDBer->dumpBopInputTrace);
+    activeAccessSeq = trace_enabled ? archDBer->nextL2AccessSeq() : 0;
+
+    if (archDBer && archDBer->dumpL2AccessTrace) {
+        const bool late_mshr = pkt->missOnLatePf;
+        const auto [late_pfq, late_pfq_source] = probeLateInPFQ(pfi);
+        PrefetchSourceType pf_source = PrefetchSourceType::PF_NONE;
+        if (!pfi.isCacheMiss()) {
+            pf_source = pfi.getXsMetadata().prefetchSource;
+        } else if (late_mshr) {
+            pf_source = pkt->getPFSource();
+        } else if (late_pfq) {
+            pf_source = late_pfq_source;
+        }
+
+        const bool has_vaddr = pkt->req->hasVaddr();
+        const bool has_pc = pfi.hasPC();
+        const bool has_context_id = pfi.hasContextId();
+        archDBer->l2AccessTraceWrite(
+            activeAccessSeq, curTick(), pfi.getPaddr(),
+            has_vaddr ? pkt->req->getVaddr() : 0, has_vaddr,
+            has_pc ? pfi.getPC() : 0, has_pc,
+            has_context_id ? pfi.contextId() : 0, has_context_id,
+            pfi.isSecure(), pfi.isCacheMiss(), late_mshr, late_pfq,
+            static_cast<int>(pf_source), pfi.isEverPrefetched(),
+            pfi.isPfHit(), pfi.isPfFirstHit(), enableBOP, enableBOP);
+    }
+
     WorkerPrefetcher::notify(pkt, pfi);
     Queued::notify(pkt, pfi);
+    activeAccessSeq = 0;
 }
 
 void

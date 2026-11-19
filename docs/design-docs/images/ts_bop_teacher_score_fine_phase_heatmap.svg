@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1380" height="218" viewBox="0 0 1380 218" role="img">
+<style>
+  text { font-family: Arial, sans-serif; fill: #172033; }
+  .title { font-size: 20px; font-weight: 500; }
+  .subtitle { font-size: 12px; fill: #667085; }
+  .label { font-size: 12px; }
+  .small { font-size: 11px; fill: #667085; }
+  .axis { stroke: #d9dee8; stroke-width: 1; }
+</style>
+<rect width="1380" height="218" fill="#ffffff"/>
+<text x="24.0" y="30.0" class="title" text-anchor="start">Teacher phase behavior</text>
+<text x="24.0" y="51.0" class="subtitle" text-anchor="start">score_max can end a strong phase early; round_max caps phases that never reach that score.</text>
+<text x="40.0" y="82.0" class="label" text-anchor="start">Actual average rounds per Teacher phase</text>
+<text x="178.3" y="93.0" class="small" text-anchor="middle">S13</text>
+<text x="265.0" y="93.0" class="small" text-anchor="middle">S14</text>
+<text x="351.7" y="93.0" class="small" text-anchor="middle">S15</text>
+<text x="438.3" y="93.0" class="small" text-anchor="middle">S16</text>
+<text x="525.0" y="93.0" class="small" text-anchor="middle">S17</text>
+<text x="611.7" y="93.0" class="small" text-anchor="middle">S31</text>
+<text x="123.0" y="134.0" class="small" text-anchor="end">R50</text>
+<rect x="137.0" y="107.0" width="82.7" height="44.0" fill="#d6e4f1"/>
+<text x="178.3" y="134.0" class="label" text-anchor="middle">41.7</text>
+<rect x="223.7" y="107.0" width="82.7" height="44.0" fill="#c1d5e8"/>
+<text x="265.0" y="134.0" class="label" text-anchor="middle">42.8</text>
+<rect x="310.3" y="107.0" width="82.7" height="44.0" fill="#b0c8e0"/>
+<text x="351.7" y="134.0" class="label" text-anchor="middle">43.8</text>
+<rect x="397.0" y="107.0" width="82.7" height="44.0" fill="#a2beda"/>
+<text x="438.3" y="134.0" class="label" text-anchor="middle">44.5</text>
+<rect x="483.7" y="107.0" width="82.7" height="44.0" fill="#94b4d4"/>
+<text x="525.0" y="134.0" class="label" text-anchor="middle">45.2</text>
+<rect x="570.3" y="107.0" width="82.7" height="44.0" fill="#427ab0"/>
+<rect x="570.3" y="107.0" width="82.7" height="44.0" fill="none" stroke="#111827" stroke-width="2"/>
+<text x="611.7" y="134.0" class="label" text-anchor="middle">49.6</text>
+<text x="720.0" y="82.0" class="label" text-anchor="start">Phases ended by score_max</text>
+<text x="858.3" y="93.0" class="small" text-anchor="middle">S13</text>
+<text x="945.0" y="93.0" class="small" text-anchor="middle">S14</text>
+<text x="1031.7" y="93.0" class="small" text-anchor="middle">S15</text>
+<text x="1118.3" y="93.0" class="small" text-anchor="middle">S16</text>
+<text x="1205.0" y="93.0" class="small" text-anchor="middle">S17</text>
+<text x="1291.7" y="93.0" class="small" text-anchor="middle">S31</text>
+<text x="803.0" y="134.0" class="small" text-anchor="end">R50</text>
+<rect x="817.0" y="107.0" width="82.7" height="44.0" fill="#427ab0"/>
+<text x="858.3" y="134.0" class="label" text-anchor="middle">32%</text>
+<rect x="903.7" y="107.0" width="82.7" height="44.0" fill="#5889ba"/>
+<text x="945.0" y="134.0" class="label" text-anchor="middle">28%</text>
+<rect x="990.3" y="107.0" width="82.7" height="44.0" fill="#6593c0"/>
+<text x="1031.7" y="134.0" class="label" text-anchor="middle">26%</text>
+<rect x="1077.0" y="107.0" width="82.7" height="44.0" fill="#709ac4"/>
+<text x="1118.3" y="134.0" class="label" text-anchor="middle">24%</text>
+<rect x="1163.7" y="107.0" width="82.7" height="44.0" fill="#7ba2c9"/>
+<text x="1205.0" y="134.0" class="label" text-anchor="middle">22%</text>
+<rect x="1250.3" y="107.0" width="82.7" height="44.0" fill="#d6e4f1"/>
+<rect x="1250.3" y="107.0" width="82.7" height="44.0" fill="none" stroke="#111827" stroke-width="2"/>
+<text x="1291.7" y="134.0" class="label" text-anchor="middle">7%</text>
+</svg>

@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="472" viewBox="0 0 1040 472" role="img">
+<style>
+  text { font-family: Arial, sans-serif; fill: #172033; }
+  .title { font-size: 20px; font-weight: 500; }
+  .subtitle { font-size: 12px; fill: #667085; }
+  .label { font-size: 12px; }
+  .small { font-size: 11px; fill: #667085; }
+  .axis { stroke: #d9dee8; stroke-width: 1; }
+</style>
+<rect width="1040" height="472" fill="#ffffff"/>
+<text x="24.0" y="30.0" class="title" text-anchor="start">Selected TS-BOP local coverage delta</text>
+<text x="24.0" y="50.0" class="subtitle" text-anchor="start">N2/R50/S20, Student 4+4, filter 2048, P8/E8, recent filter 128; delta versus dual BOP.</text>
+<line x1="803.0" y1="67.0" x2="803.0" y2="448.0" stroke="#7b8494" stroke-width="1.2"/>
+<text x="803.0" y="65.0" class="small" text-anchor="middle">0 pp</text>
+<text x="24.0" y="94.0" class="label" text-anchor="start">omnetpp_18492</text>
+<rect x="803.0" y="82.0" width="25.0" height="17.0" fill="#2f9d68"/>
+<text x="835.0" y="95.0" class="small" text-anchor="start">+0.85 pp</text>
+<text x="24.0" y="132.0" class="label" text-anchor="start">milc_28462</text>
+<rect x="803.0" y="120.0" width="14.7" height="17.0" fill="#2f9d68"/>
+<text x="824.7" y="133.0" class="small" text-anchor="start">+0.50 pp</text>
+<text x="24.0" y="170.0" class="label" text-anchor="start">bwaves_13153</text>
+<rect x="803.0" y="158.0" width="7.3" height="17.0" fill="#2f9d68"/>
+<text x="817.3" y="171.0" class="small" text-anchor="start">+0.25 pp</text>
+<text x="24.0" y="208.0" class="label" text-anchor="start">leslie3d_18494</text>
+<rect x="803.0" y="196.0" width="15.1" height="17.0" fill="#2f9d68"/>
+<text x="825.1" y="209.0" class="small" text-anchor="start">+0.51 pp</text>
+<text x="24.0" y="246.0" class="label" text-anchor="start">gcc_200_5108</text>
+<rect x="680.8" y="234.0" width="122.2" height="17.0" fill="#cf5b61"/>
+<text x="673.8" y="247.0" class="small" text-anchor="end">-4.59 pp</text>
+<text x="24.0" y="284.0" class="label" text-anchor="start">milc_30106</text>
+<rect x="803.0" y="272.0" width="2.8" height="17.0" fill="#2f9d68"/>
+<text x="812.8" y="285.0" class="small" text-anchor="start">+0.09 pp</text>
+<text x="24.0" y="322.0" class="label" text-anchor="start">cactusADM_163</text>
+<rect x="802.1" y="310.0" width="0.9" height="17.0" fill="#cf5b61"/>
+<text x="795.1" y="323.0" class="small" text-anchor="end">-0.03 pp</text>
+<text x="24.0" y="360.0" class="label" text-anchor="start">mcf_12886</text>
+<rect x="803.0" y="348.0" width="45.7" height="17.0" fill="#2f9d68"/>
+<text x="855.7" y="361.0" class="small" text-anchor="start">+1.56 pp</text>
+<text x="24.0" y="398.0" class="label" text-anchor="start">astar_biglakes_6185</text>
+<rect x="802.3" y="386.0" width="0.7" height="17.0" fill="#cf5b61"/>
+<text x="795.3" y="399.0" class="small" text-anchor="end">-0.03 pp</text>
+<text x="24.0" y="436.0" class="label" text-anchor="start">mcf_6753</text>
+<rect x="303.1" y="424.0" width="499.9" height="17.0" fill="#cf5b61"/>
+<text x="296.1" y="437.0" class="small" text-anchor="end">-18.76 pp</text>
+</svg>

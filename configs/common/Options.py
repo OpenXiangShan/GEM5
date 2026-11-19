@@ -228,6 +228,14 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         action="store_true",
                         default=False,
                         help="dump per-instruction lifetime trace for perfCCT")
+    parser.add_argument("--arch-db-dump-l2-access-trace",
+                        action="store_true",
+                        default=False,
+                        help="dump accepted L2 demand accesses to ArchDB")
+    parser.add_argument("--arch-db-dump-bop-input-trace",
+                        action="store_true",
+                        default=False,
+                        help="dump actual L2 VBOP/PBOP inputs to ArchDB")
     parser.add_argument("--enable-rolling",
                         default=False,
                         help="enable rolling perfcnt "

@@ -1,0 +1,2535 @@
+{
+  "aggregate": {
+    "dual_current": {
+      "generated_per_demand": {
+        "access_weighted": 1.4958551652758911,
+        "checkpoint_weighted": 1.7530798621916444
+      },
+      "ideal_coverage": {
+        "access_weighted": 0.6147114949220519,
+        "checkpoint_weighted": 0.7686016866457761
+      },
+      "local_coverage": {
+        "access_weighted": 0.6148392522155379,
+        "checkpoint_weighted": 0.7686659232217572
+      },
+      "local_sent_per_demand": {
+        "access_weighted": 1.4780403001487807,
+        "checkpoint_weighted": 1.734796925777426
+      }
+    },
+    "merged_d2": {
+      "generated_per_demand": {
+        "access_weighted": 1.7884727343295168,
+        "checkpoint_weighted": 1.8699657883326923
+      },
+      "ideal_coverage": {
+        "access_weighted": 0.6475354162623714,
+        "checkpoint_weighted": 0.7786850402136789
+      },
+      "local_coverage": {
+        "access_weighted": 0.6475095413674882,
+        "checkpoint_weighted": 0.7786026932842194
+      },
+      "local_sent_per_demand": {
+        "access_weighted": 1.641605213791319,
+        "checkpoint_weighted": 1.524840129292466
+      }
+    },
+    "s20_v2p2_sf2048_e8_rf128": {
+      "generated_per_demand": {
+        "access_weighted": 1.263425836082541,
+        "checkpoint_weighted": 1.2587387341430343
+      },
+      "ideal_coverage": {
+        "access_weighted": 0.5492108157060612,
+        "checkpoint_weighted": 0.7297505530180599
+      },
+      "local_coverage": {
+        "access_weighted": 0.5495471893395433,
+        "checkpoint_weighted": 0.7299246550524263
+      },
+      "local_sent_per_demand": {
+        "access_weighted": 1.2590465101235526,
+        "checkpoint_weighted": 1.2529792491636425
+      }
+    },
+    "s20_v4p4_sf2048_e8_rf128": {
+      "generated_per_demand": {
+        "access_weighted": 1.2567258554887122,
+        "checkpoint_weighted": 1.242388748994965
+      },
+      "ideal_coverage": {
+        "access_weighted": 0.5596351639821463,
+        "checkpoint_weighted": 0.7336429557839718
+      },
+      "local_coverage": {
+        "access_weighted": 0.5591111973607608,
+        "checkpoint_weighted": 0.7332812756768063
+      },
+      "local_sent_per_demand": {
+        "access_weighted": 1.2524872242706515,
+        "checkpoint_weighted": 1.2365631184433679
+      }
+    }
+  },
+  "baseline_resource": {
+    "extra_fifo_size": 4,
+    "extra_slots": 1,
+    "name": "f256_p8e4_3to1",
+    "primary_fifo_size": 8,
+    "primary_slots": 3,
+    "recent_filter_entries": 256,
+    "role_mode": "rank",
+    "strict_primary": false
+  },
+  "checkpoints": [
+    {
+      "marker": {
+        "access_seq": 130958,
+        "tick": 1373448843
+      },
+      "measurement_accesses": 129071,
+      "name": "cactusADM_163",
+      "replayed_accesses": 260029,
+      "result_dir": "/tmp/ts_bop_degree_full_cactusADM_163",
+      "schemes": {
+        "dual_current": {
+          "local_metrics": {
+            "accepted_count": 256175,
+            "coverage": 0.9800574877393062,
+            "covered_by_rank": {
+              "0": 126497
+            },
+            "covered_by_role": {
+              "extra": 41593,
+              "primary": 84904
+            },
+            "covered_count": 126497,
+            "covered_with_min_lead_cycles": {
+              "0": 126497,
+              "16": 126496,
+              "32": 126496,
+              "64": 126496,
+              "128": 126362,
+              "256": 124996
+            },
+            "demand_count": 129071,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 85259,
+              "primary": 42258
+            },
+            "duplicate_sent_count": 127517,
+            "enqueued_by_role": {
+              "extra": 127104,
+              "primary": 129071
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 258142,
+            "queue_delay_cycles_max": {
+              "extra": 18,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.846342672362924,
+              "primary": 0.8673665452855039
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 361773,
+              "primary": 111951
+            },
+            "recent_filtered_by_role": {},
+            "sent_by_role": {
+              "extra": 127101,
+              "primary": 129070
+            }
+          },
+          "metrics": {
+            "accepted_count": 256175,
+            "coverage": 0.9800574877393062,
+            "covered_by_bop": {
+              "PBOP": 41593,
+              "VBOP": 84904
+            },
+            "covered_by_rank": {
+              "0": 126497
+            },
+            "covered_count": 126497,
+            "demand_count": 129071,
+            "duplicate_count": 127518,
+            "generated_count": 258142
+          },
+          "resource": {
+            "config": {
+              "extra_fifo_size": 16,
+              "extra_slots": 1,
+              "name": "dual_p16e16_strict",
+              "primary_fifo_size": 16,
+              "primary_slots": 1,
+              "recent_filter_entries": 0,
+              "role_mode": "bop_kind",
+              "strict_primary": true
+            },
+            "metrics": {
+              "accepted_count": 256175,
+              "coverage": 0.9800574877393062,
+              "covered_by_rank": {
+                "0": 126497
+              },
+              "covered_by_role": {
+                "extra": 41593,
+                "primary": 84904
+              },
+              "covered_count": 126497,
+              "covered_with_min_lead_cycles": {
+                "0": 126497,
+                "16": 126496,
+                "32": 126496,
+                "64": 126496,
+                "128": 126362,
+                "256": 124996
+              },
+              "demand_count": 129071,
+              "dropped_by_role": {},
+              "duplicate_sent_by_role": {
+                "extra": 85259,
+                "primary": 42258
+              },
+              "duplicate_sent_count": 127517,
+              "enqueued_by_role": {
+                "extra": 127104,
+                "primary": 129071
+              },
+              "fifo_late_by_role": {},
+              "fifo_late_demand_count": 0,
+              "generated_count": 258142,
+              "queue_delay_cycles_max": {
+                "extra": 18,
+                "primary": 5
+              },
+              "queue_delay_cycles_mean": {
+                "extra": 2.846342672362924,
+                "primary": 0.8673665452855039
+              },
+              "queue_delay_cycles_sum": {
+                "extra": 361773,
+                "primary": 111951
+              },
+              "recent_filtered_by_role": {},
+              "sent_by_role": {
+                "extra": 127101,
+                "primary": 129070
+              }
+            },
+            "name": "dual_p16e16_strict"
+          }
+        },
+        "merged_d2": {
+          "local_metrics": {
+            "accepted_count": 258142,
+            "coverage": 0.9841405118113287,
+            "covered_by_rank": {
+              "0": 12072,
+              "1": 114952
+            },
+            "covered_by_role": {
+              "extra": 114952,
+              "primary": 12072
+            },
+            "covered_count": 127024,
+            "covered_with_min_lead_cycles": {
+              "0": 127024,
+              "16": 127023,
+              "32": 127022,
+              "64": 127022,
+              "128": 127020,
+              "256": 126995
+            },
+            "demand_count": 129071,
+            "dropped_by_role": {
+              "extra": 495
+            },
+            "duplicate_sent_by_role": {
+              "extra": 2119,
+              "primary": 40758
+            },
+            "duplicate_sent_count": 42877,
+            "enqueued_by_role": {
+              "extra": 119138,
+              "primary": 53370
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 258142,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 7
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.559553611314807,
+              "primary": 1.196964586846543
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 185027,
+              "primary": 63882
+            },
+            "recent_filtered_by_role": {
+              "extra": 9933,
+              "primary": 75701
+            },
+            "sent_by_role": {
+              "extra": 118641,
+              "primary": 53370
+            }
+          },
+          "metrics": {
+            "accepted_count": 258142,
+            "coverage": 0.9842179885489382,
+            "covered_by_bop": {
+              "MergedVBOP": 127034
+            },
+            "covered_by_rank": {
+              "0": 11611,
+              "1": 115423
+            },
+            "covered_count": 127034,
+            "demand_count": 129071,
+            "duplicate_count": 128993,
+            "generated_count": 258142
+          },
+          "phase": {
+            "average_best_score": 27.68,
+            "average_rounds": 46.76,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 25,
+            "tests_per_access": 0.0,
+            "two_family_winner_fraction": 0.0
+          },
+          "resource": {
+            "config": {
+              "extra_fifo_size": 4,
+              "extra_slots": 1,
+              "name": "f256_p8e4_3to1",
+              "primary_fifo_size": 8,
+              "primary_slots": 3,
+              "recent_filter_entries": 256,
+              "role_mode": "rank",
+              "strict_primary": false
+            },
+            "metrics": {
+              "accepted_count": 258142,
+              "coverage": 0.9841405118113287,
+              "covered_by_rank": {
+                "0": 12072,
+                "1": 114952
+              },
+              "covered_by_role": {
+                "extra": 114952,
+                "primary": 12072
+              },
+              "covered_count": 127024,
+              "covered_with_min_lead_cycles": {
+                "0": 127024,
+                "16": 127023,
+                "32": 127022,
+                "64": 127022,
+                "128": 127020,
+                "256": 126995
+              },
+              "demand_count": 129071,
+              "dropped_by_role": {
+                "extra": 495
+              },
+              "duplicate_sent_by_role": {
+                "extra": 2119,
+                "primary": 40758
+              },
+              "duplicate_sent_count": 42877,
+              "enqueued_by_role": {
+                "extra": 119138,
+                "primary": 53370
+              },
+              "fifo_late_by_role": {},
+              "fifo_late_demand_count": 0,
+              "generated_count": 258142,
+              "queue_delay_cycles_max": {
+                "extra": 10,
+                "primary": 7
+              },
+              "queue_delay_cycles_mean": {
+                "extra": 1.559553611314807,
+                "primary": 1.196964586846543
+              },
+              "queue_delay_cycles_sum": {
+                "extra": 185027,
+                "primary": 63882
+              },
+              "recent_filtered_by_role": {
+                "extra": 9933,
+                "primary": 75701
+              },
+              "sent_by_role": {
+                "extra": 118641,
+                "primary": 53370
+              }
+            },
+            "name": "f256_p8e4_3to1"
+          }
+        },
+        "s20_v2p2_sf2048_e8_rf128": {
+          "local_metrics": {
+            "accepted_count": 147060,
+            "coverage": 0.9817929666617599,
+            "covered_by_rank": {
+              "0": 110145,
+              "1": 16576
+            },
+            "covered_by_role": {
+              "extra": 16576,
+              "primary": 110145
+            },
+            "covered_count": 126721,
+            "covered_with_min_lead_cycles": {
+              "0": 126721,
+              "16": 126720,
+              "32": 126720,
+              "64": 126717,
+              "128": 126314,
+              "256": 121917
+            },
+            "demand_count": 129071,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 19,
+              "primary": 17673
+            },
+            "duplicate_sent_count": 17692,
+            "enqueued_by_role": {
+              "extra": 17989,
+              "primary": 128142
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 147060,
+            "queue_delay_cycles_max": {
+              "extra": 9,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.111401411973984,
+              "primary": 1.0974246917434056
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 37982,
+              "primary": 140624
+            },
+            "recent_filtered_by_role": {
+              "primary": 929
+            },
+            "sent_by_role": {
+              "extra": 17989,
+              "primary": 128140
+            }
+          },
+          "metrics": {
+            "accepted_count": 147060,
+            "coverage": 0.9817929666617599,
+            "covered_by_bop": {
+              "s20_v2p2_sf2048_e8_rf128": 126721
+            },
+            "covered_by_rank": {
+              "0": 110145,
+              "1": 16576
+            },
+            "covered_count": 126721,
+            "demand_count": 129071,
+            "duplicate_count": 18621,
+            "generated_count": 147060
+          },
+          "phase": {
+            "average_best_score": 20.0,
+            "average_rounds": 33.267605633802816,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 71,
+            "tests_per_access": 1.99967459770204,
+            "two_family_winner_fraction": 1.0
+          },
+          "resource": {
+            "config": {
+              "extra_fifo_size": 8,
+              "extra_slots": 1,
+              "name": "s20_v2p2_sf2048_e8_rf128_p8e8_rf128",
+              "primary_fifo_size": 8,
+              "primary_slots": 3,
+              "recent_filter_entries": 128,
+              "role_mode": "rank",
+              "strict_primary": false
+            },
+            "metrics": {
+              "accepted_count": 147060,
+              "coverage": 0.9817929666617599,
+              "covered_by_rank": {
+                "0": 110145,
+                "1": 16576
+              },
+              "covered_by_role": {
+                "extra": 16576,
+                "primary": 110145
+              },
+              "covered_count": 126721,
+              "covered_with_min_lead_cycles": {
+                "0": 126721,
+                "16": 126720,
+                "32": 126720,
+                "64": 126717,
+                "128": 126314,
+                "256": 121917
+              },
+              "demand_count": 129071,
+              "dropped_by_role": {},
+              "duplicate_sent_by_role": {
+                "extra": 19,
+                "primary": 17673
+              },
+              "duplicate_sent_count": 17692,
+              "enqueued_by_role": {
+                "extra": 17989,
+                "primary": 128142
+              },
+              "fifo_late_by_role": {},
+              "fifo_late_demand_count": 0,
+              "generated_count": 147060,
+              "queue_delay_cycles_max": {
+                "extra": 9,
+                "primary": 5
+              },
+              "queue_delay_cycles_mean": {
+                "extra": 2.111401411973984,
+                "primary": 1.0974246917434056
+              },
+              "queue_delay_cycles_sum": {
+                "extra": 37982,
+                "primary": 140624
+              },
+              "recent_filtered_by_role": {
+                "primary": 929
+              },
+              "sent_by_role": {
+                "extra": 17989,
+                "primary": 128140
+              }
+            },
+            "name": "s20_v2p2_sf2048_e8_rf128_p8e8_rf128"
+          }
+        },
+        "s20_v4p4_sf2048_e8_rf128": {
+          "local_metrics": {
+            "accepted_count": 142917,
+            "coverage": 0.9797320854413463,
+            "covered_by_rank": {
+              "0": 114127,
+              "1": 12328
+            },
+            "covered_by_role": {
+              "extra": 12328,
+              "primary": 114127
+            },
+            "covered_count": 126455,
+            "covered_with_min_lead_cycles": {
+              "0": 126455,
+              "16": 126454,
+              "32": 126454,
+              "64": 126449,
+              "128": 125725,
+              "256": 118020
+            },
+            "demand_count": 129071,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 18,
+              "primary": 13466
+            },
+            "duplicate_sent_count": 13484,
+            "enqueued_by_role": {
+              "extra": 13799,
+              "primary": 128142
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 142917,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.450322487136749,
+              "primary": 1.0513813017012643
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 33812,
+              "primary": 134724
+            },
+            "recent_filtered_by_role": {
+              "extra": 47,
+              "primary": 929
+            },
+            "sent_by_role": {
+              "extra": 13799,
+              "primary": 128140
+            }
+          },
+          "metrics": {
+            "accepted_count": 142917,
+            "coverage": 0.9797320854413463,
+            "covered_by_bop": {
+              "s20_v4p4_sf2048_e8_rf128": 126455
+            },
+            "covered_by_rank": {
+              "0": 114127,
+              "1": 12328
+            },
+            "covered_count": 126455,
+            "demand_count": 129071,
+            "duplicate_count": 14460,
+            "generated_count": 142917
+          },
+          "phase": {
+            "average_best_score": 20.0,
+            "average_rounds": 33.267605633802816,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 71,
+            "tests_per_access": 1.99967459770204,
+            "two_family_winner_fraction": 1.0
+          },
+          "resource": {
+            "config": {
+              "extra_fifo_size": 8,
+              "extra_slots": 1,
+              "name": "s20_v4p4_sf2048_e8_rf128_p8e8_rf128",
+              "primary_fifo_size": 8,
+              "primary_slots": 3,
+              "recent_filter_entries": 128,
+              "role_mode": "rank",
+              "strict_primary": false
+            },
+            "metrics": {
+              "accepted_count": 142917,
+              "coverage": 0.9797320854413463,
+              "covered_by_rank": {
+                "0": 114127,
+                "1": 12328
+              },
+              "covered_by_role": {
+                "extra": 12328,
+                "primary": 114127
+              },
+              "covered_count": 126455,
+              "covered_with_min_lead_cycles": {
+                "0": 126455,
+                "16": 126454,
+                "32": 126454,
+                "64": 126449,
+                "128": 125725,
+                "256": 118020
+              },
+              "demand_count": 129071,
+              "dropped_by_role": {},
+              "duplicate_sent_by_role": {
+                "extra": 18,
+                "primary": 13466
+              },
+              "duplicate_sent_count": 13484,
+              "enqueued_by_role": {
+                "extra": 13799,
+                "primary": 128142
+              },
+              "fifo_late_by_role": {},
+              "fifo_late_demand_count": 0,
+              "generated_count": 142917,
+              "queue_delay_cycles_max": {
+                "extra": 10,
+                "primary": 5
+              },
+              "queue_delay_cycles_mean": {
+                "extra": 2.450322487136749,
+                "primary": 1.0513813017012643
+              },
+              "queue_delay_cycles_sum": {
+                "extra": 33812,
+                "primary": 134724
+              },
+              "recent_filtered_by_role": {
+                "extra": 47,
+                "primary": 929
+              },
+              "sent_by_role": {
+                "extra": 13799,
+                "primary": 128140
+              }
+            },
+            "name": "s20_v4p4_sf2048_e8_rf128_p8e8_rf128"
+          }
+        }
+      },
+      "weight": 0.560381,
+      "workload": "cactusADM"
+    },
+    {
+      "marker": {
+        "access_seq": 2516253,
+        "tick": 10986261741
+      },
+      "measurement_accesses": 200000,
+      "name": "mcf_12886",
+      "replayed_accesses": 2716253,
+      "result_dir": "/tmp/ts_bop_degree_full_mcf_12886_rrcount",
+      "schemes": {
+        "dual_current": {
+          "local_metrics": {
+            "accepted_count": 197216,
+            "coverage": 0.44964,
+            "covered_by_rank": {
+              "0": 89928
+            },
+            "covered_by_role": {
+              "extra": 89895,
+              "primary": 33
+            },
+            "covered_count": 89928,
+            "covered_with_min_lead_cycles": {
+              "0": 89928,
+              "16": 89921,
+              "32": 89919,
+              "64": 89917,
+              "128": 89917,
+              "256": 89912
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 96385
+            },
+            "duplicate_sent_count": 96385,
+            "enqueued_by_role": {
+              "extra": 197216
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 200000,
+            "queue_delay_cycles_max": {
+              "extra": 3
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.0389777653829577
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 204902
+            },
+            "recent_filtered_by_role": {},
+            "sent_by_role": {
+              "extra": 197215
+            }
+          },
+          "metrics": {
+            "accepted_count": 197216,
+            "coverage": 0.44964,
+            "covered_by_bop": {
+              "PBOP": 89895,
+              "VBOP": 33
+            },
+            "covered_by_rank": {
+              "0": 89928
+            },
+            "covered_count": 89928,
+            "demand_count": 200000,
+            "duplicate_count": 96385,
+            "generated_count": 200000
+          },
+          "resource": {
+            "config": {
+              "extra_fifo_size": 16,
+              "extra_slots": 1,
+              "name": "dual_p16e16_strict",
+              "primary_fifo_size": 16,
+              "primary_slots": 1,
+              "recent_filter_entries": 0,
+              "role_mode": "bop_kind",
+              "strict_primary": true
+            },
+            "metrics": {
+              "accepted_count": 197216,
+              "coverage": 0.44964,
+              "covered_by_rank": {
+                "0": 89928
+              },
+              "covered_by_role": {
+                "extra": 89895,
+                "primary": 33
+              },
+              "covered_count": 89928,
+              "covered_with_min_lead_cycles": {
+                "0": 89928,
+                "16": 89921,
+                "32": 89919,
+                "64": 89917,
+                "128": 89917,
+                "256": 89912
+              },
+              "demand_count": 200000,
+              "dropped_by_role": {},
+              "duplicate_sent_by_role": {
+                "extra": 96385
+              },
+              "duplicate_sent_count": 96385,
+              "enqueued_by_role": {
+                "extra": 197216
+              },
+              "fifo_late_by_role": {},
+              "fifo_late_demand_count": 0,
+              "generated_count": 200000,
+              "queue_delay_cycles_max": {
+                "extra": 3
+              },
+              "queue_delay_cycles_mean": {
+                "extra": 1.0389777653829577
+              },
+              "queue_delay_cycles_sum": {
+                "extra": 204902
+              },
+              "recent_filtered_by_role": {},
+              "sent_by_role": {
+                "extra": 197215
+              }
+            },
+            "name": "dual_p16e16_strict"
+          }
+        },
+        "merged_d2": {
+          "local_metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.618595,
+            "covered_by_rank": {
+              "0": 23792,
+              "1": 99927
+            },
+            "covered_by_role": {
+              "extra": 99927,
+              "primary": 23792
+            },
+            "covered_count": 123719,
+            "covered_with_min_lead_cycles": {
+              "0": 123719,
+              "16": 123712,
+              "32": 123710,
+              "64": 123705,
+              "128": 123702,
+              "256": 123686
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {
+              "extra": 136
+            },
+            "duplicate_sent_by_role": {
+              "extra": 86958,
+              "primary": 173981
+            },
+            "duplicate_sent_count": 260939,
+            "enqueued_by_role": {
+              "extra": 199894,
+              "primary": 199879
+            },
+            "fifo_late_by_role": {
+              "primary": 1
+            },
+            "fifo_late_demand_count": 1,
+            "generated_count": 400000,
+            "queue_delay_cycles_max": {
+              "extra": 9,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.1993472068563302,
+              "primary": 1.279040214530864
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 439335,
+              "primary": 255652
+            },
+            "recent_filtered_by_role": {
+              "extra": 106,
+              "primary": 121
+            },
+            "sent_by_role": {
+              "extra": 199757,
+              "primary": 199878
+            }
+          },
+          "metrics": {
+            "accepted_count": 400000,
+            "coverage": 0.61869,
+            "covered_by_bop": {
+              "MergedVBOP": 123738
+            },
+            "covered_by_rank": {
+              "0": 23759,
+              "1": 99979
+            },
+            "covered_count": 123738,
+            "demand_count": 200000,
+            "duplicate_count": 261284,
+            "generated_count": 400000
+          },
+          "phase": {
+            "average_best_score": 3.5135135135135136,
+            "average_rounds": 50.0,
+            "issue_enabled_fraction": 0.6756756756756757,
+            "phase_count": 37,
+            "tests_per_access": 0.0,
+            "two_family_winner_fraction": 0.0
+          },
+          "resource": {
+            "config": {
+              "extra_fifo_size": 4,
+              "extra_slots": 1,
+              "name": "f256_p8e4_3to1",
+              "primary_fifo_size": 8,
+              "primary_slots": 3,
+              "recent_filter_entries": 256,
+              "role_mode": "rank",
+              "strict_primary": false
+            },
+            "metrics": {
+              "accepted_count": 400000,
+              "coverage": 0.618595,
+              "covered_by_rank": {
+                "0": 23792,
+                "1": 99927
+              },
+              "covered_by_role": {
+                "extra": 99927,
+                "primary": 23792
+              },
+              "covered_count": 123719,
+              "covered_with_min_lead_cycles": {
+                "0": 123719,
+                "16": 123712,
+                "32": 123710,
+                "64": 123705,
+                "128": 123702,
+                "256": 123686
+              },
+              "demand_count": 200000,
+              "dropped_by_role": {
+                "extra": 136
+              },
+              "duplicate_sent_by_role": {
+                "extra": 86958,
+                "primary": 173981
+              },
+              "duplicate_sent_count": 260939,
+              "enqueued_by_role": {
+                "extra": 199894,
+                "primary": 199879
+              },
+              "fifo_late_by_role": {
+                "primary": 1
+              },
+              "fifo_late_demand_count": 1,
+              "generated_count": 400000,
+              "queue_delay_cycles_max": {
+                "extra": 9,
+                "primary": 5
+              },
+              "queue_delay_cycles_mean": {
+                "extra": 2.1993472068563302,
+                "primary": 1.279040214530864
+              },
+              "queue_delay_cycles_sum": {
+                "extra": 439335,
+                "primary": 255652
+              },
+              "recent_filtered_by_role": {
+                "extra": 106,
+                "primary": 121
+              },
+              "sent_by_role": {
+                "extra": 199757,
+                "primary": 199878
+              }
+            },
+            "name": "f256_p8e4_3to1"
+          }
+        },
+        "s20_v2p2_sf2048_e8_rf128": {
+          "local_metrics": {
+            "accepted_count": 274650,
+            "coverage": 0.42612,
+            "covered_by_rank": {
+              "0": 50679,
+              "1": 34545
+            },
+            "covered_by_role": {
+              "extra": 34545,
+              "primary": 50679
+            },
+            "covered_count": 85224,
+            "covered_with_min_lead_cycles": {
+              "0": 85224,
+              "16": 85216,
+              "32": 85214,
+              "64": 85212,
+              "128": 85207,
+              "256": 85194
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 61478,
+              "primary": 80668
+            },
+            "duplicate_sent_count": 142146,
+            "enqueued_by_role": {
+              "extra": 137270,
+              "primary": 137259
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 274650,
+            "queue_delay_cycles_max": {
+              "extra": 11,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.2227014110979173,
+              "primary": 1.2612743883780908
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 305108,
+              "primary": 173120
+            },
+            "recent_filtered_by_role": {
+              "extra": 55,
+              "primary": 66
+            },
+            "sent_by_role": {
+              "extra": 137269,
+              "primary": 137258
+            }
+          },
+          "metrics": {
+            "accepted_count": 274650,
+            "coverage": 0.426115,
+            "covered_by_bop": {
+              "s20_v2p2_sf2048_e8_rf128": 85223
+            },
+            "covered_by_rank": {
+              "0": 50679,
+              "1": 34544
+            },
+            "covered_count": 85223,
+            "demand_count": 200000,
+            "duplicate_count": 142270,
+            "generated_count": 274650
+          },
+          "phase": {
+            "average_best_score": 3.164383561643836,
+            "average_rounds": 50.0,
+            "issue_enabled_fraction": 0.6301369863013698,
+            "phase_count": 73,
+            "tests_per_access": 2.0,
+            "two_family_winner_fraction": 1.0
+          },
+          "resource": {
+            "config": {
+              "extra_fifo_size": 8,
+              "extra_slots": 1,
+              "name": "s20_v2p2_sf2048_e8_rf128_p8e8_rf128",
+              "primary_fifo_size": 8,
+              "primary_slots": 3,
+              "recent_filter_entries": 128,
+              "role_mode": "rank",
+              "strict_primary": false
+            },
+            "metrics": {
+              "accepted_count": 274650,
+              "coverage": 0.42612,
+              "covered_by_rank": {
+                "0": 50679,
+                "1": 34545
+              },
+              "covered_by_role": {
+                "extra": 34545,
+                "primary": 50679
+              },
+              "covered_count": 85224,
+              "covered_with_min_lead_cycles": {
+                "0": 85224,
+                "16": 85216,
+                "32": 85214,
+                "64": 85212,
+                "128": 85207,
+                "256": 85194
+              },
+              "demand_count": 200000,
+              "dropped_by_role": {},
+              "duplicate_sent_by_role": {
+                "extra": 61478,
+                "primary": 80668
+              },
+              "duplicate_sent_count": 142146,
+              "enqueued_by_role": {
+                "extra": 137270,
+                "primary": 137259
+              },
+              "fifo_late_by_role": {},
+              "fifo_late_demand_count": 0,
+              "generated_count": 274650,
+              "queue_delay_cycles_max": {
+                "extra": 11,
+                "primary": 5
+              },
+              "queue_delay_cycles_mean": {
+                "extra": 2.2227014110979173,
+                "primary": 1.2612743883780908
+              },
+              "queue_delay_cycles_sum": {
+                "extra": 305108,
+                "primary": 173120
+              },
+              "recent_filtered_by_role": {
+                "extra": 55,
+                "primary": 66
+              },
+              "sent_by_role": {
+                "extra": 137269,
+                "primary": 137258
+              }
+            },
+            "name": "s20_v2p2_sf2048_e8_rf128_p8e8_rf128"
+          }
+        },
+        "s20_v4p4_sf2048_e8_rf128": {
+          "local_metrics": {
+            "accepted_count": 274650,
+            "coverage": 0.465265,
+            "covered_by_rank": {
+              "0": 45515,
+              "1": 47538
+            },
+            "covered_by_role": {
+              "extra": 47538,
+              "primary": 45515
+            },
+            "covered_count": 93053,
+            "covered_with_min_lead_cycles": {
+              "0": 93053,
+              "16": 93048,
+              "32": 93047,
+              "64": 93046,
+              "128": 93040,
+              "256": 93030
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 59714,
+              "primary": 86679
+            },
+            "duplicate_sent_count": 146393,
+            "enqueued_by_role": {
+              "extra": 137275,
+              "primary": 137267
+            },
+            "fifo_late_by_role": {
+              "extra": 1,
+              "primary": 1
+            },
+            "fifo_late_demand_count": 2,
+            "generated_count": 274650,
+            "queue_delay_cycles_max": {
+              "extra": 11,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.2166324285735097,
+              "primary": 1.267575364620518
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 304286,
+              "primary": 173995
+            },
+            "recent_filtered_by_role": {
+              "extra": 50,
+              "primary": 58
+            },
+            "sent_by_role": {
+              "extra": 137274,
+              "primary": 137266
+            }
+          },
+          "metrics": {
+            "accepted_count": 274650,
+            "coverage": 0.46527,
+            "covered_by_bop": {
+              "s20_v4p4_sf2048_e8_rf128": 93054
+            },
+            "covered_by_rank": {
+              "0": 45516,
+              "1": 47538
+            },
+            "covered_count": 93054,
+            "demand_count": 200000,
+            "duplicate_count": 146502,
+            "generated_count": 274650
+          },
+          "phase": {
+            "average_best_score": 3.164383561643836,
+            "average_rounds": 50.0,
+            "issue_enabled_fraction": 0.6301369863013698,
+            "phase_count": 73,
+            "tests_per_access": 2.0,
+            "two_family_winner_fraction": 1.0
+          },
+          "resource": {
+            "config": {
+              "extra_fifo_size": 8,
+              "extra_slots": 1,
+              "name": "s20_v4p4_sf2048_e8_rf128_p8e8_rf128",
+              "primary_fifo_size": 8,
+              "primary_slots": 3,
+              "recent_filter_entries": 128,
+              "role_mode": "rank",
+              "strict_primary": false
+            },
+            "metrics": {
+              "accepted_count": 274650,
+              "coverage": 0.465265,
+              "covered_by_rank": {
+                "0": 45515,
+                "1": 47538
+              },
+              "covered_by_role": {
+                "extra": 47538,
+                "primary": 45515
+              },
+              "covered_count": 93053,
+              "covered_with_min_lead_cycles": {
+                "0": 93053,
+                "16": 93048,
+                "32": 93047,
+                "64": 93046,
+                "128": 93040,
+                "256": 93030
+              },
+              "demand_count": 200000,
+              "dropped_by_role": {},
+              "duplicate_sent_by_role": {
+                "extra": 59714,
+                "primary": 86679
+              },
+              "duplicate_sent_count": 146393,
+              "enqueued_by_role": {
+                "extra": 137275,
+                "primary": 137267
+              },
+              "fifo_late_by_role": {
+                "extra": 1,
+                "primary": 1
+              },
+              "fifo_late_demand_count": 2,
+              "generated_count": 274650,
+              "queue_delay_cycles_max": {
+                "extra": 11,
+                "primary": 5
+              },
+              "queue_delay_cycles_mean": {
+                "extra": 2.2166324285735097,
+                "primary": 1.267575364620518
+              },
+              "queue_delay_cycles_sum": {
+                "extra": 304286,
+                "primary": 173995
+              },
+              "recent_filtered_by_role": {
+                "extra": 50,
+                "primary": 58
+              },
+              "sent_by_role": {
+                "extra": 137274,
+                "primary": 137266
+              }
+            },
+            "name": "s20_v4p4_sf2048_e8_rf128_p8e8_rf128"
+          }
+        }
+      },
+      "weight": 0.149435,
+      "workload": "mcf"
+    },
+    {
+      "marker": {
+        "access_seq": 75094,
+        "tick": 2201734395
+      },
+      "measurement_accesses": 89289,
+      "name": "astar_biglakes_6185",
+      "replayed_accesses": 164383,
+      "result_dir": "/tmp/ts_bop_degree_full_astar_biglakes_6185",
+      "schemes": {
+        "dual_current": {
+          "local_metrics": {
+            "accepted_count": 175405,
+            "coverage": 0.6781126454546472,
+            "covered_by_rank": {
+              "0": 60548
+            },
+            "covered_by_role": {
+              "extra": 24159,
+              "primary": 36389
+            },
+            "covered_count": 60548,
+            "covered_with_min_lead_cycles": {
+              "0": 60548,
+              "16": 59208,
+              "32": 59089,
+              "64": 58255,
+              "128": 56944,
+              "256": 53762
+            },
+            "demand_count": 89289,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 52366,
+              "primary": 38777
+            },
+            "duplicate_sent_count": 91143,
+            "enqueued_by_role": {
+              "extra": 86116,
+              "primary": 89289
+            },
+            "fifo_late_by_role": {
+              "primary": 88
+            },
+            "fifo_late_demand_count": 88,
+            "generated_count": 178578,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 3
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.225210474365674,
+              "primary": 0.9986672341188065
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 191624,
+              "primary": 89169
+            },
+            "recent_filtered_by_role": {},
+            "sent_by_role": {
+              "extra": 86115,
+              "primary": 89288
+            }
+          },
+          "metrics": {
+            "accepted_count": 175405,
+            "coverage": 0.6783254376238954,
+            "covered_by_bop": {
+              "PBOP": 24170,
+              "VBOP": 36397
+            },
+            "covered_by_rank": {
+              "0": 60567
+            },
+            "covered_count": 60567,
+            "demand_count": 89289,
+            "duplicate_count": 91156,
+            "generated_count": 178578
+          },
+          "resource": {
+            "config": {
+              "extra_fifo_size": 16,
+              "extra_slots": 1,
+              "name": "dual_p16e16_strict",
+              "primary_fifo_size": 16,
+              "primary_slots": 1,
+              "recent_filter_entries": 0,
+              "role_mode": "bop_kind",
+              "strict_primary": true
+            },
+            "metrics": {
+              "accepted_count": 175405,
+              "coverage": 0.6781126454546472,
+              "covered_by_rank": {
+                "0": 60548
+              },
+              "covered_by_role": {
+                "extra": 24159,
+                "primary": 36389
+              },
+              "covered_count": 60548,
+              "covered_with_min_lead_cycles": {
+                "0": 60548,
+                "16": 59208,
+                "32": 59089,
+                "64": 58255,
+                "128": 56944,
+                "256": 53762
+              },
+              "demand_count": 89289,
+              "dropped_by_role": {},
+              "duplicate_sent_by_role": {
+                "extra": 52366,
+                "primary": 38777
+              },
+              "duplicate_sent_count": 91143,
+              "enqueued_by_role": {
+                "extra": 86116,
+                "primary": 89289
+              },
+              "fifo_late_by_role": {
+                "primary": 88
+              },
+              "fifo_late_demand_count": 88,
+              "generated_count": 178578,
+              "queue_delay_cycles_max": {
+                "extra": 10,
+                "primary": 3
+              },
+              "queue_delay_cycles_mean": {
+                "extra": 2.225210474365674,
+                "primary": 0.9986672341188065
+              },
+              "queue_delay_cycles_sum": {
+                "extra": 191624,
+                "primary": 89169
+              },
+              "recent_filtered_by_role": {},
+              "sent_by_role": {
+                "extra": 86115,
+                "primary": 89288
+              }
+            },
+            "name": "dual_p16e16_strict"
+          }
+        },
+        "merged_d2": {
+          "local_metrics": {
+            "accepted_count": 178578,
+            "coverage": 0.6623548253424274,
+            "covered_by_rank": {
+              "0": 35031,
+              "1": 24110
+            },
+            "covered_by_role": {
+              "extra": 24110,
+              "primary": 35031
+            },
+            "covered_count": 59141,
+            "covered_with_min_lead_cycles": {
+              "0": 59141,
+              "16": 57609,
+              "32": 57352,
+              "64": 56529,
+              "128": 55109,
+              "256": 54432
+            },
+            "demand_count": 89289,
+            "dropped_by_role": {
+              "extra": 8
+            },
+            "duplicate_sent_by_role": {
+              "extra": 45329,
+              "primary": 38214
+            },
+            "duplicate_sent_count": 83543,
+            "enqueued_by_role": {
+              "extra": 88869,
+              "primary": 88824
+            },
+            "fifo_late_by_role": {
+              "extra": 15,
+              "primary": 79
+            },
+            "fifo_late_demand_count": 94,
+            "generated_count": 178578,
+            "queue_delay_cycles_max": {
+              "extra": 8,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.9413234301147873,
+              "primary": 1.2807943888407283
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 172506,
+              "primary": 113764
+            },
+            "recent_filtered_by_role": {
+              "extra": 420,
+              "primary": 465
+            },
+            "sent_by_role": {
+              "extra": 88860,
+              "primary": 88823
+            }
+          },
+          "metrics": {
+            "accepted_count": 178578,
+            "coverage": 0.662993201850172,
+            "covered_by_bop": {
+              "MergedVBOP": 59198
+            },
+            "covered_by_rank": {
+              "0": 35071,
+              "1": 24127
+            },
+            "covered_count": 59198,
+            "demand_count": 89289,
+            "duplicate_count": 84384,
+            "generated_count": 178578
+          },
+          "phase": {
+            "average_best_score": 13.647058823529411,
+            "average_rounds": 50.0,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 17,
+            "tests_per_access": 0.0,
+            "two_family_winner_fraction": 0.0
+          },
+          "resource": {
+            "config": {
+              "extra_fifo_size": 4,
+              "extra_slots": 1,
+              "name": "f256_p8e4_3to1",
+              "primary_fifo_size": 8,
+              "primary_slots": 3,
+              "recent_filter_entries": 256,
+              "role_mode": "rank",
+              "strict_primary": false
+            },
+            "metrics": {
+              "accepted_count": 178578,
+              "coverage": 0.6623548253424274,
+              "covered_by_rank": {
+                "0": 35031,
+                "1": 24110
+              },
+              "covered_by_role": {
+                "extra": 24110,
+                "primary": 35031
+              },
+              "covered_count": 59141,
+              "covered_with_min_lead_cycles": {
+                "0": 59141,
+                "16": 57609,
+                "32": 57352,
+                "64": 56529,
+                "128": 55109,
+                "256": 54432
+              },
+              "demand_count": 89289,
+              "dropped_by_role": {
+                "extra": 8
+              },
+              "duplicate_sent_by_role": {
+                "extra": 45329,
+                "primary": 38214
+              },
+              "duplicate_sent_count": 83543,
+              "enqueued_by_role": {
+                "extra": 88869,
+                "primary": 88824
+              },
+              "fifo_late_by_role": {
+                "extra": 15,
+                "primary": 79
+              },
+              "fifo_late_demand_count": 94,
+              "generated_count": 178578,
+              "queue_delay_cycles_max": {
+                "extra": 8,
+                "primary": 5
+              },
+              "queue_delay_cycles_mean": {
+                "extra": 1.9413234301147873,
+                "primary": 1.2807943888407283
+              },
+              "queue_delay_cycles_sum": {
+                "extra": 172506,
+                "primary": 113764
+              },
+              "recent_filtered_by_role": {
+                "extra": 420,
+                "primary": 465
+              },
+              "sent_by_role": {
+                "extra": 88860,
+                "primary": 88823
+              }
+            },
+            "name": "f256_p8e4_3to1"
+          }
+        },
+        "s20_v2p2_sf2048_e8_rf128": {
+          "local_metrics": {
+            "accepted_count": 178578,
+            "coverage": 0.6670026543023216,
+            "covered_by_rank": {
+              "0": 34173,
+              "1": 25383
+            },
+            "covered_by_role": {
+              "extra": 25383,
+              "primary": 34173
+            },
+            "covered_count": 59556,
+            "covered_with_min_lead_cycles": {
+              "0": 59556,
+              "16": 58289,
+              "32": 58149,
+              "64": 57349,
+              "128": 55739,
+              "256": 53133
+            },
+            "demand_count": 89289,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 47332,
+              "primary": 40287
+            },
+            "duplicate_sent_count": 87619,
+            "enqueued_by_role": {
+              "extra": 89067,
+              "primary": 89038
+            },
+            "fifo_late_by_role": {
+              "extra": 44,
+              "primary": 91
+            },
+            "fifo_late_demand_count": 135,
+            "generated_count": 178578,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.9762984752879886,
+              "primary": 1.2457742286914428
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 176021,
+              "primary": 110920
+            },
+            "recent_filtered_by_role": {
+              "extra": 222,
+              "primary": 251
+            },
+            "sent_by_role": {
+              "extra": 89066,
+              "primary": 89037
+            }
+          },
+          "metrics": {
+            "accepted_count": 178578,
+            "coverage": 0.6674842365800938,
+            "covered_by_bop": {
+              "s20_v2p2_sf2048_e8_rf128": 59599
+            },
+            "covered_by_rank": {
+              "0": 34193,
+              "1": 25406
+            },
+            "covered_count": 59599,
+            "demand_count": 89289,
+            "duplicate_count": 88046,
+            "generated_count": 178578
+          },
+          "phase": {
+            "average_best_score": 12.818181818181818,
+            "average_rounds": 49.96969696969697,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 33,
+            "tests_per_access": 1.9999888004121449,
+            "two_family_winner_fraction": 1.0
+          },
+          "resource": {
+            "config": {
+              "extra_fifo_size": 8,
+              "extra_slots": 1,
+              "name": "s20_v2p2_sf2048_e8_rf128_p8e8_rf128",
+              "primary_fifo_size": 8,
+              "primary_slots": 3,
+              "recent_filter_entries": 128,
+              "role_mode": "rank",
+              "strict_primary": false
+            },
+            "metrics": {
+              "accepted_count": 178578,
+              "coverage": 0.6670026543023216,
+              "covered_by_rank": {
+                "0": 34173,
+                "1": 25383
+              },
+              "covered_by_role": {
+                "extra": 25383,
+                "primary": 34173
+              },
+              "covered_count": 59556,
+              "covered_with_min_lead_cycles": {
+                "0": 59556,
+                "16": 58289,
+                "32": 58149,
+                "64": 57349,
+                "128": 55739,
+                "256": 53133
+              },
+              "demand_count": 89289,
+              "dropped_by_role": {},
+              "duplicate_sent_by_role": {
+                "extra": 47332,
+                "primary": 40287
+              },
+              "duplicate_sent_count": 87619,
+              "enqueued_by_role": {
+                "extra": 89067,
+                "primary": 89038
+              },
+              "fifo_late_by_role": {
+                "extra": 44,
+                "primary": 91
+              },
+              "fifo_late_demand_count": 135,
+              "generated_count": 178578,
+              "queue_delay_cycles_max": {
+                "extra": 10,
+                "primary": 5
+              },
+              "queue_delay_cycles_mean": {
+                "extra": 1.9762984752879886,
+                "primary": 1.2457742286914428
+              },
+              "queue_delay_cycles_sum": {
+                "extra": 176021,
+                "primary": 110920
+              },
+              "recent_filtered_by_role": {
+                "extra": 222,
+                "primary": 251
+              },
+              "sent_by_role": {
+                "extra": 89066,
+                "primary": 89037
+              }
+            },
+            "name": "s20_v2p2_sf2048_e8_rf128_p8e8_rf128"
+          }
+        },
+        "s20_v4p4_sf2048_e8_rf128": {
+          "local_metrics": {
+            "accepted_count": 178578,
+            "coverage": 0.6778438553461232,
+            "covered_by_rank": {
+              "0": 35557,
+              "1": 24967
+            },
+            "covered_by_role": {
+              "extra": 24967,
+              "primary": 35557
+            },
+            "covered_count": 60524,
+            "covered_with_min_lead_cycles": {
+              "0": 60524,
+              "16": 59179,
+              "32": 59046,
+              "64": 58248,
+              "128": 56890,
+              "256": 54148
+            },
+            "demand_count": 89289,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 48980,
+              "primary": 39753
+            },
+            "duplicate_sent_count": 88733,
+            "enqueued_by_role": {
+              "extra": 89046,
+              "primary": 89046
+            },
+            "fifo_late_by_role": {
+              "extra": 21,
+              "primary": 90
+            },
+            "fifo_late_demand_count": 111,
+            "generated_count": 178578,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.926845976753327,
+              "primary": 1.2951765961030939
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 171576,
+              "primary": 115329
+            },
+            "recent_filtered_by_role": {
+              "extra": 243,
+              "primary": 243
+            },
+            "sent_by_role": {
+              "extra": 89045,
+              "primary": 89045
+            }
+          },
+          "metrics": {
+            "accepted_count": 178578,
+            "coverage": 0.6784374335024471,
+            "covered_by_bop": {
+              "s20_v4p4_sf2048_e8_rf128": 60577
+            },
+            "covered_by_rank": {
+              "0": 35584,
+              "1": 24993
+            },
+            "covered_count": 60577,
+            "demand_count": 89289,
+            "duplicate_count": 89181,
+            "generated_count": 178578
+          },
+          "phase": {
+            "average_best_score": 12.818181818181818,
+            "average_rounds": 49.96969696969697,
+            "issue_enabled_fraction": 1.0,
+            "phase_count": 33,
+            "tests_per_access": 1.9999888004121449,
+            "two_family_winner_fraction": 1.0
+          },
+          "resource": {
+            "config": {
+              "extra_fifo_size": 8,
+              "extra_slots": 1,
+              "name": "s20_v4p4_sf2048_e8_rf128_p8e8_rf128",
+              "primary_fifo_size": 8,
+              "primary_slots": 3,
+              "recent_filter_entries": 128,
+              "role_mode": "rank",
+              "strict_primary": false
+            },
+            "metrics": {
+              "accepted_count": 178578,
+              "coverage": 0.6778438553461232,
+              "covered_by_rank": {
+                "0": 35557,
+                "1": 24967
+              },
+              "covered_by_role": {
+                "extra": 24967,
+                "primary": 35557
+              },
+              "covered_count": 60524,
+              "covered_with_min_lead_cycles": {
+                "0": 60524,
+                "16": 59179,
+                "32": 59046,
+                "64": 58248,
+                "128": 56890,
+                "256": 54148
+              },
+              "demand_count": 89289,
+              "dropped_by_role": {},
+              "duplicate_sent_by_role": {
+                "extra": 48980,
+                "primary": 39753
+              },
+              "duplicate_sent_count": 88733,
+              "enqueued_by_role": {
+                "extra": 89046,
+                "primary": 89046
+              },
+              "fifo_late_by_role": {
+                "extra": 21,
+                "primary": 90
+              },
+              "fifo_late_demand_count": 111,
+              "generated_count": 178578,
+              "queue_delay_cycles_max": {
+                "extra": 10,
+                "primary": 5
+              },
+              "queue_delay_cycles_mean": {
+                "extra": 1.926845976753327,
+                "primary": 1.2951765961030939
+              },
+              "queue_delay_cycles_sum": {
+                "extra": 171576,
+                "primary": 115329
+              },
+              "recent_filtered_by_role": {
+                "extra": 243,
+                "primary": 243
+              },
+              "sent_by_role": {
+                "extra": 89045,
+                "primary": 89045
+              }
+            },
+            "name": "s20_v4p4_sf2048_e8_rf128_p8e8_rf128"
+          }
+        }
+      },
+      "weight": 0.171593,
+      "workload": "astar"
+    },
+    {
+      "marker": {
+        "access_seq": 1904257,
+        "tick": 11124941589
+      },
+      "measurement_accesses": 200000,
+      "name": "mcf_6753",
+      "replayed_accesses": 2104257,
+      "result_dir": "/tmp/ts_bop_degree_full_mcf_6753_rrcount",
+      "schemes": {
+        "dual_current": {
+          "local_metrics": {
+            "accepted_count": 285174,
+            "coverage": 0.516095,
+            "covered_by_rank": {
+              "0": 103219
+            },
+            "covered_by_role": {
+              "extra": 80312,
+              "primary": 22907
+            },
+            "covered_count": 103219,
+            "covered_with_min_lead_cycles": {
+              "0": 103219,
+              "16": 102672,
+              "32": 102600,
+              "64": 102470,
+              "128": 102294,
+              "256": 102175
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 109900,
+              "primary": 49904
+            },
+            "duplicate_sent_count": 159804,
+            "enqueued_by_role": {
+              "extra": 196917,
+              "primary": 88257
+            },
+            "fifo_late_by_role": {
+              "extra": 1281
+            },
+            "fifo_late_demand_count": 1281,
+            "generated_count": 288257,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 3
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.8239249223018952,
+              "primary": 1.0170526649746192
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 359160,
+              "primary": 89761
+            },
+            "recent_filtered_by_role": {},
+            "sent_by_role": {
+              "extra": 196916,
+              "primary": 88256
+            }
+          },
+          "metrics": {
+            "accepted_count": 285174,
+            "coverage": 0.515605,
+            "covered_by_bop": {
+              "PBOP": 75281,
+              "VBOP": 27840
+            },
+            "covered_by_rank": {
+              "0": 103121
+            },
+            "covered_count": 103121,
+            "demand_count": 200000,
+            "duplicate_count": 162014,
+            "generated_count": 288257
+          },
+          "resource": {
+            "config": {
+              "extra_fifo_size": 16,
+              "extra_slots": 1,
+              "name": "dual_p16e16_strict",
+              "primary_fifo_size": 16,
+              "primary_slots": 1,
+              "recent_filter_entries": 0,
+              "role_mode": "bop_kind",
+              "strict_primary": true
+            },
+            "metrics": {
+              "accepted_count": 285174,
+              "coverage": 0.516095,
+              "covered_by_rank": {
+                "0": 103219
+              },
+              "covered_by_role": {
+                "extra": 80312,
+                "primary": 22907
+              },
+              "covered_count": 103219,
+              "covered_with_min_lead_cycles": {
+                "0": 103219,
+                "16": 102672,
+                "32": 102600,
+                "64": 102470,
+                "128": 102294,
+                "256": 102175
+              },
+              "demand_count": 200000,
+              "dropped_by_role": {},
+              "duplicate_sent_by_role": {
+                "extra": 109900,
+                "primary": 49904
+              },
+              "duplicate_sent_count": 159804,
+              "enqueued_by_role": {
+                "extra": 196917,
+                "primary": 88257
+              },
+              "fifo_late_by_role": {
+                "extra": 1281
+              },
+              "fifo_late_demand_count": 1281,
+              "generated_count": 288257,
+              "queue_delay_cycles_max": {
+                "extra": 10,
+                "primary": 3
+              },
+              "queue_delay_cycles_mean": {
+                "extra": 1.8239249223018952,
+                "primary": 1.0170526649746192
+              },
+              "queue_delay_cycles_sum": {
+                "extra": 359160,
+                "primary": 89761
+              },
+              "recent_filtered_by_role": {},
+              "sent_by_role": {
+                "extra": 196916,
+                "primary": 88256
+              }
+            },
+            "name": "dual_p16e16_strict"
+          }
+        },
+        "merged_d2": {
+          "local_metrics": {
+            "accepted_count": 269200,
+            "coverage": 0.45255,
+            "covered_by_rank": {
+              "0": 46335,
+              "1": 44175
+            },
+            "covered_by_role": {
+              "extra": 44175,
+              "primary": 46335
+            },
+            "covered_count": 90510,
+            "covered_with_min_lead_cycles": {
+              "0": 90510,
+              "16": 90406,
+              "32": 90388,
+              "64": 90354,
+              "128": 90269,
+              "256": 90135
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {
+              "extra": 65
+            },
+            "duplicate_sent_by_role": {
+              "extra": 63480,
+              "primary": 74192
+            },
+            "duplicate_sent_count": 137672,
+            "enqueued_by_role": {
+              "extra": 133003,
+              "primary": 132838
+            },
+            "fifo_late_by_role": {
+              "extra": 5,
+              "primary": 194
+            },
+            "fifo_late_demand_count": 199,
+            "generated_count": 269200,
+            "queue_delay_cycles_max": {
+              "extra": 9,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.3491653941340633,
+              "primary": 1.335651964437619
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 312291,
+              "primary": 177424
+            },
+            "recent_filtered_by_role": {
+              "extra": 1597,
+              "primary": 1762
+            },
+            "sent_by_role": {
+              "extra": 132937,
+              "primary": 132837
+            }
+          },
+          "metrics": {
+            "accepted_count": 269200,
+            "coverage": 0.4522,
+            "covered_by_bop": {
+              "MergedVBOP": 90440
+            },
+            "covered_by_rank": {
+              "0": 46127,
+              "1": 44313
+            },
+            "covered_count": 90440,
+            "demand_count": 200000,
+            "duplicate_count": 141020,
+            "generated_count": 269200
+          },
+          "phase": {
+            "average_best_score": 3.108108108108108,
+            "average_rounds": 50.0,
+            "issue_enabled_fraction": 0.7027027027027027,
+            "phase_count": 37,
+            "tests_per_access": 0.0,
+            "two_family_winner_fraction": 0.0
+          },
+          "resource": {
+            "config": {
+              "extra_fifo_size": 4,
+              "extra_slots": 1,
+              "name": "f256_p8e4_3to1",
+              "primary_fifo_size": 8,
+              "primary_slots": 3,
+              "recent_filter_entries": 256,
+              "role_mode": "rank",
+              "strict_primary": false
+            },
+            "metrics": {
+              "accepted_count": 269200,
+              "coverage": 0.45255,
+              "covered_by_rank": {
+                "0": 46335,
+                "1": 44175
+              },
+              "covered_by_role": {
+                "extra": 44175,
+                "primary": 46335
+              },
+              "covered_count": 90510,
+              "covered_with_min_lead_cycles": {
+                "0": 90510,
+                "16": 90406,
+                "32": 90388,
+                "64": 90354,
+                "128": 90269,
+                "256": 90135
+              },
+              "demand_count": 200000,
+              "dropped_by_role": {
+                "extra": 65
+              },
+              "duplicate_sent_by_role": {
+                "extra": 63480,
+                "primary": 74192
+              },
+              "duplicate_sent_count": 137672,
+              "enqueued_by_role": {
+                "extra": 133003,
+                "primary": 132838
+              },
+              "fifo_late_by_role": {
+                "extra": 5,
+                "primary": 194
+              },
+              "fifo_late_demand_count": 199,
+              "generated_count": 269200,
+              "queue_delay_cycles_max": {
+                "extra": 9,
+                "primary": 5
+              },
+              "queue_delay_cycles_mean": {
+                "extra": 2.3491653941340633,
+                "primary": 1.335651964437619
+              },
+              "queue_delay_cycles_sum": {
+                "extra": 312291,
+                "primary": 177424
+              },
+              "recent_filtered_by_role": {
+                "extra": 1597,
+                "primary": 1762
+              },
+              "sent_by_role": {
+                "extra": 132937,
+                "primary": 132837
+              }
+            },
+            "name": "f256_p8e4_3to1"
+          }
+        },
+        "s20_v2p2_sf2048_e8_rf128": {
+          "local_metrics": {
+            "accepted_count": 180964,
+            "coverage": 0.341585,
+            "covered_by_rank": {
+              "0": 40900,
+              "1": 27417
+            },
+            "covered_by_role": {
+              "extra": 27417,
+              "primary": 40900
+            },
+            "covered_count": 68317,
+            "covered_with_min_lead_cycles": {
+              "0": 68317,
+              "16": 67730,
+              "32": 67669,
+              "64": 67579,
+              "128": 67444,
+              "256": 67307
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 43364,
+              "primary": 45566
+            },
+            "duplicate_sent_count": 88930,
+            "enqueued_by_role": {
+              "extra": 89854,
+              "primary": 89933
+            },
+            "fifo_late_by_role": {
+              "extra": 1,
+              "primary": 864
+            },
+            "fifo_late_demand_count": 865,
+            "generated_count": 180964,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.4115165882051794,
+              "primary": 1.3625294667081795
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 216682,
+              "primary": 122535
+            },
+            "recent_filtered_by_role": {
+              "extra": 628,
+              "primary": 549
+            },
+            "sent_by_role": {
+              "extra": 89853,
+              "primary": 89932
+            }
+          },
+          "metrics": {
+            "accepted_count": 180964,
+            "coverage": 0.340335,
+            "covered_by_bop": {
+              "s20_v2p2_sf2048_e8_rf128": 68067
+            },
+            "covered_by_rank": {
+              "0": 36104,
+              "1": 31963
+            },
+            "covered_count": 68067,
+            "demand_count": 200000,
+            "duplicate_count": 89580,
+            "generated_count": 180964
+          },
+          "phase": {
+            "average_best_score": 2.689189189189189,
+            "average_rounds": 50.0,
+            "issue_enabled_fraction": 0.5135135135135135,
+            "phase_count": 74,
+            "tests_per_access": 2.0,
+            "two_family_winner_fraction": 1.0
+          },
+          "resource": {
+            "config": {
+              "extra_fifo_size": 8,
+              "extra_slots": 1,
+              "name": "s20_v2p2_sf2048_e8_rf128_p8e8_rf128",
+              "primary_fifo_size": 8,
+              "primary_slots": 3,
+              "recent_filter_entries": 128,
+              "role_mode": "rank",
+              "strict_primary": false
+            },
+            "metrics": {
+              "accepted_count": 180964,
+              "coverage": 0.341585,
+              "covered_by_rank": {
+                "0": 40900,
+                "1": 27417
+              },
+              "covered_by_role": {
+                "extra": 27417,
+                "primary": 40900
+              },
+              "covered_count": 68317,
+              "covered_with_min_lead_cycles": {
+                "0": 68317,
+                "16": 67730,
+                "32": 67669,
+                "64": 67579,
+                "128": 67444,
+                "256": 67307
+              },
+              "demand_count": 200000,
+              "dropped_by_role": {},
+              "duplicate_sent_by_role": {
+                "extra": 43364,
+                "primary": 45566
+              },
+              "duplicate_sent_count": 88930,
+              "enqueued_by_role": {
+                "extra": 89854,
+                "primary": 89933
+              },
+              "fifo_late_by_role": {
+                "extra": 1,
+                "primary": 864
+              },
+              "fifo_late_demand_count": 865,
+              "generated_count": 180964,
+              "queue_delay_cycles_max": {
+                "extra": 10,
+                "primary": 5
+              },
+              "queue_delay_cycles_mean": {
+                "extra": 2.4115165882051794,
+                "primary": 1.3625294667081795
+              },
+              "queue_delay_cycles_sum": {
+                "extra": 216682,
+                "primary": 122535
+              },
+              "recent_filtered_by_role": {
+                "extra": 628,
+                "primary": 549
+              },
+              "sent_by_role": {
+                "extra": 89853,
+                "primary": 89932
+              }
+            },
+            "name": "s20_v2p2_sf2048_e8_rf128_p8e8_rf128"
+          }
+        },
+        "s20_v4p4_sf2048_e8_rf128": {
+          "local_metrics": {
+            "accepted_count": 180964,
+            "coverage": 0.3285,
+            "covered_by_rank": {
+              "0": 41077,
+              "1": 24623
+            },
+            "covered_by_role": {
+              "extra": 24623,
+              "primary": 41077
+            },
+            "covered_count": 65700,
+            "covered_with_min_lead_cycles": {
+              "0": 65700,
+              "16": 64847,
+              "32": 64779,
+              "64": 64672,
+              "128": 64533,
+              "256": 64421
+            },
+            "demand_count": 200000,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 45203,
+              "primary": 47803
+            },
+            "duplicate_sent_count": 93006,
+            "enqueued_by_role": {
+              "extra": 89963,
+              "primary": 89958
+            },
+            "fifo_late_by_role": {
+              "primary": 1239
+            },
+            "fifo_late_demand_count": 1239,
+            "generated_count": 180964,
+            "queue_delay_cycles_max": {
+              "extra": 9,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.4241902136457614,
+              "primary": 1.3506897740031347
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 218085,
+              "primary": 121504
+            },
+            "recent_filtered_by_role": {
+              "extra": 519,
+              "primary": 524
+            },
+            "sent_by_role": {
+              "extra": 89962,
+              "primary": 89957
+            }
+          },
+          "metrics": {
+            "accepted_count": 180964,
+            "coverage": 0.32985,
+            "covered_by_bop": {
+              "s20_v4p4_sf2048_e8_rf128": 65970
+            },
+            "covered_by_rank": {
+              "0": 36868,
+              "1": 29102
+            },
+            "covered_count": 65970,
+            "demand_count": 200000,
+            "duplicate_count": 95181,
+            "generated_count": 180964
+          },
+          "phase": {
+            "average_best_score": 2.689189189189189,
+            "average_rounds": 50.0,
+            "issue_enabled_fraction": 0.5135135135135135,
+            "phase_count": 74,
+            "tests_per_access": 2.0,
+            "two_family_winner_fraction": 1.0
+          },
+          "resource": {
+            "config": {
+              "extra_fifo_size": 8,
+              "extra_slots": 1,
+              "name": "s20_v4p4_sf2048_e8_rf128_p8e8_rf128",
+              "primary_fifo_size": 8,
+              "primary_slots": 3,
+              "recent_filter_entries": 128,
+              "role_mode": "rank",
+              "strict_primary": false
+            },
+            "metrics": {
+              "accepted_count": 180964,
+              "coverage": 0.3285,
+              "covered_by_rank": {
+                "0": 41077,
+                "1": 24623
+              },
+              "covered_by_role": {
+                "extra": 24623,
+                "primary": 41077
+              },
+              "covered_count": 65700,
+              "covered_with_min_lead_cycles": {
+                "0": 65700,
+                "16": 64847,
+                "32": 64779,
+                "64": 64672,
+                "128": 64533,
+                "256": 64421
+              },
+              "demand_count": 200000,
+              "dropped_by_role": {},
+              "duplicate_sent_by_role": {
+                "extra": 45203,
+                "primary": 47803
+              },
+              "duplicate_sent_count": 93006,
+              "enqueued_by_role": {
+                "extra": 89963,
+                "primary": 89958
+              },
+              "fifo_late_by_role": {
+                "primary": 1239
+              },
+              "fifo_late_demand_count": 1239,
+              "generated_count": 180964,
+              "queue_delay_cycles_max": {
+                "extra": 9,
+                "primary": 5
+              },
+              "queue_delay_cycles_mean": {
+                "extra": 2.4241902136457614,
+                "primary": 1.3506897740031347
+              },
+              "queue_delay_cycles_sum": {
+                "extra": 218085,
+                "primary": 121504
+              },
+              "recent_filtered_by_role": {
+                "extra": 519,
+                "primary": 524
+              },
+              "sent_by_role": {
+                "extra": 89962,
+                "primary": 89957
+              }
+            },
+            "name": "s20_v4p4_sf2048_e8_rf128_p8e8_rf128"
+          }
+        }
+      },
+      "weight": 0.218742,
+      "workload": "mcf"
+    }
+  ],
+  "definition": "Quick static-trace sweep of one merged Teacher with a partitioned Student. Each candidate has an independent Student filter and output FIFO/recent-filter model. PBOP-family coverage is immediate and VBOP-family coverage uses the 300-cycle delay queue.",
+  "manifest": "util/ts_bop_degree/checkpoints.json",
+  "max_measurement_accesses": 200000,
+  "variants": [
+    {
+      "extra_fifo_size": 8,
+      "extra_slots": 1,
+      "name": "s20_v4p4_sf2048_e8_rf128",
+      "pbop_slots": 4,
+      "primary_fifo_size": 8,
+      "primary_slots": 3,
+      "recent_filter_entries": 128,
+      "round_max": 50,
+      "score_max": 20,
+      "student_filter_entries": 2048,
+      "tests_per_access": 2,
+      "vbop_slots": 4
+    },
+    {
+      "extra_fifo_size": 8,
+      "extra_slots": 1,
+      "name": "s20_v2p2_sf2048_e8_rf128",
+      "pbop_slots": 2,
+      "primary_fifo_size": 8,
+      "primary_slots": 3,
+      "recent_filter_entries": 128,
+      "round_max": 50,
+      "score_max": 20,
+      "student_filter_entries": 2048,
+      "tests_per_access": 2,
+      "vbop_slots": 2
+    }
+  ]
+}

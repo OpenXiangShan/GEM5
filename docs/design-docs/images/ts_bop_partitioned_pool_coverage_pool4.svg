@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1420" height="690" viewBox="0 0 1420 690" role="img">
+<style>
+  text { font-family: Arial, sans-serif; fill: #172033; }
+  .title { font-size: 20px; font-weight: 500; }
+  .subtitle { font-size: 12px; fill: #667085; }
+  .label { font-size: 12px; }
+  .small { font-size: 11px; fill: #667085; }
+  .axis { stroke: #d9dee8; stroke-width: 1; }
+</style>
+<rect width="1420" height="690" fill="#ffffff"/>
+<text x="24.0" y="30.0" class="title" text-anchor="start">Partitioned Student pool: pool=4 ideal coverage</text>
+<text x="24.0" y="50.0" class="subtitle" text-anchor="start">Static trace replay; each point is address-match ideal coverage for one checkpoint.</text>
+<rect x="24.0" y="65.0" width="13.0" height="13.0" fill="#3448c5"/>
+<text x="43.0" y="76.0" class="small" text-anchor="start">Dual BOP</text>
+<rect x="214.0" y="65.0" width="13.0" height="13.0" fill="#758195"/>
+<text x="233.0" y="76.0" class="small" text-anchor="start">Merged D2</text>
+<rect x="404.0" y="65.0" width="13.0" height="13.0" fill="#d1495b"/>
+<text x="423.0" y="76.0" class="small" text-anchor="start">Strict 2+2</text>
+<rect x="594.0" y="65.0" width="13.0" height="13.0" fill="#f28e2b"/>
+<text x="613.0" y="76.0" class="small" text-anchor="start">Strict 2+2, max-union</text>
+<rect x="784.0" y="65.0" width="13.0" height="13.0" fill="#00a676"/>
+<text x="803.0" y="76.0" class="small" text-anchor="start">Reserve 1+1 / T4</text>
+<rect x="974.0" y="65.0" width="13.0" height="13.0" fill="#8f5bb7"/>
+<text x="993.0" y="76.0" class="small" text-anchor="start">Reserve 1+1 / T4, max-union</text>
+<line x1="230.0" y1="92" x2="230.0" y2="664" class="axis"/>
+<text x="230.0" y="90.0" class="small" text-anchor="middle">30%</text>
+<line x1="392.1" y1="92" x2="392.1" y2="664" class="axis"/>
+<text x="392.1" y="90.0" class="small" text-anchor="middle">40%</text>
+<line x1="554.3" y1="92" x2="554.3" y2="664" class="axis"/>
+<text x="554.3" y="90.0" class="small" text-anchor="middle">50%</text>
+<line x1="716.4" y1="92" x2="716.4" y2="664" class="axis"/>
+<text x="716.4" y="90.0" class="small" text-anchor="middle">60%</text>
+<line x1="878.6" y1="92" x2="878.6" y2="664" class="axis"/>
+<text x="878.6" y="90.0" class="small" text-anchor="middle">70%</text>
+<line x1="1040.7" y1="92" x2="1040.7" y2="664" class="axis"/>
+<text x="1040.7" y="90.0" class="small" text-anchor="middle">80%</text>
+<line x1="1202.9" y1="92" x2="1202.9" y2="664" class="axis"/>
+<text x="1202.9" y="90.0" class="small" text-anchor="middle">90%</text>
+<line x1="1365.0" y1="92" x2="1365.0" y2="664" class="axis"/>
+<text x="1365.0" y="90.0" class="small" text-anchor="middle">100%</text>
+<text x="18.0" y="136.0" class="label" text-anchor="start">omnetpp_18492</text>
+<line x1="230.0" y1="132.0" x2="1365.0" y2="132.0" stroke="#eef1f5" stroke-width="1"/>
+<circle cx="751.1" cy="116.0" r="4.4" fill="#3448c5" stroke="#ffffff" stroke-width="1"/>
+<circle cx="584.5" cy="122.4" r="4.4" fill="#758195" stroke="#ffffff" stroke-width="1"/>
+<circle cx="651.8" cy="128.8" r="4.4" fill="#d1495b" stroke="#ffffff" stroke-width="1"/>
+<circle cx="649.3" cy="135.2" r="4.4" fill="#f28e2b" stroke="#ffffff" stroke-width="1"/>
+<circle cx="655.2" cy="141.6" r="4.4" fill="#00a676" stroke="#ffffff" stroke-width="1"/>
+<circle cx="647.6" cy="148.0" r="4.4" fill="#8f5bb7" stroke="#ffffff" stroke-width="1"/>
+<text x="18.0" y="190.0" class="label" text-anchor="start">cactusADM_163</text>
+<line x1="230.0" y1="186.0" x2="1365.0" y2="186.0" stroke="#eef1f5" stroke-width="1"/>
+<circle cx="1332.7" cy="170.0" r="4.4" fill="#3448c5" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1339.4" cy="176.4" r="4.4" fill="#758195" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1336.3" cy="182.8" r="4.4" fill="#d1495b" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1337.3" cy="189.2" r="4.4" fill="#f28e2b" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1337.0" cy="195.6" r="4.4" fill="#00a676" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1336.6" cy="202.0" r="4.4" fill="#8f5bb7" stroke="#ffffff" stroke-width="1"/>
+<text x="18.0" y="244.0" class="label" text-anchor="start">mcf_12886</text>
+<line x1="230.0" y1="240.0" x2="1365.0" y2="240.0" stroke="#eef1f5" stroke-width="1"/>
+<circle cx="474.5" cy="224.0" r="4.4" fill="#3448c5" stroke="#ffffff" stroke-width="1"/>
+<circle cx="505.9" cy="230.4" r="4.4" fill="#758195" stroke="#ffffff" stroke-width="1"/>
+<circle cx="503.4" cy="236.8" r="4.4" fill="#d1495b" stroke="#ffffff" stroke-width="1"/>
+<circle cx="509.7" cy="243.2" r="4.4" fill="#f28e2b" stroke="#ffffff" stroke-width="1"/>
+<circle cx="504.5" cy="249.6" r="4.4" fill="#00a676" stroke="#ffffff" stroke-width="1"/>
+<circle cx="505.5" cy="256.0" r="4.4" fill="#8f5bb7" stroke="#ffffff" stroke-width="1"/>
+<text x="18.0" y="298.0" class="label" text-anchor="start">milc_28462</text>
+<line x1="230.0" y1="294.0" x2="1365.0" y2="294.0" stroke="#eef1f5" stroke-width="1"/>
+<circle cx="1169.8" cy="278.0" r="4.4" fill="#3448c5" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1165.3" cy="284.4" r="4.4" fill="#758195" stroke="#ffffff" stroke-width="1"/>
+<circle cx="950.8" cy="290.8" r="4.4" fill="#d1495b" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1008.4" cy="297.2" r="4.4" fill="#f28e2b" stroke="#ffffff" stroke-width="1"/>
+<circle cx="946.1" cy="303.6" r="4.4" fill="#00a676" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1010.0" cy="310.0" r="4.4" fill="#8f5bb7" stroke="#ffffff" stroke-width="1"/>
+<text x="18.0" y="352.0" class="label" text-anchor="start">bwaves_13153</text>
+<line x1="230.0" y1="348.0" x2="1365.0" y2="348.0" stroke="#eef1f5" stroke-width="1"/>
+<circle cx="1047.3" cy="332.0" r="4.4" fill="#3448c5" stroke="#ffffff" stroke-width="1"/>
+<circle cx="951.2" cy="338.4" r="4.4" fill="#758195" stroke="#ffffff" stroke-width="1"/>
+<circle cx="939.2" cy="344.8" r="4.4" fill="#d1495b" stroke="#ffffff" stroke-width="1"/>
+<circle cx="940.6" cy="351.2" r="4.4" fill="#f28e2b" stroke="#ffffff" stroke-width="1"/>
+<circle cx="938.1" cy="357.6" r="4.4" fill="#00a676" stroke="#ffffff" stroke-width="1"/>
+<circle cx="940.5" cy="364.0" r="4.4" fill="#8f5bb7" stroke="#ffffff" stroke-width="1"/>
+<text x="18.0" y="406.0" class="label" text-anchor="start">astar_biglakes_6185</text>
+<line x1="230.0" y1="402.0" x2="1365.0" y2="402.0" stroke="#eef1f5" stroke-width="1"/>
+<circle cx="843.4" cy="386.0" r="4.4" fill="#3448c5" stroke="#ffffff" stroke-width="1"/>
+<circle cx="818.6" cy="392.4" r="4.4" fill="#758195" stroke="#ffffff" stroke-width="1"/>
+<circle cx="825.6" cy="398.8" r="4.4" fill="#d1495b" stroke="#ffffff" stroke-width="1"/>
+<circle cx="826.2" cy="405.2" r="4.4" fill="#f28e2b" stroke="#ffffff" stroke-width="1"/>
+<circle cx="811.4" cy="411.6" r="4.4" fill="#00a676" stroke="#ffffff" stroke-width="1"/>
+<circle cx="812.4" cy="418.0" r="4.4" fill="#8f5bb7" stroke="#ffffff" stroke-width="1"/>
+<text x="18.0" y="460.0" class="label" text-anchor="start">leslie3d_18494</text>
+<line x1="230.0" y1="456.0" x2="1365.0" y2="456.0" stroke="#eef1f5" stroke-width="1"/>
+<circle cx="1138.4" cy="440.0" r="4.4" fill="#3448c5" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1116.7" cy="446.4" r="4.4" fill="#758195" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1100.1" cy="452.8" r="4.4" fill="#d1495b" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1093.0" cy="459.2" r="4.4" fill="#f28e2b" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1092.3" cy="465.6" r="4.4" fill="#00a676" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1088.5" cy="472.0" r="4.4" fill="#8f5bb7" stroke="#ffffff" stroke-width="1"/>
+<text x="18.0" y="514.0" class="label" text-anchor="start">mcf_6753</text>
+<line x1="230.0" y1="510.0" x2="1365.0" y2="510.0" stroke="#eef1f5" stroke-width="1"/>
+<circle cx="621.7" cy="494.0" r="4.4" fill="#3448c5" stroke="#ffffff" stroke-width="1"/>
+<circle cx="470.6" cy="500.4" r="4.4" fill="#758195" stroke="#ffffff" stroke-width="1"/>
+<circle cx="466.4" cy="506.8" r="4.4" fill="#d1495b" stroke="#ffffff" stroke-width="1"/>
+<circle cx="465.0" cy="513.2" r="4.4" fill="#f28e2b" stroke="#ffffff" stroke-width="1"/>
+<circle cx="440.8" cy="519.6" r="4.4" fill="#00a676" stroke="#ffffff" stroke-width="1"/>
+<circle cx="435.6" cy="526.0" r="4.4" fill="#8f5bb7" stroke="#ffffff" stroke-width="1"/>
+<text x="18.0" y="568.0" class="label" text-anchor="start">gcc_200_5108</text>
+<line x1="230.0" y1="564.0" x2="1365.0" y2="564.0" stroke="#eef1f5" stroke-width="1"/>
+<circle cx="575.3" cy="548.0" r="4.4" fill="#3448c5" stroke="#ffffff" stroke-width="1"/>
+<circle cx="596.2" cy="554.4" r="4.4" fill="#758195" stroke="#ffffff" stroke-width="1"/>
+<circle cx="432.8" cy="560.8" r="4.4" fill="#d1495b" stroke="#ffffff" stroke-width="1"/>
+<circle cx="434.1" cy="567.2" r="4.4" fill="#f28e2b" stroke="#ffffff" stroke-width="1"/>
+<circle cx="387.8" cy="573.6" r="4.4" fill="#00a676" stroke="#ffffff" stroke-width="1"/>
+<circle cx="387.3" cy="580.0" r="4.4" fill="#8f5bb7" stroke="#ffffff" stroke-width="1"/>
+<text x="18.0" y="622.0" class="label" text-anchor="start">milc_30106</text>
+<line x1="230.0" y1="618.0" x2="1365.0" y2="618.0" stroke="#eef1f5" stroke-width="1"/>
+<circle cx="1359.3" cy="602.0" r="4.4" fill="#3448c5" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1364.2" cy="608.4" r="4.4" fill="#758195" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1363.0" cy="614.8" r="4.4" fill="#d1495b" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1361.8" cy="621.2" r="4.4" fill="#f28e2b" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1362.6" cy="627.6" r="4.4" fill="#00a676" stroke="#ffffff" stroke-width="1"/>
+<circle cx="1362.2" cy="634.0" r="4.4" fill="#8f5bb7" stroke="#ffffff" stroke-width="1"/>
+</svg>

@@ -1,0 +1,5549 @@
+{
+  "aggregate": {
+    "references": {
+      "dual": {
+        "generated_per_demand": {
+          "access_weighted": 1.4253635570310068,
+          "checkpoint_weighted": 1.8670297564909233
+        },
+        "ideal_coverage": {
+          "access_weighted": 0.5978804457273277,
+          "checkpoint_weighted": 0.7659477659124878
+        },
+        "local_coverage": {
+          "access_weighted": 0.5968475959162003,
+          "checkpoint_weighted": 0.7648504088454284
+        },
+        "local_sent_per_demand": {
+          "access_weighted": 1.4089365155888618,
+          "checkpoint_weighted": 1.843104732786917
+        }
+      },
+      "merged_baseline": {
+        "generated_per_demand": {
+          "access_weighted": 1.5977960785270982,
+          "checkpoint_weighted": 1.910425072915949
+        },
+        "ideal_coverage": {
+          "access_weighted": 0.5675122202761996,
+          "checkpoint_weighted": 0.7303596240876179
+        },
+        "local_coverage": {
+          "access_weighted": 0.5665239187877974,
+          "checkpoint_weighted": 0.7284029646463185
+        },
+        "local_sent_per_demand": {
+          "access_weighted": 1.4030486614144397,
+          "checkpoint_weighted": 1.4340417993396974
+        }
+      }
+    },
+    "schemes": {
+      "partition_v2_p2_independent": {
+        "config": {
+          "extra_threshold": 0.02,
+          "pbop_slots": 2,
+          "selection_policy": "independent",
+          "vbop_slots": 2
+        },
+        "generated_per_demand": {
+          "access_weighted": 1.5797086966869474,
+          "checkpoint_weighted": 1.900453247648338
+        },
+        "ideal_coverage": {
+          "access_weighted": 0.5575358369897538,
+          "checkpoint_weighted": 0.722830133700763
+        },
+        "local_coverage": {
+          "access_weighted": 0.5567022341288972,
+          "checkpoint_weighted": 0.7214394741825826
+        },
+        "local_sent_per_demand": {
+          "access_weighted": 1.4652295764247836,
+          "checkpoint_weighted": 1.726769374453808
+        }
+      },
+      "partition_v2_p2_max_union": {
+        "config": {
+          "extra_threshold": 0.02,
+          "pbop_slots": 2,
+          "selection_policy": "max_union",
+          "vbop_slots": 2
+        },
+        "generated_per_demand": {
+          "access_weighted": 1.5932396394637114,
+          "checkpoint_weighted": 1.9079661344863195
+        },
+        "ideal_coverage": {
+          "access_weighted": 0.5608732996881617,
+          "checkpoint_weighted": 0.7239071355478083
+        },
+        "local_coverage": {
+          "access_weighted": 0.5599959113183253,
+          "checkpoint_weighted": 0.7224569856927917
+        },
+        "local_sent_per_demand": {
+          "access_weighted": 1.510289289484765,
+          "checkpoint_weighted": 1.7569946354834418
+        }
+      }
+    }
+  },
+  "checkpoints": [
+    {
+      "access_count": 987944,
+      "marker": {
+        "access_seq": 495140,
+        "tick": 4606168221
+      },
+      "name": "omnetpp_18492",
+      "references": {
+        "dual": {
+          "local_metrics": {
+            "accepted_count": 975872,
+            "coverage": 0.6158756828272498,
+            "covered_by_rank": {
+              "0": 303506
+            },
+            "covered_by_role": {
+              "extra": 152219,
+              "primary": 151287
+            },
+            "covered_count": 303506,
+            "covered_with_min_lead_cycles": {
+              "0": 303506,
+              "128": 290962,
+              "16": 296297,
+              "256": 286898,
+              "32": 294514,
+              "64": 292920
+            },
+            "demand_count": 492804,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 276462,
+              "primary": 302847
+            },
+            "duplicate_sent_count": 579309,
+            "enqueued_by_role": {
+              "extra": 483068,
+              "primary": 492804
+            },
+            "fifo_late_by_role": {
+              "extra": 10224,
+              "primary": 28
+            },
+            "fifo_late_demand_count": 10252,
+            "generated_count": 985608,
+            "queue_delay_cycles_max": {
+              "extra": 22,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 3.1269143346871857,
+              "primary": 1.0149065953466099
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 1510506,
+              "primary": 500148
+            },
+            "recent_filtered_by_role": {},
+            "sent_by_role": {
+              "extra": 483066,
+              "primary": 492802
+            }
+          },
+          "metrics": {
+            "accepted_count": 975872,
+            "coverage": 0.6213870017288821,
+            "covered_by_bop": {
+              "PBOP": 139184,
+              "VBOP": 167038
+            },
+            "covered_by_rank": {
+              "0": 306222
+            },
+            "covered_count": 306222,
+            "demand_count": 492804,
+            "duplicate_count": 582929,
+            "generated_count": 985608
+          }
+        },
+        "merged_baseline": {
+          "local_metrics": {
+            "accepted_count": 985608,
+            "coverage": 0.5176256686228197,
+            "covered_by_rank": {
+              "0": 143090,
+              "1": 111998
+            },
+            "covered_by_role": {
+              "extra": 111998,
+              "primary": 143090
+            },
+            "covered_count": 255088,
+            "covered_with_min_lead_cycles": {
+              "0": 255088,
+              "128": 253970,
+              "16": 254818,
+              "256": 252035,
+              "32": 254632,
+              "64": 254425
+            },
+            "demand_count": 492804,
+            "dropped_by_role": {
+              "extra": 3912
+            },
+            "duplicate_sent_by_role": {
+              "extra": 237910,
+              "primary": 276736
+            },
+            "duplicate_sent_count": 514646,
+            "enqueued_by_role": {
+              "extra": 471203,
+              "primary": 449409
+            },
+            "fifo_late_by_role": {
+              "extra": 46,
+              "primary": 35
+            },
+            "fifo_late_demand_count": 81,
+            "generated_count": 985608,
+            "queue_delay_cycles_max": {
+              "extra": 12,
+              "primary": 9
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.4834160444607085,
+              "primary": 1.3858373367571044
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 1160473,
+              "primary": 622805
+            },
+            "recent_filtered_by_role": {
+              "extra": 21601,
+              "primary": 43395
+            },
+            "sent_by_role": {
+              "extra": 467289,
+              "primary": 449407
+            }
+          },
+          "metrics": {
+            "accepted_count": 985608,
+            "coverage": 0.5186321539597892,
+            "covered_by_bop": {
+              "MergedVBOP": 255584
+            },
+            "covered_by_rank": {
+              "0": 140674,
+              "1": 114910
+            },
+            "covered_count": 255584,
+            "demand_count": 492804,
+            "duplicate_count": 580964,
+            "generated_count": 985608
+          }
+        }
+      },
+      "result_dir": "/tmp/ts_bop_degree_omnetpp_18492_full",
+      "schemes": {
+        "partition_v2_p2_independent": {
+          "config": {
+            "extra_threshold": 0.02,
+            "pbop_slots": 2,
+            "selection_policy": "independent",
+            "vbop_slots": 2
+          },
+          "local_metrics": {
+            "accepted_count": 985608,
+            "coverage": 0.5567223480328893,
+            "covered_by_rank": {
+              "0": 167468,
+              "1": 106887
+            },
+            "covered_by_role": {
+              "extra": 106887,
+              "primary": 167468
+            },
+            "covered_count": 274355,
+            "covered_with_min_lead_cycles": {
+              "0": 274355,
+              "128": 269356,
+              "16": 271748,
+              "256": 266026,
+              "32": 270969,
+              "64": 270303
+            },
+            "demand_count": 492804,
+            "dropped_by_role": {
+              "extra": 3610
+            },
+            "duplicate_sent_by_role": {
+              "extra": 234679,
+              "primary": 284757
+            },
+            "duplicate_sent_count": 519436,
+            "enqueued_by_role": {
+              "extra": 445357,
+              "primary": 484967
+            },
+            "fifo_late_by_role": {
+              "extra": 2642,
+              "primary": 647
+            },
+            "fifo_late_demand_count": 3289,
+            "generated_count": 985608,
+            "queue_delay_cycles_max": {
+              "extra": 12,
+              "primary": 9
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.570024403163809,
+              "primary": 1.3905910735826297
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 1135298,
+              "primary": 674388
+            },
+            "recent_filtered_by_role": {
+              "extra": 47447,
+              "primary": 7837
+            },
+            "sent_by_role": {
+              "extra": 441746,
+              "primary": 484965
+            }
+          },
+          "measurement_stats": {
+            "accepted": 985608,
+            "generated": 985608,
+            "generated_rank_0": 492804,
+            "generated_rank_1": 492804,
+            "issued_offset::1": 59950,
+            "issued_offset::10": 109000,
+            "issued_offset::15": 10900,
+            "issued_offset::2": 66895,
+            "issued_offset::24": 5450,
+            "issued_offset::27": 38150,
+            "issued_offset::3": 10900,
+            "issued_offset::30": 54500,
+            "issued_offset::40": 492804,
+            "issued_offset::8": 131609,
+            "issued_offset::9": 5450,
+            "partition_evict::pbop": 72,
+            "partition_evict::vbop": 22,
+            "partition_injected::pbop": 72,
+            "partition_injected::vbop": 22,
+            "partition_next_pool_both": 91,
+            "partition_phase_both": 91,
+            "partition_selected_cross_family": 91,
+            "partition_selected_pair": 91,
+            "rr_delay_drops": 128168,
+            "rr_writes": 364647,
+            "student_delay_drains": 1457412,
+            "student_delay_drops": 509312,
+            "student_delay_inserts": 1461904,
+            "student_issue_phases": 91,
+            "student_phases": 91,
+            "student_selected_offset::1": 3,
+            "student_selected_offset::40": 87,
+            "student_selected_offset::8": 1,
+            "teacher_family_winner_count::2": 91,
+            "teacher_injected": 94,
+            "teacher_injected_offset::-25": 2,
+            "teacher_injected_offset::-3": 1,
+            "teacher_injected_offset::-32": 1,
+            "teacher_injected_offset::-40": 2,
+            "teacher_injected_offset::-5": 1,
+            "teacher_injected_offset::-6": 1,
+            "teacher_injected_offset::1": 7,
+            "teacher_injected_offset::10": 5,
+            "teacher_injected_offset::12": 1,
+            "teacher_injected_offset::120": 3,
+            "teacher_injected_offset::128": 1,
+            "teacher_injected_offset::15": 2,
+            "teacher_injected_offset::16": 2,
+            "teacher_injected_offset::160": 2,
+            "teacher_injected_offset::2": 5,
+            "teacher_injected_offset::20": 3,
+            "teacher_injected_offset::24": 3,
+            "teacher_injected_offset::27": 3,
+            "teacher_injected_offset::3": 7,
+            "teacher_injected_offset::30": 8,
+            "teacher_injected_offset::32": 1,
+            "teacher_injected_offset::36": 1,
+            "teacher_injected_offset::4": 5,
+            "teacher_injected_offset::48": 3,
+            "teacher_injected_offset::5": 6,
+            "teacher_injected_offset::6": 1,
+            "teacher_injected_offset::72": 1,
+            "teacher_injected_offset::8": 6,
+            "teacher_injected_offset::80": 8,
+            "teacher_injected_offset::9": 2,
+            "teacher_phases": 91,
+            "teacher_winner_offset::-40": 2,
+            "teacher_winner_offset::10": 1,
+            "teacher_winner_offset::120": 2,
+            "teacher_winner_offset::15": 1,
+            "teacher_winner_offset::16": 1,
+            "teacher_winner_offset::160": 1,
+            "teacher_winner_offset::2": 1,
+            "teacher_winner_offset::20": 1,
+            "teacher_winner_offset::3": 1,
+            "teacher_winner_offset::36": 1,
+            "teacher_winner_offset::40": 54,
+            "teacher_winner_offset::48": 5,
+            "teacher_winner_offset::72": 1,
+            "teacher_winner_offset::8": 3,
+            "teacher_winner_offset::80": 16
+          },
+          "metrics": {
+            "accepted_count": 985608,
+            "coverage": 0.5601699661528722,
+            "covered_by_bop": {
+              "PartitionedV2P2_independent": 276054
+            },
+            "covered_by_rank": {
+              "0": 162041,
+              "1": 114013
+            },
+            "covered_count": 276054,
+            "demand_count": 492804,
+            "duplicate_count": 575843,
+            "generated_count": 985608
+          }
+        },
+        "partition_v2_p2_max_union": {
+          "config": {
+            "extra_threshold": 0.02,
+            "pbop_slots": 2,
+            "selection_policy": "max_union",
+            "vbop_slots": 2
+          },
+          "local_metrics": {
+            "accepted_count": 985608,
+            "coverage": 0.5554195988668923,
+            "covered_by_rank": {
+              "0": 167500,
+              "1": 106213
+            },
+            "covered_by_role": {
+              "extra": 106213,
+              "primary": 167500
+            },
+            "covered_count": 273713,
+            "covered_with_min_lead_cycles": {
+              "0": 273713,
+              "128": 268649,
+              "16": 271252,
+              "256": 265297,
+              "32": 270414,
+              "64": 269695
+            },
+            "demand_count": 492804,
+            "dropped_by_role": {
+              "extra": 3786
+            },
+            "duplicate_sent_by_role": {
+              "extra": 237444,
+              "primary": 284433
+            },
+            "duplicate_sent_count": 521877,
+            "enqueued_by_role": {
+              "extra": 450133,
+              "primary": 487071
+            },
+            "fifo_late_by_role": {
+              "extra": 2185,
+              "primary": 638
+            },
+            "fifo_late_demand_count": 2823,
+            "generated_count": 985608,
+            "queue_delay_cycles_max": {
+              "extra": 11,
+              "primary": 9
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.587064743494957,
+              "primary": 1.3927780252900512
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 1154726,
+              "primary": 678379
+            },
+            "recent_filtered_by_role": {
+              "extra": 42671,
+              "primary": 5733
+            },
+            "sent_by_role": {
+              "extra": 446346,
+              "primary": 487069
+            }
+          },
+          "measurement_stats": {
+            "accepted": 985608,
+            "generated": 985608,
+            "generated_rank_0": 492804,
+            "generated_rank_1": 492804,
+            "issued_offset::-25": 5450,
+            "issued_offset::1": 54500,
+            "issued_offset::10": 109000,
+            "issued_offset::12": 10900,
+            "issued_offset::15": 27250,
+            "issued_offset::2": 45095,
+            "issued_offset::20": 10900,
+            "issued_offset::24": 10900,
+            "issued_offset::27": 27250,
+            "issued_offset::3": 27250,
+            "issued_offset::30": 10900,
+            "issued_offset::4": 10900,
+            "issued_offset::40": 476454,
+            "issued_offset::48": 5450,
+            "issued_offset::5": 5450,
+            "issued_offset::72": 5450,
+            "issued_offset::8": 131609,
+            "issued_offset::80": 5450,
+            "issued_offset::9": 5450,
+            "partition_evict::pbop": 72,
+            "partition_evict::vbop": 22,
+            "partition_injected::pbop": 72,
+            "partition_injected::vbop": 22,
+            "partition_next_pool_both": 91,
+            "partition_phase_both": 91,
+            "partition_selected_cross_family": 91,
+            "partition_selected_pair": 91,
+            "rr_delay_drops": 128168,
+            "rr_writes": 364647,
+            "student_delay_drains": 1457412,
+            "student_delay_drops": 509312,
+            "student_delay_inserts": 1461904,
+            "student_issue_phases": 91,
+            "student_phases": 91,
+            "student_selected_offset::1": 3,
+            "student_selected_offset::40": 85,
+            "student_selected_offset::48": 1,
+            "student_selected_offset::8": 1,
+            "student_selected_offset::80": 1,
+            "teacher_family_winner_count::2": 91,
+            "teacher_injected": 94,
+            "teacher_injected_offset::-25": 2,
+            "teacher_injected_offset::-3": 1,
+            "teacher_injected_offset::-32": 1,
+            "teacher_injected_offset::-40": 2,
+            "teacher_injected_offset::-5": 1,
+            "teacher_injected_offset::-6": 1,
+            "teacher_injected_offset::1": 7,
+            "teacher_injected_offset::10": 5,
+            "teacher_injected_offset::12": 1,
+            "teacher_injected_offset::120": 3,
+            "teacher_injected_offset::128": 1,
+            "teacher_injected_offset::15": 2,
+            "teacher_injected_offset::16": 2,
+            "teacher_injected_offset::160": 2,
+            "teacher_injected_offset::2": 5,
+            "teacher_injected_offset::20": 3,
+            "teacher_injected_offset::24": 3,
+            "teacher_injected_offset::27": 3,
+            "teacher_injected_offset::3": 7,
+            "teacher_injected_offset::30": 8,
+            "teacher_injected_offset::32": 1,
+            "teacher_injected_offset::36": 1,
+            "teacher_injected_offset::4": 5,
+            "teacher_injected_offset::48": 3,
+            "teacher_injected_offset::5": 6,
+            "teacher_injected_offset::6": 1,
+            "teacher_injected_offset::72": 1,
+            "teacher_injected_offset::8": 6,
+            "teacher_injected_offset::80": 8,
+            "teacher_injected_offset::9": 2,
+            "teacher_phases": 91,
+            "teacher_winner_offset::-40": 2,
+            "teacher_winner_offset::10": 1,
+            "teacher_winner_offset::120": 2,
+            "teacher_winner_offset::15": 1,
+            "teacher_winner_offset::16": 1,
+            "teacher_winner_offset::160": 1,
+            "teacher_winner_offset::2": 1,
+            "teacher_winner_offset::20": 1,
+            "teacher_winner_offset::3": 1,
+            "teacher_winner_offset::36": 1,
+            "teacher_winner_offset::40": 54,
+            "teacher_winner_offset::48": 5,
+            "teacher_winner_offset::72": 1,
+            "teacher_winner_offset::8": 3,
+            "teacher_winner_offset::80": 16
+          },
+          "metrics": {
+            "accepted_count": 985608,
+            "coverage": 0.5586257416741747,
+            "covered_by_bop": {
+              "PartitionedV2P2_max_union": 275293
+            },
+            "covered_by_rank": {
+              "0": 161786,
+              "1": 113507
+            },
+            "covered_count": 275293,
+            "demand_count": 492804,
+            "duplicate_count": 571203,
+            "generated_count": 985608
+          }
+        }
+      },
+      "weight": 0.31307,
+      "workload": "omnetpp"
+    },
+    {
+      "access_count": 260029,
+      "marker": {
+        "access_seq": 130958,
+        "tick": 1373448843
+      },
+      "name": "cactusADM_163",
+      "references": {
+        "dual": {
+          "local_metrics": {
+            "accepted_count": 256175,
+            "coverage": 0.9800574877393062,
+            "covered_by_rank": {
+              "0": 126497
+            },
+            "covered_by_role": {
+              "extra": 41593,
+              "primary": 84904
+            },
+            "covered_count": 126497,
+            "covered_with_min_lead_cycles": {
+              "0": 126497,
+              "128": 126362,
+              "16": 126496,
+              "256": 124996,
+              "32": 126496,
+              "64": 126496
+            },
+            "demand_count": 129071,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 85259,
+              "primary": 42258
+            },
+            "duplicate_sent_count": 127517,
+            "enqueued_by_role": {
+              "extra": 127104,
+              "primary": 129071
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 258142,
+            "queue_delay_cycles_max": {
+              "extra": 18,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.846342672362924,
+              "primary": 0.8673665452855039
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 361773,
+              "primary": 111951
+            },
+            "recent_filtered_by_role": {},
+            "sent_by_role": {
+              "extra": 127101,
+              "primary": 129070
+            }
+          },
+          "metrics": {
+            "accepted_count": 256175,
+            "coverage": 0.9800574877393062,
+            "covered_by_bop": {
+              "PBOP": 41593,
+              "VBOP": 84904
+            },
+            "covered_by_rank": {
+              "0": 126497
+            },
+            "covered_count": 126497,
+            "demand_count": 129071,
+            "duplicate_count": 127518,
+            "generated_count": 258142
+          }
+        },
+        "merged_baseline": {
+          "local_metrics": {
+            "accepted_count": 258142,
+            "coverage": 0.9841405118113287,
+            "covered_by_rank": {
+              "0": 12072,
+              "1": 114952
+            },
+            "covered_by_role": {
+              "extra": 114952,
+              "primary": 12072
+            },
+            "covered_count": 127024,
+            "covered_with_min_lead_cycles": {
+              "0": 127024,
+              "128": 127020,
+              "16": 127023,
+              "256": 126995,
+              "32": 127022,
+              "64": 127022
+            },
+            "demand_count": 129071,
+            "dropped_by_role": {
+              "extra": 495
+            },
+            "duplicate_sent_by_role": {
+              "extra": 2119,
+              "primary": 40758
+            },
+            "duplicate_sent_count": 42877,
+            "enqueued_by_role": {
+              "extra": 119138,
+              "primary": 53370
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 258142,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 7
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.559553611314807,
+              "primary": 1.196964586846543
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 185027,
+              "primary": 63882
+            },
+            "recent_filtered_by_role": {
+              "extra": 9933,
+              "primary": 75701
+            },
+            "sent_by_role": {
+              "extra": 118641,
+              "primary": 53370
+            }
+          },
+          "metrics": {
+            "accepted_count": 258142,
+            "coverage": 0.9842179885489382,
+            "covered_by_bop": {
+              "MergedVBOP": 127034
+            },
+            "covered_by_rank": {
+              "0": 11611,
+              "1": 115423
+            },
+            "covered_count": 127034,
+            "demand_count": 129071,
+            "duplicate_count": 128993,
+            "generated_count": 258142
+          }
+        }
+      },
+      "result_dir": "/tmp/ts_bop_degree_full_cactusADM_163",
+      "schemes": {
+        "partition_v2_p2_independent": {
+          "config": {
+            "extra_threshold": 0.02,
+            "pbop_slots": 2,
+            "selection_policy": "independent",
+            "vbop_slots": 2
+          },
+          "local_metrics": {
+            "accepted_count": 258142,
+            "coverage": 0.982095125938437,
+            "covered_by_rank": {
+              "0": 57345,
+              "1": 69415
+            },
+            "covered_by_role": {
+              "extra": 69415,
+              "primary": 57345
+            },
+            "covered_count": 126760,
+            "covered_with_min_lead_cycles": {
+              "0": 126760,
+              "128": 126746,
+              "16": 126759,
+              "256": 126713,
+              "32": 126758,
+              "64": 126758
+            },
+            "demand_count": 129071,
+            "dropped_by_role": {
+              "extra": 730
+            },
+            "duplicate_sent_by_role": {
+              "extra": 56480,
+              "primary": 52298
+            },
+            "duplicate_sent_count": 108778,
+            "enqueued_by_role": {
+              "extra": 127506,
+              "primary": 110995
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 258142,
+            "queue_delay_cycles_max": {
+              "extra": 8,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.159535866975878,
+              "primary": 1.2202641584229779
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 273773,
+              "primary": 135442
+            },
+            "recent_filtered_by_role": {
+              "extra": 1565,
+              "primary": 18076
+            },
+            "sent_by_role": {
+              "extra": 126774,
+              "primary": 110994
+            }
+          },
+          "measurement_stats": {
+            "accepted": 258142,
+            "generated": 258142,
+            "generated_rank_0": 129071,
+            "generated_rank_1": 129071,
+            "issued_offset::1": 98551,
+            "issued_offset::2": 3924,
+            "issued_offset::3": 16132,
+            "issued_offset::32": 129071,
+            "issued_offset::4": 5014,
+            "issued_offset::5": 5450,
+            "partition_evict::pbop": 6,
+            "partition_evict::vbop": 6,
+            "partition_injected::pbop": 6,
+            "partition_injected::vbop": 6,
+            "partition_next_pool_both": 25,
+            "partition_phase_both": 25,
+            "partition_selected_cross_family": 25,
+            "partition_selected_pair": 25,
+            "rr_delay_drops": 51228,
+            "rr_writes": 77843,
+            "student_delay_drains": 310620,
+            "student_delay_drops": 204392,
+            "student_delay_inserts": 311892,
+            "student_issue_phases": 25,
+            "student_phases": 25,
+            "student_selected_offset::1": 18,
+            "student_selected_offset::2": 1,
+            "student_selected_offset::32": 5,
+            "student_selected_offset::4": 1,
+            "teacher_family_winner_count::2": 25,
+            "teacher_injected": 12,
+            "teacher_injected_offset::1": 1,
+            "teacher_injected_offset::117": 1,
+            "teacher_injected_offset::125": 1,
+            "teacher_injected_offset::2": 1,
+            "teacher_injected_offset::3": 1,
+            "teacher_injected_offset::36": 2,
+            "teacher_injected_offset::4": 2,
+            "teacher_injected_offset::5": 1,
+            "teacher_injected_offset::54": 1,
+            "teacher_injected_offset::60": 1,
+            "teacher_phases": 25,
+            "teacher_winner_offset::1": 15,
+            "teacher_winner_offset::2": 4,
+            "teacher_winner_offset::3": 2,
+            "teacher_winner_offset::4": 3,
+            "teacher_winner_offset::5": 1
+          },
+          "metrics": {
+            "accepted_count": 258142,
+            "coverage": 0.9823120608037437,
+            "covered_by_bop": {
+              "PartitionedV2P2_independent": 126788
+            },
+            "covered_by_rank": {
+              "0": 57076,
+              "1": 69712
+            },
+            "covered_count": 126788,
+            "demand_count": 129071,
+            "duplicate_count": 129119,
+            "generated_count": 258142
+          }
+        },
+        "partition_v2_p2_max_union": {
+          "config": {
+            "extra_threshold": 0.02,
+            "pbop_slots": 2,
+            "selection_policy": "max_union",
+            "vbop_slots": 2
+          },
+          "local_metrics": {
+            "accepted_count": 258142,
+            "coverage": 0.9826452107754646,
+            "covered_by_rank": {
+              "0": 57705,
+              "1": 69126
+            },
+            "covered_by_role": {
+              "extra": 69126,
+              "primary": 57705
+            },
+            "covered_count": 126831,
+            "covered_with_min_lead_cycles": {
+              "0": 126831,
+              "128": 126818,
+              "16": 126830,
+              "256": 126761,
+              "32": 126829,
+              "64": 126829
+            },
+            "demand_count": 129071,
+            "dropped_by_role": {
+              "extra": 770
+            },
+            "duplicate_sent_by_role": {
+              "extra": 56670,
+              "primary": 53541
+            },
+            "duplicate_sent_count": 110211,
+            "enqueued_by_role": {
+              "extra": 127445,
+              "primary": 112596
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 258142,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 7
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.2040213778784743,
+              "primary": 1.1962786979883653
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 279190,
+              "primary": 134695
+            },
+            "recent_filtered_by_role": {
+              "extra": 1626,
+              "primary": 16475
+            },
+            "sent_by_role": {
+              "extra": 126673,
+              "primary": 112595
+            }
+          },
+          "measurement_stats": {
+            "accepted": 258142,
+            "generated": 258142,
+            "generated_rank_0": 129071,
+            "generated_rank_1": 129071,
+            "issued_offset::1": 98551,
+            "issued_offset::2": 7630,
+            "issued_offset::3": 13625,
+            "issued_offset::32": 112721,
+            "issued_offset::36": 10900,
+            "issued_offset::4": 9265,
+            "issued_offset::54": 5450,
+            "partition_evict::pbop": 6,
+            "partition_evict::vbop": 6,
+            "partition_injected::pbop": 6,
+            "partition_injected::vbop": 6,
+            "partition_next_pool_both": 25,
+            "partition_phase_both": 25,
+            "partition_selected_cross_family": 25,
+            "partition_selected_pair": 25,
+            "rr_delay_drops": 51228,
+            "rr_writes": 77843,
+            "student_delay_drains": 310620,
+            "student_delay_drops": 204392,
+            "student_delay_inserts": 311892,
+            "student_issue_phases": 25,
+            "student_phases": 25,
+            "student_selected_offset::1": 18,
+            "student_selected_offset::2": 1,
+            "student_selected_offset::32": 4,
+            "student_selected_offset::4": 1,
+            "student_selected_offset::54": 1,
+            "teacher_family_winner_count::2": 25,
+            "teacher_injected": 12,
+            "teacher_injected_offset::1": 1,
+            "teacher_injected_offset::117": 1,
+            "teacher_injected_offset::125": 1,
+            "teacher_injected_offset::2": 1,
+            "teacher_injected_offset::3": 1,
+            "teacher_injected_offset::36": 2,
+            "teacher_injected_offset::4": 2,
+            "teacher_injected_offset::5": 1,
+            "teacher_injected_offset::54": 1,
+            "teacher_injected_offset::60": 1,
+            "teacher_phases": 25,
+            "teacher_winner_offset::1": 15,
+            "teacher_winner_offset::2": 4,
+            "teacher_winner_offset::3": 2,
+            "teacher_winner_offset::4": 3,
+            "teacher_winner_offset::5": 1
+          },
+          "metrics": {
+            "accepted_count": 258142,
+            "coverage": 0.9829086316833371,
+            "covered_by_bop": {
+              "PartitionedV2P2_max_union": 126865
+            },
+            "covered_by_rank": {
+              "0": 57435,
+              "1": 69430
+            },
+            "covered_count": 126865,
+            "demand_count": 129071,
+            "duplicate_count": 129047,
+            "generated_count": 258142
+          }
+        }
+      },
+      "weight": 0.560381,
+      "workload": "cactusADM"
+    },
+    {
+      "access_count": 4962648,
+      "marker": {
+        "access_seq": 2516253,
+        "tick": 10986261741
+      },
+      "name": "mcf_12886",
+      "references": {
+        "dual": {
+          "local_metrics": {
+            "accepted_count": 2410106,
+            "coverage": 0.4508094563633428,
+            "covered_by_rank": {
+              "0": 1102858
+            },
+            "covered_by_role": {
+              "extra": 1102589,
+              "primary": 269
+            },
+            "covered_count": 1102858,
+            "covered_with_min_lead_cycles": {
+              "0": 1102858,
+              "128": 1102631,
+              "16": 1102714,
+              "256": 1102554,
+              "32": 1102695,
+              "64": 1102667
+            },
+            "demand_count": 2446395,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 1168420
+            },
+            "duplicate_sent_count": 1168420,
+            "enqueued_by_role": {
+              "extra": 2410106
+            },
+            "fifo_late_by_role": {
+              "extra": 171
+            },
+            "fifo_late_demand_count": 171,
+            "generated_count": 2446395,
+            "queue_delay_cycles_max": {
+              "extra": 4
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.0389198810840192
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 2503906
+            },
+            "recent_filtered_by_role": {},
+            "sent_by_role": {
+              "extra": 2410105
+            }
+          },
+          "metrics": {
+            "accepted_count": 2410106,
+            "coverage": 0.45081477030487715,
+            "covered_by_bop": {
+              "PBOP": 1102602,
+              "VBOP": 269
+            },
+            "covered_by_rank": {
+              "0": 1102871
+            },
+            "covered_count": 1102871,
+            "demand_count": 2446395,
+            "duplicate_count": 1168464,
+            "generated_count": 2446395
+          }
+        },
+        "merged_baseline": {
+          "local_metrics": {
+            "accepted_count": 3541190,
+            "coverage": 0.4700974290742092,
+            "covered_by_rank": {
+              "0": 242249,
+              "1": 907795
+            },
+            "covered_by_role": {
+              "extra": 907795,
+              "primary": 242249
+            },
+            "covered_count": 1150044,
+            "covered_with_min_lead_cycles": {
+              "0": 1150044,
+              "128": 1149747,
+              "16": 1149922,
+              "256": 1149599,
+              "32": 1149892,
+              "64": 1149825
+            },
+            "demand_count": 2446395,
+            "dropped_by_role": {
+              "extra": 1277
+            },
+            "duplicate_sent_by_role": {
+              "extra": 752028,
+              "primary": 1507968
+            },
+            "duplicate_sent_count": 2259996,
+            "enqueued_by_role": {
+              "extra": 1769277,
+              "primary": 1769041
+            },
+            "fifo_late_by_role": {
+              "extra": 16,
+              "primary": 119
+            },
+            "fifo_late_demand_count": 135,
+            "generated_count": 3541190,
+            "queue_delay_cycles_max": {
+              "extra": 9,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.1965561066493815,
+              "primary": 1.2824254963143853
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 3883509,
+              "primary": 2268662
+            },
+            "recent_filtered_by_role": {
+              "extra": 1318,
+              "primary": 1554
+            },
+            "sent_by_role": {
+              "extra": 1767999,
+              "primary": 1769040
+            }
+          },
+          "metrics": {
+            "accepted_count": 3541190,
+            "coverage": 0.4701771381972249,
+            "covered_by_bop": {
+              "MergedVBOP": 1150239
+            },
+            "covered_by_rank": {
+              "0": 241885,
+              "1": 908354
+            },
+            "covered_count": 1150239,
+            "demand_count": 2446395,
+            "duplicate_count": 2263965,
+            "generated_count": 3541190
+          }
+        }
+      },
+      "result_dir": "/tmp/ts_bop_degree_full_mcf_12886_rrcount",
+      "schemes": {
+        "partition_v2_p2_independent": {
+          "config": {
+            "extra_threshold": 0.02,
+            "pbop_slots": 2,
+            "selection_policy": "independent",
+            "vbop_slots": 2
+          },
+          "local_metrics": {
+            "accepted_count": 3541190,
+            "coverage": 0.46855393344083845,
+            "covered_by_rank": {
+              "0": 514589,
+              "1": 631679
+            },
+            "covered_by_role": {
+              "extra": 631679,
+              "primary": 514589
+            },
+            "covered_count": 1146268,
+            "covered_with_min_lead_cycles": {
+              "0": 1146268,
+              "128": 1146043,
+              "16": 1146173,
+              "256": 1145901,
+              "32": 1146148,
+              "64": 1146110
+            },
+            "demand_count": 2446395,
+            "dropped_by_role": {
+              "extra": 1322
+            },
+            "duplicate_sent_by_role": {
+              "extra": 787731,
+              "primary": 1193013
+            },
+            "duplicate_sent_count": 1980744,
+            "enqueued_by_role": {
+              "extra": 1768959,
+              "primary": 1769036
+            },
+            "fifo_late_by_role": {
+              "extra": 5,
+              "primary": 131
+            },
+            "fifo_late_demand_count": 136,
+            "generated_count": 3541190,
+            "queue_delay_cycles_max": {
+              "extra": 9,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.2010442195112567,
+              "primary": 1.2777672572899914
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 3890645,
+              "primary": 2260415
+            },
+            "recent_filtered_by_role": {
+              "extra": 1636,
+              "primary": 1559
+            },
+            "sent_by_role": {
+              "extra": 1767636,
+              "primary": 1769035
+            }
+          },
+          "measurement_stats": {
+            "accepted": 3541190,
+            "generated": 3541190,
+            "generated_rank_0": 1770595,
+            "generated_rank_1": 1770595,
+            "issued_offset::-117": 272499,
+            "issued_offset::-125": 32700,
+            "issued_offset::-128": 10901,
+            "issued_offset::-135": 379199,
+            "issued_offset::-150": 114451,
+            "issued_offset::-200": 16350,
+            "issued_offset::-216": 10901,
+            "issued_offset::-40": 5449,
+            "issued_offset::-48": 10900,
+            "issued_offset::-96": 5451,
+            "issued_offset::1": 1770595,
+            "issued_offset::128": 21800,
+            "issued_offset::216": 16351,
+            "issued_offset::225": 61596,
+            "issued_offset::250": 228900,
+            "issued_offset::81": 550449,
+            "issued_offset::91": 32698,
+            "partition_evict::pbop": 88,
+            "partition_evict::vbop": 431,
+            "partition_injected::pbop": 88,
+            "partition_injected::vbop": 431,
+            "partition_next_pool_both": 449,
+            "partition_phase_both": 449,
+            "partition_selected_cross_family": 449,
+            "partition_selected_pair": 449,
+            "rr_delay_drops": 962923,
+            "rr_writes": 1483477,
+            "student_delay_drains": 5927596,
+            "student_delay_drops": 3830996,
+            "student_delay_inserts": 5954584,
+            "student_issue_phases": 449,
+            "student_phases": 449,
+            "student_selected_offset::1": 449,
+            "teacher_family_winner_count::2": 449,
+            "teacher_injected": 519,
+            "teacher_injected_offset::-10": 4,
+            "teacher_injected_offset::-100": 2,
+            "teacher_injected_offset::-108": 4,
+            "teacher_injected_offset::-117": 37,
+            "teacher_injected_offset::-12": 1,
+            "teacher_injected_offset::-120": 11,
+            "teacher_injected_offset::-125": 13,
+            "teacher_injected_offset::-128": 12,
+            "teacher_injected_offset::-135": 7,
+            "teacher_injected_offset::-144": 3,
+            "teacher_injected_offset::-147": 14,
+            "teacher_injected_offset::-15": 3,
+            "teacher_injected_offset::-150": 4,
+            "teacher_injected_offset::-16": 1,
+            "teacher_injected_offset::-160": 3,
+            "teacher_injected_offset::-162": 4,
+            "teacher_injected_offset::-18": 1,
+            "teacher_injected_offset::-180": 9,
+            "teacher_injected_offset::-192": 13,
+            "teacher_injected_offset::-2": 5,
+            "teacher_injected_offset::-20": 2,
+            "teacher_injected_offset::-200": 14,
+            "teacher_injected_offset::-216": 13,
+            "teacher_injected_offset::-225": 8,
+            "teacher_injected_offset::-24": 6,
+            "teacher_injected_offset::-240": 15,
+            "teacher_injected_offset::-243": 6,
+            "teacher_injected_offset::-25": 3,
+            "teacher_injected_offset::-250": 14,
+            "teacher_injected_offset::-256": 8,
+            "teacher_injected_offset::-27": 2,
+            "teacher_injected_offset::-3": 4,
+            "teacher_injected_offset::-30": 3,
+            "teacher_injected_offset::-36": 3,
+            "teacher_injected_offset::-4": 2,
+            "teacher_injected_offset::-40": 3,
+            "teacher_injected_offset::-45": 2,
+            "teacher_injected_offset::-48": 3,
+            "teacher_injected_offset::-5": 4,
+            "teacher_injected_offset::-50": 1,
+            "teacher_injected_offset::-54": 2,
+            "teacher_injected_offset::-6": 1,
+            "teacher_injected_offset::-60": 4,
+            "teacher_injected_offset::-64": 1,
+            "teacher_injected_offset::-72": 2,
+            "teacher_injected_offset::-75": 2,
+            "teacher_injected_offset::-8": 4,
+            "teacher_injected_offset::-80": 2,
+            "teacher_injected_offset::-81": 7,
+            "teacher_injected_offset::-9": 1,
+            "teacher_injected_offset::-90": 2,
+            "teacher_injected_offset::-91": 32,
+            "teacher_injected_offset::-96": 5,
+            "teacher_injected_offset::10": 3,
+            "teacher_injected_offset::100": 2,
+            "teacher_injected_offset::117": 30,
+            "teacher_injected_offset::120": 1,
+            "teacher_injected_offset::128": 2,
+            "teacher_injected_offset::135": 5,
+            "teacher_injected_offset::144": 2,
+            "teacher_injected_offset::147": 16,
+            "teacher_injected_offset::15": 1,
+            "teacher_injected_offset::160": 1,
+            "teacher_injected_offset::18": 1,
+            "teacher_injected_offset::180": 4,
+            "teacher_injected_offset::192": 4,
+            "teacher_injected_offset::2": 20,
+            "teacher_injected_offset::200": 2,
+            "teacher_injected_offset::216": 3,
+            "teacher_injected_offset::225": 1,
+            "teacher_injected_offset::24": 1,
+            "teacher_injected_offset::240": 3,
+            "teacher_injected_offset::25": 2,
+            "teacher_injected_offset::250": 3,
+            "teacher_injected_offset::27": 1,
+            "teacher_injected_offset::3": 3,
+            "teacher_injected_offset::30": 1,
+            "teacher_injected_offset::32": 2,
+            "teacher_injected_offset::36": 3,
+            "teacher_injected_offset::4": 2,
+            "teacher_injected_offset::40": 2,
+            "teacher_injected_offset::45": 2,
+            "teacher_injected_offset::48": 4,
+            "teacher_injected_offset::5": 1,
+            "teacher_injected_offset::50": 4,
+            "teacher_injected_offset::54": 6,
+            "teacher_injected_offset::6": 1,
+            "teacher_injected_offset::60": 3,
+            "teacher_injected_offset::64": 1,
+            "teacher_injected_offset::72": 2,
+            "teacher_injected_offset::75": 2,
+            "teacher_injected_offset::8": 2,
+            "teacher_injected_offset::80": 1,
+            "teacher_injected_offset::81": 2,
+            "teacher_injected_offset::9": 2,
+            "teacher_injected_offset::90": 3,
+            "teacher_injected_offset::91": 27,
+            "teacher_injected_offset::96": 3,
+            "teacher_phases": 449,
+            "teacher_winner_offset::-10": 1,
+            "teacher_winner_offset::-108": 1,
+            "teacher_winner_offset::-12": 1,
+            "teacher_winner_offset::-120": 2,
+            "teacher_winner_offset::-125": 1,
+            "teacher_winner_offset::-128": 1,
+            "teacher_winner_offset::-144": 1,
+            "teacher_winner_offset::-180": 2,
+            "teacher_winner_offset::-2": 1,
+            "teacher_winner_offset::-200": 2,
+            "teacher_winner_offset::-216": 1,
+            "teacher_winner_offset::-24": 1,
+            "teacher_winner_offset::-240": 1,
+            "teacher_winner_offset::-25": 1,
+            "teacher_winner_offset::-250": 1,
+            "teacher_winner_offset::-3": 3,
+            "teacher_winner_offset::-36": 1,
+            "teacher_winner_offset::-40": 1,
+            "teacher_winner_offset::-48": 1,
+            "teacher_winner_offset::-5": 1,
+            "teacher_winner_offset::-50": 1,
+            "teacher_winner_offset::-60": 2,
+            "teacher_winner_offset::-64": 1,
+            "teacher_winner_offset::-75": 1,
+            "teacher_winner_offset::-8": 3,
+            "teacher_winner_offset::-81": 1,
+            "teacher_winner_offset::-91": 1,
+            "teacher_winner_offset::-96": 1,
+            "teacher_winner_offset::1": 325,
+            "teacher_winner_offset::10": 3,
+            "teacher_winner_offset::100": 1,
+            "teacher_winner_offset::117": 2,
+            "teacher_winner_offset::120": 1,
+            "teacher_winner_offset::128": 1,
+            "teacher_winner_offset::135": 1,
+            "teacher_winner_offset::144": 1,
+            "teacher_winner_offset::15": 1,
+            "teacher_winner_offset::18": 1,
+            "teacher_winner_offset::180": 3,
+            "teacher_winner_offset::192": 1,
+            "teacher_winner_offset::2": 37,
+            "teacher_winner_offset::216": 1,
+            "teacher_winner_offset::24": 1,
+            "teacher_winner_offset::240": 2,
+            "teacher_winner_offset::25": 2,
+            "teacher_winner_offset::250": 2,
+            "teacher_winner_offset::27": 1,
+            "teacher_winner_offset::3": 2,
+            "teacher_winner_offset::30": 1,
+            "teacher_winner_offset::32": 2,
+            "teacher_winner_offset::36": 1,
+            "teacher_winner_offset::4": 2,
+            "teacher_winner_offset::45": 1,
+            "teacher_winner_offset::5": 1,
+            "teacher_winner_offset::50": 1,
+            "teacher_winner_offset::54": 2,
+            "teacher_winner_offset::6": 1,
+            "teacher_winner_offset::72": 1,
+            "teacher_winner_offset::8": 2,
+            "teacher_winner_offset::81": 1,
+            "teacher_winner_offset::9": 2,
+            "teacher_winner_offset::90": 3,
+            "teacher_winner_offset::91": 2,
+            "teacher_winner_offset::96": 1,
+            "throttled": 675800
+          },
+          "metrics": {
+            "accepted_count": 3541190,
+            "coverage": 0.4686365039169881,
+            "covered_by_bop": {
+              "PartitionedV2P2_independent": 1146470
+            },
+            "covered_by_rank": {
+              "0": 514387,
+              "1": 632083
+            },
+            "covered_count": 1146470,
+            "demand_count": 2446395,
+            "duplicate_count": 1984984,
+            "generated_count": 3541190
+          }
+        },
+        "partition_v2_p2_max_union": {
+          "config": {
+            "extra_threshold": 0.02,
+            "pbop_slots": 2,
+            "selection_policy": "max_union",
+            "vbop_slots": 2
+          },
+          "local_metrics": {
+            "accepted_count": 3541190,
+            "coverage": 0.47244087729087086,
+            "covered_by_rank": {
+              "0": 546442,
+              "1": 609335
+            },
+            "covered_by_role": {
+              "extra": 609335,
+              "primary": 546442
+            },
+            "covered_count": 1155777,
+            "covered_with_min_lead_cycles": {
+              "0": 1155777,
+              "128": 1155556,
+              "16": 1155685,
+              "256": 1155404,
+              "32": 1155657,
+              "64": 1155622
+            },
+            "demand_count": 2446395,
+            "dropped_by_role": {
+              "extra": 1335
+            },
+            "duplicate_sent_by_role": {
+              "extra": 814722,
+              "primary": 1156877
+            },
+            "duplicate_sent_count": 1971599,
+            "enqueued_by_role": {
+              "extra": 1769006,
+              "primary": 1769085
+            },
+            "fifo_late_by_role": {
+              "extra": 4,
+              "primary": 127
+            },
+            "fifo_late_demand_count": 131,
+            "generated_count": 3541190,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 7
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.204758241074409,
+              "primary": 1.274057647912705
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 3897285,
+              "primary": 2253915
+            },
+            "recent_filtered_by_role": {
+              "extra": 1589,
+              "primary": 1510
+            },
+            "sent_by_role": {
+              "extra": 1767670,
+              "primary": 1769084
+            }
+          },
+          "measurement_stats": {
+            "accepted": 3541190,
+            "generated": 3541190,
+            "generated_rank_0": 1770595,
+            "generated_rank_1": 1770595,
+            "issued_offset::-117": 235994,
+            "issued_offset::-120": 10899,
+            "issued_offset::-125": 27252,
+            "issued_offset::-128": 38151,
+            "issued_offset::-135": 335600,
+            "issued_offset::-150": 92651,
+            "issued_offset::-160": 5450,
+            "issued_offset::-180": 5450,
+            "issued_offset::-192": 10900,
+            "issued_offset::-200": 32700,
+            "issued_offset::-216": 21801,
+            "issued_offset::-240": 16349,
+            "issued_offset::-256": 5450,
+            "issued_offset::-36": 5450,
+            "issued_offset::-40": 5449,
+            "issued_offset::-48": 5450,
+            "issued_offset::-60": 10899,
+            "issued_offset::-80": 5450,
+            "issued_offset::-91": 16351,
+            "issued_offset::-96": 10900,
+            "issued_offset::1": 1770595,
+            "issued_offset::117": 10900,
+            "issued_offset::128": 16350,
+            "issued_offset::216": 10901,
+            "issued_offset::225": 54500,
+            "issued_offset::240": 5450,
+            "issued_offset::250": 196198,
+            "issued_offset::50": 1,
+            "issued_offset::80": 5450,
+            "issued_offset::81": 490498,
+            "issued_offset::91": 76301,
+            "issued_offset::96": 5450,
+            "partition_evict::pbop": 88,
+            "partition_evict::vbop": 431,
+            "partition_injected::pbop": 88,
+            "partition_injected::vbop": 431,
+            "partition_next_pool_both": 449,
+            "partition_phase_both": 449,
+            "partition_selected_cross_family": 449,
+            "partition_selected_pair": 449,
+            "rr_delay_drops": 962923,
+            "rr_writes": 1483477,
+            "student_delay_drains": 5927596,
+            "student_delay_drops": 3830996,
+            "student_delay_inserts": 5954584,
+            "student_issue_phases": 449,
+            "student_phases": 449,
+            "student_selected_offset::1": 449,
+            "teacher_family_winner_count::2": 449,
+            "teacher_injected": 519,
+            "teacher_injected_offset::-10": 4,
+            "teacher_injected_offset::-100": 2,
+            "teacher_injected_offset::-108": 4,
+            "teacher_injected_offset::-117": 37,
+            "teacher_injected_offset::-12": 1,
+            "teacher_injected_offset::-120": 11,
+            "teacher_injected_offset::-125": 13,
+            "teacher_injected_offset::-128": 12,
+            "teacher_injected_offset::-135": 7,
+            "teacher_injected_offset::-144": 3,
+            "teacher_injected_offset::-147": 14,
+            "teacher_injected_offset::-15": 3,
+            "teacher_injected_offset::-150": 4,
+            "teacher_injected_offset::-16": 1,
+            "teacher_injected_offset::-160": 3,
+            "teacher_injected_offset::-162": 4,
+            "teacher_injected_offset::-18": 1,
+            "teacher_injected_offset::-180": 9,
+            "teacher_injected_offset::-192": 13,
+            "teacher_injected_offset::-2": 5,
+            "teacher_injected_offset::-20": 2,
+            "teacher_injected_offset::-200": 14,
+            "teacher_injected_offset::-216": 13,
+            "teacher_injected_offset::-225": 8,
+            "teacher_injected_offset::-24": 6,
+            "teacher_injected_offset::-240": 15,
+            "teacher_injected_offset::-243": 6,
+            "teacher_injected_offset::-25": 3,
+            "teacher_injected_offset::-250": 14,
+            "teacher_injected_offset::-256": 8,
+            "teacher_injected_offset::-27": 2,
+            "teacher_injected_offset::-3": 4,
+            "teacher_injected_offset::-30": 3,
+            "teacher_injected_offset::-36": 3,
+            "teacher_injected_offset::-4": 2,
+            "teacher_injected_offset::-40": 3,
+            "teacher_injected_offset::-45": 2,
+            "teacher_injected_offset::-48": 3,
+            "teacher_injected_offset::-5": 4,
+            "teacher_injected_offset::-50": 1,
+            "teacher_injected_offset::-54": 2,
+            "teacher_injected_offset::-6": 1,
+            "teacher_injected_offset::-60": 4,
+            "teacher_injected_offset::-64": 1,
+            "teacher_injected_offset::-72": 2,
+            "teacher_injected_offset::-75": 2,
+            "teacher_injected_offset::-8": 4,
+            "teacher_injected_offset::-80": 2,
+            "teacher_injected_offset::-81": 7,
+            "teacher_injected_offset::-9": 1,
+            "teacher_injected_offset::-90": 2,
+            "teacher_injected_offset::-91": 32,
+            "teacher_injected_offset::-96": 5,
+            "teacher_injected_offset::10": 3,
+            "teacher_injected_offset::100": 2,
+            "teacher_injected_offset::117": 30,
+            "teacher_injected_offset::120": 1,
+            "teacher_injected_offset::128": 2,
+            "teacher_injected_offset::135": 5,
+            "teacher_injected_offset::144": 2,
+            "teacher_injected_offset::147": 16,
+            "teacher_injected_offset::15": 1,
+            "teacher_injected_offset::160": 1,
+            "teacher_injected_offset::18": 1,
+            "teacher_injected_offset::180": 4,
+            "teacher_injected_offset::192": 4,
+            "teacher_injected_offset::2": 20,
+            "teacher_injected_offset::200": 2,
+            "teacher_injected_offset::216": 3,
+            "teacher_injected_offset::225": 1,
+            "teacher_injected_offset::24": 1,
+            "teacher_injected_offset::240": 3,
+            "teacher_injected_offset::25": 2,
+            "teacher_injected_offset::250": 3,
+            "teacher_injected_offset::27": 1,
+            "teacher_injected_offset::3": 3,
+            "teacher_injected_offset::30": 1,
+            "teacher_injected_offset::32": 2,
+            "teacher_injected_offset::36": 3,
+            "teacher_injected_offset::4": 2,
+            "teacher_injected_offset::40": 2,
+            "teacher_injected_offset::45": 2,
+            "teacher_injected_offset::48": 4,
+            "teacher_injected_offset::5": 1,
+            "teacher_injected_offset::50": 4,
+            "teacher_injected_offset::54": 6,
+            "teacher_injected_offset::6": 1,
+            "teacher_injected_offset::60": 3,
+            "teacher_injected_offset::64": 1,
+            "teacher_injected_offset::72": 2,
+            "teacher_injected_offset::75": 2,
+            "teacher_injected_offset::8": 2,
+            "teacher_injected_offset::80": 1,
+            "teacher_injected_offset::81": 2,
+            "teacher_injected_offset::9": 2,
+            "teacher_injected_offset::90": 3,
+            "teacher_injected_offset::91": 27,
+            "teacher_injected_offset::96": 3,
+            "teacher_phases": 449,
+            "teacher_winner_offset::-10": 1,
+            "teacher_winner_offset::-108": 1,
+            "teacher_winner_offset::-12": 1,
+            "teacher_winner_offset::-120": 2,
+            "teacher_winner_offset::-125": 1,
+            "teacher_winner_offset::-128": 1,
+            "teacher_winner_offset::-144": 1,
+            "teacher_winner_offset::-180": 2,
+            "teacher_winner_offset::-2": 1,
+            "teacher_winner_offset::-200": 2,
+            "teacher_winner_offset::-216": 1,
+            "teacher_winner_offset::-24": 1,
+            "teacher_winner_offset::-240": 1,
+            "teacher_winner_offset::-25": 1,
+            "teacher_winner_offset::-250": 1,
+            "teacher_winner_offset::-3": 3,
+            "teacher_winner_offset::-36": 1,
+            "teacher_winner_offset::-40": 1,
+            "teacher_winner_offset::-48": 1,
+            "teacher_winner_offset::-5": 1,
+            "teacher_winner_offset::-50": 1,
+            "teacher_winner_offset::-60": 2,
+            "teacher_winner_offset::-64": 1,
+            "teacher_winner_offset::-75": 1,
+            "teacher_winner_offset::-8": 3,
+            "teacher_winner_offset::-81": 1,
+            "teacher_winner_offset::-91": 1,
+            "teacher_winner_offset::-96": 1,
+            "teacher_winner_offset::1": 325,
+            "teacher_winner_offset::10": 3,
+            "teacher_winner_offset::100": 1,
+            "teacher_winner_offset::117": 2,
+            "teacher_winner_offset::120": 1,
+            "teacher_winner_offset::128": 1,
+            "teacher_winner_offset::135": 1,
+            "teacher_winner_offset::144": 1,
+            "teacher_winner_offset::15": 1,
+            "teacher_winner_offset::18": 1,
+            "teacher_winner_offset::180": 3,
+            "teacher_winner_offset::192": 1,
+            "teacher_winner_offset::2": 37,
+            "teacher_winner_offset::216": 1,
+            "teacher_winner_offset::24": 1,
+            "teacher_winner_offset::240": 2,
+            "teacher_winner_offset::25": 2,
+            "teacher_winner_offset::250": 2,
+            "teacher_winner_offset::27": 1,
+            "teacher_winner_offset::3": 2,
+            "teacher_winner_offset::30": 1,
+            "teacher_winner_offset::32": 2,
+            "teacher_winner_offset::36": 1,
+            "teacher_winner_offset::4": 2,
+            "teacher_winner_offset::45": 1,
+            "teacher_winner_offset::5": 1,
+            "teacher_winner_offset::50": 1,
+            "teacher_winner_offset::54": 2,
+            "teacher_winner_offset::6": 1,
+            "teacher_winner_offset::72": 1,
+            "teacher_winner_offset::8": 2,
+            "teacher_winner_offset::81": 1,
+            "teacher_winner_offset::9": 2,
+            "teacher_winner_offset::90": 3,
+            "teacher_winner_offset::91": 2,
+            "teacher_winner_offset::96": 1,
+            "throttled": 675800
+          },
+          "metrics": {
+            "accepted_count": 3541190,
+            "coverage": 0.47252712664962115,
+            "covered_by_bop": {
+              "PartitionedV2P2_max_union": 1155988
+            },
+            "covered_by_rank": {
+              "0": 546263,
+              "1": 609725
+            },
+            "covered_count": 1155988,
+            "demand_count": 2446395,
+            "duplicate_count": 1975737,
+            "generated_count": 3541190
+          }
+        }
+      },
+      "weight": 0.149435,
+      "workload": "mcf"
+    },
+    {
+      "access_count": 606159,
+      "marker": {
+        "access_seq": 164371,
+        "tick": 6412839075
+      },
+      "name": "milc_28462",
+      "references": {
+        "dual": {
+          "local_metrics": {
+            "accepted_count": 882145,
+            "coverage": 0.8660782999990946,
+            "covered_by_rank": {
+              "0": 382623
+            },
+            "covered_by_role": {
+              "extra": 52422,
+              "primary": 330201
+            },
+            "covered_count": 382623,
+            "covered_with_min_lead_cycles": {
+              "0": 382623,
+              "128": 308436,
+              "16": 353903,
+              "256": 177923,
+              "32": 343216,
+              "64": 338420
+            },
+            "demand_count": 441788,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 198792,
+              "primary": 8244
+            },
+            "duplicate_sent_count": 207036,
+            "enqueued_by_role": {
+              "extra": 440357,
+              "primary": 441788
+            },
+            "fifo_late_by_role": {
+              "extra": 6088
+            },
+            "fifo_late_demand_count": 6088,
+            "generated_count": 883576,
+            "queue_delay_cycles_max": {
+              "extra": 8,
+              "primary": 3
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.2748441598255953,
+              "primary": 0.959170277011947
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 1001739,
+              "primary": 423748
+            },
+            "recent_filtered_by_role": {},
+            "sent_by_role": {
+              "extra": 440355,
+              "primary": 441786
+            }
+          },
+          "metrics": {
+            "accepted_count": 882145,
+            "coverage": 0.8796209946852337,
+            "covered_by_bop": {
+              "PBOP": 58323,
+              "VBOP": 330283
+            },
+            "covered_by_rank": {
+              "0": 388606
+            },
+            "covered_count": 388606,
+            "demand_count": 441788,
+            "duplicate_count": 226192,
+            "generated_count": 883576
+          }
+        },
+        "merged_baseline": {
+          "local_metrics": {
+            "accepted_count": 872676,
+            "coverage": 0.876834590346501,
+            "covered_by_rank": {
+              "0": 254368,
+              "1": 133007
+            },
+            "covered_by_role": {
+              "extra": 133007,
+              "primary": 254368
+            },
+            "covered_count": 387375,
+            "covered_with_min_lead_cycles": {
+              "0": 387375,
+              "128": 342047,
+              "16": 387375,
+              "256": 204007,
+              "32": 387372,
+              "64": 382454
+            },
+            "demand_count": 441788,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 15362,
+              "primary": 16095
+            },
+            "duplicate_sent_count": 31457,
+            "enqueued_by_role": {
+              "extra": 262244,
+              "primary": 348853
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 872676,
+            "queue_delay_cycles_max": {
+              "extra": 6,
+              "primary": 4
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.5999740698512448,
+              "primary": 1.1351866556208812
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 419582,
+              "primary": 396011
+            },
+            "recent_filtered_by_role": {
+              "extra": 168644,
+              "primary": 92935
+            },
+            "sent_by_role": {
+              "extra": 262243,
+              "primary": 348851
+            }
+          },
+          "metrics": {
+            "accepted_count": 872676,
+            "coverage": 0.876834590346501,
+            "covered_by_bop": {
+              "MergedVBOP": 387375
+            },
+            "covered_by_rank": {
+              "0": 254368,
+              "1": 133007
+            },
+            "covered_count": 387375,
+            "demand_count": 441788,
+            "duplicate_count": 293038,
+            "generated_count": 872676
+          }
+        }
+      },
+      "result_dir": "/tmp/ts_bop_degree_full_milc_28462",
+      "schemes": {
+        "partition_v2_p2_independent": {
+          "config": {
+            "extra_threshold": 0.02,
+            "pbop_slots": 2,
+            "selection_policy": "independent",
+            "vbop_slots": 2
+          },
+          "local_metrics": {
+            "accepted_count": 840848,
+            "coverage": 0.7423153186596286,
+            "covered_by_rank": {
+              "0": 327119,
+              "1": 827
+            },
+            "covered_by_role": {
+              "extra": 827,
+              "primary": 327119
+            },
+            "covered_count": 327946,
+            "covered_with_min_lead_cycles": {
+              "0": 327946,
+              "128": 312628,
+              "16": 327945,
+              "256": 203934,
+              "32": 327945,
+              "64": 327944
+            },
+            "demand_count": 441788,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 2899,
+              "primary": 5588
+            },
+            "duplicate_sent_count": 8487,
+            "enqueued_by_role": {
+              "extra": 130274,
+              "primary": 441775
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 840848,
+            "queue_delay_cycles_max": {
+              "extra": 7,
+              "primary": 4
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.8422301031687547,
+              "primary": 1.1063396812390074
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 239991,
+              "primary": 488751
+            },
+            "recent_filtered_by_role": {
+              "extra": 268786,
+              "primary": 13
+            },
+            "sent_by_role": {
+              "extra": 130272,
+              "primary": 441773
+            }
+          },
+          "measurement_stats": {
+            "accepted": 840848,
+            "generated": 840848,
+            "generated_rank_0": 441788,
+            "generated_rank_1": 399060,
+            "issued_offset::-32": 399060,
+            "issued_offset::128": 5450,
+            "issued_offset::160": 81750,
+            "issued_offset::192": 354588,
+            "partition_evict::pbop": 74,
+            "partition_evict::vbop": 11,
+            "partition_injected::pbop": 74,
+            "partition_injected::vbop": 11,
+            "partition_next_pool_both": 81,
+            "partition_phase_both": 81,
+            "partition_selected_cross_family": 74,
+            "partition_selected_pair": 74,
+            "rr_delay_drops": 101346,
+            "rr_writes": 340440,
+            "student_delay_drains": 1361180,
+            "student_delay_drops": 401944,
+            "student_delay_inserts": 1365208,
+            "student_issue_phases": 81,
+            "student_phases": 81,
+            "student_selected_offset::128": 1,
+            "student_selected_offset::160": 15,
+            "student_selected_offset::192": 65,
+            "teacher_family_winner_count::2": 81,
+            "teacher_injected": 85,
+            "teacher_injected_offset::1": 8,
+            "teacher_injected_offset::10": 4,
+            "teacher_injected_offset::12": 6,
+            "teacher_injected_offset::128": 1,
+            "teacher_injected_offset::15": 2,
+            "teacher_injected_offset::16": 3,
+            "teacher_injected_offset::160": 1,
+            "teacher_injected_offset::18": 3,
+            "teacher_injected_offset::192": 4,
+            "teacher_injected_offset::2": 8,
+            "teacher_injected_offset::225": 4,
+            "teacher_injected_offset::3": 7,
+            "teacher_injected_offset::30": 1,
+            "teacher_injected_offset::4": 6,
+            "teacher_injected_offset::5": 5,
+            "teacher_injected_offset::6": 8,
+            "teacher_injected_offset::8": 4,
+            "teacher_injected_offset::9": 9,
+            "teacher_injected_offset::96": 1,
+            "teacher_phases": 81,
+            "teacher_winner_offset::128": 1,
+            "teacher_winner_offset::160": 3,
+            "teacher_winner_offset::192": 36,
+            "teacher_winner_offset::225": 40,
+            "teacher_winner_offset::96": 1
+          },
+          "metrics": {
+            "accepted_count": 840848,
+            "coverage": 0.7445720571857996,
+            "covered_by_bop": {
+              "PartitionedV2P2_independent": 328943
+            },
+            "covered_by_rank": {
+              "0": 326493,
+              "1": 2450
+            },
+            "covered_count": 328943,
+            "demand_count": 441788,
+            "duplicate_count": 42769,
+            "generated_count": 840848
+          }
+        },
+        "partition_v2_p2_max_union": {
+          "config": {
+            "extra_threshold": 0.02,
+            "pbop_slots": 2,
+            "selection_policy": "max_union",
+            "vbop_slots": 2
+          },
+          "local_metrics": {
+            "accepted_count": 862648,
+            "coverage": 0.7779410033771854,
+            "covered_by_rank": {
+              "0": 324791,
+              "1": 18894
+            },
+            "covered_by_role": {
+              "extra": 18894,
+              "primary": 324791
+            },
+            "covered_count": 343685,
+            "covered_with_min_lead_cycles": {
+              "0": 343685,
+              "128": 319664,
+              "16": 339467,
+              "256": 210522,
+              "32": 336715,
+              "64": 335405
+            },
+            "demand_count": 441788,
+            "dropped_by_role": {
+              "extra": 5
+            },
+            "duplicate_sent_by_role": {
+              "extra": 34580,
+              "primary": 5415
+            },
+            "duplicate_sent_count": 39995,
+            "enqueued_by_role": {
+              "extra": 370609,
+              "primary": 441043
+            },
+            "fifo_late_by_role": {
+              "extra": 420
+            },
+            "fifo_late_demand_count": 420,
+            "generated_count": 862648,
+            "queue_delay_cycles_max": {
+              "extra": 8,
+              "primary": 4
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.004935213517466,
+              "primary": 1.1819241295026992
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 743033,
+              "primary": 521277
+            },
+            "recent_filtered_by_role": {
+              "extra": 50251,
+              "primary": 745
+            },
+            "sent_by_role": {
+              "extra": 370602,
+              "primary": 441041
+            }
+          },
+          "measurement_stats": {
+            "accepted": 862648,
+            "generated": 862648,
+            "generated_rank_0": 441788,
+            "generated_rank_1": 420860,
+            "issued_offset::-32": 33910,
+            "issued_offset::1": 43600,
+            "issued_offset::10": 21800,
+            "issued_offset::12": 27250,
+            "issued_offset::128": 5450,
+            "issued_offset::15": 5450,
+            "issued_offset::16": 16350,
+            "issued_offset::160": 70850,
+            "issued_offset::18": 10900,
+            "issued_offset::192": 360038,
+            "issued_offset::2": 54500,
+            "issued_offset::225": 5450,
+            "issued_offset::3": 32700,
+            "issued_offset::4": 27250,
+            "issued_offset::5": 32700,
+            "issued_offset::6": 43600,
+            "issued_offset::8": 21800,
+            "issued_offset::9": 49050,
+            "partition_evict::pbop": 74,
+            "partition_evict::vbop": 11,
+            "partition_injected::pbop": 74,
+            "partition_injected::vbop": 11,
+            "partition_next_pool_both": 81,
+            "partition_phase_both": 81,
+            "partition_selected_cross_family": 78,
+            "partition_selected_pair": 78,
+            "rr_delay_drops": 101346,
+            "rr_writes": 340440,
+            "student_delay_drains": 1361180,
+            "student_delay_drops": 401944,
+            "student_delay_inserts": 1365208,
+            "student_issue_phases": 81,
+            "student_phases": 81,
+            "student_selected_offset::-32": 1,
+            "student_selected_offset::128": 1,
+            "student_selected_offset::160": 13,
+            "student_selected_offset::192": 66,
+            "teacher_family_winner_count::2": 81,
+            "teacher_injected": 85,
+            "teacher_injected_offset::1": 8,
+            "teacher_injected_offset::10": 4,
+            "teacher_injected_offset::12": 6,
+            "teacher_injected_offset::128": 1,
+            "teacher_injected_offset::15": 2,
+            "teacher_injected_offset::16": 3,
+            "teacher_injected_offset::160": 1,
+            "teacher_injected_offset::18": 3,
+            "teacher_injected_offset::192": 4,
+            "teacher_injected_offset::2": 8,
+            "teacher_injected_offset::225": 4,
+            "teacher_injected_offset::3": 7,
+            "teacher_injected_offset::30": 1,
+            "teacher_injected_offset::4": 6,
+            "teacher_injected_offset::5": 5,
+            "teacher_injected_offset::6": 8,
+            "teacher_injected_offset::8": 4,
+            "teacher_injected_offset::9": 9,
+            "teacher_injected_offset::96": 1,
+            "teacher_phases": 81,
+            "teacher_winner_offset::128": 1,
+            "teacher_winner_offset::160": 3,
+            "teacher_winner_offset::192": 36,
+            "teacher_winner_offset::225": 40,
+            "teacher_winner_offset::96": 1
+          },
+          "metrics": {
+            "accepted_count": 862648,
+            "coverage": 0.7800709842729997,
+            "covered_by_bop": {
+              "PartitionedV2P2_max_union": 344626
+            },
+            "covered_by_rank": {
+              "0": 324637,
+              "1": 19989
+            },
+            "covered_count": 344626,
+            "demand_count": 441788,
+            "duplicate_count": 76251,
+            "generated_count": 862648
+          }
+        }
+      },
+      "weight": 0.074958,
+      "workload": "milc"
+    },
+    {
+      "access_count": 393602,
+      "marker": {
+        "access_seq": 57242,
+        "tick": 3028149819
+      },
+      "name": "bwaves_13153",
+      "references": {
+        "dual": {
+          "local_metrics": {
+            "accepted_count": 661736,
+            "coverage": 0.8041295041027471,
+            "covered_by_rank": {
+              "0": 270477
+            },
+            "covered_by_role": {
+              "extra": 98345,
+              "primary": 172132
+            },
+            "covered_count": 270477,
+            "covered_with_min_lead_cycles": {
+              "0": 270477,
+              "128": 232238,
+              "16": 270477,
+              "256": 210988,
+              "32": 270469,
+              "64": 268730
+            },
+            "demand_count": 336360,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 177848,
+              "primary": 20893
+            },
+            "duplicate_sent_count": 198741,
+            "enqueued_by_role": {
+              "extra": 325376,
+              "primary": 336360
+            },
+            "fifo_late_by_role": {
+              "extra": 1
+            },
+            "fifo_late_demand_count": 1,
+            "generated_count": 672720,
+            "queue_delay_cycles_max": {
+              "extra": 17,
+              "primary": 3
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.736172109104879,
+              "primary": 0.8771580365026653
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 890282,
+              "primary": 295040
+            },
+            "recent_filtered_by_role": {},
+            "sent_by_role": {
+              "extra": 325375,
+              "primary": 336359
+            }
+          },
+          "metrics": {
+            "accepted_count": 661736,
+            "coverage": 0.8040819360209299,
+            "covered_by_bop": {
+              "PBOP": 98322,
+              "VBOP": 172139
+            },
+            "covered_by_rank": {
+              "0": 270461
+            },
+            "covered_count": 270461,
+            "demand_count": 336360,
+            "duplicate_count": 198758,
+            "generated_count": 672720
+          }
+        },
+        "merged_baseline": {
+          "local_metrics": {
+            "accepted_count": 672720,
+            "coverage": 0.7440302057319539,
+            "covered_by_rank": {
+              "0": 108521,
+              "1": 141741
+            },
+            "covered_by_role": {
+              "extra": 141741,
+              "primary": 108521
+            },
+            "covered_count": 250262,
+            "covered_with_min_lead_cycles": {
+              "0": 250262,
+              "128": 250105,
+              "16": 250262,
+              "256": 245962,
+              "32": 250262,
+              "64": 250262
+            },
+            "demand_count": 336360,
+            "dropped_by_role": {
+              "extra": 565
+            },
+            "duplicate_sent_by_role": {
+              "extra": 6690,
+              "primary": 8712
+            },
+            "duplicate_sent_count": 15402,
+            "enqueued_by_role": {
+              "extra": 237360,
+              "primary": 188278
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 672720,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.5478137114960684,
+              "primary": 1.123392005438766
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 366513,
+              "primary": 211510
+            },
+            "recent_filtered_by_role": {
+              "extra": 99000,
+              "primary": 148082
+            },
+            "sent_by_role": {
+              "extra": 236794,
+              "primary": 188278
+            }
+          },
+          "metrics": {
+            "accepted_count": 672720,
+            "coverage": 0.744794268046141,
+            "covered_by_bop": {
+              "MergedVBOP": 250519
+            },
+            "covered_by_rank": {
+              "0": 108510,
+              "1": 142009
+            },
+            "covered_count": 250519,
+            "demand_count": 336360,
+            "duplicate_count": 262516,
+            "generated_count": 672720
+          }
+        }
+      },
+      "result_dir": "/tmp/ts_bop_degree_full_bwaves_13153",
+      "schemes": {
+        "partition_v2_p2_independent": {
+          "config": {
+            "extra_threshold": 0.02,
+            "pbop_slots": 2,
+            "selection_policy": "independent",
+            "vbop_slots": 2
+          },
+          "local_metrics": {
+            "accepted_count": 672720,
+            "coverage": 0.7365352598406469,
+            "covered_by_rank": {
+              "0": 79535,
+              "1": 168206
+            },
+            "covered_by_role": {
+              "extra": 168206,
+              "primary": 79535
+            },
+            "covered_count": 247741,
+            "covered_with_min_lead_cycles": {
+              "0": 247741,
+              "128": 247740,
+              "16": 247741,
+              "256": 247739,
+              "32": 247741,
+              "64": 247740
+            },
+            "demand_count": 336360,
+            "dropped_by_role": {
+              "extra": 1662
+            },
+            "duplicate_sent_by_role": {
+              "extra": 10746,
+              "primary": 125526
+            },
+            "duplicate_sent_count": 136272,
+            "enqueued_by_role": {
+              "extra": 321490,
+              "primary": 276786
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 672720,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.0665734912937306,
+              "primary": 1.200072258250989
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 660946,
+              "primary": 332162
+            },
+            "recent_filtered_by_role": {
+              "extra": 14870,
+              "primary": 59574
+            },
+            "sent_by_role": {
+              "extra": 319827,
+              "primary": 276785
+            }
+          },
+          "measurement_stats": {
+            "accepted": 672720,
+            "generated": 672720,
+            "generated_rank_0": 336360,
+            "generated_rank_1": 336360,
+            "issued_offset::128": 5450,
+            "issued_offset::144": 2707,
+            "issued_offset::15": 10900,
+            "issued_offset::20": 8157,
+            "issued_offset::32": 234350,
+            "issued_offset::36": 21800,
+            "issued_offset::40": 5450,
+            "issued_offset::45": 61153,
+            "issued_offset::54": 5450,
+            "issued_offset::8": 208303,
+            "issued_offset::9": 109000,
+            "partition_evict::pbop": 41,
+            "partition_evict::vbop": 41,
+            "partition_injected::pbop": 41,
+            "partition_injected::vbop": 41,
+            "partition_next_pool_both": 62,
+            "partition_phase_both": 62,
+            "partition_selected_cross_family": 62,
+            "partition_selected_pair": 62,
+            "rr_delay_drops": 103005,
+            "rr_writes": 233346,
+            "student_delay_drains": 932692,
+            "student_delay_drops": 409572,
+            "student_delay_inserts": 935868,
+            "student_issue_phases": 62,
+            "student_phases": 62,
+            "student_selected_offset::15": 2,
+            "student_selected_offset::20": 1,
+            "student_selected_offset::8": 39,
+            "student_selected_offset::9": 20,
+            "teacher_family_winner_count::2": 62,
+            "teacher_injected": 82,
+            "teacher_injected_offset::10": 4,
+            "teacher_injected_offset::100": 1,
+            "teacher_injected_offset::12": 3,
+            "teacher_injected_offset::15": 3,
+            "teacher_injected_offset::16": 1,
+            "teacher_injected_offset::2": 1,
+            "teacher_injected_offset::3": 3,
+            "teacher_injected_offset::32": 2,
+            "teacher_injected_offset::36": 7,
+            "teacher_injected_offset::4": 5,
+            "teacher_injected_offset::40": 7,
+            "teacher_injected_offset::45": 8,
+            "teacher_injected_offset::48": 2,
+            "teacher_injected_offset::5": 8,
+            "teacher_injected_offset::50": 5,
+            "teacher_injected_offset::54": 5,
+            "teacher_injected_offset::6": 6,
+            "teacher_injected_offset::60": 2,
+            "teacher_injected_offset::64": 1,
+            "teacher_injected_offset::72": 1,
+            "teacher_injected_offset::8": 3,
+            "teacher_injected_offset::9": 4,
+            "teacher_phases": 62,
+            "teacher_winner_offset::10": 4,
+            "teacher_winner_offset::12": 3,
+            "teacher_winner_offset::15": 3,
+            "teacher_winner_offset::16": 1,
+            "teacher_winner_offset::2": 1,
+            "teacher_winner_offset::3": 3,
+            "teacher_winner_offset::4": 6,
+            "teacher_winner_offset::5": 12,
+            "teacher_winner_offset::6": 6,
+            "teacher_winner_offset::8": 14,
+            "teacher_winner_offset::9": 9
+          },
+          "metrics": {
+            "accepted_count": 672720,
+            "coverage": 0.7374004043286955,
+            "covered_by_bop": {
+              "PartitionedV2P2_independent": 248032
+            },
+            "covered_by_rank": {
+              "0": 78939,
+              "1": 169093
+            },
+            "covered_count": 248032,
+            "demand_count": 336360,
+            "duplicate_count": 211291,
+            "generated_count": 672720
+          }
+        },
+        "partition_v2_p2_max_union": {
+          "config": {
+            "extra_threshold": 0.02,
+            "pbop_slots": 2,
+            "selection_policy": "max_union",
+            "vbop_slots": 2
+          },
+          "local_metrics": {
+            "accepted_count": 672720,
+            "coverage": 0.7373736472826733,
+            "covered_by_rank": {
+              "0": 84618,
+              "1": 163405
+            },
+            "covered_by_role": {
+              "extra": 163405,
+              "primary": 84618
+            },
+            "covered_count": 248023,
+            "covered_with_min_lead_cycles": {
+              "0": 248023,
+              "128": 248013,
+              "16": 248022,
+              "256": 247479,
+              "32": 248021,
+              "64": 248018
+            },
+            "demand_count": 336360,
+            "dropped_by_role": {
+              "extra": 1725
+            },
+            "duplicate_sent_by_role": {
+              "extra": 13317,
+              "primary": 126646
+            },
+            "duplicate_sent_count": 139963,
+            "enqueued_by_role": {
+              "extra": 320544,
+              "primary": 282894
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 672720,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.096503334190667,
+              "primary": 1.200156949800808
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 668403,
+              "primary": 339516
+            },
+            "recent_filtered_by_role": {
+              "extra": 15816,
+              "primary": 53466
+            },
+            "sent_by_role": {
+              "extra": 318818,
+              "primary": 282893
+            }
+          },
+          "measurement_stats": {
+            "accepted": 672720,
+            "generated": 672720,
+            "generated_rank_0": 336360,
+            "generated_rank_1": 336360,
+            "issued_offset::10": 5450,
+            "issued_offset::100": 10900,
+            "issued_offset::128": 5450,
+            "issued_offset::135": 2707,
+            "issued_offset::15": 5450,
+            "issued_offset::20": 8157,
+            "issued_offset::32": 179850,
+            "issued_offset::36": 27250,
+            "issued_offset::4": 5450,
+            "issued_offset::40": 27250,
+            "issued_offset::45": 50253,
+            "issued_offset::50": 5450,
+            "issued_offset::54": 16350,
+            "issued_offset::64": 5450,
+            "issued_offset::72": 5450,
+            "issued_offset::8": 219203,
+            "issued_offset::9": 92650,
+            "partition_evict::pbop": 41,
+            "partition_evict::vbop": 41,
+            "partition_injected::pbop": 41,
+            "partition_injected::vbop": 41,
+            "partition_next_pool_both": 62,
+            "partition_phase_both": 62,
+            "partition_selected_cross_family": 62,
+            "partition_selected_pair": 62,
+            "rr_delay_drops": 103005,
+            "rr_writes": 233346,
+            "student_delay_drains": 932692,
+            "student_delay_drops": 409572,
+            "student_delay_inserts": 935868,
+            "student_issue_phases": 62,
+            "student_phases": 62,
+            "student_selected_offset::10": 1,
+            "student_selected_offset::15": 1,
+            "student_selected_offset::20": 1,
+            "student_selected_offset::4": 1,
+            "student_selected_offset::8": 41,
+            "student_selected_offset::9": 17,
+            "teacher_family_winner_count::2": 62,
+            "teacher_injected": 82,
+            "teacher_injected_offset::10": 4,
+            "teacher_injected_offset::100": 1,
+            "teacher_injected_offset::12": 3,
+            "teacher_injected_offset::15": 3,
+            "teacher_injected_offset::16": 1,
+            "teacher_injected_offset::2": 1,
+            "teacher_injected_offset::3": 3,
+            "teacher_injected_offset::32": 2,
+            "teacher_injected_offset::36": 7,
+            "teacher_injected_offset::4": 5,
+            "teacher_injected_offset::40": 7,
+            "teacher_injected_offset::45": 8,
+            "teacher_injected_offset::48": 2,
+            "teacher_injected_offset::5": 8,
+            "teacher_injected_offset::50": 5,
+            "teacher_injected_offset::54": 5,
+            "teacher_injected_offset::6": 6,
+            "teacher_injected_offset::60": 2,
+            "teacher_injected_offset::64": 1,
+            "teacher_injected_offset::72": 1,
+            "teacher_injected_offset::8": 3,
+            "teacher_injected_offset::9": 4,
+            "teacher_phases": 62,
+            "teacher_winner_offset::10": 4,
+            "teacher_winner_offset::12": 3,
+            "teacher_winner_offset::15": 3,
+            "teacher_winner_offset::16": 1,
+            "teacher_winner_offset::2": 1,
+            "teacher_winner_offset::3": 3,
+            "teacher_winner_offset::4": 6,
+            "teacher_winner_offset::5": 12,
+            "teacher_winner_offset::6": 6,
+            "teacher_winner_offset::8": 14,
+            "teacher_winner_offset::9": 9
+          },
+          "metrics": {
+            "accepted_count": 672720,
+            "coverage": 0.7382477107860625,
+            "covered_by_bop": {
+              "PartitionedV2P2_max_union": 248317
+            },
+            "covered_by_rank": {
+              "0": 83358,
+              "1": 164959
+            },
+            "covered_count": 248317,
+            "demand_count": 336360,
+            "duplicate_count": 209822,
+            "generated_count": 672720
+          }
+        }
+      },
+      "weight": 0.72016,
+      "workload": "bwaves"
+    },
+    {
+      "access_count": 164383,
+      "marker": {
+        "access_seq": 75094,
+        "tick": 2201734395
+      },
+      "name": "astar_biglakes_6185",
+      "references": {
+        "dual": {
+          "local_metrics": {
+            "accepted_count": 175405,
+            "coverage": 0.6781126454546472,
+            "covered_by_rank": {
+              "0": 60548
+            },
+            "covered_by_role": {
+              "extra": 24159,
+              "primary": 36389
+            },
+            "covered_count": 60548,
+            "covered_with_min_lead_cycles": {
+              "0": 60548,
+              "128": 56944,
+              "16": 59208,
+              "256": 53762,
+              "32": 59089,
+              "64": 58255
+            },
+            "demand_count": 89289,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 52366,
+              "primary": 38777
+            },
+            "duplicate_sent_count": 91143,
+            "enqueued_by_role": {
+              "extra": 86116,
+              "primary": 89289
+            },
+            "fifo_late_by_role": {
+              "primary": 88
+            },
+            "fifo_late_demand_count": 88,
+            "generated_count": 178578,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 3
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.225210474365674,
+              "primary": 0.9986672341188065
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 191624,
+              "primary": 89169
+            },
+            "recent_filtered_by_role": {},
+            "sent_by_role": {
+              "extra": 86115,
+              "primary": 89288
+            }
+          },
+          "metrics": {
+            "accepted_count": 175405,
+            "coverage": 0.6783254376238954,
+            "covered_by_bop": {
+              "PBOP": 24170,
+              "VBOP": 36397
+            },
+            "covered_by_rank": {
+              "0": 60567
+            },
+            "covered_count": 60567,
+            "demand_count": 89289,
+            "duplicate_count": 91156,
+            "generated_count": 178578
+          }
+        },
+        "merged_baseline": {
+          "local_metrics": {
+            "accepted_count": 178578,
+            "coverage": 0.6623548253424274,
+            "covered_by_rank": {
+              "0": 35031,
+              "1": 24110
+            },
+            "covered_by_role": {
+              "extra": 24110,
+              "primary": 35031
+            },
+            "covered_count": 59141,
+            "covered_with_min_lead_cycles": {
+              "0": 59141,
+              "128": 55109,
+              "16": 57609,
+              "256": 54432,
+              "32": 57352,
+              "64": 56529
+            },
+            "demand_count": 89289,
+            "dropped_by_role": {
+              "extra": 8
+            },
+            "duplicate_sent_by_role": {
+              "extra": 45329,
+              "primary": 38214
+            },
+            "duplicate_sent_count": 83543,
+            "enqueued_by_role": {
+              "extra": 88869,
+              "primary": 88824
+            },
+            "fifo_late_by_role": {
+              "extra": 15,
+              "primary": 79
+            },
+            "fifo_late_demand_count": 94,
+            "generated_count": 178578,
+            "queue_delay_cycles_max": {
+              "extra": 8,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.9413234301147873,
+              "primary": 1.2807943888407283
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 172506,
+              "primary": 113764
+            },
+            "recent_filtered_by_role": {
+              "extra": 420,
+              "primary": 465
+            },
+            "sent_by_role": {
+              "extra": 88860,
+              "primary": 88823
+            }
+          },
+          "metrics": {
+            "accepted_count": 178578,
+            "coverage": 0.662993201850172,
+            "covered_by_bop": {
+              "MergedVBOP": 59198
+            },
+            "covered_by_rank": {
+              "0": 35071,
+              "1": 24127
+            },
+            "covered_count": 59198,
+            "demand_count": 89289,
+            "duplicate_count": 84384,
+            "generated_count": 178578
+          }
+        }
+      },
+      "result_dir": "/tmp/ts_bop_degree_full_astar_biglakes_6185",
+      "schemes": {
+        "partition_v2_p2_independent": {
+          "config": {
+            "extra_threshold": 0.02,
+            "pbop_slots": 2,
+            "selection_policy": "independent",
+            "vbop_slots": 2
+          },
+          "local_metrics": {
+            "accepted_count": 178578,
+            "coverage": 0.6663418786188668,
+            "covered_by_rank": {
+              "0": 36298,
+              "1": 23199
+            },
+            "covered_by_role": {
+              "extra": 23199,
+              "primary": 36298
+            },
+            "covered_count": 59497,
+            "covered_with_min_lead_cycles": {
+              "0": 59497,
+              "128": 55965,
+              "16": 58182,
+              "256": 55306,
+              "32": 58083,
+              "64": 57487
+            },
+            "demand_count": 89289,
+            "dropped_by_role": {
+              "extra": 7
+            },
+            "duplicate_sent_by_role": {
+              "extra": 44032,
+              "primary": 35832
+            },
+            "duplicate_sent_count": 79864,
+            "enqueued_by_role": {
+              "extra": 88820,
+              "primary": 88842
+            },
+            "fifo_late_by_role": {
+              "primary": 133
+            },
+            "fifo_late_demand_count": 133,
+            "generated_count": 178578,
+            "queue_delay_cycles_max": {
+              "extra": 8,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.9397941719587444,
+              "primary": 1.2823358584437365
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 172277,
+              "primary": 113924
+            },
+            "recent_filtered_by_role": {
+              "extra": 469,
+              "primary": 447
+            },
+            "sent_by_role": {
+              "extra": 88812,
+              "primary": 88841
+            }
+          },
+          "measurement_stats": {
+            "accepted": 178578,
+            "generated": 178578,
+            "generated_rank_0": 89289,
+            "generated_rank_1": 89289,
+            "issued_offset::-128": 81750,
+            "issued_offset::-256": 5450,
+            "issued_offset::-3": 18439,
+            "issued_offset::-4": 32700,
+            "issued_offset::-5": 5450,
+            "issued_offset::-6": 27250,
+            "issued_offset::-8": 5450,
+            "issued_offset::128": 2089,
+            "partition_evict::pbop": 9,
+            "partition_evict::vbop": 7,
+            "partition_injected::pbop": 9,
+            "partition_injected::vbop": 7,
+            "partition_next_pool_both": 17,
+            "partition_phase_both": 17,
+            "partition_selected_cross_family": 17,
+            "partition_selected_pair": 17,
+            "rr_delay_drops": 88,
+            "rr_writes": 89204,
+            "student_delay_drains": 356432,
+            "student_delay_drops": 344,
+            "student_delay_inserts": 356812,
+            "student_issue_phases": 17,
+            "student_phases": 17,
+            "student_selected_offset::-128": 15,
+            "student_selected_offset::-256": 1,
+            "student_selected_offset::128": 1,
+            "teacher_family_winner_count::2": 17,
+            "teacher_injected": 16,
+            "teacher_injected_offset::-128": 1,
+            "teacher_injected_offset::-256": 1,
+            "teacher_injected_offset::-3": 2,
+            "teacher_injected_offset::-36": 1,
+            "teacher_injected_offset::-4": 2,
+            "teacher_injected_offset::-5": 2,
+            "teacher_injected_offset::-6": 2,
+            "teacher_injected_offset::-64": 1,
+            "teacher_injected_offset::-8": 1,
+            "teacher_injected_offset::128": 2,
+            "teacher_injected_offset::32": 1,
+            "teacher_phases": 17,
+            "teacher_winner_offset::-3": 2,
+            "teacher_winner_offset::-4": 5,
+            "teacher_winner_offset::-5": 3,
+            "teacher_winner_offset::-6": 5,
+            "teacher_winner_offset::-8": 1,
+            "teacher_winner_offset::128": 1
+          },
+          "metrics": {
+            "accepted_count": 178578,
+            "coverage": 0.667361041113687,
+            "covered_by_bop": {
+              "PartitionedV2P2_independent": 59588
+            },
+            "covered_by_rank": {
+              "0": 36353,
+              "1": 23235
+            },
+            "covered_count": 59588,
+            "demand_count": 89289,
+            "duplicate_count": 80735,
+            "generated_count": 178578
+          }
+        },
+        "partition_v2_p2_max_union": {
+          "config": {
+            "extra_threshold": 0.02,
+            "pbop_slots": 2,
+            "selection_policy": "max_union",
+            "vbop_slots": 2
+          },
+          "local_metrics": {
+            "accepted_count": 178578,
+            "coverage": 0.6667674629573632,
+            "covered_by_rank": {
+              "0": 36268,
+              "1": 23267
+            },
+            "covered_by_role": {
+              "extra": 23267,
+              "primary": 36268
+            },
+            "covered_count": 59535,
+            "covered_with_min_lead_cycles": {
+              "0": 59535,
+              "128": 55744,
+              "16": 58116,
+              "256": 55114,
+              "32": 58011,
+              "64": 57360
+            },
+            "demand_count": 89289,
+            "dropped_by_role": {
+              "extra": 10
+            },
+            "duplicate_sent_by_role": {
+              "extra": 46072,
+              "primary": 35994
+            },
+            "duplicate_sent_count": 82066,
+            "enqueued_by_role": {
+              "extra": 88842,
+              "primary": 88844
+            },
+            "fifo_late_by_role": {
+              "primary": 125
+            },
+            "fifo_late_demand_count": 125,
+            "generated_count": 178578,
+            "queue_delay_cycles_max": {
+              "extra": 8,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.9440735779176188,
+              "primary": 1.2777033643618518
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 172694,
+              "primary": 113515
+            },
+            "recent_filtered_by_role": {
+              "extra": 447,
+              "primary": 445
+            },
+            "sent_by_role": {
+              "extra": 88831,
+              "primary": 88843
+            }
+          },
+          "measurement_stats": {
+            "accepted": 178578,
+            "generated": 178578,
+            "generated_rank_0": 89289,
+            "generated_rank_1": 89289,
+            "issued_offset::-128": 82634,
+            "issued_offset::-3": 29339,
+            "issued_offset::-4": 21800,
+            "issued_offset::-5": 10900,
+            "issued_offset::-6": 21800,
+            "issued_offset::-8": 5450,
+            "issued_offset::128": 6655,
+            "partition_evict::pbop": 9,
+            "partition_evict::vbop": 7,
+            "partition_injected::pbop": 9,
+            "partition_injected::vbop": 7,
+            "partition_next_pool_both": 17,
+            "partition_phase_both": 17,
+            "partition_selected_cross_family": 17,
+            "partition_selected_pair": 17,
+            "rr_delay_drops": 88,
+            "rr_writes": 89204,
+            "student_delay_drains": 356432,
+            "student_delay_drops": 344,
+            "student_delay_inserts": 356812,
+            "student_issue_phases": 17,
+            "student_phases": 17,
+            "student_selected_offset::-128": 16,
+            "student_selected_offset::128": 1,
+            "teacher_family_winner_count::2": 17,
+            "teacher_injected": 16,
+            "teacher_injected_offset::-128": 1,
+            "teacher_injected_offset::-256": 1,
+            "teacher_injected_offset::-3": 2,
+            "teacher_injected_offset::-36": 1,
+            "teacher_injected_offset::-4": 2,
+            "teacher_injected_offset::-5": 2,
+            "teacher_injected_offset::-6": 2,
+            "teacher_injected_offset::-64": 1,
+            "teacher_injected_offset::-8": 1,
+            "teacher_injected_offset::128": 2,
+            "teacher_injected_offset::32": 1,
+            "teacher_phases": 17,
+            "teacher_winner_offset::-3": 2,
+            "teacher_winner_offset::-4": 5,
+            "teacher_winner_offset::-5": 3,
+            "teacher_winner_offset::-6": 5,
+            "teacher_winner_offset::-8": 1,
+            "teacher_winner_offset::128": 1
+          },
+          "metrics": {
+            "accepted_count": 178578,
+            "coverage": 0.6676858291614869,
+            "covered_by_bop": {
+              "PartitionedV2P2_max_union": 59617
+            },
+            "covered_by_rank": {
+              "0": 36327,
+              "1": 23290
+            },
+            "covered_count": 59617,
+            "demand_count": 89289,
+            "duplicate_count": 82921,
+            "generated_count": 178578
+          }
+        }
+      },
+      "weight": 0.171593,
+      "workload": "astar"
+    },
+    {
+      "access_count": 365253,
+      "marker": {
+        "access_seq": 92649,
+        "tick": 2801094435
+      },
+      "name": "leslie3d_18494",
+      "references": {
+        "dual": {
+          "local_metrics": {
+            "accepted_count": 532956,
+            "coverage": 0.8598223063491365,
+            "covered_by_rank": {
+              "0": 234391
+            },
+            "covered_by_role": {
+              "extra": 80886,
+              "primary": 153505
+            },
+            "covered_count": 234391,
+            "covered_with_min_lead_cycles": {
+              "0": 234391,
+              "128": 220673,
+              "16": 233880,
+              "256": 180799,
+              "32": 227983,
+              "64": 224587
+            },
+            "demand_count": 272604,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 176669,
+              "primary": 113657
+            },
+            "duplicate_sent_count": 290326,
+            "enqueued_by_role": {
+              "extra": 260352,
+              "primary": 272604
+            },
+            "fifo_late_by_role": {
+              "extra": 127
+            },
+            "fifo_late_demand_count": 127,
+            "generated_count": 545208,
+            "queue_delay_cycles_max": {
+              "extra": 13,
+              "primary": 4
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.54035897691962,
+              "primary": 0.9174147019658624
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 661385,
+              "primary": 250090
+            },
+            "recent_filtered_by_role": {},
+            "sent_by_role": {
+              "extra": 260351,
+              "primary": 272603
+            }
+          },
+          "metrics": {
+            "accepted_count": 532956,
+            "coverage": 0.8602771786180687,
+            "covered_by_bop": {
+              "PBOP": 81011,
+              "VBOP": 153504
+            },
+            "covered_by_rank": {
+              "0": 234515
+            },
+            "covered_count": 234515,
+            "demand_count": 272604,
+            "duplicate_count": 290403,
+            "generated_count": 545208
+          }
+        },
+        "merged_baseline": {
+          "local_metrics": {
+            "accepted_count": 545208,
+            "coverage": 0.8332599668383442,
+            "covered_by_rank": {
+              "0": 80930,
+              "1": 146220
+            },
+            "covered_by_role": {
+              "extra": 146220,
+              "primary": 80930
+            },
+            "covered_count": 227150,
+            "covered_with_min_lead_cycles": {
+              "0": 227150,
+              "128": 193562,
+              "16": 226987,
+              "256": 186067,
+              "32": 226497,
+              "64": 216554
+            },
+            "demand_count": 272604,
+            "dropped_by_role": {
+              "extra": 193
+            },
+            "duplicate_sent_by_role": {
+              "extra": 58449,
+              "primary": 59817
+            },
+            "duplicate_sent_count": 118266,
+            "enqueued_by_role": {
+              "extra": 209246,
+              "primary": 141520
+            },
+            "fifo_late_by_role": {
+              "extra": 45
+            },
+            "fifo_late_demand_count": 45,
+            "generated_count": 545208,
+            "queue_delay_cycles_max": {
+              "extra": 11,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.560377322388688,
+              "primary": 1.180808366308649
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 326200,
+              "primary": 167108
+            },
+            "recent_filtered_by_role": {
+              "extra": 63358,
+              "primary": 131084
+            },
+            "sent_by_role": {
+              "extra": 209052,
+              "primary": 141520
+            }
+          },
+          "metrics": {
+            "accepted_count": 545208,
+            "coverage": 0.8468694516588164,
+            "covered_by_bop": {
+              "MergedVBOP": 230860
+            },
+            "covered_by_rank": {
+              "0": 80164,
+              "1": 150696
+            },
+            "covered_count": 230860,
+            "demand_count": 272604,
+            "duplicate_count": 308646,
+            "generated_count": 545208
+          }
+        }
+      },
+      "result_dir": "/tmp/ts_bop_degree_full_leslie3d_18494",
+      "schemes": {
+        "partition_v2_p2_independent": {
+          "config": {
+            "extra_threshold": 0.02,
+            "pbop_slots": 2,
+            "selection_policy": "independent",
+            "vbop_slots": 2
+          },
+          "local_metrics": {
+            "accepted_count": 545208,
+            "coverage": 0.8313414329943801,
+            "covered_by_rank": {
+              "0": 87114,
+              "1": 139513
+            },
+            "covered_by_role": {
+              "extra": 139513,
+              "primary": 87114
+            },
+            "covered_count": 226627,
+            "covered_with_min_lead_cycles": {
+              "0": 226627,
+              "128": 219123,
+              "16": 226625,
+              "256": 216245,
+              "32": 226247,
+              "64": 221043
+            },
+            "demand_count": 272604,
+            "dropped_by_role": {
+              "extra": 316
+            },
+            "duplicate_sent_by_role": {
+              "extra": 94325,
+              "primary": 163907
+            },
+            "duplicate_sent_count": 258232,
+            "enqueued_by_role": {
+              "extra": 239961,
+              "primary": 253560
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 545208,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.1184799118692728,
+              "primary": 1.2196096372047531
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 507681,
+              "primary": 309243
+            },
+            "recent_filtered_by_role": {
+              "extra": 32643,
+              "primary": 19044
+            },
+            "sent_by_role": {
+              "extra": 239644,
+              "primary": 253559
+            }
+          },
+          "measurement_stats": {
+            "accepted": 545208,
+            "generated": 545208,
+            "generated_rank_0": 272604,
+            "generated_rank_1": 272604,
+            "issued_offset::36": 257344,
+            "issued_offset::40": 15260,
+            "issued_offset::5": 272604,
+            "partition_evict::pbop": 19,
+            "partition_evict::vbop": 27,
+            "partition_injected::pbop": 19,
+            "partition_injected::vbop": 27,
+            "partition_next_pool_both": 50,
+            "partition_phase_both": 50,
+            "partition_selected_cross_family": 50,
+            "partition_selected_pair": 50,
+            "rr_delay_drops": 123272,
+            "rr_writes": 149328,
+            "student_delay_drains": 596316,
+            "student_delay_drops": 491144,
+            "student_delay_inserts": 599272,
+            "student_issue_phases": 50,
+            "student_phases": 50,
+            "student_selected_offset::5": 50,
+            "teacher_family_winner_count::2": 50,
+            "teacher_injected": 46,
+            "teacher_injected_offset::-36": 5,
+            "teacher_injected_offset::-40": 2,
+            "teacher_injected_offset::-54": 2,
+            "teacher_injected_offset::12": 1,
+            "teacher_injected_offset::20": 1,
+            "teacher_injected_offset::32": 9,
+            "teacher_injected_offset::36": 1,
+            "teacher_injected_offset::4": 4,
+            "teacher_injected_offset::40": 3,
+            "teacher_injected_offset::54": 5,
+            "teacher_injected_offset::6": 7,
+            "teacher_injected_offset::8": 3,
+            "teacher_injected_offset::9": 3,
+            "teacher_phases": 50,
+            "teacher_winner_offset::12": 1,
+            "teacher_winner_offset::20": 1,
+            "teacher_winner_offset::4": 6,
+            "teacher_winner_offset::5": 17,
+            "teacher_winner_offset::6": 17,
+            "teacher_winner_offset::8": 5,
+            "teacher_winner_offset::9": 3
+          },
+          "metrics": {
+            "accepted_count": 545208,
+            "coverage": 0.8366531672315887,
+            "covered_by_bop": {
+              "PartitionedV2P2_independent": 228075
+            },
+            "covered_by_rank": {
+              "0": 86317,
+              "1": 141758
+            },
+            "covered_count": 228075,
+            "demand_count": 272604,
+            "duplicate_count": 308463,
+            "generated_count": 545208
+          }
+        },
+        "partition_v2_p2_max_union": {
+          "config": {
+            "extra_threshold": 0.02,
+            "pbop_slots": 2,
+            "selection_policy": "max_union",
+            "vbop_slots": 2
+          },
+          "local_metrics": {
+            "accepted_count": 545208,
+            "coverage": 0.8266716555883259,
+            "covered_by_rank": {
+              "0": 100862,
+              "1": 124492
+            },
+            "covered_by_role": {
+              "extra": 124492,
+              "primary": 100862
+            },
+            "covered_count": 225354,
+            "covered_with_min_lead_cycles": {
+              "0": 225354,
+              "128": 210160,
+              "16": 225344,
+              "256": 207271,
+              "32": 224581,
+              "64": 215711
+            },
+            "demand_count": 272604,
+            "dropped_by_role": {
+              "extra": 318
+            },
+            "duplicate_sent_by_role": {
+              "extra": 108823,
+              "primary": 144295
+            },
+            "duplicate_sent_count": 253118,
+            "enqueued_by_role": {
+              "extra": 244065,
+              "primary": 248622
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 545208,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.0894168519688527,
+              "primary": 1.2291158027680686
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 509287,
+              "primary": 305584
+            },
+            "recent_filtered_by_role": {
+              "extra": 28539,
+              "primary": 23982
+            },
+            "sent_by_role": {
+              "extra": 243746,
+              "primary": 248621
+            }
+          },
+          "measurement_stats": {
+            "accepted": 545208,
+            "generated": 545208,
+            "generated_rank_0": 272604,
+            "generated_rank_1": 272604,
+            "issued_offset::-36": 10900,
+            "issued_offset::-40": 5450,
+            "issued_offset::32": 38150,
+            "issued_offset::36": 170144,
+            "issued_offset::40": 15260,
+            "issued_offset::5": 261704,
+            "issued_offset::54": 32700,
+            "issued_offset::6": 10900,
+            "partition_evict::pbop": 19,
+            "partition_evict::vbop": 27,
+            "partition_injected::pbop": 19,
+            "partition_injected::vbop": 27,
+            "partition_next_pool_both": 50,
+            "partition_phase_both": 50,
+            "partition_selected_cross_family": 50,
+            "partition_selected_pair": 50,
+            "rr_delay_drops": 123272,
+            "rr_writes": 149328,
+            "student_delay_drains": 596316,
+            "student_delay_drops": 491144,
+            "student_delay_inserts": 599272,
+            "student_issue_phases": 50,
+            "student_phases": 50,
+            "student_selected_offset::5": 48,
+            "student_selected_offset::6": 2,
+            "teacher_family_winner_count::2": 50,
+            "teacher_injected": 46,
+            "teacher_injected_offset::-36": 5,
+            "teacher_injected_offset::-40": 2,
+            "teacher_injected_offset::-54": 2,
+            "teacher_injected_offset::12": 1,
+            "teacher_injected_offset::20": 1,
+            "teacher_injected_offset::32": 9,
+            "teacher_injected_offset::36": 1,
+            "teacher_injected_offset::4": 4,
+            "teacher_injected_offset::40": 3,
+            "teacher_injected_offset::54": 5,
+            "teacher_injected_offset::6": 7,
+            "teacher_injected_offset::8": 3,
+            "teacher_injected_offset::9": 3,
+            "teacher_phases": 50,
+            "teacher_winner_offset::12": 1,
+            "teacher_winner_offset::20": 1,
+            "teacher_winner_offset::4": 6,
+            "teacher_winner_offset::5": 17,
+            "teacher_winner_offset::6": 17,
+            "teacher_winner_offset::8": 5,
+            "teacher_winner_offset::9": 3
+          },
+          "metrics": {
+            "accepted_count": 545208,
+            "coverage": 0.8322254992589984,
+            "covered_by_bop": {
+              "PartitionedV2P2_max_union": 226868
+            },
+            "covered_by_rank": {
+              "0": 100226,
+              "1": 126642
+            },
+            "covered_count": 226868,
+            "demand_count": 272604,
+            "duplicate_count": 304106,
+            "generated_count": 545208
+          }
+        }
+      },
+      "weight": 0.181792,
+      "workload": "leslie3d"
+    },
+    {
+      "access_count": 3759759,
+      "marker": {
+        "access_seq": 1904257,
+        "tick": 11124941589
+      },
+      "name": "mcf_6753",
+      "references": {
+        "dual": {
+          "local_metrics": {
+            "accepted_count": 2719930,
+            "coverage": 0.5428315356167764,
+            "covered_by_rank": {
+              "0": 1007225
+            },
+            "covered_by_role": {
+              "extra": 753162,
+              "primary": 254063
+            },
+            "covered_count": 1007225,
+            "covered_with_min_lead_cycles": {
+              "0": 1007225,
+              "128": 998886,
+              "16": 1002112,
+              "256": 997502,
+              "32": 1001265,
+              "64": 1000224
+            },
+            "demand_count": 1855502,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 950920,
+              "primary": 553950
+            },
+            "duplicate_sent_count": 1504870,
+            "enqueued_by_role": {
+              "extra": 1737130,
+              "primary": 982800
+            },
+            "fifo_late_by_role": {
+              "extra": 11726,
+              "primary": 8
+            },
+            "fifo_late_demand_count": 11734,
+            "generated_count": 2747652,
+            "queue_delay_cycles_max": {
+              "extra": 12,
+              "primary": 4
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.001720079510503,
+              "primary": 1.0186945461945462
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 3477246,
+              "primary": 1001173
+            },
+            "recent_filtered_by_role": {},
+            "sent_by_role": {
+              "extra": 1737129,
+              "primary": 982800
+            }
+          },
+          "metrics": {
+            "accepted_count": 2719930,
+            "coverage": 0.5415515585539654,
+            "covered_by_bop": {
+              "PBOP": 697727,
+              "VBOP": 307123
+            },
+            "covered_by_rank": {
+              "0": 1004850
+            },
+            "covered_count": 1004850,
+            "demand_count": 1855502,
+            "duplicate_count": 1506452,
+            "generated_count": 2747652
+          }
+        },
+        "merged_baseline": {
+          "local_metrics": {
+            "accepted_count": 2437186,
+            "coverage": 0.44821509219607414,
+            "covered_by_rank": {
+              "0": 430489,
+              "1": 401175
+            },
+            "covered_by_role": {
+              "extra": 401175,
+              "primary": 430489
+            },
+            "covered_count": 831664,
+            "covered_with_min_lead_cycles": {
+              "0": 831664,
+              "128": 828790,
+              "16": 830784,
+              "256": 827426,
+              "32": 830427,
+              "64": 829881
+            },
+            "demand_count": 1855502,
+            "dropped_by_role": {
+              "extra": 683
+            },
+            "duplicate_sent_by_role": {
+              "extra": 604262,
+              "primary": 634968
+            },
+            "duplicate_sent_count": 1239230,
+            "enqueued_by_role": {
+              "extra": 1205423,
+              "primary": 1205291
+            },
+            "fifo_late_by_role": {
+              "extra": 31,
+              "primary": 1683
+            },
+            "fifo_late_demand_count": 1714,
+            "generated_count": 2437186,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.358781977854143,
+              "primary": 1.347056436993224
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 2841719,
+              "primary": 1623595
+            },
+            "recent_filtered_by_role": {
+              "extra": 13170,
+              "primary": 13302
+            },
+            "sent_by_role": {
+              "extra": 1204740,
+              "primary": 1205291
+            }
+          },
+          "metrics": {
+            "accepted_count": 2437186,
+            "coverage": 0.44835952750253033,
+            "covered_by_bop": {
+              "MergedVBOP": 831932
+            },
+            "covered_by_rank": {
+              "0": 428666,
+              "1": 403266
+            },
+            "covered_count": 831932,
+            "demand_count": 1855502,
+            "duplicate_count": 1266016,
+            "generated_count": 2437186
+          }
+        }
+      },
+      "result_dir": "/tmp/ts_bop_degree_full_mcf_6753_rrcount",
+      "schemes": {
+        "partition_v2_p2_independent": {
+          "config": {
+            "extra_threshold": 0.02,
+            "pbop_slots": 2,
+            "selection_policy": "independent",
+            "vbop_slots": 2
+          },
+          "local_metrics": {
+            "accepted_count": 2437186,
+            "coverage": 0.4456750787657464,
+            "covered_by_rank": {
+              "0": 423070,
+              "1": 403881
+            },
+            "covered_by_role": {
+              "extra": 403881,
+              "primary": 423070
+            },
+            "covered_count": 826951,
+            "covered_with_min_lead_cycles": {
+              "0": 826951,
+              "128": 824082,
+              "16": 826015,
+              "256": 822812,
+              "32": 825662,
+              "64": 825125
+            },
+            "demand_count": 1855502,
+            "dropped_by_role": {
+              "extra": 677
+            },
+            "duplicate_sent_by_role": {
+              "extra": 623430,
+              "primary": 645578
+            },
+            "duplicate_sent_count": 1269008,
+            "enqueued_by_role": {
+              "extra": 1206441,
+              "primary": 1206325
+            },
+            "fifo_late_by_role": {
+              "extra": 28,
+              "primary": 1812
+            },
+            "fifo_late_demand_count": 1840,
+            "generated_count": 2437186,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.3651477403538337,
+              "primary": 1.342721074337347
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 2851810,
+              "primary": 1619758
+            },
+            "recent_filtered_by_role": {
+              "extra": 12152,
+              "primary": 12268
+            },
+            "sent_by_role": {
+              "extra": 1205764,
+              "primary": 1206325
+            }
+          },
+          "measurement_stats": {
+            "accepted": 2437186,
+            "generated": 2437186,
+            "generated_rank_0": 1218593,
+            "generated_rank_1": 1218593,
+            "issued_offset::-117": 81752,
+            "issued_offset::-12": 65399,
+            "issued_offset::-120": 114449,
+            "issued_offset::-125": 38151,
+            "issued_offset::-128": 10900,
+            "issued_offset::-135": 76300,
+            "issued_offset::-144": 27250,
+            "issued_offset::-147": 27249,
+            "issued_offset::-150": 10900,
+            "issued_offset::-16": 5450,
+            "issued_offset::-160": 5450,
+            "issued_offset::-18": 16350,
+            "issued_offset::-180": 10900,
+            "issued_offset::-192": 21799,
+            "issued_offset::-2": 10900,
+            "issued_offset::-20": 5450,
+            "issued_offset::-216": 19593,
+            "issued_offset::-24": 59950,
+            "issued_offset::-243": 5450,
+            "issued_offset::-25": 10900,
+            "issued_offset::-27": 32700,
+            "issued_offset::-3": 43600,
+            "issued_offset::-30": 59951,
+            "issued_offset::-32": 70848,
+            "issued_offset::-4": 21800,
+            "issued_offset::-40": 5450,
+            "issued_offset::-45": 27250,
+            "issued_offset::-48": 54500,
+            "issued_offset::-50": 5450,
+            "issued_offset::-54": 27250,
+            "issued_offset::-6": 10899,
+            "issued_offset::-60": 27250,
+            "issued_offset::-72": 49050,
+            "issued_offset::-75": 16350,
+            "issued_offset::-8": 87200,
+            "issued_offset::-80": 10900,
+            "issued_offset::-9": 21800,
+            "issued_offset::-90": 5450,
+            "issued_offset::-91": 38150,
+            "issued_offset::-96": 27250,
+            "issued_offset::1": 270298,
+            "issued_offset::10": 16350,
+            "issued_offset::108": 10899,
+            "issued_offset::117": 10899,
+            "issued_offset::12": 65400,
+            "issued_offset::135": 27250,
+            "issued_offset::16": 81750,
+            "issued_offset::162": 43601,
+            "issued_offset::18": 38150,
+            "issued_offset::180": 16350,
+            "issued_offset::192": 5450,
+            "issued_offset::2": 10900,
+            "issued_offset::20": 43600,
+            "issued_offset::216": 1,
+            "issued_offset::225": 16350,
+            "issued_offset::24": 5450,
+            "issued_offset::240": 5450,
+            "issued_offset::27": 21800,
+            "issued_offset::3": 32699,
+            "issued_offset::36": 16350,
+            "issued_offset::4": 27250,
+            "issued_offset::40": 87200,
+            "issued_offset::48": 16350,
+            "issued_offset::5": 5450,
+            "issued_offset::50": 10900,
+            "issued_offset::6": 32699,
+            "issued_offset::60": 65401,
+            "issued_offset::64": 16350,
+            "issued_offset::8": 38150,
+            "issued_offset::80": 5449,
+            "issued_offset::81": 87201,
+            "issued_offset::9": 5450,
+            "issued_offset::90": 10900,
+            "issued_offset::91": 10900,
+            "issued_offset::96": 10899,
+            "partition_evict::pbop": 259,
+            "partition_evict::vbop": 326,
+            "partition_injected::pbop": 259,
+            "partition_injected::vbop": 326,
+            "partition_next_pool_both": 340,
+            "partition_phase_both": 340,
+            "partition_selected_cross_family": 340,
+            "partition_selected_pair": 340,
+            "rr_delay_drops": 637072,
+            "rr_writes": 1218423,
+            "student_delay_drains": 4869024,
+            "student_delay_drops": 2533284,
+            "student_delay_inserts": 4888724,
+            "student_issue_phases": 340,
+            "student_phases": 340,
+            "student_selected_offset::-117": 2,
+            "student_selected_offset::-12": 9,
+            "student_selected_offset::-120": 15,
+            "student_selected_offset::-135": 6,
+            "student_selected_offset::-144": 1,
+            "student_selected_offset::-147": 1,
+            "student_selected_offset::-16": 1,
+            "student_selected_offset::-18": 1,
+            "student_selected_offset::-180": 1,
+            "student_selected_offset::-192": 3,
+            "student_selected_offset::-2": 2,
+            "student_selected_offset::-24": 3,
+            "student_selected_offset::-25": 2,
+            "student_selected_offset::-27": 5,
+            "student_selected_offset::-3": 5,
+            "student_selected_offset::-30": 8,
+            "student_selected_offset::-32": 7,
+            "student_selected_offset::-4": 1,
+            "student_selected_offset::-45": 3,
+            "student_selected_offset::-48": 5,
+            "student_selected_offset::-54": 2,
+            "student_selected_offset::-72": 5,
+            "student_selected_offset::-75": 1,
+            "student_selected_offset::-8": 7,
+            "student_selected_offset::-80": 1,
+            "student_selected_offset::-9": 1,
+            "student_selected_offset::-90": 1,
+            "student_selected_offset::-91": 3,
+            "student_selected_offset::-96": 2,
+            "student_selected_offset::1": 159,
+            "student_selected_offset::10": 1,
+            "student_selected_offset::108": 2,
+            "student_selected_offset::12": 7,
+            "student_selected_offset::135": 5,
+            "student_selected_offset::16": 8,
+            "student_selected_offset::162": 3,
+            "student_selected_offset::18": 2,
+            "student_selected_offset::180": 1,
+            "student_selected_offset::2": 1,
+            "student_selected_offset::20": 3,
+            "student_selected_offset::225": 2,
+            "student_selected_offset::24": 1,
+            "student_selected_offset::27": 3,
+            "student_selected_offset::3": 4,
+            "student_selected_offset::36": 2,
+            "student_selected_offset::4": 3,
+            "student_selected_offset::40": 5,
+            "student_selected_offset::48": 3,
+            "student_selected_offset::5": 1,
+            "student_selected_offset::50": 1,
+            "student_selected_offset::6": 3,
+            "student_selected_offset::60": 4,
+            "student_selected_offset::64": 2,
+            "student_selected_offset::8": 4,
+            "student_selected_offset::80": 1,
+            "student_selected_offset::81": 1,
+            "student_selected_offset::9": 1,
+            "student_selected_offset::90": 1,
+            "student_selected_offset::96": 2,
+            "teacher_family_winner_count::2": 340,
+            "teacher_injected": 585,
+            "teacher_injected_offset::-1": 1,
+            "teacher_injected_offset::-10": 7,
+            "teacher_injected_offset::-100": 2,
+            "teacher_injected_offset::-108": 2,
+            "teacher_injected_offset::-117": 19,
+            "teacher_injected_offset::-12": 14,
+            "teacher_injected_offset::-120": 8,
+            "teacher_injected_offset::-125": 6,
+            "teacher_injected_offset::-128": 5,
+            "teacher_injected_offset::-135": 9,
+            "teacher_injected_offset::-144": 8,
+            "teacher_injected_offset::-147": 13,
+            "teacher_injected_offset::-15": 7,
+            "teacher_injected_offset::-150": 5,
+            "teacher_injected_offset::-16": 4,
+            "teacher_injected_offset::-160": 6,
+            "teacher_injected_offset::-162": 5,
+            "teacher_injected_offset::-18": 14,
+            "teacher_injected_offset::-180": 2,
+            "teacher_injected_offset::-192": 5,
+            "teacher_injected_offset::-2": 8,
+            "teacher_injected_offset::-20": 3,
+            "teacher_injected_offset::-200": 7,
+            "teacher_injected_offset::-216": 8,
+            "teacher_injected_offset::-225": 4,
+            "teacher_injected_offset::-24": 12,
+            "teacher_injected_offset::-240": 2,
+            "teacher_injected_offset::-243": 4,
+            "teacher_injected_offset::-25": 7,
+            "teacher_injected_offset::-250": 7,
+            "teacher_injected_offset::-256": 4,
+            "teacher_injected_offset::-27": 10,
+            "teacher_injected_offset::-3": 7,
+            "teacher_injected_offset::-30": 14,
+            "teacher_injected_offset::-32": 13,
+            "teacher_injected_offset::-36": 2,
+            "teacher_injected_offset::-4": 9,
+            "teacher_injected_offset::-40": 3,
+            "teacher_injected_offset::-45": 4,
+            "teacher_injected_offset::-48": 6,
+            "teacher_injected_offset::-5": 9,
+            "teacher_injected_offset::-50": 2,
+            "teacher_injected_offset::-54": 4,
+            "teacher_injected_offset::-6": 9,
+            "teacher_injected_offset::-60": 7,
+            "teacher_injected_offset::-64": 2,
+            "teacher_injected_offset::-72": 5,
+            "teacher_injected_offset::-75": 9,
+            "teacher_injected_offset::-8": 7,
+            "teacher_injected_offset::-80": 3,
+            "teacher_injected_offset::-81": 5,
+            "teacher_injected_offset::-9": 9,
+            "teacher_injected_offset::-90": 3,
+            "teacher_injected_offset::-91": 11,
+            "teacher_injected_offset::-96": 5,
+            "teacher_injected_offset::1": 11,
+            "teacher_injected_offset::10": 7,
+            "teacher_injected_offset::100": 2,
+            "teacher_injected_offset::108": 4,
+            "teacher_injected_offset::117": 17,
+            "teacher_injected_offset::12": 6,
+            "teacher_injected_offset::125": 5,
+            "teacher_injected_offset::128": 3,
+            "teacher_injected_offset::135": 5,
+            "teacher_injected_offset::144": 3,
+            "teacher_injected_offset::147": 6,
+            "teacher_injected_offset::15": 4,
+            "teacher_injected_offset::16": 8,
+            "teacher_injected_offset::162": 5,
+            "teacher_injected_offset::18": 6,
+            "teacher_injected_offset::180": 5,
+            "teacher_injected_offset::192": 3,
+            "teacher_injected_offset::2": 10,
+            "teacher_injected_offset::20": 4,
+            "teacher_injected_offset::200": 1,
+            "teacher_injected_offset::216": 3,
+            "teacher_injected_offset::225": 3,
+            "teacher_injected_offset::24": 1,
+            "teacher_injected_offset::240": 2,
+            "teacher_injected_offset::243": 2,
+            "teacher_injected_offset::25": 2,
+            "teacher_injected_offset::250": 3,
+            "teacher_injected_offset::27": 3,
+            "teacher_injected_offset::3": 5,
+            "teacher_injected_offset::30": 3,
+            "teacher_injected_offset::32": 2,
+            "teacher_injected_offset::36": 4,
+            "teacher_injected_offset::4": 5,
+            "teacher_injected_offset::40": 5,
+            "teacher_injected_offset::45": 2,
+            "teacher_injected_offset::48": 3,
+            "teacher_injected_offset::5": 5,
+            "teacher_injected_offset::50": 3,
+            "teacher_injected_offset::54": 1,
+            "teacher_injected_offset::6": 6,
+            "teacher_injected_offset::60": 7,
+            "teacher_injected_offset::64": 4,
+            "teacher_injected_offset::72": 1,
+            "teacher_injected_offset::75": 2,
+            "teacher_injected_offset::8": 6,
+            "teacher_injected_offset::80": 1,
+            "teacher_injected_offset::81": 4,
+            "teacher_injected_offset::9": 3,
+            "teacher_injected_offset::90": 3,
+            "teacher_injected_offset::91": 9,
+            "teacher_injected_offset::96": 1,
+            "teacher_phases": 340,
+            "teacher_winner_offset::-10": 1,
+            "teacher_winner_offset::-100": 1,
+            "teacher_winner_offset::-108": 2,
+            "teacher_winner_offset::-117": 7,
+            "teacher_winner_offset::-12": 4,
+            "teacher_winner_offset::-120": 4,
+            "teacher_winner_offset::-125": 2,
+            "teacher_winner_offset::-128": 2,
+            "teacher_winner_offset::-135": 2,
+            "teacher_winner_offset::-144": 2,
+            "teacher_winner_offset::-15": 1,
+            "teacher_winner_offset::-150": 2,
+            "teacher_winner_offset::-16": 3,
+            "teacher_winner_offset::-160": 2,
+            "teacher_winner_offset::-162": 3,
+            "teacher_winner_offset::-18": 4,
+            "teacher_winner_offset::-180": 1,
+            "teacher_winner_offset::-192": 1,
+            "teacher_winner_offset::-2": 7,
+            "teacher_winner_offset::-20": 1,
+            "teacher_winner_offset::-200": 4,
+            "teacher_winner_offset::-216": 5,
+            "teacher_winner_offset::-225": 2,
+            "teacher_winner_offset::-24": 4,
+            "teacher_winner_offset::-243": 1,
+            "teacher_winner_offset::-25": 2,
+            "teacher_winner_offset::-250": 2,
+            "teacher_winner_offset::-256": 1,
+            "teacher_winner_offset::-27": 2,
+            "teacher_winner_offset::-3": 6,
+            "teacher_winner_offset::-30": 1,
+            "teacher_winner_offset::-32": 6,
+            "teacher_winner_offset::-36": 1,
+            "teacher_winner_offset::-4": 5,
+            "teacher_winner_offset::-40": 2,
+            "teacher_winner_offset::-45": 3,
+            "teacher_winner_offset::-48": 6,
+            "teacher_winner_offset::-5": 3,
+            "teacher_winner_offset::-50": 2,
+            "teacher_winner_offset::-54": 2,
+            "teacher_winner_offset::-6": 4,
+            "teacher_winner_offset::-60": 5,
+            "teacher_winner_offset::-64": 2,
+            "teacher_winner_offset::-72": 5,
+            "teacher_winner_offset::-75": 4,
+            "teacher_winner_offset::-80": 3,
+            "teacher_winner_offset::-81": 4,
+            "teacher_winner_offset::-9": 3,
+            "teacher_winner_offset::-90": 2,
+            "teacher_winner_offset::-91": 1,
+            "teacher_winner_offset::-96": 4,
+            "teacher_winner_offset::1": 72,
+            "teacher_winner_offset::10": 2,
+            "teacher_winner_offset::100": 2,
+            "teacher_winner_offset::108": 3,
+            "teacher_winner_offset::117": 3,
+            "teacher_winner_offset::12": 5,
+            "teacher_winner_offset::125": 3,
+            "teacher_winner_offset::128": 1,
+            "teacher_winner_offset::135": 3,
+            "teacher_winner_offset::144": 3,
+            "teacher_winner_offset::147": 2,
+            "teacher_winner_offset::15": 3,
+            "teacher_winner_offset::16": 1,
+            "teacher_winner_offset::162": 5,
+            "teacher_winner_offset::18": 4,
+            "teacher_winner_offset::180": 5,
+            "teacher_winner_offset::192": 1,
+            "teacher_winner_offset::2": 9,
+            "teacher_winner_offset::200": 1,
+            "teacher_winner_offset::216": 3,
+            "teacher_winner_offset::24": 1,
+            "teacher_winner_offset::240": 2,
+            "teacher_winner_offset::243": 1,
+            "teacher_winner_offset::25": 2,
+            "teacher_winner_offset::250": 3,
+            "teacher_winner_offset::27": 1,
+            "teacher_winner_offset::3": 2,
+            "teacher_winner_offset::30": 2,
+            "teacher_winner_offset::32": 1,
+            "teacher_winner_offset::36": 1,
+            "teacher_winner_offset::4": 3,
+            "teacher_winner_offset::40": 2,
+            "teacher_winner_offset::45": 2,
+            "teacher_winner_offset::48": 2,
+            "teacher_winner_offset::5": 4,
+            "teacher_winner_offset::50": 3,
+            "teacher_winner_offset::54": 1,
+            "teacher_winner_offset::6": 2,
+            "teacher_winner_offset::60": 5,
+            "teacher_winner_offset::64": 3,
+            "teacher_winner_offset::75": 1,
+            "teacher_winner_offset::8": 4,
+            "teacher_winner_offset::80": 1,
+            "teacher_winner_offset::81": 3,
+            "teacher_winner_offset::9": 2,
+            "teacher_winner_offset::90": 2,
+            "teacher_winner_offset::91": 3,
+            "teacher_winner_offset::96": 1,
+            "throttled": 636909
+          },
+          "metrics": {
+            "accepted_count": 2437186,
+            "coverage": 0.44578933356040573,
+            "covered_by_bop": {
+              "PartitionedV2P2_independent": 827163
+            },
+            "covered_by_rank": {
+              "0": 421137,
+              "1": 406026
+            },
+            "covered_count": 827163,
+            "demand_count": 1855502,
+            "duplicate_count": 1293786,
+            "generated_count": 2437186
+          }
+        },
+        "partition_v2_p2_max_union": {
+          "config": {
+            "extra_threshold": 0.02,
+            "pbop_slots": 2,
+            "selection_policy": "max_union",
+            "vbop_slots": 2
+          },
+          "local_metrics": {
+            "accepted_count": 2437186,
+            "coverage": 0.4447653519101569,
+            "covered_by_rank": {
+              "0": 424259,
+              "1": 401004
+            },
+            "covered_by_role": {
+              "extra": 401004,
+              "primary": 424259
+            },
+            "covered_count": 825263,
+            "covered_with_min_lead_cycles": {
+              "0": 825263,
+              "128": 822274,
+              "16": 824238,
+              "256": 821027,
+              "32": 823873,
+              "64": 823368
+            },
+            "demand_count": 1855502,
+            "dropped_by_role": {
+              "extra": 709
+            },
+            "duplicate_sent_by_role": {
+              "extra": 612964,
+              "primary": 647849
+            },
+            "duplicate_sent_count": 1260813,
+            "enqueued_by_role": {
+              "extra": 1206680,
+              "primary": 1206476
+            },
+            "fifo_late_by_role": {
+              "extra": 157,
+              "primary": 1832
+            },
+            "fifo_late_demand_count": 1989,
+            "generated_count": 2437186,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 6
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.3650883810638894,
+              "primary": 1.343187929142395
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 2852228,
+              "primary": 1620524
+            },
+            "recent_filtered_by_role": {
+              "extra": 11913,
+              "primary": 12117
+            },
+            "sent_by_role": {
+              "extra": 1205971,
+              "primary": 1206476
+            }
+          },
+          "measurement_stats": {
+            "accepted": 2437186,
+            "generated": 2437186,
+            "generated_rank_0": 1218593,
+            "generated_rank_1": 1218593,
+            "issued_offset::-10": 5450,
+            "issued_offset::-117": 65403,
+            "issued_offset::-12": 70849,
+            "issued_offset::-120": 98099,
+            "issued_offset::-125": 32701,
+            "issued_offset::-128": 10900,
+            "issued_offset::-135": 81750,
+            "issued_offset::-144": 27250,
+            "issued_offset::-147": 21800,
+            "issued_offset::-150": 16350,
+            "issued_offset::-16": 10900,
+            "issued_offset::-160": 21800,
+            "issued_offset::-162": 5450,
+            "issued_offset::-18": 16350,
+            "issued_offset::-180": 16350,
+            "issued_offset::-192": 27249,
+            "issued_offset::-2": 10900,
+            "issued_offset::-20": 5450,
+            "issued_offset::-216": 14143,
+            "issued_offset::-24": 49050,
+            "issued_offset::-25": 21800,
+            "issued_offset::-27": 38150,
+            "issued_offset::-3": 32700,
+            "issued_offset::-30": 49051,
+            "issued_offset::-32": 38149,
+            "issued_offset::-4": 27250,
+            "issued_offset::-40": 5450,
+            "issued_offset::-45": 10900,
+            "issued_offset::-48": 49050,
+            "issued_offset::-54": 21799,
+            "issued_offset::-6": 21799,
+            "issued_offset::-60": 43600,
+            "issued_offset::-72": 38150,
+            "issued_offset::-75": 21800,
+            "issued_offset::-8": 98100,
+            "issued_offset::-80": 16350,
+            "issued_offset::-9": 21800,
+            "issued_offset::-90": 5450,
+            "issued_offset::-91": 38150,
+            "issued_offset::-96": 27250,
+            "issued_offset::1": 275748,
+            "issued_offset::10": 21800,
+            "issued_offset::108": 10899,
+            "issued_offset::117": 16349,
+            "issued_offset::12": 43600,
+            "issued_offset::125": 5450,
+            "issued_offset::128": 5450,
+            "issued_offset::135": 38150,
+            "issued_offset::147": 5450,
+            "issued_offset::16": 76300,
+            "issued_offset::162": 38151,
+            "issued_offset::18": 38150,
+            "issued_offset::180": 16350,
+            "issued_offset::192": 10900,
+            "issued_offset::2": 21799,
+            "issued_offset::20": 38150,
+            "issued_offset::200": 5450,
+            "issued_offset::216": 10900,
+            "issued_offset::225": 16350,
+            "issued_offset::24": 10900,
+            "issued_offset::240": 5450,
+            "issued_offset::250": 5450,
+            "issued_offset::27": 21800,
+            "issued_offset::3": 43599,
+            "issued_offset::36": 16350,
+            "issued_offset::4": 27250,
+            "issued_offset::40": 92650,
+            "issued_offset::48": 21800,
+            "issued_offset::50": 16350,
+            "issued_offset::6": 49049,
+            "issued_offset::60": 43600,
+            "issued_offset::64": 16350,
+            "issued_offset::75": 5450,
+            "issued_offset::8": 32700,
+            "issued_offset::80": 5449,
+            "issued_offset::81": 59952,
+            "issued_offset::90": 5450,
+            "issued_offset::91": 16350,
+            "issued_offset::96": 10899,
+            "partition_evict::pbop": 259,
+            "partition_evict::vbop": 326,
+            "partition_injected::pbop": 259,
+            "partition_injected::vbop": 326,
+            "partition_next_pool_both": 340,
+            "partition_phase_both": 340,
+            "partition_selected_cross_family": 340,
+            "partition_selected_pair": 340,
+            "rr_delay_drops": 637072,
+            "rr_writes": 1218423,
+            "student_delay_drains": 4869024,
+            "student_delay_drops": 2533284,
+            "student_delay_inserts": 4888724,
+            "student_issue_phases": 340,
+            "student_phases": 340,
+            "student_selected_offset::-117": 1,
+            "student_selected_offset::-12": 9,
+            "student_selected_offset::-120": 11,
+            "student_selected_offset::-125": 1,
+            "student_selected_offset::-135": 7,
+            "student_selected_offset::-147": 1,
+            "student_selected_offset::-16": 2,
+            "student_selected_offset::-18": 1,
+            "student_selected_offset::-180": 1,
+            "student_selected_offset::-192": 4,
+            "student_selected_offset::-2": 2,
+            "student_selected_offset::-24": 5,
+            "student_selected_offset::-25": 3,
+            "student_selected_offset::-27": 5,
+            "student_selected_offset::-3": 4,
+            "student_selected_offset::-30": 6,
+            "student_selected_offset::-32": 7,
+            "student_selected_offset::-4": 2,
+            "student_selected_offset::-48": 5,
+            "student_selected_offset::-54": 1,
+            "student_selected_offset::-6": 1,
+            "student_selected_offset::-72": 4,
+            "student_selected_offset::-75": 2,
+            "student_selected_offset::-8": 12,
+            "student_selected_offset::-80": 1,
+            "student_selected_offset::-9": 1,
+            "student_selected_offset::-90": 1,
+            "student_selected_offset::-91": 3,
+            "student_selected_offset::-96": 2,
+            "student_selected_offset::1": 158,
+            "student_selected_offset::10": 2,
+            "student_selected_offset::108": 2,
+            "student_selected_offset::12": 5,
+            "student_selected_offset::135": 5,
+            "student_selected_offset::16": 7,
+            "student_selected_offset::162": 3,
+            "student_selected_offset::18": 3,
+            "student_selected_offset::180": 1,
+            "student_selected_offset::2": 2,
+            "student_selected_offset::20": 2,
+            "student_selected_offset::225": 2,
+            "student_selected_offset::24": 2,
+            "student_selected_offset::250": 1,
+            "student_selected_offset::27": 2,
+            "student_selected_offset::3": 4,
+            "student_selected_offset::36": 2,
+            "student_selected_offset::4": 3,
+            "student_selected_offset::40": 5,
+            "student_selected_offset::48": 4,
+            "student_selected_offset::50": 1,
+            "student_selected_offset::6": 3,
+            "student_selected_offset::60": 5,
+            "student_selected_offset::64": 2,
+            "student_selected_offset::8": 5,
+            "student_selected_offset::80": 1,
+            "student_selected_offset::81": 1,
+            "student_selected_offset::96": 2,
+            "teacher_family_winner_count::2": 340,
+            "teacher_injected": 585,
+            "teacher_injected_offset::-1": 1,
+            "teacher_injected_offset::-10": 7,
+            "teacher_injected_offset::-100": 2,
+            "teacher_injected_offset::-108": 2,
+            "teacher_injected_offset::-117": 19,
+            "teacher_injected_offset::-12": 14,
+            "teacher_injected_offset::-120": 8,
+            "teacher_injected_offset::-125": 6,
+            "teacher_injected_offset::-128": 5,
+            "teacher_injected_offset::-135": 9,
+            "teacher_injected_offset::-144": 8,
+            "teacher_injected_offset::-147": 13,
+            "teacher_injected_offset::-15": 7,
+            "teacher_injected_offset::-150": 5,
+            "teacher_injected_offset::-16": 4,
+            "teacher_injected_offset::-160": 6,
+            "teacher_injected_offset::-162": 5,
+            "teacher_injected_offset::-18": 14,
+            "teacher_injected_offset::-180": 2,
+            "teacher_injected_offset::-192": 5,
+            "teacher_injected_offset::-2": 8,
+            "teacher_injected_offset::-20": 3,
+            "teacher_injected_offset::-200": 7,
+            "teacher_injected_offset::-216": 8,
+            "teacher_injected_offset::-225": 4,
+            "teacher_injected_offset::-24": 12,
+            "teacher_injected_offset::-240": 2,
+            "teacher_injected_offset::-243": 4,
+            "teacher_injected_offset::-25": 7,
+            "teacher_injected_offset::-250": 7,
+            "teacher_injected_offset::-256": 4,
+            "teacher_injected_offset::-27": 10,
+            "teacher_injected_offset::-3": 7,
+            "teacher_injected_offset::-30": 14,
+            "teacher_injected_offset::-32": 13,
+            "teacher_injected_offset::-36": 2,
+            "teacher_injected_offset::-4": 9,
+            "teacher_injected_offset::-40": 3,
+            "teacher_injected_offset::-45": 4,
+            "teacher_injected_offset::-48": 6,
+            "teacher_injected_offset::-5": 9,
+            "teacher_injected_offset::-50": 2,
+            "teacher_injected_offset::-54": 4,
+            "teacher_injected_offset::-6": 9,
+            "teacher_injected_offset::-60": 7,
+            "teacher_injected_offset::-64": 2,
+            "teacher_injected_offset::-72": 5,
+            "teacher_injected_offset::-75": 9,
+            "teacher_injected_offset::-8": 7,
+            "teacher_injected_offset::-80": 3,
+            "teacher_injected_offset::-81": 5,
+            "teacher_injected_offset::-9": 9,
+            "teacher_injected_offset::-90": 3,
+            "teacher_injected_offset::-91": 11,
+            "teacher_injected_offset::-96": 5,
+            "teacher_injected_offset::1": 11,
+            "teacher_injected_offset::10": 7,
+            "teacher_injected_offset::100": 2,
+            "teacher_injected_offset::108": 4,
+            "teacher_injected_offset::117": 17,
+            "teacher_injected_offset::12": 6,
+            "teacher_injected_offset::125": 5,
+            "teacher_injected_offset::128": 3,
+            "teacher_injected_offset::135": 5,
+            "teacher_injected_offset::144": 3,
+            "teacher_injected_offset::147": 6,
+            "teacher_injected_offset::15": 4,
+            "teacher_injected_offset::16": 8,
+            "teacher_injected_offset::162": 5,
+            "teacher_injected_offset::18": 6,
+            "teacher_injected_offset::180": 5,
+            "teacher_injected_offset::192": 3,
+            "teacher_injected_offset::2": 10,
+            "teacher_injected_offset::20": 4,
+            "teacher_injected_offset::200": 1,
+            "teacher_injected_offset::216": 3,
+            "teacher_injected_offset::225": 3,
+            "teacher_injected_offset::24": 1,
+            "teacher_injected_offset::240": 2,
+            "teacher_injected_offset::243": 2,
+            "teacher_injected_offset::25": 2,
+            "teacher_injected_offset::250": 3,
+            "teacher_injected_offset::27": 3,
+            "teacher_injected_offset::3": 5,
+            "teacher_injected_offset::30": 3,
+            "teacher_injected_offset::32": 2,
+            "teacher_injected_offset::36": 4,
+            "teacher_injected_offset::4": 5,
+            "teacher_injected_offset::40": 5,
+            "teacher_injected_offset::45": 2,
+            "teacher_injected_offset::48": 3,
+            "teacher_injected_offset::5": 5,
+            "teacher_injected_offset::50": 3,
+            "teacher_injected_offset::54": 1,
+            "teacher_injected_offset::6": 6,
+            "teacher_injected_offset::60": 7,
+            "teacher_injected_offset::64": 4,
+            "teacher_injected_offset::72": 1,
+            "teacher_injected_offset::75": 2,
+            "teacher_injected_offset::8": 6,
+            "teacher_injected_offset::80": 1,
+            "teacher_injected_offset::81": 4,
+            "teacher_injected_offset::9": 3,
+            "teacher_injected_offset::90": 3,
+            "teacher_injected_offset::91": 9,
+            "teacher_injected_offset::96": 1,
+            "teacher_phases": 340,
+            "teacher_winner_offset::-10": 1,
+            "teacher_winner_offset::-100": 1,
+            "teacher_winner_offset::-108": 2,
+            "teacher_winner_offset::-117": 7,
+            "teacher_winner_offset::-12": 4,
+            "teacher_winner_offset::-120": 4,
+            "teacher_winner_offset::-125": 2,
+            "teacher_winner_offset::-128": 2,
+            "teacher_winner_offset::-135": 2,
+            "teacher_winner_offset::-144": 2,
+            "teacher_winner_offset::-15": 1,
+            "teacher_winner_offset::-150": 2,
+            "teacher_winner_offset::-16": 3,
+            "teacher_winner_offset::-160": 2,
+            "teacher_winner_offset::-162": 3,
+            "teacher_winner_offset::-18": 4,
+            "teacher_winner_offset::-180": 1,
+            "teacher_winner_offset::-192": 1,
+            "teacher_winner_offset::-2": 7,
+            "teacher_winner_offset::-20": 1,
+            "teacher_winner_offset::-200": 4,
+            "teacher_winner_offset::-216": 5,
+            "teacher_winner_offset::-225": 2,
+            "teacher_winner_offset::-24": 4,
+            "teacher_winner_offset::-243": 1,
+            "teacher_winner_offset::-25": 2,
+            "teacher_winner_offset::-250": 2,
+            "teacher_winner_offset::-256": 1,
+            "teacher_winner_offset::-27": 2,
+            "teacher_winner_offset::-3": 6,
+            "teacher_winner_offset::-30": 1,
+            "teacher_winner_offset::-32": 6,
+            "teacher_winner_offset::-36": 1,
+            "teacher_winner_offset::-4": 5,
+            "teacher_winner_offset::-40": 2,
+            "teacher_winner_offset::-45": 3,
+            "teacher_winner_offset::-48": 6,
+            "teacher_winner_offset::-5": 3,
+            "teacher_winner_offset::-50": 2,
+            "teacher_winner_offset::-54": 2,
+            "teacher_winner_offset::-6": 4,
+            "teacher_winner_offset::-60": 5,
+            "teacher_winner_offset::-64": 2,
+            "teacher_winner_offset::-72": 5,
+            "teacher_winner_offset::-75": 4,
+            "teacher_winner_offset::-80": 3,
+            "teacher_winner_offset::-81": 4,
+            "teacher_winner_offset::-9": 3,
+            "teacher_winner_offset::-90": 2,
+            "teacher_winner_offset::-91": 1,
+            "teacher_winner_offset::-96": 4,
+            "teacher_winner_offset::1": 72,
+            "teacher_winner_offset::10": 2,
+            "teacher_winner_offset::100": 2,
+            "teacher_winner_offset::108": 3,
+            "teacher_winner_offset::117": 3,
+            "teacher_winner_offset::12": 5,
+            "teacher_winner_offset::125": 3,
+            "teacher_winner_offset::128": 1,
+            "teacher_winner_offset::135": 3,
+            "teacher_winner_offset::144": 3,
+            "teacher_winner_offset::147": 2,
+            "teacher_winner_offset::15": 3,
+            "teacher_winner_offset::16": 1,
+            "teacher_winner_offset::162": 5,
+            "teacher_winner_offset::18": 4,
+            "teacher_winner_offset::180": 5,
+            "teacher_winner_offset::192": 1,
+            "teacher_winner_offset::2": 9,
+            "teacher_winner_offset::200": 1,
+            "teacher_winner_offset::216": 3,
+            "teacher_winner_offset::24": 1,
+            "teacher_winner_offset::240": 2,
+            "teacher_winner_offset::243": 1,
+            "teacher_winner_offset::25": 2,
+            "teacher_winner_offset::250": 3,
+            "teacher_winner_offset::27": 1,
+            "teacher_winner_offset::3": 2,
+            "teacher_winner_offset::30": 2,
+            "teacher_winner_offset::32": 1,
+            "teacher_winner_offset::36": 1,
+            "teacher_winner_offset::4": 3,
+            "teacher_winner_offset::40": 2,
+            "teacher_winner_offset::45": 2,
+            "teacher_winner_offset::48": 2,
+            "teacher_winner_offset::5": 4,
+            "teacher_winner_offset::50": 3,
+            "teacher_winner_offset::54": 1,
+            "teacher_winner_offset::6": 2,
+            "teacher_winner_offset::60": 5,
+            "teacher_winner_offset::64": 3,
+            "teacher_winner_offset::75": 1,
+            "teacher_winner_offset::8": 4,
+            "teacher_winner_offset::80": 1,
+            "teacher_winner_offset::81": 3,
+            "teacher_winner_offset::9": 2,
+            "teacher_winner_offset::90": 2,
+            "teacher_winner_offset::91": 3,
+            "teacher_winner_offset::96": 1,
+            "throttled": 636909
+          },
+          "metrics": {
+            "accepted_count": 2437186,
+            "coverage": 0.4449324226004607,
+            "covered_by_bop": {
+              "PartitionedV2P2_max_union": 825573
+            },
+            "covered_by_rank": {
+              "0": 422573,
+              "1": 403000
+            },
+            "covered_count": 825573,
+            "demand_count": 1855502,
+            "duplicate_count": 1285141,
+            "generated_count": 2437186
+          }
+        }
+      },
+      "weight": 0.218742,
+      "workload": "mcf"
+    },
+    {
+      "access_count": 222257,
+      "marker": {
+        "access_seq": 88201,
+        "tick": 2741988600
+      },
+      "name": "gcc_200_5108",
+      "references": {
+        "dual": {
+          "local_metrics": {
+            "accepted_count": 264015,
+            "coverage": 0.5106597242943247,
+            "covered_by_rank": {
+              "0": 68457
+            },
+            "covered_by_role": {
+              "extra": 46488,
+              "primary": 21969
+            },
+            "covered_count": 68457,
+            "covered_with_min_lead_cycles": {
+              "0": 68457,
+              "128": 57688,
+              "16": 65964,
+              "256": 53603,
+              "32": 64387,
+              "64": 61407
+            },
+            "demand_count": 134056,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 65138,
+              "primary": 85428
+            },
+            "duplicate_sent_count": 150566,
+            "enqueued_by_role": {
+              "extra": 129959,
+              "primary": 134056
+            },
+            "fifo_late_by_role": {
+              "extra": 430
+            },
+            "fifo_late_demand_count": 430,
+            "generated_count": 268112,
+            "queue_delay_cycles_max": {
+              "extra": 10,
+              "primary": 3
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 2.254359100632512,
+              "primary": 1.0191563164372832
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 292972,
+              "primary": 136623
+            },
+            "recent_filtered_by_role": {},
+            "sent_by_role": {
+              "extra": 129958,
+              "primary": 134055
+            }
+          },
+          "metrics": {
+            "accepted_count": 264015,
+            "coverage": 0.5129423524497225,
+            "covered_by_bop": {
+              "PBOP": 46727,
+              "VBOP": 22036
+            },
+            "covered_by_rank": {
+              "0": 68763
+            },
+            "covered_count": 68763,
+            "demand_count": 134056,
+            "duplicate_count": 150600,
+            "generated_count": 268112
+          }
+        },
+        "merged_baseline": {
+          "local_metrics": {
+            "accepted_count": 268112,
+            "coverage": 0.5147774064570031,
+            "covered_by_rank": {
+              "0": 37250,
+              "1": 31759
+            },
+            "covered_by_role": {
+              "extra": 31759,
+              "primary": 37250
+            },
+            "covered_count": 69009,
+            "covered_with_min_lead_cycles": {
+              "0": 69009,
+              "128": 59425,
+              "16": 67122,
+              "256": 54044,
+              "32": 65806,
+              "64": 63107
+            },
+            "demand_count": 134056,
+            "dropped_by_role": {
+              "extra": 6
+            },
+            "duplicate_sent_by_role": {
+              "extra": 67353,
+              "primary": 62049
+            },
+            "duplicate_sent_count": 129402,
+            "enqueued_by_role": {
+              "extra": 118957,
+              "primary": 115241
+            },
+            "fifo_late_by_role": {
+              "extra": 23,
+              "primary": 48
+            },
+            "fifo_late_demand_count": 71,
+            "generated_count": 268112,
+            "queue_delay_cycles_max": {
+              "extra": 8,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.8505338377469525,
+              "primary": 1.2715289829920167
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 220121,
+              "primary": 146531
+            },
+            "recent_filtered_by_role": {
+              "extra": 15099,
+              "primary": 18815
+            },
+            "sent_by_role": {
+              "extra": 118950,
+              "primary": 115240
+            }
+          },
+          "metrics": {
+            "accepted_count": 268112,
+            "coverage": 0.5258474070537685,
+            "covered_by_bop": {
+              "MergedVBOP": 70493
+            },
+            "covered_by_rank": {
+              "0": 36705,
+              "1": 33788
+            },
+            "covered_count": 70493,
+            "demand_count": 134056,
+            "duplicate_count": 161286,
+            "generated_count": 268112
+          }
+        }
+      },
+      "result_dir": "/tmp/ts_bop_degree_full_gcc_200_5108",
+      "schemes": {
+        "partition_v2_p2_independent": {
+          "config": {
+            "extra_threshold": 0.02,
+            "pbop_slots": 2,
+            "selection_policy": "independent",
+            "vbop_slots": 2
+          },
+          "local_metrics": {
+            "accepted_count": 268112,
+            "coverage": 0.42192068986095366,
+            "covered_by_rank": {
+              "0": 31560,
+              "1": 25001
+            },
+            "covered_by_role": {
+              "extra": 25001,
+              "primary": 31560
+            },
+            "covered_count": 56561,
+            "covered_with_min_lead_cycles": {
+              "0": 56561,
+              "128": 54015,
+              "16": 56392,
+              "256": 50598,
+              "32": 56156,
+              "64": 55564
+            },
+            "demand_count": 134056,
+            "dropped_by_role": {
+              "extra": 7
+            },
+            "duplicate_sent_by_role": {
+              "extra": 80315,
+              "primary": 65317
+            },
+            "duplicate_sent_count": 145632,
+            "enqueued_by_role": {
+              "extra": 124910,
+              "primary": 116109
+            },
+            "fifo_late_by_role": {
+              "primary": 7
+            },
+            "fifo_late_demand_count": 7,
+            "generated_count": 268112,
+            "queue_delay_cycles_max": {
+              "extra": 8,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.8659428992329987,
+              "primary": 1.2721948530678333
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 233060,
+              "primary": 147712
+            },
+            "recent_filtered_by_role": {
+              "extra": 9146,
+              "primary": 17947
+            },
+            "sent_by_role": {
+              "extra": 124902,
+              "primary": 116108
+            }
+          },
+          "measurement_stats": {
+            "accepted": 268112,
+            "generated": 268112,
+            "generated_rank_0": 134056,
+            "generated_rank_1": 134056,
+            "issued_offset::-10": 5450,
+            "issued_offset::-8": 5450,
+            "issued_offset::-9": 16350,
+            "issued_offset::10": 10900,
+            "issued_offset::15": 54500,
+            "issued_offset::20": 10900,
+            "issued_offset::25": 4448,
+            "issued_offset::32": 134056,
+            "issued_offset::6": 15158,
+            "issued_offset::8": 5450,
+            "issued_offset::9": 5450,
+            "partition_evict::pbop": 20,
+            "partition_evict::vbop": 23,
+            "partition_injected::pbop": 20,
+            "partition_injected::vbop": 23,
+            "partition_next_pool_both": 24,
+            "partition_phase_both": 24,
+            "partition_selected_cross_family": 24,
+            "partition_selected_pair": 24,
+            "rr_delay_drops": 11330,
+            "rr_writes": 122723,
+            "student_delay_drains": 490440,
+            "student_delay_drops": 44952,
+            "student_delay_inserts": 491272,
+            "student_issue_phases": 24,
+            "student_phases": 24,
+            "student_selected_offset::-10": 1,
+            "student_selected_offset::-8": 1,
+            "student_selected_offset::-9": 2,
+            "student_selected_offset::10": 2,
+            "student_selected_offset::15": 10,
+            "student_selected_offset::20": 2,
+            "student_selected_offset::32": 1,
+            "student_selected_offset::6": 3,
+            "student_selected_offset::8": 1,
+            "student_selected_offset::9": 1,
+            "teacher_family_winner_count::2": 24,
+            "teacher_injected": 43,
+            "teacher_injected_offset::-10": 1,
+            "teacher_injected_offset::-12": 1,
+            "teacher_injected_offset::-128": 3,
+            "teacher_injected_offset::-135": 1,
+            "teacher_injected_offset::-144": 1,
+            "teacher_injected_offset::-147": 1,
+            "teacher_injected_offset::-150": 1,
+            "teacher_injected_offset::-16": 2,
+            "teacher_injected_offset::-162": 1,
+            "teacher_injected_offset::-225": 1,
+            "teacher_injected_offset::-32": 1,
+            "teacher_injected_offset::-36": 1,
+            "teacher_injected_offset::-45": 2,
+            "teacher_injected_offset::-48": 1,
+            "teacher_injected_offset::-60": 1,
+            "teacher_injected_offset::-72": 1,
+            "teacher_injected_offset::-8": 1,
+            "teacher_injected_offset::-81": 1,
+            "teacher_injected_offset::-9": 1,
+            "teacher_injected_offset::-90": 3,
+            "teacher_injected_offset::-96": 1,
+            "teacher_injected_offset::1": 1,
+            "teacher_injected_offset::10": 2,
+            "teacher_injected_offset::125": 1,
+            "teacher_injected_offset::128": 1,
+            "teacher_injected_offset::15": 1,
+            "teacher_injected_offset::16": 2,
+            "teacher_injected_offset::2": 1,
+            "teacher_injected_offset::25": 1,
+            "teacher_injected_offset::27": 1,
+            "teacher_injected_offset::36": 1,
+            "teacher_injected_offset::6": 1,
+            "teacher_injected_offset::8": 1,
+            "teacher_injected_offset::9": 2,
+            "teacher_phases": 24,
+            "teacher_winner_offset::-10": 1,
+            "teacher_winner_offset::-12": 1,
+            "teacher_winner_offset::-128": 1,
+            "teacher_winner_offset::-147": 1,
+            "teacher_winner_offset::-150": 1,
+            "teacher_winner_offset::-16": 2,
+            "teacher_winner_offset::-32": 1,
+            "teacher_winner_offset::-8": 2,
+            "teacher_winner_offset::-9": 1,
+            "teacher_winner_offset::1": 1,
+            "teacher_winner_offset::10": 2,
+            "teacher_winner_offset::15": 1,
+            "teacher_winner_offset::16": 2,
+            "teacher_winner_offset::2": 1,
+            "teacher_winner_offset::25": 2,
+            "teacher_winner_offset::6": 1,
+            "teacher_winner_offset::8": 1,
+            "teacher_winner_offset::9": 2
+          },
+          "metrics": {
+            "accepted_count": 268112,
+            "coverage": 0.42508354717431523,
+            "covered_by_bop": {
+              "PartitionedV2P2_independent": 56985
+            },
+            "covered_by_rank": {
+              "0": 31562,
+              "1": 25423
+            },
+            "covered_count": 56985,
+            "demand_count": 134056,
+            "duplicate_count": 172102,
+            "generated_count": 268112
+          }
+        },
+        "partition_v2_p2_max_union": {
+          "config": {
+            "extra_threshold": 0.02,
+            "pbop_slots": 2,
+            "selection_policy": "max_union",
+            "vbop_slots": 2
+          },
+          "local_metrics": {
+            "accepted_count": 268112,
+            "coverage": 0.4218386346004655,
+            "covered_by_rank": {
+              "0": 32573,
+              "1": 23977
+            },
+            "covered_by_role": {
+              "extra": 23977,
+              "primary": 32573
+            },
+            "covered_count": 56550,
+            "covered_with_min_lead_cycles": {
+              "0": 56550,
+              "128": 53769,
+              "16": 56149,
+              "256": 50654,
+              "32": 55872,
+              "64": 55252
+            },
+            "demand_count": 134056,
+            "dropped_by_role": {
+              "extra": 7
+            },
+            "duplicate_sent_by_role": {
+              "extra": 78460,
+              "primary": 69056
+            },
+            "duplicate_sent_count": 147516,
+            "enqueued_by_role": {
+              "extra": 128036,
+              "primary": 121470
+            },
+            "fifo_late_by_role": {
+              "extra": 2,
+              "primary": 151
+            },
+            "fifo_late_demand_count": 153,
+            "generated_count": 268112,
+            "queue_delay_cycles_max": {
+              "extra": 8,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.898264442153279,
+              "primary": 1.2868139196008859
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 243031,
+              "primary": 156308
+            },
+            "recent_filtered_by_role": {
+              "extra": 6020,
+              "primary": 12586
+            },
+            "sent_by_role": {
+              "extra": 128028,
+              "primary": 121469
+            }
+          },
+          "measurement_stats": {
+            "accepted": 268112,
+            "generated": 268112,
+            "generated_rank_0": 134056,
+            "generated_rank_1": 134056,
+            "issued_offset::-10": 5450,
+            "issued_offset::-128": 16350,
+            "issued_offset::-144": 5450,
+            "issued_offset::-150": 5450,
+            "issued_offset::-225": 5450,
+            "issued_offset::-45": 10900,
+            "issued_offset::-5": 4448,
+            "issued_offset::-60": 5450,
+            "issued_offset::-8": 5450,
+            "issued_offset::-9": 16350,
+            "issued_offset::1": 5450,
+            "issued_offset::10": 10900,
+            "issued_offset::125": 5450,
+            "issued_offset::15": 38150,
+            "issued_offset::16": 5450,
+            "issued_offset::2": 5450,
+            "issued_offset::20": 10900,
+            "issued_offset::32": 74106,
+            "issued_offset::36": 5450,
+            "issued_offset::6": 15158,
+            "issued_offset::8": 5450,
+            "issued_offset::9": 5450,
+            "partition_evict::pbop": 20,
+            "partition_evict::vbop": 23,
+            "partition_injected::pbop": 20,
+            "partition_injected::vbop": 23,
+            "partition_next_pool_both": 24,
+            "partition_phase_both": 24,
+            "partition_selected_cross_family": 24,
+            "partition_selected_pair": 24,
+            "rr_delay_drops": 11330,
+            "rr_writes": 122723,
+            "student_delay_drains": 490440,
+            "student_delay_drops": 44952,
+            "student_delay_inserts": 491272,
+            "student_issue_phases": 24,
+            "student_phases": 24,
+            "student_selected_offset::-10": 1,
+            "student_selected_offset::-8": 1,
+            "student_selected_offset::-9": 2,
+            "student_selected_offset::1": 1,
+            "student_selected_offset::10": 2,
+            "student_selected_offset::15": 7,
+            "student_selected_offset::16": 1,
+            "student_selected_offset::20": 2,
+            "student_selected_offset::32": 2,
+            "student_selected_offset::6": 3,
+            "student_selected_offset::8": 1,
+            "student_selected_offset::9": 1,
+            "teacher_family_winner_count::2": 24,
+            "teacher_injected": 43,
+            "teacher_injected_offset::-10": 1,
+            "teacher_injected_offset::-12": 1,
+            "teacher_injected_offset::-128": 3,
+            "teacher_injected_offset::-135": 1,
+            "teacher_injected_offset::-144": 1,
+            "teacher_injected_offset::-147": 1,
+            "teacher_injected_offset::-150": 1,
+            "teacher_injected_offset::-16": 2,
+            "teacher_injected_offset::-162": 1,
+            "teacher_injected_offset::-225": 1,
+            "teacher_injected_offset::-32": 1,
+            "teacher_injected_offset::-36": 1,
+            "teacher_injected_offset::-45": 2,
+            "teacher_injected_offset::-48": 1,
+            "teacher_injected_offset::-60": 1,
+            "teacher_injected_offset::-72": 1,
+            "teacher_injected_offset::-8": 1,
+            "teacher_injected_offset::-81": 1,
+            "teacher_injected_offset::-9": 1,
+            "teacher_injected_offset::-90": 3,
+            "teacher_injected_offset::-96": 1,
+            "teacher_injected_offset::1": 1,
+            "teacher_injected_offset::10": 2,
+            "teacher_injected_offset::125": 1,
+            "teacher_injected_offset::128": 1,
+            "teacher_injected_offset::15": 1,
+            "teacher_injected_offset::16": 2,
+            "teacher_injected_offset::2": 1,
+            "teacher_injected_offset::25": 1,
+            "teacher_injected_offset::27": 1,
+            "teacher_injected_offset::36": 1,
+            "teacher_injected_offset::6": 1,
+            "teacher_injected_offset::8": 1,
+            "teacher_injected_offset::9": 2,
+            "teacher_phases": 24,
+            "teacher_winner_offset::-10": 1,
+            "teacher_winner_offset::-12": 1,
+            "teacher_winner_offset::-128": 1,
+            "teacher_winner_offset::-147": 1,
+            "teacher_winner_offset::-150": 1,
+            "teacher_winner_offset::-16": 2,
+            "teacher_winner_offset::-32": 1,
+            "teacher_winner_offset::-8": 2,
+            "teacher_winner_offset::-9": 1,
+            "teacher_winner_offset::1": 1,
+            "teacher_winner_offset::10": 2,
+            "teacher_winner_offset::15": 1,
+            "teacher_winner_offset::16": 2,
+            "teacher_winner_offset::2": 1,
+            "teacher_winner_offset::25": 2,
+            "teacher_winner_offset::6": 1,
+            "teacher_winner_offset::8": 1,
+            "teacher_winner_offset::9": 2
+          },
+          "metrics": {
+            "accepted_count": 268112,
+            "coverage": 0.42590409977919674,
+            "covered_by_bop": {
+              "PartitionedV2P2_max_union": 57095
+            },
+            "covered_by_rank": {
+              "0": 32743,
+              "1": 24352
+            },
+            "covered_count": 57095,
+            "demand_count": 134056,
+            "duplicate_count": 165408,
+            "generated_count": 268112
+          }
+        }
+      },
+      "weight": 0.143446,
+      "workload": "gcc_200"
+    },
+    {
+      "access_count": 718616,
+      "marker": {
+        "access_seq": 361805,
+        "tick": 1664786547
+      },
+      "name": "milc_30106",
+      "references": {
+        "dual": {
+          "local_metrics": {
+            "accepted_count": 356811,
+            "coverage": 0.9965023499836048,
+            "covered_by_rank": {
+              "0": 355563
+            },
+            "covered_by_role": {
+              "primary": 355563
+            },
+            "covered_count": 355563,
+            "covered_with_min_lead_cycles": {
+              "0": 355563,
+              "128": 355563,
+              "16": 355563,
+              "256": 355563,
+              "32": 355563,
+              "64": 355563
+            },
+            "demand_count": 356811,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "primary": 768
+            },
+            "duplicate_sent_count": 768,
+            "enqueued_by_role": {
+              "primary": 356811
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 356811,
+            "queue_delay_cycles_max": {
+              "primary": 3
+            },
+            "queue_delay_cycles_mean": {
+              "primary": 1.2505479106527284
+            },
+            "queue_delay_cycles_sum": {
+              "primary": 446208
+            },
+            "recent_filtered_by_role": {},
+            "sent_by_role": {
+              "primary": 356810
+            }
+          },
+          "metrics": {
+            "accepted_count": 356811,
+            "coverage": 0.9965023499836048,
+            "covered_by_bop": {
+              "VBOP": 355563
+            },
+            "covered_by_rank": {
+              "0": 355563
+            },
+            "covered_count": 355563,
+            "demand_count": 356811,
+            "duplicate_count": 768,
+            "generated_count": 356811
+          }
+        },
+        "merged_baseline": {
+          "local_metrics": {
+            "accepted_count": 713622,
+            "coverage": 0.9994815182267363,
+            "covered_by_rank": {
+              "0": 30031,
+              "1": 326595
+            },
+            "covered_by_role": {
+              "extra": 326595,
+              "primary": 30031
+            },
+            "covered_count": 356626,
+            "covered_with_min_lead_cycles": {
+              "0": 356626,
+              "128": 356626,
+              "16": 356626,
+              "256": 356626,
+              "32": 356626,
+              "64": 356626
+            },
+            "demand_count": 356811,
+            "dropped_by_role": {
+              "extra": 1
+            },
+            "duplicate_sent_by_role": {
+              "extra": 923,
+              "primary": 4010
+            },
+            "duplicate_sent_count": 4933,
+            "enqueued_by_role": {
+              "extra": 328102,
+              "primary": 34047
+            },
+            "fifo_late_by_role": {},
+            "fifo_late_demand_count": 0,
+            "generated_count": 713622,
+            "queue_delay_cycles_max": {
+              "extra": 8,
+              "primary": 3
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.2662023773239865,
+              "primary": 1.2475107939025465
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 415441,
+              "primary": 42474
+            },
+            "recent_filtered_by_role": {
+              "extra": 28709,
+              "primary": 322764
+            },
+            "sent_by_role": {
+              "extra": 328100,
+              "primary": 34047
+            }
+          },
+          "metrics": {
+            "accepted_count": 713622,
+            "coverage": 0.9994843208309161,
+            "covered_by_bop": {
+              "MergedVBOP": 356627
+            },
+            "covered_by_rank": {
+              "0": 30031,
+              "1": 326596
+            },
+            "covered_count": 356627,
+            "demand_count": 356811,
+            "duplicate_count": 356406,
+            "generated_count": 713622
+          }
+        }
+      },
+      "result_dir": "/tmp/ts_bop_degree_full_milc_30106_rrcount",
+      "schemes": {
+        "partition_v2_p2_independent": {
+          "config": {
+            "extra_threshold": 0.02,
+            "pbop_slots": 2,
+            "selection_policy": "independent",
+            "vbop_slots": 2
+          },
+          "local_metrics": {
+            "accepted_count": 626893,
+            "coverage": 0.9985650666599404,
+            "covered_by_rank": {
+              "0": 356246,
+              "1": 53
+            },
+            "covered_by_role": {
+              "extra": 53,
+              "primary": 356246
+            },
+            "covered_count": 356299,
+            "covered_with_min_lead_cycles": {
+              "0": 356299,
+              "128": 356287,
+              "16": 356287,
+              "256": 356287,
+              "32": 356287,
+              "64": 356287
+            },
+            "demand_count": 356811,
+            "dropped_by_role": {},
+            "duplicate_sent_by_role": {
+              "extra": 2032,
+              "primary": 128
+            },
+            "duplicate_sent_count": 2160,
+            "enqueued_by_role": {
+              "extra": 53558,
+              "primary": 356793
+            },
+            "fifo_late_by_role": {
+              "extra": 72
+            },
+            "fifo_late_demand_count": 72,
+            "generated_count": 626893,
+            "queue_delay_cycles_max": {
+              "extra": 7,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.6615381742816064,
+              "primary": 1.3627463620260545
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 88987,
+              "primary": 486217
+            },
+            "recent_filtered_by_role": {
+              "extra": 216524,
+              "primary": 18
+            },
+            "sent_by_role": {
+              "extra": 53557,
+              "primary": 356792
+            }
+          },
+          "measurement_stats": {
+            "accepted": 626893,
+            "generated": 626893,
+            "generated_rank_0": 356811,
+            "generated_rank_1": 270082,
+            "issued_offset::-32": 119662,
+            "issued_offset::1": 150420,
+            "issued_offset::128": 15151,
+            "issued_offset::96": 341660,
+            "partition_evict::pbop": 28,
+            "partition_evict::vbop": 30,
+            "partition_injected::pbop": 28,
+            "partition_injected::vbop": 30,
+            "partition_next_pool_both": 74,
+            "partition_phase_both": 74,
+            "partition_selected_cross_family": 57,
+            "partition_selected_pair": 57,
+            "rr_delay_drops": 139930,
+            "rr_writes": 216889,
+            "student_delay_drains": 864712,
+            "student_delay_drops": 558140,
+            "student_delay_inserts": 869104,
+            "student_issue_phases": 74,
+            "student_phases": 74,
+            "student_selected_offset::128": 3,
+            "student_selected_offset::96": 71,
+            "teacher_family_winner_count::1": 20,
+            "teacher_family_winner_count::2": 54,
+            "teacher_injected": 58,
+            "teacher_injected_offset::-32": 1,
+            "teacher_injected_offset::1": 5,
+            "teacher_injected_offset::10": 3,
+            "teacher_injected_offset::12": 4,
+            "teacher_injected_offset::128": 9,
+            "teacher_injected_offset::160": 10,
+            "teacher_injected_offset::192": 10,
+            "teacher_injected_offset::2": 5,
+            "teacher_injected_offset::3": 2,
+            "teacher_injected_offset::30": 3,
+            "teacher_injected_offset::4": 1,
+            "teacher_injected_offset::5": 2,
+            "teacher_injected_offset::6": 1,
+            "teacher_injected_offset::9": 1,
+            "teacher_injected_offset::96": 1,
+            "teacher_phases": 74,
+            "teacher_winner_offset::128": 16,
+            "teacher_winner_offset::160": 14,
+            "teacher_winner_offset::192": 19,
+            "teacher_winner_offset::96": 25
+          },
+          "metrics": {
+            "accepted_count": 626893,
+            "coverage": 0.9987668541608863,
+            "covered_by_bop": {
+              "PartitionedV2P2_independent": 356371
+            },
+            "covered_by_rank": {
+              "0": 356246,
+              "1": 125
+            },
+            "covered_count": 356371,
+            "demand_count": 356811,
+            "duplicate_count": 85794,
+            "generated_count": 626893
+          }
+        },
+        "partition_v2_p2_max_union": {
+          "config": {
+            "extra_threshold": 0.02,
+            "pbop_slots": 2,
+            "selection_policy": "max_union",
+            "vbop_slots": 2
+          },
+          "local_metrics": {
+            "accepted_count": 693784,
+            "coverage": 0.9973431312375459,
+            "covered_by_rank": {
+              "0": 355175,
+              "1": 688
+            },
+            "covered_by_role": {
+              "extra": 688,
+              "primary": 355175
+            },
+            "covered_count": 355863,
+            "covered_with_min_lead_cycles": {
+              "0": 355863,
+              "128": 355817,
+              "16": 355818,
+              "256": 355817,
+              "32": 355818,
+              "64": 355817
+            },
+            "demand_count": 356811,
+            "dropped_by_role": {
+              "extra": 2
+            },
+            "duplicate_sent_by_role": {
+              "extra": 2739,
+              "primary": 974
+            },
+            "duplicate_sent_count": 3713,
+            "enqueued_by_role": {
+              "extra": 88141,
+              "primary": 356550
+            },
+            "fifo_late_by_role": {
+              "extra": 240
+            },
+            "fifo_late_demand_count": 240,
+            "generated_count": 693784,
+            "queue_delay_cycles_max": {
+              "extra": 7,
+              "primary": 5
+            },
+            "queue_delay_cycles_mean": {
+              "extra": 1.7147200980280923,
+              "primary": 1.437081579249977
+            },
+            "queue_delay_cycles_sum": {
+              "extra": 151132,
+              "primary": 512390
+            },
+            "recent_filtered_by_role": {
+              "extra": 248832,
+              "primary": 261
+            },
+            "sent_by_role": {
+              "extra": 88138,
+              "primary": 356549
+            }
+          },
+          "measurement_stats": {
+            "accepted": 693784,
+            "generated": 693784,
+            "generated_rank_0": 356811,
+            "generated_rank_1": 336973,
+            "issued_offset::-32": 90995,
+            "issued_offset::1": 241400,
+            "issued_offset::12": 4578,
+            "issued_offset::128": 120118,
+            "issued_offset::160": 81279,
+            "issued_offset::192": 24089,
+            "issued_offset::96": 131325,
+            "partition_evict::pbop": 28,
+            "partition_evict::vbop": 30,
+            "partition_injected::pbop": 28,
+            "partition_injected::vbop": 30,
+            "partition_next_pool_both": 74,
+            "partition_phase_both": 74,
+            "partition_selected_cross_family": 70,
+            "partition_selected_pair": 70,
+            "rr_delay_drops": 139930,
+            "rr_writes": 216889,
+            "student_delay_drains": 864712,
+            "student_delay_drops": 558140,
+            "student_delay_inserts": 869104,
+            "student_issue_phases": 74,
+            "student_phases": 74,
+            "student_selected_offset::128": 25,
+            "student_selected_offset::160": 16,
+            "student_selected_offset::192": 5,
+            "student_selected_offset::96": 28,
+            "teacher_family_winner_count::1": 20,
+            "teacher_family_winner_count::2": 54,
+            "teacher_injected": 58,
+            "teacher_injected_offset::-32": 1,
+            "teacher_injected_offset::1": 5,
+            "teacher_injected_offset::10": 3,
+            "teacher_injected_offset::12": 4,
+            "teacher_injected_offset::128": 9,
+            "teacher_injected_offset::160": 10,
+            "teacher_injected_offset::192": 10,
+            "teacher_injected_offset::2": 5,
+            "teacher_injected_offset::3": 2,
+            "teacher_injected_offset::30": 3,
+            "teacher_injected_offset::4": 1,
+            "teacher_injected_offset::5": 2,
+            "teacher_injected_offset::6": 1,
+            "teacher_injected_offset::9": 1,
+            "teacher_injected_offset::96": 1,
+            "teacher_phases": 74,
+            "teacher_winner_offset::128": 16,
+            "teacher_winner_offset::160": 14,
+            "teacher_winner_offset::192": 19,
+            "teacher_winner_offset::96": 25
+          },
+          "metrics": {
+            "accepted_count": 693784,
+            "coverage": 0.9980157562406988,
+            "covered_by_bop": {
+              "PartitionedV2P2_max_union": 356103
+            },
+            "covered_by_rank": {
+              "0": 355175,
+              "1": 928
+            },
+            "covered_count": 356103,
+            "demand_count": 356811,
+            "duplicate_count": 138961,
+            "generated_count": 693784
+          }
+        }
+      },
+      "weight": 0.085219,
+      "workload": "milc"
+    }
+  ],
+  "definition": "Static trace replay with one merged Teacher, per-family Teacher winner output, partition-local Student insertion/eviction, and one selected offset from each historical family",
+  "manifest": "/nfs/home/lixin/myworkspace/simulator/bankconflict/GEM5/util/ts_bop_degree/checkpoints.json",
+  "policies": [
+    "independent",
+    "max_union"
+  ],
+  "reservations": [],
+  "splits": [
+    [
+      2,
+      2
+    ]
+  ]
+}

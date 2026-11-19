@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="545" viewBox="0 0 1160 545">
+<style>
+text { font-family: Arial, sans-serif; fill: #202124; }
+.title { font-size: 18px; font-weight: 700; }
+.subtitle { font-size: 12px; fill: #5f6368; }
+.label { font-size: 11px; }
+.small { font-size: 10px; fill: #5f6368; }
+.axis { stroke: #80868b; stroke-width: 1; }
+.grid { stroke: #e0e0e0; stroke-width: 1; }
+</style>
+<rect width="1160" height="545" fill="#ffffff"/>
+<text x="24.0" y="30.0" text-anchor="start" class="title">Async dual-context coverage / traffic trade-off</text>
+<text x="24.0" y="50.0" text-anchor="start" class="subtitle">Upper-left is preferable: higher local demand coverage with fewer candidates leaving the local FIFO.</text>
+<circle cx="29" cy="64" r="5" fill="#333333"/>
+<text x="40.0" y="68.0" text-anchor="start" class="small">Dual BOP</text>
+<circle cx="299" cy="64" r="5" fill="#9c755f"/>
+<text x="310.0" y="68.0" text-anchor="start" class="small">Merged D2 R50/S31</text>
+<circle cx="569" cy="64" r="5" fill="#d1495b"/>
+<text x="580.0" y="68.0" text-anchor="start" class="small">Async 2+2</text>
+<circle cx="839" cy="64" r="5" fill="#b07aa1"/>
+<text x="850.0" y="68.0" text-anchor="start" class="small">Async 2+2, PBOP delay</text>
+<circle cx="29" cy="84" r="5" fill="#4e79a7"/>
+<text x="40.0" y="88.0" text-anchor="start" class="small">Async 2+8</text>
+<circle cx="299" cy="84" r="5" fill="#f28e2b"/>
+<text x="310.0" y="88.0" text-anchor="start" class="small">Async 3+3</text>
+<circle cx="569" cy="84" r="5" fill="#76b7b2"/>
+<text x="580.0" y="88.0" text-anchor="start" class="small">Async 4+2</text>
+<circle cx="839" cy="84" r="5" fill="#59a14f"/>
+<text x="850.0" y="88.0" text-anchor="start" class="small">Async 4+8</text>
+<text x="75.0" y="120.0" text-anchor="start" class="label">Checkpoint-weighted</text>
+<line x1="75" y1="475" x2="575" y2="475" class="axis"/>
+<line x1="75" y1="135" x2="75" y2="475" class="axis"/>
+<line x1="75.0" y1="135" x2="75.0" y2="475" class="grid"/>
+<text x="75.0" y="495.0" text-anchor="middle" class="small">1.30</text>
+<line x1="75" y1="475.0" x2="575" y2="475.0" class="grid"/>
+<text x="67.0" y="479.0" text-anchor="end" class="small">55.7%</text>
+<line x1="175.0" y1="135" x2="175.0" y2="475" class="grid"/>
+<text x="175.0" y="495.0" text-anchor="middle" class="small">1.42</text>
+<line x1="75" y1="407.0" x2="575" y2="407.0" class="grid"/>
+<text x="67.0" y="411.0" text-anchor="end" class="small">60.0%</text>
+<line x1="275.0" y1="135" x2="275.0" y2="475" class="grid"/>
+<text x="275.0" y="495.0" text-anchor="middle" class="small">1.53</text>
+<line x1="75" y1="339.0" x2="575" y2="339.0" class="grid"/>
+<text x="67.0" y="343.0" text-anchor="end" class="small">64.4%</text>
+<line x1="375.0" y1="135" x2="375.0" y2="475" class="grid"/>
+<text x="375.0" y="495.0" text-anchor="middle" class="small">1.65</text>
+<line x1="75" y1="271.0" x2="575" y2="271.0" class="grid"/>
+<text x="67.0" y="275.0" text-anchor="end" class="small">68.8%</text>
+<line x1="475.0" y1="135" x2="475.0" y2="475" class="grid"/>
+<text x="475.0" y="495.0" text-anchor="middle" class="small">1.77</text>
+<line x1="75" y1="203.0" x2="575" y2="203.0" class="grid"/>
+<text x="67.0" y="207.0" text-anchor="end" class="small">73.1%</text>
+<line x1="575.0" y1="135" x2="575.0" y2="475" class="grid"/>
+<text x="575.0" y="495.0" text-anchor="middle" class="small">1.88</text>
+<line x1="75" y1="135.0" x2="575" y2="135.0" class="grid"/>
+<text x="67.0" y="139.0" text-anchor="end" class="small">77.5%</text>
+<text x="325.0" y="517.0" text-anchor="middle" class="label">local sent / demand</text>
+<circle cx="540.7" cy="150.6" r="5" fill="#333333"/>
+<circle cx="189.8" cy="207.3" r="5" fill="#9c755f"/>
+<circle cx="419.7" cy="163.4" r="5" fill="#d1495b"/>
+<circle cx="392.9" cy="211.3" r="5" fill="#b07aa1"/>
+<circle cx="421.6" cy="155.4" r="5" fill="#4e79a7"/>
+<circle cx="420.8" cy="158.5" r="5" fill="#f28e2b"/>
+<circle cx="417.1" cy="162.3" r="5" fill="#76b7b2"/>
+<circle cx="418.8" cy="154.6" r="5" fill="#59a14f"/>
+<text x="620.0" y="120.0" text-anchor="start" class="label">Access-weighted</text>
+<line x1="620" y1="475" x2="1120" y2="475" class="axis"/>
+<line x1="620" y1="135" x2="620" y2="475" class="axis"/>
+<line x1="620.0" y1="135" x2="620.0" y2="475" class="grid"/>
+<text x="620.0" y="495.0" text-anchor="middle" class="small">1.30</text>
+<line x1="620" y1="475.0" x2="1120" y2="475.0" class="grid"/>
+<text x="612.0" y="479.0" text-anchor="end" class="small">55.7%</text>
+<line x1="720.0" y1="135" x2="720.0" y2="475" class="grid"/>
+<text x="720.0" y="495.0" text-anchor="middle" class="small">1.42</text>
+<line x1="620" y1="407.0" x2="1120" y2="407.0" class="grid"/>
+<text x="612.0" y="411.0" text-anchor="end" class="small">60.0%</text>
+<line x1="820.0" y1="135" x2="820.0" y2="475" class="grid"/>
+<text x="820.0" y="495.0" text-anchor="middle" class="small">1.53</text>
+<line x1="620" y1="339.0" x2="1120" y2="339.0" class="grid"/>
+<text x="612.0" y="343.0" text-anchor="end" class="small">64.4%</text>
+<line x1="920.0" y1="135" x2="920.0" y2="475" class="grid"/>
+<text x="920.0" y="495.0" text-anchor="middle" class="small">1.65</text>
+<line x1="620" y1="271.0" x2="1120" y2="271.0" class="grid"/>
+<text x="612.0" y="275.0" text-anchor="end" class="small">68.8%</text>
+<line x1="1020.0" y1="135" x2="1020.0" y2="475" class="grid"/>
+<text x="1020.0" y="495.0" text-anchor="middle" class="small">1.77</text>
+<line x1="620" y1="203.0" x2="1120" y2="203.0" class="grid"/>
+<text x="612.0" y="207.0" text-anchor="end" class="small">73.1%</text>
+<line x1="1120.0" y1="135" x2="1120.0" y2="475" class="grid"/>
+<text x="1120.0" y="495.0" text-anchor="middle" class="small">1.88</text>
+<line x1="620" y1="135.0" x2="1120" y2="135.0" class="grid"/>
+<text x="612.0" y="139.0" text-anchor="end" class="small">77.5%</text>
+<text x="870.0" y="517.0" text-anchor="middle" class="label">local sent / demand</text>
+<circle cx="713.3" cy="412.2" r="5" fill="#333333"/>
+<circle cx="708.2" cy="459.4" r="5" fill="#9c755f"/>
+<circle cx="657.6" cy="417.2" r="5" fill="#d1495b"/>
+<circle cx="658.6" cy="441.1" r="5" fill="#b07aa1"/>
+<circle cx="655.1" cy="413.9" r="5" fill="#4e79a7"/>
+<circle cx="657.6" cy="415.3" r="5" fill="#f28e2b"/>
+<circle cx="656.9" cy="417.0" r="5" fill="#76b7b2"/>
+<circle cx="654.3" cy="413.8" r="5" fill="#59a14f"/>
+</svg>

@@ -59,6 +59,8 @@ class ArchDBer : public SimObject
     bool dumpL3EvictTrace;
     bool dumpL1MissTrace;
     bool dumpBopTrainTrace;
+    bool dumpL2AccessTrace;
+    bool dumpBopInputTrace;
     bool dumpSMSTrainTrace;
     bool dumpStrideTrainTrace;
     bool dumpDespacitoTrainTrace;
@@ -68,6 +70,10 @@ class ArchDBer : public SimObject
     bool dumpLifetimeMore;
 
     sqlite3 *mem_db;
+    sqlite3_stmt *l2AccessTraceStmt;
+    sqlite3_stmt *bopInputTraceStmt;
+    uint64_t l2AccessSeq;
+    bool traceTransactionActive;
     char * zErrMsg;
     int rc;
     //path to save
@@ -84,6 +90,45 @@ class ArchDBer : public SimObject
     DBTraceManager *addAndGetTrace(const char *name, std::vector<std::pair<std::string, DataType>> fields);
 
     bool get_dump_rolling() { return dumpRolling; }
+
+    uint64_t nextL2AccessSeq();
+
+    void l2AccessTraceWrite(
+      uint64_t access_seq,
+      Tick tick,
+      Addr paddr,
+      Addr vaddr,
+      bool has_vaddr,
+      Addr pc,
+      bool has_pc,
+      uint64_t context_id,
+      bool has_context_id,
+      bool secure,
+      bool cache_miss,
+      bool late_mshr,
+      bool late_pfq,
+      int pf_source,
+      bool ever_prefetched,
+      bool pf_hit,
+      bool pf_first_hit,
+      bool train_vbop,
+      bool train_pbop
+    );
+
+    void bopInputTraceWrite(
+      uint64_t access_seq,
+      Tick tick,
+      const char *bop_kind,
+      Addr train_addr,
+      uint64_t rr_insert_count,
+      bool cache_miss,
+      bool late,
+      int pf_source,
+      Addr pc,
+      bool has_pc,
+      uint64_t context_id,
+      bool has_context_id
+    );
 
     void L1MissTrace_write(
       uint64_t pc,
@@ -108,6 +153,10 @@ class ArchDBer : public SimObject
     void dcacheWayPreTrace(Tick tick, uint64_t pc, uint64_t vaddr, int way, int is_write);
     void vaddrTrace(Tick tick, uint64_t pc, uint64_t vaddr, int hit);
     char memTraceSQLBuf[1024];
+
+  private:
+    void prepareTraceStatement(const char *sql, sqlite3_stmt **stmt);
+    void finishTraceWrite(sqlite3_stmt *stmt, const char *trace_name);
 };
 
 

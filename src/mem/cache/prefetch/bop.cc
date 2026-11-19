@@ -304,6 +304,7 @@ BOP::insertIntoRR(RREntryDebug rr_entry, unsigned int way)
             rrRight[hash(rr_entry.fullAddr, RRWay::Right)] = rr_entry;
             break;
     }
+    rrInsertCount++;
 }
 
 void

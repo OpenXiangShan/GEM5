@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="772" viewBox="0 0 1120 772" role="img">
+<style>
+  text { font-family: Arial, sans-serif; fill: #172033; }
+  .title { font-size: 20px; font-weight: 500; }
+  .subtitle { font-size: 12px; fill: #667085; }
+  .label { font-size: 12px; }
+  .small { font-size: 11px; fill: #667085; }
+  .axis { stroke: #d9dee8; stroke-width: 1; }
+</style>
+<rect width="1120" height="772" fill="#ffffff"/>
+<text x="24.0" y="30.0" class="title" text-anchor="start">Final TS-BOP local coverage by checkpoint</text>
+<text x="24.0" y="50.0" class="subtitle" text-anchor="start">Dual BOP, merged global confidence, and V2/P0 family-independent confidence.</text>
+<rect x="620.0" y="20.0" width="16.0" height="10.0" fill="#7b8494"/>
+<text x="642.0" y="30.0" class="small" text-anchor="start">Dual BOP</text>
+<rect x="735.0" y="20.0" width="16.0" height="10.0" fill="#4e79a7"/>
+<text x="757.0" y="30.0" class="small" text-anchor="start">Global confidence</text>
+<rect x="900.0" y="20.0" width="16.0" height="10.0" fill="#2f9d68"/>
+<text x="922.0" y="30.0" class="small" text-anchor="start">Family confidence</text>
+<line x1="250.0" y1="92.0" x2="250.0" y2="724.0" stroke="#edf0f5" stroke-width="1.0"/>
+<text x="250.0" y="86.0" class="small" text-anchor="middle">0%</text>
+<line x1="425.0" y1="92.0" x2="425.0" y2="724.0" stroke="#edf0f5" stroke-width="1.0"/>
+<text x="425.0" y="86.0" class="small" text-anchor="middle">25%</text>
+<line x1="600.0" y1="92.0" x2="600.0" y2="724.0" stroke="#edf0f5" stroke-width="1.0"/>
+<text x="600.0" y="86.0" class="small" text-anchor="middle">50%</text>
+<line x1="775.0" y1="92.0" x2="775.0" y2="724.0" stroke="#edf0f5" stroke-width="1.0"/>
+<text x="775.0" y="86.0" class="small" text-anchor="middle">75%</text>
+<line x1="950.0" y1="92.0" x2="950.0" y2="724.0" stroke="#edf0f5" stroke-width="1.0"/>
+<text x="950.0" y="86.0" class="small" text-anchor="middle">100%</text>
+<text x="24.0" y="128.0" class="label" text-anchor="start">omnetpp_18492</text>
+<rect x="250.0" y="104.0" width="426.7" height="9.0" fill="#7b8494"/>
+<rect x="250.0" y="117.0" width="432.7" height="9.0" fill="#4e79a7"/>
+<rect x="250.0" y="130.0" width="432.7" height="9.0" fill="#2f9d68"/>
+<text x="962.0" y="137.0" class="small" text-anchor="start">61.82% (+0.85 pp)</text>
+<text x="24.0" y="190.0" class="label" text-anchor="start">cactusADM_163</text>
+<rect x="250.0" y="166.0" width="686.0" height="9.0" fill="#7b8494"/>
+<rect x="250.0" y="179.0" width="685.8" height="9.0" fill="#4e79a7"/>
+<rect x="250.0" y="192.0" width="685.8" height="9.0" fill="#2f9d68"/>
+<text x="962.0" y="199.0" class="small" text-anchor="start">97.97% (-0.03 pp)</text>
+<text x="24.0" y="252.0" class="label" text-anchor="start">mcf_12886</text>
+<rect x="250.0" y="228.0" width="314.7" height="9.0" fill="#7b8494"/>
+<rect x="250.0" y="241.0" width="325.7" height="9.0" fill="#4e79a7"/>
+<rect x="250.0" y="254.0" width="319.6" height="9.0" fill="#2f9d68"/>
+<text x="962.0" y="261.0" class="small" text-anchor="start">45.65% (+0.69 pp)</text>
+<text x="24.0" y="314.0" class="label" text-anchor="start">milc_28462</text>
+<rect x="250.0" y="290.0" width="598.4" height="9.0" fill="#7b8494"/>
+<rect x="250.0" y="303.0" width="601.9" height="9.0" fill="#4e79a7"/>
+<rect x="250.0" y="316.0" width="601.9" height="9.0" fill="#2f9d68"/>
+<text x="962.0" y="323.0" class="small" text-anchor="start">85.99% (+0.50 pp)</text>
+<text x="24.0" y="376.0" class="label" text-anchor="start">bwaves_13153</text>
+<rect x="250.0" y="352.0" width="559.0" height="9.0" fill="#7b8494"/>
+<rect x="250.0" y="365.0" width="560.8" height="9.0" fill="#4e79a7"/>
+<rect x="250.0" y="378.0" width="560.8" height="9.0" fill="#2f9d68"/>
+<text x="962.0" y="385.0" class="small" text-anchor="start">80.11% (+0.25 pp)</text>
+<text x="24.0" y="438.0" class="label" text-anchor="start">astar_biglakes_6185</text>
+<rect x="250.0" y="414.0" width="474.7" height="9.0" fill="#7b8494"/>
+<rect x="250.0" y="427.0" width="474.5" height="9.0" fill="#4e79a7"/>
+<rect x="250.0" y="440.0" width="474.5" height="9.0" fill="#2f9d68"/>
+<text x="962.0" y="447.0" class="small" text-anchor="start">67.78% (-0.03 pp)</text>
+<text x="24.0" y="500.0" class="label" text-anchor="start">leslie3d_18494</text>
+<rect x="250.0" y="476.0" width="601.3" height="9.0" fill="#7b8494"/>
+<rect x="250.0" y="489.0" width="605.0" height="9.0" fill="#4e79a7"/>
+<rect x="250.0" y="502.0" width="605.0" height="9.0" fill="#2f9d68"/>
+<text x="962.0" y="509.0" class="small" text-anchor="start">86.43% (+0.52 pp)</text>
+<text x="24.0" y="562.0" class="label" text-anchor="start">mcf_6753</text>
+<rect x="250.0" y="538.0" width="361.3" height="9.0" fill="#7b8494"/>
+<rect x="250.0" y="551.0" width="230.0" height="9.0" fill="#4e79a7"/>
+<rect x="250.0" y="564.0" width="364.9" height="9.0" fill="#2f9d68"/>
+<text x="962.0" y="571.0" class="small" text-anchor="start">52.13% (+0.52 pp)</text>
+<text x="24.0" y="624.0" class="label" text-anchor="start">gcc_200_5108</text>
+<rect x="250.0" y="600.0" width="357.5" height="9.0" fill="#7b8494"/>
+<rect x="250.0" y="613.0" width="325.4" height="9.0" fill="#4e79a7"/>
+<rect x="250.0" y="626.0" width="330.7" height="9.0" fill="#2f9d68"/>
+<text x="962.0" y="633.0" class="small" text-anchor="start">47.24% (-3.83 pp)</text>
+<text x="24.0" y="686.0" class="label" text-anchor="start">milc_30106</text>
+<rect x="250.0" y="662.0" width="697.5" height="9.0" fill="#7b8494"/>
+<rect x="250.0" y="675.0" width="698.2" height="9.0" fill="#4e79a7"/>
+<rect x="250.0" y="688.0" width="698.2" height="9.0" fill="#2f9d68"/>
+<text x="962.0" y="695.0" class="small" text-anchor="start">99.74% (+0.09 pp)</text>
+</svg>

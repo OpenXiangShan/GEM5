@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="740" viewBox="0 0 1120 740">
+<style>
+text { font-family: Arial, sans-serif; fill: #202124; }
+.title { font-size: 18px; font-weight: 700; }
+.subtitle { font-size: 12px; fill: #5f6368; }
+.label { font-size: 11px; }
+.small { font-size: 10px; fill: #5f6368; }
+.axis { stroke: #80868b; stroke-width: 1; }
+.grid { stroke: #e0e0e0; stroke-width: 1; }
+</style>
+<rect width="1120" height="740" fill="#ffffff"/>
+<text x="24.0" y="30.0" text-anchor="start" class="title">Async dual-context local coverage delta</text>
+<text x="24.0" y="50.0" text-anchor="start" class="subtitle">Percentage-point delta versus original dual BOP; target local resource is F256 P8/E4 3:1.</text>
+<rect x="24" y="67" width="12" height="12" fill="#d1495b"/>
+<text x="41.0" y="77.0" text-anchor="start" class="label">Async 2+2</text>
+<rect x="229" y="67" width="12" height="12" fill="#b07aa1"/>
+<text x="246.0" y="77.0" text-anchor="start" class="label">Async 2+2, PBOP delay</text>
+<rect x="434" y="67" width="12" height="12" fill="#59a14f"/>
+<text x="451.0" y="77.0" text-anchor="start" class="label">Async 4+8</text>
+<line x1="190.0" y1="95" x2="190.0" y2="705" class="grid"/>
+<text x="190.0" y="723.0" text-anchor="middle" class="small">-10.7</text>
+<line x1="301.9" y1="95" x2="301.9" y2="705" class="grid"/>
+<text x="301.9" y="723.0" text-anchor="middle" class="small">-8.0</text>
+<line x1="413.8" y1="95" x2="413.8" y2="705" class="grid"/>
+<text x="413.8" y="723.0" text-anchor="middle" class="small">-5.3</text>
+<line x1="525.6" y1="95" x2="525.6" y2="705" class="grid"/>
+<text x="525.6" y="723.0" text-anchor="middle" class="small">-2.7</text>
+<line x1="637.5" y1="95" x2="637.5" y2="705" class="axis"/>
+<text x="637.5" y="723.0" text-anchor="middle" class="small">+0.0</text>
+<line x1="749.4" y1="95" x2="749.4" y2="705" class="grid"/>
+<text x="749.4" y="723.0" text-anchor="middle" class="small">+2.7</text>
+<line x1="861.2" y1="95" x2="861.2" y2="705" class="grid"/>
+<text x="861.2" y="723.0" text-anchor="middle" class="small">+5.3</text>
+<line x1="973.1" y1="95" x2="973.1" y2="705" class="grid"/>
+<text x="973.1" y="723.0" text-anchor="middle" class="small">+8.0</text>
+<line x1="1085.0" y1="95" x2="1085.0" y2="705" class="grid"/>
+<text x="1085.0" y="723.0" text-anchor="middle" class="small">+10.7</text>
+<text x="178.0" y="138.0" text-anchor="end" class="label">omnetpp_18492</text>
+<rect x="598.4" y="114.0" width="39.1" height="12" fill="#d1495b"/>
+<text x="594.4" y="124.0" text-anchor="end" class="small">-0.94</text>
+<rect x="465.7" y="129.0" width="171.8" height="12" fill="#b07aa1"/>
+<text x="461.7" y="139.0" text-anchor="end" class="small">-4.11</text>
+<rect x="625.5" y="144.0" width="12.0" height="12" fill="#59a14f"/>
+<text x="621.5" y="154.0" text-anchor="end" class="small">-0.29</text>
+<text x="178.0" y="196.0" text-anchor="end" class="label">cactusADM_163</text>
+<rect x="631.4" y="172.0" width="6.1" height="12" fill="#d1495b"/>
+<text x="627.4" y="182.0" text-anchor="end" class="small">-0.15</text>
+<rect x="626.8" y="187.0" width="10.7" height="12" fill="#b07aa1"/>
+<text x="622.8" y="197.0" text-anchor="end" class="small">-0.26</text>
+<rect x="631.4" y="202.0" width="6.1" height="12" fill="#59a14f"/>
+<text x="627.4" y="212.0" text-anchor="end" class="small">-0.15</text>
+<text x="178.0" y="254.0" text-anchor="end" class="label">mcf_12886</text>
+<rect x="637.5" y="230.0" width="1.0" height="12" fill="#d1495b"/>
+<text x="633.5" y="240.0" text-anchor="end" class="small">-0.00</text>
+<rect x="637.5" y="245.0" width="1.0" height="12" fill="#b07aa1"/>
+<text x="633.5" y="255.0" text-anchor="end" class="small">-0.00</text>
+<rect x="637.5" y="260.0" width="1.0" height="12" fill="#59a14f"/>
+<text x="633.5" y="270.0" text-anchor="end" class="small">-0.00</text>
+<text x="178.0" y="312.0" text-anchor="end" class="label">milc_28462</text>
+<rect x="600.1" y="288.0" width="37.4" height="12" fill="#d1495b"/>
+<text x="596.1" y="298.0" text-anchor="end" class="small">-0.89</text>
+<rect x="416.1" y="303.0" width="221.4" height="12" fill="#b07aa1"/>
+<text x="412.1" y="313.0" text-anchor="end" class="small">-5.29</text>
+<rect x="637.5" y="318.0" width="6.3" height="12" fill="#59a14f"/>
+<text x="647.8" y="328.0" text-anchor="start" class="small">+0.15</text>
+<text x="178.0" y="370.0" text-anchor="end" class="label">bwaves_13153</text>
+<rect x="627.7" y="346.0" width="9.8" height="12" fill="#d1495b"/>
+<text x="623.7" y="356.0" text-anchor="end" class="small">-0.23</text>
+<rect x="318.2" y="361.0" width="319.3" height="12" fill="#b07aa1"/>
+<text x="314.2" y="371.0" text-anchor="end" class="small">-7.63</text>
+<rect x="624.6" y="376.0" width="12.9" height="12" fill="#59a14f"/>
+<text x="620.6" y="386.0" text-anchor="end" class="small">-0.31</text>
+<text x="178.0" y="428.0" text-anchor="end" class="label">astar_biglakes_6185</text>
+<rect x="570.6" y="404.0" width="66.9" height="12" fill="#d1495b"/>
+<text x="566.6" y="414.0" text-anchor="end" class="small">-1.60</text>
+<rect x="545.6" y="419.0" width="91.9" height="12" fill="#b07aa1"/>
+<text x="541.6" y="429.0" text-anchor="end" class="small">-2.20</text>
+<rect x="632.3" y="434.0" width="5.2" height="12" fill="#59a14f"/>
+<text x="628.3" y="444.0" text-anchor="end" class="small">-0.12</text>
+<text x="178.0" y="486.0" text-anchor="end" class="label">leslie3d_18494</text>
+<rect x="558.5" y="462.0" width="79.0" height="12" fill="#d1495b"/>
+<text x="554.5" y="472.0" text-anchor="end" class="small">-1.89</text>
+<rect x="436.7" y="477.0" width="200.8" height="12" fill="#b07aa1"/>
+<text x="432.7" y="487.0" text-anchor="end" class="small">-4.80</text>
+<rect x="599.8" y="492.0" width="37.7" height="12" fill="#59a14f"/>
+<text x="595.8" y="502.0" text-anchor="end" class="small">-0.90</text>
+<text x="178.0" y="544.0" text-anchor="end" class="label">mcf_6753</text>
+<rect x="637.5" y="520.0" width="7.9" height="12" fill="#d1495b"/>
+<text x="649.4" y="530.0" text-anchor="start" class="small">+0.19</text>
+<rect x="581.9" y="535.0" width="55.6" height="12" fill="#b07aa1"/>
+<text x="577.9" y="545.0" text-anchor="end" class="small">-1.33</text>
+<rect x="634.7" y="550.0" width="2.8" height="12" fill="#59a14f"/>
+<text x="630.7" y="560.0" text-anchor="end" class="small">-0.07</text>
+<text x="178.0" y="602.0" text-anchor="end" class="label">gcc_200_5108</text>
+<rect x="349.5" y="578.0" width="288.0" height="12" fill="#d1495b"/>
+<text x="345.5" y="588.0" text-anchor="end" class="small">-6.88</text>
+<rect x="237.9" y="593.0" width="399.6" height="12" fill="#b07aa1"/>
+<text x="233.9" y="603.0" text-anchor="end" class="small">-9.55</text>
+<rect x="608.5" y="608.0" width="29.0" height="12" fill="#59a14f"/>
+<text x="604.5" y="618.0" text-anchor="end" class="small">-0.69</text>
+<text x="178.0" y="660.0" text-anchor="end" class="label">milc_30106</text>
+<rect x="637.5" y="636.0" width="8.1" height="12" fill="#d1495b"/>
+<text x="649.6" y="646.0" text-anchor="start" class="small">+0.19</text>
+<rect x="637.5" y="651.0" width="8.1" height="12" fill="#b07aa1"/>
+<text x="649.6" y="661.0" text-anchor="start" class="small">+0.19</text>
+<rect x="637.5" y="666.0" width="1.0" height="12" fill="#59a14f"/>
+<text x="641.5" y="676.0" text-anchor="start" class="small">+0.00</text>
+</svg>

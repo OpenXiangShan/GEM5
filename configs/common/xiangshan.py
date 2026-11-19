@@ -715,6 +715,11 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
             cpu.enable_riscv_vector = True
 
     # config arch db
+    if ((args.arch_db_dump_l2_access_trace or
+         args.arch_db_dump_bop_input_trace) and
+            not args.enable_arch_db):
+        fatal("L2/BOP ArchDB traces require --enable-arch-db")
+
     if args.enable_arch_db:
         perfCCT_cmd = "CREATE TABLE LifeTimeCommitTrace(ID INTEGER PRIMARY KEY AUTOINCREMENT,"
         perfCCT_cmd += PerfRecord.vals[0] + " bigint unsigned NOT NULL"
@@ -748,6 +753,8 @@ CREATE TABLE LoadLifeTimeCommitTrace(
         test_sys.arch_db.dump_l3_evict_trace = False
         test_sys.arch_db.dump_l1_miss_trace = False
         test_sys.arch_db.dump_bop_train_trace = False
+        test_sys.arch_db.dump_l2_access_trace = args.arch_db_dump_l2_access_trace
+        test_sys.arch_db.dump_bop_input_trace = args.arch_db_dump_bop_input_trace
         test_sys.arch_db.dump_stride_train_trace = False
         test_sys.arch_db.dump_sms_train_trace = False
         test_sys.arch_db.dump_vaddr_trace = False
@@ -811,6 +818,49 @@ CREATE TABLE LoadLifeTimeCommitTrace(
             "Score INT NOT NULL," \
             "Miss BOOL NOT NULL," \
             "SITE TEXT);"
+            ,
+            "CREATE TABLE L2AccessTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "AccessSeq INT NOT NULL," \
+            "Tick INT NOT NULL," \
+            "PAddr INT NOT NULL," \
+            "VAddr INT NOT NULL," \
+            "HasVAddr BOOL NOT NULL," \
+            "PC INT NOT NULL," \
+            "HasPC BOOL NOT NULL," \
+            "ContextId INT NOT NULL," \
+            "HasContextId BOOL NOT NULL," \
+            "Secure BOOL NOT NULL," \
+            "CacheMiss BOOL NOT NULL," \
+            "LateMSHR BOOL NOT NULL," \
+            "LatePFQ BOOL NOT NULL," \
+            "PfSource INT NOT NULL," \
+            "EverPrefetched BOOL NOT NULL," \
+            "PfHit BOOL NOT NULL," \
+            "PfFirstHit BOOL NOT NULL," \
+            "TrainVBOP BOOL NOT NULL," \
+            "TrainPBOP BOOL NOT NULL);"
+            ,
+            "CREATE TABLE BOPInputTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "AccessSeq INT NOT NULL," \
+            "Tick INT NOT NULL," \
+            "BOPKind TEXT NOT NULL," \
+            "TrainAddr INT NOT NULL," \
+            "RRInsertCount INT NOT NULL," \
+            "CacheMiss BOOL NOT NULL," \
+            "Late BOOL NOT NULL," \
+            "PfSource INT NOT NULL," \
+            "PC INT NOT NULL," \
+            "HasPC BOOL NOT NULL," \
+            "ContextId INT NOT NULL," \
+            "HasContextId BOOL NOT NULL);"
+            ,
+            "CREATE TABLE ArchDBTraceMarker(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
+            "AccessSeq INT NOT NULL," \
+            "Event TEXT NOT NULL);"
             ,
             "CREATE TABLE SMSTrainTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \

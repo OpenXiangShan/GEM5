@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1380" height="508" viewBox="0 0 1380 508" role="img">
+<style>
+  text { font-family: Arial, sans-serif; fill: #172033; }
+  .title { font-size: 20px; font-weight: 500; }
+  .subtitle { font-size: 12px; fill: #667085; }
+  .label { font-size: 12px; }
+  .small { font-size: 11px; fill: #667085; }
+  .axis { stroke: #d9dee8; stroke-width: 1; }
+</style>
+<rect width="1380" height="508" fill="#ffffff"/>
+<text x="24.0" y="30.0" class="title" text-anchor="start">Teacher phase behavior</text>
+<text x="24.0" y="51.0" class="subtitle" text-anchor="start">score_max can end a strong phase early; round_max caps phases that never reach that score.</text>
+<text x="40.0" y="82.0" class="label" text-anchor="start">Actual average rounds per Teacher phase</text>
+<text x="194.0" y="93.0" class="small" text-anchor="middle">S12</text>
+<text x="312.0" y="93.0" class="small" text-anchor="middle">S20</text>
+<text x="430.0" y="93.0" class="small" text-anchor="middle">S31</text>
+<text x="548.0" y="93.0" class="small" text-anchor="middle">S40</text>
+<text x="123.0" y="134.0" class="small" text-anchor="end">R30</text>
+<rect x="137.0" y="107.0" width="114.0" height="44.0" fill="#d6e4f1"/>
+<text x="194.0" y="134.0" class="label" text-anchor="middle">27.8</text>
+<rect x="255.0" y="107.0" width="114.0" height="44.0" fill="#d0dfee"/>
+<text x="312.0" y="134.0" class="label" text-anchor="middle">29.8</text>
+<rect x="373.0" y="107.0" width="114.0" height="44.0" fill="#f2f4f7"/>
+<text x="430.0" y="134.0" class="small" text-anchor="middle">n/a</text>
+<rect x="491.0" y="107.0" width="114.0" height="44.0" fill="#f2f4f7"/>
+<text x="548.0" y="134.0" class="small" text-anchor="middle">n/a</text>
+<text x="123.0" y="182.0" class="small" text-anchor="end">R33</text>
+<rect x="137.0" y="155.0" width="114.0" height="44.0" fill="#f2f4f7"/>
+<text x="194.0" y="182.0" class="small" text-anchor="middle">n/a</text>
+<rect x="255.0" y="155.0" width="114.0" height="44.0" fill="#f2f4f7"/>
+<text x="312.0" y="182.0" class="small" text-anchor="middle">n/a</text>
+<rect x="373.0" y="155.0" width="114.0" height="44.0" fill="#c7d9ea"/>
+<text x="430.0" y="182.0" class="label" text-anchor="middle">33.0</text>
+<rect x="491.0" y="155.0" width="114.0" height="44.0" fill="#f2f4f7"/>
+<text x="548.0" y="182.0" class="small" text-anchor="middle">n/a</text>
+<text x="123.0" y="230.0" class="small" text-anchor="end">R40</text>
+<rect x="137.0" y="203.0" width="114.0" height="44.0" fill="#c2d5e8"/>
+<text x="194.0" y="230.0" class="label" text-anchor="middle">34.6</text>
+<rect x="255.0" y="203.0" width="114.0" height="44.0" fill="#b6cce3"/>
+<text x="312.0" y="230.0" class="label" text-anchor="middle">38.8</text>
+<rect x="373.0" y="203.0" width="114.0" height="44.0" fill="#b2cae1"/>
+<text x="430.0" y="230.0" class="label" text-anchor="middle">40.0</text>
+<rect x="491.0" y="203.0" width="114.0" height="44.0" fill="#b2cae1"/>
+<text x="548.0" y="230.0" class="label" text-anchor="middle">40.0</text>
+<text x="123.0" y="278.0" class="small" text-anchor="end">R50</text>
+<rect x="137.0" y="251.0" width="114.0" height="44.0" fill="#b1c9e1"/>
+<text x="194.0" y="278.0" class="label" text-anchor="middle">40.4</text>
+<rect x="255.0" y="251.0" width="114.0" height="44.0" fill="#9ebbd8"/>
+<text x="312.0" y="278.0" class="label" text-anchor="middle">46.9</text>
+<rect x="373.0" y="251.0" width="114.0" height="44.0" fill="#96b6d5"/>
+<rect x="373.0" y="251.0" width="114.0" height="44.0" fill="none" stroke="#111827" stroke-width="2"/>
+<text x="430.0" y="278.0" class="label" text-anchor="middle">49.6</text>
+<rect x="491.0" y="251.0" width="114.0" height="44.0" fill="#95b5d4"/>
+<text x="548.0" y="278.0" class="label" text-anchor="middle">50.0</text>
+<text x="123.0" y="326.0" class="small" text-anchor="end">R65</text>
+<rect x="137.0" y="299.0" width="114.0" height="44.0" fill="#9dbbd8"/>
+<text x="194.0" y="326.0" class="label" text-anchor="middle">47.2</text>
+<rect x="255.0" y="299.0" width="114.0" height="44.0" fill="#7ea5cb"/>
+<text x="312.0" y="326.0" class="label" text-anchor="middle">57.7</text>
+<rect x="373.0" y="299.0" width="114.0" height="44.0" fill="#6e99c4"/>
+<text x="430.0" y="326.0" class="label" text-anchor="middle">63.0</text>
+<rect x="491.0" y="299.0" width="114.0" height="44.0" fill="#6a96c2"/>
+<text x="548.0" y="326.0" class="label" text-anchor="middle">64.5</text>
+<text x="123.0" y="374.0" class="small" text-anchor="end">R80</text>
+<rect x="137.0" y="347.0" width="114.0" height="44.0" fill="#8eb0d2"/>
+<text x="194.0" y="374.0" class="label" text-anchor="middle">52.3</text>
+<rect x="255.0" y="347.0" width="114.0" height="44.0" fill="#6291be"/>
+<text x="312.0" y="374.0" class="label" text-anchor="middle">67.2</text>
+<rect x="373.0" y="347.0" width="114.0" height="44.0" fill="#4b80b4"/>
+<text x="430.0" y="374.0" class="label" text-anchor="middle">75.2</text>
+<rect x="491.0" y="347.0" width="114.0" height="44.0" fill="#427ab0"/>
+<text x="548.0" y="374.0" class="label" text-anchor="middle">78.2</text>
+<text x="720.0" y="82.0" class="label" text-anchor="start">Phases ended by score_max</text>
+<text x="874.0" y="93.0" class="small" text-anchor="middle">S12</text>
+<text x="992.0" y="93.0" class="small" text-anchor="middle">S20</text>
+<text x="1110.0" y="93.0" class="small" text-anchor="middle">S31</text>
+<text x="1228.0" y="93.0" class="small" text-anchor="middle">S40</text>
+<text x="803.0" y="134.0" class="small" text-anchor="end">R30</text>
+<rect x="817.0" y="107.0" width="114.0" height="44.0" fill="#a1bdda"/>
+<text x="874.0" y="134.0" class="label" text-anchor="middle">20%</text>
+<rect x="935.0" y="107.0" width="114.0" height="44.0" fill="#c6d8ea"/>
+<text x="992.0" y="134.0" class="label" text-anchor="middle">6%</text>
+<rect x="1053.0" y="107.0" width="114.0" height="44.0" fill="#f2f4f7"/>
+<text x="1110.0" y="134.0" class="small" text-anchor="middle">n/a</text>
+<rect x="1171.0" y="107.0" width="114.0" height="44.0" fill="#f2f4f7"/>
+<text x="1228.0" y="134.0" class="small" text-anchor="middle">n/a</text>
+<text x="803.0" y="182.0" class="small" text-anchor="end">R33</text>
+<rect x="817.0" y="155.0" width="114.0" height="44.0" fill="#f2f4f7"/>
+<text x="874.0" y="182.0" class="small" text-anchor="middle">n/a</text>
+<rect x="935.0" y="155.0" width="114.0" height="44.0" fill="#f2f4f7"/>
+<text x="992.0" y="182.0" class="small" text-anchor="middle">n/a</text>
+<rect x="1053.0" y="155.0" width="114.0" height="44.0" fill="#d6e4f1"/>
+<text x="1110.0" y="182.0" class="label" text-anchor="middle">0%</text>
+<rect x="1171.0" y="155.0" width="114.0" height="44.0" fill="#f2f4f7"/>
+<text x="1228.0" y="182.0" class="small" text-anchor="middle">n/a</text>
+<text x="803.0" y="230.0" class="small" text-anchor="end">R40</text>
+<rect x="817.0" y="203.0" width="114.0" height="44.0" fill="#8dafd1"/>
+<text x="874.0" y="230.0" class="label" text-anchor="middle">27%</text>
+<rect x="935.0" y="203.0" width="114.0" height="44.0" fill="#b6cce3"/>
+<text x="992.0" y="230.0" class="label" text-anchor="middle">12%</text>
+<rect x="1053.0" y="203.0" width="114.0" height="44.0" fill="#d4e2f0"/>
+<text x="1110.0" y="230.0" class="label" text-anchor="middle">1%</text>
+<rect x="1171.0" y="203.0" width="114.0" height="44.0" fill="#d6e4f1"/>
+<text x="1228.0" y="230.0" class="label" text-anchor="middle">0%</text>
+<text x="803.0" y="278.0" class="small" text-anchor="end">R50</text>
+<rect x="817.0" y="251.0" width="114.0" height="44.0" fill="#779fc7"/>
+<text x="874.0" y="278.0" class="label" text-anchor="middle">36%</text>
+<rect x="935.0" y="251.0" width="114.0" height="44.0" fill="#a6c1dc"/>
+<text x="992.0" y="278.0" class="label" text-anchor="middle">18%</text>
+<rect x="1053.0" y="251.0" width="114.0" height="44.0" fill="#c4d7e9"/>
+<rect x="1053.0" y="251.0" width="114.0" height="44.0" fill="none" stroke="#111827" stroke-width="2"/>
+<text x="1110.0" y="278.0" class="label" text-anchor="middle">7%</text>
+<rect x="1171.0" y="251.0" width="114.0" height="44.0" fill="#d5e3f1"/>
+<text x="1228.0" y="278.0" class="label" text-anchor="middle">0%</text>
+<text x="803.0" y="326.0" class="small" text-anchor="end">R65</text>
+<rect x="817.0" y="299.0" width="114.0" height="44.0" fill="#5789ba"/>
+<text x="874.0" y="326.0" class="label" text-anchor="middle">47%</text>
+<rect x="935.0" y="299.0" width="114.0" height="44.0" fill="#95b5d5"/>
+<text x="992.0" y="326.0" class="label" text-anchor="middle">24%</text>
+<rect x="1053.0" y="299.0" width="114.0" height="44.0" fill="#b4cbe2"/>
+<text x="1110.0" y="326.0" class="label" text-anchor="middle">13%</text>
+<rect x="1171.0" y="299.0" width="114.0" height="44.0" fill="#c5d8ea"/>
+<text x="1228.0" y="326.0" class="label" text-anchor="middle">6%</text>
+<text x="803.0" y="374.0" class="small" text-anchor="end">R80</text>
+<rect x="817.0" y="347.0" width="114.0" height="44.0" fill="#427ab0"/>
+<text x="874.0" y="374.0" class="label" text-anchor="middle">55%</text>
+<rect x="935.0" y="347.0" width="114.0" height="44.0" fill="#84a9cd"/>
+<text x="992.0" y="374.0" class="label" text-anchor="middle">31%</text>
+<rect x="1053.0" y="347.0" width="114.0" height="44.0" fill="#a5c1dc"/>
+<text x="1110.0" y="374.0" class="label" text-anchor="middle">18%</text>
+<rect x="1171.0" y="347.0" width="114.0" height="44.0" fill="#bbd0e5"/>
+<text x="1228.0" y="374.0" class="label" text-anchor="middle">10%</text>
+</svg>

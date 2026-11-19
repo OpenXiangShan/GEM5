@@ -105,6 +105,7 @@ class BOP : public Queued
 
         std::vector<RREntryDebug> rrLeft;
         std::vector<RREntryDebug> rrRight;
+        uint64_t rrInsertCount{0};
 
         /** Structure to save the offset and the score */
         // typedef std::pair<int16_t, uint8_t> OffsetListEntry;
@@ -344,7 +345,9 @@ class BOP : public Queued
         using Queued::calculatePrefetch;
 
         void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late);
-        
+
+        uint64_t getRRInsertCount() const { return rrInsertCount; }
+
         bool tryAddOffset(int64_t offset, bool late = false);
 };
 

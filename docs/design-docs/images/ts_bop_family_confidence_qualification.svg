@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="646" viewBox="0 0 1080 646" role="img">
+<style>
+  text { font-family: Arial, sans-serif; fill: #172033; }
+  .title { font-size: 20px; font-weight: 500; }
+  .subtitle { font-size: 12px; fill: #667085; }
+  .label { font-size: 12px; }
+  .small { font-size: 11px; fill: #667085; }
+  .axis { stroke: #d9dee8; stroke-width: 1; }
+</style>
+<rect width="1080" height="646" fill="#ffffff"/>
+<text x="24.0" y="30.0" class="title" text-anchor="start">Teacher family qualification by checkpoint</text>
+<text x="24.0" y="50.0" class="subtitle" text-anchor="start">Fraction of shared Teacher phases satisfying VBOP score &gt; 2 or PBOP score &gt; 0.</text>
+<rect x="715.0" y="20.0" width="16.0" height="10.0" fill="#cf5b61"/>
+<text x="737.0" y="30.0" class="small" text-anchor="start">VBOP V2</text>
+<rect x="825.0" y="20.0" width="16.0" height="10.0" fill="#4e79a7"/>
+<text x="847.0" y="30.0" class="small" text-anchor="start">PBOP P0</text>
+<line x1="260.0" y1="90.0" x2="260.0" y2="600.0" stroke="#edf0f5" stroke-width="1.0"/>
+<text x="260.0" y="84.0" class="small" text-anchor="middle">0%</text>
+<line x1="422.5" y1="90.0" x2="422.5" y2="600.0" stroke="#edf0f5" stroke-width="1.0"/>
+<text x="422.5" y="84.0" class="small" text-anchor="middle">25%</text>
+<line x1="585.0" y1="90.0" x2="585.0" y2="600.0" stroke="#edf0f5" stroke-width="1.0"/>
+<text x="585.0" y="84.0" class="small" text-anchor="middle">50%</text>
+<line x1="747.5" y1="90.0" x2="747.5" y2="600.0" stroke="#edf0f5" stroke-width="1.0"/>
+<text x="747.5" y="84.0" class="small" text-anchor="middle">75%</text>
+<line x1="910.0" y1="90.0" x2="910.0" y2="600.0" stroke="#edf0f5" stroke-width="1.0"/>
+<text x="910.0" y="84.0" class="small" text-anchor="middle">100%</text>
+<text x="24.0" y="120.0" class="label" text-anchor="start">omnetpp_18492</text>
+<rect x="260.0" y="100.0" width="632.2" height="12.0" fill="#cf5b61"/>
+<rect x="260.0" y="117.0" width="650.0" height="12.0" fill="#4e79a7"/>
+<text x="922.0" y="111.0" class="small" text-anchor="start">V 97.3%</text>
+<text x="922.0" y="128.0" class="small" text-anchor="start">P 100.0%</text>
+<text x="24.0" y="170.0" class="label" text-anchor="start">cactusADM_163</text>
+<rect x="260.0" y="150.0" width="631.7" height="12.0" fill="#cf5b61"/>
+<rect x="260.0" y="167.0" width="650.0" height="12.0" fill="#4e79a7"/>
+<text x="922.0" y="161.0" class="small" text-anchor="start">V 97.2%</text>
+<text x="922.0" y="178.0" class="small" text-anchor="start">P 100.0%</text>
+<text x="24.0" y="220.0" class="label" text-anchor="start">mcf_12886</text>
+<rect x="260.0" y="200.0" width="0.0" height="12.0" fill="#cf5b61"/>
+<rect x="260.0" y="217.0" width="650.0" height="12.0" fill="#4e79a7"/>
+<text x="922.0" y="211.0" class="small" text-anchor="start">V 0.0%</text>
+<text x="922.0" y="228.0" class="small" text-anchor="start">P 100.0%</text>
+<text x="24.0" y="270.0" class="label" text-anchor="start">milc_28462</text>
+<rect x="260.0" y="250.0" width="650.0" height="12.0" fill="#cf5b61"/>
+<rect x="260.0" y="267.0" width="650.0" height="12.0" fill="#4e79a7"/>
+<text x="922.0" y="261.0" class="small" text-anchor="start">V 100.0%</text>
+<text x="922.0" y="278.0" class="small" text-anchor="start">P 100.0%</text>
+<text x="24.0" y="320.0" class="label" text-anchor="start">bwaves_13153</text>
+<rect x="260.0" y="300.0" width="650.0" height="12.0" fill="#cf5b61"/>
+<rect x="260.0" y="317.0" width="650.0" height="12.0" fill="#4e79a7"/>
+<text x="922.0" y="311.0" class="small" text-anchor="start">V 100.0%</text>
+<text x="922.0" y="328.0" class="small" text-anchor="start">P 100.0%</text>
+<text x="24.0" y="370.0" class="label" text-anchor="start">astar_biglakes_6185</text>
+<rect x="260.0" y="350.0" width="650.0" height="12.0" fill="#cf5b61"/>
+<rect x="260.0" y="367.0" width="650.0" height="12.0" fill="#4e79a7"/>
+<text x="922.0" y="361.0" class="small" text-anchor="start">V 100.0%</text>
+<text x="922.0" y="378.0" class="small" text-anchor="start">P 100.0%</text>
+<text x="24.0" y="420.0" class="label" text-anchor="start">leslie3d_18494</text>
+<rect x="260.0" y="400.0" width="561.0" height="12.0" fill="#cf5b61"/>
+<rect x="260.0" y="417.0" width="650.0" height="12.0" fill="#4e79a7"/>
+<text x="922.0" y="411.0" class="small" text-anchor="start">V 86.3%</text>
+<text x="922.0" y="428.0" class="small" text-anchor="start">P 100.0%</text>
+<text x="24.0" y="470.0" class="label" text-anchor="start">mcf_6753</text>
+<rect x="260.0" y="450.0" width="272.3" height="12.0" fill="#cf5b61"/>
+<rect x="260.0" y="467.0" width="650.0" height="12.0" fill="#4e79a7"/>
+<text x="922.0" y="461.0" class="small" text-anchor="start">V 41.9%</text>
+<text x="922.0" y="478.0" class="small" text-anchor="start">P 100.0%</text>
+<text x="24.0" y="520.0" class="label" text-anchor="start">gcc_200_5108</text>
+<rect x="260.0" y="500.0" width="611.0" height="12.0" fill="#cf5b61"/>
+<rect x="260.0" y="517.0" width="650.0" height="12.0" fill="#4e79a7"/>
+<text x="922.0" y="511.0" class="small" text-anchor="start">V 94.0%</text>
+<text x="922.0" y="528.0" class="small" text-anchor="start">P 100.0%</text>
+<text x="24.0" y="570.0" class="label" text-anchor="start">milc_30106</text>
+<rect x="260.0" y="550.0" width="650.0" height="12.0" fill="#cf5b61"/>
+<rect x="260.0" y="567.0" width="359.1" height="12.0" fill="#4e79a7"/>
+<text x="922.0" y="561.0" class="small" text-anchor="start">V 100.0%</text>
+<text x="922.0" y="578.0" class="small" text-anchor="start">P 55.2%</text>
+</svg>

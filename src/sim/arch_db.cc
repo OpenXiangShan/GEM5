@@ -2,6 +2,7 @@
 #include "sim/arch_db.hh"
 
 #include "params/ArchDBer.hh"
+#include "sim/cur_tick.hh"
 
 namespace gem5{
 
@@ -26,13 +27,16 @@ ArchDBer::ArchDBer(const Params &p)
     dumpL3EvictTrace(p.dump_l3_evict_trace),
     dumpL1MissTrace(p.dump_l1_miss_trace),
     dumpBopTrainTrace(p.dump_bop_train_trace),
+    dumpL2AccessTrace(p.dump_l2_access_trace),
+    dumpBopInputTrace(p.dump_bop_input_trace),
     dumpSMSTrainTrace(p.dump_sms_train_trace),
     dumpStrideTrainTrace(p.dump_stride_train_trace),
     dumpDespacitoTrainTrace(p.dump_despacito_train_trace),
     dumpL1WayPreTrace(p.dump_l1d_way_pre_trace),
     dumpVaddrTrace(p.dump_vaddr_trace),
     dumpLifetime(p.dump_lifetime),
-    mem_db(nullptr), zErrMsg(nullptr),rc(0),
+    mem_db(nullptr), l2AccessTraceStmt(nullptr), bopInputTraceStmt(nullptr),
+    l2AccessSeq(0), traceTransactionActive(false), zErrMsg(nullptr),rc(0),
     db_path(p.arch_db_file)
 {
   int rc = sqlite3_open(":memory:", &mem_db);
@@ -46,6 +50,26 @@ ArchDBer::ArchDBer(const Params &p)
 
   for (const auto &s : p.table_cmds) {
     create_table(s);
+  }
+
+  if (dumpL2AccessTrace) {
+    prepareTraceStatement(
+        "INSERT INTO L2AccessTrace(AccessSeq,Tick,PAddr,VAddr,HasVAddr,"
+        "PC,HasPC,ContextId,HasContextId,Secure,CacheMiss,LateMSHR,"
+        "LatePFQ,PfSource,EverPrefetched,PfHit,PfFirstHit,TrainVBOP,"
+        "TrainPBOP) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);",
+        &l2AccessTraceStmt);
+  }
+  if (dumpBopInputTrace) {
+    prepareTraceStatement(
+        "INSERT INTO BOPInputTrace(AccessSeq,Tick,BOPKind,TrainAddr,"
+        "RRInsertCount,CacheMiss,Late,PfSource,PC,HasPC,ContextId,"
+        "HasContextId) VALUES(?,?,?,?,?,?,?,?,?,?,?,?);",
+        &bopInputTraceStmt);
+  }
+  if (dumpL2AccessTrace || dumpBopInputTrace) {
+    execmd("BEGIN TRANSACTION;");
+    traceTransactionActive = true;
   }
   registerExitCallback([this](){ save_db(); });
 }
@@ -63,10 +87,25 @@ void ArchDBer::create_table(const std::string &sql) {
 
 void ArchDBer::start_recording() {
   dumpGlobal = true;
+  if (dumpL2AccessTrace || dumpBopInputTrace) {
+    sprintf(memTraceSQLBuf,
+            "INSERT INTO ArchDBTraceMarker(Tick,AccessSeq,Event) "
+            "VALUES(%lld,%lld,'%s');",
+            sqliteSignedInt(curTick()), sqliteSignedInt(l2AccessSeq),
+            "MeasurementStart");
+    rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
+    if (rc != SQLITE_OK) {
+      fatal("SQL error: %s\n", zErrMsg);
+    }
+  }
 }
 
 void ArchDBer::save_db() {
   warn("saving memdb to %s ...\n", db_path.c_str());
+  if (traceTransactionActive) {
+    execmd("COMMIT;");
+    traceTransactionActive = false;
+  }
   sqlite3 *disk_db;
   sqlite3_backup *pBackup;
   int rc = sqlite3_open(db_path.c_str(), &disk_db);
@@ -95,6 +134,92 @@ ArchDBer::addAndGetTrace(const char *name, std::vector<std::pair<std::string, Da
 {
   _traces[name] = DBTraceManager(name, fields, mem_db);
   return &_traces[name];
+}
+
+void
+ArchDBer::prepareTraceStatement(const char *sql, sqlite3_stmt **stmt)
+{
+  const int result = sqlite3_prepare_v2(mem_db, sql, -1, stmt, nullptr);
+  fatal_if(result != SQLITE_OK, "Failed to prepare ArchDB trace statement: %s\n",
+           sqlite3_errmsg(mem_db));
+}
+
+void
+ArchDBer::finishTraceWrite(sqlite3_stmt *stmt, const char *trace_name)
+{
+  const int result = sqlite3_step(stmt);
+  fatal_if(result != SQLITE_DONE, "Failed to write %s: %s\n", trace_name,
+           sqlite3_errmsg(mem_db));
+  sqlite3_reset(stmt);
+  sqlite3_clear_bindings(stmt);
+}
+
+uint64_t
+ArchDBer::nextL2AccessSeq()
+{
+  return ++l2AccessSeq;
+}
+
+void
+ArchDBer::l2AccessTraceWrite(
+    uint64_t access_seq, Tick tick, Addr paddr, Addr vaddr, bool has_vaddr,
+    Addr pc, bool has_pc, uint64_t context_id, bool has_context_id,
+    bool secure, bool cache_miss, bool late_mshr, bool late_pfq,
+    int pf_source, bool ever_prefetched, bool pf_hit, bool pf_first_hit,
+    bool train_vbop, bool train_pbop)
+{
+  if (!(dumpGlobal && dumpL2AccessTrace)) {
+    return;
+  }
+
+  assert(l2AccessTraceStmt);
+  sqlite3_bind_int64(l2AccessTraceStmt, 1, sqliteSignedInt(access_seq));
+  sqlite3_bind_int64(l2AccessTraceStmt, 2, sqliteSignedInt(tick));
+  sqlite3_bind_int64(l2AccessTraceStmt, 3, sqliteSignedInt(paddr));
+  sqlite3_bind_int64(l2AccessTraceStmt, 4, sqliteSignedInt(vaddr));
+  sqlite3_bind_int(l2AccessTraceStmt, 5, has_vaddr);
+  sqlite3_bind_int64(l2AccessTraceStmt, 6, sqliteSignedInt(pc));
+  sqlite3_bind_int(l2AccessTraceStmt, 7, has_pc);
+  sqlite3_bind_int64(l2AccessTraceStmt, 8, sqliteSignedInt(context_id));
+  sqlite3_bind_int(l2AccessTraceStmt, 9, has_context_id);
+  sqlite3_bind_int(l2AccessTraceStmt, 10, secure);
+  sqlite3_bind_int(l2AccessTraceStmt, 11, cache_miss);
+  sqlite3_bind_int(l2AccessTraceStmt, 12, late_mshr);
+  sqlite3_bind_int(l2AccessTraceStmt, 13, late_pfq);
+  sqlite3_bind_int(l2AccessTraceStmt, 14, pf_source);
+  sqlite3_bind_int(l2AccessTraceStmt, 15, ever_prefetched);
+  sqlite3_bind_int(l2AccessTraceStmt, 16, pf_hit);
+  sqlite3_bind_int(l2AccessTraceStmt, 17, pf_first_hit);
+  sqlite3_bind_int(l2AccessTraceStmt, 18, train_vbop);
+  sqlite3_bind_int(l2AccessTraceStmt, 19, train_pbop);
+  finishTraceWrite(l2AccessTraceStmt, "L2AccessTrace");
+}
+
+void
+ArchDBer::bopInputTraceWrite(
+    uint64_t access_seq, Tick tick, const char *bop_kind, Addr train_addr,
+    uint64_t rr_insert_count, bool cache_miss, bool late, int pf_source,
+    Addr pc, bool has_pc, uint64_t context_id, bool has_context_id)
+{
+  if (!(dumpGlobal && dumpBopInputTrace)) {
+    return;
+  }
+
+  assert(bopInputTraceStmt);
+  sqlite3_bind_int64(bopInputTraceStmt, 1, sqliteSignedInt(access_seq));
+  sqlite3_bind_int64(bopInputTraceStmt, 2, sqliteSignedInt(tick));
+  sqlite3_bind_text(bopInputTraceStmt, 3, bop_kind, -1, SQLITE_STATIC);
+  sqlite3_bind_int64(bopInputTraceStmt, 4, sqliteSignedInt(train_addr));
+  sqlite3_bind_int64(
+      bopInputTraceStmt, 5, sqliteSignedInt(rr_insert_count));
+  sqlite3_bind_int(bopInputTraceStmt, 6, cache_miss);
+  sqlite3_bind_int(bopInputTraceStmt, 7, late);
+  sqlite3_bind_int(bopInputTraceStmt, 8, pf_source);
+  sqlite3_bind_int64(bopInputTraceStmt, 9, sqliteSignedInt(pc));
+  sqlite3_bind_int(bopInputTraceStmt, 10, has_pc);
+  sqlite3_bind_int64(bopInputTraceStmt, 11, sqliteSignedInt(context_id));
+  sqlite3_bind_int(bopInputTraceStmt, 12, has_context_id);
+  finishTraceWrite(bopInputTraceStmt, "BOPInputTrace");
 }
 
 void

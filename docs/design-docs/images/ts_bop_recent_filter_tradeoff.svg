@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520" role="img">
+<style>
+  text { font-family: Arial, sans-serif; fill: #172033; }
+  .title { font-size: 20px; font-weight: 500; }
+  .subtitle { font-size: 12px; fill: #667085; }
+  .label { font-size: 12px; }
+  .small { font-size: 11px; fill: #667085; }
+  .axis { stroke: #d9dee8; stroke-width: 1; }
+</style>
+<rect width="900" height="520" fill="#ffffff"/>
+<text x="24.0" y="30.0" class="title" text-anchor="start">Recent-filter coverage and traffic trade-off</text>
+<text x="24.0" y="50.0" class="subtitle" text-anchor="start">Six-checkpoint sensitivity; access-weighted local coverage versus locally sent requests per demand.</text>
+<line x1="90.0" y1="448.0" x2="848.0" y2="448.0" stroke="#aeb6c4" stroke-width="1.0"/>
+<line x1="90.0" y1="76.0" x2="90.0" y2="448.0" stroke="#aeb6c4" stroke-width="1.0"/>
+<line x1="90.0" y1="76.0" x2="90.0" y2="448.0" stroke="#edf0f5" stroke-width="1.0"/>
+<text x="90.0" y="472.0" class="small" text-anchor="middle">1.59</text>
+<line x1="90.0" y1="448.0" x2="848.0" y2="448.0" stroke="#edf0f5" stroke-width="1.0"/>
+<text x="80.0" y="452.0" class="small" text-anchor="end">78.33%</text>
+<line x1="279.5" y1="76.0" x2="279.5" y2="448.0" stroke="#edf0f5" stroke-width="1.0"/>
+<text x="279.5" y="472.0" class="small" text-anchor="middle">1.69</text>
+<line x1="90.0" y1="355.0" x2="848.0" y2="355.0" stroke="#edf0f5" stroke-width="1.0"/>
+<text x="80.0" y="359.0" class="small" text-anchor="end">78.41%</text>
+<line x1="469.0" y1="76.0" x2="469.0" y2="448.0" stroke="#edf0f5" stroke-width="1.0"/>
+<text x="469.0" y="472.0" class="small" text-anchor="middle">1.79</text>
+<line x1="90.0" y1="262.0" x2="848.0" y2="262.0" stroke="#edf0f5" stroke-width="1.0"/>
+<text x="80.0" y="266.0" class="small" text-anchor="end">78.49%</text>
+<line x1="658.5" y1="76.0" x2="658.5" y2="448.0" stroke="#edf0f5" stroke-width="1.0"/>
+<text x="658.5" y="472.0" class="small" text-anchor="middle">1.89</text>
+<line x1="90.0" y1="169.0" x2="848.0" y2="169.0" stroke="#edf0f5" stroke-width="1.0"/>
+<text x="80.0" y="173.0" class="small" text-anchor="end">78.57%</text>
+<line x1="848.0" y1="76.0" x2="848.0" y2="448.0" stroke="#edf0f5" stroke-width="1.0"/>
+<text x="848.0" y="472.0" class="small" text-anchor="middle">1.99</text>
+<line x1="90.0" y1="76.0" x2="848.0" y2="76.0" stroke="#edf0f5" stroke-width="1.0"/>
+<text x="80.0" y="80.0" class="small" text-anchor="end">78.65%</text>
+<text x="469.0" y="498.0" class="label" text-anchor="middle">Local sent / demand</text>
+<text x="20" y="262.0" class="label" text-anchor="middle" transform="rotate(-90 20 262.0)">Local coverage</text>
+<circle cx="800.7" cy="146.1" r="5.0" fill="#4e79a7" stroke="#ffffff" stroke-width="1.5"/>
+<text x="809.7" y="138.1" class="small" text-anchor="start">off</text>
+<circle cx="616.5" cy="122.7" r="5.0" fill="#4e79a7" stroke="#ffffff" stroke-width="1.5"/>
+<text x="625.5" y="114.7" class="small" text-anchor="start">32</text>
+<circle cx="412.7" cy="145.6" r="5.0" fill="#4e79a7" stroke="#ffffff" stroke-width="1.5"/>
+<text x="421.7" y="137.6" class="small" text-anchor="start">64</text>
+<circle cx="202.7" cy="222.4" r="7.0" fill="#2f9d68" stroke="#ffffff" stroke-width="1.5"/>
+<text x="211.7" y="214.4" class="small" text-anchor="start">128</text>
+<circle cx="137.3" cy="401.3" r="5.0" fill="#4e79a7" stroke="#ffffff" stroke-width="1.5"/>
+<text x="146.3" y="393.3" class="small" text-anchor="start">256</text>
+</svg>

@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1380" height="218" viewBox="0 0 1380 218" role="img">
+<style>
+  text { font-family: Arial, sans-serif; fill: #172033; }
+  .title { font-size: 20px; font-weight: 500; }
+  .subtitle { font-size: 12px; fill: #667085; }
+  .label { font-size: 12px; }
+  .small { font-size: 11px; fill: #667085; }
+  .axis { stroke: #d9dee8; stroke-width: 1; }
+</style>
+<rect width="1380" height="218" fill="#ffffff"/>
+<text x="24.0" y="30.0" class="title" text-anchor="start">Merged VBOP Teacher parameter sweep</text>
+<text x="24.0" y="51.0" class="subtitle" text-anchor="start">Cell labels are local coverage deltas versus R50/S31 after the shared filter, FIFOs, and 3:1 arbiter.</text>
+<text x="40.0" y="82.0" class="label" text-anchor="start">Checkpoint-weighted local coverage</text>
+<text x="178.3" y="93.0" class="small" text-anchor="middle">S13</text>
+<text x="265.0" y="93.0" class="small" text-anchor="middle">S14</text>
+<text x="351.7" y="93.0" class="small" text-anchor="middle">S15</text>
+<text x="438.3" y="93.0" class="small" text-anchor="middle">S16</text>
+<text x="525.0" y="93.0" class="small" text-anchor="middle">S17</text>
+<text x="611.7" y="93.0" class="small" text-anchor="middle">S31</text>
+<text x="123.0" y="134.0" class="small" text-anchor="end">R50</text>
+<rect x="137.0" y="107.0" width="82.7" height="44.0" fill="#89c3a6"/>
+<text x="178.3" y="134.0" class="label" text-anchor="middle">+0.34 pp</text>
+<rect x="223.7" y="107.0" width="82.7" height="44.0" fill="#b1d7c4"/>
+<text x="265.0" y="134.0" class="label" text-anchor="middle">+0.18 pp</text>
+<rect x="310.3" y="107.0" width="82.7" height="44.0" fill="#8fc6ab"/>
+<text x="351.7" y="134.0" class="label" text-anchor="middle">+0.31 pp</text>
+<rect x="397.0" y="107.0" width="82.7" height="44.0" fill="#3a9a6a"/>
+<text x="438.3" y="134.0" class="label" text-anchor="middle">+0.65 pp</text>
+<rect x="483.7" y="107.0" width="82.7" height="44.0" fill="#5aaa82"/>
+<text x="525.0" y="134.0" class="label" text-anchor="middle">+0.53 pp</text>
+<rect x="570.3" y="107.0" width="82.7" height="44.0" fill="#deeee6"/>
+<rect x="570.3" y="107.0" width="82.7" height="44.0" fill="none" stroke="#111827" stroke-width="2"/>
+<text x="611.7" y="134.0" class="label" text-anchor="middle">+0.00 pp</text>
+<text x="395.0" y="177.0" class="small" text-anchor="middle">baseline 72.84%</text>
+<text x="720.0" y="82.0" class="label" text-anchor="start">Access-weighted local coverage</text>
+<text x="858.3" y="93.0" class="small" text-anchor="middle">S13</text>
+<text x="945.0" y="93.0" class="small" text-anchor="middle">S14</text>
+<text x="1031.7" y="93.0" class="small" text-anchor="middle">S15</text>
+<text x="1118.3" y="93.0" class="small" text-anchor="middle">S16</text>
+<text x="1205.0" y="93.0" class="small" text-anchor="middle">S17</text>
+<text x="1291.7" y="93.0" class="small" text-anchor="middle">S31</text>
+<text x="803.0" y="134.0" class="small" text-anchor="end">R50</text>
+<rect x="817.0" y="107.0" width="82.7" height="44.0" fill="#bfdecf"/>
+<text x="858.3" y="134.0" class="label" text-anchor="middle">+0.13 pp</text>
+<rect x="903.7" y="107.0" width="82.7" height="44.0" fill="#dbede4"/>
+<text x="945.0" y="134.0" class="label" text-anchor="middle">+0.01 pp</text>
+<rect x="990.3" y="107.0" width="82.7" height="44.0" fill="#8dc5a9"/>
+<text x="1031.7" y="134.0" class="label" text-anchor="middle">+0.32 pp</text>
+<rect x="1077.0" y="107.0" width="82.7" height="44.0" fill="#75b997"/>
+<text x="1118.3" y="134.0" class="label" text-anchor="middle">+0.42 pp</text>
+<rect x="1163.7" y="107.0" width="82.7" height="44.0" fill="#a4d1bb"/>
+<text x="1205.0" y="134.0" class="label" text-anchor="middle">+0.23 pp</text>
+<rect x="1250.3" y="107.0" width="82.7" height="44.0" fill="#deeee6"/>
+<rect x="1250.3" y="107.0" width="82.7" height="44.0" fill="none" stroke="#111827" stroke-width="2"/>
+<text x="1291.7" y="134.0" class="label" text-anchor="middle">+0.00 pp</text>
+<text x="1075.0" y="177.0" class="small" text-anchor="middle">baseline 56.65%</text>
+</svg>

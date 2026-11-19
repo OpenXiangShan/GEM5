@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="588" viewBox="0 0 860 588" role="img">
+<style>
+  text { font-family: Arial, sans-serif; fill: #172033; }
+  .title { font-size: 20px; font-weight: 500; }
+  .subtitle { font-size: 12px; fill: #667085; }
+  .label { font-size: 12px; }
+  .small { font-size: 11px; fill: #667085; }
+  .axis { stroke: #d9dee8; stroke-width: 1; }
+</style>
+<rect width="860" height="588" fill="#ffffff"/>
+<text x="24.0" y="30.0" class="title" text-anchor="start">Per-checkpoint local coverage delta</text>
+<text x="24.0" y="51.0" class="subtitle" text-anchor="start">Deltas are versus merged D2 R50/S31; positive cells recover coverage, negative cells regress.</text>
+<text x="317.5" y="92.0" class="small" text-anchor="middle">Dual BOP</text>
+<text x="462.5" y="92.0" class="small" text-anchor="middle">R50/S16</text>
+<text x="607.5" y="92.0" class="small" text-anchor="middle">R50/S15</text>
+<text x="752.5" y="92.0" class="small" text-anchor="middle">R50/S13</text>
+<text x="18.0" y="137.0" class="label" text-anchor="start">omnetpp_18492</text>
+<text x="233.0" y="137.0" class="small" text-anchor="end">base 51.8%</text>
+<rect x="247.0" y="112.0" width="141.0" height="39.0" fill="#3a9a6a"/>
+<text x="317.5" y="137.0" class="label" text-anchor="middle">+9.83 pp</text>
+<rect x="392.0" y="112.0" width="141.0" height="39.0" fill="#c2e0d1"/>
+<text x="462.5" y="137.0" class="label" text-anchor="middle">+1.69 pp</text>
+<rect x="537.0" y="112.0" width="141.0" height="39.0" fill="#cbe4d8"/>
+<text x="607.5" y="137.0" class="label" text-anchor="middle">+1.17 pp</text>
+<rect x="682.0" y="112.0" width="141.0" height="39.0" fill="#c5e1d3"/>
+<text x="752.5" y="137.0" class="label" text-anchor="middle">+1.50 pp</text>
+<text x="18.0" y="180.0" class="label" text-anchor="start">cactusADM_163</text>
+<text x="233.0" y="180.0" class="small" text-anchor="end">base 98.4%</text>
+<rect x="247.0" y="155.0" width="141.0" height="39.0" fill="#f5dedf"/>
+<text x="317.5" y="180.0" class="label" text-anchor="middle">-0.41 pp</text>
+<rect x="392.0" y="155.0" width="141.0" height="39.0" fill="#deeee6"/>
+<text x="462.5" y="180.0" class="label" text-anchor="middle">+0.02 pp</text>
+<rect x="537.0" y="155.0" width="141.0" height="39.0" fill="#ddeee6"/>
+<text x="607.5" y="180.0" class="label" text-anchor="middle">+0.04 pp</text>
+<rect x="682.0" y="155.0" width="141.0" height="39.0" fill="#ddeee5"/>
+<text x="752.5" y="180.0" class="label" text-anchor="middle">+0.08 pp</text>
+<text x="18.0" y="223.0" class="label" text-anchor="start">mcf_12886</text>
+<text x="233.0" y="223.0" class="small" text-anchor="end">base 47.0%</text>
+<rect x="247.0" y="198.0" width="141.0" height="39.0" fill="#efc9cb"/>
+<text x="317.5" y="223.0" class="label" text-anchor="middle">-1.93 pp</text>
+<rect x="392.0" y="198.0" width="141.0" height="39.0" fill="#deeee6"/>
+<text x="462.5" y="223.0" class="label" text-anchor="middle">+0.00 pp</text>
+<rect x="537.0" y="198.0" width="141.0" height="39.0" fill="#deeee6"/>
+<text x="607.5" y="223.0" class="label" text-anchor="middle">+0.00 pp</text>
+<rect x="682.0" y="198.0" width="141.0" height="39.0" fill="#deeee6"/>
+<text x="752.5" y="223.0" class="label" text-anchor="middle">+0.00 pp</text>
+<text x="18.0" y="266.0" class="label" text-anchor="start">milc_28462</text>
+<text x="233.0" y="266.0" class="small" text-anchor="end">base 87.7%</text>
+<rect x="247.0" y="241.0" width="141.0" height="39.0" fill="#f2d5d6"/>
+<text x="317.5" y="266.0" class="label" text-anchor="middle">-1.08 pp</text>
+<rect x="392.0" y="241.0" width="141.0" height="39.0" fill="#acd5c1"/>
+<text x="462.5" y="266.0" class="label" text-anchor="middle">+2.99 pp</text>
+<rect x="537.0" y="241.0" width="141.0" height="39.0" fill="#abd4c0"/>
+<text x="607.5" y="266.0" class="label" text-anchor="middle">+3.05 pp</text>
+<rect x="682.0" y="241.0" width="141.0" height="39.0" fill="#f6e0e1"/>
+<text x="752.5" y="266.0" class="label" text-anchor="middle">-0.30 pp</text>
+<text x="18.0" y="309.0" class="label" text-anchor="start">bwaves_13153</text>
+<text x="233.0" y="309.0" class="small" text-anchor="end">base 74.4%</text>
+<rect x="247.0" y="284.0" width="141.0" height="39.0" fill="#7abb9b"/>
+<text x="317.5" y="309.0" class="label" text-anchor="middle">+6.01 pp</text>
+<rect x="392.0" y="284.0" width="141.0" height="39.0" fill="#cfe7db"/>
+<text x="462.5" y="309.0" class="label" text-anchor="middle">+0.90 pp</text>
+<rect x="537.0" y="284.0" width="141.0" height="39.0" fill="#d3e9de"/>
+<text x="607.5" y="309.0" class="label" text-anchor="middle">+0.65 pp</text>
+<rect x="682.0" y="284.0" width="141.0" height="39.0" fill="#d6eae0"/>
+<text x="752.5" y="309.0" class="label" text-anchor="middle">+0.48 pp</text>
+<text x="18.0" y="352.0" class="label" text-anchor="start">astar_biglakes_6185</text>
+<text x="233.0" y="352.0" class="small" text-anchor="end">base 66.2%</text>
+<rect x="247.0" y="327.0" width="141.0" height="39.0" fill="#c4e1d2"/>
+<text x="317.5" y="352.0" class="label" text-anchor="middle">+1.58 pp</text>
+<rect x="392.0" y="327.0" width="141.0" height="39.0" fill="#dcede5"/>
+<text x="462.5" y="352.0" class="label" text-anchor="middle">+0.13 pp</text>
+<rect x="537.0" y="327.0" width="141.0" height="39.0" fill="#ebbbbd"/>
+<text x="607.5" y="352.0" class="label" text-anchor="middle">-2.97 pp</text>
+<rect x="682.0" y="327.0" width="141.0" height="39.0" fill="#deeee6"/>
+<text x="752.5" y="352.0" class="label" text-anchor="middle">+0.01 pp</text>
+<text x="18.0" y="395.0" class="label" text-anchor="start">leslie3d_18494</text>
+<text x="233.0" y="395.0" class="small" text-anchor="end">base 83.3%</text>
+<rect x="247.0" y="370.0" width="141.0" height="39.0" fill="#b2d7c5"/>
+<text x="317.5" y="395.0" class="label" text-anchor="middle">+2.66 pp</text>
+<rect x="392.0" y="370.0" width="141.0" height="39.0" fill="#ddede5"/>
+<text x="462.5" y="395.0" class="label" text-anchor="middle">+0.09 pp</text>
+<rect x="537.0" y="370.0" width="141.0" height="39.0" fill="#ddeee6"/>
+<text x="607.5" y="395.0" class="label" text-anchor="middle">+0.04 pp</text>
+<rect x="682.0" y="370.0" width="141.0" height="39.0" fill="#f7e3e4"/>
+<text x="752.5" y="395.0" class="label" text-anchor="middle">-0.04 pp</text>
+<text x="18.0" y="438.0" class="label" text-anchor="start">mcf_6753</text>
+<text x="233.0" y="438.0" class="small" text-anchor="end">base 44.8%</text>
+<rect x="247.0" y="413.0" width="141.0" height="39.0" fill="#409d6f"/>
+<text x="317.5" y="438.0" class="label" text-anchor="middle">+9.46 pp</text>
+<rect x="392.0" y="413.0" width="141.0" height="39.0" fill="#deeee6"/>
+<text x="462.5" y="438.0" class="label" text-anchor="middle">+0.00 pp</text>
+<rect x="537.0" y="413.0" width="141.0" height="39.0" fill="#deeee6"/>
+<text x="607.5" y="438.0" class="label" text-anchor="middle">+0.00 pp</text>
+<rect x="682.0" y="413.0" width="141.0" height="39.0" fill="#deeee6"/>
+<text x="752.5" y="438.0" class="label" text-anchor="middle">+0.00 pp</text>
+<text x="18.0" y="481.0" class="label" text-anchor="start">gcc_200_5108</text>
+<text x="233.0" y="481.0" class="small" text-anchor="end">base 51.5%</text>
+<rect x="247.0" y="456.0" width="141.0" height="39.0" fill="#f5dedf"/>
+<text x="317.5" y="481.0" class="label" text-anchor="middle">-0.41 pp</text>
+<rect x="392.0" y="456.0" width="141.0" height="39.0" fill="#c0dfcf"/>
+<text x="462.5" y="481.0" class="label" text-anchor="middle">+1.83 pp</text>
+<rect x="537.0" y="456.0" width="141.0" height="39.0" fill="#c2e0d1"/>
+<text x="607.5" y="481.0" class="label" text-anchor="middle">+1.70 pp</text>
+<rect x="682.0" y="456.0" width="141.0" height="39.0" fill="#d8ebe1"/>
+<text x="752.5" y="481.0" class="label" text-anchor="middle">+0.38 pp</text>
+<text x="18.0" y="524.0" class="label" text-anchor="start">milc_30106</text>
+<text x="233.0" y="524.0" class="small" text-anchor="end">base 99.9%</text>
+<rect x="247.0" y="499.0" width="141.0" height="39.0" fill="#f6e0e1"/>
+<text x="317.5" y="524.0" class="label" text-anchor="middle">-0.30 pp</text>
+<rect x="392.0" y="499.0" width="141.0" height="39.0" fill="#f7e4e5"/>
+<text x="462.5" y="524.0" class="label" text-anchor="middle">-0.01 pp</text>
+<rect x="537.0" y="499.0" width="141.0" height="39.0" fill="#f7e4e5"/>
+<text x="607.5" y="524.0" class="label" text-anchor="middle">-0.01 pp</text>
+<rect x="682.0" y="499.0" width="141.0" height="39.0" fill="#f7e4e5"/>
+<text x="752.5" y="524.0" class="label" text-anchor="middle">-0.01 pp</text>
+</svg>

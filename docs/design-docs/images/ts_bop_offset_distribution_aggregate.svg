@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="800" viewBox="0 0 1240 800" role="img">
+<style>
+  text { font-family: Arial, sans-serif; fill: #172033; }
+  .title { font-size: 20px; font-weight: 500; }
+  .subtitle { font-size: 12px; fill: #667085; }
+  .label { font-size: 12px; }
+  .small { font-size: 11px; fill: #667085; }
+  .axis { stroke: #d9dee8; stroke-width: 1; }
+</style>
+<rect width="1240" height="800" fill="#ffffff"/>
+<text x="24.0" y="30.0" class="title" text-anchor="start">Checkpoint-weighted offset distribution</text>
+<text x="24.0" y="50.0" class="subtitle" text-anchor="start">Top offsets within each stream; &#x27;other&#x27; combines the remaining offsets. Color follows the historical offset family.</text>
+<text x="30.0" y="82.0" class="label" text-anchor="start">Dual VBOP</text>
+<text x="30.0" y="100.0" class="small" text-anchor="start">former PBOP share 0.0%; requests/demand 0.904</text>
+<text x="92.0" y="133.0" class="label" text-anchor="end">+32</text>
+<rect x="102.0" y="120.0" width="410.0" height="17.0" fill="#3b82f6"/>
+<text x="520.0" y="133.0" class="small" text-anchor="start">47.0%</text>
+<text x="92.0" y="158.0" class="label" text-anchor="end">+40</text>
+<rect x="102.0" y="145.0" width="107.1" height="17.0" fill="#3b82f6"/>
+<text x="217.1" y="158.0" class="small" text-anchor="start">12.3%</text>
+<text x="92.0" y="183.0" class="label" text-anchor="end">+36</text>
+<rect x="102.0" y="170.0" width="102.1" height="17.0" fill="#3b82f6"/>
+<text x="212.1" y="183.0" class="small" text-anchor="start">11.7%</text>
+<text x="92.0" y="208.0" class="label" text-anchor="end">-128</text>
+<rect x="102.0" y="195.0" width="37.9" height="17.0" fill="#3b82f6"/>
+<text x="147.9" y="208.0" class="small" text-anchor="start">4.3%</text>
+<text x="92.0" y="233.0" class="label" text-anchor="end">+128</text>
+<rect x="102.0" y="220.0" width="35.7" height="17.0" fill="#3b82f6"/>
+<text x="145.7" y="233.0" class="small" text-anchor="start">4.1%</text>
+<text x="92.0" y="258.0" class="label" text-anchor="end">+45</text>
+<rect x="102.0" y="245.0" width="31.1" height="17.0" fill="#3b82f6"/>
+<text x="141.1" y="258.0" class="small" text-anchor="start">3.6%</text>
+<text x="92.0" y="283.0" class="label" text-anchor="end">+96</text>
+<rect x="102.0" y="270.0" width="24.2" height="17.0" fill="#3b82f6"/>
+<text x="134.2" y="283.0" class="small" text-anchor="start">2.8%</text>
+<text x="92.0" y="308.0" class="label" text-anchor="end">+160</text>
+<rect x="102.0" y="295.0" width="15.6" height="17.0" fill="#3b82f6"/>
+<text x="125.6" y="308.0" class="small" text-anchor="start">1.8%</text>
+<text x="92.0" y="333.0" class="label" text-anchor="end">+192</text>
+<rect x="102.0" y="320.0" width="15.3" height="17.0" fill="#3b82f6"/>
+<text x="125.3" y="333.0" class="small" text-anchor="start">1.8%</text>
+<text x="92.0" y="358.0" class="label" text-anchor="end">+48</text>
+<rect x="102.0" y="345.0" width="9.9" height="17.0" fill="#3b82f6"/>
+<text x="119.9" y="358.0" class="small" text-anchor="start">1.1%</text>
+<text x="92.0" y="383.0" class="label" text-anchor="end">other</text>
+<rect x="102.0" y="370.0" width="83.4" height="17.0" fill="#98a2b3"/>
+<text x="193.4" y="383.0" class="small" text-anchor="start">9.6%</text>
+<text x="640.0" y="82.0" class="label" text-anchor="start">Dual PBOP</text>
+<text x="640.0" y="100.0" class="small" text-anchor="start">former PBOP share 100.0%; requests/demand 0.963</text>
+<text x="702.0" y="133.0" class="label" text-anchor="end">+1</text>
+<rect x="712.0" y="120.0" width="410.0" height="17.0" fill="#f59e0b"/>
+<text x="1130.0" y="133.0" class="small" text-anchor="start">46.9%</text>
+<text x="702.0" y="158.0" class="label" text-anchor="end">+2</text>
+<rect x="712.0" y="145.0" width="305.2" height="17.0" fill="#f59e0b"/>
+<text x="1025.2" y="158.0" class="small" text-anchor="start">34.9%</text>
+<text x="702.0" y="183.0" class="label" text-anchor="end">+3</text>
+<rect x="712.0" y="170.0" width="63.2" height="17.0" fill="#f59e0b"/>
+<text x="783.2" y="183.0" class="small" text-anchor="start">7.2%</text>
+<text x="702.0" y="208.0" class="label" text-anchor="end">-2</text>
+<rect x="712.0" y="195.0" width="49.3" height="17.0" fill="#f59e0b"/>
+<text x="769.3" y="208.0" class="small" text-anchor="start">5.6%</text>
+<text x="702.0" y="233.0" class="label" text-anchor="end">+4</text>
+<rect x="712.0" y="220.0" width="21.9" height="17.0" fill="#f59e0b"/>
+<text x="741.9" y="233.0" class="small" text-anchor="start">2.5%</text>
+<text x="702.0" y="258.0" class="label" text-anchor="end">-3</text>
+<rect x="712.0" y="245.0" width="14.2" height="17.0" fill="#f59e0b"/>
+<text x="734.2" y="258.0" class="small" text-anchor="start">1.6%</text>
+<text x="702.0" y="283.0" class="label" text-anchor="end">-1</text>
+<rect x="712.0" y="270.0" width="3.6" height="17.0" fill="#f59e0b"/>
+<text x="723.6" y="283.0" class="small" text-anchor="start">0.4%</text>
+<text x="702.0" y="308.0" class="label" text-anchor="end">+5</text>
+<rect x="712.0" y="295.0" width="2.8" height="17.0" fill="#f59e0b"/>
+<text x="722.8" y="308.0" class="small" text-anchor="start">0.3%</text>
+<text x="702.0" y="333.0" class="label" text-anchor="end">-6</text>
+<rect x="712.0" y="320.0" width="2.7" height="17.0" fill="#f59e0b"/>
+<text x="722.7" y="333.0" class="small" text-anchor="start">0.3%</text>
+<text x="702.0" y="358.0" class="label" text-anchor="end">-4</text>
+<rect x="712.0" y="345.0" width="1.9" height="17.0" fill="#f59e0b"/>
+<text x="721.9" y="358.0" class="small" text-anchor="start">0.2%</text>
+<text x="30.0" y="430.0" class="label" text-anchor="start">Merged primary</text>
+<text x="30.0" y="448.0" class="small" text-anchor="start">former PBOP share 73.1%; requests/demand 0.956</text>
+<text x="92.0" y="481.0" class="label" text-anchor="end">+1</text>
+<rect x="102.0" y="468.0" width="410.0" height="17.0" fill="#f59e0b"/>
+<text x="520.0" y="481.0" class="small" text-anchor="start">23.9%</text>
+<text x="92.0" y="506.0" class="label" text-anchor="end">+8</text>
+<rect x="102.0" y="493.0" width="387.7" height="17.0" fill="#f59e0b"/>
+<text x="497.7" y="506.0" class="small" text-anchor="start">22.6%</text>
+<text x="92.0" y="531.0" class="label" text-anchor="end">+40</text>
+<rect x="102.0" y="518.0" width="206.7" height="17.0" fill="#3b82f6"/>
+<text x="316.7" y="531.0" class="small" text-anchor="start">12.0%</text>
+<text x="92.0" y="556.0" class="label" text-anchor="end">+5</text>
+<rect x="102.0" y="543.0" width="134.8" height="17.0" fill="#f59e0b"/>
+<text x="244.8" y="556.0" class="small" text-anchor="start">7.8%</text>
+<text x="92.0" y="581.0" class="label" text-anchor="end">+128</text>
+<rect x="102.0" y="568.0" width="103.3" height="17.0" fill="#3b82f6"/>
+<text x="213.3" y="581.0" class="small" text-anchor="start">6.0%</text>
+<text x="92.0" y="606.0" class="label" text-anchor="end">+9</text>
+<rect x="102.0" y="593.0" width="62.5" height="17.0" fill="#f59e0b"/>
+<text x="172.5" y="606.0" class="small" text-anchor="start">3.6%</text>
+<text x="92.0" y="631.0" class="label" text-anchor="end">+3</text>
+<rect x="102.0" y="618.0" width="58.4" height="17.0" fill="#f59e0b"/>
+<text x="168.4" y="631.0" class="small" text-anchor="start">3.4%</text>
+<text x="92.0" y="656.0" class="label" text-anchor="end">+2</text>
+<rect x="102.0" y="643.0" width="55.8" height="17.0" fill="#f59e0b"/>
+<text x="165.8" y="656.0" class="small" text-anchor="start">3.2%</text>
+<text x="92.0" y="681.0" class="label" text-anchor="end">+96</text>
+<rect x="102.0" y="668.0" width="52.5" height="17.0" fill="#3b82f6"/>
+<text x="162.5" y="681.0" class="small" text-anchor="start">3.1%</text>
+<text x="92.0" y="706.0" class="label" text-anchor="end">+160</text>
+<rect x="102.0" y="693.0" width="43.9" height="17.0" fill="#3b82f6"/>
+<text x="153.9" y="706.0" class="small" text-anchor="start">2.6%</text>
+<text x="92.0" y="731.0" class="label" text-anchor="end">other</text>
+<rect x="102.0" y="718.0" width="202.7" height="17.0" fill="#98a2b3"/>
+<text x="312.7" y="731.0" class="small" text-anchor="start">11.8%</text>
+<text x="640.0" y="430.0" class="label" text-anchor="start">Merged extra</text>
+<text x="640.0" y="448.0" class="small" text-anchor="start">former PBOP share 80.0%; requests/demand 0.955</text>
+<text x="702.0" y="481.0" class="label" text-anchor="end">+4</text>
+<rect x="712.0" y="468.0" width="210.2" height="17.0" fill="#f59e0b"/>
+<text x="930.2" y="481.0" class="small" text-anchor="start">16.7%</text>
+<text x="702.0" y="506.0" class="label" text-anchor="end">+10</text>
+<rect x="712.0" y="493.0" width="152.5" height="17.0" fill="#f59e0b"/>
+<text x="872.5" y="506.0" class="small" text-anchor="start">12.1%</text>
+<text x="702.0" y="531.0" class="label" text-anchor="end">+2</text>
+<rect x="712.0" y="518.0" width="124.3" height="17.0" fill="#f59e0b"/>
+<text x="844.3" y="531.0" class="small" text-anchor="start">9.9%</text>
+<text x="702.0" y="556.0" class="label" text-anchor="end">+5</text>
+<rect x="712.0" y="543.0" width="74.6" height="17.0" fill="#f59e0b"/>
+<text x="794.6" y="556.0" class="small" text-anchor="start">5.9%</text>
+<text x="702.0" y="581.0" class="label" text-anchor="end">+3</text>
+<rect x="712.0" y="568.0" width="68.1" height="17.0" fill="#f59e0b"/>
+<text x="788.1" y="581.0" class="small" text-anchor="start">5.4%</text>
+<text x="702.0" y="606.0" class="label" text-anchor="end">+8</text>
+<rect x="712.0" y="593.0" width="61.4" height="17.0" fill="#f59e0b"/>
+<text x="781.4" y="606.0" class="small" text-anchor="start">4.9%</text>
+<text x="702.0" y="631.0" class="label" text-anchor="end">+6</text>
+<rect x="712.0" y="618.0" width="52.4" height="17.0" fill="#f59e0b"/>
+<text x="772.4" y="631.0" class="small" text-anchor="start">4.2%</text>
+<text x="702.0" y="656.0" class="label" text-anchor="end">+128</text>
+<rect x="712.0" y="643.0" width="36.2" height="17.0" fill="#3b82f6"/>
+<text x="756.2" y="656.0" class="small" text-anchor="start">2.9%</text>
+<text x="702.0" y="681.0" class="label" text-anchor="end">+20</text>
+<rect x="712.0" y="668.0" width="33.8" height="17.0" fill="#f59e0b"/>
+<text x="753.8" y="681.0" class="small" text-anchor="start">2.7%</text>
+<text x="702.0" y="706.0" class="label" text-anchor="end">+120</text>
+<rect x="712.0" y="693.0" width="33.2" height="17.0" fill="#3b82f6"/>
+<text x="753.2" y="706.0" class="small" text-anchor="start">2.6%</text>
+<text x="702.0" y="731.0" class="label" text-anchor="end">other</text>
+<rect x="712.0" y="718.0" width="410.0" height="17.0" fill="#98a2b3"/>
+<text x="1130.0" y="731.0" class="small" text-anchor="start">32.6%</text>
+</svg>

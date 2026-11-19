@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="610" viewBox="0 0 1400 610" role="img">
+<style>
+  text { font-family: Arial, sans-serif; fill: #172033; }
+  .title { font-size: 20px; font-weight: 500; }
+  .subtitle { font-size: 12px; fill: #667085; }
+  .label { font-size: 12px; }
+  .small { font-size: 11px; fill: #667085; }
+  .axis { stroke: #d9dee8; stroke-width: 1; }
+</style>
+<rect width="1400" height="610" fill="#ffffff"/>
+<text x="24.0" y="30.0" class="title" text-anchor="start">Partitioned Student pool: local coverage / traffic trade-off</text>
+<text x="24.0" y="50.0" class="subtitle" text-anchor="start">Coverage and sent/demand after the shared 256-entry filter, Primary 8 / Extra 4 FIFOs, and 3:1 arbiter.</text>
+<rect x="24.0" y="68.0" width="13.0" height="13.0" fill="#3448c5"/>
+<text x="43.0" y="79.0" class="small" text-anchor="start">Dual BOP</text>
+<rect x="214.0" y="68.0" width="13.0" height="13.0" fill="#758195"/>
+<text x="233.0" y="79.0" class="small" text-anchor="start">Merged D2</text>
+<rect x="404.0" y="68.0" width="13.0" height="13.0" fill="#d1495b"/>
+<text x="423.0" y="79.0" class="small" text-anchor="start">P2+2 max-union</text>
+<rect x="594.0" y="68.0" width="13.0" height="13.0" fill="#00a676"/>
+<text x="613.0" y="79.0" class="small" text-anchor="start">R1+1/T4 max-union</text>
+<rect x="784.0" y="68.0" width="13.0" height="13.0" fill="#f28e2b"/>
+<text x="803.0" y="79.0" class="small" text-anchor="start">P3+3 max-union</text>
+<rect x="974.0" y="68.0" width="13.0" height="13.0" fill="#8f5bb7"/>
+<text x="993.0" y="79.0" class="small" text-anchor="start">R2+2/T6 max-union</text>
+<text x="70.0" y="115.0" class="label" text-anchor="start">Checkpoint-weighted</text>
+<line x1="128.0" y1="149.0" x2="128.0" y2="494.0" class="axis"/>
+<text x="128.0" y="514.0" class="small" text-anchor="middle">1.40</text>
+<line x1="128.0" y1="494.0" x2="670.0" y2="494.0" class="axis"/>
+<text x="120.0" y="498.0" class="small" text-anchor="end">70%</text>
+<line x1="236.4" y1="149.0" x2="236.4" y2="494.0" class="axis"/>
+<text x="236.4" y="514.0" class="small" text-anchor="middle">1.50</text>
+<line x1="128.0" y1="425.0" x2="670.0" y2="425.0" class="axis"/>
+<text x="120.0" y="429.0" class="small" text-anchor="end">72%</text>
+<line x1="344.8" y1="149.0" x2="344.8" y2="494.0" class="axis"/>
+<text x="344.8" y="514.0" class="small" text-anchor="middle">1.60</text>
+<line x1="128.0" y1="356.0" x2="670.0" y2="356.0" class="axis"/>
+<text x="120.0" y="360.0" class="small" text-anchor="end">73%</text>
+<line x1="453.2" y1="149.0" x2="453.2" y2="494.0" class="axis"/>
+<text x="453.2" y="514.0" class="small" text-anchor="middle">1.70</text>
+<line x1="128.0" y1="287.0" x2="670.0" y2="287.0" class="axis"/>
+<text x="120.0" y="291.0" class="small" text-anchor="end">75%</text>
+<line x1="561.6" y1="149.0" x2="561.6" y2="494.0" class="axis"/>
+<text x="561.6" y="514.0" class="small" text-anchor="middle">1.80</text>
+<line x1="128.0" y1="218.0" x2="670.0" y2="218.0" class="axis"/>
+<text x="120.0" y="222.0" class="small" text-anchor="end">76%</text>
+<line x1="670.0" y1="149.0" x2="670.0" y2="494.0" class="axis"/>
+<text x="670.0" y="514.0" class="small" text-anchor="middle">1.90</text>
+<line x1="128.0" y1="149.0" x2="670.0" y2="149.0" class="axis"/>
+<text x="120.0" y="153.0" class="small" text-anchor="end">78%</text>
+<text x="399.0" y="536.0" class="small" text-anchor="middle">local sent / demand</text>
+<text x="128.0" y="139.0" class="small" text-anchor="start">local coverage</text>
+<circle cx="608.3" cy="214.3" r="6" fill="#3448c5" stroke="#ffffff" stroke-width="1.5"/>
+<text x="616.3" y="205.3" class="small" text-anchor="start">Dual BOP</text>
+<circle cx="164.9" cy="371.5" r="6" fill="#758195" stroke="#ffffff" stroke-width="1.5"/>
+<text x="172.9" y="388.5" class="small" text-anchor="start">Merged D2</text>
+<circle cx="515.0" cy="397.2" r="6" fill="#d1495b" stroke="#ffffff" stroke-width="1.5"/>
+<text x="523.0" y="416.2" class="small" text-anchor="start">P2+2 max-union</text>
+<circle cx="515.3" cy="414.6" r="6" fill="#00a676" stroke="#ffffff" stroke-width="1.5"/>
+<text x="523.3" y="445.6" class="small" text-anchor="start">R1+1/T4 max-union</text>
+<circle cx="497.9" cy="385.0" r="6" fill="#f28e2b" stroke="#ffffff" stroke-width="1.5"/>
+<text x="505.9" y="375.0" class="small" text-anchor="start">P3+3 max-union</text>
+<circle cx="486.7" cy="391.6" r="6" fill="#8f5bb7" stroke="#ffffff" stroke-width="1.5"/>
+<text x="374.7" y="409.6" class="small" text-anchor="start">R2+2/T6 max-union</text>
+<text x="750.0" y="115.0" class="label" text-anchor="start">Access-weighted</text>
+<line x1="808.0" y1="149.0" x2="808.0" y2="494.0" class="axis"/>
+<text x="808.0" y="514.0" class="small" text-anchor="middle">1.40</text>
+<line x1="808.0" y1="494.0" x2="1350.0" y2="494.0" class="axis"/>
+<text x="800.0" y="498.0" class="small" text-anchor="end">54%</text>
+<line x1="916.4" y1="149.0" x2="916.4" y2="494.0" class="axis"/>
+<text x="916.4" y="514.0" class="small" text-anchor="middle">1.44</text>
+<line x1="808.0" y1="425.0" x2="1350.0" y2="425.0" class="axis"/>
+<text x="800.0" y="429.0" class="small" text-anchor="end">55%</text>
+<line x1="1024.8" y1="149.0" x2="1024.8" y2="494.0" class="axis"/>
+<text x="1024.8" y="514.0" class="small" text-anchor="middle">1.48</text>
+<line x1="808.0" y1="356.0" x2="1350.0" y2="356.0" class="axis"/>
+<text x="800.0" y="360.0" class="small" text-anchor="end">56%</text>
+<line x1="1133.2" y1="149.0" x2="1133.2" y2="494.0" class="axis"/>
+<text x="1133.2" y="514.0" class="small" text-anchor="middle">1.52</text>
+<line x1="808.0" y1="287.0" x2="1350.0" y2="287.0" class="axis"/>
+<text x="800.0" y="291.0" class="small" text-anchor="end">58%</text>
+<line x1="1241.6" y1="149.0" x2="1241.6" y2="494.0" class="axis"/>
+<text x="1241.6" y="514.0" class="small" text-anchor="middle">1.56</text>
+<line x1="808.0" y1="218.0" x2="1350.0" y2="218.0" class="axis"/>
+<text x="800.0" y="222.0" class="small" text-anchor="end">59%</text>
+<line x1="1350.0" y1="149.0" x2="1350.0" y2="494.0" class="axis"/>
+<text x="1350.0" y="514.0" class="small" text-anchor="middle">1.60</text>
+<line x1="808.0" y1="149.0" x2="1350.0" y2="149.0" class="axis"/>
+<text x="800.0" y="153.0" class="small" text-anchor="end">60%</text>
+<text x="1079.0" y="536.0" class="small" text-anchor="middle">local sent / demand</text>
+<text x="808.0" y="139.0" class="small" text-anchor="start">local coverage</text>
+<circle cx="832.2" cy="167.1" r="6" fill="#3448c5" stroke="#ffffff" stroke-width="1.5"/>
+<text x="840.2" y="158.1" class="small" text-anchor="start">Dual BOP</text>
+<circle cx="816.3" cy="341.5" r="6" fill="#758195" stroke="#ffffff" stroke-width="1.5"/>
+<text x="824.3" y="358.5" class="small" text-anchor="start">Merged D2</text>
+<circle cx="1106.9" cy="379.0" r="6" fill="#d1495b" stroke="#ffffff" stroke-width="1.5"/>
+<text x="1114.9" y="369.0" class="small" text-anchor="start">P2+2 max-union</text>
+<circle cx="1112.7" cy="418.4" r="6" fill="#00a676" stroke="#ffffff" stroke-width="1.5"/>
+<text x="1120.7" y="438.4" class="small" text-anchor="start">R1+1/T4 max-union</text>
+<circle cx="1040.8" cy="298.3" r="6" fill="#f28e2b" stroke="#ffffff" stroke-width="1.5"/>
+<text x="1048.8" y="288.3" class="small" text-anchor="start">P3+3 max-union</text>
+<circle cx="1006.8" cy="350.5" r="6" fill="#8f5bb7" stroke="#ffffff" stroke-width="1.5"/>
+<text x="1014.8" y="370.5" class="small" text-anchor="start">R2+2/T6 max-union</text>
+</svg>
