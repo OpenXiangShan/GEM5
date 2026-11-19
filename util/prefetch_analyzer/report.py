@@ -125,6 +125,8 @@ def write_report(output, summary, pcs, timeline, runs, pc_deltas):
                 if value is not None
                 else "未知来源"
             )
+        if key == "accuracy_observed":
+            return display(value, True)
         if key == "stage":
             return stage_names[value]
         return display(value)
@@ -180,6 +182,14 @@ def write_report(output, summary, pcs, timeline, runs, pc_deltas):
         )
         + "</tr>"
         for row in summary["queue_analysis"]["stages"]
+    )
+    outcome_rows = "".join(
+        "<tr>" + "".join(
+            f"<td>{html.escape(readable(key, row[key]))}</td>"
+            for key in ("actor", "source", "priority", "dequeued_requests",
+                        "accepted_requests", "useful_requests", "accuracy_observed",
+                        "unused_evicted_requests", "censored_requests")
+        ) + "</tr>" for row in summary["queue_analysis"]["outcomes"]
     )
     delta_rows = "".join(
         "<tr>"
@@ -239,6 +249,11 @@ def write_report(output, summary, pcs, timeline, runs, pc_deltas):
                 else "此 Trace 未采集占用状态。"
             ),
         )
+        .replace("__QUEUE_OUTCOMES__", outcome_rows)
+        .replace("__QUEUE_OUTCOME_LINKS__", (
+            '完整表见 <a href="queue-outcomes.csv">逐优先级结局</a>。'
+            if summary["queue_analysis"]["outcomes"] else "当前 Trace 尚无出队优先级观测。"
+        ))
         .replace("__QUEUE_STAGES__", queue_rows)
         .replace(
             "__QUEUE_LINKS__",

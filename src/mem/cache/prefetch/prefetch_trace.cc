@@ -61,7 +61,8 @@ PrefetchTrace::startup()
         << "\n# start_tick=" << startTick << "\n# end_tick=" << endTick
         << "\n# after_warmup=" << afterWarmup
         << "\n# cache_occupancy_version=1\n"
-        << "# prefetch_queue_version=1\n";
+        << "# prefetch_queue_version=1\n"
+        << "# translation_trace_scope=direct_l1_data\n";
     for (unsigned i = 0; i < NUM_PF_SOURCES; ++i)
         out << "# prefetch_source_" << i << "="
             << prefetchSourceTypeName(i) << "\n";

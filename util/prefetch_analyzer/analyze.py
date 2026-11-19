@@ -61,6 +61,9 @@ def read_stats(path, cpu):
                     ".pfRemovedDemand",
                     ".hits::total",
                     ".misses::total",
+                    ".l1InitialLookupMisses",
+                    ".readprefetchHits",
+                    ".readprefetchMisses",
                 )
             )
         },
@@ -93,9 +96,20 @@ def reconcile_counters(db, summary):
         "pfOnlyFill": ("cache", "PF_FILL_CLASSIFY", "result=?", ("pure",)),
         "pfMergedWithDemand": ("cache", "PF_FILL_CLASSIFY", "result=?", ("merged",)),
     }
+    translation_mappings = {
+        "l1InitialLookupMisses": ("actor", "DEMAND_TLB_MISS", "1", ()),
+        "readprefetchHits": ("actor", "PF_TLB_LOOKUP", "result=?", ("hit",)),
+        "readprefetchMisses": ("actor", "PF_TLB_LOOKUP", "result=?", ("miss",)),
+    }
+    mappings.update(translation_mappings)
     checks = []
     for name, expected in summary["stats"]["native_counters"].items():
         owner, suffix = name.rsplit(".", 1)
+        if suffix in translation_mappings and (
+            summary["trace"].get("translation_trace_scope") != "direct_l1_data"
+            or config.get(owner + ".is_dtlb") != "true"
+        ):
+            continue
         if suffix == "tagsInUse":
             cache = owner.removesuffix(".tags")
             occupancy = next(
@@ -239,7 +253,9 @@ def analyze_run(path, output, cpu, weight):
     summary["counter_reconciliation"] = reconcile_counters(db, summary)
     summary["source_analysis"] = source_analysis(db)
     queues = queue_analysis(db)
-    summary["queue_analysis"] = {"stages": queues["stages"]}
+    summary["queue_analysis"] = {
+        "stages": queues["stages"], "outcomes": queues["outcomes"]
+    }
     for filename, rows in queues.items():
         if rows:
             with (output / ("queue-" + filename + ".csv")).open(

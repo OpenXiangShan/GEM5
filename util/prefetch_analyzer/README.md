@@ -126,8 +126,24 @@ percentiles.
 Select a prefetch ID to export its lifecycle, aliases, and demand consumers.
 The HTML selector filters the embedded preview and highlights observed buffer,
 queue, and service intervals. Events retain raw names alongside readable labels.
+A report created with `--prefetch-id` opens with that request selected.
+The selector follows alias chains and shows observed lifecycle timestamps.
+The time-range control focuses on service through first use or includes the
+full observed lifecycle. Stage durations remain visible as text on small screens.
 
 ```bash
 python3 util/prefetch_analyzer/analyze.py /path/to/m5out \
   --prefetch-id 12345 --output /path/to/request-report
 ```
+
+`queue-outcomes.csv` groups distinct dequeued prefetch IDs by actor, source,
+and actual dequeue priority. Its acceptance and use outcomes follow each
+request across all observed cache copies. The same request can occur in more
+than one actor group. Useful, unused-evicted, and censored requests partition
+the accepted requests in each group.
+
+Direct one-stage data translations additionally record `PF_TLB_LOOKUP` and
+`DEMAND_TLB_MISS`. These events retain the prefetch or demand identity so a
+selected timeline can include translation facts before L1 cache arrival.
+Cache-request latency is measured from L1 port arrival to CPU response acceptance.
+The metadata `translation_trace_scope=direct_l1_data` identifies this scope.

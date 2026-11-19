@@ -58,6 +58,7 @@
 #include "debug/TLBVerbosel2.hh"
 #include "debug/TLBtrace.hh"
 #include "debug/autoNextline.hh"
+#include "mem/cache/prefetch/prefetch_trace.hh"
 #include "mem/page_table.hh"
 #include "mem/request.hh"
 #include "params/RiscvTLB.hh"
@@ -2392,6 +2393,16 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     TlbEntry *back_pre[L_L2SUM] = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
     const bool is_prefetch = req->isPrefetch();
     e[0] = lookup(vaddr, satp.asid, mode, false, true, direct, is_prefetch);
+    auto *trace = tc->getSystemPtr()->prefetchTrace;
+    if (trace && trace->active() && is_dtlb && (is_prefetch || !e[0])) {
+        PrefetchTrace::Record record{
+            is_prefetch ? "PF_TLB_LOOKUP" : "DEMAND_TLB_MISS", name(), 0,
+            tc->getCpuPtr()->clockPeriod(), req};
+        record.prefetchId = req->analysisPrefetchId;
+        record.result = e[0] ? "hit" : "miss";
+        record.op = is_prefetch ? "prefetch" : "demand";
+        trace->emit(record);
+    }
     if (!is_prefetch) {
         if (e[0]) {
             stats.l1InitialLookupHits++;

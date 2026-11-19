@@ -85,4 +85,52 @@ def queue_analysis(db):
                 "p99_ticks": values[math.ceil(0.99 * len(values)) - 1],
             }
         )
-    return {"stages": stages, "samples": samples, "intervals": intervals}
+    outcomes = {}
+    seen = set()
+    for row in db.execute("""SELECT e.actor,e.source,e.prefetch_id,e.result,
+            p.send_tick,p.use_tick,p.unused_evicted FROM events e
+            JOIN prefetches p ON e.prefetch_id=p.id
+            WHERE e.event='PF_DEQUEUE' ORDER BY e.tick,e.[order]"""):
+        identity = row["actor"], row["prefetch_id"]
+        if identity in seen or not row["result"].startswith("{"):
+            continue
+        seen.add(identity)
+        priority = json.loads(row["result"])["priority"]
+        key = row["actor"], row["source"], priority
+        counts = outcomes.setdefault(
+            key,
+            {
+                "actor": row["actor"],
+                "source": row["source"],
+                "priority": priority,
+                "dequeued_requests": 0,
+                "accepted_requests": 0,
+                "useful_requests": 0,
+                "unused_evicted_requests": 0,
+                "censored_requests": 0,
+            },
+        )
+        counts["dequeued_requests"] += 1
+        if row["send_tick"] is not None:
+            counts["accepted_requests"] += 1
+            if row["use_tick"] is not None:
+                counts["useful_requests"] += 1
+            elif row["unused_evicted"]:
+                counts["unused_evicted_requests"] += 1
+            else:
+                counts["censored_requests"] += 1
+    outcome_rows = []
+    for key in sorted(outcomes):
+        row = outcomes[key]
+        row["accuracy_observed"] = (
+            row["useful_requests"] / row["accepted_requests"]
+            if row["accepted_requests"]
+            else None
+        )
+        outcome_rows.append(row)
+    return {
+        "stages": stages,
+        "samples": samples,
+        "intervals": intervals,
+        "outcomes": outcome_rows,
+    }

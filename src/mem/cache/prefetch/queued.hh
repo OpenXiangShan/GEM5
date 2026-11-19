@@ -167,6 +167,7 @@ class Queued : public Base
         void setTranslationRequest(const RequestPtr &req)
         {
             translationRequest = req;
+            translationRequest->analysisPrefetchId = traceId;
         }
 
         void markDelayed() override

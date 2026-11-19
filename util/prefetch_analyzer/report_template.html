@@ -28,6 +28,9 @@ first_ready 是最早缓存层 ready，不代表 L1 ready；offload 路径可跨
 <p class="muted">按实际出队优先级查看预测缓冲和发送队列的驻留时间。仅纳入同一请求、同一 Actor 的完整入队和出队区间，单位为 tick。队列长度是事件发生时的采样值。__QUEUE_LINKS__</p>
 <div class="scroll"><svg id="queue-waits" role="img" aria-label="各来源优先级的队列平均和P90等待" style="min-width:1000px"></svg></div>
 <div class="scroll"><table id="queue-stages"><thead><tr><th>Actor</th><th>来源</th><th>优先级</th><th>阶段</th><th>样本</th><th>平均 / tick</th><th>P90 / tick</th><th>P99 / tick</th></tr></thead><tbody>__QUEUE_STAGES__</tbody></table></div>
+<h3>按出队优先级查看利用率</h3>
+<p class="muted">每个 Actor 内按预取 ID 去重，并关联该请求在所有已观察副本上的全局结局。接受、有用、未使用驱逐和右截断沿用请求级定义，Actor 间会包含同一请求。__QUEUE_OUTCOME_LINKS__</p>
+<div class="scroll"><table id="queue-outcomes"><thead><tr><th>Actor</th><th>来源</th><th>优先级</th><th>出队请求</th><th>已接受</th><th>已确认有用</th><th>观察准确率</th><th>未使用驱逐</th><th>右截断</th></tr></thead><tbody>__QUEUE_OUTCOMES__</tbody></table></div>
 <h2>Cache 占用</h2>
 <p class="muted">每次分配、驱逐、预取填入和首次使用均更新状态，按实际驻留 tick 积分。
 预取驻留包含已经使用过的预取行；尚未使用的预取行随首次使用转出。
@@ -44,8 +47,11 @@ first_ready 是最早缓存层 ready，不代表 L1 ready；offload 路径可跨
 <div class="scroll"><table><thead><tr><th>PC</th><th>Cache</th><th>Address Space</th><th>Before Miss</th><th>After Miss</th><th>Δ 加权等待 tick / retired inst</th><th>Before Pending</th><th>After Pending</th></tr></thead><tbody>__PC_DELTAS__</tbody></table></div>
 <h2>预取时间线</h2><p class="muted" id="timeline-count"></p>
 <select id="timeline-prefetch" aria-label="选择预取请求"></select>
+<label for="timeline-window">图中时间范围</label>
+<select id="timeline-window"><option value="service">请求服务阶段</option><option value="full">完整生命周期</option></select>
 <input id="timeline-filter" aria-label="筛选时间线" placeholder="PC / PA / VA / request_id / prefetch_id"><button id="reset">显示全部预览</button>
-<p class="muted">选中请求后，金色区间表示预测缓冲驻留，蓝色表示发送队列驻留，绿色表示下游接受至填充。圆点表示单条事实，小屏可横向滚动查看完整时间范围。</p>
+<p id="timeline-summary"></p><p id="timeline-intervals"></p>
+<p class="muted">选中请求后，金色区间表示预测缓冲驻留，紫色表示 DTLB 查询至翻译完成，蓝色表示发送队列驻留，绿色表示下游接受至填充。圆点表示单条事实。服务阶段截至已观察到的首次消费，可切换完整生命周期查看后续驻留和驱逐。小屏可横向滚动。</p>
 <div class="scroll"><svg id="timeline" role="img" aria-label="Demand 与 Prefetch 时间线" style="min-width:900px"></svg></div><div class="scroll"><table id="events"><thead><tr><th>Tick / Cycle</th><th>事件</th><th>Actor</th><th>Request / PF / Related ID</th><th>PC</th><th>VA / PA</th><th>Context / Address Space</th><th>优先级与队列</th><th>结果 / 原因 / Ready Tick</th></tr></thead><tbody></tbody></table></div>
 <h2>观测口径与边界</h2><ul>__NOTES__</ul>
 <p>完整产物：<a href="summary.json">结构化摘要</a> · <a href="pcs.csv">PC 表</a> · <a href="demands.csv">Demand 表</a> · <a href="prefetches.csv">预取生命周期</a> · <a href="timeline.csv">事件时间线</a> · <a href="performance.csv">性能工作流输入</a></p>
@@ -63,7 +69,9 @@ let sortKey='weighted_miss_latency_ticks',descending=true;
 function pcTable(){const search=$('search').value.toLowerCase(),rows=data.pcs.filter(p=>[p.pc,p.function||'',p.cache,p.context_id,p.address_space,p.pattern,...Object.keys(p.failures)].join(' ').toLowerCase().includes(search));rows.sort((a,b)=>{const x=a[sortKey]??'',y=b[sortKey]??'';return (typeof x==='number'&&typeof y==='number'?x-y:String(x).localeCompare(String(y)))*(descending?-1:1);});$('pc-count').textContent=`${rows.length} 个 PC / Context`;const body=$('pcs').tBodies[0];body.replaceChildren();rows.forEach(p=>{const tr=document.createElement('tr');cell(tr,`${p.pc||'unknown'}${p.function?' · '+p.function:''}`);cell(tr,`${p.cache} / ${p.context_id??'unknown'} / ${p.address_space||'unknown space'}`);cell(tr,p.misses);cell(tr,p.trained_fraction===null?'—':(p.trained_fraction*100).toFixed(1)+'%');cell(tr,p.pattern);cell(tr,p.dominant_stride_bytes);cell(tr,p.weighted_miss_latency_ticks);cell(tr,Object.entries(p.failures).map(([k,v])=>(labels[k]||k)+': '+v).join(' · '));tr.addEventListener('click',()=>{$('detail').textContent=`${p.pc||'unknown'} · ${p.cache} · Context ${p.context_id??'unknown'} / ${p.address_space||'unknown space'}\n${p.function||'未解析函数'} · ${p.source_location||'未解析源码行'}
 ${p.suggestion}\n失败阶段：${JSON.stringify(p.stages)}\n训练丢弃：${JSON.stringify(p.training_drops)}\nDelta 频率：${JSON.stringify(p.deltas)}\n完成 ${p.completed}/${p.accesses} 个请求；平均延迟 ${txt(p.mean_latency_ticks)} tick`;});body.append(tr);});}
 const eventNames = {
-    CACHE_ARB: 'Cache 仲裁选择',
+    CACHE_ARB: 'Cache 仲裁选择', PF_TLB_LOOKUP: '预取查询 DTLB',
+    DEMAND_TLB_MISS: '需求 DTLB 未命中',
+    PF_OBSERVE: '观察访存', PF_TRAIN: '训练预取器', PF_TRAIN_DROP: '丢弃训练样本',
     PF_CANDIDATE: '生成候选', PF_BUFFER_ENQUEUE: '进入预测缓冲',
     PF_BUFFER_DEQUEUE: '离开预测缓冲', PF_IDENTIFIED: '识别请求',
     PF_ENQUEUE: '进入队列', PF_DEQUEUE: '发送出队',
@@ -103,14 +111,40 @@ function timeline() {
         requests.forEach((source, id) => selector.add(
             new Option('PF ' + id + ' · ' + sourceName(source), String(id))
         ));
+        if (data.timeline.scope.prefetch_id !== null) {
+            selector.value = String(data.timeline.scope.prefetch_id);
+        }
     }
     const id = Number(selector.value);
+    const prefetchIds = new Set(id ? [id] : []);
+    let previousSize = 0;
+    while (prefetchIds.size > previousSize) {
+        previousSize = prefetchIds.size;
+        data.timeline.events.filter(event => event.event === 'PF_ALIAS').forEach(event => {
+            if (prefetchIds.has(event.prefetch_id) || prefetchIds.has(event.related_id)) {
+                prefetchIds.add(event.prefetch_id);
+                prefetchIds.add(event.related_id);
+            }
+        });
+    }
     const requestIds = new Set(data.timeline.events
-        .filter(event => id && (event.prefetch_id === id || event.related_id === id))
-        .map(event => event.request_id));
+        .filter(event => prefetchIds.has(event.prefetch_id) || prefetchIds.has(event.related_id))
+        .map(event => event.request_id).filter(request => request > 0));
+    const selected = data.timeline.events.filter(event => prefetchIds.has(event.prefetch_id));
+    const candidate = selected.find(event => event.prefetch_id === id && event.event === 'PF_CANDIDATE');
+    $('timeline-summary').textContent = id ? [
+        `PF ${id} · ${sourceName(candidate?.source ?? selected[0]?.source ?? null)}`,
+        `关联 PF ${[...prefetchIds].join(' / ')}`,
+        `触发 PC ${candidate?.pc || '未观测'}`,
+        ...[['PF_CANDIDATE', '生成'], ['PF_SEND_ACCEPT', '下游接受'],
+            ['PF_FIRST_USE', '首次消费']].map(([event, label]) => {
+            const fact = selected.find(row => row.event === event);
+            return `${label} ${fact ? 'tick ' + txt(fact.tick) : '未观测'}`;
+        })
+    ].join(' · ') : '';
     const filter = $('timeline-filter').value.toLowerCase();
     const rows = data.timeline.events.filter(event => {
-        const identityMatch = !id || event.prefetch_id === id || event.related_id === id ||
+        const identityMatch = !id || prefetchIds.has(event.prefetch_id) || prefetchIds.has(event.related_id) ||
             (!event.prefetch_id && requestIds.has(event.request_id));
         const textMatch = [event.pc, event.paddr, event.vaddr, event.request_id,
             event.prefetch_id, event.related_id, event.event, event.actor,
@@ -118,10 +152,13 @@ function timeline() {
             .some(value => String(value ?? '').toLowerCase().includes(filter));
         return identityMatch && textMatch;
     });
+    const firstUse = selected.find(event => event.event === 'PF_FIRST_USE');
+    const plotRows = id && firstUse && $('timeline-window').value === 'service' ?
+        rows.filter(event => event.tick <= firstUse.tick) : rows;
     const scope = data.timeline.scope;
     $('timeline-count').textContent =
         `已导出 ${data.timeline.total} 条关联事实，嵌入 ${data.timeline.events.length} 条。` +
-        `当前显示 ${rows.length} 条。PC ${scope.pc || '全部'}，Line ${scope.line || '全部'}，` +
+        `表格 ${rows.length} 条，图中 ${plotRows.length} 条。PC ${scope.pc || '全部'}，Line ${scope.line || '全部'}，` +
         `PF ${scope.prefetch_id ?? '全部'}。悬停查看事件，选择请求可沿 Actor 追踪。`;
     const body = $('events').tBodies[0];
     body.replaceChildren();
@@ -129,7 +166,7 @@ function timeline() {
         const tr = document.createElement('tr');
         cell(tr, `${event.tick} / ${event.cycle}`);
         cell(tr, `${eventNames[event.event] || event.event} (${event.event})`);
-        cell(tr, event.actor + ' · ' + sourceName(event.source));
+        cell(tr, event.actor);
         cell(tr, `${event.request_id} / ${event.prefetch_id} / ${event.related_id}`);
         cell(tr, event.pc);
         cell(tr, `${event.vaddr || '—'} / ${event.paddr || '—'}`);
@@ -141,16 +178,18 @@ function timeline() {
     });
     const svg = $('timeline');
     svg.replaceChildren();
-    if (!rows.length) {
+    $('timeline-intervals').textContent = '';
+    if (!plotRows.length) {
         svg.setAttribute('viewBox', '0 0 1100 70');
-        shape(svg, 'text', {x: 15, y: 35}, '预览中无匹配事件，可用 --prefetch-id / --pc / --line 导出目标。');
+        shape(svg, 'text', {x: 15, y: 35}, '当前图中匹配 0 条事件，请调整筛选或选择完整生命周期。');
         return;
     }
-    const actors = [...new Set(rows.map(event => event.actor))];
-    const first = Math.min(...rows.map(event => event.tick));
-    const last = Math.max(first + 1, ...rows.map(event => event.tick));
+    const actors = [...new Set(plotRows.map(event => event.actor))];
+    const first = Math.min(...plotRows.map(event => event.tick));
+    const last = Math.max(first + 1, ...plotRows.map(event => event.tick));
     const x = tick => 190 + 860 * (tick - first) / (last - first);
     svg.setAttribute('viewBox', `0 0 1100 ${actors.length * 42 + 65}`);
+    const intervals = [];
     actors.forEach((actor, index) => {
         const y = 30 + index * 42;
         const label = actor.replace(/^system\.cpu\./, '').replace(/^system\.l2_wrappers\./, 'L2.').replace(/^system\./, '').replace('inner_cache', 'cache').replace('prefetcher', 'PF');
@@ -158,26 +197,31 @@ function timeline() {
         shape(name, 'title', {}, actor);
         shape(svg, 'line', {x1: 190, x2: 1050, y1: y, y2: y, stroke: '#dce3ed'});
         if (id) {
-            const events = rows.filter(event => event.actor === actor && event.prefetch_id === id);
+            const events = plotRows.filter(event => event.actor === actor && prefetchIds.has(event.prefetch_id));
             for (const [begin, end, color] of [
                 ['PF_BUFFER_ENQUEUE', 'PF_BUFFER_DEQUEUE', '#b88735'],
+                ['PF_TLB_LOOKUP', 'PF_TRANSLATE', '#7753a5'],
                 ['PF_ENQUEUE', 'PF_DEQUEUE', '#3378a9'],
                 ['PF_SEND_ACCEPT', 'PF_FILL', '#28856d']
             ]) {
                 const a = events.find(event => event.event === begin &&
                     (begin !== 'PF_ENQUEUE' || event.reason === 'ready_queue'));
-                const b = events.find(event => event.event === end);
+                const endEvents = begin === 'PF_TLB_LOOKUP' ? plotRows : events;
+                const b = a && endEvents.find(event => event.event === end && event.prefetch_id === a.prefetch_id);
                 if (a && b && b.tick >= a.tick) {
                     const bar = shape(svg, 'rect', {
                         x: x(a.tick), y: y - 6, width: Math.max(1, x(b.tick) - x(a.tick)),
                         height: 12, fill: color, opacity: 0.3
                     });
-                    shape(bar, 'title', {}, `${eventNames[begin]} → ${eventNames[end]} · ${b.tick - a.tick} tick`);
+                    const duration = `${eventNames[begin]} → ${eventNames[end]} ${txt(b.tick - a.tick)} tick`;
+                    shape(bar, 'title', {}, duration);
+                    intervals.push(`${label} · ${duration}`);
                 }
             }
         }
     });
-    rows.forEach(event => {
+    $('timeline-intervals').textContent = intervals.join('。');
+    plotRows.forEach(event => {
         const y = 30 + actors.indexOf(event.actor) * 42;
         const color = event.event.startsWith('DEMAND') ? '#3378a9' :
             event.event === 'PF_DROP' ? '#b95550' :
@@ -192,6 +236,7 @@ function timeline() {
         `+${last - first} tick`);
 }
 $('timeline-prefetch').addEventListener('change', timeline);
+$('timeline-window').addEventListener('change', timeline);
 function queueWaitChart() {
     const svg = $('queue-waits');
     const rows = [...data.queues].sort((a, b) => b.p90_ticks - a.p90_ticks).slice(0, 20);

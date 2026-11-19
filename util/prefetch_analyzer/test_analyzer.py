@@ -201,6 +201,33 @@ class AnalyzerTests(unittest.TestCase):
         self.assertEqual(audit["status"], "mismatch")
         self.assertEqual(audit["checks"][0]["trace"], 0)
 
+    def test_direct_dtlb_counters_require_scope_metadata(self):
+        from analyze import reconcile_counters
+
+        trace = Trace()
+        owner = "system.cpu.mmu.dtb"
+        trace.add(10, "PF_TLB_LOOKUP", pf=10, actor=owner, result="hit")
+        trace.add(11, "PF_TLB_LOOKUP", pf=20, actor=owner, result="miss")
+        trace.add(12, "DEMAND_TLB_MISS", actor=owner, result="miss")
+        db, summary, _ = self.analyze(trace)
+        summary.update(
+            trace_matches_stats_window=True,
+            trace={"translation_trace_scope": "direct_l1_data"},
+            config={"entries": {owner + ".is_dtlb": "true"}},
+            stats={"native_counters": {
+                owner + ".l1InitialLookupMisses": 1,
+                owner + ".readprefetchHits": 1,
+                owner + ".readprefetchMisses": 1,
+            }},
+        )
+        audit = reconcile_counters(db, summary)
+        self.assertEqual(audit["status"], "equal")
+        self.assertEqual(len(audit["checks"]), 3)
+        summary["stats"]["native_counters"][owner + ".readprefetchMisses"] = 2
+        self.assertEqual(reconcile_counters(db, summary)["status"], "mismatch")
+        summary["trace"] = {}
+        self.assertEqual(reconcile_counters(db, summary)["checks"], [])
+
     def test_same_hardware_context_different_address_spaces_and_pa_mismatch(self):
         trace = Trace()
         trace.candidate(10, 10, None, va="0x4000", address_space="se:1000:0:0:0:0")
@@ -467,6 +494,8 @@ class AnalyzerTests(unittest.TestCase):
         trace.add(
             42, "PF_DEQUEUE", pf=10, source=4, result=state, actor="forwarder"
         )
+        trace.add(45, "PF_SEND_ACCEPT", pf=10, source=4)
+        trace.add(50, "PF_FIRST_USE", req=2, pf=10, source=4, result="hit")
         db, _, _ = self.analyze(trace)
         result = queue_analysis(db)
         self.assertEqual(len(result["intervals"]), 2)
@@ -476,6 +505,10 @@ class AnalyzerTests(unittest.TestCase):
         self.assertEqual(elapsed, {"prediction_buffer": 5, "ready_queue": 15})
         self.assertTrue(all(row["priority"] == 32 for row in result["stages"]))
         self.assertEqual(result["samples"][-1]["actor"], "forwarder")
+        self.assertEqual(len(result["outcomes"]), 2)
+        self.assertTrue(all(row["useful_requests"] == 1
+                            and row["accuracy_observed"] == 1.0
+                            for row in result["outcomes"]))
 
     def test_prefetch_id_timeline_follows_aliases_and_demand_consumers(self):
         from analyze import export_timeline
@@ -485,6 +518,11 @@ class AnalyzerTests(unittest.TestCase):
         trace.candidate(11, 20, "0x1000")
         trace.add(12, "PF_ALIAS", pf=20, related_id=10)
         trace.candidate(13, 30, "0x2000")
+        trace.add(14, "PF_TLB_LOOKUP", req=100, pf=10, pa=None,
+                  actor="system.cpu.mmu.dtb", result="miss")
+        trace.add(15, "PF_TRANSLATE", req=100, pf=10)
+        trace.add(90, "DEMAND_TLB_MISS", req=7, pa=None,
+                  actor="system.cpu.mmu.dtb", result="miss")
         trace.add(
             30,
             "CACHE_ARB",
@@ -519,6 +557,11 @@ class AnalyzerTests(unittest.TestCase):
                 row["event"] == "DEMAND_COMPLETE" and row["request_id"] == 99
                 for row in timeline["events"]
             )
+        )
+        self.assertEqual(
+            {row["event"] for row in timeline["events"]
+             if row["actor"] == "system.cpu.mmu.dtb"},
+            {"PF_TLB_LOOKUP", "DEMAND_TLB_MISS"},
         )
         self.assertEqual(timeline["scope"]["prefetch_id"], 10)
 
