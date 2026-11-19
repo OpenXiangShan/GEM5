@@ -159,7 +159,8 @@ def setKmhV3IdealParams(args, system):
                     l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
                 l2_prefetcher = l2_wrapper.prefetcher
             if l2_prefetcher != NULL:
-                if args.ideal_l2_bop_mode == "compound":
+                bop_mode = args.l2_bop_mode or "compound"
+                if bop_mode == "compound":
                     PrefetcherConfig.configure_l2_compound_bop(
                         l2_prefetcher)
                 else:
