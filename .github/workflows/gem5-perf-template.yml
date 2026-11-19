@@ -229,6 +229,17 @@ jobs:
             echo "- Path: \`$TARGET_DIR\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Check out progress formatter for an overridden test ref
+        if: ${{ (inputs.pr_sha || github.sha) != github.workflow_sha }}
+        id: progress_source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .perf-workflow
+          sparse-checkout: util/xs_scripts/perf_progress.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - name: XS-GEM5 - Run performance test
         # ${{ steps.config.outputs.comment }}
         env:
@@ -242,6 +253,7 @@ jobs:
           SPECIFIC_BENCHMARKS_INPUT: ${{ inputs.specific_benchmarks }}
           EXTRA_GEM5_ARGS_RAW: ${{ inputs.extra_args }}
           CHECKPOINT_LIST: ${{ steps.archive.outputs.target_dir }}/checkpoints.lst
+          CHECKPOINT_PROGRESS_SCRIPT: ${{ steps.progress_source.outcome == 'success' && '.perf-workflow/util/xs_scripts/perf_progress.py' || 'util/xs_scripts/perf_progress.py' }}
           CHECKPOINT_ROOT_NODE: ${{ steps.config.outputs.checkpoint_root_node }}
           DISTRIBUTED_SERVERS: ${{ steps.archive.outputs.distributed_servers }}
           DISTRIBUTED_JOBS_PER_SERVER: ${{ inputs.distributed_jobs_per_server }}
@@ -303,14 +315,17 @@ jobs:
             fi
           fi
 
+          progress_wrapper=(python3 "$GEM5_HOME/$CHECKPOINT_PROGRESS_SCRIPT"
+            "$CHECKPOINT_LIST" "$SPECIFIC_BENCHMARKS_INPUT" "$TRACE_FORMAT")
+
           run_local_parallel() {
             if [[ -n "$TRACE_FORMAT" ]]; then
-              bash "$GEM5_HOME/util/xs_scripts/trace/parallel_trace_sim.sh" \
+              "${progress_wrapper[@]}" bash "$GEM5_HOME/util/xs_scripts/trace/parallel_trace_sim.sh" \
                 "$CONFIG_PATH" "$CHECKPOINT_LIST" "$CHECKPOINT_ROOT_NODE" \
                 spec_all "$SPECIFIC_BENCHMARKS_INPUT" "$extra_args"
             else
               echo "Using local parallel_sim.sh runner"
-              bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
+              "${progress_wrapper[@]}" bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
                 "$CHECKPOINT_LIST" \
                 "$CHECKPOINT_ROOT_NODE" \
                 spec_all \
@@ -323,7 +338,7 @@ jobs:
           if [ -n "$distributed_servers" ]; then
             echo "Using distributed gem5 runner on servers: $distributed_servers"
             distributed_status=0
-            python3 "$GEM5_HOME/util/xs_scripts/distributed_sim.py" \
+            "${progress_wrapper[@]}" python3 "$GEM5_HOME/util/xs_scripts/distributed_sim.py" \
               --servers "$distributed_servers" \
               --jobs-per-server "$DISTRIBUTED_JOBS_PER_SERVER" \
               --require-idle-cpus "$DISTRIBUTED_REQUIRE_IDLE_CPUS" \
