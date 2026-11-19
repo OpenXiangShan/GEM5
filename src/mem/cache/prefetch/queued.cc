@@ -1161,8 +1161,6 @@ Queued::PFSendEventWrapper()
             
         PacketPtr pkt = addr_prio.pf_trigger_info.pkt;
         PrefetchInfo pfi = PrefetchInfo(*addr_prio.pf_trigger_info.pfi_old);
-        //override address's prio to 1 
-        addr_prio.priority = 1;
         // Block align prefetch address
         addr_prio.addr = blockAddress(addr_prio.addr);
 
