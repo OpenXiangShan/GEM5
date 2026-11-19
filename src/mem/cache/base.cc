@@ -65,7 +65,6 @@
 #include "debug/CachePort.hh"
 #include "debug/CacheRepl.hh"
 #include "debug/CacheVerbose.hh"
-#include "debug/DcacheMainPipePrefetch.hh"
 #include "debug/HWPrefetch.hh"
 #include "debug/MSHR.hh"
 #include "debug/TagReadFail.hh"
@@ -190,7 +189,6 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       cacheLevel(p.cache_level),
       forceHit(p.force_hit),
       simulateDcacheRefill(p.simulate_dcache_refill),
-      modelDcacheLoadpipeTag(p.model_dcache_loadpipe_tag),
       dcachePrefetchWakeupEvent([this] {
           if (dcacheMainPipeLSQ)
               dcacheMainPipeLSQ->wakeDcachePrefetch();
@@ -199,9 +197,6 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       Prefetch_CanOffload(p.prefetch_can_offload)
 {
     hitUnderBlock = p.hit_under_block;
-    if (usesDcachePrefetchMainPipe())
-        mshrQueue.enableIndexedPrefetchReserve(
-            p.mainpipe_demand_mshr_reserve);
 
     // the MSHR queue has no reserve entries as we check the MSHR
     // queue on every single allocation, whereas the write queue has
@@ -382,16 +377,6 @@ BaseCache::getMshrAvgEntryNum() const
 
     return static_cast<double>(mshrQueue.getOccupancyEntryTicks(now)) /
         static_cast<double>(elapsed);
-}
-
-double
-BaseCache::getMshrHeldAvgEntryNum() const
-{
-    const Tick now = curTick();
-    const Tick elapsed = mshrQueue.getOccupancyElapsedTicks(now);
-    return elapsed ?
-        static_cast<double>(mshrQueue.getHeldOccupancyEntryTicks(now)) /
-            static_cast<double>(elapsed) : 0.0;
 }
 
 double
@@ -685,22 +670,7 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
 bool
 BaseCache::tryAccessTag(PacketPtr pkt)
 {
-    // Failure belongs to this attempt, not to a previously rejected send.
-    pkt->tagReadFail = false;
     if ((cacheLevel == 1) && pkt->needsResponse() && pkt->isRead()) {
-        if (usesDcachePrefetchMainPipe() && modelDcacheLoadpipeTag &&
-            pkt->getLSQPtr()) {
-            auto *request = dynamic_cast<o3::LSQ::LSQRequest *>(pkt->senderState);
-            if (request && request->isLoad()) {
-                registerDcacheMainPipeLSQ(pkt->getLSQPtr());
-                const bool accepted = dcacheMainPipeLSQ->tryDcacheLoadTag(
-                    request->instruction());
-                pkt->tagReadFail = !accepted;
-                if (!accepted)
-                    ++stats.loadTagReadFails;
-                return accepted;
-            }
-        }
         if (!tagAccessCheck()) {
             // send tag read fail signal to lsu
             stats.loadTagReadFails++;
@@ -1011,9 +981,6 @@ BaseCache::dcacheMainPipeEffectiveMSHRFull() const
 bool
 BaseCache::dcacheMainPipeCanPrefetch() const
 {
-    if (usesDcachePrefetchMainPipe())
-        return !dcacheMainPipeEffectiveMSHRFull() &&
-            mshrQueue.canMainPipePrefetch();
     return mshrQueue.canPrefetchWithExtraAllocated(
         dcacheMainPipeHeldMSHRCredits);
 }
@@ -1049,24 +1016,21 @@ BaseCache::scheduleDcachePrefetchWakeup(Tick ready)
         reschedule(dcachePrefetchWakeupEvent, when);
 }
 
-PacketPtr
-BaseCache::peekDcacheMainPipePrefetch() const
+bool
+BaseCache::hasReadyDcacheMainPipePrefetch() const
 {
-    if (!usesDcachePrefetchMainPipe() || !prefetcher ||
-        prefetcher->nextPrefetchReadyTime() > curTick())
-        return nullptr;
-    return prefetcher->peekPacket();
+    return usesDcachePrefetchMainPipe() && prefetcher &&
+        prefetcher->nextPrefetchReadyTime() <= curTick();
 }
 
 PacketPtr
 BaseCache::takeDcacheMainPipePrefetch()
 {
-    PacketPtr expected = peekDcacheMainPipePrefetch();
-    assert(expected);
+    assert(hasReadyDcacheMainPipePrefetch());
     PacketPtr packet = prefetcher->getPacket();
-    panic_if(packet != expected, "%s: prefetch peek/get disagree", name());
+    panic_if(!packet, "%s: ready prefetcher did not return a packet", name());
     scheduleDcachePrefetchWakeup(prefetcher->nextPrefetchReadyTime());
-    DPRINTF(DcacheMainPipePrefetch, "MainPipe prefetch accept addr=%#x\n", packet->getAddr());
+    DPRINTF(HWPrefetch, "MainPipe prefetch accept addr=%#x\n", packet->getAddr());
     return packet;
 }
 
@@ -1076,7 +1040,7 @@ BaseCache::captureDcacheMainPipePrefetchTag(const Packet &packet)
     const CacheBlk *blk = tags->findBlock(packet.getBlockAddr(blkSize),
                                            packet.isSecure());
     const bool readable = blk && blk->isSet(CacheBlk::ReadableBit);
-    DPRINTF(DcacheMainPipePrefetch,
+    DPRINTF(HWPrefetch,
             "MainPipe prefetch S1 addr=%#x readable=%d\n",
             packet.getAddr(), readable);
     return readable;
@@ -1089,7 +1053,7 @@ BaseCache::issueDcacheMainPipePrefetch(std::unique_ptr<Packet> &packet,
     assert(usesDcachePrefetchMainPipe() && packet);
     PacketPtr pkt = packet.get();
     const Addr addr = pkt->getBlockAddr(blkSize);
-    DPRINTF(DcacheMainPipePrefetch, "MainPipe prefetch S2 addr=%#x\n", pkt->getAddr());
+    DPRINTF(HWPrefetch, "MainPipe prefetch S2 addr=%#x\n", pkt->getAddr());
     const auto source = pkt->req->getXsMetadata().prefetchSource;
     auto late = [&] {
         if (source == PrefetchSourceType::SStream)
@@ -1099,15 +1063,13 @@ BaseCache::issueDcacheMainPipePrefetch(std::unique_ptr<Packet> &packet,
     CacheBlk *blk = tags->findBlock(addr, pkt->isSecure());
     const bool now_readable = blk && blk->isSet(CacheBlk::ReadableBit);
     if (now_readable != s1_readable) {
-        DPRINTF(DcacheMainPipePrefetch,
+        DPRINTF(HWPrefetch,
                 "MainPipe prefetch tag_change addr=%#x s1=%d s2=%d action=%s\n",
                 pkt->getAddr(), s1_readable, now_readable,
                 s1_readable ? "nack" : "hit");
-        ++stats.mainPipePrefetchTagChanged;
         // Classic snoops/fills do not yet pass through the fake MainPipe.
         // A stale hit must never authorize data access or an allocation.
         if (s1_readable) {
-            ++stats.mainPipePrefetchTagLost;
             packet.reset();
             return MainPipePrefetchResult::Nack;
         }
@@ -1127,61 +1089,43 @@ BaseCache::issueDcacheMainPipePrefetch(std::unique_ptr<Packet> &packet,
         late();
         return MainPipePrefetchResult::WBHit;
     }
-    // Recheck capacity at S2, including the credits held by refill timing.
-    // Like RTL, a rejected hardware prefetch exits rather than replaying.
-    if (!dcacheMainPipeCanPrefetch() || isBlocked()) {
-        if (!dcacheMainPipeCanPrefetch())
-            ++stats.mainPipePrefetchNackCapacity;
-        else
-            ++stats.mainPipePrefetchNackBlocked;
+    // Keep the legacy allocation policy; only a new miss needs a slot.
+    const bool can_prefetch = dcacheMainPipeCanPrefetch();
+    if (!can_prefetch || isBlocked()) {
+        DPRINTF(HWPrefetch, "MainPipe prefetch nack addr=%#x reason=%s\n",
+                pkt->getAddr(), can_prefetch ? "blocked" : "capacity");
         packet.reset();
         return MainPipePrefetchResult::Nack;
-    }
-    if (mshrAllocPerCycle >= 0) {
-        const auto cycle = ticksToCycles(curTick());
-        if (lastMSHRAllocCycle != cycle) {
-            lastMSHRAllocCycle = cycle;
-            accessCounter = 0;
-        }
-        if (accessCounter >= mshrAllocPerCycle) {
-            ++stats.MSHRArbFails;
-            ++stats.mainPipePrefetchNackBandwidth;
-            packet.reset();
-            return MainPipePrefetchResult::Nack;
-        }
-        ++accessCounter;
     }
     assert(pkt->req->requestorId() < system->maxRequestors());
     stats.cmdStats(pkt).mshrMisses[pkt->req->requestorId()]++;
     // Unlike the old getNextQueueEntry path, S2 does not return this MSHR
     // to the send arbiter. Its outbound event must be scheduled here.
-    if (!mshrQueue.canPrefetchWithExtraAllocated(dcacheMainPipeHeldMSHRCredits))
-        ++stats.mainPipePrefetchReserveRecovered;
+    DPRINTF(HWPrefetch, "MainPipe prefetch allocate addr=%#x\n",
+            pkt->getAddr());
     allocateMissBuffer(packet.release(), clockEdge(), true);
     return MainPipePrefetchResult::Miss;
 }
 
 void
-BaseCache::holdDcacheMainPipeMSHRCredit(MSHR *entry)
+BaseCache::holdDcacheMainPipeMSHRCredit()
 {
-    mshrQueue.holdRefillEntry(entry);
     ++dcacheMainPipeHeldMSHRCredits;
 }
 
 void
-BaseCache::scheduleDcacheMainPipeMSHRCreditRelease(Tick tick, MSHR *entry)
+BaseCache::scheduleDcacheMainPipeMSHRCreditRelease(Tick tick)
 {
     Event *event = new EventFunctionWrapper(
-        [this, entry] { releaseDcacheMainPipeMSHRCredit(entry); },
+        [this] { releaseDcacheMainPipeMSHRCredit(); },
         name() + ".dcache_mainpipe_mshr_credit_release", true);
     schedule(event, std::max(tick, curTick()));
 }
 
 void
-BaseCache::releaseDcacheMainPipeMSHRCredit(MSHR *entry)
+BaseCache::releaseDcacheMainPipeMSHRCredit()
 {
     const bool was_full = dcacheMainPipeEffectiveMSHRFull();
-    mshrQueue.releaseRefillEntry(entry);
     assert(dcacheMainPipeHeldMSHRCredits > 0);
     --dcacheMainPipeHeldMSHRCredits;
 
@@ -1368,11 +1312,11 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 
         dcache_refill_notified = true;
         if (hold_mshr_credit) {
-            holdDcacheMainPipeMSHRCredit(mshr);
+            holdDcacheMainPipeMSHRCredit();
             dcache_refill_lsq->notifyDcacheRefill(
                 dcache_refill_addr, dcache_refill_need_data_read,
-                [this, mshr](Tick tick) {
-                    scheduleDcacheMainPipeMSHRCreditRelease(tick, mshr);
+                [this](Tick tick) {
+                    scheduleDcacheMainPipeMSHRCreditRelease(tick);
                 });
         } else {
             dcache_refill_lsq->notifyDcacheRefill(
@@ -3375,12 +3319,6 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "average number of allocated MSHR entries"),
     ADD_STAT(mshrOccupancyRatio, statistics::units::Ratio::get(),
              "average allocated MSHR entry ratio"),
-    ADD_STAT(mshrHeldAvgEntryNum, statistics::units::Ratio::get(),
-             "average held refill slots excluding allocated entries"),
-    ADD_STAT(mshrEffectiveAvgEntryNum, statistics::units::Ratio::get(),
-             "average union of allocated MSHRs and held refill slots"),
-    ADD_STAT(mshrEffectiveOccupancyRatio, statistics::units::Ratio::get(),
-             "average effective MSHR entry ratio including held refill slots"),
     ADD_STAT(noMshrBlockedCycles, statistics::units::Cycle::get(),
              "number of cycles blocked by no MSHR entries"),
     ADD_STAT(hitUnderBlockServed, statistics::units::Count::get(),
@@ -3441,18 +3379,6 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of MSHR Alias fails (VA diff)"),
     ADD_STAT(FindHitInWriteBuffer, statistics::units::Count::get(),
              "number of hits in write buffer when missing in cache"),
-    ADD_STAT(mainPipePrefetchReserveRecovered, statistics::units::Count::get(),
-             "S2 prefetch MSHRs admitted beyond the legacy global occupancy gate"),
-    ADD_STAT(mainPipePrefetchNackCapacity, statistics::units::Count::get(),
-             "S2 prefetches rejected with no eligible unheld MSHR entry"),
-    ADD_STAT(mainPipePrefetchNackBlocked, statistics::units::Count::get(),
-             "S2 prefetches rejected by the classic cache blocked flag"),
-    ADD_STAT(mainPipePrefetchNackBandwidth, statistics::units::Count::get(),
-             "S2 prefetches rejected by MSHR allocation bandwidth"),
-    ADD_STAT(mainPipePrefetchTagChanged, statistics::units::Count::get(),
-             "Prefetch S1/S2 readable tag changes in classic cache"),
-    ADD_STAT(mainPipePrefetchTagLost, statistics::units::Count::get(),
-             "Prefetch S1 hits dropped after coherence/eviction races"),
     ADD_STAT(prefetchTagReadFails, statistics::units::Count::get(),
              "number of prefetch req Tag read fail because of load"),
     ADD_STAT(dataExpansions, statistics::units::Count::get(),
@@ -3707,24 +3633,6 @@ BaseCache::CacheStats::regStats()
     mshrOccupancyRatio
         .flags(nonan)
         .functor([this]() { return cache.getMshrOccupancyRatio(); });
-
-    mshrHeldAvgEntryNum
-        .flags(nonan)
-        .functor([this]() { return cache.getMshrHeldAvgEntryNum(); });
-    mshrEffectiveAvgEntryNum
-        .flags(nonan)
-        .functor([this]() {
-            return cache.getMshrAvgEntryNum() +
-                cache.getMshrHeldAvgEntryNum();
-        });
-    mshrEffectiveOccupancyRatio
-        .flags(nonan)
-        .functor([this]() {
-            const int entries = cache.mshrQueue.getNumEntries();
-            return entries > 0 ?
-                (cache.getMshrAvgEntryNum() +
-                 cache.getMshrHeldAvgEntryNum()) / entries : 0.0;
-        });
 
     bytesRecvPerCycle.flags(total | nozero | nonan);
     bytesRecvPerCycle = bytesRecv / simTicks * cache.clockPeriod();

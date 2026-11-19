@@ -43,8 +43,6 @@ class PrefetcherForwarder : public Base
     void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
     void probeNotify(const PacketPtr &pkt, bool miss) override;
 
-    PacketPtr peekPacket() const override
-    { return prefetch_queue.empty() ? nullptr : prefetch_queue.front(); }
     PacketPtr getPacket() override;
     bool hasPendingPacket() override;
     Tick nextPrefetchReadyTime() const override;

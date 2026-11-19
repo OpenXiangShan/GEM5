@@ -1181,12 +1181,6 @@ class LSQ
 
     void advanceDcacheMainPipe();
 
-    /** Reserve a scheduler-identified LoadPipe tag interface this cycle. */
-    bool tryDcacheLoadTag(const DynInstPtr &inst);
-    bool usesDcacheLoadTagModel() const;
-    /** Tag-write readiness precedes data-bank arbitration. */
-    bool blockDcacheLoadTagForWrite(const DynInstPtr &inst);
-
     unsigned
     getDcacheDiv(Addr vaddr) const;
 
@@ -1510,14 +1504,6 @@ class LSQ
 
     std::queue<DcacheMainPipeRequest> dcacheMainPipeRefillQ;
     DcacheMainPipeBufferedPipe dcacheMainPipe = {};
-    struct DcacheLoadTagLane
-    {
-        Tick tick = MaxTick;
-        ThreadID tid = InvalidThreadID;
-        InstSeqNum seq = 0;
-    };
-    std::vector<DcacheLoadTagLane> dcacheLoadTagLanes;
-    Tick dcacheMainPipeSnapshotTick = MaxTick;
     DcacheMainPipeSlot dcacheMainPipeSkid = {};
     bool dcacheMainPipeInputReady = false;
     bool dcacheMainPipeS0TagWriteBlocked = false;
@@ -1668,28 +1654,17 @@ class LSQ
         statistics::Vector sbufferMissForward;
         statistics::Vector sbufferDcacheReqBlocked;
         statistics::Vector sbufferDcacheReqBlockedByMainPipe;
-        statistics::Scalar dcacheLoadTagRead;
-        statistics::Scalar dcacheLoadTagWriteBlocked;
-        statistics::Scalar dcacheLoadTagLaneBlocked;
-        statistics::Scalar dcacheLoadTagPacketReuse;
         statistics::Scalar dcacheMainPipeRefillEnter;
         statistics::Scalar dcacheMainPipeStoreEnter;
         statistics::Scalar dcacheMainPipePrefetchAccepted;
         statistics::Scalar dcacheMainPipeSkidCapture;
         statistics::Scalar dcacheMainPipeSkidDrain;
-        statistics::Scalar dcacheMainPipeStoreBlockedByInput;
         statistics::Scalar dcacheMainPipePrefetchEnter;
-        statistics::Scalar dcacheMainPipePrefetchBlockedByRefill;
-        statistics::Scalar dcacheMainPipePrefetchBlockedByS1;
-        statistics::Scalar dcacheMainPipePrefetchBlockedByTagWrite;
-        statistics::Scalar dcacheMainPipePrefetchBlockedBySet;
-        statistics::Scalar dcacheMainPipeStoreBlockedByPrefetch;
         statistics::Scalar dcacheMainPipePrefetchS2Hit;
         statistics::Scalar dcacheMainPipePrefetchS2Miss;
         statistics::Scalar dcacheMainPipePrefetchS2MSHRHit;
         statistics::Scalar dcacheMainPipePrefetchS2WBHit;
         statistics::Scalar dcacheMainPipePrefetchS2Nack;
-        statistics::Scalar dcacheMainPipePrefetchWithoutVaddr;
         statistics::Scalar dcacheMainPipeStoreBlockedByRefill;
         statistics::Scalar dcacheMainPipeStoreBlockedBySet;
         statistics::Scalar dcacheMainPipeBlockedByS1Backpressure;

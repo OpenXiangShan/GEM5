@@ -65,11 +65,11 @@
 #include "cpu/o3/iew.hh"
 #include "cpu/o3/issue_queue.hh"
 #include "cpu/o3/limits.hh"
-#include "debug/DcacheMainPipePrefetch.hh"
 #include "debug/Drain.hh"
 #include "debug/Fetch.hh"
 #include "debug/Hint.hh"
 #include "debug/HtmCpu.hh"
+#include "debug/HWPrefetch.hh"
 #include "debug/LSQ.hh"
 #include "debug/PacketSender.hh"
 #include "debug/Schedule.hh"
@@ -467,14 +467,6 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent, unsigned num_threads)
       ADD_STAT(sbufferDcacheReqBlockedByMainPipe,
                statistics::units::Count::get(),
                "Number of sbuffer write requests blocked by fake dcache mainpipe"),
-      ADD_STAT(dcacheLoadTagRead, statistics::units::Count::get(),
-               "Logical load tag queries admitted by scheduler LoadPipe ID"),
-      ADD_STAT(dcacheLoadTagWriteBlocked, statistics::units::Count::get(),
-               "Load tag attempts blocked by MainPipe tag write intention"),
-      ADD_STAT(dcacheLoadTagLaneBlocked, statistics::units::Count::get(),
-               "Load tag attempts blocked by another instruction on that lane"),
-      ADD_STAT(dcacheLoadTagPacketReuse, statistics::units::Count::get(),
-               "Cache packets reusing their LoadPipe same-cycle tag admission"),
       ADD_STAT(dcacheMainPipeRefillEnter, statistics::units::Count::get(),
                "Number of refill requests accepted by fake dcache mainpipe"),
       ADD_STAT(dcacheMainPipeStoreEnter, statistics::units::Count::get(),
@@ -485,20 +477,8 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent, unsigned num_threads)
                "Requests captured in the shared one-entry skid buffer"),
       ADD_STAT(dcacheMainPipeSkidDrain, statistics::units::Count::get(),
                "Buffered requests advancing from skid to S0"),
-      ADD_STAT(dcacheMainPipeStoreBlockedByInput, statistics::units::Count::get(),
-               "Store admission attempts while the shared input is not ready"),
       ADD_STAT(dcacheMainPipePrefetchEnter, statistics::units::Count::get(),
                "Hardware prefetches admitted at MainPipe S0"),
-      ADD_STAT(dcacheMainPipePrefetchBlockedByRefill, statistics::units::Count::get(),
-               "Cycles a ready prefetch waits behind a pending refill"),
-      ADD_STAT(dcacheMainPipePrefetchBlockedByS1, statistics::units::Count::get(),
-               "Cycles prefetch admission is blocked by S1 occupancy"),
-      ADD_STAT(dcacheMainPipePrefetchBlockedByTagWrite, statistics::units::Count::get(),
-               "Cycles prefetch admission is blocked by S3 tag write"),
-      ADD_STAT(dcacheMainPipePrefetchBlockedBySet, statistics::units::Count::get(),
-               "Cycles prefetch admission sees an in-flight modifying same-set request"),
-      ADD_STAT(dcacheMainPipeStoreBlockedByPrefetch, statistics::units::Count::get(),
-               "StoreBuffer admission attempts blocked by a ready prefetch"),
       ADD_STAT(dcacheMainPipePrefetchS2Hit, statistics::units::Count::get(),
                "First-lookup prefetch hits completing through S3"),
       ADD_STAT(dcacheMainPipePrefetchS2Miss, statistics::units::Count::get(),
@@ -508,9 +488,7 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent, unsigned num_threads)
       ADD_STAT(dcacheMainPipePrefetchS2WBHit, statistics::units::Count::get(),
                "Prefetches dropped on an existing write buffer entry at S2"),
       ADD_STAT(dcacheMainPipePrefetchS2Nack, statistics::units::Count::get(),
-               "Prefetches rejected at S2 by capacity, cache block or allocation bandwidth"),
-      ADD_STAT(dcacheMainPipePrefetchWithoutVaddr, statistics::units::Count::get(),
-               "Admitted prefetches using physical address for the set-index fallback"),
+               "Prefetches rejected at S2 by stale tag state, capacity or cache block"),
       ADD_STAT(dcacheMainPipeStoreBlockedByRefill,
                statistics::units::Count::get(),
                "Number of store buffer requests blocked by pending refill priority"),
@@ -864,8 +842,6 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     const unsigned phySqPart = enableSpMT ? physicalSQEntries / 2 : physicalSQEntries;
     const unsigned rarqPart = enableSpMT ? RARQEntries / 2 : RARQEntries;
     const unsigned rawqPart = enableSpMT ? RAWQEntries / 2 : RAWQEntries;
-    dcacheLoadTagLanes.resize(params.scheduler->getLoadPipeCount());
-
     // TODO: Parameterize the load/store pipeline stages
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         thread.emplace_back(lqPart, sqPart, phySqPart,
@@ -1040,7 +1016,6 @@ LSQ::advanceDcacheMainPipe()
     // Every S0 request observes the same pre-edge tag/set state, including
     // stores offered later in processWriteback(). The shared skid is
     // fall-through when empty, and cannot refill on its drain cycle.
-    dcacheMainPipeSnapshotTick = curTick();
     dcacheMainPipeInputReady = !dcacheMainPipeSkid.valid;
     dcacheMainPipeS0BlockedSets.clear();
     for (unsigned i = 0; i < 3; ++i) {
@@ -1051,7 +1026,7 @@ LSQ::advanceDcacheMainPipe()
     const auto &old_s3 = dcacheMainPipeStage(DcacheMainPipeStage::S3TagWrite);
     dcacheMainPipeS0TagWriteBlocked = old_s3.valid && old_s3.req.needTagWrite;
     if (dcacheMainPipeS0TagWriteBlocked) {
-        DPRINTF(DcacheMainPipePrefetch, "LoadTag write_intent\n");
+        DPRINTF(HWPrefetch, "MainPipe tag write\n");
     }
 
     const auto &s1_data_read =
@@ -1132,7 +1107,6 @@ LSQ::advanceDcacheMainPipe()
         }
     }
 
-    const bool prefetch_ready = hasReadyDcachePrefetch();
     if (dcachePrefetchCache) {
         if (dcacheMainPipeSkid.valid) {
             if (canEnterDcacheMainPipe(dcacheMainPipeSkid.req, next_pipe)) {
@@ -1142,11 +1116,9 @@ LSQ::advanceDcacheMainPipe()
                 ++stats.dcacheMainPipeSkidDrain;
             }
         } else if (!dcacheMainPipeRefillQ.empty()) {
-            if (prefetch_ready)
-                ++stats.dcacheMainPipePrefetchBlockedByRefill;
             acceptDcacheMainPipeInput(dcacheMainPipeRefillQ.front(), next_pipe);
             dcacheMainPipeRefillQ.pop();
-        } else if (prefetch_ready) {
+        } else if (hasReadyDcachePrefetch()) {
             PacketPtr packet = dcachePrefetchCache->takeDcacheMainPipePrefetch();
             acceptDcacheMainPipeInput(makePrefetchMainPipeRequest(packet), next_pipe);
             ++stats.dcacheMainPipePrefetchAccepted;
@@ -1173,7 +1145,7 @@ LSQ::recordDcacheMainPipeS0(const DcacheMainPipeRequest &request)
 {
     if (request.isPrefetch()) {
         ++stats.dcacheMainPipePrefetchEnter;
-        DPRINTF(DcacheMainPipePrefetch, "MainPipe prefetch admit addr=%#x\n",
+        DPRINTF(HWPrefetch, "MainPipe prefetch admit addr=%#x\n",
                 request.prefetchPaddr);
     } else if (request.isRefill()) {
         ++stats.dcacheMainPipeRefillEnter;
@@ -1272,62 +1244,6 @@ LSQ::registerDcachePrefetchCache(BaseCache *cache)
     dcachePrefetchCache = cache;
 }
 
-bool
-LSQ::usesDcacheLoadTagModel() const
-{
-    return dcachePrefetchCache && dcachePrefetchCache->usesDcacheLoadpipeTag();
-}
-
-bool
-LSQ::blockDcacheLoadTagForWrite(const DynInstPtr &inst)
-{
-    if (!dcachePrefetchCache || !dcachePrefetchCache->usesDcacheLoadpipeTag())
-        return false;
-    const auto &s3 = dcacheMainPipeStage(DcacheMainPipeStage::S3TagWrite);
-    const bool tag_write = dcacheMainPipeSnapshotTick == curTick() ?
-        dcacheMainPipeS0TagWriteBlocked :
-        (s3.valid && s3.req.needTagWrite);
-    if (!tag_write)
-        return false;
-    ++stats.dcacheLoadTagWriteBlocked;
-    DPRINTF(DcacheMainPipePrefetch,
-            "LoadTag reject_write lane=%d tid=%d sn=%llu\n",
-            inst->issueQue->getLoadPipeId(), inst->threadNumber, inst->seqNum);
-    return true;
-}
-
-bool
-LSQ::tryDcacheLoadTag(const DynInstPtr &inst)
-{
-    const int lane_id = inst->issueQue->getLoadPipeId();
-    panic_if(lane_id < 0 ||
-                 static_cast<unsigned>(lane_id) >= dcacheLoadTagLanes.size(),
-             "Load tag query has no valid scheduler LoadPipe ID");
-    auto &lane = dcacheLoadTagLanes.at(lane_id);
-    if (blockDcacheLoadTagForWrite(inst))
-        return false;
-    if (lane.tick == curTick()) {
-        if (lane.tid == inst->threadNumber && lane.seq == inst->seqNum) {
-            ++stats.dcacheLoadTagPacketReuse;
-            DPRINTF(DcacheMainPipePrefetch,
-                    "LoadTag reuse lane=%d tid=%d sn=%llu\n",
-                    lane_id, inst->threadNumber, inst->seqNum);
-            return true;
-        }
-        ++stats.dcacheLoadTagLaneBlocked;
-        DPRINTF(DcacheMainPipePrefetch,
-                "LoadTag reject_lane lane=%d tid=%d sn=%llu\n",
-                lane_id, inst->threadNumber, inst->seqNum);
-        return false;
-    }
-    lane = {curTick(), inst->threadNumber, inst->seqNum};
-    ++stats.dcacheLoadTagRead;
-    DPRINTF(DcacheMainPipePrefetch,
-            "LoadTag admit lane=%d tid=%d sn=%llu\n",
-            lane_id, inst->threadNumber, inst->seqNum);
-    return true;
-}
-
 void
 LSQ::wakeDcachePrefetch()
 {
@@ -1343,7 +1259,7 @@ bool
 LSQ::hasReadyDcachePrefetch() const
 {
     return !cpu->isDraining() && dcachePrefetchCache &&
-        dcachePrefetchCache->peekDcacheMainPipePrefetch();
+        dcachePrefetchCache->hasReadyDcacheMainPipePrefetch();
 }
 
 LSQ::DcacheMainPipeRequest
@@ -1354,8 +1270,6 @@ LSQ::makePrefetchMainPipeRequest(PacketPtr packet)
     request.prefetchPaddr = packet->getAddr();
     request.addr = packet->req->hasVaddr() ?
         packet->req->getVaddr() : packet->getAddr();
-    if (!packet->req->hasVaddr())
-        ++stats.dcacheMainPipePrefetchWithoutVaddr;
     request.div = getDcacheDiv(request.addr);
     request.setKey = getDcacheSetKey(request.addr);
     request.readBanks = DcacheBankMask(numBank, false);
@@ -1569,16 +1483,12 @@ LSQ::canEnterDcacheMainPipe(
             ++stats.dcacheMainPipeStoreBlockedByS1Backpressure;
         } else if (request.isRefill()) {
             ++stats.dcacheMainPipeRefillBlockedByS1Backpressure;
-        } else if (request.isPrefetch()) {
-            ++stats.dcacheMainPipePrefetchBlockedByS1;
         }
         blocked = true;
     }
     if (s0_tag_read_blocked) {
         if (request.isStoreBuffer()) {
             ++stats.dcacheMainPipeStoreBlockedByTagWrite;
-        } else if (request.isPrefetch()) {
-            ++stats.dcacheMainPipePrefetchBlockedByTagWrite;
         }
         blocked = true;
     }
@@ -1593,7 +1503,6 @@ LSQ::canEnterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry)
 {
     if (dcachePrefetchCache) {
         if (!dcacheMainPipeInputReady) {
-            ++stats.dcacheMainPipeStoreBlockedByInput;
             return false;
         }
         if (!dcacheMainPipeRefillQ.empty()) {
@@ -1601,7 +1510,6 @@ LSQ::canEnterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry)
             return false;
         }
         if (hasReadyDcachePrefetch()) {
-            ++stats.dcacheMainPipeStoreBlockedByPrefetch;
             return false;
         }
         return true;
@@ -1624,12 +1532,6 @@ LSQ::canEnterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry)
         return false;
     }
 
-    // A valid higher-priority prefetch must not be bypassed by a store,
-    // even when that prefetch itself is waiting on a set/tag conflict.
-    if (hasReadyDcachePrefetch()) {
-        ++stats.dcacheMainPipeStoreBlockedByPrefetch;
-        return false;
-    }
     bool blocked = false;
     if (s1_backpressured) {
         ++stats.dcacheMainPipeBlockedByS1Backpressure;

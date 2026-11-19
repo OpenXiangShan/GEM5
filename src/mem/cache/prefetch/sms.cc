@@ -1140,17 +1140,6 @@ XSCompositePrefetcher::hasPendingPacket()
 }
 
 PacketPtr
-XSCompositePrefetcher::peekPacket() const
-{
-    const bool lldp_ready = enableLLDP &&
-        lldp->nextPrefetchReadyTime() <= curTick();
-    const bool queued_ready = Queued::nextPrefetchReadyTime() <= curTick();
-    if (lldp_ready && (!queued_ready || preferLLDP))
-        return lldp->peekPacket();
-    return queued_ready ? Queued::peekPacket() : nullptr;
-}
-
-PacketPtr
 XSCompositePrefetcher::getPacket()
 {
     const bool lldpReady = enableLLDP &&

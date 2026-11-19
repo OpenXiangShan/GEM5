@@ -669,9 +669,9 @@ class BaseCache : public ClockedObject, public CacheAccessor
     bool dcacheMainPipeEffectiveMSHRFull() const;
     bool dcacheMainPipeCanPrefetch() const;
     void registerDcacheMainPipeLSQ(o3::LSQ *lsq);
-    void holdDcacheMainPipeMSHRCredit(MSHR *entry);
-    void scheduleDcacheMainPipeMSHRCreditRelease(Tick tick, MSHR *entry);
-    void releaseDcacheMainPipeMSHRCredit(MSHR *entry);
+    void holdDcacheMainPipeMSHRCredit();
+    void scheduleDcacheMainPipeMSHRCreditRelease(Tick tick);
+    void releaseDcacheMainPipeMSHRCredit();
 
     /**
      * Handles a response (cache line fill/write ack) from the bus.
@@ -1289,11 +1289,6 @@ class BaseCache : public ClockedObject, public CacheAccessor
         statistics::Value mshrAvgEntryNum;
         /** Average allocated-entry ratio normalized by queue capacity. */
         statistics::Value mshrOccupancyRatio;
-        /** Held refill slots excluded from classic allocated occupancy. */
-        statistics::Value mshrHeldAvgEntryNum;
-        /** Union of active MSHRs and held refill slots. */
-        statistics::Value mshrEffectiveAvgEntryNum;
-        statistics::Value mshrEffectiveOccupancyRatio;
         /** Cycles for which the cache stayed blocked due to no free MSHR. */
         statistics::Scalar noMshrBlockedCycles;
         /** Clean read hits served while the cache was blocked (hit-under-blocked). */
@@ -1374,12 +1369,6 @@ class BaseCache : public ClockedObject, public CacheAccessor
         statistics::Scalar FindHitInWriteBuffer;
 
         /** Number of prefetch req Tag read fail because of load. */
-        statistics::Scalar mainPipePrefetchReserveRecovered;
-        statistics::Scalar mainPipePrefetchNackCapacity;
-        statistics::Scalar mainPipePrefetchNackBlocked;
-        statistics::Scalar mainPipePrefetchNackBandwidth;
-        statistics::Scalar mainPipePrefetchTagChanged;
-        statistics::Scalar mainPipePrefetchTagLost;
         mutable statistics::Scalar prefetchTagReadFails;
 
         /** Number of data expansions. */
@@ -1406,11 +1395,9 @@ class BaseCache : public ClockedObject, public CacheAccessor
     void resetStats() override;
 
     enum class MainPipePrefetchResult { Hit, Miss, MSHRHit, WBHit, Nack };
-    bool usesDcacheLoadpipeTag() const
-    { return usesDcachePrefetchMainPipe() && modelDcacheLoadpipeTag; }
     bool usesDcachePrefetchMainPipe() const
     { return simulateDcacheRefill && cacheLevel == 1 && !isReadOnly; }
-    PacketPtr peekDcacheMainPipePrefetch() const;
+    bool hasReadyDcacheMainPipePrefetch() const;
     PacketPtr takeDcacheMainPipePrefetch();
     bool captureDcacheMainPipePrefetchTag(const Packet &packet);
     MainPipePrefetchResult issueDcacheMainPipePrefetch(
@@ -1603,7 +1590,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
     Tick nextPrefetchReadyTime() const
     {
         // L1D first-lookup admission is driven by LSQ, independently of the
-        // downstream request queue and the load tag-port budget.
+        // downstream request queue and the legacy tag-query budget.
         if (usesDcachePrefetchMainPipe())
             return MaxTick;
         Tick rdy_time = prefetcher->nextPrefetchReadyTime();
@@ -1694,7 +1681,6 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
     const bool forceHit;
     const bool simulateDcacheRefill;
-    const bool modelDcacheLoadpipeTag;
     o3::LSQ *dcacheMainPipeLSQ = nullptr;
     EventFunctionWrapper dcachePrefetchWakeupEvent;
 
@@ -1765,8 +1751,6 @@ public:
     double getMshrAvgEntryNum() const;
 
     double getMshrOccupancyRatio() const;
-
-    double getMshrHeldAvgEntryNum() const;
 
     const uint8_t* findBlock(Addr addr, bool is_secure) const override {
         auto blk = tags->findBlock(addr, is_secure);

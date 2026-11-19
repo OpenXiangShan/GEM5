@@ -212,7 +212,6 @@ class XSCompositePrefetcher : public Queued
     void regProbeListeners() override;
     void setPacketReadyCallback(std::function<void(Tick)> callback) override;
     bool hasPendingPacket() override;
-    PacketPtr peekPacket() const override;
     PacketPtr getPacket() override;
     Tick nextPrefetchReadyTime() const override;
 
