@@ -822,3 +822,47 @@ includes `round4-hysteresis/validation.json`,
 `round4-final-config/{selection.json,published-validation.json,default-long/validation.json}`.
 Rejected candidates retain their own source snapshots, frozen binaries,
 validation records and decisions in `round2-*` and `round3-split-insertion/`.
+
+
+## Disable generators absent from RTL DefaultConfig (2026-11-19)
+
+For the next LRU/KPC comparison, both policies use the same tested source,
+`idealkmhv3.py`, full `spec06-rva23-novec-gcc16-1.0c` coverage and the
+explicit `--disable-non-rtl-prefetchers` option. KPC retains the evaluated
+`--kpc-profile=l2` setting (live RRPV 0, four-bit hysteresis). The prior
+complete-suite comparison above used the original prefetch settings.
+
+This experiment follows `FDPGEM5/docs/prefetch/gem5-vs-xiangshan-default-prefetchers.md`.
+That document describes `kmhv3.py`; the actual previous performance entry
+point is `idealkmhv3.py`, which additionally forces LLDP on and uses the
+non-aligned composite profile. Therefore disabling CDP alone is insufficient.
+The new option applies a disable-only mask after profile configuration:
+
+| Component | Previous ideal setting | With the option |
+| --- | --- | --- |
+| L1 Berti, Temporal, LLDP | Enabled | Disabled |
+| L2 CDP, Despacito Stream, LLDP | Enabled | Disabled |
+| L1 OPT, SPP, CPLX; L2 CMC | Already disabled | Remain disabled |
+| L3 WorkerPrefetcher | Instantiated | Absent |
+| L2-to-L3 prefetch hint | Connected | Not connected |
+| L1 active-page/AGT, PHT; L2 BOP | Enabled | Preserved |
+
+The Worker is a hint receiver, not an independent predictor. Its removal
+also disconnects the hint path without removing the L3 cache. L1-to-L2
+forwarding remains connected. The option does not enable engines that the
+selected profile leaves off, alter CPU/cache timing, select `--kmh-align`,
+or implement RTL-only FDIP/TLB prefetching. It therefore does not claim full
+RTL equivalence. Existing behavior is preserved when the option is omitted.
+No replacement algorithm, cache geometry or C++ code changes in this step.
+
+Four 100K-instruction NEMU/DRAMsim3 smoke cases completed: masked LRU,
+masked KPC, and their unmasked controls. Actual config.json files confirm
+the disabled generators, absent L3 prefetcher, preserved AGT/PHT/BOP,
+correct replacement policies and KPC 0/4 parameters. The unmasked controls
+exactly reproduce all 11631 LRU and 11685 KPC common system/inst/tick
+statistics from the prior published checks. The max-instruction exit can
+overshoot by one commit group (observed 100011 or 100013 instructions).
+These short cases establish integration and parameter mapping, not speedup.
+
+Commands, source hashes, logs and validation results are under
+`/nfs/home/chenzhuo/.tmp/kpc-rtl-prefetch-20261119/`.

@@ -318,7 +318,9 @@ def config_cache(options, system):
                     l2_prefetcher != NULL
                 dcache.prefetcher.add_pf_downstream(l2_prefetcher)
 
-            if (not options.no_pf) and options.l3cache and options.l2_to_l3_pf_hint:
+            if ((not options.no_pf) and options.l3cache and
+                    options.l2_to_l3_pf_hint and
+                    not getattr(options, 'disable_non_rtl_prefetchers', False)):
                 assert l2_prefetcher != NULL and \
                     system.l3.prefetcher != NULL
                 l2_prefetcher.add_pf_downstream(system.l3.prefetcher)

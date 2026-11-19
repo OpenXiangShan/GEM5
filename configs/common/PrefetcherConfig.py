@@ -567,6 +567,9 @@ def _configure_l3_prefetcher(prefetcher, options):
         prefetcher.max_prefetch_requests_with_pending_translation = 128
 
 def create_prefetcher(cpu, cache_level, options):
+    if (getattr(options, 'disable_non_rtl_prefetchers', False) and
+            cache_level == 'l3'):
+        return NULL
     prefetcher_attr = '{}_hwp_type'.format(cache_level)
     prefetcher_name = ''
     prefetcher = NULL
@@ -637,5 +640,13 @@ def create_prefetcher(cpu, cache_level, options):
 
     if cache_level == 'l3':
         _configure_l3_prefetcher(prefetcher, options)
+
+    if getattr(options, 'disable_non_rtl_prefetchers', False):
+        # Disable-only mask: preserve the selected profile's supported engines.
+        for name in ('enable_berti', 'enable_temporal', 'enable_opt',
+                     'enable_spp', 'enable_cplx', 'enable_lldp', 'enable_cdp',
+                     'enable_cmc', 'enable_despacito_stream'):
+            if hasattr(prefetcher, name):
+                setattr(prefetcher, name, False)
 
     return prefetcher
