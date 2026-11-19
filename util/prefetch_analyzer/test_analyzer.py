@@ -291,6 +291,28 @@ class AnalyzerTests(unittest.TestCase):
         self.assertIsNone(compare(off, on)["net_miss_coverage"])
         self.assertEqual(compare(off, on)["ipc_speedup"], 1.0)
 
+    def test_paired_diagnostics_normalizes_one_sided_misses(self):
+        from copy import deepcopy
+        from analyze import paired_diagnostics
+
+        before = dict(demand={"failures": {"late": 2}},
+                      source_analysis={"sources": [], "drop_events": []},
+                      stats={"retired_instructions": 100},
+                      counter_reconciliation={"status": "no_counters"},
+                      trace_matches_stats_window=True)
+        after = deepcopy(before)
+        after["demand"]["failures"] = {"dropped": 1}
+        after["stats"]["retired_instructions"] = 200
+        pair = {"paired": True}
+        rows = paired_diagnostics(before, after, pair)["rows"]
+        self.assertEqual([(r["metric"], r["delta_per_ki"]) for r in rows],
+                         [("late", -20), ("dropped", 5)])
+        after["trace_matches_stats_window"] = False
+        self.assertFalse(paired_diagnostics(before, after, pair)["rows"])
+        after["trace_matches_stats_window"] = True
+        before["counter_reconciliation"]["status"] = "mismatch"
+        self.assertFalse(paired_diagnostics(before, after, pair)["rows"])
+
     def test_port_backpressure_does_not_make_a_late_prefetch_timely(self):
         trace = Trace()
         trace.candidate(10, 10, "0x2000")

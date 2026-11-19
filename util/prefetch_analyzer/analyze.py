@@ -347,6 +347,46 @@ def compare(off, on, prefetch_off=False):
     return result
 
 
+def diagnostic_counts(run):
+    counts = {
+        ("demand_miss", "", "", reason): count
+        for reason, count in run["demand"]["failures"].items()
+    }
+    for row in run["source_analysis"]["sources"]:
+        for metric in ("candidates", "aliases", "sent", "useful", "unused_evicted", "censored"):
+            counts["source", row["cache"], row["source"], metric] = row[metric]
+    for row in run["source_analysis"]["drop_events"]:
+        counts["drop_event", row["cache"], row["source"], row["reason"]] = row["events"]
+    return counts
+
+
+def paired_diagnostics(before, after, pairing):
+    """Normalize each trace by its own retired count; keep one-sided categories."""
+    if not pairing["paired"]:
+        return {"reason": pairing["reason"], "rows": []}
+    for label, run in (("reference", before), ("candidate", after)):
+        if not run["trace_matches_stats_window"]:
+            return {"reason": f"{label}: trace and statistics windows differ", "rows": []}
+        if run["counter_reconciliation"]["status"] == "mismatch":
+            return {"reason": f"{label}: native counter mismatch", "rows": []}
+        if not (run["stats"]["retired_instructions"] or 0) > 0:
+            return {"reason": f"{label}: missing positive retired count", "rows": []}
+    a, b = diagnostic_counts(before), diagnostic_counts(after)
+    rows = []
+    for key in a.keys() | b.keys():
+        old, new = a.get(key, 0), b.get(key, 0)
+        old_rate = 1000 * old / before["stats"]["retired_instructions"]
+        new_rate = 1000 * new / after["stats"]["retired_instructions"]
+        group, cache, source, metric = key
+        rows.append(dict(group=group, cache=cache, source=source, metric=metric,
+                         before=old, after=new, before_per_ki=old_rate,
+                         after_per_ki=new_rate, delta_per_ki=new_rate - old_rate))
+    rows.sort(key=lambda r: (r["group"], -abs(r["delta_per_ki"]), str(r["cache"]),
+                             str(r["source"]), str(r["metric"])))
+    return {"reference_audit": before["counter_reconciliation"]["status"],
+            "candidate_audit": after["counter_reconciliation"]["status"], "rows": rows}
+
+
 def export_timeline(db, output, pc=None, line=None, block_size=64):
     # Filters select seed facts. Then follow identities, including aliases,
     # trigger requests and demand consumers with a different PC.
@@ -481,6 +521,17 @@ def main():
         "versus_original" if reference == "control" else "versus_prefetch_off",
         {},
     )
+    if reference:
+        diagnostics = paired_diagnostics(runs[reference], summary, comparison)
+        diagnostics["reference"] = reference
+        summary["paired_diagnostics"] = diagnostics
+        with (args.output / "paired-diagnostics.csv").open("w", newline="") as stream:
+            writer = csv.DictWriter(stream, fieldnames=[
+                "group", "cache", "source", "metric", "before", "after",
+                "before_per_ki", "after_per_ki", "delta_per_ki",
+            ])
+            writer.writeheader()
+            writer.writerows(diagnostics["rows"])
     if (
         reference
         and comparison.get("paired")

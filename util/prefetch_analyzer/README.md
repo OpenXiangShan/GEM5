@@ -205,3 +205,25 @@ TMPDIR="$HOME/.tmp" python3 -m unittest discover \
 ```
 
 `examples/stream.c` is a sequential load/store control. Build it with the RISC-V cross compiler, then run the same GEM5 binary with tracing off/on, prefetch off, and only the offload switch changed. Require identical non-host native statistics for tracing off/on. A matched full-window trace is reconciled against demand hit/miss counters, prefetch identification/dequeue/removal counters and pure/merged fill counters in `audit.json`. ROI-boundary lifecycles are censored; a partial tick window is not compared with a full-window native counter.
+
+### Reading a paired diagnosis
+
+With `--control` (preferred for tuning) or `--baseline`, the HTML and
+`summary.json` include paired diagnostics. The full `paired-diagnostics.csv`
+retains both raw counts and rates per thousand retired instructions. Start
+with demand Miss categories (their signed deltas sum to the total MPKI
+delta), then inspect changes by generating cache/source and drop reason.
+Source counts cover candidates generated in the trace window. Drop events
+and candidate outcomes use different denominators. These changes identify
+hypotheses to check against PC timelines and CPU performance.
+
+Both traces must cover their respective stats windows with positive retired
+counts, pass the existing configuration pairing check and have no known
+counter mismatch. Missing native counters are reported as unverified.
+The caller must match checkpoint, workload and instruction ROI. Tick
+durations may differ between configurations. A short paired window
+describes only that window.
+
+In stages.csv, prediction_to_first_ready uses candidate and first-ready
+timestamps from the same non-alias request. Its percentiles cover requests
+with both endpoints, across all observed cache levels.

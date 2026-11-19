@@ -167,13 +167,38 @@ def write_report(output, summary, pcs, timeline, runs, pc_deltas):
         + "</tr>"
         for row in pc_deltas[:30]
     )
+    diagnostic_html = ""
+    if diagnostics := summary.get("paired_diagnostics"):
+        diagnostic_html = "<h2>每千退休指令的配对变化</h2>"
+        if diagnostics.get("reason"):
+            diagnostic_html += "<p>" + html.escape(diagnostics["reason"]) + "</p>"
+        else:
+            diagnostic_html += (
+                f"<p>参考组 {diagnostics['reference']}。原生计数核对 "
+                f"{diagnostics['reference_audit']} → {diagnostics['candidate_audit']}。"
+                "差值为候选组减参考组。各类需求 Miss 的差值之和等于总 MPKI 变化。"
+                "来源按 ROI 内生成的候选统计，丢弃按事件计数。"
+                '<a href="paired-diagnostics.csv">下载全部差值和原始计数</a></p>'
+            )
+            for group, label in (("demand_miss", "需求 Miss"), ("source", "来源结局"),
+                                 ("drop_event", "丢弃原因")):
+                rows = [r for r in diagnostics["rows"] if r["group"] == group]
+                diagnostic_html += f"<h3>{label}（按绝对变化取前 12 项）</h3>"
+                diagnostic_html += "<table><tr><th>Cache</th><th>Source</th><th>指标</th><th>参考组 / kInst</th><th>候选组 / kInst</th><th>差值 / kInst</th></tr>"
+                for row in rows[:12]:
+                    diagnostic_html += "<tr>" + "".join(
+                        f"<td>{html.escape(display(row[k]))}</td>" for k in
+                        ("cache", "source", "metric", "before_per_ki", "after_per_ki", "delta_per_ki")
+                    ) + "</tr>"
+                diagnostic_html += "</table>"
     payload = json.dumps(
         {"pcs": pcs, "timeline": timeline, "failures": demand["failures"]},
         ensure_ascii=False,
     ).replace("<", "\\u003c")
     page = Path(__file__).with_name("report_template.html").read_text()
     page = (
-        page.replace("__PC_DELTAS__", delta_rows)
+        page.replace("__DIAGNOSTICS__", diagnostic_html)
+        .replace("__PC_DELTAS__", delta_rows)
         .replace("__SOURCES__", source_rows)
         .replace("__STAGES__", stage_rows)
         .replace("__CARDS__", cards)

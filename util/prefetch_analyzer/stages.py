@@ -33,6 +33,7 @@ def source_analysis(db):
     ]
     phases = []
     for stage, begin, end in (
+        ("prediction_to_first_ready", "candidate_tick", "ready_tick"),
         ("prediction_to_enqueue", "candidate_tick", "enqueue_tick"),
         ("enqueue_to_dequeue", "enqueue_tick", "dequeue_tick"),
         ("dequeue_to_accept", "dequeue_tick", "send_tick"),

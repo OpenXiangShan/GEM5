@@ -10,6 +10,7 @@ svg{background:white;border:1px solid #dce3ed;border-radius:6px;width:100%}a{col
 </style><h1>GEM5 预取失效分析</h1><p class="muted">独立事实流 · 按 Demand / Prefetch 两套口径 · 可离线阅读</p>
 <div class="cards">__CARDS__</div>
 <h2>配对性能</h2><div class="scroll"><table><thead><tr><th>配置</th><th>周期</th><th>退休指令</th><th>IPC</th><th>L1 Miss</th><th>平均请求延迟 / tick</th><th>唯一预取请求字节</th></tr></thead><tbody>__COMPARISON__</tbody></table></div>
+__DIAGNOSTICS__
 <h2>Residual Miss 归因</h2><svg id="failures" role="img" aria-label="Residual Miss 分类"></svg>
 <h2>按来源定位预取损失</h2>
 <p class="muted">Source 是 Trace 内的 PrefetchSourceType 数字编码；按候选生成者归属。
