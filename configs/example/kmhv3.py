@@ -240,12 +240,15 @@ def setKmhV3Params(args, system):
                 l2_wrapper.pipe_dir_write_stage = 3
                 l2_wrapper.dir_read_bypass = False
                 for j in range(args.l2_slices):
-                    l2_wrapper.slices[j].inner_cache.wpu = NULL
-                    l2_wrapper.slices[j].inner_cache.do_fast_writeline = True
-                    l2_wrapper.slices[j].inner_cache.prefetch_can_offload = False
-                    # Configure XSDRRIP replacement policy (DRRIP mode)
-                    # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
-                    l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
+                    inner_cache = l2_wrapper.slices[j].inner_cache
+                    inner_cache.wpu = NULL
+                    inner_cache.do_fast_writeline = True
+                    inner_cache.prefetch_can_offload = False
+                    inner_cache.demand_mshrs_before_prefetches = True
+                    inner_cache.demand_reads_before_evictions = True
+                    # Each slice: 512KB, 8-way, 64B line, 1024 sets.
+                    inner_cache.replacement_policy = XSDRRIPRP(
+                        mode=2, num_sets=1024, ignore_prefetch_touches=True)
             system.tol2bus_list[i].forward_latency = 0
             system.tol2bus_list[i].response_latency = 1
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1
