@@ -233,6 +233,17 @@ jobs:
             echo "- Path: \`$TARGET_DIR\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Check out progress formatter for an overridden test ref
+        if: ${{ inputs.checkpoint_progress && (inputs.pr_sha || github.sha) != github.workflow_sha }}
+        id: progress_source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .perf-workflow
+          sparse-checkout: util/xs_scripts/perf_progress.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - name: XS-GEM5 - Run performance test
         # ${{ steps.config.outputs.comment }}
         env:
@@ -247,6 +258,7 @@ jobs:
           EXTRA_GEM5_ARGS_RAW: ${{ inputs.extra_args }}
           CHECKPOINT_LIST: ${{ steps.archive.outputs.target_dir }}/checkpoints.lst
           CHECKPOINT_PROGRESS: ${{ inputs.checkpoint_progress }}
+          CHECKPOINT_PROGRESS_SCRIPT: ${{ steps.progress_source.outcome == 'success' && '.perf-workflow/util/xs_scripts/perf_progress.py' || 'util/xs_scripts/perf_progress.py' }}
           CHECKPOINT_ROOT_NODE: ${{ steps.config.outputs.checkpoint_root_node }}
           DISTRIBUTED_SERVERS: ${{ steps.archive.outputs.distributed_servers }}
           DISTRIBUTED_JOBS_PER_SERVER: ${{ inputs.distributed_jobs_per_server }}
@@ -258,9 +270,6 @@ jobs:
           # A nonempty trace format selects trace replay.
           TRACE_FORMAT: ${{ steps.config.outputs.trace_format }}
         run: |
-          if [[ "$CHECKPOINT_PROGRESS" == true ]]; then
-            unset LD_PRELOAD
-          fi
           mkdir -p "$PERF_ARCHIVE_DIR"
           cd "$PERF_ARCHIVE_DIR"
 
@@ -284,7 +293,11 @@ jobs:
           extra_args="${extra_args//\$\{GEM5_HOME\}/$GEM5_HOME}"
           extra_args="${extra_args//\$GEM5_HOME/$GEM5_HOME}"
           extra_args="$(echo "$extra_args $PROFILE_EXTRA_ARGS" | xargs)"
-          if [[ "$CHECKPOINT_PROGRESS" != true ]]; then
+          progress_wrapper=()
+          if [[ "$CHECKPOINT_PROGRESS" == true ]]; then
+            progress_wrapper=(python3 "$GEM5_HOME/$CHECKPOINT_PROGRESS_SCRIPT"
+              "$CHECKPOINT_LIST" "$SPECIFIC_BENCHMARKS_INPUT" "$TRACE_FORMAT")
+          else
             echo "Resolved extra gem5 args: $extra_args"
           fi
           printf 'resolved_extra_args: %s\n' "$extra_args" >> "$PERF_ARCHIVE_DIR/metadata.txt"
@@ -313,134 +326,16 @@ jobs:
             fi
           fi
 
-          run_sim() {
-            if [[ "$CHECKPOINT_PROGRESS" != true ]]; then
-              "$@"
-              return
-            fi
-
-            python3 - "$CHECKPOINT_LIST" "$SPECIFIC_BENCHMARKS_INPUT" "$TRACE_FORMAT" "$@" <<'PY'
-          from itertools import islice
-          import json
-          import logging
-          from pathlib import Path
-          import socket
-          import subprocess
-          import sys
-          import time
-
-          listing, filters, trace, *command = sys.argv[1:]
-          tokens = [token.strip().lower() for token in filters.split(",") if token.strip()]
-          names = [line.split()[0] for line in Path(listing).read_text().splitlines()
-                   if line.strip() and (not tokens or any(token in line.lower() for token in tokens))]
-          cluster = Path("cluster.json")
-          weights = {
-              f"{workload}_{point}": float(weight)
-              for workload, entry in json.loads(cluster.read_text()).items()
-              if isinstance(entry, dict)
-              for point, weight in entry.get("points", {}).items()
-          } if not trace and cluster.is_file() else {}
-          labels = {name: f"{name}_{weights[name]:.6f}" if name in weights else name for name in names}
-          root = Path("spec_all")
-          launcher_log = Path("launcher.log")
-          already_done = {name for name in names if (root / name / "completed").is_file()}
-          local = command[0] == "bash"
-          host = socket.gethostname()
-          assigned, finished = {}, set()
-          failed_count = last_remaining = 0
-          logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)5s - %(message)s")
-
-          def progress(level, message, *args):
-              logging.log(level, "[%d,%d,%d/%d] " + message,
-                          len(assigned), len(finished), failed_count, len(names), *args)
-
-          with (
-              launcher_log.open("a") as output,
-              launcher_log.open(errors="replace") as launcher,
-              subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT) as proc,
-          ):
-              servers = 1 if local else None
-              if local:
-                  progress(logging.INFO, "Start running %d checkpoints on %d servers", len(names), servers)
-              while True:
-                  status = proc.poll()
-                  if servers is None:
-                      for line in launcher:
-                          if line.startswith("Servers: "):
-                              servers = len(line.removeprefix("Servers: ").split(", "))
-                              progress(logging.INFO, "Start running %d checkpoints on %d servers", len(names), servers)
-                              break
-                  for name in (names if servers is not None else ()):
-                      if name in finished:
-                          continue
-                      work = root / name
-                      completed = work / "completed"
-                      done = completed.is_file()
-                      failed = (work / "abort").is_file()
-                      if name not in assigned:
-                          try:
-                              started_at = (work / "running").stat().st_mtime
-                          except FileNotFoundError:
-                              if not done and not failed:
-                                  continue
-                              started_at = None
-                          node = host if local else ""
-                          log_path = work / "log.txt"
-                          if not local and log_path.is_file():
-                              with log_path.open(errors="replace") as log:
-                                  node = next((line[6:].strip() for line in islice(log, 3)
-                                               if line.startswith("host: ")), "")
-                          node = node.split(".", 1)[0]
-                          if name in already_done:
-                              progress(logging.INFO, "%s is State.FINISHED, skipping", labels[name])
-                              finished.add(name)
-                          elif node:
-                              progress(logging.INFO, "Started %s on %s", labels[name], node)
-                          assigned[name] = (node, started_at)
-                          if len(assigned) == len(names):
-                              progress(logging.INFO, "All checkpoints assigned, waiting for completion...")
-                      if (done or failed) and name not in finished:
-                          node, started_at = assigned[name]
-                          where = f" \ton {node}" if node else ""
-                          if done:
-                              duration = ""
-                              if started_at is not None:
-                                  elapsed = time.gmtime(max(0, completed.stat().st_mtime - started_at))
-                                  duration = " \tin " + time.strftime("%Hh %Mm %Ss", elapsed)
-                              progress(logging.INFO, "%s succeeded%s%s", labels[name], where, duration)
-                          else:
-                              progress(logging.ERROR, "%s failed%s (log: %s)", labels[name], where, work / "log.txt")
-                              failed_count += 1
-                          finished.add(name)
-                  remaining = len(names) - len(finished)
-                  if len(assigned) == len(names) and 0 < remaining <= 5 and remaining != last_remaining:
-                      progress(logging.INFO, "Remaining checkpoints: %s",
-                               ", ".join(labels[name] for name in names if name not in finished))
-                      last_remaining = remaining
-                  if status is not None:
-                      break
-                  try:
-                      proc.wait(timeout=2)
-                  except subprocess.TimeoutExpired:
-                      pass
-          if names and len(finished) == len(names):
-              progress(logging.INFO, "All checkpoints completed")
-          if status and status != 75:
-              progress(logging.ERROR, "Launcher exits with code %d (log: %s)", status, launcher_log.resolve())
-          sys.exit(status if status >= 0 else 128 - status)
-          PY
-          }
-
           run_local_parallel() {
             if [[ -n "$TRACE_FORMAT" ]]; then
-              run_sim bash "$GEM5_HOME/util/xs_scripts/trace/parallel_trace_sim.sh" \
+              "${progress_wrapper[@]}" bash "$GEM5_HOME/util/xs_scripts/trace/parallel_trace_sim.sh" \
                 "$CONFIG_PATH" "$CHECKPOINT_LIST" "$CHECKPOINT_ROOT_NODE" \
                 spec_all "$SPECIFIC_BENCHMARKS_INPUT" "$extra_args"
             else
               if [[ "$CHECKPOINT_PROGRESS" != true ]]; then
                 echo "Using local parallel_sim.sh runner"
               fi
-              run_sim bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
+              "${progress_wrapper[@]}" bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
                 "$CHECKPOINT_LIST" \
                 "$CHECKPOINT_ROOT_NODE" \
                 spec_all \
@@ -455,7 +350,7 @@ jobs:
               echo "Using distributed gem5 runner on servers: $distributed_servers"
             fi
             distributed_status=0
-            run_sim python3 "$GEM5_HOME/util/xs_scripts/distributed_sim.py" \
+            "${progress_wrapper[@]}" python3 "$GEM5_HOME/util/xs_scripts/distributed_sim.py" \
               --servers "$distributed_servers" \
               --jobs-per-server "$DISTRIBUTED_JOBS_PER_SERVER" \
               --require-idle-cpus "$DISTRIBUTED_REQUIRE_IDLE_CPUS" \
