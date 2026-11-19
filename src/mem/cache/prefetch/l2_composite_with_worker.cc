@@ -60,6 +60,7 @@ L2CompositeWithWorkerPrefetcher::addToQueue(std::list<DeferredPacket> &queue, De
         // Check whether the cdp prefetch request needs to be filtered out
         if (dpp.pkt->req->getXsMetadata().prefetchSource == PrefetchSourceType::CDP) {
             if (cdp->needFilter(dpp.pkt->req->getPaddr())) {
+                traceDeferred("PF_DROP", dpp, "cdp_filter");
                 delete dpp.pkt;
                 return;
             }

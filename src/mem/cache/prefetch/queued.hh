@@ -183,8 +183,8 @@ class Queued : public Base
     };
 
     void traceCandidate(const AddrPriority &cmd, PacketPtr trigger);
-    void traceCommandDrop(const AddrPriority &cmd, PacketPtr trigger,
-                          const char *reason);
+    void traceCommand(const char *event, const AddrPriority &cmd,
+                      PacketPtr trigger, const char *reason = "");
     void traceDeferred(const char *event, const DeferredPacket &dp,
                        const char *reason = "", uint64_t related = 0);
     uint64_t traceQueuedId(const std::list<DeferredPacket> &queue,
@@ -532,6 +532,8 @@ class Queued : public Base
         }
         AddrPriority addr_prio = PFRequestBuffer.front();
         PFRequestBuffer.pop_front();
+        traceCommand("PF_BUFFER_DEQUEUE", addr_prio,
+                     addr_prio.pf_trigger_info.pkt);
         addresses.push_back(addr_prio);
         return true;
     };

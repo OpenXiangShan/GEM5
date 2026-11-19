@@ -423,6 +423,105 @@ class AnalyzerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "still open or truncated"):
             load_trace(path, Path(self.temp.name) / "open.sqlite")
 
+    def test_queue_intervals_match_actor_and_exclude_translation_wait(self):
+        from queue_analysis import queue_analysis
+
+        trace = Trace()
+        trace.candidate(10, 10, "0x1000", source=4)
+        state = '{"priority":32,"prediction_buffer_entries":1}'
+        trace.add(
+            10,
+            "PF_BUFFER_ENQUEUE",
+            pf=10,
+            source=4,
+            result=state,
+            actor="generator",
+        )
+        trace.add(
+            15,
+            "PF_BUFFER_DEQUEUE",
+            pf=10,
+            source=4,
+            result=state,
+            actor="generator",
+        )
+        state = '{"priority":32,"ready_queue_entries":2,"translation_queue_entries":1}'
+        trace.add(
+            15,
+            "PF_ENQUEUE",
+            pf=10,
+            source=4,
+            result=state,
+            reason="translation_queue",
+        )
+        trace.add(
+            25,
+            "PF_ENQUEUE",
+            pf=10,
+            source=4,
+            result=state,
+            reason="ready_queue",
+        )
+        trace.add(40, "PF_DEQUEUE", pf=10, source=4, result=state)
+        # An observed dequeue with an absent enqueue remains incomplete.
+        trace.add(
+            42, "PF_DEQUEUE", pf=10, source=4, result=state, actor="forwarder"
+        )
+        db, _, _ = self.analyze(trace)
+        result = queue_analysis(db)
+        self.assertEqual(len(result["intervals"]), 2)
+        elapsed = {
+            row["stage"]: row["elapsed_ticks"] for row in result["intervals"]
+        }
+        self.assertEqual(elapsed, {"prediction_buffer": 5, "ready_queue": 15})
+        self.assertTrue(all(row["priority"] == 32 for row in result["stages"]))
+        self.assertEqual(result["samples"][-1]["actor"], "forwarder")
+
+    def test_prefetch_id_timeline_follows_aliases_and_demand_consumers(self):
+        from analyze import export_timeline
+
+        trace = Trace()
+        trace.candidate(10, 10, "0x1000")
+        trace.candidate(11, 20, "0x1000")
+        trace.add(12, "PF_ALIAS", pf=20, related_id=10)
+        trace.candidate(13, 30, "0x2000")
+        trace.add(
+            30,
+            "CACHE_ARB",
+            req=99,
+            related_id=10,
+            pa="0x3000",
+            reason="ready_demand_before_prefetch",
+        )
+        trace.demand(33, 99, "0x3000")
+        trace.sent(10, "0x1000")
+        trace.fill(10, "0x1000")
+        trace.demand(100, 7, "0x1000", "hit", pc="0x777")
+        trace.add(100, "PF_FIRST_USE", req=7, pf=10, pa="0x1000", result="hit")
+        db, _, _ = self.analyze(trace)
+        timeline = export_timeline(db, Path(self.temp.name), prefetch_id=10)
+        ids = {row["prefetch_id"] for row in timeline["events"]}
+        self.assertEqual(ids, {0, 10, 20})
+        self.assertTrue(
+            any(
+                row["event"] == "DEMAND_COMPLETE" and row["request_id"] == 7
+                for row in timeline["events"]
+            )
+        )
+        self.assertTrue(
+            any(
+                row["event"] == "CACHE_ARB" and row["request_id"] == 99
+                for row in timeline["events"]
+            )
+        )
+        self.assertTrue(
+            any(
+                row["event"] == "DEMAND_COMPLETE" and row["request_id"] == 99
+                for row in timeline["events"]
+            )
+        )
+        self.assertEqual(timeline["scope"]["prefetch_id"], 10)
+
 
 if __name__ == "__main__":
     unittest.main()

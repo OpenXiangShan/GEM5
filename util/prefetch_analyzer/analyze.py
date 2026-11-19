@@ -13,6 +13,7 @@ from occupancy import cache_occupancy
 from parse_trace import address, digest, export_csv, line_address, load_trace, require
 from report import write_report
 from stages import source_analysis
+from queue_analysis import queue_analysis
 from symbolize import symbolize_pcs
 
 
@@ -237,6 +238,16 @@ def analyze_run(path, output, cpu, weight):
                 writer.writerows(rows)
     summary["counter_reconciliation"] = reconcile_counters(db, summary)
     summary["source_analysis"] = source_analysis(db)
+    queues = queue_analysis(db)
+    summary["queue_analysis"] = {"stages": queues["stages"]}
+    for filename, rows in queues.items():
+        if rows:
+            with (output / ("queue-" + filename + ".csv")).open(
+                "w", newline=""
+            ) as stream:
+                writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(rows)
     for name, rows, columns in (
         (
             "sources",
@@ -333,7 +344,9 @@ def compare(off, on, prefetch_off=False):
     return result
 
 
-def export_timeline(db, output, pc=None, line=None, block_size=64):
+def export_timeline(
+    db, output, pc=None, line=None, block_size=64, prefetch_id=None
+):
     # Filters select seed facts. Then follow identities, including aliases,
     # trigger requests and demand consumers with a different PC.
     where, params = [], []
@@ -343,18 +356,26 @@ def export_timeline(db, output, pc=None, line=None, block_size=64):
     if line:
         where.append("(pa_line=? OR va_line=?)")
         params.extend([line_address(line, block_size)] * 2)
+    if prefetch_id is not None:
+        where.append("prefetch_id=?")
+        params.append(prefetch_id)
     seed = " AND ".join(where) if where else "1"
+    merge_seed = seed.replace("prefetch_id=?", "related_id=?")
+    demand_seed = seed.replace("prefetch_id=?", "matched_pf=?")
     cte = f"""WITH RECURSIVE selected_pf(id) AS (
         SELECT prefetch_id FROM events WHERE {seed} AND prefetch_id>0
-        UNION SELECT related_id FROM events WHERE {seed} AND event='DEMAND_MERGE' AND related_id>0
-        UNION SELECT matched_pf FROM demands WHERE {seed} AND matched_pf IS NOT NULL
+        UNION SELECT related_id FROM events WHERE {merge_seed}
+            AND event IN ('DEMAND_MERGE','CACHE_ARB') AND related_id>0
+        UNION SELECT matched_pf FROM demands WHERE {demand_seed} AND matched_pf IS NOT NULL
         UNION SELECT p.alias_id FROM prefetches p JOIN selected_pf s ON p.id=s.id WHERE p.alias_id IS NOT NULL
         UNION SELECT p.id FROM prefetches p JOIN selected_pf s ON p.alias_id=s.id
     ), selected_requests(id) AS (
         SELECT request_id FROM events WHERE {seed} AND request_id>0
         UNION SELECT trigger_id FROM prefetches WHERE id IN (SELECT id FROM selected_pf)
         UNION SELECT request_id FROM events WHERE event='PF_FIRST_USE' AND prefetch_id IN (SELECT id FROM selected_pf)
-        UNION SELECT request_id FROM events WHERE event='DEMAND_MERGE' AND related_id IN (SELECT id FROM selected_pf)
+        UNION SELECT request_id FROM events
+            WHERE event IN ('DEMAND_MERGE','CACHE_ARB')
+            AND related_id IN (SELECT id FROM selected_pf)
     ) """
     parameters = params * 4
     selection = """SELECT * FROM events WHERE
@@ -368,7 +389,7 @@ def export_timeline(db, output, pc=None, line=None, block_size=64):
         "events": preview,
         "total": total,
         "preview_limit": 2000,
-        "scope": {"pc": pc, "line": line},
+        "scope": {"pc": pc, "line": line, "prefetch_id": prefetch_id},
     }
 
 
@@ -387,6 +408,11 @@ def main():
     parser.add_argument("--pc", help="Select a trigger/demand PC for the timeline")
     parser.add_argument(
         "--line", help="Select a physical or context-qualified virtual line for the timeline"
+    )
+    parser.add_argument(
+        "--prefetch-id",
+        type=int,
+        help="Select one prefetch lifecycle and its aliases/consumers",
     )
     parser.add_argument("--elf", type=Path, help="Matching workload ELF for PC symbols")
     parser.add_argument(
@@ -449,9 +475,18 @@ def main():
         writer = csv.DictWriter(stream, fieldnames=columns)
         writer.writeheader()
         writer.writerows(pc_deltas)
-    timeline_pc = args.pc or (pcs[0]["pc"] if pcs and not args.line else None)
+    timeline_pc = args.pc or (
+        pcs[0]["pc"]
+        if pcs and not args.line and args.prefetch_id is None
+        else None
+    )
     timeline = export_timeline(
-        db, args.output, timeline_pc, args.line, int(summary["trace"]["block_size"])
+        db,
+        args.output,
+        timeline_pc,
+        args.line,
+        int(summary["trace"]["block_size"]),
+        args.prefetch_id,
     )
     export_csv(db, "SELECT * FROM prefetches ORDER BY id", args.output / "prefetches.csv")
     export_csv(db, 'SELECT * FROM demands ORDER BY tick,"order"', args.output / "demands.csv")

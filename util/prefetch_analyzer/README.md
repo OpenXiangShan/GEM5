@@ -107,3 +107,27 @@ Each physical cache copy contributes to its own cache's occupancy.
 `cache-occupancy-timeline.csv` contains 128 area-preserving time bins per cache.
 The HTML report includes cache selection and a stacked occupancy chart.
 Traces without occupancy events display an absent measurement.
+
+## Priority and queue traces
+
+The trace records source names from the running model and candidate priority
+and chain depth. `PF_BUFFER_ENQUEUE` and `PF_BUFFER_DEQUEUE` show actual
+prediction-buffer residence. Queue events carry priority, ready-queue entries,
+and pending-translation entries in their JSON `result`. Queue lengths are
+snapshots at those events. `PF_DEQUEUE` captures the queue before removal.
+
+The report shows mean, P90, and P99 residence by actor, source, and priority.
+Each interval uses an observed enqueue and dequeue for the same actor and
+prefetch ID. Ready-queue residence starts at `PF_ENQUEUE` with reason
+`ready_queue`. The CSV exports are `queue-stages.csv`, `queue-intervals.csv`,
+and `queue-samples.csv`. Incomplete boundary intervals remain outside the
+percentiles.
+
+Select a prefetch ID to export its lifecycle, aliases, and demand consumers.
+The HTML selector filters the embedded preview and highlights observed buffer,
+queue, and service intervals. Events retain raw names alongside readable labels.
+
+```bash
+python3 util/prefetch_analyzer/analyze.py /path/to/m5out \
+  --prefetch-id 12345 --output /path/to/request-report
+```

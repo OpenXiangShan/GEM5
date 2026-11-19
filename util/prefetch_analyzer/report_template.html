@@ -1,18 +1,19 @@
 <!doctype html><html lang="zh-CN"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>GEM5 预取失效分析</title><style>
-:root{font-family:system-ui,sans-serif;color:#182b44;background:#f4f6fa}body{max-width:1440px;margin:auto;padding:28px}
+<title>GEM5 预取与需求分析</title><style>
+:root{font-family:system-ui,sans-serif;color:#182b44;background:#f4f6fa}body{overflow-wrap:anywhere;max-width:1440px;margin:auto;padding:28px}
 h1{margin-bottom:4px}h2{margin-top:32px}p,li{line-height:1.65}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
 .card{background:white;border:1px solid #dce3ed;border-radius:8px;padding:16px}.card span{display:block;font-size:13px;color:#53677e}.card b{display:block;font-size:25px;margin-top:8px}
+#events{min-width:1800px}#events th{white-space:nowrap}
 table{border-collapse:collapse;width:100%;background:white;font-size:13px}th,td{padding:9px;border-bottom:1px solid #dce3ed;text-align:left;vertical-align:top}th{background:#e7edf5;cursor:pointer;position:sticky;top:0}
-input,select,button{padding:8px;border:1px solid #bccada;border-radius:4px;margin:4px}button{background:#e7f1ff;cursor:pointer}.scroll{overflow:auto;max-height:600px}.muted{color:#53677e;font-size:13px}
+input,select,button{max-width:100%;box-sizing:border-box;padding:8px;border:1px solid #bccada;border-radius:4px;margin:4px}button{background:#e7f1ff;cursor:pointer}.scroll{overflow:auto;max-height:600px}.muted{color:#53677e;font-size:13px}
 svg{background:white;border:1px solid #dce3ed;border-radius:6px;width:100%}a{color:#1763a6}code{overflow-wrap:anywhere}#detail{background:white;padding:14px;border-left:4px solid #2376b7;white-space:pre-wrap;font-size:13px;overflow-wrap:anywhere}
-</style><h1>GEM5 预取失效分析</h1><p class="muted">独立事实流 · 按 Demand / Prefetch 两套口径 · 可离线阅读</p>
+</style><h1>GEM5 预取与需求分析</h1><p class="muted">独立事实流 · 按 Demand / Prefetch 两套口径 · 可离线阅读</p>
 <div class="cards">__CARDS__</div>
 <h2>配对性能</h2><div class="scroll"><table><thead><tr><th>配置</th><th>周期</th><th>退休指令</th><th>IPC</th><th>L1 Miss</th><th>平均请求延迟 / tick</th><th>唯一预取请求字节</th></tr></thead><tbody>__COMPARISON__</tbody></table></div>
 <h2>Residual Miss 归因</h2><svg id="failures" role="img" aria-label="Residual Miss 分类"></svg>
 <h2>按来源定位预取损失</h2>
-<p class="muted">Source 是 Trace 内的 PrefetchSourceType 数字编码；按候选生成者归属。
+<p class="muted">来源名称取自被测源码的 PrefetchSourceType，括号内保留数字编码。统计按候选生成者归属。
 Alias 不增加实际发送，边界未见候选的请求不进入此表。Drop 为事件次数，见
 <a href="source-drops.csv">按来源丢弃原因</a>。</p>
 <div class="scroll"><table id="sources"><thead><tr><th>生成 Cache</th><th>Source</th>
@@ -23,6 +24,10 @@ first_ready 是最早缓存层 ready，不代表 L1 ready；offload 路径可跨
 区间不是可加的 CPU 停顿，截断请求不填零。完整 P50/P90/P99 见 <a href="stages.csv">阶段表</a>。</p>
 <div class="scroll"><table id="stages"><thead><tr><th>生成 Cache</th><th>Source</th>
 <th>阶段</th><th>样本</th><th>平均</th><th>P90</th></tr></thead><tbody>__STAGES__</tbody></table></div>
+<h2>优先级与队列等待</h2>
+<p class="muted">按实际出队优先级查看预测缓冲和发送队列的驻留时间。仅纳入同一请求、同一 Actor 的完整入队和出队区间，单位为 tick。队列长度是事件发生时的采样值。__QUEUE_LINKS__</p>
+<div class="scroll"><svg id="queue-waits" role="img" aria-label="各来源优先级的队列平均和P90等待" style="min-width:1000px"></svg></div>
+<div class="scroll"><table id="queue-stages"><thead><tr><th>Actor</th><th>来源</th><th>优先级</th><th>阶段</th><th>样本</th><th>平均 / tick</th><th>P90 / tick</th><th>P99 / tick</th></tr></thead><tbody>__QUEUE_STAGES__</tbody></table></div>
 <h2>Cache 占用</h2>
 <p class="muted">每次分配、驱逐、预取填入和首次使用均更新状态，按实际驻留 tick 积分。
 预取驻留包含已经使用过的预取行；尚未使用的预取行随首次使用转出。
@@ -38,8 +43,10 @@ first_ready 是最早缓存层 ready，不代表 L1 ready；offload 路径可跨
 <h2>配对 PC 等待变化</h2><p class="muted">优先比较原始 On control，否则比较 Off baseline。按变化绝对值列出前 30 个 PC；负值为等待减少。请求等待会重叠，此表不能相加为 CPU 停顿或 IPC 收益。完整表见 <a href="pc-comparison.csv">pc-comparison.csv</a>；缺少可比较窗口时表为空。</p>
 <div class="scroll"><table><thead><tr><th>PC</th><th>Cache</th><th>Address Space</th><th>Before Miss</th><th>After Miss</th><th>Δ 加权等待 tick / retired inst</th><th>Before Pending</th><th>After Pending</th></tr></thead><tbody>__PC_DELTAS__</tbody></table></div>
 <h2>预取时间线</h2><p class="muted" id="timeline-count"></p>
+<select id="timeline-prefetch" aria-label="选择预取请求"></select>
 <input id="timeline-filter" aria-label="筛选时间线" placeholder="PC / PA / VA / request_id / prefetch_id"><button id="reset">显示全部预览</button>
-<svg id="timeline" role="img" aria-label="Demand 与 Prefetch 时间线"></svg><div class="scroll"><table id="events"><thead><tr><th>Tick / Cycle</th><th>事件</th><th>Actor</th><th>Request / PF / Related ID</th><th>PC</th><th>VA / PA</th><th>Context / Address Space</th><th>结果 / 原因 / Ready Tick</th></tr></thead><tbody></tbody></table></div>
+<p class="muted">选中请求后，金色区间表示预测缓冲驻留，蓝色表示发送队列驻留，绿色表示下游接受至填充。圆点表示单条事实，小屏可横向滚动查看完整时间范围。</p>
+<div class="scroll"><svg id="timeline" role="img" aria-label="Demand 与 Prefetch 时间线" style="min-width:900px"></svg></div><div class="scroll"><table id="events"><thead><tr><th>Tick / Cycle</th><th>事件</th><th>Actor</th><th>Request / PF / Related ID</th><th>PC</th><th>VA / PA</th><th>Context / Address Space</th><th>优先级与队列</th><th>结果 / 原因 / Ready Tick</th></tr></thead><tbody></tbody></table></div>
 <h2>观测口径与边界</h2><ul>__NOTES__</ul>
 <p>完整产物：<a href="summary.json">结构化摘要</a> · <a href="pcs.csv">PC 表</a> · <a href="demands.csv">Demand 表</a> · <a href="prefetches.csv">预取生命周期</a> · <a href="timeline.csv">事件时间线</a> · <a href="performance.csv">性能工作流输入</a></p>
 <script type="application/json" id="data">__DATA__</script><script>
@@ -55,7 +62,161 @@ function bars(){const s=$('failures'),entries=Object.entries(data.failures).sort
 let sortKey='weighted_miss_latency_ticks',descending=true;
 function pcTable(){const search=$('search').value.toLowerCase(),rows=data.pcs.filter(p=>[p.pc,p.function||'',p.cache,p.context_id,p.address_space,p.pattern,...Object.keys(p.failures)].join(' ').toLowerCase().includes(search));rows.sort((a,b)=>{const x=a[sortKey]??'',y=b[sortKey]??'';return (typeof x==='number'&&typeof y==='number'?x-y:String(x).localeCompare(String(y)))*(descending?-1:1);});$('pc-count').textContent=`${rows.length} 个 PC / Context`;const body=$('pcs').tBodies[0];body.replaceChildren();rows.forEach(p=>{const tr=document.createElement('tr');cell(tr,`${p.pc||'unknown'}${p.function?' · '+p.function:''}`);cell(tr,`${p.cache} / ${p.context_id??'unknown'} / ${p.address_space||'unknown space'}`);cell(tr,p.misses);cell(tr,p.trained_fraction===null?'—':(p.trained_fraction*100).toFixed(1)+'%');cell(tr,p.pattern);cell(tr,p.dominant_stride_bytes);cell(tr,p.weighted_miss_latency_ticks);cell(tr,Object.entries(p.failures).map(([k,v])=>(labels[k]||k)+': '+v).join(' · '));tr.addEventListener('click',()=>{$('detail').textContent=`${p.pc||'unknown'} · ${p.cache} · Context ${p.context_id??'unknown'} / ${p.address_space||'unknown space'}\n${p.function||'未解析函数'} · ${p.source_location||'未解析源码行'}
 ${p.suggestion}\n失败阶段：${JSON.stringify(p.stages)}\n训练丢弃：${JSON.stringify(p.training_drops)}\nDelta 频率：${JSON.stringify(p.deltas)}\n完成 ${p.completed}/${p.accesses} 个请求；平均延迟 ${txt(p.mean_latency_ticks)} tick`;});body.append(tr);});}
-function timeline(){const f=$('timeline-filter').value.toLowerCase(),rows=data.timeline.events.filter(e=>[e.pc,e.paddr,e.vaddr,e.request_id,e.prefetch_id,e.related_id,e.event,e.actor].some(v=>String(v??'').toLowerCase().includes(f)));$('timeline-count').textContent=`选择 PC ${data.timeline.scope.pc||'全部'} / Line ${data.timeline.scope.line||'全部'}。预览内匹配 ${rows.length} 条；当前筛选导出的完整事件 ${data.timeline.total} 条，嵌入 ${data.timeline.events.length} 条。悬停图上事件查看事实。`;const body=$('events').tBodies[0];body.replaceChildren();rows.forEach(e=>{const tr=document.createElement('tr');cell(tr,`${e.tick} / ${e.cycle}`);cell(tr,e.event);cell(tr,e.actor);cell(tr,`${e.request_id} / ${e.prefetch_id} / ${e.related_id}`);cell(tr,e.pc);cell(tr,`${e.vaddr||'—'} / ${e.paddr||'—'}`);cell(tr,`${e.context_id??'unknown'} / ${e.address_space||'unknown'}`);cell(tr,`${e.result||''} / ${e.reason||''}${e.ready_tick!==null?' / ready '+e.ready_tick:''}`);body.append(tr);});const s=$('timeline');s.replaceChildren();if(!rows.length){s.setAttribute('viewBox','0 0 1100 70');shape(s,'text',{x:15,y:35},'预览中无匹配事件；用 --pc / --line 生成目标时间线。');return;}const actors=[...new Set(rows.map(e=>e.actor))],start=Math.min(...rows.map(e=>e.tick)),end=Math.max(start+1,...rows.map(e=>e.tick));s.setAttribute('viewBox',`0 0 1100 ${actors.length*38+60}`);actors.forEach((a,i)=>{shape(s,'text',{x:8,y:35+i*38,'font-size':10},a);shape(s,'line',{x1:330,x2:1060,y1:31+i*38,y2:31+i*38,stroke:'#dce3ed'});});rows.forEach(e=>{const y=31+actors.indexOf(e.actor)*38,x=330+730*(e.tick-start)/(end-start),color=e.event.startsWith('DEMAND')?'#2878b8':e.event==='PF_DROP'?'#bd4e4e':e.event==='PF_FILL'?'#488f70':'#d98a27',n=shape(s,'circle',{cx:x,cy:y,r:4,fill:color});const title=document.createElementNS(ns,'title');title.textContent=JSON.stringify(e,null,2);n.append(title);});shape(s,'text',{x:330,y:actors.length*38+42,'font-size':12},`Tick ${start}`);shape(s,'text',{x:1060,y:actors.length*38+42,'font-size':12,'text-anchor':'end'},`Tick ${end}`);}
+const eventNames = {
+    CACHE_ARB: 'Cache 仲裁选择',
+    PF_CANDIDATE: '生成候选', PF_BUFFER_ENQUEUE: '进入预测缓冲',
+    PF_BUFFER_DEQUEUE: '离开预测缓冲', PF_IDENTIFIED: '识别请求',
+    PF_ENQUEUE: '进入队列', PF_DEQUEUE: '发送出队',
+    PF_TRANSLATE: '完成地址翻译', PF_RESOLVE: '解析物理地址',
+    PF_SEND_RETRY: '下游反压重试', PF_SEND_ACCEPT: '下游接受',
+    PF_SNOOP_ACCEPT: '上游接受返回', PF_FILL: '填入 Cache',
+    PF_FILL_CLASSIFY: '填充分类', PF_FIRST_USE: '需求首次消费',
+    PF_EVICT: '驱逐或失效', PF_ALIAS: '合并重复候选', PF_DROP: '丢弃候选',
+    PF_OFFLOAD: '向下层分流', PF_OFFLOAD_ACCEPT: '下层接受分流',
+    PF_FORWARD_ACCEPT: '转发器接受', PF_FORWARD_DEQUEUE: '转发器出队',
+    DEMAND_ARRIVE: '需求到达端口', DEMAND_ACCESS: '需求查询 Cache',
+    DEMAND_COMPLETE: 'CPU 接收响应', DEMAND_MERGE: '需求合入预取 MSHR'
+};
+function sourceName(source) {
+    return data.sourceNames[source] || (source === null ? '未知来源' : 'Source ' + source);
+}
+function queueState(event) {
+    if (!event.result || !event.result.startsWith('{')) return '—';
+    const state = JSON.parse(event.result);
+    const names = {
+        priority: '优先级', prediction_buffer_entries: '预测缓冲项数',
+        ready_queue_entries: '发送队列项数', translation_queue_entries: '翻译队列项数'
+    };
+    return Object.entries(names).filter(([key]) => state[key] !== undefined)
+        .map(([key, name]) => name + ' ' + state[key]).join(' · ') || '—';
+}
+function timeline() {
+    const selector = $('timeline-prefetch');
+    if (!selector.options.length) {
+        selector.add(new Option('全部预览请求', ''));
+        const requests = new Map();
+        data.timeline.events.forEach(event => {
+            if (event.prefetch_id && (event.event === 'PF_CANDIDATE' || !requests.has(event.prefetch_id))) {
+                requests.set(event.prefetch_id, event.source);
+            }
+        });
+        requests.forEach((source, id) => selector.add(
+            new Option('PF ' + id + ' · ' + sourceName(source), String(id))
+        ));
+    }
+    const id = Number(selector.value);
+    const requestIds = new Set(data.timeline.events
+        .filter(event => id && (event.prefetch_id === id || event.related_id === id))
+        .map(event => event.request_id));
+    const filter = $('timeline-filter').value.toLowerCase();
+    const rows = data.timeline.events.filter(event => {
+        const identityMatch = !id || event.prefetch_id === id || event.related_id === id ||
+            (!event.prefetch_id && requestIds.has(event.request_id));
+        const textMatch = [event.pc, event.paddr, event.vaddr, event.request_id,
+            event.prefetch_id, event.related_id, event.event, event.actor,
+            eventNames[event.event], sourceName(event.source)]
+            .some(value => String(value ?? '').toLowerCase().includes(filter));
+        return identityMatch && textMatch;
+    });
+    const scope = data.timeline.scope;
+    $('timeline-count').textContent =
+        `已导出 ${data.timeline.total} 条关联事实，嵌入 ${data.timeline.events.length} 条。` +
+        `当前显示 ${rows.length} 条。PC ${scope.pc || '全部'}，Line ${scope.line || '全部'}，` +
+        `PF ${scope.prefetch_id ?? '全部'}。悬停查看事件，选择请求可沿 Actor 追踪。`;
+    const body = $('events').tBodies[0];
+    body.replaceChildren();
+    rows.forEach(event => {
+        const tr = document.createElement('tr');
+        cell(tr, `${event.tick} / ${event.cycle}`);
+        cell(tr, `${eventNames[event.event] || event.event} (${event.event})`);
+        cell(tr, event.actor + ' · ' + sourceName(event.source));
+        cell(tr, `${event.request_id} / ${event.prefetch_id} / ${event.related_id}`);
+        cell(tr, event.pc);
+        cell(tr, `${event.vaddr || '—'} / ${event.paddr || '—'}`);
+        cell(tr, `${event.context_id ?? 'unknown'} / ${event.address_space || 'unknown'}`);
+        cell(tr, queueState(event));
+        cell(tr, `${event.result || ''} / ${event.reason || ''}` +
+            (event.ready_tick !== null ? ' / ready ' + event.ready_tick : ''));
+        body.append(tr);
+    });
+    const svg = $('timeline');
+    svg.replaceChildren();
+    if (!rows.length) {
+        svg.setAttribute('viewBox', '0 0 1100 70');
+        shape(svg, 'text', {x: 15, y: 35}, '预览中无匹配事件，可用 --prefetch-id / --pc / --line 导出目标。');
+        return;
+    }
+    const actors = [...new Set(rows.map(event => event.actor))];
+    const first = Math.min(...rows.map(event => event.tick));
+    const last = Math.max(first + 1, ...rows.map(event => event.tick));
+    const x = tick => 190 + 860 * (tick - first) / (last - first);
+    svg.setAttribute('viewBox', `0 0 1100 ${actors.length * 42 + 65}`);
+    actors.forEach((actor, index) => {
+        const y = 30 + index * 42;
+        const label = actor.replace(/^system\.cpu\./, '').replace(/^system\.l2_wrappers\./, 'L2.').replace(/^system\./, '').replace('inner_cache', 'cache').replace('prefetcher', 'PF');
+        const name = shape(svg, 'text', {x: 8, y: y + 4, 'font-size': 10}, label);
+        shape(name, 'title', {}, actor);
+        shape(svg, 'line', {x1: 190, x2: 1050, y1: y, y2: y, stroke: '#dce3ed'});
+        if (id) {
+            const events = rows.filter(event => event.actor === actor && event.prefetch_id === id);
+            for (const [begin, end, color] of [
+                ['PF_BUFFER_ENQUEUE', 'PF_BUFFER_DEQUEUE', '#b88735'],
+                ['PF_ENQUEUE', 'PF_DEQUEUE', '#3378a9'],
+                ['PF_SEND_ACCEPT', 'PF_FILL', '#28856d']
+            ]) {
+                const a = events.find(event => event.event === begin &&
+                    (begin !== 'PF_ENQUEUE' || event.reason === 'ready_queue'));
+                const b = events.find(event => event.event === end);
+                if (a && b && b.tick >= a.tick) {
+                    const bar = shape(svg, 'rect', {
+                        x: x(a.tick), y: y - 6, width: Math.max(1, x(b.tick) - x(a.tick)),
+                        height: 12, fill: color, opacity: 0.3
+                    });
+                    shape(bar, 'title', {}, `${eventNames[begin]} → ${eventNames[end]} · ${b.tick - a.tick} tick`);
+                }
+            }
+        }
+    });
+    rows.forEach(event => {
+        const y = 30 + actors.indexOf(event.actor) * 42;
+        const color = event.event.startsWith('DEMAND') ? '#3378a9' :
+            event.event === 'PF_DROP' ? '#b95550' :
+            event.event === 'PF_FIRST_USE' ? '#28856d' : '#b88735';
+        const point = shape(svg, 'circle', {cx: x(event.tick), cy: y, r: 4, fill: color});
+        shape(point, 'title', {}, `${eventNames[event.event] || event.event} · PF ${event.prefetch_id}` +
+            ` · tick ${event.tick} · ${queueState(event)}`);
+    });
+    const bottom = actors.length * 42 + 40;
+    shape(svg, 'text', {x: 190, y: bottom, 'font-size': 12}, '起点 tick ' + first);
+    shape(svg, 'text', {x: 1050, y: bottom, 'font-size': 12, 'text-anchor': 'end'},
+        `+${last - first} tick`);
+}
+$('timeline-prefetch').addEventListener('change', timeline);
+function queueWaitChart() {
+    const svg = $('queue-waits');
+    const rows = [...data.queues].sort((a, b) => b.p90_ticks - a.p90_ticks).slice(0, 20);
+    svg.setAttribute('viewBox', `0 0 1100 ${Math.max(90, rows.length * 34 + 75)}`);
+    if (!rows.length) {
+        shape(svg, 'text', {x: 20, y: 40}, '当前 Trace 尚无完整的队列驻留观测');
+        return;
+    }
+    const max = Math.max(1, ...rows.flatMap(row => [row.mean_ticks, row.p90_ticks]));
+    rows.forEach((row, index) => {
+        const y = 45 + index * 34;
+        const actor = row.actor.replace(/^system\./, '');
+        const stage = row.stage === 'prediction_buffer' ? '预测缓冲' : '发送队列';
+        shape(svg, 'text', {x: 10, y: y + 4, 'font-size': 11},
+            `${actor} · ${sourceName(row.source)} · P${row.priority} · ${stage}`);
+        shape(svg, 'rect', {x: 560, y: y - 9, height: 16,
+            width: 430 * row.mean_ticks / max, fill: '#3378a9'});
+        const point = shape(svg, 'circle', {cx: 560 + 430 * row.p90_ticks / max,
+            cy: y - 1, r: 4, fill: '#b95550'});
+        shape(point, 'title', {}, `P90 ${txt(row.p90_ticks)} tick · 样本 ${row.samples}`);
+        shape(svg, 'text', {x: 1005, y: y + 3, 'font-size': 11}, txt(row.p90_ticks));
+    });
+    shape(svg, 'text', {x: 560, y: 18, 'font-size': 12}, '蓝条为平均等待，红点为 P90，单位 tick');
+}
+queueWaitChart();
 function occupancyChart() {
     const selector = $('occupancy-cache');
     const svg = $('occupancy');
@@ -129,5 +290,5 @@ function occupancyChart() {
 }
 $('occupancy-cache').addEventListener('change', occupancyChart);
 occupancyChart();
-$('search').addEventListener('input',pcTable);$('timeline-filter').addEventListener('input',timeline);$('reset').addEventListener('click',()=>{$('timeline-filter').value='';timeline();});document.querySelectorAll('#pcs th[data-key]').forEach(th=>th.addEventListener('click',()=>{const key=th.dataset.key;descending=key===sortKey?!descending:true;sortKey=key;pcTable();}));bars();pcTable();timeline();
+$('search').addEventListener('input',pcTable);$('timeline-filter').addEventListener('input',timeline);$('reset').addEventListener('click',()=>{$('timeline-filter').value='';$('timeline-prefetch').value='';timeline();});document.querySelectorAll('#pcs th[data-key]').forEach(th=>th.addEventListener('click',()=>{const key=th.dataset.key;descending=key===sortKey?!descending:true;sortKey=key;pcTable();}));bars();pcTable();timeline();
 </script></html>

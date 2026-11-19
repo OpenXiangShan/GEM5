@@ -60,7 +60,11 @@ PrefetchTrace::startup()
     out << "# prefetch_trace_version=3\n# block_size=" << blockSize
         << "\n# start_tick=" << startTick << "\n# end_tick=" << endTick
         << "\n# after_warmup=" << afterWarmup
-        << "\n# cache_occupancy_version=1\n";
+        << "\n# cache_occupancy_version=1\n"
+        << "# prefetch_queue_version=1\n";
+    for (unsigned i = 0; i < NUM_PF_SOURCES; ++i)
+        out << "# prefetch_source_" << i << "="
+            << prefetchSourceTypeName(i) << "\n";
     out << "event,order,tick,cycle,actor,level,request_id,prefetch_id,"
            "related_id,pc,vaddr,paddr,secure,context_id,requestor_id,"
            "inst_seq,op,size,result,source,reason,ready_tick,cache,command,address_space,arrival_tick\n";

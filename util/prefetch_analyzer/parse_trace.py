@@ -102,7 +102,8 @@ def load_trace(path, database):
             CREATE UNIQUE INDEX event_order ON events("order");
             CREATE INDEX event_pf ON events(prefetch_id,event,tick,"order");
             CREATE INDEX event_req ON events(cache,request_id,event);
-            CREATE INDEX event_type ON events(event);
+            CREATE INDEX event_type ON events(event,actor,reason);
+            CREATE INDEX event_cache_counters ON events(event,cache,command,result);
             CREATE INDEX event_training_instruction ON events(
                 cache,inst_seq,context_id,address_space,pa_line)
                 WHERE event='PF_TRAIN' AND level=1;

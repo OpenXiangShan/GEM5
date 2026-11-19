@@ -47,7 +47,8 @@ def write_report(output, summary, pcs, timeline, runs, pc_deltas):
         "填充到达和 cache line ready 是不同时间点。下层填充不等于 L1 命中；权限或一致性导致的 Miss 单独列出。",
         "Pollution 仅凭一次驱逐不能确证，本报告不把驱逐或 Unused 自动归因为污染。需结合配对 Off 轨迹、受害 line 与性能证据继续验证。",
         "PC 的累计请求延迟会重叠，仅用于热点排序，不能相加为 CPU 停顿或 IPC 收益。Stride 规律来自同一地址空间及 ContextID 的实际地址序列。",
-        "时间线嵌入最多 2,000 条事实，所选对象的完整事件在 timeline.csv，全部事实在 events.sqlite；用 --pc / --line 可生成指定对象的预览。",
+        "时间线嵌入最多 2,000 条事实，所选对象的完整事件在 timeline.csv，全部事实在 events.sqlite。"
+        "用 --prefetch-id / --pc / --line 可导出指定对象及关联消费的预览。",
     ]
     if "symbolization" in summary:
         symbols = summary["symbolization"]
@@ -103,10 +104,35 @@ def write_report(output, summary, pcs, timeline, runs, pc_deltas):
         for row in comparison
     )
     notes = "".join("<li>" + html.escape(text) + "</li>" for text in limitations)
+    source_names = {
+        int(key.removeprefix("prefetch_source_")): value
+        for key, value in summary["trace"].items()
+        if key.startswith("prefetch_source_")
+    }
+    stage_names = {
+        "prediction_to_enqueue": "生成 → 首次入队",
+        "enqueue_to_dequeue": "首次入队 → 发送出队",
+        "dequeue_to_accept": "发送出队 → 下游接受",
+        "accept_to_first_ready": "下游接受 → 首个副本就绪",
+        "prediction_buffer": "预测缓冲驻留",
+        "ready_queue": "发送队列驻留",
+    }
+
+    def readable(key, value):
+        if key == "source":
+            return (
+                source_names.get(value, "Source") + f" ({value})"
+                if value is not None
+                else "未知来源"
+            )
+        if key == "stage":
+            return stage_names[value]
+        return display(value)
+
     source_rows = "".join(
         "<tr>"
         + "".join(
-            f"<td>{html.escape(display(row[key]))}</td>"
+            f"<td>{html.escape(readable(key, row[key]))}</td>"
             for key in (
                 "cache",
                 "source",
@@ -124,16 +150,41 @@ def write_report(output, summary, pcs, timeline, runs, pc_deltas):
     stage_rows = "".join(
         "<tr>"
         + "".join(
-            f"<td>{html.escape(display(row[key]))}</td>"
-            for key in ("cache", "source", "stage", "samples", "mean_ticks", "p90_ticks")
+            f"<td>{html.escape(readable(key, row[key]))}</td>"
+            for key in (
+                "cache",
+                "source",
+                "stage",
+                "samples",
+                "mean_ticks",
+                "p90_ticks",
+            )
         )
         + "</tr>"
         for row in summary["source_analysis"]["phases"]
     )
+    queue_rows = "".join(
+        "<tr>"
+        + "".join(
+            f"<td>{html.escape(readable(key, row[key]))}</td>"
+            for key in (
+                "actor",
+                "source",
+                "priority",
+                "stage",
+                "samples",
+                "mean_ticks",
+                "p90_ticks",
+                "p99_ticks",
+            )
+        )
+        + "</tr>"
+        for row in summary["queue_analysis"]["stages"]
+    )
     delta_rows = "".join(
         "<tr>"
         + "".join(
-            f"<td>{html.escape(display(row[key]))}</td>"
+            f"<td>{html.escape(readable(key, row[key]))}</td>"
             for key in (
                 "pc",
                 "cache",
@@ -166,8 +217,15 @@ def write_report(output, summary, pcs, timeline, runs, pc_deltas):
         for row in occupancy["caches"]
     )
     payload = json.dumps(
-        {"pcs": pcs, "timeline": timeline, "failures": demand["failures"],
-         "occupancy": occupancy}, ensure_ascii=False
+        {
+            "pcs": pcs,
+            "timeline": timeline,
+            "failures": demand["failures"],
+            "occupancy": occupancy,
+            "sourceNames": source_names,
+            "queues": summary["queue_analysis"]["stages"],
+        },
+        ensure_ascii=False,
     ).replace("<", "\\u003c")
     page = Path(__file__).with_name("report_template.html").read_text()
     page = (
@@ -179,6 +237,17 @@ def write_report(output, summary, pcs, timeline, runs, pc_deltas):
                 '<a href="cache-occupancy-timeline.csv">时间序列</a>'
                 if occupancy["caches"]
                 else "此 Trace 未采集占用状态。"
+            ),
+        )
+        .replace("__QUEUE_STAGES__", queue_rows)
+        .replace(
+            "__QUEUE_LINKS__",
+            (
+                '<a href="queue-stages.csv">分位数</a> · '
+                '<a href="queue-intervals.csv">逐请求区间</a> · '
+                '<a href="queue-samples.csv">原始队列采样</a>'
+                if summary["queue_analysis"]["stages"]
+                else "当前 Trace 尚无完整队列驻留区间。"
             ),
         )
         .replace("__PC_DELTAS__", delta_rows)
