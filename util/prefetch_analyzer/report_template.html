@@ -30,7 +30,7 @@ first_ready 是最早缓存层 ready，不代表 L1 ready；offload 路径可跨
 <div class="scroll"><table><thead><tr><th>Cache</th><th>容量 / 行</th><th>平均有效行</th>
 <th>有效占用</th><th>预取驻留占用</th><th>未使用预取占用</th></tr></thead><tbody>__OCCUPANCY__</tbody></table></div>
 <select id="occupancy-cache" aria-label="选择 Cache"></select>
-<svg id="occupancy" role="img" aria-label="Cache 容量占用随时间变化"></svg>
+<div class="scroll"><svg id="occupancy" role="img" aria-label="Cache 容量占用随时间变化" style="min-width:960px"></svg></div>
 <h2>按 PC 定位</h2><p class="muted">默认按 Miss 累计请求延迟 × 工作负载权重排序；点击表头排序，点击一行查看证据与建议。</p>
 <input id="search" aria-label="搜索 PC 或归因" placeholder="PC、Cache、失败原因或模式"><span id="pc-count"></span>
 <div class="scroll"><table id="pcs"><thead><tr><th data-key="pc">PC / 函数</th><th data-key="cache">Cache / Context</th><th data-key="misses">Miss</th><th data-key="trained_fraction">实际训练占比</th><th data-key="pattern">地址模式</th><th data-key="dominant_stride_bytes">主要 Δ / 字节</th><th data-key="weighted_miss_latency_ticks">加权 Miss 延迟 / tick</th><th>失败分布</th></tr></thead><tbody></tbody></table></div>

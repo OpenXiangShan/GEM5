@@ -212,9 +212,9 @@ PrefetchTrace::fill(const ClockedObject &actor, unsigned level, PacketPtr pkt,
             --state.prefetched;
             if (!previous->second.used) --state.unused;
         }
-        residents[line] = {prefetch, r.prefetchId, ready, merged};
+        residents[line] = {prefetch, r.prefetchId, ready, false};
         ++state.prefetched;
-        if (!merged) ++state.unused;
+        ++state.unused;
         cacheOccupancy(actor.name());
     }
 }

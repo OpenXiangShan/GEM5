@@ -95,7 +95,7 @@ The event's JSON `result` records `capacity_lines`, `valid_lines`,
 The recorder snapshots every cache at the ROI start and updates counts on tag
 allocation, invalidation, prefetch fill, and first demand use. Resident lines
 from warmup are included. Temporary response blocks use separate storage.
-A fill with a merged demand is consumed immediately.
+Cache hits and MSHR demand service record the first consumption event.
 
 The analyzer integrates each state over `[ROI begin, ROI end)` using integer
 line-ticks. Dividing by ROI ticks gives mean occupied lines. Dividing by
