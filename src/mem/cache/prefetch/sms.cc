@@ -10,6 +10,7 @@
 #include "debug/BOPOffsets.hh"
 #include "debug/XSCompositePrefetcher.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
+#include "mem/cache/prefetch/sms_agt.hh"
 
 namespace gem5
 {
@@ -61,6 +62,9 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       Opt(p.opt),
       Xsstream(p.xsstream),
       lldp(dynamic_cast<LLDPrefetcher *>(p.lldp)),
+      rtlSmsAgt(p.rtl_sms_agt),
+      smsAgtThreshold(p.sms_agt_threshold),
+      smsAgtStride(p.sms_agt_stride),
       enableActivepage(p.enable_activepage),
       enablePht(p.enable_pht),
       enableCPLX(p.enable_cplx),
@@ -84,6 +88,12 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
     assert(learnedBOP);
     assert(lldp);
     assert(isPowerOf2(regionSize));
+    fatal_if(enableActivepage && enableXsstream && !rtlSmsAgt,
+             "%s: concurrent AGT/XSStream requires rtl_sms_agt", name());
+    fatal_if(rtlSmsAgt && (!smsAgtStride || regionBlks > 64 ||
+                          smsAgtThreshold >= regionBlks || phtPFLevel != 2),
+             "%s: RTL SMS requires 1..64 region lines, a smaller active "
+             "threshold, nonzero lookahead and L2 PHT", name());
 
     setSharedFilterContextQualified(true);
     largeBOP->setSharedFilterContextQualified(true);
@@ -171,8 +181,8 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     Addr pf_tgt_addr = 0;
     bool decr = false;
     bool is_first_64 = false;
+    bool agt_generated = false;
     if (pfi.isCacheMiss() || pfi.isPfFirstHit()) {
-        assert(!(enableActivepage && enableXsstream));
         if (enableXsstream) {
             Xsstream->calculatePrefetch(pfi, addresses, streamlatenum);
             stats.streamTrainCount++;
@@ -188,11 +198,16 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             DPRINTF(XSCompositePrefetcher, "ACT hit or match: pc:%x addr: %x offset: %d active: %d decr: %d\n", pc,
                     vaddr, region_offset, is_active_page, decr);
             if (is_active_page && enableActivepage) {
-                origin_depth = act_match_entry->depth;
-                int depth = 16;
-                // active page
-                pf_tgt_addr = decr ? block_addr - depth * blkSize : block_addr + depth * blkSize;  // depth here?
-                sendStreamPF(pfi, pf_tgt_addr, addresses, pfPageLRUFilter, decr, 1);
+                if (rtlSmsAgt) {
+                    agt_generated = sendSmsAgt(pfi, decr, addresses);
+                } else {
+                    origin_depth = act_match_entry->depth;
+                    int depth = 16;
+                    pf_tgt_addr = decr ? block_addr - depth * blkSize :
+                                        block_addr + depth * blkSize;
+                    sendStreamPF(pfi, pf_tgt_addr, addresses,
+                                 pfPageLRUFilter, decr, 1);
+                }
             }
         }
     }
@@ -241,7 +256,9 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
 
 
     Addr stride_pf_addr = 0;
-    if (pf_source != PrefetchSourceType::SStream && !is_active_page) {
+    // RTL arbitrates AGT ahead of PHT, independently of Stream/Stride.
+    if (rtlSmsAgt ? !agt_generated :
+        (pf_source != PrefetchSourceType::SStream && !is_active_page)) {
         bool use_bop = enableBOP && ((pfi.isPfFirstHit() && (pf_source == PrefetchSourceType::HWP_BOP ||
                                                              pf_source == PrefetchSourceType::IPCP_CPLX ||
                                                              pf_source == PrefetchSourceType::Berti)) ||
@@ -280,6 +297,8 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                          pf_source == PrefetchSourceType::SPht || pf_source == PrefetchSourceType::IPCP_CPLX ||
                          pf_source == PrefetchSourceType::SPP || pf_source == PrefetchSourceType::Berti));
 
+        if (rtlSmsAgt)
+            use_pht = pfi.isCacheMiss() || pfi.isPfFirstHit();
         use_pht &= (!pfi.isStore()) && enablePht;
 
         bool trigger_pht = false;
@@ -355,7 +374,8 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
     if (entry) {
         // act hit
         act.accessEntry(entry);
-        in_active_page = entry->inActivePage(regionBlks);
+        in_active_page = (rtlSmsAgt ? entry->accessCount > smsAgtThreshold :
+            entry->inActivePage(regionBlks));
         uint64_t region_bit_accessed = 1UL << region_offset;
         if (phtEarlyUpdate)
             updatePht(entry, region_start, re_act_entry, true, region_offset);
@@ -384,14 +404,16 @@ XSCompositePrefetcher::actLookup(const PrefetchInfo &pfi, bool &in_active_page, 
         act.findEntry(contextKey(region_addr - 1, context_id), secure);
     if (old_neighbor_entry) {
         // act miss, but cur_region - 1 = entry_region found, => cur_region = entry_region + 1
-        in_active_page = old_neighbor_entry->inActivePage(regionBlks);
+        in_active_page = (rtlSmsAgt ? old_neighbor_entry->accessCount > smsAgtThreshold :
+            old_neighbor_entry->inActivePage(regionBlks));
         found = true;
         forward = true;
     } else if ((old_neighbor_entry =
                     act.findEntry(contextKey(region_addr + 1, context_id),
                                   secure))) {
         // act miss, but cur_region + 1 = entry_region found, => cur_region = entry_region - 1
-        in_active_page = old_neighbor_entry->inActivePage(regionBlks);
+        in_active_page = (rtlSmsAgt ? old_neighbor_entry->accessCount > smsAgtThreshold :
+            old_neighbor_entry->inActivePage(regionBlks));
         found = true;
         forward = false;
     }
@@ -748,6 +770,29 @@ XSCompositePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std:
         DPRINTF(XSCompositePrefetcher, "Send pf: %lx, target level: %i\n", addr, ahead_level);
         return true;
     }
+}
+
+bool
+XSCompositePrefetcher::sendSmsAgt(const PrefetchInfo &pfi, bool decr,
+                                 std::vector<AddrPriority> &addresses)
+{
+    const auto region = smsAgtRegion(
+        pfi.getAddr(), blkSize, regionBlks, smsAgtStride, decr);
+    if (!region)
+        return false;
+
+    // RTL AGT sends the remaining portion of the lookahead region to L2.
+    // Share SMS filtering with PHT, but retain the per-bit algorithm/PC.
+    for (unsigned i = 0; i < regionBlks; ++i) {
+        if (region->bits & (uint64_t(1) << i)) {
+            sendPFWithFilter(pfi, region->base + i * blkSize, addresses,
+                             regionBlks - i, enums::SMS_AGT, 2);
+        }
+    }
+    pfi.setTriggerInfo_PFsrc(enums::SMS_AGT);
+    sms_pfFilter.Insert(regionAddress(region->base), region->bits, 0,
+                        true, decr, pfi.isSecure(), 2, &pfi.trigger_info);
+    return true;
 }
 
 void

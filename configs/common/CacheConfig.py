@@ -70,6 +70,12 @@ def _get_cache_opts(cpu, level, options):
     if hasattr(options, prefetcher_attr) and (not options.no_pf):
         opts['prefetcher'] = create_prefetcher(cpu, level, options)
 
+    if (getattr(options, 'rtl_default_data_prefetchers', False) and
+            level in ('l1d', 'l2')):
+        # RTL keeps the requested target level under backpressure. Do not
+        # silently turn L1/L2 requests into lower-level prefetch candidates.
+        opts['prefetch_can_offload'] = False
+
     if level == 'l2':
         opts['l2_evict_invalidate_l1'] = getattr(
             options, 'l2_evict_invalidate_l1', False)
@@ -202,6 +208,10 @@ def config_aligned_l2(options, system, l2_cache_class):
         l2_wrapper.cpu_side = system.tol2bus_list[i].mem_side_ports
 
 def config_cache(options, system):
+    if (getattr(options, 'rtl_default_data_prefetchers', False) and
+            (options.no_pf or not options.caches or not options.l2cache)):
+        fatal("--rtl-default-data-prefetchers requires L1/L2 caches "
+              "with prefetching enabled")
     if options.external_memory_system and (options.caches or options.l2cache):
         print("External caches and internal caches are exclusive options.\n")
         sys.exit(1)

@@ -74,9 +74,10 @@ buildPfControlSourceAdmitPct(const std::vector<int> &values)
         return table;
     }
 
-    panic_if(values.size() != NUM_PF_SOURCES,
+    // SMS_AGT was appended without renumbering the original 16 sources.
+    panic_if(values.size() != NUM_PF_SOURCES && values.size() != 16,
              "pf_control_source_admit_pcts must be empty or have "
-             "%u entries, got %zu",
+             "16 or %u entries, got %zu",
              unsigned(NUM_PF_SOURCES), values.size());
 
     for (size_t idx = 0; idx < values.size(); ++idx) {

@@ -299,6 +299,10 @@ def addCommonOptions(parser, configure_xiangshan=False):
     parser.add_argument("--kmh-align", action="store_true", default=False,
                         help="""
                         Use kmu config""")
+    parser.add_argument("--rtl-default-data-prefetchers",
+                        action="store_true", default=False,
+                        help="Enable the RTL DefaultConfig data-prefetch "
+                             "algorithm set and target levels; not cycle alignment")
     parser.add_argument("--functional-tlb", action="store_true", default=False,
                         help="""
                         Use functional TLB""")

@@ -209,6 +209,8 @@ class XSCompositePrefetcher : public Queued
                           PrefetchSourceType src, int ahead_level = -1);
     void sendStreamPF(const PrefetchInfo &pfi, Addr pf_tgt_addr, std::vector<AddrPriority> &addresses,
                       boost::compute::detail::lru_cache<Addr, Addr> &Filter, bool decr, int pf_level);
+    bool sendSmsAgt(const PrefetchInfo &pfi, bool decr,
+                    std::vector<AddrPriority> &addresses);
     void updatePhtBits(bool accessed, bool early_update, bool re_act_mode, uint8_t hist_idx,
                        XSCompositePrefetcher::ACTEntry *act_entry, XSCompositePrefetcher::PhtEntry *pht_entry);
 
@@ -230,6 +232,9 @@ class XSCompositePrefetcher : public Queued
     LLDPrefetcher *lldp;
 
 
+    const bool rtlSmsAgt;
+    const unsigned smsAgtThreshold;
+    const unsigned smsAgtStride;
     const bool enableActivepage;
     const bool enablePht;
     const bool enableCPLX;

@@ -501,7 +501,9 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
         assert args.dramsim3_ini is not None
 
     for cpu in test_sys.cpu:
-        cpu.store_prefetch_train = not args.kmh_align
+        cpu.store_prefetch_train = not (
+            args.kmh_align or
+            getattr(args, 'rtl_default_data_prefetchers', False))
 
     # Configure trace mode if enabled
     if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:

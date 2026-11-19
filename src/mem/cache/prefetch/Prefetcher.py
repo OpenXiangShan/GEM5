@@ -820,6 +820,8 @@ class BOPPrefetcher(QueuedPrefetcher):
     on_data  = True
     on_inst  = False
 
+    train_on_physical_addresses = Param.Bool(False,
+        "Train embedded PBOP on PA and map same-page candidates to parent VA")
     score_max = Param.Unsigned(20, "Max. score to update the best offset")
     round_max = Param.Unsigned(50, "Max. round to update the best offset")
     bad_score = Param.Unsigned(12, "Score at which the HWP is disabled")
@@ -1330,6 +1332,10 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     pht_early_update = Param.Bool(True, "Enable update pht earlier")
     neighbor_pht_update = Param.Bool(True, "Enable use nearby act entry to update pht")
 
+    rtl_sms_agt = Param.Bool(False,
+        "Use a separate SMS AGT source and L2-only generation alongside XSStream")
+    sms_agt_threshold = Param.Unsigned(12, "SMS active-region threshold in lines")
+    sms_agt_stride = Param.Unsigned(30, "SMS AGT lookahead in cache lines")
     enable_activepage = Param.Bool(False,"Enable activepage stream prefetcher")
     enable_xsstream = Param.Bool(False,"Enable xs_stream component")
     enable_sstride = Param.Bool(False,"Enable sms stride component")

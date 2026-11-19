@@ -77,6 +77,7 @@ class BOP : public Queued
         const unsigned int delayTicks;
         /** Cross page parameters */
         const bool crossPage;
+        const bool trainOnPhysicalAddresses;
         /** Adapt Bop Offset */
         const bool enableAdaptOffset;
 

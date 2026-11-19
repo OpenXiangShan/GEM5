@@ -26,6 +26,7 @@ PF_SOURCE_NAMES = [
     "SOpt",
     "DespacitoStream",
     "LLDP",
+    "SMS_AGT",
 ]
 
 
@@ -287,7 +288,8 @@ def _parse_source_pct_table(spec, path):
             raw_source, raw_pct = pair.split('=', 1)
             items.append((raw_source.strip(), raw_pct.strip()))
     elif isinstance(spec, (list, tuple)):
-        if len(spec) == len(PF_SOURCE_NAMES):
+        # Preserve full vectors from the original 16-source layout.
+        if len(spec) in (16, len(PF_SOURCE_NAMES)):
             for idx, pct in enumerate(spec):
                 table[idx] = _validate_source_pct(pct, f"{path}.{idx}")
             return table
@@ -469,6 +471,27 @@ def _configure_xs_composite_kmh_align(prefetcher):
     prefetcher.enable_opt = False
     prefetcher.pht_pf_level = 2
 
+def _rtl_default_data_prefetchers(options):
+    return getattr(options, 'rtl_default_data_prefetchers', False)
+
+
+def _configure_rtl_default_l1(prefetcher):
+    # Stream/Stride and SMS AGT/PHT are separate generators in RTL.
+    _configure_xs_composite_kmh_align(prefetcher)
+    prefetcher.enable_activepage = True
+    prefetcher.rtl_sms_agt = True
+    prefetcher.sms_agt_threshold = 12
+    prefetcher.sms_agt_stride = 30
+    prefetcher.enable_spp = False
+    prefetcher.enable_cplx = False
+    prefetcher.enable_lldp = False
+    prefetcher.lldp.training_cpu = NULL
+    prefetcher.stream_pf_ahead = False
+    prefetcher.xsstream.enable_l3_stream_pre = False
+    prefetcher.sstride.use_xs_depth = True
+    prefetcher.sstride.use_redundant_table = False
+
+
 def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
     _configure_xs_composite_common(prefetcher, options)
 
@@ -487,6 +510,9 @@ def _configure_xs_composite(prefetcher, options, pf_buffer_enabled):
         if hasattr(prefetcher, 'lldp'):
             prefetcher.lldp.training_cpu = (
                 options._lldp_training_cpu if options.l1d_enable_lldp else NULL)
+
+    if _rtl_default_data_prefetchers(options):
+        _configure_rtl_default_l1(prefetcher)
 
     _set_pf_buffer_training_policy(prefetcher, pf_buffer_enabled)
 
@@ -526,7 +552,7 @@ def _configure_cdp(prefetcher, options):
 
 
 def _configure_l2_composite(prefetcher, prefetcher_name, options):
-    if options.kmh_align:
+    if options.kmh_align or _rtl_default_data_prefetchers(options):
         assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
         _configure_l2_composite_kmh_align(prefetcher)
     elif prefetcher_name == 'L2CompositeWithWorkerPrefetcher':
@@ -536,6 +562,13 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
 
     if hasattr(options, 'l2_enable_lldp') and hasattr(prefetcher, 'enable_lldp'):
         prefetcher.enable_lldp = options.l2_enable_lldp
+
+    if _rtl_default_data_prefetchers(options):
+        prefetcher.enable_cdp = False
+        prefetcher.enable_lldp = False
+        prefetcher.bop_large.use_virtual_addresses = True
+        prefetcher.bop_small.use_virtual_addresses = False
+        prefetcher.bop_small.train_on_physical_addresses = True
 
 def _configure_l2_prefetcher(prefetcher, prefetcher_name, options,
                              pf_buffer_enabled):
@@ -575,6 +608,20 @@ def create_prefetcher(cpu, cache_level, options):
         prefetcher_name = getattr(options, prefetcher_attr)
         prefetcher = _get_hwp(prefetcher_name)
         print(f"create_prefetcher at {cache_level}: {prefetcher_name}")
+
+    if _rtl_default_data_prefetchers(options):
+        if not getattr(options, 'l1_to_l2_pf_hint', False):
+            fatal("--rtl-default-data-prefetchers requires L1-to-L2 PF hints")
+        expected = {
+            'l1d': 'XSCompositePrefetcher',
+            'l2': ('L2CompositeWithWorkerPrefetcher' if options.classic_l2
+                   else 'PrefetcherForwarder'),
+            'l2_wrapper': 'L2CompositeWithWorkerPrefetcher',
+            'l3': 'WorkerPrefetcher',
+        }
+        if cache_level in expected and prefetcher_name != expected[cache_level]:
+            fatal("--rtl-default-data-prefetchers requires "
+                  f"{cache_level}={expected[cache_level]}, got {prefetcher_name}")
 
     _configure_pf_buffer(prefetcher, pf_buffer_enabled)
 

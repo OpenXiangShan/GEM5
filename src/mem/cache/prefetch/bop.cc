@@ -50,6 +50,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
       delayQueueSize(p.delay_queue_size),
       delayTicks(cyclesToTicks(p.delay_queue_cycles)),
       crossPage(p.crossPage),
+      trainOnPhysicalAddresses(p.train_on_physical_addresses),
       enableAdaptOffset(p.enable_adaptoffset),
       victimListSize(p.victimOffsetsListSize),
       restoreCycle(p.restoreCycle),
@@ -57,6 +58,8 @@ BOP::BOP(const BOPPrefetcherParams &p)
       issuePrefetchRequests(false), bestOffset(1), phaseBestOffset(0),
       bestScore(0), round(0), stats(this)
 {
+    fatal_if(trainOnPhysicalAddresses && crossPage,
+             "%s: embedded PBOP requires same-page candidates", name());
     if (!isPowerOf2(rrEntries)) {
         fatal("%s: number of RR entries is not power of 2\n", name());
     }
@@ -445,7 +448,8 @@ void
 BOP::calculatePrefetch(const PrefetchInfo &pfi,
         std::vector<AddrPriority> &addresses, bool late)
 {
-    Addr addr = blockAddress(pfi.getAddr());
+    Addr addr = blockAddress(trainOnPhysicalAddresses ?
+                             pfi.getPaddr() : pfi.getAddr());
     Addr tag_x = tag(addr);
 
     DPRINTF(BOPPrefetcher,
@@ -491,6 +495,15 @@ BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriori
     // Count generated prefetch
     prefetchStats.pfGenerated++;
 
+    if (trainOnPhysicalAddresses) {
+        if (!samePage(pfi.getPaddr(), addr)) {
+            prefetchStats.pfFiltered++;
+            return false;
+        }
+        // The composite queue translates VAs. A same-page physical
+        // candidate shares the trigger's page offset and VA mapping.
+        addr = pageAddress(pfi.getAddr()) + pageOffset(addr);
+    }
     if (!samePage(pfi.getAddr(), addr) && !crossPage) {
         // Count filtered prefetch (cross-page)
         prefetchStats.pfFiltered++;

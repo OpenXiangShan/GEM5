@@ -816,6 +816,27 @@ TEST_F(SDBPInterface, SplitActiveSamplerPredictionsSelectDeadVictim)
     EXPECT_EQ(SDBP::victimClass(live.replacementData), 1);
 }
 
+TEST_F(SDBPInterface, SplitActiveSmsAgtDoesNotTrainIndependentStream)
+{
+    auto params = testParams();
+    params.split_prefetch_sources = true;
+    params.sampler_assoc = 1;
+    SDBP policy(params);
+    auto agt = sourcedPacket(Request::L2RequestSource::L2Prefetch, 0x1000);
+    agt->req->setPFSource(enums::SMS_AGT);
+    auto stream = sourcedPacket(Request::L2RequestSource::L2Prefetch, 0x1000);
+    stream->req->setPFSource(enums::SStream);
+    for (unsigned tag = 1; tag <= 4; ++tag)
+        policy.observeFill(agt.get(), 0, tag);
+    auto data = policy.instantiateEntry();
+    policy.reset(data, stream.get());
+    EXPECT_EQ(SDBP::victimClass(data), 1);
+    policy.reset(data, agt.get());
+    EXPECT_EQ(SDBP::victimClass(data), 2);
+    EXPECT_EQ(sourceStat(policy, "deadTrainingBySource",
+                         1 + NUM_PF_SOURCES + enums::SMS_AGT), 3);
+}
+
 TEST_F(SDBPInterface, SplitActiveSamplerTrainsPreviousAlgorithmAndLevel)
 {
     auto params = testParams();
