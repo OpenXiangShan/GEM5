@@ -177,6 +177,8 @@ class IssueQue : public SimObject
     std::vector<std::vector<std::pair<int, int>>> intRdRfTPI;
     std::vector<std::vector<std::pair<int, int>>> fpRdRfTPI;
 
+    std::vector<TimeBuffer<DynInstPtr>> delay_ageQue;
+
     std::vector<std::vector<std::pair<int, int>>> intWrRfTPI;
 
     std::vector<int64_t> portBusy;
@@ -357,6 +359,7 @@ class Scheduler : public SimObject
     const int intel_fewops = 4;
     bool old_disp = false;
     const int intRegfileBanks;
+    const bool age_readarb = false;
 
     /** Load/store pipe counts derived from scheduler issue ports. */
     unsigned loadPipeCount = 0;
