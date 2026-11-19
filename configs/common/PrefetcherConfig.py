@@ -545,9 +545,6 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
     _configure_cdp(prefetcher, options)
 
     if getattr(options, 'l2_mlop_enable', False):
-        llc_threshold = options.l2_mlop_llc_threshold
-        if not options.l3cache or not options.l2_to_l3_pf_hint:
-            llc_threshold = max(llc_threshold, options.l2_mlop_num_updates + 1)
         prefetcher.mlop = MLOPPrefetcher(
             is_sub_prefetcher=True,
             use_pf_buffer=True,
@@ -557,7 +554,6 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
             max_zones=options.l2_mlop_max_zones,
             num_updates=options.l2_mlop_num_updates,
             l2_threshold=options.l2_mlop_l2_threshold,
-            llc_threshold=llc_threshold,
         )
 
     if hasattr(options, 'l2_enable_lldp') and hasattr(prefetcher, 'enable_lldp'):

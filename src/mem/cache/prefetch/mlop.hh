@@ -26,7 +26,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <utility>
 #include <vector>
 
 #include "mem/cache/prefetch/worker.hh"
@@ -40,7 +39,7 @@ namespace prefetch
 {
 
 /**
- * Multi-Lookahead Offset Prefetcher.
+ * Multi-Lookahead Offset Prefetcher targeting the local L2 cache.
  *
  * The state layout follows the DPC-3 implementation: an access-map table
  * tracks 64-block zones, each zone retains the last 15 accesses, and one
@@ -69,10 +68,7 @@ class MLOPPrefetcher : public WorkerPrefetcher
     {
         bool valid = false;
         ZoneKey key;
-        // Keep the state and target level explicit. This is easier to inspect
-        // in the software model than a packed hardware-style bit array.
         std::array<State, BlocksInZone> accessMap{};
-        std::array<uint8_t, BlocksInZone> blockPrefetchLevel{};
         std::array<uint8_t, HistoryLength> history{};
         uint8_t historySize = 0;
         uint64_t lru = 0;
@@ -86,13 +82,9 @@ class MLOPPrefetcher : public WorkerPrefetcher
         statistics::Scalar rounds;
         statistics::Scalar zoneEvictions;
         statistics::Scalar l2Candidates;
-        statistics::Scalar llcCandidates;
         statistics::Scalar crossPageDropped;
         statistics::Distribution l2SubmittedOffsetDist;
-        statistics::Distribution llcSubmittedOffsetDist;
         statistics::Scalar l2Accepted;
-        statistics::Scalar llcAccepted;
-        statistics::Scalar downstreamUnavailable;
     } statsMLOP;
 
     std::vector<Zone> amt;
@@ -101,12 +93,10 @@ class MLOPPrefetcher : public WorkerPrefetcher
 
     std::array<std::array<uint16_t, NumOffsets>, PrefetchDegree> offsetScores{};
     std::array<std::vector<int>, PrefetchDegree> prefetchOffsets;
-    std::array<uint8_t, PrefetchDegree> prefetchLevel{};
 
     const unsigned maxZones;
     const unsigned updatesPerRound;
     const unsigned l2Threshold;
-    const unsigned llcThreshold;
     unsigned updateCount = 0;
     uint64_t trainingCount = 0;
     uint64_t roundCount = 0;
@@ -118,11 +108,10 @@ class MLOPPrefetcher : public WorkerPrefetcher
     Zone &getZone(const ZoneKey &key);
     void touchZone(Zone &zone);
     void eraseZone(Zone &zone);
-    void mark(uint64_t block, State state, uint8_t level, bool secure);
+    void mark(uint64_t block, State state, bool secure);
     void learn(uint64_t block, bool secure);
     void finishRound();
-    std::vector<std::pair<uint64_t, uint8_t>> candidates(uint64_t block, bool secure);
-    void sampleSubmittedOffset(uint8_t level, int64_t offset);
+    std::vector<uint64_t> candidates(uint64_t block, bool secure);
 
   protected:
     void onPrefetchAccepted(const DeferredPacket &dpp) override;
@@ -137,8 +126,8 @@ class MLOPPrefetcher : public WorkerPrefetcher
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override;
 
     /** Feedback from the parent composite's actual prefetch queue. */
-    void recordAccepted(Addr paddr, uint8_t level, bool secure);
-    void recordRemoved(Addr paddr, uint8_t level, bool secure);
+    void recordAccepted(Addr paddr, bool secure);
+    void recordRemoved(Addr paddr, bool secure);
 };
 
 }  // namespace prefetch

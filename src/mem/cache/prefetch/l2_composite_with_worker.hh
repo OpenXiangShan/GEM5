@@ -39,9 +39,6 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     {
         hintDownStream = down_stream;
         cdp->addHintDownStream(down_stream);
-        if (mlop) {
-            mlop->addHintDownStream(down_stream);
-        }
     }
     void rxHint(BaseMMU::Translation *dpp) override;
     void pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override;

@@ -39,18 +39,11 @@ MLOPPrefetcher::MLOPStats::MLOPStats(statistics::Group *parent)
       ADD_STAT(rounds, statistics::units::Count::get(), "MLOP score selection rounds"),
       ADD_STAT(zoneEvictions, statistics::units::Count::get(), "MLOP AMT zone replacements"),
       ADD_STAT(l2Candidates, statistics::units::Count::get(), "MLOP candidates targeting L2"),
-      ADD_STAT(llcCandidates, statistics::units::Count::get(), "MLOP candidates targeting LLC"),
       ADD_STAT(crossPageDropped, statistics::units::Count::get(), "MLOP candidates dropped at a zone/page boundary"),
       ADD_STAT(l2SubmittedOffsetDist, statistics::units::Count::get(), "Offsets submitted by MLOP for L2 prefetching"),
-      ADD_STAT(llcSubmittedOffsetDist, statistics::units::Count::get(),
-               "Offsets submitted by MLOP for LLC prefetching"),
-      ADD_STAT(l2Accepted, statistics::units::Count::get(), "MLOP L2 candidates accepted by a prefetch queue"),
-      ADD_STAT(llcAccepted, statistics::units::Count::get(), "MLOP LLC candidates handed to a downstream prefetcher"),
-      ADD_STAT(downstreamUnavailable, statistics::units::Count::get(),
-               "MLOP downstream candidates without a downstream prefetcher")
+      ADD_STAT(l2Accepted, statistics::units::Count::get(), "MLOP L2 candidates accepted by a prefetch queue")
 {
     l2SubmittedOffsetDist.init(-63, 63, 1).prereq(l2SubmittedOffsetDist);
-    llcSubmittedOffsetDist.init(-63, 63, 1).prereq(llcSubmittedOffsetDist);
 }
 
 MLOPPrefetcher::MLOPPrefetcher(const MLOPPrefetcherParams &p)
@@ -58,11 +51,10 @@ MLOPPrefetcher::MLOPPrefetcher(const MLOPPrefetcherParams &p)
       statsMLOP(this),
       maxZones(p.max_zones),
       updatesPerRound(p.num_updates),
-      l2Threshold(p.l2_threshold),
-      llcThreshold(p.llc_threshold)
+      l2Threshold(p.l2_threshold)
 {
     fatal_if(maxZones == 0 || updatesPerRound == 0 || updatesPerRound > std::numeric_limits<uint16_t>::max() ||
-                 l2Threshold == 0 || llcThreshold == 0,
+                 l2Threshold == 0,
              "MLOP requires positive capacity, round and threshold "
              "parameters and at most 65535 updates per round");
 
@@ -169,13 +161,12 @@ MLOPPrefetcher::eraseZone(Zone &zone)
 {
     zone.valid = false;
     zone.accessMap.fill(State::Init);
-    zone.blockPrefetchLevel.fill(0);
     zone.history.fill(0);
     zone.historySize = 0;
 }
 
 void
-MLOPPrefetcher::mark(uint64_t block, State state, uint8_t level, bool secure)
+MLOPPrefetcher::mark(uint64_t block, State state, bool secure)
 {
     const ZoneKey key{block / BlocksInZone, secure};
     const auto index = static_cast<unsigned>(block % BlocksInZone);
@@ -201,7 +192,6 @@ MLOPPrefetcher::mark(uint64_t block, State state, uint8_t level, bool secure)
     }
 
     zone->accessMap[index] = state;
-    zone->blockPrefetchLevel[index] = state == State::Prefetch ? level : 0;
 
     if (state == State::Init && std::all_of(zone->accessMap.begin(), zone->accessMap.end(),
                                             [](State value) { return value == State::Init; })) {
@@ -252,36 +242,25 @@ MLOPPrefetcher::finishRound()
 {
     updateCount = 0;
     ++roundCount;
-    prefetchLevel.fill(0);
     for (auto &offsets : prefetchOffsets) {
         offsets.clear();
     }
 
-    std::array<uint16_t, PrefetchDegree> maxScores{};
-    for (std::size_t depth = 0; depth < PrefetchDegree; ++depth) {
-        maxScores[depth] = *std::max_element(offsetScores[depth].begin(), offsetScores[depth].end());
-    }
-
     std::array<bool, NumOffsets> selected{};
     for (int depth = static_cast<int>(PrefetchDegree) - 1; depth >= 0; --depth) {
-        uint8_t level = 0;
-        if (maxScores[depth] >= l2Threshold) {
-            level = 2;
-        } else if (maxScores[depth] >= llcThreshold) {
-            level = 3;
+        const auto &scores = offsetScores[depth];
+        const auto maxScore = *std::max_element(scores.begin(), scores.end());
+        if (maxScore <= l2Threshold) {
+            continue;
         }
 
-        if (level == 0)
-            continue;
-
-        prefetchLevel[depth] = level;
         for (int offset = -static_cast<int>(BlocksInZone - 1); offset <= static_cast<int>(BlocksInZone - 1);
              ++offset) {
             if (offset == 0) {
                 continue;
             }
             const auto index = static_cast<unsigned>(BlocksInZone - 1 + offset);
-            if (!selected[index] && offsetScores[depth][index] == maxScores[depth]) {
+            if (!selected[index] && scores[index] == maxScore) {
                 prefetchOffsets[depth].push_back(offset);
                 selected[index] = true;
             }
@@ -290,7 +269,7 @@ MLOPPrefetcher::finishRound()
     offsetScores = {};
 }
 
-std::vector<std::pair<uint64_t, uint8_t>>
+std::vector<uint64_t>
 MLOPPrefetcher::candidates(uint64_t block, bool secure)
 {
     const ZoneKey key{block / BlocksInZone, secure};
@@ -300,38 +279,21 @@ MLOPPrefetcher::candidates(uint64_t block, bool secure)
     }
 
     const auto origin = static_cast<int>(block % BlocksInZone);
-    std::vector<std::pair<uint64_t, uint8_t>> result;
-    for (unsigned depth = 0; depth < PrefetchDegree; ++depth) {
-        for (const int offset : prefetchOffsets[depth]) {
+    std::vector<uint64_t> result;
+    for (const auto &offsets : prefetchOffsets) {
+        for (const int offset : offsets) {
             const int target = origin + offset;
             if (target < 0 || target >= static_cast<int>(BlocksInZone)) {
                 ++statsMLOP.crossPageDropped;
                 continue;
             }
             const auto index = static_cast<unsigned>(target);
-            if (zone->accessMap[index] == State::Access || (zone->accessMap[index] == State::Prefetch &&
-                                                            zone->blockPrefetchLevel[index] <= prefetchLevel[depth])) {
-                continue;
+            if (zone->accessMap[index] == State::Init) {
+                result.push_back(key.number * BlocksInZone + index);
             }
-            result.emplace_back(key.number * BlocksInZone + index, prefetchLevel[depth]);
         }
     }
     return result;
-}
-
-void
-MLOPPrefetcher::sampleSubmittedOffset(uint8_t level, int64_t offset)
-{
-    switch (level) {
-        case 2:
-            statsMLOP.l2SubmittedOffsetDist.sample(offset);
-            break;
-        case 3:
-            statsMLOP.llcSubmittedOffsetDist.sample(offset);
-            break;
-        default:
-            panic("MLOP submitted an invalid target level");
-    }
 }
 
 void
@@ -359,7 +321,7 @@ MLOPPrefetcher::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
 void
 MLOPPrefetcher::notifyBlockInvalidated(Addr addr, bool is_secure)
 {
-    mark(addr / blkSize, State::Init, 0, is_secure);
+    mark(addr / blkSize, State::Init, is_secure);
 }
 
 void
@@ -381,29 +343,10 @@ MLOPPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrior
     if (pfi.isCacheMiss() || pfi.isPfFirstHit()) {
         learn(block, secure);
     }
-    mark(block, State::Access, 0, secure);
+    mark(block, State::Access, secure);
 
-    const auto generated = candidates(block, secure);
-    for (const auto &candidate : generated) {
-        const auto candidateBlock = candidate.first;
-        const auto level = candidate.second;
-        const bool local = level == 2;
-        if (!local && !hasHintDownStream()) {
-            ++statsMLOP.downstreamUnavailable;
-            continue;
-        }
-
-        switch (level) {
-            case 2:
-                ++statsMLOP.l2Candidates;
-                break;
-            case 3:
-                ++statsMLOP.llcCandidates;
-                break;
-            default:
-                panic("MLOP generated an invalid fill level");
-        }
-
+    for (const auto candidateBlock : candidates(block, secure)) {
+        ++statsMLOP.l2Candidates;
         const Addr candidatePaddr = candidateBlock * blkSize;
         // The L2 composite issues VAs, but MLOP always learns physical zones.
         // Its candidates stay in the trigger's physical page.
@@ -417,8 +360,7 @@ MLOPPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrior
                     const Addr pendingPaddr = useVirtualAddresses
                                                   ? pageAddress(trigger->getPaddr()) | pageOffset(pending.addr)
                                                   : pending.addr;
-                    return pendingPaddr == candidatePaddr && pending.pfahead_host == (local ? 0 : level) &&
-                           trigger->isSecure() == secure;
+                    return pendingPaddr == candidatePaddr && trigger->isSecure() == secure;
                 });
             if (alreadyBuffered) {
                 continue;
@@ -426,18 +368,13 @@ MLOPPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrior
         }
 
         AddrPriority address(candidateAddr, 0, PrefetchSourceType::MLOP);
-        if (!local) {
-            address.pfahead = true;
-            address.pfahead_host = level;
-        }
         if (usePFBuffer) {
             address.pf_trigger_info = pfi.trigger_info;
             InsertPFRequestToBuffer(address);
-            sampleSubmittedOffset(level, offset);
         } else {
             addresses.push_back(address);
-            sampleSubmittedOffset(level, offset);
         }
+        statsMLOP.l2SubmittedOffsetDist.sample(offset);
     }
 
     statsMLOP.trainings += trainingCount - beforeTraining;
@@ -449,46 +386,34 @@ void
 MLOPPrefetcher::onPrefetchAccepted(const DeferredPacket &dpp)
 {
     if (dpp.owner == this && dpp.pkt && dpp.pfInfo.getXsMetadata().prefetchSource == PrefetchSourceType::MLOP) {
-        const uint8_t level = dpp.pfahead ? dpp.pfahead_host : 2;
-        recordAccepted(dpp.pkt->getAddr(), level, dpp.pfInfo.isSecure());
+        recordAccepted(dpp.pkt->getAddr(), dpp.pfInfo.isSecure());
     }
 }
 
 void
-MLOPPrefetcher::recordAccepted(Addr paddr, uint8_t level, bool secure)
+MLOPPrefetcher::recordAccepted(Addr paddr, bool secure)
 {
-    mark(paddr / blkSize, State::Prefetch, level, secure);
-    switch (level) {
-        case 2:
-            ++statsMLOP.l2Accepted;
-            break;
-        case 3:
-            ++statsMLOP.llcAccepted;
-            break;
-        default:
-            panic("MLOP accepted an invalid fill level");
-    }
+    mark(paddr / blkSize, State::Prefetch, secure);
+    ++statsMLOP.l2Accepted;
 }
 
 void
 MLOPPrefetcher::onPrefetchRemoved(const DeferredPacket &dpp)
 {
     if (dpp.owner == this && dpp.pkt && dpp.pfInfo.getXsMetadata().prefetchSource == PrefetchSourceType::MLOP) {
-        const uint8_t level = dpp.pfahead ? dpp.pfahead_host : 2;
-        recordRemoved(dpp.pkt->getAddr(), level, dpp.pfInfo.isSecure());
+        recordRemoved(dpp.pkt->getAddr(), dpp.pfInfo.isSecure());
     }
 }
 
 void
-MLOPPrefetcher::recordRemoved(Addr paddr, uint8_t level, bool secure)
+MLOPPrefetcher::recordRemoved(Addr paddr, bool secure)
 {
     const auto block = paddr / blkSize;
     const auto index = block % BlocksInZone;
     const auto *zone = findZone(ZoneKey{block / BlocksInZone, secure});
-    // An intervening demand or a prefetch to a closer cache can supersede
-    // the entry before the discarded packet reaches the head of the queue.
-    if (zone && zone->accessMap[index] == State::Prefetch && zone->blockPrefetchLevel[index] == level) {
-        mark(block, State::Init, 0, secure);
+    // An intervening demand can supersede the queued prefetch.
+    if (zone && zone->accessMap[index] == State::Prefetch) {
+        mark(block, State::Init, secure);
     }
 }
 

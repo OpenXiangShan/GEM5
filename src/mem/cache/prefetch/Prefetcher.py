@@ -466,8 +466,7 @@ class MLOPPrefetcher(WorkerPrefetcher):
 
     max_zones = Param.Unsigned(256, "Maximum tracked 64-block zones")
     num_updates = Param.Unsigned(500, "Training updates per score round")
-    l2_threshold = Param.Unsigned(200, "Minimum score for L2 prefetches")
-    llc_threshold = Param.Unsigned(150, "Minimum score for LLC prefetches")
+    l2_threshold = Param.Unsigned(150, "Exclusive score threshold for L2 prefetches")
 
 
 class StridePrefetcher(QueuedPrefetcher):

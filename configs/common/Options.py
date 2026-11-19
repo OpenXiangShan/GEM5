@@ -312,10 +312,8 @@ def addCommonOptions(parser, configure_xiangshan=False):
                         help="L2 MLOP access-map table capacity in zones")
     parser.add_argument("--l2-mlop-num-updates", type=int, default=500,
                         help="L2 MLOP training updates per scoring round")
-    parser.add_argument("--l2-mlop-l2-threshold", type=int, default=200,
-                        help="L2 MLOP score threshold for local prefetches")
-    parser.add_argument("--l2-mlop-llc-threshold", type=int, default=150,
-                        help="L2 MLOP score threshold for LLC prefetches")
+    parser.add_argument("--l2-mlop-l2-threshold", type=int, default=150,
+                        help="L2 MLOP generates prefetches for scores above this threshold")
     parser.add_argument("--l2-enable-lldp", action="store_true", default=False,
                         help="Enable LLDP inside the L2 composite prefetcher")
     parser.add_argument("--short-stride-thres", action="store", default=0, type=int,

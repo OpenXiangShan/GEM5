@@ -1705,8 +1705,9 @@ Queued::offloadToDownStream()
     unsigned offloaded = 0;
     auto dpp_it = pfq.begin();
     while (offloaded < offloadBandwidth && dpp_it != pfq.end()) {
-        // we should not offload cdp prefetch request to lower caches
-        if (dpp_it->pfInfo.getXsMetadata().prefetchSource != PrefetchSourceType::CDP) {
+        // Keep CDP and MLOP requests at their originating cache.
+        const auto source = dpp_it->pfInfo.getXsMetadata().prefetchSource;
+        if (source != PrefetchSourceType::CDP && source != PrefetchSourceType::MLOP) {
             prefetchStats.pfOffloaded++;
             assert(dpp_it->pkt != nullptr);
             DPRINTF(HWPrefetch, "Offload prefetch for %#x.\n", dpp_it->pkt->getAddr());

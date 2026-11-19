@@ -276,8 +276,7 @@ L2CompositeWithWorkerPrefetcher::onPrefetchAccepted(const DeferredPacket &dpp)
 {
     if (mlop && dpp.owner == this && dpp.pkt &&
         dpp.pfInfo.getXsMetadata().prefetchSource == PrefetchSourceType::MLOP) {
-        const uint8_t level = dpp.pfahead ? dpp.pfahead_host : 2;
-        mlop->recordAccepted(dpp.pkt->getAddr(), level, dpp.pfInfo.isSecure());
+        mlop->recordAccepted(dpp.pkt->getAddr(), dpp.pfInfo.isSecure());
     }
 }
 
@@ -286,8 +285,7 @@ L2CompositeWithWorkerPrefetcher::onPrefetchRemoved(const DeferredPacket &dpp)
 {
     if (mlop && dpp.owner == this && dpp.pkt &&
         dpp.pfInfo.getXsMetadata().prefetchSource == PrefetchSourceType::MLOP) {
-        const uint8_t level = dpp.pfahead ? dpp.pfahead_host : 2;
-        mlop->recordRemoved(dpp.pkt->getAddr(), level, dpp.pfInfo.isSecure());
+        mlop->recordRemoved(dpp.pkt->getAddr(), dpp.pfInfo.isSecure());
     }
 }
 
