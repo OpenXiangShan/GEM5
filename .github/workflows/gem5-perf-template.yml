@@ -41,10 +41,6 @@ on:
         type: boolean
         description: "Whether to check result (failed ckpts)"
         default: true
-      checkpoint_progress:
-        type: boolean
-        default: false
-        description: "Show perf-trigger-style checkpoint progress instead of launcher output."
       pr_sha:
         required: false
         type: string
@@ -234,7 +230,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check out progress formatter for an overridden test ref
-        if: ${{ inputs.checkpoint_progress && (inputs.pr_sha || github.sha) != github.workflow_sha }}
+        if: ${{ (inputs.pr_sha || github.sha) != github.workflow_sha }}
         id: progress_source
         uses: actions/checkout@v7
         with:
@@ -257,7 +253,6 @@ jobs:
           SPECIFIC_BENCHMARKS_INPUT: ${{ inputs.specific_benchmarks }}
           EXTRA_GEM5_ARGS_RAW: ${{ inputs.extra_args }}
           CHECKPOINT_LIST: ${{ steps.archive.outputs.target_dir }}/checkpoints.lst
-          CHECKPOINT_PROGRESS: ${{ inputs.checkpoint_progress }}
           CHECKPOINT_PROGRESS_SCRIPT: ${{ steps.progress_source.outcome == 'success' && '.perf-workflow/util/xs_scripts/perf_progress.py' || 'util/xs_scripts/perf_progress.py' }}
           CHECKPOINT_ROOT_NODE: ${{ steps.config.outputs.checkpoint_root_node }}
           DISTRIBUTED_SERVERS: ${{ steps.archive.outputs.distributed_servers }}
@@ -293,13 +288,6 @@ jobs:
           extra_args="${extra_args//\$\{GEM5_HOME\}/$GEM5_HOME}"
           extra_args="${extra_args//\$GEM5_HOME/$GEM5_HOME}"
           extra_args="$(echo "$extra_args $PROFILE_EXTRA_ARGS" | xargs)"
-          progress_wrapper=()
-          if [[ "$CHECKPOINT_PROGRESS" == true ]]; then
-            progress_wrapper=(python3 "$GEM5_HOME/$CHECKPOINT_PROGRESS_SCRIPT"
-              "$CHECKPOINT_LIST" "$SPECIFIC_BENCHMARKS_INPUT" "$TRACE_FORMAT")
-          else
-            echo "Resolved extra gem5 args: $extra_args"
-          fi
           printf 'resolved_extra_args: %s\n' "$extra_args" >> "$PERF_ARCHIVE_DIR/metadata.txt"
 
           # Reuse checkpoint scheduling and fallback; trace needs no REF.
@@ -326,15 +314,15 @@ jobs:
             fi
           fi
 
+          progress_wrapper=(python3 "$GEM5_HOME/$CHECKPOINT_PROGRESS_SCRIPT"
+            "$CHECKPOINT_LIST" "$SPECIFIC_BENCHMARKS_INPUT" "$TRACE_FORMAT")
+
           run_local_parallel() {
             if [[ -n "$TRACE_FORMAT" ]]; then
               "${progress_wrapper[@]}" bash "$GEM5_HOME/util/xs_scripts/trace/parallel_trace_sim.sh" \
                 "$CONFIG_PATH" "$CHECKPOINT_LIST" "$CHECKPOINT_ROOT_NODE" \
                 spec_all "$SPECIFIC_BENCHMARKS_INPUT" "$extra_args"
             else
-              if [[ "$CHECKPOINT_PROGRESS" != true ]]; then
-                echo "Using local parallel_sim.sh runner"
-              fi
               "${progress_wrapper[@]}" bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
                 "$CHECKPOINT_LIST" \
                 "$CHECKPOINT_ROOT_NODE" \
@@ -346,9 +334,6 @@ jobs:
 
           distributed_servers="$DISTRIBUTED_SERVERS"
           if [ -n "$distributed_servers" ]; then
-            if [[ "$CHECKPOINT_PROGRESS" != true ]]; then
-              echo "Using distributed gem5 runner on servers: $distributed_servers"
-            fi
             distributed_status=0
             "${progress_wrapper[@]}" python3 "$GEM5_HOME/util/xs_scripts/distributed_sim.py" \
               --servers "$distributed_servers" \
