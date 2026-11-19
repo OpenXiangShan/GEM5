@@ -278,8 +278,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Distribution ftqEntryDist;
         statistics::Scalar ftqEntryEnqueued;
         statistics::Scalar secondBlockEnqueued;
-        statistics::Scalar secondBlockFtqFull;
-        statistics::Scalar secondBlockRunAhead;
+        statistics::Scalar secondBlockFtqBlocked;
         statistics::Scalar ftqEntryCommitted;
         statistics::Scalar controlSquashFromDecode;
         statistics::Scalar controlSquashFromCommit;
