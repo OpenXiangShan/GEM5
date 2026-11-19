@@ -149,6 +149,11 @@ class PairTAGE : public TimedBaseBTBPredictor
     // predicted block, like the other s1 predictors.
     void updateUsingS3Pred(FullBTBPrediction &s3Pred);
 
+    bool inFirstPhase(ThreadID tid) const
+    {
+        return threadPhase[tid] == StatePhase::First;
+    }
+
     // Fill pred with the second block to enqueue in the same cycle as the
     // first block just predicted, and return whether there is one
     bool getSecondBlock(ThreadID tid, FullBTBPrediction &pred);

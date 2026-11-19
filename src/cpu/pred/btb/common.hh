@@ -221,6 +221,15 @@ struct PathHistoryUpdate
     Addr target = 0;
 };
 
+// Which role this FTQ entry had when the predictor issued the pair.
+enum class PairTAGEBlockKind : uint8_t
+{
+    TwoTakenFirst,
+    TwoTakenSecond,
+    OrdinarySecond,
+    None
+};
+
 /**
  * @brief Fetch Stream representing a sequence of instructions with prediction info
  *
@@ -262,6 +271,10 @@ struct FetchTarget
     int fetchInstNum;
     int commitInstNum;
     int commitInstBytes;
+    PairTAGEBlockKind pairtageBlockKind{PairTAGEBlockKind::None};
+    uint8_t pairtageExitType{0};
+    // Actual next PC of the last retired instruction, for pair accuracy.
+    Addr committedEndPC{0};
 
     int s1Source; // which stage the prediction comes from
     int s3Source; // which stage the prediction comes from
