@@ -173,6 +173,10 @@ class BaseTags : public ClockedObject
      */
     virtual void tagsInit() = 0;
 
+    /** Current valid tag count, before time averaging. */
+    unsigned validBlocks() const { return stats.tagsInUse.value(); }
+    unsigned capacityBlocks() const { return numBlocks; }
+
     /**
      * Average in the reference count for valid blocks when the simulation
      * exits.

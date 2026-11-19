@@ -9,6 +9,7 @@ import math
 from pathlib import Path
 
 from correlate import compare_pcs, ratio, summarize
+from occupancy import cache_occupancy
 from parse_trace import address, digest, export_csv, line_address, load_trace, require
 from report import write_report
 from stages import source_analysis
@@ -50,6 +51,7 @@ def read_stats(path, cpu):
             for k, v in values.items()
             if k.endswith(
                 (
+                    ".tagsInUse",
                     ".pfOnlyFill",
                     ".pfMergedWithDemand",
                     ".pfDequeued",
@@ -93,7 +95,31 @@ def reconcile_counters(db, summary):
     checks = []
     for name, expected in summary["stats"]["native_counters"].items():
         owner, suffix = name.rsplit(".", 1)
-        if suffix in mappings:
+        if suffix == "tagsInUse":
+            cache = owner.removesuffix(".tags")
+            occupancy = next(
+                (
+                    row
+                    for row in summary["cache_occupancy"]["caches"]
+                    if row["cache"] == cache
+                ),
+                None,
+            )
+            if occupancy is None:
+                continue
+            final = json.loads(
+                db.execute(
+                    "SELECT result FROM events WHERE event='CACHE_OCCUPANCY' "
+                    'AND cache=? ORDER BY tick DESC,"order" DESC LIMIT 1',
+                    (cache,),
+                ).fetchone()[0]
+            )["valid_lines"]
+            begin, end = summary["observation_ticks"]
+            # AvgStor includes the final tick in its printed average.
+            actual = (occupancy["valid_lines_ticks"] + final) / (
+                end - begin + 1
+            )
+        elif suffix in mappings:
             column, event, clause, parameters = mappings[suffix]
             actual = db.execute(
                 f"SELECT count(*) FROM events WHERE {column}=? AND event=? AND {clause}",
@@ -111,8 +137,12 @@ def reconcile_counters(db, summary):
             ).fetchone()[0]
         else:
             continue
+        equal = (
+            math.isclose(actual, expected, rel_tol=0, abs_tol=0.000001)
+            if suffix == "tagsInUse" else actual == expected
+        )
         checks.append(
-            {"counter": name, "trace": actual, "native": expected, "equal": actual == expected}
+            {"counter": name, "trace": actual, "native": expected, "equal": equal}
         )
     return {
         "status": (
@@ -192,6 +222,19 @@ def analyze_run(path, output, cpu, weight):
         and stats["final_tick"] - stats["sim_ticks"] == begin
     )
     summary["observation_ticks"] = [begin, end]
+    summary["cache_occupancy"] = cache_occupancy(db, metadata, begin, end)
+    for filename, rows in (
+        ("cache-occupancy.csv", summary["cache_occupancy"]["caches"]),
+        (
+            "cache-occupancy-timeline.csv",
+            summary["cache_occupancy"]["timeline"],
+        ),
+    ):
+        if rows:
+            with (output / filename).open("w", newline="") as stream:
+                writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(rows)
     summary["counter_reconciliation"] = reconcile_counters(db, summary)
     summary["source_analysis"] = source_analysis(db)
     for name, rows, columns in (

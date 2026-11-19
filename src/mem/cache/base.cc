@@ -375,6 +375,11 @@ BaseCache::init()
         fatal("Cache ports on %s are not connected\n", name());
     cpuSidePort.sendRangeChange();
     forwardSnoops = cpuSidePort.isSnooping();
+    if (system->prefetchTrace) {
+        system->prefetchTrace->registerCache(*this, cacheLevel,
+            tags->capacityBlocks(),
+            [this] { return tags->validBlocks(); });
+    }
     mshrQueue.resetOccupancyStats(curTick());
 }
 
@@ -1218,7 +1223,8 @@ BaseCache::recvTimingResp(PacketPtr pkt)
         assert(blk != nullptr);
         // A squashed prefetch can leave the MSHR's flag set while a
         // merged demand continues. Record only an actual prefetch response.
-        if (system->prefetchTrace && pkt->req->analysisPrefetchId) {
+        if (system->prefetchTrace && blk != tempBlock &&
+            pkt->req->analysisPrefetchId) {
             system->prefetchTrace->fill(*this, cacheLevel, pkt,
                 pkt->req, mshr->hasFromCPU(), blk->getWhenReady());
         }
@@ -2641,6 +2647,8 @@ BaseCache::allocateBlock(
 
     // Insert new block at victimized entry
     tags->insertBlock(pkt, victim);
+    if (system->prefetchTrace)
+        system->prefetchTrace->cacheOccupancy(name());
 
     // If using a compressor, set compression data. This must be done after
     // insertion, as the compression bit may be set.
@@ -2655,7 +2663,7 @@ BaseCache::allocateBlock(
 void
 BaseCache::invalidateBlock(CacheBlk *blk)
 {
-    if (system->prefetchTrace && blk->isValid())
+    if (system->prefetchTrace && blk != tempBlock && blk->isValid())
         system->prefetchTrace->evict(*this, cacheLevel,
             regenerateBlkAddr(blk), blk->isSecure(), "invalidation");
     static uint64_t _inval_cnt{0};
@@ -2680,6 +2688,8 @@ BaseCache::invalidateBlock(CacheBlk *blk)
     } else {
         tempBlock->invalidate();
     }
+    if (system->prefetchTrace && blk != tempBlock)
+        system->prefetchTrace->cacheOccupancy(name());
 }
 
 void

@@ -85,3 +85,25 @@ TMPDIR="$HOME/.tmp" python3 -m unittest discover \
 ```
 
 `examples/stream.c` is a sequential load/store control. Build it with the RISC-V cross compiler, then run the same GEM5 binary with tracing off/on, prefetch off, and only the offload switch changed. Require identical non-host native statistics for tracing off/on. A matched full-window trace is reconciled against demand hit/miss counters, prefetch identification/dequeue/removal counters and pure/merged fill counters in `audit.json`. ROI-boundary lifecycles are censored; a partial tick window is not compared with a full-window native counter.
+
+
+## Cache occupancy
+
+New traces include `cache_occupancy_version=1` and `CACHE_OCCUPANCY` events.
+The event's JSON `result` records `capacity_lines`, `valid_lines`,
+`prefetched_lines`, and `unused_prefetched_lines` for the physical cache.
+The recorder snapshots every cache at the ROI start and updates counts on tag
+allocation, invalidation, prefetch fill, and first demand use. Resident lines
+from warmup are included. Temporary response blocks use separate storage.
+A fill with a merged demand is consumed immediately.
+
+The analyzer integrates each state over `[ROI begin, ROI end)` using integer
+line-ticks. Dividing by ROI ticks gives mean occupied lines. Dividing by
+capacity times ROI ticks gives capacity fractions. First use ends the unused
+interval, while the prefetch-origin residency continues until eviction.
+Each physical cache copy contributes to its own cache's occupancy.
+
+`cache-occupancy.csv` contains exact totals and averages.
+`cache-occupancy-timeline.csv` contains 128 area-preserving time bins per cache.
+The HTML report includes cache selection and a stacked occupancy chart.
+Traces without occupancy events display an absent measurement.

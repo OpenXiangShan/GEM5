@@ -35,7 +35,8 @@ address(std::ostream &out, std::optional<Addr> addr)
 } // anonymous namespace
 
 PrefetchTrace::PrefetchTrace(const PrefetchTraceParams &p)
-    : SimObject(p), startTick(p.start_tick), endTick(p.end_tick),
+    : SimObject(p), beginEvent([this] { begin(); }, name() + ".begin"),
+      startTick(p.start_tick), endTick(p.end_tick),
       afterWarmup(p.after_warmup), bufferSize(p.buffer_size),
       blockSize(p.block_size), started(!p.after_warmup)
 {
@@ -45,7 +46,7 @@ PrefetchTrace::PrefetchTrace(const PrefetchTraceParams &p)
     statistics::registerResetCallback([this] {
         if (afterWarmup && !started && curTick() > 0) {
             started = true;
-            emit({"ROI_BEGIN", name(), 0, 1, nullptr});
+            begin();
         }
     });
     registerExitCallback([this] { finish(); });
@@ -58,10 +59,42 @@ PrefetchTrace::startup()
     auto &out = *output->stream();
     out << "# prefetch_trace_version=3\n# block_size=" << blockSize
         << "\n# start_tick=" << startTick << "\n# end_tick=" << endTick
-        << "\n# after_warmup=" << afterWarmup << '\n';
+        << "\n# after_warmup=" << afterWarmup
+        << "\n# cache_occupancy_version=1\n";
     out << "event,order,tick,cycle,actor,level,request_id,prefetch_id,"
            "related_id,pc,vaddr,paddr,secure,context_id,requestor_id,"
            "inst_seq,op,size,result,source,reason,ready_tick,cache,command,address_space,arrival_tick\n";
+    schedule(beginEvent, startTick);
+}
+
+void
+PrefetchTrace::begin()
+{
+    if (!active()) return;
+    emit({"ROI_BEGIN", name(), 0, 1, nullptr});
+    for (const auto &[cache, state] : cacheOccupancies)
+        cacheOccupancy(cache);
+}
+
+void
+PrefetchTrace::registerCache(const ClockedObject &actor, unsigned level,
+                            unsigned capacity, std::function<unsigned()> valid)
+{
+    cacheOccupancies.emplace(actor.name(), CacheOccupancy{
+        level, actor.clockPeriod(), capacity, std::move(valid)});
+}
+
+void
+PrefetchTrace::cacheOccupancy(const std::string &cache)
+{
+    if (!active()) return;
+    const auto &state = cacheOccupancies.at(cache);
+    Record r{"CACHE_OCCUPANCY", cache, state.level, state.period, nullptr};
+    r.result = "{\"valid_lines\":" + std::to_string(state.valid()) +
+        ",\"prefetched_lines\":" + std::to_string(state.prefetched) +
+        ",\"unused_prefetched_lines\":" + std::to_string(state.unused) +
+        ",\"capacity_lines\":" + std::to_string(state.capacity) + "}";
+    emit(r);
 }
 
 bool
@@ -171,8 +204,18 @@ PrefetchTrace::fill(const ClockedObject &actor, unsigned level, PacketPtr pkt,
     r.ready = ready;
     emit(r);
     if (r.prefetchId) {
-        residents[{actor.name(), pkt->getAddr() & ~(Addr(blockSize) - 1),
-                   pkt->isSecure()}] = {prefetch, r.prefetchId, ready, false};
+        const Line line{actor.name(), pkt->getBlockAddr(blockSize),
+                        pkt->isSecure()};
+        auto &state = cacheOccupancies.at(actor.name());
+        const auto previous = residents.find(line);
+        if (previous != residents.end()) {
+            --state.prefetched;
+            if (!previous->second.used) --state.unused;
+        }
+        residents[line] = {prefetch, r.prefetchId, ready, merged};
+        ++state.prefetched;
+        if (!merged) ++state.unused;
+        cacheOccupancy(actor.name());
     }
 }
 
@@ -185,6 +228,8 @@ PrefetchTrace::use(const ClockedObject &actor, unsigned level, PacketPtr pkt,
                               pkt->isSecure()});
     if (it == residents.end() || it->second.used) return;
     it->second.used = true;
+    --cacheOccupancies.at(actor.name()).unused;
+    cacheOccupancy(actor.name());
     Record r{"PF_FIRST_USE", actor.name(), level, actor.clockPeriod(), pkt->req};
     r.prefetchId = it->second.id;
     r.op = pkt->isWrite() ? "store" : "load";
@@ -206,7 +251,11 @@ PrefetchTrace::evict(const ClockedObject &actor, unsigned level, Addr line,
     r.result = it->second.used ? "used" : "unused";
     r.reason = reason;
     emit(r);
+    auto &state = cacheOccupancies.at(actor.name());
+    --state.prefetched;
+    if (!it->second.used) --state.unused;
     residents.erase(it);
+    cacheOccupancy(actor.name());
 }
 
 void

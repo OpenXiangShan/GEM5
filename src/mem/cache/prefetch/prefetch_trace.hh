@@ -4,6 +4,7 @@
 #define __MEM_CACHE_PREFETCH_PREFETCH_TRACE_HH__
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <optional>
 #include <sstream>
@@ -66,6 +67,9 @@ class PrefetchTrace : public SimObject
               const RequestPtr &prefetch, bool merged, Tick ready);
     void use(const ClockedObject &actor, unsigned level, PacketPtr pkt,
              const std::string &result);
+    void registerCache(const ClockedObject &actor, unsigned level,
+                       unsigned capacity, std::function<unsigned()> valid);
+    void cacheOccupancy(const std::string &cache);
     void evict(const ClockedObject &actor, unsigned level, Addr line,
                bool secure, const char *reason);
 
@@ -79,6 +83,18 @@ class PrefetchTrace : public SimObject
         bool used = false;
     };
     std::map<Line, Resident> residents;
+    struct CacheOccupancy
+    {
+        unsigned level;
+        Tick period;
+        unsigned capacity;
+        std::function<unsigned()> valid;
+        unsigned prefetched = 0;
+        unsigned unused = 0;
+    };
+    std::map<std::string, CacheOccupancy> cacheOccupancies;
+    EventFunctionWrapper beginEvent;
+    void begin();
     const Tick startTick;
     const Tick endTick;
     const bool afterWarmup;

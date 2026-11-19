@@ -148,12 +148,40 @@ def write_report(output, summary, pcs, timeline, runs, pc_deltas):
         + "</tr>"
         for row in pc_deltas[:30]
     )
+    occupancy = summary["cache_occupancy"]
+    occupancy_rows = "".join(
+        "<tr>"
+        + "".join(
+            f"<td>{html.escape(display(value, percent))}</td>"
+            for value, percent in (
+                (row["cache"], False),
+                (row["capacity_lines"], False),
+                (row["mean_valid_lines"], False),
+                (row["valid_lines_capacity_fraction"], True),
+                (row["prefetched_lines_capacity_fraction"], True),
+                (row["unused_prefetched_lines_capacity_fraction"], True),
+            )
+        )
+        + "</tr>"
+        for row in occupancy["caches"]
+    )
     payload = json.dumps(
-        {"pcs": pcs, "timeline": timeline, "failures": demand["failures"]}, ensure_ascii=False
+        {"pcs": pcs, "timeline": timeline, "failures": demand["failures"],
+         "occupancy": occupancy}, ensure_ascii=False
     ).replace("<", "\\u003c")
     page = Path(__file__).with_name("report_template.html").read_text()
     page = (
-        page.replace("__PC_DELTAS__", delta_rows)
+        page.replace("__OCCUPANCY__", occupancy_rows)
+        .replace(
+            "__OCCUPANCY_LINKS__",
+            (
+                '<a href="cache-occupancy.csv">完整积分表</a> · '
+                '<a href="cache-occupancy-timeline.csv">时间序列</a>'
+                if occupancy["caches"]
+                else "此 Trace 未采集占用状态。"
+            ),
+        )
+        .replace("__PC_DELTAS__", delta_rows)
         .replace("__SOURCES__", source_rows)
         .replace("__STAGES__", stage_rows)
         .replace("__CARDS__", cards)
@@ -186,5 +214,20 @@ def write_report(output, summary, pcs, timeline, runs, pc_deltas):
             f"| {pc['pc']} {pc.get('function') or ''} | {pc['cache']} / {pc['context_id']} | {pc['misses']} | "
             f"{main} | {pc['pattern']} | {pc['suggestion']} |"
         )
+    lines += ["", "## Cache 占用", ""]
+    if occupancy["caches"]:
+        lines += [
+            "| Cache | 容量行数 | 有效容量占比 | 预取驻留容量占比 | 未使用预取容量占比 |",
+            "| --- | ---: | ---: | ---: | ---: |",
+        ]
+        for row in occupancy["caches"]:
+            lines.append(
+                f"| {row['cache']} | {row['capacity_lines']} | "
+                f"{display(row['valid_lines_capacity_fraction'], True)} | "
+                f"{display(row['prefetched_lines_capacity_fraction'], True)} | "
+                f"{display(row['unused_prefetched_lines_capacity_fraction'], True)} |"
+            )
+    else:
+        lines.append("此 Trace 未采集占用状态。")
     lines += ["", "## 口径与边界", ""] + ["- " + text for text in limitations]
     (Path(output) / "report.md").write_text("\n".join(lines) + "\n")

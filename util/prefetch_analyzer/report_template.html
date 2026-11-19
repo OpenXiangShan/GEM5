@@ -23,6 +23,14 @@ first_ready 是最早缓存层 ready，不代表 L1 ready；offload 路径可跨
 区间不是可加的 CPU 停顿，截断请求不填零。完整 P50/P90/P99 见 <a href="stages.csv">阶段表</a>。</p>
 <div class="scroll"><table id="stages"><thead><tr><th>生成 Cache</th><th>Source</th>
 <th>阶段</th><th>样本</th><th>平均</th><th>P90</th></tr></thead><tbody>__STAGES__</tbody></table></div>
+<h2>Cache 占用</h2>
+<p class="muted">每次分配、驱逐、预取填入和首次使用均更新状态，按实际驻留 tick 积分。
+预取驻留包含已经使用过的预取行；尚未使用的预取行随首次使用转出。
+图中每段表示该时间区间的平均占用。__OCCUPANCY_LINKS__</p>
+<div class="scroll"><table><thead><tr><th>Cache</th><th>容量 / 行</th><th>平均有效行</th>
+<th>有效占用</th><th>预取驻留占用</th><th>未使用预取占用</th></tr></thead><tbody>__OCCUPANCY__</tbody></table></div>
+<select id="occupancy-cache" aria-label="选择 Cache"></select>
+<svg id="occupancy" role="img" aria-label="Cache 容量占用随时间变化"></svg>
 <h2>按 PC 定位</h2><p class="muted">默认按 Miss 累计请求延迟 × 工作负载权重排序；点击表头排序，点击一行查看证据与建议。</p>
 <input id="search" aria-label="搜索 PC 或归因" placeholder="PC、Cache、失败原因或模式"><span id="pc-count"></span>
 <div class="scroll"><table id="pcs"><thead><tr><th data-key="pc">PC / 函数</th><th data-key="cache">Cache / Context</th><th data-key="misses">Miss</th><th data-key="trained_fraction">实际训练占比</th><th data-key="pattern">地址模式</th><th data-key="dominant_stride_bytes">主要 Δ / 字节</th><th data-key="weighted_miss_latency_ticks">加权 Miss 延迟 / tick</th><th>失败分布</th></tr></thead><tbody></tbody></table></div>
@@ -48,5 +56,21 @@ let sortKey='weighted_miss_latency_ticks',descending=true;
 function pcTable(){const search=$('search').value.toLowerCase(),rows=data.pcs.filter(p=>[p.pc,p.function||'',p.cache,p.context_id,p.address_space,p.pattern,...Object.keys(p.failures)].join(' ').toLowerCase().includes(search));rows.sort((a,b)=>{const x=a[sortKey]??'',y=b[sortKey]??'';return (typeof x==='number'&&typeof y==='number'?x-y:String(x).localeCompare(String(y)))*(descending?-1:1);});$('pc-count').textContent=`${rows.length} 个 PC / Context`;const body=$('pcs').tBodies[0];body.replaceChildren();rows.forEach(p=>{const tr=document.createElement('tr');cell(tr,`${p.pc||'unknown'}${p.function?' · '+p.function:''}`);cell(tr,`${p.cache} / ${p.context_id??'unknown'} / ${p.address_space||'unknown space'}`);cell(tr,p.misses);cell(tr,p.trained_fraction===null?'—':(p.trained_fraction*100).toFixed(1)+'%');cell(tr,p.pattern);cell(tr,p.dominant_stride_bytes);cell(tr,p.weighted_miss_latency_ticks);cell(tr,Object.entries(p.failures).map(([k,v])=>(labels[k]||k)+': '+v).join(' · '));tr.addEventListener('click',()=>{$('detail').textContent=`${p.pc||'unknown'} · ${p.cache} · Context ${p.context_id??'unknown'} / ${p.address_space||'unknown space'}\n${p.function||'未解析函数'} · ${p.source_location||'未解析源码行'}
 ${p.suggestion}\n失败阶段：${JSON.stringify(p.stages)}\n训练丢弃：${JSON.stringify(p.training_drops)}\nDelta 频率：${JSON.stringify(p.deltas)}\n完成 ${p.completed}/${p.accesses} 个请求；平均延迟 ${txt(p.mean_latency_ticks)} tick`;});body.append(tr);});}
 function timeline(){const f=$('timeline-filter').value.toLowerCase(),rows=data.timeline.events.filter(e=>[e.pc,e.paddr,e.vaddr,e.request_id,e.prefetch_id,e.related_id,e.event,e.actor].some(v=>String(v??'').toLowerCase().includes(f)));$('timeline-count').textContent=`选择 PC ${data.timeline.scope.pc||'全部'} / Line ${data.timeline.scope.line||'全部'}。预览内匹配 ${rows.length} 条；当前筛选导出的完整事件 ${data.timeline.total} 条，嵌入 ${data.timeline.events.length} 条。悬停图上事件查看事实。`;const body=$('events').tBodies[0];body.replaceChildren();rows.forEach(e=>{const tr=document.createElement('tr');cell(tr,`${e.tick} / ${e.cycle}`);cell(tr,e.event);cell(tr,e.actor);cell(tr,`${e.request_id} / ${e.prefetch_id} / ${e.related_id}`);cell(tr,e.pc);cell(tr,`${e.vaddr||'—'} / ${e.paddr||'—'}`);cell(tr,`${e.context_id??'unknown'} / ${e.address_space||'unknown'}`);cell(tr,`${e.result||''} / ${e.reason||''}${e.ready_tick!==null?' / ready '+e.ready_tick:''}`);body.append(tr);});const s=$('timeline');s.replaceChildren();if(!rows.length){s.setAttribute('viewBox','0 0 1100 70');shape(s,'text',{x:15,y:35},'预览中无匹配事件；用 --pc / --line 生成目标时间线。');return;}const actors=[...new Set(rows.map(e=>e.actor))],start=Math.min(...rows.map(e=>e.tick)),end=Math.max(start+1,...rows.map(e=>e.tick));s.setAttribute('viewBox',`0 0 1100 ${actors.length*38+60}`);actors.forEach((a,i)=>{shape(s,'text',{x:8,y:35+i*38,'font-size':10},a);shape(s,'line',{x1:330,x2:1060,y1:31+i*38,y2:31+i*38,stroke:'#dce3ed'});});rows.forEach(e=>{const y=31+actors.indexOf(e.actor)*38,x=330+730*(e.tick-start)/(end-start),color=e.event.startsWith('DEMAND')?'#2878b8':e.event==='PF_DROP'?'#bd4e4e':e.event==='PF_FILL'?'#488f70':'#d98a27',n=shape(s,'circle',{cx:x,cy:y,r:4,fill:color});const title=document.createElementNS(ns,'title');title.textContent=JSON.stringify(e,null,2);n.append(title);});shape(s,'text',{x:330,y:actors.length*38+42,'font-size':12},`Tick ${start}`);shape(s,'text',{x:1060,y:actors.length*38+42,'font-size':12,'text-anchor':'end'},`Tick ${end}`);}
+function occupancyChart(){
+ const select=$('occupancy-cache'),svg=$('occupancy');
+ if(!select.options.length){
+  data.occupancy.caches.forEach(row=>{const option=document.createElement('option');option.value=row.cache;option.textContent=row.cache;select.append(option);});
+ }
+ svg.replaceChildren();svg.setAttribute('viewBox','0 0 1100 310');
+ const rows=data.occupancy.timeline.filter(row=>row.cache===select.value);
+ if(!rows.length){shape(svg,'text',{x:20,y:40},'此 Trace 未采集 Cache 占用状态');return;}
+ const first=rows[0].begin_tick,last=rows[rows.length-1].end_tick;
+ const names=['其他有效行','已使用预取行','尚未使用预取行'];
+ for(let i=0;i<=4;i++){const y=245-i*50;shape(svg,'line',{x1:65,x2:1070,y1:y,y2:y,stroke:'#dce3ed'});shape(svg,'text',{x:55,y:y+4,'text-anchor':'end','font-size':12},i*25+'%');}
+ rows.forEach(row=>{const x=65+1005*(row.begin_tick-first)/(last-first),w=1005*(row.end_tick-row.begin_tick)/(last-first),values=[row.valid_lines-row.prefetched_lines,row.prefetched_lines-row.unused_prefetched_lines,row.unused_prefetched_lines];let bottom=245;values.forEach((value,i)=>{const h=200*value/row.capacity_lines;const bar=shape(svg,'rect',{x,y:bottom-h,width:w+0.2,height:h,fill:colors[i]});const title=document.createElementNS(ns,'title');title.textContent=`${row.begin_tick}–${row.end_tick} tick · ${names[i]} ${(value/row.capacity_lines*100).toFixed(2)}%`;bar.append(title);bottom-=h;});});
+ names.forEach((name,i)=>{shape(svg,'rect',{x:65+i*260,y:15,width:13,height:13,fill:colors[i]});shape(svg,'text',{x:85+i*260,y:27,'font-size':13},name);});
+ shape(svg,'text',{x:65,y:275,'font-size':12},'Tick '+first);shape(svg,'text',{x:1070,y:275,'text-anchor':'end','font-size':12},'Tick '+last);
+}
+$('occupancy-cache').addEventListener('change',occupancyChart);occupancyChart();
 $('search').addEventListener('input',pcTable);$('timeline-filter').addEventListener('input',timeline);$('reset').addEventListener('click',()=>{$('timeline-filter').value='';timeline();});document.querySelectorAll('#pcs th[data-key]').forEach(th=>th.addEventListener('click',()=>{const key=th.dataset.key;descending=key===sortKey?!descending:true;sortKey=key;pcTable();}));bars();pcTable();timeline();
 </script></html>
