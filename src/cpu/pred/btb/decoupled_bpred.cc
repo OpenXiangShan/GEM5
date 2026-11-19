@@ -625,18 +625,12 @@ DecoupledBPUWithBTB::enqueueSecondBlock(ThreadID tid)
         return;
     }
 
-    // Not enqueue 2 Taken when FTQ has enough entries since the second block
-    // cause MPKI increase and no improvement in this circumstance.
+    // Enqueue the second block only if the FTQ needs it and has room.
     assert(ftq.fetchId(tid) <= ftq.backId(tid) + 1);
     const unsigned runAhead = ftq.backId(tid) + 1 - ftq.fetchId(tid);
-    if (twoTakenMaxRunAhead && runAhead > twoTakenMaxRunAhead) {
-        dbpBtbStats.secondBlockRunAhead++;
-        return;
-    }
-
-    // Without room for both, the second block waits for the next cycle
-    if (ftqFull(tid)) {
-        dbpBtbStats.secondBlockFtqFull++;
+    if ((twoTakenMaxRunAhead && runAhead > twoTakenMaxRunAhead) ||
+        ftqFull(tid)) {
+        dbpBtbStats.secondBlockFtqBlocked++;
         return;
     }
 
