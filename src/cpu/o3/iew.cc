@@ -2996,9 +2996,11 @@ IEW::mdpAddrReplayRegister(const DynInstPtr &inst,
 
 void
 IEW::mdpAddrReplayRegisterStrict(const DynInstPtr &inst,
-                                 size_t required_store_completed_idx)
+                                 size_t required_store_completed_idx,
+                                 InstSeqNum store_seq_num)
 {
-    instQueue.mdpAddrReplayRegisterStrict(inst, required_store_completed_idx);
+    instQueue.mdpAddrReplayRegisterStrict(inst, required_store_completed_idx,
+                                        store_seq_num);
 }
 
 void

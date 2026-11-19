@@ -931,6 +931,8 @@ IssueQue::issueToFu()
             issuedStore++;
         }
 
+        // Replays bypass scheduleInst and still need an issue pulse.
+        inst->instQueue->notifyStoreIssue(inst, Cycles(1));
         scheduler->addToFU(inst);
         DPRINTF(Schedule, "[sn:%llu] replayed to FU\n", inst->seqNum);
         replayQ.pop();
@@ -1349,6 +1351,9 @@ IssueQue::scheduleInst()
             }
 
             scheduler->fpPublished(inst);
+            // STD corresponds to OG0; STA corresponds to the later OG1.
+            inst->instQueue->notifyStoreIssue(
+                inst, Cycles(inst->isSplitStoreData() ? 1 : 2));
             scheduler->specWakeUpDependents(inst, this);
             cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueArb);
         }
