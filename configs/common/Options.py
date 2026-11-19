@@ -353,13 +353,10 @@ def addCommonOptions(parser, configure_xiangshan=False):
                         help="Use KunminghuV3 ideal params, which take priority over command-line arguments.")
 
     parser.add_argument(
-        "--l2-bop-mode",
         "--ideal-l2-bop-mode",
-        dest="l2_bop_mode",
         choices=("compound", "dual"),
-        default=None,
-        help="Select the L2 BOP implementation. Defaults to compound for "
-             "idealkmhv3.py and dual for RTL-aligned configurations")
+        default="compound",
+        help="Select the L2 BOP implementation used by idealkmhv3.py")
 
 
     # for warmup without switching cpu

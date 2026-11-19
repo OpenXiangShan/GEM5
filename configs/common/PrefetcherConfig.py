@@ -517,16 +517,13 @@ def configure_l2_compound_bop(prefetcher):
         is_sub_prefetcher=True)
 
 
-def _configure_l2_composite_kmh_align(prefetcher, options):
+def _configure_l2_composite_kmh_align(prefetcher):
     # RTL-aligned L2CompositeWithWorker profile.
     prefetcher.enable_cmc = False
     prefetcher.enable_bop = True
     prefetcher.enable_cdp = True
     prefetcher.enable_despacito_stream = False
-    if options.l2_bop_mode == "compound":
-        configure_l2_compound_bop(prefetcher)
-    else:
-        configure_l2_teacher_student_bop(prefetcher)
+    configure_l2_teacher_student_bop(prefetcher)
 
 
 def _configure_cdp(prefetcher, options):
@@ -548,7 +545,7 @@ def _configure_cdp(prefetcher, options):
 def _configure_l2_composite(prefetcher, prefetcher_name, options):
     if options.kmh_align:
         assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
-        _configure_l2_composite_kmh_align(prefetcher, options)
+        _configure_l2_composite_kmh_align(prefetcher)
     elif prefetcher_name == 'L2CompositeWithWorkerPrefetcher':
         _configure_l2_composite_default(prefetcher)
 
