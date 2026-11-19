@@ -25,6 +25,7 @@
 
 #include "base/logging.hh"
 #include "mem/mem_util.hh"
+#include "mem/packet.hh"
 
 namespace gem5
 {
@@ -75,6 +76,24 @@ GoldenGloablMem::updateGoldenMem(uint64_t addr, void *data, const std::vector<bo
             pmemWriteCheck(addr + i, dataArray[i], 1);
         }
     }
+}
+
+void
+GoldenGloablMem::recordScalarRead(Packet *pkt)
+{
+    auto &req = *pkt->req;
+    if (!req.hasXsMetadata() || !req.hasVaddr() || !req.hasPaddr() ||
+        req.isInstFetch() ||
+        pkt->fromCache() || pkt->getSize() > sizeof(Request::ScalarReadBytes) ||
+        pkt->getSize() != req.getSize() ||
+        pkt->getAddr() != req.getPaddr() ||
+        !inPmem(pkt->getAddr(), pkt->getSize())) {
+        return;
+    }
+    if (!req.scalarReadGolden) {
+        req.scalarReadGolden = std::make_unique<Request::ScalarReadBytes>();
+    }
+    readGoldenMem(pkt->getAddr(), req.scalarReadGolden->data(), pkt->getSize());
 }
 
 void

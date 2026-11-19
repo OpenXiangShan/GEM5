@@ -405,8 +405,6 @@ class LSQ
         uint32_t _numOutstandingPackets;
         AtomicOpFunctorPtr _amo_op;
         bool _hasStaleTranslation;
-        bool _sbufferBypass;
-        bool _goldenSnapshotCaptured = false;
 
         struct FWDPacket
         {

@@ -1933,6 +1933,10 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
             blk->trackLoadLocked(pkt);
         }
 
+        if (system->multiContextDifftest() &&
+            system->params().golden_mem_at_write) {
+            system->getGoldenMemManager()->recordScalarRead(pkt);
+        }
         // all read responses have a data payload
         assert(pkt->hasRespData());
         pkt->setDataFromBlock(blk->data, blkSize);

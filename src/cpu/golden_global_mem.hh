@@ -25,6 +25,8 @@
 namespace gem5
 {
 
+class Packet;
+
 class GoldenGloablMem
 {
   public:
@@ -42,6 +44,7 @@ class GoldenGloablMem
     void pmemWriteCheck(uint64_t addr, uint64_t data, int len);
     void pmemWrite(uint64_t addr, uint64_t data, int len);
 
+    void recordScalarRead(Packet *pkt);
     void readGoldenMem(uint64_t addr, void *data, uint64_t len);
     uint64_t pmemReadCheck(uint64_t addr, int len);
     uint64_t pmemRead(uint64_t addr, int len);

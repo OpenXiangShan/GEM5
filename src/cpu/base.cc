@@ -215,7 +215,6 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
     }
 
     diffAllStates.resize(numThreads);
-    syncVisibleStoreReplayArmed.resize(numThreads, false);
     if (enableDifftest) {
         assert(params().difftest_ref_so.length() > 2);
         for (ThreadID tid = 0; tid < numThreads; ++tid) {
@@ -1199,6 +1198,55 @@ formatVectorRegister(const riscv64_CPU_regfile &reg_file, int reg_idx)
 } // anonymous namespace
 
 
+void
+BaseCPU::stepReference(RefProxy &ref)
+{
+    auto step = [&] {
+        ref.exec(1);
+        if (diffInfo.inst->isFusion()) {
+            ref.exec(1);
+        }
+    };
+
+    const auto *snapshot = diffInfo.loadSnapshot;
+    if (!snapshot) {
+        step();
+        return;
+    }
+
+    // NEMU executes the load, including extension and boxing. Overlay only
+    // the bytes supplied by cache. Forwarded bytes use this hart's own stores.
+    Request::ScalarReadBytes saved;
+    std::bitset<sizeof(saved)> changed;
+    snapshot->visitCacheRanges([&](size_t i, Addr addr, const uint8_t *data,
+                              size_t size) {
+        ref.memcpy(addr, saved.data() + i, size, DIFFTEST_TO_DUT);
+        // Response-accounted memory systems retain issue and commit samples.
+        if (diffInfo.legacyLoadData) {
+            const auto *observed = diffInfo.legacyLoadData + i;
+            if (std::memcmp(observed, saved.data() + i, size) == 0) {
+                return;
+            }
+            const auto *current = static_cast<const uint8_t *>(
+                _goldenMemManager->guestToHost(addr));
+            if (std::memcmp(observed, current, size) == 0) {
+                data = current;
+            }
+        }
+        if (std::memcmp(saved.data() + i, data, size) != 0) {
+            ref.memcpy(addr, const_cast<uint8_t *>(data), size, DIFFTEST_TO_REF);
+            changed[i] = true;
+        }
+    });
+    step();
+    // A later forwarded load must still see the private store image.
+    snapshot->visitCacheRanges([&](size_t i, Addr addr, const uint8_t *, size_t size) {
+        if (changed[i]) {
+            ref.memcpy(addr, saved.data() + i, size, DIFFTEST_TO_REF);
+        }
+    });
+}
+
 std::pair<int, bool>
 BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
 {
@@ -1240,10 +1288,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
     } else {
         // difftest step start
         DPRINTF(Diff, "Step NEMU\n");
-        diffAllStates->proxy->exec(1);
-        if (diffInfo.inst->isFusion()) {
-            diffAllStates->proxy->exec(1); // execute the second part of the fusion
-        }
+        stepReference(*diffAllStates->proxy);
         diffAllStates->proxy->regcpy(diffAllStates->diff.nemu_reg, REF_TO_DIFFTEST);
 
         uint64_t next_pc = diffAllStates->diff.nemu_reg->pc;
@@ -1850,81 +1895,25 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                                         diffInfo.physEffAddr, diffInfo.effSize);
                 }
 
-                if (system->multiContextDifftest() &&
-                    (diffInfo.inst->isLoad() || diffInfo.inst->isAtomic()) &&
-                    _goldenMemManager->inPmem(diffInfo.physEffAddr)) {
-                    DPRINTF(Diff,
-                            "Difference on %s instr found in multicore mode, "
-                            "check in golden memory\n",
-                            diffInfo.inst->isLoad() ? "load" : "amo");
-                    uint8_t current_golden_data[16] = {};
-                    panic_if(diffInfo.effSize > sizeof(current_golden_data),
-                             "Unexpected large mem diff size: %u\n",
-                             diffInfo.effSize);
-                    _goldenMemManager->readGoldenMem(diffInfo.physEffAddr,
-                                                     current_golden_data,
-                                                     diffInfo.effSize);
-                    uint8_t *golden_ptr = current_golden_data;
-                    uint8_t *exec_golden_ptr = diffInfo.goldenValue;
-                    auto sync_reg = [&]() {
-                        diffAllStates->referenceRegFile[dest_tag] = gem5_val;
-                        diffAllStates->proxy->regcpy(
-                            &(diffAllStates->referenceRegFile), DUT_TO_REF);
-                    };
-
-                    auto sync_mem_reg = [&](const uint8_t *mem_src) {
-                        diffAllStates->proxy->memcpy(diffInfo.physEffAddr,
-                                                     const_cast<uint8_t *>(mem_src),
-                                                     diffInfo.effSize,
-                                                     DIFFTEST_TO_REF);
-                        sync_reg();
-                    };
-
-                    if (diffInfo.inst->isLoad() &&
-                               memcmp(golden_ptr, &gem5_val,
-                                      diffInfo.effSize) == 0) {
-                        DPRINTF(Diff,
-                                "Load content matched in golden memory. "
-                                "Sync from golden to ref\n");
-                        sync_mem_reg(golden_ptr);
-                        continue;
-                    } else if (diffInfo.inst->isLoad() && exec_golden_ptr &&
-                               memcmp(exec_golden_ptr, &gem5_val,
-                                      diffInfo.effSize) == 0) {
-                        DPRINTF(Diff,
-                                "Load content matched the execution-time "
-                                "golden snapshot. Sync from the recorded "
-                                "snapshot to ref\n");
-                        sync_mem_reg(exec_golden_ptr);
-                        continue;
-                    } else if (diffInfo.inst->isAtomic()) {
-                        DPRINTF(Diff, "Golden mem old value: %#lx, "
-                                "GEM5 old value: %#lx\n",
-                                *(uint64_t *)diffInfo.amoOldGoldenValue,
-                                gem5_val);
-                        DPRINTF(Diff, "New golden value: %#lx\n",
-                                *(uint64_t *)golden_ptr);
-                        if (memcmp(diffInfo.amoOldGoldenValue, &gem5_val,
-                                   diffInfo.effSize) == 0) {
-                            DPRINTF(Diff, "Atomic encountered, old value "
-                                    "matched. Sync from golden to ref\n");
-                            sync_mem_reg(golden_ptr);
-                            continue;
-                        }
-                    } else if (diffInfo.inst->isLoad()) {
-                        DPRINTF(Diff,
-                                "Unresolved shared-memory load mismatch at "
-                                "addr=%#lx gem5=%#lx current_golden=%#lx "
-                                "exec_snapshot=%#lx; falling back to normal "
-                                "difftest reporting.\n",
-                                diffInfo.physEffAddr, gem5_val,
-                                *(uint64_t *)golden_ptr,
-                                exec_golden_ptr ?
-                                    *(uint64_t *)exec_golden_ptr : 0);
-                    }
+                if (system->multiContextDifftest() && diffInfo.inst->isAtomic() &&
+                    _goldenMemManager->inPmem(diffInfo.physEffAddr,
+                                              diffInfo.effSize) &&
+                    diffInfo.effSize <= sizeof(gem5_val) &&
+                    std::memcmp(diffInfo.amoOldGoldenValue, &gem5_val,
+                                diffInfo.effSize) == 0) {
+                    diffAllStates->proxy->memcpy(diffInfo.physEffAddr,
+                        _goldenMemManager->guestToHost(diffInfo.physEffAddr),
+                        diffInfo.effSize, DIFFTEST_TO_REF);
+                    diffAllStates->referenceRegFile[dest_tag] = gem5_val;
+                    diffAllStates->proxy->regcpy(
+                        &diffAllStates->referenceRegFile, DUT_TO_REF);
+                    continue;
                 }
 
-                if (dest.isFloatReg() && (gem5_val ^ nemu_val) == ((0xffffffffULL) << 32)) {
+                const bool check_load_box = system->multiContextDifftest() &&
+                    diffInfo.inst->isLoad() && !diffInfo.inst->isVector();
+                if (dest.isFloatReg() && !check_load_box &&
+                    (gem5_val ^ nemu_val) == (0xffffffffULL << 32)) {
                     DPRINTF(Diff,
                             "Difference might be caused by box,"
                             " ignore it\n");
@@ -2020,14 +2009,9 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
                 auto start = pmemStart + pmemSize * difftestHartId(tid);
                 diffAllStates->proxy->memcpy(0x80000000u, start, pmemSize, DUT_TO_REF);
             } else if (enableMemDedup) {
-                if (system->multiContextDifftest()) {
-                    assert(goldenMemPtr);
-                    diffAllStates->proxy->attachBackedMemory(
-                        system->createCopyOnWriteBranch(), pmemSize);
-                } else {
-                    diffAllStates->proxy->attachBackedMemory(
-                        system->createCopyOnWriteBranch(), pmemSize);
-                }
+                assert(!system->multiContextDifftest() || goldenMemPtr);
+                diffAllStates->proxy->attachBackedMemory(
+                    system->createCopyOnWriteBranch(), pmemSize);
             } else {
                 diffAllStates->proxy->memcpy_init(0x80000000u, pmemStart, pmemSize, DUT_TO_REF);
             }
