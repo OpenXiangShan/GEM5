@@ -930,7 +930,7 @@ IssueQue::issueToFu()
             issuedStore++;
         }
 
-        // Replays bypass scheduleInst and still need an issue pulse.
+        // Both store halves wake replaying loads one cycle after reissue.
         inst->instQueue->notifyStoreIssue(inst, Cycles(1));
         scheduler->addToFU(inst);
         DPRINTF(Schedule, "[sn:%llu] replayed to FU\n", inst->seqNum);
@@ -980,6 +980,10 @@ IssueQue::issueToFu()
             issuedStore++;
         }
         addToFu(inst);
+        if (inst->isSplitStoreAddr()) {
+            // The OG1 address hint follows the STA that won the issue port.
+            inst->instQueue->notifyStoreIssue(inst, Cycles(1));
+        }
         cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueReadReg);
         issued++;
     }
@@ -1334,9 +1338,10 @@ IssueQue::scheduleInst()
             }
 
             scheduler->fpPublished(inst);
-            // STD corresponds to OG0; STA corresponds to the later OG1.
-            inst->instQueue->notifyStoreIssue(
-                inst, Cycles(inst->isSplitStoreData() ? 1 : 2));
+            if (inst->isSplitStoreData()) {
+                // STD wakes the load replay queue at OG0.
+                inst->instQueue->notifyStoreIssue(inst, Cycles(1));
+            }
             scheduler->specWakeUpDependents(inst, this);
             cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueArb);
         }
