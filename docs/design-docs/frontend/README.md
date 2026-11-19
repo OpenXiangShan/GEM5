@@ -25,6 +25,7 @@
 - `ubtb_design.md`：最前级 taken-target predictor
 - `abtb_design.md`：ahead pipeline 下的较大容量早期 target predictor
 - `microtage_design.md`：放在 `S1` 的轻量方向预测器
+- `h2p-table.md`：H2P 分支分类表的查询、提交训练、过滤与统计口径
 
 当前暂未单独展开的模块包括：
 

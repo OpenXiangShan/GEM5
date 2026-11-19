@@ -546,6 +546,38 @@ TEST_F(BTBTAGETest, BasicPrediction) {
     EXPECT_GE(table, 0) << "No TAGE table entry was allocated";
 }
 
+TEST_F(BTBTAGETest, H2PMetadataPreservesProviderAndSCConfidence)
+{
+    const Addr pc = 0x1000;
+    const auto entry = createBTBEntry(pc);
+    predictTAGE(tage, pc, {entry}, history, stagePreds);
+    ASSERT_EQ(stagePreds[1].tageInfoForMgscs.count(pc), 1u);
+    EXPECT_EQ(stagePreds[1].tageInfoForMgscs.at(pc).tage_final_provider_table, -1);
+    EXPECT_TRUE(stagePreds[1].tageInfoForMgscs.at(pc).tage_pred_conf_low);
+
+    for (short counter = -4; counter <= 3; ++counter) {
+        SCOPED_TRACE(counter);
+        setupTageEntry(tage, pc, 3, counter);
+        const auto check = [counter](const TageInfoForMGSC& info) {
+            EXPECT_EQ(info.tage_pred_conf_low, counter == -1 || counter == 0);
+            EXPECT_EQ(info.tage_pred_conf_mid, counter == -3 || counter == -2 || counter == 1 || counter == 2);
+            EXPECT_EQ(info.tage_pred_conf_high, counter == -4 || counter == 3);
+            if (info.tage_pred_conf_high) {
+                EXPECT_EQ(info.tage_final_provider_table, 3);
+            }
+        };
+
+        predictTAGE(tage, pc, {entry}, history, stagePreds);
+        check(stagePreds[1].tageInfoForMgscs.at(pc));
+
+        FullBTBPrediction refreshed;
+        refreshed.bbStart = pc;
+        refreshed.btbEntries = {entry};
+        tage->refreshPredictionMeta(pc, history, refreshed);
+        check(refreshed.tageInfoForMgscs.at(pc));
+    }
+}
+
 // Test basic history update functionality (PHR semantics)
 TEST_F(BTBTAGETest, HistoryUpdate) {
     // Use a fixed control PC to derive PHR bits
@@ -1445,6 +1477,7 @@ TEST_F(BTBTAGEUpperBoundTest, ProviderAltSelection) {
     EXPECT_EQ(pred.altInfo.table, 1u);
     EXPECT_TRUE(pred.useAlt);
     EXPECT_FALSE(pred.taken);
+    EXPECT_EQ(stagePreds[1].tageInfoForMgscs.at(entry.pc).tage_final_provider_table, 1);
 }
 
 TEST_F(BTBTAGEUpperBoundTest, AllocationUsesPredictionTimeHistory) {

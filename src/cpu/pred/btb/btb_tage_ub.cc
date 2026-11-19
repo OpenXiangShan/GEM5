@@ -268,6 +268,7 @@ BTBTAGEUpperBound::notePredictionResult(
     CondTakens &results) const
 {
     results.push_back({btbEntry.pc, pred.taken});
+    tageInfoForMgscs[btbEntry.pc].tage_final_provider_table = pred.finalProviderTable;
     tageInfoForMgscs[btbEntry.pc].tage_pred_taken = pred.taken;
     tageInfoForMgscs[btbEntry.pc].tage_main_taken =
         pred.mainInfo.found ? pred.mainInfo.taken() : false;

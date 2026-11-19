@@ -243,6 +243,7 @@ struct TageInfoForMGSC
     bool tage_pred_conf_mid;
     bool tage_pred_conf_low;
     bool tage_pred_alt_diff;
+    int tage_final_provider_table = -1;
 
     // Addr offset; // retrived from lowest bits of pc
     TageInfoForMGSC()
@@ -336,6 +337,9 @@ struct FetchTarget
     bool isHit;          // whether the predicted btb entry is hit
     bool falseHit;       // not used
     std::vector<Addr> predictedBranchPCs;
+    std::vector<Addr> h2pTableBranchPCs;
+    std::vector<Addr> h2pBranchPCs;
+    std::vector<Addr> h2pAllocateBranchPCs;
 
     unsigned predSource;   // source of the prediction(numStage)
     OverrideReason overrideReason; // reason of the override(for profiling)

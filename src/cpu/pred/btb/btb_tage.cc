@@ -436,6 +436,7 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
             threadMeta[tid]->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
             results.push_back({btb_entry.pc, pred.taken});
+            tageInfoForMgscs[btb_entry.pc].tage_final_provider_table = pred.finalProviderTable;
             tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;
             tageInfoForMgscs[btb_entry.pc].tage_main_taken = pred.mainInfo.found ? pred.mainInfo.taken() : false;
             tageInfoForMgscs[btb_entry.pc].tage_pred_conf_high = pred.mainInfo.found &&
@@ -557,6 +558,7 @@ BTBTAGE::refreshPredictionMeta(Addr startPC,
         meta->preds[btb_entry.pc] = tage_pred;
 
         auto &tage_info = pred.tageInfoForMgscs[btb_entry.pc];
+        tage_info.tage_final_provider_table = tage_pred.finalProviderTable;
         tage_info.tage_pred_taken = tage_pred.taken;
         tage_info.tage_main_taken =
             tage_pred.mainInfo.found ? tage_pred.mainInfo.taken() : false;

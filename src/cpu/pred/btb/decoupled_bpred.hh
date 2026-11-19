@@ -21,6 +21,7 @@
 #include "cpu/pred/btb/btb_ubtb.hh"
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/ftq.hh"
+#include "cpu/pred/btb/h2p_table.hh"
 #include "cpu/pred/btb/history_manager.hh"
 #include "cpu/pred/btb/mbtb.hh"
 #include "cpu/pred/btb/microtage.hh"
@@ -152,6 +153,13 @@ class DecoupledBPUWithBTB : public BPredUnit
     std::vector<HistoryManager> historyManagers;
     std::vector<unsigned> resolveDequeueFailCounters;
     const unsigned resolveBlockThreshold;
+    const bool enableH2PTable;
+    const bool enableH2PWeakConfidence;
+    const bool enableH2PProviderFilter;
+    const unsigned h2pMinProviderTable;
+    const uint64_t h2pAgeInsts;
+    H2PTable h2pTable;
+    uint64_t h2pAgeRemaining;
 
     bool sharedFTQMode() const;
     unsigned activeFTQThreads() const;
@@ -160,6 +168,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     unsigned logicalMaxFTQEntries(ThreadID tid) const;
     unsigned logicalFreeFTQEntries(ThreadID tid) const;
     bool ftqFull(ThreadID tid) const;
+    void classifyH2PBranches(FetchTarget &target, FullBTBPrediction &prediction);
+    void trainH2P(const BranchOutcome &branch, const FetchTarget &target);
 
     bool isThreadActive(ThreadID tid) const;
     bool canStartPrediction(ThreadID tid) const;
@@ -260,6 +270,33 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar uncondMiss;   ///< Unconditional branch mispredictions
         statistics::Scalar returnMiss;   ///< Return mispredictions
         statistics::Scalar otherMiss;    ///< Other control mispredictions
+
+        statistics::Scalar h2pLookups;
+        statistics::Scalar h2pTableCandidates;
+        statistics::Scalar h2pCandidates;
+        statistics::Scalar h2pConfidenceRejected;
+        statistics::Scalar h2pConfidenceMissing;
+        statistics::Scalar h2pTableTruePositive;
+        statistics::Scalar h2pTableFalsePositive;
+        statistics::Scalar h2pTableFalseNegative;
+        statistics::Scalar h2pTableTrueNegative;
+        statistics::Formula h2pTableCoverage;
+        statistics::Formula h2pTablePrecision;
+        statistics::Formula h2pTableWastage;
+        statistics::Scalar h2pTruePositive;
+        statistics::Scalar h2pFalsePositive;
+        statistics::Scalar h2pFalseNegative;
+        statistics::Scalar h2pTrueNegative;
+        statistics::Formula h2pCoverage;
+        statistics::Formula h2pPrecision;
+        statistics::Formula h2pAccuracy;
+        statistics::Formula h2pFalsePositiveRate;
+        statistics::Scalar h2pTrainMispredicts;
+        statistics::Scalar h2pTrainProviderRejected;
+        statistics::Scalar h2pAllocations;
+        statistics::Scalar h2pCounterAges;
+        statistics::Scalar h2pReplacements;
+        statistics::Scalar h2pAllocationDrops;
 
         // Fine-grained branch classification statistics
         statistics::Vector branchClassCounts; ///< Classified branch occurrences
