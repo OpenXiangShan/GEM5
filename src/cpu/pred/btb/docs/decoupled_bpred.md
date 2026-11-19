@@ -56,6 +56,33 @@ for override bubbles and FTQ space before enqueuing a FetchTarget and updating
 speculative histories. The optional PairTAGE second block uses the same metadata,
 FTQ-capacity and history-update paths as before.
 
+## PairTAGE Statistics
+
+Under `system.cpu.branchPred`, `pairtageFirstBlockEnqueued` counts every FTQ
+entry enqueued in PairTAGE's first phase, even on a lookup miss. Divide
+`secondBlockEnqueued` by this count for the fraction of pair starts that
+enqueue both blocks in one cycle. `secondBlockFtqBlocked` counts available
+second blocks that cannot be enqueued in that cycle due to the FTQ run-ahead
+limit or capacity; it replaces `secondBlockRunAhead` and `secondBlockFtqFull`.
+
+`pairtageBlock{Enqueued,Evaluated,Correct}ByType_<role>::<type>` bins blocks
+by predicted exit type at enqueue. The roles are `two_taken_first`,
+`two_taken_second`, and `ordinary_second` (the normal prediction in PairTAGE's
+second phase, even if another predictor supplies the final result). The exit
+types are `cond_branch`, `direct_call`, `indirect_call`, `return`, `direct_jump`,
+`indirect_jump`, `unknown`, and `fallthrough`. A `::total` sums each role.
+
+- Divide `Enqueued` for a type by that role's `Enqueued::total` for the type
+  share. This measures the speculative output, including wrong-path entries.
+- Divide `Correct` by `Evaluated` for the same role and type (or `::total`).
+  Commit evaluates the original FTQ prediction against the first retired
+  taken branch's PC and target, or whether execution reached the predicted
+  fall-through boundary. Blocks discarded on an older redirect, and blocks
+  interrupted before their exit can be checked, do not enter the denominator.
+
+The raw counters can be extracted with
+`.agents/skills/frontend-pmu-analysis/configs/pairtage_counters.txt`.
+
 ## Training and Recovery
 
 FetchTargets retain component metadata through `getPredictionMeta(tid)`.

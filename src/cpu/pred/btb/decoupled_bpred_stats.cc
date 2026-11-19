@@ -232,6 +232,39 @@ classifyBranchImpl(const InstPtr &inst)
     return BranchClass::Unknown;
 }
 
+constexpr size_t NumPairTAGEBlockKinds =
+    static_cast<size_t>(PairTAGEBlockKind::None);
+constexpr size_t FallthroughExit = DecoupledBPUWithBTB::NumBranchClasses;
+constexpr std::array<const char *, NumPairTAGEBlockKinds> PairTAGEBlockLabels = {
+    "two_taken_first", "two_taken_second", "ordinary_second"
+};
+
+size_t
+predictedExitType(const FetchTarget &target)
+{
+    using BranchClass = DecoupledBPUWithBTB::BranchClass;
+    if (!target.predTaken) {
+        return FallthroughExit;
+    }
+
+    const auto &branch = target.predBranchInfo;
+    if (branch.isReturn) {
+        return static_cast<size_t>(BranchClass::Return);
+    }
+    if (branch.isCall) {
+        return static_cast<size_t>(branch.isIndirect ?
+                BranchClass::IndirectCall : BranchClass::DirectCall);
+    }
+    if (branch.isCond) {
+        return static_cast<size_t>(BranchClass::CondBranch);
+    }
+    if (branch.isIndirect) {
+        return static_cast<size_t>(BranchClass::IndirectJump);
+    }
+    return static_cast<size_t>(branch.isDirect ? BranchClass::DirectJump :
+                                               BranchClass::Unknown);
+}
+
 } // anonymous namespace
 
 DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
@@ -270,10 +303,18 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
              "the distribution of number of entries in ftq"),
     ADD_STAT(ftqEntryEnqueued, statistics::units::Count::get(),
              "the number of ftq entries enqueued"),
+    ADD_STAT(pairtageFirstBlockEnqueued, statistics::units::Count::get(),
+             "FTQ entries enqueued in PairTAGE's first-block phase"),
     ADD_STAT(secondBlockEnqueued, statistics::units::Count::get(),
              "second blocks enqueued in the same cycle as their first block"),
     ADD_STAT(secondBlockFtqBlocked, statistics::units::Count::get(),
              "available second blocks not enqueued due to FTQ capacity or run-ahead"),
+    ADD_STAT(pairtageBlockEnqueuedByType, statistics::units::Count::get(),
+             "PairTAGE pair blocks enqueued, by role and predicted exit type"),
+    ADD_STAT(pairtageBlockEvaluatedByType, statistics::units::Count::get(),
+             "PairTAGE pair blocks evaluated at commit, by role and predicted exit type"),
+    ADD_STAT(pairtageBlockCorrectByType, statistics::units::Count::get(),
+             "correct PairTAGE pair blocks at commit, by role and predicted exit type"),
     ADD_STAT(ftqEntryCommitted, statistics::units::Count::get(),
              "the number of ftq entries committed"),
     ADD_STAT(controlSquashFromDecode, statistics::units::Count::get(),
@@ -337,6 +378,19 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     predictionsStartedByThread.init(numThreads);
     branchClassMisses.init(NumBranchClasses);
     controlSquashByClass.init(NumBranchClasses);
+    for (auto *stat : {&pairtageBlockEnqueuedByType,
+                      &pairtageBlockEvaluatedByType,
+                      &pairtageBlockCorrectByType}) {
+        stat->init(NumPairTAGEBlockKinds, NumBranchClasses + 1)
+            .flags(statistics::total);
+        for (size_t i = 0; i < NumPairTAGEBlockKinds; ++i) {
+            stat->subname(i, PairTAGEBlockLabels[i]);
+        }
+        for (size_t i = 0; i < NumBranchClasses; ++i) {
+            stat->ysubname(i, BranchClassLabels[i]);
+        }
+        stat->ysubname(FallthroughExit, "fallthrough");
+    }
     for (int i = 0; i < NumS1SourceBuckets; ++i) {
         s1PredWrongBySourceAndReason.subname(i, S1SourceLabels[i]);
     }
@@ -428,9 +482,58 @@ DecoupledBPUWithBTB::addControlSquashCommitStat(BranchClass cls)
 }
 
 void
+DecoupledBPUWithBTB::recordPairTAGEBlockEnqueue(FetchTarget &target,
+                                               PairTAGEBlockKind kind)
+{
+    target.pairtageBlockKind = kind;
+    target.pairtageExitType = predictedExitType(target);
+    dbpBtbStats.pairtageBlockEnqueuedByType[static_cast<size_t>(kind)]
+                                           [target.pairtageExitType]++;
+}
+
+void
+DecoupledBPUWithBTB::recordPairTAGEBlockOutcome(
+    const FetchTarget &target, const PreparedUpdate &update)
+{
+    if (target.pairtageBlockKind == PairTAGEBlockKind::None) {
+        return;
+    }
+
+    // Use the original prediction: Decode and predecode may have already
+    // repaired the dynamic instruction's prediction by the time it retires.
+    const auto exit = std::find_if(update.branches.begin(), update.branches.end(),
+        [](const BranchOutcome &branch) { return branch.taken; });
+    bool correct;
+    if (exit != update.branches.end()) {
+        correct = target.predTaken && target.predBranchInfo.pc == exit->branch.pc &&
+            target.predBranchInfo.target == exit->branch.target;
+    } else if (target.predTaken) {
+        if (target.committedEndPC <= target.predBranchInfo.pc) {
+            return; // Interrupted before the predicted exit was reached.
+        }
+        correct = false;
+    } else {
+        // Fetch treats a sequential instruction spanning the end as
+        // consuming the block, so its next PC may be beyond predEndPC.
+        if (target.committedEndPC < target.predEndPC) {
+            return;
+        }
+        correct = true;
+    }
+
+    const auto kind = static_cast<size_t>(target.pairtageBlockKind);
+    dbpBtbStats.pairtageBlockEvaluatedByType[kind][target.pairtageExitType]++;
+    if (correct) {
+        dbpBtbStats.pairtageBlockCorrectByType[kind][target.pairtageExitType]++;
+    }
+}
+
+void
 DecoupledBPUWithBTB::updateStatistics(
     const FetchTarget &target, const PreparedUpdate &update)
 {
+    recordPairTAGEBlockOutcome(target, update);
+
     if (profiler && profiler->recordFetchBlock(target, update)) {
         dbpBtbStats.btbEntriesWithDifferentStart++;
     }

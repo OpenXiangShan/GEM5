@@ -589,6 +589,8 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
 
     DPRINTF(DecoupleBP, "Creating new prediction for PC %#lx\n", s0PC);
 
+    const bool pairtageEnabled = pairtage->isEnabled();
+    const bool pairtageFirst = pairtageEnabled && pairtage->inFirstPhase(tid);
     enqueuePrediction(tid, threads[tid].finalPred);
     threads[tid].nextPredictionAfterSquash = false;
     threads[tid].validprediction = false;
@@ -599,6 +601,12 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
 
     printTarget(ftq.back(tid));
     dbpBtbStats.ftqEntryEnqueued++;
+    if (pairtageFirst) {
+        dbpBtbStats.pairtageFirstBlockEnqueued++;
+    } else if (pairtageEnabled) {
+        recordPairTAGEBlockEnqueue(ftq.back(tid),
+                                  PairTAGEBlockKind::OrdinarySecond);
+    }
 
     // A second block may follow the first in the same cycle.
     enqueueSecondBlock(tid);
@@ -645,8 +653,10 @@ DecoupledBPUWithBTB::enqueueSecondBlock(ThreadID tid)
 
     // TODO: Currently the ABTB's ahead history is not updated for the second
     // which maybe a expected behavior due to the physical timing constraints.
+    recordPairTAGEBlockEnqueue(ftq.back(tid), PairTAGEBlockKind::TwoTakenFirst);
     enqueuePrediction(tid, secondPred);
     ftq.back(tid).isTwoTakenBlock = true;
+    recordPairTAGEBlockEnqueue(ftq.back(tid), PairTAGEBlockKind::TwoTakenSecond);
     DPRINTF(DecoupleBP, "Inserted second block %lu starting at PC %#lx\n",
             ftq.backId(tid), ftq.back(tid).startPC);
     printTarget(ftq.back(tid));
@@ -845,6 +855,10 @@ DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
     auto &target = ftq.get(inst->ftqId, inst->threadNumber);
     target.commitInstNum++;
     target.commitInstBytes += inst->getInstBytes();
+    if (target.pairtageBlockKind != PairTAGEBlockKind::None &&
+        (!inst->isMicroop() || inst->isLastMicroop())) {
+        target.committedEndPC = inst->getNPC();
+    }
 
     DPRINTF(Profiling, "notifyInstCommit, inst=%s, commitInstNum=%d\n",
             inst->staticInst->disassemble(inst->pcState().instAddr()),
