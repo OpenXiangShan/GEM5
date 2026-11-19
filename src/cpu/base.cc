@@ -215,7 +215,6 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
     }
 
     diffAllStates.resize(numThreads);
-    recentCommittedStores.resize(numThreads);
     syncVisibleStoreReplayArmed.resize(numThreads, false);
     if (enableDifftest) {
         assert(params().difftest_ref_so.length() > 2);
@@ -436,33 +435,6 @@ BaseCPU::startup()
     }
     diffInfo.scalarResults.resize(MaxDestRegisters);
 
-}
-
-void
-BaseCPU::recordCommittedStore(ThreadID tid, const o3::DynInstPtr &inst)
-{
-    RecentCommittedStore recent;
-
-    if (!system->multiContextDifftest() || !_goldenMemManager ||
-        !inst->isStore() || inst->isAtomic() ||
-        (inst->isStoreConditional() && !inst->lockedWriteSuccess()) ||
-        !inst->memData || inst->effSize == 0 ||
-        inst->effSize > sizeof(recent.data) ||
-        !_goldenMemManager->inPmem(inst->physEffAddr)) {
-        return;
-    }
-
-    auto &recent_history = recentCommittedStores.at(tid);
-    recent.valid = true;
-    recent.addr = inst->physEffAddr;
-    recent.size = inst->effSize;
-    recent.seq = inst->seqNum;
-    std::memcpy(recent.data, inst->memData, recent.size);
-    recent_history.push_back(recent);
-    constexpr size_t max_store_history = 16;
-    if (recent_history.size() > max_store_history) {
-        recent_history.pop_front();
-    }
 }
 
 probing::PMUUPtr
@@ -1894,26 +1866,6 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                                                      diffInfo.effSize);
                     uint8_t *golden_ptr = current_golden_data;
                     uint8_t *exec_golden_ptr = diffInfo.goldenValue;
-                    const RecentCommittedStore *matched_recent_store = nullptr;
-                    if (diffInfo.inst->isLoad()) {
-                        const auto &recent_history =
-                            recentCommittedStores.at(tid);
-                        for (auto it = recent_history.rbegin();
-                             it != recent_history.rend(); ++it) {
-                            if (!it->valid ||
-                                it->addr != diffInfo.physEffAddr ||
-                                it->size != diffInfo.effSize ||
-                                it->seq >= seq ||
-                                (seq - it->seq) > 256) {
-                                continue;
-                            }
-                            if (memcmp(it->data, &gem5_val,
-                                       diffInfo.effSize) == 0) {
-                                matched_recent_store = &(*it);
-                                break;
-                            }
-                        }
-                    }
                     auto sync_reg = [&]() {
                         diffAllStates->referenceRegFile[dest_tag] = gem5_val;
                         diffAllStates->proxy->regcpy(
@@ -1944,15 +1896,6 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                                 "golden snapshot. Sync from the recorded "
                                 "snapshot to ref\n");
                         sync_mem_reg(exec_golden_ptr);
-                        continue;
-                    } else if (matched_recent_store) {
-                        DPRINTF(Diff,
-                                "Load content matched recent committed store "
-                                "[sn:%llu] at addr %#lx. Syncing ref from the "
-                                "store snapshot for this hart.\n",
-                                matched_recent_store->seq,
-                                diffInfo.physEffAddr);
-                        sync_mem_reg(matched_recent_store->data);
                         continue;
                     } else if (diffInfo.inst->isAtomic()) {
                         DPRINTF(Diff, "Golden mem old value: %#lx, "

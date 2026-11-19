@@ -3080,7 +3080,7 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
             // instruction so commit/difftest can use a per-inst golden copy
             // under SMT, but derive the new memory image from the DUT-observed
             // old value captured in goldenData.
-            memcpy(tmp_data, store_inst->getGolden(), request->_size);
+            memcpy(tmp_data, store_inst->getAmoOldGoldenValuePtr(), request->_size);
 
             (*(request->req()->getAtomicOpFunctor()))(tmp_data);
 
@@ -3705,6 +3705,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         request->_sbufferBypass = false;
         if (!load_inst->hasPendingCacheReq()) {
             request->_goldenSnapshotCaptured = false;
+            load_inst->goldenDataValid = false;
         }
     }
 

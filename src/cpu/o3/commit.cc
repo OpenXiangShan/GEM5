@@ -2113,7 +2113,6 @@ Commit::diffInst(ThreadID tid, const DynInstPtr &inst) {
     cpu->diffInfo.effSize = inst->effSize;
     cpu->diffInfo.goldenValue = inst->getGolden();
     std::memcpy(cpu->diffInfo.amoOldGoldenValue, inst->getAmoOldGoldenValuePtr(), std::min((uint32_t)inst->effSize, (uint32_t)sizeof(cpu->diffInfo.amoOldGoldenValue)));
-    cpu->recordCommittedStore(tid, inst);
     cpu->difftestStep(tid, inst->seqNum);
 }
 

@@ -140,16 +140,6 @@ struct DiffAllStates
 class BaseCPU : public ClockedObject
 {
   protected:
-    struct RecentCommittedStore
-    {
-        bool valid = false;
-        Addr addr = 0;
-        size_t size = 0;
-        InstSeqNum seq = 0;
-        uint8_t data[16] = {};
-    };
-
-    std::vector<std::deque<RecentCommittedStore>> recentCommittedStores;
     std::vector<bool> syncVisibleStoreReplayArmed;
 
     const unsigned IntRegIndexBase = 0;
@@ -795,7 +785,6 @@ class BaseCPU : public ClockedObject
 
     void difftestStep(ThreadID tid, InstSeqNum seq);
 
-    void recordCommittedStore(ThreadID tid, const o3::DynInstPtr &inst);
     void armSyncVisibleStoreReplay(ThreadID tid)
     {
         syncVisibleStoreReplayArmed.at(tid) = true;

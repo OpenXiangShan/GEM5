@@ -537,6 +537,7 @@ class DynInst : public ExecContext, public RefCounted
 
     /** If load data is from cache then it must be golden */
     uint8_t goldenData[16] = {0};
+    bool goldenDataValid = false;
 
     /** Performance signature accumulated for Timing Event Attribution. */
     uint16_t teaPsv = 0;
@@ -1906,10 +1907,14 @@ class DynInst : public ExecContext, public RefCounted
     }
 
     /** set golden */
-    void setGolden(uint8_t *golden) { memcpy(goldenData, golden, effSize); }
+    void setGolden(uint8_t *golden)
+    {
+        memcpy(goldenData, golden, effSize);
+        goldenDataValid = true;
+    }
 
     /** get golden */
-    uint8_t *getGolden() { return goldenData; }
+    uint8_t *getGolden() { return goldenDataValid ? goldenData : nullptr; }
 
     /** value prediction */
     valuepred::VPResult vpResult = {false, 0xdeadbeefULL};
