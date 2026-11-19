@@ -57,6 +57,7 @@ makeCore(const SDBPRPParams &p)
 
 SDBP::SDBP(const Params &p)
     : Base(p), core(makeCore(p)), enableBypass(p.enable_bypass),
+      dropDeadL2Prefetch(p.drop_dead_l2_prefetch),
       l1CopyProtection(p.l1_copy_protection),
       observationOnly(p.observation_only),
       splitPrefetchSources(p.split_prefetch_sources),
@@ -262,6 +263,22 @@ SDBP::observe(const PacketPtr pkt, unsigned set, Addr tag, bool hit)
     }
     if (!observationOnly)
         sample(pkt, set, tag);
+}
+
+bool
+SDBP::dropL2PrefetchFill(const PacketPtr pkt, unsigned set, Addr tag)
+{
+    if (!dropDeadL2Prefetch || observationOnly ||
+        !pkt || !pkt->req || !pkt->isResponse() || !isPrefetch(pkt) ||
+        pkt->req->l2RequestSource() != Request::L2RequestSource::L2Prefetch ||
+        !predict(pkt)) {
+        return false;
+    }
+
+    // The independent sampler must still see fills denied real cache space.
+    observeFill(pkt, set, tag);
+    ++stats.droppedL2PrefetchFills;
+    return true;
 }
 
 void
@@ -643,6 +660,7 @@ SDBP::SDBPStats::SDBPStats(statistics::Group *parent, bool split_sources)
       ADD_STAT(nonLruDeadVictims, "Dead victims different from the LRU victim"),
       ADD_STAT(lruVictims, "Victim selections falling back to LRU"),
       ADD_STAT(bypasses, "Predicted-dead data refills bypassed by SDBP"),
+      ADD_STAT(droppedL2PrefetchFills, "Predicted-dead local L2 prefetch fills discarded"),
       ADD_STAT(l1CopyChecks, "Dead candidates checked for resident L1 copies"),
       ADD_STAT(l1CopyProtectedDead, "Dead candidates skipped due to resident L1 copies"),
       ADD_STAT(l1CopyLruFallbacks, "Selections using LRU because every dead candidate has an L1 copy"),

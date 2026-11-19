@@ -1253,8 +1253,14 @@ BaseCache::recvTimingResp(PacketPtr pkt)
         DPRINTF(Cache, "Block for addr %#llx being updated in Cache\n",
                 pkt->getAddr());
 
-        const bool allocate = (writeAllocator && mshr->wasWholeLineWrite) ?
+        bool allocate = (writeAllocator && mshr->wasWholeLineWrite) ?
             writeAllocator->allocate() : mshr->allocOnFill();
+        if (cacheLevel == 2 && allocate && !blk && pure_prefetch_fill &&
+            !mshr->hasDeferredCpuTarget()) {
+            if (auto *set_assoc = dynamic_cast<BaseSetAssoc *>(tags)) {
+                allocate = !set_assoc->dropL2PrefetchFill(pkt);
+            }
+        }
         const bool is_dcache_mainpipe_refill =
             allocate && (mshr->hasFromCPU() || mshr->hasFromPref());
         // Send allocated L1D fill/update traffic into the fake mainpipe.

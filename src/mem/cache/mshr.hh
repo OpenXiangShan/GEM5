@@ -370,6 +370,8 @@ class MSHR : public QueueEntry, public Printable
         return targets.hasFromPref;
     }
 
+    bool hasDeferredCpuTarget() const { return deferredTargets.hasFromCPU; }
+
     bool hasFromCPU() const {
         return targets.hasFromCPU;
     }

@@ -109,6 +109,7 @@ class SDBPRP(BaseReplacementPolicy):
     table_hash_seeds = VectorParam.UInt64([], "Distinct per-table hash seeds")
     crc_live_update = Param.Bool(True, "Halve odd tables on live training")
     enable_bypass = Param.Bool(False, "Bypass predicted-dead data refills (L2 only)")
+    drop_dead_l2_prefetch = Param.Bool(False, "Drop predicted-dead local L2 prefetch fills")
     split_prefetch_sources = Param.Bool(
         False, "Independent banks per L1/L2 prefetch algorithm"
     )

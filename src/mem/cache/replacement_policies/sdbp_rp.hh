@@ -31,6 +31,7 @@ class SDBP : public Base
     using L1CopyProbe = std::function<bool(const ReplaceableEntry *)>;
     void setL1CopyProbe(L1CopyProbe probe);
     void observe(const PacketPtr pkt, unsigned set, Addr tag, bool hit);
+    bool dropL2PrefetchFill(const PacketPtr pkt, unsigned set, Addr tag);
     void observeFill(const PacketPtr pkt, unsigned set, Addr tag);
     void observeLocalPrefetch(
         const PacketPtr pkt,
@@ -89,6 +90,7 @@ class SDBP : public Base
     void censorPrediction(SDBPReplData &entry);
     SDBPCore core;
     const bool enableBypass;
+    const bool dropDeadL2Prefetch;
     const bool l1CopyProtection;
     const bool observationOnly;
     const bool splitPrefetchSources;
@@ -122,6 +124,7 @@ class SDBP : public Base
         statistics::Scalar nonLruDeadVictims;
         statistics::Scalar lruVictims;
         statistics::Scalar bypasses;
+        statistics::Scalar droppedL2PrefetchFills;
         statistics::Scalar l1CopyChecks;
         statistics::Scalar l1CopyProtectedDead;
         statistics::Scalar l1CopyLruFallbacks;

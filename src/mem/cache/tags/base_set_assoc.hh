@@ -147,6 +147,13 @@ class BaseSetAssoc : public BaseTags
         }
     }
 
+    bool dropL2PrefetchFill(const PacketPtr pkt)
+    {
+        return sdbpPolicy && sdbpPolicy->dropL2PrefetchFill(
+            pkt, indexingPolicy->extractSet(pkt->getAddr()),
+            extractTag(pkt->getAddr()));
+    }
+
     /** Resolve full-cache SDBP metadata for an eviction that will commit. */
     void notifyReplacementEviction(CacheBlk *blk)
     {

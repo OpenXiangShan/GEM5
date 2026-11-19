@@ -46,6 +46,7 @@ testParams(bool bypass = false, unsigned threshold = 8)
     p.index_hash_type = "mixed";
     p.crc_live_update = true;
     p.enable_bypass = bypass;
+    p.drop_dead_l2_prefetch = false;
     p.observation_only = false;
     p.split_prefetch_sources = false;
     return p;
@@ -766,6 +767,31 @@ TEST_F(SDBPInterface, FullCacheObserverResetStatsPreservesPendingAndPredictor)
     EXPECT_EQ(stat(policy, "fullCachePending"), 0);
     EXPECT_EQ(stat(policy, "fullCacheResolved"), 2);
     EXPECT_EQ(stat(policy, "fullCachePredictions"), 1);
+}
+
+TEST_F(SDBPInterface, DropOnlyDeadLocalPrefetchFillsAndKeepSampling)
+{
+    auto params = testParams(false, 0);
+    params.split_prefetch_sources = true;
+    auto pf = sourcedPacket(Request::L2RequestSource::L2Prefetch, 0x1000);
+    pf->makeResponse();
+    SDBP disabled(params);
+    EXPECT_FALSE(disabled.dropL2PrefetchFill(pf.get(), 0, 1));
+
+    params.drop_dead_l2_prefetch = true;
+    SDBP policy(params);
+    EXPECT_TRUE(policy.dropL2PrefetchFill(pf.get(), 0, 1));
+    EXPECT_EQ(stat(policy, "samplerAccesses"), 1);
+    params.dead_threshold = 8;
+    SDBP cold(params);
+    EXPECT_FALSE(cold.dropL2PrefetchFill(pf.get(), 0, 1));
+
+    pf->req->setL2RequestSource(Request::L2RequestSource::L1Prefetch);
+    EXPECT_FALSE(policy.dropL2PrefetchFill(pf.get(), 0, 1));
+    pf->req->setL2RequestSource(Request::L2RequestSource::L2Prefetch);
+    pf->setSamplerDemand();
+    EXPECT_FALSE(policy.dropL2PrefetchFill(pf.get(), 0, 1));
+    EXPECT_EQ(stat(policy, "droppedL2PrefetchFills"), 1);
 }
 
 TEST_F(SDBPInterface, SplitActiveSamplerPredictionsSelectDeadVictim)

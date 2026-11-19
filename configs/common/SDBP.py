@@ -64,6 +64,10 @@ def add_sdbp_options(parser):
         choices=("xor_fold", "mixed", "low_bits"),
         default="xor_fold",
     )
+    parser.add_argument(
+        "--sdbp-drop-dead-l2-prefetch", action="store_true",
+        help="Skip L2 allocation for predicted-dead local prefetch fills",
+    )
     parser.add_argument("--sdbp-pc-shift", type=int, default=1)
     parser.add_argument(
         "--sdbp-split-prefetch-sources",
@@ -100,12 +104,15 @@ def configure_sdbp(args, system):
                 enable_bypass=(
                     args.sdbp_enable_bypass and not observation_only
                 ),
+                drop_dead_l2_prefetch=args.sdbp_drop_dead_l2_prefetch,
                 observation_only=observation_only,
                 split_prefetch_sources=args.sdbp_split_prefetch_sources,
                 pc_hash_type=args.sdbp_pc_hash_type,
                 pc_shift=args.sdbp_pc_shift,
             )
 
+    if args.sdbp_drop_dead_l2_prefetch and args.l2_replacement_policy != "sdbp":
+        raise ValueError("Dropping L2 prefetch fills requires active SDBP")
     if (
         args.sdbp_split_prefetch_sources
         and args.l2_replacement_policy not in ("sdbp", "lru-sdbp")
