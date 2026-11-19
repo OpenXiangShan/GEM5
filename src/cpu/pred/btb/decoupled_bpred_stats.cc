@@ -1,6 +1,7 @@
 #include <array>
 
 #include "base/output.hh"
+#include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/trace/TraceBranchTruth.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
@@ -140,7 +141,8 @@ void
 DecoupledBPUWithBTB::traceFetchBlocks(ThreadID tid, FetchTargetId first,
                                       FetchTargetId last, bool squashed)
 {
-    if (!enableFetchBlockTrace) {
+    // Record only the measured window after warmup, as stats do
+    if (!enableFetchBlockTrace || !cpu->warmupDone()) {
         return;
     }
     for (FetchTargetId id = first; id <= last && ftq.hasTarget(id, tid);
