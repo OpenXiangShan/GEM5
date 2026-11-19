@@ -176,6 +176,13 @@ class AMPMHintTable(SimObject):
     zone_size = Param.Unsigned(4096, 'Bytes covered by one access map')
     block_size = Param.Unsigned(64, 'Cache-line bytes')
     external_hints = Param.Bool(False, 'Receive states from the AMPM prefetcher')
+    first_use_predictor = Param.Bool(
+        False, 'Predict reuse after first prefetch use')
+    first_use_entries = Param.Unsigned(1024, 'Region reuse predictor entries')
+    first_use_sample_entries = Param.Unsigned(
+        128, 'Independent LRU sampler entries')
+    first_use_sample_period = Param.Unsigned(
+        256, 'Sample one in N hashed blocks')
 
 
 class PAMAIPRP(BaseReplacementPolicy):

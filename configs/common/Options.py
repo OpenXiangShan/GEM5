@@ -183,6 +183,8 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         help="Shuffle leader sets; 0 keeps bit-pattern roles")
     parser.add_argument("--ampm-duel-demand-only", action="store_true",
                         help="Train insertion dueling on demand misses only")
+    parser.add_argument("--ampm-first-use-predictor", action="store_true",
+                        help="Predict reuse after first prefetch consumption")
     parser.add_argument("--ampm-protect-demand", action="store_true",
                         help="Insert demand fills at RRPV 0 in PA-MAIP")
     parser.add_argument("--l2_slices", type=int, default=4)

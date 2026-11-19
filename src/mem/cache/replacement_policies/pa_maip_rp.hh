@@ -11,6 +11,7 @@
 #include "base/statistics.hh"
 #include "mem/cache/replacement_policies/base.hh"
 #include "mem/cache/replacement_policies/pa_maip_logic.hh"
+#include "mem/cache/replacement_policies/pa_maip_reuse.hh"
 #include "params/AMPMHintTable.hh"
 #include "params/PAMAIPRP.hh"
 
@@ -24,11 +25,18 @@ class AMPMHintTable : public SimObject
   private:
     std::unique_ptr<pa_maip::AccessMap> maps;
     const bool externalHints;
+    std::unique_ptr<pa_maip::FirstUsePredictor> firstUsePredictor;
     struct HintStats : statistics::Group
     {
         explicit HintStats(statistics::Group *parent);
         statistics::Vector demandStates;
         statistics::Vector prefetchStates;
+        statistics::Scalar reuseSampleAccesses;
+        statistics::Scalar reusePositiveTraining;
+        statistics::Scalar reuseNegativeTraining;
+        statistics::Scalar reuseUnusedSamples;
+        statistics::Scalar reuseSampleCorrect;
+        statistics::Scalar reuseSampleWrong;
     } stats;
 
   public:
@@ -38,6 +46,9 @@ class AMPMHintTable : public SimObject
     void capture(const PacketPtr pkt, uint8_t state);
     void recordPrefetchHint(uint8_t state);
     bool isExternal() const { return externalHints; }
+    bool predictsFirstUse() const { return bool(firstUsePredictor); }
+    pa_maip::FirstUsePredictor::Prediction predictFirstUse(
+        const PacketPtr pkt) const;
     bool getHint(const PacketPtr pkt, pa_maip::State &state) const;
 };
 
@@ -86,9 +97,15 @@ class PAMAIP : public Base
         statistics::Scalar followerSrripFills;
         statistics::Scalar followerBrripFills;
         statistics::Scalar selector;
+        statistics::Scalar firstUsePredictHigh;
+        statistics::Scalar firstUsePredictLow;
+        statistics::Scalar firstUsePredictUnknown;
     } stats;
 
     void sampleDemandMiss(pa_maip::Dueling::Team team);
+    bool predictFirstUse(const PacketPtr pkt,
+                         const std::shared_ptr<PAMAIPReplData>& data,
+                         bool &promoted);
 
   public:
     using Params = PAMAIPRPParams;

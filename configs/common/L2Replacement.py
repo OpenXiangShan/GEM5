@@ -17,7 +17,9 @@ def configure_l2_replacement(args, system):
             hints = AMPMHintTable(entries=args.ampm_map_entries,
                                   assoc=args.ampm_map_assoc,
                                   block_size=int(system.cache_line_size),
-                                  external_hints=external)
+                                  external_hints=external,
+                                  first_use_predictor=
+                                  args.ampm_first_use_predictor)
             setattr(system, "l2_ampm_hints%d" % i, hints)
             if external:
                 prefetcher = system.cpu[i].dcache.prefetcher

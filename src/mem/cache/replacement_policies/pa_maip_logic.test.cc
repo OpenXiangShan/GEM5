@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include "mem/cache/replacement_policies/pa_maip_logic.hh"
+#include "mem/cache/replacement_policies/pa_maip_reuse.hh"
 
 using namespace gem5::replacement_policy::pa_maip;
 
@@ -187,4 +188,174 @@ TEST(PAMAIPTest, MapPrefetchStateSuppressesHitsIndependentlyOfLineHistory)
     EXPECT_EQ(line.rrpv, 6);
     EXPECT_TRUE(line.touchMap(false, Accessed));
     EXPECT_EQ(line.rrpv, 0);
+}
+
+// The sampler observes the request stream independently of real-cache victims.
+TEST(PAMAIPReuseTest, ColdAndUnsampledRequestsDoNotPredict)
+{
+    FirstUsePredictor predictor;
+    EXPECT_EQ(predictor.predict(0x1000, false), FirstUsePredictor::Unknown);
+    unsigned skipped = 0;
+    for (unsigned i = 0; i < 512; ++i) {
+        skipped += !predictor.observe(i * 64, false, true).sampled;
+    }
+    EXPECT_GT(skipped, 400);
+}
+
+TEST(PAMAIPReuseTest, SecondDemandTrainsOnceAndRequiresConfidence)
+{
+    FirstUsePredictor predictor(1, 4, 1);
+    for (unsigned i = 0; i < 3; ++i) {
+        const uint64_t address = i * 64;
+        predictor.observe(address, false, true);
+        EXPECT_FALSE(predictor.observe(address, false, false).positive);
+        EXPECT_TRUE(predictor.observe(address, false, false).positive);
+        EXPECT_FALSE(predictor.observe(address, false, false).positive);
+        EXPECT_EQ(predictor.predict(address, false), i < 2 ?
+                  FirstUsePredictor::Unknown : FirstUsePredictor::Reuse);
+    }
+}
+
+static void
+sampleOneUse(FirstUsePredictor &predictor, uint64_t address)
+{
+    predictor.observe(address, false, true);
+    predictor.observe(address, false, false);
+    unsigned negative = 0;
+    for (unsigned i = 0; i < 4; ++i) {
+        negative += predictor.observe(0x100000 + address + i * 64,
+                                      false, false).negative;
+    }
+    EXPECT_EQ(negative, 1);
+}
+
+TEST(PAMAIPReuseTest, OneUseRetirementTrainsLowConfidence)
+{
+    FirstUsePredictor predictor(1, 4, 1);
+    for (unsigned i = 0; i < 3; ++i) {
+        sampleOneUse(predictor, i * 4096);
+        EXPECT_EQ(predictor.predict(0, false), i < 2 ?
+                  FirstUsePredictor::Unknown : FirstUsePredictor::Dead);
+    }
+}
+
+TEST(PAMAIPReuseTest, NeverUsedPrefetchesDoNotTrainSecondUse)
+{
+    FirstUsePredictor predictor(1, 4, 1);
+    unsigned unused = 0;
+    for (unsigned i = 0; i < 16; ++i) {
+        const auto result = predictor.observe(i * 64, false, true);
+        unused += result.unused;
+        EXPECT_FALSE(result.negative);
+        EXPECT_FALSE(result.positive);
+    }
+    EXPECT_EQ(unused, 12);
+    EXPECT_EQ(predictor.predict(0, false), FirstUsePredictor::Unknown);
+}
+
+TEST(PAMAIPReuseTest, DemandOriginAndPrefetchHitsCannotInventTraining)
+{
+    FirstUsePredictor predictor(1, 4, 1);
+    predictor.observe(0, false, false);
+    predictor.observe(0, false, true);
+    EXPECT_FALSE(predictor.observe(0, false, false).positive);
+    predictor.observe(64, false, true);
+    predictor.observe(64, false, false);
+    for (unsigned i = 0; i < 5; ++i) {
+        EXPECT_FALSE(predictor.observe(64, false, true).positive);
+    }
+    EXPECT_TRUE(predictor.observe(64, false, false).positive);
+}
+
+TEST(PAMAIPReuseTest, SamplerRetainsEvidenceAcrossRealCacheMisses)
+{
+    FirstUsePredictor predictor(1, 4, 1);
+    predictor.observe(0, false, true);
+    predictor.observe(0, false, false);
+    predictor.observe(64, false, false);
+    predictor.observe(128, false, false);
+    // This can be a miss in the real cache: no real-cache hit is required.
+    EXPECT_TRUE(predictor.observe(0, false, false).positive);
+}
+
+TEST(PAMAIPReuseTest, SecurityDomainsDoNotShareSampleLifetimes)
+{
+    FirstUsePredictor predictor(1, 4, 1);
+    predictor.observe(0, false, true);
+    EXPECT_FALSE(predictor.observe(0, true, false).positive);
+    EXPECT_FALSE(predictor.observe(0, false, false).positive);
+    EXPECT_TRUE(predictor.observe(0, false, false).positive);
+}
+
+TEST(PAMAIPReuseTest, SamplerLRURefreshProtectsTheObservedLifetime)
+{
+    FirstUsePredictor predictor(1, 4, 1);
+    for (unsigned i = 0; i < 4; ++i) {
+        predictor.observe(i * 64, false, true);
+    }
+    predictor.observe(0, false, false);
+    const auto eviction = predictor.observe(256, false, false);
+    EXPECT_TRUE(eviction.unused);
+    EXPECT_FALSE(eviction.negative);
+    EXPECT_TRUE(predictor.observe(0, false, false).positive);
+}
+
+TEST(PAMAIPReuseTest, ReusedSampleRetirementDoesNotTrainTwice)
+{
+    FirstUsePredictor predictor(1, 4, 1);
+    predictor.observe(0, false, true);
+    predictor.observe(0, false, false);
+    EXPECT_TRUE(predictor.observe(0, false, false).positive);
+    for (unsigned i = 1; i <= 4; ++i) {
+        const auto result = predictor.observe(i * 64, false, false);
+        EXPECT_FALSE(result.positive);
+        EXPECT_FALSE(result.negative);
+    }
+    EXPECT_EQ(predictor.predict(0, false), FirstUsePredictor::Unknown);
+}
+
+TEST(PAMAIPReuseTest, LowPredictionCanBeCorrectedByLaterDemand)
+{
+    FirstUsePredictor predictor(1, 4, 1);
+    for (unsigned i = 0; i < 3; ++i) {
+        sampleOneUse(predictor, i * 4096);
+    }
+    EXPECT_EQ(predictor.predict(0, false), FirstUsePredictor::Dead);
+    predictor.observe(0x4000, false, true);
+    predictor.observe(0x4000, false, false);
+    const auto correction = predictor.observe(0x4000, false, false);
+    EXPECT_TRUE(correction.positive);
+    EXPECT_EQ(correction.evaluated, FirstUsePredictor::Dead);
+    EXPECT_FALSE(correction.correct);
+    EXPECT_EQ(predictor.predict(0, false), FirstUsePredictor::Unknown);
+}
+
+TEST(PAMAIPReuseTest, ConfidentReusePredictionIsEvaluatedAtFirstUse)
+{
+    FirstUsePredictor predictor(1, 4, 1);
+    for (unsigned i = 0; i < 3; ++i) {
+        predictor.observe(i * 64, false, true);
+        predictor.observe(i * 64, false, false);
+        predictor.observe(i * 64, false, false);
+    }
+    predictor.observe(256, false, true);
+    predictor.observe(256, false, false);
+    const auto feedback = predictor.observe(256, false, false);
+    EXPECT_EQ(feedback.evaluated, FirstUsePredictor::Reuse);
+    EXPECT_TRUE(feedback.correct);
+}
+
+TEST(PAMAIPReuseTest, PredictionCountersSaturateAndCanReverse)
+{
+    FirstUsePredictor predictor(1, 4, 1);
+    for (unsigned i = 0; i < 100; ++i) {
+        predictor.observe(i * 64, false, true);
+        predictor.observe(i * 64, false, false);
+        predictor.observe(i * 64, false, false);
+    }
+    EXPECT_EQ(predictor.predict(0, false), FirstUsePredictor::Reuse);
+    for (unsigned i = 0; i < 100; ++i) {
+        sampleOneUse(predictor, 0x1000000 + i * 4096);
+    }
+    EXPECT_EQ(predictor.predict(0, false), FirstUsePredictor::Dead);
 }

@@ -55,6 +55,15 @@ AMPMHintTable::AMPMHintTable(const Params &p)
     externalHints(p.external_hints), stats(this)
 {
     checkedEntries(p);
+    fatal_if(p.first_use_predictor && (p.external_hints ||
+             !p.first_use_entries || p.first_use_sample_entries < 4 ||
+             p.first_use_sample_entries % 4 || !p.first_use_sample_period),
+             "First-use reuse prediction needs cache hints and valid tables");
+    if (p.first_use_predictor) {
+        firstUsePredictor = std::make_unique<pa_maip::FirstUsePredictor>(
+            p.first_use_entries, p.first_use_sample_entries,
+            p.first_use_sample_period, p.block_size, p.zone_size);
+    }
 }
 
 bool
@@ -89,6 +98,18 @@ AMPMHintTable::observe(const PacketPtr pkt)
         // Do not invent an access-map state for these requests.
         return;
     }
+    if (firstUsePredictor) {
+        const auto feedback = firstUsePredictor->observe(
+            pkt->getAddr(), pkt->isSecure(), prefetch);
+        stats.reuseSampleAccesses += feedback.sampled;
+        stats.reusePositiveTraining += feedback.positive;
+        stats.reuseNegativeTraining += feedback.negative;
+        stats.reuseUnusedSamples += feedback.unused;
+        if (feedback.evaluated != pa_maip::FirstUsePredictor::Unknown) {
+            stats.reuseSampleCorrect += feedback.correct;
+            stats.reuseSampleWrong += !feedback.correct;
+        }
+    }
     capture(pkt, maps->access(pkt->getAddr(), pkt->isSecure(), prefetch));
 }
 
@@ -102,6 +123,14 @@ AMPMHintTable::capture(const PacketPtr pkt, uint8_t state)
     assert(state <= pa_maip::Reused);
     pkt->req->setInsertionHint(this, state);
     (isPrefetch(pkt) ? stats.prefetchStates : stats.demandStates)[state]++;
+}
+
+pa_maip::FirstUsePredictor::Prediction
+AMPMHintTable::predictFirstUse(const PacketPtr pkt) const
+{
+    return firstUsePredictor ? firstUsePredictor->predict(
+        pkt->getAddr(), pkt->isSecure()) :
+        pa_maip::FirstUsePredictor::Unknown;
 }
 
 void
@@ -148,6 +177,29 @@ PAMAIP::notifyAccess(const PacketPtr pkt)
     hints->observe(pkt);
 }
 
+bool
+PAMAIP::predictFirstUse(const PacketPtr pkt,
+                       const std::shared_ptr<PAMAIPReplData>& data,
+                       bool &promoted)
+{
+    if (!hints->predictsFirstUse()) {
+        return false;
+    }
+    const auto prediction = hints->predictFirstUse(pkt);
+    if (prediction == pa_maip::FirstUsePredictor::Unknown) {
+        stats.firstUsePredictUnknown++;
+        return false;
+    }
+    promoted = prediction == pa_maip::FirstUsePredictor::Reuse;
+    data->rrpv = promoted ? 0 : maxRRPV;
+    if (promoted) {
+        stats.firstUsePredictHigh++;
+    } else {
+        stats.firstUsePredictLow++;
+    }
+    return true;
+}
+
 void
 PAMAIP::notifyDataUse(const std::shared_ptr<ReplacementData>& replacement_data,
                      const PacketPtr pkt)
@@ -156,7 +208,10 @@ PAMAIP::notifyDataUse(const std::shared_ptr<ReplacementData>& replacement_data,
     if (pkt->isDemand() && !isPrefetch(pkt) && data->consumeDemand()) {
         stats.fillConsumptions++;
         sampleDemandMiss(data->team);
-        if (protectDemand) {
+        bool promoted = false;
+        if (predictFirstUse(pkt, data, promoted)) {
+            stats.promotions += promoted;
+        } else if (protectDemand) {
             data->rrpv = 0;
             stats.protectedDemandFills++;
         }
@@ -190,19 +245,27 @@ PAMAIP::touch(const std::shared_ptr<ReplacementData>& replacement_data,
         // AMPM has observed an earlier demand use absorbed by L1.
         data->consumeDemand();
     }
+    const bool first_use = !prefetch && data->unusedPrefetch;
     if (prefetch) {
         stats.prefetchHits++;
-    } else if (data->unusedPrefetch) {
+    } else if (first_use) {
         stats.firstUses++;
-        if (use_map ? state == pa_maip::Prefetched : suppressFirstHit) {
-            stats.suppressedFirstUses++;
-        }
     }
-    const bool promoted = use_map ? data->touchMap(prefetch, state) :
-                                   data->touch(prefetch, suppressFirstHit);
+    bool promoted = false;
+    const bool predicted = first_use && predictFirstUse(pkt, data, promoted);
+    if (predicted) {
+        data->consumeDemand();
+    } else {
+        promoted = use_map ? data->touchMap(prefetch, state) :
+                            data->touch(prefetch, suppressFirstHit);
+    }
+    if (first_use && !promoted &&
+        (use_map ? state == pa_maip::Prefetched : suppressFirstHit)) {
+        stats.suppressedFirstUses++;
+    }
     if (promoted) {
         stats.promotions++;
-        if (use_map && state == pa_maip::Init) {
+        if (!predicted && use_map && state == pa_maip::Init) {
             stats.mapInitPromotions++;
         }
     } else if (use_map && !prefetch && state == pa_maip::Prefetched) {
@@ -331,7 +394,19 @@ AMPMHintTable::HintStats::HintStats(statistics::Group *parent)
     ADD_STAT(demandStates, statistics::units::Count::get(),
              "Demand requests by pre-access map state"),
     ADD_STAT(prefetchStates, statistics::units::Count::get(),
-             "Prefetch requests by pre-access map state")
+             "Prefetch requests by pre-access map state"),
+    ADD_STAT(reuseSampleAccesses, statistics::units::Count::get(),
+             "Requests observed by the independent first-use sampler"),
+    ADD_STAT(reusePositiveTraining, statistics::units::Count::get(),
+             "Sampled prefetches receiving a second demand use"),
+    ADD_STAT(reuseNegativeTraining, statistics::units::Count::get(),
+             "Sampled prefetches retired after exactly one demand use"),
+    ADD_STAT(reuseUnusedSamples, statistics::units::Count::get(),
+             "Sampled prefetches retired unused, not training second use"),
+    ADD_STAT(reuseSampleCorrect, statistics::units::Count::get(),
+             "Confident first-use predictions matching sampled outcomes"),
+    ADD_STAT(reuseSampleWrong, statistics::units::Count::get(),
+             "Confident first-use predictions missing sampled outcomes")
 {
     demandStates.init(4);
     prefetchStates.init(4);
@@ -380,7 +455,13 @@ PAMAIP::PolicyStats::PolicyStats(statistics::Group *parent, unsigned levels)
     ADD_STAT(followerBrripFills, statistics::units::Count::get(),
              "Follower fills using BRRIP"),
     ADD_STAT(selector, statistics::units::Count::get(),
-             "Current 10-bit insertion selector, high favors BRRIP")
+             "Current 10-bit insertion selector, high favors BRRIP"),
+    ADD_STAT(firstUsePredictHigh, statistics::units::Count::get(),
+             "First prefetch consumptions promoted by reuse prediction"),
+    ADD_STAT(firstUsePredictLow, statistics::units::Count::get(),
+             "First prefetch consumptions demoted by no-reuse prediction"),
+    ADD_STAT(firstUsePredictUnknown, statistics::units::Count::get(),
+             "First prefetch consumptions using the original policy")
 {
     insertions.init(levels);
 }
