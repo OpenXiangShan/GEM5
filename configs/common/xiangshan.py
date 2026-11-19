@@ -474,6 +474,7 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
         cpu.mlpMissPatternTableSize = args.mlp_miss_pattern_table_size
         cpu.mlpDistanceTableSize = args.mlp_distance_table_size
         cpu.mlpLongLatencyCacheDepth = args.mlp_long_latency_cache_depth
+        cpu.enableLoadTriple = args.enable_load_triple
         cpu.enableDip = args.enable_dip
         cpu.dipSamplePeriod = args.dip_sample_period
         cpu.enableTea = args.enable_tea
@@ -507,6 +508,7 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
             bp_db_switches = []
 
         test_sys.cpu[i].branchPred = DecoupledBPUWithBTB(
+            enableBpuProfiler=args.enable_bpu_profiler,
             bpDBSwitches=bp_db_switches,
         )
         test_sys.cpu[i].branchPred.isDumpMisspredPC = True
@@ -1063,6 +1065,16 @@ def xiangshan_system_init(*, smt=False):
         action="store_true",
         default=False,
         help="Disable direction TAGE sources in kmhv3 and force MGSC standalone SC prediction",
+    )
+    parser.add_argument(
+        "--enable-bpu-profiler",
+        action="store_true",
+        help="Collect detailed BPU CSV profiles and phase histories",
+    )
+    parser.add_argument(
+        "--enable-load-triple",
+        action="store_true",
+        help="Collect repeated committed load PC/address/value triples",
     )
     parser.add_argument(
         "--enable-dip", dest="enable_dip", action="store_true", default=None,
