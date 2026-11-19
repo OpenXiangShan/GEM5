@@ -390,6 +390,7 @@ jobs:
                               with log_path.open(errors="replace") as log:
                                   node = next((line[6:].strip() for line in islice(log, 3)
                                                if line.startswith("host: ")), "")
+                          node = node.split(".", 1)[0]
                           if name in already_done:
                               progress(logging.INFO, "%s is State.FINISHED, skipping", labels[name])
                               finished.add(name)
