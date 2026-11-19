@@ -91,8 +91,7 @@ def setKmhV3Params(args, system):
             cpu.scheduler = KMHV3SpMTScheduler()
         else:
             cpu.scheduler = KMHV3Scheduler()
-        
-        cpu.scheduler.enableFpSpecWakeup = True
+
         cpu.scheduler.disableAllRegArb()
         for iq in cpu.scheduler.IQs:
             iq.deferNewEnqueueSelection = not args.smt
