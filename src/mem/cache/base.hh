@@ -430,6 +430,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
      * the Python SimObject parameter mshr_alloc_per_cycle.
      */
     const int mshrAllocPerCycle;
+    const bool demandMshrsBeforePrefetches;
+    const bool demandReadsBeforeEvictions;
 
     /** Compression method being used. */
     compression::Base* compressor;
@@ -1380,6 +1382,9 @@ class BaseCache : public ClockedObject, public CacheAccessor
         statistics::Scalar MSHRAliasFails;
 
         statistics::Scalar FindHitInWriteBuffer;
+
+        statistics::Scalar demandMshrPrioritySelections;
+        statistics::Scalar demandReadEvictionSelections;
 
         /** Number of prefetch req Tag read fail because of load. */
         mutable statistics::Scalar prefetchTagReadFails;

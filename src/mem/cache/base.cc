@@ -204,6 +204,8 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       lastTagAccessCheckCycle(0),
       lastMSHRAllocCycle(0),
       mshrAllocPerCycle(p.mshr_alloc_per_cycle),
+      demandMshrsBeforePrefetches(p.demand_mshrs_before_prefetches),
+      demandReadsBeforeEvictions(p.demand_reads_before_evictions),
       compressor(p.compressor),
       prefetcher(p.prefetcher),
       writeAllocator(p.write_allocator),
@@ -1608,8 +1610,36 @@ BaseCache::getNextQueueEntry()
     // Check both MSHR queue and write buffer for potential requests,
     // note that null does not mean there is no request, it could
     // simply be that it is not ready
-    MSHR *miss_mshr  = mshrQueue.getNext();
+    MSHR *miss_mshr = mshrQueue.getNext();
+    if (demandMshrsBeforePrefetches && miss_mshr &&
+        miss_mshr->hasFromPref() && !miss_mshr->hasFromCPU()) {
+        if (MSHR *demand = mshrQueue.getReadyDemand()) {
+            if (system->prefetchTrace) {
+                system->prefetchTrace->packet("CACHE_ARB", *this, cacheLevel,
+                    demand->getTarget()->pkt, "ready_demand_before_prefetch",
+                    miss_mshr->getTarget()->pkt->req->analysisPrefetchId);
+            }
+            miss_mshr = demand;
+            stats.demandMshrPrioritySelections++;
+        }
+    }
     WriteQueueEntry *wq_entry = writeBuffer.getNext();
+
+    if (demandReadsBeforeEvictions && miss_mshr && wq_entry &&
+        !writeBuffer.isFull() && miss_mshr->hasFromCPU() &&
+        miss_mshr->getTarget()->pkt->isRead() && !miss_mshr->needsWritable() &&
+        !miss_mshr->getTarget()->pkt->req->isUncacheable() &&
+        wq_entry->getTarget()->pkt->isEviction()) {
+        if (auto *conflict = writeBuffer.findPending(miss_mshr)) {
+            return conflict;
+        }
+        if (system->prefetchTrace) {
+            system->prefetchTrace->packet("CACHE_ARB", *this, cacheLevel,
+                miss_mshr->getTarget()->pkt, "demand_read_before_eviction");
+        }
+        stats.demandReadEvictionSelections++;
+        return miss_mshr;
+    }
 
     // In order to align with the Tilelink protocol,
     // we will adjust the priority of the write-back to the highest.
@@ -3384,6 +3414,10 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of MSHR Alias fails (VA diff)"),
     ADD_STAT(FindHitInWriteBuffer, statistics::units::Count::get(),
              "number of hits in write buffer when missing in cache"),
+    ADD_STAT(demandMshrPrioritySelections, statistics::units::Count::get(),
+             "Arbiter calls selecting a ready demand before a pure prefetch head"),
+    ADD_STAT(demandReadEvictionSelections, statistics::units::Count::get(),
+             "Arbiter calls returning a demand read before an ordinary eviction"),
     ADD_STAT(prefetchTagReadFails, statistics::units::Count::get(),
              "number of prefetch req Tag read fail because of load"),
     ADD_STAT(dataExpansions, statistics::units::Count::get(),
