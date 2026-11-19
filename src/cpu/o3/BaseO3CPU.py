@@ -164,6 +164,23 @@ class BaseO3CPU(BaseCPU):
                                     "per-thread")
     enablePredecode = Param.Bool(False,
         "Enable the RISC-V frontend predecode pipeline")
+    enableFastFetch = Param.Bool(False,
+        "Enable the post-recovery fast fetch bypass")
+    fastFetchAllowBlockedDecode = Param.Bool(
+        False,
+        "Allow the first fast bundle into empty Decode buffers while blocked",
+    )
+    enableFastFetchContinuation = Param.Bool(
+        False, "Continue fast fetch beyond the first post-recovery bundle"
+    )
+    enableFastFetchMaskRouting = Param.Bool(
+        False, "Route each fetch packet once between fast and normal paths"
+    )
+    enableFastFetchOnEmpty = Param.Bool(
+        False, "Rearm mask-routed fast fetch when IBuffer and normal link are empty"
+    )
+    fastFetchBytes = Param.Unsigned(64,
+        "Maximum number of bytes read by post-recovery fast fetch")
 
     renameToDecodeDelay = Param.Cycles(1, "Rename to decode delay")
     iewToDecodeDelay = Param.Cycles(1, "Issue/Execute/Writeback to decode "

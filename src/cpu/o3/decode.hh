@@ -114,6 +114,13 @@ class Decode
     /** Sets pointer to time buffer coming from fetch. */
     void setFetchQueue(TimeBuffer<FetchStruct> *fq_ptr);
 
+    bool fastFetchBufferEmpty(ThreadID tid) const
+    {
+        return fixedbuffer[tid].empty() && stallBuffer[tid].empty();
+    }
+
+    bool canStartEmptyFastFetch(ThreadID tid) const;
+
     /** Sets pointer to list of active threads. */
     void setActiveThreads(std::list<ThreadID> *at_ptr);
 
@@ -154,7 +161,8 @@ class Decode
     /** Common control checks, performed only after consuming the instruction. */
     StallReason processInstControl(const DynInstPtr &inst, ThreadID tid);
     StaticInstPtr prepareFusion(const DynInstPtr &first,
-                                const DynInstPtr &second);
+                                const DynInstPtr &second,
+                                bool update_ignore_pc = true);
     DynInstPtr applyFusion(const DynInstPtr &first, const DynInstPtr &second,
                           const StaticInstPtr &fused_inst);
 
@@ -195,6 +203,8 @@ class Decode
      * sorted by thread.
      */
     void moveInstsToBuffer();
+    void routeFastFetchPacket();
+    void acceptFastFetch();
 
     void checkSquash();
 
@@ -266,6 +276,16 @@ class Decode
     /** Wire to get fetch's output from fetch queue. */
     TimeBuffer<FetchStruct>::wire fromFetch;
 
+    /** One-cycle-earlier fast-fetch view of the fetch time buffer. */
+    TimeBuffer<FetchStruct>::wire fromFastFetch;
+    bool fastFetchContinuing[MaxThreads]{};
+    uint64_t fastFetchEpoch[MaxThreads]{};
+    uint64_t fastFetchClosedEpoch[MaxThreads]{};
+    bool fastFetchNormalOnly[MaxThreads]{};
+    uint64_t fastFetchBlockId[MaxThreads]{};
+    unsigned fastFetchBlockInsts[MaxThreads]{};
+    bool fastFetchBlockComplete[MaxThreads]{};
+
     /** Queue of all instructions coming from fetch this cycle. */
     boost::circular_buffer<DynInstPtr> fixedbuffer[MaxThreads];
 
@@ -294,6 +314,12 @@ class Decode
 
     /** Fetch to decode delay. */
     Cycles fetchToDecodeDelay;
+
+    /** Whether the post-recovery fast path is enabled. */
+    const bool enableFastFetch;
+    const bool fastFetchAllowBlockedDecode;
+    const bool enableFastFetchContinuation;
+    const bool enableFastFetchMaskRouting;
 
     /** Decode to fetch feedback delay for stage backpressure. */
     Cycles decodeToFetchDelay;
@@ -358,7 +384,7 @@ class Decode
         statistics::Scalar mispredictedByPC;
         /** stat for total number of instructions that mispredicted due to npc. */
         statistics::Scalar mispredictedByNPC;
-        
+
         // Decode bubbles statistics (analogous to fetchBubbles)
         /** Unutilized decode pipeline slots while there is no backend-stall */
         statistics::Scalar decodeBubbles;
