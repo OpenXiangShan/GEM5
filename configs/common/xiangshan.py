@@ -942,8 +942,12 @@ def xiangshan_system_init(*, smt=False):
         help="Use BTBTAGEUpperBound in kmhv3 instead of the default BTBTAGE",
     )
     parser.add_argument(
-        "--split-l1-dtlb", action="store_true",
-        help="Separate load, store and prefetch L1 DTLBs",
+        "--split-l1-dtlb", action="store_true", default=True,
+        help="Use separate load, store and prefetch L1 DTLBs (default)",
+    )
+    parser.add_argument(
+        "--disable-split-l1-dtlb", action="store_false", dest="split_l1_dtlb",
+        help="Use a unified L1 DTLB",
     )
     parser.add_argument(
         "--disable-l1-direct-compression",

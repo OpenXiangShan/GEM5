@@ -55,7 +55,7 @@ class RiscvMMU(BaseMMU):
 
     itb = RiscvTLB(entry_type="instruction",
     next_level=Parent.l2_shared)
-    dtb = RiscvTLB(entry_type="data",
+    dtb = RiscvTLB(entry_type="data", size=48,
                    next_level=Parent.l2_shared, is_dtlb=True)
     pma_checker = Param.PMAChecker(PMAChecker(), "PMA Checker")
     pmp = Param.PMP(PMP(), "Physical Memory Protection Unit")
@@ -63,7 +63,7 @@ class RiscvMMU(BaseMMU):
     def splitDataTLB(self, compression):
         for name in ('stb', 'ptb'):
             peer = RiscvTLB(
-                entry_type="data", is_dtlb=True, walker=NULL,
+                entry_type="data", size=48, is_dtlb=True, walker=NULL,
                 next_level=Parent.l2_shared,
                 is_open_nextline=Parent.dtb.is_open_nextline,
                 regulation_num=Parent.dtb.regulation_num,
