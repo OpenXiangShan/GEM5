@@ -1114,24 +1114,48 @@ def iter_accesses(connection: sqlite3.Connection) -> Iterable[Access]:
         row[1] for row in connection.execute("PRAGMA table_info(BOPInputTrace)")
     }
     has_rr_insert_count = "RRInsertCount" in bop_columns
-    rr_columns = (
-        "v.RRInsertCount, p.RRInsertCount"
-        if has_rr_insert_count
-        else "NULL, NULL"
-    )
-    query = f"""
-        SELECT l.AccessSeq, l.Tick, v.TrainAddr,
-               l.ContextId, l.HasContextId, l.Secure,
-               l.CacheMiss, l.LateMSHR, l.LatePFQ,
-               l.PfSource, l.PfFirstHit,
-               {rr_columns}
-        FROM L2AccessTrace AS l
-        JOIN BOPInputTrace AS v ON v.AccessSeq = l.AccessSeq
-            AND v.BOPKind = 'VBOP'
-        JOIN BOPInputTrace AS p ON p.AccessSeq = l.AccessSeq
-            AND p.BOPKind = 'PBOP'
-        ORDER BY l.AccessSeq
-    """
+    bop_kinds = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT DISTINCT BOPKind FROM BOPInputTrace"
+        )
+    }
+    if "CompoundBOP" in bop_kinds:
+        rr_columns = (
+            "c.RRInsertCount, c.RRInsertCount"
+            if has_rr_insert_count
+            else "NULL, NULL"
+        )
+        query = f"""
+            SELECT l.AccessSeq, l.Tick, c.TrainAddr,
+                   l.ContextId, l.HasContextId, l.Secure,
+                   l.CacheMiss, l.LateMSHR, l.LatePFQ,
+                   l.PfSource, l.PfFirstHit,
+                   {rr_columns}
+            FROM L2AccessTrace AS l
+            JOIN BOPInputTrace AS c ON c.AccessSeq = l.AccessSeq
+                AND c.BOPKind = 'CompoundBOP'
+            ORDER BY l.AccessSeq
+        """
+    else:
+        rr_columns = (
+            "v.RRInsertCount, p.RRInsertCount"
+            if has_rr_insert_count
+            else "NULL, NULL"
+        )
+        query = f"""
+            SELECT l.AccessSeq, l.Tick, v.TrainAddr,
+                   l.ContextId, l.HasContextId, l.Secure,
+                   l.CacheMiss, l.LateMSHR, l.LatePFQ,
+                   l.PfSource, l.PfFirstHit,
+                   {rr_columns}
+            FROM L2AccessTrace AS l
+            JOIN BOPInputTrace AS v ON v.AccessSeq = l.AccessSeq
+                AND v.BOPKind = 'VBOP'
+            JOIN BOPInputTrace AS p ON p.AccessSeq = l.AccessSeq
+                AND p.BOPKind = 'PBOP'
+            ORDER BY l.AccessSeq
+        """
     for row in connection.execute(query):
         yield Access(
             seq=int(row[0]),

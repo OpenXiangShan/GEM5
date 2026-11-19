@@ -884,6 +884,87 @@ class BOPPrefetcher(QueuedPrefetcher):
         300,
         "Cycles before a student predicted address becomes visible in the student filter")
 
+
+class CompoundBOPPrefetcher(QueuedPrefetcher):
+    type = "CompoundBOPPrefetcher"
+    cxx_class = "gem5::prefetch::CompoundBOP"
+    cxx_header = "mem/cache/prefetch/compound_bop.hh"
+
+    use_virtual_addresses = True
+    prefetch_on_pf_hit = True
+    on_read = True
+    on_write = False
+    on_data = True
+    on_inst = False
+
+    vbop_offsets = VectorParam.Int([
+        -117, -147, -91, 117, 147, 91,
+        -256, -250, -243, -240, -225, -216, -200,
+        -192, -180, -162, -160, -150, -144, -135, -128,
+        -125, -120, -108, -100, -96, -90, -81, -80,
+        -75, -72, -64, -60, -54, -50, -48, -45,
+        -40, -36, 32, 36, 40, 45, 48,
+        50, 54, 60, 64, 72, 75, 80, 81,
+        90, 96, 100, 108, 120, 125, 128, 135,
+        144, 150, 160, 162, 180, 192, 200, 216,
+        225, 240, 243, 250,
+    ], "VBOP family offsets; entries before the minimum form the Teacher "
+       "priority prefix")
+    pbop_offsets = VectorParam.Int([
+        x for magnitude in
+        [1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 27, 30]
+        for x in (magnitude, -magnitude)
+    ] + [-32], "PBOP family offsets merged into the sorted Teacher body")
+
+    teacher_tests_per_access = Param.Unsigned(
+        2, "Number of ordered Teacher offset tests per demand access")
+    teacher_score_max = Param.Unsigned(20, "Teacher score phase threshold")
+    teacher_round_max = Param.Unsigned(50, "Teacher round phase threshold")
+    teacher_fallback_bad_score = Param.Unsigned(
+        2, "Strict score threshold for cold-start global-best fallback")
+    teacher_vbop_bad_score = Param.Unsigned(
+        2, "Strict qualification threshold for the VBOP family winner")
+    teacher_pbop_bad_score = Param.Unsigned(
+        0, "Strict qualification threshold for the PBOP family winner")
+
+    rr_size = Param.Unsigned(256, "Entries in each shared RR bank")
+    tag_bits = Param.Unsigned(12, "RR tag width")
+    delay_queue_size = Param.Unsigned(16, "Shared RR delay queue entries")
+    delay_queue_cycles = Param.Cycles(300, "Shared RR insertion delay")
+    cross_page = Param.Bool(True, "Allow cross-page Compound BOP predictions")
+
+    student_vbop_slots = Param.Unsigned(4, "VBOP Student partition entries")
+    student_pbop_slots = Param.Unsigned(4, "PBOP Student partition entries")
+    student_conf_alpha = Param.Float(
+        0.0, "Student entry confidence smoothing factor")
+    student_filter_entries = Param.Unsigned(
+        2048, "Entries in the shared Student coverage filter")
+    student_hash_addr_bits = Param.Unsigned(
+        50, "Address width used by the pairs_low9 Student hash")
+    student_vbop_delay_queue_size = Param.Unsigned(
+        64, "Pending delayed VBOP Student predictions")
+    student_vbop_delay_cycles = Param.Cycles(
+        300, "Delay before a VBOP Student prediction becomes visible")
+    student_primary_coverage_threshold_pct = Param.Unsigned(
+        0, "Minimum primary coverage as a percentage of phase accesses")
+    student_extra_marginal_threshold_pct = Param.Unsigned(
+        2, "Minimum extra marginal coverage as a percentage of phase accesses")
+
+    issue_confidence_threshold = Param.Unsigned(
+        14, "Family issue confidence values below this threshold may issue")
+    issue_confidence_max = Param.Unsigned(15, "Maximum family issue confidence")
+    issue_confidence_pass_decrement = Param.Unsigned(
+        1, "Family issue confidence decrement after qualification")
+    issue_confidence_fail_increment = Param.Unsigned(
+        2, "Family issue confidence increment after rejection")
+
+    primary_fifo_entries = Param.Unsigned(8, "Primary output FIFO entries")
+    extra_fifo_entries = Param.Unsigned(8, "Extra output FIFO entries")
+    primary_arbiter_slots = Param.Unsigned(3, "Primary slots per arbitration period")
+    extra_arbiter_slots = Param.Unsigned(1, "Extra slots per arbitration period")
+    recent_filter_entries = Param.Unsigned(
+        128, "Shared recent-address filter entries before both output FIFOs")
+
 class XSPhysicalSmallBOP(BOPPrefetcher):
     score_max = 31
     round_max = 50
@@ -1435,6 +1516,11 @@ class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
                                      "Large BOP used in composite prefetcher ")
     bop_small = Param.BOPPrefetcher(SmallBOPPrefetcher(is_sub_prefetcher=True),
                                      "Small BOP used in composite prefetcher ")
+    compound_bop = Param.CompoundBOPPrefetcher(
+        CompoundBOPPrefetcher(is_sub_prefetcher=True),
+        "Single merged Teacher and partitioned Student Compound BOP")
+    use_compound_bop = Param.Bool(
+        False, "Use Compound BOP instead of the legacy large/small BOP pair")
     despacito_stream = Param.DespacitoStreamPrefetcher(DespacitoStreamPrefetcher(is_sub_prefetcher=True),
                                                        "DespacitoStream used in composite prefetcher")
     enable_bop = Param.Bool(False, "Enable BOP")

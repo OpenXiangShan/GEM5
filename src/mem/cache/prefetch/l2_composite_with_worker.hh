@@ -9,6 +9,7 @@
 #include "mem/cache/prefetch/cdp.hh"
 #include "mem/cache/prefetch/cmc.hh"
 #include "mem/cache/prefetch/composite_with_worker.hh"
+#include "mem/cache/prefetch/compound_bop.hh"
 #include "mem/cache/prefetch/despacito_stream.hh"
 #include "mem/cache/prefetch/lldp.hh"
 #include "params/L2CompositeWithWorkerPrefetcher.hh"
@@ -66,10 +67,12 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     CDP* cdp;
     BOP* largeBOP;
     BOP* smallBOP;
+    CompoundBOP* compoundBOP;
     CMCPrefetcher* cmc;
     DespacitoStreamPrefetcher* despacitoStream;
 
     const bool enableBOP;
+    const bool useCompoundBOP;
     const bool enableCDP;
     const bool enableCMC;
     const bool enableDespacitoStream;

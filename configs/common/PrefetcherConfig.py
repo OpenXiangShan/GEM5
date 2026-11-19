@@ -7,7 +7,11 @@ from m5.objects import *
 from m5.util import fatal
 from common.Caches import *
 from common import ObjectList
-from m5.objects.Prefetcher import XSPhysicalSmallBOP, XSVirtualLargeBOP
+from m5.objects.Prefetcher import (
+    CompoundBOPPrefetcher,
+    XSPhysicalSmallBOP,
+    XSVirtualLargeBOP,
+)
 
 PF_SOURCE_NAMES = [
     "PF_NONE",
@@ -499,10 +503,18 @@ def _configure_l2_composite_default(prefetcher):
 
 
 def configure_l2_teacher_student_bop(prefetcher):
+    prefetcher.use_compound_bop = False
     prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,
                                              enable_adaptoffset=False)
     prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,
                                               enable_adaptoffset=False)
+
+
+def configure_l2_compound_bop(prefetcher):
+    prefetcher.enable_bop = True
+    prefetcher.use_compound_bop = True
+    prefetcher.compound_bop = CompoundBOPPrefetcher(
+        is_sub_prefetcher=True)
 
 
 def _configure_l2_composite_kmh_align(prefetcher):

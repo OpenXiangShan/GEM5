@@ -19,9 +19,11 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
       cdp(p.cdp),
       largeBOP(p.bop_large),
       smallBOP(p.bop_small),
+      compoundBOP(p.compound_bop),
       cmc(p.cmc),
       despacitoStream(p.despacito_stream),
       enableBOP(p.enable_bop),
+      useCompoundBOP(p.use_compound_bop),
       enableCDP(p.enable_cdp),
       enableCMC(p.enable_cmc),
       enableDespacitoStream(p.enable_despacito_stream),
@@ -33,6 +35,7 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
     cdp->setSharedFilterContextQualified(true);
     largeBOP->setSharedFilterContextQualified(true);
     smallBOP->setSharedFilterContextQualified(true);
+    compoundBOP->setSharedFilterContextQualified(true);
     cmc->setSharedFilterContextQualified(true);
     despacitoStream->setSharedFilterContextQualified(true);
     cdp->pfLRUFilter = &pfLRUFilter;
@@ -41,6 +44,10 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
     cmc->filter = &pfLRUFilter;
     despacitoStream->filter = &pfLRUFilter;
     assert(lldp);
+    assert(compoundBOP);
+    fatal_if(useCompoundBOP && !usePFBuffer,
+        "%s: Compound BOP requires the parent prefetch buffer for its "
+        "one-request-per-cycle output model", name());
     cdp->parentRid = p.sys->getRequestorId(this);
 }
 
@@ -50,6 +57,9 @@ L2CompositeWithWorkerPrefetcher::prefetchUnused(Addr paddr, PrefetchSourceType p
     Base::prefetchUnused(pfSource);
     if (pfSource == PrefetchSourceType::CDP) {
         cdp->recordUnusedPrefetch(paddr);
+    } else if (useCompoundBOP &&
+            pfSource == PrefetchSourceType::HWP_BOP) {
+        compoundBOP->recordUnused(paddr);
     }
 }
 
@@ -84,24 +94,36 @@ L2CompositeWithWorkerPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std:
         const Addr pc = pfi.hasPC() ? pfi.getPC() : 0;
         const uint64_t context_id = pfi.hasContextId() ?
             pfi.contextId() : 0;
-        if (archDBer && archDBer->dumpBopInputTrace &&
-            activeAccessSeq != 0) {
-            archDBer->bopInputTraceWrite(
-                activeAccessSeq, curTick(), "VBOP", pfi.getAddr(),
-                largeBOP->getRRInsertCount(), pfi.isCacheMiss(), bop_late,
-                static_cast<int>(pf_source), pc, pfi.hasPC(), context_id,
-                pfi.hasContextId());
+        if (useCompoundBOP) {
+            if (archDBer && archDBer->dumpBopInputTrace &&
+                activeAccessSeq != 0) {
+                archDBer->bopInputTraceWrite(
+                    activeAccessSeq, curTick(), "CompoundBOP", pfi.getAddr(),
+                    compoundBOP->getRRInsertCount(), pfi.isCacheMiss(),
+                    bop_late, static_cast<int>(pf_source), pc, pfi.hasPC(),
+                    context_id, pfi.hasContextId());
+            }
+            compoundBOP->calculatePrefetch(pfi, addresses, bop_late);
+        } else {
+            if (archDBer && archDBer->dumpBopInputTrace &&
+                activeAccessSeq != 0) {
+                archDBer->bopInputTraceWrite(
+                    activeAccessSeq, curTick(), "VBOP", pfi.getAddr(),
+                    largeBOP->getRRInsertCount(), pfi.isCacheMiss(), bop_late,
+                    static_cast<int>(pf_source), pc, pfi.hasPC(), context_id,
+                    pfi.hasContextId());
+            }
+            largeBOP->calculatePrefetch(pfi, addresses, bop_late);
+            if (archDBer && archDBer->dumpBopInputTrace &&
+                activeAccessSeq != 0) {
+                archDBer->bopInputTraceWrite(
+                    activeAccessSeq, curTick(), "PBOP", pfi.getAddr(),
+                    smallBOP->getRRInsertCount(), pfi.isCacheMiss(), bop_late,
+                    static_cast<int>(pf_source), pc, pfi.hasPC(), context_id,
+                    pfi.hasContextId());
+            }
+            smallBOP->calculatePrefetch(pfi, addresses, bop_late);
         }
-        largeBOP->calculatePrefetch(pfi, addresses, bop_late);
-        if (archDBer && archDBer->dumpBopInputTrace &&
-            activeAccessSeq != 0) {
-            archDBer->bopInputTraceWrite(
-                activeAccessSeq, curTick(), "PBOP", pfi.getAddr(),
-                smallBOP->getRRInsertCount(), pfi.isCacheMiss(), bop_late,
-                static_cast<int>(pf_source), pc, pfi.hasPC(), context_id,
-                pfi.hasContextId());
-        }
-        smallBOP->calculatePrefetch(pfi, addresses, bop_late);
     }
     if (enableDespacitoStream) {
         despacitoStream->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::DespacitoStream);
@@ -177,7 +199,14 @@ L2CompositeWithWorkerPrefetcher::notify(const PacketPtr &pkt, const PrefetchInfo
             has_context_id ? pfi.contextId() : 0, has_context_id,
             pfi.isSecure(), pfi.isCacheMiss(), late_mshr, late_pfq,
             static_cast<int>(pf_source), pfi.isEverPrefetched(),
-            pfi.isPfHit(), pfi.isPfFirstHit(), enableBOP, enableBOP);
+            pfi.isPfHit(), pfi.isPfFirstHit(), enableBOP,
+            enableBOP && !useCompoundBOP);
+    }
+
+    if (useCompoundBOP && !pfi.isCacheMiss() && pfi.isPfFirstHit() &&
+            pfi.getXsMetadata().prefetchSource ==
+                PrefetchSourceType::HWP_BOP) {
+        compoundBOP->recordUseful(pfi.getAddr());
     }
 
     WorkerPrefetcher::notify(pkt, pfi);
@@ -216,6 +245,7 @@ L2CompositeWithWorkerPrefetcher::setParentInfo(System *sys, ProbeManager *pm, Ca
     cdp->setStatsPtr(&prefetchStats);
     largeBOP->setParentInfo(sys, pm, _cache, blk_size);
     smallBOP->setParentInfo(sys, pm, _cache, blk_size);
+    compoundBOP->setParentInfo(sys, pm, _cache, blk_size);
     cmc->setParentInfo(sys, pm, _cache, blk_size);
     despacitoStream->setParentInfo(sys, pm, _cache, blk_size);
     lldp->setParentInfo(sys, pm, _cache, blk_size);
@@ -320,10 +350,16 @@ L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriorit
     }
     bool L2PFsent = false;
     L2PFsent = ticksToCycles(latestTransferTick) == ticksToCycles(curTick());
-    if (!L2PFsent && largeBOP->hasPFRequestsInBuffer()){
+    if (!L2PFsent && useCompoundBOP &&
+            compoundBOP->hasPFRequestsInBuffer()) {
+        L2PFsent = compoundBOP->GetPFRequestsFromBuffer(addresses);
+    }
+    if (!L2PFsent && !useCompoundBOP &&
+            largeBOP->hasPFRequestsInBuffer()){
         L2PFsent = largeBOP->GetPFRequestsFromBuffer(addresses);
     }
-    if (!L2PFsent && smallBOP->hasPFRequestsInBuffer()){
+    if (!L2PFsent && !useCompoundBOP &&
+            smallBOP->hasPFRequestsInBuffer()){
         L2PFsent = smallBOP->GetPFRequestsFromBuffer(addresses);
     }
     if (!L2PFsent && despacitoStream->hasPFRequestsInBuffer()){
@@ -344,8 +380,11 @@ L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriorit
     return L2PFsent;
 }
 bool L2CompositeWithWorkerPrefetcher::hasPFRequestsInBuffer() {
-    return  largeBOP->hasPFRequestsInBuffer() ||
-            smallBOP->hasPFRequestsInBuffer() ||
+    const bool bop_pending = useCompoundBOP ?
+        compoundBOP->hasPFRequestsInBuffer() :
+        (largeBOP->hasPFRequestsInBuffer() ||
+         smallBOP->hasPFRequestsInBuffer());
+    return  bop_pending ||
             cmc->hasPFRequestsInBuffer() ||
             cdp->hasPFRequestsInBuffer() ||
             despacitoStream->hasPFRequestsInBuffer();

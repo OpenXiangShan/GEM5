@@ -159,8 +159,12 @@ def setKmhV3IdealParams(args, system):
                     l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
                 l2_prefetcher = l2_wrapper.prefetcher
             if l2_prefetcher != NULL:
-                PrefetcherConfig.configure_l2_teacher_student_bop(
-                    l2_prefetcher)
+                if args.ideal_l2_bop_mode == "compound":
+                    PrefetcherConfig.configure_l2_compound_bop(
+                        l2_prefetcher)
+                else:
+                    PrefetcherConfig.configure_l2_teacher_student_bop(
+                        l2_prefetcher)
                 if hasattr(l2_prefetcher, 'offload_low_accuracy'):
                     l2_prefetcher.offload_low_accuracy = True
             system.tol2bus_list[i].forward_latency = 0

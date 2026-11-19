@@ -352,6 +352,12 @@ def addCommonOptions(parser, configure_xiangshan=False):
     parser.add_argument("--ideal-kmhv3", action= "store_true",
                         help="Use KunminghuV3 ideal params, which take priority over command-line arguments.")
 
+    parser.add_argument(
+        "--ideal-l2-bop-mode",
+        choices=("compound", "dual"),
+        default="compound",
+        help="Select the L2 BOP implementation used by idealkmhv3.py")
+
 
     # for warmup without switching cpu
     parser.add_argument("--warmup-insts-no-switch", action="store", type=int,

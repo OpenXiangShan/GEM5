@@ -1,15 +1,14 @@
 # TS-BOP 单 BOP Degree 研究与开发跟踪
 
 > 最后更新：2026-11-19
-> 当前阶段：阶段 2d 离线 replay 与机制收敛已完成；下一步进入阶段 3 功能实现。
+> 当前阶段：阶段 3 功能实现已完成；阶段 4 的 3 点 checkpoint IPC/流量 A/B 已完成，下一步进行实现后 trace 和 coverage 对齐。
 > 最终参数：`N2/R50/S20 + V2/P0 + Student 4+4 + SF2048 + degree 2 + 2% marginal + P8/E8 + RF128`。
 > 完整 10 点静态 replay：local coverage 为 `76.08% / 72.70%`，local sent/demand 为 `1.595 / 1.527`（checkpoint-weighted / access-weighted）；coverage 与双 BOP 基本持平，发送量降低 `13.3% / 9.5%`。
 > 已知上限：`gcc_200_5108` 仍比双 BOP 低 3.83 pp；该点作为单一学习域的已知风险保留，不再阻塞当前机制选择。
-> 状态：`L2AccessTrace`、`BOPInputTrace`、离线 replay、参数扫描和报告脚本已完成；
-> 58 项本地 Python replay 单测通过，测试代码按提交边界不纳入本次提交。
-> 语义修正：Student entry confidence 改为 VBOP/PBOP 子池分别选择 best/worst 并更新；
-> Teacher 的两个 family winner 也只在对应子池内查重和替换。现有阶段 2d 全局 pool
-> 更新结果保留为历史数据，采用新语义的完整 10 点结果仍需重新生成。
+> 状态：独立 `CompoundBOP` 已按冻结机制接入 `idealkmhv3.py`，完整构建、C++ 单测、
+> 58 项 Python replay 单测和配置冒烟已通过；3 个真实 checkpoint 的 20M warmup +
+> 20M measurement A/B 已完成，Compound 对双 BOP 的三点等权 IPC 几何平均为 +0.13%，实现后 trace 对齐仍待完成。
+> 阶段 3 确认调整：Student entry confidence 改为 VBOP/PBOP 子池分别选择 best/worst 并更新；阶段 2d 的全局 pool 更新结果保留为历史数据，需用新语义重新 replay。
 
 ## 1. 背景与目标
 
@@ -82,8 +81,8 @@ recent filter           = shared 128 entries, before both FIFOs
 ```
 
 `round_max=16/25`、`score_max=16/31`、pool `2+2`、Student filter 4096、Extra FIFO 4、recent
-filter `0/32/64/256` 均保留为 sensitivity。上述组合作为阶段 3 功能实现目标，
-静态结果只作为后续 closed-loop 验证的参考。`R50/S20` 允许 score threshold 提前结束；
+filter `0/32/64/256` 均保留为 sensitivity。上述组合已实现为独立 `CompoundBOP`，
+静态结果仍只作为实现后 closed-loop 验证的参考。`R50/S20` 允许 score threshold 提前结束；
 baseline 中 `cactusADM_163`、`bwaves_13153` 和 `milc_30106` 的 average rounds 分别为
 33.27、41.07 和 25.66，其余点主要由 round threshold 结束。
 
@@ -1328,8 +1327,57 @@ local resource replay。最终结论和后续实现统一以本节正式 runner 
 | 2b. 离线 replay/参数扫描 | 完成 | 10/10 精确校准；degree/threshold/top-N/FIFO/filter/仲裁最终汇总；58 个分析单测通过 |
 | 2c. 覆盖缺口归因 | 完成 | 逐 checkpoint coverage、offset 分布图、degree/pool/top-N/phase frequency/Student delay/hash/bad-score 对照 |
 | 2d. 最小机制优化 | 完成 | V2/P0 + family 独立 confidence 完成 10 点 replay；coverage 与双 BOP 持平并降低发送量 |
-| 3. 功能实现 | 待开始 | 独立 Compound BOP、family winner/gate、4+4 Student、P8/E8/RF128 |
-| 4. 实现后验证 | 未开始 | 实现后 trace/coverage 对齐、真实 checkpoint IPC 和带宽 A/B |
+| 3. 功能实现 | 完成 | 独立 CompoundBOP、family winner/gate、4+4 Student、P8/E8/RF128 已接入 idealkmhv3 |
+| 4. 实现后验证 | 部分完成 | 3 个真实 checkpoint 的 IPC/流量 A/B 已完成；同 checkpoint trace 与 coverage 对齐待运行 |
+
+### 8.1 阶段 3 实现结果
+
+- 新增独立 `CompoundBOP : Queued`，旧 `BOP` 和默认 `kmhv3.py` 路径保持不变；
+  L2 wrapper 通过 `use_compound_bop` 在旧双 BOP 与新实现之间切换。
+- Teacher 扫描表只由 `vbop_offsets` 和 `pbop_offsets` 派生，不保留第三份
+  `teacher_offsets` 参数；VBOP 最小 offset 之前的历史优先前缀保持原顺序，
+  其余 VBOP/PBOP offset 合并后按数值升序扫描，以保持现有 tie-break 行为。
+- 冷启动使用共享 Teacher global best fallback，严格要求 score `> 2`，并继续经过
+  fallback offset 所属 family 的独立 issue-confidence gate。
+- Student entry confidence 在 VBOP/PBOP 四槽子池内分别选择 best/worst 更新，
+  Teacher 的两个 family winner 也只在对应子池中查重和替换。
+- Primary/Extra 使用两个 8-entry 覆盖式 FIFO、共享 RF128 和 3:1
+  work-conserving 仲裁；请求统一使用 `HWP_BOP` source。
+- `gem5.opt`、`gem5.fast`、完整 `unittests.opt --unit-test`、58 项 Python replay 单测、
+  `py_compile`、`git diff --check` 和 CompoundBOP 配置冒烟均已通过。
+
+### 8.2 阶段 4 真实 checkpoint IPC A/B
+
+2026-11-19 使用新构建的 `build/RISCV/gem5.fast` 和 `idealkmhv3.py`，在相同
+checkpoint、CPU/cache 配置和 NEMU REF 下只切换
+`--ideal-l2-bop-mode={dual,compound}`。每个任务使用
+`--warmup-insts-no-switch=20000000 --maxinsts=40000000`，下表均取统计清零后的
+第二个 block；六个任务的 measurement `simInsts` 均约为 20M，且 difftest 正常结束。
+
+| checkpoint | dual IPC | compound IPC | IPC delta | HWP_BOP issued delta | HWP_BOP useful delta | HWP_BOP late delta | L2 data miss delta |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `bwaves_13153` | 3.258169 | 3.274571 | +0.503% | -12.918% | +7.718% | -24.029% | -2.445% |
+| `mcf_6753` | 0.748672 | 0.747137 | -0.205% | -0.545% | +3.840% | -3.689% | -0.098% |
+| `gcc_200_5108` | 2.201955 | 2.203859 | +0.086% | +2.037% | -5.241% | -3.202% | +2.207% |
+
+- 三点等权 IPC 几何平均 delta 为 **+0.128%**。三个等长 measurement 窗口直接汇总时，
+  HWP_BOP issued 为 -2.214%，useful 为 +4.494%，late 为 -7.940%，L2 data miss
+  为 -0.175%。该汇总只描述这三个有意挑选的敏感点，不代表 SPEC 全套结果。
+- `bwaves_13153` 是当前最明确的正向点：Compound 减少实际发送和 late，同时降低
+  L2 data miss，最终 IPC 提升约 0.50%。
+- `mcf_6753` 的 useful/late 方向改善且 L2 data miss 基本持平，但 IPC 仍回退
+  0.205%。这说明 family gate 修复消除了明显流量问题后，closed-loop 时序、cache
+  干扰或关键 miss 的及时性仍需用实现后 trace 继续定位。
+- `gcc_200_5108` IPC 基本持平，但 useful 下降、L2 data miss 上升，与离线 replay
+  已记录的 coverage 风险一致；该点不能仅凭 IPC 持平视为问题已关闭。
+- Compound 的 Primary/Extra generated、RF128 filter、enqueue/dequeue、overwrite、
+  local/downstream late 和 first-useful 详细计数，以及双 BOP 对照原始计数，保存在
+  `docs/design-docs/images/ts_bop_checkpoint_ipc_ab.csv`。其中 Primary/Extra useful
+  是按 `isPfFirstHit()` 做的角色归因，不应与父预取器可能包含重复命中的
+  `pfUseful_srcs::HWP_BOP` 直接相加比较。
+- 本次输出目录为 `/tmp/ts_bop_checkpoint_ab_20261119/full`。下一步仍需对相同
+  checkpoint 重新采集实现后 trace，检查 actual coverage、winner/offset 时间线和
+  Primary/Extra 的及时性。
 
 ## 9. 已知风险
 
