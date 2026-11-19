@@ -26,6 +26,7 @@ PF_SOURCE_NAMES = [
     "SOpt",
     "DespacitoStream",
     "LLDP",
+    "MLOP",
 ]
 
 
@@ -287,7 +288,10 @@ def _parse_source_pct_table(spec, path):
             raw_source, raw_pct = pair.split('=', 1)
             items.append((raw_source.strip(), raw_pct.strip()))
     elif isinstance(spec, (list, tuple)):
-        if len(spec) == len(PF_SOURCE_NAMES):
+        # Legacy positional tables end at LLDP and leave MLOP at -1.
+        legacy_length = PF_SOURCE_BY_NAME["mlop"]
+        if (len(spec) in (legacy_length, len(PF_SOURCE_NAMES)) and
+                not isinstance(spec[0], (list, tuple))):
             for idx, pct in enumerate(spec):
                 table[idx] = _validate_source_pct(pct, f"{path}.{idx}")
             return table
@@ -539,6 +543,22 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
         _configure_l2_composite_default(prefetcher)
 
     _configure_cdp(prefetcher, options)
+
+    if getattr(options, 'l2_mlop_enable', False):
+        llc_threshold = options.l2_mlop_llc_threshold
+        if not options.l3cache or not options.l2_to_l3_pf_hint:
+            llc_threshold = max(llc_threshold, options.l2_mlop_num_updates + 1)
+        prefetcher.mlop = MLOPPrefetcher(
+            is_sub_prefetcher=True,
+            use_pf_buffer=True,
+            queue_filter=False,
+            use_virtual_addresses=prefetcher.use_virtual_addresses,
+            page_bytes=prefetcher.page_bytes,
+            max_zones=options.l2_mlop_max_zones,
+            num_updates=options.l2_mlop_num_updates,
+            l2_threshold=options.l2_mlop_l2_threshold,
+            llc_threshold=llc_threshold,
+        )
 
     if hasattr(options, 'l2_enable_lldp') and hasattr(prefetcher, 'enable_lldp'):
         prefetcher.enable_lldp = options.l2_enable_lldp

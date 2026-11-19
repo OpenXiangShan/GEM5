@@ -451,6 +451,25 @@ class WorkerPrefetcher(QueuedPrefetcher):
     prefetch_on_pf_hit = True
     use_virtual_addresses = True
 
+class MLOPPrefetcher(WorkerPrefetcher):
+    type = 'MLOPPrefetcher'
+    cxx_class = 'gem5::prefetch::MLOPPrefetcher'
+    cxx_header = 'mem/cache/prefetch/mlop.hh'
+
+    on_read = True
+    on_write = False
+    prefetch_on_pf_hit = False
+    prefetch_train = False
+    use_virtual_addresses = False
+    use_pf_buffer = False
+    queue_filter = True
+
+    max_zones = Param.Unsigned(256, "Maximum tracked 64-block zones")
+    num_updates = Param.Unsigned(500, "Training updates per score round")
+    l2_threshold = Param.Unsigned(200, "Minimum score for L2 prefetches")
+    llc_threshold = Param.Unsigned(150, "Minimum score for LLC prefetches")
+
+
 class StridePrefetcher(QueuedPrefetcher):
     type = 'StridePrefetcher'
     cxx_class = 'gem5::prefetch::Stride'
@@ -1453,6 +1472,7 @@ class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
                                      "Large BOP used in composite prefetcher ")
     bop_small = Param.BOPPrefetcher(SmallBOPPrefetcher(is_sub_prefetcher=True),
                                      "Small BOP used in composite prefetcher ")
+    mlop = Param.MLOPPrefetcher(NULL, "Optional MLOP component")
     despacito_stream = Param.DespacitoStreamPrefetcher(DespacitoStreamPrefetcher(is_sub_prefetcher=True),
                                                        "DespacitoStream used in composite prefetcher")
     enable_bop = Param.Bool(False, "Enable BOP")

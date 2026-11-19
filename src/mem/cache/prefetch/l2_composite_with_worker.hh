@@ -9,6 +9,7 @@
 #include "mem/cache/prefetch/composite_with_worker.hh"
 #include "mem/cache/prefetch/despacito_stream.hh"
 #include "mem/cache/prefetch/lldp.hh"
+#include "mem/cache/prefetch/mlop.hh"
 #include "params/L2CompositeWithWorkerPrefetcher.hh"
 
 namespace gem5
@@ -38,6 +39,9 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     {
         hintDownStream = down_stream;
         cdp->addHintDownStream(down_stream);
+        if (mlop) {
+            mlop->addHintDownStream(down_stream);
+        }
     }
     void rxHint(BaseMMU::Translation *dpp) override;
     void pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override;
@@ -58,12 +62,23 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     void recvCustomInfoFrmUpStream(CustomPfInfo& info) override;
 
     void notifyFill(const PacketPtr &pkt) override;
+    void notifyBlockInvalidated(Addr addr, bool is_secure) override;
     void notifyIns(int ins_num) override { cdp->notifyIns(ins_num); }
 
   private:
+    struct ArbitrationStats : public statistics::Group
+    {
+        explicit ArbitrationStats(statistics::Group *parent);
+
+        statistics::Scalar contendedCycles;
+        statistics::Scalar smallBOPWins;
+        statistics::Scalar mlopWins;
+    } arbitrationStats;
+
     CDP* cdp;
     BOP* largeBOP;
     BOP* smallBOP;
+    MLOPPrefetcher *const mlop;
     CMCPrefetcher* cmc;
     DespacitoStreamPrefetcher* despacitoStream;
 
@@ -74,8 +89,12 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     LLDPrefetcher *lldp;
     const bool enableLLDP;
     bool preferLLDP{false};
+    bool preferMLOPOnContention{false};
 
     const bool offloadLowAccuracy;
+
+    void onPrefetchAccepted(const DeferredPacket &dpp) override;
+    void onPrefetchRemoved(const DeferredPacket &dpp) override;
     protected:
     void InsertPFRequestToBuffer(const AddrPriority &addr_prio) override{
       panic("SMS:InsertPFRequestToBuffer not implemented");

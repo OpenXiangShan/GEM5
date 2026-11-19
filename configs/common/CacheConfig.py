@@ -43,6 +43,7 @@
 import math
 import m5
 from m5.objects import *
+from m5.util import fatal
 from common.Caches import *
 from common.LSQBankConflict import set_lsq_bank_conflict_cache_params
 from common import ObjectList
@@ -199,6 +200,19 @@ def config_aligned_l2(options, system, l2_cache_class):
         l2_wrapper.cpu_side = system.tol2bus_list[i].mem_side_ports
 
 def config_cache(options, system):
+    if getattr(options, 'l2_mlop_enable', False):
+        if (not options.l2cache or options.no_pf or
+                not is_pf_buffer_enabled(options)):
+            fatal("--l2-mlop-enable requires L2, hardware prefetching "
+                  "and PFRequestBuffer")
+        l2_type = options.l2_hwp_type
+        if l2_type == 'PrefetcherForwarder':
+            l2_type = options.l2_wrapper_hwp_type
+        elif not options.classic_l2:
+            fatal("--l2-mlop-enable requires PrefetcherForwarder in the L2 slices")
+        if l2_type != 'L2CompositeWithWorkerPrefetcher':
+            fatal("--l2-mlop-enable requires L2CompositeWithWorkerPrefetcher")
+
     if options.external_memory_system and (options.caches or options.l2cache):
         print("External caches and internal caches are exclusive options.\n")
         sys.exit(1)

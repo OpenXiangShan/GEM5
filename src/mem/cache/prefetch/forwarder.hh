@@ -53,6 +53,7 @@ class PrefetcherForwarder : public Base
                   const uint8_t *data, unsigned size) override
     { if (real_pf) real_pf->hintData(hint, demand, data, size); }
     void notifyFill(const PacketPtr &pkt) override;
+    void notifyBlockInvalidated(Addr addr, bool is_secure) override;
     void coreDirectAddrNotify(const PacketPtr &pkt) override;
     bool hasHintDownStream() const override;
     void nofityHitToDownStream(const PacketPtr &pkt) override;

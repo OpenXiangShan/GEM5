@@ -47,6 +47,14 @@ PrefetcherForwarder::notifyFill(const PacketPtr &pkt)
 }
 
 void
+PrefetcherForwarder::notifyBlockInvalidated(Addr addr, bool is_secure)
+{
+    if (real_pf) {
+        real_pf->notifyBlockInvalidated(addr, is_secure);
+    }
+}
+
+void
 PrefetcherForwarder::coreDirectAddrNotify(const PacketPtr &pkt)
 {
     if (real_pf) {

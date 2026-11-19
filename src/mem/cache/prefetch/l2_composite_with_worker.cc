@@ -14,11 +14,28 @@ GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
 
+L2CompositeWithWorkerPrefetcher::ArbitrationStats::ArbitrationStats(
+    statistics::Group *parent)
+    : statistics::Group(parent),
+      ADD_STAT(contendedCycles, statistics::units::Count::get(),
+               "Cycles with both small BOP and MLOP candidates ready"),
+      ADD_STAT(smallBOPWins, statistics::units::Count::get(),
+               "Contended cycles granted to small BOP"),
+      ADD_STAT(mlopWins, statistics::units::Count::get(),
+               "Contended cycles granted to MLOP")
+{
+    contendedCycles.flags(statistics::nozero);
+    smallBOPWins.flags(statistics::nozero);
+    mlopWins.flags(statistics::nozero);
+}
+
 L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2CompositeWithWorkerPrefetcherParams &p)
     : CompositeWithWorkerPrefetcher(p),
+      arbitrationStats(this),
       cdp(p.cdp),
       largeBOP(p.bop_large),
       smallBOP(p.bop_small),
+      mlop(p.mlop),
       cmc(p.cmc),
       despacitoStream(p.despacito_stream),
       enableBOP(p.enable_bop),
@@ -33,6 +50,8 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
     cdp->setSharedFilterContextQualified(true);
     largeBOP->setSharedFilterContextQualified(true);
     smallBOP->setSharedFilterContextQualified(true);
+    fatal_if(mlop && !usePFBuffer,
+             "L2 composite MLOP requires PFRequestBuffer");
     cmc->setSharedFilterContextQualified(true);
     despacitoStream->setSharedFilterContextQualified(true);
     cdp->pfLRUFilter = &pfLRUFilter;
@@ -81,6 +100,9 @@ L2CompositeWithWorkerPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std:
     if (enableBOP) {
         largeBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
         smallBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
+    }
+    if (mlop) {
+        mlop->calculatePrefetch(pfi, addresses);
     }
     if (enableDespacitoStream) {
         despacitoStream->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::DespacitoStream);
@@ -145,6 +167,9 @@ L2CompositeWithWorkerPrefetcher::setParentInfo(System *sys, ProbeManager *pm, Ca
     cdp->setStatsPtr(&prefetchStats);
     largeBOP->setParentInfo(sys, pm, _cache, blk_size);
     smallBOP->setParentInfo(sys, pm, _cache, blk_size);
+    if (mlop) {
+        mlop->setParentInfo(sys, pm, _cache, blk_size);
+    }
     cmc->setParentInfo(sys, pm, _cache, blk_size);
     despacitoStream->setParentInfo(sys, pm, _cache, blk_size);
     lldp->setParentInfo(sys, pm, _cache, blk_size);
@@ -238,13 +263,40 @@ L2CompositeWithWorkerPrefetcher::notifyFill(const PacketPtr &pkt)
     }
     addressGenBuffer.clear();
 }
-bool 
-L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) 
+void
+L2CompositeWithWorkerPrefetcher::notifyBlockInvalidated(Addr addr, bool is_secure)
 {
-    //here we decide which to send for this cycle
-    //L1 Streamstride>berti>SMS>CMC
-    //L2 Streamstride>SMS>vBOP>pbop>TP
-    if(pfq.size() == queueSize) {
+    if (mlop) {
+        mlop->notifyBlockInvalidated(addr, is_secure);
+    }
+}
+
+void
+L2CompositeWithWorkerPrefetcher::onPrefetchAccepted(const DeferredPacket &dpp)
+{
+    if (mlop && dpp.owner == this && dpp.pkt &&
+        dpp.pfInfo.getXsMetadata().prefetchSource == PrefetchSourceType::MLOP) {
+        const uint8_t level = dpp.pfahead ? dpp.pfahead_host : 2;
+        mlop->recordAccepted(dpp.pkt->getAddr(), level, dpp.pfInfo.isSecure());
+    }
+}
+
+void
+L2CompositeWithWorkerPrefetcher::onPrefetchRemoved(const DeferredPacket &dpp)
+{
+    if (mlop && dpp.owner == this && dpp.pkt &&
+        dpp.pfInfo.getXsMetadata().prefetchSource == PrefetchSourceType::MLOP) {
+        const uint8_t level = dpp.pfahead ? dpp.pfahead_host : 2;
+        mlop->recordRemoved(dpp.pkt->getAddr(), level, dpp.pfInfo.isSecure());
+    }
+}
+
+bool
+L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(
+    std::vector<AddrPriority> &addresses)
+{
+    // A forwarded L1 prefetch uses this cycle's L2 transfer slot.
+    if (pfq.size() == queueSize) {
         return false;
     }
     bool L2PFsent = false;
@@ -252,8 +304,31 @@ L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriorit
     if (!L2PFsent && largeBOP->hasPFRequestsInBuffer()){
         L2PFsent = largeBOP->GetPFRequestsFromBuffer(addresses);
     }
-    if (!L2PFsent && smallBOP->hasPFRequestsInBuffer()){
-        L2PFsent = smallBOP->GetPFRequestsFromBuffer(addresses);
+    if (!L2PFsent) {
+        const bool smallReady = smallBOP->hasPFRequestsInBuffer();
+        const bool mlopReady = mlop && mlop->hasPFRequestsInBuffer();
+        if (smallReady && mlopReady) {
+            ++arbitrationStats.contendedCycles;
+            // Small BOP gets the first grant, then alternate on contention.
+            if (preferMLOPOnContention) {
+                L2PFsent = mlop->GetPFRequestsFromBuffer(addresses);
+                if (L2PFsent) {
+                    ++arbitrationStats.mlopWins;
+                }
+            } else {
+                L2PFsent = smallBOP->GetPFRequestsFromBuffer(addresses);
+                if (L2PFsent) {
+                    ++arbitrationStats.smallBOPWins;
+                }
+            }
+            if (L2PFsent) {
+                preferMLOPOnContention = !preferMLOPOnContention;
+            }
+        } else if (smallReady) {
+            L2PFsent = smallBOP->GetPFRequestsFromBuffer(addresses);
+        } else if (mlopReady) {
+            L2PFsent = mlop->GetPFRequestsFromBuffer(addresses);
+        }
     }
     if (!L2PFsent && despacitoStream->hasPFRequestsInBuffer()){
         L2PFsent = despacitoStream->GetPFRequestsFromBuffer(addresses);
@@ -264,20 +339,18 @@ L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriorit
     if (!L2PFsent && cmc->hasPFRequestsInBuffer()){
         L2PFsent = cmc->GetPFRequestsFromBuffer(addresses);
     }
-    // For now we dont have L3PF
-    // bool L3PFsent = false;
-    // L3PFsent = stridestream_pfFilter_l2l3.GetPFAddrL3(addresses);
-    // if (!L3PFsent){
-    //     L3PFsent = sms_pfFilter.GetPFAddrL3(addresses);
-    // }
     return L2PFsent;
 }
-bool L2CompositeWithWorkerPrefetcher::hasPFRequestsInBuffer() {
-    return  largeBOP->hasPFRequestsInBuffer() ||
-            smallBOP->hasPFRequestsInBuffer() ||
-            cmc->hasPFRequestsInBuffer() ||
-            cdp->hasPFRequestsInBuffer() ||
-            despacitoStream->hasPFRequestsInBuffer();
-        }
+
+bool
+L2CompositeWithWorkerPrefetcher::hasPFRequestsInBuffer()
+{
+    return largeBOP->hasPFRequestsInBuffer() ||
+           smallBOP->hasPFRequestsInBuffer() ||
+           (mlop && mlop->hasPFRequestsInBuffer()) ||
+           cmc->hasPFRequestsInBuffer() ||
+           cdp->hasPFRequestsInBuffer() ||
+           despacitoStream->hasPFRequestsInBuffer();
+}
 }  // namespace prefetch
 }  // namespace gem5

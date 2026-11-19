@@ -31,7 +31,7 @@ Import('*')
 SimObject('Prefetcher.py', sim_objects=[
     'CMCPrefetcher', 'BasePrefetcher', 'MultiPrefetcher', 'QueuedPrefetcher',
     'XSCompositePrefetcher', 'XSStridePrefetcher','OptPrefetcher','XsStreamPrefetcher',
-    'BertiPrefetcher', 'CDP',
+    'BertiPrefetcher', 'CDP', 'MLOPPrefetcher',
     'StridePrefetcherHashedSetAssociative', 'StridePrefetcher',
     'TaggedPrefetcher', 'IndirectMemoryPrefetcher', 'SignaturePathPrefetcher',
     'SignaturePathPrefetcherV2', 'AccessMapPatternMatching', 'AMPMPrefetcher',
@@ -96,3 +96,4 @@ Source('despacito_stream.cc')
 Source('forwarder.cc')
 Source('prefetch_filter.cc')
 Source('lldp.cc')
+Source('mlop.cc')

@@ -405,6 +405,12 @@ class Queued : public Base
      */
     virtual void addToQueue(std::list<DeferredPacket> &queue, DeferredPacket &dpp);
 
+    /** Notify stateful prefetchers when an identified candidate is accepted. */
+    virtual void onPrefetchAccepted(const DeferredPacket &dpp) {}
+
+    /** Notify stateful prefetchers when a queued packet is discarded. */
+    virtual void onPrefetchRemoved(const DeferredPacket &dpp) {}
+
     /**
      * Starts the translations of the queued prefetches with a
      * missing translation. It performs a maximum specified number of

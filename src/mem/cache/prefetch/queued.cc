@@ -73,10 +73,12 @@ buildPfControlSourceAdmitPct(const std::vector<int> &values)
         return table;
     }
 
-    panic_if(values.size() != NUM_PF_SOURCES,
+    // Older configurations provide a vector ending at LLDP.
+    const auto legacyLength = static_cast<unsigned>(PrefetchSourceType::MLOP);
+    panic_if(values.size() != NUM_PF_SOURCES && values.size() != legacyLength,
              "pf_control_source_admit_pcts must be empty or have "
-             "%u entries, got %zu",
-             unsigned(NUM_PF_SOURCES), values.size());
+             "%u or %u entries, got %zu",
+             legacyLength, unsigned(NUM_PF_SOURCES), values.size());
 
     for (size_t idx = 0; idx < values.size(); ++idx) {
         const int pct = values[idx];
@@ -973,6 +975,7 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
                         blockAddress(itr->pfInfo.getAddr()));
                 late_in_pfq = true;  // hit in pf queue
                 late_pfq_src = itr->pfInfo.getXsMetadata().prefetchSource;
+                onPrefetchRemoved(*itr);
                 delete itr->pkt;
                 itr = pfq.erase(itr);
                 statsQueued.pfRemovedDemand++;
@@ -1592,6 +1595,7 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
         // if found the dpp is pfahead marked
         // send it to next level pfq
         if (hasHintDownStream() && dpp.pfahead && (dpp.pfahead_host > cache->level())) {
+            onPrefetchAccepted(dpp);
             hintDownStream->rxHint(&dpp);
             prefetchStats.pfaheadOffloaded++;
             DPRINTF(HWPrefetchOther,
@@ -1638,6 +1642,9 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
                 queue.size(), it->pfInfo.getAddr());
         statsQueued.pfRemovedFull_srcs[it->pfInfo.getXsMetadata().prefetchSource]++;
 
+        if (&queue == &pfq) {
+            onPrefetchRemoved(*it);
+        }
         if (&queue == &pfq || !it->ongoingTranslation){
             delete it->pkt;
             queue.erase(it);
@@ -1680,6 +1687,9 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
 
     if (debug::HWPrefetchQueue)
         printQueue(queue);
+    if (&queue == &pfq) {
+        onPrefetchAccepted(dpp);
+    }
 }
 
 void
