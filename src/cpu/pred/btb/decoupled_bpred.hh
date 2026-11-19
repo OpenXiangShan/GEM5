@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -319,7 +320,7 @@ class DecoupledBPUWithBTB : public BPredUnit
                     unsigned numThreads);
     } dbpBtbStats;
 
-    BPUProfiler profiler;
+    std::unique_ptr<BPUProfiler> profiler;
 
   public:
     /**

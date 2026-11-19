@@ -101,7 +101,9 @@ DecoupledBPUWithBTB::initDB()
 void
 DecoupledBPUWithBTB::dumpStats()
 {
-    profiler.dump();
+    if (profiler) {
+        profiler->dump();
+    }
     if (someDBenabled) {
         bpdb.save_db(simout.resolve("bp.db").c_str());
     }
@@ -379,7 +381,7 @@ void
 DecoupledBPUWithBTB::updateStatistics(
     const FetchTarget &target, const PreparedUpdate &update)
 {
-    if (profiler.recordFetchBlock(target, update)) {
+    if (profiler && profiler->recordFetchBlock(target, update)) {
         dbpBtbStats.btbEntriesWithDifferentStart++;
     }
 
