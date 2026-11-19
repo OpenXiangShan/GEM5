@@ -45,13 +45,6 @@ jobs:
           trap 'rm -rf "$corpus"' EXIT
           tar -xzf "$bundle" -C "$corpus"
           python3 .github/scripts/weekly_rvwmo.py build/RISCV/gem5.opt "$corpus"
-      - name: Upload failing simulator logs
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: rvwmo-failures
-          path: rvwmo-failures/
-          if-no-files-found: ignore
 
   align_test_spec06:
     if: ${{ !inputs.jobs || contains(format(',{0},', inputs.jobs), ',align_test_spec06,') }}

@@ -4,14 +4,13 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
-import shutil
 import subprocess
 import tempfile
 
 from check import check_observations  # litmus-tests-riscv/platforms/xs-gem5
 
 
-def run_image(gem5, corpus, failures, image, model, topology):
+def run_image(gem5, corpus, image, model, topology):
     with tempfile.TemporaryDirectory(prefix="gem5-litmus-") as work:
         log = Path(work) / "sim.log"
         command = [
@@ -48,11 +47,10 @@ def run_image(gem5, corpus, failures, image, model, topology):
                 if result["status"] == "pass":
                     return True
                 reason = str(result)
-        except (subprocess.TimeoutExpired, ValueError) as error:
+        except subprocess.TimeoutExpired:
+            reason = "simulation timed out"
+        except ValueError as error:
             reason = str(error)
-        dest = failures / topology / Path(image).with_suffix(".log")
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(log, dest)
         print(f"FAIL {topology} {image}: {reason}", flush=True)
         return False
 
@@ -62,9 +60,6 @@ def main():
     parser.add_argument("gem5", type=Path)
     parser.add_argument("corpus", type=Path)
     parser.add_argument("--jobs", type=int, default=64)
-    parser.add_argument(
-        "--failures", type=Path, default=Path("rvwmo-failures")
-    )
     args = parser.parse_args()
     images = json.loads((args.corpus / "manifest.json").read_text())
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
@@ -73,7 +68,6 @@ def main():
                 run_image,
                 args.gem5,
                 args.corpus,
-                args.failures,
                 image,
                 model,
                 topology,
