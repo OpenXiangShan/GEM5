@@ -1160,6 +1160,15 @@ class LSQ
 
     void recvFunctionalCustomSignal(PacketPtr pkt, int sig);
 
+    enum class BusEntryRange
+    {
+        AtOrBefore,
+        After
+    };
+
+    void eraseBusEntries(ThreadID tid, InstSeqNum boundary,
+                         BusEntryRange range);
+
     void* getCPUPtr();
 
     Fault pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
@@ -1170,8 +1179,14 @@ class LSQ
     /** The CPU pointer. */
     CPU *cpu;
 
-    /** contains all the insts which can forward data from bus <seqNum, Paddr> */
-    std::unordered_map<uint64_t, Addr> bus;
+    struct BusEntry
+    {
+        Addr addr;
+        ThreadID tid;
+    };
+
+    /** Loads which can forward data from the refill bus. */
+    std::unordered_map<InstSeqNum, BusEntry> bus;
 
     /** The IEW stage pointer. */
     IEW *iewStage;
