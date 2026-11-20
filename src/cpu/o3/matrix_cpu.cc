@@ -40,7 +40,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <algorithm>
 #include <cassert>
+#include <cstring>
+#include <vector>
 
 #include "base/trace.hh"
 #include "cpu/o3/cpu.hh"
@@ -56,6 +59,18 @@ namespace gem5
 
 namespace o3
 {
+
+Port &
+CPU::getPort(const std::string &if_name, PortID idx)
+{
+    if (if_name == "matrix_mem_port") {
+        panic_if(!enableMatrixMemPort,
+                 "matrix_mem_port requested while enableMatrixMemPort=false");
+        return *matrixState->memoryPort;
+    }
+
+    return BaseCPU::getPort(if_name, idx);
+}
 
 void
 CPU::checkMatrixCheckpoint(ThreadID tid) const
@@ -116,21 +131,32 @@ void
 CPU::initMatrix(const BaseO3CPUParams &params)
 {
     enableMatrixBackend = params.enableMatrixBackend;
-    if (!enableMatrixBackend) {
+    enableMatrixMemPort = params.enableMatrixMemPort;
+    if (!enableMatrixBackend && !enableMatrixMemPort) {
         return;
     }
     fatal_if(!FullSystem || params.numThreads != 1,
              "Matrix requires full-system mode and one hardware thread");
     matrixState = std::make_unique<MatrixCpuState>();
-    constexpr unsigned detailedCuteFifoDepth = 8;
-    matrix::DetailedCuteBackend::TimingConfig timing_config;
-    timing_config.matrixCZeroLoadLatencyCycles =
-        params.matrixCZeroLoadLatency;
-    matrixState->backend = std::make_unique<matrix::DetailedCuteBackend>(
-        detailedCuteFifoDepth,
-        matrix::MatrixRegFile::DefaultAbRegCount,
-        matrix::MatrixRegFile::DefaultCRegCount,
-        timing_config, this);
+    if (enableMatrixMemPort) {
+        matrixState->memoryPort = std::make_unique<MatrixMemPort>(
+            name() + ".matrix_mem_port", this);
+    }
+    if (enableMatrixBackend) {
+        constexpr unsigned detailedCuteFifoDepth = 8;
+        matrix::DetailedCuteBackend::TimingConfig timing_config;
+        timing_config.matrixCZeroLoadLatencyCycles =
+            params.matrixCZeroLoadLatency;
+        auto detailed_backend = std::make_unique<matrix::DetailedCuteBackend>(
+            detailedCuteFifoDepth,
+            matrix::MatrixRegFile::DefaultAbRegCount,
+            matrix::MatrixRegFile::DefaultCRegCount,
+            timing_config, this);
+        if (enableMatrixMemPort) {
+            detailed_backend->setTimingMemoryAdapter(matrixState->memoryPort.get());
+        }
+        matrixState->backend = std::move(detailed_backend);
+    }
 }
 
 void
@@ -263,7 +289,11 @@ CPU::tryIssueMatrixAmu(ThreadID tid, MatrixAmuBuffer &buffer)
     panic_if(!inserted,
              "Duplicate matrix backend owner [tid:%i] [sn:%llu]",
              tid, seq_num);
-    matrixState->backend->submit(backend_req);
+    auto submit_req = backend_req;
+    if (submit_req.kind == matrix::CuteRequestKind::Lsu) {
+        submit_req.lsu.tc = tcBase(tid);
+    }
+    matrixState->backend->submit(submit_req);
     matrixState->checkOrder.push_back(seq_num);
 
     if (backend_req.kind == matrix::CuteRequestKind::Release) {
@@ -330,3 +360,165 @@ CPU::checkMatrixResults()
 }
 
 } // namespace gem5::o3
+
+namespace gem5
+{
+
+namespace o3
+{
+
+namespace
+{
+
+std::vector<bool>
+byteEnableFromMask(uint64_t byte_mask, uint32_t packet_size)
+{
+    std::vector<bool> byte_enable(packet_size, byte_mask == 0);
+    for (uint32_t byte = 0; byte < packet_size && byte < 64; ++byte) {
+        if ((byte_mask & (uint64_t(1) << byte)) != 0) {
+            byte_enable[byte] = true;
+        }
+    }
+    return byte_enable;
+}
+
+} // anonymous namespace
+
+MatrixMemPort::MatrixMemPort(const std::string &name, CPU *cpu_)
+    : RequestPort(name), stats(cpu_), cpu(cpu_)
+{
+}
+
+MatrixMemPort::PortStats::PortStats(statistics::Group *parent)
+    : statistics::Group(parent, "matrixMemoryPort"),
+      ADD_STAT(sourcesAccepted, statistics::units::Count::get(),
+               "Backend sources accepted by the timing adapter"),
+      ADD_STAT(sourcesCompleted, statistics::units::Count::get(),
+               "Sources completed at final read data or store acknowledgement"),
+      ADD_STAT(sourceTicks, statistics::units::Tick::get(),
+               "Total source lifetime including preparation and retry"),
+      ADD_STAT(sourceTicksMax, statistics::units::Tick::get(),
+               "Maximum source lifetime"),
+      ADD_STAT(sourcesMax, statistics::units::Count::get(),
+               "Maximum sources awaiting final response")
+{
+}
+
+void
+MatrixMemPort::noteSourceCompletion(uint32_t source)
+{
+    const auto it = sourceStarted.find(source);
+    panic_if(it == sourceStarted.end(), "Missing Matrix source lifetime");
+    const Tick lifetime = curTick() - it->second;
+    sourceStarted.erase(it);
+    stats.sourcesCompleted++;
+    stats.sourceTicks += lifetime;
+    stats.sourceTicksMax = std::max<double>(stats.sourceTicksMax.value(), lifetime);
+}
+
+PacketPtr
+MatrixMemPort::buildPacket(const Request &request)
+{
+    auto req = std::make_shared<gem5::Request>(
+        request.paddr, request.packetSize, gem5::Request::PHYSICAL,
+        cpu->dataRequestorId());
+    req->taskId(cpu->taskId());
+    if (request.contextId != InvalidContextID) {
+        req->setContext(request.contextId);
+    }
+    if (request.isStore) {
+        assert(request.packetSize <= request.data.size());
+        req->setByteEnable(byteEnableFromMask(request.byteMask,
+                                              request.packetSize));
+    }
+    auto *pkt = new Packet(req, request.isStore ?
+        MemCmd::WriteReq : MemCmd::ReadReq);
+    auto *data = new uint8_t[request.packetSize]{};
+    if (request.isStore) {
+        std::memcpy(data, request.data.data(), request.packetSize);
+    }
+    pkt->dataDynamic(data);
+    pkt->senderState = new SenderState(request);
+    return pkt;
+}
+
+bool
+MatrixMemPort::sendTimingRequest(const Request &request)
+{
+    panic_if(!sourceStarted.emplace(request.sourceId, curTick()).second,
+             "Matrix source reused before final response");
+    stats.sourcesAccepted++;
+    stats.sourcesMax = std::max<double>(stats.sourcesMax.value(), sourceStarted.size());
+    blockedPackets.push_back(buildPacket(request));
+    if (!waitingForRetry) {
+        trySendBlocked();
+    }
+    return true;
+}
+
+bool
+MatrixMemPort::recvTimingResp(PacketPtr pkt)
+{
+    auto *state = dynamic_cast<SenderState *>(pkt->senderState);
+    panic_if(state == nullptr,
+             "Matrix memory response missing sender state");
+
+    const uint32_t source_id = state->request.sourceId;
+    const bool valid_response = state->request.isStore ?
+        pkt->cmd == MemCmd::WriteResp :
+        (pkt->cmd == MemCmd::ReadResp ||
+         pkt->cmd == MemCmd::ReadRespWithInvalidate);
+    panic_if(!valid_response,
+             "Matrix memory received unexpected response command %s",
+             pkt->cmd.toString());
+    const bool has_data = pkt->hasData() && pkt->getSize() != 0;
+    const uint32_t data_size = has_data ? pkt->getSize() : 0;
+    std::vector<uint8_t> data;
+    if (has_data) {
+        data.resize(data_size);
+        std::memcpy(data.data(), pkt->getPtr<uint8_t>(), data.size());
+    }
+
+    delete pkt->senderState;
+    pkt->senderState = nullptr;
+    delete pkt;
+
+    noteSourceCompletion(source_id);
+
+    const bool completed =
+        cpu->matrixState->backend &&
+        cpu->matrixState->backend->completeTimingMemoryResponse(
+            source_id, data.empty() ? nullptr : data.data(), data.size());
+    panic_if(!completed,
+             "Matrix memory response for unknown source %u", source_id);
+
+    cpu->activityRec.activity();
+    cpu->scheduleTickEvent(Cycles(0));
+    return true;
+}
+
+void
+MatrixMemPort::trySendBlocked()
+{
+    while (!blockedPackets.empty()) {
+        PacketPtr pkt = blockedPackets.front();
+        if (!sendTimingReq(pkt)) {
+            waitingForRetry = true;
+            return;
+        }
+        blockedPackets.pop_front();
+    }
+}
+
+void
+MatrixMemPort::recvReqRetry()
+{
+    panic_if(!waitingForRetry, "Unexpected Matrix request retry");
+    waitingForRetry = false;
+    trySendBlocked();
+    cpu->activityRec.activity();
+    cpu->scheduleTickEvent(Cycles(0));
+}
+
+} // namespace o3
+} // namespace gem5

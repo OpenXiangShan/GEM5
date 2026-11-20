@@ -92,7 +92,12 @@ struct MatrixDynInstState
     bool configFrozen = false;
     std::array<RegVal, 8> config = {};
     InstInfo matrixInst;
+    uint8_t lsuWidths = 0;
+    RiscvISA::MatrixElemKind lsuElemKind = RiscvISA::MatrixElemKind::None;
+    uint8_t lsuAccessSize = 0;
     std::optional<matrix::CuteRequest> request;
+    std::optional<unsigned> mlsqSlot;
+    std::optional<unsigned> replaySlot;
     std::optional<RegVal> stagedMatrixTokenReset;
 
     bool matrixNeedAmuCtrl() const

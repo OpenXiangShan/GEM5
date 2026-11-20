@@ -54,6 +54,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
     if env['CONF']['GEM5_ENABLE_MATRIX']:
         Source('matrix_pipeline.cc')
         Source('matrix_cpu.cc')
+        Source('mls_unit.cc')
     Source('mem_dep_unit.cc')
     Source('phast.cc')
     Source('regfile.cc')
