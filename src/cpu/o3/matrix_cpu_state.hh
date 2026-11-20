@@ -4,9 +4,11 @@
 #include <array>
 #include <cassert>
 #include <deque>
+#include <map>
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <vector>
 
 #include "arch/riscv/matrix.hh"
 #include "base/statistics.hh"
@@ -78,17 +80,33 @@ struct MatrixCpuState
     MatrixCpuState();
     ~MatrixCpuState();
 
+    struct ObservedPacket
+    {
+        Addr paddr;
+        uint32_t packetSize;
+        std::array<uint8_t, 64> data;
+        uint64_t byteMask;
+    };
     struct Owner
     {
         ThreadID tid;
         matrix::CuteRequest request;
         std::optional<matrix::CuteCompletion> completion = {};
+        std::vector<ObservedPacket> packets = {};
+        bool refReleaseApplied = false;
     };
     std::unique_ptr<MatrixMemPort> memoryPort;
     std::unique_ptr<matrix::DetailedCuteBackend> backend;
     std::array<InstSeqNum, RiscvISA::MatrixTokenCount> resetSeqs{};
     std::unordered_map<InstSeqNum, Owner> owners;
     std::deque<InstSeqNum> checkOrder;
+    std::map<std::pair<ThreadID, uint8_t>, std::vector<uint8_t>> verified;
+    uint64_t committed = 0, submitted = 0, completed = 0, checked = 0;
+    uint64_t mmaChecked = 0, loadChecked = 0, zeroChecked = 0;
+    uint64_t storeChecked = 0, releaseChecked = 0, syncChecked = 0;
+    uint64_t memorySent = 0, memoryCompleted = 0;
+    uint64_t staleReleases = 0, outOfOrder = 0;
+
 };
 
 } // namespace gem5::o3

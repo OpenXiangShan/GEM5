@@ -235,6 +235,10 @@ struct CuteCompletion
     CuteCompletionStatus status = CuteCompletionStatus::Success;
     uint32_t tokenIdx = 0;
     ThreadID tid = 0;
+    // Frozen at the register write, before releasing destination hazards.
+    // MatrixTensor is a compact active rectangle; unwritten bytes are not
+    // claimed as results. A whole-register mzero has a full-sized rectangle.
+    std::shared_ptr<const MatrixTensor> result;
 };
 
 inline constexpr size_t

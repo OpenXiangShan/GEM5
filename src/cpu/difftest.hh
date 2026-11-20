@@ -11,6 +11,7 @@
 
 #include "arch/riscv/types.hh"
 #include "base/logging.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "cpu/golden_global_mem.hh"
 
 enum
@@ -33,6 +34,43 @@ typedef uint16_t ioaddr_t;
 #define VENUM32 (gem5::RiscvISA::VLEN/32)
 #define VENUM16 (gem5::RiscvISA::VLEN/16)
 #define VENUM8 (gem5::RiscvISA::VLEN/8)
+
+#if GEM5_ENABLE_MATRIX
+// Natural-layout ABI shared with NEMU's include/ame/event.h.  Keep this
+// separate from riscv64_CPU_regfile: matrix tile bytes are asynchronous and
+// are compared on backend completion, while these fields are control events.
+struct NemuAmuCtrlEvent
+{
+    uint8_t valid;
+    uint8_t op;
+    uint8_t rm;
+    uint8_t md;
+    uint8_t sat;
+    uint8_t ms1;
+    uint8_t ms2;
+    uint16_t mtilem;
+    uint16_t mtilen;
+    uint16_t mtilek;
+    uint8_t types1;
+    uint8_t types2;
+    uint8_t typed;
+    uint8_t isfp;
+    uint64_t base;
+    uint64_t stride;
+    uint64_t pc;
+};
+
+struct NemuMsyncEvent
+{
+    uint8_t valid;
+    uint8_t op;
+    uint8_t msyncRd;
+    uint64_t pc;
+};
+static_assert(sizeof(NemuAmuCtrlEvent) == 48);
+static_assert(sizeof(NemuMsyncEvent) == 16);
+
+#endif // GEM5_ENABLE_MATRIX
 
 
 
@@ -80,6 +118,16 @@ struct riscv64_CPU_regfile
     uint64_t vxsat, vxrm, vcsr;
     uint64_t vl, vtype, vlenb;
     uint64_t fcsr;
+
+#if GEM5_ENABLE_MATRIX
+    // Matrix CSR shadow state.  Keep the order identical to the
+    // CONFIG_RV_AME portion of NEMU's riscv64_CPU_state; the matrix tile
+    // data (mtr/macc) remains outside the ordinary regcpy ABI and is
+    // compared through dedicated completion hooks.
+    uint64_t mcsr, mxrm, msat, mfflags, mfrm, msaten;
+    uint64_t tlenb, trlenb, alenb, mtilem, mtilen, mtilek, msync;
+    uint64_t mcfg[8];
+#endif // GEM5_ENABLE_MATRIX
 
     uint64_t& operator[](int x) {
         assert(x<64);
@@ -195,6 +243,22 @@ class RefProxy
     void (*uarchstatus_cpy)(void *dut, bool direction) = nullptr;
     int (*store_commit)(uint64_t *saddr, uint64_t *sdata,
                         uint8_t *smask) = nullptr;
+#if GEM5_ENABLE_MATRIX
+    int (*amu_ctrl)(void *event) = nullptr;
+    int (*amu_exec)(void *event, void *matrix) = nullptr;
+    uint8_t *(*get_mreg_row_addr)(int reg, uint64_t row) = nullptr;
+    void (*amu_lazy)(void *event, void *result, void *src1,
+                     void *src2, void *src3) = nullptr;
+    int (*msync_event)(void *event) = nullptr;
+    int (*matrix_store_commit)(uint64_t *base, uint64_t *stride,
+                               uint32_t *row, uint32_t *column,
+                               uint32_t *width, bool *transpose) = nullptr;
+
+    bool hasMatrixEvents() const
+    {
+        return amu_ctrl && amu_exec && amu_lazy && msync_event;
+    }
+#endif // GEM5_ENABLE_MATRIX
     void (*exec)(uint64_t n) = nullptr;
     vaddr_t (*guided_exec)(void *disambiguate_para) = nullptr;
     vaddr_t (*update_config)(void *config) = nullptr;

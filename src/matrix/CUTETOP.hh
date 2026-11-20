@@ -97,7 +97,8 @@ class DetailedCuteBackend
                         size_t ab_reg_count,
                         size_t c_reg_count,
                         TimingConfig timing_config,
-                        statistics::Group *stats_parent = nullptr);
+                        statistics::Group *stats_parent = nullptr,
+                        bool capture_results = false);
 
     bool canAccept(const CuteRequest &req) const;
     void submit(const CuteRequest &req);
@@ -293,6 +294,7 @@ class DetailedCuteBackend
 
   private:
     size_t fifoDepth;
+    const bool captureResults;
     std::deque<DecodedFifoEntry> fifo;
     MatrixRegFile regFile;
     DetailedCuteScoreboard scoreboard;

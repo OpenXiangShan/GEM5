@@ -30,6 +30,8 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdlib>
+#include <cstring>
 #include <optional>
 #include <utility>
 
@@ -207,8 +209,13 @@ DetailedCuteBackend::executeTaskSlot(const TaskSlot &task)
         if (desc.rows && desc.cols) {
             regFile.write(MatrixBankKind::C, desc.reg, zeros);
         }
-        return makeCompletion(entry.request.seq, CuteRequestKind::Arith,
-                              CuteCompletionStatus::Success);
+        auto completion = makeCompletion(entry.request.seq,
+            CuteRequestKind::Arith, CuteCompletionStatus::Success);
+        if (captureResults) {
+            completion.result =
+                std::make_shared<const MatrixTensor>(std::move(zeros));
+        }
+        return completion;
     }
 
     assert(entry.isRelease);
@@ -244,8 +251,13 @@ DetailedCuteBackend::executeLoadWrite(TaskSlot &task)
 
     regFile.write(destBank(task.entry), task.entry.writeRegs[0],
                   task.bufferedTensor);
-    return makeCompletion(task.entry.request.seq, CuteRequestKind::Lsu,
-                          CuteCompletionStatus::Success);
+    auto completion = makeCompletion(task.entry.request.seq,
+        CuteRequestKind::Lsu, CuteCompletionStatus::Success);
+    if (captureResults) {
+        completion.result = std::make_shared<const MatrixTensor>(
+            std::move(task.bufferedTensor));
+    }
+    return completion;
 }
 
 CuteCompletion
@@ -280,10 +292,25 @@ DetailedCuteBackend::executeComputeWrite(ComputeTaskState &task)
                               CuteCompletionStatus::Unsupported);
     }
 
+    // Explicit validation-only fault: mutate the actual architectural value
+    // before both writeback and its immutable snapshot. No simulated delay.
+    static bool injected = false;
+    const char *fault = std::getenv("GEM5_MATRIX_TEST_FAULT");
+    if (!injected && fault && std::strcmp(fault, "mma") == 0) {
+        task.bufferedTensor.elements.at(0) ^= 1;
+        injected = true;
+        warn("Inject Matrix MMA output bit [tid:%u] [sn:%llu] pc=%#llx",
+             task.entry.request.tid, task.entry.request.seq, task.entry.request.pc);
+    }
     regFile.write(MatrixBankKind::C, task.entry.writeRegs[0],
                   task.bufferedTensor);
-    return makeCompletion(task.entry.request.seq, CuteRequestKind::Mma,
-                          CuteCompletionStatus::Success);
+    auto completion = makeCompletion(task.entry.request.seq,
+        CuteRequestKind::Mma, CuteCompletionStatus::Success);
+    if (captureResults) {
+        completion.result = std::make_shared<const MatrixTensor>(
+            std::move(task.bufferedTensor));
+    }
+    return completion;
 }
 
 void
@@ -1383,8 +1410,9 @@ DetailedCuteBackend::DetailedCuteBackend(
 
 DetailedCuteBackend::DetailedCuteBackend(
     size_t fifo_depth, size_t ab_reg_count, size_t c_reg_count,
-    TimingConfig timing_config, statistics::Group *stats_parent)
-    : fifoDepth(fifo_depth),
+    TimingConfig timing_config, statistics::Group *stats_parent,
+    bool capture_results)
+    : fifoDepth(fifo_depth), captureResults(capture_results),
       regFile(ab_reg_count, c_reg_count),
       scoreboard(ab_reg_count, c_reg_count),
       timingConfig(timing_config),
