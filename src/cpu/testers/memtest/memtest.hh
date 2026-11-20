@@ -174,6 +174,11 @@ class MemTest : public ClockedObject
     const bool atomic;
 
     const bool suppressFuncErrors;
+
+    // Check read data against the private reference model (disabled
+    // when several testers share an address space: racing writes make
+    // each private model diverge from the coherent memory state)
+    const bool checkData;
   protected:
     struct MemTestStats : public statistics::Group
     {

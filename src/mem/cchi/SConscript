@@ -1,0 +1,304 @@
+# -*- mode:python -*-
+# Copyright (c) 2026
+#
+# Build rules for the CCHI (CHIron Cohestra) L1-fabric integration.
+#
+# Everything in this directory is gated behind the WITH_CCHI build option
+# (declared in this directory's SConsopts as a sticky per-build variable):
+# when off, nothing here is compiled and the CCHI SimObjects do not exist.
+# WITH_CCHI_RTL gates the Verilator endpoint backend (Phase 3) and adds
+# nothing yet.
+
+import glob
+import os
+
+Import('*')
+
+if not env['WITH_CCHI']:
+    Return()
+
+# --- CHIron location ---------------------------------------------------------
+# Sticky variable first, then the environment. There is no default checkout
+# location: an unset CHIRON_DIR is a hard error, not a silent guess.
+chiron_dir = env.get('CHIRON_DIR') or os.environ.get('CHIRON_DIR')
+
+if not chiron_dir:
+    print("error: WITH_CCHI=True requires CHIRON_DIR (scons variable or "
+          "environment variable) pointing at a CHIron checkout")
+    Exit(1)
+
+chiron_dir = os.path.abspath(chiron_dir)
+
+if not os.path.isdir(chiron_dir):
+    print("error: WITH_CCHI=True requires a CHIron checkout; got "
+          "CHIRON_DIR='%s' (set the sticky variable or the environment "
+          "variable)" % chiron_dir)
+    Exit(1)
+
+env['HAVE_CHIRON'] = True
+
+# Include paths: the gem5-side code (incl. the vendored Earth endpoint)
+# uses -I<CHIRON_DIR>/cchi style includes; CHIron's own cohestra sources
+# additionally need their vendored spdlog/SimpleIni directories.
+# -isystem (not -I): gem5 builds with -Wextra/-Werror and CHIron's headers
+# are not warning-clean under it (e.g. -Wempty-body in nonstdint.hpp) —
+# the same treatment system/boost headers get.
+for inc in [
+        chiron_dir,
+        os.path.join(chiron_dir, 'cchi'),
+        os.path.join(chiron_dir, 'cchi', 'cohestra'),
+        os.path.join(chiron_dir, 'cchi', 'cohestra', 'cohestra_stimulators'),
+        os.path.join(chiron_dir, 'cchi', 'cohestra', 'spdlog', 'include'),
+        os.path.join(chiron_dir, 'cchi', 'cohestra', 'simpleini'),
+]:
+    env.Append(CCFLAGS=['-isystem', inc])
+
+# CHIron's cohestra harness headers pull in the vendored spdlog, which
+# enables its header-only mode itself when SPDLOG_COMPILED_LIB is unset
+# (see cchi/cohestra/spdlog/include/spdlog/common.h), so no define or
+# extra library is needed here.
+
+# --- gem5-side CCHI sources --------------------------------------------------
+# CCHI_HAVE_GEM5_DEBUG routes this directory's DPRINTF through the CCHI
+# debug flag; EARTH_HAVE_GEM5_DEBUG does the same for the vendored Earth
+# sources (their fprintf fallback is for standalone syntax checks only).
+gem5_cchi_defines = ['CCHI_HAVE_GEM5_DEBUG', 'EARTH_HAVE_GEM5_DEBUG']
+
+Source('cchi_l1_agent.cc', append={'CPPDEFINES': gem5_cchi_defines})
+Source('cchi_fabric.cc', append={'CPPDEFINES': gem5_cchi_defines})
+
+# Vendored Earth endpoint (parallel workstream; picked up once present)
+earth_src_dir = os.path.join(Dir('.').srcnode().abspath, 'earth')
+earth_srcs = sorted(glob.glob(os.path.join(earth_src_dir, '*.cc')) +
+                    glob.glob(os.path.join(earth_src_dir, '*.cpp')))
+for earth_src in earth_srcs:
+    # Source() paths are relative to this SConscript's (variant) directory
+    Source(os.path.join('earth', os.path.basename(earth_src)),
+           append={'CPPDEFINES': gem5_cchi_defines})
+
+SimObject('CCHIL1Agent.py', sim_objects=['CCHIL1Agent'])
+SimObject('CCHIFabric.py', sim_objects=['CCHIFabric'])
+
+DebugFlag('CCHI')
+DebugFlag('Earth')
+
+# --- Read-only CHIron cohestra sources ---------------------------------------
+# Compiled straight from the CHIron checkout (never modified, never
+# vendored). SCons places object files next to their sources for absolute
+# out-of-tree paths, which would write into the read-only checkout, so the
+# sources are copied into the variant directory at configure time and the
+# copies are compiled (mirroring how generated sources are handled).
+chiron_cohestra_srcs = [
+    'cohestra_axi.cpp',
+    'cohestra_cchi_flit_logger.cpp',
+    'cohestra_config.cpp',
+    'cohestra_instance.cpp',
+    'cohestra_instance_config.cpp',
+    'cohestra_monitor.cpp',
+    'cohestra_stimulator.cpp',
+]
+chiron_cohestra_srcs += sorted(
+    os.path.join('cohestra_stimulators', os.path.basename(p))
+    for p in glob.glob(os.path.join(chiron_dir, 'cchi', 'cohestra',
+                                    'cohestra_stimulators', '*.cpp')))
+
+chiron_build_dir = 'chiron'
+
+for rel in chiron_cohestra_srcs:
+    src = os.path.join(chiron_dir, 'cchi', 'cohestra', rel)
+    if not os.path.isfile(src):
+        print("error: expected CHIron source not found: %s" % src)
+        Exit(1)
+    # Copy via a real build action so the variant-dir copy is a proper
+    # generated source node (a plain configure-time copy leaves SCons
+    # looking for the file in the source tree, which is read-only).
+    dst = os.path.join(chiron_build_dir, os.path.basename(rel))
+    copied = env.Command(dst, src, Copy('$TARGET', '$SOURCE'))
+    # Third-party read-only sources: don't hold them to gem5's -Werror
+    # (e.g. -Wmaybe-uninitialized fires inside nonstdint.hpp when inlined).
+    Source(copied[0], append={'CCFLAGS': ['-w']})
+
+# WITH_CCHI_RTL: Verilator-based downstream RTL endpoints (Phase 3)
+# ---------------------------------------------------------------------------
+# Verilates CCHI_RTL_TOP over CCHI_RTL_SRCS (auto-resolved for the known
+# CHIron tops) into <variant>/cchi_rtl/obj_dir and compiles the generated
+# model plus the Verilator runtime into this binary. The generated top's
+# class/header are exported to the gem5 sources as CCHI_RTL_TOP_CLASS /
+# CCHI_RTL_TOP_HEADER (see cchi_rtl_top.hh).
+if env['WITH_CCHI_RTL']:
+    import hashlib
+    import shutil
+    import subprocess
+
+    rtl_top = env.get('CCHI_RTL_TOP', '')
+    rtl_srcs = env.get('CCHI_RTL_SRCS', '')
+
+    # Known top shortcuts (sources in dependency order, mirroring
+    # cohestra_v3/CMakeLists.txt)
+    v3_dir = os.path.join(chiron_dir, 'cchi', 'cohestra', 'cohestra_v3')
+    if rtl_top == 'top_dummy':
+        rtl_srcs = os.path.join(v3_dir, 'top_dummy.sv')
+    elif rtl_top == 'venus_v3_top' or rtl_top == 'venus_v3_top_extmem':
+        venus_dir = os.path.join(v3_dir, 'venus')
+        rtl_srcs = ' '.join(
+            os.path.join(venus_dir, f) for f in [
+                'venus_pkg.sv', 'venus_fifo.sv', 'venus_id_alloc.sv',
+                'venus_sram_if.sv', 'venus_sram_box.sv', 'venus_directory.sv',
+                'venus_snoop_filter.sv', 'venus_axi_map.sv',
+                'venus_axi_master.sv', 'venus_port.sv', 'venus_mshr.sv',
+                'venus.sv',
+            ]) + ' ' + os.path.join(venus_dir, 'tb',
+                                    'venus_v3_top_extmem.sv'
+                                    if rtl_top == 'venus_v3_top_extmem'
+                                    else 'venus_v3_top.sv')
+    elif rtl_top == 'TestTop_L2OpenLLC':
+        # XSCache (Oceanus L2 + OpenLLC + OpenNCB) generated top. The
+        # checkout path is a per-build knob, never a repo default. The
+        # source set mirrors XSCache's own scripts/cohestra/
+        # boot_cohestra.sh (sorted glob of the firtool output dir;
+        # Verilator resolves elaboration order itself, so filelist.f is
+        # not parsed). The waiver .vlt carries the lint waivers the
+        # firtool RTL needs.
+        xscache_dir = env.get('CCHI_XSCACHE_DIR') or \
+            os.environ.get('XSCACHE_DIR', '')
+        if not xscache_dir or not os.path.isdir(xscache_dir):
+            print("error: CCHI_RTL_TOP=TestTop_L2OpenLLC requires "
+                  "CCHI_XSCACHE_DIR (or $XSCACHE_DIR) pointing at an "
+                  "XSCache checkout; got '%s'" % xscache_dir)
+            Exit(1)
+        rtl_dir = os.path.join(xscache_dir, 'build', 'l2openllc')
+        if not os.path.isfile(os.path.join(rtl_dir,
+                                           'TestTop_L2OpenLLC.sv')):
+            print("error: %s has no generated RTL; run "
+                  "'make test-top-l2openllc' in the XSCache checkout "
+                  "first" % rtl_dir)
+            Exit(1)
+        rtl_srcs = ' '.join(
+            sorted(glob.glob(os.path.join(rtl_dir, '*.sv')) +
+                   glob.glob(os.path.join(rtl_dir, '*.v'))))
+        waivers = os.path.join(xscache_dir, 'scripts', 'cohestra',
+                               'xscache_waivers.vlt')
+        if os.path.isfile(waivers):
+            rtl_srcs += ' ' + waivers
+
+    if not rtl_top or not rtl_srcs:
+        print("error: WITH_CCHI_RTL=True requires CCHI_RTL_TOP (and "
+              "CCHI_RTL_SRCS for custom tops); known tops: top_dummy, "
+              "venus_v3_top, venus_v3_top_extmem, TestTop_L2OpenLLC")
+        Exit(1)
+
+    verilator = shutil.which('verilator')
+    if not verilator:
+        print("error: WITH_CCHI_RTL=True requires verilator on PATH")
+        Exit(1)
+    verilator_root = subprocess.check_output(
+        [verilator, '--getenv', 'VERILATOR_ROOT'], text=True).strip()
+
+    rtl_src_list = sorted(set(rtl_srcs.split()),
+                          key=rtl_srcs.split().index)  # dedupe, keep order
+    for src in rtl_src_list:
+        if not os.path.isfile(src):
+            print("error: CCHI_RTL source not found: %s" % src)
+            Exit(1)
+
+    # Verilate at configure time into the system temp dir (NOT the build
+    # tree: some network filesystems drop freshly written build-tree files
+    # between configure and compile, breaking both the archive link and
+    # the include scanner; /tmp is machine-local and stable). Guarded by a
+    # stamp of the inputs so plain rebuilds don't re-run verilator.
+    import multiprocessing
+    import tempfile
+
+    rtl_prefix = 'V' + rtl_top.replace('_v3_top', '') if '_v3_top' in rtl_top \
+        else 'V' + rtl_top
+    rtl_build_dir = os.path.join(
+        tempfile.gettempdir(),
+        'cchi_rtl_%s_%s' % (rtl_top,
+                            hashlib.md5(env['BUILDDIR'].encode()).hexdigest()[:8]))
+    rtl_obj_dir = os.path.join(rtl_build_dir, 'obj_dir')
+    rtl_archive = os.path.join(rtl_obj_dir, '%s__ALL.a' % rtl_prefix)
+    rtl_stamp = os.path.join(rtl_build_dir, '.verilator_stamp')
+    # Source freshness matters for developing checkouts (XSCache
+    # regenerates its firtool output in place): fold each source file's
+    # mtime+size into the stamp so RTL regeneration re-verilates. Cheap
+    # stat(), no content hashing.
+    src_stamps = ['%s:%d:%d' % (src, os.stat(src).st_mtime_ns,
+                                os.stat(src).st_size)
+                  for src in rtl_src_list]
+    stamp_content = '|'.join([rtl_top, rtl_prefix, verilator_root,
+                              subprocess.check_output(
+                                  [verilator, '--version'],
+                                  text=True).strip()] + src_stamps)
+
+    os.makedirs(rtl_build_dir, exist_ok=True)
+    prev_stamp = ''
+    if os.path.isfile(rtl_stamp):
+        with open(rtl_stamp) as f:
+            prev_stamp = f.read()
+
+    if prev_stamp != stamp_content or not os.path.isfile(rtl_archive):
+        shutil.rmtree(rtl_obj_dir, ignore_errors=True)
+        cmd = [verilator, '--cc', '--build', '-j',
+               str(multiprocessing.cpu_count()),
+               '--top-module', rtl_top,
+               '--prefix', rtl_prefix,
+               '-Mdir', rtl_obj_dir,
+               '-O3', '--assert', '--trace',
+               '-Wno-UNUSEDSIGNAL', '-Wno-UNUSEDPARAM', '-Wno-PINCONNECTEMPTY',
+               '-Wno-IMPORTSTAR', '-Wno-VARHIDDEN', '-Wno-BLKSEQ',
+               '-Wno-WIDTHTRUNC'] + rtl_src_list
+        print("cchi: verilating %s -> %s" % (rtl_top, rtl_obj_dir))
+        subprocess.check_call(cmd)
+        with open(rtl_stamp, 'w') as f:
+            f.write(stamp_content)
+
+    env.Append(LIBS=[File(rtl_archive),
+                     File(os.path.join(rtl_obj_dir, 'libverilated.a'))])
+
+    # The FST writer in the trace-enabled runtime needs LZ4
+    env.Append(LIBS=['lz4'])
+
+    # obj_dir (model headers) is a scanner-visible include; the verilator
+    # includes stay -isystem for warning suppression of third-party headers
+    env.Append(CPPPATH=[rtl_obj_dir])
+    for inc in [os.path.join(verilator_root, 'include'),
+                os.path.join(verilator_root, 'include', 'vltstd')]:
+        env.Append(CCFLAGS=['-isystem', inc])
+
+    # Top alias as a generated header (see cchi_rtl_top.hh): string-literal
+    # -D defines don't survive SCons' shell quoting, so the class/header
+    # binding is written out instead of macro-injected. Lives beside the
+    # obj_dir in the machine-local temp dir.
+    alias_header = os.path.join(rtl_build_dir, 'cchi_rtl_top_generated.hh')
+    alias_content = """\
+#pragma once
+// Generated by src/mem/cchi/SConscript (WITH_CCHI_RTL): the verilated top
+// alias for the configured CCHI_RTL_TOP.
+#include "verilated.h"
+#include "%s.h"
+namespace gem5
+{
+using CchiRtlModule = %s;
+constexpr const char *CCHI_RTL_TOP_NAME = "%s";
+} // namespace gem5
+""" % (rtl_prefix, rtl_prefix, rtl_top)
+
+    prev_alias = ''
+    if os.path.isfile(alias_header):
+        with open(alias_header) as f:
+            prev_alias = f.read()
+    if prev_alias != alias_content:
+        if prev_alias:
+            print("cchi: CCHI_RTL_TOP changed; wiping variant objects")
+            for d in ['mem', 'params', 'python', 'sim', 'base', 'dev',
+                      'cpu', 'arch', 'ext']:
+                shutil.rmtree(os.path.join(env['BUILDDIR'], d),
+                              ignore_errors=True)
+        with open(alias_header, 'w') as f:
+            f.write(alias_content)
+
+    env.Append(CPPPATH=[rtl_build_dir])
+
+    env.Append(CPPDEFINES=[('CCHI_RTL_ENABLED', '1')])
+
+    Source('cchi_axi_mem_bridge.cc', append={'CPPDEFINES': gem5_cchi_defines})
