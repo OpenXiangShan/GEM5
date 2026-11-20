@@ -1889,6 +1889,9 @@ CPU::readGem5Regs(ThreadID tid)
     diffAllStates->gem5RegFile.fcsr =
         (readMiscRegNoEffect(RiscvISA::MISCREG_FRM, tid) & 0x7) << 5 |
         (readMiscRegNoEffect(RiscvISA::MISCREG_FFLAGS, tid) & 0x1f);
+#if GEM5_ENABLE_MATRIX
+    readMatrixRegs(tid);
+#endif
     for (int i = 0; i < 32; i++) {
         diffAllStates->gem5RegFile[i] = readArchIntReg(i, tid);
         diffAllStates->gem5RegFile[i + 32] = readArchFloatReg(i, tid);
