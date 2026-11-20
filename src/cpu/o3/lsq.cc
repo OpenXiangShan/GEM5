@@ -4032,8 +4032,10 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
         _hasStaleTranslation = false;
     }
     // Clear the pending cache request
-    LSQRequest::_inst->hasPendingCacheReq(false);
-    LSQRequest::_inst->pendingCacheReq = nullptr;
+    if (_inst->pendingCacheReq == this) {
+        _inst->hasPendingCacheReq(false);
+        _inst->pendingCacheReq = nullptr;
+    }
     return true;
 }
 
@@ -4051,8 +4053,10 @@ LSQ::SplitDataRequest::recvTimingResp(PacketPtr pkt)
         flags.set(Flag::Complete);
         assemblePackets();
         _hasStaleTranslation = false;
-        LSQRequest::_inst->hasPendingCacheReq(false);
-        LSQRequest::_inst->pendingCacheReq = nullptr;
+        if (_inst->pendingCacheReq == this) {
+            _inst->hasPendingCacheReq(false);
+            _inst->pendingCacheReq = nullptr;
+        }
     }
     return true;
 }
