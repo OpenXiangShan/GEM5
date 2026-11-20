@@ -1,0 +1,51 @@
+name: gem5 Matrix Correctness Test (Tier 2 - Post-Merge)
+
+on:
+  push:
+    branches: [ xs-dev ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  matrix-correctness:
+    runs-on: [self-hosted, node]
+    timeout-minutes: 90
+    env:
+      MATRIX_CI_IMAGE_DIR: /nfs/share/gem5_ci/matrix
+      MATRIX_CI_REFERENCE_SO: /nfs/share/gem5_ci/ref/matrix/riscv64-nemu-interpreter-so
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check test inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "$MATRIX_CI_IMAGE_DIR"
+          test -r "$MATRIX_CI_REFERENCE_SO"
+      - name: Test correctness result checks
+        run: python3 -m unittest discover -s .github/workflows/autotest/script -p test_matrix_ci.py
+      - uses: ./.github/actions/build-dramsim
+      - name: Build Matrix-enabled GEM5
+        run: CC=gcc CXX=g++ scons build/RISCV_MATRIX/gem5.opt --default=RISCV --enable-matrix --linker=gold -j64
+      - name: Run 13 fixed-shape correctness cases with difftest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/workflows/autotest/script/matrix_ci.py run \
+            --gem5 "$GITHUB_WORKSPACE/build/RISCV_MATRIX/gem5.opt" \
+            --output "$GITHUB_WORKSPACE/matrix-ci-results" \
+            --image-dir "$MATRIX_CI_IMAGE_DIR" \
+            --reference "$MATRIX_CI_REFERENCE_SO" \
+            --jobs 2 --timeout 1800
+      - name: Upload validation results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: matrix-correctness-results
+          path: matrix-ci-results/
+          if-no-files-found: warn

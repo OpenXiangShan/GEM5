@@ -1,0 +1,39 @@
+Matrix correctness CI
+=====================
+
+Shared inputs use the same layout as the Vector test images:
+
+    /nfs/share/gem5_ci/matrix/*.bin
+    /nfs/share/gem5_ci/ref/matrix/riscv64-nemu-interpreter-so
+
+The runner lists the 13 fixed-shape image filenames in matrix_ci.py. It reads
+those bin files directly. No manifest, checksum file, source checkout or image
+build step is needed to run CI. Missing cases are errors.
+
+The images run one optimized xsai-blas operator with no warmup. Each contains
+expected outputs from the host generic implementation. GEMM and Flash
+Attention require AME+RVV; the other operators require RVV. The NEMU reference
+must support the 1544-byte Matrix ABI and Matrix difftest interfaces.
+
+The workflow runs on pushes to xs-dev and supports manual dispatch. It builds
+GEM5, runs the acceptance tests and executes the suite with two parallel
+simulations. Each case has a 30-minute timeout. Results and logs are uploaded
+even when a case fails. The workflow builds build/RISCV_MATRIX/gem5.opt with
+--enable-matrix and uses the configs/example/kmhv2_matrix.py entry point.
+
+Run locally from the GEM5 repository root:
+
+    scons build/RISCV_MATRIX/gem5.opt --default=RISCV --enable-matrix --linker=gold -j64
+    python3 .github/workflows/autotest/script/matrix_ci.py run \
+      --output /absolute/path/to/results
+
+The build needs DRAMsim3, which the workflow prepares through
+.github/actions/build-dramsim. Use --gem5 to select another Matrix-enabled
+binary. Use --image-dir and --reference to override shared paths. Use
+--case rms_norm to run one operator. Without --case, all 13 are required.
+
+The runner enables --matrix and difftest, disables the instruction limit and
+statistics warmup, and checks numerical correctness, normal guest completion
+and completion of all Matrix checks and memory work. GEMM and Flash Attention
+must each have a checked Matrix MMA. A timeout, incomplete run, fallback
+implementation or numerical failure fails CI.
