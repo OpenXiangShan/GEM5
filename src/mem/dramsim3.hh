@@ -111,6 +111,8 @@ class DRAMsim3 : public AbstractMemory
      * Is the connected port waiting for a retry from us
      */
     bool retryReq;
+    Addr retryReqAddr;
+    bool retryReqIsWrite;
 
     /**
      * Are we waiting for a retry for sending a response.
