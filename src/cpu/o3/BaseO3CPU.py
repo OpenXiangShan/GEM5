@@ -157,9 +157,9 @@ class BaseO3CPU(BaseCPU):
     fetchWidth = Param.Unsigned(16, "Fetch width")
     fetchBufferSize = Param.Unsigned(66, "Fetch buffer size in bytes")
     enableTwoFetch = Param.Bool(False,
-        "Enable two consecutive FTQ targets from one fetch buffer")
+        "Enable independent paired FTQ blocks (single-thread classic ICache)")
     twoFetchMaxBytes = Param.Unsigned(64,
-        "Maximum fetch-buffer window covered by two-fetch")
+        "Maximum combined effective bytes of a paired fetch group")
     fetchQueueSize = Param.Unsigned(48, "Fetch queue size in micro-ops "
                                     "per-thread")
     enablePredecode = Param.Bool(False,
