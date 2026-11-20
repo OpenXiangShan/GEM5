@@ -736,6 +736,22 @@ default: GEM5_UNREACHABLE;
 
 }};
 
+// Widening conversions also accept 16-bit integer/FP inputs. Keep this
+// separate from widening arithmetic, whose supported element types differ.
+def template VectorFloatWideningCvtDecodeBlock {{
+
+// A widening destination with LMUL=8 would require 16 registers.
+if (machInst.vtype8.vlmul == 3)
+    return new Unknown(machInst);
+
+switch(machInst.vtype8.vsew) {
+case 0b001: return new %(class_name)s<float16_t>(machInst);
+case 0b010: return new %(class_name)s<float32_t>(machInst);
+default: return new Unknown(machInst);
+}
+
+}};
+
 def template ViotaMacroDeclare {{
 
 template<typename ElemType>
