@@ -53,6 +53,7 @@
 #include "arch/riscv/pcstate.hh"
 #include "base/output.hh"
 #include "base/stats/info.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "config/the_isa.hh"
 #include "cpu/checker/cpu.hh"
 #include "cpu/o3/bpu_update.hh"
@@ -2515,6 +2516,11 @@ IEW::executeInsts()
 
         Fault fault = NoFault;
 
+#if GEM5_ENABLE_MATRIX
+        if (inst->matrixData().matrixNeedAmuCtrl()) {
+            inst->matrixData().clearMatrixPayload();
+        }
+#endif
         // Execute instruction.
         // Note that if the instruction faults, it will be handled
         // at the commit stage.
@@ -3103,6 +3109,22 @@ IEW::dqTypeToReason(DQType dq_type)
 IEW::DQType
 IEW::getInstDQType(const DynInstPtr &inst)
 {
+#if GEM5_ENABLE_MATRIX
+    if (inst->isMatrixInst()) {
+        switch (inst->opClass()) {
+          case MatrixIntOp:
+          case MatrixReleaseOp:
+          case MatrixSyncOp:
+            return IntDQ;
+          case MatrixCsrOp:
+          case MatrixMmaOp:
+          case MatrixArithOp:
+            return FVDQ;
+          default:
+            break;
+        }
+    }
+#endif
     if (inst->isMemRef() || inst->isReadBarrier() || inst->isWriteBarrier() || inst->isNonSpeculative()) {
         return MemDQ;
     }

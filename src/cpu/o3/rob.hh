@@ -43,11 +43,19 @@
 
 #include <cassert>
 #include <list>
+#include <memory>
 #include <optional>
 #include <queue>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "config/gem5_enable_matrix.hh"
+
+#if GEM5_ENABLE_MATRIX
+#include <boost/circular_buffer.hpp>
+
+#endif
 
 #include "base/statistics.hh"
 #include "base/types.hh"
@@ -55,6 +63,11 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
+
+#if GEM5_ENABLE_MATRIX
+#include "cpu/o3/matrix_pipeline.hh"
+
+#endif
 #include "cpu/o3/rob_hybrid.hh"
 #include "cpu/reg_class.hh"
 #include "enums/ROBCompressPolicy.hh"
@@ -327,6 +340,14 @@ class ROB
     InstSeqNum squashHybrid(const DynInstPtr &redirect, bool flush_itself,
                             ThreadID tid);
 
+#if GEM5_ENABLE_MATRIX
+    void noteMatrixAmuWriteback(const DynInstPtr &inst);
+    void noteMatrixAmuCommit(const DynInstPtr &inst);
+    bool canAllocateMatrixAmu(ThreadID tid,
+        const boost::circular_buffer<DynInstPtr> &insts, unsigned rename_width);
+    void issueMatrixAmu();
+#endif
+
     /** Updates the head instruction with the new oldest instruction. */
     void updateHead();
 
@@ -382,6 +403,11 @@ class ROB
   private:
     /** Reset the ROB state */
     void resetState();
+#if GEM5_ENABLE_MATRIX
+    bool shouldTrackMatrixAmu(const DynInstPtr &inst) const;
+    void insertMatrixAmuEntry(const DynInstPtr &inst);
+    void squashMatrixAmuEntry(ThreadID tid, InstSeqNum seq_num);
+#endif
 
     /** Pointer to the CPU. */
     CPU *cpu;
@@ -391,6 +417,10 @@ class ROB
 
     /** Number of instructions in the ROB. */
     unsigned numEntries;
+#if GEM5_ENABLE_MATRIX
+    /** Number of entries in the ROB-parallel AMU control shadow buffer. */
+    unsigned matrixAmuBufferEntries;
+#endif
 
     unsigned instsPerGroup;
 
@@ -406,6 +436,9 @@ class ROB
 
     /** ROB List of Instructions */
     std::list<DynInstPtr> instList[MaxThreads];
+#if GEM5_ENABLE_MATRIX
+    std::unique_ptr<MatrixAmuBuffer[]> matrixAmuBuffers;
+#endif
 
     /** Number of instructions that can be squashed in a single cycle. */
     unsigned rollbackWidth;
