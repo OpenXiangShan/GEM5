@@ -73,6 +73,8 @@ class WorkerPrefetcher : public Queued
     } workerStats;
 
   protected:
+    virtual bool canTransferHint() const { return true; }
+
     boost::compute::detail::lru_cache<Addr, Addr> pfLRUFilter;
 
     std::list<DeferredPacket> localBuffer;

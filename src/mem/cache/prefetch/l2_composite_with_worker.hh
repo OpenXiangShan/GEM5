@@ -1,6 +1,11 @@
 #ifndef __MEM_CACHE_PREFETCH_COMPOITE_WITH_WORKER_L2_HH__
 #define __MEM_CACHE_PREFETCH_COMPOITE_WITH_WORKER_L2_HH__
 
+#include <array>
+#include <functional>
+#include <limits>
+#include <list>
+#include <memory>
 #include <vector>
 
 #include "mem/cache/prefetch/bop.hh"
@@ -9,6 +14,7 @@
 #include "mem/cache/prefetch/composite_with_worker.hh"
 #include "mem/cache/prefetch/despacito_stream.hh"
 #include "mem/cache/prefetch/lldp.hh"
+#include "mem/cache/prefetch/sliced.hh"
 #include "params/L2CompositeWithWorkerPrefetcher.hh"
 
 namespace gem5
@@ -18,10 +24,13 @@ GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
 
-class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
+class L2CompositeWithWorkerPrefetcher :
+    public CompositeWithWorkerPrefetcher,
+    public SlicedPrefetcher
 {
   public:
     L2CompositeWithWorkerPrefetcher(const L2CompositeWithWorkerPrefetcherParams &p);
+    ~L2CompositeWithWorkerPrefetcher() override;
 
     using CompositeWithWorkerPrefetcher::prefetchUnused;
 
@@ -59,8 +68,39 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
 
     void notifyFill(const PacketPtr &pkt) override;
     void notifyIns(int ins_num) override { cdp->notifyIns(ins_num); }
+    void resetStats() override;
+    void preDumpStats() override;
+
+    void configureSlices(unsigned num_slices, SliceMapper mapper) override;
+    unsigned numSlices() const override { return sliceCount; }
+    bool hasPendingPacket(unsigned slice) const override;
+    Tick nextPrefetchReadyTime(unsigned slice) const override;
+    PacketPtr getPacket(unsigned slice) override;
+    bool hasPendingIngress() const override;
+    void processIngress() override;
 
   private:
+    enum class InputSource : uint8_t
+    {
+        L1,
+        LargeBOP,
+        SmallBOP,
+        DespacitoStream,
+        LLDP,
+        CDP,
+        CMC,
+        NumSources
+    };
+
+    static constexpr unsigned NumInputSources =
+        static_cast<unsigned>(InputSource::NumSources);
+
+    static constexpr unsigned
+    sourceIndex(InputSource source)
+    {
+        return static_cast<unsigned>(source);
+    }
+
     CDP* cdp;
     BOP* largeBOP;
     BOP* smallBOP;
@@ -76,10 +116,62 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     bool preferLLDP{false};
 
     const bool offloadLowAccuracy;
-    protected:
-    void InsertPFRequestToBuffer(const AddrPriority &addr_prio) override{
-      panic("SMS:InsertPFRequestToBuffer not implemented");
+
+    const unsigned entriesPerSlice;
+    unsigned sliceCount{0};
+    SliceMapper sliceMapper;
+    std::array<std::list<DeferredPacket>, NumInputSources> sourceReady;
+    std::vector<unsigned> maxSliceOccupancy;
+    uint64_t lastIngressCycle{std::numeric_limits<uint64_t>::max()};
+    std::vector<uint64_t> lastDequeueCycleBySlice;
+
+    struct SlicePfqStats : public statistics::Group
+    {
+        SlicePfqStats(statistics::Group *parent, unsigned num_slices);
+
+        statistics::Vector pfqEnqueued;
+        statistics::Vector pfqDequeued;
+        statistics::Vector pfqDroppedOldest;
+        statistics::Vector pfqInputConflict;
+        statistics::Vector pfqOccupancy;
+        statistics::Vector pfqMaxOccupancy;
+        statistics::Vector pfqInputWonBySource;
+        statistics::Distribution pfqEnqueueWidth;
     };
+    std::unique_ptr<SlicePfqStats> slicePfqStats;
+
+    bool sliced() const { return sliceCount != 0; }
+    unsigned packetSlice(const DeferredPacket &dpp) const;
+    iterator sliceHead(unsigned slice);
+    const_iterator sliceHead(unsigned slice) const;
+    unsigned sliceOccupancy(unsigned slice) const;
+    bool queuedInPfq(const PrefetchInfo &pfi) const;
+    void updateSliceOccupancyStats();
+    void dropStagedFront(InputSource source);
+    void enqueueWinner(InputSource source, unsigned slice);
+    void tagNewRequests(std::vector<AddrPriority> &addresses,
+                        size_t previous_size, InputSource source) const;
+    bool pullSourceRequest(Queued *source, InputSource input_source,
+                           std::vector<AddrPriority> &addresses);
+
+  protected:
+    bool canTransferHint() const override
+    {
+        return !sliced() ||
+            sourceReady[sourceIndex(InputSource::L1)].empty();
+    }
+
+    void InsertPFRequestToBuffer(const AddrPriority &addr_prio) override
+    {
+        panic("L2CompositeWithWorkerPrefetcher: local buffer not implemented");
+    }
+
+    bool reorderOnPriorityUpdate(
+        const std::list<DeferredPacket> &queue) const override
+    {
+        return !sliced() || &queue != &pfq;
+    }
+
   public:
     bool GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) override;
     bool hasPFRequestsInBuffer() override;
