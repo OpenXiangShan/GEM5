@@ -45,16 +45,23 @@
 
 #include <iostream>
 #include <list>
+#include <memory>
 #include <queue>
 #include <set>
 #include <vector>
 
 #include "arch/generic/pcstate.hh"
 #include "base/statistics.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "config/the_isa.hh"
 #include "cpu/activity.hh"
 #include "cpu/base.hh"
 #include "cpu/difftest.hh"
+
+#if GEM5_ENABLE_MATRIX
+#include "cpu/exec_context.hh"
+
+#endif
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/commit.hh"
 #include "cpu/o3/cpu_def.hh"
@@ -90,11 +97,21 @@ class ThreadContext;
 class Checkpoint;
 class Process;
 
+#if GEM5_ENABLE_MATRIX
+namespace matrix
+{
+struct CuteRequest;
+} // namespace matrix
+
+#endif
 namespace o3
 {
 
 class ThreadContext;
 class TraceInstruction;
+#if GEM5_ENABLE_MATRIX
+struct MatrixCpuState;
+#endif
 
 /**
  * O3CPU class, has each of the stages (fetch through commit)
@@ -145,6 +162,12 @@ class CPU : public BaseCPU
     /** The exit event used for terminating all ready-to-exit threads */
     EventFunctionWrapper threadExitEvent;
 
+#if GEM5_ENABLE_MATRIX
+    static const BaseISA::RegClasses &matrixRegClasses(
+        const BaseO3CPUParams &params);
+    void initMatrix(const BaseO3CPUParams &params);
+
+#endif
     /** Schedule tick event, regardless of its current state. */
     void
     scheduleTickEvent(Cycles delay)
@@ -346,6 +369,23 @@ class CPU : public BaseCPU
      * might have as defined by the architecture.
      */
     void setMiscReg(int misc_reg, RegVal val, ThreadID tid);
+#if GEM5_ENABLE_MATRIX
+    bool isMatrixBackendEnabled() const { return enableMatrixBackend; }
+    void commitMatrixResetToken(
+        ThreadID tid, RegVal token_idx, InstSeqNum seq_num);
+    bool matrixTokenReady(ThreadID tid, RegVal token, RegVal threshold) const;
+    void commitMatrixReleaseToken(
+        ThreadID tid, RegVal token_idx, InstSeqNum seq_num);
+    bool tryIssueMatrixAmu(ThreadID tid, MatrixAmuBuffer &buffer);
+    void serviceMatrixBackend();
+    void checkMatrixResults();
+    bool matrixHasLiveState() const;
+    bool matrixHasPendingWork() const;
+    void checkMatrixCheckpoint(ThreadID tid) const;
+    void checkMatrixDrain() const;
+    void checkMatrixSwitchOut() const;
+    void commitMatrixResetToken(const DynInstPtr &inst);
+#endif
 
     RegVal getReg(PhysRegIdPtr phys_reg);
     RegVal getReg(VirtRegId phys_reg);
@@ -644,6 +684,12 @@ class CPU : public BaseCPU
     /** Available thread ids in the cpu*/
     std::vector<ThreadID> tids;
 
+#if GEM5_ENABLE_MATRIX
+
+    bool enableMatrixBackend = false;
+    std::unique_ptr<MatrixCpuState> matrixState;
+
+#endif
     /** CPU pushRequest function, forwards request to LSQ. */
     Fault
     pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,

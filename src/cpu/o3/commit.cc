@@ -56,6 +56,7 @@
 #include "base/loader/symtab.hh"
 #include "base/logging.hh"
 #include "base/output.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "config/the_isa.hh"
 #include "cpu/base.hh"
 #include "cpu/checker/cpu.hh"
@@ -2079,6 +2080,10 @@ Commit::commitInsts()
         toIEW->commitInfo[tid].robheadSeqNum = robheadSeqNum;
     }
 
+#if GEM5_ENABLE_MATRIX
+    rob->issueMatrixAmu();
+
+#endif
     DPRINTF(CommitRate, "%i\n", num_committed);
     stats.numCommittedDist.sample(num_committed);
 
@@ -2414,6 +2419,9 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num,
     if (head_inst->isHtmStart())
         iewStage->setLastRetiredHtmUid(tid, head_inst->getHtmTransactionUid());
 
+#if GEM5_ENABLE_MATRIX
+    cpu->commitMatrixResetToken(head_inst);
+#endif
     if (valuePred && head_inst->canLVP() && (inst_fault == NoFault)) {
         // essential trainning info for all value predictors
         valuepred::VPUpdateInfo updateInfo;
@@ -2534,6 +2542,9 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num,
         }
     }
 
+#if GEM5_ENABLE_MATRIX
+    rob->noteMatrixAmuCommit(head_inst);
+#endif
     // Finally clear the head ROB entry.
     if (auto *tea = cpu->getTea()) {
         tea->commit(head_inst);
@@ -2636,6 +2647,10 @@ Commit::moveInstsToBuffer()
         const unsigned allocation = rob->isHybrid() ? hybrid_plan.size() :
             std::min<unsigned>(fixedbuffer[i].size(), renameWidth);
         bool block = !rob->canAllocate(i, allocation) || robblock;
+#if GEM5_ENABLE_MATRIX
+        block = block ||
+            !rob->canAllocateMatrixAmu(i, fixedbuffer[i], renameWidth);
+#endif
         bool active = !block && !fixedbuffer[i].empty();
         StallReason block_reason = StallReason::NoStall;
         if (robblock) {
@@ -2813,6 +2828,9 @@ Commit::markCompletedInsts()
             // Mark the instruction as ready to commit.
             fromIEW->insts[inst_num]->setCanCommit();
             auto &inst = fromIEW->insts[inst_num];
+#if GEM5_ENABLE_MATRIX
+            rob->noteMatrixAmuWriteback(inst);
+#endif
 
             panic_if(!inst->isInROB(),
                      "[tid:%i] [sn:%llu] Committed instruction not found in ROB",

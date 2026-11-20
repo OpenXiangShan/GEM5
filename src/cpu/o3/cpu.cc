@@ -47,6 +47,7 @@
 #include <limits>
 
 #include "arch/riscv/regs/misc.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "config/the_isa.hh"
 #include "cpu/activity.hh"
 #include "cpu/checker/cpu.hh"
@@ -72,6 +73,12 @@
 #include "sim/process.hh"
 #include "sim/stat_control.hh"
 #include "sim/system.hh"
+
+#if GEM5_ENABLE_MATRIX
+#include "arch/riscv/matrix.hh"
+#include "cpu/o3/matrix_cpu_state.hh"
+
+#endif
 
 namespace gem5
 {
@@ -104,7 +111,11 @@ CPU::CPU(const BaseO3CPUParams &params)
               params.numPhysVecPredRegs,
               params.numPhysCCRegs,
               params.numPhysRMiscRegs,
+#if GEM5_ENABLE_MATRIX
+              matrixRegClasses(params)),
+#else
               params.isa[0]->regClasses()),
+#endif
 
       freeList(name() + ".freelist", &regFile, params),
 
@@ -164,6 +175,10 @@ CPU::CPU(const BaseO3CPUParams &params)
         tids.resize(numThreads);
     }
 
+#if GEM5_ENABLE_MATRIX
+    initMatrix(params);
+
+#endif
     // The stages also need their CPU pointer setup.  However this
     // must be done at the upper level CPU because they have pointers
     // to the upper level CPU, and not this CPU.
@@ -654,6 +669,9 @@ CPU::tick()
     rename.tick();
     decode.tick();
     fetch.tick();
+#if GEM5_ENABLE_MATRIX
+    serviceMatrixBackend();
+#endif
 
     fetchTimebuffer.advance();
     decodeTimebuffer.advance();
@@ -718,6 +736,20 @@ void
 CPU::startup()
 {
     BaseCPU::startup();
+#if GEM5_ENABLE_MATRIX
+    if (enableMatrixBackend) {
+        // ISA checkpoint loading has finished. Restore renamed tile sources
+        // from the committed CSRs before fetch can read them.
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            setArchReg(TheISA::MatrixRenamedTileMReg,
+                       readMiscRegNoEffect(TheISA::MISCREG_MTILEM, tid), tid);
+            setArchReg(TheISA::MatrixRenamedTileNReg,
+                       readMiscRegNoEffect(TheISA::MISCREG_MTILEN, tid), tid);
+            setArchReg(TheISA::MatrixRenamedTileKReg,
+                       readMiscRegNoEffect(TheISA::MISCREG_MTILEK, tid), tid);
+        }
+    }
+#endif
 
     fetch.startupStage();
     decode.startupStage();
@@ -1002,6 +1034,9 @@ CPU::trap(const Fault &fault, ThreadID tid, const StaticInstPtr &inst)
 void
 CPU::serializeThread(CheckpointOut &cp, ThreadID tid) const
 {
+#if GEM5_ENABLE_MATRIX
+    checkMatrixCheckpoint(tid);
+#endif
     thread[tid]->serialize(cp);
 }
 
@@ -1017,6 +1052,9 @@ CPU::drain()
     // Deschedule any power gating event (if any)
     deschedulePowerGatingEvent();
 
+#if GEM5_ENABLE_MATRIX
+    checkMatrixDrain();
+#endif
     // If the CPU isn't doing anything, then return immediately.
     if (switchedOut())
         return DrainState::Drained;
@@ -1134,6 +1172,13 @@ CPU::isCpuDrained() const
         drained = false;
     }
 
+#if GEM5_ENABLE_MATRIX
+    if (matrixHasPendingWork()) {
+        DPRINTF(Drain, "Matrix backend not drained.\n");
+        drained = false;
+    }
+
+#endif
     return drained;
 }
 
@@ -1171,6 +1216,9 @@ CPU::drainResume()
 void
 CPU::switchOut()
 {
+#if GEM5_ENABLE_MATRIX
+    checkMatrixSwitchOut();
+#endif
     DPRINTF(O3CPU, "Switching out\n");
     BaseCPU::switchOut();
 

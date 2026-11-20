@@ -51,6 +51,9 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('lsq.cc')
     Source('mlp_predictor.cc')
     Source('lsq_unit.cc')
+    if env['CONF']['GEM5_ENABLE_MATRIX']:
+        Source('matrix_pipeline.cc')
+        Source('matrix_cpu.cc')
     Source('mem_dep_unit.cc')
     Source('phast.cc')
     Source('regfile.cc')
@@ -103,7 +106,6 @@ if env['CONF']['TARGET_ISA'] != 'null':
     DebugFlag('LoadPipeline')
     DebugFlag('StorePipeline')
     DebugFlag('TraceReader')
-
     CompoundFlag('O3CPUAll', [ 'Fetch', 'Decode', 'Rename', 'IEW', 'Commit',
         'IQ', 'ROB', 'FreeList', 'LSQ', 'LSQUnit', 'StoreSet', 'MemDepUnit',
         'DynInst', 'O3CPU', 'Activity', 'Scoreboard', 'Writeback' ])
