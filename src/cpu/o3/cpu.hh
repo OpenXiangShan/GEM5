@@ -48,6 +48,7 @@
 #include <memory>
 #include <queue>
 #include <set>
+#include <string>
 #include <vector>
 
 #include "arch/generic/pcstate.hh"
@@ -110,6 +111,7 @@ namespace o3
 class ThreadContext;
 class TraceInstruction;
 #if GEM5_ENABLE_MATRIX
+class MatrixMemPort;
 struct MatrixCpuState;
 #endif
 
@@ -124,6 +126,9 @@ class CPU : public BaseCPU
     typedef std::list<DynInstPtr>::iterator ListIt;
 
     friend class ThreadContext;
+#if GEM5_ENABLE_MATRIX
+    friend class MatrixMemPort;
+#endif
 
   public:
     gem5::prefetch::Base *hintDownStream{nullptr};
@@ -238,6 +243,11 @@ class CPU : public BaseCPU
     /** Initialize the CPU */
     void init() override;
 
+#if GEM5_ENABLE_MATRIX
+    Port &getPort(const std::string &if_name,
+                  PortID idx=InvalidPortID) override;
+
+#endif
     void startup() override;
 
     /** Returns the Number of Active Threads in the CPU */
@@ -687,6 +697,7 @@ class CPU : public BaseCPU
 #if GEM5_ENABLE_MATRIX
 
     bool enableMatrixBackend = false;
+    bool enableMatrixMemPort = false;
     std::unique_ptr<MatrixCpuState> matrixState;
 
 #endif
