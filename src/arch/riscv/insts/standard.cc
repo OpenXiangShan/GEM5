@@ -75,6 +75,41 @@ MopOp::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
     return ss.str();
 }
 
+CSROp::Ordering
+CSROp::ordering() const
+{
+    // rs1 and zimm share the same five encoded bits.
+    switch (machInst.funct3) {
+      case 0x2: // CSRRS
+      case 0x3: // CSRRC
+      case 0x6: // CSRRSI
+      case 0x7: // CSRRCI
+        if (uimm != 0)
+            return Ordering::Serialized;
+        break;
+      default: // CSRRW and CSRRWI always write.
+        return Ordering::Serialized;
+    }
+
+    switch (csr) {
+      case CSR_MIREG: case CSR_SIREG: case CSR_VSIREG:
+      case CSR_MTOPI: case CSR_STOPI: case CSR_VSTOPI:
+      case CSR_MTOPEI: case CSR_STOPEI: case CSR_VSTOPEI:
+      case CSR_MIP: case CSR_SIP: case CSR_VSIP:
+      case CSR_HIP: case CSR_HVIP: case CSR_MVIP:
+      // Keep vector length reads on their existing serialized path.
+      case CSR_VL: case CSR_VLENB:
+        return Ordering::Serialized;
+      case CSR_FFLAGS: case CSR_FCSR:
+      case CSR_VXSAT: case CSR_VCSR: case CSR_VSTART:
+      case CSR_SSTATUS: case CSR_VSSTATUS: case CSR_MSTATUS:
+      case CSR_HSTATUS: case CSR_MNSTATUS: case CSR_DCSR: case CSR_VTYPE:
+        return Ordering::WaitForOlder;
+      default:
+        return Ordering::Unordered;
+    }
+}
+
 std::string
 CSROp::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
 {

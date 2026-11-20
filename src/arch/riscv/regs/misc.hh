@@ -347,6 +347,9 @@ enum CSRIndex
     CSR_SATP = 0x180,
     CSR_STIMECMP = 0x14D,
     // STIMECMPH rv32 only
+    CSR_SIREG = 0x151,
+    CSR_STOPEI = 0x15C,
+    CSR_STOPI = 0xDB0,
 
     CSR_MVENDORID = 0xF11,
     CSR_MARCHID = 0xF12,
@@ -359,6 +362,7 @@ enum CSRIndex
     CSR_MIE = 0x304,
     CSR_MTVEC = 0x305,
     CSR_MCOUNTEREN = 0x306,
+    CSR_MVIP = 0x309,
     CSR_MENVCFG = 0x30A,
     CSR_MSTATEEN0 = 0x30C,
     CSR_MSTATEEN1 = 0x30D,
@@ -369,6 +373,10 @@ enum CSRIndex
     CSR_MCAUSE = 0x342,
     CSR_MTVAL = 0x343,
     CSR_MIP = 0x344,
+    CSR_MIREG = 0x351,
+    CSR_MTOPEI = 0x35C,
+    CSR_MTOPI = 0xFB0,
+    CSR_MNSTATUS = 0x744,
     CSR_PMPCFG0 = 0x3A0,
     // pmpcfg1 rv32 only
     CSR_PMPCFG2 = 0x3A2,
@@ -526,6 +534,9 @@ enum CSRIndex
     CSR_VSATP       = 0x280,
     CSR_VSTIMECMP   = 0x24D,
     // VSTIMECMPH rv32 only
+    CSR_VSIREG      = 0x251,
+    CSR_VSTOPEI     = 0x25C,
+    CSR_VSTOPI      = 0xEB0,
     CSR_MTINST      = 0x34A,
     CSR_MTVAL2      = 0x34B,
 };

@@ -328,6 +328,22 @@ def template JumpExecute {{
     }
 }};
 
+def template CSRConstructor {{
+    %(class_name)s::%(class_name)s(ExtMachInst machInst)
+        : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s)
+    {
+        %(set_reg_idx_arr)s;
+        %(constructor)s;
+        // Apply the CSR policy after the decoder initializes the flags.
+        const auto policy = ordering();
+        if (policy != Ordering::Serialized) {
+            flags[IsSerializeBefore] = policy == Ordering::WaitForOlder;
+            flags[IsSerializeAfter] = false;
+            flags[IsNonSpeculative] = false;
+        }
+    }
+}};
+
 def template CSRExecute {{
     Fault
     %(class_name)s::execute(ExecContext *xc,
@@ -642,7 +658,7 @@ def format SystemOp(code, *opt_flags) {{
 def format CSROp(code, *opt_flags) {{
     iop = InstObjParams(name, Name, 'CSROp', code, opt_flags)
     header_output = BasicDeclare.subst(iop)
-    decoder_output = BasicConstructor.subst(iop)
+    decoder_output = CSRConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)
     exec_output = CSRExecute.subst(iop)
 }};
