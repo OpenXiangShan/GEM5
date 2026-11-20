@@ -1,0 +1,17 @@
+checkpoint,workload,point,simpoint_weight,compound_dual_ipc_delta_pct,historical_bop_on_off_ipc_delta_pct,dual_bop_mpki,selection_group
+omnetpp_18492,omnetpp,18492,0.313070,-0.154305,5.792528,45.161566,historical_10pt
+cactusADM_163,cactusADM,163,0.560381,3.191974,-2.973856,11.703301,historical_10pt
+mcf_12886,mcf,12886,0.149435,0.195589,-6.783413,88.025809,historical_10pt
+mcf_6753,mcf,6753,0.218742,0.432827,1.721803,102.386770,historical_10pt
+milc_28462,milc,28462,0.0749584,-2.858094,10.406428,38.531394,historical_10pt
+milc_30106,milc,30106,0.0852193,-1.689002,-3.711313,17.827855,historical_10pt
+bwaves_13153,bwaves,13153,0.720160,-0.259345,1.030706,18.253802,historical_10pt
+astar_biglakes_6185,astar_biglakes,6185,0.171593,-0.061523,3.023360,8.246300,historical_10pt
+leslie3d_18494,leslie3d,18494,0.181792,-0.354385,2.343960,16.519801,historical_10pt
+gcc_200_5108,gcc_200,5108,0.143446,-0.291522,-2.260745,12.678301,historical_10pt
+gcc_166_800,gcc_166,800,0.155920,-4.078877,-0.429532,22.176751,kmhv3_0.3c_added
+gobmk_trevorc_883,gobmk_trevorc,883,0.239453,0.846507,-0.591529,0.672000,kmhv3_0.3c_added
+wrf_9169,wrf,9169,0.218538,0.551928,-0.294642,2.797349,kmhv3_0.3c_added
+GemsFDTD_43464,GemsFDTD,43464,0.210201,0.234755,0.833746,18.258355,kmhv3_0.3c_added
+soplex_pds-50_9466,soplex_pds-50,9466,0.126190,-0.551043,0.110263,43.237539,kmhv3_0.3c_added
+perlbench_diffmail_2097,perlbench_diffmail,2097,0.421425,0.256673,-0.063732,5.903999,kmhv3_0.3c_added

@@ -1,13 +1,19 @@
 # TS-BOP 单 BOP Degree 研究与开发跟踪
 
-> 最后更新：2026-11-19
-> 当前阶段：阶段 3 功能实现已完成；阶段 4 的 3 点 checkpoint IPC/流量 A/B 已完成，下一步进行实现后 trace 和 coverage 对齐。
+> 最后更新：2026-11-20
+> 当前阶段：阶段 3 功能实现、`idealkmhv3.py` 与 `kmhv3.py` 全套 A/B、架构级面积评估和参数求解准备已完成；下一步运行 24 小时 CI NSGA-II 参数求解，再回到 0.3c/1.0c 全套复验最优候选。
 > 最终参数：`N2/R50/S20 + V2/P0 + Student 4+4 + SF2048 + degree 2 + 2% marginal + P8/E8 + RF128`。
 > 完整 10 点静态 replay：local coverage 为 `76.08% / 72.70%`，local sent/demand 为 `1.595 / 1.527`（checkpoint-weighted / access-weighted）；coverage 与双 BOP 基本持平，发送量降低 `13.3% / 9.5%`。
 > 已知上限：`gcc_200_5108` 仍比双 BOP 低 3.83 pp；该点作为单一学习域的已知风险保留，不再阻塞当前机制选择。
-> 状态：独立 `CompoundBOP` 已按冻结机制接入 `idealkmhv3.py`，完整构建、C++ 单测、
-> 58 项 Python replay 单测和配置冒烟已通过；3 个真实 checkpoint 的 20M warmup +
-> 20M measurement A/B 已完成，Compound 对双 BOP 的三点等权 IPC 几何平均为 +0.13%，实现后 trace 对齐仍待完成。
+> 状态：独立 `CompoundBOP` 已按冻结机制接入 L2 composite；`idealkmhv3.py` 可用配置
+> 选择，`kmhv3.py` 可通过 `system.l2_wrappers[0].prefetcher.use_compound_bop` 的 py 参数
+> 切换。完整构建、C++ 单测、58 项 Python replay 单测和配置冒烟已通过；实现后 trace
+> 对齐仍待完成。
+> 阶段 3 全套结果：Compound 与双 BOP 的 SPEC06 0.3c Overall score/GHz 分别为
+> `24.18755 / 24.18906`，差值 `-0.0063%`；按当前逻辑资源估算，BOP 子系统物理
+> 面积预计减少 `25%--40%`，中心估计约 `30%`，该数字不是 RTL 综合结果。
+> `kmhv3.py` 结果：0.3c / 1.0c Overall 分别为 `+0.0789% / +0.1237%`，BOP issued
+> 分别降低 `5.40% / 7.38%`。已注册 16 点 `bop-key` 集合作为后续 SimPoint 加权求解输入。
 > 阶段 3 确认调整：Student entry confidence 改为 VBOP/PBOP 子池分别选择 best/worst 并更新；阶段 2d 的全局 pool 更新结果保留为历史数据，需用新语义重新 replay。
 
 ## 1. 背景与目标
@@ -1327,7 +1333,8 @@ local resource replay。最终结论和后续实现统一以本节正式 runner 
 | 2b. 离线 replay/参数扫描 | 完成 | 10/10 精确校准；degree/threshold/top-N/FIFO/filter/仲裁最终汇总；58 个分析单测通过 |
 | 2c. 覆盖缺口归因 | 完成 | 逐 checkpoint coverage、offset 分布图、degree/pool/top-N/phase frequency/Student delay/hash/bad-score 对照 |
 | 2d. 最小机制优化 | 完成 | V2/P0 + family 独立 confidence 完成 10 点 replay；coverage 与双 BOP 持平并降低发送量 |
-| 3. 功能实现 | 完成 | 独立 CompoundBOP、family winner/gate、4+4 Student、P8/E8/RF128 已接入 idealkmhv3 |
+| 3. 功能实现与整体评估 | 完成 | 独立 CompoundBOP、family winner/gate、4+4 Student、P8/E8/RF128 已接入；idealkmhv3 0.3c 和 kmhv3 0.3c/1.0c A/B 与架构级面积估算已完成 |
+| 3b. CI 参数求解准备 | 完成 | 注册 16 点 SimPoint 加权集合与 `CompoundBOPKeyNsga2ScoreSearch`；目标、关键参数域、24 小时预算及 16x16 并发已固定 |
 | 4. 实现后验证 | 部分完成 | 3 个真实 checkpoint 的 IPC/流量 A/B 已完成；同 checkpoint trace 与 coverage 对齐待运行 |
 
 ### 8.1 阶段 3 实现结果
@@ -1346,7 +1353,171 @@ local resource replay。最终结论和后续实现统一以本节正式 runner 
 - `gem5.opt`、`gem5.fast`、完整 `unittests.opt --unit-test`、58 项 Python replay 单测、
   `py_compile`、`git diff --check` 和 CompoundBOP 配置冒烟均已通过。
 
-### 8.2 阶段 4 真实 checkpoint IPC A/B
+### 8.2 阶段 3 全套 SPEC06 性能与面积评估
+
+2026-11-19 在同一提交 `7bc7b6264a08570228885d2971d21ede485a39b0` 上完成
+`spec06-rva23-novec-gcc16-0.3c` 全套测试。两组均使用 `idealkmhv3.py`，只切换
+`--ideal-l2-bop-mode={dual,compound}`，因此该结果直接比较旧双 BOP 与当前
+CompoundBOP：
+
+| 配置 | Actions run | 归档目录 |
+| --- | --- | --- |
+| CompoundBOP | [44461746571](https://github.com/OpenXiangShan/GEM5/actions/runs/44461746571) | `/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261119_134000_7bc7b626_idealkmhv3_run2266` |
+| 双 BOP | [44461746803](https://github.com/OpenXiangShan/GEM5/actions/runs/44461746803) | `/nfs/home/share/gem5_ci/performance_data/spec06-rva23-novec-gcc16-0.3c/20261119_132021_7bc7b6264a_idealkmhv3_run2267` |
+
+| 配置 | INT score/GHz | FP score/GHz | Overall score/GHz | Overall @ 3 GHz |
+| --- | ---: | ---: | ---: | ---: |
+| 双 BOP | 23.648103 | 24.578351 | 24.189063 | 72.567188 |
+| CompoundBOP | 23.637200 | 24.583728 | 24.187549 | 72.562646 |
+| Compound 相对双 BOP | -0.0461% | +0.0219% | **-0.0063%** | **-0.0063%** |
+
+Overall 差值只有 `-0.0063%`，当前精度下可以视为全套性能基本持平。INT 有很小的
+下降，FP 有很小的上升，未观察到 CompoundBOP 导致的整体性性能损失。按 workload
+汇总，较大的正向变化为 `milc +0.807%`、`bwaves +0.503%`、`wrf +0.203%` 和
+`gcc +0.154%`；较大的负向变化为 `zeusmp -0.499%`、`omnetpp -0.333%`、
+`GemsFDTD -0.248%` 和 `gobmk -0.207%`。这些正负变化说明共享机制改变了具体
+workload 的训练和及时性，但整体收益与回退基本抵消。
+
+面积只能在当前阶段做架构级估算。下表比较的是预期硬件逻辑状态，不是 C++ 对象的
+内存占用；RR 按两路 bank、12-bit tag 加 valid 估算，Student filter 只计算实际
+使用的 hit-mask 位：
+
+| 主要资源 | 双 BOP | CompoundBOP | 资源变化 |
+| --- | ---: | ---: | ---: |
+| RR banks | `2 BOP * 2 * 256 * (12+1)` bit | `1 BOP * 2 * 256 * (12+1)` bit | -50% |
+| Student coverage filter | `4096*4 + 2048*8 = 32768` bit | `2048*8 = 16384` bit | -50% |
+| Teacher score | `(72+37)*5 = 545` bit | `109*5 = 545` bit | 持平 |
+| Student pool | `4+8 = 12` entries | `4+4 = 8` entries | -33% entries |
+| RR delay queue | `2*16` entries | `1*16` entries | -50% entries |
+| BOP 本地输出 FIFO | `16+16` entries | `8+8` entries | -50% entries |
+
+CompoundBOP 额外需要 16 个 cross-family overlap counter、RF128、Primary/Extra
+仲裁和两套很小的 family confidence/gate 状态。综合这些新增逻辑后，当前判断是：
+
+- 只看主要存储状态，预计减少约 `40%--50%`。
+- 计入 RF128、每次 access 两次 RR lookup 的端口代价以及新增控制逻辑后，BOP
+  子系统物理面积预计减少约 `25%--40%`，中心估计约 `30%`。
+- 如果共享 RR 为满足吞吐必须复制或实现代价较高的双读口，收益可能只有
+  `20%--30%`；如果两次 lookup 能流水/分时且 recent filter 使用紧凑实现，则可能
+  接近 `35%--40%`。
+
+这里的比例只针对双 BOP 到 CompoundBOP 的局部子系统，不能外推为整个 L2 或整个
+core 的面积变化。最终数字需要在确定 RF128 结构、RR 端口方案和 counter 位宽后，
+通过 RTL 综合、SRAM compiler、时序收敛和布局布线确认。
+
+### 8.3 kmhv3 全套验证与参数求解集合
+
+2026-11-19 在同一提交 `5694f904113bcfef4e71fc91f72daa0997e9c9f2` 上完成
+`kmhv3.py` 的 0.3c 和 1.0c 全套测试。四组运行都只通过 py 参数切换
+`system.l2_wrappers[0].prefetcher.use_compound_bop`，没有增加命令行模式参数：
+
+| 覆盖率 | 配置 | Actions run | 归档目录 |
+| --- | --- | --- | --- |
+| 0.3c | 双 BOP | [44481902345](https://github.com/OpenXiangShan/GEM5/actions/runs/44481902345) | `20261119_155255_5694f90411_kmhv3_run2279` |
+| 0.3c | CompoundBOP | [44481907978](https://github.com/OpenXiangShan/GEM5/actions/runs/44481907978) | `20261119_155240_5694f90411_kmhv3_run2280` |
+| 1.0c | 双 BOP | [44494377934](https://github.com/OpenXiangShan/GEM5/actions/runs/44494377934) | `20261119_171857_5694f90411_kmhv3_run2283` |
+| 1.0c | CompoundBOP | [44494384544](https://github.com/OpenXiangShan/GEM5/actions/runs/44494384544) | `20261119_171851_5694f90411_kmhv3_run2284` |
+
+| 覆盖率 | 配置 | INT score/GHz | FP score/GHz | Overall score/GHz |
+| --- | --- | ---: | ---: | ---: |
+| 0.3c | 双 BOP | 21.757512 | 23.795835 | 22.930199 |
+| 0.3c | CompoundBOP | 21.755400 | 23.829525 | 22.948302 |
+| 0.3c | Compound 相对双 BOP | -0.0097% | +0.1416% | **+0.0789%** |
+| 1.0c | 双 BOP | 20.152007 | 23.209799 | 21.891923 |
+| 1.0c | CompoundBOP | 20.117445 | 23.287014 | 21.919012 |
+| 1.0c | Compound 相对双 BOP | -0.1715% | +0.3327% | **+0.1237%** |
+
+| 覆盖率 | BOP issued | BOP useful | BOP late | useful / issued | late / issued |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 0.3c Compound 相对双 BOP | -5.40% | -2.38% | -7.70% | 18.11% -> 18.68% | - |
+| 1.0c Compound 相对双 BOP | -7.38% | -8.59% | -9.34% | 17.56% -> 17.33% | 63.90% -> 62.54% |
+
+因此当前结论仍是“性能基本持平、小幅偏正，同时稳定减少 BOP issued 和 late”，
+而不是 CompoundBOP 对所有 workload 都有普遍加速。收益和回退集中在少数切片，
+适合继续做有针对性的参数求解。
+
+参数求解集合使用以下三个筛选指标：
+
+```text
+current_weighted_impact = SimPoint weight * abs(IPC_compound / IPC_dual - 1)
+historical_bop_impact   = SimPoint weight * abs(IPC_bop_on / IPC_bop_off - 1)
+weighted_bop_intensity  = SimPoint weight * dual_bop_issued_per_kinst
+```
+
+最终集合保留阶段 1 的 10 个历史敏感点，并从当前 0.3c 增加 6 个 Compound/Dual
+差异、高权重或高 BOP 流量点，共 16 个：
+
+```text
+omnetpp_18492          cactusADM_163          mcf_12886
+mcf_6753               milc_28462             milc_30106
+bwaves_13153           astar_biglakes_6185    leslie3d_18494
+gcc_200_5108           gcc_166_800            gobmk_trevorc_883
+wrf_9169               GemsFDTD_43464         soplex_pds-50_9466
+perlbench_diffmail_2097
+```
+
+代表性点包括：`cactusADM_163` 的 Compound/Dual IPC 为 `+3.192%`，
+`gcc_166_800` 为 `-4.079%`，`milc_28462` 的历史 BOP on/off 为 `+10.406%`，
+两个 mcf 点的双 BOP issued 强度分别达到 `88.03/102.39 per kinst`，而
+`bwaves_13153` 的 SimPoint 权重为 `0.720160`。完整选点数据保存在
+`configs/solver_profiles/compound_bop_key_slices/selection.csv`。
+
+该集合使用原始 SimPoint 权重，在每个 workload 内对保留切片重新归一化，再对集合中
+实际出现的 SPEC benchmark 做几何平均。用现有结果回放评分得到：
+
+| 对比 | INT | FP | Overall |
+| --- | ---: | ---: | ---: |
+| CompoundBOP 相对双 BOP | -0.0371% | +0.0311% | **-0.00038%** |
+| 历史 BOP on 相对 off | +0.7242% | +0.9982% | **+0.8716%** |
+
+这说明集合对当前 Compound/Dual 默认值几乎完全平衡，不会天然奖励其中一方；同时它把
+历史 BOP 开关影响从全套的 `+0.221%` 放大到 `+0.872%`，对 BOP 参数更敏感。
+求解入口已注册为 `spec06-rva23-novec-gcc16-bop-key`，对应文件为：
+
+- `configs/solver_profiles/compound_bop_key_slices/checkpoints.lst`
+- `configs/solver_profiles/compound_bop_key_slices/weights.json`
+- `configs/solver_profiles/compound_bop_key_slices/selection.csv`
+
+正式求解 spec 为
+`configs/solver_specs/compound_bop_key_nsga2_score_search.py:CompoundBOPKeyNsga2ScoreSearch`。
+搜索使用 `kmhv3.py`，并通过现有 py 参数
+`system.l2_wrappers[0].prefetcher.use_compound_bop=True` 固定启用 CompoundBOP，
+不增加新的配置命令行选项。求解配置为：
+
+| 项目 | 配置 |
+| --- | --- |
+| 目标 | 最大化 `Estimated overall score per GHz` |
+| 算法 | NSGA-II，单目标使用相同候选生成与保留框架 |
+| 工作负载 | `spec06-rva23-novec-gcc16-bop-key`，16 个切片按 SimPoint 方式评分 |
+| 时间预算 | 24 小时 |
+| 试验上限 | 4096，仅作为保险上限，不设置 `no_improve_trials` 提前结束 |
+| 并发 | `max_parallel_trials=16`，`max_parallel_workloads=16` |
+| 面积 | 不作为目标，也不设约束 |
+
+关键搜索参数如下；Teacher phase 和 Student slots 使用成对语义变量，避免独立搜索
+产生无意义组合：
+
+| 语义参数 | 搜索域 | 当前默认值 |
+| --- | --- | --- |
+| `teacher_tests_per_access` | `1, 2, 4` | `2` |
+| `teacher_phase=[round_max, score_max]` | `round={25,33,50,55,60}`，`score={16,20,24,31}`，且 `score<=round` | `[50,20]` |
+| `teacher_vbop_bad_score` | `1, 2, 3` | `2` |
+| `teacher_pbop_bad_score` | `0, 1, 2` | `0` |
+| `student_extra_marginal_threshold_pct` | `0, 1, 2, 3, 5` | `2` |
+| `issue_confidence_threshold` | `10, 12, 14, 15` | `14` |
+| `recent_filter_entries` | `64, 128, 256` | `128` |
+| `student_slots=[VBOP,PBOP]` | `[2,2], [4,4], [4,8], [8,4]` | `[4,4]` |
+| `issue_confidence_pass_decrement` | `1, 2` | `1` |
+| `issue_confidence_fail_increment` | `1, 2, 3` | `2` |
+
+该域共有 `738720` 个合法参数组合，另加一个不覆盖参数的当前默认配置基线。
+offset 表、RR/tag/delay、Student filter/hash、FIFO 和 arbiter 保持当前冻结设计；这些项
+不属于本轮已确认的关键算法参数，混入会显著稀释 24 小时内对关键参数的采样密度。
+
+这个集合是“参数辨识集合”，不是全套代表集。求解完成后仍必须回到 0.3c 或 1.0c
+全套复验，避免只优化这些敏感点。
+
+### 8.4 阶段 4 真实 checkpoint IPC A/B
 
 2026-11-19 使用新构建的 `build/RISCV/gem5.fast` 和 `idealkmhv3.py`，在相同
 checkpoint、CPU/cache 配置和 NEMU REF 下只切换
@@ -1386,6 +1557,9 @@ checkpoint、CPU/cache 配置和 NEMU REF 下只切换
 - 原始 trace 驱动的新方案 replay 是 open-loop，无法完全复现预取改变 hit/miss、训练流和 cache 状态的反馈。
 - 当前资源模型只覆盖 BOP 局部 FIFO/filter/仲裁，不包含 CDP、父 PFQ、cache eviction 和内存系统竞争。
 - 10 个点是有意选择的 BOP-sensitive 集合；checkpoint-weighted 和 access-weighted 结果都不能直接外推为全套性能。
+- 16 点 `bop-key` 集合也是定向敏感集合，不代表完整 SPEC06 分布；单切片 workload
+  在 workload 内会归一化为权重 1，只有 mcf/milc 的两个保留点会按相对 SimPoint
+  权重互相加权。它适合参数辨识，但最终候选必须回到全套验证。
 - 4+4、SF2048、E8 和 RF128 使用完整 10 个敏感 checkpoint 或六点 sensitivity
   支持；R50/S20 已完成完整 10 点回放。
 - 固定 coverage threshold 在不同 checkpoint 上的流量控制效果差异很大；
@@ -1403,6 +1577,9 @@ checkpoint、CPU/cache 配置和 NEMU REF 下只切换
   同样依赖 shared filter，不能等同于 Teacher/Student 动态功耗同比下降。
 - N2 当前静态模型假定每个 access 可以连续完成两次 RR lookup/test。若实际
   单端口无法满足吞吐，需要双端口、两拍流水或输入队列，可能抵消面积和及时性收益。
+- 阶段 3 的 `25%--40%` 面积降幅只基于逻辑状态和结构数量，不是 RTL 综合结果；
+  RR 双读口或表复制、RF128 的具体实现、counter 位宽、SRAM compiler、布线和时序
+  优化都可能改变最终面积，其中 RR 表复制会使结果更接近估算区间下限。
 - 4+4 + SF2048 只保持 Student filter bit 数不变，并不代表 Student 总面积不变；
   还需计入 4 个 entry 元数据、8-bit mask 更新和跨 family overlap counters。
 - 离线 replay 用 256-bin 8-bit hit-mask 直方图精确算 union；硬件候选应改为 8 个
@@ -1433,3 +1610,6 @@ checkpoint、CPU/cache 配置和 NEMU REF 下只切换
 - `util/ts_bop_degree/parameter_sweep.py`：N/R/S、Student pool/filter、FIFO 和 recent-filter 联合静态扫描。
 - `util/ts_bop_degree/parameter_sweep_report.py`：最终逐点 CSV、coverage delta 和 recent-filter trade-off 图。
 - `util/ts_bop_degree/checkpoints.json`：当前 10 个 checkpoint、权重和结果目录。
+- `configs/solver_profiles/compound_bop_key_slices/`：16 点参数求解集合、SimPoint 权重和选点依据。
+- `configs/solver_specs/compound_bop_key_nsga2_score_search.py`：24 小时 CompoundBOP NSGA-II 单目标求解配置。
+- `util/xs_scripts/perf_benchmarks.py`：注册 `spec06-rva23-novec-gcc16-bop-key` 的 CI benchmark 入口。

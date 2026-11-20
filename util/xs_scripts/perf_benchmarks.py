@@ -17,6 +17,12 @@ import re
 from pathlib import Path
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_COMPOUND_BOP_KEY_PROFILE = (
+    _REPO_ROOT / "configs/solver_profiles/compound_bop_key_slices"
+)
+
+
 @dataclass(frozen=True)
 class BenchmarkConfig:
     benchmark_type: str
@@ -126,6 +132,18 @@ _BENCHMARKS = _index_benchmarks(
             checkpoint_root="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint",
             cluster_config="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/json/checkpoints_cov0.3.json",
             comment=("run 30% coverage gcc16 rva23-novec SPEC06 checkpoints"),
+        ),
+        BenchmarkConfig(
+            benchmark_type="spec06-rva23-novec-gcc16-bop-key",
+            checkpoint_list=str(
+                _COMPOUND_BOP_KEY_PROFILE / "checkpoints.lst"
+            ),
+            checkpoint_root="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint",
+            cluster_config=str(_COMPOUND_BOP_KEY_PROFILE / "weights.json"),
+            comment=(
+                "run 16 CompoundBOP-sensitive gcc16 rva23-novec SPEC06 "
+                "checkpoints with SimPoint weights"
+            ),
         ),
         BenchmarkConfig(
             benchmark_type="spec06-rva23-novec-gcc16-1.0c",
