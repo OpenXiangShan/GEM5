@@ -96,6 +96,24 @@ GoldenGloablMem::recordScalarRead(Packet *pkt)
     readGoldenMem(pkt->getAddr(), req.scalarReadGolden->data(), pkt->getSize());
 }
 
+AmoDifftestData *
+GoldenGloablMem::beginAtomic(Packet *pkt)
+{
+    if (pkt->fromCache() || !pkt->req->hasXsMetadata()) {
+        return nullptr;
+    }
+    const auto &inst = pkt->req->getXsMetadata().instXsMetadata;
+    if (!inst) {
+        return nullptr;
+    }
+    panic_if(pkt->getSize() > sizeof(AmoDifftestData::Bytes),
+             "Oversized difftest AMO at %#x", pkt->getAddr());
+    inst->difftestAmo = std::make_unique<AmoDifftestData>();
+    readGoldenMem(pkt->getAddr(), inst->difftestAmo->before.data(),
+                  pkt->getSize());
+    return inst->difftestAmo.get();
+}
+
 void
 GoldenGloablMem::readGoldenMem(uint64_t addr, void *data, uint64_t len)
 {

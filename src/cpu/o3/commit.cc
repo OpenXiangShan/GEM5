@@ -2109,7 +2109,9 @@ Commit::diffInst(ThreadID tid, const DynInstPtr &inst) {
     cpu->diffInfo.loadSnapshot = inst->loadSnapshot.get();
     cpu->diffInfo.legacyLoadData = cpu->system->params().golden_mem_at_write ?
         nullptr : inst->memData;
-    if (inst->isAtomic()) {
+    cpu->diffInfo.amo = inst->xsMeta->difftestAmo.get();
+    if (inst->isAtomic() && cpu->system->multiContextDifftest() &&
+        !cpu->system->params().golden_mem_at_write) {
         const size_t size = std::min<size_t>(
             inst->effSize, sizeof(cpu->diffInfo.amoOldGoldenValue));
         std::memcpy(cpu->diffInfo.amoOldGoldenValue,

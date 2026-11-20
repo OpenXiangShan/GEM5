@@ -387,9 +387,14 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
             cpu->goldenMemManager()->inPmem(pkt->getAddr(), pkt->getSize())) {
             assert(pkt->getSize() == inst->effSize);
             assert(inst->effSize <= sizeof(cpu->diffInfo.amoOldGoldenValue));
-            // The response carries the old value of this serialized RMW.
-            std::memcpy(inst->getAmoOldGoldenValuePtr(),
-                        pkt->getConstPtr<uint8_t>(), pkt->getSize());
+            if (system->params().golden_mem_at_write) {
+                panic_if(!inst->xsMeta->difftestAmo,
+                         "Missing Classic AMO observation at %#x", pkt->getAddr());
+            } else {
+                // Response-accounted protocols update golden memory in completeStore.
+                std::memcpy(inst->getAmoOldGoldenValuePtr(),
+                            pkt->getConstPtr<uint8_t>(), pkt->getSize());
+            }
         }
 
         if (request->needWBToRegister()) {
@@ -2331,22 +2336,6 @@ LSQUnit::writebackBlockedStore()
     }
 
     auto *request = storeWBIt->request();
-    const auto &inst = storeWBIt->instruction();
-
-    if (request->mainReq()->hasPaddr() &&
-        system->multiContextDifftest() && inst->isAtomic() &&
-        cpu->goldenMemManager() &&
-        cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
-        uint8_t issue_golden[16] = {};
-        panic_if(request->_size > sizeof(issue_golden),
-                 "Unexpected AMO size %u at addr %#lx\n",
-                 request->_size, request->mainReq()->getPaddr());
-        cpu->goldenMemManager()->readGoldenMem(
-            request->mainReq()->getPaddr(), issue_golden, request->_size);
-        std::memcpy(inst->getAmoOldGoldenValuePtr(), issue_golden,
-                    request->_size);
-    }
-
     request->sendPacketToCache();
     if (request->isSent()) {
         storePostSend();
@@ -2405,21 +2394,6 @@ LSQUnit::directStoreToCache()
             else
                 storeWBIt = storeQueue.end();
             return true;
-        }
-    }
-
-    if (request->mainReq()->hasPaddr()) {
-        if (system->multiContextDifftest() && inst->isAtomic() &&
-            cpu->goldenMemManager() &&
-            cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
-            uint8_t issue_golden[16] = {};
-            panic_if(request->_size > sizeof(issue_golden),
-                     "Unexpected AMO size %u at addr %#lx\n",
-                     request->_size, request->mainReq()->getPaddr());
-            cpu->goldenMemManager()->readGoldenMem(
-                request->mainReq()->getPaddr(), issue_golden, request->_size);
-            std::memcpy(inst->getAmoOldGoldenValuePtr(), issue_golden,
-                        request->_size);
         }
     }
 
