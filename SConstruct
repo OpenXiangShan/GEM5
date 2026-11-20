@@ -155,6 +155,8 @@ AddOption('--unit-test', action='store_true',
           help='Enable unit test build')
 AddOption('--debug-cycle', action='store_true',
           help='Enable print cycle in DPRINTF')
+AddOption('--enable-matrix', action='store_true', default=False,
+          help='Build the RISC-V Matrix extension')
 
 # Inject the built_tools directory into the python path.
 sys.path[1:1] = [ Dir('#build_tools').abspath ]
@@ -779,6 +781,10 @@ Build variables for {dir}:
 
     # Pull all the sticky variables into the CONF dict.
     env['CONF'].update({key: env[key] for key in sticky_vars.keys()})
+
+    if GetOption('enable_matrix') and env['CONF']['TARGET_ISA'] != 'riscv':
+        error('--enable-matrix requires TARGET_ISA=riscv')
+    env['CONF']['GEM5_ENABLE_MATRIX'] = GetOption('enable_matrix')
 
     # Do this after we save setting back, or else we'll tack on an
     # extra 'qdo' every time we run scons.

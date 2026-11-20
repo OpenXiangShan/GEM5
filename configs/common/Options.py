@@ -258,6 +258,9 @@ def addCommonOptions(parser, configure_xiangshan=False):
     # start by adding the base options that do not assume an ISA
     addNoISAOptions(parser,configure_xiangshan=configure_xiangshan)
 
+    parser.add_argument("--matrix", action="store_true",
+                        help="Configure the RISC-V Matrix backend and scheduler")
+
     # system options
     parser.add_argument("--list-cpu-types",
                         action=ListCpu, nargs=0,
