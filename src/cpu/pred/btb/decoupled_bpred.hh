@@ -91,6 +91,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool someDBenabled{false};
     bool enableBranchTrace{false};
     bool enablePredFSQTrace{false};
+    bool enableFetchBlockTrace{false};
 
     bool checkGivenSwitch(std::vector<std::string> switches, std::string switchName) {
         for (auto &sw : switches) {
@@ -107,8 +108,13 @@ class DecoupledBPUWithBTB : public BPredUnit
     DataBase bpdb;
     TraceManager *bptrace;
     TraceManager *predTraceManager;  // Trace manager for prediction-time events
+    TraceManager *fetchBlockTrace{};  // Trace manager for FTQ block lifetimes
 
     void initDB();
+
+    /** Record FTQ blocks [first, last] as they leave the FTQ. */
+    void traceFetchBlocks(ThreadID tid, FetchTargetId first,
+                          FetchTargetId last, bool squashed);
 
     std::vector<TimedBaseBTBPredictor*> components{};
     unsigned numComponents{};
@@ -348,6 +354,9 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid);
 
+    /** Mark the current fetching block as fetched by 2-Fetch. */
+    void markTwoFetchBlock(ThreadID tid);
+
     struct BpTrace : public Record
     {
         void set(uint64_t fsqId, uint64_t startPC, uint64_t controlPC, uint64_t controlType,
@@ -387,6 +396,45 @@ class DecoupledBPUWithBTB : public BPredUnit
             set(id, entry.startPC, entry.predTaken, entry.predEndPC,
                 entry.predBranchInfo.pc, entry.predBranchInfo.target,
                 entry.predSource, entry.isHit ? 1 : 0);
+        }
+    };
+
+    // Fetch block trace recorded when a block leaves FTQ by commit or squash
+    struct FetchBlockTrace : public Record
+    {
+        // Branch type of a block without a predicted taken branch
+        static constexpr uint64_t noBranchType = 0xff;
+
+        FetchBlockTrace(ThreadID tid, FetchTargetId id, const FetchTarget &e,
+                        bool squashed)
+        {
+            _tick = curTick();
+            const bool taken = e.predTaken;
+            const Addr end = taken ? e.predBranchInfo.getEnd() : e.predEndPC;
+            // Fingerprint
+            _uint64_data["tid"] = tid;
+            _uint64_data["fsqId"] = id;
+            _uint64_data["startPC"] = e.startPC;
+            _uint64_data["taken"] = taken;
+            _uint64_data["brPC"] = taken ? e.predBranchInfo.pc : 0;
+            _uint64_data["target"] =
+                taken ? e.predBranchInfo.target : e.predEndPC;
+            _uint64_data["brType"] =
+                taken ? e.predBranchInfo.getType() : noBranchType;
+            // Features
+            _uint64_data["byteSize"] = end - e.startPC;
+            _uint64_data["fetchInstNum"] = e.fetchInstNum;
+            _uint64_data["commitInstNum"] = e.commitInstNum;
+            _uint64_data["commitInstBytes"] = e.commitInstBytes;
+            // Events
+            _uint64_data["predSource"] = e.predSource;
+            _uint64_data["isTwoTakenBlock"] = e.isTwoTakenBlock;
+            _uint64_data["isTwoFetchBlock"] = e.isTwoFetchBlock;
+            _uint64_data["squashed"] = squashed;
+            // Timing
+            _uint64_data["predTick"] = e.predTick;
+            _uint64_data["enqTick"] = e.enqTick;
+            _uint64_data["fetchTick"] = e.fetchTick;
         }
     };
 

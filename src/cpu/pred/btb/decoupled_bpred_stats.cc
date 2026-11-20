@@ -1,6 +1,7 @@
 #include <array>
 
 #include "base/output.hh"
+#include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/trace/TraceBranchTruth.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
@@ -95,6 +96,59 @@ DecoupledBPUWithBTB::initDB()
         predTraceManager->init_table();
         removeGivenSwitch(bpDBSwitches, std::string("predfsq"));
         someDBenabled = true;
+    }
+
+    enableFetchBlockTrace =
+        checkGivenSwitch(bpDBSwitches, std::string("fetchblock"));
+    if (enableFetchBlockTrace) {
+        // One record per FTQ block when it is committed or squashed
+        std::vector<std::pair<std::string, DataType>> fields_vec = {
+            std::make_pair("tid", UINT64),
+            std::make_pair("fsqId", UINT64),
+            std::make_pair("startPC", UINT64),
+            std::make_pair("taken", UINT64),
+            std::make_pair("brPC", UINT64),
+            std::make_pair("target", UINT64),
+            std::make_pair("brType", UINT64),
+            std::make_pair("byteSize", UINT64),
+            std::make_pair("fetchInstNum", UINT64),
+            std::make_pair("commitInstNum", UINT64),
+            std::make_pair("commitInstBytes", UINT64),
+            std::make_pair("predSource", UINT64),
+            std::make_pair("isTwoTakenBlock", UINT64),
+            std::make_pair("isTwoFetchBlock", UINT64),
+            std::make_pair("squashed", UINT64),
+            std::make_pair("predTick", UINT64),
+            std::make_pair("enqTick", UINT64),
+            std::make_pair("fetchTick", UINT64)
+        };
+        fetchBlockTrace = bpdb.addAndGetTrace("FETCHBLOCKTRACE", fields_vec);
+        fetchBlockTrace->init_table();
+        removeGivenSwitch(bpDBSwitches, std::string("fetchblock"));
+        someDBenabled = true;
+    }
+}
+
+void
+DecoupledBPUWithBTB::markTwoFetchBlock(ThreadID tid)
+{
+    // Fetch continues with this block in the same fetch buffer
+    assert(ftq.hasTarget(ftq.fetchId(tid), tid));
+    ftq.fetching(tid).isTwoFetchBlock = true;
+}
+
+void
+DecoupledBPUWithBTB::traceFetchBlocks(ThreadID tid, FetchTargetId first,
+                                      FetchTargetId last, bool squashed)
+{
+    // Record only the measured window after warmup, as stats do
+    if (!enableFetchBlockTrace || !cpu->warmupDone()) {
+        return;
+    }
+    for (FetchTargetId id = first; id <= last && ftq.hasTarget(id, tid);
+         ++id) {
+        fetchBlockTrace->write_record(
+            FetchBlockTrace(tid, id, ftq.get(id, tid), squashed));
     }
 }
 

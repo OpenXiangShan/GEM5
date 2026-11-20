@@ -114,6 +114,10 @@ class CPU : public BaseCPU
     {
         hintDownStream = down_stream;
     }
+
+    /** Whether the configured warmup has finished, or no warmup is set. */
+    bool warmupDone() const { return !warmupInstCount || warmup_done; }
+
     bool hasHintDownStream() const
     {
         return hintDownStream != nullptr;

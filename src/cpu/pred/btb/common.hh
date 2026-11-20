@@ -262,6 +262,10 @@ struct FetchTarget
     int fetchInstNum;
     int commitInstNum;
     int commitInstBytes;
+    bool isTwoTakenBlock;  // second block enqueued with its first block
+    bool isTwoFetchBlock;  // fetched in the same buffer as the previous block
+    Tick enqTick;          // when this block entered FTQ
+    Tick fetchTick;        // when fetch consumed this block
 
     int s1Source; // which stage the prediction comes from
     int s3Source; // which stage the prediction comes from
@@ -284,6 +288,10 @@ struct FetchTarget
          fetchInstNum(0),
          commitInstNum(0),
          commitInstBytes(0),
+         isTwoTakenBlock(false),
+         isTwoFetchBlock(false),
+         enqTick(0),
+         fetchTick(0),
          s1Source(-1),
          s3Source(-1)
    {
