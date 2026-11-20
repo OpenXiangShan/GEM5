@@ -1,7 +1,7 @@
 # TS-BOP 单 BOP Degree 研究与开发跟踪
 
 > 最后更新：2026-11-20
-> 当前阶段：阶段 3 功能实现、`idealkmhv3.py` 与 `kmhv3.py` 全套 A/B、架构级面积评估和参数求解准备已完成；下一步运行 24 小时 CI NSGA-II 参数求解，再回到 0.3c/1.0c 全套复验最优候选。
+> 当前阶段：阶段 3 功能实现、`idealkmhv3.py` 与 `kmhv3.py` 全套 A/B、架构级面积评估和参数求解准备已完成；24 小时 CI NSGA-II 参数求解已触发，完成后回到 0.3c/1.0c 全套复验最优候选。
 > 最终参数：`N2/R50/S20 + V2/P0 + Student 4+4 + SF2048 + degree 2 + 2% marginal + P8/E8 + RF128`。
 > 完整 10 点静态 replay：local coverage 为 `76.08% / 72.70%`，local sent/demand 为 `1.595 / 1.527`（checkpoint-weighted / access-weighted）；coverage 与双 BOP 基本持平，发送量降低 `13.3% / 9.5%`。
 > 已知上限：`gcc_200_5108` 仍比双 BOP 低 3.83 pp；该点作为单一学习域的已知风险保留，不再阻塞当前机制选择。
@@ -1335,6 +1335,7 @@ local resource replay。最终结论和后续实现统一以本节正式 runner 
 | 2d. 最小机制优化 | 完成 | V2/P0 + family 独立 confidence 完成 10 点 replay；coverage 与双 BOP 持平并降低发送量 |
 | 3. 功能实现与整体评估 | 完成 | 独立 CompoundBOP、family winner/gate、4+4 Student、P8/E8/RF128 已接入；idealkmhv3 0.3c 和 kmhv3 0.3c/1.0c A/B 与架构级面积估算已完成 |
 | 3b. CI 参数求解准备 | 完成 | 注册 16 点 SimPoint 加权集合与 `CompoundBOPKeyNsga2ScoreSearch`；目标、关键参数域、24 小时预算及 16x16 并发已固定 |
+| 3c. CI 参数求解 | 运行中 | [Actions run 44729209067](https://github.com/OpenXiangShan/GEM5/actions/runs/44729209067)，head `d049327d1c`，setup 已通过 |
 | 4. 实现后验证 | 部分完成 | 3 个真实 checkpoint 的 IPC/流量 A/B 已完成；同 checkpoint trace 与 coverage 对齐待运行 |
 
 ### 8.1 阶段 3 实现结果
@@ -1493,6 +1494,11 @@ perlbench_diffmail_2097
 | 试验上限 | 4096，仅作为保险上限，不设置 `no_improve_trials` 提前结束 |
 | 并发 | `max_parallel_trials=16`，`max_parallel_workloads=16` |
 | 面积 | 不作为目标，也不设约束 |
+
+该配置已于 2026-11-20 从 `bop-explore` 分支的 `d049327d1c` 提交触发：
+[Actions run 44729209067](https://github.com/OpenXiangShan/GEM5/actions/runs/44729209067)。
+使用 `distributed_servers=default`，`distributed_jobs_per_server=0`，只改变执行分布，
+不改变上述参数域、目标和停止条件。
 
 关键搜索参数如下；Teacher phase 和 Student slots 使用成对语义变量，避免独立搜索
 产生无意义组合：
