@@ -30,7 +30,9 @@
 
 #include "arch/riscv/isa.hh"
 
+#include <algorithm>
 #include <ctime>
+#include <iterator>
 #include <set>
 #include <sstream>
 
@@ -48,6 +50,7 @@
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "cpu/base.hh"
 #include "debug/Checkpoint.hh"
 #include "debug/FloatRegs.hh"
@@ -58,8 +61,6 @@
 #include "debug/VecRegs.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
-#include "mem/se_translating_port_proxy.hh"
-#include "mem/translating_port_proxy.hh"
 #include "params/RiscvISA.hh"
 #include "sim/core.hh"
 #include "sim/faults.hh"
@@ -71,47 +72,6 @@ namespace gem5
 
 namespace RiscvISA
 {
-
-namespace
-{
-
-Fault
-matrixReadBlob(ThreadContext *tc, Addr addr, void *dst, size_t size)
-{
-    bool ok = false;
-    if (FullSystem) {
-        TranslatingPortProxy proxy(tc);
-        ok = proxy.tryReadBlob(addr, dst, size);
-    } else {
-        SETranslatingPortProxy proxy(tc);
-        ok = proxy.tryReadBlob(addr, dst, size);
-    }
-
-    if (!ok) {
-        return std::make_shared<GenericPageTableFault>(addr);
-    }
-    return NoFault;
-}
-
-Fault
-matrixWriteBlob(ThreadContext *tc, Addr addr, const void *src, size_t size)
-{
-    bool ok = false;
-    if (FullSystem) {
-        TranslatingPortProxy proxy(tc);
-        ok = proxy.tryWriteBlob(addr, src, size);
-    } else {
-        SETranslatingPortProxy proxy(tc);
-        ok = proxy.tryWriteBlob(addr, src, size);
-    }
-
-    if (!ok) {
-        return std::make_shared<GenericPageTableFault>(addr);
-    }
-    return NoFault;
-}
-
-} // namespace
 
 [[maybe_unused]] const std::array<const char *, NUM_MISC_AND_HELPER_REGS> MiscRegNames = {{
     [MISCREG_PRV]           = "PRV",
@@ -280,6 +240,22 @@ matrixWriteBlob(ThreadContext *tc, Addr addr, const void *src, size_t size)
     [MISCREG_VL]            = "VL",
     [MISCREG_VTYPE]         = "VTYPE",
     [MISCREG_VLENB]         = "VLENB",
+#if GEM5_ENABLE_MATRIX
+    [MISCREG_XMCSR]         = "XMCSR",
+    [MISCREG_XMXRM]         = "XMXRM",
+    [MISCREG_XMSAT]         = "XMSAT",
+    [MISCREG_XMFFLAGS]      = "XMFFLAGS",
+    [MISCREG_XMFRM]         = "XMFRM",
+    [MISCREG_XMSATEN]       = "XMSATEN",
+    [MISCREG_XMISA]         = "XMISA",
+    [MISCREG_XTLENB]        = "XTLENB",
+    [MISCREG_XTRLENB]       = "XTRLENB",
+    [MISCREG_XALENB]        = "XALENB",
+    [MISCREG_MSYNC]         = "MSYNC",
+    [MISCREG_MTILEM]        = "MTILEM",
+    [MISCREG_MTILEN]        = "MTILEN",
+    [MISCREG_MTILEK]        = "MTILEK",
+#endif
 
     [MISCREG_HSTATUS]       = "HSTATUS",
     [MISCREG_HEDELEG]       = "HEDELEG",
@@ -326,6 +302,16 @@ matrixWriteBlob(ThreadContext *tc, Addr addr, const void *src, size_t size)
     [MISCREG_HSTATEEN1]     = "HSTATEEN1",
     [MISCREG_HSTATEEN2]     = "HSTATEEN2",
     [MISCREG_HSTATEEN3]     = "HSTATEEN3",
+#if GEM5_ENABLE_MATRIX
+    [MISCREG_MCFG0]         = "MCFG0",
+    [MISCREG_MCFG1]         = "MCFG1",
+    [MISCREG_MCFG2]         = "MCFG2",
+    [MISCREG_MCFG3]         = "MCFG3",
+    [MISCREG_MCFG4]         = "MCFG4",
+    [MISCREG_MCFG5]         = "MCFG5",
+    [MISCREG_MCFG6]         = "MCFG6",
+    [MISCREG_MCFG7]         = "MCFG7",
+#endif
 
     [MISCREG_STIMECMP]      = "STIMECMP",
     [MISCREG_VSTIMECMP]     = "VSTIMECMP",
@@ -349,7 +335,6 @@ ISA::ISA(const Params &p) : BaseISA(p)
     _regClasses.emplace_back(MiscRegClass, NUM_MISCREGS, debug::MiscRegs, sizeof(RegVal));
 
     miscRegFile.resize(NUM_MISCREGS);
-    resetMatrixState();
     clear();
 }
 
@@ -375,6 +360,12 @@ ISA::copyRegsFrom(ThreadContext *src)
 
     // TODO: Copy vector regs.
 
+#if GEM5_ENABLE_MATRIX
+    for (int i = 0; i < 8; ++i) {
+        setMiscRegNoEffect(MISCREG_MCFG0 + i,
+                           src->readMiscRegNoEffect(MISCREG_MCFG0 + i));
+    }
+#endif
     // Lastly copy PC/NPC
     tc->pcState(src->pcState());
 }
@@ -382,7 +373,9 @@ ISA::copyRegsFrom(ThreadContext *src)
 void ISA::clear()
 {
     std::fill(miscRegFile.begin(), miscRegFile.end(), 0);
+#if GEM5_ENABLE_MATRIX
     resetMatrixState();
+#endif
 
     miscRegFile[MISCREG_PRV] = PRV_M;
     miscRegFile[MISCREG_ISA] = 0x80000000003411af;
@@ -417,136 +410,6 @@ void ISA::clear()
     miscRegFile[MISCREG_VENDORID] = (16ULL << 7) | 0x6FULL;
     miscRegFile[MISCREG_STIMECMP] = UINT64_MAX;
     miscRegFile[MISCREG_VSTIMECMP] = UINT64_MAX;
-}
-
-void
-ISA::resetMatrixState()
-{
-    matrixTileM = 0;
-    matrixTileK = 0;
-    matrixTileN = 0;
-    matrixTileA.assign(MatrixTileABytes, 0);
-    matrixTileB.assign(MatrixTileBBytes, 0);
-    matrixAcc.assign(MatrixAccElems, 0);
-    matrixTokens.assign(32, 0);
-}
-
-void
-ISA::matrixSyncReset(uint64_t token_idx)
-{
-    matrixToken(token_idx) = 0;
-}
-
-void
-ISA::matrixRelease(uint64_t token_idx)
-{
-    ++matrixToken(token_idx);
-}
-
-void
-ISA::matrixAcquire(uint64_t token_idx, uint64_t target)
-{
-    panic_if(matrixToken(token_idx) < target,
-        "macquire tok%u target=%llu observed=%llu",
-        token_idx, target, matrixToken(token_idx));
-}
-
-void
-ISA::setMatrixTileM(uint64_t value)
-{
-    matrixTileM = clampMatrixTileM(value);
-}
-
-void
-ISA::setMatrixTileK(uint64_t value)
-{
-    matrixTileK = clampMatrixTileK(value);
-}
-
-void
-ISA::setMatrixTileN(uint64_t value)
-{
-    matrixTileN = clampMatrixTileN(value);
-}
-
-Fault
-ISA::matrixLoadA8(ExecContext *xc, Addr base, Addr stride)
-{
-    ThreadContext *tc = xc->tcBase();
-    for (uint32_t row = 0; row < matrixTileM; ++row) {
-        auto *dst = reinterpret_cast<uint8_t *>(&matrixTileA[row * MatrixMaxK]);
-        Fault fault = matrixReadBlob(tc, base + row * stride, dst, matrixTileK);
-        if (fault != NoFault) {
-            return fault;
-        }
-    }
-    return NoFault;
-}
-
-Fault
-ISA::matrixLoadB8(ExecContext *xc, Addr base, Addr stride)
-{
-    ThreadContext *tc = xc->tcBase();
-    for (uint32_t row = 0; row < matrixTileN; ++row) {
-        auto *dst = reinterpret_cast<uint8_t *>(&matrixTileB[row * MatrixMaxK]);
-        Fault fault = matrixReadBlob(tc, base + row * stride, dst, matrixTileK);
-        if (fault != NoFault) {
-            return fault;
-        }
-    }
-    return NoFault;
-}
-
-Fault
-ISA::matrixLoadC32(ExecContext *xc, Addr base, Addr stride)
-{
-    ThreadContext *tc = xc->tcBase();
-    for (uint32_t row = 0; row < matrixTileM; ++row) {
-        auto *dst = reinterpret_cast<uint8_t *>(&matrixAcc[row * MatrixMaxN]);
-        Fault fault = matrixReadBlob(
-            tc, base + row * stride, dst, matrixTileN * sizeof(int32_t));
-        if (fault != NoFault) {
-            return fault;
-        }
-    }
-    return NoFault;
-}
-
-Fault
-ISA::matrixStoreC32(ExecContext *xc, Addr base, Addr stride)
-{
-    ThreadContext *tc = xc->tcBase();
-    for (uint32_t row = 0; row < matrixTileM; ++row) {
-        auto *src = reinterpret_cast<uint8_t *>(&matrixAcc[row * MatrixMaxN]);
-        Fault fault = matrixWriteBlob(
-            tc, base + row * stride, src, matrixTileN * sizeof(int32_t));
-        if (fault != NoFault) {
-            return fault;
-        }
-    }
-    return NoFault;
-}
-
-void
-ISA::matrixZeroAcc()
-{
-    std::fill(matrixAcc.begin(), matrixAcc.end(), 0);
-}
-
-void
-ISA::matrixMMAccWB()
-{
-    for (uint32_t m = 0; m < matrixTileM; ++m) {
-        for (uint32_t n = 0; n < matrixTileN; ++n) {
-            int32_t acc = matrixAcc[m * MatrixMaxN + n];
-            for (uint32_t k = 0; k < matrixTileK; ++k) {
-                int8_t a = matrixTileA[m * MatrixMaxK + k];
-                int8_t b = matrixTileB[n * MatrixMaxK + k];
-                acc += static_cast<int32_t>(a) * static_cast<int32_t>(b);
-            }
-            matrixAcc[m * MatrixMaxN + n] = acc;
-        }
-    }
 }
 
 bool
@@ -598,6 +461,15 @@ ISA::readMiscRegNoEffect(int misc_reg) const
         panic("Illegal CSR index %#x\n", misc_reg);
         return -1;
     }
+#if GEM5_ENABLE_MATRIX
+    RegVal val;
+    if (readMatrixMiscReg(misc_reg, val)) {
+        DPRINTF(RiscvMisc, "Reading MiscReg %s (%d): %#x.\n",
+                MiscRegNames[misc_reg], misc_reg, val);
+        return val;
+    }
+#endif
+
     DPRINTF(RiscvMisc, "Reading MiscReg %s (%d): %#x.\n",
             MiscRegNames[misc_reg], misc_reg, miscRegFile[misc_reg]);
     return miscRegFile[misc_reg];
@@ -782,6 +654,11 @@ ISA::setMiscRegNoEffect(int misc_reg, RegVal val)
     }
     DPRINTF(RiscvMisc, "Setting MiscReg %s (%d) to %#x.\n",
             MiscRegNames[misc_reg], misc_reg, val);
+#if GEM5_ENABLE_MATRIX
+    if (writeMatrixMiscReg(misc_reg, val)) {
+        return;
+    }
+#endif
     miscRegFile[misc_reg] = val;
 }
 
@@ -811,21 +688,16 @@ ISA::setMiscReg(int misc_reg, RegVal val)
             setMiscRegNoEffect(MISCREG_VSSCRATCH, val);
         }
 
-    } else if ((v == 1) && ((misc_reg == MISCREG_STATUS)) && (readMiscRegNoEffect(MISCREG_PRV) == PRV_S)) {
-        auto vsstatus = readMiscRegNoEffect(MISCREG_VSSTATUS);
-        STATUS write_val = ((vsstatus & ~(NEMU_SSTATUS_WMASK)) | (val & NEMU_SSTATUS_WMASK));
-        bool fs_dirty = (write_val.fs == 0x3);
-        bool vs_dirty = (write_val.vs == 0x3);
-        write_val.sd = fs_dirty || vs_dirty;
-        setMiscRegNoEffect(MISCREG_VSSTATUS, write_val);
-    } else if ((v == 1) && (misc_reg == MISCREG_VSSTATUS)) {
-        auto vsstatus = readMiscRegNoEffect(MISCREG_VSSTATUS);
-        STATUS write_val = ((vsstatus & ~(NEMU_SSTATUS_WMASK)) | (val & NEMU_SSTATUS_WMASK));
-        // if enable h
-        bool fs_dirty = (write_val.fs == 0x3);
-        bool vs_dirty = (write_val.vs == 0x3);
-        write_val.sd = fs_dirty || vs_dirty;
-        setMiscRegNoEffect(MISCREG_VSSTATUS, write_val);
+    } else if (misc_reg == MISCREG_STATUS || misc_reg == MISCREG_VSSTATUS) {
+        auto mask = misc_reg == MISCREG_STATUS ? NEMU_MSTATUS_WMASK :
+                                                NEMU_SSTATUS_WMASK;
+#if GEM5_ENABLE_MATRIX
+        if (matrixEnabled)
+            mask |= NEMU_MSTATUS_WMASK_RV_AME;
+#endif
+        STATUS status = (readMiscRegNoEffect(misc_reg) & ~mask) | (val & mask);
+        status.sd = status.fs == 3 || status.vs == 3;
+        setMiscRegNoEffect(misc_reg, status);
     } else if ((v == 1) && ((misc_reg == MISCREG_SATP))) {
         auto satp_mode = (val & SATP_MODE_MASK) >> NEMU_SATP_RIGHT_OFFSET;
         if (satp_mode == NEMU_SATP_BARE) {
@@ -844,14 +716,6 @@ ISA::setMiscReg(int misc_reg, RegVal val)
         setMiscRegNoEffect(MISCREG_VSTVEC, val & ~(0x2UL));
     } else if ((v == 1) && ((misc_reg == MISCREG_STIMECMP))) {
         setMiscReg(MISCREG_VSTIMECMP, val);
-    } else if (misc_reg == MISCREG_VSSTATUS) {
-        auto vsstatus = readMiscRegNoEffect(MISCREG_VSSTATUS);
-        STATUS write_val = ((vsstatus & ~(NEMU_SSTATUS_WMASK)) | (val & NEMU_SSTATUS_WMASK));
-        // if enable h
-        bool fs_dirty = (write_val.fs == 0x3);
-        bool vs_dirty = (write_val.vs == 0x3);
-        write_val.sd = fs_dirty || vs_dirty;
-        setMiscRegNoEffect(MISCREG_VSSTATUS, write_val);
     } else {
         switch (misc_reg) {
 
@@ -1028,16 +892,6 @@ ISA::setMiscReg(int misc_reg, RegVal val)
             break;
           case MISCREG_ISA:
             break;
-          case MISCREG_STATUS:
-            {
-                // Match NEMU CSR semantics: only writable MSTATUS fields update.
-                auto cur = readMiscRegNoEffect(misc_reg);
-                STATUS mstatus =
-                    ((cur & ~(NEMU_MSTATUS_WMASK)) | (val & NEMU_MSTATUS_WMASK));
-                mstatus.sd = mstatus.fs == 0x3 || mstatus.vs == 0x3;
-                setMiscRegNoEffect(misc_reg, mstatus);
-            }
-            break;
           case MISCREG_FFLAGS_EXE:
             {
                 DPRINTF(RiscvMisc, "Will set fs\n");
@@ -1122,6 +976,14 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 setMiscRegNoEffect(misc_reg, val);
             }
             break;
+#if GEM5_ENABLE_MATRIX
+          case MISCREG_XMISA:
+          case MISCREG_XTLENB:
+          case MISCREG_XTRLENB:
+          case MISCREG_XALENB:
+          case MISCREG_MSYNC:
+            break;
+#endif
           case MISCREG_MIDELEG:
             {
                RegVal writeVal = val|((1 << 12) | (1 << 10) | (1 << 6) | (1 << 2));
@@ -1150,18 +1012,56 @@ ISA::setMiscReg(int misc_reg, RegVal val)
     }
 }
 
+namespace
+{
+
+// xs-dev's ordinary RISC-V checkpoints also contained empty SE Matrix state.
+constexpr struct {
+    const char *name;
+    size_t count;
+} legacyMatrixFields[] = {
+    {"matrixTileM", 1}, {"matrixTileK", 1}, {"matrixTileN", 1},
+    {"matrixTileA", 8192}, {"matrixTileB", 8192}, {"matrixAcc", 16384},
+    {"matrixTokens", 32}
+};
+
+} // anonymous namespace
+
+void
+ISA::validateLegacyMatrixCheckpoint(CheckpointIn &cp)
+{
+    const auto &section = Serializable::currentSection();
+    if (std::none_of(std::begin(legacyMatrixFields), std::end(legacyMatrixFields),
+                     [&](const auto &field) {
+                         return cp.entryExists(section, field.name);
+                     })) {
+        return;
+    }
+    for (const auto &field : legacyMatrixFields) {
+        std::vector<int64_t> values;
+        arrayParamIn(cp, field.name, values);
+        fatal_if(values.size() != field.count,
+                 "Invalid legacy Matrix checkpoint field %s: got %zu values, "
+                 "expected %zu.", field.name, values.size(), field.count);
+        fatal_if(std::any_of(values.begin(), values.end(),
+                             [](int64_t value) { return value != 0; }),
+                 "Checkpoint contains live SE Matrix state in %s; the "
+                 "functional SE Matrix extension has been removed.", field.name);
+    }
+}
+
 void
 ISA::serialize(CheckpointOut &cp) const
 {
     DPRINTF(Checkpoint, "Serializing Riscv Misc Registers\n");
+#if GEM5_ENABLE_MATRIX
+    serializeMatrixState(cp);
+#else
     SERIALIZE_CONTAINER(miscRegFile);
-    SERIALIZE_SCALAR(matrixTileM);
-    SERIALIZE_SCALAR(matrixTileK);
-    SERIALIZE_SCALAR(matrixTileN);
-    SERIALIZE_CONTAINER(matrixTileA);
-    SERIALIZE_CONTAINER(matrixTileB);
-    SERIALIZE_CONTAINER(matrixAcc);
-    SERIALIZE_CONTAINER(matrixTokens);
+    for (const auto &field : legacyMatrixFields) {
+        arrayParamOut(cp, field.name, std::vector<int>(field.count, 0));
+    }
+#endif
 }
 
 void
@@ -1169,8 +1069,16 @@ ISA::unserialize(CheckpointIn &cp)
 {
     DPRINTF(Checkpoint, "Unserializing Riscv Misc Registers\n");
     UNSERIALIZE_CONTAINER(miscRegFile);
-
+#if GEM5_ENABLE_MATRIX
+    unserializeMatrixState(cp);
+#else
     const size_t savedMiscRegCount = miscRegFile.size();
+    const auto &section = Serializable::currentSection();
+    fatal_if(savedMiscRegCount > NUM_MISCREGS ||
+             cp.entryExists(section, "matrix_checkpoint_version"),
+             "Incompatible RISC-V checkpoint register layout for this build "
+             "(%zu slots, maximum %u).", savedMiscRegCount,
+             unsigned(NUM_MISCREGS));
     if (savedMiscRegCount < NUM_MISCREGS)
         miscRegFile.resize(NUM_MISCREGS, 0);
 
@@ -1179,29 +1087,8 @@ ISA::unserialize(CheckpointIn &cp)
     if (savedMiscRegCount <= MISCREG_VSTIMECMP)
         miscRegFile[MISCREG_VSTIMECMP] = UINT64_MAX;
 
-    UNSERIALIZE_SCALAR(matrixTileM);
-    UNSERIALIZE_SCALAR(matrixTileK);
-    UNSERIALIZE_SCALAR(matrixTileN);
-    UNSERIALIZE_CONTAINER(matrixTileA);
-    UNSERIALIZE_CONTAINER(matrixTileB);
-    UNSERIALIZE_CONTAINER(matrixAcc);
-    UNSERIALIZE_CONTAINER(matrixTokens);
-}
-
-RegVal &
-ISA::matrixToken(size_t idx)
-{
-    panic_if(idx >= matrixTokens.size(), "matrix token index %u out of range",
-        idx);
-    return matrixTokens[idx];
-}
-
-const RegVal &
-ISA::matrixToken(size_t idx) const
-{
-    panic_if(idx >= matrixTokens.size(), "matrix token index %u out of range",
-        idx);
-    return matrixTokens[idx];
+    validateLegacyMatrixCheckpoint(cp);
+#endif
 }
 
 const int WARN_FAILURE = 10000;

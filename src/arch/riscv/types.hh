@@ -66,6 +66,7 @@ typedef uint32_t MachInst;
 BitUnion64(ExtMachInst)
     Bitfield<63>        compressed;
     // More bits for vector extension
+    Bitfield<41>        matrixEnabled;
     Bitfield<40>        vill;
     SubBitUnion(vtype8, 39, 32) // exclude vill
         Bitfield<39> vma;

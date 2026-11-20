@@ -458,7 +458,16 @@ def template CSRExecute {{
             (csr == CSR_SIE || csr == CSR_SIP) &&
             xc->readMiscReg(MISCREG_VIRMODE) == 1;
 
-        if (guestInterruptCsr) {
+        if (csr == CSR_SSTATUS) {
+            if (xc->readMiscReg(MISCREG_VIRMODE)) {
+                effectiveMiscReg = MISCREG_VSSTATUS;
+                visibleMask = NEMU_SSTATUS_RMASK;
+            }
+#if GEM5_ENABLE_MATRIX
+            if (machInst.matrixEnabled)
+                visibleMask |= NEMU_MSTATUS_WMASK_RV_AME;
+#endif
+        } else if (guestInterruptCsr) {
             effectiveMiscReg =
                 (csr == CSR_SIE) ? MISCREG_VSIE : MISCREG_VSIP;
             visibleMask = SI_MASK;

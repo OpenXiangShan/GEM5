@@ -44,6 +44,7 @@
 
 #include "arch/vecregs.hh"
 #include "base/types.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "config/the_isa.hh"
 #include "cpu/base.hh"
 #include "cpu/reg_class.hh"
@@ -53,6 +54,13 @@
 
 namespace gem5
 {
+
+#if GEM5_ENABLE_MATRIX
+namespace matrix
+{
+struct CuteRequest;
+} // namespace matrix
+#endif
 
 /**
  * The ExecContext is an abstract base class the provides the
@@ -73,7 +81,6 @@ namespace gem5
 class ExecContext
 {
   public:
-
     virtual RegVal getRegOperand(const StaticInst *si, int idx) = 0;
     virtual void getRegOperand(const StaticInst *si, int idx, void *val) = 0;
     virtual void *getWritableRegOperand(const StaticInst *si, int idx) = 0;
@@ -230,6 +237,33 @@ class ExecContext
     virtual AddressMonitor *getAddrMonitor() = 0;
 
     /** @} */
+#if GEM5_ENABLE_MATRIX
+
+    virtual RegVal readMatrixConfig(unsigned index)
+    {
+        panic("Matrix configuration requires a Matrix execution context");
+    }
+
+    virtual bool
+    stageMatrixRequest(const matrix::CuteRequest &request)
+    {
+        return false;
+    }
+
+    virtual bool
+    stageMatrixTokenReset(RegVal token_idx)
+    {
+        return false;
+    }
+
+    virtual bool
+    readStagedMatrixTokenReady(RegVal token_idx, RegVal threshold,
+                               bool &ready)
+    {
+        ready = false;
+        return false;
+    }
+#endif
 };
 
 } // namespace gem5
