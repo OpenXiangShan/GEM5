@@ -953,6 +953,31 @@ TEST(BTBMGSCTest, SpecUpdatePHistUsesReturnTargetOverride)
                            "return target override");
 }
 
+TEST(BTBMGSCAsidTest, TidPartitionHistoryAndBiasIndicesIgnoreAsid)
+{
+    BTBMGSC predictor;
+    predictor.setSmtTidPartitioned(true);
+    constexpr Addr pc = 0x1000;
+    constexpr unsigned bits = 8;
+    constexpr uint64_t folded = 0x35;
+    for (ThreadID tid = 0; tid < 2; ++tid) {
+        const auto hist = BTBMGSC::TestAccess::getHistIndex(
+            predictor, pc, bits, folded, 0, tid);
+        const auto bias = BTBMGSC::TestAccess::getBiasIndex(
+            predictor, pc, bits, true, false, 0, tid);
+        for (uint8_t asid = 0; asid < 16; ++asid) {
+            EXPECT_EQ(BTBMGSC::TestAccess::getHistIndex(
+                predictor, pc, bits, folded, asid, tid), hist);
+            EXPECT_EQ(BTBMGSC::TestAccess::getBiasIndex(
+                predictor, pc, bits, true, false, asid, tid), bias);
+        }
+        EXPECT_NE(hist, BTBMGSC::TestAccess::getHistIndex(
+            predictor, pc, bits, folded, 0, 1 - tid));
+        EXPECT_NE(bias, BTBMGSC::TestAccess::getBiasIndex(
+            predictor, pc, bits, true, false, 0, 1 - tid));
+    }
+}
+
 }  // namespace test
 }  // namespace btb_pred
 }  // namespace branch_prediction

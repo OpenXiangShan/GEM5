@@ -1159,6 +1159,69 @@ TEST_F(BTBTest, UpdateFromVictimCachePath) {
     verifyPrediction(stagePreds, mbtb->getDelay(), {branches});
 }
 
+TEST_F(BTBTest, TidPartitionsRetainEntriesAcrossAsidChanges)
+{
+    MBTB btb(16, 20, 4, 1, 8);
+    btb.setSmtTidPartitioned(true);
+    constexpr Addr start = 0x1000;
+    for (ThreadID tid = 0; tid < 2; ++tid) {
+        for (unsigned i = 0; i < 5; ++i) {
+            std::vector<FullBTBPrediction> predictions(4);
+            for (auto &pred : predictions) {
+                pred.tid = tid;
+                pred.asidHash = tid + 1;
+            }
+            btb.putPCHistory(start, boost::dynamic_bitset<>(8), predictions);
+            auto branch = createBranchInfo(
+                start + i * 4, 0x2000 + tid * 0x1000 + i * 16, true);
+            auto stream = setupStream(
+                start, branch, true, btb.getPredictionMeta(tid), tid);
+            stream.asidHash = tid + 1;
+            btb.update(PredictionUpdateContext(stream),
+                       createPreparedUpdate(stream, branch, true));
+        }
+    }
+
+    // Five same-block entries exercise both SRAM and the private VC.
+    for (ThreadID tid = 0; tid < 2; ++tid) {
+        for (uint8_t asid = 0; asid < 16; ++asid) {
+            const auto entries = btb.getPredictedEntriesNoSideEffect(
+                start, tid, asid);
+            ASSERT_EQ(entries.size(), 5);
+            for (unsigned i = 0; i < entries.size(); ++i) {
+                EXPECT_EQ(entries[i].branch.pc, start + i * 4);
+                EXPECT_EQ(entries[i].branch.target,
+                          0x2000 + tid * 0x1000 + i * 16);
+            }
+        }
+    }
+}
+
+TEST_F(BTBTest, SharedStorageRetainsAsidMatching)
+{
+    MBTB btb(8192, 16, 4, 1, 0);
+    constexpr Addr start = 0x1000;
+    for (uint8_t asid : {1, 2}) {
+        std::vector<FullBTBPrediction> predictions(4);
+        for (auto &pred : predictions) {
+            pred.asidHash = asid;
+        }
+        btb.putPCHistory(start, boost::dynamic_bitset<>(8), predictions);
+        auto branch = createBranchInfo(start + 4, 0x2000 + asid * 0x1000,
+                                       true);
+        auto stream = setupStream(
+            start, branch, true, btb.getPredictionMeta());
+        stream.asidHash = asid;
+        btb.update(PredictionUpdateContext(stream),
+                   createPreparedUpdate(stream, branch, true));
+    }
+    for (uint8_t asid : {1, 2}) {
+        const auto entries = btb.getPredictedEntriesNoSideEffect(
+            start, 0, asid);
+        ASSERT_EQ(entries.size(), 1);
+        EXPECT_EQ(entries[0].branch.target, 0x2000 + asid * 0x1000);
+    }
+}
 
 } // namespace test
 } // namespace btb_pred
