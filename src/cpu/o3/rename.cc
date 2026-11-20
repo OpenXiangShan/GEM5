@@ -72,6 +72,7 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
       aggregateRenameWidth(renameWidth * numPreDispatchThreads),
       releaseWidth(params.phyregReleaseWidth),
       numThreads(params.numThreads),
+      rab(params.numThreads == 1 ? params.numRABEntries : 0, renameWidth),
       pregBackendBackpressureDonorEnabled(
           params.smtPregBackendBackpressureDonor),
       pregBackendBackpressureDonorHoldCycles(
@@ -89,6 +90,9 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
     panic_if(aggregateRenameWidth > MaxWidth,
              "aggregate SMT rename width (%u * %u) exceeds MaxWidth (%u)",
              renameWidth, numPreDispatchThreads, MaxWidth);
+    fatal_if(rab.capacity() && rab.capacity() / 2 < renameWidth,
+             "numRABEntries (%u) must be zero or at least %u "
+             "(two rename widths)", rab.capacity(), 2 * renameWidth);
 
     for (uint32_t tid = 0; tid < MaxThreads; tid++) {
         const unsigned capacity = renameWidth *
@@ -112,6 +116,9 @@ Rename::name() const
 
 Rename::RenameStats::RenameStats(CPU *cpu, Rename *rename)
     : statistics::Group(cpu, "rename"),
+      owner(*rename),
+      ADD_STAT(rabPeakOccupancy, statistics::units::Count::get(),
+               "Maximum RAB occupancy in the measurement window"),
       ADD_STAT(squashCycles, statistics::units::Cycle::get(),
                "Number of cycles rename is squashing"),
       ADD_STAT(idleCycles, statistics::units::Cycle::get(),
@@ -241,6 +248,7 @@ Rename::RenameStats::RenameStats(CPU *cpu, Rename *rename)
         { RegFull, "RegFull"},
         { SerializeInst, "SerializeInst"},
         { BWFull, "BWFull"},
+        { RABFull, "RABFull"},
     };
 
     for (int i = 0; i < StallEventCount; i++) {
@@ -249,6 +257,13 @@ Rename::RenameStats::RenameStats(CPU *cpu, Rename *rename)
     }
 
     distanceRatSnapshot.init(10, 100, 5).flags(statistics::pdf);
+}
+
+void
+Rename::RenameStats::resetStats()
+{
+    statistics::Group::resetStats();
+    rabPeakOccupancy = owner.rab.occupancy();
 }
 
 void
@@ -311,6 +326,9 @@ Rename::clearStates(ThreadID tid)
 void
 Rename::resetStage()
 {
+    // Stage reset is only valid at startup or after a complete drain.
+    assert(rab.occupancy() == 0);
+    rab.latchAdmission();
     _status = Inactive;
     resumeUnblocking = false;
 
@@ -355,6 +373,8 @@ Rename::setScoreboard(Scoreboard *_scoreboard)
 bool
 Rename::isDrained() const
 {
+    if (rab.occupancy())
+        return false;
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         if (!historyBuffer[tid].empty() ||
             !fixedbuffer[tid].empty() ||
@@ -373,6 +393,7 @@ Rename::takeOverFrom()
 void
 Rename::drainSanityCheck() const
 {
+    assert(rab.occupancy() == 0);
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         assert(historyBuffer[tid].empty());
         assert(fixedbuffer[tid].empty());
@@ -402,6 +423,12 @@ Rename::squash(const InstSeqNum &squash_seq_num, ThreadID tid)
 void
 Rename::tick()
 {
+    // Commit has enqueued into the ROB. Use the old dispatch grant this tick;
+    // latch the next grants before checkSquash/releasePhysRegs return space.
+    const bool rab_dispatch_ready = rab.canDispatch();
+    DPRINTF(Rename, "RAB grants enq=%u dispatch=%u sampledOccupancy=%u\n",
+            rab.canEnqueue(), rab_dispatch_ready, rab.occupancy());
+    rab.latchAdmission();
     toIEW->fetchStallReason = fromDecode->fetchStallReason;
     toIEW->decodeStallReason = fromDecode->decodeStallReason;
 
@@ -452,7 +479,8 @@ Rename::tick()
     regFullThisCycle = false;
     for (int i = 0; i < numThreads; i++) {
         bool can_rename = canRename(i);
-        bool block = stallSig->blockRename[i] || !can_rename;
+        const bool rab_full = !rab_dispatch_ready && !fixedbuffer[i].empty();
+        bool block = stallSig->blockRename[i] || !can_rename || rab_full;
         bool active = !block && !fixedbuffer[i].empty();
         StallReason block_reason = StallReason::NoStall;
         if (stallSig->blockRename[i]) {
@@ -473,7 +501,12 @@ Rename::tick()
                     }
                 }
             }
+        } else if (rab_full) {
+            block_reason = StallReason::RABFull;
         }
+
+        if (block_reason == StallReason::RABFull && !fixedbuffer[i].empty())
+            ++stats.stallEvents[RABFull];
 
         if (block_reason == StallReason::ROBFull) {
             stats.smtStallEvents[ROBFull].sample(i);
@@ -497,7 +530,7 @@ Rename::tick()
         toDecode->renameInfo[i].blockReason = stallSig->decodeBlockReason[i];
         if (block && !fixedbuffer[i].empty()) {
             if (auto *dip = cpu->getDip()) {
-                dip->renameBlock(fixedbuffer[i].front(), !can_rename);
+                dip->renameBlock(fixedbuffer[i].front(), !can_rename || rab_full);
             }
             setAllStalls(i, block_reason);
         }
@@ -690,6 +723,16 @@ Rename::canRename(ThreadID tid)
         }
     }
     return true;
+}
+
+void
+Rename::enqueueRAB(const DynInstPtr &inst)
+{
+    rab.enqueue(inst->seqNum, inst->rabMappings);
+    stats.rabPeakOccupancy = std::max<statistics::Counter>(
+        stats.rabPeakOccupancy.value(), rab.occupancy());
+    DPRINTF(Rename, "RAB enqueue [sn:%llu] mappings=%u occupancy=%u\n",
+            inst->seqNum, inst->rabMappings, rab.occupancy());
 }
 
 void
@@ -1008,6 +1051,8 @@ Rename::doSquash(const InstSeqNum &squashed_seq_num, ThreadID tid)
 
         ++stats.undoneMaps;
     }
+    if (numThreads == 1)
+        rab.squashAfter(squashed_seq_num);
 }
 
 size_t
@@ -1077,48 +1122,27 @@ Rename::removeFromHistory(InstSeqNum inst_seq_num, ThreadID tid)
             "history buffer %u (size=%i), until [sn:%llu].\n",
             tid, tid, historyBuffer[tid].size(), inst_seq_num);
 
-    auto hb_it = historyBuffer[tid].end();
-
-    --hb_it;
-
-    if (historyBuffer[tid].empty()) {
-        DPRINTF(Rename, "[tid:%i] History buffer is empty.\n", tid);
-        return;
-    } else if (hb_it->instSeqNum > inst_seq_num) {
-        DPRINTF(Rename, "[tid:%i] [sn:%llu] "
-                "Old sequence number encountered. "
-                "Ensure that a syscall happened recently.\n",
-                tid,inst_seq_num);
-        return;
-    }
-
-    // Commit all the renames up until (and including) the committed sequence
-    // number. Some or even all of the committed instructions may not have
-    // rename histories if they did not have destination registers that were
-    // renamed.
+    // Retain the existing sequence-based release timing while removing every
+    // destination mapping at or below the released sequence boundary.
     while (!historyBuffer[tid].empty() &&
-           hb_it != historyBuffer[tid].end() &&
-           hb_it->instSeqNum <= inst_seq_num) {
+           historyBuffer[tid].back().instSeqNum <= inst_seq_num) {
+        const auto &entry = historyBuffer[tid].back();
 
         DPRINTF(Rename,
                 "[tid:%i] try to free up older rename of reg %s (%s), "
                 "[sn:%llu].\n",
-                tid, hb_it->prevPhysReg.toString(),
-                hb_it->prevPhysReg.PhyReg()->className(),
-                hb_it->instSeqNum);
+                tid, entry.prevPhysReg.toString(),
+                entry.prevPhysReg.PhyReg()->className(), entry.instSeqNum);
 
-
-        // Don't free special phys regs like misc and zero regs, which
-        // can be recognized because the new mapping is the same as
-        // the old one.
-        if (hb_it->newPhysReg.PhyReg() != hb_it->prevPhysReg.PhyReg()) {
-            tryFreePReg(hb_it->prevPhysReg.PhyReg(), tid);
+        if (entry.newPhysReg.PhyReg() != entry.prevPhysReg.PhyReg()) {
+            tryFreePReg(entry.prevPhysReg.PhyReg(), tid);
         }
 
         ++stats.committedMaps;
-
-        historyBuffer[tid].erase(hb_it--);
+        historyBuffer[tid].pop_back();
     }
+    if (numThreads == 1)
+        rab.commitThrough(inst_seq_num);
 }
 
 void
@@ -1256,6 +1280,8 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
                 rename_result.first.toString());
 
         // Record the rename information so that a history can be kept.
+        if (numThreads == 1 && RenameRAB::counts(flat_dest_regid))
+            ++inst->rabMappings;
         RenameHistory hb_entry(inst->seqNum, flat_dest_regid,
                                rename_result.first,
                                rename_result.second);
