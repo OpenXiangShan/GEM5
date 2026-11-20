@@ -342,6 +342,7 @@ class LSQUnit
      * @param dropReqNow call request->discard() now
      */
     void loadSetReplay(DynInstPtr inst, LSQRequest* request, bool dropReqNow);
+    void clearLoadBadAddressError(const DynInstPtr &inst, LSQRequest *request);
 
     /** Drop a completed store translation before a physical-SQ replay. */
     void storeSetReplay(const DynInstPtr& inst, LSQRequest* request);

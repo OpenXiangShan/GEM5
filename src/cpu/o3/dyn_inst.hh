@@ -186,6 +186,9 @@ class DynInst : public ExecContext, public RefCounted
     /** The kind of fault this instruction has generated. */
     Fault fault = NoFault;
 
+    bool badAddressError = false;
+    Addr badAddressPaddr = 0;
+
     /** InstRecord that tracks this instructions. */
     Trace::InstRecord *traceData = nullptr;
 

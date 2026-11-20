@@ -255,9 +255,19 @@ LSQUnit::recvTimingResp(PacketPtr pkt)
     }
     bool ret = true;
     /* Check that the request is still alive before any further action. */
-    if (!request->isReleased()) {
+    if (!request->isReleased() && request->badAddressErrorRelevant) {
         // Record response facts before per-request replay or completion.
         if (const auto &inst = request->instruction()) {
+            if (inst->isLoad() && !inst->isSquashed() &&
+                !inst->isDataPrefetch() && !inst->isInstPrefetch() &&
+                (currentLoadRequest(inst) == request ||
+                 inst->pendingCacheReq == request) &&
+                pkt->cmd == MemCmd::BadAddressError) {
+                if (!inst->badAddressError) {
+                    inst->badAddressPaddr = pkt->getAddr();
+                }
+                inst->badAddressError = true;
+            }
             inst->cacheAccessDepth = std::max(
                 inst->cacheAccessDepth, pkt->cacheAccessDepth);
             if (auto *tea = cpu->getTea();
@@ -285,8 +295,13 @@ LSQUnit::recvTimingResp(PacketPtr pkt)
     } else if (request->instruction()) {
         DPRINTF(LoadPipeline, "LSQUnit::recvTimingResp [sn:%lu] pkt: %s - ignored\n",
                 request->instruction()->seqNum, pkt->print());
-        request->instruction()->hasPendingCacheReq(false);
-        request->instruction()->pendingCacheReq = nullptr;
+        if (request->instruction()->pendingCacheReq == request) {
+            request->instruction()->hasPendingCacheReq(false);
+            request->instruction()->pendingCacheReq = nullptr;
+        }
+        if (!request->isReleased()) {
+            request->discard();
+        }
     }
 
     return ret;
@@ -1229,8 +1244,28 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
 }
 
 void
+LSQUnit::clearLoadBadAddressError(const DynInstPtr &inst, LSQRequest *request)
+{
+    inst->badAddressError = false;
+    inst->badAddressPaddr = 0;
+    lsq->bus.erase(inst->seqNum);
+    if (request) {
+        request->badAddressErrorRelevant = false;
+    }
+    if (inst->hasPendingCacheReq() && inst->pendingCacheReq) {
+        inst->pendingCacheReq->badAddressErrorRelevant = false;
+        inst->hasPendingCacheReq(false);
+        inst->pendingCacheReq = nullptr;
+    }
+    inst->waitingCacheRefill(false);
+}
+
+void
 LSQUnit::loadSetReplay(DynInstPtr inst, LSQRequest* request, bool dropReqNow)
 {
+    if (!inst->needCacheMissReplay() && !inst->needBankConflictReplay()) {
+        clearLoadBadAddressError(inst, request);
+    }
     // clear state in this instruction
     inst->effAddrValid(false);
     // Reset DTB translation state
@@ -1785,6 +1820,9 @@ LSQUnit::executeLoadPipeSx()
             // immediately.
             if (inst->needSTLFReplay() || inst->needCacheBlockedReplay() || inst->needRescheduleReplay() ||
                 inst->needRAWReplay() || inst->needRARReplay()) {
+                if (!inst->needCacheBlockedReplay()) {
+                    clearLoadBadAddressError(inst, currentLoadRequest(inst));
+                }
                 DPRINTF(LoadPipeline, "Load [sn:%llu] replayed\n", inst->seqNum);
                 // record replay stats
                 assert(inst->getReplayType());
@@ -1837,11 +1875,9 @@ LSQUnit::executeLoadPipeSx()
                 else if (inst->needMdpAddrReplay()) iewStage->mdpAddrReplayPipeDone(inst);
                 else if (inst->needNukeReplay()) {
                     if (auto *request = currentLoadRequest(inst); request) {
-                        if (inst->cacheHit()) {
-                            loadSetReplay(inst, request, true);
-                        } else if (inst->hasPendingCacheReq()) {
-                            loadSetReplay(inst, request, false);
-                        }
+                        loadSetReplay(inst, request, true);
+                    } else {
+                        clearLoadBadAddressError(inst, nullptr);
                     }
                     inst->issueQue->retryMem(inst);
                 }
