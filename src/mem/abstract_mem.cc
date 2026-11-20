@@ -409,6 +409,8 @@ AbstractMemory::access(PacketPtr pkt)
             pkt->getAddr(), pkt->getSize());
 
     if (pkt->cmd == MemCmd::SwapReq) {
+        auto *amo = update_golden ?
+            system()->getGoldenMemManager()->beginAtomic(pkt) : nullptr;
         if (pkt->isAtomicOp()) {
             if (pmemAddr) {
                 pkt->setData(host_addr);
@@ -457,6 +459,10 @@ AbstractMemory::access(PacketPtr pkt)
             TRACE_PACKET("Read/Write");
             stats.numOther[pkt->req->requestorId()]++;
         }
+        if (amo) {
+            std::memcpy(amo->after.data(), host_addr,
+                        pkt->getSize());
+        }
     } else if (pkt->isRead()) {
         assert(!pkt->isWrite());
         if (pkt->isLLSC()) {
@@ -467,6 +473,10 @@ AbstractMemory::access(PacketPtr pkt)
         }
         if (pmemAddr) {
             pkt->setData(host_addr);
+        }
+        if (pmemAddr && system()->multiContextDifftest() &&
+            system()->params().golden_mem_at_write) {
+            system()->getGoldenMemManager()->recordScalarRead(pkt);
         }
         TRACE_PACKET(pkt->req->isInstFetch() ? "IFetch" : "Read");
         stats.numReads[pkt->req->requestorId()]++;

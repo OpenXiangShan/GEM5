@@ -9,7 +9,7 @@ This script intentionally mirrors the output layout of parallel_sim.sh:
 
 Version 1 keeps scheduling simple and explicit: callers pass a server list and a
 fixed number of jobs per server.  The remote hosts are expected to see the same
-NFS paths as the launcher host.
+NFS paths as the launcher host and have python3 available.
 """
 
 from __future__ import annotations
@@ -34,6 +34,31 @@ DEFAULT_LAUNCH_RETRY_DELAY_SEC = 20.0
 DEFAULT_LAUNCH_INTERVAL_SEC = 0.2
 NO_ELIGIBLE_SERVERS_EXIT_CODE = 75
 ENV_KEY_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+# SSH stdin is a lifetime pipe, not simulator input. Run this on the worker
+# so losing the launcher never requires a second SSH connection to clean up.
+SSH_JOB_GUARD = """\
+import os
+import select
+import signal
+import subprocess
+import sys
+
+with subprocess.Popen(
+    sys.argv[1:], stdin=subprocess.DEVNULL, start_new_session=True
+) as sim:
+    while sim.poll() is None:
+        if not select.select([0], [], [], 1)[0]:
+            continue
+        if sim.poll() is None:
+            try:
+                os.killpg(sim.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        break
+status = sim.returncode
+sys.exit(status if status >= 0 else 128 - status)
+"""
 
 
 class NoEligibleServersError(RuntimeError):
@@ -530,11 +555,15 @@ def make_job_script(
     checkpoint: Path,
     command: list[str],
     env: dict[str, str],
+    *,
+    remote: bool,
 ) -> str:
-    command_text = " ".join(shlex.quote(part) for part in command)
+    command_text = shlex.join(command)
     workload_message = shlex.quote(f"distributed_sim workload: {workload.name}")
     checkpoint_message = shlex.quote(f"checkpoint: {checkpoint}")
     command_message = shlex.quote(f"command: {command_text}")
+    if remote:
+        command_text = shlex.join(["python3", "-c", SSH_JOB_GUARD, *command])
     return f"""set -u
 mkdir -p {shlex.quote(str(work_dir))}
 cd {shlex.quote(str(work_dir))}
@@ -586,6 +615,8 @@ def launch_job(
             ssh_options=ssh_options,
             fixed_options=[
                 "BatchMode=yes",
+                "RequestTTY=no",
+                "StdinNull=no",
                 "ConnectionAttempts=3",
                 "TCPKeepAlive=yes",
                 "ServerAliveInterval=300",
@@ -594,6 +625,7 @@ def launch_job(
         )
         proc = subprocess.Popen(
             ssh_cmd,
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=True,
@@ -1182,6 +1214,7 @@ def run_scheduler(
                     checkpoint=checkpoint,
                     command=command,
                     env=env,
+                    remote=server.name != "local",
                 )
                 launch_job(
                     server=server,

@@ -1864,6 +1864,8 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
     // Check RMW operations first since both isRead() and
     // isWrite() will be true for them
     if (pkt->cmd == MemCmd::SwapReq) {
+        auto *amo = update_golden ?
+            system->getGoldenMemManager()->beginAtomic(pkt) : nullptr;
         if (pkt->isAtomicOp()) {
             // Get a copy of the old block's contents for the probe before
             // the update
@@ -1906,6 +1908,10 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
         } else {
             cmpAndSwap(blk, pkt);
         }
+        if (amo) {
+            std::memcpy(amo->after.data(), blk->data + pkt->getOffset(blkSize),
+                        pkt->getSize());
+        }
     } else if (pkt->isWrite()) {
         // we have the block in a writable state and can go ahead,
         // note that the line may be also be considered writable in
@@ -1933,6 +1939,10 @@ BaseCache::satisfyRequest(PacketPtr pkt, CacheBlk *blk, bool, bool)
             blk->trackLoadLocked(pkt);
         }
 
+        if (system->multiContextDifftest() &&
+            system->params().golden_mem_at_write) {
+            system->getGoldenMemManager()->recordScalarRead(pkt);
+        }
         // all read responses have a data payload
         assert(pkt->hasRespData());
         pkt->setDataFromBlock(blk->data, blkSize);
