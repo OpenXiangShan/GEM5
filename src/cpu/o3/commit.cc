@@ -1932,11 +1932,6 @@ Commit::commitInsts()
 
                     }
 
-                    if (head_inst->isReadBarrier() ||
-                        head_inst->isWriteBarrier()) {
-                        cpu->armSyncVisibleStoreReplay(tid);
-                    }
-
                     if (cpu->difftestEnabled()) {
                         diffInst(tid, head_inst);
                     }
@@ -2111,9 +2106,15 @@ Commit::diffInst(ThreadID tid, const DynInstPtr &inst) {
         inst->strictlyOrdered();
     cpu->diffInfo.physEffAddr = inst->physEffAddr;
     cpu->diffInfo.effSize = inst->effSize;
-    cpu->diffInfo.goldenValue = inst->getGolden();
-    std::memcpy(cpu->diffInfo.amoOldGoldenValue, inst->getAmoOldGoldenValuePtr(), std::min((uint32_t)inst->effSize, (uint32_t)sizeof(cpu->diffInfo.amoOldGoldenValue)));
-    cpu->recordCommittedStore(tid, inst);
+    cpu->diffInfo.loadSnapshot = inst->loadSnapshot.get();
+    cpu->diffInfo.legacyLoadData = cpu->system->params().golden_mem_at_write ?
+        nullptr : inst->memData;
+    if (inst->isAtomic()) {
+        const size_t size = std::min<size_t>(
+            inst->effSize, sizeof(cpu->diffInfo.amoOldGoldenValue));
+        std::memcpy(cpu->diffInfo.amoOldGoldenValue,
+                    inst->getAmoOldGoldenValuePtr(), size);
+    }
     cpu->difftestStep(tid, inst->seqNum);
 }
 

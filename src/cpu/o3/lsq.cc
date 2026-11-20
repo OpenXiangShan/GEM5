@@ -2099,7 +2099,6 @@ void
 LSQ::completeSbufferEvict(PacketPtr pkt)
 {
     auto request = dynamic_cast<SbufferRequest *>(pkt->senderState);
-    cpu->consumeSyncVisibleStoreReplay(request->sbuffer_entry->tid);
     if (!pkt->localWriteSnoopSent()) {
         notifyOtherThreadsStoreVisible(request->sbuffer_entry->tid,
                                        request->mainReq()->getPaddr());
@@ -3745,8 +3744,7 @@ LSQ::LSQRequest::LSQRequest(
     _state(State::NotIssued),
     _port(*port), _inst(inst), _data(nullptr),
     _res(nullptr), _addr(0), _size(0), _flags(0),
-    _numOutstandingPackets(0), _amo_op(nullptr),
-    _sbufferBypass(false)
+    _numOutstandingPackets(0), _amo_op(nullptr)
 {
 
     flags.set(Flag::IsLoad, isLoad);
@@ -3772,8 +3770,7 @@ LSQ::LSQRequest::LSQRequest(
     _flags(flags_),
     _numOutstandingPackets(0),
     _amo_op(std::move(amo_op)),
-    _hasStaleTranslation(stale_translation),
-    _sbufferBypass(false)
+    _hasStaleTranslation(stale_translation)
 {
 
     flags.set(Flag::IsLoad, isLoad);
@@ -3840,12 +3837,16 @@ LSQ::LSQRequest::forward()
     DPRINTF(StoreBuffer, "sbuffer/storeQue forward data\n");
     for (auto& p : SBforwardPackets)
     {
-        _sbufferBypass = true;
+        if (_inst->loadSnapshot) {
+            _inst->loadSnapshot->forwarded.set(p.idx);
+        }
         _inst->memData[p.idx] = p.byte;
     }
 
     for (auto& p : SQforwardPackets) {
-        _sbufferBypass = true;
+        if (_inst->loadSnapshot) {
+            _inst->loadSnapshot->forwarded.set(p.idx);
+        }
         _inst->memData[p.idx] = p.byte;
     }
 }

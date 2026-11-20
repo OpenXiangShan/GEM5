@@ -42,6 +42,7 @@
 #ifndef __CPU_BASE_HH__
 #define __CPU_BASE_HH__
 
+#include <bitset>
 #include <deque>
 #include <queue>
 #include <vector>
@@ -63,6 +64,7 @@
 #include "debug/Mwait.hh"
 #include "mem/htm.hh"
 #include "mem/port_proxy.hh"
+#include "mem/request.hh"
 #include "sim/clocked_object.hh"
 #include "sim/eventq.hh"
 #include "sim/faults.hh"
@@ -127,6 +129,41 @@ class CPUProgressEvent : public Event
     virtual const char *description() const;
 };
 
+// Bytes observed at the read point, grouped by the physical LSQ fragment.
+struct ScalarLoadSnapshot
+{
+    struct Fragment
+    {
+        Addr addr;
+        size_t offset;
+        size_t size;
+        Request::ScalarReadBytes bytes;
+    };
+
+    std::vector<Fragment> fragments;
+    std::bitset<sizeof(Request::ScalarReadBytes)> forwarded;
+
+    template<class Visitor>
+    void visitCacheRanges(Visitor visit) const
+    {
+        for (const auto &f : fragments) {
+            size_t i = 0;
+            while (i < f.size) {
+                if (forwarded[f.offset + i]) {
+                    ++i;
+                    continue;
+                }
+                const size_t start = i++;
+                while (i < f.size && !forwarded[f.offset + i]) {
+                    ++i;
+                }
+                visit(f.offset + start, f.addr + start, f.bytes.data() + start,
+                      i - start);
+            }
+        }
+    }
+};
+
 struct DiffAllStates
 {
     riscv64_CPU_regfile gem5RegFile;
@@ -140,18 +177,6 @@ struct DiffAllStates
 class BaseCPU : public ClockedObject
 {
   protected:
-    struct RecentCommittedStore
-    {
-        bool valid = false;
-        Addr addr = 0;
-        size_t size = 0;
-        InstSeqNum seq = 0;
-        uint8_t data[16] = {};
-    };
-
-    std::vector<std::deque<RecentCommittedStore>> recentCommittedStores;
-    std::vector<bool> syncVisibleStoreReplayArmed;
-
     const unsigned IntRegIndexBase = 0;
     const unsigned FPRegIndexBase = 32;
 
@@ -725,6 +750,7 @@ class BaseCPU : public ClockedObject
 
     void csrDiffMessage(uint64_t gem5_val, uint64_t ref_val, int error_num, uint64_t &error_reg, InstSeqNum seq,
                         std::string error_csr_name,int &diff_at);
+    void stepReference(RefProxy &ref);
     std::pair<int, bool> diffWithNEMU(ThreadID tid, InstSeqNum seq);
     int difftestHartId(ThreadID tid) const;
 
@@ -761,7 +787,8 @@ class BaseCPU : public ClockedObject
         bool curInstStrictOrdered{false};
         gem5::Addr physEffAddr;
         gem5::Addr effSize;
-        uint8_t *goldenValue;
+        const ScalarLoadSnapshot *loadSnapshot = nullptr;
+        const uint8_t *legacyLoadData = nullptr;
         uint8_t amoOldGoldenValue[16];
         // Register address causing difftest error
         bool errorRegsValue[diffAllNum];
@@ -794,18 +821,6 @@ class BaseCPU : public ClockedObject
     void difftestStep(ThreadID tid) { difftestStep(tid, 0);}
 
     void difftestStep(ThreadID tid, InstSeqNum seq);
-
-    void recordCommittedStore(ThreadID tid, const o3::DynInstPtr &inst);
-    void armSyncVisibleStoreReplay(ThreadID tid)
-    {
-        syncVisibleStoreReplayArmed.at(tid) = true;
-    }
-    bool consumeSyncVisibleStoreReplay(ThreadID tid)
-    {
-        bool armed = syncVisibleStoreReplayArmed.at(tid);
-        syncVisibleStoreReplayArmed.at(tid) = false;
-        return armed;
-    }
 
     inline bool difftestEnabled() const { return enableDifftest; }
 

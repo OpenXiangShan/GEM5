@@ -468,6 +468,10 @@ AbstractMemory::access(PacketPtr pkt)
         if (pmemAddr) {
             pkt->setData(host_addr);
         }
+        if (pmemAddr && system()->multiContextDifftest() &&
+            system()->params().golden_mem_at_write) {
+            system()->getGoldenMemManager()->recordScalarRead(pkt);
+        }
         TRACE_PACKET(pkt->req->isInstFetch() ? "IFetch" : "Read");
         stats.numReads[pkt->req->requestorId()]++;
         stats.bytesRead[pkt->req->requestorId()] += pkt->getSize();
