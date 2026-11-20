@@ -38,6 +38,7 @@
 
 from m5.SimObject import SimObject
 from m5.params import *
+from m5.defines import buildEnv
 
 class OpClass(Enum):
     vals = ['No_OpClass',
@@ -75,6 +76,10 @@ class OpClass(Enum):
             'VectorIntegerArith', 'VectorFloatArith', 'VectorFloatConvert',
             'VectorIntegerReduce', 'VectorFloatReduce',
             'VectorMisc', 'VectorIntegerExtension', 'VectorConfig'
+            ]
+    if buildEnv['GEM5_ENABLE_MATRIX']:
+        vals += ['MatrixInt', 'MatrixRelease', 'MatrixCsr',
+            'MatrixMma', 'MatrixArith', 'MatrixSync', 'MatrixMem'
             ]
 
 class OpDesc(SimObject):

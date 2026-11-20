@@ -28,6 +28,7 @@
  */
 
 #include "arch/riscv/decoder.hh"
+#include "arch/riscv/isa.hh"
 #include "arch/riscv/types.hh"
 #include "base/bitfield.hh"
 #include "debug/Decode.hh"
@@ -39,6 +40,15 @@ namespace RiscvISA
 {
 
 GenericISA::BasicDecodeCache<Decoder, ExtMachInst> Decoder::defaultCache;
+
+Decoder::Decoder(const RiscvDecoderParams &p)
+    : InstDecoder(p, &machInst)
+#if GEM5_ENABLE_MATRIX
+    , isa(static_cast<const ISA *>(p.isa))
+#endif
+{
+    reset();
+}
 
 void Decoder::reset()
 {
@@ -105,6 +115,10 @@ Decoder::decode(PCStateBase &_next_pc)
         next_pc.compressed(false);
     }
 
+#if GEM5_ENABLE_MATRIX
+    // Include the ISA capability in the shared decode-cache key.
+    emi.matrixEnabled = isa && isa->isMatrixEnabled();
+#endif
     emi.vtype8 = this->machVtype & 0xff;
     StaticInstPtr inst = decode(emi, next_pc.instAddr());
     if (inst->isVectorConfig()) {

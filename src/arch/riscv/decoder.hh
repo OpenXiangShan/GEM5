@@ -36,6 +36,7 @@
 #include "arch/riscv/types.hh"
 #include "base/logging.hh"
 #include "base/types.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "cpu/static_inst.hh"
 #include "debug/Decode.hh"
 #include "params/RiscvDecoder.hh"
@@ -54,6 +55,9 @@ class Decoder : public InstDecoder
     ExtMachInst emi;
     uint32_t machInst;
 
+#if GEM5_ENABLE_MATRIX
+    const ISA *isa;
+#endif
     bool vtypeReady = true;
     VTYPE machVtype;
 
@@ -69,10 +73,7 @@ class Decoder : public InstDecoder
     StaticInstPtr decode(ExtMachInst mach_inst, Addr addr);
 
   public:
-    Decoder(const RiscvDecoderParams &p) : InstDecoder(p, &machInst)
-    {
-        reset();
-    }
+    Decoder(const RiscvDecoderParams &p);
 
     void reset() override;
 
