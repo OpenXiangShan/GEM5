@@ -53,6 +53,14 @@
 5. 将指令插入提交队列，等待提交。
 6. 检查是否发生分支预测错误
 
+## L1D 硬件预取查询
+
+香山 [RTL PR #5997](https://github.com/OpenXiangShan/XiangShan/pull/5997) 将硬件预取的 L1D 查询从 LoadPipe 迁到 MainPipe。原 GEM5 在下层发送仲裁中取预取包，和普通 load 共用每拍 tag 查询额度；即使最终在 L1 命中，也要先通过 MSHR 门槛。
+
+采用 fake MainPipe 的 L1D 通过已有的 LSQ 连接提交就绪预取。LSQ 最多持有一笔等待入管的预取；回填、预取和 StoreBuffer 按这个顺序竞争入口。预取和其他入口请求一样检查 tag 写入、同 set 冲突和 S1 空间。预取在 S2 查一次 tag 和可读权限，命中到 S3 结束，不写数据。已有同块 MSHR 或写缓冲时丢弃重复请求；新的 miss 通过现有 MSHR 门槛后，由经典缓存发送。
+
+普通 load 的 tag 查询额度和现有回填路径不变。GEM5 用一个就绪事件处理预取队列延时和 O3 空闲停 tick；fake MainPipe 不模拟 RTL 的共享 skid 或 S1 tag 响应锁存。
+
 ## lsq向cache发送读请求流程
 ### **1. 指令被插入 Load Queue**
 + **函数**: `LSQ::insertLoad`

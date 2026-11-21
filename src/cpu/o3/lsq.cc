@@ -907,7 +907,11 @@ LSQ::isDrained() const
         drained = false;
     }
 
-    return drained;
+    return drained && !dcacheMainPipePrefetch.valid &&
+        std::none_of(dcacheMainPipe.begin(), dcacheMainPipe.end(),
+                     [](const auto &slot) {
+                         return slot.valid && slot.req.isPrefetch();
+                     });
 }
 
 void
@@ -1044,7 +1048,7 @@ LSQ::advanceDcacheMainPipe()
 
     if (s3_tag_write.valid && !s3_can_go) {
         next_s3_tag_write = s3_tag_write;
-    } else if (s3_tag_write.valid) {
+    } else if (s3_tag_write.valid && !s3_tag_write.req.isPrefetch()) {
         next_s4_data_write = s3_tag_write;
     }
 
@@ -1075,6 +1079,10 @@ LSQ::advanceDcacheMainPipe()
             ++stats.dcacheMainPipeRefillBlocked;
             ++stats.dcacheMainPipeRefillBlockedByPipeResource;
         }
+    } else if (dcacheMainPipePrefetch.valid &&
+               canEnterDcacheMainPipe(dcacheMainPipePrefetch.req, next_pipe)) {
+        next_s1_data_read = std::exchange(dcacheMainPipePrefetch, {});
+        std::exchange(dcacheMainPipePrefetchAdmitted, {})();
     }
 
     dcacheMainPipe = next_pipe;
@@ -1278,7 +1286,8 @@ LSQ::isDcacheMainPipeSetBlocked(uint64_t set_key) const
          ++stage) {
         const auto &pipe_stage =
             dcacheMainPipeStage(static_cast<DcacheMainPipeStage>(stage));
-        if (pipe_stage.valid && pipe_stage.req.setKey == set_key) {
+        if (pipe_stage.valid && !pipe_stage.req.isPrefetch() &&
+            pipe_stage.req.setKey == set_key) {
             return true;
         }
     }
@@ -1338,6 +1347,8 @@ LSQ::canEnterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry)
         ++stats.dcacheMainPipeStoreBlockedByRefill;
         return false;
     }
+    if (dcacheMainPipePrefetch.valid)
+        return false;
 
     bool blocked = false;
     if (s1_backpressured) {
@@ -1464,6 +1475,29 @@ LSQ::notifyDcacheRefill(
     dcacheMainPipeRefillQ.push(
         makeDcacheRefillMainPipeRequest(
             addr, need_data_read, std::move(on_complete)));
+    cpu->wakeCPU();
+    cpu->activityThisCycle();
+}
+
+bool
+LSQ::canQueueDcachePrefetch() const
+{
+    return !dcacheMainPipePrefetch.valid && !cpu->switchedOut() &&
+           cpu->drainState() == DrainState::Running;
+}
+
+void
+LSQ::queueDcachePrefetch(Addr addr, DcacheMainPipeS2Callback issue,
+                        std::function<void()> on_admit)
+{
+    assert(canQueueDcachePrefetch());
+    auto &slot = dcacheMainPipePrefetch;
+    slot.valid = true;
+    slot.req.source = DcacheMainPipeSource::Prefetch;
+    slot.req.addr = addr;
+    slot.req.setKey = getDcacheSetKey(addr);
+    slot.req.onS2Issue = std::move(issue);
+    dcacheMainPipePrefetchAdmitted = std::move(on_admit);
     cpu->wakeCPU();
     cpu->activityThisCycle();
 }
@@ -3234,7 +3268,7 @@ LSQ::numStoresToSbuffer(ThreadID tid)
 bool
 LSQ::willWB()
 {
-    if (!dcacheMainPipeRefillQ.empty()) {
+    if (dcacheMainPipePrefetch.valid || !dcacheMainPipeRefillQ.empty()) {
         return true;
     }
     for (const auto &stage : dcacheMainPipe) {

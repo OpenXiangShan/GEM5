@@ -1397,6 +1397,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
     void init() override;
     void resetStats() override;
 
+    void drainResume() override;
+
     Port &getPort(const std::string &if_name,
                   PortID idx=InvalidPortID) override;
 
@@ -1582,6 +1584,10 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
     Tick nextPrefetchReadyTime() const
     {
+        // L1D first-lookup admission is driven by LSQ, independently of the
+        // downstream request queue and the legacy tag-query budget.
+        if (usesDcachePrefetchMainPipe())
+            return MaxTick;
         Tick rdy_time = prefetcher->nextPrefetchReadyTime();
         if (cacheLevel == 1) {
             if (curTick() >= rdy_time && freeTagLoadReadPorts == 0) {
@@ -1671,6 +1677,12 @@ class BaseCache : public ClockedObject, public CacheAccessor
     const bool forceHit;
     const bool simulateDcacheRefill;
     o3::LSQ *dcacheMainPipeLSQ = nullptr;
+    EventFunctionWrapper dcachePrefetchReadyEvent;
+    bool usesDcachePrefetchMainPipe() const
+    { return simulateDcacheRefill && cacheLevel == 1 && !isReadOnly; }
+    void scheduleDcachePrefetch(Tick ready);
+    void offerDcacheMainPipePrefetch();
+    bool lookupDcacheMainPipePrefetch(std::unique_ptr<Packet> &packet);
 
 public:
     /**

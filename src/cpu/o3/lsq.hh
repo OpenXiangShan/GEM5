@@ -1379,6 +1379,7 @@ class LSQ
     enum class DcacheMainPipeSource : unsigned
     {
         Refill,
+        Prefetch,
         StoreBuffer
     };
 
@@ -1414,6 +1415,11 @@ class LSQ
         bool isStoreBuffer() const
         {
             return source == DcacheMainPipeSource::StoreBuffer;
+        }
+
+        bool isPrefetch() const
+        {
+            return source == DcacheMainPipeSource::Prefetch;
         }
     };
 
@@ -1485,8 +1491,14 @@ class LSQ
         Addr addr, bool need_data_read = true,
         DcacheMainPipeCompleteCallback on_complete = {});
 
+    bool canQueueDcachePrefetch() const;
+    void queueDcachePrefetch(Addr addr, DcacheMainPipeS2Callback issue,
+                            std::function<void()> on_admit);
+
     std::queue<DcacheMainPipeRequest> dcacheMainPipeRefillQ;
     DcacheMainPipeBufferedPipe dcacheMainPipe = {};
+    DcacheMainPipeSlot dcacheMainPipePrefetch;
+    std::function<void()> dcacheMainPipePrefetchAdmitted;
 
     bool isDcacheRefillTagWrite() const
     {

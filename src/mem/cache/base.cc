@@ -189,6 +189,8 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       cacheLevel(p.cache_level),
       forceHit(p.force_hit),
       simulateDcacheRefill(p.simulate_dcache_refill),
+      dcachePrefetchReadyEvent([this] { offerDcacheMainPipePrefetch(); },
+                               p.name + ".dcache_prefetch_ready"),
       doFastWriteline(p.do_fast_writeline),
       Prefetch_CanOffload(p.prefetch_can_offload)
 {
@@ -213,8 +215,16 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
     if (prefetcher) {
         prefetcher->setParentInfo(system, getProbeManager(), this, getBlockSize());
         prefetcher->setPacketReadyCallback([this](Tick ready) {
-            schedMemSideSendEvent(std::max(ready, clockEdge()));
+            if (usesDcachePrefetchMainPipe())
+                scheduleDcachePrefetch(ready);
+            else
+                schedMemSideSendEvent(std::max(ready, clockEdge()));
         });
+        if (usesDcachePrefetchMainPipe()) {
+            prefetcher->setMainPipeReadyCallback([this](Tick ready) {
+                scheduleDcachePrefetch(ready);
+            });
+        }
     }
 
     fatal_if(compressor && !dynamic_cast<CompressedTags*>(tags),
@@ -262,6 +272,8 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
 
 BaseCache::~BaseCache()
 {
+    if (dcachePrefetchReadyEvent.scheduled())
+        deschedule(dcachePrefetchReadyEvent);
     delete tempBlock;
 }
 
@@ -727,6 +739,10 @@ BaseCache::recvTimingReq(PacketPtr pkt)
     if (pkt->cmd == MemCmd::HardPFReq) {
         if (prefetcher) {
             prefetcher->recvPrefetchFromCache(pkt);
+            if (usesDcachePrefetchMainPipe()) {
+                scheduleDcachePrefetch(prefetcher->nextPrefetchReadyTime());
+                return;
+            }
             // schedule a prefetch
             Tick next_pf_time = std::max(prefetcher->nextPrefetchReadyTime(),
                                          curTick() + cyclesToTicks(Cycles(lookupLatency)));
@@ -977,7 +993,98 @@ BaseCache::registerDcacheMainPipeLSQ(o3::LSQ *lsq)
     panic_if(dcacheMainPipeLSQ && dcacheMainPipeLSQ != lsq,
              "%s: DCache fake mainpipe LSQ owner already set\n",
              name().c_str());
+    const bool first_binding = !dcacheMainPipeLSQ;
     dcacheMainPipeLSQ = lsq;
+    if (first_binding && prefetcher)
+        scheduleDcachePrefetch(prefetcher->nextPrefetchReadyTime());
+}
+
+void
+BaseCache::drainResume()
+{
+    if (prefetcher)
+        scheduleDcachePrefetch(prefetcher->nextPrefetchReadyTime());
+}
+
+void
+BaseCache::scheduleDcachePrefetch(Tick ready)
+{
+    if (!usesDcachePrefetchMainPipe() || !dcacheMainPipeLSQ || ready == MaxTick)
+        return;
+
+    // O3 can stop ticking when idle. Notify it when a queued packet is ready.
+    const Tick when = std::max(ready, nextCycle());
+    if (!dcachePrefetchReadyEvent.scheduled())
+        schedule(dcachePrefetchReadyEvent, when);
+    else if (when < dcachePrefetchReadyEvent.when())
+        reschedule(dcachePrefetchReadyEvent, when);
+}
+
+void
+BaseCache::offerDcacheMainPipePrefetch()
+{
+    auto *lsq = dcacheMainPipeLSQ;
+    if (!lsq->canQueueDcachePrefetch())
+        return; // Admission or drain resume will rearm the event.
+
+    const Tick ready = prefetcher->nextPrefetchReadyTime();
+    if (ready > curTick()) {
+        // A demand access may have squashed the former queue head.
+        scheduleDcachePrefetch(ready);
+        return;
+    }
+
+    PacketPtr pkt = prefetcher->getPacket();
+    assert(pkt);
+    const Addr addr = pkt->req->hasVaddr() ?
+        pkt->req->getVaddr() : pkt->getAddr();
+    // The pipeline copies slots; only the miss path transfers the packet.
+    auto packet = std::make_shared<std::unique_ptr<Packet>>(pkt);
+    lsq->queueDcachePrefetch(addr,
+        [this, packet](Tick) {
+            using Result = o3::LSQ::DcacheMainPipeS2Result;
+            const bool hit = lookupDcacheMainPipePrefetch(*packet);
+            packet->reset();
+            return hit ? Result::GoToS3 : Result::ExitPipe;
+        },
+        [this] {
+            scheduleDcachePrefetch(prefetcher->nextPrefetchReadyTime());
+        });
+}
+
+bool
+BaseCache::lookupDcacheMainPipePrefetch(std::unique_ptr<Packet> &packet)
+{
+    PacketPtr pkt = packet.get();
+    const Addr addr = pkt->getBlockAddr(blkSize);
+    const auto source = pkt->req->getXsMetadata().prefetchSource;
+    const CacheBlk *blk = tags->findBlock(addr, pkt->isSecure());
+    const bool hit = blk && blk->isSet(CacheBlk::ReadableBit);
+    const char *late = nullptr;
+    if (hit) {
+        prefetcher->pfHitInCache(source);
+        late = "cache";
+    } else if (mshrQueue.findMatch(addr, pkt->isSecure())) {
+        prefetcher->pfHitInMSHR(source);
+        late = "MSHR";
+    } else if (writeBuffer.findMatch(addr, pkt->isSecure())) {
+        prefetcher->pfHitInWB(source);
+        late = "write buffer";
+    }
+    if (late) {
+        if (source == PrefetchSourceType::SStream)
+            prefetcher->streamPflate();
+        DPRINTF(HWPrefetch, "MainPipe prefetch %#x hit in %s\n", addr, late);
+    } else if (dcacheMainPipeCanPrefetch() && !isBlocked()) {
+        DPRINTF(HWPrefetch, "MainPipe prefetch %#x allocated MSHR\n", addr);
+        assert(pkt->req->requestorId() < system->maxRequestors());
+        stats.cmdStats(pkt).mshrMisses[pkt->req->requestorId()]++;
+        // S2 is outside the send arbiter, so schedule the outbound request.
+        allocateMissBuffer(packet.release(), clockEdge());
+    } else {
+        DPRINTF(HWPrefetch, "MainPipe prefetch %#x rejected\n", addr);
+    }
+    return hit;
 }
 
 void
@@ -1570,7 +1677,8 @@ BaseCache::getNextQueueEntry()
 
     // fall through... no pending requests.  Try a prefetch.
     assert(!miss_mshr && !wq_entry);
-    if (prefetcher && dcacheMainPipeCanPrefetch() && !isBlocked()) {
+    if (prefetcher && !usesDcachePrefetchMainPipe() &&
+        dcacheMainPipeCanPrefetch() && !isBlocked()) {
         // If we have a miss queue slot, we can try a prefetch
         bool has_pending_pkt = prefetcher->hasPendingPacket();
         PacketPtr pkt = nullptr;

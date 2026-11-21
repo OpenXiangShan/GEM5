@@ -121,6 +121,14 @@ Multi::hasPendingPacket()
     return false;
 }
 
+void
+Multi::setMainPipeReadyCallback(std::function<void(Tick)> callback)
+{
+    Base::setMainPipeReadyCallback(callback);
+    for (auto *pf : prefetchers)
+        pf->setMainPipeReadyCallback(callback);
+}
+
 PacketPtr
 Multi::getPacket()
 {
