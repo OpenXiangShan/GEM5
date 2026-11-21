@@ -481,6 +481,12 @@ def template CSRExecute {{
 
         %(code)s;
 
+        // Suppress CSR writes for read-only CSRRS/CSRRC forms.
+        if (!write && bits(machInst, 13, 12) != 1) {
+            %(op_wb)s;
+            return NoFault;
+        }
+
         data &= visibleMask;
         if(csr == CSR_HIE){
             xc->setMiscReg(effectiveMiscReg, data);
