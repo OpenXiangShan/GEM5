@@ -80,7 +80,6 @@ namespace gem5
 {
 
 struct BaseO3CPUParams;
-class BaseCache;
 
 namespace o3
 {
@@ -1399,7 +1398,6 @@ class LSQ
     {
         DcacheMainPipeSource source = DcacheMainPipeSource::Refill;
         Addr addr = 0;
-        Addr prefetchPaddr = 0;
         unsigned div = 0;
         uint64_t setKey = 0;
         bool needDataRead = false;
@@ -1410,7 +1408,6 @@ class LSQ
         DcacheBankMask writeBanks = {};
         DcacheMainPipeCompleteCallback onComplete;
         DcacheMainPipeS2Callback onS2Issue;
-        DcacheMainPipeCompleteCallback onS1Capture;
 
         bool isRefill() const
         {
@@ -1496,21 +1493,14 @@ class LSQ
         Addr addr, bool need_data_read = true,
         DcacheMainPipeCompleteCallback on_complete = {});
 
-    void registerDcachePrefetchCache(BaseCache *cache);
-    void wakeDcachePrefetch();
-    bool hasReadyDcachePrefetch() const;
-    DcacheMainPipeRequest makePrefetchMainPipeRequest(PacketPtr packet);
-    BaseCache *dcachePrefetchCache = nullptr;
+    bool canQueueDcachePrefetch() const;
+    void queueDcachePrefetch(Addr addr, DcacheMainPipeS2Callback issue,
+                            std::function<void()> on_admit);
 
     std::queue<DcacheMainPipeRequest> dcacheMainPipeRefillQ;
     DcacheMainPipeBufferedPipe dcacheMainPipe = {};
-    DcacheMainPipeSlot dcacheMainPipeSkid = {};
-    bool dcacheMainPipeInputReady = false;
-    bool dcacheMainPipeS0TagWriteBlocked = false;
-    std::vector<uint64_t> dcacheMainPipeS0BlockedSets;
-    void acceptDcacheMainPipeInput(const DcacheMainPipeRequest &request,
-                                  DcacheMainPipeBufferedPipe &pipe);
-    void recordDcacheMainPipeS0(const DcacheMainPipeRequest &request);
+    DcacheMainPipeSlot dcacheMainPipePrefetch;
+    std::function<void()> dcacheMainPipePrefetchAdmitted;
 
     bool isDcacheRefillTagWrite() const
     {
@@ -1656,15 +1646,6 @@ class LSQ
         statistics::Vector sbufferDcacheReqBlockedByMainPipe;
         statistics::Scalar dcacheMainPipeRefillEnter;
         statistics::Scalar dcacheMainPipeStoreEnter;
-        statistics::Scalar dcacheMainPipePrefetchAccepted;
-        statistics::Scalar dcacheMainPipeSkidCapture;
-        statistics::Scalar dcacheMainPipeSkidDrain;
-        statistics::Scalar dcacheMainPipePrefetchEnter;
-        statistics::Scalar dcacheMainPipePrefetchS2Hit;
-        statistics::Scalar dcacheMainPipePrefetchS2Miss;
-        statistics::Scalar dcacheMainPipePrefetchS2MSHRHit;
-        statistics::Scalar dcacheMainPipePrefetchS2WBHit;
-        statistics::Scalar dcacheMainPipePrefetchS2Nack;
         statistics::Scalar dcacheMainPipeStoreBlockedByRefill;
         statistics::Scalar dcacheMainPipeStoreBlockedBySet;
         statistics::Scalar dcacheMainPipeBlockedByS1Backpressure;

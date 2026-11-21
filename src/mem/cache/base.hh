@@ -1394,15 +1394,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
     void init() override;
     void resetStats() override;
 
-    enum class MainPipePrefetchResult { Hit, Miss, MSHRHit, WBHit, Nack };
-    bool usesDcachePrefetchMainPipe() const
-    { return simulateDcacheRefill && cacheLevel == 1 && !isReadOnly; }
-    bool hasReadyDcacheMainPipePrefetch() const;
-    PacketPtr takeDcacheMainPipePrefetch();
-    bool captureDcacheMainPipePrefetchTag(const Packet &packet);
-    MainPipePrefetchResult issueDcacheMainPipePrefetch(
-        std::unique_ptr<Packet> &packet, bool s1_readable);
-    void scheduleDcachePrefetchWakeup(Tick ready);
+    void drainResume() override;
 
     Port &getPort(const std::string &if_name,
                   PortID idx=InvalidPortID) override;
@@ -1682,7 +1674,12 @@ class BaseCache : public ClockedObject, public CacheAccessor
     const bool forceHit;
     const bool simulateDcacheRefill;
     o3::LSQ *dcacheMainPipeLSQ = nullptr;
-    EventFunctionWrapper dcachePrefetchWakeupEvent;
+    EventFunctionWrapper dcachePrefetchReadyEvent;
+    bool usesDcachePrefetchMainPipe() const
+    { return simulateDcacheRefill && cacheLevel == 1 && !isReadOnly; }
+    void scheduleDcachePrefetch(Tick ready);
+    void offerDcacheMainPipePrefetch();
+    bool lookupDcacheMainPipePrefetch(std::unique_ptr<Packet> &packet);
 
 public:
     /**

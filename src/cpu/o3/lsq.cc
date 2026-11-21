@@ -69,14 +69,12 @@
 #include "debug/Fetch.hh"
 #include "debug/Hint.hh"
 #include "debug/HtmCpu.hh"
-#include "debug/HWPrefetch.hh"
 #include "debug/LSQ.hh"
 #include "debug/PacketSender.hh"
 #include "debug/Schedule.hh"
 #include "debug/StoreBuffer.hh"
 #include "debug/TagReadFail.hh"
 #include "debug/Writeback.hh"
-#include "mem/cache/base.hh"
 #include "mem/packet.hh"
 #include "mem/packet_access.hh"
 #include "mem/request.hh"
@@ -471,24 +469,6 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent, unsigned num_threads)
                "Number of refill requests accepted by fake dcache mainpipe"),
       ADD_STAT(dcacheMainPipeStoreEnter, statistics::units::Count::get(),
                "Number of store buffer requests accepted by fake dcache mainpipe"),
-      ADD_STAT(dcacheMainPipePrefetchAccepted, statistics::units::Count::get(),
-               "Prefetches accepted by the arbiter into bypass or skid"),
-      ADD_STAT(dcacheMainPipeSkidCapture, statistics::units::Count::get(),
-               "Requests captured in the shared one-entry skid buffer"),
-      ADD_STAT(dcacheMainPipeSkidDrain, statistics::units::Count::get(),
-               "Buffered requests advancing from skid to S0"),
-      ADD_STAT(dcacheMainPipePrefetchEnter, statistics::units::Count::get(),
-               "Hardware prefetches admitted at MainPipe S0"),
-      ADD_STAT(dcacheMainPipePrefetchS2Hit, statistics::units::Count::get(),
-               "First-lookup prefetch hits completing through S3"),
-      ADD_STAT(dcacheMainPipePrefetchS2Miss, statistics::units::Count::get(),
-               "Prefetches allocating a new MSHR at S2"),
-      ADD_STAT(dcacheMainPipePrefetchS2MSHRHit, statistics::units::Count::get(),
-               "Late prefetches dropped on an existing MSHR at S2"),
-      ADD_STAT(dcacheMainPipePrefetchS2WBHit, statistics::units::Count::get(),
-               "Prefetches dropped on an existing write buffer entry at S2"),
-      ADD_STAT(dcacheMainPipePrefetchS2Nack, statistics::units::Count::get(),
-               "Prefetches rejected at S2 by stale tag state, capacity or cache block"),
       ADD_STAT(dcacheMainPipeStoreBlockedByRefill,
                statistics::units::Count::get(),
                "Number of store buffer requests blocked by pending refill priority"),
@@ -927,12 +907,11 @@ LSQ::isDrained() const
         drained = false;
     }
 
-    if (dcacheMainPipeSkid.valid || !dcacheMainPipeRefillQ.empty() ||
-        std::any_of(dcacheMainPipe.begin(), dcacheMainPipe.end(),
-                    [](const auto &slot) { return slot.valid; })) {
-        drained = false;
-    }
-    return drained;
+    return drained && !dcacheMainPipePrefetch.valid &&
+        std::none_of(dcacheMainPipe.begin(), dcacheMainPipe.end(),
+                     [](const auto &slot) {
+                         return slot.valid && slot.req.isPrefetch();
+                     });
 }
 
 void
@@ -1013,21 +992,6 @@ void
 LSQ::advanceDcacheMainPipe()
 {
     DcacheMainPipeBufferedPipe next_pipe = {};
-    // Every S0 request observes the same pre-edge tag/set state, including
-    // stores offered later in processWriteback(). The shared skid is
-    // fall-through when empty, and cannot refill on its drain cycle.
-    dcacheMainPipeInputReady = !dcacheMainPipeSkid.valid;
-    dcacheMainPipeS0BlockedSets.clear();
-    for (unsigned i = 0; i < 3; ++i) {
-        const auto &slot = dcacheMainPipe.at(i);
-        if (slot.valid && !slot.req.isPrefetch())
-            dcacheMainPipeS0BlockedSets.push_back(slot.req.setKey);
-    }
-    const auto &old_s3 = dcacheMainPipeStage(DcacheMainPipeStage::S3TagWrite);
-    dcacheMainPipeS0TagWriteBlocked = old_s3.valid && old_s3.req.needTagWrite;
-    if (dcacheMainPipeS0TagWriteBlocked) {
-        DPRINTF(HWPrefetch, "MainPipe tag write\n");
-    }
 
     const auto &s1_data_read =
         dcacheMainPipeStage(DcacheMainPipeStage::S1DataRead);
@@ -1085,7 +1049,6 @@ LSQ::advanceDcacheMainPipe()
     if (s3_tag_write.valid && !s3_can_go) {
         next_s3_tag_write = s3_tag_write;
     } else if (s3_tag_write.valid && !s3_tag_write.req.isPrefetch()) {
-        // First-lookup prefetch hits finish at S3 and never use data-write S4.
         next_s4_data_write = s3_tag_write;
     }
 
@@ -1098,8 +1061,6 @@ LSQ::advanceDcacheMainPipe()
     }
 
     if (s1_data_read.valid) {
-        if (s1_data_read.req.onS1Capture)
-            s1_data_read.req.onS1Capture(curTick());
         if (s1_can_go) {
             next_s2_data_resp = s1_data_read;
         } else {
@@ -1107,24 +1068,7 @@ LSQ::advanceDcacheMainPipe()
         }
     }
 
-    if (dcachePrefetchCache) {
-        if (dcacheMainPipeSkid.valid) {
-            if (canEnterDcacheMainPipe(dcacheMainPipeSkid.req, next_pipe)) {
-                next_s1_data_read = dcacheMainPipeSkid;
-                recordDcacheMainPipeS0(dcacheMainPipeSkid.req);
-                dcacheMainPipeSkid = {};
-                ++stats.dcacheMainPipeSkidDrain;
-            }
-        } else if (!dcacheMainPipeRefillQ.empty()) {
-            acceptDcacheMainPipeInput(dcacheMainPipeRefillQ.front(), next_pipe);
-            dcacheMainPipeRefillQ.pop();
-        } else if (hasReadyDcachePrefetch()) {
-            PacketPtr packet = dcachePrefetchCache->takeDcacheMainPipePrefetch();
-            acceptDcacheMainPipeInput(makePrefetchMainPipeRequest(packet), next_pipe);
-            ++stats.dcacheMainPipePrefetchAccepted;
-        }
-    } else if (!dcacheMainPipeRefillQ.empty()) {
-        // Preserve the original refill-only path until the L1D is bound.
+    if (!dcacheMainPipeRefillQ.empty()) {
         const auto &queued_refill = dcacheMainPipeRefillQ.front();
         if (canEnterDcacheMainPipe(queued_refill, next_pipe)) {
             next_s1_data_read.valid = true;
@@ -1135,40 +1079,13 @@ LSQ::advanceDcacheMainPipe()
             ++stats.dcacheMainPipeRefillBlocked;
             ++stats.dcacheMainPipeRefillBlockedByPipeResource;
         }
+    } else if (dcacheMainPipePrefetch.valid &&
+               canEnterDcacheMainPipe(dcacheMainPipePrefetch.req, next_pipe)) {
+        next_s1_data_read = std::exchange(dcacheMainPipePrefetch, {});
+        std::exchange(dcacheMainPipePrefetchAdmitted, {})();
     }
 
     dcacheMainPipe = next_pipe;
-}
-
-void
-LSQ::recordDcacheMainPipeS0(const DcacheMainPipeRequest &request)
-{
-    if (request.isPrefetch()) {
-        ++stats.dcacheMainPipePrefetchEnter;
-        DPRINTF(HWPrefetch, "MainPipe prefetch admit addr=%#x\n",
-                request.prefetchPaddr);
-    } else if (request.isRefill()) {
-        ++stats.dcacheMainPipeRefillEnter;
-    }
-}
-
-void
-LSQ::acceptDcacheMainPipeInput(const DcacheMainPipeRequest &request,
-                              DcacheMainPipeBufferedPipe &pipe)
-{
-    assert(dcacheMainPipeInputReady && !dcacheMainPipeSkid.valid);
-    dcacheMainPipeInputReady = false;
-    if (canEnterDcacheMainPipe(request, pipe)) {
-        auto &s1 = pipe.at(dcacheMainPipeIndex(DcacheMainPipeStage::S1DataRead));
-        assert(!s1.valid);
-        s1.valid = true;
-        s1.req = request;
-        recordDcacheMainPipeS0(request);
-    } else {
-        dcacheMainPipeSkid.valid = true;
-        dcacheMainPipeSkid.req = request;
-        ++stats.dcacheMainPipeSkidCapture;
-    }
 }
 
 LSQ::DcacheMainPipeSlot &
@@ -1234,88 +1151,6 @@ LSQ::storeMaskToDcacheBanks(Addr block_addr,
         std::fill(bank_mask.begin(), bank_mask.end(), true);
     }
     return bank_mask;
-}
-
-void
-LSQ::registerDcachePrefetchCache(BaseCache *cache)
-{
-    panic_if(dcachePrefetchCache && dcachePrefetchCache != cache,
-             "LSQ has more than one L1D MainPipe prefetch owner");
-    dcachePrefetchCache = cache;
-}
-
-void
-LSQ::wakeDcachePrefetch()
-{
-    if (cpu->switchedOut() || cpu->drainState() != DrainState::Running)
-        return;
-    if (hasReadyDcachePrefetch()) {
-        cpu->wakeCPU();
-        cpu->activityThisCycle();
-    }
-}
-
-bool
-LSQ::hasReadyDcachePrefetch() const
-{
-    return !cpu->isDraining() && dcachePrefetchCache &&
-        dcachePrefetchCache->hasReadyDcacheMainPipePrefetch();
-}
-
-LSQ::DcacheMainPipeRequest
-LSQ::makePrefetchMainPipeRequest(PacketPtr packet)
-{
-    DcacheMainPipeRequest request;
-    request.source = DcacheMainPipeSource::Prefetch;
-    request.prefetchPaddr = packet->getAddr();
-    request.addr = packet->req->hasVaddr() ?
-        packet->req->getVaddr() : packet->getAddr();
-    request.div = getDcacheDiv(request.addr);
-    request.setKey = getDcacheSetKey(request.addr);
-    request.readBanks = DcacheBankMask(numBank, false);
-    request.writeBanks = DcacheBankMask(numBank, false);
-    // Pipeline slots are copied during advancement. Share the holder, not
-    // packet ownership; S2 either deletes the packet or releases it to MSHR.
-    auto holder = std::make_shared<std::unique_ptr<Packet>>(packet);
-    // S1 can stall, so capture its lookup only once per request.
-    struct TagResult
-    {
-        bool valid = false;
-        bool readable = false;
-    };
-    auto tag_result = std::make_shared<TagResult>();
-    request.onS1Capture = [this, holder, tag_result](Tick) {
-        if (!tag_result->valid) {
-            tag_result->readable =
-                dcachePrefetchCache->captureDcacheMainPipePrefetchTag(**holder);
-            tag_result->valid = true;
-        }
-    };
-    request.onS2Issue = [this, holder, tag_result](Tick) {
-        assert(tag_result->valid);
-        using Result = BaseCache::MainPipePrefetchResult;
-        const auto result = dcachePrefetchCache->issueDcacheMainPipePrefetch(
-            *holder, tag_result->readable);
-        switch (result) {
-          case Result::Hit:
-            ++stats.dcacheMainPipePrefetchS2Hit;
-            return DcacheMainPipeS2Result::GoToS3;
-          case Result::Miss:
-            ++stats.dcacheMainPipePrefetchS2Miss;
-            break;
-          case Result::MSHRHit:
-            ++stats.dcacheMainPipePrefetchS2MSHRHit;
-            break;
-          case Result::WBHit:
-            ++stats.dcacheMainPipePrefetchS2WBHit;
-            break;
-          case Result::Nack:
-            ++stats.dcacheMainPipePrefetchS2Nack;
-            break;
-        }
-        return DcacheMainPipeS2Result::ExitPipe;
-    };
-    return request;
 }
 
 LSQ::DcacheMainPipeRequest
@@ -1444,11 +1279,6 @@ LSQ::hasDcacheMainPipeDataArrayConflict() const
 bool
 LSQ::isDcacheMainPipeSetBlocked(uint64_t set_key) const
 {
-    if (dcachePrefetchCache) {
-        return std::find(dcacheMainPipeS0BlockedSets.begin(),
-                         dcacheMainPipeS0BlockedSets.end(), set_key) !=
-            dcacheMainPipeS0BlockedSets.end();
-    }
     // S4 only models data write resource usage; it does not block S0 tag/meta
     // reads by same-set conflict.
     for (unsigned stage = static_cast<unsigned>(DcacheMainPipeStage::S1DataRead);
@@ -1469,10 +1299,9 @@ LSQ::canEnterDcacheMainPipe(
     const DcacheMainPipeRequest &request,
     const DcacheMainPipeBufferedPipe &next_pipe)
 {
-    const bool s0_tag_read_blocked = dcachePrefetchCache ?
-        dcacheMainPipeS0TagWriteBlocked :
-        (dcacheMainPipeStage(DcacheMainPipeStage::S3TagWrite).valid &&
-         dcacheMainPipeStage(DcacheMainPipeStage::S3TagWrite).req.needTagWrite);
+    const bool s0_tag_read_blocked =
+        dcacheMainPipeStage(DcacheMainPipeStage::S3TagWrite).valid &&
+        dcacheMainPipeStage(DcacheMainPipeStage::S3TagWrite).req.needTagWrite;
     const bool s1_backpressured =
         next_pipe.at(dcacheMainPipeIndex(DcacheMainPipeStage::S1DataRead)).valid;
 
@@ -1501,19 +1330,6 @@ LSQ::canEnterDcacheMainPipe(
 bool
 LSQ::canEnterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry)
 {
-    if (dcachePrefetchCache) {
-        if (!dcacheMainPipeInputReady) {
-            return false;
-        }
-        if (!dcacheMainPipeRefillQ.empty()) {
-            ++stats.dcacheMainPipeStoreBlockedByRefill;
-            return false;
-        }
-        if (hasReadyDcachePrefetch()) {
-            return false;
-        }
-        return true;
-    }
     const auto req = makeStoreBufferMainPipeRequest(entry);
     const bool s1_backpressured =
         dcacheMainPipeStage(DcacheMainPipeStage::S1DataRead).valid;
@@ -1531,6 +1347,8 @@ LSQ::canEnterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry)
         ++stats.dcacheMainPipeStoreBlockedByRefill;
         return false;
     }
+    if (dcacheMainPipePrefetch.valid)
+        return false;
 
     bool blocked = false;
     if (s1_backpressured) {
@@ -1563,13 +1381,9 @@ LSQ::enterStoreBufferDcacheMainPipe(StoreBufferEntry &entry, PacketPtr data_pkt)
         });
     auto &s1_data_read =
         dcacheMainPipeStage(DcacheMainPipeStage::S1DataRead);
-    if (dcachePrefetchCache) {
-        acceptDcacheMainPipeInput(req, dcacheMainPipe);
-    } else {
-        assert(!s1_data_read.valid);
-        s1_data_read.valid = true;
-        s1_data_read.req = req;
-    }
+    assert(!s1_data_read.valid);
+    s1_data_read.valid = true;
+    s1_data_read.req = req;
     entry.inDcacheMainPipe = true;
     ++stats.dcacheMainPipeStoreEnter;
 }
@@ -1661,6 +1475,29 @@ LSQ::notifyDcacheRefill(
     dcacheMainPipeRefillQ.push(
         makeDcacheRefillMainPipeRequest(
             addr, need_data_read, std::move(on_complete)));
+    cpu->wakeCPU();
+    cpu->activityThisCycle();
+}
+
+bool
+LSQ::canQueueDcachePrefetch() const
+{
+    return !dcacheMainPipePrefetch.valid && !cpu->switchedOut() &&
+           cpu->drainState() == DrainState::Running;
+}
+
+void
+LSQ::queueDcachePrefetch(Addr addr, DcacheMainPipeS2Callback issue,
+                        std::function<void()> on_admit)
+{
+    assert(canQueueDcachePrefetch());
+    auto &slot = dcacheMainPipePrefetch;
+    slot.valid = true;
+    slot.req.source = DcacheMainPipeSource::Prefetch;
+    slot.req.addr = addr;
+    slot.req.setKey = getDcacheSetKey(addr);
+    slot.req.onS2Issue = std::move(issue);
+    dcacheMainPipePrefetchAdmitted = std::move(on_admit);
     cpu->wakeCPU();
     cpu->activityThisCycle();
 }
@@ -3438,9 +3275,7 @@ LSQ::numStoresToSbuffer(ThreadID tid)
 bool
 LSQ::willWB()
 {
-    if (hasReadyDcachePrefetch() || dcacheMainPipeSkid.valid)
-        return true;
-    if (!dcacheMainPipeRefillQ.empty()) {
+    if (dcacheMainPipePrefetch.valid || !dcacheMainPipeRefillQ.empty()) {
         return true;
     }
     for (const auto &stage : dcacheMainPipe) {

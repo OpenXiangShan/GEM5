@@ -57,9 +57,9 @@
 
 香山 [RTL PR #5997](https://github.com/OpenXiangShan/XiangShan/pull/5997) 将硬件预取的 L1D 查询从 LoadPipe 迁到 MainPipe。原 GEM5 在下层发送仲裁中取预取包，和普通 load 共用每拍 tag 查询额度；即使最终在 L1 命中，也要先通过 MSHR 门槛。
 
-采用 fake MainPipe 的 L1D 改为在预取队列就绪后通知 LSQ。回填、预取和 StoreBuffer 依次竞争入口；仲裁接收后才取包，入口暂存位最多容纳一笔。预取在 S1 记录 tag 可读状态，S2 核对当前状态。已有缓存行、同块在途 MSHR 或写缓冲时不再重复向下层取数。只有新的 miss 才检查原有 MSHR 申请条件，获准后通过经典缓存发送；拒绝的预取不自动重试。
+采用 fake MainPipe 的 L1D 通过已有的 LSQ 连接提交就绪预取。LSQ 最多持有一笔等待入管的预取；回填、预取和 StoreBuffer 按这个顺序竞争入口。预取和其他入口请求一样检查 tag 写入、同 set 冲突和 S1 空间。预取在 S2 查一次 tag 和可读权限，命中到 S3 结束，不写数据。已有同块 MSHR 或写缓冲时丢弃重复请求；新的 miss 通过现有 MSHR 门槛后，由经典缓存发送。
 
-普通 load 的查询额度、MSHR 资格与功能回填、条目释放仍使用原模型。这个改动覆盖预取查询路径，不模拟 RTL 的全部逐拍时序。
+普通 load 的 tag 查询额度和现有回填路径不变。GEM5 用一个就绪事件处理预取队列延时和 O3 空闲停 tick；fake MainPipe 不模拟 RTL 的共享 skid 或 S1 tag 响应锁存。
 
 ## lsq向cache发送读请求流程
 ### **1. 指令被插入 Load Queue**
