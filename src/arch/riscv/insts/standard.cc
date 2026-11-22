@@ -104,6 +104,11 @@ CSROp::ordering() const
       case CSR_VXSAT: case CSR_VCSR: case CSR_VSTART:
       case CSR_SSTATUS: case CSR_VSSTATUS: case CSR_MSTATUS:
       case CSR_HSTATUS: case CSR_MNSTATUS: case CSR_DCSR: case CSR_VTYPE:
+      // Sample counters after older instructions have retired.
+      case CSR_MCYCLE: case CSR_MINSTRET:
+      case CSR_MMHPMCOUNTER3 ... CSR_MMHPMCOUNTER31:
+      case CSR_CYCLE: case CSR_TIME: case CSR_INSTRET:
+      case CSR_HPMCOUNTER03 ... CSR_HPMCOUNTER31:
         return Ordering::WaitForOlder;
       default:
         return Ordering::Unordered;
