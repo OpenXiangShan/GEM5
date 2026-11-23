@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 
-# Collect error reasons for aborted workloads launched via parallel_sim.sh.
+# Collect error reasons for aborted workloads launched via run_batch.py.
 #
 # Usage:
 #   bash collect_parallel_errors.sh WORK_ROOT [OUT_FILE]
 #
-# WORK_ROOT 是 parallel_sim.sh 的第 4 个参数对应的结果目录，
+# WORK_ROOT 是 run_batch.py 的第 4 个参数对应的结果目录，
 # 例如：/nfs/home/goulingrui/expri_results/gem5_trace/trace_ipc1_50M_50M。
 #
 # 本脚本会遍历 WORK_ROOT 下的子目录（每个子目录对应一个 workload），

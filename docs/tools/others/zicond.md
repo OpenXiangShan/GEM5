@@ -477,6 +477,7 @@ sjeng	381.382	12100	10.576
 现在spec06_llvm18.1.8_rv64gcbv_zicond_base_intFppOff_for_qemu_dual_core_NEMU_archgroup_2024-09-14-17-51  17-51 对应生成了三次切片的sjeng，无zicond指令
 
 ```bash
+# Historical command from this experiment
 bash ../parallel_sim.sh `realpath ../kmh_6wide.sh` /nfs/home/yanyue/workspace/checkpoint_scripts/checkpoint_scripts/archive/spec06_llvm18.1.8_rv64gcbv_zicond_base_intFppOff_for_qemu_dual_core_NEMU_archgroup_2024-09-14-17-51/checkpoint-0-0-0/checkpoint.lst  /nfs/home/yanyue/workspace/checkpoint_scripts/checkpoint_scripts/archive/spec06_llvm18.1.8_rv64gcbv_zicond_base_intFppOff_for_qemu_dual_core_NEMU_archgroup_2024-09-14-17-51/checkpoint-0-0-0/sjeng sjeng_nozicond0
 ```
 

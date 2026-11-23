@@ -216,7 +216,7 @@ stateDiagram-v2
   - 示例：`--debug-flags=Fetch,DecoupleBP --debug-file=fetch.trace`
 - 快速运行（香山配置）：
   - `./build/RISCV/gem5.opt ./configs/example/kmhv3.py --raw-cpt --generic-rv-cpt=<path> [--bp-type=DecoupledBPUWithBTB]`
-  - 理想化模型：将配置脚本替换为 `./configs/example/idealkmhv3.py`（也可用 `util/xs_scripts/kmh_v3_ideal.sh`）
+  - 理想化模型：将配置脚本替换为 `./configs/example/idealkmhv3.py`
 - 系统测试：
   - `cd tests && ./main.py run --length quick --variant opt --isa RISCV`
 - 重构/性能对比：

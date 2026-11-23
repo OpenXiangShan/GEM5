@@ -32,11 +32,11 @@ services:
       - ./results:/results # run result dir, do not change
     environment:
       # runtime env
-      - checkpoints_dir="/checkpoints"
-      - checkpoints_tag="spec06_gc" # tag of checkpoint 
-      - run_script="kmh_6wide.sh" # must in util/xs_scripts
-      - workloads_lst="checkpoints.lst"
-      - run_tag="any-tag" # any tag
+      - checkpoints_dir=/checkpoints
+      - checkpoints_tag=spec06_gc # tag of checkpoint
+      - config_path=configs/example/kmhv2.py
+      - workloads_lst=checkpoints.lst
+      - run_tag=any-tag # any tag
       - xsgem5_para_jobs=40 # para-run threads
 ```
 

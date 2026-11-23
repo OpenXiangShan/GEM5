@@ -27,8 +27,7 @@
 #   - For performance experiments, prefer decompressing first
 #     (zstd -d -k file.trace.zstd -o file.trace): raw files support cheap
 #     fseek-based rollback; compressed streams replay from the beginning.
-#   - Intended for use with util/xs_scripts/trace/parallel_trace_sim.sh
-#     (TRACE_FORMAT=tracertl) and gen_tracertl_workloads.sh.
+#   - For batch replay use ci/run_batch.py --trace-format tracertl.
 
 set -euo pipefail
 

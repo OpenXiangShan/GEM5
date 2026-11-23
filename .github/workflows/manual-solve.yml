@@ -32,7 +32,6 @@ on:
           - custom_bin
           - spec06-rva23-novec-gcc16-0.3c
           - spec06-rva23-novec-gcc16-1.0c
-          - gcc12-spec06-0.3c
           - gcc12-spec06-0.8c
           - gcc12-spec06-1.0c
           - spec17-1.0c
@@ -51,7 +50,7 @@ on:
         type: string
         default: "4"
       distributed_servers:
-        description: "Optional distributed server list. Empty runs only on the current CI runner; default uses node020-node029,node034,node036-node042."
+        description: "Optional distributed server list. Empty runs only on the current CI runner; default uses the shared CI pool."
         required: false
         type: string
         default: ""

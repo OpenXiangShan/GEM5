@@ -5,7 +5,7 @@
 # Usage:
 #   bash report_pc_mismatch_bind.sh WORK_ROOT [OUT_FILE]
 #
-# WORK_ROOT 是 parallel_sim.sh 的结果根目录，例如：
+# WORK_ROOT 是 run_batch.py 的结果根目录，例如：
 #   /nfs/home/goulingrui/expri_results/gem5_trace/trace_ipc1_50M_50M
 #
 # 对于每个包含 panic "Trace stream PC mismatch" 的 workload 目录，

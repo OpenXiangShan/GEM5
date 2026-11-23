@@ -145,7 +145,7 @@ workflow 的并行 runner 传递。
 
 - 只在需要时运行，节省资源
 - 支持多种 benchmark 类型
-- 切片路径只在 `util/xs_scripts/perf_benchmarks.py` 维护，性能模板和 solver 共用
+- 切片路径只在 `util/xs_scripts/ci/benchmarks.py` 维护，性能模板和 solver 共用
 
 ---
 
@@ -288,7 +288,7 @@ A: 在目标分支为 `xs-dev` 的同仓库 PR 上添加 `regression` 标签。w
 A: 性能测试会 checkout 并执行 PR 代码。为了避免 `pull_request_target` 执行外部 fork 代码，label 触发仅允许同仓库 PR。
 
 **Q: 新增 benchmark 类型需要修改哪些文件？**
-A: 在 `util/xs_scripts/perf_benchmarks.py` 增加配置，并在需要暴露它的手动 workflow
+A: 在 `util/xs_scripts/ci/benchmarks.py` 增加配置，并在需要暴露它的手动 workflow
 静态 `choice` 中增加类型名。只修改已有切片路径时只需改共享配置文件。
 
 **Q: 如何跑动态预取性能测试？**

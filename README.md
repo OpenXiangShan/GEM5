@@ -76,9 +76,9 @@ XS-GEM5 is enhanced with
 
 We maintain three main Kunminghu configuration scripts to mirror RTL progress and performance targets. Each is covered by a distinct CI workflow so their results are easy to track (SPECCPU06 coverage shown in parentheses).
 
-- `configs/example/kmhv2.py`: Kunminghu V2 baseline; used by the Tier 2 post-merge regression workflow `gem5 Performance Test (Tier 2 - Post-Merge)` (gcc12-spec06-0.8c). If further development under the kmh-v2–related configuration is required, please switch to the KMH-V2-CONFIG branch.
-- `configs/example/kmhv3.py`: Kunminghu V3 RTL-aligned mainline; keeps some BPU/backend/performance knobs conservative to match the in-progress RTL, so scores are currently close to V2. CI: `gem5 Align BTB Performance Test(0.3c)` (gcc12-spec06-0.3c).
-- `configs/example/idealkmhv3.py`: Ideal/performance-tuned V3 with aggressive microarchitectural settings enabled; currently the highest-scoring variant. CI: `gem5 Ideal BTB Performance Test` (gcc12-spec06-0.8c).
+- `configs/example/kmhv2.py`: Kunminghu V2 baseline; used by the dual-core Ruby and H checkpoint smoke tests in `gem5 Full Test (Tier 2 - Post-Merge)`. If further development under the kmh-v2–related configuration is required, please switch to the KMH-V2-CONFIG branch.
+- `configs/example/kmhv3.py`: Kunminghu V3 RTL-aligned mainline; keeps some BPU/backend/performance knobs conservative to match the in-progress RTL, so scores are currently close to V2. CI: `gem5 Align BTB Performance Test(0.3c)` (spec06-rva23-novec-gcc16-0.3c).
+- `configs/example/idealkmhv3.py`: Ideal/performance-tuned V3 with aggressive microarchitectural settings enabled; currently the highest-scoring variant. CI: `gem5 Ideal BTB Performance Test` (spec06-rva23-novec-gcc16-0.3c).
 
 Note: 
 - The V3 RTL BPU predictor and backend updates are still being implemented. Several performance switches remain off in `kmhv3.py` to stay aligned with the RTL snapshot; as RTL work lands, we will re-enable them and expect the mainline V3 scores to pull ahead of V2.
@@ -287,8 +287,7 @@ Press enter to continue, or ctrl-c to abort:
 
 Users must properly prepare workloads before running GEM5, plz read [Workflows](#workflows-how-to-run-workloads) first.
 
-[The example running script](util/xs_scripts/kmh_v3_btb.sh) contains the default command for simulate XS-GEM5 (Kunminghu V3).
-[The example batch running script](util/xs_scripts/parallel_sim.sh) shows an example to simulate multiple workloads in parallel.
+[Performance profiles and batch execution](docs/tools/others/shared-perf-benchmark-config.md) describes the shared CI runner.
 
 ### Environment variables
 
@@ -381,19 +380,14 @@ Then you can see the output in the terminal, find gem5 output in the `m5out` dir
 
 Otherwise, if you want to run a checkpoint, you should ensure GEM5 is properly built and workloads are prepared by running a single workload:
 ``` shel
-mkdir util/xs_scripts/example
-cd util/xs_scripts/example
-bash ../kmh_v3_btb.sh /path/to/a/single/checkpoint.gz
+./build/RISCV/gem5.opt configs/example/kmhv3.py --generic-rv-cpt=/path/to/checkpoint.gz
 ```
 
-Then, for running multiple workloads in parallel, one can use the batch running script:
-``` shel
-mkdir util/xs_scripts/example
-cd util/xs_scripts/example
-bash ../parallel_sim.sh `realpath ../kmh_v3_btb.sh` $workloads_lst /top/dir/of/checkpoints a_fancy_simulation_tag
+Run a local list from the repository root with:
+
+```bash
+python3 -m util.xs_scripts.ci.run_batch configs/example/kmhv3.py "$workloads_lst" /top/dir/of/checkpoints results
 ```
-In this example, parallel_sim.sh will invoke kmh_v3_btb.sh with GNU parallel to run multiple workloads.
-Through this, parallel simulation infrastructure is decouple from the simulation script.
 
 #### run xs-gem5 in docker
 In order to be able to run scores on servers without root access, we provide a simple docker script to run xs-gem5.
@@ -404,8 +398,7 @@ For more details see [README about run in docker](./util/xs_scripts/docker/READM
 A line of `workload_lst` is a space-separated list of workload parameters.
 For example, "hmmer_nph3_15858 hmmer_nph3/15858 0 0 20 20" represents the workload name, checkpoint path, skip insts (usually 0), functional warmup insts (usually 0),
 detailed warmup insts (usually 20), and sample insts (usually 20), respectively.
-`parallel_sim.sh` will `find hmmer_nph3/15858/*.gz` in the /top/dir/of/checkpoints to obtain the checkpoint gz file.
-Then the gz file will be passed to `kmh_v3_btb.sh` to run the simulation.
+The runner opens the image under `hmmer_nph3/15858/` and records the command in the workload log.
 
 
 More details can be found in comments and code of the example running scripts.

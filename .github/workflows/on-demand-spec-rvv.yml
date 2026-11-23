@@ -13,9 +13,8 @@ permissions:
   pull-requests: read
 
 jobs:
-  trigger:
-    name: Trigger RVV SPEC Test
-    runs-on: ubuntu-latest
+  run_rvv_spec_test:
+    name: Run RVV SPEC Test
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/xs-dev') ||
       github.event_name == 'workflow_dispatch' ||
@@ -23,27 +22,8 @@ jobs:
        github.event.label.name == 'rvv' &&
        github.event.pull_request.base.ref == 'xs-dev' &&
        github.event.pull_request.head.repo.full_name == github.repository)
-    
-    outputs:
-      benchmark_type: ${{ steps.setup.outputs.benchmark }}
-      pr_sha: ${{ steps.setup.outputs.pr_sha }}
-    
-    steps:
-      - name: Set RVV parameters
-        id: setup
-        run: |
-          echo "benchmark=spec06int-rvv-0.8c" >> "$GITHUB_OUTPUT"
-          if [ "${{ github.event_name }}" = "pull_request_target" ]; then
-            echo "pr_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "pr_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
-          fi
-
-  run_rvv_spec_test:
-    name: Run RVV SPEC Test
-    needs: trigger
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/idealkmhv3.py
-      benchmark_type: ${{ needs.trigger.outputs.benchmark_type }}
-      pr_sha: ${{ needs.trigger.outputs.pr_sha }}
+      benchmark_type: spec06int-rvv-0.8c
+      pr_sha: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}

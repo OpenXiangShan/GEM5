@@ -44,13 +44,9 @@ export CHECKPOINT_ROOT="/nfs/home/share/jiaxiaoyu/simpoint_checkpoint_archive/sp
 # export CHECKPOINT_ROOT="/nfs/home/share/jiaxiaoyu/simpoint_checkpoint_zstd_format/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc"
 export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
 export GEM5_HOME=$(pwd)
-mkdir -p $GEM5_HOME/util/xs_scripts/test
-cd $GEM5_HOME/util/xs_scripts/test
-# 批量跑 ckpt
-bash ../parallel_sim.sh `realpath ../kmh_v3_btb.sh` \
-      /nfs/home/share/gem5_ci/spec06_cpts/spec_0.8c_int.lst \ # 跑 ckpt 的 list，类似于 json
-      $CHECKPOINT_ROOT \
-      spec_all # 输出的 log 所在文件夹名
+python3 -m util.xs_scripts.ci.run_batch configs/example/kmhv3.py \
+      /nfs/home/share/gem5_ci/spec06_cpts/spec_0.8c_int.lst \
+      "$CHECKPOINT_ROOT" spec_all
 ```
 
 ```shell

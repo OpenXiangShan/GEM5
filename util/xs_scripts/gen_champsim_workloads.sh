@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Generate a workload_list file for parallel_sim.sh from a directory
+# Generate a workload_list file for run_batch.py from a directory
 # containing trace files (ChampSim / CBP2025).
 #
 # Usage:

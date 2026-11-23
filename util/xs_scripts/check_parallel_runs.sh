@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 
-# Summarize the status of runs launched via util/xs_scripts/parallel_sim.sh.
+# Summarize the status of runs launched via util/xs_scripts/ci/run_batch.py.
 #
 # Usage:
 #   bash check_parallel_runs.sh WORK_ROOT [--details]
 #
-# WORK_ROOT is the tag directory passed as the 4th argument to parallel_sim.sh,
+# WORK_ROOT is the tag directory passed as the 4th argument to run_batch.py,
 # e.g. trace_champsim_100M.
 
 set -uo pipefail

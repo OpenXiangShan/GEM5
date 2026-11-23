@@ -14,9 +14,9 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from util.solver.executor.ci_local import CiLocalParallelExecutor
-from util.solver.executor.distributed import (
+from util.xs_scripts.ci.runner import (
     DEFAULT_DISTRIBUTED_SERVERS,
-    DistributedExecutionConfig,
+    RunnerConfig,
 )
 from util.solver.parser.bind_targets import bind_problem_targets
 from util.solver.parser.load_spec import parse_problem
@@ -558,7 +558,7 @@ def main() -> int:
             ),
         )
 
-        distributed_config = DistributedExecutionConfig(
+        distributed_config = RunnerConfig(
             servers=args.distributed_servers,
             jobs_per_server=args.distributed_jobs_per_server,
             require_idle_cpus=args.distributed_require_idle_cpus,

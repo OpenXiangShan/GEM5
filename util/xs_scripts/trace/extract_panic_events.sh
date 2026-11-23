@@ -5,7 +5,7 @@
 # Usage:
 #   bash extract_panic_events.sh WORK_ROOT [WINDOW]
 #
-# WORK_ROOT 是 parallel_sim.sh 的结果根目录，例如：
+# WORK_ROOT 是 run_batch.py 的结果根目录，例如：
 #   /nfs/home/goulingrui/expri_results/gem5_trace/trace_ipc1_50M_50M
 #
 # WINDOW 为从 abort_tick 向前追溯的 tick 数（默认 1000000），

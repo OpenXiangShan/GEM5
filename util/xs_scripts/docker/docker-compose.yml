@@ -17,9 +17,9 @@ services:
       - ./results:/results
     environment:
       # runtime env
-      - checkpoints_dir="/checkpoints"
-      - checkpoints_tag="spec06_gc"
-      - run_script="kmh_6wide.sh" # must in util/xs_scripts
-      - workloads_lst="checkpoint.lst"
-      - run_tag="any-tag"
+      - checkpoints_dir=/checkpoints
+      - checkpoints_tag=spec06_gc
+      - config_path=configs/example/kmhv2.py
+      - workloads_lst=checkpoint.lst
+      - run_tag=any-tag
       - xsgem5_para_jobs=40
