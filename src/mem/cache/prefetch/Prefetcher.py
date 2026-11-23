@@ -264,11 +264,10 @@ class LLDPrefetcher(QueuedPrefetcher):
     on_inst = False
     training_cpu = Param.BaseCPU(NULL, "L1 IQ dependenceTrain source; NULL learns L2 loads")
     enable_fp_direct = Param.Bool(
-        True, "Allow scalar FP loads to train and trigger exact-address Meta"
+        True, "Allow scalar FP loads in dependency training"
     )
     training_queue_size = Param.Unsigned(
-        64, "Address training FIFO entries Q; dependency FIFO uses max(1, Q // 4) "
-        "entries, and address requests may be requeued Q + 4 times"
+        64, "Dependency training FIFO uses max(1, Q // 4) entries"
     )
     confidence_bits = Param.Unsigned(3, "Width of saturating LLDT confidence counters")
     initial_confidence = Param.Unsigned(1, "Initial consumer and immediate confidence")

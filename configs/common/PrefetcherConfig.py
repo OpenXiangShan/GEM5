@@ -27,10 +27,7 @@ PF_SOURCE_NAMES = [
     "DespacitoStream",
     "LLDP",
     "LLDPS",
-    "LLDPT",
     "LLDPC",
-    "LLDPS_T",
-    "LLDPC_T",
     "TP",
 ]
 

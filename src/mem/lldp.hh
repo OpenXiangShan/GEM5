@@ -50,14 +50,6 @@ restoreAddressTag(uint64_t tag, unsigned set, uint64_t salt = 0)
 
 enum class SourceForm : uint8_t { SingleImmediate, DualRegister, Other };
 
-// Scans run after every 4096 load events. Round a training event up to its
-// next scan batch before adding the original eight-batch inactivity limit.
-inline uint8_t
-metaAgeDeadline(uint32_t epoch)
-{
-    return ((epoch >> 12) + bool(epoch & 4095) + 8) & 15;
-}
-
 struct LoadInfo
 {
     uint8_t size{0};
@@ -194,8 +186,6 @@ struct Chain
     bool replayable{true};
     bool producerFloating{false};
     uint64_t producerPC{0};
-    uint64_t producerAddress{0};
-    bool producerAddressValid{false};
     uint32_t length{0};
     std::array<Operation, 2> ops{};
     // Count all operations, including those beyond the two replay slots.
@@ -209,13 +199,6 @@ struct Chain
         c.valid = true;
         c.producerPC = pc;
         c.length = 1;
-        return c;
-    }
-    static Chain start(uint64_t pc, uint64_t address)
-    {
-        Chain c = start(pc);
-        c.producerAddress = address;
-        c.producerAddressValid = true;
         return c;
     }
     Chain extend(const Operation &op) const
@@ -341,7 +324,6 @@ struct Hint
     bool spatial{false};
     bool chained{false};
     unsigned chainDepth{0};
-    uint8_t metaCoveredMask{0};
 };
 
 // A small binary tree PLRU, also used by the 4-way consumer subtable.

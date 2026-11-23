@@ -77,9 +77,6 @@ class XsDynInstMeta : public RefCounted
     Addr lldpLoadLine{0};
     uint8_t lldpLoadOffset{0};
     bool lldpLoadAddressValid{false};
-    Addr lldpConsumerAddress{0};
-    bool lldpConsumerAddressValid{false};
-    bool lldpAddressNotified{false};
 
   public:
     XsDynInstMeta(): squashed(false), instAddr(0), seqNum(0) {}

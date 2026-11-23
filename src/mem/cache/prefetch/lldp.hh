@@ -99,70 +99,14 @@ class LLDPrefetcher : public Queued
     std::array<Entry, TableEntries> table{};
     lldp::PLRU<TableEntries> replacement;
 
-    static constexpr unsigned SamplerWays = 2;
-    static constexpr unsigned SamplerSets = 256;
-    static constexpr unsigned SamplerEntries = SamplerSets * SamplerWays;
-    static constexpr unsigned MetaWays = 1;
-    static constexpr unsigned MetaSets = 256;
-    static constexpr unsigned MetaEntries = MetaSets * MetaWays;
-    static constexpr uint8_t SamplerThreshold = 2;
-    struct SamplerEntry
-    {
-        bool valid{false};
-        uint64_t addrPTag{0};
-        Addr producerPC{0};
-        Addr consumerPC{0};
-        ContextID context{InvalidContextID};
-        Addr addrC{0};
-        uint8_t alias{0};
-        uint64_t dependencyGeneration{0};
-        uint8_t stableCount{0};
-        uint8_t rrpv{3};
-        uint8_t matchesSincePromotion{0};
-        bool fpDirect{false};
-    };
-    struct MetaEntry
-    {
-        bool valid{false};
-        uint64_t addrPTag{0};
-        Addr addrC{0};
-        Addr producerPC{0};
-        Addr consumerPC{0};
-        ContextID context{InvalidContextID};
-        uint32_t generation{0};
-        uint8_t trainConf{0};
-        uint8_t qualityConf{0};
-        uint8_t tokens{0};
-        bool busy{false};
-        uint8_t rrpv{3};
-        uint8_t ageDeadline{0};
-        bool fpDirect{false};
-    };
-    std::array<std::array<SamplerEntry, SamplerWays>, SamplerSets>
-        samplerTable{};
-    std::array<std::array<MetaEntry, MetaWays>, MetaSets>
-        metaTable{};
     uint64_t generation{0};
     uint64_t candidateId{0};
     uint64_t version{0};
     std::deque<Training> input;
-    struct AddressTraining
-    {
-        o3::XsDynInstMetaPtr owner;
-        Addr producerPC;
-        Addr producerAddress;
-        Addr consumerAddress;
-        Addr consumerPC;
-        ContextID context;
-        unsigned retries{0};
-        bool fpDirect{false};
-    };
-    std::deque<AddressTraining> addressInput;
     static constexpr unsigned TlbFilterEntries = 64;
     std::deque<Addr> tlbFilter;
     std::unordered_set<Addr> tlbFilterSet;
     std::deque<std::pair<ContextID, InstSeqNum>> observedLoads;
-    uint32_t tableEpoch{0};
     struct CandidateOwner
     {
         unsigned row;
@@ -170,11 +114,6 @@ class LLDPrefetcher : public Queued
         uint64_t generation;
         Addr consumerPC;
         PrefetchSourceType source;
-        bool meta{false};
-        unsigned metaSet{0};
-        unsigned metaWay{0};
-        uint32_t metaGeneration{0};
-        bool fpDirect{false};
         uint64_t consumerGeneration{0}; // Observation identity only.
     };
     Entry *feedbackProducer(const CandidateOwner &owner);
@@ -184,8 +123,6 @@ class LLDPrefetcher : public Queued
     std::optional<Update> s1;
     EventFunctionWrapper learningEvent;
     const unsigned dependenceQueueSize;
-    const unsigned addressQueueSize;
-    const unsigned addressRetryLimit;
     const uint8_t maxConf;
     const uint8_t initialConf;
     const uint8_t producerInitialConf;
@@ -206,28 +143,12 @@ class LLDPrefetcher : public Queued
         { parent.dependenceTrain(meta); }
     };
     ProbeListenerPtr<DependenceListener> dependenceListener;
-    class AddressListener : public ProbeListenerArgBase<o3::XsDynInstMetaPtr>
-    {
-        LLDPrefetcher &parent;
-      public:
-        AddressListener(LLDPrefetcher &p, std::string name)
-            : ProbeListenerArgBase(std::move(name)), parent(p) {}
-        void notify(const o3::XsDynInstMetaPtr &meta) override
-        { parent.addressTrain(meta); }
-    };
-    ProbeListenerPtr<AddressListener> addressListener;
-
     struct LLDPStats : public statistics::Group
     {
         LLDPStats(statistics::Group *parent);
         statistics::Scalar trainAccepted, trainDropped, trainSquashed;
         statistics::Scalar dualSourceReplayExcluded;
-        statistics::Scalar addressTrainAccepted, addressTrainDropped,
-            addressTrainSquashed, addressTrainNoAlias;
-        statistics::Scalar samplerAllocations, samplerMatches,
-            samplerAliasRebinds,
-            metaAllocations, metaUpdates;
-        statistics::Vector samplerAlias, candidatesByType;
+        statistics::Vector candidatesByType;
         statistics::Scalar producerWrites, producerReplacements;
         statistics::Scalar producerMatches, pipelineBypasses;
         statistics::Scalar spatialLoadTrain, spatialHints;
@@ -240,17 +161,11 @@ class LLDPrefetcher : public Queued
         statistics::Scalar hints, hitHintsDiscarded, hitHintsRetained,
             returnedHints, staleHints;
         statistics::Scalar candidates, filtered, duplicates, unsupported;
-        statistics::Scalar samplerOutputsToMeta, metaTableHits,
-            metaTablePrefetches, samplerValidEntries, metaValidEntries;
-        statistics::Scalar samplerTargetMismatch, samplerRepromotions,
-            metaInvalidations, metaTokenStalls, metaFallbacks;
-        statistics::Vector samplerReplacementCnt;
         statistics::Scalar candidateGenerated, candidateQueued, candidateIssued,
             candidateDropped, candidateMerged, candidateUseful, candidateUnused,
             candidateLate;
         statistics::Scalar staleConsumerFeedback;
-        statistics::Scalar dependenceQueueCapacity, addressQueueCapacity,
-            addressRetryBudget;
+        statistics::Scalar dependenceQueueCapacity;
         statistics::Scalar candidateCacheHit, candidateMshrHit, candidateWbHit;
         statistics::Vector childrenAtReplacement, childrenAtDump;
         statistics::Vector pcpActiveHistogram;
@@ -268,53 +183,23 @@ class LLDPrefetcher : public Queued
             consumerDemandHits;
         statistics::Scalar validProducers;
         statistics::Scalar fpDirectEligible, fpTrainAccepted, fpTrainDropped,
-            fpAddressTrainAccepted, fpAddressTrainDropped, fpAddressPairs,
-            fpDemandLookups, fpMetaHits, fpMetaQueued, fpMetaIssued,
-            fpMetaUseful, fpMetaLate, fpMetaMerged, fpMetaUnused, fpMetaDropped,
-            fpReplayRejected;
-        statistics::Scalar fpSamplerValidEntries, fpMetaValidEntries,
-            fpProducerEntries, fpConsumerEntries;
-        statistics::Vector trainLoadKinds, addressLoadKinds,
-            producerEvictions, consumerEvictions, samplerEvictions,
-            metaEvictions;
+            fpReplayRejected, fpProducerEntries, fpConsumerEntries;
+        statistics::Vector trainLoadKinds, producerEvictions,
+            consumerEvictions;
     } stats;
 
     int findProducer(Addr pc, ContextID context) const;
     int findConsumer(const Entry &entry, Addr pc) const;
     static bool hasFpDependency(const Entry &entry);
-    bool isFpMetaCandidate(uint64_t id) const;
     void learningTick();
     Update makeUpdate(LookupTraining training);
     void commitUpdate(const Update &update);
     unsigned validChildren(const Entry &entry) const;
     lldp::Hint pfHint(const PacketPtr &pkt);
     bool isSpatialPrefetch(const PacketPtr &pkt) const;
-    static bool isLldpSource(PrefetchSourceType source);
-    unsigned samplerSet(Addr addr_p) const;
-    unsigned metaSet(Addr addr_p) const;
-    unsigned samplerVictim(unsigned set);
-    unsigned metaVictim(unsigned set);
-    void trainAddressPair(Addr addr_p, Addr addr_c, Addr producer_pc,
-                          Addr consumer_pc, ContextID context,
-                          unsigned alias, uint64_t dependency_generation,
-                          bool fp_direct);
-    void updateMetaTable(const SamplerEntry &sample, Addr addr_p);
-    struct MetaHit
-    {
-        Addr addrC{0};
-        unsigned set{0};
-        unsigned way{0};
-        uint32_t generation{0};
-    };
-    std::optional<MetaHit> lookupMetaTable(Addr addr_p, Addr producer_pc,
-                                           Addr consumer_pc, ContextID context);
-    void ageMetaTable();
-    void updateMetaOwner(uint64_t candidate_id, int result);
-    bool queueCandidate(const PacketPtr &demand, const lldp::Hint &hint,
-                        Addr addr_p, Addr addr_c,
-                        PrefetchSourceType source,
-                        std::optional<unsigned> consumer,
-                        std::optional<MetaHit> meta_hit = std::nullopt);
+    void queueCandidate(const PacketPtr &demand, const lldp::Hint &hint,
+                        Addr addr_c, PrefetchSourceType source,
+                        unsigned row, unsigned consumer);
     bool filterCandidate(Addr line);
     bool rejectTranslatedPrefetch(const DeferredPacket &dpp,
                                   Addr paddr) override;
@@ -327,7 +212,6 @@ class LLDPrefetcher : public Queued
     void regProbeListeners() override;
     void preDumpStats() override;
     void dependenceTrain(const o3::XsDynInstMetaPtr &meta);
-    void addressTrain(const o3::XsDynInstMetaPtr &meta);
     lldp::Hint loadTrain(const PacketPtr &pkt, bool miss) override;
     void hintData(const lldp::Hint &hint, const PacketPtr &demand,
                   Addr addr_p, const uint8_t *data, unsigned size) override;

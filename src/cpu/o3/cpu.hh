@@ -192,7 +192,6 @@ class CPU : public BaseCPU
     CPU(const BaseO3CPUParams &params);
 
     ProbePointArg<XsDynInstMetaPtr> *ppLldpDependenceTrain;
-    ProbePointArg<XsDynInstMetaPtr> *ppLldpAddressTrain;
     ProbePointArg<PacketPtr> *ppInstAccessComplete;
     ProbePointArg<std::pair<DynInstPtr, PacketPtr> > *ppDataAccessComplete;
 

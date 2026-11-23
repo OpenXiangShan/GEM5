@@ -66,9 +66,9 @@ TEST(LldpLoad, FloatingLoadsHaveWidthWithoutIntegerSignedness)
     EXPECT_FALSE(decodeLoad("ld").floating);
 }
 
-TEST(LldpChain, FloatingRootStaysAddressOnlyThroughAllPropagation)
+TEST(LldpChain, FloatingRootStaysNonReplayableThroughAllPropagation)
 {
-    auto chain = Chain::start(0x1002, 0x2048);
+    auto chain = Chain::start(0x1002);
     chain.producerFloating = true;
     // Even an accidentally replayable FP root must never pass the guard.
     EXPECT_FALSE(chain.trainable());
@@ -76,31 +76,11 @@ TEST(LldpChain, FloatingRootStaysAddressOnlyThroughAllPropagation)
     chain = chain.extend(decodeOperation("addi", 8));
     chain = chain.extendDependencyOnly(SourceForm::Other);
     EXPECT_TRUE(chain.producerFloating);
-    EXPECT_TRUE(chain.producerAddressValid);
-    EXPECT_EQ(chain.producerAddress, 0x2048);
     EXPECT_FALSE(chain.trainable());
-    const auto integer = Chain::start(0x1004, 0x3000);
+    const auto integer = Chain::start(0x1004);
     EXPECT_FALSE(integer.producerFloating);
     EXPECT_TRUE(integer.trainable());
     EXPECT_FALSE(Hint{}.valueReplayable);
-}
-
-TEST(LldpChain, PhysicalAddressZeroSurvivesArithmeticAndDependencyOnlyChains)
-{
-    auto chain = Chain::start(0x1000, 0);
-    ASSERT_TRUE(chain.producerAddressValid);
-    chain = chain.extend(decodeOperation("addi", 64));
-    chain = chain.extendDependencyOnly(SourceForm::DualRegister);
-    for (unsigned i = 0; i < 12; ++i)
-        chain = chain.extend(decodeOperation("slli", 2));
-    EXPECT_EQ(chain.producerAddress, 0);
-    EXPECT_TRUE(chain.producerAddressValid);
-    EXPECT_FALSE(chain.trainable());
-    auto fresh = Chain::start(0x2000, 0x1234);
-    EXPECT_EQ(fresh.producerAddress, 0x1234);
-    EXPECT_EQ(fresh.length, 1);
-    EXPECT_TRUE(fresh.trainable());
-    EXPECT_FALSE(Chain::start(0x3000).producerAddressValid);
 }
 
 TEST(LldpChain, DualSourceOnlyPropagatesLength)

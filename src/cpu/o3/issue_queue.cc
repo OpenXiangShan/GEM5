@@ -918,11 +918,6 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
                     chain = {};
                     if (inst->isLoad() && !inst->isAtomic()) {
                         chain = lldp::Chain::start(inst->pcState().instAddr());
-                        if (inst->effAddrValid() && inst->translationCompleted() &&
-                            !inst->faulted()) {
-                            chain = lldp::Chain::start(
-                                inst->pcState().instAddr(), inst->physEffAddr);
-                        }
                         chain.producerFloating = inst->isFloating();
                         chain.replayable = !inst->isVector() &&
                             !inst->isFloating() && !inst->isLoadReserved();
@@ -1654,9 +1649,6 @@ Scheduler::addToFU(const DynInstPtr& inst)
             !load.floating;
         meta.lldpSize = load.size;
         meta.lldpSigned = load.signExtend;
-        if (first_issue)
-            meta.lldpAddressNotified = false;
-        meta.lldpConsumerAddressValid = false;
         if (meta.lldpChain.valid && first_issue)
             cpu->ppLldpDependenceTrain->notify(inst->xsMeta);
     }

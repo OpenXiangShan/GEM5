@@ -46,9 +46,6 @@ class PrefetchSourceType(Enum):
         "DespacitoStream",
         "LLDP",
         "LLDPS",
-        "LLDPT",
         "LLDPC",
-        "LLDPS_T",
-        "LLDPC_T",
         "TP",
     ]
