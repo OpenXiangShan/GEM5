@@ -2355,11 +2355,11 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num,
         return false;
     }
 
-    panic_if(head_inst->badAddressError,
+    panic_if(head_inst->badAddressPaddr.has_value(),
              "[tid:%i] [sn:%llu] Load with BadAddressError reached commit: "
              "PC %s, bad paddr=%#lx\n",
              tid, head_inst->seqNum, head_inst->pcState(),
-             head_inst->badAddressPaddr);
+             *head_inst->badAddressPaddr);
 
     // if (IsSerializeAfter, IsNonSpeculative, IsReturn)
     if (head_inst->isSerializeAfter() && head_inst->isNonSpeculative() &&

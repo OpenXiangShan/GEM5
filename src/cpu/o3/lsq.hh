@@ -405,10 +405,6 @@ class LSQ
         uint32_t _numOutstandingPackets;
         AtomicOpFunctorPtr _amo_op;
         bool _hasStaleTranslation;
-        bool _sbufferBypass;
-        bool _goldenSnapshotCaptured = false;
-        // A cancelled access can still have responses in flight during replay.
-        bool badAddressErrorRelevant = true;
 
         struct FWDPacket
         {
