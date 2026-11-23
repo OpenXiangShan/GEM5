@@ -258,6 +258,13 @@ LSQUnit::recvTimingResp(PacketPtr pkt)
     if (!request->isReleased()) {
         // Record response facts before per-request replay or completion.
         if (const auto &inst = request->instruction()) {
+            if (pkt->cmd == MemCmd::BadAddressError && inst->isLoad() &&
+                !inst->isSquashed() && !inst->isDataPrefetch() &&
+                !inst->isInstPrefetch() && !inst->badAddressPaddr &&
+                (currentLoadRequest(inst) == request ||
+                 inst->pendingCacheReq == request)) {
+                inst->badAddressPaddr = pkt->getAddr();
+            }
             inst->cacheAccessDepth = std::max(
                 inst->cacheAccessDepth, pkt->cacheAccessDepth);
             if (auto *tea = cpu->getTea();

@@ -186,6 +186,9 @@ class DynInst : public ExecContext, public RefCounted
     /** The kind of fault this instruction has generated. */
     Fault fault = NoFault;
 
+    /** First BadAddressError observed by this load, including prior attempts. */
+    std::optional<Addr> badAddressPaddr;
+
     /** InstRecord that tracks this instructions. */
     Trace::InstRecord *traceData = nullptr;
 
