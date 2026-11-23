@@ -20,7 +20,7 @@ on:
           - 'kmhv3.py'
           - 'idealkmhv3.py'
       coverage_type:
-        description: '0822 H SPEC06 checkpoint coverage (0.3c: regression subset; 1.0c: full set)'
+        description: 'H SPEC06 checkpoint coverage type'
         required: true
         type: choice
         default: 'h-spec06-0.3c'
@@ -33,7 +33,7 @@ on:
         type: string
         default: ''
       extra_args:
-        description: 'Extra gem5 args. H checkpoint, NEMU ref, restorer, memory size, maxinst and DRAMSim3 arguments are fixed by this workflow.'
+        description: 'Extra gem5 args. H checkpoint, NEMU ref, restorer, maxinst and DRAMSim3 arguments are fixed by this workflow.'
         required: false
         type: string
         default: ''

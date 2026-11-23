@@ -1,11 +1,9 @@
-from dataclasses import replace
 import importlib.util
 import json
 from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
 
 
 MODULE_PATH = (
@@ -112,83 +110,10 @@ class CustomBenchmarkTest(unittest.TestCase):
 
     def test_registered_profiles_unchanged(self):
         for name in MODULE.benchmark_types():
-            if name == "h-spec06-0.3c":
-                continue  # Covered separately with a checkpoint profile.
             config = MODULE.resolve_benchmark(name)
             self.assertEqual(config.benchmark_type, name)
             self.assertEqual(config.github_outputs()["archive_subdir"], name)
             self.assertEqual(config.github_outputs()["benchmark_type"], name)
-
-
-class HSpec06BenchmarkTest(unittest.TestCase):
-    NAME = "h-spec06-0.3c"
-
-    def setUp(self):
-        temp = tempfile.TemporaryDirectory()
-        self.addCleanup(temp.cleanup)
-        base = Path(temp.name)
-        self.output = base / "output"
-        self.full_list = base / "checkpoint.lst"
-        self.full_list.write_text(
-            "# checkpoint list\n"
-            "gcc_10 gcc/10 0 0 20 20\n"
-            "gcc_11 gcc/11 1 2 3 4\n"
-            "mcf_20 mcf/20 5 6 7 8\n"
-        )
-        self.weights = base / "checkpoints_cov0.3.json"
-        self.weights.write_text(
-            json.dumps(
-                {
-                    "mcf": {"points": {"20": "0.7"}},
-                    "gcc": {"points": {"11": "0.5"}},
-                }
-            )
-        )
-        subset = replace(
-            MODULE._BENCHMARKS[self.NAME],
-            checkpoint_list=str(self.full_list),
-            checkpoint_root=str(base),
-            cluster_config=str(self.weights),
-        )
-        patcher = patch.dict(MODULE._BENCHMARKS, {self.NAME: subset})
-        patcher.start()
-        self.addCleanup(patcher.stop)
-
-    def resolve(self):
-        return MODULE.resolve_benchmark(self.NAME, output_dir=self.output)
-
-    def test_subset_matches_weights_and_preserves_list_order_and_fields(self):
-        outputs = self.resolve().github_outputs()
-        self.assertEqual(outputs["benchmark_type"], self.NAME)
-        self.assertEqual(outputs["cluster_config"], str(self.weights))
-        self.assertEqual(
-            Path(outputs["checkpoint_list"]).read_text(),
-            "gcc_11 gcc/11 1 2 3 4\nmcf_20 mcf/20 5 6 7 8\n",
-        )
-
-    def test_missing_weighted_point_is_rejected(self):
-        self.full_list.write_text("gcc_11 gcc/11 0 0 20 20\n")
-        with self.assertRaisesRegex(ValueError, "missing.*mcf/20"):
-            self.resolve()
-        self.assertFalse(self.output.exists())
-
-    def test_duplicate_weighted_point_is_rejected(self):
-        with self.full_list.open("a") as listing:
-            listing.write("gcc_11 gcc/11 0 0 20 20\n")
-        with self.assertRaisesRegex(ValueError, "duplicate checkpoint gcc/11"):
-            self.resolve()
-        self.assertFalse(self.output.exists())
-
-    def test_full_coverage_uses_archive_list_and_weights_directly(self):
-        config = MODULE.resolve_benchmark("h-spec06-1.0c")
-        root = Path(config.checkpoint_root).parent
-        self.assertEqual(root.name, "spec06_gcc16_rv64gcb_h_260822")
-        self.assertEqual(
-            Path(config.checkpoint_list), root / "checkpoint/checkpoint.lst"
-        )
-        self.assertEqual(
-            Path(config.cluster_config), root / "json/checkpoints_all.json"
-        )
 
 
 if __name__ == "__main__":

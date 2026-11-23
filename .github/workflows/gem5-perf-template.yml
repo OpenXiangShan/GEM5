@@ -84,19 +84,6 @@ jobs:
           ref: ${{ inputs.pr_sha || github.sha }}
           persist-credentials: false
 
-      - name: Check out workflow tools for an overridden test ref
-        if: ${{ (inputs.pr_sha || github.sha) != github.workflow_sha }}
-        id: workflow_tools
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ github.workflow_sha }}
-          path: .perf-workflow
-          sparse-checkout: |
-            util/xs_scripts/perf_benchmarks.py
-            util/xs_scripts/perf_progress.py
-          sparse-checkout-cone-mode: false
-          persist-credentials: false
-
       - name: Set benchmark configuration
         id: config
         env:
@@ -105,14 +92,8 @@ jobs:
           JSON_PATH_INPUT: ${{ inputs.json_path }}
           GCBV_REF_INPUT: ${{ inputs.gcbv_ref_so }}
           CONFIG_PATH_INPUT: ${{ inputs.config_path }}
-          WORKFLOW_TOOLS_READY: ${{ steps.workflow_tools.outcome == 'success' }}
         run: |
-          BENCHMARK_RESOLVER="util/xs_scripts/perf_benchmarks.py"
-          # The H slice profile follows the workflow ref, even for an older test ref.
-          if [[ "$BENCHMARK_TYPE" == h-spec06-* && "$WORKFLOW_TOOLS_READY" == true ]]; then
-            BENCHMARK_RESOLVER=".perf-workflow/$BENCHMARK_RESOLVER"
-          fi
-          python3 "$BENCHMARK_RESOLVER" \
+          python3 util/xs_scripts/perf_benchmarks.py \
             "$BENCHMARK_TYPE" \
             --checkpoint-path "$CHECKPOINT_PATH_INPUT" \
             --json-path "$JSON_PATH_INPUT" \
@@ -123,9 +104,7 @@ jobs:
             : # Trace replay needs no checkpoint REF/restorer/mem-dedup setup.
           elif [[ "$BENCHMARK_TYPE" == h-spec06-* ]]; then
             H_REF_SO="$(python3 util/nemu_ref/resolve.py h)"
-            H_CPT_DIR="$(sed -n 's/^checkpoint_root_node=//p' "$GITHUB_OUTPUT")"
-            H_RESTORER="${H_CPT_DIR%/*}/gcpt/gcpt.bin"
-            test -r "$H_RESTORER"
+            H_RESTORER="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rv64gcb_h_260822/gcpt/gcpt.bin"
             H_DRAM_INI="$GITHUB_WORKSPACE/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
             echo "profile_ref_so=$H_REF_SO" >> "$GITHUB_OUTPUT"
             echo "profile_restorer=$H_RESTORER" >> "$GITHUB_OUTPUT"
@@ -250,6 +229,17 @@ jobs:
             echo "- Path: \`$TARGET_DIR\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Check out progress formatter for an overridden test ref
+        if: ${{ (inputs.pr_sha || github.sha) != github.workflow_sha }}
+        id: progress_source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .perf-workflow
+          sparse-checkout: util/xs_scripts/perf_progress.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - name: XS-GEM5 - Run performance test
         # ${{ steps.config.outputs.comment }}
         env:
@@ -263,7 +253,7 @@ jobs:
           SPECIFIC_BENCHMARKS_INPUT: ${{ inputs.specific_benchmarks }}
           EXTRA_GEM5_ARGS_RAW: ${{ inputs.extra_args }}
           CHECKPOINT_LIST: ${{ steps.archive.outputs.target_dir }}/checkpoints.lst
-          CHECKPOINT_PROGRESS_SCRIPT: ${{ steps.workflow_tools.outcome == 'success' && '.perf-workflow/util/xs_scripts/perf_progress.py' || 'util/xs_scripts/perf_progress.py' }}
+          CHECKPOINT_PROGRESS_SCRIPT: ${{ steps.progress_source.outcome == 'success' && '.perf-workflow/util/xs_scripts/perf_progress.py' || 'util/xs_scripts/perf_progress.py' }}
           CHECKPOINT_ROOT_NODE: ${{ steps.config.outputs.checkpoint_root_node }}
           DISTRIBUTED_SERVERS: ${{ steps.archive.outputs.distributed_servers }}
           DISTRIBUTED_JOBS_PER_SERVER: ${{ inputs.distributed_jobs_per_server }}

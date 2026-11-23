@@ -9,7 +9,7 @@ the CLI also checks their measurement results.
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 import hashlib
 import json
 import math
@@ -69,12 +69,6 @@ def _index_benchmarks(
             )
         result[config.benchmark_type] = config
     return result
-
-
-_H_SPEC06_ROOT = Path(
-    "/nfs/home/share/checkpoints_profiles/spec06_gcc16_rv64gcb_h_260822"
-)
-_H_SPEC06_FULL_LIST = _H_SPEC06_ROOT / "checkpoint/checkpoint.lst"
 
 
 _BENCHMARKS = _index_benchmarks(
@@ -142,17 +136,23 @@ _BENCHMARKS = _index_benchmarks(
         ),
         BenchmarkConfig(
             benchmark_type="h-spec06-0.3c",
-            checkpoint_list=str(_H_SPEC06_FULL_LIST),
-            checkpoint_root=str(_H_SPEC06_ROOT / "checkpoint"),
-            cluster_config=str(_H_SPEC06_ROOT / "json/checkpoints_cov0.3.json"),
-            comment="run the 0822 H SPEC06 regression subset (30% coverage)",
+            checkpoint_list="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rv64gcb_h_260822/checkpoint/checkpoint_cov0.3.lst",
+            checkpoint_root="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rv64gcb_h_260822/checkpoint",
+            cluster_config="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rv64gcb_h_260822/json/checkpoints_cov0.3.json",
+            comment=(
+                "run 30% coverage H SPEC06 checkpoints with pinned H NEMU, "
+                "GCPT restore, DRAMsim3 and 40M maxinsts"
+            ),
         ),
         BenchmarkConfig(
             benchmark_type="h-spec06-1.0c",
-            checkpoint_list=str(_H_SPEC06_FULL_LIST),
-            checkpoint_root=str(_H_SPEC06_ROOT / "checkpoint"),
-            cluster_config=str(_H_SPEC06_ROOT / "json/checkpoints_all.json"),
-            comment="run the full 0822 H SPEC06 set (100% coverage)",
+            checkpoint_list="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rv64gcb_h_260822/checkpoint/checkpoint.lst",
+            checkpoint_root="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rv64gcb_h_260822/checkpoint",
+            cluster_config="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rv64gcb_h_260822/json/checkpoints_all.json",
+            comment=(
+                "run 100% coverage H SPEC06 checkpoints with pinned H NEMU, "
+                "GCPT restore, DRAMsim3 and 40M maxinsts"
+            ),
         ),
         BenchmarkConfig(
             benchmark_type="spec17-1.0c",
@@ -281,64 +281,15 @@ def benchmark_types() -> tuple[str, ...]:
     return tuple(_BENCHMARKS)
 
 
-def _materialize_h_spec06_subset(
-    config: BenchmarkConfig, output_dir: str | Path
-) -> BenchmarkConfig:
-    # The archive only ships a full list. Filter it by the scoring profile
-    # rather than maintaining a second copy of the selected checkpoint rows.
-    with Path(config.cluster_config).open(encoding="utf-8") as source:
-        weights = json.load(source)
-    selected = {
-        f"{workload}/{point}"
-        for workload, entry in weights.items()
-        for point in entry["points"]
-    }
-    if not selected:
-        raise ValueError(f"no checkpoint points in {config.cluster_config}")
-
-    rows = {}
-    with Path(config.checkpoint_list).open(encoding="utf-8") as source:
-        for line in source:
-            fields = line.split()
-            if len(fields) < 2 or fields[0].startswith("#"):
-                continue
-            point = fields[1]
-            if point not in selected:
-                continue
-            if point in rows:
-                raise ValueError(
-                    f"duplicate checkpoint {point} in {source.name}"
-                )
-            rows[point] = line.rstrip("\n") + "\n"
-    if missing := selected - rows.keys():
-        raise ValueError(
-            f"{len(missing)} weighted checkpoints missing from "
-            f"{config.checkpoint_list}: {', '.join(sorted(missing)[:5])}"
-        )
-
-    destination = Path(output_dir).resolve()
-    destination.mkdir(parents=True, exist_ok=True)
-    checkpoint_list = destination / f"{config.benchmark_type}.lst"
-    checkpoint_list.write_text("".join(rows.values()), encoding="utf-8")
-    return replace(config, checkpoint_list=str(checkpoint_list))
-
-
-def resolve_benchmark(
-    benchmark_type: str, *, output_dir: str | Path | None = None
-) -> BenchmarkConfig:
+def resolve_benchmark(benchmark_type: str) -> BenchmarkConfig:
     try:
-        config = _BENCHMARKS[benchmark_type]
+        return _BENCHMARKS[benchmark_type]
     except KeyError:
         supported = ", ".join(benchmark_types())
         raise KeyError(
             f"unsupported benchmark_type {benchmark_type!r}; "
             f"supported values: {supported}"
         ) from None
-    if benchmark_type == "h-spec06-0.3c":
-        if output_dir is None:
-            raise ValueError(f"{benchmark_type} requires an output directory")
-        return _materialize_h_spec06_subset(config, output_dir)
-    return config
 
 
 def resolve_custom_benchmark(
@@ -650,9 +601,7 @@ def main() -> int:
                 raise ValueError(
                     "checkpoint_path/json_path require a custom benchmark type"
                 )
-            config = resolve_benchmark(
-                args.benchmark_type, output_dir=args.output_dir
-            )
+            config = resolve_benchmark(args.benchmark_type)
     except (KeyError, ValueError, OSError, TypeError) as error:
         parser.error(
             error.args[0] if isinstance(error, KeyError) else str(error)
