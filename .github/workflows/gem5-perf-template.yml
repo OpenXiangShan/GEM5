@@ -104,11 +104,11 @@ jobs:
             : # Trace replay needs no checkpoint REF/restorer/mem-dedup setup.
           elif [[ "$BENCHMARK_TYPE" == h-spec06-* ]]; then
             H_REF_SO="$(python3 util/nemu_ref/resolve.py h)"
-            H_RESTORER="/nfs/home/share/gem5_ci/tools/gcpt.bin"
+            H_RESTORER="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rv64gcb_h_260822/gcpt/gcpt.bin"
             H_DRAM_INI="$GITHUB_WORKSPACE/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
             echo "profile_ref_so=$H_REF_SO" >> "$GITHUB_OUTPUT"
             echo "profile_restorer=$H_RESTORER" >> "$GITHUB_OUTPUT"
-            echo "profile_extra_args=--enable-h-gcpt --restore-rvh-cpt --gcpt-restorer=$H_RESTORER --difftest-ref-so=$H_REF_SO --maxinsts=40000000 --dramsim3-ini=$H_DRAM_INI" >> "$GITHUB_OUTPUT"
+            echo "profile_extra_args=--enable-h-gcpt --restore-rvh-cpt --gcpt-restorer=$H_RESTORER --difftest-ref-so=$H_REF_SO --maxinsts=40000000 --mem-size=16GB --dramsim3-ini=$H_DRAM_INI" >> "$GITHUB_OUTPUT"
           elif [[ "$BENCHMARK_TYPE" == gcc12-spec06-smt-* || "$CONFIG_PATH_INPUT" == */smt_idealkmhv3.py ]]; then
             MULTI_REF_SO="$(python3 util/nemu_ref/resolve.py multi)"
             echo "multi_ref_so=$MULTI_REF_SO" >> "$GITHUB_OUTPUT"

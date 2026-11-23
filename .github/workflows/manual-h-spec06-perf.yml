@@ -14,7 +14,7 @@ on:
         description: 'Choose Kunminghu configuration'
         required: true
         type: choice
-        default: 'idealkmhv3.py'
+        default: 'kmhv3.py'
         options:
           - 'kmhv2.py'
           - 'kmhv3.py'
@@ -23,9 +23,9 @@ on:
         description: 'H SPEC06 checkpoint coverage type'
         required: true
         type: choice
-        default: 'h-spec06-1.0c'
+        default: 'h-spec06-0.3c'
         options:
-          - 'h-spec06-0.5c'
+          - 'h-spec06-0.3c'
           - 'h-spec06-1.0c'
       specific_benchmarks:
         description: 'Specific benchmarks to run (comma-separated, for example "mcf,gcc"); leave empty to run the selected coverage set'

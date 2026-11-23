@@ -135,22 +135,22 @@ _BENCHMARKS = _index_benchmarks(
             comment=("run 100% coverage gcc16 rva23-novec SPEC06 checkpoints"),
         ),
         BenchmarkConfig(
-            benchmark_type="h-spec06-0.5c",
-            checkpoint_list="/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_0.5c.lst",
-            checkpoint_root="/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/checkpoint-0-0-0",
-            cluster_config="/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_0.5c_h_profile_insts.json",
+            benchmark_type="h-spec06-0.3c",
+            checkpoint_list="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rv64gcb_h_260822/checkpoint/checkpoint_cov0.3.lst",
+            checkpoint_root="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rv64gcb_h_260822/checkpoint",
+            cluster_config="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rv64gcb_h_260822/json/checkpoints_cov0.3.json",
             comment=(
-                "run 50% coverage H SPEC06 checkpoints with FS0 NEMU, "
+                "run 30% coverage H SPEC06 checkpoints with pinned H NEMU, "
                 "GCPT restore, DRAMsim3 and 40M maxinsts"
             ),
         ),
         BenchmarkConfig(
             benchmark_type="h-spec06-1.0c",
-            checkpoint_list="/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_1.0c.lst",
-            checkpoint_root="/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/checkpoint-0-0-0",
-            cluster_config="/nfs/home/share/gem5_ci/spec06_cpts/h_spec06/h_spec06_1.0c_h_profile_insts.json",
+            checkpoint_list="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rv64gcb_h_260822/checkpoint/checkpoint.lst",
+            checkpoint_root="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rv64gcb_h_260822/checkpoint",
+            cluster_config="/nfs/home/share/checkpoints_profiles/spec06_gcc16_rv64gcb_h_260822/json/checkpoints_all.json",
             comment=(
-                "run 100% coverage H SPEC06 checkpoints with FS0 NEMU, "
+                "run 100% coverage H SPEC06 checkpoints with pinned H NEMU, "
                 "GCPT restore, DRAMsim3 and 40M maxinsts"
             ),
         ),
