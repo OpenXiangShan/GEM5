@@ -50,26 +50,25 @@ class RiscvMMU(BaseMMU):
 
     l2_shared = Param.RiscvTLB(RiscvTLBL2(entry_type="unified"),
                                "Shared second-level TLB")
-    stb = Param.RiscvTLB(NULL, "Optional store L1 TLB")
-    ptb = Param.RiscvTLB(NULL, "Optional prefetch L1 TLB")
-
     itb = RiscvTLB(entry_type="instruction",
     next_level=Parent.l2_shared)
     dtb = RiscvTLB(entry_type="data", size=48,
                    next_level=Parent.l2_shared, is_dtlb=True)
+    stb = Param.RiscvTLB(
+        RiscvTLB(entry_type="data", size=48,
+                 next_level=Parent.l2_shared, is_dtlb=True,
+                 walker=Parent.dtb.walker),
+        "Optional store L1 TLB")
+    ptb = Param.RiscvTLB(
+        RiscvTLB(entry_type="data", size=48,
+                 next_level=Parent.l2_shared, is_dtlb=True,
+                 walker=Parent.dtb.walker),
+        "Optional prefetch L1 TLB")
+    stb.default.clear_child("walker")
+    ptb.default.clear_child("walker")
+
     pma_checker = Param.PMAChecker(PMAChecker(), "PMA Checker")
     pmp = Param.PMP(PMP(), "Physical Memory Protection Unit")
-
-    def splitDataTLB(self, compression):
-        for name in ('stb', 'ptb'):
-            peer = RiscvTLB(
-                entry_type="data", size=48, is_dtlb=True, walker=NULL,
-                next_level=Parent.l2_shared,
-                is_open_nextline=Parent.dtb.is_open_nextline,
-                regulation_num=Parent.dtb.regulation_num,
-                enable_l1_direct_compression=compression)
-            peer.walker = self.dtb.walker
-            setattr(self, name, peer)
 
     @classmethod
     def walkerPorts(cls):
