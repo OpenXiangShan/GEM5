@@ -17,7 +17,7 @@ namespace branch_prediction
 namespace btb_pred
 {
 
-/** Owns CSV branch profiles and phase snapshots across all BPU threads. */
+/** Owns CSV branch profiles and phase summaries across all BPU threads. */
 class BPUProfiler
 {
   public:
@@ -89,24 +89,22 @@ class BPUProfiler
     std::map<Addr, unsigned> topMispredIndirect;
     std::unordered_map<Addr, std::pair<BTBEntry, int>> totalBTBEntries;
 
-    // Completed phases and independent snapshots for main/sub-phase deltas.
+    // Independent cumulative snapshots for main/sub-phase deltas.
     BranchStatsMap lastPhaseTopMispredictsByBranch;
     BranchStatsMap lastSubPhaseTopMispredictsByBranch;
-    std::vector<BranchStatsMap> topMispredictsByBranchByPhase;
-    std::vector<BranchStatsMap> topMispredictsByBranchBySubPhase;
     std::unordered_map<Addr, int> currentPhaseTakenBranches;
     std::unordered_map<Addr, int> currentSubPhaseTakenBranches;
-    std::vector<std::unordered_map<Addr, int>> takenBranchesByPhase;
-    std::vector<std::unordered_map<Addr, int>> takenBranchesBySubPhase;
     std::unordered_map<Addr, std::pair<BTBEntry, int>> lastPhaseBTBEntries;
-    std::vector<std::unordered_map<Addr, std::pair<BTBEntry, int>>>
-        BTBEntriesByPhase;
+    // Buffer completed branch and BTB rows for the exit-time CSV dump.
+    std::string phaseBranchRows;
+    std::string subPhaseBranchRows;
+    std::string phaseBtbRows;
+    static constexpr size_t TopBranches = 5;
+    static constexpr size_t TopBtbEntries = 2;
 
-    int phaseIdToDump = 1;
-    int numInstCommitted = 0;
-    int phaseSizeByInst = 100000;
-    int subPhaseIdToDump = 1;
-    int subPhaseRatio = 10;
+    uint64_t numInstCommitted = 0;
+    static constexpr unsigned PhaseSize = 100000;
+    static constexpr unsigned SubPhaseSize = PhaseSize / 10;
 
     // FTQ instruction distributions and snapshots for completed main phases.
     std::vector<int> commitFtqEntryHasInstsVector;
@@ -116,16 +114,13 @@ class BPUProfiler
     std::vector<int> lastPhaseFtqEntryNumFetchedInstDist;
     std::vector<std::vector<int>> ftqEntryNumFetchedInstDistByPhase;
 
-    int subPhaseSizeByInst() const { return phaseSizeByInst / subPhaseRatio; }
     void trackTakenBranch(Addr branchAddr);
-    bool processPhase(bool isSubPhase, int phaseID, int &phaseToDump,
-                      BranchStatsMap &lastPhaseStats,
-                      std::vector<BranchStatsMap> &phaseStatsList,
-                      std::unordered_map<Addr, int> &currentPhaseBranches,
-                      std::vector<std::unordered_map<Addr, int>> &phaseBranchesList);
+    void summarizeBranches(uint64_t phaseID, BranchStatsMap &lastStats,
+                           std::unordered_map<Addr, int> &takenBranches,
+                           std::string &rows);
     void processFetchDistributions(std::vector<int> &committed,
                                    std::vector<int> &fetched);
-    std::unordered_map<Addr, std::pair<BTBEntry, int>> processBTBEntries();
+    void summarizeBtbEntries(uint64_t phaseID);
 };
 
 } // namespace btb_pred
