@@ -43,6 +43,7 @@ DecoupledBPUWithBTB::consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid)
 {
     auto &target = ftq.fetching(tid);
     target.fetchInstNum = fetched_inst_num;
+    target.fetchTick = curTick();
     ftq.finishTarget(tid);
 }
 
@@ -649,6 +650,7 @@ DecoupledBPUWithBTB::enqueueSecondBlock(ThreadID tid)
     // TODO: Currently the ABTB's ahead history is not updated for the second
     // which maybe a expected behavior due to the physical timing constraints.
     enqueuePrediction(tid, secondPred);
+    ftq.back(tid).isTwoTakenBlock = true;
     DPRINTF(DecoupleBP, "Inserted second block %lu starting at PC %#lx\n",
             ftq.backId(tid), ftq.back(tid).startPC);
     printTarget(ftq.back(tid));
@@ -698,6 +700,7 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
                 "Ignore squash for tid %u on missing FTQ target %u; "
                 "recovering predictor state from redirect PC %#lx\n",
                 tid, target_id, redirect_pc);
+        traceFetchBlocks(tid, ftq.frontId(tid), ftq.backId(tid), true);
         ftq.clear(tid);
         clearPreds(tid);
         threads[tid].validprediction = false;
@@ -714,6 +717,7 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
     }
 
     // Remove targets after the squashed one
+    traceFetchBlocks(tid, target_id + 1, ftq.backId(tid), true);
     ftq.squashAfter(target_id, tid);
 
     const auto &recovery_target = ftq.get(target_id, tid);
@@ -970,6 +974,7 @@ DecoupledBPUWithBTB::commit(
             block_idx++;
         }
 
+        traceFetchBlocks(tid, committed_id, committed_id, false);
         ftq.commitTarget(tid);
         dbpBtbStats.ftqEntryCommitted++;
     }
@@ -1104,6 +1109,7 @@ DecoupledBPUWithBTB::enqueuePrediction(ThreadID tid, FullBTBPrediction &pred)
     threads[tid].s0PC = pred.getTarget(predictWidth);
     updateHistoryForPrediction(entry, pred);
     fillAheadPipeline(entry);
+    entry.enqTick = curTick();
 
     if (enablePredFSQTrace) {
         predTraceManager->write_record(PredictionTrace(ftq.backId(tid), entry));

@@ -1279,6 +1279,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
         dbpbtb->consumeFetchTarget(ftqEntryFetchedInsts[tid], tid);
         ftqEntryFetchedInsts[tid] = 0;
         if (continued_to_next_target) {
+            dbpbtb->markTwoFetchBlock(tid);
             threads[tid].usedForTwoFetch = true;
             ++fetchStats.twoFetchSuccesses;
             DPRINTF(DecoupleBP,

@@ -351,8 +351,6 @@ class LSQUnit
      * of the intermediate invalidate.
      */
     void checkSnoop(PacketPtr pkt);
-    void checkLocalStoreVisible(Addr store_paddr,
-                                const std::vector<bool> &store_byte_enable);
 
     /** Iq issues a load to load pipeline. */
     void issueToLoadPipe(const DynInstPtr &inst);

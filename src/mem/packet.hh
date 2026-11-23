@@ -382,7 +382,13 @@ class Packet : public Printable
         // Record whether the fake-mainpipe StoreBuffer access hit in L1D.
         DCACHE_MAINPIPE_SBUFFER_HIT = 0x00200000,
 
-        FIRST_ISSUE_SCALAR_LOAD = 0x00400000
+
+        FIRST_ISSUE_SCALAR_LOAD = 0x00400000,
+
+        // L1-local write notification, delivered only to the owning CPU.
+        LOCAL_WRITE_SNOOP = 0x00400000,
+        LOCAL_WRITE_SNOOP_SENT = 0x00800000
+
     };
 
     Flags flags;
@@ -838,6 +844,12 @@ class Packet : public Printable
     { return flags.isSet(DCACHE_MAINPIPE_SBUFFER_HIT); }
     void clearDcacheMainPipeSbufferHit()
     { flags.clear(DCACHE_MAINPIPE_SBUFFER_HIT); }
+
+    void setLocalWriteSnoop() { flags.set(LOCAL_WRITE_SNOOP); }
+    bool isLocalWriteSnoop() const { return flags.isSet(LOCAL_WRITE_SNOOP); }
+    void setLocalWriteSnoopSent() { flags.set(LOCAL_WRITE_SNOOP_SENT); }
+    bool localWriteSnoopSent() const
+    { return flags.isSet(LOCAL_WRITE_SNOOP_SENT); }
 
     void setLSQPtr(o3::LSQ *lsq) { lsqPtr = lsq; }
     o3::LSQ *getLSQPtr() const { return lsqPtr; }

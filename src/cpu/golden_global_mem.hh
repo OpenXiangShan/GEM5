@@ -17,6 +17,7 @@
 #ifndef __MEMORY_PADDR_H__
 #define __MEMORY_PADDR_H__
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -24,6 +25,15 @@
 
 namespace gem5
 {
+
+class Packet;
+
+struct AmoDifftestData
+{
+    using Bytes = std::array<uint8_t, 16>; // Includes amocas.q.
+    Bytes before;
+    Bytes after;
+};
 
 class GoldenGloablMem
 {
@@ -42,6 +52,8 @@ class GoldenGloablMem
     void pmemWriteCheck(uint64_t addr, uint64_t data, int len);
     void pmemWrite(uint64_t addr, uint64_t data, int len);
 
+    void recordScalarRead(Packet *pkt);
+    AmoDifftestData *beginAtomic(Packet *pkt);
     void readGoldenMem(uint64_t addr, void *data, uint64_t len);
     uint64_t pmemReadCheck(uint64_t addr, int len);
     uint64_t pmemRead(uint64_t addr, int len);

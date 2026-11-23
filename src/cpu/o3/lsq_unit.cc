@@ -265,6 +265,22 @@ LSQUnit::recvTimingResp(PacketPtr pkt)
                 tea->cacheMiss(inst, pkt->cacheAccessDepth);
             }
         }
+        if (pkt->req->scalarReadGolden) {
+            const auto &inst = request->instruction();
+            if (inst && !inst->isExecuted() && !inst->isSquashed() &&
+                inst->isLoad() && !inst->isVector() &&
+                inst->effSize <= sizeof(Request::ScalarReadBytes)) {
+                if (!inst->loadSnapshot) {
+                    inst->loadSnapshot = std::make_unique<ScalarLoadSnapshot>();
+                }
+                const auto offset =
+                    pkt->req->getVaddr() - request->mainReq()->getVaddr();
+                assert(offset + pkt->getSize() <= inst->effSize);
+                inst->loadSnapshot->fragments.push_back({
+                    pkt->getAddr(), offset, pkt->getSize(),
+                    *pkt->req->scalarReadGolden});
+            }
+        }
         ret = request->recvTimingResp(pkt);
     } else if (request->instruction()) {
         DPRINTF(LoadPipeline, "LSQUnit::recvTimingResp [sn:%lu] pkt: %s - ignored\n",
@@ -367,47 +383,17 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
 
     assert(!cpu->switchedOut());
     if (!inst->isSquashed()) {
-        if (inst->isLoad() || inst->isAtomic()) {
-            Addr addr = pkt->getAddr();
-            auto [enable_diff, diff_all_states] = cpu->getDiffAllStates();
-            if (system->multiContextDifftest() && enable_diff &&
-                request->_sbufferBypass &&
-                inst->isLoad() &&
-                cpu->goldenMemManager()->inPmem(addr)) {
-                // A store-forwarded load may legitimately observe a value that
-                // is newer than the current shared golden memory snapshot.
-                // Keep the observed value on the instruction so difftest can
-                // repair the reference state for this hart if needed.
-                inst->setGolden(pkt->getPtr<uint8_t>());
-            }
-            if (system->multiContextDifftest() && enable_diff &&
-                !request->_sbufferBypass &&
-                cpu->goldenMemManager()->inPmem(addr)) {
-                uint8_t *loaded_data = pkt->getPtr<uint8_t>();
-                size_t size = pkt->getSize();
-                assert(size == inst->effSize);
-
-                if (inst->isAtomic()) {
-                    // Preserve the DUT-observed old value until completeStore()
-                    // derives the post-AMO memory image. Keep the actual
-                    // response value for difftest, since the request may have
-                    // been serialized behind another hart's AMO by the cache.
-                    inst->setGolden(loaded_data);
-                    std::memcpy(inst->getAmoOldGoldenValuePtr(), loaded_data,
-                                size);
-                } else {
-                    // check data with golden mem
-                    uint8_t *golden_data =
-                        (uint8_t *)cpu->goldenMemManager()->guestToHost(addr);
-                    if (memcmp(golden_data, loaded_data, size) != 0) {
-                        DPRINTF(Diff,
-                                "[tid:%d] [sn:%llu] Load sees value different from "
-                                "current golden memory at addr %#lx, size %d. "
-                                "Treating as concurrent update window. %s\n",
-                                inst->threadNumber, inst->seqNum, addr, size,
-                                goldenDiffStr(loaded_data, golden_data, size).c_str());
-                    }
-                }
+        if (inst->isAtomic() && system->multiContextDifftest() &&
+            cpu->goldenMemManager()->inPmem(pkt->getAddr(), pkt->getSize())) {
+            assert(pkt->getSize() == inst->effSize);
+            assert(inst->effSize <= sizeof(cpu->diffInfo.amoOldGoldenValue));
+            if (system->params().golden_mem_at_write) {
+                panic_if(!inst->xsMeta->difftestAmo,
+                         "Missing Classic AMO observation at %#x", pkt->getAddr());
+            } else {
+                // Response-accounted protocols update golden memory in completeStore.
+                std::memcpy(inst->getAmoOldGoldenValuePtr(),
+                            pkt->getConstPtr<uint8_t>(), pkt->getSize());
             }
         }
 
@@ -1066,101 +1052,6 @@ LSQUnit::checkSnoop(PacketPtr pkt)
         }
     }
     return;
-}
-
-namespace
-{
-
-bool
-overlapsVisibleStore(const o3::LSQ::LSQRequest *load_req, Addr store_paddr,
-                     const std::vector<bool> &store_byte_enable)
-{
-    if (!load_req) {
-        return false;
-    }
-
-    for (size_t req_idx = 0; req_idx < load_req->numReqs(); ++req_idx) {
-        const auto req = load_req->req(req_idx);
-        if (!req->hasPaddr()) {
-            continue;
-        }
-
-        const Addr load_start = req->getPaddr();
-        const Addr load_end = load_start + req->getSize();
-        for (size_t byte_idx = 0; byte_idx < store_byte_enable.size();
-             ++byte_idx) {
-            if (!store_byte_enable[byte_idx]) {
-                continue;
-            }
-
-            const Addr byte_addr = store_paddr + byte_idx;
-            if (byte_addr >= load_start && byte_addr < load_end) {
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
-
-} // anonymous namespace
-
-void
-LSQUnit::checkLocalStoreVisible(Addr store_paddr,
-                                const std::vector<bool> &store_byte_enable)
-{
-    if (loadQueue.empty()) {
-        return;
-    }
-
-    const Addr block_addr = store_paddr & cacheBlockMask;
-    DynInstPtr oldest_violator = memDepViolator;
-
-    for (auto it = loadQueue.begin(); it != loadQueue.end(); ++it) {
-        DynInstPtr ld_inst = it->instruction();
-        if (!ld_inst || ld_inst->isSquashed() || ld_inst->needReplay() ||
-            !ld_inst->effAddrValid() || ld_inst->strictlyOrdered()) {
-            continue;
-        }
-
-        LSQRequest *request = it->request();
-        // Replay/cancel paths can leave the dyninst carrying a stale
-        // savedRequest pointer after the active LQ request has been replaced
-        // or dropped. Only the current queue entry request is safe here.
-        if (!request || !request->isCacheBlockHit(block_addr, cacheBlockMask)) {
-            continue;
-        }
-        if (!overlapsVisibleStore(request, store_paddr, store_byte_enable)) {
-            continue;
-        }
-        if (ld_inst->memReqFlags & Request::LLSC) {
-            ld_inst->tcBase()->getIsaPtr()->handleLockedSnoopHit(ld_inst.get());
-        }
-
-        if (ld_inst->isExecuted()) {
-            DPRINTF(LSQUnit,
-                    "Local visible store ignores already executed load "
-                    "[sn:%lli] on addr %#x\n",
-                    ld_inst->seqNum, store_paddr);
-            continue;
-        }
-
-        ld_inst->hitExternalSnoop(true);
-        ld_inst->possibleLoadViolation(true);
-        DPRINTF(LSQUnit,
-                "Local visible store replays not-yet-executed load [sn:%lli] "
-                "on addr %#x\n",
-                ld_inst->seqNum, store_paddr);
-        ld_inst->setNukeReplay();
-        loadSetReplay(ld_inst, request, true);
-    }
-
-    if (oldest_violator &&
-        (!memDepViolator || oldest_violator->seqNum < memDepViolator->seqNum)) {
-        memDepViolator = oldest_violator;
-        cpu->activityThisCycle();
-        iewStage->SquashCheckAfterExe(oldest_violator);
-    }
 }
 
 Fault
@@ -2445,22 +2336,6 @@ LSQUnit::writebackBlockedStore()
     }
 
     auto *request = storeWBIt->request();
-    const auto &inst = storeWBIt->instruction();
-
-    if (request->mainReq()->hasPaddr() &&
-        system->multiContextDifftest() && inst->isAtomic() &&
-        cpu->goldenMemManager() &&
-        cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
-        uint8_t issue_golden[16] = {};
-        panic_if(request->_size > sizeof(issue_golden),
-                 "Unexpected AMO size %u at addr %#lx\n",
-                 request->_size, request->mainReq()->getPaddr());
-        cpu->goldenMemManager()->readGoldenMem(
-            request->mainReq()->getPaddr(), issue_golden, request->_size);
-        std::memcpy(inst->getAmoOldGoldenValuePtr(), issue_golden,
-                    request->_size);
-    }
-
     request->sendPacketToCache();
     if (request->isSent()) {
         storePostSend();
@@ -2519,21 +2394,6 @@ LSQUnit::directStoreToCache()
             else
                 storeWBIt = storeQueue.end();
             return true;
-        }
-    }
-
-    if (request->mainReq()->hasPaddr()) {
-        if (system->multiContextDifftest() && inst->isAtomic() &&
-            cpu->goldenMemManager() &&
-            cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
-            uint8_t issue_golden[16] = {};
-            panic_if(request->_size > sizeof(issue_golden),
-                     "Unexpected AMO size %u at addr %#lx\n",
-                     request->_size, request->mainReq()->getPaddr());
-            cpu->goldenMemManager()->readGoldenMem(
-                request->mainReq()->getPaddr(), issue_golden, request->_size);
-            std::memcpy(inst->getAmoOldGoldenValuePtr(), issue_golden,
-                        request->_size);
         }
     }
 
@@ -3138,12 +2998,13 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
     if (!from_sbuffer &&
         (!store_inst->isStoreConditional() || store_inst->lockedWriteSuccess()) &&
         has_paddr) {
-        if (!store_inst->isAtomic()) {
-            cpu->consumeSyncVisibleStoreReplay(lsqID);
+        // Split stores have no main packet. Check each fragment so an
+        // early L1 notification is neither lost nor repeated at completion.
+        for (auto *pkt : request->_packets) {
+            if (!pkt->localWriteSnoopSent()) {
+                lsq->notifyOtherThreadsStoreVisible(lsqID, pkt->getAddr());
+            }
         }
-        lsq->notifyOtherThreadsStoreVisible(lsqID,
-            request->mainReq()->getPaddr(),
-            request->mainReq()->getByteEnable());
     }
 
     if (!system->params().golden_mem_at_write && !from_sbuffer &&
@@ -3167,11 +3028,9 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
             memset(tmp_data, 0, sizeof(tmp_data));
             assert(request->req()->getAtomicOpFunctor());
 
-            // The AMO response returns the old memory value. Capture it on the
-            // instruction so commit/difftest can use a per-inst golden copy
-            // under SMT, but derive the new memory image from the DUT-observed
-            // old value captured in goldenData.
-            memcpy(tmp_data, store_inst->getGolden(), request->_size);
+            // Apply the operation to the old value saved from its response.
+            memcpy(tmp_data, store_inst->getAmoOldGoldenValuePtr(),
+                   request->_size);
 
             (*(request->req()->getAtomicOpFunctor()))(tmp_data);
 
@@ -3296,6 +3155,14 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
             }
             bank_conflict = true;
             ret = false;
+        }
+        // A hit can update the cache synchronously inside sendTimingReq().
+        // Publish the LSQ owner before entering the cache, including AMO/SC.
+        data_pkt->setLSQPtr(lsq);
+        if (isLoad && !bank_conflict && system->multiContextDifftest() &&
+            !system->params().golden_mem_at_write) {
+            // Response-accounted memory systems have no read serializer hook.
+            cpu->goldenMemManager()->recordScalarRead(data_pkt);
         }
         if (!bank_conflict && !dcachePort->sendTimingReq(data_pkt)) {
             ret = false;
@@ -3789,15 +3656,11 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     }
 
     // A retry can revisit read() with an LSQRequest that already made cache
-    // progress.  Only clear forwarding/snapshot state for a fresh access, so
+    // progress. Only clear forwarding state for a fresh access, so
     // partially sent split requests keep their in-flight packet accounting.
     if (request && !request->hasCachePacketProgress()) {
         request->SBforwardPackets.clear();
         request->SQforwardPackets.clear();
-        request->_sbufferBypass = false;
-        if (!load_inst->hasPendingCacheReq()) {
-            request->_goldenSnapshotCaptured = false;
-        }
     }
 
     // Check older, not-yet-written stores for store-to-load forwarding.
@@ -4114,21 +3977,14 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         // generic cache-blocked replay path owns the retry.
         DPRINTF(LoadPipeline, "Load [sn:%llu] sendPacketToCache\n", load_inst->seqNum);
         // if cannot forward from bus, do real cache access
-        bool should_capture_golden =
-            system->multiContextDifftest() &&
-            cpu->goldenMemManager() &&
-            cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr()) &&
-            !request->_goldenSnapshotCaptured;
+        // A new attempt supersedes old data-bus observations. Retain the
+        // earlier fragments of a partially issued split access.
+        if (load_inst->loadSnapshot && !request->hasCachePacketProgress()) {
+            load_inst->loadSnapshot.reset();
+        }
         request->buildPackets();
         // if the cache is not blocked, do cache access
         request->sendPacketToCache();
-        if (request->isSent() && should_capture_golden) {
-            uint8_t *issue_golden =
-                (uint8_t *)cpu->goldenMemManager()->guestToHost(
-                    request->mainReq()->getPaddr());
-            load_inst->setGolden(issue_golden);
-            request->_goldenSnapshotCaptured = true;
-        }
         if (!request->isSent() && !load_inst->needBankConflictReplay() && !load_inst->needMshrArbFailReplay() &&
             !load_inst->needMshrAliasFailReplay() &&!load_inst->needHitInWriteBufferReplay()) {
             const bool partialSplitRequest =

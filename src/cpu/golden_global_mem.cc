@@ -25,6 +25,7 @@
 
 #include "base/logging.hh"
 #include "mem/mem_util.hh"
+#include "mem/packet.hh"
 
 namespace gem5
 {
@@ -75,6 +76,42 @@ GoldenGloablMem::updateGoldenMem(uint64_t addr, void *data, const std::vector<bo
             pmemWriteCheck(addr + i, dataArray[i], 1);
         }
     }
+}
+
+void
+GoldenGloablMem::recordScalarRead(Packet *pkt)
+{
+    auto &req = *pkt->req;
+    if (!req.hasXsMetadata() || !req.hasVaddr() || !req.hasPaddr() ||
+        req.isInstFetch() ||
+        pkt->fromCache() || pkt->getSize() > sizeof(Request::ScalarReadBytes) ||
+        pkt->getSize() != req.getSize() ||
+        pkt->getAddr() != req.getPaddr() ||
+        !inPmem(pkt->getAddr(), pkt->getSize())) {
+        return;
+    }
+    if (!req.scalarReadGolden) {
+        req.scalarReadGolden = std::make_unique<Request::ScalarReadBytes>();
+    }
+    readGoldenMem(pkt->getAddr(), req.scalarReadGolden->data(), pkt->getSize());
+}
+
+AmoDifftestData *
+GoldenGloablMem::beginAtomic(Packet *pkt)
+{
+    if (pkt->fromCache() || !pkt->req->hasXsMetadata()) {
+        return nullptr;
+    }
+    const auto &inst = pkt->req->getXsMetadata().instXsMetadata;
+    if (!inst) {
+        return nullptr;
+    }
+    panic_if(pkt->getSize() > sizeof(AmoDifftestData::Bytes),
+             "Oversized difftest AMO at %#x", pkt->getAddr());
+    inst->difftestAmo = std::make_unique<AmoDifftestData>();
+    readGoldenMem(pkt->getAddr(), inst->difftestAmo->before.data(),
+                  pkt->getSize());
+    return inst->difftestAmo.get();
 }
 
 void

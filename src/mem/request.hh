@@ -49,6 +49,7 @@
 #define __MEM_REQUEST_HH__
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <functional>
@@ -610,6 +611,11 @@ class Request
         _byteEnable = std::vector<bool>(size, true);
     }
 
+    // One scalar load fragment. Cache-line fills share the Request but
+    // must not replace the observation of the CPU-sized read.
+    using ScalarReadBytes = std::array<uint8_t, 16>; // Up to two fused RV64 loads.
+    std::unique_ptr<ScalarReadBytes> scalarReadGolden;
+
     Request(const Request& other)
         : _paddr(other._paddr), _size(other._size),
           _byteEnable(other._byteEnable),
@@ -701,6 +707,7 @@ class Request
     setVirt(Addr vaddr, unsigned size, Flags flags, RequestorID id, Addr pc,
             AtomicOpFunctorPtr amo_op=nullptr)
     {
+        scalarReadGolden.reset();
         _vaddr = vaddr;
         _size = size;
         _requestorId = id;
