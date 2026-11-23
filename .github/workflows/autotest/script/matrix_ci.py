@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the fixed Matrix correctness suite from a shared bin directory."""
+"""Check Matrix operator results and record cycles for each shape."""
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
@@ -15,21 +15,16 @@ import time
 REPO = Path(__file__).resolve().parents[4]
 IMAGE_DIR = Path("/nfs/share/gem5_ci/matrix")
 REFERENCE = Path("/nfs/share/gem5_ci/ref/matrix/riscv64-nemu-interpreter-so")
-IMAGES = {
-    "gemm_i8_f32": "gemm_i8_f32-m512-k256-n512-test.bin",
-    "flash_attention": "flash_attention-q256-kv512-d128-test.bin",
-    "softmax": "softmax-fp32-n65536-test.bin",
-    "quantize_f32_i8": "quantize_f32_i8-n65536-block32-test.bin",
-    "rms_norm": "rms_norm-fp32-n4096-test.bin",
-    "gemv": "gemv-fp32-1024x1024-test.bin",
-    "matmul": "matmul-fp32-m128-k256-n128-test.bin",
-    "add": "add-fp32-n65536-test.bin",
-    "mul": "mul-fp32-n65536-test.bin",
-    "div": "div-fp32-n65536-test.bin",
-    "silu": "silu-fp32-n65536-test.bin",
-    "transpose": "transpose-fp32-4x128x256-test.bin",
-    "embedding": "embedding-fp32-v1024-d256-i128-test.bin",
-}
+REQUIRED_CAPABILITIES = 3  # xsai-blas RVV and AME
+# Start the longest images first on the two CI workers.
+CASES = (
+    "gemm_i8_f32-m512-k256-n512",
+    "flash_attention-q256-kv512-d128",
+    "gemm_i8_f32-m256-k256-n256",
+    "flash_attention-q32-kv256-d64",
+    "gemm_i8_f32-m128-k64-n128",
+    "flash_attention-q8-kv130-d70",
+)
 
 
 def save(path, value):
@@ -37,18 +32,15 @@ def save(path, value):
 
 
 def select_images(directory, cases=None):
-    selected = set(cases) if cases else set(IMAGES)
-    unknown = selected - IMAGES.keys()
+    selected = set(cases or CASES)
+    operators = {name.partition("-")[0] for name in CASES}
+    unknown = selected.difference(CASES, operators)
     if unknown:
         raise ValueError("Unknown CI cases: " + ", ".join(sorted(unknown)))
     images = [
-        {
-            "id": name,
-            "image": directory / filename,
-            "matrix_required": name in ("gemm_i8_f32", "flash_attention"),
-        }
-        for name, filename in IMAGES.items()
-        if name in selected
+        {"id": name, "image": directory / f"{name}-ci.bin"}
+        for name in CASES
+        if name in selected or name.partition("-")[0] in selected
     ]
     missing = [
         str(item["image"]) for item in images if not item["image"].is_file()
@@ -58,7 +50,7 @@ def select_images(directory, cases=None):
     return images
 
 
-def evaluate(log, item, returncode, timed_out):
+def evaluate(log, case, returncode, timed_out):
     failures = []
     if timed_out:
         failures.append("wall-clock timeout")
@@ -69,9 +61,8 @@ def evaluate(log, item, returncode, timed_out):
         failures.append("numerical correctness verdict missing or failed")
     if not re.search(r"--- 1 passed, 0 failed, 0 skipped ---", log):
         failures.append("single-case completion summary missing")
-    guest_completed = bool(
-        re.search(r"Exiting @ tick \d+ because m5_exit instruction encountered", log)
-    )
+    exit_reason = r"Exiting @ tick \d+ because m5_exit instruction encountered"
+    guest_completed = bool(re.search(exit_reason, log))
     if not guest_completed:
         failures.append("normal guest completion missing")
     if "Simulated exit code not 0" in log:
@@ -79,17 +70,34 @@ def evaluate(log, item, returncode, timed_out):
     diff_initialized = "NEMU register state: 1544 bytes" in log
     if not diff_initialized:
         failures.append("compatible NEMU difftest initialization missing")
-    if re.search(r"(?:panic:|fatal:|Difftest failed|BAD TRAP)", log):
+    diff_failed = bool(
+        re.search(r"Difftest failed|Matrix difftest ended with", log)
+    )
+    if diff_failed or re.search(r"panic:|fatal:|BAD TRAP", log):
         failures.append("simulator/difftest failure reported")
     dispatch = re.findall(
-        r"\[matrix-ci-dispatch\] reference=0 capabilities=(\d+) .*?status=(\d+)",
+        r"\[matrix-ci-dispatch\] reference=0 "
+        r"capabilities=(\d+) .*?status=(\d+)",
         log,
     )
-    required = 3 if item["matrix_required"] else 1
     if not dispatch or any(
-        int(c) & required != required or int(s) != 0 for c, s in dispatch
+        int(caps) & REQUIRED_CAPABILITIES != REQUIRED_CAPABILITIES
+        or int(status) != 0
+        for caps, status in dispatch
     ):
         failures.append("required implementation was not selected")
+    samples = re.findall(
+        r"^\[matrix-ci-perf\] case=(\S+) cycles=(\d+) instret=(\d+)\r?$",
+        log,
+        re.MULTILINE,
+    )
+    performance = None
+    if len(samples) == 1 and log.count("[matrix-ci-perf]") == 1:
+        name, cycles, instret = samples[0]
+        if name == case and int(cycles) > 0 and int(instret) > 0:
+            performance = {"cycles": int(cycles), "instret": int(instret)}
+    if performance is None:
+        failures.append(f"missing or invalid performance sample for {case}")
     summaries = []
     for line in log.splitlines():
         if "MatrixDiff committed=" in line:
@@ -98,8 +106,14 @@ def evaluate(log, item, returncode, timed_out):
             )
     pending = ("pendingChecks", "pendingOwners", "pendingMemory")
     required_counts = {
-        "committed", "submitted", "completed", "checked", "memorySent",
-        "memoryCompleted", "mma", *pending,
+        "committed",
+        "submitted",
+        "completed",
+        "checked",
+        "memorySent",
+        "memoryCompleted",
+        "mma",
+        *pending,
     }
     checks_complete = bool(summaries) and all(
         required_counts <= s.keys()
@@ -112,14 +126,11 @@ def evaluate(log, item, returncode, timed_out):
         failures.append("Matrix completion/checking summary missing")
     elif not checks_complete:
         failures.append("Matrix work or memory checks incomplete")
-    if item["matrix_required"] and not any(
-        s.get("mma", 0) > 0 for s in summaries
-    ):
+    if not any(0 < s.get("mma", 0) <= s.get("checked", 0) for s in summaries):
         failures.append("no Matrix MMA was checked")
+    if not any(s.get("memorySent", 0) > 0 for s in summaries):
+        failures.append("no Matrix memory request was sent")
     divergence = re.search(r".*NEMU PC:.*GEM5 PC:.*inst:.*", log)
-    diff_failed = bool(
-        re.search(r"Difftest failed|Matrix difftest ended with", log)
-    )
     difftest = (
         "failed"
         if diff_failed
@@ -138,6 +149,7 @@ def evaluate(log, item, returncode, timed_out):
         "first_divergence": divergence[0] if divergence else None,
         "numerical_verdict": numerical[0] if numerical else None,
         "matrix_difftest": summaries,
+        "performance": performance,
     }
 
 
@@ -164,6 +176,7 @@ def run(args):
             str(case_dir / "m5out"),
             str(REPO / "configs/example/kmhv2_matrix.py"),
             "--matrix",
+            "--classic-l2",
             "--enable-difftest",
             "--raw-cpt",
             "--maxinsts=0",
@@ -171,8 +184,6 @@ def run(args):
             f"--generic-rv-cpt={item['image']}",
             f"--difftest-ref-so={reference}",
         ]
-        if item["matrix_required"]:
-            invocation.append("--classic-l2")
         save(case_dir / "command.json", invocation)
         started = time.monotonic()
         timed_out = False
@@ -193,7 +204,7 @@ def run(args):
                 returncode = process.returncode
         log = (case_dir / "sim.log").read_text(errors="replace")
         result = dict(
-            evaluate(log, item, returncode, timed_out),
+            evaluate(log, item["id"], returncode, timed_out),
             id=item["id"],
             image=str(item["image"]),
             returncode=returncode,
@@ -201,11 +212,16 @@ def run(args):
             log=str(case_dir / "sim.log"),
         )
         save(case_dir / "result.json", result)
-        print(
-            f"{item['id']}: {'PASS' if result['passed'] else 'FAIL'} "
-            f"({result['wall_seconds']:.1f}s) {result['failures']}",
-            flush=True,
-        )
+        if result["passed"]:
+            perf = result["performance"]
+            mma = sum(s["mma"] for s in result["matrix_difftest"])
+            print(
+                f"{item['id']}: PASS cycles={perf['cycles']} "
+                f"instret={perf['instret']} mma={mma}",
+                flush=True,
+            )
+        else:
+            print(f"{item['id']}: FAIL {result['failures']}", flush=True)
         return result
 
     with ThreadPoolExecutor(max_workers=args.jobs) as executor:
@@ -226,7 +242,11 @@ def main():
     runner.add_argument("--image-dir", type=Path, default=IMAGE_DIR)
     runner.add_argument("--jobs", type=int, default=2)
     runner.add_argument("--timeout", type=int, default=1800)
-    runner.add_argument("--case", action="append")
+    runner.add_argument(
+        "--case",
+        action="append",
+        help="operator or full shape ID (repeatable)",
+    )
     args = parser.parse_args()
     if args.jobs < 1 or args.timeout < 1:
         parser.error("--jobs and --timeout must be positive")

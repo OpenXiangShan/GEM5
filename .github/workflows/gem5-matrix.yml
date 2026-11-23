@@ -1,4 +1,4 @@
-name: gem5 Matrix Correctness Test (Tier 2 - Post-Merge)
+name: gem5 Matrix Operator Test (Tier 2 - Post-Merge)
 
 on:
   push:
@@ -27,12 +27,12 @@ jobs:
           set -euo pipefail
           test -d "$MATRIX_CI_IMAGE_DIR"
           test -r "$MATRIX_CI_REFERENCE_SO"
-      - name: Test correctness result checks
+      - name: Test the Matrix result parser
         run: python3 -m unittest discover -s .github/workflows/autotest/script -p test_matrix_ci.py
       - uses: ./.github/actions/build-dramsim
       - name: Build Matrix-enabled GEM5
         run: CC=gcc CXX=g++ scons build/RISCV_MATRIX/gem5.opt --default=RISCV --enable-matrix --linker=gold -j64
-      - name: Run 13 fixed-shape correctness cases with difftest
+      - name: Check GEMM and FlashAttention results and collect operator cycles
         shell: bash
         run: |
           set -euo pipefail
