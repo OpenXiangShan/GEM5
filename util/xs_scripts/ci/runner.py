@@ -21,6 +21,14 @@ from . import hosts
 DEFAULT_DISTRIBUTED_SERVERS = (
     "node003-node008,node020-node029,node034,node036-node042"
 )
+CHECKPOINT_ENV = (
+    "GCBV_REF_SO",
+    "GCBV_MULTI_CORE_REF_SO",
+    "GCBH_REF_SO",
+    "GCB_MULTI_CORE_RESTORER",
+    "GCBV_RESTORER",
+    "GCBH_RESTORER",
+)
 
 
 @dataclass(frozen=True)
@@ -51,6 +59,8 @@ class RunnerConfig:
         )
 
     def validate(self):
+        if self.probe_interval < 0:
+            raise ValueError("probe interval must be nonnegative")
         if self.jobs_per_server < 0 or self.require_idle_cpus < -1:
             raise ValueError("invalid distributed capacity")
         if (
@@ -85,12 +95,7 @@ def simulation_env():
     names = (
         "GEM5_HOME",
         "GEM5_BUILD_TYPE",
-        "GCBV_REF_SO",
-        "GCBV_MULTI_CORE_REF_SO",
-        "GCB_MULTI_CORE_RESTORER",
-        "GCBV_RESTORER",
-        "GCBH_REF_SO",
-        "GCBH_RESTORER",
+        *CHECKPOINT_ENV,
         "AM_HOME",
         "NEMU_HOME",
         "LD_LIBRARY_PATH",
@@ -108,6 +113,7 @@ def start(job, node, config, attempt):
             (directory / marker).unlink(missing_ok=True)
     command = job.command
     local = node == "local"
+    unset = [key for key in CHECKPOINT_ENV if key not in job.env]
     host = socket.gethostname() if local else node
     with (directory / "log.txt").open("a") as log:
         print(
@@ -128,12 +134,17 @@ def start(job, node, config, attempt):
             )
         if local:
             (directory / "running").touch()
+            env = {**os.environ, **job.env}
+            for key in unset:
+                env.pop(key, None)
         else:
             # Only the launcher commits terminal markers. The worker publishes
             # running before exec so a lost connection cannot replay a started job.
-            env = [f"{k}={v}" for k, v in job.env.items()]
             worker = shlex.join(
-                ["env", *env, "python3", "-c", hosts.SSH_JOB_GUARD, *command]
+                ["env"]
+                + [arg for key in unset for arg in ("-u", key)]
+                + [f"{k}={v}" for k, v in job.env.items()]
+                + ["python3", "-c", hosts.SSH_JOB_GUARD, *command]
             )
             script = f"cd {shlex.quote(str(directory))} && (set -C; : >running) && exec {worker} >>log.txt 2>&1"
             command = hosts.build_ssh_command(
@@ -154,7 +165,7 @@ def start(job, node, config, attempt):
         return subprocess.Popen(
             command,
             cwd=directory,
-            env={**os.environ, **job.env} if local else None,
+            env=env if local else None,
             stdin=subprocess.DEVNULL if local else subprocess.PIPE,
             stdout=log,
             stderr=subprocess.STDOUT,
@@ -168,9 +179,10 @@ def stop(proc):
     if proc.poll() is None:
         try:
             os.killpg(proc.pid, signal.SIGTERM)
-            proc.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            os.killpg(proc.pid, signal.SIGKILL)
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                os.killpg(proc.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
     proc.wait()
@@ -214,11 +226,15 @@ def run_jobs(
     active = {}
     results = []
     failed = assigned = 0
-    capacities = {}
+    capacities = {"local": slots} if nodes == ["local"] else {}
+    retry_after = {}
+    stats_wait = {}
     next_probe = next_launch = 0
     total = len(queue)
 
     def probe(node):
+        if now < retry_after.get(node, 0):
+            return 0
         if node == "local" or minimum == 0:
             return slots
         idle, detail = hosts.probe_idle_cpus(
@@ -232,22 +248,14 @@ def run_jobs(
         )
         if idle is None:
             log(f"{node}: {detail}")
-        return min(limit, idle) if idle is not None and idle >= minimum else 0
+            return 0
+        capacity = occupied[node] + idle
+        return min(limit, capacity) if capacity >= minimum else 0
 
     def finish(job, node, started, code, status, detail=""):
         nonlocal failed
         job.work_dir.mkdir(parents=True, exist_ok=True)
         (job.work_dir / "running").unlink(missing_ok=True)
-        if (
-            status == "completed"
-            and validate_output
-            and not validate_output(job)
-        ):
-            status, code, detail = (
-                "failed",
-                1,
-                "Missing or incomplete simulation statistics",
-            )
         passed = status == "completed"
         (job.work_dir / ("abort" if passed else "completed")).unlink(
             missing_ok=True
@@ -285,48 +293,71 @@ def run_jobs(
                 code = proc.poll()
                 if code is None:
                     continue
+                detail = ""
+                if code == 0 and validate_output:
+                    if proc in stats_wait and now < stats_wait[proc][0]:
+                        continue
+                    if not validate_output(job):
+                        # A remote writer may exit before its NFS stats are visible.
+                        expires = stats_wait.get(proc, (now, now + 10))[1]
+                        if node != "local" and now < expires:
+                            stats_wait[proc] = (now + 0.5, expires)
+                            continue
+                        code = 1
+                        detail = "Missing or incomplete simulation statistics"
+                    stats_wait.pop(proc, None)
                 del active[proc]
                 if proc.stdin:
                     proc.stdin.close()
                 if (
                     node != "local"
                     and code == 255
-                    and attempt < config.retries
                     and not (job.work_dir / "running").exists()
                 ):
-                    queue.append(
-                        (
-                            job,
-                            attempt + 1,
-                            now + config.retry_delay * (attempt + 1),
+                    capacities[node] = 0
+                    retry_after[node] = now + config.retry_delay
+                    if not config.probe_interval:
+                        next_probe = retry_after[node]
+                    if attempt < config.retries:
+                        queue.append(
+                            (
+                                job,
+                                attempt + 1,
+                                now + config.retry_delay * (attempt + 1),
+                            )
                         )
-                    )
-                    log(
-                        f"Retry {job.workload_name} after SSH launch failure on {node}"
-                    )
-                    continue
+                        log(
+                            f"Retry {job.workload_name} after SSH launch failure on {node}"
+                        )
+                        continue
                 finish(
                     job,
                     node,
                     started,
                     code,
                     "completed" if code == 0 else "failed",
+                    detail,
                 )
-            if queue and now >= next_probe:
+            occupied = Counter(item[1] for item in active.values())
+            free_slot = any(cap > occupied[n] for n, cap in capacities.items())
+            if (
+                queue
+                and len(active) < parallelism
+                and not free_slot
+                and now >= next_probe
+                and nodes != ["local"]
+                and (config.probe_interval or not any(capacities.values()))
+            ):
                 with ThreadPoolExecutor(max_workers=len(nodes)) as pool:
                     capacities = dict(zip(nodes, pool.map(probe, nodes)))
-                if (
-                    not assigned
-                    and not any(capacities.values())
-                    and fallback_to_local
-                ):
+                if not any(capacities.values()) and fallback_to_local:
                     nodes = ["local"]
                     slots = parallelism = fallback_to_local
                     capacities = {"local": slots}
                     log("No eligible remote host; running locally")
-                next_probe = time.monotonic() + config.probe_interval
-                continue
-            occupied = Counter(item[1] for item in active.values())
+                next_probe = time.monotonic() + (
+                    config.probe_interval or config.retry_delay
+                )
             for _ in range(len(queue)):
                 node = max(nodes, key=lambda n: capacities[n] - occupied[n])
                 if (

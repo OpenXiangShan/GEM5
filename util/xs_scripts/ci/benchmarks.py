@@ -32,7 +32,6 @@ class CheckpointMode:
     variant: str
     ref_env: str
     extra_args: tuple[str, ...]
-    restorer: str = ""
 
 
 CHECKPOINT_MODES = {
@@ -46,14 +45,10 @@ CHECKPOINT_MODES = {
         "h",
         "GCBH_REF_SO",
         (
-            "--enable-h-gcpt",
-            "--restore-rvh-cpt",
-            "--gcpt-restorer={restorer}",
             "--difftest-ref-so={ref}",
             "--maxinsts=40000000",
             "--dramsim3-ini={repo}/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
         ),
-        "/nfs/home/share/gem5_ci/tools/gcpt.bin",
     ),
 }
 
@@ -67,8 +62,7 @@ GCC12 = (
     / "jiaxiaoyu/simpoint_checkpoint_zstd_format/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc"
 )
 SMT = (
-    SHARE
-    / "xuyan/spec06_gcc12.2.0_rv64gcb_base_intFppOff_for_qemu_dual_core_"
+    SHARE / "xuyan/spec06_gcc12.2.0_rv64gcb_base_intFppOff_for_qemu_dual_core_"
     "disable_timer_QEMU_archgroup_2024-11-11-15-46/checkpoint-0-0-0"
 )
 PAIRED = SPEC06 / "gcc12-spec06-paired.json"

@@ -1,10 +1,10 @@
 # 性能 CI 与 Solver 的切片与执行
 
-Perf 和 Solver 从 `util/xs_scripts/ci/benchmarks.py` 读取同一份 profile。SPEC 的权重 JSON 决定选点，每个 `workload/point` 在切片根目录下对应一个镜像。Trace 从六列清单读取文件和测量区间。所有作业经过筛选后交给 `runner.py`，可以在本机执行，也可以用 SSH 分配到共享池。空服务器列表表示本机，`default` 选择共同的节点池。Solver 继续控制 trial、overlay、超时和目标函数。
+Perf 和 Solver 从 `util/xs_scripts/ci/benchmarks.py` 读取同一份 profile。SPEC 的权重 JSON 决定选点，每个 `workload/point` 在切片根目录下对应一个镜像。Trace 从六列清单读取文件和测量区间。所有作业经过筛选后交给 `runner.py`，可以在本机执行，也可以用 SSH 分配到共享池。空服务器列表表示本机，`default` 选择共同的节点池。Perf 在启动时探测节点，池内节点全部失联时再重探。Solver 在排队任务缺少空槽时按间隔重新探测，继续控制 trial、overlay、超时和目标函数。
 
 GCC12 weekly 单线程及 SMT 1c 共用切片目录 `spec06_cpts/gcc12-spec06-paired.json`，包含 1,167 个成对镜像。它保留旧权重和指令数，移除了 SMT 缺镜像的两个 HMMER 第 0 点。手动 SMT INT 1c 使用同目录下的 682 点 INT JSON。SMT 0.3c 继续使用 `spec06_0.3c.json` 的 148 点。
 
-新增 SPEC profile 时，在 catalog 登记根目录、权重文件和 SPEC 版本。需要出现在手动菜单时再增加对应 choice。Perf 使用被测 checkout 的配置、PGO 构建和 REF lock，调用 workflow 版本的 CI 工具。一次运行写入独立归档，`checkpoints.lst` 记录实际选点，`cluster.json` 保存计分权重。每个切片的 `log.txt` 记录命令和主机，终态由 launcher 统一写入。允许部分失败的 weekly 任务仍会在摘要里列出未完成点。
+新增 SPEC profile 时，在 catalog 登记根目录、权重文件和 SPEC 版本。需要出现在手动菜单时再增加对应 choice。Perf 使用被测 checkout 的配置、PGO 构建和 REF lock，调用 workflow 版本的 CI 工具。一次运行写入独立归档，`checkpoints.lst` 记录实际选点，`cluster.json` 保存计分权重。每个切片的 `log.txt` 记录命令和主机，终态由 launcher 统一写入。摘要最多列出 20 个未完成点，完整清单写入归档的 `metadata.txt`。
 
 ## 手动运行新的切片 profile
 

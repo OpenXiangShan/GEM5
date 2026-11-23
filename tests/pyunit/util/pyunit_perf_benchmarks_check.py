@@ -1,9 +1,13 @@
 import json
+from argparse import Namespace
+from dataclasses import replace
+import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import time
 
 
@@ -11,8 +15,8 @@ sys.path.insert(
     0, str(Path(__file__).resolve().parents[3] / "util/xs_scripts")
 )
 from ci import benchmarks as MODULE
-from ci.run_perf_ci import archive, complete_stats, prune
-from ci.runner import Job, RunnerConfig, run_jobs, start
+from ci.run_perf_ci import archive, complete_stats, prepare_command, prune
+from ci.runner import CHECKPOINT_ENV, Job, RunnerConfig, run_jobs, start, stop
 
 
 class CustomBenchmarkTest(unittest.TestCase):
@@ -212,6 +216,191 @@ class RunnerTest(unittest.TestCase):
         )
         self.assertEqual(result.status, "cancelled")
         self.assertFalse((self.root / "a/log.txt").exists())
+
+    def test_fixed_pool_probes_once(self):
+        cfg = RunnerConfig(
+            servers="node037",
+            jobs_per_server=1,
+            probe_interval=0,
+            launch_interval=0,
+        )
+        with patch(
+            "ci.hosts.probe_idle_cpus", return_value=(1, "")
+        ) as probe, patch(
+            "ci.runner.start", return_value=Mock(stdin=None, poll=lambda: 0)
+        ):
+            results = run_jobs(
+                [self.job(n, "pass") for n in ("a", "b")], cfg, 2
+            )
+        self.assertEqual([r.status for r in results], ["completed"] * 2)
+        probe.assert_called_once()
+
+    def test_refresh_counts_occupied_slots(self):
+        cfg = RunnerConfig(
+            servers="node037",
+            jobs_per_server=2,
+            probe_interval=0.01,
+            launch_interval=0,
+        )
+        jobs = [self.job(n, "pass") for n in ("a", "b", "c")]
+        started = []
+
+        def launch(job, *args):
+            started.append(job.workload_name)
+
+            def poll():
+                if job is jobs[0] and probe.call_count < 2:
+                    return None
+                if job is jobs[1] and len(started) < 3:
+                    return None
+                return 0
+
+            return Mock(stdin=None, poll=poll)
+
+        # The first two jobs fill the host. A reprobe sees zero idle cores.
+        with patch("ci.hosts.probe_idle_cpus") as probe, patch(
+            "ci.runner.start", side_effect=launch
+        ), patch("ci.runner.stop"):
+            probe.side_effect = lambda *args: (2 if not started else 0, "")
+            results = run_jobs(jobs, cfg, 3, deadline=time.monotonic() + 3)
+        self.assertEqual([r.status for r in results], ["completed"] * 3)
+
+    def test_ssh_launch_failure_moves_pending_jobs_to_healthy_host(self):
+        cfg = RunnerConfig(
+            servers="node036,node037",
+            require_idle_cpus=0,
+            jobs_per_server=1,
+            probe_interval=0,
+            retry_delay=0.1,
+            launch_interval=0,
+        )
+
+        def launch(job, node, *args):
+            return Mock(
+                stdin=None, poll=lambda: 255 if node == "node036" else 0
+            )
+
+        with patch("ci.runner.start", side_effect=launch) as started:
+            results = run_jobs(
+                [self.job(n, "pass") for n in ("a", "b")], cfg, 1
+            )
+        self.assertEqual(
+            [c.args[1] for c in started.call_args_list],
+            ["node036", "node037", "node037"],
+        )
+        self.assertTrue(all(r.status == "completed" for r in results))
+
+    def test_last_failed_host_can_recover(self):
+        cfg = RunnerConfig(
+            servers="node037",
+            jobs_per_server=1,
+            probe_interval=0,
+            retry_delay=0.1,
+            launch_interval=0,
+        )
+        with patch(
+            "ci.hosts.probe_idle_cpus", return_value=(1, "")
+        ) as probe, patch(
+            "ci.runner.start",
+            side_effect=[
+                Mock(stdin=None, poll=lambda: 255),
+                Mock(stdin=None, poll=lambda: 0),
+            ],
+        ):
+            (result,) = run_jobs(
+                [self.job("a", "pass")], cfg, 1, deadline=time.monotonic() + 3
+            )
+        self.assertEqual(probe.call_count, 2)
+        self.assertEqual(result.status, "completed")
+
+    def test_remote_stats_can_appear_after_exit(self):
+        cfg = RunnerConfig(
+            servers="node037", jobs_per_server=1, require_idle_cpus=0
+        )
+        visible = Mock(side_effect=[False, True])
+        with patch(
+            "ci.runner.start", return_value=Mock(stdin=None, poll=lambda: 0)
+        ):
+            (result,) = run_jobs(
+                [self.job("a", "pass")], cfg, 1, validate_output=visible
+            )
+        self.assertEqual(result.status, "completed")
+        self.assertEqual(visible.call_count, 2)
+
+    def test_stop_if_process_exits_during_escalation(self):
+        proc = Mock(stdin=None, pid=123, poll=lambda: None)
+        proc.wait.side_effect = [subprocess.TimeoutExpired("gem5", 3), 0]
+        with patch(
+            "ci.runner.os.killpg", side_effect=[None, ProcessLookupError]
+        ):
+            stop(proc)
+        self.assertEqual(proc.wait.call_count, 2)
+
+    def test_perf_builds_only_active_checkpoint_environment(self):
+        config = self.root / "kmhv3.py"
+        config.touch()
+        ref = self.root / "ref.so"
+        ref.touch()
+        args = Namespace(
+            config_path=config.name,
+            build_type="fast",
+            gcbv_ref_so="",
+            extra_args="",
+        )
+        with patch.dict(
+            os.environ, dict.fromkeys(CHECKPOINT_ENV, "stale")
+        ), patch(
+            "ci.run_perf_ci.subprocess.check_output", return_value=str(ref)
+        ):
+            for profile, extra, active in [
+                ("gcc12-spec06-1.0c", "", {"GCBV_REF_SO": str(ref)}),
+                ("h-spec06-0.5c", "", {"GCBH_REF_SO": str(ref)}),
+                (
+                    "gcc12-spec06-1.0c",
+                    "--smt",
+                    {
+                        "GCBV_MULTI_CORE_REF_SO": str(ref),
+                        "GCB_MULTI_CORE_RESTORER": "",
+                    },
+                ),
+                (
+                    "gcc12-spec06-1.0c",
+                    "--num-cpus=2",
+                    {
+                        "GCBV_MULTI_CORE_REF_SO": str(ref),
+                        "GCB_MULTI_CORE_RESTORER": "",
+                    },
+                ),
+            ]:
+                args.extra_args = extra
+                _, _, env, _ = prepare_command(
+                    self.root, MODULE.resolve_benchmark(profile), args
+                )
+                self.assertEqual(
+                    {k: env[k] for k in CHECKPOINT_ENV if k in env}, active
+                )
+
+    def test_local_and_ssh_commands_clear_inactive_environment(self):
+        with patch.dict(
+            os.environ, dict.fromkeys(CHECKPOINT_ENV, "stale")
+        ), patch(
+            "ci.hosts.build_ssh_command",
+            side_effect=lambda target, cmd, *args: cmd,
+        ):
+            for node in ("local", "node037"):
+                job = replace(
+                    self.job(
+                        node,
+                        "import os; assert 'GCBV_REF_SO' not in os.environ; "
+                        "assert os.environ['GCBH_REF_SO'] == 'selected'",
+                    ),
+                    env={"GCBH_REF_SO": "selected"},
+                )
+                proc = start(job, node, RunnerConfig(), 0)
+                try:
+                    self.assertEqual(proc.wait(timeout=10), 0)
+                finally:
+                    stop(proc)
 
 
 class ArchiveTest(unittest.TestCase):

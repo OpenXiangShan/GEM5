@@ -18,6 +18,7 @@ import tempfile
 
 from .benchmarks import CHECKPOINT_MODES, resolve_benchmark, workloads
 from .runner import (
+    CHECKPOINT_ENV,
     Job,
     RunnerConfig,
     cancellation_signals,
@@ -56,21 +57,19 @@ def prepare_command(repo, profile, args):
     ]
     env = simulation_env()
     env.update(GEM5_HOME=str(repo), GEM5_BUILD_TYPE=args.build_type)
-    for key in (
-        "GCBV_REF_SO",
-        "GCBV_MULTI_CORE_REF_SO",
-        "GCB_MULTI_CORE_RESTORER",
-        "GCBH_REF_SO",
-        "GCBH_RESTORER",
-    ):
-        env[key] = ""
+    for key in CHECKPOINT_ENV:
+        env.pop(key, None)
     binary = repo / "build/RISCV" / f"gem5.{args.build_type}"
     cmd = [str(binary)]
     if profile.trace_format:
         cmd.extend(["--outdir=.", "--stats-file=stats.txt"])
         return cmd + [str(config)], extra, env, None
     mode_name = profile.mode
-    if config.name == "smt_idealkmhv3.py":
+    topology = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    topology.add_argument("--smt", action="store_true")
+    topology.add_argument("-n", "--num-cpus", type=int, default=1)
+    shape, _ = topology.parse_known_args(extra)
+    if config.name == "smt_idealkmhv3.py" or shape.smt or shape.num_cpus > 1:
         if mode_name == "h":
             raise ValueError(
                 "H checkpoints require a single-thread configuration"
@@ -94,15 +93,11 @@ def prepare_command(repo, profile, args):
     if not ref.is_absolute() or not ref.is_file():
         raise ValueError(f"unreadable reference: {ref}")
     env[mode.ref_env] = str(ref)
-    if mode.restorer:
-        if not Path(mode.restorer).is_file():
-            raise FileNotFoundError(mode.restorer)
-        env["GCBH_RESTORER"] = mode.restorer
+    if mode_name == "smt":
+        # Multi-context configs require the key even for an embedded restorer.
+        env["GCB_MULTI_CORE_RESTORER"] = ""
     if not custom_ref:
-        extra.extend(
-            arg.format(restorer=mode.restorer, ref=ref, repo=repo)
-            for arg in mode.extra_args
-        )
+        extra.extend(arg.format(ref=ref, repo=repo) for arg in mode.extra_args)
     return cmd + [str(config)], extra, env, ref
 
 
@@ -211,6 +206,7 @@ def run(args):
     config = RunnerConfig(
         servers=args.distributed_servers,
         jobs_per_server=args.distributed_jobs_per_server,
+        probe_interval=0,
     )
     if args.distributed_jobs_per_server < 1 or args.local_jobs < 1:
         raise ValueError("parallelism must be positive")
@@ -232,6 +228,7 @@ def run(args):
         profile.archive_subdir or profile.benchmark_type
     )
     with archive(parent, f"{stamp}_{short}_{name}", number) as directory:
+        print(f"Archiving performance data to {directory}", flush=True)
         listing = directory / "checkpoints.lst"
         listing.write_text("".join(w.row + "\n" for w in selected))
         if profile.weights:
@@ -274,9 +271,7 @@ def run(args):
         if ref:
             metadata["ref_so"] = str(ref)
             if profile.mode == "h":
-                metadata.update(
-                    profile_ref_so=ref, profile_restorer=env["GCBH_RESTORER"]
-                )
+                metadata["profile_ref_so"] = ref
             manifest = ref.parent / "manifest.json"
             if manifest.is_file():
                 shutil.copyfile(manifest, directory / "ref-manifest.json")
@@ -342,19 +337,24 @@ def run(args):
         coverage = (
             f"Completed {len(passed)}/{len(selected)} selected workloads."
         )
-        if missing:
-            coverage += " Incomplete: " + ", ".join(missing)
         print(coverage, flush=True)
+        full_coverage = coverage
+        if missing:
+            full_coverage += " Incomplete: " + ", ".join(missing)
+            coverage += f" Incomplete ({len(missing)}): " + ", ".join(
+                missing[:20]
+            )
+            if len(missing) > 20:
+                coverage += ", …"
         append(summary, coverage)
-        append(directory / "metadata.txt", f"coverage: {coverage}")
+        append(directory / "metadata.txt", f"coverage: {full_coverage}")
         if event.is_set():
             return 130
         status = score(profile, directory, repo, passed)
-        tail = (
-            (directory / "score.txt")
-            .read_text(errors="replace")
-            .splitlines()[-42:]
+        lines = (
+            (directory / "score.txt").read_text(errors="replace").splitlines()
         )
+        tail = lines if trace_format else lines[-42:]
         append(
             summary,
             "### Performance result\n```\n" + "\n".join(tail) + "\n```",

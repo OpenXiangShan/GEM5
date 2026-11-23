@@ -46,7 +46,7 @@ solver 自己只维护 SMT 等能力限制。详细职责边界见
   - [configs/example/kmhv2.py](../../../configs/example/kmhv2.py)
 - 当前 solver runtime / CI 手动入口暂不支持 SMT config，也不接受 `gcc12-spec06-smt-*`
   benchmark_type。
-- `h-spec06-*` 依赖性能 workflow 的 H-profile reference、restorer 和额外参数，当前也只由
+- `h-spec06-*` 使用 H 专用 reference 和切片内置的 restorer，当前也只由
   性能 workflow 支持，不由 solver runtime 接受。
 - 这里的“支持多个 config”只表示 runtime 接口已经接好；某个具体 solver spec
   能否在所选 config 上工作，仍取决于它的 `target` 路径能否在该 config 上成功绑定。
