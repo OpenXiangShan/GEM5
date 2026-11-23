@@ -1,39 +1,42 @@
-Matrix correctness CI
-=====================
+Matrix operator regression
+==========================
 
-Shared inputs use the same layout as the Vector test images:
+Build DRAMsim3 as described in docs/quick_start.md. From the GEM5 root, build
+GEM5 and run one case.
+
+    scons build/RISCV_MATRIX/gem5.opt --default=RISCV --enable-matrix --linker=gold -j64
+    python3 .github/workflows/autotest/script/matrix_ci.py run \
+        --case rms_norm --output matrix-ci-results
+
+Omit --case to run all 13 operators. The summary is in
+matrix-ci-results/validation-results.json. For a failure, open
+matrix-ci-results/runs/<case>/sim.log. The exact command is in command.json
+in the same directory.
+
+Inputs
+------
 
     /nfs/share/gem5_ci/matrix/*.bin
     /nfs/share/gem5_ci/ref/matrix/riscv64-nemu-interpreter-so
 
-The runner lists the 13 fixed-shape image filenames in matrix_ci.py. It reads
-those bin files directly. No manifest, checksum file, source checkout or image
-build step is needed to run CI. Missing cases are errors.
+script/matrix_ci.py lists the image filenames. Use --image-dir, --reference
+and --gem5 to select other inputs or a different binary. The Matrix REF uses
+a 1544-byte register layout.
 
-The images run one optimized xsai-blas operator with no warmup. Each contains
-expected outputs from the host generic implementation. GEMM and Flash
-Attention require AME+RVV; the other operators require RVV. The NEMU reference
-must support the 1544-byte Matrix ABI and Matrix difftest interfaces.
+What CI checks
+--------------
 
-The workflow runs on pushes to xs-dev and supports manual dispatch. It builds
-GEM5, runs the acceptance tests and executes the suite with two parallel
-simulations. Each case has a 30-minute timeout. Results and logs are uploaded
-even when a case fails. The workflow builds build/RISCV_MATRIX/gem5.opt with
---enable-matrix and uses the configs/example/kmhv2_matrix.py entry point.
+gem5-matrix.yml runs on pushes to xs-dev and on manual dispatch. It runs two
+cases at a time, with a 30-minute timeout per case, and uploads the logs and
+summary as matrix-correctness-results.
 
-Run locally from the GEM5 repository root:
+Each image must run its optimized xsai-blas operator, match the embedded
+reference output and exit normally with difftest enabled. All Matrix commands,
+result checks and memory requests must finish. GEMM and FlashAttention must
+each report a checked MMA. These two use --classic-l2. The other 11 cases
+use the default aligned L2. The large FlashAttention case aborts in
+CoherentXBar::recvTimingSnoopResp with the default L2.
 
-    scons build/RISCV_MATRIX/gem5.opt --default=RISCV --enable-matrix --linker=gold -j64
-    python3 .github/workflows/autotest/script/matrix_ci.py run \
-      --output /absolute/path/to/results
+Run the result-parser tests with
 
-The build needs DRAMsim3, which the workflow prepares through
-.github/actions/build-dramsim. Use --gem5 to select another Matrix-enabled
-binary. Use --image-dir and --reference to override shared paths. Use
---case rms_norm to run one operator. Without --case, all 13 are required.
-
-The runner enables --matrix and difftest, disables the instruction limit and
-statistics warmup, and checks numerical correctness, normal guest completion
-and completion of all Matrix checks and memory work. GEMM and Flash Attention
-must each have a checked Matrix MMA. A timeout, incomplete run, fallback
-implementation or numerical failure fails CI.
+    python3 -m unittest discover -s .github/workflows/autotest/script -p test_matrix_ci.py
