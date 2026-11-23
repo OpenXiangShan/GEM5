@@ -99,7 +99,7 @@ jobs:
       extra_args: ${{ inputs.extra_args }}
       gcbv_ref_so: ${{ inputs.gcbv_ref_so }}
       distributed_servers: ${{ inputs.distributed_servers }}
-      distributed_jobs_per_server: ${{ inputs.distributed_jobs_per_server }}
+      distributed_jobs_per_server: ${{ fromJSON(github.event.inputs.distributed_jobs_per_server || '32') }}
       pr_sha: ${{ inputs.branch || github.sha }}
       check_result: true
       timeout_minutes: 720
