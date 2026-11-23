@@ -135,6 +135,10 @@ class IssueQue : public SimObject
     int numLoadPipe = 0;
     int numStorePipe = 0;
     int loadPipeId = -1;
+    bool hasIndependentStdPort() const
+    {
+        return numLoadPipe == 0 && readyQclassify[StoreDataOp];
+    }
 
     enum class VectorSplitKind
     {

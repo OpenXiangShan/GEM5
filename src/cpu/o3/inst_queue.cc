@@ -666,9 +666,7 @@ InstructionQueue::scheduleReadyInsts()
         mem_inst->issueQue->retryMem(mem_inst);
     }
 
-    while ((mem_inst = getSTLFFailInstToExecute())) {
-        mem_inst->issueQue->retryMem(mem_inst);
-    }
+    retrySTLFFailLoads();
 
     // See if any cache blocked instructions are able to be executed
     while ((mem_inst = getBlockedMemInstToExecute())) {
@@ -1078,26 +1076,21 @@ InstructionQueue::getCacheMissInstToExecute()
     return nullptr;
 }
 
-DynInstPtr
-InstructionQueue::getSTLFFailInstToExecute()
+void
+InstructionQueue::retrySTLFFailLoads(bool early_only)
 {
-    for (auto it = stlfFailLdInsts.begin(); it != stlfFailLdInsts.end();
-         ++it) {
-        if ((*it).resolved || (*it).earlyReady || (*it).inst->isSquashed()) {
-            DPRINTF(IQ, "STDFwdFailed load inst [sn:%llu] PC %s is ready to "
-                    "execute\n", (*it).inst->seqNum, (*it).inst->pcState());
-            DynInstPtr mem_inst = std::move((*it).inst);
-            stlfFailLdInsts.erase(it);
-            return mem_inst;
-        }
-        if (!(*it).resolved) {
-            DPRINTF(
-                IQ,
-                "inst [sn:%llu] PC %s is waiting for store [sn:%llu] to be ready\n",
-                (*it).inst->seqNum, (*it).inst->pcState(), (*it).storeSeqNum);
+    for (auto it = stlfFailLdInsts.begin(); it != stlfFailLdInsts.end();) {
+        // A hint can unblock a new entry, which becomes selectable next cycle.
+        const bool early = it->earlyReady && it->enqueueTick < curTick();
+        if (early || (!early_only && (it->resolved || it->inst->isSquashed()))) {
+            DPRINTF(IQ, "C_FF retry load [sn:%llu] for store [sn:%llu]\n",
+                    it->inst->seqNum, it->storeSeqNum);
+            it->inst->issueQue->retryMem(it->inst);
+            it = stlfFailLdInsts.erase(it);
+        } else {
+            ++it;
         }
     }
-    return nullptr;
 }
 
 void
@@ -1119,8 +1112,25 @@ InstructionQueue::notifyStoreIssue(const DynInstPtr &inst, Cycles delay)
         return;
     }
     const bool data = inst->isSplitStoreData();
+    if (data && delay == Cycles(0)) {
+        // Execute has already registered this cycle's forwarding failures.
+        wakeStoreDataWaiters(inst);
+        return;
+    }
     const Tick visible = cpu->clockEdge(delay);
     storeReplayWakeups.push_back({inst, visible, data});
+}
+
+void
+InstructionQueue::wakeStoreDataWaiters(const DynInstPtr &store)
+{
+    for (auto &wait : stlfFailLdInsts) {
+        if (!wait.inst->isSquashed() &&
+            wait.inst->threadNumber == store->threadNumber &&
+            wait.storeSeqNum == store->seqNum) {
+            wait.earlyReady = true;
+        }
+    }
 }
 
 void
@@ -1138,14 +1148,7 @@ InstructionQueue::processStoreReplayWakeups()
         }
         const auto &store = it->store;
         if (it->data) {
-            for (auto &wait : stlfFailLdInsts) {
-                if (!wait.earlyReady && !wait.resolved &&
-                    !wait.inst->isSquashed() &&
-                    wait.inst->threadNumber == store->threadNumber &&
-                    wait.storeSeqNum == store->seqNum) {
-                    wait.earlyReady = true;
-                }
-            }
+            wakeStoreDataWaiters(store);
         } else if (storeQueueWriteReady(store)) {
             // RTL ignores address hints outside the physical SQ window.
             for (auto &wait : mdpAddrReplayLdInsts[store->threadNumber]) {

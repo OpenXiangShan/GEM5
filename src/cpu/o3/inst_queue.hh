@@ -204,10 +204,13 @@ class InstructionQueue
      */
     DynInstPtr getCacheMissInstToExecute();
 
-    /** Gets a load instruction that was referred due to data unready store
-     *  if it is now ready to execute.  NULL if none available.
-     */
-    DynInstPtr getSTLFFailInstToExecute();
+    /** Offer ready C_FF loads to their replay ports, in wait-list order. */
+    void retrySTLFFailLoads(bool early_only = false);
+    bool hasResidentSTLFFailLoads() const
+    {
+        return !stlfFailLdInsts.empty() &&
+               stlfFailLdInsts.front().enqueueTick < curTick();
+    }
 
     /** Notify instruction queue that a previous block has been resolved */
     void resolveSTLFFailInst(const InstSeqNum &store_seq_num);
@@ -324,6 +327,7 @@ class InstructionQueue
     void doSquash(ThreadID tid);
 
     void resolveMdpAddrReplayStoreAddr(const DynInstPtr &store_inst);
+    void wakeStoreDataWaiters(const DynInstPtr &store);
     void processStoreReplayWakeups();
 
     /////////////////////////
@@ -391,6 +395,7 @@ class InstructionQueue
     {
       DynInstPtr inst; // load inst
       InstSeqNum storeSeqNum; // the store waiting for
+      Tick enqueueTick = curTick();
       bool resolved; // store data ready or not
       bool earlyReady = false;
 
