@@ -65,6 +65,7 @@ def setKmhV3IdealParams(args, system):
             cpu.scheduler = KMHV3SpMTScheduler()
         else:
             cpu.scheduler = KMHV3Scheduler()
+        cpu.scheduler.enableFpDivSqrtPipelining = True
 
         # rob
         cpu.commitWidth = 8
