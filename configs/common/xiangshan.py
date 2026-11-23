@@ -1067,9 +1067,11 @@ def xiangshan_system_init(*, smt=False):
         help="Disable direction TAGE sources in kmhv3 and force MGSC standalone SC prediction",
     )
     parser.add_argument(
-        "--enable-bpu-profiler",
-        action="store_true",
-        help="Collect detailed BPU CSV profiles and phase histories",
+        "--disable-bpu-profiler",
+        dest="enable_bpu_profiler",
+        action="store_false",
+        default=True,
+        help="Disable detailed BPU CSV profiles and phase histories",
     )
     parser.add_argument(
         "--enable-load-triple",
