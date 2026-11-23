@@ -71,6 +71,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       enableSPP(p.enable_spp),
       enableTemporal(p.enable_temporal),
       enableSstride(p.enable_sstride),
+      sstrideRequireFirstIssueTlbHit(p.sstride_require_first_issue_tlb_hit),
       enableBerti(p.enable_berti),
       enableBOP(p.enable_bop),
       enableOpt(p.enable_opt),
@@ -332,9 +333,18 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         }
     }
 
-    bool use_stride = !pfi.isStore() && (pfi.isCacheMiss() || pfi.isPfFirstHit()) && enableSstride;
-    if (use_stride){
-        DPRINTF(XSCompositePrefetcher, "Do Sstride traing/prefetching...\n");
+    const bool stride_hit = sstrideRequireFirstIssueTlbHit ?
+        pf_source == PrefetchSourceType::SStride : pfi.isPfFirstHit();
+    const bool use_stride = enableSstride && !pfi.isStore() &&
+        (pfi.isCacheMiss() || stride_hit);
+    if (use_stride && sstrideRequireFirstIssueTlbHit && !pfi.isFirstIssueScalarLoad()) {
+        ++stats.strideTrainFilteredIssue;
+        DPRINTF(XSCompositePrefetcher,
+                "SStride skip non-first-scalar issue: pc=%#x va=%#x miss=%d\n",
+                pc, vaddr, pfi.isCacheMiss());
+    } else if (use_stride) {
+        DPRINTF(XSCompositePrefetcher, "SStride train: pc=%#x va=%#x miss=%d\n",
+                pc, vaddr, pfi.isCacheMiss());
         int64_t learned_bop_offset = 0;
         stats.strideTrainCount++;
         Sstride->calculatePrefetch(pfi, addresses, late, pf_source, miss_repeat, enter_new_region, is_first_shot,
@@ -1075,6 +1085,8 @@ XSCompositePrefetcher::XSCompositeStats::XSCompositeStats(statistics::Group *par
       ADD_STAT(smsIncrRegionoverride, statistics::units::Count::get(), "sms increased region override prefetches"),
       ADD_STAT(smsDecrRegionoverride, statistics::units::Count::get(), "sms decreased region override prefetches"),
       ADD_STAT(strideTrainCount, statistics::units::Count::get(), "stride train count"),
+      ADD_STAT(strideTrainFilteredIssue, statistics::units::Count::get(),
+               "SStride miss/stride-hit events rejected for lack of a scalar first issue"),
       ADD_STAT(streamTrainCount, statistics::units::Count::get(), "stream train count"),
       ADD_STAT(totalTrainCount, statistics::units::Count::get(), "total train count"),
       ADD_STAT(smsPhtIssuedL1, statistics::units::Count::get(),

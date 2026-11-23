@@ -3248,7 +3248,11 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
     data_pkt->sendTick = curTick();
     PacketPtr pkt = data_pkt;
 
-    auto inst = dynamic_cast<LSQRequest *>(data_pkt->senderState)->instruction();
+    auto inst = request->instruction();
+    pkt->flags.set(Packet::FIRST_ISSUE_SCALAR_LOAD,
+        isLoad && !inst->isVector() && inst->getFault() == NoFault &&
+        !pkt->req->isUncacheable() && request->isTranslationComplete() &&
+        inst->getLoadPipeSource() == DynInst::LoadPipeSource::IssueQueue);
 
     DPRINTF(LSQUnit, "Attempting to send packet for inst [sn:%llu], addr: %#x\n",
             inst->seqNum, data_pkt->getAddr());

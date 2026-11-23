@@ -380,7 +380,9 @@ class Packet : public Printable
         DCACHE_MAINPIPE_SBUFFER_REQ = 0x00100000,
 
         // Record whether the fake-mainpipe StoreBuffer access hit in L1D.
-        DCACHE_MAINPIPE_SBUFFER_HIT = 0x00200000
+        DCACHE_MAINPIPE_SBUFFER_HIT = 0x00200000,
+
+        FIRST_ISSUE_SCALAR_LOAD = 0x00400000
     };
 
     Flags flags;

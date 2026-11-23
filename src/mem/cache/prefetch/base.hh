@@ -198,6 +198,8 @@ class Base : public ClockedObject
 
         bool storePFTrain{ false };
 
+        bool firstIssueScalarLoad{false};
+
         uint64_t *data_ptr;
 
       public:
@@ -387,6 +389,8 @@ class Base : public ClockedObject
         void setPfFirstHit(bool hit) { pfFirstHit = hit; }
 
         void setStorePftrain(bool s) { storePFTrain = s; }
+
+        bool isFirstIssueScalarLoad() const { return firstIssueScalarLoad; }
 
         /**
          * Constructs a PrefetchInfo using a PacketPtr.
@@ -707,6 +711,7 @@ class Base : public ClockedObject
         bool everPrefetched;
         bool pfFirstHit;
         bool pfHit;
+        bool firstIssueScalarLoad;
         bool squashMark;                // Request after squash
 
         // TrainFilter fields for ROB-order training
@@ -730,6 +735,7 @@ class Base : public ClockedObject
               everPrefetched(_everPrefetched),
               pfFirstHit(_pfFirstHit),
               pfHit(_pfHit),
+              firstIssueScalarLoad(pkt->flags.isSet(Packet::FIRST_ISSUE_SCALAR_LOAD)),
               squashMark(_squashMark),
               seqNum(_seqNum),
               blockAddr(_blockAddr),
@@ -762,6 +768,7 @@ class Base : public ClockedObject
               everPrefetched(other.everPrefetched),
               pfFirstHit(other.pfFirstHit),
               pfHit(other.pfHit),
+              firstIssueScalarLoad(other.firstIssueScalarLoad),
               squashMark(other.squashMark),
               seqNum(other.seqNum),
               blockAddr(other.blockAddr),
@@ -787,6 +794,7 @@ class Base : public ClockedObject
                 everPrefetched = other.everPrefetched;
                 pfFirstHit = other.pfFirstHit;
                 pfHit = other.pfHit;
+                firstIssueScalarLoad = other.firstIssueScalarLoad;
                 squashMark = other.squashMark;
                 seqNum = other.seqNum;
                 blockAddr = other.blockAddr;

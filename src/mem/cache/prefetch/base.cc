@@ -69,7 +69,8 @@ Base::PrefetchInfo::PrefetchInfo(PacketPtr pkt, Addr addr, bool miss)
     validContextId(pkt->req->hasContextId()),
     validPC(pkt->req->hasPC()),
     secure(pkt->isSecure()), size(pkt->req->getSize()), write(pkt->isWrite()),
-    paddress(pkt->req->getPaddr()), cacheMiss(miss)
+    paddress(pkt->req->getPaddr()), cacheMiss(miss),
+    firstIssueScalarLoad(pkt->flags.isSet(Packet::FIRST_ISSUE_SCALAR_LOAD))
 {
     unsigned int req_size = pkt->req->getSize();
     if (!write && miss) {
@@ -96,7 +97,8 @@ Base::PrefetchInfo::PrefetchInfo(
     validContextId(pkt->req->hasContextId()),
     validPC(pkt->req->hasPC()),
     secure(pkt->isSecure()), size(pkt->req->getSize()), write(pkt->isWrite()),
-    paddress(pkt->req->getPaddr()), cacheMiss(miss), xsMetadata(xsMeta)
+    paddress(pkt->req->getPaddr()), cacheMiss(miss), xsMetadata(xsMeta),
+    firstIssueScalarLoad(pkt->flags.isSet(Packet::FIRST_ISSUE_SCALAR_LOAD))
 {
     unsigned int req_size = pkt->req->getSize();
     if (!write && miss) {
@@ -719,6 +721,7 @@ Base::processTraining()
             trainingBuffer.size() - 1);
 
     PacketPtr temp_pkt = new Packet(req.req, req.cmd);
+    temp_pkt->flags.set(Packet::FIRST_ISSUE_SCALAR_LOAD, req.firstIssueScalarLoad);
 
     bool isWrite = temp_pkt->isWrite();
     bool willAccessData = (isWrite || !req.miss) && !temp_pkt->isStorePFTrain();
