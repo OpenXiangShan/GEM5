@@ -138,7 +138,10 @@ class CSROp : public RiscvStaticInst
             }
         }
 
-        if (csr == CSR_SATP) {
+        // CSRRW/CSRRWI always write; set/clear forms require a nonzero
+        // encoded rs1/zimm field to write.
+        if (csr == CSR_SATP &&
+            (bits(_extMachInst, 13, 12) == 1 || uimm != 0)) {
             flags[IsSquashAfter] = true;
         }
     }
