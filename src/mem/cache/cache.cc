@@ -83,6 +83,16 @@ Cache::satisfyRequest(PacketPtr pkt, CacheBlk *blk,
     BaseCache::satisfyRequest(pkt, blk);
 
     if (pkt->isRead()) {
+        auto *mshr = pkt->fromCache() ? pkt->findNextSenderState<MSHR>() :
+                                      nullptr;
+        // A snoop may precede a buffered hit's ownership decision. If the
+        // receiver has already observed it, retain ownership here and send a
+        // shared response, just as for a response deferred by our own miss.
+        if (mshr && mshr->inService &&
+            (mshr->hasPostInvalidate() || mshr->hasPostDowngrade())) {
+            pending_downgrade = true;
+        }
+
         // determine if this read is from a (coherent) cache or not
         if (pkt->fromCache()) {
             assert(pkt->getSize() == blkSize);
@@ -153,6 +163,18 @@ Cache::satisfyRequest(PacketPtr pkt, CacheBlk *blk,
             } else {
                 // otherwise only respond with a shared copy
                 pkt->setHasSharers();
+            }
+        }
+
+        // A pipelined cache can accept the request before it determines that
+        // the response transfers dirty ownership. Publish that handoff before
+        // a younger snoop reaches the receiving cache's outstanding miss.
+        // Otherwise it can defer an invalidation without promising a response
+        // and discard the dirty fill while the next requester receives a clean
+        // copy. Synchronous hits record these flags in markInService() instead.
+        if (pkt->fromCache() && pkt->cacheResponding() && !pkt->hasSharers()) {
+            if (mshr && mshr->inService) {
+                mshr->markPendingModified();
             }
         }
     }

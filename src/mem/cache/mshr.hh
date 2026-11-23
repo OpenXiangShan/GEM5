@@ -346,6 +346,12 @@ class MSHR : public QueueEntry, public Printable
         assert(inService); return pendingModified;
     }
 
+    /** Record ownership handed off after the downstream request was sent. */
+    void markPendingModified() {
+        assert(inService);
+        pendingModified = true;
+    }
+
     bool hasPostInvalidate() const {
         assert(inService); return postInvalidate;
     }

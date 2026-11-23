@@ -67,6 +67,15 @@ gem5_verify_config(
     valid_isas=(constants.null_tag,),
 )
 
+for pipelined in (0, 1):
+    gem5_verify_config(
+        name='cache_dirty_handoff_' + ('pipeline' if pipelined else 'sync'),
+        verifiers=(),
+        config=joinpath(getcwd(), 'cache-handoff-run.py'),
+        config_args=['--pipelined=' + str(pipelined)],
+        valid_isas=(constants.riscv_tag,),
+    )
+
 null_tests = [
     ('garnet_synth_traffic', None, ['--sim-cycles', '5000000']),
     ('memcheck', None, ['--maxtick', '2000000000', '--prefetchers']),
