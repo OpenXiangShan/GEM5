@@ -20,9 +20,11 @@ _TEACHER_PHASES = [
 
 _STUDENT_SLOTS = [
     [2, 2],
+    [2, 4],
+    [4, 2],
     [4, 4],
-    [4, 8],
-    [8, 4],
+    [2, 6],
+    [6, 2],
 ]
 
 
@@ -44,7 +46,7 @@ class CompoundBOPKeyNsga2ScoreSearch(SolveSpec):
 
     teacher_tests_per_access = InferTunable(
         target=f"{_COMPOUND_BOP}.teacher_tests_per_access",
-        domain=Choice([1, 2, 4]),
+        domain=Choice([1, 2]),
     )
 
     # Keep phase thresholds coupled so every candidate is meaningful.
@@ -66,6 +68,18 @@ class CompoundBOPKeyNsga2ScoreSearch(SolveSpec):
     student_extra_marginal_threshold_pct = InferTunable(
         target=(
             f"{_COMPOUND_BOP}.student_extra_marginal_threshold_pct"
+        ),
+        domain=Choice([0, 1, 2, 3, 5]),
+    )
+
+    student_conf_alpha = InferTunable(
+        target=f"{_COMPOUND_BOP}.student_conf_alpha",
+        domain=Choice([0.0, 0.25, 0.5, 0.75]),
+    )
+
+    student_primary_coverage_threshold_pct = InferTunable(
+        target=(
+            f"{_COMPOUND_BOP}.student_primary_coverage_threshold_pct"
         ),
         domain=Choice([0, 1, 2, 3, 5]),
     )
