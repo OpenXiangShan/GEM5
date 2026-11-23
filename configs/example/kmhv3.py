@@ -58,6 +58,10 @@ def setKmhV3Params(args, system):
         # fetch (idealfetch not care)
         cpu.mmu.itb.enable_l1_direct_compression = args.enable_l1_direct_compression
         cpu.mmu.dtb.enable_l1_direct_compression = args.enable_l1_direct_compression
+        if cpu.mmu.stb != NULL:
+            cpu.mmu.stb.enable_l1_direct_compression = args.enable_l1_direct_compression
+        if cpu.mmu.ptb != NULL:
+            cpu.mmu.ptb.enable_l1_direct_compression = args.enable_l1_direct_compression
         setPtwLevelLimitParams(args, cpu.mmu.itb)
         setPtwLevelLimitParams(args, cpu.mmu.dtb)
         cpu.fetchWidth = 32
