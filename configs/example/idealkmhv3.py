@@ -35,22 +35,24 @@ def make_value_predictor(vp_type):
     if vp_type == "estride":
         # Table size, stride/tag width and the SafeStride constants are the
         # paper-sized values, which are also the source defaults in
-        # src/cpu/valuepred/ValuePredictor.py. The confidence bar is not: this
-        # override keeps the project-specific SPEC setting
-        # (0.35 * 2^13 = 2867 consistent strides) instead of the paper-sized
-        # source default (0.25 * 2^5 = 8). Every parameter that can differ
-        # from the source defaults is passed explicitly because SimObject
-        # params are embedded into gem5.opt at build time, so an edited source
-        # default only takes effect after a rebuild. EStride sits second in the
-        # fixed-priority arbiter's table (after IdealConstantLVP), so the
-        # default --vp-arb=fixed-priority already applies its predictions.
+        # src/cpu/valuepred/ValuePredictor.py. The confidence bar is the SPEC
+        # setting pinned by three 0.3c search passes (see
+        # configs/solver_specs/estride_ga_score_search.py): a predict gate of
+        # 0.25 * 2^10 = 256 consistent strides, down from the earlier
+        # 0.35 * 2^13 = 2867 and up from the paper-sized 0.25 * 2^5 = 8. Every
+        # parameter that can differ from the source defaults is passed
+        # explicitly because SimObject params are embedded into gem5.opt at
+        # build time, so an edited source default only takes effect after a
+        # rebuild. EStride sits second in the fixed-priority arbiter's table
+        # (after IdealConstantLVP), so the default --vp-arb=fixed-priority
+        # already applies its predictions.
         return EStride(
             ways=3,
             strideWidth=20,
             tagWidth=16,
             logESTBEntrys=7,
-            logMaxConfidence=13,
-            thresholdPercent=0.35,
+            logMaxConfidence=10,
+            thresholdPercent=0.25,
             safeStridePenalty=1024,
             safeStrideBonusLoad=8,
             safeStrideBonusOther=4,
