@@ -27,7 +27,7 @@ image=/absolute/path/to/matrix-workload.bin
 Matrix 版本的 GEM5 使用 1544 字节寄存器布局的 NEMU REF，即使运行时关闭 Matrix 后端也是如此。共享 CI 服务器可直接使用下面的 REF，其他环境可换成本地编译的共享库。
 
 ```bash
-export GCBV_REF_SO=/nfs/share/gem5_ci/ref/matrix/riscv64-nemu-interpreter-so
+export GCBV_REF_SO=/nfs/share/gem5_ci/ref/matrix/af9d4ce51fc2/riscv64-nemu-interpreter-so
 ./build/RISCV_MATRIX/gem5.opt -r -d m5out/matrix-difftest \
     configs/example/kmhv2_matrix.py \
     --raw-cpt --generic-rv-cpt="$image" --warmup-insts-no-switch=0 \
@@ -35,17 +35,30 @@ export GCBV_REF_SO=/nfs/share/gem5_ci/ref/matrix/riscv64-nemu-interpreter-so
     --enable-difftest --difftest-ref-so="$GCBV_REF_SO"
 ```
 
-在 `m5out/matrix-difftest/simout` 查看程序自检结果和 `m5_exit instruction encountered`。`MatrixDiff` 汇总中，`submitted`、`completed`、`checked` 应相等，`memorySent` 应等于 `memoryCompleted`，`pendingChecks`、`pendingOwners`、`pendingMemory` 应为零。
+在 `m5out/matrix-difftest/simout` 确认启动时打印了 `NEMU register state: 1544 bytes`，并查看程序自检结果和 `m5_exit instruction encountered`。`MatrixDiff` 汇总中，`submitted`、`completed`、`checked` 应相等，`memorySent` 应等于 `memoryCompleted`，`pendingChecks`、`pendingOwners`、`pendingMemory` 应为零。
 
 ### 自行编译 Matrix REF
 
-使用 GEM5 [版本清单](../../util/nemu_ref/lock.json)记录的 [NEMU 源码](https://github.com/OpenXiangShan/NEMU)及依赖版本。在 NEMU 根目录执行，配置工具需要 `flex` 和 `bison`。
+共享 REF 使用 NEMU `af9d4ce51fc2`。从 GEM5 根目录执行下面的命令，在新目录 `../NEMU-matrix` 中按版本清单检出 NEMU 和四个依赖。构建需要 `jq`、`flex` 和 `bison`。[NEMU 提交](https://github.com/OpenXiangShan/NEMU/commit/af9d4ce51fc2087156b09f26d64a8e1cfb83332f) · [版本清单](../../util/nemu_ref/lock.json)
 
 ```bash
+set -e
+lock="$PWD/util/nemu_ref/lock.json"
+git clone --no-checkout "$(jq -r .repository "$lock")" ../NEMU-matrix
+cd ../NEMU-matrix
+git checkout --detach "$(jq -r .commit "$lock")"
 export NEMU_HOME="$PWD"
-cfg=configs/riscv64-gem5-matrix-ref_defconfig
-cp configs/riscv64-gem5-ref_defconfig "$cfg"
-cat >> "$cfg" <<'EOF'
+
+clone_dep() {
+    git clone --no-checkout "https://github.com/$2.git" "$1"
+    git -C "$1" checkout --detach "$(jq -r --arg dep "$1" '.dependencies[$dep]' "$lock")"
+}
+clone_dep resource/softfloat/repo ucb-bar/berkeley-softfloat-3
+clone_dep resource/gcpt_restore OpenXiangShan/LibCheckpointAlpha
+clone_dep resource/LibCheckpoint OpenXiangShan/LibCheckpoint
+clone_dep resource/nanopb nanopb/nanopb
+
+cat > matrix.config <<'EOF'
 CONFIG_RV_AME=y
 CONFIG_RV_AME_TLEN=65536
 CONFIG_RV_AME_TRLEN=512
@@ -54,7 +67,9 @@ CONFIG_RV_AME_MSYNC_32=y
 CONFIG_DIFFTEST_AMU_CTRL=y
 CONFIG_TVAL_EX_II=y
 EOF
+cat "configs/$(jq -r .base_defconfig "$lock")" matrix.config > configs/riscv64-gem5-matrix-ref_defconfig
 make riscv64-gem5-matrix-ref_defconfig
+diff -u <(sort matrix.config) <(grep -Fxf matrix.config .config | sort)
 make -j32
 export GCBV_REF_SO="$NEMU_HOME/build/riscv64-nemu-interpreter-so"
 ```
