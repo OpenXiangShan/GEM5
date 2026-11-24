@@ -1,1 +1,66 @@
-* @jueshiwenli @happy-lx @jensen-yan
+# Repository-wide owner, including files without a subsystem rule.
+* @jueshiwenli
+
+# The last matching rule wins; keep the repository-wide owner on every rule.
+# Owner order does not grant priority or require approval from every owner.
+
+# Backend: decode, rename, issue, execute, commit, and shared O3 structures.
+/src/cpu/o3/ @jueshiwenli @kaia7596
+/src/cpu/func_unit.* @jueshiwenli @kaia7596
+/src/cpu/FuncUnit.py @jueshiwenli @kaia7596
+/src/arch/riscv/decoder.* @jueshiwenli @kaia7596
+/src/arch/riscv/RiscvDecoder.py @jueshiwenli @kaia7596
+/configs/common/FUScheduler.py @jueshiwenli @kaia7596
+/docs/design-docs/backend/ @jueshiwenli @kaia7596
+/docs/Gem5_Docs/midcore/XS-GEM5_backend.md @jueshiwenli @kaia7596
+
+# Frontend: instruction fetch and branch prediction.
+/src/cpu/pred/ @jueshiwenli @jensen-yan @Yakkhini
+/src/cpu/o3/fetch.* @jueshiwenli @jensen-yan @Yakkhini
+/src/cpu/o3/bpu_update.* @jueshiwenli @jensen-yan @Yakkhini
+/src/cpu/o3/trace/TraceFetch.* @jueshiwenli @jensen-yan @Yakkhini
+/docs/design-docs/frontend/ @jueshiwenli @jensen-yan @Yakkhini
+/docs/Gem5_Docs/frontend/ @jueshiwenli @jensen-yan @Yakkhini
+# The hybrid ROB document lives under frontend but describes the backend.
+/docs/design-docs/frontend/Hybrid_ROB* @jueshiwenli @kaia7596
+
+# Memory: caches, prefetchers, interconnects, and memory controllers.
+/src/mem/ @jueshiwenli @happy-lx
+/configs/common/Cache*.py @jueshiwenli @happy-lx
+/configs/common/MemConfig.py @jueshiwenli @happy-lx
+/configs/common/PrefetcherConfig.py @jueshiwenli @happy-lx
+/configs/common/LSQBankConflict.py @jueshiwenli @happy-lx
+/docs/prefetch/ @jueshiwenli @happy-lx
+/docs/Gem5_Docs/cache/ @jueshiwenli @happy-lx
+/docs/Gem5_Docs/lsu/ @jueshiwenli @happy-lx
+
+# Load/store queues, replay, and memory dependence prediction override O3.
+/src/cpu/o3/lsq* @jueshiwenli @happy-lx
+/src/cpu/o3/mem_dep_unit.* @jueshiwenli @happy-lx
+/src/cpu/o3/store_set.* @jueshiwenli @happy-lx
+/src/cpu/o3/phast.* @jueshiwenli @happy-lx
+/src/cpu/o3/mlp_predictor.* @jueshiwenli @happy-lx
+/src/cpu/o3/replay_events.hh @jueshiwenli @happy-lx
+/src/cpu/translation.hh @jueshiwenli @happy-lx @2306195993
+
+# Address translation and RISC-V memory protection.
+/src/arch/*/mmu.* @jueshiwenli @happy-lx @2306195993
+/src/arch/*/tlb* @jueshiwenli @happy-lx @2306195993
+/src/arch/*/pagetable* @jueshiwenli @happy-lx @2306195993
+/src/arch/*/*MMU.py @jueshiwenli @happy-lx @2306195993
+/src/arch/*/*TLB.py @jueshiwenli @happy-lx @2306195993
+/src/arch/riscv/pmp.* @jueshiwenli @happy-lx @2306195993
+/src/arch/riscv/PMP.py @jueshiwenli @happy-lx @2306195993
+/src/arch/riscv/pma_checker.* @jueshiwenli @happy-lx @2306195993
+/src/arch/riscv/PMAChecker.py @jueshiwenli @happy-lx @2306195993
+
+# RVV: vector instructions, registers, documentation, and dedicated test flows.
+/src/arch/riscv/isa/vector/ @jueshiwenli @XDu5
+/src/arch/riscv/insts/vector.* @jueshiwenli @XDu5
+/src/arch/riscv/regs/vector.hh @jueshiwenli @XDu5
+/src/arch/riscv/vecregs.hh @jueshiwenli @XDu5
+/docs/Gem5_Docs/RVV/ @jueshiwenli @XDu5
+/.github/workflows/gem5-vector.yml @jueshiwenli @XDu5
+/.github/workflows/on-demand-spec-rvv.yml @jueshiwenli @XDu5
+/.github/workflows/autotest/gem5-vec.cfg @jueshiwenli @XDu5
+/util/xs_scripts/kmh_6wide_vector.sh @jueshiwenli @XDu5
