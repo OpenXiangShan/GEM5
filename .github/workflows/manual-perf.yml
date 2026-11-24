@@ -34,6 +34,8 @@ on:
           - h-spec06-1.0c
           - gcc12-spec06-0.8c
           - gcc12-spec06-1.0c
+          - xscc-spec06-1.0c
+          - gcc16-spec17-smt-1.0c
           - spec17-1.0c
           - spec06-rvv-1.0c
           - spec06int-rvv-0.8c
@@ -91,7 +93,7 @@ jobs:
   perf_test:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
-      config_path: ${{ startsWith(inputs.benchmark_type, 'gcc12-spec06-smt-') && 'configs/example/smt_idealkmhv3.py' || format('configs/example/{0}', inputs.configuration) }}
+      config_path: ${{ contains(inputs.benchmark_type, '-smt-') && 'configs/example/smt_idealkmhv3.py' || format('configs/example/{0}', inputs.configuration) }}
       benchmark_type: ${{ inputs.benchmark_type }}
       checkpoint_path: ${{ inputs.checkpoint_path }}
       json_path: ${{ inputs.json_path }}

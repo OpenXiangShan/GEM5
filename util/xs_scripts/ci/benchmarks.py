@@ -26,10 +26,14 @@ class BenchmarkProfile:
         return f"gem5-score-ci{suffix}.sh"
 
 
-# REF variants are resolved against the simulator checkout's NEMU lock.
+SHARE = Path("/nfs/home/share")
+CI = SHARE / "gem5_ci"
+
+
+# Named variants use the simulator checkout's lock; XSCC pins a 32 GiB REF.
 @dataclass(frozen=True)
 class CheckpointMode:
-    variant: str
+    reference: str | Path
     ref_env: str
     extra_args: tuple[str, ...]
 
@@ -37,6 +41,13 @@ class CheckpointMode:
 CHECKPOINT_MODES = {
     "single": CheckpointMode(
         "normal-dedup", "GCBV_REF_SO", ("--enable-mem-dedup",)
+    ),
+    "single-32g": CheckpointMode(
+        CI
+        / "ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc-single32g"
+        / "normal-dedup-32g/riscv64-nemu-interpreter-so",
+        "GCBV_REF_SO",
+        ("--enable-mem-dedup", "--mem-size=32GB"),
     ),
     "smt": CheckpointMode(
         "multi", "GCBV_MULTI_CORE_REF_SO", ("--mem-size=16GB",)
@@ -53,10 +64,8 @@ CHECKPOINT_MODES = {
 }
 
 
-SHARE = Path("/nfs/home/share")
-CI = SHARE / "gem5_ci"
 PROFILES = SHARE / "checkpoints_profiles"
-SPEC06 = CI / "spec06_cpts"
+SPEC06_JSON = CI / "spec06_cpts"
 GCC12 = (
     SHARE
     / "jiaxiaoyu/simpoint_checkpoint_zstd_format/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc"
@@ -65,10 +74,12 @@ SMT = (
     SHARE / "xuyan/spec06_gcc12.2.0_rv64gcb_base_intFppOff_for_qemu_dual_core_"
     "disable_timer_QEMU_archgroup_2024-11-11-15-46/checkpoint-0-0-0"
 )
-PAIRED = SPEC06 / "gcc12-spec06-paired.json"
+PAIRED = SPEC06_JSON / "gcc12-spec06-paired.json"
 GCC16 = PROFILES / "spec06_gcc16_rva23_novec_260820"
 SPEC17 = PROFILES / "spec17_rate_gcc16_rva23_novec_260904"
-H = SPEC06 / "h_spec06"
+XSCC = PROFILES / "spec06_xscc_rv64gcb_261013"
+SPEC17_SMT = PROFILES / "spec17_gcc16_rva23_novec_2harts_260911"
+H = CI / "spec06_cpts/h_spec06"
 RVV = SHARE / "wujiabin/checkpoint-trigger/spec06_gcc15_rva23u64_lmul8_260723"
 RVV_INT = Path(
     "/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_"
@@ -83,20 +94,20 @@ CATALOG = {
     p.benchmark_type: p
     for p in (
         BenchmarkProfile(
-            "gcc12-spec06-0.8c", GCC12, SPEC06 / "spec06_0.8c_int.json"
+            "gcc12-spec06-0.8c", GCC12, SPEC06_JSON / "spec06_0.8c_int.json"
         ),
         BenchmarkProfile("gcc12-spec06-1.0c", GCC12, PAIRED),
         BenchmarkProfile(
             "gcc12-spec06-smt-0.3c",
             SMT,
-            SPEC06 / "spec06_0.3c.json",
+            SPEC06_JSON / "spec06_0.3c.json",
             mode="smt",
         ),
         BenchmarkProfile("gcc12-spec06-smt-1.0c", SMT, PAIRED, mode="smt"),
         BenchmarkProfile(
             "gcc12-spec06-smt-int-1.0c",
             SMT,
-            SPEC06 / "gcc12-spec06-int-paired.json",
+            SPEC06_JSON / "gcc12-spec06-int-paired.json",
             mode="smt",
         ),
         BenchmarkProfile(
@@ -108,6 +119,21 @@ CATALOG = {
             "spec06-rva23-novec-gcc16-1.0c",
             GCC16 / "checkpoint",
             GCC16 / "json/checkpoints_all.json",
+        ),
+        BenchmarkProfile(
+            "xscc-spec06-1.0c",
+            XSCC / "checkpoint-0-0-0",
+            XSCC / "checkpoint-0-0-0/cluster-0-0.json",
+            mode="single-32g",
+            archive_subdir=f"custom/{XSCC.name}",
+        ),
+        BenchmarkProfile(
+            "gcc16-spec17-smt-1.0c",
+            SPEC17_SMT / "checkpoint",
+            SPEC17_SMT / "json/checkpoints_all.json",
+            suite="17",
+            mode="smt",
+            archive_subdir=f"custom/{SPEC17_SMT.name}",
         ),
         BenchmarkProfile(
             "h-spec06-0.5c",

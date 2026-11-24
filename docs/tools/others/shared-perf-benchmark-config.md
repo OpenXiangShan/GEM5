@@ -4,6 +4,8 @@ Perf 和 Solver 从 `util/xs_scripts/ci/benchmarks.py` 读取同一份 profile�
 
 GCC12 weekly 单线程及 SMT 1c 共用切片目录 `spec06_cpts/gcc12-spec06-paired.json`，包含 1,167 个成对镜像。它保留旧权重和指令数，移除了 SMT 缺镜像的两个 HMMER 第 0 点。手动 SMT INT 1c 使用同目录下的 682 点 INT JSON。SMT 0.3c 继续使用 `spec06_0.3c.json` 的 148 点。
 
+Weekly 的 XSCC SPEC06 和双 hart GCC16 SPEC17 分别使用 `xscc-spec06-1.0c` 和 `gcc16-spec17-smt-1.0c`。XSCC 使用 32 GB 内存及对应的单核 dedup REF，双 hart 使用 SMT 模式的 16 GB 内存及 multi REF。两者沿用原先的 `custom/<profile目录名>` 归档，历史结果仍在同一目录。
+
 新增 SPEC profile 时，在 catalog 登记根目录、权重文件和 SPEC 版本。需要出现在手动菜单时再增加对应 choice。Perf 使用被测 checkout 的配置、PGO 构建和 REF lock，调用 workflow 版本的 CI 工具。一次运行写入独立归档，`checkpoints.lst` 记录实际选点，`cluster.json` 保存计分权重。每个切片的 `log.txt` 记录命令和主机，终态由 launcher 统一写入。摘要最多列出 20 个未完成点，完整清单写入归档的 `metadata.txt`。
 
 切片退出后立即释放执行槽位，`completed` 表示进程正常退出。算分机在整批结束后读取各点的 stats 尾标，对仍不可读的点共用 60 秒重试窗口。到期后按执行机批量补查，摘要和 `metadata.txt` 分别记录算分机与执行机的读取结果。严格模式下缺点会返回失败并跳过出分；显式允许部分结果的 SPEC 任务会标注可计分点数。

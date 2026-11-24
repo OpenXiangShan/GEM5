@@ -560,6 +560,36 @@ class RunnerTest(unittest.TestCase):
                     {k: env[k] for k in CHECKPOINT_ENV if k in env}, active
                 )
 
+    def test_weekly_profiles_keep_ref_and_memory_paired(self):
+        config = self.root / "kmhv3.py"
+        config.touch()
+        ref = self.root / "ref.so"
+        ref.touch()
+        args = Namespace(
+            config_path=config.name,
+            build_type="fast",
+            gcbv_ref_so="",
+            extra_args="",
+        )
+        xscc = MODULE.resolve_benchmark("xscc-spec06-1.0c")
+        mode = MODULE.CHECKPOINT_MODES[xscc.mode]
+        self.assertEqual(mode.reference.parent.name, "normal-dedup-32g")
+        with patch.dict(
+            MODULE.CHECKPOINT_MODES, {xscc.mode: replace(mode, reference=ref)}
+        ):
+            _, extra, env, _ = prepare_command(self.root, xscc, args)
+            self.assertEqual(env["GCBV_REF_SO"], str(ref))
+            self.assertEqual(extra, ["--enable-mem-dedup", "--mem-size=32GB"])
+        smt = MODULE.resolve_benchmark("gcc16-spec17-smt-1.0c")
+        with patch(
+            "ci.run_perf_ci.subprocess.check_output", return_value=str(ref)
+        ) as resolve:
+            _, extra, env, _ = prepare_command(self.root, smt, args)
+        self.assertEqual(resolve.call_args.args[0][-1], "multi")
+        self.assertEqual(env["GCBV_MULTI_CORE_REF_SO"], str(ref))
+        self.assertEqual(extra, ["--mem-size=16GB"])
+        self.assertEqual(smt.score_script, "gem5-score-ci-17.sh")
+
     def test_local_and_ssh_commands_clear_inactive_environment(self):
         with patch.dict(
             os.environ, dict.fromkeys(CHECKPOINT_ENV, "stale")

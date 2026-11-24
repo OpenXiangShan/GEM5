@@ -4,8 +4,9 @@ from dataclasses import asdict, dataclass, field, is_dataclass
 import json
 from typing import Any
 
+from util.xs_scripts.ci.benchmarks import CATALOG
+
 CUSTOM_BIN_BENCHMARK_TYPE = "custom_bin"
-SMT_BENCHMARK_PREFIX = "gcc12-spec06-smt-"
 H_PROFILE_BENCHMARK_PREFIX = "h-spec06-"
 SUPPORTED_SOLVER_CONFIG_BASENAMES = (
     "kmhv2.py",
@@ -36,11 +37,14 @@ def normalize_solver_config_path(raw_config_path: str) -> str:
 
 
 def validate_solver_benchmark_type(benchmark_type: str) -> None:
-    if benchmark_type.startswith(SMT_BENCHMARK_PREFIX):
+    if "-smt-" in benchmark_type:
         raise ValueError(
             f"SMT benchmark_type {benchmark_type!r} is not supported by the "
             "solver runtime yet; choose a non-SMT benchmark_type"
         )
+    profile = CATALOG.get(benchmark_type)
+    if profile and profile.mode == "single-32g":
+        raise ValueError("The solver does not configure the XSCC 32 GiB REF")
     if benchmark_type.startswith(H_PROFILE_BENCHMARK_PREFIX):
         raise ValueError(
             f"H-profile benchmark_type {benchmark_type!r} is not supported "
