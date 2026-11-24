@@ -141,7 +141,7 @@ class System(SimObject):
     arch_db = Param.ArchDBer(NULL,"arch db for this system")
 
     enable_riscv_vector = Param.Bool(False, "Enable riscv vector extension")
-    difftest_ref_so = Param.String("", "Reference library for automatic difftest memory sharing")
+    enable_mem_dedup = Param.Bool(False, "Enable memory deduplication")
 
     num_cpus = Param.Unsigned(1, "Number of CPUs in the system")
     enable_difftest = Param.Bool(False, "Enable RISC-V difftest")

@@ -176,7 +176,7 @@ build/RISCV/gem5.opt --outdir=/tmp/sbuffer-merge-cactus163-ci-dedup \
   configs/example/kmhv3.py \
   --generic-rv-cpt=/nfs/home/share/checkpoints_profiles/spec06_gcc16_rva23_novec_260820/checkpoint/cactusADM/163/_163_0.560381_memory_.zstd \
   --warmup-insts-no-switch=100000 --maxinsts=1100000 \
-  --enable-difftest \
+  --enable-difftest --enable-mem-dedup \
   --difftest-ref-so=/nfs/home/share/gem5_ci/ref/releases/d30fff1ece9e-gem5-r3/normal-dedup/riscv64-nemu-interpreter-so
 ```
 

@@ -87,26 +87,6 @@ skipPerfCntCsr()
     }
 }
 
-bool
-NemuProxy::supportsMemDedup(const char *ref_so)
-{
-    void *handle = openDiffTestHandle(ref_so);
-    fatal_if(!handle, "Cannot load NEMU REF %s: %s", ref_so, dlerror());
-    auto get_pmem = (uint8_t *(*)())dlsym(handle, "get_pmem");
-    auto attach = (void (*)(void *, size_t))dlsym(handle, "difftest_get_backed_memory");
-    auto memory_size = (const unsigned long *)dlsym(handle, "MEMORY_SIZE");
-    bool supported = false;
-    if (get_pmem && attach && memory_size) {
-        // Non-dedup NEMU also exports attach as a no-op. Probe an isolated,
-        // uninitialized REF; attachment only sets the pointer and flushes TLBs.
-        uint8_t probe;
-        attach(&probe, *memory_size);
-        supported = get_pmem() == &probe;
-    }
-    dlclose(handle);
-    return supported;
-}
-
 NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bool enable_mem_dedup, bool multi_core)
 {
     handle = openDiffTestHandle(ref_so);
@@ -134,10 +114,8 @@ NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bo
     if (enable_mem_dedup) {
         this->ref_get_backed_memory =
             (void (*)(void *backed_mem, size_t n))dlsym(handle, "difftest_get_backed_memory");
-        auto memory_size = (const unsigned long *)dlsym(handle, "MEMORY_SIZE");
-        fatal_if(!ref_get_backed_memory || !refGetPmem || !memory_size,
+        fatal_if(!ref_get_backed_memory || !refGetPmem,
                  "NEMU REF lacks the memory attachment verification API");
-        refMemorySize = *memory_size;
     }
 
     this->memcpy = (void (*)(paddr_t, void *, size_t, bool))dlsym(
@@ -207,7 +185,8 @@ NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bo
 
     nemu_init();
     fatal_if(!enable_mem_dedup && refGetPmem && !refGetPmem(),
-             "NEMU REF requires external memory but COW attachment was not detected");
+             "NEMU REF requires external memory; enable memory deduplication "
+             "or select a non-dedup REF");
 }
 
 void
@@ -215,9 +194,6 @@ RefProxy::attachBackedMemory(void *memory, size_t size)
 {
     fatal_if(!ref_get_backed_memory || !refGetPmem,
              "REF does not support verified memory attachment");
-    fatal_if(size != refMemorySize,
-             "Initial memory image size %lu does not match NEMU REF memory size %lu",
-             size, refMemorySize);
     ref_get_backed_memory(memory, size);
     fatal_if(refGetPmem() != memory,
              "NEMU REF did not attach GEM5 backing memory; rebuild the REF "

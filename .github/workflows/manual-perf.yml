@@ -63,7 +63,7 @@ on:
         type: string
         default: ''
       gcbv_ref_so:
-        description: 'Custom single-core REF (empty: pinned REF with memdedup; COW support is detected automatically)'
+        description: 'Custom single-core REF (empty: pinned REF with memdedup; custom dedup REF also needs --enable-mem-dedup in extra_args)'
         required: false
         type: string
         default: ''
