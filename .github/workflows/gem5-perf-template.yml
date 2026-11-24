@@ -100,13 +100,48 @@ jobs:
           export GCBV_REF_SO
           bash util/pgo/basic_pgo_new.sh
 
-      - name: Run and score performance test
+      - name: Run performance test
         id: perf
         working-directory: .perf-workflow
         env:
-          PERF_WORKFLOW_SHA: ${{ github.workflow_sha }}
           PERF_INPUTS: ${{ toJSON(inputs) }}
         run: python3 -m util.xs_scripts.ci.run_perf_ci --repo "$GITHUB_WORKSPACE"
+
+      - name: Score performance test
+        working-directory: .perf-workflow
+        shell: bash
+        env:
+          ARCHIVE: ${{ steps.perf.outputs.archive }}
+          BENCHMARK_TYPE: ${{ steps.perf.outputs.benchmark_type }}
+          TRACE_FORMAT: ${{ steps.perf.outputs.trace_format }}
+          SCORE_SCRIPT: ${{ steps.perf.outputs.score_script }}
+          PARTIAL: ${{ steps.perf.outputs.partial }}
+        run: |
+          score="$ARCHIVE/score.txt"
+          if [[ -n "$TRACE_FORMAT" ]]; then
+            python3 -m util.xs_scripts.ci.trace_report "$BENCHMARK_TYPE" "$ARCHIVE" > "$score"
+          else
+            tmp=$(mktemp -d)
+            trap 'rm -rf -- "$tmp"' EXIT
+            rsync -a --exclude=/.git --exclude=/results /nfs/home/share/gem5_ci/gem5_data_proc/ "$tmp/scorer/"
+            mkdir "$tmp/spec_all"
+            while IFS= read -r name; do
+              ln -s -- "$ARCHIVE/spec_all/$name" "$tmp/spec_all/$name"
+            done < "$ARCHIVE/passed.lst"
+            cd "$tmp/scorer" || exit 1
+            export GEM5_HOME="$GITHUB_WORKSPACE"
+            export PYTHONPATH="$PWD:/nfs/home/yanyue/.local/lib/python3.12/site-packages:${PYTHONPATH:-}"
+            {
+              if [[ -n "$PARTIAL" ]]; then echo "$PARTIAL"; fi
+              bash -e "example-scripts/$SCORE_SCRIPT" "$tmp/spec_all" "$ARCHIVE/cluster.json"
+            } > "$score"
+          fi
+          {
+            echo "### ${PARTIAL:-Performance result}"
+            echo '```'
+            if [[ -n "$TRACE_FORMAT" ]]; then cat "$score"; else tail -n 42 "$score"; fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload score artifact
         if: ${{ always() && steps.perf.outputs.archive != '' }}

@@ -1,10 +1,11 @@
 """Summarize post-warmup trace IPC and branch MPKI."""
 
+import argparse
 import json
 import math
 from pathlib import Path
 
-from .benchmarks import BenchmarkProfile
+from .benchmarks import BenchmarkProfile, resolve_benchmark
 
 
 def summarize_trace_results(
@@ -109,3 +110,17 @@ def summarize_trace_results(
         print("Overall averages unavailable: failed or incomplete runs")
     print(f"Failed traces: {failed}")
     return int(failed > 0)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("benchmark_type")
+    parser.add_argument("archive", type=Path)
+    args = parser.parse_args()
+    raise SystemExit(
+        summarize_trace_results(
+            resolve_benchmark(args.benchmark_type),
+            args.archive / "spec_all",
+            (args.archive / "passed.lst").read_text().splitlines(),
+        )
+    )

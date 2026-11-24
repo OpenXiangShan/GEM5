@@ -334,6 +334,9 @@ def run_jobs(
             ):
                 with ThreadPoolExecutor(max_workers=len(nodes)) as pool:
                     capacities = dict(zip(nodes, pool.map(probe, nodes)))
+                now = time.monotonic()
+                if cancelled() or (deadline is not None and now >= deadline):
+                    continue
                 if not any(capacities.values()) and fallback_to_local:
                     nodes = ["local"]
                     slots = parallelism = fallback_to_local

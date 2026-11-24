@@ -15,15 +15,12 @@ sys.path.insert(
     0, str(Path(__file__).resolve().parents[3] / "util/xs_scripts")
 )
 from ci import benchmarks as MODULE
-from ci.run_perf_ci import (
-    archive,
-    check_archive,
-    finish_perf,
-    prepare_command,
+from ci.run_perf_ci import prepare_command
+from ci.perf_archive import (
+    complete_stats,
+    verify_results,
     prune,
-    worker_stats,
 )
-from ci.stats_probe import stats_state
 from ci.runner import (
     CHECKPOINT_ENV,
     Job,
@@ -85,6 +82,10 @@ class CustomBenchmarkTest(unittest.TestCase):
         self.assertEqual(self.resolve().root, legacy)
 
     def test_missing_or_ambiguous_image(self):
+        self.image.with_suffix(".bin").touch()
+        self.assertEqual(
+            list(MODULE.workloads(self.resolve()))[0].image, self.image
+        )
         self.image.unlink()
         with self.assertRaisesRegex(
             ValueError, "expected one checkpoint image"
@@ -126,6 +127,86 @@ class CustomBenchmarkTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 list(MODULE.workloads(self.resolve()))
 
+    def test_cli_publishes_verified_inputs_for_yaml(self):
+        repo = self.base / "gem5"
+        binary = repo / "build/RISCV/gem5.fast"
+        binary.parent.mkdir(parents=True)
+        binary.write_text(
+            "#!/bin/sh\nmkdir m5out\necho 'End Simulation Statistics' > m5out/stats.txt\n"
+        )
+        binary.chmod(0o755)
+        (repo / "kmhv3.py").touch()
+        subprocess.run(["git", "init", "-q", repo], check=True)
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                repo,
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.org",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-qm",
+                "fixture",
+                "--allow-empty",
+            ],
+            check=True,
+        )
+        inputs = dict(
+            benchmark_type="custom-spec17",
+            checkpoint_path=str(self.root),
+            config_path="kmhv3.py",
+            gcbv_ref_so=str(self.image),
+        )
+        outputs = self.base / "outputs"
+        stdout = subprocess.check_output(
+            [
+                "python3",
+                "-m",
+                "util.xs_scripts.ci.run_perf_ci",
+                "--repo",
+                str(repo),
+                "--archive-root",
+                str(self.base / "archives"),
+            ],
+            cwd=Path(__file__).resolve().parents[3],
+            env={
+                **os.environ,
+                "PERF_INPUTS": json.dumps(inputs),
+                "GITHUB_OUTPUT": str(outputs),
+                "GITHUB_STEP_SUMMARY": str(self.base / "summary"),
+                "GITHUB_RUN_NUMBER": "42",
+            },
+            text=True,
+        )
+        fields = dict(
+            line.split("=", 1) for line in outputs.read_text().splitlines()
+        )
+        directory = Path(fields.pop("archive"))
+        self.assertEqual(
+            fields,
+            dict(
+                artifact_name="score-custom-spec17",
+                score_script="gem5-score-ci-17.sh",
+                trace_format="",
+                benchmark_type=self.resolve().benchmark_type,
+                partial="",
+            ),
+        )
+        self.assertIn(f"Archiving performance data to {directory}", stdout)
+        self.assertTrue(directory.name.endswith("_kmhv3_run42"))
+        self.assertEqual(
+            (directory / "passed.lst").read_text(), "gcc_input_42\n"
+        )
+        self.assertEqual(
+            (directory / "cluster.json").read_bytes(),
+            self.cluster.read_bytes(),
+        )
+        self.assertFalse((directory / "score.txt").exists())
+
     def test_gcc12_catalog(self):
         self.assertNotIn("gcc12-spec06-0.3c", MODULE.CATALOG)
         self.assertIn("gcc12-spec06-smt-0.3c", MODULE.CATALOG)
@@ -138,6 +219,12 @@ class CustomBenchmarkTest(unittest.TestCase):
         (self.base / "a.trace.zstd").touch()
         rows = ["slice1 a.trace 0 1 2 4", "slice2 missing 0 1 2 4"]
         (w,) = MODULE.select_workloads(rows, self.base, "SLICE1", "tracertl")
+        exact = self.base / "a.trace"
+        exact.touch()
+        (match,) = MODULE.select_workloads(
+            rows, self.base, "SLICE1", "tracertl"
+        )
+        self.assertEqual(match.image, exact)
         self.assertIn("--maxinsts=7", w.arguments("tracertl"))
         self.assertIn("--warmup-insts-no-switch=3", w.arguments("tracertl"))
         with self.assertRaisesRegex(ValueError, "no workloads"):
@@ -187,6 +274,33 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual([r.status for r in results], ["timeout", "timeout"])
         self.assertEqual(len(list(self.root.glob("*/abort"))), 2)
 
+    def test_stop_during_remote_probe(self):
+        for stopped in ("cancelled", "timeout"):
+            with self.subTest(stopped=stopped):
+                now = [0]
+
+                def probe(*args):
+                    now[0] = 2
+                    return 1, ""
+
+                with patch(
+                    "ci.hosts.probe_idle_cpus", side_effect=probe
+                ), patch(
+                    "ci.runner.time.monotonic", side_effect=lambda: now[0]
+                ), patch(
+                    "ci.runner.start"
+                ) as launch:
+                    (result,) = run_jobs(
+                        [self.job("queued", "pass")],
+                        RunnerConfig(servers="node037"),
+                        1,
+                        deadline=1 if stopped == "timeout" else None,
+                        cancelled=lambda: stopped == "cancelled"
+                        and now[0] > 0,
+                    )
+                launch.assert_not_called()
+                self.assertEqual(result.status, stopped)
+
     def test_archive_timeout_withholds_strict_score_and_preserves_exit(self):
         cfg = RunnerConfig(launch_interval=0)
         jobs = [self.job("visible", "pass"), self.job("missing", "pass")]
@@ -194,17 +308,11 @@ class RunnerTest(unittest.TestCase):
         stats = jobs[0].work_dir / "m5out/stats.txt"
         stats.parent.mkdir()
         stats.write_text("---------- End Simulation Statistics ----------\n")
-        profile = MODULE.resolve_benchmark("gcc12-spec06-smt-0.3c")
-        with patch("ci.run_perf_ci.time.monotonic", side_effect=[0, 61]):
-            rc = finish_perf(
-                profile,
-                self.root,
-                self.root,
-                results,
-                cfg,
-                True,
-                self.root / "summary",
-            )
+        with patch.dict(
+            os.environ, GITHUB_STEP_SUMMARY=str(self.root / "summary")
+        ):
+            rc = verify_results(self.root, results, "", True, timeout=0)
+        self.assertEqual((self.root / "passed.lst").read_text(), "visible\n")
         self.assertEqual(rc, 1)
         self.assertFalse((self.root / "score.txt").exists())
         self.assertIn("Scorable 1/2", (self.root / "summary").read_text())
@@ -227,29 +335,24 @@ class RunnerTest(unittest.TestCase):
             "system.cpu.commit.branchMispredicts 1\n"
             "---------- End Simulation Statistics ----------\n"
         )
-        profile = MODULE.BenchmarkProfile(
-            "trace", self.root, None, trace_format="tracertl"
-        )
         result = Result(job, "completed", 0, "local", 0, 1)
         self.assertEqual(
-            finish_perf(
-                profile,
-                self.root,
-                self.root,
-                [result],
-                RunnerConfig(),
-                True,
-                None,
-            ),
-            0,
+            verify_results(self.root, [result], "tracertl", True), 0
         )
-        self.assertIn(
-            "Overall IPC (equal trace weights): 2.000000",
-            (self.root / "score.txt").read_text(),
+        output = subprocess.check_output(
+            [
+                "python3",
+                "-m",
+                "util.xs_scripts.ci.trace_report",
+                "trace-cbp-0.3c",
+                str(self.root),
+            ],
+            cwd=Path(__file__).resolve().parents[3],
+            text=True,
         )
+        self.assertIn("Overall IPC (equal trace weights): 2.000000", output)
 
     def test_non_strict_spec_labels_partial_score(self):
-        profile = MODULE.resolve_benchmark("gcc12-spec06-smt-0.3c")
         results = [
             Result(self.job(n, "pass"), status, rc, "local", 0, 1)
             for n, status, rc in [
@@ -262,27 +365,27 @@ class RunnerTest(unittest.TestCase):
         (directory / "stats.txt").write_text(
             "---------- End Simulation Statistics ----------\n"
         )
-        scorer = self.root / "tools/example-scripts"
-        scorer.mkdir(parents=True)
-        (scorer / profile.score_script).write_text(
-            'test -L "$1/ok" && test ! -e "$1/failed" && echo score'
-        )
-        with patch("ci.run_perf_ci.SCORER", scorer.parent):
-            rc = finish_perf(
-                profile,
-                self.root,
-                self.root,
-                results,
-                RunnerConfig(),
-                False,
-                self.root / "summary",
+        outputs = self.root / "outputs"
+        with patch.dict(
+            os.environ,
+            GITHUB_OUTPUT=str(outputs),
+            GITHUB_STEP_SUMMARY=str(self.root / "summary"),
+        ):
+            self.assertEqual(verify_results(self.root, results, "", False), 0)
+            self.assertIn(
+                "partial=Partial score. Scorable 1/2", outputs.read_text()
             )
-        self.assertEqual(rc, 0)
-        self.assertIn(
-            "Partial score. Scorable 1/2",
-            (self.root / "score.txt").read_text(),
-        )
-        self.assertIn("exit=23", (self.root / "summary").read_text())
+            self.assertEqual((self.root / "passed.lst").read_text(), "ok\n")
+            self.assertIn("exit=23", (self.root / "summary").read_text())
+            self.assertEqual(
+                verify_results(
+                    self.root, results, "tracertl", False, timeout=0
+                ),
+                1,
+            )
+            self.assertEqual(
+                verify_results(self.root, results[1:], "", False), 1
+            )
 
     def test_busy_host_is_probed_again(self):
         config = RunnerConfig(
@@ -436,23 +539,19 @@ class RunnerTest(unittest.TestCase):
             now[0] += seconds
 
         def state(path):
-            return (
-                "complete"
-                if path.parent.name == "ready" or now[0] >= 11
-                else "missing"
-            )
+            return path.parent.name == "ready" or now[0] >= 11
 
         with patch(
-            "ci.run_perf_ci.time.monotonic", side_effect=lambda: now[0]
-        ), patch("ci.run_perf_ci.time.sleep", side_effect=advance), patch(
-            "ci.run_perf_ci.stats_probe.stats_state", side_effect=state
-        ) as read, patch(
-            "ci.run_perf_ci.worker_stats"
-        ) as ssh:
+            "ci.perf_archive.time.monotonic", side_effect=lambda: now[0]
+        ), patch("ci.perf_archive.time.sleep", side_effect=advance), patch(
+            "ci.perf_archive.complete_stats", side_effect=state
+        ) as read:
             self.assertEqual(
-                check_archive(results, "stats.txt", cfg),
-                ({"ready", "late"}, {}),
+                verify_results(self.root, results, "trace", True), 0
             )
+        self.assertEqual(
+            (self.root / "passed.lst").read_text(), "late\nready\n"
+        )
         self.assertEqual(now[0], 11)
         self.assertEqual(
             sum(
@@ -461,51 +560,6 @@ class RunnerTest(unittest.TestCase):
             ),
             1,
         )
-        ssh.assert_not_called()
-
-    def test_diagnose_only_unavailable_stats_once_per_worker(self):
-        results = [
-            Result(self.job(n, "pass"), "completed", 0, "node037", 0, 1)
-            for n in ("a", "b", "c")
-        ]
-        with patch(
-            "ci.run_perf_ci.worker_stats",
-            return_value=["complete", "incomplete", "missing"],
-        ) as ssh:
-            ready, issues = check_archive(
-                results, "m5out/stats.txt", RunnerConfig(), timeout=0
-            )
-        self.assertFalse(ready)
-        ssh.assert_called_once()
-        self.assertEqual(
-            [v.split(", ")[-1] for v in issues.values()],
-            [
-                "worker stats complete",
-                "worker stats incomplete",
-                "worker stats missing",
-            ],
-        )
-
-    def test_worker_probe_uses_same_footer_check_and_handles_disconnect(self):
-        good = self.root / "path with spaces"
-        good.write_text("---------- End Simulation Statistics ----------\n")
-        paths = [good, self.root / "missing"]
-        with patch(
-            "ci.hosts.build_ssh_command",
-            side_effect=lambda target, cmd, *args: cmd,
-        ):
-            self.assertEqual(
-                worker_stats("node037", paths, RunnerConfig()),
-                ["complete", "missing"],
-            )
-        with patch(
-            "ci.run_perf_ci.subprocess.run",
-            side_effect=subprocess.TimeoutExpired("ssh", 10),
-        ):
-            self.assertEqual(
-                worker_stats("node037", paths, RunnerConfig()),
-                ["unconfirmed"] * 2,
-            )
 
     def test_stop_if_process_exits_during_escalation(self):
         proc = Mock(stdin=None, pid=123, poll=lambda: None)
@@ -532,26 +586,23 @@ class RunnerTest(unittest.TestCase):
         ), patch(
             "ci.run_perf_ci.subprocess.check_output", return_value=str(ref)
         ):
-            for profile, extra, active in [
-                ("gcc12-spec06-1.0c", "", {"GCBV_REF_SO": str(ref)}),
-                ("h-spec06-0.5c", "", {"GCBH_REF_SO": str(ref)}),
+            (self.root / "smt_idealkmhv3.py").touch()
+            multi = {
+                "GCBV_MULTI_CORE_REF_SO": str(ref),
+                "GCB_MULTI_CORE_RESTORER": "",
+            }
+            for profile, config_name, extra, active in [
                 (
                     "gcc12-spec06-1.0c",
+                    config.name,
                     "--smt",
-                    {
-                        "GCBV_MULTI_CORE_REF_SO": str(ref),
-                        "GCB_MULTI_CORE_RESTORER": "",
-                    },
+                    {"GCBV_REF_SO": str(ref)},
                 ),
-                (
-                    "gcc12-spec06-1.0c",
-                    "--num-cpus=2",
-                    {
-                        "GCBV_MULTI_CORE_REF_SO": str(ref),
-                        "GCB_MULTI_CORE_RESTORER": "",
-                    },
-                ),
+                ("h-spec06-0.5c", config.name, "", {"GCBH_REF_SO": str(ref)}),
+                ("gcc12-spec06-smt-0.3c", config.name, "", multi),
+                ("gcc12-spec06-1.0c", "smt_idealkmhv3.py", "", multi),
             ]:
+                args.config_path = config_name
                 args.extra_args = extra
                 _, _, env, _ = prepare_command(
                     self.root, MODULE.resolve_benchmark(profile), args
@@ -617,40 +668,36 @@ class ArchiveTest(unittest.TestCase):
     def test_statistics_must_have_finished_dump(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "stats.txt"
-            self.assertEqual(stats_state(path), "missing")
+            self.assertFalse(complete_stats(path))
             path.write_text("Begin Simulation Statistics")
-            self.assertEqual(stats_state(path), "incomplete")
+            self.assertFalse(complete_stats(path))
             path.write_text(
                 "---------- End Simulation Statistics   ----------\n"
             )
-            self.assertEqual(stats_state(path), "complete")
+            self.assertTrue(complete_stats(path))
             with path.open("a") as out:
                 out.write(
                     "---------- Begin Simulation Statistics ----------\n"
                 )
-            self.assertEqual(stats_state(path), "incomplete")
+            self.assertFalse(complete_stats(path))
 
-    def test_retention_and_concurrent_names(self):
+    def test_retention_preserves_recent_and_unrelated_directories(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            for i in range(201):
-                run = root / f"20261101_000000_abc_x_run{i:03d}"
+            runs = [
+                root / f"20261101_000000_abc_x_run{i:03d}" for i in range(202)
+            ]
+            for run in runs:
                 run.mkdir()
-                (run / "metadata.txt").touch()
-                (run / "finished").touch()
-            active = root / "20261101_000000_abc_w_run0"
-            active.mkdir()
-            (active / "metadata.txt").touch()
-            (active / "launcher.active").touch()
-            (active / "score.txt").touch()
+                os.utime(run, (0, 0))
+            runs[0].touch()
+            other = root / "notes"
+            other.mkdir()
             prune(root)
-            self.assertEqual(len(list(root.glob("*/finished"))), 200)
-            self.assertTrue(active.exists())
-            with archive(root, "20261102_000000_abc_x", "0") as first:
-                with archive(root, "20261102_000000_abc_x", "0") as second:
-                    self.assertNotEqual(first, second)
-                    self.assertTrue((first / "launcher.active").exists())
-                self.assertTrue((second / "finished").exists())
+            self.assertTrue(runs[0].exists())
+            self.assertFalse(runs[1].exists())
+            self.assertTrue(all(run.exists() for run in runs[2:]))
+            self.assertTrue(other.exists())
 
 
 if __name__ == "__main__":

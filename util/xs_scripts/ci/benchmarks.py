@@ -359,16 +359,17 @@ def select_workloads(rows, root, filters="", trace_format=""):
         if Path(key).is_absolute() or ".." in Path(key).parts:
             raise ValueError(f"invalid workload path: {key}")
         path = root / key
+        if trace_format and path.is_file():
+            yield Workload(name, path.resolve(), row)
+            continue
         if trace_format:
-            candidates = [path] + [
+            candidates = [
                 Path(f"{path}.{s}")
                 for s in ("gz", "zstd", "xz", "champsimtrace")
             ]
         else:
             candidates = [
-                p
-                for p in path.glob("*")
-                if p.suffix in (".gz", ".zstd", ".bin")
+                p for p in path.glob("*") if p.suffix in (".gz", ".zstd")
             ]
         images = [p for p in candidates if p.is_file()]
         if len(images) != 1:
