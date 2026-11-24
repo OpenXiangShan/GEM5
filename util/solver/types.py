@@ -43,11 +43,8 @@ def validate_solver_benchmark_type(benchmark_type: str) -> None:
             "solver runtime yet; choose a non-SMT benchmark_type"
         )
     profile = CATALOG.get(benchmark_type)
-    if profile and (profile.single_core_ref or profile.extra_args):
-        raise ValueError(
-            f"The solver does not configure the REF or arguments "
-            f"required by {benchmark_type}"
-        )
+    if profile and profile.mode == "single-32g":
+        raise ValueError("The solver does not configure the XSCC 32 GiB REF")
     if benchmark_type.startswith(H_PROFILE_BENCHMARK_PREFIX):
         raise ValueError(
             f"H-profile benchmark_type {benchmark_type!r} is not supported "
