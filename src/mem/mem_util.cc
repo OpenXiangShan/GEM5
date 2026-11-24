@@ -89,16 +89,12 @@ DedupMemory::createSharedReadOnlyRoot(size_t size)
 void
 DedupMemory::initRootFromExistingFile(int fd, const char* file_path)
 {
-    panic("This fucntion has not been tested yet\n");
     assert(backedFilePath.empty() && rootPMem == nullptr);
-    // tell file size
-    auto file_size = lseek(fd, 0, SEEK_END);
-    memSize = file_size;
-    warn("Memory size set to the same as file size = %lu\n", file_size);
-
-    rootPMem = (uint8_t *)mmap(nullptr,file_size, PROT_WRITE, MAP_SHARED, fd, 0);
-
-    assert(rootPMem != MAP_FAILED);
+    memSize = lseek(fd, 0, SEEK_END);
+    // The loader closes fd after restore; retain our own descriptor for COW
+    // branches without creating a writable shared mapping of the input image.
+    shmFd = dup(fd);
+    fatal_if(shmFd == -1, "Failed to retain checkpoint file descriptor: %s", strerror(errno));
     backedFilePath = file_path;
     fromExistingFile = true;
     namedShmObject = false;

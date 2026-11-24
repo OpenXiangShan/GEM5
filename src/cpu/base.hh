@@ -735,11 +735,6 @@ class BaseCPU : public ClockedObject
     // NoHype mode split memory space into distinct regions for different cores
     const bool noHypeMode{false};
 
-    /** enableMemDedup: Let memory of GEM5, difftest ref cores, and global memory share one origin memory
-     *  Each branch memory is a copy-on-write mirror of the origin memory
-     */
-    const bool enableMemDedup{false};
-
     uint8_t *goldenMemPtr;
 
     gem5::GoldenGloablMem *_goldenMemManager;

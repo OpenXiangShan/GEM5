@@ -202,6 +202,7 @@ class RefProxy
 
   protected:
     uint8_t *(*refGetPmem)() = nullptr;
+    size_t refMemorySize = 0;
     bool refHasFcsr = false;
     bool multiCore;
 
@@ -211,6 +212,7 @@ class RefProxy
 class NemuProxy : public RefProxy
 {
   public:
+    static bool supportsMemDedup(const char *ref_so);
     NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bool enable_mem_dedup, bool multi_core);
 
     void initState(int coreid, uint8_t *golden_mem) override;

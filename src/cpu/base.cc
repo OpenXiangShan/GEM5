@@ -172,8 +172,7 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
       enableRVV(p.enable_riscv_vector),
       enableRVHDIFF(p.enable_riscv_h),
       enableSkipCSR(p.enable_skip_csr),
-      noHypeMode(false),
-      enableMemDedup(p.enable_mem_dedup)
+      noHypeMode(false)
 {
     // if Python did not provide a valid ID, do it here
     if (_cpuId == -1 ) {
@@ -2075,15 +2074,9 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
             if (noHypeMode) {
                 auto start = pmemStart + pmemSize * difftestHartId(tid);
                 diffAllStates->proxy->memcpy(0x80000000u, start, pmemSize, DUT_TO_REF);
-            } else if (enableMemDedup) {
-                if (system->multiContextDifftest()) {
-                    assert(goldenMemPtr);
-                    diffAllStates->proxy->attachBackedMemory(
-                        system->createCopyOnWriteBranch(), pmemSize);
-                } else {
-                    diffAllStates->proxy->attachBackedMemory(
-                        system->createCopyOnWriteBranch(), pmemSize);
-                }
+            } else if (system->enabledMemDedup()) {
+                diffAllStates->proxy->attachBackedMemory(
+                    system->createCopyOnWriteBranch(), pmemSize);
             } else {
                 diffAllStates->proxy->memcpy_init(0x80000000u, pmemStart, pmemSize, DUT_TO_REF);
             }

@@ -50,8 +50,11 @@
 #include "base/str.hh"
 #include "base/trace.hh"
 #include "config/the_isa.hh"
+
 #if !IS_NULL_ISA
 #include "cpu/base.hh"
+#include "cpu/difftest.hh"
+
 #endif
 #include "cpu/thread_context.hh"
 #include "debug/Loader.hh"
@@ -184,11 +187,15 @@ System::System(const Params &p)
       workload(p.workload),
       numCPUs(p.num_cpus),
       enableDifftest(p.enable_difftest),
-      enableMemDedup(p.enable_mem_dedup),
+#if !IS_NULL_ISA
+      enableMemDedup(p.enable_difftest &&
+                     p.difftest_ref_so.find("spike") == std::string::npos &&
+                     NemuProxy::supportsMemDedup(p.difftest_ref_so.c_str())),
+#endif
       physmem(name() + ".physmem", p.memories, p.mmap_using_noreserve,
               p.shared_backstore, p.enable_h_gcpt, p.restore_from_gcpt, p.gcpt_restorer_file,
               p.gcpt_file, p.map_to_raw_cpt, p.auto_unlink_shared_backstore, p.gcpt_restorer_size_limit,
-              &dedupMemManager, p.enable_mem_dedup),
+              &dedupMemManager, enableMemDedup),
       ShadowRomRanges(p.shadow_rom_ranges.begin(),
                       p.shadow_rom_ranges.end()),
       memoryMode(p.mem_mode),
@@ -204,6 +211,13 @@ System::System(const Params &p)
     panic_if(!workload, "No workload set for system %s "
             "(could use StubWorkload?).", name());
     workload->setSystem(this);
+
+    fatal_if(multiContextDifftest() && !enableMemDedup,
+             "Multi-context difftest requires a NEMU REF supporting COW memory attachment");
+    if (enableDifftest) {
+        inform("Difftest memory: %s (detected from REF)\n",
+               enableMemDedup ? "COW" : "private copy");
+    }
 
     // add self to global system list
     systemList.push_back(this);

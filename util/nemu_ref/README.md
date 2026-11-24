@@ -76,19 +76,20 @@ python3 util/nemu_ref/resolve.py normal-dedup --root /tmp/nemu-release
 
 ## memdedup 的边界
 
-单核使用 `normal-dedup` 时必须加 `--enable-mem-dedup`；使用 `normal`
-时不要加。GEM5 会检查 REF 确实接收了 COW backing memory，不能仅根据
+开启 difftest 后，GEM5 自动检测 REF 是否真正接收外部内存指针：支持时使用
+COW，不支持时使用普通复制，无需命令行 COW 开关。检测在独立加载的 REF 中完成，
+不会初始化执行状态；实际挂接时仍检查指针及内存大小。不能仅根据
 `difftest_get_backed_memory` 符号存在就判断支持，因为不支持时 NEMU 也导出空实现。
-SMT/多核保留已有的自动开启行为。
+SMT/多核需要支持 COW 的 REF。
 
-普通性能 workflow 在未指定 `gcbv_ref_so` 时选 `normal-dedup` 并附加开关。
-指定自定义 REF 后不会自动附加开关，自定义 dedup REF 须在 `extra_args` 中显式开启。
+普通性能 workflow 在未指定 `gcbv_ref_so` 时选 `normal-dedup`。
+自定义 REF 使用同样的自动检测规则。
 H 和 SMT profiles 使用专用 REF；PGO 训练始终使用单核 `normal`。
 性能归档记录选定 REF 路径、SHA 和存在时的构建 manifest。
 
-不在 GEM5 全局默认开启：raw image 大于等于模拟 RAM 时仍会进入
-`DedupMemory::initRootFromExistingFile()` 的未实现路径；H、设备及其他运行方式
-也不能仅由普通 SPEC 切片结果推断兼容。默认普通性能切片不走该 raw-image 路径。
+压缩切片和小于模拟 RAM 的 raw image 使用 RAM 大小的 COW 底本；大于等于
+模拟 RAM 的 raw image 直接以原文件作为 COW 底本，映射范围为文件大小，写入
+不会修改原文件。挂接范围必须与 REF 的内存大小一致。
 
 ## 升级与回归
 

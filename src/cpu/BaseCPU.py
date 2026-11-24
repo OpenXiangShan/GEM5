@@ -161,7 +161,6 @@ class BaseCPU(ClockedObject):
     enable_riscv_vector = Param.Bool(False, "Enable riscv vector extension")
     enable_riscv_h = Param.Bool(True, "Enable riscv vector extension")
     enable_skip_csr = Param.Bool(True, "Enable skip csr")
-    enable_mem_dedup = Param.Bool(False, "Enable memory deduplication for difftest and golden memory")
 
     def createInterruptController(self):
         self.interrupts = [
