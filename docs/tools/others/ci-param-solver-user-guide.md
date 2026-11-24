@@ -30,7 +30,7 @@
   [.github/workflows/manual-solve.yml](../../../.github/workflows/manual-solve.yml)
 
 内建 `benchmark_type` 的切片路径不由 solver 单独维护。性能 CI 和 solver 都从
-[`util/xs_scripts/perf_benchmarks.py`](../../../util/xs_scripts/perf_benchmarks.py) 解析
+[`util/xs_scripts/ci/benchmarks.py`](../../../util/xs_scripts/ci/benchmarks.py) 解析
 checkpoint list、checkpoint root、聚类配置和算分脚本。修改已有切片路径时只改这一处；
 solver 自己只维护 SMT 等能力限制。详细职责边界见
 [性能 CI 与 Solver 共用切片配置](shared-perf-benchmark-config.md)。
@@ -46,7 +46,7 @@ solver 自己只维护 SMT 等能力限制。详细职责边界见
   - [configs/example/kmhv2.py](../../../configs/example/kmhv2.py)
 - 当前 solver runtime / CI 手动入口暂不支持 SMT config，也不接受 `gcc12-spec06-smt-*`
   benchmark_type。
-- `h-spec06-*` 依赖性能 workflow 的 H-profile reference、restorer 和额外参数，当前也只由
+- `h-spec06-*` 使用 H 专用 reference 和切片内置的 restorer，当前也只由
   性能 workflow 支持，不由 solver runtime 接受。
 - 这里的“支持多个 config”只表示 runtime 接口已经接好；某个具体 solver spec
   能否在所选 config 上工作，仍取决于它的 `target` 路径能否在该 config 上成功绑定。
@@ -564,7 +564,7 @@ VTAGEIPCSearch
 - 当前 workflow / controller 都会拒绝 `gcc12-spec06-smt-*`，因为 solver runtime
   还没有接 SMT config
 - `distributed_servers` 留空时，solver 只在当前 CI runner 上执行仿真，行为与旧版一致
-- `distributed_servers = default` 会展开为 `node020-node029,node034,node036-node042`（默认排除 node030-node033 和 node035）
+- `distributed_servers = default` 会展开为 `node003-node008,node020-node029,node034,node036-node042`（默认排除 node030-node033 和 node035）
 - `distributed_servers` 填显式列表或 range 时，solver 会把 batch 内的
   `(trial, workload)` 任务按服务器空闲 CPU 和 per-server 上限分发到这些机器
 - `distributed_jobs_per_server = 0` 表示根据

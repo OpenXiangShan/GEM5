@@ -20,7 +20,7 @@ scons -j$(nproc) --gold-linker build/RISCV/gem5.opt
   --stats-file=m5out/stats.txt
 ```
 
-批量/并行脚本见 `docs/trace_tools.md`（`run_trace_champsim.sh`, `parallel_trace_sim.sh`, 分布式调度等）。TRACERTL/NEMU 格式（48 B zstd 记录，自带真实 RV64 编码）用 `--trace-format=tracertl`，脚本 `util/xs_scripts/trace/run_trace_tracertl.sh` 自动从同名 `.trace.log` 解析 warm-up/sample 边界。
+批量/并行脚本见 `docs/tools/trace/trace_tools.md`（`run_trace_champsim.sh`, `util/xs_scripts/ci/run_batch.py`, 分布式调度等）。TRACERTL/NEMU 格式（48 B zstd 记录，自带真实 RV64 编码）用 `--trace-format=tracertl`，脚本 `util/xs_scripts/trace/run_trace_tracertl.sh` 自动从同名 `.trace.log` 解析 warm-up/sample 边界。
 
 ## 2. Trace 专用命令行参数（configs/example/kmhv3.py）
 

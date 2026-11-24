@@ -43,9 +43,7 @@ Environment:
   TRACE_FORMAT       champsim | cbp2025 (default: champsim)
 
 Notes:
-  - This script is intended to be used with util/xs_scripts/parallel_sim.sh.
-  - When used with parallel_sim.sh, each workload's work_dir is set as CWD,
-    and this script will write all outputs into that directory.
+  - For batch replay use ci/run_batch.py with --trace-format.
 EOF
 }
 
@@ -102,8 +100,7 @@ if [[ ! -f "${TRACE_FILE}" ]]; then
     exit 1
 fi
 
-# Output directory: default to current working directory. When called from
-# parallel_sim.sh, this will be each workload's work_dir.
+# Output defaults to the current working directory.
 OUTDIR=${OUTDIR:-"$(pwd)"}
 mkdir -p "${OUTDIR}"
 # gem5 interprets --stats-file relative to --outdir, so keep it absolute.

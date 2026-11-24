@@ -1,5 +1,7 @@
 # 入门-跑一遍checkpoint
 
+本文记录早期 GNU parallel 工作流及源码。当前单点与批量命令见[快速入门](../../quick_start.md)。
+
 ## 安装环境
 1. 连接好大机房、小机房，配置好rsa密钥
     1. windows本机下载git bash，生成一份，copy到大机房一个节点就行，由于nfs共享文件系统，其他节点也能直接连接

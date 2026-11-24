@@ -15,7 +15,7 @@ on:
       benchmark_type:
         required: true
         type: string
-        description: "Benchmark type registered in util/xs_scripts/perf_benchmarks.py"
+        description: "Benchmark type registered in util/xs_scripts/ci/benchmarks.py"
       checkpoint_path:
         required: false
         type: string
@@ -54,7 +54,7 @@ on:
         required: false
         type: string
         default: ""
-        description: "Optional distributed runner server list. Empty keeps using parallel_sim.sh; 'default' uses the shared SMT node pool."
+        description: "Optional distributed runner server list. Empty runs locally; 'default' uses the shared CI pool."
       distributed_jobs_per_server:
         required: false
         type: number
@@ -84,404 +84,71 @@ jobs:
           ref: ${{ inputs.pr_sha || github.sha }}
           persist-credentials: false
 
-      - name: Set benchmark configuration
-        id: config
-        env:
-          BENCHMARK_TYPE: ${{ inputs.benchmark_type }}
-          CHECKPOINT_PATH_INPUT: ${{ inputs.checkpoint_path }}
-          JSON_PATH_INPUT: ${{ inputs.json_path }}
-          GCBV_REF_INPUT: ${{ inputs.gcbv_ref_so }}
-          CONFIG_PATH_INPUT: ${{ inputs.config_path }}
-        run: |
-          python3 util/xs_scripts/perf_benchmarks.py \
-            "$BENCHMARK_TYPE" \
-            --checkpoint-path "$CHECKPOINT_PATH_INPUT" \
-            --json-path "$JSON_PATH_INPUT" \
-            --output-dir "$GITHUB_WORKSPACE/.perf-inputs" \
-            --github-output "$GITHUB_OUTPUT"
-
-          if [[ "$BENCHMARK_TYPE" == trace-* ]]; then
-            : # Trace replay needs no checkpoint REF/restorer/mem-dedup setup.
-          elif [[ "$BENCHMARK_TYPE" == h-spec06-* ]]; then
-            H_REF_SO="$(python3 util/nemu_ref/resolve.py h)"
-            H_RESTORER="/nfs/home/share/gem5_ci/tools/gcpt.bin"
-            H_DRAM_INI="$GITHUB_WORKSPACE/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini"
-            echo "profile_ref_so=$H_REF_SO" >> "$GITHUB_OUTPUT"
-            echo "profile_restorer=$H_RESTORER" >> "$GITHUB_OUTPUT"
-            echo "profile_extra_args=--enable-h-gcpt --restore-rvh-cpt --gcpt-restorer=$H_RESTORER --difftest-ref-so=$H_REF_SO --maxinsts=40000000 --dramsim3-ini=$H_DRAM_INI" >> "$GITHUB_OUTPUT"
-          elif [[ "$BENCHMARK_TYPE" == gcc12-spec06-smt-* || "$CONFIG_PATH_INPUT" == */smt_idealkmhv3.py ]]; then
-            MULTI_REF_SO="$(python3 util/nemu_ref/resolve.py multi)"
-            echo "multi_ref_so=$MULTI_REF_SO" >> "$GITHUB_OUTPUT"
-            echo "profile_extra_args=--mem-size=16GB" >> "$GITHUB_OUTPUT"
-          elif [[ -z "$GCBV_REF_INPUT" ]]; then
-            GCBV_REF_INPUT="$(python3 util/nemu_ref/resolve.py normal-dedup)"
-            echo "profile_extra_args=--enable-mem-dedup" >> "$GITHUB_OUTPUT"
-          fi
-          echo "gcbv_ref_so=$GCBV_REF_INPUT" >> "$GITHUB_OUTPUT"
-
-          case "${{ inputs.config_path }}" in
-            */kmhv3.py|*/kmhv2.py)
-              artifact_name_prefix="score"
-              ;;
-            */idealkmhv3.py)
-              artifact_name_prefix="score-ideal"
-              ;;
-            */smt_idealkmhv3.py)
-              artifact_name_prefix="score-smt-ideal"
-              ;;
-            *)
-              artifact_name_prefix="score-unknown"
-              ;;
-          esac
-          echo "artifact_name=${artifact_name_prefix}-${{ inputs.benchmark_type }}" >> "$GITHUB_OUTPUT"
-
-      - uses: ./.github/actions/build-dramsim
-      - name: Build GEM5 fast
-        run: |
-          export GEM5_HOME=$(pwd)
-          # PGO always uses a single-core raw CoreMark image.
-          GCBV_REF_SO="$(python3 util/nemu_ref/resolve.py normal)"
-          export GCBV_REF_SO
-          # use pgo profile to build gem5
-          bash util/pgo/basic_pgo_new.sh
-
-      - name: Prepare performance archive
-        id: archive
-        env:
-          CONFIG_PATH_INPUT: ${{ inputs.config_path }}
-          BENCHMARK_TYPE_INPUT: ${{ steps.config.outputs.benchmark_type }}
-          ARCHIVE_SUBDIR_INPUT: ${{ steps.config.outputs.archive_subdir }}
-          SPECIFIC_BENCHMARKS_INPUT: ${{ inputs.specific_benchmarks }}
-          EXTRA_ARGS_INPUT: ${{ inputs.extra_args }}
-          CHECKPOINT_LIST_INPUT: ${{ steps.config.outputs.checkpoint_list }}
-          CHECKPOINT_ROOT_INPUT: ${{ steps.config.outputs.checkpoint_root_node }}
-          CLUSTER_CONFIG_INPUT: ${{ steps.config.outputs.cluster_config }}
-          DISTRIBUTED_SERVERS_RAW: ${{ inputs.distributed_servers }}
-          DISTRIBUTED_JOBS_PER_SERVER_RAW: ${{ inputs.distributed_jobs_per_server }}
-        run: |
-          ARCHIVE_ROOT="/nfs/home/share/gem5_ci/performance_data"
-          BENCHMARK_DIR="${ARCHIVE_ROOT}/${ARCHIVE_SUBDIR_INPUT}"
-          TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-          COMMIT_SHORT=$(git rev-parse --short HEAD)
-          RUN_NUMBER="${{ github.run_number }}"
-          CONFIG_NAME=$(basename "$CONFIG_PATH_INPUT" .py)
-          CONFIG_NAME=$(printf '%s' "$CONFIG_NAME" | tr -c 'A-Za-z0-9._-' '_')
-          CONFIG_NAME=${CONFIG_NAME:-config}
-          TARGET_DIR="${BENCHMARK_DIR}/${TIMESTAMP}_${COMMIT_SHORT}_${CONFIG_NAME}_run${RUN_NUMBER}"
-          # Keep node030-node033 and node035 out of the shared pool.
-          DEFAULT_DISTRIBUTED_SERVERS="node003-node008,node020-node029,node034,node036-node042"
-          DISTRIBUTED_SERVERS_INPUT="$DISTRIBUTED_SERVERS_RAW"
-          DISTRIBUTED_SERVERS=$(echo "$DISTRIBUTED_SERVERS_INPUT" | xargs)
-          if [ "$DISTRIBUTED_SERVERS" = "default" ]; then
-            DISTRIBUTED_SERVERS="$DEFAULT_DISTRIBUTED_SERVERS"
-          fi
-          DISTRIBUTED_REQUIRE_IDLE_CPUS="$DISTRIBUTED_JOBS_PER_SERVER_RAW"
-          DISTRIBUTED_IDLE_PROBE_MODE="physical"
-
-          mkdir -p "$TARGET_DIR"
-          cp "$CHECKPOINT_LIST_INPUT" "$TARGET_DIR/checkpoints.lst"
-          # Archive SPEC or Google trace weights with the run.
-          if [[ -n "$CLUSTER_CONFIG_INPUT" ]]; then
-            cp "$CLUSTER_CONFIG_INPUT" "$TARGET_DIR/cluster.json"
-          fi
-
-          {
-            echo "benchmark_dir=$BENCHMARK_DIR"
-            echo "target_dir=$TARGET_DIR"
-            echo "timestamp=$TIMESTAMP"
-            echo "commit_short=$COMMIT_SHORT"
-            echo "config_name=$CONFIG_NAME"
-            echo "run_number=$RUN_NUMBER"
-            echo "distributed_servers=$DISTRIBUTED_SERVERS"
-            echo "distributed_require_idle_cpus=$DISTRIBUTED_REQUIRE_IDLE_CPUS"
-            echo "distributed_idle_probe_mode=$DISTRIBUTED_IDLE_PROBE_MODE"
-          } >> "$GITHUB_OUTPUT"
-
-          echo "timestamp: $TIMESTAMP" > "$TARGET_DIR/metadata.txt"
-          echo "commit: $(git rev-parse HEAD)" >> "$TARGET_DIR/metadata.txt"
-          echo "commit_short: $COMMIT_SHORT" >> "$TARGET_DIR/metadata.txt"
-          echo "branch: ${GITHUB_REF#refs/heads/}" >> "$TARGET_DIR/metadata.txt"
-          echo "config_path: $CONFIG_PATH_INPUT" >> "$TARGET_DIR/metadata.txt"
-          echo "config_name: $CONFIG_NAME" >> "$TARGET_DIR/metadata.txt"
-          echo "run_number: $RUN_NUMBER" >> "$TARGET_DIR/metadata.txt"
-          echo "benchmark_type: $BENCHMARK_TYPE_INPUT" >> "$TARGET_DIR/metadata.txt"
-          echo "checkpoint_root: $CHECKPOINT_ROOT_INPUT" >> "$TARGET_DIR/metadata.txt"
-          echo "checkpoint_list: $CHECKPOINT_LIST_INPUT" >> "$TARGET_DIR/metadata.txt"
-          echo "cluster_config: $CLUSTER_CONFIG_INPUT" >> "$TARGET_DIR/metadata.txt"
-          echo "specific_benchmarks: $SPECIFIC_BENCHMARKS_INPUT" >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_servers_input: $DISTRIBUTED_SERVERS_INPUT" >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_servers: $DISTRIBUTED_SERVERS" >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_server_domain: " >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_jobs_per_server: $DISTRIBUTED_JOBS_PER_SERVER_RAW" >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_require_idle_cpus: $DISTRIBUTED_REQUIRE_IDLE_CPUS" >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_idle_probe_mode: $DISTRIBUTED_IDLE_PROBE_MODE" >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_idle_cpu_threshold: 30" >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_ssh_config: " >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_ssh_user: " >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_launch_retries: 3" >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_launch_retry_delay: 30" >> "$TARGET_DIR/metadata.txt"
-          echo "distributed_launch_interval: 0.5" >> "$TARGET_DIR/metadata.txt"
-          printf 'extra_args: %s\n' "$EXTRA_ARGS_INPUT" >> "$TARGET_DIR/metadata.txt"
-          echo "workflow_run_id: ${{ github.run_id }}" >> "$TARGET_DIR/metadata.txt"
-
-          {
-            echo "### Live archive output"
-            echo "- Path: \`$TARGET_DIR\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Check out progress formatter for an overridden test ref
-        if: ${{ (inputs.pr_sha || github.sha) != github.workflow_sha }}
-        id: progress_source
+      - name: Check out CI tools from the workflow revision
         uses: actions/checkout@v7
         with:
           ref: ${{ github.workflow_sha }}
           path: .perf-workflow
-          sparse-checkout: util/xs_scripts/perf_progress.py
-          sparse-checkout-cone-mode: false
+          sparse-checkout: util/xs_scripts/ci
           persist-credentials: false
 
-      - name: XS-GEM5 - Run performance test
-        # ${{ steps.config.outputs.comment }}
-        env:
-          GCBV_REF_SO: ${{ steps.config.outputs.gcbv_ref_so }}
-          GCBV_MULTI_CORE_REF_SO: ${{ steps.config.outputs.multi_ref_so }}
-          GEM5_HOME: ${{ github.workspace }}
-          GEM5_BUILD_TYPE: fast
-          PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
-          CONFIG_PATH_INPUT: ${{ inputs.config_path }}
-          BENCHMARK_TYPE_INPUT: ${{ steps.config.outputs.benchmark_type }}
-          SPECIFIC_BENCHMARKS_INPUT: ${{ inputs.specific_benchmarks }}
-          EXTRA_GEM5_ARGS_RAW: ${{ inputs.extra_args }}
-          CHECKPOINT_LIST: ${{ steps.archive.outputs.target_dir }}/checkpoints.lst
-          CHECKPOINT_PROGRESS_SCRIPT: ${{ steps.progress_source.outcome == 'success' && '.perf-workflow/util/xs_scripts/perf_progress.py' || 'util/xs_scripts/perf_progress.py' }}
-          CHECKPOINT_ROOT_NODE: ${{ steps.config.outputs.checkpoint_root_node }}
-          DISTRIBUTED_SERVERS: ${{ steps.archive.outputs.distributed_servers }}
-          DISTRIBUTED_JOBS_PER_SERVER: ${{ inputs.distributed_jobs_per_server }}
-          DISTRIBUTED_REQUIRE_IDLE_CPUS: ${{ steps.archive.outputs.distributed_require_idle_cpus }}
-          DISTRIBUTED_IDLE_PROBE_MODE: ${{ steps.archive.outputs.distributed_idle_probe_mode }}
-          GCBH_REF_SO: ${{ steps.config.outputs.profile_ref_so }}
-          GCBH_RESTORER: ${{ steps.config.outputs.profile_restorer }}
-          PROFILE_EXTRA_ARGS: ${{ steps.config.outputs.profile_extra_args }}
-          # A nonempty trace format selects trace replay.
-          TRACE_FORMAT: ${{ steps.config.outputs.trace_format }}
+      - uses: ./.github/actions/build-dramsim
+      - name: Build GEM5 fast
         run: |
-          mkdir -p "$PERF_ARCHIVE_DIR"
-          cd "$PERF_ARCHIVE_DIR"
+          export GEM5_HOME="$PWD"
+          GCBV_REF_SO="$(python3 util/nemu_ref/resolve.py normal)"
+          export GCBV_REF_SO
+          bash util/pgo/basic_pgo_new.sh
 
-          CONFIG_PATH="$CONFIG_PATH_INPUT"
-          if [[ "$CONFIG_PATH" == /* ]]; then
-            echo "Error: config_path must be repo-root-relative, got absolute path: '$CONFIG_PATH'"
-            exit 1
-          fi
-          if [[ "$CONFIG_PATH" != *.py ]]; then
-            echo "Error: config_path must be a .py gem5 config file path, got: '$CONFIG_PATH'"
-            exit 1
-          fi
+      - name: Run performance test
+        id: perf
+        working-directory: .perf-workflow
+        env:
+          PERF_INPUTS: ${{ toJSON(inputs) }}
+        run: python3 -m util.xs_scripts.ci.run_perf_ci --repo "$GITHUB_WORKSPACE"
 
-          CONFIG_PATH="$GEM5_HOME/$CONFIG_PATH"
-          if [[ -n "$GCBV_MULTI_CORE_REF_SO" ]]; then
-            export GCB_MULTI_CORE_RESTORER=""
-          fi
-
-          extra_args="$EXTRA_GEM5_ARGS_RAW"
-          extra_args="$(echo "$extra_args" | xargs)"
-          extra_args="${extra_args//\$\{GEM5_HOME\}/$GEM5_HOME}"
-          extra_args="${extra_args//\$GEM5_HOME/$GEM5_HOME}"
-          extra_args="$(echo "$extra_args $PROFILE_EXTRA_ARGS" | xargs)"
-          echo "Resolved extra gem5 args: $extra_args"
-          printf 'resolved_extra_args: %s\n' "$extra_args" >> "$PERF_ARCHIVE_DIR/metadata.txt"
-
-          # Reuse checkpoint scheduling and fallback; trace needs no REF.
-          trace_args=()
+      - name: Score performance test
+        working-directory: .perf-workflow
+        shell: bash
+        env:
+          ARCHIVE: ${{ steps.perf.outputs.archive }}
+          BENCHMARK_TYPE: ${{ steps.perf.outputs.benchmark_type }}
+          TRACE_FORMAT: ${{ steps.perf.outputs.trace_format }}
+          SCORE_SCRIPT: ${{ steps.perf.outputs.score_script }}
+          PARTIAL: ${{ steps.perf.outputs.partial }}
+        run: |
+          score="$ARCHIVE/score.txt"
           if [[ -n "$TRACE_FORMAT" ]]; then
-            trace_args=("--trace-format=$TRACE_FORMAT")
+            python3 -m util.xs_scripts.ci.trace_report "$BENCHMARK_TYPE" "$ARCHIVE" > "$score"
           else
-            ref_so="${GCBV_MULTI_CORE_REF_SO:-${GCBH_REF_SO:-$GCBV_REF_SO}}"
-            test -r "$ref_so"
-            printf 'ref_so: %s\n' "$ref_so" >> "$PERF_ARCHIVE_DIR/metadata.txt"
-            sha256sum "$ref_so" >> "$PERF_ARCHIVE_DIR/metadata.txt"
-            if [[ -f "$(dirname "$ref_so")/manifest.json" ]]; then
-              cp "$(dirname "$ref_so")/manifest.json" "$PERF_ARCHIVE_DIR/ref-manifest.json"
-            fi
-
-            if [ -n "$GCBH_REF_SO" ]; then
-              test -r "$GCBH_REF_SO"
-              test -r "$GCBH_RESTORER"
-              test -d "$CHECKPOINT_ROOT_NODE"
-              {
-                echo "profile_ref_so: $GCBH_REF_SO"
-                echo "profile_restorer: $GCBH_RESTORER"
-              } >> "$PERF_ARCHIVE_DIR/metadata.txt"
-            fi
+            tmp=$(mktemp -d)
+            trap 'rm -rf -- "$tmp"' EXIT
+            rsync -a --exclude=/.git --exclude=/results /nfs/home/share/gem5_ci/gem5_data_proc/ "$tmp/scorer/"
+            mkdir "$tmp/spec_all"
+            while IFS= read -r name; do
+              ln -s -- "$ARCHIVE/spec_all/$name" "$tmp/spec_all/$name"
+            done < "$ARCHIVE/passed.lst"
+            cd "$tmp/scorer" || exit 1
+            export GEM5_HOME="$GITHUB_WORKSPACE"
+            export PYTHONPATH="$PWD:/nfs/home/yanyue/.local/lib/python3.12/site-packages:${PYTHONPATH:-}"
+            {
+              if [[ -n "$PARTIAL" ]]; then echo "$PARTIAL"; fi
+              bash -e "example-scripts/$SCORE_SCRIPT" "$tmp/spec_all" "$ARCHIVE/cluster.json"
+            } > "$score"
           fi
-
-          progress_wrapper=(python3 "$GEM5_HOME/$CHECKPOINT_PROGRESS_SCRIPT"
-            "$CHECKPOINT_LIST" "$SPECIFIC_BENCHMARKS_INPUT" "$TRACE_FORMAT")
-
-          run_local_parallel() {
-            if [[ -n "$TRACE_FORMAT" ]]; then
-              "${progress_wrapper[@]}" bash "$GEM5_HOME/util/xs_scripts/trace/parallel_trace_sim.sh" \
-                "$CONFIG_PATH" "$CHECKPOINT_LIST" "$CHECKPOINT_ROOT_NODE" \
-                spec_all "$SPECIFIC_BENCHMARKS_INPUT" "$extra_args"
-            else
-              echo "Using local parallel_sim.sh runner"
-              "${progress_wrapper[@]}" bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
-                "$CHECKPOINT_LIST" \
-                "$CHECKPOINT_ROOT_NODE" \
-                spec_all \
-                "$SPECIFIC_BENCHMARKS_INPUT" \
-                "$extra_args"
-            fi
-          }
-
-          distributed_servers="$DISTRIBUTED_SERVERS"
-          if [ -n "$distributed_servers" ]; then
-            echo "Using distributed gem5 runner on servers: $distributed_servers"
-            distributed_status=0
-            "${progress_wrapper[@]}" python3 "$GEM5_HOME/util/xs_scripts/distributed_sim.py" \
-              --servers "$distributed_servers" \
-              --jobs-per-server "$DISTRIBUTED_JOBS_PER_SERVER" \
-              --require-idle-cpus "$DISTRIBUTED_REQUIRE_IDLE_CPUS" \
-              --idle-probe-mode "$DISTRIBUTED_IDLE_PROBE_MODE" \
-              --launch-retries 3 \
-              --launch-retry-delay 30 \
-              --launch-interval 0.5 \
-              --ssh-option StrictHostKeyChecking=accept-new \
-              --ssh-option UserKnownHostsFile="$PERF_ARCHIVE_DIR/known_hosts" \
-              --ssh-option ConnectTimeout=10 \
-              --build-type "$GEM5_BUILD_TYPE" \
-              "${trace_args[@]}" \
-              "$(realpath "$CONFIG_PATH")" \
-              "$CHECKPOINT_LIST" \
-              "$CHECKPOINT_ROOT_NODE" \
-              spec_all \
-              "$SPECIFIC_BENCHMARKS_INPUT" \
-              "$extra_args" || distributed_status=$?
-
-            if [ "$distributed_status" -eq 75 ]; then
-              echo "::warning title=Distributed servers unavailable::Falling back to local parallel_sim.sh"
-              run_local_parallel
-            elif [ "$distributed_status" -ne 0 ]; then
-              exit "$distributed_status"
-            fi
-          else
-            run_local_parallel
-          fi
-      # SPEC scoring applies only to checkpoint suites.
-      - name: Setup gem5_data_proc environment
-        if: ${{ steps.config.outputs.trace_format == '' }}
-        run: |
-          # 使用本地数据处理仓库，避免GitHub网络问题
-          cd $GITHUB_WORKSPACE
-          cp -r /nfs/home/share/gem5_ci/gem5_data_proc .
-      - name: Check performance test result
-        if: ${{ steps.config.outputs.trace_format == '' }}
-        env:
-          PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
-        run: |
-          # 添加yanyue的 Python 包路径, 包含pandas等
-          export PYTHONPATH=$GITHUB_WORKSPACE/gem5_data_proc:/nfs/home/yanyue/.local/lib/python3.12/site-packages:$PYTHONPATH
-          # 每次run 会进入新的shell, 需要重新设置GEM5_HOME
-          export GEM5_HOME=$GITHUB_WORKSPACE
-
-          cd $GITHUB_WORKSPACE/gem5_data_proc
-          CLUSTER_CONFIG="$PERF_ARCHIVE_DIR/cluster.json"
-          if [[ "$CLUSTER_CONFIG" != /* ]]; then
-            CLUSTER_CONFIG="$GEM5_HOME/$CLUSTER_CONFIG"
-          fi
-          # 使用已有的数据spec_all生成测试报告
-          bash example-scripts/${{ steps.config.outputs.score_script }} \
-            "$PERF_ARCHIVE_DIR/spec_all" \
-            "$CLUSTER_CONFIG" \
-            > $GITHUB_WORKSPACE/score.txt
-          cp "$GITHUB_WORKSPACE/score.txt" "$PERF_ARCHIVE_DIR/"
-          # 提取最后42行score信息
-          echo "### performance test result :rocket:" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          tail -n 42 $GITHUB_WORKSPACE/score.txt >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          # 提取关键指标
-          FINAL_SCORE=$(grep "Estimated Int score per GHz:" $GITHUB_WORKSPACE/score.txt | awk '{print $NF}')
-          echo "### Key indicators" >> $GITHUB_STEP_SUMMARY
-          echo "- Final Int score per GHz: **${FINAL_SCORE}**" >> $GITHUB_STEP_SUMMARY
-
-          # 最后检查是否存在abort文件， 如果存在，打出前10个错误名字
-          ABORT_COUNT=$(find "$PERF_ARCHIVE_DIR/spec_all" -type f -name "abort" | wc -l)
-          if [ "$ABORT_COUNT" -gt 0 ]; then
-            echo "### :x: Test Failures Detected!" >> $GITHUB_STEP_SUMMARY
-            echo "Failed test count: $ABORT_COUNT" >> $GITHUB_STEP_SUMMARY
-            echo "First 10 failed tests:" >> $GITHUB_STEP_SUMMARY
-            find "$PERF_ARCHIVE_DIR/spec_all" -type f -name "abort" |
-              sed 's|.*/\([^/]*\)/abort|\1|' |
-              head -n 10 |
-              while read -r line; do
-                echo "- $line" >> $GITHUB_STEP_SUMMARY
-              done
-              if [ "${{ inputs.check_result }}" == "true" ]; then
-                exit 1
-              fi
-          fi
-      # Trace reports reuse score.txt and the existing archive/upload steps.
-      - name: Check trace performance results
-        if: ${{ !cancelled() && steps.config.outputs.trace_format != '' && steps.archive.outputs.target_dir != '' }}
-        env:
-          BENCHMARK_TYPE: ${{ steps.config.outputs.benchmark_type }}
-          PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
-        run: |
-          status=0
-          python3 util/xs_scripts/perf_benchmarks.py "$BENCHMARK_TYPE" \
-            --output-dir "$PERF_ARCHIVE_DIR" \
-            --trace-results "$PERF_ARCHIVE_DIR/spec_all" \
-            > "$GITHUB_WORKSPACE/score.txt" || status=$?
-          cp "$GITHUB_WORKSPACE/score.txt" "$PERF_ARCHIVE_DIR/"
           {
-            echo '### Trace performance test result'
+            echo "### ${PARTIAL:-Performance result}"
             echo '```'
-            cat "$GITHUB_WORKSPACE/score.txt"
+            if [[ -n "$TRACE_FORMAT" ]]; then cat "$score"; else tail -n 42 "$score"; fi
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          exit "$status"
 
-      - name: Archive performance data
-        if: ${{ always() && steps.archive.outputs.target_dir != '' }}
-        run: |
-          BENCHMARK_DIR="${{ steps.archive.outputs.benchmark_dir }}"
-          TARGET_DIR="${{ steps.archive.outputs.target_dir }}"
-
-          echo "Performance data already written to $TARGET_DIR"
-          
-          # Also save score.txt for quick reference
-          if [ -f "$GITHUB_WORKSPACE/score.txt" ]; then
-            cp "$GITHUB_WORKSPACE/score.txt" "$TARGET_DIR/"
-          fi
-          
-          # Auto cleanup: keep only last 200 runs for this benchmark type
-          if [ -d "$BENCHMARK_DIR" ] && [ $(ls -1 "$BENCHMARK_DIR" 2>/dev/null | wc -l) -gt 200 ]; then
-            echo "Cleaning up old performance data, keeping last 200 runs"
-            # Use absolute paths to avoid accidental deletion if cd fails
-            ls -1t "$BENCHMARK_DIR" | tail -n +201 | while read -r old_run; do
-              if [ -n "$old_run" ] && [ -d "$BENCHMARK_DIR/$old_run" ]; then
-                rm -rf "$BENCHMARK_DIR/$old_run"
-                echo "Deleted: $BENCHMARK_DIR/$old_run"
-              fi
-            done
-            echo "Cleanup completed"
-          fi
-          
-          echo "Performance data archived successfully"
-          ARCHIVE_SIZE=$(du -sh "$TARGET_DIR/spec_all" 2>/dev/null | cut -f1 || echo "missing")
-          echo "Archive size: ${ARCHIVE_SIZE}"
-          {
-            echo "### Archive output"
-            echo "- Path: \`$TARGET_DIR\`"
-            echo "- Size: ${ARCHIVE_SIZE}"
-          } >> $GITHUB_STEP_SUMMARY
       - name: Upload score artifact
-        if: always()
+        if: ${{ always() && steps.perf.outputs.archive != '' }}
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.config.outputs.artifact_name }}
-          path: score.txt
+          name: ${{ steps.perf.outputs.artifact_name }}
+          path: ${{ steps.perf.outputs.archive }}/score.txt
           if-no-files-found: warn
           retention-days: 30

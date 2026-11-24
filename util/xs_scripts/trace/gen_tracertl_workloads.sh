@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Generate a parallel_trace_sim.sh workload list for a TRACERTL simpoint
+# Generate a run_batch.py workload list for a TRACERTL simpoint
 # interval corpus.
 #
 # Corpus layout (gwt-v2-nemu-format-simpoint-interval style):
@@ -15,8 +15,8 @@
 # the segment's TRANSFORMED (RISC-V) records. Only Y is in the reader's
 # instruction unit (W_to + S_to == "Total Transformed" == 48-byte record
 # count), so dw = warm-up "to" and sample = sampling "to".
-# parallel_trace_sim.sh maps fw+dw -> XS_WARMUP_INSTS_NO_SWITCH and
-# fw+dw+sample -> XS_MAX_INSTS, matching the reader's record counting.
+# run_batch.py maps fw+dw to --warmup-insts-no-switch and
+# fw+dw+sample to --maxinsts, matching the reader's record counting.
 #
 # Usage:
 #   bash gen_tracertl_workloads.sh <corpus_root> [output_list]

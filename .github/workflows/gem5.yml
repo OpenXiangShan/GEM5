@@ -225,7 +225,8 @@ jobs:
           export GEM5_HOME=$(pwd)
           mkdir -p $GEM5_HOME/util/xs_scripts/test_multi_core
           cd $GEM5_HOME/util/xs_scripts/test_multi_core
-          bash ../kmh-ruby-dual.sh /nfs/home/share/gem5_ci/checkpoints/multi_core_test.gz --mem-size=16GB --disable-tea --disable-dip
+          "$GEM5_HOME/build/RISCV_CHI/gem5.opt" "$GEM5_HOME/configs/example/kmhv2.py" \
+            --ruby --num-cpus=2 --mem-type=DDR4_2400_8x8 --generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/multi_core_test.gz --mem-size=16GB --disable-tea --disable-dip
 
   new_sim_script_test_gcbh:
     if: |
@@ -253,7 +254,8 @@ jobs:
           export GEM5_HOME=$(pwd)
           mkdir -p $GEM5_HOME/util/xs_scripts/test_h
           cd $GEM5_HOME/util/xs_scripts/test_h
-          bash ../kmh_6wide_h.sh /nfs/home/share/gem5_ci/checkpoints/gcbh_test.zstd
+          "$GEM5_HOME/build/RISCV/gem5.opt" "$GEM5_HOME/configs/example/kmhv2.py" \
+            --restore-rvh-cpt --generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/gcbh_test.zstd
 
   trace_micro_corpus_test:
     if: |

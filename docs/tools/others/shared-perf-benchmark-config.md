@@ -1,87 +1,14 @@
-# 性能 CI 与 Solver 共用切片配置
+# 性能 CI 与 Solver 的切片与执行
 
-## 背景
+Perf 和 Solver 从 `util/xs_scripts/ci/benchmarks.py` 读取同一份 profile。SPEC 的权重 JSON 决定选点，每个 `workload/point` 在切片根目录下对应一个镜像。Trace 从六列清单读取文件和测量区间。所有作业经过筛选后交给 `runner.py`，可以在本机执行，也可以用 SSH 分配到共享池。空服务器列表表示本机，`default` 选择共同的节点池。Perf 在启动时探测节点，池内节点全部失联时再重探。Solver 在排队任务缺少空槽时按间隔重新探测，继续控制 trial、overlay、超时和目标函数。
 
-过去有两份内建切片路径配置：
+GCC12 weekly 单线程及 SMT 1c 共用切片目录 `spec06_cpts/gcc12-spec06-paired.json`，包含 1,167 个成对镜像。它保留旧权重和指令数，移除了 SMT 缺镜像的两个 HMMER 第 0 点。手动 SMT INT 1c 使用同目录下的 682 点 INT JSON。SMT 0.3c 继续使用 `spec06_0.3c.json` 的 148 点。
 
-- `.github/workflows/gem5-perf-template.yml` 维护手动性能测试使用的
-  checkpoint list、checkpoint root、聚类配置和算分脚本。
-- `util/solver/executor/benchmarks.py` 为 solver 再复制一遍相同路径。
+Weekly 的 XSCC SPEC06 和双 hart GCC16 SPEC17 分别使用 `xscc-spec06-1.0c` 和 `gcc16-spec17-smt-1.0c`。XSCC 使用 32 GB 内存及对应的单核 dedup REF，双 hart 使用 SMT 模式的 16 GB 内存及 multi REF。两者沿用原先的 `custom/<profile目录名>` 归档，历史结果仍在同一目录。
 
-这会让一次切片迁移必须同时修改 workflow 和 solver。漏改任意一处后，普通性能测试与
-参数求解会在同一个 `benchmark_type` 下运行不同数据。
+新增 SPEC profile 时，在 catalog 登记根目录、权重文件和 SPEC 版本。需要出现在手动菜单时再增加对应 choice。Perf 使用被测 checkout 的配置、PGO 构建和 REF lock，调用 workflow 版本的 CI 工具。一次运行写入独立归档，`checkpoints.lst` 记录实际选点，`cluster.json` 保存计分权重。每个切片的 `log.txt` 记录命令和主机，终态由 launcher 统一写入。摘要最多列出 20 个未完成点，完整清单写入归档的 `metadata.txt`。
 
-## 设计
-
-切片配置的唯一来源现在是：
-
-`util/xs_scripts/perf_benchmarks.py`
-
-```text
-util/xs_scripts/perf_benchmarks.py
-        |
-        +-- CLI --> gem5-perf-template.yml --> GitHub step outputs
-        |
-        +-- import --> solver/executor/benchmarks.py --> solver workloads
-```
-
-性能模板仍然是完整性能测试流程的主入口。共享模块只是把模板原来的 `case` 配置变成
-可复用、可单测的 resolver，避免 solver 复制模板数据。
-
-共享字段与消费者的关系如下：
-
-| 共享字段 | 性能 workflow 输出 | Solver 用途 |
-| --- | --- | --- |
-| `checkpoint_list` | `checkpoint_list` | 枚举 workload |
-| `checkpoint_root` | `checkpoint_root_node` | 定位 `.gz` / `.zstd` checkpoint |
-| `cluster_config` | `cluster_config` | weighted stats 和 score 聚合 |
-| `score_script` | `score_script` | 生成 `score.txt` |
-| `comment` | `comment` | 性能任务说明 |
-
-## 职责边界
-
-共享 catalog 只描述 benchmark 数据，不表示每个消费者都支持其中的全部类型。
-
-- `gem5-perf-template.yml` 可以使用完整 catalog，并继续负责 H-profile、SMT 环境、构建、
-  执行、归档、算分和基于 config 类型生成 artifact 名称。
-- solver 复用路径，但继续在 `util/solver/types.py` 中维护自身能力限制。例如 catalog
-  包含 `gcc12-spec06-smt-*` 和 `h-spec06-*`，solver 当前仍会明确拒绝这些类型。
-- `manual-perf.yml` 和 `manual-solve.yml` 中的 `choice` 是 GitHub Actions 要求的静态 UI
-  allowlist。`manual-solve.yml` 可以只列 solver 已支持的子集；这些列表不再包含切片路径。
-- `custom_bin` 是 solver 的独立入口，不进入共享 catalog。
-
-## 维护方法
-
-### 修改已有切片路径
-
-只修改 `util/xs_scripts/perf_benchmarks.py` 中对应的 `BenchmarkConfig`。性能模板和 solver
-会在同一个 commit 中自动使用新值，不再修改 `util/solver/executor/benchmarks.py`。
-
-本地检查 resolver：
-
-```bash
-python3 util/xs_scripts/perf_benchmarks.py spec06-rva23-novec-gcc16-0.3c
-```
-
-不传 `--github-output` 时会打印 JSON，便于检查最终路径。性能 workflow 使用
-`--github-output "$GITHUB_OUTPUT"` 生成兼容原模板的 step outputs。
-
-### 新增 benchmark 类型
-
-1. 在 `util/xs_scripts/perf_benchmarks.py` 增加一个 `BenchmarkConfig`。
-2. 在需要暴露该类型的手动 workflow 中增加静态 `choice`；不支持该类型的入口不要增加。
-3. 如果 solver 对该类型有额外能力限制，在 solver validation 中维护限制，不复制路径。
-4. 运行下面的定向测试。
-
-```bash
-python3 util/xs_scripts/perf_benchmarks.py <benchmark-type>
-python3 -m py_compile \
-  util/xs_scripts/perf_benchmarks.py \
-  util/solver/executor/benchmarks.py
-```
-
-提交前应确认性能模板调用共享 resolver、solver 不再包含 NFS 切片路径、GitHub output
-schema 保持兼容，以及 solver 的 SMT/H-profile 限制没有因共享 catalog 而放宽。
+切片退出后立即释放执行槽位，`completed` 表示进程正常退出。调度机在整批结束后检查每个正常退出切片的 stats 尾标，所有尚不可读或未写完的文件共用 60 秒等待窗口。通过检查的切片写入归档的 `passed.lst`。workflow 的下一步按这份名单算分并展示结果。严格模式和 Trace 缺点会跳过算分，允许部分结果的 SPEC 任务会在分数首行标注覆盖率。
 
 ## 手动运行新的切片 profile
 
@@ -114,12 +41,12 @@ NEMU 沿用现有统一 REF 选择逻辑。单核使用普通 configuration；�
 本地只检查目录和配置，不启动 GEM5：
 
 ```bash
-python3 util/xs_scripts/perf_benchmarks.py custom \
+python3 -m util.xs_scripts.ci.run_perf_ci --dry-run --benchmark-type custom \
   --checkpoint-path /nfs/home/share/checkpoints_profiles/spec17_rate_gcc16_rva23_novec_260904 \
-  --output-dir /tmp/gem5-custom-perf
+  --config-path configs/example/kmhv3.py
 ```
 
-预检在 CI 构建前执行；缺镜像或歧义会直接报错。归档目录使用
+入口在派发前核对输入；缺镜像或歧义会直接报错。归档目录使用
 `custom/<profile目录名>/<时间_SHA_配置_run编号>`，内建类型仍使用原路径。
 路径与 JSON 内容摘要保留在 metadata 的 `benchmark_type` 中，用于区分同名
 profile 或权重更新；目录名相同不代表结果可以直接作为 baseline 比较。

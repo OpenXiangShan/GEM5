@@ -282,13 +282,6 @@ cd $GEM5_HOME
 当准备好checkpoint文件后，可以运行以下命令来运行checkpoint：
 
 ```bash
-mkdir util/xs_scripts/example
-cd util/xs_scripts/example
-bash ../kmh_v3_btb.sh /path/to/a/single/checkpoint.gz
-```
-
-上方命令等效于
-```bash
 ./build/RISCV/gem5.opt ./configs/example/kmhv3.py --generic-rv-cpt=/path/to/a/single/checkpoint.gz
 ```
 
@@ -297,17 +290,10 @@ bash ../kmh_v3_btb.sh /path/to/a/single/checkpoint.gz
 如需批量运行多个workload，可使用批量脚本：
 
 ```bash
-mkdir util/xs_scripts/example
-cd util/xs_scripts/example
-bash ../parallel_sim.sh `realpath ../kmh_v3_btb.sh` $workloads_lst /top/dir/of/checkpoints a_fancy_simulation_tag
+python3 -m util.xs_scripts.ci.run_batch configs/example/kmhv3.py "$workloads_lst" /top/dir/of/checkpoints results
 ```
 
-- `parallel_sim.sh` 会调用 `kmh_v3_btb.sh`（内部使用 `kmhv3.py`），并用GNU parallel批量运行多个workload
-- 仿真结果会输出到各自的目录
-
-### 关于workload_lst
-
-`workload_lst`的每一行是由空格分隔的workload参数列表。例如："hmmer_nph3_15858 hmmer_nph3/15858 0 0 20 20"分别表示workload名称、checkpoint路径、跳过指令数（通常为0）、功能预热指令数（通常为0）、详细预热指令数（通常为20）和采样指令数（通常为20）。`parallel_sim.sh`会在`/top/dir/of/checkpoints`中查找`hmmer_nph3/15858/*.gz`文件，然后将该gz文件传递给`kmh_v3_btb.sh`进行仿真。
+从仓库根目录执行。每个切片的命令、日志和完成标记写入 `results/<workload>/`。日常 CI 直接从权重 JSON 枚举切片，详见[性能测试配置](tools/others/shared-perf-benchmark-config.md)。
 
 ## 在Docker中运行
 

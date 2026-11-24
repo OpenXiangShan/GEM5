@@ -8,7 +8,7 @@
 
 1) 统计指令数（可选）：`TRACE_FORMAT=cbp2025 bash util/xs_scripts/trace/count_traces_from_list_parallel.sh <lst> <trace_root> <out.tsv>`.
 2) 生成 workload 列表（默认 warmup=sample=50M）：`bash util/xs_scripts/gen_champsim_workloads.sh <trace_root> <out.lst>`（已支持 champsim/cbp）。
-3) 并行跑 trace：`TRACE_FORMAT=cbp2025 bash util/xs_scripts/trace/parallel_trace_sim.sh util/xs_scripts/trace/run_trace_champsim.sh <workload.lst> <trace_root> <tag>`.
+3) 并行跑 trace：`python3 -m util.xs_scripts.ci.run_batch --trace-format cbp2025 configs/example/kmhv3.py <workload.lst> <trace_root> <tag>`.
 4) 查看运行状态：`bash util/xs_scripts/check_parallel_runs.sh <work_root>/<tag> [--details]`.
 5) Debug：panic/PC mismatch 时用 `util/xs_scripts/trace/report_pc_mismatch_bind.sh`（必要时先 `extract_panic_events.sh`/`extract_debug_events.sh`）。
    - `TRACE_FORMAT` 贯穿计数/跑批/片段抽取，默认 `champsim`，CBP 时显式设置 `TRACE_FORMAT=cbp2025`。
@@ -93,62 +93,9 @@ $gem5_home/configs/example/kmhv3.py \
 
 ---
 
-### 1.2 并行控制：`util/xs_scripts/trace/parallel_trace_sim.sh`
+### 1.2 批量运行 trace
 
-**作用**
-
-- 从 workload 列表读取 trace 路径 + warmup/sample 配置。
-- 调用 arch_script（通常是 `util/xs_scripts/trace/run_trace_champsim.sh`）并行跑一批 workload。
-- 支持 `.gz/.zstd/.xz` 自动识别，支持输出根目录重定向（`XSGEM5_WORK_ROOT`）。
-- 为了在 CI 中和 checkpoint 运行统一格式，该脚本增加了对直接使用 gem5 python 配置文件的支持。
-
-**workload 列表格式**
-
-每行：
-
-```text
-workload_name  checkpoint_path  skip  fw  dw  sample
-```
-
-字段含义：
-
-- `skip`：skip insts（通常 0）。
-- `fw`：functional_warmup insts。
-- `dw`：detailed_warmup insts。
-- `sample`：正式统计阶段指令数。
-
-**warmup/sample 传递逻辑（在 `parallel_trace_sim.sh` 中完成）**
-
-```bash
-# workload 行字段：name path skip fw dw sample
-IFS=' ' read -r task task_path skip fw dw sample <<< "${line}"
-
-skip=${skip:-0}
-fw=${fw:-0}
-dw=${dw:-0}
-sample=${sample:-0}
-
-warmup=$((fw + dw))
-total=$((warmup + sample))
-
-XS_MAX_INSTS="${total}" XS_WARMUP_INSTS_NO_SWITCH="${warmup}" \\
-    run "${checkpoint}" "${work_dir}" >"${work_dir}/${log_file}" 2>&1
-```
-
-> 如需 CBP trace，将 `TRACE_FORMAT=cbp2025` 置于并行命令前，arch_script 会继承该环境变量。
-
-**输出根目录指定（`XSGEM5_WORK_ROOT`）**
-
-- 默认：结果落在调用脚本目录下的 `$tag` 中：
-  - `full_work_dir=$PWD/$tag`。
-- 可以通过 `XSGEM5_WORK_ROOT` 覆盖 trace 结果根目录：
-
-```bash
-export XSGEM5_WORK_ROOT=/nfs/home/goulingrui/expri_results/gem5_trace
-# full_work_dir = $XSGEM5_WORK_ROOT/$tag
-```
-
----
+从仓库根目录运行 `python3 -m util.xs_scripts.ci.run_batch configs/example/kmhv3.py workloads.lst TRACE_ROOT OUTPUT --trace-format cbp2025`。每行含 `name path skip fw dw sample`，运行参数为 `--warmup-insts-no-switch=fw+dw`、`--maxinsts=fw+dw+sample`。输出在 `OUTPUT/name/`。通过 `--jobs` 设置并发数。
 
 ### 1.3 生成 workload 列表：`util/xs_scripts/gen_champsim_workloads.sh`（champsim/cbp 均可）
 
@@ -167,7 +114,7 @@ bash util/xs_scripts/gen_champsim_workloads.sh \
 生成示例行：
 
 ```text
-ipc_client_002  ipc1_public/ipc_client_002.champsimtrace  0 50000000 0 50000000
+ipc_client_002.champsimtrace  ipc_client_002.champsimtrace  0 50000000 0 50000000
 ```
 
 ---
@@ -184,12 +131,11 @@ bash util/xs_scripts/gen_champsim_workloads.sh \
 export xsgem5_para_jobs=32
 export XSGEM5_WORK_ROOT=/nfs/home/goulingrui/expri_results/gem5_trace
 
-# 3) 并行跑（trace 专用 parallel_trace_sim.sh）
-bash util/xs_scripts/trace/parallel_trace_sim.sh \
-  util/xs_scripts/trace/run_trace_champsim.sh \
+# 3) 并行跑（trace 专用 run_batch.py）
+python3 -m util.xs_scripts.ci.run_batch --trace-format champsim configs/example/kmhv3.py \
   ./ipc1_public_traces.lst \
-  /nfs/home/share/glr/champsim_traces \
-  trace_ipc1_50M_50M
+  /nfs/home/share/glr/champsim_traces/ipc1_public \
+  "$XSGEM5_WORK_ROOT/trace_ipc1_50M_50M"
 ```
 
 所有输出将位于：
@@ -274,15 +220,13 @@ bash util/xs_scripts/trace/run_trace_tracertl.sh \
 
 log 行的口径：`from X` 是该段的 **x86 源条目数**，`to Y` 才是**转换后（RISC-V）记录数**——只有 `to` 与 gem5 reader 的指令计数同口径（`W_to + S_to == "Total Transformed" == 48B 记录总数`），切勿用 `to − from` 做差。**不要**使用 log 里的 `Decompressed size` 字段（生成器按 56B/条记账，与实际 48B 布局不符）。
 
-**批量：生成 workload 列表 + parallel_trace_sim.sh**
+**批量：生成 workload 列表 + run_batch.py**
 
 ```bash
 bash util/xs_scripts/trace/gen_tracertl_workloads.sh \
   /nfs/home/zhangzifei/external-trace/gwt-v2-nemu-format-simpoint-interval workloads.lst
 
-TRACE_FORMAT=tracertl \
-bash util/xs_scripts/trace/parallel_trace_sim.sh \
-  util/xs_scripts/trace/run_trace_tracertl.sh workloads.lst \
+python3 -m util.xs_scripts.ci.run_batch --trace-format tracertl configs/example/kmhv3.py workloads.lst \
   /nfs/home/zhangzifei/external-trace/gwt-v2-nemu-format-simpoint-interval tracertl_gwt_v2
 ```
 
@@ -413,7 +357,7 @@ workload_name\tabort_tick\treason_line
   - 通过 SSH 下发到 `server_list` 中的机器，按照 cores/2 - load1 估算容量；支持全局/每机并发上限。
   - 支持 Ctrl-C：主控退出时会尝试对正在运行的远端任务发送 SIGTERM（基于远端记录的 pid）。
   - 支持清理旧 abort 标记：`--clear-old-abort` 会在派发前移除 `abort` 文件（保留为 `abort.prev` 以防丢信息），便于区分“新 abort”。
-  - 旧的 `util/xs_scripts/rerun_aborted_with_debug.sh` 已废弃，仅保留提示信息。
+  - 旧的 `util/xs_scripts/rerun_aborted_with_debug.sh` 已删除。
 
 **参数**
 
@@ -605,7 +549,7 @@ bash util/xs_scripts/report_pc_mismatch_bind.sh \
 
 `.github/workflows/gem5-ideal-btb-perf-weekly.yml` 每周运行 Google / CBP 两项全量 trace 测试，共用 `gem5-perf-template.yml`，默认配置为 `configs/example/kmhv3.py`。
 
-输入清单在 `util/xs_scripts/perf_benchmarks.py` 中配置。`parallel_trace_sim.sh` 直接接收 gem5 配置脚本，并发数由 `xsgem5_para_jobs` 指定，未设置时为 63。
+输入清单在 `util/xs_scripts/ci/benchmarks.py` 中配置。`run_batch.py` 直接接收 gem5 配置脚本，并发数由 `xsgem5_para_jobs` 指定，未设置时为 63。
 
 **输入与 warmup/sample**
 
@@ -668,11 +612,11 @@ python3 util/xs_scripts/trace/gen_google_trace_weights.py \
 
 - `specific_benchmarks` 支持逗号分隔、不区分大小写的子串匹配，与 checkpoint CI 相同。
 - `extra_args` 按 checkpoint CI 的方式处理，追加到 gem5 命令。
-- `distributed_servers` 留空时本地并行；设置后由 `distributed_sim.py` 选择服务器、控制每机并发，无可用服务器时回退到本地运行。
+- `distributed_servers` 留空时本地并行；设置后由 `util/xs_scripts/ci/runner.py` 选择服务器、控制每机并发，无可用服务器时回退到本地运行。
 
 ## 6. 主线 trace smoke test
 
-`.github/workflows/gem5-trace-0.3c.yml` 在每次 push 到 `xs-dev` 后运行 Google / CBP 子集，共用性能模板和归档流程。两套子集配置在 `util/xs_scripts/perf_benchmarks.py` 中注册：
+`.github/workflows/gem5-trace-0.3c.yml` 在每次 push 到 `xs-dev` 后运行 Google / CBP 子集，共用性能模板和归档流程。两套子集配置在 `util/xs_scripts/ci/benchmarks.py` 中注册：
 
 | benchmark 类型 | 覆盖方式 | 清单 | 数量 |
 | --- | --- | --- | ---: |

@@ -29,7 +29,6 @@ RUN apt-get update && apt-get install -y \
     libsqlite3-dev \
     zstd \
     libzstd-dev \
-    parallel \
     cmake \
     wget
 
@@ -42,6 +41,7 @@ RUN git clone ${xsgem5_url} && \
     cd GEM5 && \
     git checkout ${xsgem5_commit_hash}
 ENV gem5_home=${tools_dir}/GEM5
+ENV GEM5_HOME=${gem5_home}
 
 # creare python env
 WORKDIR ${tools_dir}/miniconda3
@@ -82,12 +82,11 @@ ENV GCBV_REF_SO=${nemu_ref_dir}/nemu_ref
 # run xsgem5
 WORKDIR /results
 RUN chmod -R 777 /results
-CMD bash -c " \
+CMD bash -c ' \
     source /workdir/miniconda3/etc/profile.d/conda.sh && \
     conda activate py38 && \
-    bash ${gem5_home}/util/xs_scripts/parallel_sim.sh \
-    ${gem5_home}/util/xs_scripts/${run_script} \
-    /checkpoints/${checkpoints_tag}/${workloads_lst} \
-    /checkpoints/${checkpoints_tag} ${run_tag} && \
+    cd "${gem5_home}" && \
+    /usr/bin/python3 -m util.xs_scripts.ci.run_batch "$config_path" \
+      "/checkpoints/$checkpoints_tag/$workloads_lst" "/checkpoints/$checkpoints_tag" "/results/$run_tag" && \
     chmod -R 777 /results \
-" 
+'

@@ -1,5 +1,5 @@
 name: Manual Performance Test
-run-name: ${{ format('{0} - {1} - {2}{3} - {4} - {5} [{6}]', github.event.inputs.note || 'Manual Performance Test', github.event.inputs.configuration, startsWith(github.event.inputs.benchmark_type, 'custom') && github.event.inputs.checkpoint_path && format('{0} [{1}]', github.event.inputs.benchmark_type, github.event.inputs.checkpoint_path) || github.event.inputs.benchmark_type, github.event.inputs.specific_benchmarks && format(' ({0})', github.event.inputs.specific_benchmarks) || '', github.event.inputs.branch || github.ref_name, github.event.inputs.extra_args || 'no-extra-args', github.event.inputs.distributed_servers && 'distributed' || 'local') }}
+run-name: ${{ format('{0} - {1} - {2}{3} - {4} - {5} [{6}]', inputs.note || 'Manual Performance Test', inputs.configuration, startsWith(inputs.benchmark_type, 'custom') && inputs.checkpoint_path && format('{0} [{1}]', inputs.benchmark_type, inputs.checkpoint_path) || inputs.benchmark_type, inputs.specific_benchmarks && format(' ({0})', inputs.specific_benchmarks) || '', inputs.branch || github.ref_name, inputs.extra_args || 'no-extra-args', inputs.distributed_servers && 'distributed' || 'local') }}
 
 on:
   workflow_dispatch:
@@ -27,12 +27,15 @@ on:
         options:
           - spec06-rva23-novec-gcc16-0.3c
           - spec06-rva23-novec-gcc16-1.0c
-          - gcc12-spec06-0.3c
           - gcc12-spec06-smt-0.3c
           - gcc12-spec06-smt-1.0c
           - gcc12-spec06-smt-int-1.0c
+          - h-spec06-0.5c
+          - h-spec06-1.0c
           - gcc12-spec06-0.8c
           - gcc12-spec06-1.0c
+          - xscc-spec06-1.0c
+          - gcc16-spec17-smt-1.0c
           - spec17-1.0c
           - spec06-rvv-1.0c
           - spec06int-rvv-0.8c
@@ -72,7 +75,7 @@ on:
         type: string
         default: ''
       distributed_servers:
-        description: 'Optional distributed server list. Use default for node003-node008,node020-node029,node034,node036-node042; leave empty for old single-runner parallel path'
+        description: 'Optional distributed server list. Use default for the shared CI pool; leave empty to run locally'
         required: false
         type: string
         default: ''
@@ -87,40 +90,18 @@ on:
         type: string
 
 jobs:
-  setup:
-    runs-on: ubuntu-latest
-    outputs:
-      config_path: ${{ steps.resolve.outputs.config_path }}
-      pr_sha: ${{ steps.resolve.outputs.pr_sha }}
-    steps:
-      - name: Resolve parameters
-        id: resolve
-        run: |
-          if [[ "${{ github.event.inputs.benchmark_type }}" == gcc12-spec06-smt-* ]]; then
-            echo "config_path=configs/example/smt_idealkmhv3.py" >> $GITHUB_OUTPUT
-          else
-            echo "config_path=configs/example/${{ github.event.inputs.configuration }}" >> $GITHUB_OUTPUT
-          fi
-
-          if [ -n "${{ github.event.inputs.branch }}" ]; then
-            echo "pr_sha=${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
-          else
-            echo "pr_sha=${{ github.sha }}" >> $GITHUB_OUTPUT
-          fi
-
   perf_test:
-    needs: setup
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
-      config_path: ${{ needs.setup.outputs.config_path }}
-      benchmark_type: ${{ github.event.inputs.benchmark_type }}
-      checkpoint_path: ${{ github.event.inputs.checkpoint_path }}
-      json_path: ${{ github.event.inputs.json_path }}
-      specific_benchmarks: ${{ github.event.inputs.specific_benchmarks }}
-      extra_args: ${{ github.event.inputs.extra_args }}
-      gcbv_ref_so: ${{ github.event.inputs.gcbv_ref_so }}
-      distributed_servers: ${{ github.event.inputs.distributed_servers }}
+      config_path: ${{ contains(inputs.benchmark_type, '-smt-') && 'configs/example/smt_idealkmhv3.py' || format('configs/example/{0}', inputs.configuration) }}
+      benchmark_type: ${{ inputs.benchmark_type }}
+      checkpoint_path: ${{ inputs.checkpoint_path }}
+      json_path: ${{ inputs.json_path }}
+      specific_benchmarks: ${{ inputs.specific_benchmarks }}
+      extra_args: ${{ inputs.extra_args }}
+      gcbv_ref_so: ${{ inputs.gcbv_ref_so }}
+      distributed_servers: ${{ inputs.distributed_servers }}
       distributed_jobs_per_server: ${{ fromJSON(github.event.inputs.distributed_jobs_per_server || '32') }}
-      pr_sha: ${{ needs.setup.outputs.pr_sha }}
+      pr_sha: ${{ inputs.branch || github.sha }}
       check_result: true
       timeout_minutes: 720

@@ -19,9 +19,7 @@ Steps to reproduce the behavior:
 - Build command: typically `scons build/RISCV/gem5.opt`
 - Running command: typically
 ```
-mkdir -p util/xs_scripts/test
-cd util/xs_scripts/test
-bash ../kmh_6wide.sh /path/to/checkpoint
+./build/RISCV/gem5.opt configs/example/kmhv2.py --generic-rv-cpt=/path/to/checkpoint
 ```
 - The link to your image or checkpoint
 
