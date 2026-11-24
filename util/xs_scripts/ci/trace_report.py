@@ -8,7 +8,7 @@ from .benchmarks import BenchmarkProfile
 
 
 def summarize_trace_results(
-    config: BenchmarkProfile, stats_root: str | Path
+    config: BenchmarkProfile, stats_root: str | Path, names
 ) -> int:
     """Print measurement IPC/MPKI using only archived run outputs."""
     root = Path(stats_root)
@@ -16,30 +16,16 @@ def summarize_trace_results(
     if config.weights:
         archived = root.parent / "cluster.json"
         weights_path = archived if archived.is_file() else config.weights
-    aborted = sorted(root.rglob("abort"))
-    failed = len(aborted)
+    failed = 0
     results = {}
     print(f"{config.benchmark_type}: measurement after warmup")
     print(f"{'Trace':<32} {'Status':<8} {'IPC':>12} {'Branch MPKI':>12}")
-    for marker in aborted:
-        print(f"{marker.parent.name:<32} failed: run aborted")
-    # Inspect task directories even if a worker never wrote stats.txt.
-    directories = sorted(
-        p for p in root.glob("*") if p.is_dir() and not p.is_symlink()
-    )
-    if not directories:
-        print("No trace task directories found")
+    if not names:
+        print("No trace workloads to score")
         return 1
-    for directory in directories:
-        name = directory.name
-        if (directory / "abort").exists():
-            continue
+    for name in sorted(names):
+        directory = root / name
         try:
-            if (
-                not (directory / "completed").is_file()
-                or (directory / "running").exists()
-            ):
-                raise ValueError("run did not complete")
             stats_file = directory / "stats.txt"
             # The final complete dump contains post-warmup measurements.
             blocks, current = [], None

@@ -210,7 +210,6 @@ def run_jobs(
     fallback_to_local=0,
     deadline=None,
     cancelled=lambda: False,
-    validate_output=None,
     log=print,
 ):
     config.validate()
@@ -228,7 +227,6 @@ def run_jobs(
     failed = assigned = 0
     capacities = {"local": slots} if nodes == ["local"] else {}
     retry_after = {}
-    stats_wait = {}
     next_probe = next_launch = 0
     total = len(queue)
 
@@ -293,19 +291,6 @@ def run_jobs(
                 code = proc.poll()
                 if code is None:
                     continue
-                detail = ""
-                if code == 0 and validate_output:
-                    if proc in stats_wait and now < stats_wait[proc][0]:
-                        continue
-                    if not validate_output(job):
-                        # A remote writer may exit before its NFS stats are visible.
-                        expires = stats_wait.get(proc, (now, now + 10))[1]
-                        if node != "local" and now < expires:
-                            stats_wait[proc] = (now + 0.5, expires)
-                            continue
-                        code = 1
-                        detail = "Missing or incomplete simulation statistics"
-                    stats_wait.pop(proc, None)
                 del active[proc]
                 if proc.stdin:
                     proc.stdin.close()
@@ -336,7 +321,6 @@ def run_jobs(
                     started,
                     code,
                     "completed" if code == 0 else "failed",
-                    detail,
                 )
             occupied = Counter(item[1] for item in active.values())
             free_slot = any(cap > occupied[n] for n, cap in capacities.items())

@@ -15,8 +15,24 @@ sys.path.insert(
     0, str(Path(__file__).resolve().parents[3] / "util/xs_scripts")
 )
 from ci import benchmarks as MODULE
-from ci.run_perf_ci import archive, complete_stats, prepare_command, prune
-from ci.runner import CHECKPOINT_ENV, Job, RunnerConfig, run_jobs, start, stop
+from ci.run_perf_ci import (
+    archive,
+    check_archive,
+    finish_perf,
+    prepare_command,
+    prune,
+    worker_stats,
+)
+from ci.stats_probe import stats_state
+from ci.runner import (
+    CHECKPOINT_ENV,
+    Job,
+    Result,
+    RunnerConfig,
+    run_jobs,
+    start,
+    stop,
+)
 
 
 class CustomBenchmarkTest(unittest.TestCase):
@@ -171,18 +187,102 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual([r.status for r in results], ["timeout", "timeout"])
         self.assertEqual(len(list(self.root.glob("*/abort"))), 2)
 
-    def test_missing_statistics_fail_successful_command(self):
-        (result,) = run_jobs(
-            [self.job("missing", "pass")],
-            RunnerConfig(),
-            1,
-            validate_output=lambda job: complete_stats(
-                job.work_dir / "stats.txt"
-            ),
-            log=lambda _: None,
+    def test_archive_timeout_withholds_strict_score_and_preserves_exit(self):
+        cfg = RunnerConfig(launch_interval=0)
+        jobs = [self.job("visible", "pass"), self.job("missing", "pass")]
+        results = run_jobs(jobs, cfg, 1)
+        stats = jobs[0].work_dir / "m5out/stats.txt"
+        stats.parent.mkdir()
+        stats.write_text("---------- End Simulation Statistics ----------\n")
+        profile = MODULE.resolve_benchmark("gcc12-spec06-smt-0.3c")
+        with patch("ci.run_perf_ci.time.monotonic", side_effect=[0, 61]):
+            rc = finish_perf(
+                profile,
+                self.root,
+                self.root,
+                results,
+                cfg,
+                True,
+                self.root / "summary",
+            )
+        self.assertEqual(rc, 1)
+        self.assertFalse((self.root / "score.txt").exists())
+        self.assertIn("Scorable 1/2", (self.root / "summary").read_text())
+        self.assertIn(
+            "missing: exit=0 on local, archive stats missing",
+            (self.root / "metadata.txt").read_text(),
         )
-        self.assertEqual(result.status, "failed")
-        self.assertTrue((result.job.work_dir / "abort").is_file())
+        self.assertTrue((jobs[1].work_dir / "completed").exists())
+        self.assertFalse((jobs[1].work_dir / "abort").exists())
+
+    def test_trace_uses_verified_set_even_with_old_archive_markers(self):
+        name = "example"
+        job = self.job(name, "pass")
+        job = replace(job, work_dir=self.root / "spec_all" / name)
+        job.work_dir.mkdir(parents=True)
+        (job.work_dir / "abort").touch()
+        (job.work_dir / "stats.txt").write_text(
+            "---------- Begin Simulation Statistics ----------\n"
+            "simInsts 20\nsystem.cpu.numCycles 10\n"
+            "system.cpu.commit.branchMispredicts 1\n"
+            "---------- End Simulation Statistics ----------\n"
+        )
+        profile = MODULE.BenchmarkProfile(
+            "trace", self.root, None, trace_format="tracertl"
+        )
+        result = Result(job, "completed", 0, "local", 0, 1)
+        self.assertEqual(
+            finish_perf(
+                profile,
+                self.root,
+                self.root,
+                [result],
+                RunnerConfig(),
+                True,
+                None,
+            ),
+            0,
+        )
+        self.assertIn(
+            "Overall IPC (equal trace weights): 2.000000",
+            (self.root / "score.txt").read_text(),
+        )
+
+    def test_non_strict_spec_labels_partial_score(self):
+        profile = MODULE.resolve_benchmark("gcc12-spec06-smt-0.3c")
+        results = [
+            Result(self.job(n, "pass"), status, rc, "local", 0, 1)
+            for n, status, rc in [
+                ("ok", "completed", 0),
+                ("failed", "failed", 23),
+            ]
+        ]
+        directory = self.root / "ok/m5out"
+        directory.mkdir(parents=True)
+        (directory / "stats.txt").write_text(
+            "---------- End Simulation Statistics ----------\n"
+        )
+        scorer = self.root / "tools/example-scripts"
+        scorer.mkdir(parents=True)
+        (scorer / profile.score_script).write_text(
+            'test -L "$1/ok" && test ! -e "$1/failed" && echo score'
+        )
+        with patch("ci.run_perf_ci.SCORER", scorer.parent):
+            rc = finish_perf(
+                profile,
+                self.root,
+                self.root,
+                results,
+                RunnerConfig(),
+                False,
+                self.root / "summary",
+            )
+        self.assertEqual(rc, 0)
+        self.assertIn(
+            "Partial score. Scorable 1/2",
+            (self.root / "score.txt").read_text(),
+        )
+        self.assertIn("exit=23", (self.root / "summary").read_text())
 
     def test_busy_host_is_probed_again(self):
         config = RunnerConfig(
@@ -313,19 +413,99 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(probe.call_count, 2)
         self.assertEqual(result.status, "completed")
 
-    def test_remote_stats_can_appear_after_exit(self):
+    def test_late_stats_release_slot_and_rejoin_scoring(self):
         cfg = RunnerConfig(
-            servers="node037", jobs_per_server=1, require_idle_cpus=0
+            servers="node037",
+            jobs_per_server=1,
+            require_idle_cpus=0,
+            launch_interval=0,
         )
-        visible = Mock(side_effect=[False, True])
         with patch(
-            "ci.runner.start", return_value=Mock(stdin=None, poll=lambda: 0)
-        ):
-            (result,) = run_jobs(
-                [self.job("a", "pass")], cfg, 1, validate_output=visible
+            "ci.runner.start",
+            side_effect=lambda job, node, cfg, attempt: start(
+                job, "local", cfg, attempt
+            ),
+        ) as launch:
+            results = run_jobs(
+                [self.job(n, "pass") for n in ("late", "ready")], cfg, 1
             )
-        self.assertEqual(result.status, "completed")
-        self.assertEqual(visible.call_count, 2)
+        self.assertEqual(launch.call_count, 2)
+        now = [0]
+
+        def advance(seconds):
+            now[0] += seconds
+
+        def state(path):
+            return (
+                "complete"
+                if path.parent.name == "ready" or now[0] >= 11
+                else "missing"
+            )
+
+        with patch(
+            "ci.run_perf_ci.time.monotonic", side_effect=lambda: now[0]
+        ), patch("ci.run_perf_ci.time.sleep", side_effect=advance), patch(
+            "ci.run_perf_ci.stats_probe.stats_state", side_effect=state
+        ) as read, patch(
+            "ci.run_perf_ci.worker_stats"
+        ) as ssh:
+            self.assertEqual(
+                check_archive(results, "stats.txt", cfg),
+                ({"ready", "late"}, {}),
+            )
+        self.assertEqual(now[0], 11)
+        self.assertEqual(
+            sum(
+                call.args[0].parent.name == "ready"
+                for call in read.call_args_list
+            ),
+            1,
+        )
+        ssh.assert_not_called()
+
+    def test_diagnose_only_unavailable_stats_once_per_worker(self):
+        results = [
+            Result(self.job(n, "pass"), "completed", 0, "node037", 0, 1)
+            for n in ("a", "b", "c")
+        ]
+        with patch(
+            "ci.run_perf_ci.worker_stats",
+            return_value=["complete", "incomplete", "missing"],
+        ) as ssh:
+            ready, issues = check_archive(
+                results, "m5out/stats.txt", RunnerConfig(), timeout=0
+            )
+        self.assertFalse(ready)
+        ssh.assert_called_once()
+        self.assertEqual(
+            [v.split(", ")[-1] for v in issues.values()],
+            [
+                "worker stats complete",
+                "worker stats incomplete",
+                "worker stats missing",
+            ],
+        )
+
+    def test_worker_probe_uses_same_footer_check_and_handles_disconnect(self):
+        good = self.root / "path with spaces"
+        good.write_text("---------- End Simulation Statistics ----------\n")
+        paths = [good, self.root / "missing"]
+        with patch(
+            "ci.hosts.build_ssh_command",
+            side_effect=lambda target, cmd, *args: cmd,
+        ):
+            self.assertEqual(
+                worker_stats("node037", paths, RunnerConfig()),
+                ["complete", "missing"],
+            )
+        with patch(
+            "ci.run_perf_ci.subprocess.run",
+            side_effect=subprocess.TimeoutExpired("ssh", 10),
+        ):
+            self.assertEqual(
+                worker_stats("node037", paths, RunnerConfig()),
+                ["unconfirmed"] * 2,
+            )
 
     def test_stop_if_process_exits_during_escalation(self):
         proc = Mock(stdin=None, pid=123, poll=lambda: None)
@@ -407,13 +587,18 @@ class ArchiveTest(unittest.TestCase):
     def test_statistics_must_have_finished_dump(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "stats.txt"
-            self.assertFalse(complete_stats(path))
+            self.assertEqual(stats_state(path), "missing")
             path.write_text("Begin Simulation Statistics")
-            self.assertFalse(complete_stats(path))
+            self.assertEqual(stats_state(path), "incomplete")
             path.write_text(
                 "---------- End Simulation Statistics   ----------\n"
             )
-            self.assertTrue(complete_stats(path))
+            self.assertEqual(stats_state(path), "complete")
+            with path.open("a") as out:
+                out.write(
+                    "---------- Begin Simulation Statistics ----------\n"
+                )
+            self.assertEqual(stats_state(path), "incomplete")
 
     def test_retention_and_concurrent_names(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -6,6 +6,8 @@ GCC12 weekly 单线程及 SMT 1c 共用切片目录 `spec06_cpts/gcc12-spec06-pa
 
 新增 SPEC profile 时，在 catalog 登记根目录、权重文件和 SPEC 版本。需要出现在手动菜单时再增加对应 choice。Perf 使用被测 checkout 的配置、PGO 构建和 REF lock，调用 workflow 版本的 CI 工具。一次运行写入独立归档，`checkpoints.lst` 记录实际选点，`cluster.json` 保存计分权重。每个切片的 `log.txt` 记录命令和主机，终态由 launcher 统一写入。摘要最多列出 20 个未完成点，完整清单写入归档的 `metadata.txt`。
 
+切片退出后立即释放执行槽位，`completed` 表示进程正常退出。算分机在整批结束后读取各点的 stats 尾标，对仍不可读的点共用 60 秒重试窗口。到期后按执行机批量补查，摘要和 `metadata.txt` 分别记录算分机与执行机的读取结果。严格模式下缺点会返回失败并跳过出分；显式允许部分结果的 SPEC 任务会标注可计分点数。
+
 ## 手动运行新的切片 profile
 
 在 `manual-perf.yml` 的 Run workflow 中填写：

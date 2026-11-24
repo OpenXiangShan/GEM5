@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import defaultdict
 from contextlib import contextmanager, redirect_stdout
 from dataclasses import replace
 from datetime import datetime
@@ -15,6 +16,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+
+from . import hosts, stats_probe
 
 from .benchmarks import CHECKPOINT_MODES, resolve_benchmark, workloads
 from .runner import (
@@ -101,11 +105,13 @@ def prepare_command(repo, profile, args):
     return cmd + [str(config)], extra, env, ref
 
 
-def score(profile, directory, repo, passed):
+def score(profile, directory, repo, passed, partial=""):
     score_path = directory / "score.txt"
     if profile.trace_format:
         with score_path.open("w") as output, redirect_stdout(output):
-            return summarize_trace_results(profile, directory / "spec_all")
+            return summarize_trace_results(
+                profile, directory / "spec_all", passed
+            )
     with tempfile.TemporaryDirectory() as tmp:
         scorer = Path(tmp) / "gem5_data_proc"
         shutil.copytree(
@@ -129,6 +135,8 @@ def score(profile, directory, repo, passed):
                 directory / "spec_all" / name, target_is_directory=True
             )
         with score_path.open("w") as output:
+            if partial:
+                print(partial, file=output, flush=True)
             return subprocess.run(
                 [
                     "bash",
@@ -187,13 +195,122 @@ def archive(parent, prefix, number):
         prune(parent)
 
 
-def complete_stats(path):
+def worker_stats(node, paths, config):
+    # Batch exceptional paths into one read-only SSH request per worker.
+    command = hosts.build_ssh_command(
+        hosts.make_ssh_target(node, config.ssh_user),
+        ["python3", "-c", Path(stats_probe.__file__).read_text()],
+        config.ssh_config,
+        list(config.ssh_options),
+        ["BatchMode=yes", "ConnectionAttempts=1"],
+    )
     try:
-        with path.open("rb") as source:
-            source.seek(max(0, os.fstat(source.fileno()).st_size - 256))
-            return b"End Simulation Statistics" in source.read()
-    except FileNotFoundError:
-        return False
+        response = subprocess.run(
+            command,
+            input=json.dumps([str(p) for p in paths]),
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=10,
+        )
+        states = json.loads(response.stdout)
+        if (
+            not isinstance(states, list)
+            or len(states) != len(paths)
+            or not all(isinstance(state, str) for state in states)
+        ):
+            raise ValueError("invalid worker stats response")
+        return states
+    except (OSError, subprocess.SubprocessError, ValueError) as error:
+        print(
+            f"Stats probe on {node} failed ({type(error).__name__})",
+            flush=True,
+        )
+        return ["unconfirmed"] * len(paths)
+
+
+def check_archive(results, stats_path, config, timeout=60):
+    """Return scoring inputs and details for runs whose output is unavailable."""
+    pending = {
+        r.job.workload_name: r for r in results if r.status == "completed"
+    }
+    ready = set()
+    deadline = time.monotonic() + timeout
+    while pending:
+        for name, result in list(pending.items()):
+            if (
+                stats_probe.stats_state(result.job.work_dir / stats_path)
+                == "complete"
+            ):
+                ready.add(name)
+                del pending[name]
+        remaining = deadline - time.monotonic()
+        if not pending or remaining <= 0:
+            break
+        time.sleep(min(1, remaining))
+
+    by_node = defaultdict(list)
+    for name, result in pending.items():
+        by_node[result.server_name].append(name)
+    issues = {}
+    for node, names in by_node.items():
+        paths = [pending[name].job.work_dir / stats_path for name in names]
+        remote = worker_stats(node, paths, config) if node != "local" else None
+        for idx, (name, path) in enumerate(zip(names, paths)):
+            state = stats_probe.stats_state(path)
+            if state == "complete":
+                ready.add(name)
+                continue
+            detail = f"exit=0 on {node}, archive stats {state}"
+            if remote is not None:
+                detail += f", worker stats {remote[idx]}"
+            issues[name] = detail
+    return ready, issues
+
+
+def finish_perf(profile, directory, repo, results, config, strict, summary):
+    stats_path = "stats.txt" if profile.trace_format else "m5out/stats.txt"
+    ready, issues = check_archive(results, stats_path, config)
+    for result in results:
+        if result.status != "completed":
+            issues[
+                result.job.workload_name
+            ] = f"{result.status} on {result.server_name} (exit={result.return_code})"
+    coverage = f"Scorable {len(ready)}/{len(results)} selected workloads."
+    details = [f"- {name}: {issues[name]}" for name in sorted(issues)]
+    print(coverage, *details, sep="\n", flush=True)
+    append(
+        directory / "metadata.txt",
+        "\n".join([f"coverage: {coverage}", *details]),
+    )
+    append(summary, "\n".join([coverage, *details[:20]]))
+    if len(details) > 20:
+        append(
+            summary,
+            f"See metadata.txt for all {len(details)} affected workloads.",
+        )
+    if not ready or (issues and (strict or profile.trace_format)):
+        append(
+            summary,
+            "Score withheld because the selected workload set is incomplete.",
+        )
+        return 1
+    partial = f"Partial score. {coverage}" if issues else ""
+    status = score(profile, directory, repo, ready, partial)
+    lines = (directory / "score.txt").read_text(errors="replace").splitlines()
+    tail = lines if profile.trace_format else lines[-42:]
+    append(
+        summary,
+        (
+            "### Partial performance result"
+            if issues
+            else "### Performance result"
+        )
+        + "\n```\n"
+        + "\n".join(tail)
+        + "\n```",
+    )
+    return status
 
 
 def run(args):
@@ -309,7 +426,6 @@ def run(args):
         )
         if not remote:
             config = replace(config, jobs_per_server=slots)
-        stats_path = "stats.txt" if profile.trace_format else "m5out/stats.txt"
         with cancellation_signals() as event:
             with (directory / "launcher.log").open(
                 "w", buffering=1
@@ -325,41 +441,19 @@ def run(args):
                     slots,
                     fallback_to_local=args.local_jobs,
                     cancelled=event.is_set,
-                    validate_output=lambda job: complete_stats(
-                        job.work_dir / stats_path
-                    ),
                     log=log,
                 )
-        passed = {
-            r.job.workload_name for r in results if r.status == "completed"
-        }
-        missing = sorted({w.name for w in selected} - passed)
-        coverage = (
-            f"Completed {len(passed)}/{len(selected)} selected workloads."
-        )
-        print(coverage, flush=True)
-        full_coverage = coverage
-        if missing:
-            full_coverage += " Incomplete: " + ", ".join(missing)
-            coverage += f" Incomplete ({len(missing)}): " + ", ".join(
-                missing[:20]
-            )
-            if len(missing) > 20:
-                coverage += ", …"
-        append(summary, coverage)
-        append(directory / "metadata.txt", f"coverage: {full_coverage}")
         if event.is_set():
             return 130
-        status = score(profile, directory, repo, passed)
-        lines = (
-            (directory / "score.txt").read_text(errors="replace").splitlines()
-        )
-        tail = lines if trace_format else lines[-42:]
-        append(
+        return finish_perf(
+            profile,
+            directory,
+            repo,
+            results,
+            config,
+            args.check_result,
             summary,
-            "### Performance result\n```\n" + "\n".join(tail) + "\n```",
         )
-        return status or int(bool(missing) and args.check_result)
 
 
 def main():
