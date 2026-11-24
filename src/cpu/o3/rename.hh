@@ -44,6 +44,7 @@
 
 #include <list>
 #include <utility>
+#include <vector>
 
 #include "base/statistics.hh"
 #include "cpu/o3/comm.hh"
@@ -226,7 +227,7 @@ class Rename
     /** Renames instructions for the given thread. Also handles serializing
      * instructions.
      */
-    unsigned renameInsts(ThreadID tid, unsigned max_insts);
+    unsigned renameInsts(ThreadID tid, unsigned max_insts, bool hold_output);
 
     /** Check physical register space for this rename bundle. */
     bool canRename(ThreadID tid);
@@ -426,6 +427,8 @@ class Rename
 
     /** Single-thread capacity; history records own the charged entries. */
     RenameRAB rab;
+    /** One renamed group waiting for the single-thread RAB dispatch grant. */
+    std::vector<DynInstPtr> heldRenameGroup;
 
     /** Whether a thread stalled on ROB/dispatch-queue-bandwidth backpressure
      *  (a resource other than Preg itself) should also be treated as a Preg

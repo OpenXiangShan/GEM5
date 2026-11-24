@@ -328,6 +328,7 @@ Rename::resetStage()
 {
     // Stage reset is only valid at startup or after a complete drain.
     assert(rab.occupancy() == 0);
+    assert(heldRenameGroup.empty());
     rab.latchAdmission();
     _status = Inactive;
     resumeUnblocking = false;
@@ -373,7 +374,7 @@ Rename::setScoreboard(Scoreboard *_scoreboard)
 bool
 Rename::isDrained() const
 {
-    if (rab.occupancy())
+    if (rab.occupancy() || !heldRenameGroup.empty())
         return false;
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         if (!historyBuffer[tid].empty() ||
@@ -394,6 +395,7 @@ void
 Rename::drainSanityCheck() const
 {
     assert(rab.occupancy() == 0);
+    assert(heldRenameGroup.empty());
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         assert(historyBuffer[tid].empty());
         assert(fixedbuffer[tid].empty());
@@ -417,6 +419,10 @@ Rename::squash(const InstSeqNum &squash_seq_num, ThreadID tid)
         }
     }
 
+    while (!heldRenameGroup.empty() &&
+           heldRenameGroup.back()->seqNum > squash_seq_num) {
+        heldRenameGroup.pop_back();
+    }
     doSquash(squash_seq_num, tid);
 }
 
@@ -443,6 +449,20 @@ Rename::tick()
     checkSquash();
 
     releasePhysRegs();
+
+    // Publish the old group before accepting a replacement, even on an input bubble.
+    const bool send_held = !heldRenameGroup.empty() && rab_dispatch_ready &&
+                           !stallSig->blockRename[0];
+    if (send_held) {
+        assert(toIEW->size == 0);
+        DPRINTF(Rename, "Sending held rename group [sn:%llu..%llu]\n",
+                heldRenameGroup.front()->seqNum, heldRenameGroup.back()->seqNum);
+        for (auto &inst : heldRenameGroup)
+            toIEW->insts[toIEW->size++] = std::move(inst);
+        heldRenameGroup.clear();
+        cpu->activityThisCycle();
+    }
+    const bool hold_output = !rab_dispatch_ready || send_held;
 
     // Establish this cycle's Preg SMT-DynamicBorrowing donor eligibility for
     // every thread up front, before any thread's canRename() consumes it via
@@ -479,7 +499,7 @@ Rename::tick()
     regFullThisCycle = false;
     for (int i = 0; i < numThreads; i++) {
         bool can_rename = canRename(i);
-        const bool rab_full = !rab_dispatch_ready && !fixedbuffer[i].empty();
+        const bool rab_full = !heldRenameGroup.empty() && !fixedbuffer[i].empty();
         bool block = stallSig->blockRename[i] || !can_rename || rab_full;
         bool active = !block && !fixedbuffer[i].empty();
         StallReason block_reason = StallReason::NoStall;
@@ -584,7 +604,7 @@ Rename::tick()
     unsigned threads_renamed = 0;
     for (const ThreadID tid : selected_tids) {
         setAllStalls(tid, StallReason::NoStall);
-        if (toIEW->size >= aggregateRenameWidth) {
+        if (!hold_output && toIEW->size >= aggregateRenameWidth) {
             freezeActiveThread(tid);
             continue;
         }
@@ -600,7 +620,7 @@ Rename::tick()
         }
 
         DPRINTF(Rename, "Processing [tid:%i]\n", tid);
-        const unsigned renamed = renameInsts(tid, renameWidth);
+        const unsigned renamed = renameInsts(tid, renameWidth, hold_output);
         renamed_this_cycle += renamed;
         threads_renamed += renamed != 0;
 
@@ -777,7 +797,7 @@ Rename::hasBackendQuotaFullStall(ThreadID tid)
 }
 
 unsigned
-Rename::renameInsts(ThreadID tid, unsigned max_insts)
+Rename::renameInsts(ThreadID tid, unsigned max_insts, bool hold_output)
 {
     // Instructions can be either in the skid buffer or the queue of
     // instructions coming from decode, depending on the status.
@@ -785,14 +805,14 @@ Rename::renameInsts(ThreadID tid, unsigned max_insts)
     int insts_available = insts_to_rename.size();
 
     int renamed_insts = 0;
-    int toIEWIndex = toIEW->size;
+    assert(!hold_output || (numThreads == 1 && heldRenameGroup.empty()));
 
     std::queue<StallReason> rename_stalls;
 
     StallReason breakRename = StallReason::NoStall;
     unsigned processed_insts = 0;
     while (insts_available > 0 && processed_insts < max_insts &&
-           toIEWIndex < aggregateRenameWidth) {
+           (hold_output || toIEW->size < aggregateRenameWidth)) {
 
         assert(!insts_to_rename.empty());
 
@@ -840,12 +860,10 @@ Rename::renameInsts(ThreadID tid, unsigned max_insts)
         // this instruction have been renamed.
         ppRename->notify(inst);
 
-        // Put instruction in rename queue.
-        toIEW->insts[toIEWIndex] = inst;
-        ++(toIEW->size);
-
-        // Increment which instruction we're on.
-        ++toIEWIndex;
+        if (hold_output)
+            heldRenameGroup.push_back(inst);
+        else
+            toIEW->insts[toIEW->size++] = inst;
 
         // Decrement how many instructions are available.
         --insts_available;
@@ -904,7 +922,7 @@ Rename::renameInsts(ThreadID tid, unsigned max_insts)
     }
 
     // If we wrote to the time buffer, record this.
-    if (renamed_insts) {
+    if (renamed_insts && !hold_output) {
         wroteToTimeBuffer = true;
     }
 

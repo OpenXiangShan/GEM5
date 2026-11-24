@@ -1734,13 +1734,31 @@ IEW::dispatchInsts()
             threads_dispatched += dispatched != 0;
 
             if (!fixedbuffer[tid].empty()) {
+                // Hitting the RAB limit does not exhaust dispatch bandwidth.
+                if (width < renameWidth && dispatched == width) {
+                    // Mark waiting slots only; count squashes separately.
+                    const auto count = std::min<size_t>(
+                        renameWidth - dispatched, fixedbuffer[tid].size());
+                    for (size_t i = 0; i < count; ++i) {
+                        dispatchStalls[dispatched + i] =
+                            fixedbuffer[tid][i]->isSquashed() ?
+                            StallReason::InstSquashed : StallReason::RABFull;
+                    }
+                } else {
+                    DPRINTF(IEW, "[tid:%i] Dispatch: Bandwidth Full. Blocking.\n", tid);
+                    iewStats.stallEvents[DispBWFull]++;
+                    iewStats.smtStallEvents[DispBWFull].sample(tid);
+                }
                 stallSig->blockRename[tid] = true;
                 stallSig->renameBlockReason[tid] =
                     blockReason == StallReason::NoStall ?
                         StallReason::OtherFragStall : blockReason;
                 DPRINTF(IEW,
-                        "Dispatch bandwidth full, blocking thread %i\n", tid);
+                        "Dispatch input remains, blocking thread %i\n", tid);
             }
+            for (int i = 0; i < dispatchStalls.size(); ++i)
+                DPRINTF(IEW, "[tid:%i] dispatchStalls[%d]=%d\n",
+                        tid, i, dispatchStalls[i]);
 
             auto &iew_info = toRename->iewInfo[tid];
             iew_info.robHeadStallReason =
@@ -1995,20 +2013,6 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
             }
         }
     }
-
-
-    for (int i = 0;i < dispatchStalls.size();i++) {
-        DPRINTF(IEW,"[tid:%i] dispatchStalls[%d]=%d\n", tid, i, dispatchStalls.at(i));
-    }
-
-    if (!insts_to_dispatch.empty()) {
-        DPRINTF(IEW,"[tid:%i] Dispatch: Bandwidth Full. Blocking.\n", tid);
-
-        iewStats.stallEvents[DispBWFull]++;
-        iewStats.smtStallEvents[DispBWFull].sample(tid);
-        
-    }
-
     return dispatched;
 }
 
@@ -2146,17 +2150,6 @@ IEW::classifyInstToDispQue(ThreadID tid, unsigned max_insts,
                 }
             }
         }
-    }
-
-
-    for (int i = 0;i < dispatchStalls.size();i++) {
-        DPRINTF(IEW,"[tid:%i] dispatchStalls[%d]=%d\n", tid, i, dispatchStalls.at(i));
-    }
-
-    if (!insts_to_dispatch.empty()) {
-        DPRINTF(IEW,"[tid:%i] Dispatch: Bandwidth Full. Blocking.\n", tid);
-        iewStats.stallEvents[DispBWFull]++;
-        iewStats.smtStallEvents[DispBWFull].sample(tid);
     }
     return dispatched;
 }
