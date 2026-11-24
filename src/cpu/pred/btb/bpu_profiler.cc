@@ -172,43 +172,26 @@ BPUProfiler::recordFetchBlock(const FetchTarget &target,
 void
 BPUProfiler::recordInstructionCommit()
 {
-    // Update global committed instruction count
-    numInstCommitted++;
+    ++numInstCommitted;
 
-    // ----------------------- Main Phase Processing -------------------------
-    if (numInstCommitted % phaseSizeByInst == 0) {
-        int currentPhaseID = numInstCommitted / phaseSizeByInst;
+    // Completed windows have zero-based IDs in the CSV files.
+    if (numInstCommitted % PhaseSize == 0) {
+        const auto phaseID = numInstCommitted / PhaseSize - 1;
+        DPRINTF(Profiling, "dump main phase %d\n", phaseID + 1);
+        summarizeBranches(phaseID, lastPhaseTopMispredictsByBranch,
+                          currentPhaseTakenBranches, phaseBranchRows);
 
-        // Process main phase statistics if needed
-        if (processPhase(false, currentPhaseID, phaseIdToDump,
-                        lastPhaseTopMispredictsByBranch,
-                        topMispredictsByBranchByPhase,
-                        currentPhaseTakenBranches,
-                        takenBranchesByPhase)) {
-
-            // Process fetch instruction distributions
-            std::vector<int> committedInstDist, fetchedInstDist;
-            processFetchDistributions(committedInstDist, fetchedInstDist);
-
-            // Store the distributions
-            ftqEntryNumCommittedInstDistByPhase.push_back(committedInstDist);
-            ftqEntryNumFetchedInstDistByPhase.push_back(fetchedInstDist);
-
-            // Process BTB entries
-            BTBEntriesByPhase.push_back(processBTBEntries());
-        }
+        auto &committedDist = ftqEntryNumCommittedInstDistByPhase.emplace_back();
+        auto &fetchedDist = ftqEntryNumFetchedInstDistByPhase.emplace_back();
+        processFetchDistributions(committedDist, fetchedDist);
+        summarizeBtbEntries(phaseID);
     }
 
-    // ---------------------- Sub-Phase Processing --------------------------
-    if (numInstCommitted % subPhaseSizeByInst() == 0) {
-        int currentSubPhaseID = numInstCommitted / subPhaseSizeByInst();
-
-        // Process sub-phase statistics if needed
-        processPhase(true, currentSubPhaseID, subPhaseIdToDump,
-                    lastSubPhaseTopMispredictsByBranch,
-                    topMispredictsByBranchBySubPhase,
-                    currentSubPhaseTakenBranches,
-                    takenBranchesBySubPhase);
+    if (numInstCommitted % SubPhaseSize == 0) {
+        const auto phaseID = numInstCommitted / SubPhaseSize - 1;
+        DPRINTF(Profiling, "dump sub phase %d\n", phaseID + 1);
+        summarizeBranches(phaseID, lastSubPhaseTopMispredictsByBranch,
+                          currentSubPhaseTakenBranches, subPhaseBranchRows);
     }
 }
 
@@ -233,8 +216,8 @@ BPUProfiler::processFetchDistributions(
     }
 }
 
-std::unordered_map<Addr, std::pair<BTBEntry, int>>
-BPUProfiler::processBTBEntries()
+void
+BPUProfiler::summarizeBtbEntries(uint64_t phaseID)
 {
     std::unordered_map<Addr, std::pair<BTBEntry, int>> currentPhaseBTBEntries;
 
@@ -258,73 +241,65 @@ BPUProfiler::processBTBEntries()
     // Update last phase BTB entries for next time
     lastPhaseBTBEntries = totalBTBEntries;
 
-    return currentPhaseBTBEntries;
+    // Keep the original hash iteration order as input to the sort: equal
+    // visit counts otherwise change which entries appear in the report.
+    std::vector<std::tuple<Addr, BTBEntry, int>> entries;
+    entries.reserve(currentPhaseBTBEntries.size());
+    for (const auto &[pc, entry] : currentPhaseBTBEntries) {
+        entries.emplace_back(pc, entry.first, entry.second);
+    }
+    std::sort(entries.begin(), entries.end(), [](const auto &a, const auto &b) {
+        return std::get<2>(a) > std::get<2>(b);
+    });
+
+    std::ostringstream row;
+    row << phaseID << "," << entries.size();
+    for (size_t i = 0; i < std::min(TopBtbEntries, entries.size()); ++i) {
+        const auto &[pc, entry, count] = entries[i];
+        row << "," << std::hex << pc << "," << std::dec << entry.branch.getType();
+    }
+    row << '\n';
+    phaseBtbRows += row.str();
 }
 
-bool
-BPUProfiler::processPhase(
-    bool isSubPhase, int phaseID, int &phaseToDump,
-    BranchStatsMap &lastPhaseStats,
-    std::vector<BranchStatsMap> &phaseStatsList,
-    std::unordered_map<Addr, int> &currentPhaseBranches,
-    std::vector<std::unordered_map<Addr, int>> &phaseBranchesList)
+void
+BPUProfiler::summarizeBranches(uint64_t phaseID, BranchStatsMap &lastStats,
+                               std::unordered_map<Addr, int> &takenBranches,
+                               std::string &rows)
 {
-    // Check if this phase should be processed
-    if (phaseToDump > phaseID) {
-        return false;
-    }
-
-    // Debug output
-    DPRINTF(Profiling, "dump %s phase %d\n",
-            isSubPhase ? "sub" : "main", phaseToDump);
-
-    // Create map for current phase statistics
-    BranchStatsMap currentPhaseStats;
-
-    // Process each branch in the global statistics
-    for (auto &it : topMispredictsByBranch) {
-        const auto &key = it.first;
-        const auto &stats = it.second;
-
-        // Find stats from last phase
-        auto lastIt = lastPhaseStats.find(key);
-
-        // If branch exists in last phase, calculate difference
-        if (lastIt != lastPhaseStats.end()) {
-            const auto &lastStats = lastIt->second;
-
-            // Skip branches with no new executions
-            if (stats.totalCount <= lastStats.totalCount) {
+    std::vector<std::pair<BranchKey, int>> records;
+    int totalMispredicts = 0;
+    for (const auto &[key, stats] : topMispredictsByBranch) {
+        const auto last = lastStats.find(key);
+        int misses = stats.mispredCount;
+        if (last != lastStats.end()) {
+            if (stats.totalCount <= last->second.totalCount) {
                 continue;
             }
-
-            // Create stats for current phase (delta from last phase)
-            BranchStats phaseStats(stats.pc, stats.branchType);
-            phaseStats.totalCount = stats.totalCount - lastStats.totalCount;
-            phaseStats.mispredCount = stats.mispredCount - lastStats.mispredCount;
-            phaseStats.dirWrongCount = stats.dirWrongCount - lastStats.dirWrongCount;
-            phaseStats.targetWrongCount = stats.targetWrongCount - lastStats.targetWrongCount;
-            phaseStats.noPredCount = stats.noPredCount - lastStats.noPredCount;
-
-            currentPhaseStats[key] = phaseStats;
-        } else {
-            // This is a new branch in this phase
-            currentPhaseStats[key] = stats;
+            misses -= last->second.mispredCount;
         }
+        records.emplace_back(key, misses);
+        totalMispredicts += misses;
     }
 
-    // Store the processed data
-    lastPhaseStats = topMispredictsByBranch;
-    phaseStatsList.push_back(currentPhaseStats);
+    // Input is in BranchKey order, including executed branches with no misses.
+    std::sort(records.begin(), records.end(), [](const auto &a, const auto &b) {
+        return a.second > b.second;
+    });
 
-    // Handle taken branches map
-    phaseBranchesList.push_back(currentPhaseBranches);
-    currentPhaseBranches.clear();
+    std::ostringstream row;
+    row << phaseID << "," << records.size() << "," << takenBranches.size()
+        << "," << totalMispredicts;
+    for (size_t i = 0; i < std::min(TopBranches, records.size()); ++i) {
+        const auto &[key, misses] = records[i];
+        row << "," << std::hex << key.first << "," << std::dec << key.second
+            << "," << misses;
+    }
+    row << '\n';
+    rows += row.str();
 
-    // Increment phase counter for next time
-    phaseToDump++;
-
-    return true;
+    lastStats = topMispredictsByBranch;
+    takenBranches.clear();
 }
 
 void
@@ -436,80 +411,20 @@ BPUProfiler::dump()
     }
     simout.close(outFile);
 
-    // Create CSV header for topN tables
-    auto createTopNHeader = [](std::ostream& out, int outputTopN, const std::string& prefix) {
-        out << prefix;
-        for (int i = 0; i < outputTopN; i++) {
-            out << ",topMispPC_" << i
-                << ",type_" << i
-                << ",misCnt_" << i;
-        }
-        out << std::endl;
-    };
-
-    // Output phase-classified mispredictions
-    int outputTopN = 5;
-
-    // 4. Phase-based mispredictions
-    auto processPhaseData = [&](const std::string& filename,
-                           const auto& dataByPhase,
-                           const auto& takenBranches) {
+    auto writeBranchPhases = [&](const std::string &filename,
+                                 const char *idColumn, const std::string &rows) {
         outFile = simout.create(filename, false, true);
-        auto& out = *outFile->stream();
-
-        // Write header
-        createTopNHeader(out, outputTopN,
-                        filename.find("Sub") != std::string::npos ?
-                        "subPhaseID,numBranches,numEverTakenBranches,totalMispredicts" :
-                        "phaseID,numBranches,numEverTakenBranches,totalMispredicts");
-
-        int phaseID = 0;
-        for (const auto& phaseData : dataByPhase) {
-            int numStaticBranches = phaseData.size();
-            int numEverTakenStaticBranches = takenBranches[phaseID].size();
-
-            // Copy data and calculate total mispredictions
-            std::vector<std::pair<BranchKey, BranchStats>> phaseRecords;
-            for (const auto& record : phaseData) {
-                phaseRecords.push_back(record);
-            }
-
-            // Calculate total mispredicts
-            int totalMispredicts = 0;
-            for (const auto& rec : phaseRecords) {
-                totalMispredicts += rec.second.mispredCount;
-            }
-
-            // Output phase basic info
-            out << phaseID << "," << numStaticBranches << ","
-                << numEverTakenStaticBranches << "," << totalMispredicts;
-
-            // Sort by misprediction count
-            std::sort(phaseRecords.begin(), phaseRecords.end(),
-                [](const auto& a, const auto& b) {
-                    return a.second.mispredCount > b.second.mispredCount;
-                });
-
-            // Output top-N
-            for (int i = 0; i < outputTopN && i < phaseRecords.size(); i++) {
-                const auto& stats = phaseRecords[i].second;
-                out << "," << std::hex << stats.pc // pc
-                    << "," << std::dec << stats.branchType // type
-                    << "," << stats.mispredCount; // count
-            }
-            out << std::dec << std::endl;
-            phaseID++;
+        auto &out = *outFile->stream();
+        out << idColumn << ",numBranches,numEverTakenBranches,totalMispredicts";
+        for (size_t i = 0; i < TopBranches; ++i) {
+            out << ",topMispPC_" << i << ",type_" << i << ",misCnt_" << i;
         }
+        out << '\n' << rows;
         simout.close(outFile);
     };
-
-    processPhaseData("topMispredictByPhase.csv",
-                     topMispredictsByBranchByPhase,
-                     takenBranchesByPhase);
-
-    processPhaseData("topMispredictBySubPhase.csv",
-                     topMispredictsByBranchBySubPhase,
-                     takenBranchesBySubPhase);
+    writeBranchPhases("topMispredictByPhase.csv", "phaseID", phaseBranchRows);
+    writeBranchPhases("topMispredictBySubPhase.csv", "subPhaseID",
+                      subPhaseBranchRows);
 
     // 5. Output history misprediction data
     outFile = createOutputFile("topMisPredictHist.csv", "Hist,count");
@@ -564,7 +479,7 @@ BPUProfiler::dump()
                 out << "," << dist[i];
             }
 
-            out << "," << (double)phaseSizeByInst / (double)numFtqEntries << std::endl;
+            out << "," << (double)PhaseSize / (double)numFtqEntries << std::endl;
             phaseID++;
         }
 
@@ -579,41 +494,13 @@ BPUProfiler::dump()
                           ftqEntryNumFetchedInstDistByPhase);
 
     // 9. Output BTB entries
-    int outputTopNEntries = 1;
-    std::stringstream headerSS;
-    headerSS << "phaseID,numBTBEntries";
-    for (int i = 0; i <= outputTopNEntries; i++) {
-        headerSS << ",entry_" << i << "_pc,entry_" << i << "_type";
+    std::ostringstream header;
+    header << "phaseID,numBTBEntries";
+    for (size_t i = 0; i < TopBtbEntries; ++i) {
+        header << ",entry_" << i << "_pc,entry_" << i << "_type";
     }
-    outFile = createOutputFile("btbEntriesByPhase.csv", headerSS.str());
-
-    int phaseID = 0;
-    for (auto& phase : BTBEntriesByPhase) {
-        auto& out = *outFile->stream();
-        out << std::dec << phaseID << "," << phase.size();
-
-        // Vector of (PC, BTBEntry, count) tuples
-        std::vector<std::tuple<Addr, BTBEntry, int>> btbEntries;
-        for (auto& entry : phase) {
-            btbEntries.push_back(std::make_tuple(
-                entry.first, entry.second.first, entry.second.second));
-        }
-
-        std::sort(btbEntries.begin(), btbEntries.end(),
-            [](const auto &a, const auto &b) {
-                 return std::get<2>(a) > std::get<2>(b);
-            });
-
-        for (int i = 0; i <= outputTopNEntries && i < btbEntries.size(); i++) {
-            const auto &entry = btbEntries[i];
-            out << "," << std::hex << std::get<0>(entry);
-            BTBEntry btbEntry = std::get<1>(entry);
-            out << "," << std::dec << btbEntry.branch.getType();
-        }
-
-        out << std::endl;
-        phaseID++;
-    }
+    outFile = createOutputFile("btbEntriesByPhase.csv", header.str());
+    *outFile->stream() << phaseBtbRows;
     simout.close(outFile);
 }
 

@@ -73,7 +73,9 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       resolveBlockThreshold(p.resolveBlockThreshold),
       twoTakenMaxRunAhead(p.twoTakenMaxRunAhead),
       dbpBtbStats(this, p.numStages, p.ftq_size, p.predictWidth, maxInstsNum, p.numThreads),
-      profiler(name(), maxInstsNum)
+      profiler(p.enableBpuProfiler
+                   ? std::make_unique<BPUProfiler>(name(), maxInstsNum)
+                   : nullptr)
 {
     panic_if(numPredictingThreads == 0 ||
              numPredictingThreads > numThreads ||
@@ -853,7 +855,9 @@ DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
     DPRINTF(Profiling, "notifyInstCommit, inst=%s, commitInstNum=%d\n",
             inst->staticInst->disassemble(inst->pcState().instAddr()),
             target.commitInstNum);
-    profiler.recordInstructionCommit();
+    if (profiler) {
+        profiler->recordInstructionCommit();
+    }
 }
 
 void
@@ -902,7 +906,8 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
         rv_pc.branching() || inst->isUncondCtrl(), trace_facts);
 
     // ---------- Process misprediction and update statistics ----------
-    if (profiler.recordBranch(entry, branchAddr, info, taken, mispred)) {
+    if (profiler &&
+        profiler->recordBranch(entry, branchAddr, info, taken, mispred)) {
         dbpBtbStats.staticBranchNum++;
     }
 

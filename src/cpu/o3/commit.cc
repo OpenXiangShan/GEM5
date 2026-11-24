@@ -140,6 +140,9 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         }
         cpu->schedule(this->stuckCheckEvent, cpu->clockEdge(Cycles(40010)));
       }, "CommitStuckCheckEvent"),
+      loadTripleCounter(params.enableLoadTriple
+                            ? std::make_unique<LoadTripleCounter>()
+                            : nullptr),
       cpu(_cpu),
       bp(_bp),
       valuePred(params.valuePred),
@@ -1939,17 +1942,20 @@ Commit::commitInsts()
                     if (head_inst->isLoad()) {
                         Addr load_pc = head_inst->pcState().instAddr();
                         Addr load_addr = head_inst->physEffAddr;
-                        char buffer[8] = {0};
-                        if (head_inst->memData) {
-                            std::memcpy(buffer, head_inst->memData,
-                                        std::min<size_t>(head_inst->effSize,
-                                                        sizeof(buffer)));
-                        }
-                        Addr load_value = *((uint64_t *)buffer);
-                        bool hit = loadTripleCounter.update(load_pc, load_addr, load_value);
-                        if (hit) {
-                            // same PC && same addr && same value
-                            stats.loadTriple++;
+                        if (loadTripleCounter) {
+                            char buffer[8] = {0};
+                            if (head_inst->memData) {
+                                std::memcpy(buffer, head_inst->memData,
+                                            std::min<size_t>(head_inst->effSize,
+                                                            sizeof(buffer)));
+                            }
+                            Addr load_value = *((uint64_t *)buffer);
+                            bool hit = loadTripleCounter->update(
+                                load_pc, load_addr, load_value);
+                            if (hit) {
+                                // same PC && same addr && same value
+                                stats.loadTriple++;
+                            }
                         }
                         // EA reuse: compare to last committed EA of same static load
                         auto itEA = lastLoadEA.find(load_pc);

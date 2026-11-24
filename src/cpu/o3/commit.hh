@@ -44,6 +44,7 @@
 #include <cstdint>
 #include <list>
 #include <map>
+#include <memory>
 #include <queue>
 #include <unordered_map>
 #include <utility>
@@ -202,7 +203,7 @@ class Commit
 
     /** Mark the thread as processing a trap. */
     void processTrapEvent(ThreadID tid);
-    LoadTripleCounter loadTripleCounter;
+    std::unique_ptr<LoadTripleCounter> loadTripleCounter;
     BranchHistory committedBranchHistory[MaxThreads];
 
     // --- Maps for "last time" tracking, keyed by static load PC ---

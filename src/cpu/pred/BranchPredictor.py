@@ -1234,6 +1234,8 @@ class DecoupledBPUWithBTB(BranchPredictor):
     ras = Param.BTBRAS(BTBRAS(), "RAS")
     pairtage = Param.PairTAGE(PairTAGE(), "PairTAGE predictor")
 
+    enableBpuProfiler = Param.Bool(
+        True, "Collect detailed BPU CSV profiles and phase histories")
     bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
     resolveBlockThreshold = Param.Unsigned(8, "Consecutive resolve dequeue failures before blocking prediction once")
     twoTakenMaxRunAhead = Param.Unsigned(4, "Enqueue 2 taken block only while FTQ lack of entries; 0 means no limit")
