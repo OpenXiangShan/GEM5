@@ -465,6 +465,7 @@ def _configure_xs_composite_kmh_align(prefetcher):
     prefetcher.enable_bop = False
     prefetcher.enable_temporal = False
     prefetcher.enable_sstride = True
+    prefetcher.sstride_require_first_issue_tlb_hit = True
     prefetcher.enable_xsstream = True
     prefetcher.enable_opt = False
     prefetcher.pht_pf_level = 2

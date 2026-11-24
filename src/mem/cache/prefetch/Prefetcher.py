@@ -1415,6 +1415,9 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     enable_activepage = Param.Bool(False,"Enable activepage stream prefetcher")
     enable_xsstream = Param.Bool(False,"Enable xs_stream component")
     enable_sstride = Param.Bool(False,"Enable sms stride component")
+    sstride_require_first_issue_tlb_hit = Param.Bool(
+        False, "Require a first-issue scalar load TLB hit for SStride training; "
+        "train on a cache miss or a hit on an SStride-prefetched line")
     enable_pht = Param.Bool(False,"Enable sms pht prefetcher")
     enable_bop = Param.Bool(False, "Enable BOP")
     enable_temporal = Param.Bool(False, "Enable temporal component")

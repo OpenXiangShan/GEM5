@@ -179,6 +179,7 @@ class XSCompositePrefetcher : public Queued
         statistics::Scalar smsIncrRegionoverride;
         statistics::Scalar smsDecrRegionoverride;
         statistics::Scalar strideTrainCount;
+        statistics::Scalar strideTrainFilteredIssue;
         statistics::Scalar streamTrainCount;
         statistics::Scalar totalTrainCount;
         statistics::Scalar smsPhtIssuedL1;
@@ -260,6 +261,7 @@ class XSCompositePrefetcher : public Queued
     const bool enableSPP;
     const bool enableTemporal;
     const bool enableSstride;
+    const bool sstrideRequireFirstIssueTlbHit;
     const bool enableBerti;
     const bool enableBOP;
     const bool enableOpt;
