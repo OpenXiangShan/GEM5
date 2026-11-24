@@ -383,7 +383,7 @@ class Packet : public Printable
         DCACHE_MAINPIPE_SBUFFER_HIT = 0x00200000,
 
 
-        FIRST_ISSUE_SCALAR_LOAD = 0x00400000,
+        FIRST_ISSUE_SCALAR_LOAD = 0x01000000,
 
         // L1-local write notification, delivered only to the owning CPU.
         LOCAL_WRITE_SNOOP = 0x00400000,
