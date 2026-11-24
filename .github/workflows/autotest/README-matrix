@@ -26,7 +26,7 @@ Inputs
 ------
 
     /nfs/share/gem5_ci/matrix/<case>-ci.bin
-    /nfs/share/gem5_ci/ref/matrix/riscv64-nemu-interpreter-so
+    /nfs/share/gem5_ci/ref/matrix/af9d4ce51fc2/riscv64-nemu-interpreter-so
 
 script/matrix_ci.py lists the six case IDs. Use --image-dir, --reference
 and --gem5 to select other inputs or a different binary. The Matrix REF uses
@@ -35,9 +35,9 @@ a 1544-byte register layout.
 What CI checks
 --------------
 
-gem5-matrix.yml runs on pushes to xs-dev and on manual dispatch. It runs two
-cases at a time, with a 30-minute timeout per case, and uploads the logs and
-summary as matrix-correctness-results.
+gem5-matrix.yml runs on pushes to xs-dev and on manual dispatch. It builds
+GEM5 once and runs all six cases in parallel, with a 30-minute timeout per
+case. It uploads the logs and summary as matrix-correctness-results.
 
 Each guest runs the optimized Matrix and RVV implementation once and compares
 the output against an embedded reference computed on the host. The guest must

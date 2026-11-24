@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 90
     env:
       MATRIX_CI_IMAGE_DIR: /nfs/share/gem5_ci/matrix
-      MATRIX_CI_REFERENCE_SO: /nfs/share/gem5_ci/ref/matrix/riscv64-nemu-interpreter-so
+      MATRIX_CI_REFERENCE_SO: /nfs/share/gem5_ci/ref/matrix/af9d4ce51fc2/riscv64-nemu-interpreter-so
     steps:
       - uses: actions/checkout@v7
       - name: Check test inputs
@@ -41,7 +41,7 @@ jobs:
             --output "$GITHUB_WORKSPACE/matrix-ci-results" \
             --image-dir "$MATRIX_CI_IMAGE_DIR" \
             --reference "$MATRIX_CI_REFERENCE_SO" \
-            --jobs 2 --timeout 1800
+            --jobs 6 --timeout 1800
       - name: Upload validation results
         if: always()
         uses: actions/upload-artifact@v7

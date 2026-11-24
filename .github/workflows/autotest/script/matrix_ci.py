@@ -14,9 +14,11 @@ import time
 
 REPO = Path(__file__).resolve().parents[4]
 IMAGE_DIR = Path("/nfs/share/gem5_ci/matrix")
-REFERENCE = Path("/nfs/share/gem5_ci/ref/matrix/riscv64-nemu-interpreter-so")
+REFERENCE = Path(
+    "/nfs/share/gem5_ci/ref/matrix/af9d4ce51fc2/riscv64-nemu-interpreter-so"
+)
 REQUIRED_CAPABILITIES = 3  # xsai-blas RVV and AME
-# Start the longest images first on the two CI workers.
+# Run larger cases first when fewer workers are available.
 CASES = (
     "gemm_i8_f32-m512-k256-n512",
     "flash_attention-q256-kv512-d128",
