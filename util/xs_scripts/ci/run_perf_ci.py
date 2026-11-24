@@ -74,24 +74,23 @@ def prepare_command(repo, profile, args):
     topology.add_argument("-n", "--num-cpus", type=int, default=1)
     shape, _ = topology.parse_known_args(extra)
     if config.name == "smt_idealkmhv3.py" or shape.smt or shape.num_cpus > 1:
-        if mode_name in ("h", "single-32g"):
+        if mode_name == "h" or profile.single_core_ref:
             raise ValueError(
                 f"{profile.benchmark_type} requires a single-thread configuration"
             )
         mode_name = "smt"
     mode = CHECKPOINT_MODES[mode_name]
-    custom_ref = mode.ref_env == "GCBV_REF_SO" and args.gcbv_ref_so
-    if custom_ref:
-        ref = Path(args.gcbv_ref_so)
-    elif isinstance(mode.reference, Path):
-        ref = mode.reference
+    custom_ref = mode_name == "single" and args.gcbv_ref_so
+    ref_path = custom_ref or profile.single_core_ref
+    if ref_path:
+        ref = Path(ref_path)
     else:
         ref = Path(
             subprocess.check_output(
                 [
                     sys.executable,
                     repo / "util/nemu_ref/resolve.py",
-                    mode.reference,
+                    mode.variant,
                 ],
                 text=True,
             ).strip()
@@ -102,11 +101,9 @@ def prepare_command(repo, profile, args):
     if mode_name == "smt":
         # Multi-context configs require the key even for an embedded restorer.
         env["GCB_MULTI_CORE_RESTORER"] = ""
-    extra.extend(
-        arg.format(ref=ref, repo=repo)
-        for arg in mode.extra_args
-        if not (custom_ref and arg == "--enable-mem-dedup")
-    )
+    if not custom_ref:
+        extra.extend(arg.format(ref=ref, repo=repo) for arg in mode.extra_args)
+    extra.extend(profile.extra_args)
     return cmd + [str(config)], extra, env, ref
 
 

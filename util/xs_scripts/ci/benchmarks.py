@@ -19,6 +19,8 @@ class BenchmarkProfile:
     listing: Path | None = None
     trace_format: str = ""
     archive_subdir: str = ""
+    single_core_ref: Path | None = None
+    extra_args: tuple[str, ...] = ()
 
     @property
     def score_script(self):
@@ -30,10 +32,9 @@ SHARE = Path("/nfs/home/share")
 CI = SHARE / "gem5_ci"
 
 
-# Named variants use the simulator checkout's lock; XSCC pins a 32 GiB REF.
 @dataclass(frozen=True)
 class CheckpointMode:
-    reference: str | Path
+    variant: str
     ref_env: str
     extra_args: tuple[str, ...]
 
@@ -41,13 +42,6 @@ class CheckpointMode:
 CHECKPOINT_MODES = {
     "single": CheckpointMode(
         "normal-dedup", "GCBV_REF_SO", ("--enable-mem-dedup",)
-    ),
-    "single-32g": CheckpointMode(
-        CI
-        / "ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc-single32g"
-        / "normal-dedup-32g/riscv64-nemu-interpreter-so",
-        "GCBV_REF_SO",
-        ("--enable-mem-dedup", "--mem-size=32GB"),
     ),
     "smt": CheckpointMode(
         "multi", "GCBV_MULTI_CORE_REF_SO", ("--mem-size=16GB",)
@@ -124,8 +118,13 @@ CATALOG = {
             "xscc-spec06-1.0c",
             XSCC / "checkpoint-0-0-0",
             XSCC / "checkpoint-0-0-0/cluster-0-0.json",
-            mode="single-32g",
             archive_subdir=f"custom/{XSCC.name}",
+            single_core_ref=(
+                CI
+                / "ref/releases/af9d4ce51fc2-gem5-r4-multi16g-zfa-cbo-sstc-single32g"
+                / "normal-dedup-32g/riscv64-nemu-interpreter-so"
+            ),
+            extra_args=("--mem-size=32GB",),
         ),
         BenchmarkProfile(
             "gcc16-spec17-smt-1.0c",

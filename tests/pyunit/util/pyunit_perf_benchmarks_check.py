@@ -572,14 +572,12 @@ class RunnerTest(unittest.TestCase):
             extra_args="",
         )
         xscc = MODULE.resolve_benchmark("xscc-spec06-1.0c")
-        mode = MODULE.CHECKPOINT_MODES[xscc.mode]
-        self.assertEqual(mode.reference.parent.name, "normal-dedup-32g")
-        with patch.dict(
-            MODULE.CHECKPOINT_MODES, {xscc.mode: replace(mode, reference=ref)}
-        ):
-            _, extra, env, _ = prepare_command(self.root, xscc, args)
-            self.assertEqual(env["GCBV_REF_SO"], str(ref))
-            self.assertEqual(extra, ["--enable-mem-dedup", "--mem-size=32GB"])
+        self.assertEqual(xscc.mode, "single")
+        self.assertEqual(xscc.single_core_ref.parent.name, "normal-dedup-32g")
+        xscc = replace(xscc, single_core_ref=ref)
+        _, extra, env, _ = prepare_command(self.root, xscc, args)
+        self.assertEqual(env["GCBV_REF_SO"], str(ref))
+        self.assertEqual(extra, ["--enable-mem-dedup", "--mem-size=32GB"])
         smt = MODULE.resolve_benchmark("gcc16-spec17-smt-1.0c")
         with patch(
             "ci.run_perf_ci.subprocess.check_output", return_value=str(ref)
@@ -589,6 +587,16 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(env["GCBV_MULTI_CORE_REF_SO"], str(ref))
         self.assertEqual(extra, ["--mem-size=16GB"])
         self.assertEqual(smt.score_script, "gem5-score-ci-17.sh")
+
+        override = self.root / "manual.so"
+        override.touch()
+        args.gcbv_ref_so = str(override)
+        _, extra, env, _ = prepare_command(self.root, xscc, args)
+        self.assertEqual(env["GCBV_REF_SO"], str(override))
+        self.assertEqual(extra, ["--mem-size=32GB"])
+        args.extra_args = "--smt"
+        with self.assertRaisesRegex(ValueError, "single-thread"):
+            prepare_command(self.root, xscc, args)
 
     def test_local_and_ssh_commands_clear_inactive_environment(self):
         with patch.dict(
