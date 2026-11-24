@@ -60,6 +60,8 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     void notifyFill(const PacketPtr &pkt) override;
     void notifyIns(int ins_num) override { cdp->notifyIns(ins_num); }
 
+    void resetStats() override;
+
   private:
     CDP* cdp;
     BOP* largeBOP;
@@ -76,6 +78,9 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     bool preferLLDP{false};
 
     bool offloadLowAccuracy = true;
+
+    // Keep the hint-router and CDP feedback counters across stats resets.
+    const bool routeLifetimeStats;
     protected:
     void InsertPFRequestToBuffer(const AddrPriority &addr_prio) override{
       panic("SMS:InsertPFRequestToBuffer not implemented");

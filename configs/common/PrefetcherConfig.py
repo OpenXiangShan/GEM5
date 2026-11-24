@@ -537,6 +537,10 @@ def _configure_l2_composite(prefetcher, prefetcher_name, options):
     if hasattr(options, 'l2_enable_lldp') and hasattr(prefetcher, 'enable_lldp'):
         prefetcher.enable_lldp = options.l2_enable_lldp
 
+    if hasattr(options, 'l2_route_lifetime_stats') and \
+            hasattr(prefetcher, 'route_lifetime_stats'):
+        prefetcher.route_lifetime_stats = options.l2_route_lifetime_stats
+
 def _configure_l2_prefetcher(prefetcher, prefetcher_name, options,
                              pf_buffer_enabled):
     # classic_l2 attaches the real L2 prefetcher directly to the L2 cache.

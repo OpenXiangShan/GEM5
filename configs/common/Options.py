@@ -308,6 +308,11 @@ def addCommonOptions(parser, configure_xiangshan=False):
                         help="Enable LLDP inside the L1 composite prefetcher")
     parser.add_argument("--l2-enable-lldp", action="store_true", default=False,
                         help="Enable LLDP inside the L2 composite prefetcher")
+    parser.add_argument("--l2-route-lifetime-stats", action="store_true",
+                        default=False,
+                        help="""
+                        Keep the L2 hint-routing and CDP feedback counters
+                        across statistics resets""")
     parser.add_argument("--short-stride-thres", action="store", default=0, type=int,
                         help="""
                         Ignore short strides when seen long strides for stride, 0 for turning off""")

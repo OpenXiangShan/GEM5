@@ -1,6 +1,7 @@
 #include "mem/cache/prefetch/l2_composite_with_worker.hh"
 
 #include <algorithm>
+#include <array>
 #include <utility>
 
 #include "debug/CDPFilter.hh"
@@ -26,7 +27,8 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
       enableCMC(p.enable_cmc),
       enableDespacitoStream(p.enable_despacito_stream),
       lldp(dynamic_cast<LLDPrefetcher *>(p.lldp)),
-      enableLLDP(p.enable_lldp)
+      enableLLDP(p.enable_lldp),
+      routeLifetimeStats(p.route_lifetime_stats)
 {
     setSharedFilterContextQualified(true);
     cdp->setSharedFilterContextQualified(true);
@@ -41,6 +43,34 @@ L2CompositeWithWorkerPrefetcher::L2CompositeWithWorkerPrefetcher(const L2Composi
     despacitoStream->filter = &pfLRUFilter;
     assert(lldp);
     cdp->parentRid = p.sys->getRequestorId(this);
+}
+
+void
+L2CompositeWithWorkerPrefetcher::resetStats()
+{
+    if (!routeLifetimeStats) {
+        CompositeWithWorkerPrefetcher::resetStats();
+        return;
+    }
+
+    // rxHint() and the CDP decision gates read these counters as a live
+    // feedback window. A statistics reset clears them while the prefetch
+    // queue keeps draining, so keep their history across the reset.
+    const uint64_t deq = prefetchStats.pfDequeued.value();
+    std::array<uint64_t, NUM_PF_SOURCES> deqSrc;
+    std::array<uint64_t, NUM_PF_SOURCES> usefulSrc;
+    for (unsigned i = 0; i < NUM_PF_SOURCES; i++) {
+        deqSrc[i] = prefetchStats.pfDequeued_srcs[i].value();
+        usefulSrc[i] = prefetchStats.pfUseful_srcs[i].value();
+    }
+
+    CompositeWithWorkerPrefetcher::resetStats();
+
+    prefetchStats.pfDequeued = deq;
+    for (unsigned i = 0; i < NUM_PF_SOURCES; i++) {
+        prefetchStats.pfDequeued_srcs[i] = deqSrc[i];
+        prefetchStats.pfUseful_srcs[i] = usefulSrc[i];
+    }
 }
 
 void

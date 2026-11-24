@@ -1380,6 +1380,8 @@ class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     lldp = Param.LLDPrefetcher(LLDPrefetcher(is_sub_prefetcher=True),
                                "LLDP component")
     enable_lldp = Param.Bool(False, "Enable LLDP component")
+    route_lifetime_stats = Param.Bool(False,
+        "Keep the hint-routing and CDP feedback counters across stats resets")
 
 class L3CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     type = 'L3CompositeWithWorkerPrefetcher'
