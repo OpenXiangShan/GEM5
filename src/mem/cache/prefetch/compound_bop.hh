@@ -67,13 +67,6 @@ class CompoundBOP : public Queued
         Tick readyTick;
     };
 
-    struct StudentDelayQueueEntry
-    {
-        Tick readyTick;
-        unsigned filterIndex;
-        uint64_t mask;
-    };
-
     struct RecentKey
     {
         Addr addr;
@@ -172,7 +165,7 @@ class CompoundBOP : public Queued
     const unsigned teacherScoreMax;
     const unsigned teacherRoundMax;
     const unsigned teacherFallbackBadScore;
-    const std::array<unsigned, FamilyCount> teacherFamilyBadScore;
+    const unsigned teacherMinNominationScore;
 
     const unsigned rrEntries;
     const Addr tagMask;
@@ -185,8 +178,6 @@ class CompoundBOP : public Queued
     const double studentConfAlpha;
     const unsigned studentFilterEntries;
     const unsigned studentHashAddrBits;
-    const unsigned studentDelayQueueSize;
-    const Tick studentDelayTicks;
     const unsigned studentPrimaryThresholdPct;
     const unsigned studentExtraThresholdPct;
 
@@ -215,7 +206,7 @@ class CompoundBOP : public Queued
     std::vector<StudentEntry> studentEntries;
     std::vector<uint64_t> studentFilter;
     std::vector<uint32_t> crossFamilyOverlap;
-    std::deque<StudentDelayQueueEntry> studentDelayQueue;
+    compound_bop::StudentDelayQueues studentDelayQueues;
     uint32_t studentPhaseTrainCount = 0;
     std::vector<SelectedOffset> studentSelectedOffsets;
     bool studentSelectedValid = false;

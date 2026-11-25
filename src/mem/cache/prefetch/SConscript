@@ -64,6 +64,7 @@ DebugFlag('CMCPrefetcher')
 DebugFlag('DespacitoStreamPrefetcher')
 DebugFlag('LLDPrefetcher')
 
+GTest('compound_bop_delay.test', 'compound_bop_delay.test.cc')
 GTest('context_key.test', 'context_key.test.cc')
 GTest('lldp_logic.test', 'lldp_logic.test.cc')
 

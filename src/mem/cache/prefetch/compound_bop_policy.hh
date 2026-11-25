@@ -2,6 +2,7 @@
 #define __MEM_CACHE_PREFETCH_COMPOUND_BOP_POLICY_HH__
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
@@ -64,6 +65,59 @@ mergeFamilyOffsets(const std::vector<int> &vbop_offsets,
         });
     return merged;
 }
+
+// Keep the two families on the same scoring clock without letting a full
+// queue in the first family starve the second during a slot-order walk.
+class StudentDelayQueues
+{
+  public:
+    StudentDelayQueues(size_t capacity, uint64_t delay)
+        : capacity(capacity), delay(delay)
+    {}
+
+    bool enqueue(Family family, uint64_t now, unsigned index, uint64_t mask)
+    {
+        auto &queue = queues[static_cast<size_t>(family)];
+        if (queue.size() >= capacity) {
+            return false;
+        }
+        queue.push_back({now + delay, index, mask});
+        return true;
+    }
+
+    template <typename Insert>
+    void drain(uint64_t now, Insert insert)
+    {
+        for (auto &queue : queues) {
+            while (!queue.empty() && queue.front().ready <= now) {
+                const auto &entry = queue.front();
+                insert(entry.index, entry.mask);
+                queue.pop_front();
+            }
+        }
+    }
+
+    size_t size() const { return queues[0].size() + queues[1].size(); }
+
+    void clear()
+    {
+        for (auto &queue : queues) {
+            queue.clear();
+        }
+    }
+
+  private:
+    struct Entry
+    {
+        uint64_t ready;
+        unsigned index;
+        uint64_t mask;
+    };
+
+    const size_t capacity;
+    const uint64_t delay;
+    std::array<std::deque<Entry>, 2> queues;
+};
 
 struct StudentEntry
 {

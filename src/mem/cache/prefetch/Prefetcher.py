@@ -897,24 +897,21 @@ class CompoundBOPPrefetcher(QueuedPrefetcher):
     on_data = True
     on_inst = False
 
-    vbop_offsets = VectorParam.Int([
-        -117, -147, -91, 117, 147, 91,
-        -256, -250, -243, -240, -225, -216, -200,
-        -192, -180, -162, -160, -150, -144, -135, -128,
-        -125, -120, -108, -100, -96, -90, -81, -80,
-        -75, -72, -64, -60, -54, -50, -48, -45,
-        -40, -36, 32, 36, 40, 45, 48,
-        50, 54, 60, 64, 72, 75, 80, 81,
-        90, 96, 100, 108, 120, 125, 128, 135,
-        144, 150, 160, 162, 180, 192, 200, 216,
-        225, 240, 243, 250,
-    ], "VBOP family offsets; entries before the minimum form the Teacher "
-       "priority prefix")
-    pbop_offsets = VectorParam.Int([
-        x for magnitude in
-        [1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 27, 30]
-        for x in (magnitude, -magnitude)
-    ] + [-32], "PBOP family offsets merged into the sorted Teacher body")
+    # Sort the signed offsets: a minimum-first V menu leaves no legacy
+    # V-only priority prefix when the Teacher merges the two families.
+    vbop_offsets = VectorParam.Int(sorted(
+        sign * magnitude
+        for magnitude in (2, 3, 4, 5, 6, 8, 9, 10, 15, 16, 20, 32, 36,
+                          40, 45, 48, 50, 54, 64, 80, 96, 128, 160, 192, 240)
+        for sign in (1, -1)
+    ), "Signed group A cache-line offsets (V)")
+    pbop_offsets = VectorParam.Int(sorted(
+        sign * magnitude
+        for magnitude in (1, 7, 11, 13, 17, 19, 23, 29, 31, 49, 61, 77,
+                          91, 97, 119, 121, 127, 133, 143, 161, 169, 187,
+                          209, 221, 247)
+        for sign in (1, -1)
+    ), "Signed group B cache-line offsets (P)")
 
     teacher_tests_per_access = Param.Unsigned(
         2, "Number of ordered Teacher offset tests per demand access")
@@ -922,10 +919,8 @@ class CompoundBOPPrefetcher(QueuedPrefetcher):
     teacher_round_max = Param.Unsigned(50, "Teacher round phase threshold")
     teacher_fallback_bad_score = Param.Unsigned(
         2, "Strict score threshold for cold-start global-best fallback")
-    teacher_vbop_bad_score = Param.Unsigned(
-        2, "Strict qualification threshold for the VBOP family winner")
-    teacher_pbop_bad_score = Param.Unsigned(
-        0, "Strict qualification threshold for the PBOP family winner")
+    teacher_min_nomination_score = Param.Unsigned(
+        2, "Inclusive minimum score to nominate either family winner")
 
     rr_size = Param.Unsigned(256, "Entries in each shared RR bank")
     tag_bits = Param.Unsigned(12, "RR tag width")
@@ -941,10 +936,12 @@ class CompoundBOPPrefetcher(QueuedPrefetcher):
         2048, "Entries in the shared Student coverage filter")
     student_hash_addr_bits = Param.Unsigned(
         50, "Address width used by the pairs_low9 Student hash")
-    student_vbop_delay_queue_size = Param.Unsigned(
-        64, "Pending delayed VBOP Student predictions")
-    student_vbop_delay_cycles = Param.Cycles(
-        300, "Delay before a VBOP Student prediction becomes visible")
+    student_delay_queue_size = Param.Unsigned(
+        64, "Pending Student predictions per family delay queue")
+    student_delay_cycles = Param.Cycles(
+        300, "Delay before either family's Student prediction becomes visible")
+    student_vbop_delay_queue_size = DeprecatedParam(student_delay_queue_size)
+    student_vbop_delay_cycles = DeprecatedParam(student_delay_cycles)
     student_primary_coverage_threshold_pct = Param.Unsigned(
         0, "Minimum primary coverage as a percentage of phase accesses")
     student_extra_marginal_threshold_pct = Param.Unsigned(
