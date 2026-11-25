@@ -42,19 +42,18 @@ TEST(CompoundBOPRegroup, FourRedundantWinnersMakeRoomForFifth)
     EXPECT_EQ(groups.family(2, P), V);
 }
 
-TEST(CompoundBOPRegroup, RestoresEarlyWithoutStaleExpiry)
+TEST(CompoundBOPRegroup, FullTwelvePhaseLeaseWithoutCountermove)
 {
-    FamilyAssignments groups(2, 3);
+    FamilyAssignments groups(3, 12);
     groups.advance();
-    EXPECT_TRUE(groups.moveTo(0, V, P));
-    groups.advance();
-    EXPECT_TRUE(groups.moveTo(0, V, V));
-    groups.advance();
-    EXPECT_TRUE(groups.moveTo(0, V, P));
-    // The cancelled first move is not allowed to undo the latest move.
-    EXPECT_FALSE(groups.advance());
-    EXPECT_EQ(groups.family(0, V), P);
-    EXPECT_FALSE(groups.advance());
+    ASSERT_TRUE(groups.moveTo(0, V, P));
+    for (unsigned i = 1; i < 12; ++i) {
+        EXPECT_FALSE(groups.advance());
+        EXPECT_FALSE(groups.moveTo(0, V, V));
+        EXPECT_EQ(groups.family(0, V), P);
+        EXPECT_EQ(groups.family(1, P), P);
+        EXPECT_EQ(groups.family(2, V), V);
+    }
     EXPECT_EQ(groups.advance(), 0U);
     EXPECT_EQ(groups.family(0, V), V);
 }
@@ -83,6 +82,8 @@ TEST(CompoundBOPRegroup, ReturnInvalidatesOldSlotAndKeepsPrimary)
     auto change = reconcileFamilies(slots, pair, [](int64_t) { return V; });
     EXPECT_EQ(change.invalidated, 1U);
     EXPECT_FALSE(slots[1].valid);
+    EXPECT_FALSE(change.canAdmit(-4));
+    EXPECT_TRUE(change.canAdmit(32));
     EXPECT_TRUE(slots[0].valid);
     EXPECT_TRUE(change.extraRemoved);
     ASSERT_EQ(pair.size(), 1U);

@@ -109,20 +109,12 @@ class FamilyAssignments
 
     bool moveTo(size_t id, Family home, Family target)
     {
-        if (!enabled() || family(id, home) == target) {
-            return false;
+        if (!enabled() || moved[id] || home == target) {
+            return false; // Keep the full lease, even on reverse feedback.
         }
-        if (target == home) {
-            // Reverse feedback before expiry. Cancel the old return event.
-            auto it = std::find(returns.begin(), returns.end(), id);
-            assert(it != returns.end());
-            it->reset();
-            moved[id] = false;
-        } else {
-            assert(!returns[cursor]);
-            returns[cursor] = id;
-            moved[id] = true;
-        }
+        assert(!returns[cursor]);
+        returns[cursor] = id;
+        moved[id] = true;
         return true;
     }
 
@@ -338,6 +330,14 @@ struct RegroupChange
 {
     unsigned invalidated = 0;
     bool extraRemoved = false;
+    // One feedback move plus one expiry, or the two ends of one swap.
+    std::array<int64_t, 2> evicted{};
+
+    bool canAdmit(int64_t offset) const
+    {
+        return std::find(evicted.begin(), evicted.begin() + invalidated,
+                         offset) == evicted.begin() + invalidated;
+    }
 };
 
 template <typename Lookup>
@@ -350,7 +350,8 @@ reconcileFamilies(std::vector<StudentEntry> &residents,
     for (auto &entry : residents) {
         if (entry.valid && lookup(entry.offset) != entry.family) {
             entry.valid = false;
-            ++change.invalidated;
+            assert(change.invalidated < change.evicted.size());
+            change.evicted[change.invalidated++] = entry.offset;
         }
     }
 

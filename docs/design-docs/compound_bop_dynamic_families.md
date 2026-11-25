@@ -20,17 +20,18 @@ when **both** of these conditions hold (using the outgoing phase's counters):
 Apply at most one feedback move per phase, after aging earlier moves. The
 extra joins the primary's effective family for the next nomination. Clear
 residents whose physical partition no longer matches. They can re-enter only
-by winning their new group; the move never displaces the primary to make
-room. The Teacher applies these groups to the scores it has already collected,
+by a later nomination; an evicted Student slot cannot be refilled with
+the same offset at the move boundary. The Teacher applies these groups
+to the scores it has already collected,
 so a rejected offset cannot immediately win its old group again. The scan,
 including the original priority prefix, does not change.
 
-A move lasts eight nominations including the one at the move boundary;
+A move lasts twelve nominations including the one at the move boundary;
 expiry does not require eviction, new feedback or a free Student slot.
-Opposite feedback can return an offset earlier. If expiry puts two selected
-offsets back together, keep only the primary for issue. Empty groups cannot
-nominate. The state is one membership bit per Teacher offset plus an
-eight-entry ring of returned candidate IDs; the 4×4 cross-family overlap
+Reverse feedback does not shorten the lease. No offset moves in exchange.
+If expiry reunites two selected offsets, keep only the primary. Empty groups cannot
+nominate. The state is one membership bit per Teacher offset plus a
+twelve-entry ring of returned candidate IDs; the 4×4 cross-family overlap
 table does not grow.
 
 For example, if P's four highest-scoring offsets each prove redundant against
@@ -45,7 +46,7 @@ via `--param`. To isolate feedback, run the **same commit and checkpoints**
 with the additional parameter
 `--param=system.l2_wrappers[0].prefetcher.compound_bop.regroup_hold_phases=0`.
 This control keeps the original menus, common nomination threshold and both
-delay queues. The default hold of 8 and overlap threshold of 80 are
+delay queues. The default hold of 12 and overlap threshold of 80 are
 experimental settings, not tuned results.
 
 Check `regroupPToV`, `regroupVToP`, `regroupExpired`,

@@ -951,7 +951,7 @@ class CompoundBOPPrefetcher(QueuedPrefetcher):
         2, "Minimum extra marginal coverage as a percentage of phase accesses")
 
     regroup_hold_phases = Param.Unsigned(
-        8, "Teacher nominations before temporary family changes expire "
+        12, "Teacher phases before a moved offset returns home "
            "(0 disables regrouping)")
     regroup_overlap_pct = Param.Unsigned(
         80, "Minimum percent of a rejected extra's own coverage shared "

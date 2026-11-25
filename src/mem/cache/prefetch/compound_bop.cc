@@ -672,7 +672,7 @@ CompoundBOP::finishStudentPhase()
     }
 
     updateStudentEntryConfidence();
-    updateAssignments(redundant);
+    const auto regroup = updateAssignments(redundant);
     if (studentSelectedOffsets.size() == 2) {
         stats.studentExtraOffsetDist.sample(studentSelectedOffsets[1].offset);
     }
@@ -682,16 +682,18 @@ CompoundBOP::finishStudentPhase()
     std::vector<int64_t> teacher_winners;
     commitTeacherPhase(teacher_winners);
     for (const auto winner : teacher_winners) {
-        insertTeacherWinner(winner);
+        if (regroup.canAdmit(winner)) {
+            insertTeacherWinner(winner);
+        }
     }
     clearStudentPhase();
 }
 
-void
+compound_bop::RegroupChange
 CompoundBOP::updateAssignments(std::optional<int64_t> redundant)
 {
     if (!assignments.enabled()) {
-        return;
+        return {};
     }
     const auto expired = assignments.advance();
     if (expired) {
@@ -717,7 +719,7 @@ CompoundBOP::updateAssignments(std::optional<int64_t> redundant)
         }
     }
     if (!expired && !changed) {
-        return;
+        return {};
     }
 
     const auto change = compound_bop::reconcileFamilies(
@@ -727,6 +729,7 @@ CompoundBOP::updateAssignments(std::optional<int64_t> redundant)
     if (change.extraRemoved) {
         stats.regroupExtraCollisions++;
     }
+    return change;
 }
 
 void
