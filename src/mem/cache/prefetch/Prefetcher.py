@@ -901,15 +901,14 @@ class CompoundBOPPrefetcher(QueuedPrefetcher):
     # V-only priority prefix when the Teacher merges the two families.
     vbop_offsets = VectorParam.Int(sorted(
         sign * magnitude
-        for magnitude in (2, 3, 4, 5, 6, 8, 9, 10, 15, 16, 20, 32, 36,
-                          40, 45, 48, 50, 54, 64, 80, 96, 128, 160, 192, 240)
+        for magnitude in (3, 4, 5, 6, 8, 9, 10, 15, 16, 20, 32, 36, 40,
+                          45, 48, 50, 54, 64, 80, 96, 117, 128, 160, 192, 240)
         for sign in (1, -1)
     ), "Signed group A cache-line offsets (V)")
     pbop_offsets = VectorParam.Int(sorted(
         sign * magnitude
-        for magnitude in (1, 7, 11, 13, 17, 19, 23, 29, 31, 49, 61, 77,
-                          91, 97, 119, 121, 127, 133, 143, 161, 169, 187,
-                          209, 221, 247)
+        for magnitude in (1, 2, 7, 11, 13, 17, 19, 23, 29, 30, 31, 49, 60,
+                          61, 77, 91, 97, 119, 121, 127, 133, 143, 161, 221, 247)
         for sign in (1, -1)
     ), "Signed group B cache-line offsets (P)")
 
