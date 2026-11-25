@@ -613,35 +613,59 @@ CPU::recordMatrixResponse(
 void
 CPU::checkMatrixCommit(ThreadID tid, const DynInstPtr &inst)
 {
+    const bool matrix_inst = inst->isMatrixInst();
     if (!difftestEnabled() || !isMatrixBackendEnabled() ||
-        !inst->isMatrixInst() || inst->getFault() != NoFault) {
+        inst->getFault() != NoFault ||
+        (!matrix_inst && !inst->isNonSpeculative())) {
         return;
     }
-    ++matrixState->committed;
-    riscv64_CPU_regfile reference = {};
-    const auto &proxy = diffAllStates.at(tid)->proxy;
-    proxy->regcpy(&reference, REF_TO_DUT);
-    for (unsigned i = 0; i < 8; ++i) {
-        const auto actual = readMiscRegNoEffect(RiscvISA::MISCREG_MCFG0 + i, tid);
-        // The ordinary difftest path can copy this shadow back to REF when
-        // resynchronizing scalar state. Retain committed Matrix state too.
-        diffAllStates.at(tid)->gem5RegFile.mcfg[i] = actual;
-        panic_if(actual != reference.mcfg[i],
-                 "Matrix config mismatch [tid:%u] [sn:%llu] pc=%#llx "
-                 "mcfg[%u] expected=%#llx actual=%#llx", tid, inst->seqNum,
-                 inst->pcState().instAddr(), i, reference.mcfg[i], actual);
-    }
-    panic_if(reference.mtilem != readMiscRegNoEffect(RiscvISA::MISCREG_MTILEM, tid) ||
-             reference.mtilen != readMiscRegNoEffect(RiscvISA::MISCREG_MTILEN, tid) ||
-             reference.mtilek != readMiscRegNoEffect(RiscvISA::MISCREG_MTILEK, tid),
-             "Matrix tile config mismatch [tid:%u] [sn:%llu] pc=%#llx",
-             tid, inst->seqNum, inst->pcState().instAddr());
-    auto &dut = diffAllStates.at(tid)->gem5RegFile;
-    dut.mtilem = readMiscRegNoEffect(RiscvISA::MISCREG_MTILEM, tid);
-    dut.mtilen = readMiscRegNoEffect(RiscvISA::MISCREG_MTILEN, tid);
-    dut.mtilek = readMiscRegNoEffect(RiscvISA::MISCREG_MTILEK, tid);
     const auto *riscv = dynamic_cast<const RiscvISA::RiscvStaticInst *>(
         inst->staticInst.get());
+    if (!matrix_inst) {
+        if (!riscv || riscv->machInst.opcode7 != 0x73 ||
+            (riscv->machInst.funct3 & 3) == 0) {
+            return;
+        }
+        const unsigned csr = riscv->machInst.funct12;
+        if (csr != RiscvISA::CSR_XMCSR &&
+            (csr < RiscvISA::CSR_XMXRM || csr > RiscvISA::CSR_XMSATEN)) {
+            return;
+        }
+    }
+
+    auto &state = *diffAllStates.at(tid);
+    readMatrixRegs(tid);
+    const auto &dut = state.gem5RegFile;
+    const auto &reference = state.referenceRegFile;
+    const auto check = [&](const char *name, uint64_t actual,
+                           uint64_t expected) {
+        panic_if(actual != expected, "Matrix CSR %s mismatch [tid:%u] "
+                 "[sn:%llu] pc=%#llx expected=%#llx actual=%#llx",
+                 name, tid, inst->seqNum, inst->pcState().instAddr(),
+                 expected, actual);
+    };
+    check("xmcsr", dut.mcsr, reference.mcsr);
+    check("xmxrm", dut.mxrm, reference.mxrm);
+    check("xmsat", dut.msat, reference.msat);
+    check("xmfflags", dut.mfflags, reference.mfflags);
+    check("xmfrm", dut.mfrm, reference.mfrm);
+    check("xmsaten", dut.msaten, reference.msaten);
+    if (!matrix_inst) {
+        return;
+    }
+
+    ++matrixState->committed;
+    const auto &proxy = state.proxy;
+    for (unsigned i = 0; i < 8; ++i) {
+        panic_if(dut.mcfg[i] != reference.mcfg[i],
+                 "Matrix config mismatch [tid:%u] [sn:%llu] pc=%#llx "
+                 "mcfg[%u] expected=%#llx actual=%#llx", tid, inst->seqNum,
+                 inst->pcState().instAddr(), i, reference.mcfg[i],
+                 dut.mcfg[i]);
+    }
+    check("mtilem", dut.mtilem, reference.mtilem);
+    check("mtilen", dut.mtilen, reference.mtilen);
+    check("mtilek", dut.mtilek, reference.mtilek);
     if (!riscv || riscv->machInst.opcode7 != 0x2b ||
         riscv->machInst.funct3 != 4 || riscv->machInst.funct7 == 0x48) {
         return;
