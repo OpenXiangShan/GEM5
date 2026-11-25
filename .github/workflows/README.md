@@ -179,7 +179,11 @@ workflow 的并行 runner 传递。
 
 #### 4. 其他测试
 - `gem5-vector.yml` - RVV 扩展测试
-- `gem5-ideal-btb-perf-weekly.yml` - 定时任务（每周四），全部 11 个 SPEC 1c 任务使用默认共享池，包括 GCC16/XSCC SPEC06、SPEC17 和 SPEC26 的 align 与 ideal 回归、SPEC06/SPEC17 SMT 回归，以及 GCC12 动态预取回归。每个任务沿用模板的每节点 32 个并发。
+- `gem5-ideal-btb-perf-weekly.yml` - 定时任务（每周四），全部 13 个性能任务使用默认共享池，包括 GCC16/XSCC SPEC06、SPEC17 和 SPEC26 的 align 与 ideal 回归、SPEC06/SPEC17 SMT 回归、GCC12 动态预取回归，以及 Google/CBP trace 回归。每个任务沿用模板的每节点 32 个并发。
+
+共享执行器每次向远端派发前要求 `MemAvailable > max(总内存 × 10%, 64 GiB)`。
+内存不足或探测失败时跳过该机，至少 60 秒后重试；任务保留在队列中，不因内存拒绝而回退本机。
+该检查也覆盖分布式 Solver；纯本机执行和原有 CPU 筛选失败后的本机回退保持原样。
 
 ---
 

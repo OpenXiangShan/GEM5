@@ -149,6 +149,7 @@ jobs:
     with:
       config_path: configs/example/kmhv3.py
       benchmark_type: "trace-google"
+      distributed_servers: "default"
       timeout_minutes: 720
 
   trace_test_cbp:
@@ -157,4 +158,5 @@ jobs:
     with:
       config_path: configs/example/kmhv3.py
       benchmark_type: "trace-cbp"
+      distributed_servers: "default"
       timeout_minutes: 720

@@ -236,6 +236,9 @@ class RunnerTest(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
+        memory = patch("ci.hosts.probe_memory", return_value=(True, ""))
+        self.addCleanup(memory.stop)
+        memory.start()
 
     def job(self, name, code):
         return Job(

@@ -21,6 +21,7 @@ from . import hosts
 DEFAULT_DISTRIBUTED_SERVERS = (
     "node003-node008,node020-node029,node034,node036-node042"
 )
+MEMORY_RETRY_DELAY = 60
 CHECKPOINT_ENV = (
     "GCBV_REF_SO",
     "GCBV_MULTI_CORE_REF_SO",
@@ -227,6 +228,7 @@ def run_jobs(
     failed = assigned = 0
     capacities = {"local": slots} if nodes == ["local"] else {}
     retry_after = {}
+    memory_retry_after = {}
     next_probe = next_launch = 0
     total = len(queue)
 
@@ -249,6 +251,36 @@ def run_jobs(
             return 0
         capacity = occupied[node] + idle
         return min(limit, capacity) if capacity >= minimum else 0
+
+    def select_node():
+        nonlocal now
+        for node in sorted(
+            nodes, key=lambda n: capacities[n] - occupied[n], reverse=True
+        ):
+            if (
+                occupied[node] >= capacities[node]
+                or now < memory_retry_after.get(node, 0)
+            ):
+                continue
+            if node == "local":
+                return node
+            if now < next_launch:
+                return None
+            enough, detail = hosts.probe_memory(
+                node,
+                config.ssh_config,
+                list(config.ssh_options),
+                config.ssh_user,
+            )
+            now = time.monotonic()
+            if cancelled() or (deadline is not None and now >= deadline):
+                return None
+            if enough:
+                return node
+            # Keep CPU capacity so memory rejection cannot trigger fallback.
+            memory_retry_after[node] = now + MEMORY_RETRY_DELAY
+            log(f"{node}: {detail}; retrying memory probe in 60s")
+        return None
 
     def finish(job, node, started, code, status, detail=""):
         nonlocal failed
@@ -346,17 +378,16 @@ def run_jobs(
                     config.probe_interval or config.retry_delay
                 )
             for _ in range(len(queue)):
-                node = max(nodes, key=lambda n: capacities[n] - occupied[n])
-                if (
-                    len(active) >= parallelism
-                    or occupied[node] >= capacities[node]
-                    or (node != "local" and now < next_launch)
-                ):
+                if len(active) >= parallelism:
                     break
-                job, attempt, ready = queue.popleft()
+                job, attempt, ready = queue[0]
                 if ready > now:
-                    queue.append((job, attempt, ready))
+                    queue.rotate(-1)
                     continue
+                node = select_node()
+                if node is None:
+                    break
+                queue.popleft()
                 assigned += int(attempt == 0)
                 try:
                     proc = start(job, node, config, attempt)
