@@ -2863,6 +2863,8 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
         pkt->setSatisfied();
     }
 
+    const bool sbuffer_read = cacheLevel == 1 && !isReadOnly &&
+        mshr->isInitialSbufferSend() && pkt->isRead();
     if (!memSidePort.sendTimingReq(pkt)) {
         // we are awaiting a retry, but we
         // delete the packet and will be creating a new packet
@@ -2885,6 +2887,11 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
         // point
         bool pending_modified_resp = !pkt->hasSharers() &&
             pkt->cacheResponding();
+        if (sbuffer_read && !pkt->cacheResponding()) {
+            if (auto *lsq = tgt_pkt->getLSQPtr()) {
+                lsq->recordSbufferL2Read(tgt_pkt);
+            }
+        }
         markInService(mshr, pending_modified_resp);
 
         if (pkt->isClean() && blk && blk->isSet(CacheBlk::DirtyBit)) {

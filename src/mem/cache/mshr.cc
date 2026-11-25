@@ -337,6 +337,7 @@ MSHR::allocate(Addr blk_addr, unsigned blk_size, PacketPtr target,
     isForward = false;
     wasWholeLineWrite = false;
     sbufferStoreOrigin = target->isDcacheMainPipeSbufferReq();
+    initialSbufferSend = sbufferStoreOrigin;
     _isUncacheable = target->req->isUncacheable();
     inService = false;
     downstreamPending = false;
@@ -372,6 +373,7 @@ MSHR::markInService(bool pending_modified_resp)
     assert(!inService);
 
     inService = true;
+    initialSbufferSend = false;
     pendingModified = targets.needsWritable || pending_modified_resp;
     postInvalidate = postDowngrade = false;
 

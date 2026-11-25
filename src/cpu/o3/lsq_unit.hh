@@ -395,7 +395,7 @@ class LSQUnit
 
     bool insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas,
                            uint64_t size, const std::vector<bool>& mask,
-                           InstSeqNum store_seq);
+                           InstSeqNum store_seq, std::optional<Addr> store_pc);
 
     bool storeBufferEmpty() { return lsq->storeBufferEmpty(); }
     bool storeBufferEmpty(ThreadID tid) { return lsq->storeBufferEmpty(tid); }

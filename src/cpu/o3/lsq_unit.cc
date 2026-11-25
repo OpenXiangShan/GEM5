@@ -2515,6 +2515,11 @@ LSQUnit::offloadToStoreBuffer(uint32_t max_entries, std::vector<bool>& offload_f
         }
         assert(!request->mainReq()->isLocalAccess());
 
+        std::optional<Addr> store_pc;
+        if (lsq->collectSbufferPcStats()) {
+            store_pc = inst->pcState().instAddr();
+        }
+
         if (request->isSplit()) {
             Addr vbase = request->_addr;
             for (int i = request->_numOutstandingPackets; i < request->_reqs.size(); i++) {
@@ -2526,7 +2531,7 @@ LSQUnit::offloadToStoreBuffer(uint32_t max_entries, std::vector<bool>& offload_f
                 assert(offset + req->getSize() <= storeWBIt->size());
                 bool success = insertStoreBuffer(
                     vaddr, paddr, (uint8_t *)storeWBIt->data() + offset,
-                    req->getSize(), req->getByteEnable(), inst->seqNum);
+                    req->getSize(), req->getByteEnable(), inst->seqNum, store_pc);
                 if (success) {
                     request->_numOutstandingPackets++;
                 } else {
@@ -2557,7 +2562,7 @@ LSQUnit::offloadToStoreBuffer(uint32_t max_entries, std::vector<bool>& offload_f
             }
             bool success = insertStoreBuffer(
                 vaddr, paddr, data, request->_size,
-                request->mainReq()->getByteEnable(), inst->seqNum);
+                request->mainReq()->getByteEnable(), inst->seqNum, store_pc);
             if (!success) {
                 offload_fail[lsqID] = true;
                 break;
@@ -2573,7 +2578,7 @@ LSQUnit::offloadToStoreBuffer(uint32_t max_entries, std::vector<bool>& offload_f
 bool
 LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas,
                            uint64_t size, const std::vector<bool>& mask,
-                           InstSeqNum store_seq)
+                           InstSeqNum store_seq, std::optional<Addr> store_pc)
 {
     auto &storeBuffer = lsq->getStoreBuffer();
     // access range must in a cache block
@@ -2591,7 +2596,7 @@ LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas,
                 // merge into vice
                 stats.sbufferMerge++;
                 entry = entry->vice;
-                entry->merge(offset, datas, size, mask);
+                entry->merge(offset, datas, size, mask, store_pc);
                 DPRINTF(StoreBuffer, "Merging vice entry[%#x] for addr %#x\n",
                         blockPaddr, paddr);
             } else {
@@ -2605,7 +2610,7 @@ LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas,
                 stats.sbufferCreateVice++;
                 auto vice = storeBuffer.createVice(entry);
                 vice->reset(lsqID, store_seq, blockVaddr, blockPaddr, offset,
-                            datas, size, mask);
+                            datas, size, mask, store_pc);
                 DPRINTF(StoreBuffer, "Create new vice entry[%#x] for addr %#x\n",
                         blockPaddr, paddr);
             }
@@ -2613,7 +2618,7 @@ LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas,
             // merge into unsent
             stats.sbufferMerge++;
             storeBuffer.update(entry->index);
-            entry->merge(offset, datas, size, mask);
+            entry->merge(offset, datas, size, mask, store_pc);
             entry->seqNum = std::max(entry->seqNum, store_seq);
             DPRINTF(StoreBuffer, "Merging entry[%#x] for addr %#x\n",
                     blockPaddr, paddr);
@@ -2630,7 +2635,7 @@ LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas,
         stats.sbufferNewline++;
         auto entry = storeBuffer.getEmpty();
         entry->reset(lsqID, store_seq, blockVaddr, blockPaddr, offset, datas,
-                     size, mask);
+                     size, mask, store_pc);
         storeBuffer.insert(entry);
         DPRINTF(StoreBuffer, "Create new entry[%#x] for addr %#x\n",
                 blockPaddr, paddr);

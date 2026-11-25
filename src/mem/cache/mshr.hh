@@ -120,8 +120,11 @@ class MSHR : public QueueEntry, public Printable
 
     // RTL permits later stores to merge only into a store-allocated miss.
     bool sbufferStoreOrigin = false;
+    // Exclude sends for targets promoted after this allocation's first send.
+    bool initialSbufferSend = false;
 
   public:
+    bool isInitialSbufferSend() const { return initialSbufferSend; }
 
     /** Track if we sent this as a whole line write or not */
     bool wasWholeLineWrite;

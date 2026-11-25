@@ -255,6 +255,8 @@ class BaseO3CPU(BaseCPU):
     SbufferEntries = Param.Unsigned(16, "Number of store buffer entries")
     sbufferReleaseOnMiss = Param.Bool(
         True, "Release store buffer entries when a miss is accepted by L1D")
+    enableSbufferPcStats = Param.Bool(
+        False, "Profile the PCs of stores merged into store buffer entries")
     SbufferEvictThreshold = Param.Unsigned(7, "store buffer eviction threshold")
     storeBufferInactiveThreshold = Param.Unsigned(800, "store buffer writeback timeout threshold")
     MaxStoreBufferEntriesAcceptedFromSQPerCycle = Param.Unsigned(

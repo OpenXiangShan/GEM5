@@ -50,6 +50,7 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <optional>
 #include <queue>
 #include <set>
 #include <string>
@@ -171,6 +172,9 @@ class LSQ
         Addr blockPaddr;
         std::vector<uint8_t> blockDatas;
         std::vector<bool> validMask;
+        Addr firstStorePc = 0;
+        uint64_t storePcLow15Sum = 0;
+        bool storesHaveSamePc = true;
         bool sending;
         bool inDcacheMainPipe;
         // Blocked at fake MainPipe S2 and waits to re-enter from S0.
@@ -191,10 +195,11 @@ class LSQ
 
         void reset(ThreadID tid, InstSeqNum seq_num, uint64_t block_vaddr,
                    uint64_t block_paddr, uint64_t offset, uint8_t *datas,
-                   uint64_t size, const std::vector<bool> &mask);
+                   uint64_t size, const std::vector<bool> &mask,
+                   std::optional<Addr> store_pc);
 
         void merge(uint64_t offset, uint8_t *datas, uint64_t size,
-                   const std::vector<bool> &mask);
+                   const std::vector<bool> &mask, std::optional<Addr> store_pc);
 
         bool recordForward(RequestPtr req, LSQRequest *lsqreq,
                            ThreadID load_tid);
@@ -1302,6 +1307,8 @@ class LSQ
     DcacheMainPipeS2Result issueSbufferPacketFromDcacheMainPipe(
         PacketPtr data_pkt, Tick issue_tick);
     void completeSbufferEvict(PacketPtr pkt);
+    bool collectSbufferPcStats() const { return sbufferPcStats != nullptr; }
+    void recordSbufferL2Read(PacketPtr store_pkt);
 
     unsigned getLQEntries() const { return LQEntries; }
 
@@ -1695,6 +1702,45 @@ class LSQ
 
     /** Number of Threads. */
     ThreadID numThreads;
+
+    // Use numeric labels backed by full-width integer sums.
+    class SbufferPcSumStats : public statistics::VectorInfo
+    {
+      public:
+        SbufferPcSumStats(statistics::Group *parent, const char *name,
+                          const char *description);
+        void sample(uint64_t sum);
+        void reset() override;
+        void prepare() override;
+        bool check() const override { return true; }
+        bool zero() const override { return counts.empty(); }
+        void visit(statistics::Output &output) override { output.visit(*this); }
+        statistics::size_type size() const override { return counts.size() + 1; }
+        const statistics::VCounter &value() const override { return values; }
+        const statistics::VResult &result() const override { return values; }
+        statistics::Result total() const override { return samples; }
+
+      private:
+        std::map<uint64_t, uint64_t> counts;
+        uint64_t samples = 0;
+        statistics::VCounter values;
+    };
+
+    struct SbufferPcStats : public statistics::Group
+    {
+        explicit SbufferPcStats(statistics::Group *parent);
+
+        statistics::Scalar dcacheDirectHits;
+        statistics::Scalar dcacheWritesSamePc;
+        statistics::Scalar dcacheWritesMixedPc;
+        SbufferPcSumStats dcacheWritePcLow15Sum;
+        statistics::Scalar l2ReadReqs;
+        statistics::Scalar l2ReadsSamePc;
+        statistics::Scalar l2ReadsMixedPc;
+        SbufferPcSumStats l2ReadPcLow15Sum;
+    };
+
+    std::unique_ptr<SbufferPcStats> sbufferPcStats;
 };
 
 } // namespace o3

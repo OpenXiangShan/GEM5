@@ -54,6 +54,7 @@
 
 #include "arch/riscv/insts/fusion.hh"
 #include "arch/riscv/insts/vector.hh"
+#include "base/bitfield.hh"
 #include "base/compiler.hh"
 #include "base/intmath.hh"
 #include "base/logging.hh"
@@ -96,7 +97,8 @@ void
 LSQ::StoreBufferEntry::reset(ThreadID tid, InstSeqNum seq_num,
                              uint64_t block_vaddr, uint64_t block_paddr,
                              uint64_t offset, uint8_t *datas, uint64_t size,
-                             const std::vector<bool> &mask)
+                             const std::vector<bool> &mask,
+                             std::optional<Addr> store_pc)
 {
     std::fill(validMask.begin(), validMask.begin() + offset, false);
 
@@ -111,6 +113,9 @@ LSQ::StoreBufferEntry::reset(ThreadID tid, InstSeqNum seq_num,
     this->seqNum = seq_num;
     this->blockVaddr = block_vaddr;
     this->blockPaddr = block_paddr;
+    firstStorePc = store_pc.value_or(0);
+    storePcLow15Sum = bits(firstStorePc, 14, 0);
+    storesHaveSamePc = true;
     this->sending = false;
     this->inDcacheMainPipe = false;
     this->replayQueued = false;
@@ -120,7 +125,8 @@ LSQ::StoreBufferEntry::reset(ThreadID tid, InstSeqNum seq_num,
 
 void
 LSQ::StoreBufferEntry::merge(uint64_t offset, uint8_t *datas, uint64_t size,
-                             const std::vector<bool> &mask)
+                             const std::vector<bool> &mask,
+                             std::optional<Addr> store_pc)
 {
     assert(offset + size <= validMask.size());
     for (uint64_t i = 0; i < size; ++i) {
@@ -128,6 +134,10 @@ LSQ::StoreBufferEntry::merge(uint64_t offset, uint8_t *datas, uint64_t size,
             blockDatas[offset + i] = datas[i];
             validMask[offset + i] = true;
         }
+    }
+    if (store_pc) {
+        storesHaveSamePc &= (*store_pc == firstStorePc);
+        storePcLow15Sum += bits(*store_pc, 14, 0);
     }
 }
 
@@ -419,6 +429,68 @@ LSQ::StoreBuffer::release(StoreBufferEntry *entry)
         crossRef[vice->index] = it;
         lru_index.push_front(vice->index);
     }
+}
+
+LSQ::SbufferPcSumStats::SbufferPcSumStats(
+    statistics::Group *parent, const char *name, const char *description)
+{
+    setName(name, false);
+    desc = description;
+    unit = statistics::units::Count::get();
+    precision = 0;
+    flags.set(statistics::init | statistics::display | statistics::nozero);
+    parent->addStat(this);
+}
+
+void
+LSQ::SbufferPcSumStats::sample(uint64_t sum)
+{
+    ++counts[sum];
+    ++samples;
+}
+
+void
+LSQ::SbufferPcSumStats::reset()
+{
+    counts.clear();
+    samples = 0;
+}
+
+void
+LSQ::SbufferPcSumStats::prepare()
+{
+    values.resize(size());
+    subnames.resize(size());
+    subdescs.resize(size());
+    values[0] = samples;
+    subnames[0] = "samples";
+    std::size_t index = 1;
+    for (const auto &[sum, count] : counts) {
+        subnames[index] = std::to_string(sum);
+        values[index] = count;
+        ++index;
+    }
+}
+
+LSQ::SbufferPcStats::SbufferPcStats(statistics::Group *parent)
+    : statistics::Group(parent, "sbufferPc"),
+      ADD_STAT(dcacheDirectHits, statistics::units::Count::get(),
+               "SBuffer writes that hit directly in L1D"),
+      ADD_STAT(dcacheWritesSamePc, statistics::units::Count::get(),
+               "L1D-accepted SBuffer writes whose stores all share a PC"),
+      ADD_STAT(dcacheWritesMixedPc, statistics::units::Count::get(),
+               "L1D-accepted SBuffer writes with distinct store PCs"),
+      dcacheWritePcLow15Sum(this, "dcacheWritePcLow15Sum",
+          "Sums of per-store PC low 15 bits for L1D-accepted SBuffer writes"),
+      ADD_STAT(l2ReadReqs, statistics::units::Count::get(),
+               "L2 reads issued by new SBuffer-origin L1D MSHRs"),
+      ADD_STAT(l2ReadsSamePc, statistics::units::Count::get(),
+               "SBuffer-origin L2 reads whose stores all share a PC"),
+      ADD_STAT(l2ReadsMixedPc, statistics::units::Count::get(),
+               "SBuffer-origin L2 reads with distinct store PCs"),
+      l2ReadPcLow15Sum(this, "l2ReadPcLow15Sum",
+          "Sums of per-store PC low 15 bits for SBuffer-origin L2 reads")
+{
 }
 
 LSQ::LSQStats::LSQStats(statistics::Group *parent, unsigned num_threads)
@@ -768,6 +840,9 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     }
 
     cpu->addStatGroup("lsq", &stats);
+    if (params.enableSbufferPcStats) {
+        sbufferPcStats = std::make_unique<SbufferPcStats>(&stats);
+    }
 
     DPRINTF(LSQ, "VirtualSQ physical=%u multiple=%u virtual=%u policy=%s\n",
             physicalSQEntries, storeQueueMultiple, SQEntries,
@@ -2033,15 +2108,23 @@ LSQ::issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt, Tick issue_tick)
     }
 
     if (result == DcacheMainPipeS2Result::GoToS3) {
-        ++stats.sbufferDcacheReqFire[request->sbuffer_entry->tid];
+        const auto &entry = *request->sbuffer_entry;
+        const bool hit = data_pkt->isDcacheMainPipeSbufferHit();
+        ++stats.sbufferDcacheReqFire[entry.tid];
+        if (sbufferPcStats) {
+            auto &profile = *sbufferPcStats;
+            profile.dcacheDirectHits += hit;
+            ++(entry.storesHaveSamePc ? profile.dcacheWritesSamePc :
+                                      profile.dcacheWritesMixedPc);
+            profile.dcacheWritePcLow15Sum.sample(entry.storePcLow15Sum);
+        }
         cachePortBusy(false);
         request->_numOutstandingPackets = 1;
         request->sbuffer_entry->inDcacheMainPipe = false;
         request->sbuffer_entry->sending = true;
         resetStoreBufferInactiveCycles(request->sbuffer_entry->tid);
-        result = data_pkt->isDcacheMainPipeSbufferHit() ?
-            DcacheMainPipeS2Result::GoToS3 :
-            DcacheMainPipeS2Result::ExitPipe;
+        result = hit ? DcacheMainPipeS2Result::GoToS3 :
+                       DcacheMainPipeS2Result::ExitPipe;
         if (result == DcacheMainPipeS2Result::ExitPipe) {
             ++stats.dcacheMainPipeStoreS2MissExit;
             if (sbufferReleaseOnMiss) {
@@ -2067,6 +2150,21 @@ LSQ::issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt, Tick issue_tick)
     }
 
     return result;
+}
+
+void
+LSQ::recordSbufferL2Read(PacketPtr store_pkt)
+{
+    if (!sbufferPcStats) {
+        return;
+    }
+    auto *request = dynamic_cast<SbufferRequest *>(store_pkt->senderState);
+    assert(request && request->sbuffer_entry);
+    const auto &entry = *request->sbuffer_entry;
+    auto &profile = *sbufferPcStats;
+    ++profile.l2ReadReqs;
+    ++(entry.storesHaveSamePc ? profile.l2ReadsSamePc : profile.l2ReadsMixedPc);
+    profile.l2ReadPcLow15Sum.sample(entry.storePcLow15Sum);
 }
 
 void
