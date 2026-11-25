@@ -272,10 +272,8 @@ class XSStridePrefetcher(QueuedPrefetcher):
     on_inst = False
     region_size = Param.Int(1024, "region size")
 
-    use_xs_depth = Param.Bool(True,"use xs rtl stride depth")
-    fuzzy_stride_matching = Param.Bool(False, "Match stride with fuzzy condition")
-    short_stride_thres = Param.Unsigned(512, "Ignore short strides when there are long strides (Bytes)")
-    stride_dyn_depth = Param.Bool(False, "Dynamic depth of stride table")
+    stride_history_bits = Param.Unsigned(
+        25, "Virtual address history width for the KMH stride predictor")
     stride_entries = Param.MemorySize("10", "Stride Entries")
     stride_unique_indexing_policy = Param.BaseIndexingPolicy(
         SetAssociative(
@@ -287,35 +285,6 @@ class XSStridePrefetcher(QueuedPrefetcher):
     stride_unique_replacement_policy = Param.BaseReplacementPolicy(
         TreePLRURP(num_leaves=Parent.stride_entries),
         "Replacement policy of stride table"
-    )
-    stride_redundant_indexing_policy = Param.BaseIndexingPolicy(
-        SetAssociative(
-            entry_size=1,
-            assoc=Parent.stride_entries,
-            size=Parent.stride_entries),
-        "Indexing policy of stride table"
-    )
-    stride_redundant_replacement_policy = Param.BaseReplacementPolicy(
-        TreePLRURP(num_leaves=Parent.stride_entries),
-        "Replacement policy of stride table"
-    )
-    use_redundant_table = Param.Bool(False, "Use redundant stride table")
-    fuzzy_stride_matching = Param.Bool(False, "Match stride with fuzzy condition")
-
-    # stride black list
-    enable_non_stride_filter= Param.Bool(False, "Prevent non-stride PCs to touch stride table")
-    non_stride_entries = Param.MemorySize("256", "Non-Stride Entries")
-    non_stride_assoc = Param.Int(4, "Associativity of the non-stride pc table")
-    non_stride_indexing_policy = Param.BaseIndexingPolicy(
-        SetAssociative(
-            entry_size=1,
-            assoc=Parent.non_stride_assoc,
-            size=Parent.non_stride_entries),
-        "Indexing policy of non-stride PC table"
-    )
-    non_stride_replacement_policy = Param.BaseReplacementPolicy(
-        TreePLRURP(num_leaves=Parent.non_stride_assoc),
-        "Replacement policy of non-stride pc table"
     )
 
 class OptPrefetcher(QueuedPrefetcher):
