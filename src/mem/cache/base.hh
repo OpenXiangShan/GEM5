@@ -1677,9 +1677,10 @@ class BaseCache : public ClockedObject, public CacheAccessor
     EventFunctionWrapper dcachePrefetchReadyEvent;
     bool usesDcachePrefetchMainPipe() const
     { return simulateDcacheRefill && cacheLevel == 1 && !isReadOnly; }
-    void scheduleDcachePrefetch(Tick ready);
+    void notifyPrefetchReady(Tick ready) override;
     void offerDcacheMainPipePrefetch();
-    bool lookupDcacheMainPipePrefetch(std::unique_ptr<Packet> &packet);
+    // Takes ownership of pkt. hit reports a local cache hit.
+    MSHR *handlePrefetch(PacketPtr pkt, bool &hit);
 
 public:
     /**

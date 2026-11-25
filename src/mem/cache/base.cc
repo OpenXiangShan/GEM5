@@ -216,15 +216,10 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
         prefetcher->setParentInfo(system, getProbeManager(), this, getBlockSize());
         prefetcher->setPacketReadyCallback([this](Tick ready) {
             if (usesDcachePrefetchMainPipe())
-                scheduleDcachePrefetch(ready);
+                notifyPrefetchReady(ready);
             else
                 schedMemSideSendEvent(std::max(ready, clockEdge()));
         });
-        if (usesDcachePrefetchMainPipe()) {
-            prefetcher->setMainPipeReadyCallback([this](Tick ready) {
-                scheduleDcachePrefetch(ready);
-            });
-        }
     }
 
     fatal_if(compressor && !dynamic_cast<CompressedTags*>(tags),
@@ -740,7 +735,7 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         if (prefetcher) {
             prefetcher->recvPrefetchFromCache(pkt);
             if (usesDcachePrefetchMainPipe()) {
-                scheduleDcachePrefetch(prefetcher->nextPrefetchReadyTime());
+                notifyPrefetchReady(prefetcher->nextPrefetchReadyTime());
                 return;
             }
             // schedule a prefetch
@@ -996,18 +991,18 @@ BaseCache::registerDcacheMainPipeLSQ(o3::LSQ *lsq)
     const bool first_binding = !dcacheMainPipeLSQ;
     dcacheMainPipeLSQ = lsq;
     if (first_binding && prefetcher)
-        scheduleDcachePrefetch(prefetcher->nextPrefetchReadyTime());
+        notifyPrefetchReady(prefetcher->nextPrefetchReadyTime());
 }
 
 void
 BaseCache::drainResume()
 {
     if (prefetcher)
-        scheduleDcachePrefetch(prefetcher->nextPrefetchReadyTime());
+        notifyPrefetchReady(prefetcher->nextPrefetchReadyTime());
 }
 
 void
-BaseCache::scheduleDcachePrefetch(Tick ready)
+BaseCache::notifyPrefetchReady(Tick ready)
 {
     if (!usesDcachePrefetchMainPipe() || !dcacheMainPipeLSQ || ready == MaxTick)
         return;
@@ -1030,7 +1025,7 @@ BaseCache::offerDcacheMainPipePrefetch()
     const Tick ready = prefetcher->nextPrefetchReadyTime();
     if (ready > curTick()) {
         // A demand access may have squashed the former queue head.
-        scheduleDcachePrefetch(ready);
+        notifyPrefetchReady(ready);
         return;
     }
 
@@ -1043,23 +1038,24 @@ BaseCache::offerDcacheMainPipePrefetch()
     lsq->queueDcachePrefetch(addr,
         [this, packet](Tick) {
             using Result = o3::LSQ::DcacheMainPipeS2Result;
-            const bool hit = lookupDcacheMainPipePrefetch(*packet);
-            packet->reset();
+            bool hit = false;
+            handlePrefetch(packet->release(), hit);
             return hit ? Result::GoToS3 : Result::ExitPipe;
         },
         [this] {
-            scheduleDcachePrefetch(prefetcher->nextPrefetchReadyTime());
+            notifyPrefetchReady(prefetcher->nextPrefetchReadyTime());
         });
 }
 
-bool
-BaseCache::lookupDcacheMainPipePrefetch(std::unique_ptr<Packet> &packet)
+MSHR *
+BaseCache::handlePrefetch(PacketPtr pkt, bool &hit)
 {
-    PacketPtr pkt = packet.get();
+    std::unique_ptr<Packet> packet(pkt);
+    const bool main_pipe = usesDcachePrefetchMainPipe();
     const Addr addr = pkt->getBlockAddr(blkSize);
     const auto source = pkt->req->getXsMetadata().prefetchSource;
     const CacheBlk *blk = tags->findBlock(addr, pkt->isSecure());
-    const bool hit = blk && blk->isSet(CacheBlk::ReadableBit);
+    hit = blk && (!main_pipe || blk->isSet(CacheBlk::ReadableBit));
     const char *late = nullptr;
     if (hit) {
         prefetcher->pfHitInCache(source);
@@ -1074,17 +1070,22 @@ BaseCache::lookupDcacheMainPipePrefetch(std::unique_ptr<Packet> &packet)
     if (late) {
         if (source == PrefetchSourceType::SStream)
             prefetcher->streamPflate();
-        DPRINTF(HWPrefetch, "MainPipe prefetch %#x hit in %s\n", addr, late);
-    } else if (dcacheMainPipeCanPrefetch() && !isBlocked()) {
-        DPRINTF(HWPrefetch, "MainPipe prefetch %#x allocated MSHR\n", addr);
+        DPRINTF(HWPrefetch, "%s prefetch %#x hit in %s\n",
+                main_pipe ? "MainPipe" : "Classic", addr, late);
+    } else if (!main_pipe ||
+               (dcacheMainPipeCanPrefetch() && !isBlocked())) {
+        DPRINTF(HWPrefetch, "%s prefetch %#x allocated MSHR\n",
+                main_pipe ? "MainPipe" : "Classic", addr);
         assert(pkt->req->requestorId() < system->maxRequestors());
         stats.cmdStats(pkt).mshrMisses[pkt->req->requestorId()]++;
         // S2 is outside the send arbiter, so schedule the outbound request.
-        allocateMissBuffer(packet.release(), clockEdge());
+        return allocateMissBuffer(packet.release(),
+                                  main_pipe ? clockEdge() : curTick(),
+                                  main_pipe);
     } else {
         DPRINTF(HWPrefetch, "MainPipe prefetch %#x rejected\n", addr);
     }
-    return hit;
+    return nullptr;
 }
 
 void
@@ -1692,49 +1693,9 @@ BaseCache::getNextQueueEntry()
             pkt = prefetcher->getPacket();
         }
         if (pkt) {
-            Addr pf_addr = pkt->getBlockAddr(blkSize);
-            PrefetchSourceType pf_type = pkt->req->getXsMetadata().prefetchSource;
-            if (tags->findBlock(pf_addr, pkt->isSecure())) {
-                DPRINTF(HWPrefetch, "Prefetch %#x has hit in cache, "
-                        "dropped.\n", pf_addr);
-                prefetcher->pfHitInCache(pf_type);
-                if (pf_type == PrefetchSourceType::SStream)
-                    prefetcher->streamPflate();
-                // free the request and packet
-                delete pkt;
-            } else if (mshrQueue.findMatch(pf_addr, pkt->isSecure())) {
-                DPRINTF(HWPrefetch, "Prefetch %#x has hit in a MSHR, "
-                        "dropped.\n", pf_addr);
-                prefetcher->pfHitInMSHR(pf_type);
-                if (pf_type == PrefetchSourceType::SStream)
-                    prefetcher->streamPflate();
-                // free the request and packet
-                delete pkt;
-            } else if (writeBuffer.findMatch(pf_addr, pkt->isSecure())) {
-                DPRINTF(HWPrefetch, "Prefetch %#x has hit in the "
-                        "Write Buffer, dropped.\n", pf_addr);
-                prefetcher->pfHitInWB(pf_type);
-                if (pf_type == PrefetchSourceType::SStream)
-                    prefetcher->streamPflate();
-                // free the request and packet
-                delete pkt;
-            } else {
-                // Update statistic on number of prefetches issued
-                // (hwpf_mshr_misses)
-                assert(pkt->req->requestorId() < system->maxRequestors());
-                stats.cmdStats(pkt).mshrMisses[pkt->req->requestorId()]++;
-
-                // allocate an MSHR and return it, note
-                // that we send the packet straight away, so do not
-                // schedule the send
-                DPRINTF(HWPrefetch, "Allocating MSHR for prefetching addr %#x\n", pf_addr);
-                auto buf = allocateMissBuffer(pkt, curTick(), false);
-                return buf;
-            }
-            // if (prefetcher->hasHintsWaiting() && !memSidePort.hasSchedSendEvent()) {
-            //     DPRINTF(HWPrefetch, "Prefetcher has hints waiting, issuing them next cycle (%llu).\n", nextCycle());
-            //     memSidePort.schedSendEvent(nextCycle());
-            // }
+            bool hit = false;
+            if (auto *mshr = handlePrefetch(pkt, hit))
+                return mshr;
         } else {
             DPRINTF(HWPrefetch, "No prefetch packet obtained\n");
         }

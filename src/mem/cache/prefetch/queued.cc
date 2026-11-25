@@ -1678,8 +1678,8 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
         }
     }
 
-    if (&queue == &pfq && !pfq.empty() && mainPipeReady)
-        mainPipeReady(pfq.front().tick);
+    if (&queue == &pfq && !pfq.empty() && cache)
+        cache->notifyPrefetchReady(pfq.front().tick);
 
     if (debug::HWPrefetchQueue)
         printQueue(queue);
