@@ -204,8 +204,13 @@ class InstructionQueue
      */
     DynInstPtr getCacheMissInstToExecute();
 
-    /** Offer ready C_FF loads to their replay ports, in wait-list order. */
+    /**
+     * Retry loads waiting for store data (C_FF) in queue order.
+     * With early_only, skip loads queued this cycle or missing an STD hint.
+     */
     void retrySTLFFailLoads(bool early_only = false);
+
+    /** Return whether any C_FF load has been waiting since a prior cycle. */
     bool hasResidentSTLFFailLoads() const
     {
         return !stlfFailLdInsts.empty() &&
@@ -319,7 +324,10 @@ class InstructionQueue
 
     void notifyExecuted(const DynInstPtr &inst);
 
-    /** wakeup C_FF/C_MA when STD/STA issued */
+    /**
+     * Make a split store's issue hint visible after delay cycles to loads
+     * waiting for its address (C_MA) or data (C_FF).
+     */
     void notifyStoreIssue(const DynInstPtr &inst, Cycles delay);
 
   private:
@@ -327,7 +335,14 @@ class InstructionQueue
     void doSquash(ThreadID tid);
 
     void resolveMdpAddrReplayStoreAddr(const DynInstPtr &store_inst);
+
+    /** Mark loads waiting for this store's data as eligible for early retry. */
     void wakeStoreDataWaiters(const DynInstPtr &store);
+
+    /**
+     * Apply this cycle's store issue hints and retry early-woken C_MA loads
+     * once they have left the load pipeline.
+     */
     void processStoreReplayWakeups();
 
     /////////////////////////
