@@ -55,16 +55,6 @@ class CompoundBOPKeyNsga2ScoreSearch(SolveSpec):
         default=[50, 20],
     )
 
-    teacher_vbop_bad_score = InferTunable(
-        target=f"{_COMPOUND_BOP}.teacher_vbop_bad_score",
-        domain=Choice([1, 2, 3]),
-    )
-
-    teacher_pbop_bad_score = InferTunable(
-        target=f"{_COMPOUND_BOP}.teacher_pbop_bad_score",
-        domain=Choice([0, 1, 2]),
-    )
-
     student_extra_marginal_threshold_pct = InferTunable(
         target=(
             f"{_COMPOUND_BOP}.student_extra_marginal_threshold_pct"

@@ -922,10 +922,8 @@ class CompoundBOPPrefetcher(QueuedPrefetcher):
     teacher_round_max = Param.Unsigned(50, "Teacher round phase threshold")
     teacher_fallback_bad_score = Param.Unsigned(
         2, "Strict score threshold for cold-start global-best fallback")
-    teacher_vbop_bad_score = Param.Unsigned(
-        2, "Strict qualification threshold for the VBOP family winner")
-    teacher_pbop_bad_score = Param.Unsigned(
-        0, "Strict qualification threshold for the PBOP family winner")
+    teacher_min_nomination_score = Param.Unsigned(
+        2, "Inclusive minimum score to nominate either family winner")
 
     rr_size = Param.Unsigned(256, "Entries in each shared RR bank")
     tag_bits = Param.Unsigned(12, "RR tag width")
@@ -941,14 +939,23 @@ class CompoundBOPPrefetcher(QueuedPrefetcher):
         2048, "Entries in the shared Student coverage filter")
     student_hash_addr_bits = Param.Unsigned(
         50, "Address width used by the pairs_low9 Student hash")
-    student_vbop_delay_queue_size = Param.Unsigned(
-        64, "Pending delayed VBOP Student predictions")
-    student_vbop_delay_cycles = Param.Cycles(
-        300, "Delay before a VBOP Student prediction becomes visible")
+    student_delay_queue_size = Param.Unsigned(
+        64, "Pending Student predictions per family delay queue")
+    student_delay_cycles = Param.Cycles(
+        300, "Delay before either family's Student prediction becomes visible")
+    student_vbop_delay_queue_size = DeprecatedParam(student_delay_queue_size)
+    student_vbop_delay_cycles = DeprecatedParam(student_delay_cycles)
     student_primary_coverage_threshold_pct = Param.Unsigned(
         0, "Minimum primary coverage as a percentage of phase accesses")
     student_extra_marginal_threshold_pct = Param.Unsigned(
         2, "Minimum extra marginal coverage as a percentage of phase accesses")
+
+    regroup_hold_phases = Param.Unsigned(
+        8, "Teacher nominations before temporary family changes expire "
+           "(0 disables regrouping)")
+    regroup_overlap_pct = Param.Unsigned(
+        80, "Minimum percent of a rejected extra's own coverage shared "
+            "with the primary to change its family")
 
     issue_confidence_threshold = Param.Unsigned(
         14, "Family issue confidence values below this threshold may issue")

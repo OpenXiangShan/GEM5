@@ -48,13 +48,6 @@ class CompoundBOP : public Queued
 
     static constexpr size_t FamilyCount = 2;
 
-    struct TeacherOffsetEntry
-    {
-        int64_t offset;
-        unsigned score;
-        Family family;
-    };
-
     struct RREntry
     {
         Addr fullAddr = 0;
@@ -65,13 +58,6 @@ class CompoundBOP : public Queued
     {
         RREntry rrEntry;
         Tick readyTick;
-    };
-
-    struct StudentDelayQueueEntry
-    {
-        Tick readyTick;
-        unsigned filterIndex;
-        uint64_t mask;
     };
 
     struct RecentKey
@@ -137,6 +123,11 @@ class CompoundBOP : public Queued
         statistics::Scalar studentPBOPInjectedCount;
         statistics::Scalar studentVBOPEvictedCount;
         statistics::Scalar studentPBOPEvictedCount;
+        statistics::Scalar regroupVToP;
+        statistics::Scalar regroupPToV;
+        statistics::Scalar regroupExpired;
+        statistics::Scalar regroupResidentInvalidations;
+        statistics::Scalar regroupExtraCollisions;
         statistics::Scalar studentDelayQueueInsertCount;
         statistics::Scalar studentDelayQueueDrainCount;
         statistics::Scalar studentDelayQueueFullDropCount;
@@ -172,7 +163,7 @@ class CompoundBOP : public Queued
     const unsigned teacherScoreMax;
     const unsigned teacherRoundMax;
     const unsigned teacherFallbackBadScore;
-    const std::array<unsigned, FamilyCount> teacherFamilyBadScore;
+    const unsigned teacherMinNominationScore;
 
     const unsigned rrEntries;
     const Addr tagMask;
@@ -185,8 +176,6 @@ class CompoundBOP : public Queued
     const double studentConfAlpha;
     const unsigned studentFilterEntries;
     const unsigned studentHashAddrBits;
-    const unsigned studentDelayQueueSize;
-    const Tick studentDelayTicks;
     const unsigned studentPrimaryThresholdPct;
     const unsigned studentExtraThresholdPct;
 
@@ -196,7 +185,9 @@ class CompoundBOP : public Queued
     const unsigned issueConfidenceFailIncrement;
     const unsigned recentFilterEntries;
 
-    std::vector<TeacherOffsetEntry> teacherOffsets;
+    const unsigned regroupOverlapPct;
+    compound_bop::FamilyAssignments assignments;
+    std::vector<compound_bop::TeacherEntry> teacherOffsets;
     size_t teacherOffsetIndex = 0;
     unsigned teacherBestScore = 0;
     unsigned teacherRound = 0;
@@ -215,7 +206,7 @@ class CompoundBOP : public Queued
     std::vector<StudentEntry> studentEntries;
     std::vector<uint64_t> studentFilter;
     std::vector<uint32_t> crossFamilyOverlap;
-    std::deque<StudentDelayQueueEntry> studentDelayQueue;
+    compound_bop::StudentDelayQueues studentDelayQueues;
     uint32_t studentPhaseTrainCount = 0;
     std::vector<SelectedOffset> studentSelectedOffsets;
     bool studentSelectedValid = false;
@@ -232,6 +223,7 @@ class CompoundBOP : public Queued
     CompoundBOPStats stats;
 
     static size_t familyIndex(Family family);
+    size_t offsetIndex(int64_t offset) const;
     Family offsetFamily(int64_t offset) const;
     unsigned familySlotBegin(Family family) const;
     unsigned familySlotEnd(Family family) const;
@@ -243,10 +235,8 @@ class CompoundBOP : public Queued
     void insertIntoRR(const RREntry &entry);
     void enqueueRR(Addr addr);
     void rrDelayQueueEventWrapper();
-    bool runTeacherTest(Addr addr, const PrefetchInfo &pfi,
-        std::vector<int64_t> &qualified_winners);
-    bool runTeacherTests(Addr addr, const PrefetchInfo &pfi,
-        std::vector<int64_t> &qualified_winners);
+    bool runTeacherTest(Addr addr, const PrefetchInfo &pfi);
+    bool runTeacherTests(Addr addr, const PrefetchInfo &pfi);
     void commitTeacherPhase(std::vector<int64_t> &qualified_winners);
     void updateFamilyIssueConfidence();
 
@@ -258,7 +248,8 @@ class CompoundBOP : public Queued
     uint32_t overlapFor(size_t lhs, size_t rhs) const;
     void updateStudentEntryConfidence();
     void insertTeacherWinner(int64_t offset);
-    void finishStudentPhase(const std::vector<int64_t> &teacher_winners);
+    void finishStudentPhase();
+    void updateAssignments(std::optional<int64_t> redundant);
     void clearStudentPhase();
 
     RecentKey recentKey(const PrefetchInfo &pfi, Addr addr) const;

@@ -2,6 +2,7 @@
 #define __MEM_CACHE_PREFETCH_COMPOUND_BOP_POLICY_HH__
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
@@ -64,6 +65,151 @@ mergeFamilyOffsets(const std::vector<int> &vbop_offsets,
         });
     return merged;
 }
+
+struct TeacherEntry
+{
+    int64_t offset;
+    unsigned score;
+    Family home;
+};
+
+// At most one rejected extra moves per phase. One moved bit per Teacher
+// candidate and a ring of candidate IDs suffice; no all-offset overlap table.
+class FamilyAssignments
+{
+  public:
+    FamilyAssignments(size_t candidates, unsigned hold_phases)
+        : moved(candidates, false), returns(hold_phases)
+    {}
+
+    Family family(size_t id, Family home) const
+    {
+        if (!moved[id]) {
+            return home;
+        }
+        return home == Family::VBOP ? Family::PBOP : Family::VBOP;
+    }
+
+    bool enabled() const { return !returns.empty(); }
+
+    // Advance before applying feedback for the next nomination. An empty
+    // phase must also age the history, even when no Student pair was seen.
+    std::optional<size_t> advance()
+    {
+        if (!enabled()) {
+            return {};
+        }
+        cursor = (cursor + 1) % returns.size();
+        auto expired = std::exchange(returns[cursor], std::nullopt);
+        if (expired) {
+            moved[*expired] = false;
+        }
+        return expired;
+    }
+
+    bool moveTo(size_t id, Family home, Family target)
+    {
+        if (!enabled() || family(id, home) == target) {
+            return false;
+        }
+        if (target == home) {
+            // Reverse feedback before expiry. Cancel the old return event.
+            auto it = std::find(returns.begin(), returns.end(), id);
+            assert(it != returns.end());
+            it->reset();
+            moved[id] = false;
+        } else {
+            assert(!returns[cursor]);
+            returns[cursor] = id;
+            moved[id] = true;
+        }
+        return true;
+    }
+
+    std::array<std::optional<size_t>, 2>
+    bestInFamilies(const std::vector<TeacherEntry> &entries) const
+    {
+        assert(entries.size() == moved.size());
+        std::array<std::optional<size_t>, 2> best{};
+        for (size_t i = 0; i < entries.size(); ++i) {
+            auto group = static_cast<size_t>(family(i, entries[i].home));
+            if (!best[group] ||
+                    entries[i].score > entries[*best[group]].score) {
+                best[group] = i;
+            }
+        }
+        return best;
+    }
+
+  private:
+    std::vector<bool> moved;
+    std::vector<std::optional<size_t>> returns;
+    size_t cursor = 0;
+};
+
+inline bool
+redundantExtra(uint32_t coverage, uint32_t overlap, uint32_t demands,
+        unsigned marginal_pct, unsigned overlap_pct)
+{
+    assert(overlap <= coverage);
+    const uint64_t required = uint64_t{demands} * marginal_pct;
+    return demands && overlap && uint64_t{coverage} * 100 >= required &&
+        uint64_t{coverage - overlap} * 100 < required &&
+        uint64_t{overlap} * 100 >= uint64_t{coverage} * overlap_pct;
+}
+
+// Keep the two families on the same scoring clock without letting a full
+// queue in the first family starve the second during a slot-order walk.
+class StudentDelayQueues
+{
+  public:
+    StudentDelayQueues(size_t capacity, uint64_t delay)
+        : capacity(capacity), delay(delay)
+    {}
+
+    bool enqueue(Family family, uint64_t now, unsigned index, uint64_t mask)
+    {
+        auto &queue = queues[static_cast<size_t>(family)];
+        if (queue.size() >= capacity) {
+            return false;
+        }
+        queue.push_back({now + delay, index, mask});
+        return true;
+    }
+
+    template <typename Insert>
+    void drain(uint64_t now, Insert insert)
+    {
+        for (auto &queue : queues) {
+            while (!queue.empty() && queue.front().ready <= now) {
+                const auto &entry = queue.front();
+                insert(entry.index, entry.mask);
+                queue.pop_front();
+            }
+        }
+    }
+
+    size_t size() const { return queues[0].size() + queues[1].size(); }
+
+    void clear()
+    {
+        for (auto &queue : queues) {
+            queue.clear();
+        }
+    }
+
+  private:
+    struct Entry
+    {
+        uint64_t ready;
+        unsigned index;
+        uint64_t mask;
+    };
+
+    const size_t capacity;
+    const uint64_t delay;
+    std::array<std::deque<Entry>, 2> queues;
+};
 
 struct StudentEntry
 {
@@ -187,6 +333,38 @@ struct SelectedOffset
     int64_t offset = 0;
     Family family = Family::VBOP;
 };
+
+struct RegroupChange
+{
+    unsigned invalidated = 0;
+    bool extraRemoved = false;
+};
+
+template <typename Lookup>
+RegroupChange
+reconcileFamilies(std::vector<StudentEntry> &residents,
+        std::vector<SelectedOffset> &selected, Lookup lookup)
+{
+    RegroupChange change;
+    // Do not transfer bitmap history or confidence across physical slots.
+    for (auto &entry : residents) {
+        if (entry.valid && lookup(entry.offset) != entry.family) {
+            entry.valid = false;
+            ++change.invalidated;
+        }
+    }
+
+    // Choices were measured under the outgoing partition. Retag for the
+    // issue gates; if expiry reunited a pair, always preserve the primary.
+    for (auto &choice : selected) {
+        choice.family = lookup(choice.offset);
+    }
+    if (selected.size() == 2 && selected[0].family == selected[1].family) {
+        selected.pop_back();
+        change.extraRemoved = true;
+    }
+    return change;
+}
 
 inline std::vector<SelectedOffset>
 applyFamilyGates(const std::vector<SelectedOffset> &selected,

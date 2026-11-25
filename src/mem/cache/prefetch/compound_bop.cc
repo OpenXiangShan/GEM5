@@ -86,8 +86,7 @@ CompoundBOP::CompoundBOP(const CompoundBOPPrefetcherParams &p)
       teacherScoreMax(p.teacher_score_max),
       teacherRoundMax(p.teacher_round_max),
       teacherFallbackBadScore(p.teacher_fallback_bad_score),
-      teacherFamilyBadScore{{
-          p.teacher_vbop_bad_score, p.teacher_pbop_bad_score}},
+      teacherMinNominationScore(p.teacher_min_nomination_score),
       rrEntries(p.rr_size),
       tagMask(lowMask(p.tag_bits)),
       rrDelayQueueSize(p.delay_queue_size),
@@ -98,8 +97,6 @@ CompoundBOP::CompoundBOP(const CompoundBOPPrefetcherParams &p)
       studentConfAlpha(p.student_conf_alpha),
       studentFilterEntries(p.student_filter_entries),
       studentHashAddrBits(p.student_hash_addr_bits),
-      studentDelayQueueSize(p.student_vbop_delay_queue_size),
-      studentDelayTicks(cyclesToTicks(p.student_vbop_delay_cycles)),
       studentPrimaryThresholdPct(
           p.student_primary_coverage_threshold_pct),
       studentExtraThresholdPct(
@@ -110,14 +107,19 @@ CompoundBOP::CompoundBOP(const CompoundBOPPrefetcherParams &p)
           p.issue_confidence_pass_decrement),
       issueConfidenceFailIncrement(p.issue_confidence_fail_increment),
       recentFilterEntries(p.recent_filter_entries),
+      regroupOverlapPct(p.regroup_overlap_pct),
+      assignments(p.vbop_offsets.size() + p.pbop_offsets.size(),
+          p.regroup_hold_phases),
       rrDelayQueueEvent(
           [this] { rrDelayQueueEventWrapper(); }, name() + ".rrDelay"),
+      studentDelayQueues(p.student_delay_queue_size,
+          cyclesToTicks(p.student_delay_cycles)),
       primaryFifo(p.primary_fifo_entries),
       extraFifo(p.extra_fifo_entries),
       outputArbiter(p.primary_arbiter_slots, p.extra_arbiter_slots),
       stats(this, p.teacher_round_max,
           p.student_vbop_slots + p.student_pbop_slots,
-          p.student_vbop_delay_queue_size)
+          FamilyCount * p.student_delay_queue_size)
 {
     fatal_if(teacherTestsPerAccess == 0,
         "%s: teacher_tests_per_access must be non-zero", name());
@@ -138,11 +140,11 @@ CompoundBOP::CompoundBOP(const CompoundBOPPrefetcherParams &p)
     fatal_if(studentHashAddrBits <= lBlkSize + 6 ||
             studentHashAddrBits > 64,
         "%s: invalid pairs_low9 address width", name());
-    fatal_if(studentDelayQueueSize == 0,
-        "%s: student_vbop_delay_queue_size must be non-zero", name());
+    fatal_if(p.student_delay_queue_size == 0,
+        "%s: student_delay_queue_size must be non-zero", name());
     fatal_if(studentConfAlpha < 0.0 || studentConfAlpha > 1.0,
         "%s: student_conf_alpha must be in [0, 1]", name());
-    fatal_if(studentPrimaryThresholdPct > 100 ||
+    fatal_if(regroupOverlapPct > 100 || studentPrimaryThresholdPct > 100 ||
             studentExtraThresholdPct > 100,
         "%s: Student coverage thresholds must be percentages", name());
     fatal_if(issueConfidenceMax > 15 ||
@@ -192,15 +194,22 @@ CompoundBOP::CompoundBOP(const CompoundBOPPrefetcherParams &p)
     crossFamilyOverlap.assign(studentVBOPSlots * studentPBOPSlots, 0);
 }
 
-CompoundBOP::Family
-CompoundBOP::offsetFamily(int64_t offset) const
+size_t
+CompoundBOP::offsetIndex(int64_t offset) const
 {
-    for (const auto &entry : teacherOffsets) {
-        if (entry.offset == offset) {
-            return entry.family;
+    for (size_t i = 0; i < teacherOffsets.size(); ++i) {
+        if (teacherOffsets[i].offset == offset) {
+            return i;
         }
     }
     panic("%s: offset %ld is not in the merged Teacher list", name(), offset);
+}
+
+CompoundBOP::Family
+CompoundBOP::offsetFamily(int64_t offset) const
+{
+    const auto id = offsetIndex(offset);
+    return assignments.family(id, teacherOffsets[id].home);
 }
 
 unsigned
@@ -289,8 +298,7 @@ CompoundBOP::rrDelayQueueEventWrapper()
 }
 
 bool
-CompoundBOP::runTeacherTest(Addr addr, const PrefetchInfo &pfi,
-        std::vector<int64_t> &qualified_winners)
+CompoundBOP::runTeacherTest(Addr addr, const PrefetchInfo &pfi)
 {
     auto &entry = teacherOffsets[teacherOffsetIndex];
     const int64_t byte_offset =
@@ -323,16 +331,14 @@ CompoundBOP::runTeacherTest(Addr addr, const PrefetchInfo &pfi,
         return false;
     }
 
-    commitTeacherPhase(qualified_winners);
     return true;
 }
 
 bool
-CompoundBOP::runTeacherTests(Addr addr, const PrefetchInfo &pfi,
-        std::vector<int64_t> &qualified_winners)
+CompoundBOP::runTeacherTests(Addr addr, const PrefetchInfo &pfi)
 {
     for (unsigned test = 0; test < teacherTestsPerAccess; ++test) {
-        if (runTeacherTest(addr, pfi, qualified_winners)) {
+        if (runTeacherTest(addr, pfi)) {
             return true;
         }
     }
@@ -346,24 +352,16 @@ CompoundBOP::commitTeacherPhase(
     stats.teacherPhaseCount++;
     stats.teacherRoundCount += teacherRound;
 
+    const auto best = assignments.bestInFamilies(teacherOffsets);
     for (const Family family : {Family::VBOP, Family::PBOP}) {
         const size_t family_idx = familyIndex(family);
-        const TeacherOffsetEntry *winner = nullptr;
-        for (const auto &entry : teacherOffsets) {
-            if (entry.family != family) {
-                continue;
-            }
-            if (!winner || entry.score > winner->score) {
-                winner = &entry;
-            }
-        }
-        assert(winner);
-
-        const bool qualified = compound_bop::qualifies(
-            winner->score, teacherFamilyBadScore[family_idx]);
+        const auto id = best[family_idx];
+        const auto *winner = id ? &teacherOffsets[*id] : nullptr;
+        const unsigned score = winner ? winner->score : 0;
+        const bool qualified = winner && score >= teacherMinNominationScore;
         familyQualified[family_idx] = qualified;
         if (family == Family::VBOP) {
-            stats.teacherVBOPBestScoreDist.sample(winner->score);
+            stats.teacherVBOPBestScoreDist.sample(score);
             if (qualified) {
                 stats.teacherVBOPQualifiedCount++;
                 stats.teacherVBOPWinnerOffsetDist.sample(winner->offset);
@@ -371,7 +369,7 @@ CompoundBOP::commitTeacherPhase(
                 stats.teacherVBOPRejectedCount++;
             }
         } else {
-            stats.teacherPBOPBestScoreDist.sample(winner->score);
+            stats.teacherPBOPBestScoreDist.sample(score);
             if (qualified) {
                 stats.teacherPBOPQualifiedCount++;
                 stats.teacherPBOPWinnerOffsetDist.sample(winner->offset);
@@ -442,14 +440,11 @@ CompoundBOP::studentInsertFilterMask(unsigned index, uint64_t mask)
 void
 CompoundBOP::studentDrainDelayQueue()
 {
-    while (!studentDelayQueue.empty() &&
-            studentDelayQueue.front().readyTick <= curTick()) {
-        const auto entry = studentDelayQueue.front();
-        studentDelayQueue.pop_front();
-        studentInsertFilterMask(entry.filterIndex, entry.mask);
+    studentDelayQueues.drain(curTick(), [this](unsigned index, uint64_t mask) {
+        studentInsertFilterMask(index, mask);
         stats.studentDelayQueueDrainCount++;
-    }
-    stats.studentDelayQueueOccupancyDist.sample(studentDelayQueue.size());
+    });
+    stats.studentDelayQueueOccupancyDist.sample(studentDelayQueues.size());
 }
 
 void
@@ -471,19 +466,12 @@ CompoundBOP::studentEnqueuePrediction(Addr train_addr, size_t slot)
 
     const unsigned index = studentHashIndex(predicted_addr >> lBlkSize);
     const uint64_t mask = 1ULL << slot;
-    if (entry.family == Family::PBOP) {
-        studentInsertFilterMask(index, mask);
-        return;
-    }
-
-    if (studentDelayQueue.size() >= studentDelayQueueSize) {
+    if (!studentDelayQueues.enqueue(entry.family, curTick(), index, mask)) {
         stats.studentDelayQueueFullDropCount++;
         return;
     }
-    studentDelayQueue.push_back(
-        {curTick() + studentDelayTicks, index, mask});
     stats.studentDelayQueueInsertCount++;
-    stats.studentDelayQueueOccupancyDist.sample(studentDelayQueue.size());
+    stats.studentDelayQueueOccupancyDist.sample(studentDelayQueues.size());
 }
 
 void
@@ -612,9 +600,9 @@ CompoundBOP::insertTeacherWinner(int64_t offset)
 }
 
 void
-CompoundBOP::finishStudentPhase(
-        const std::vector<int64_t> &teacher_winners)
+CompoundBOP::finishStudentPhase()
 {
+    std::optional<int64_t> redundant;
     stats.studentPhaseCount++;
     stats.studentPoolOccupancyDist.sample(studentOccupancy());
     studentSelectedOffsets.clear();
@@ -669,8 +657,12 @@ CompoundBOP::finishStudentPhase(
                     studentSelectedOffsets.push_back({
                         studentEntries[*extra].offset,
                         studentEntries[*extra].family});
-                    stats.studentExtraOffsetDist.sample(
-                        studentEntries[*extra].offset);
+                } else if (assignments.enabled() &&
+                        compound_bop::redundantExtra(
+                            studentEntries[*extra].currentCoverage, overlap,
+                            studentPhaseTrainCount, studentExtraThresholdPct,
+                            regroupOverlapPct)) {
+                    redundant = studentEntries[*extra].offset;
                 }
             }
         }
@@ -680,6 +672,15 @@ CompoundBOP::finishStudentPhase(
     }
 
     updateStudentEntryConfidence();
+    updateAssignments(redundant);
+    if (studentSelectedOffsets.size() == 2) {
+        stats.studentExtraOffsetDist.sample(studentSelectedOffsets[1].offset);
+    }
+
+    // Scores belong to individual offsets. Nominate from the updated
+    // partitions before clearing the finished round's scores.
+    std::vector<int64_t> teacher_winners;
+    commitTeacherPhase(teacher_winners);
     for (const auto winner : teacher_winners) {
         insertTeacherWinner(winner);
     }
@@ -687,12 +688,54 @@ CompoundBOP::finishStudentPhase(
 }
 
 void
+CompoundBOP::updateAssignments(std::optional<int64_t> redundant)
+{
+    if (!assignments.enabled()) {
+        return;
+    }
+    const auto expired = assignments.advance();
+    if (expired) {
+        stats.regroupExpired++;
+        DPRINTF(CompoundBOP, "Offset %ld returns to its home family\n",
+                teacherOffsets[*expired].offset);
+    }
+    bool changed = false;
+    if (redundant) {
+        assert(!studentSelectedOffsets.empty());
+        const auto primary = studentSelectedOffsets.front().offset;
+        const auto target = offsetFamily(primary);
+        const auto id = offsetIndex(*redundant);
+        changed = assignments.moveTo(id, teacherOffsets[id].home, target);
+        if (changed) {
+            if (target == Family::VBOP) {
+                stats.regroupPToV++;
+            } else {
+                stats.regroupVToP++;
+            }
+            DPRINTF(CompoundBOP, "Regroup extra %ld with primary %ld in %s\n",
+                    *redundant, primary, target == Family::VBOP ? "V" : "P");
+        }
+    }
+    if (!expired && !changed) {
+        return;
+    }
+
+    const auto change = compound_bop::reconcileFamilies(
+        studentEntries, studentSelectedOffsets,
+        [this](int64_t offset) { return offsetFamily(offset); });
+    stats.regroupResidentInvalidations += change.invalidated;
+    if (change.extraRemoved) {
+        stats.regroupExtraCollisions++;
+    }
+}
+
+void
 CompoundBOP::clearStudentPhase()
 {
     std::fill(studentFilter.begin(), studentFilter.end(), 0);
     std::fill(crossFamilyOverlap.begin(), crossFamilyOverlap.end(), 0);
-    stats.studentDelayQueueOccupancyDist.sample(studentDelayQueue.size());
-    studentDelayQueue.clear();
+    stats.studentDelayQueueOccupancyDist.sample(studentDelayQueues.size());
+    studentDelayQueues.clear();
     studentPhaseTrainCount = 0;
     for (auto &entry : studentEntries) {
         entry.currentCoverage = 0;
@@ -870,11 +913,10 @@ CompoundBOP::calculatePrefetch(const PrefetchInfo &pfi,
     }
 
     enqueueRR(addr);
-    std::vector<int64_t> teacher_winners;
-    const bool phase_end = runTeacherTests(addr, pfi, teacher_winners);
+    const bool phase_end = runTeacherTests(addr, pfi);
     studentObserve(addr);
     if (phase_end) {
-        finishStudentPhase(teacher_winners);
+        finishStudentPhase();
     }
 
     const bool student_issue =
@@ -1025,14 +1067,24 @@ CompoundBOP::CompoundBOPStats::CompoundBOPStats(
           "VBOP Student entries replaced by VBOP Teacher winners"),
       ADD_STAT(studentPBOPEvictedCount, statistics::units::Count::get(),
           "PBOP Student entries replaced by PBOP Teacher winners"),
+      ADD_STAT(regroupVToP, statistics::units::Count::get(),
+          "Redundant extras reassigned from V to P by feedback"),
+      ADD_STAT(regroupPToV, statistics::units::Count::get(),
+          "Redundant extras reassigned from P to V by feedback"),
+      ADD_STAT(regroupExpired, statistics::units::Count::get(),
+          "Temporary family assignments returned home on expiry"),
+      ADD_STAT(regroupResidentInvalidations, statistics::units::Count::get(),
+          "Student residents removed after a family change"),
+      ADD_STAT(regroupExtraCollisions, statistics::units::Count::get(),
+          "Selected extras dropped because expiry reunited the pair"),
       ADD_STAT(studentDelayQueueInsertCount, statistics::units::Count::get(),
-          "Delayed VBOP Student predictions enqueued"),
+          "Delayed Student predictions (both families) enqueued"),
       ADD_STAT(studentDelayQueueDrainCount, statistics::units::Count::get(),
-          "Delayed VBOP Student predictions made visible"),
+          "Delayed Student predictions (both families) made visible"),
       ADD_STAT(studentDelayQueueFullDropCount, statistics::units::Count::get(),
-          "Delayed VBOP Student predictions dropped on a full queue"),
+          "Delayed Student predictions (both families) dropped on a full queue"),
       ADD_STAT(studentDelayQueueOccupancyDist, statistics::units::Count::get(),
-          "VBOP Student delay queue occupancy"),
+          "Total occupancy of both Student delay queues"),
       ADD_STAT(teacherFallbackIssueCount, statistics::units::Count::get(),
           "Accesses issuing the cold-start global Teacher fallback"),
       ADD_STAT(issuedOffsetDist, statistics::units::Count::get(),
