@@ -394,6 +394,23 @@ def template CSRExecute {{
             }
             break;
           }
+#if GEM5_ENABLE_MATRIX
+          case CSR_XMCSR:
+          case CSR_XMXRM:
+          case CSR_XMSAT:
+          case CSR_XMFFLAGS:
+          case CSR_XMFRM:
+          case CSR_XMSATEN: {
+            const STATUS status = xc->readMiscReg(MISCREG_STATUS);
+            if (status.ms == 0 ||
+                (xc->readMiscReg(MISCREG_VIRMODE) &&
+                 STATUS(xc->readMiscReg(MISCREG_VSSTATUS)).ms == 0)) {
+                return std::make_shared<IllegalInstFault>(
+                    "Matrix CSR access with MS off", machInst);
+            }
+            break;
+          }
+#endif
           case CSR_SATP: {
             STATUS status = xc->readMiscReg(MISCREG_STATUS);
             HSTATUS hstatus = xc->readMiscReg(MISCREG_HSTATUS);
