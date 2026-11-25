@@ -35,6 +35,10 @@
                     0x0: decode RS1 {
                         0x0: decode RD {
                             0x0: MatrixConfOp::minit({{
+                                if (xc->readMiscReg(MISCREG_PRV) != PRV_M) {
+                                    return std::make_shared<IllegalInstFault>(
+                                        "minit requires M-mode", machInst);
+                                }
                                 STATUS status = xc->readMiscReg(MISCREG_STATUS);
                                 status.ms = 1;
                                 xc->setMiscReg(MISCREG_STATUS, status);
