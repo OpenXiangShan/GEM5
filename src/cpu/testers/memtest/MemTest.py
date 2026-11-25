@@ -76,3 +76,11 @@ class MemTest(ClockedObject):
     # accesses as Ruby needs this
     suppress_func_errors = Param.Bool(False, "Suppress panic when "\
                                             "functional accesses fail.")
+
+    # Data-check reads against the tester's private reference model.
+    # Disable when several testers share one address space: racing
+    # writes to the same line make each private model diverge from the
+    # coherent memory state, producing false mismatches (coherence
+    # itself is checked by other means, e.g. a data monitor).
+    check_data = Param.Bool(True, "Check read data against the local "
+                                  "reference model")
