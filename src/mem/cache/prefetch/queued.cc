@@ -1137,11 +1137,19 @@ Queued::getPacket()
         return nullptr;
     }
 
-    PacketPtr pkt = pfq.front().pkt;
-    if (pfq.front().pfahead) {
+    return dequeuePacket(pfq.begin());
+}
+
+PacketPtr
+Queued::dequeuePacket(iterator it)
+{
+    assert(it != pfq.end());
+
+    PacketPtr pkt = it->pkt;
+    if (it->pfahead) {
         prefetchStats.pfaheadProcess++;
     }
-    pfq.pop_front();
+    pfq.erase(it);
 
     assert(pkt != nullptr);
     if (issueStatsAreAtForwarder()) {
@@ -1408,7 +1416,9 @@ Queued::alreadyInQueue(std::list<DeferredPacket> &queue,
             /* Because swap() will cause the translationComplete
              * run into wrong DeferredPacket, we use std::list::sort
              * to update this queue */
-            queue.sort(std::greater<DeferredPacket>());
+            if (reorderOnPriorityUpdate(queue)) {
+                queue.sort(std::greater<DeferredPacket>());
+            }
             DPRINTF(HWPrefetch, "Prefetch addr already in "
                 "prefetch queue, priority updated\n");
         } else {
@@ -1438,7 +1448,9 @@ Queued::alreadyInQueue(std::list<DeferredPacket> &queue,
             /* Because swap() will cause the translationComplete
              * run into wrong DeferredPacket, we use std::list::sort
              * to update this queue */
-            queue.sort(std::greater<DeferredPacket>());
+            if (reorderOnPriorityUpdate(queue)) {
+                queue.sort(std::greater<DeferredPacket>());
+            }
             DPRINTF(HWPrefetch, "Prefetch addr already in "
                 "prefetch queue, priority updated\n");
         } else {
@@ -1557,6 +1569,7 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
     DeferredPacket dpp(this, new_pfi, 0, priority);
     dpp.pfahead = addr_prio.pfahead;
     dpp.pfahead_host = addr_prio.pfahead_host;
+    dpp.queueTag = addr_prio.queueTag;
     if (dpp.pfahead) {
         DPRINTF(HWPrefetchOther, "Create one pfahead request\n");
     }
