@@ -2034,14 +2034,14 @@ Scheduler::issueAndSelect()
 
     bool stdArbitrated = false;
     for (auto *iq : issueQues) {
-        if (stdArbitrated && iq->hasIndependentStdPort()) {
+        if (stdArbitrated && iq->isStoreDataQueue()) {
             continue;
         }
         if (iq->loadPipeId == 0 && iew->instQueue.hasResidentSTLFFailLoads()) {
             // Resolve the STD ports that follow the first load port before
             // giving resident C_FF loads their chance to replay this cycle.
             for (size_t i = iq->getId() + 1; i < issueQues.size(); ++i) {
-                if (issueQues[i]->hasIndependentStdPort()) {
+                if (issueQues[i]->isStoreDataQueue()) {
                     issueQues[i]->issueToFu();
                 }
             }
