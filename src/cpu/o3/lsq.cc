@@ -96,7 +96,7 @@ void
 LSQ::StoreBufferEntry::reset(ThreadID tid, InstSeqNum seq_num,
                              uint64_t block_vaddr, uint64_t block_paddr,
                              uint64_t offset, uint8_t *datas, uint64_t size,
-                             const std::vector<bool> &mask)
+                             const std::vector<bool> &mask, Addr store_pc)
 {
     std::fill(validMask.begin(), validMask.begin() + offset, false);
 
@@ -109,6 +109,9 @@ LSQ::StoreBufferEntry::reset(ThreadID tid, InstSeqNum seq_num,
 
     this->tid = tid;
     this->seqNum = seq_num;
+    pcSum = store_pc;
+    firstPC = store_pc;
+    lastPC = store_pc;
     this->blockVaddr = block_vaddr;
     this->blockPaddr = block_paddr;
     this->sending = false;
@@ -120,7 +123,7 @@ LSQ::StoreBufferEntry::reset(ThreadID tid, InstSeqNum seq_num,
 
 void
 LSQ::StoreBufferEntry::merge(uint64_t offset, uint8_t *datas, uint64_t size,
-                             const std::vector<bool> &mask)
+                             const std::vector<bool> &mask, Addr store_pc)
 {
     assert(offset + size <= validMask.size());
     for (uint64_t i = 0; i < size; ++i) {
@@ -128,6 +131,25 @@ LSQ::StoreBufferEntry::merge(uint64_t offset, uint8_t *datas, uint64_t size,
             blockDatas[offset + i] = datas[i];
             validMask[offset + i] = true;
         }
+    }
+    pcSum += store_pc;
+    lastPC = store_pc;
+}
+
+Addr
+LSQ::StoreBufferEntry::writebackPC(SbufferWritebackPC mode) const
+{
+    switch (mode) {
+      case SbufferWritebackPC::PCSum:
+        return pcSum;
+      case SbufferWritebackPC::FirstPC:
+        return firstPC;
+      case SbufferWritebackPC::LastPC:
+        return lastPC;
+      case SbufferWritebackPC::FirstLastPCSum:
+        return firstPC + lastPC;
+      default:
+        panic("Invalid SBuffer writeback PC mode");
     }
 }
 
@@ -501,6 +523,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       sbufferEvictThreshold(params.SbufferEvictThreshold),
       sbufferEntries(params.SbufferEntries),
       sbufferReleaseOnMiss(params.sbufferReleaseOnMiss),
+      sbufferWritebackPC(params.sbufferWritebackPC),
       storeBufferInactiveThreshold(params.storeBufferInactiveThreshold),
       enableBankConflictCheck(params.BankConflictCheck),
       sbufferBankWriteAccurately(params.sbufferBankWriteAccurately),
@@ -1617,8 +1640,9 @@ LSQ::storeBufferWriteback()
             }
             auto &owner_unit = thread[entry->tid];
             recordStoreBufferEviction(*cause);
-            DPRINTF(StoreBuffer, "Evicting sbuffer entry[%#x]\n",
-                    entry->blockPaddr);
+            const Addr pc = entry->writebackPC(sbufferWritebackPC);
+            DPRINTF(StoreBuffer, "Evicting sbuffer entry[%#x] PC %#x\n",
+                    entry->blockPaddr, pc);
             if (debug::StoreBuffer) {
                 DPRINTFR(StoreBuffer, "Dumping sbuffer entry data\n");
                 for (int i = 0; i < owner_unit.cacheLineSize(); i++) {
@@ -1634,7 +1658,7 @@ LSQ::storeBufferWriteback()
                                                 entry->blockPaddr,
                                                 entry->blockDatas.data());
             entry->request->addReq(entry->blockVaddr, entry->blockPaddr,
-                                   entry->validMask);
+                                   entry->validMask, pc);
             entry->request->buildPackets();
             entry->request->sbuffer_entry = entry;
             bool success = entry->request->sendPacketToCache();
@@ -3418,13 +3442,15 @@ LSQ::SbufferRequest::~SbufferRequest() {
 }
 
 void
-LSQ::SbufferRequest::addReq(Addr blockVaddr, Addr blockPaddr, const std::vector<bool> byteEnable)
+LSQ::SbufferRequest::addReq(Addr blockVaddr, Addr blockPaddr,
+                           const std::vector<bool> &byteEnable, Addr pc)
 {
     auto req = std::make_shared<Request>(
         blockPaddr, _port.cacheLineSize(), Request::Flags(),
         cpu->dataRequestorId());
     req->setContext(cpu->getContext(_port.lsqID)->contextId());
     req->setByteEnable(byteEnable);
+    req->setPC(pc);
 
     _reqs.push_back(req);
 }

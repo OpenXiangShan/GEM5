@@ -84,6 +84,9 @@ class SMTQueuePolicy(ScopedEnum):
 class SMTLSQMode(ScopedEnum):
     vals = [ 'Independent', 'Shared' ]
 
+class SbufferWritebackPC(ScopedEnum):
+    vals = ["PCSum", "FirstPC", "LastPC", "FirstLastPCSum"]
+
 class CommitPolicy(ScopedEnum):
     vals = [ 'RoundRobin', 'OldestReady' ]
 
@@ -232,6 +235,8 @@ class BaseO3CPU(BaseCPU):
     SbufferEntries = Param.Unsigned(16, "Number of store buffer entries")
     sbufferReleaseOnMiss = Param.Bool(
         True, "Release store buffer entries when a miss is accepted by L1D")
+    sbufferWritebackPC = Param.SbufferWritebackPC(
+        "PCSum", "Store PC metadata to put on SBuffer writeback requests")
     SbufferEvictThreshold = Param.Unsigned(7, "store buffer eviction threshold")
     storeBufferInactiveThreshold = Param.Unsigned(800, "store buffer writeback timeout threshold")
 

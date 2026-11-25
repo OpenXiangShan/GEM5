@@ -37,7 +37,8 @@ if env['CONF']['TARGET_ISA'] != 'null':
     SimObject('BaseO3CPU.py', sim_objects=['BaseO3CPU'], enums=[
         'SMTFetchPolicy', 'SMTDecodePolicy', 'SMTFetchBlockPolicy',
         'SMTQueuePolicy', 'SMTLSQMode', 'CommitPolicy',
-        'ROBWalkPolicy', 'ROBCompressPolicy', 'PerfRecord'])
+        'ROBWalkPolicy', 'ROBCompressPolicy', 'PerfRecord',
+        'SbufferWritebackPC'])
 
     Source('commit.cc')
     Source('cpu.cc')

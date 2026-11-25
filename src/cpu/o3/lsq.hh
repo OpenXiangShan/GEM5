@@ -72,6 +72,7 @@
 #include "cpu/utils.hh"
 #include "enums/SMTLSQMode.hh"
 #include "enums/SMTQueuePolicy.hh"
+#include "enums/SbufferWritebackPC.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
 #include "sim/sim_object.hh"
@@ -167,6 +168,9 @@ class LSQ
         const int index;
         ThreadID tid;
         InstSeqNum seqNum = 0;
+        Addr pcSum = 0;
+        Addr firstPC = 0;
+        Addr lastPC = 0;
         Addr blockVaddr;
         Addr blockPaddr;
         std::vector<uint8_t> blockDatas;
@@ -191,10 +195,12 @@ class LSQ
 
         void reset(ThreadID tid, InstSeqNum seq_num, uint64_t block_vaddr,
                    uint64_t block_paddr, uint64_t offset, uint8_t *datas,
-                   uint64_t size, const std::vector<bool> &mask);
+                   uint64_t size, const std::vector<bool> &mask, Addr store_pc);
 
         void merge(uint64_t offset, uint8_t *datas, uint64_t size,
-                   const std::vector<bool> &mask);
+                   const std::vector<bool> &mask, Addr store_pc);
+
+        Addr writebackPC(SbufferWritebackPC mode) const;
 
         bool recordForward(RequestPtr req, LSQRequest *lsqreq,
                            ThreadID load_tid, InstSeqNum load_seq);
@@ -203,7 +209,7 @@ class LSQ
         // must go to a vice entry instead of mutating this entry's payload.
         bool evictionInProgress() const
         {
-            return sending || inDcacheMainPipe || replayQueued;
+            return request != nullptr;
         }
     };
 
@@ -866,7 +872,8 @@ class LSQ
         SbufferRequest(CPU* cpu, LSQUnit* port, Addr blockpaddr, uint8_t* data);
         virtual ~SbufferRequest();
 
-        void addReq(Addr blockVaddr, Addr blockPaddr, const std::vector<bool> byteEnable);
+        void addReq(Addr blockVaddr, Addr blockPaddr,
+                    const std::vector<bool> &byteEnable, Addr pc);
 
         // do not translate
         void markAsStaleTranslation() override {}
@@ -1508,6 +1515,7 @@ class LSQ
     const uint32_t sbufferEvictThreshold;
     const uint32_t sbufferEntries;
     const bool sbufferReleaseOnMiss;
+    const SbufferWritebackPC sbufferWritebackPC;
     const uint64_t storeBufferInactiveThreshold;
     const uint32_t maxStoreBufferEntriesAcceptedFromSQPerCycle = 2;
     StoreBuffer storeBuffer;
