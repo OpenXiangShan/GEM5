@@ -83,6 +83,7 @@ template<typename ElemType>
 {
     const uint32_t num_microops = vflmul < 1 ? 1 : vflmul;
     StaticInstPtr microop;
+    assert(num_microops == 1 || num_microops % 2 == 0);
     for (int i = 0; i < num_microops; ++i) {
         microop = new %(class_name)sMicro<ElemType>(_machInst, i);
         microop->setDelayedCommit();
