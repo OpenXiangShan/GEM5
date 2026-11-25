@@ -73,13 +73,12 @@ struct TeacherEntry
     Family home;
 };
 
-// At most one rejected extra moves per phase. One moved bit per Teacher
-// candidate and a ring of candidate IDs suffice; no all-offset overlap table.
+// One bit per Teacher entry records whether it is in its original family.
 class FamilyAssignments
 {
   public:
-    FamilyAssignments(size_t candidates, unsigned hold_phases)
-        : moved(candidates, false), returns(hold_phases)
+    FamilyAssignments(size_t candidates, bool enable)
+        : moved(candidates, false), enable(enable)
     {}
 
     Family family(size_t id, Family home) const
@@ -90,40 +89,31 @@ class FamilyAssignments
         return home == Family::VBOP ? Family::PBOP : Family::VBOP;
     }
 
-    bool enabled() const { return !returns.empty(); }
+    bool enabled() const { return enable; }
 
-    // Advance before applying feedback for the next nomination. An empty
-    // phase must also age the history, even when no Student pair was seen.
-    std::optional<size_t> advance()
+    // Draw a rank in the current primary family, excluding only the primary.
+    // No score, Student residency, or previous exchange biases the draw.
+    template <typename Draw>
+    std::optional<size_t> swapExtra(const std::vector<TeacherEntry> &entries,
+            size_t extra, size_t primary, Draw draw)
     {
-        if (!enabled()) {
+        const auto target = family(primary, entries[primary].home);
+        if (!enable || family(extra, entries[extra].home) == target) {
             return {};
         }
-        cursor = (cursor + 1) % returns.size();
-        auto expired = std::exchange(returns[cursor], std::nullopt);
-        if (expired) {
-            moved[*expired] = false;
+        std::vector<size_t> eligible;
+        for (size_t i = 0; i < entries.size(); ++i) {
+            if (i != primary && family(i, entries[i].home) == target) {
+                eligible.push_back(i);
+            }
         }
-        return expired;
-    }
-
-    bool moveTo(size_t id, Family home, Family target)
-    {
-        if (!enabled() || family(id, home) == target) {
-            return false;
+        if (eligible.empty()) {
+            return {};
         }
-        if (target == home) {
-            // Reverse feedback before expiry. Cancel the old return event.
-            auto it = std::find(returns.begin(), returns.end(), id);
-            assert(it != returns.end());
-            it->reset();
-            moved[id] = false;
-        } else {
-            assert(!returns[cursor]);
-            returns[cursor] = id;
-            moved[id] = true;
-        }
-        return true;
+        const size_t partner = eligible.at(draw(eligible.size()));
+        moved[extra].flip();
+        moved[partner].flip();
+        return partner;
     }
 
     std::array<std::optional<size_t>, 2>
@@ -143,8 +133,7 @@ class FamilyAssignments
 
   private:
     std::vector<bool> moved;
-    std::vector<std::optional<size_t>> returns;
-    size_t cursor = 0;
+    const bool enable;
 };
 
 inline bool
@@ -338,6 +327,14 @@ struct RegroupChange
 {
     unsigned invalidated = 0;
     bool extraRemoved = false;
+    // One feedback move plus one expiry, or the two ends of one swap.
+    std::array<int64_t, 2> evicted{};
+
+    bool canAdmit(int64_t offset) const
+    {
+        return std::find(evicted.begin(), evicted.begin() + invalidated,
+                         offset) == evicted.begin() + invalidated;
+    }
 };
 
 template <typename Lookup>
@@ -350,7 +347,8 @@ reconcileFamilies(std::vector<StudentEntry> &residents,
     for (auto &entry : residents) {
         if (entry.valid && lookup(entry.offset) != entry.family) {
             entry.valid = false;
-            ++change.invalidated;
+            assert(change.invalidated < change.evicted.size());
+            change.evicted[change.invalidated++] = entry.offset;
         }
     }
 

@@ -1,54 +1,36 @@
-# Compound BOP: temporary offset families
+# Compound BOP: permanent random family exchanges
 
-The initial menus and Teacher scan order match `55107ce6a2`: 72 signed V
-offsets, 37 signed P offsets. Both families nominate at a score of at least
-2. Student V and P each have four slots and a separate 64-prediction delay
-queue; both queues delay coverage visibility by 300 cycles. This delay
-applies to scoring, not to sending a prefetch.
+The default menus contain the same 109 signed offsets, in the same merged
+Teacher scan order as 55107ce6a2. Move the 17 smallest-magnitude former V
+entries (+32 and both signs of 36, 40, 45, 48, 50, 54, 60, 64) into P
+at initialization: V starts with 55 entries, P with 54. Each family nominates
+at a Teacher score of at least 2. Each Student partition has four slots and
+a separate 64-entry queue delaying coverage visibility by 300 cycles.
 
-At a phase boundary the Student still compares the best resident of each
-family. If the primary is enabled and the extra is rejected, regroup only
-when **both** of these conditions hold (using the outgoing phase's counters):
+At a phase boundary, consider the extra only when it could cover at least
+2% of demands alone, its marginal coverage falls below 2%, and at least 80%
+of its own coverage overlaps the primary's. Exactly 2% marginal passes for
+issue and does not trigger an exchange. These are coverage-filter hits.
 
-- The extra by itself meets the 2% coverage threshold, but after subtracting
-  overlap with the primary it covers less than 2% of all training demands.
-  Exactly 2% marginal coverage still qualifies for issue.
-- At least 80% of the extra's own coverage overlaps the primary, with at
-  least one observed overlap. These are coverage-filter hits, not exact
-  stream identities or a measurement of performance.
+Exchange that extra with a **uniform random** offset from the primary's
+current Teacher family, excluding only the primary. Use one gem5 RNG draw;
+Teacher score, Student residency and prior exchanges do not affect eligibility.
+If there is no eligible partner, leave both families unchanged. The exchange
+is permanent until subsequent feedback moves either offset again. There is
+no timer. Sizes stay constant; no additional overlap counters are required.
 
-Apply at most one feedback move per phase, after aging earlier moves. The
-extra joins the primary's effective family for the next nomination. Clear
-residents whose physical partition no longer matches. They can re-enter only
-by winning their new group; the move never displaces the primary to make
-room. The Teacher applies these groups to the scores it has already collected,
-so a rejected offset cannot immediately win its old group again. The scan,
-including the original priority prefix, does not change.
+Kick the extra out of its Student slot. If the random partner was resident,
+kick it out too. Neither carries its confidence or bitmap into another slot,
+nor can a just-evicted offset re-enter on the same boundary. Teacher
+nomination uses the new partition and the just-completed scores. A partner
+that was not resident remains eligible for immediate admission. A later
+nomination can re-admit either offset. The primary is protected from being
+the swap partner.
 
-A move lasts eight nominations including the one at the move boundary;
-expiry does not require eviction, new feedback or a free Student slot.
-Opposite feedback can return an offset earlier. If expiry puts two selected
-offsets back together, keep only the primary for issue. Empty groups cannot
-nominate. The state is one membership bit per Teacher offset plus an
-eight-entry ring of returned candidate IDs; the 4×4 cross-family overlap
-table does not grow.
-
-For example, if P's four highest-scoring offsets each prove redundant against
-V's primary on successive phases, all four can briefly be in V together. The
-fifth P offset can then win P if it meets the nomination threshold. It is
-not guaranteed to issue: it must still pass Student selection and issue gates.
-
-## Comparing runs
-
-For `kmhv3.py`, enable `system.l2_wrappers[0].prefetcher.use_compound_bop=True`
-via `--param`. To isolate feedback, run the **same commit and checkpoints**
-with the additional parameter
-`--param=system.l2_wrappers[0].prefetcher.compound_bop.regroup_hold_phases=0`.
-This control keeps the original menus, common nomination threshold and both
-delay queues. The default hold of 8 and overlap threshold of 80 are
-experimental settings, not tuned results.
-
-Check `regroupPToV`, `regroupVToP`, `regroupExpired`,
-`regroupResidentInvalidations` and `regroupExtraCollisions` along with
-the existing coverage and issue statistics. In a tracing-enabled build
-the `CompoundBOP` debug flag reports the signed offsets involved.
+With kmhv3.py enable the compound unit via
+`--param=system.l2_wrappers[0].prefetcher.use_compound_bop=True`.
+Set `system.l2_wrappers[0].prefetcher.compound_bop.regroup_enable=False`
+with a second `--param` for the fixed-55/54 control. Compare using the same
+checkpoints and random seed. See `regroupPToV` / `regroupVToP` for feedback
+direction (one count per exchange), `regroupNoPartner` for skipped exchanges,
+and `regroupResidentPartners` for the number that also evicted the partner.

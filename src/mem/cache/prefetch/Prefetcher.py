@@ -897,24 +897,24 @@ class CompoundBOPPrefetcher(QueuedPrefetcher):
     on_data = True
     on_inst = False
 
+    # Start 55:54 by assigning the shortest 17 former V entries to P.
+    # The original V priority prefix and the sorted merged body are unchanged.
     vbop_offsets = VectorParam.Int([
         -117, -147, -91, 117, 147, 91,
         -256, -250, -243, -240, -225, -216, -200,
         -192, -180, -162, -160, -150, -144, -135, -128,
         -125, -120, -108, -100, -96, -90, -81, -80,
-        -75, -72, -64, -60, -54, -50, -48, -45,
-        -40, -36, 32, 36, 40, 45, 48,
-        50, 54, 60, 64, 72, 75, 80, 81,
-        90, 96, 100, 108, 120, 125, 128, 135,
-        144, 150, 160, 162, 180, 192, 200, 216,
-        225, 240, 243, 250,
+        -75, -72, 72, 75, 80, 81, 90, 96, 100, 108,
+        120, 125, 128, 135, 144, 150, 160, 162, 180,
+        192, 200, 216, 225, 240, 243, 250,
     ], "VBOP family offsets; entries before the minimum form the Teacher "
        "priority prefix")
     pbop_offsets = VectorParam.Int([
         x for magnitude in
-        [1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 27, 30]
+        [1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 27, 30,
+         32, 36, 40, 45, 48, 50, 54, 60, 64]
         for x in (magnitude, -magnitude)
-    ] + [-32], "PBOP family offsets merged into the sorted Teacher body")
+    ], "PBOP family offsets merged into the sorted Teacher body")
 
     teacher_tests_per_access = Param.Unsigned(
         2, "Number of ordered Teacher offset tests per demand access")
@@ -950,9 +950,8 @@ class CompoundBOPPrefetcher(QueuedPrefetcher):
     student_extra_marginal_threshold_pct = Param.Unsigned(
         2, "Minimum extra marginal coverage as a percentage of phase accesses")
 
-    regroup_hold_phases = Param.Unsigned(
-        8, "Teacher nominations before temporary family changes expire "
-           "(0 disables regrouping)")
+    regroup_enable = Param.Bool(
+        True, "Permanently exchange Teacher families on redundant coverage")
     regroup_overlap_pct = Param.Unsigned(
         80, "Minimum percent of a rejected extra's own coverage shared "
             "with the primary to change its family")

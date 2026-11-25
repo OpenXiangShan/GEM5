@@ -18,76 +18,87 @@ TEST(CompoundBOPRegroup, OverlapMustExplainTheRejectedExtra)
     EXPECT_TRUE(redundantExtra(100, 81, 1000, 2, 80));
 }
 
-TEST(CompoundBOPRegroup, FourRedundantWinnersMakeRoomForFifth)
+TEST(CompoundBOPRegroup, DrawsEveryNonPrimaryRegardlessOfScoreOrResidency)
 {
     const std::vector<TeacherEntry> entries = {
-        {32, 16, V}, {2, 12, P}, {4, 11, P}, {6, 10, P}, {8, 9, P},
-        {1, 5, P}};
-    FamilyAssignments groups(entries.size(), 8);
-    for (size_t redundant = 1; redundant <= 4; ++redundant) {
-        auto before = groups.bestInFamilies(entries);
-        ASSERT_EQ(before[0], 0U);
-        ASSERT_EQ(before[1], redundant);
-        EXPECT_FALSE(groups.advance());
-        ASSERT_TRUE(groups.moveTo(redundant, P, V));
-        EXPECT_EQ(groups.bestInFamilies(entries)[1], redundant + 1);
+        {32, 1, V}, {1, 20, P}, {64, 18, V}, {96, 0, V}, {2, 4, P}};
+    for (size_t rank = 0; rank < 2; ++rank) {
+        FamilyAssignments groups(entries.size(), true);
+        auto partner = groups.swapExtra(entries, 1, 0, [&](size_t n) {
+            EXPECT_EQ(n, 2U);
+            return rank;
+        });
+        ASSERT_TRUE(partner);
+        EXPECT_EQ(*partner, 2 + rank);
+        EXPECT_EQ(groups.family(0, V), V);
+        EXPECT_EQ(groups.family(1, P), V);
+        EXPECT_EQ(groups.family(*partner, V), P);
+        std::vector<StudentEntry> residents = {
+            {true, V, 32}, {true, P, 1}, {true, V, 64}};
+        std::vector<SelectedOffset> selected = {{32, V}};
+        auto change = reconcileFamilies(residents, selected, [&](int64_t off) {
+            for (size_t i = 0; i < entries.size(); ++i) {
+                if (off == entries[i].offset) {
+                    return groups.family(i, entries[i].home);
+                }
+            }
+            ADD_FAILURE() << "unknown resident";
+            return P;
+        });
+        EXPECT_TRUE(residents[0].valid);
+        EXPECT_FALSE(residents[1].valid);
+        EXPECT_EQ(residents[2].valid, rank != 0);
+        EXPECT_EQ(change.invalidated, rank == 0 ? 2U : 1U);
+        EXPECT_FALSE(change.canAdmit(1));
+        EXPECT_EQ(change.canAdmit(64), rank != 0);
+        EXPECT_TRUE(change.canAdmit(32));
+        ASSERT_EQ(selected.size(), 1U);
+        EXPECT_EQ(selected[0].offset, 32);
     }
-    // S5 can be nominated despite its lower standalone Teacher score.
-    EXPECT_EQ(entries[*groups.bestInFamilies(entries)[1]].offset, 1);
-    for (unsigned i = 0; i < 4; ++i) {
-        EXPECT_FALSE(groups.advance());
+}
+
+TEST(CompoundBOPRegroup, MaintainsSizesAndUsesCurrentFamiliesOnEverySwap)
+{
+    std::vector<TeacherEntry> entries;
+    for (size_t i = 0; i < 109; ++i) {
+        entries.push_back({static_cast<int64_t>(i + 1), 3, i < 55 ? V : P});
     }
-    EXPECT_EQ(groups.advance(), 1U);
-    EXPECT_EQ(groups.bestInFamilies(entries)[1], 1U);
-    EXPECT_EQ(groups.family(2, P), V);
+    FamilyAssignments groups(entries.size(), true);
+    size_t extra = 55;
+    for (size_t phase = 0; phase < 200; ++phase) {
+        const auto target = phase % 2 ? P : V;
+        const size_t primary = phase % 2 ? 108 : 0;
+        const auto partner = groups.swapExtra(entries, extra, primary,
+            [&](size_t count) {
+                EXPECT_EQ(count, target == V ? 54U : 53U);
+                return (phase * 17) % count;
+            });
+        ASSERT_TRUE(partner);
+        EXPECT_NE(*partner, primary);
+        EXPECT_EQ(groups.family(primary, entries[primary].home), target);
+        EXPECT_EQ(groups.family(extra, entries[extra].home), target);
+        unsigned v_count = 0;
+        for (size_t i = 0; i < entries.size(); ++i) {
+            v_count += groups.family(i, entries[i].home) == V;
+        }
+        EXPECT_EQ(v_count, 55U);
+        // The same offset can move again, but never just because time passes.
+        for (unsigned i = 0; i < 12; ++i) {
+            groups.bestInFamilies(entries);
+        }
+        EXPECT_EQ(groups.family(extra, entries[extra].home), target);
+    }
 }
 
-TEST(CompoundBOPRegroup, RestoresEarlyWithoutStaleExpiry)
+TEST(CompoundBOPRegroup, CannotDrawTheOnlyPrimaryOrDrawWhenDisabled)
 {
-    FamilyAssignments groups(2, 3);
-    groups.advance();
-    EXPECT_TRUE(groups.moveTo(0, V, P));
-    groups.advance();
-    EXPECT_TRUE(groups.moveTo(0, V, V));
-    groups.advance();
-    EXPECT_TRUE(groups.moveTo(0, V, P));
-    // The cancelled first move is not allowed to undo the latest move.
-    EXPECT_FALSE(groups.advance());
-    EXPECT_EQ(groups.family(0, V), P);
-    EXPECT_FALSE(groups.advance());
-    EXPECT_EQ(groups.advance(), 0U);
-    EXPECT_EQ(groups.family(0, V), V);
-}
-
-TEST(CompoundBOPRegroup, EmptyFamilyAndStaticControl)
-{
-    const std::vector<TeacherEntry> entries = {{32, 2, V}, {1, 2, P}};
-    FamilyAssignments fixed(entries.size(), 0);
-    EXPECT_FALSE(fixed.advance());
-    EXPECT_FALSE(fixed.moveTo(0, V, P));
-    EXPECT_EQ(fixed.bestInFamilies(entries)[0], 0U);
-    FamilyAssignments changing(entries.size(), 1);
-    changing.advance();
-    ASSERT_TRUE(changing.moveTo(0, V, P));
-    EXPECT_FALSE(changing.bestInFamilies(entries)[0]);
-    EXPECT_EQ(changing.bestInFamilies(entries)[1], 0U); // Stable tie order.
-    EXPECT_EQ(changing.advance(), 0U);
-    EXPECT_EQ(changing.bestInFamilies(entries)[1], 1U);
-}
-
-TEST(CompoundBOPRegroup, ReturnInvalidatesOldSlotAndKeepsPrimary)
-{
-    // -4 was born in V and was selected from P before its lease expired.
-    std::vector<StudentEntry> slots = {{true, V, 32}, {true, P, -4}};
-    std::vector<SelectedOffset> pair = {{-4, P}, {32, V}};
-    auto change = reconcileFamilies(slots, pair, [](int64_t) { return V; });
-    EXPECT_EQ(change.invalidated, 1U);
-    EXPECT_FALSE(slots[1].valid);
-    EXPECT_TRUE(slots[0].valid);
-    EXPECT_TRUE(change.extraRemoved);
-    ASSERT_EQ(pair.size(), 1U);
-    EXPECT_EQ(pair[0].offset, -4);
-    EXPECT_EQ(pair[0].family, V);
+    const std::vector<TeacherEntry> entries = {{32, 1, V}, {1, 2, P}};
+    auto never = [](size_t) { ADD_FAILURE() << "unexpected RNG draw"; return 0; };
+    FamilyAssignments active(entries.size(), true), fixed(entries.size(), false);
+    EXPECT_FALSE(active.swapExtra(entries, 1, 0, never));
+    EXPECT_FALSE(fixed.swapExtra(entries, 1, 0, never));
+    EXPECT_EQ(active.family(1, P), P);
+    EXPECT_EQ(active.family(0, V), V);
 }
 
 } // namespace gem5::prefetch::compound_bop

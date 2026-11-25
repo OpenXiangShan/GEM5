@@ -125,9 +125,9 @@ class CompoundBOP : public Queued
         statistics::Scalar studentPBOPEvictedCount;
         statistics::Scalar regroupVToP;
         statistics::Scalar regroupPToV;
-        statistics::Scalar regroupExpired;
+        statistics::Scalar regroupNoPartner;
         statistics::Scalar regroupResidentInvalidations;
-        statistics::Scalar regroupExtraCollisions;
+        statistics::Scalar regroupResidentPartners;
         statistics::Scalar studentDelayQueueInsertCount;
         statistics::Scalar studentDelayQueueDrainCount;
         statistics::Scalar studentDelayQueueFullDropCount;
@@ -249,7 +249,8 @@ class CompoundBOP : public Queued
     void updateStudentEntryConfidence();
     void insertTeacherWinner(int64_t offset);
     void finishStudentPhase();
-    void updateAssignments(std::optional<int64_t> redundant);
+    compound_bop::RegroupChange updateAssignments(
+        std::optional<int64_t> redundant);
     void clearStudentPhase();
 
     RecentKey recentKey(const PrefetchInfo &pfi, Addr addr) const;

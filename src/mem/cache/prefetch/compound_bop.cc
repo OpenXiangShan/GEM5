@@ -8,6 +8,7 @@
 
 #include "base/intmath.hh"
 #include "base/logging.hh"
+#include "base/random.hh"
 #include "base/stats/group.hh"
 #include "debug/CompoundBOP.hh"
 #include "mem/cache/base.hh"
@@ -109,7 +110,7 @@ CompoundBOP::CompoundBOP(const CompoundBOPPrefetcherParams &p)
       recentFilterEntries(p.recent_filter_entries),
       regroupOverlapPct(p.regroup_overlap_pct),
       assignments(p.vbop_offsets.size() + p.pbop_offsets.size(),
-          p.regroup_hold_phases),
+          p.regroup_enable),
       rrDelayQueueEvent(
           [this] { rrDelayQueueEventWrapper(); }, name() + ".rrDelay"),
       studentDelayQueues(p.student_delay_queue_size,
@@ -672,7 +673,7 @@ CompoundBOP::finishStudentPhase()
     }
 
     updateStudentEntryConfidence();
-    updateAssignments(redundant);
+    const auto regroup = updateAssignments(redundant);
     if (studentSelectedOffsets.size() == 2) {
         stats.studentExtraOffsetDist.sample(studentSelectedOffsets[1].offset);
     }
@@ -682,51 +683,46 @@ CompoundBOP::finishStudentPhase()
     std::vector<int64_t> teacher_winners;
     commitTeacherPhase(teacher_winners);
     for (const auto winner : teacher_winners) {
-        insertTeacherWinner(winner);
+        if (regroup.canAdmit(winner)) {
+            insertTeacherWinner(winner);
+        }
     }
     clearStudentPhase();
 }
 
-void
+compound_bop::RegroupChange
 CompoundBOP::updateAssignments(std::optional<int64_t> redundant)
 {
-    if (!assignments.enabled()) {
-        return;
+    if (!redundant) {
+        return {};
     }
-    const auto expired = assignments.advance();
-    if (expired) {
-        stats.regroupExpired++;
-        DPRINTF(CompoundBOP, "Offset %ld returns to its home family\n",
-                teacherOffsets[*expired].offset);
+    assert(!studentSelectedOffsets.empty());
+    const auto primary = studentSelectedOffsets.front().offset;
+    const auto target = offsetFamily(primary);
+    const auto partner = assignments.swapExtra(teacherOffsets,
+            offsetIndex(*redundant), offsetIndex(primary),
+            [](size_t count) { return random_mt.random<size_t>(0, count - 1); });
+    if (!partner) {
+        stats.regroupNoPartner++;
+        return {};
     }
-    bool changed = false;
-    if (redundant) {
-        assert(!studentSelectedOffsets.empty());
-        const auto primary = studentSelectedOffsets.front().offset;
-        const auto target = offsetFamily(primary);
-        const auto id = offsetIndex(*redundant);
-        changed = assignments.moveTo(id, teacherOffsets[id].home, target);
-        if (changed) {
-            if (target == Family::VBOP) {
-                stats.regroupPToV++;
-            } else {
-                stats.regroupVToP++;
-            }
-            DPRINTF(CompoundBOP, "Regroup extra %ld with primary %ld in %s\n",
-                    *redundant, primary, target == Family::VBOP ? "V" : "P");
-        }
+    if (target == Family::VBOP) {
+        stats.regroupPToV++;
+    } else {
+        stats.regroupVToP++;
     }
-    if (!expired && !changed) {
-        return;
-    }
+    DPRINTF(CompoundBOP, "Swap extra %ld with %ld; primary %ld stays in %s\n",
+            *redundant, teacherOffsets[*partner].offset,
+            primary, target == Family::VBOP ? "V" : "P");
 
     const auto change = compound_bop::reconcileFamilies(
         studentEntries, studentSelectedOffsets,
         [this](int64_t offset) { return offsetFamily(offset); });
     stats.regroupResidentInvalidations += change.invalidated;
-    if (change.extraRemoved) {
-        stats.regroupExtraCollisions++;
+    if (change.invalidated == 2) {
+        stats.regroupResidentPartners++;
     }
+    return change;
 }
 
 void
@@ -1071,12 +1067,12 @@ CompoundBOP::CompoundBOPStats::CompoundBOPStats(
           "Redundant extras reassigned from V to P by feedback"),
       ADD_STAT(regroupPToV, statistics::units::Count::get(),
           "Redundant extras reassigned from P to V by feedback"),
-      ADD_STAT(regroupExpired, statistics::units::Count::get(),
-          "Temporary family assignments returned home on expiry"),
+      ADD_STAT(regroupNoPartner, statistics::units::Count::get(),
+          "Redundant extras skipped without a legal exchange partner"),
       ADD_STAT(regroupResidentInvalidations, statistics::units::Count::get(),
           "Student residents removed after a family change"),
-      ADD_STAT(regroupExtraCollisions, statistics::units::Count::get(),
-          "Selected extras dropped because expiry reunited the pair"),
+      ADD_STAT(regroupResidentPartners, statistics::units::Count::get(),
+          "Exchanges that also evicted the random partner from the Student"),
       ADD_STAT(studentDelayQueueInsertCount, statistics::units::Count::get(),
           "Delayed Student predictions (both families) enqueued"),
       ADD_STAT(studentDelayQueueDrainCount, statistics::units::Count::get(),
