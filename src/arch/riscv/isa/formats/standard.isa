@@ -402,11 +402,21 @@ def template CSRExecute {{
           case CSR_XMFRM:
           case CSR_XMSATEN: {
             const STATUS status = xc->readMiscReg(MISCREG_STATUS);
-            if (status.ms == 0 ||
-                (xc->readMiscReg(MISCREG_VIRMODE) &&
-                 STATUS(xc->readMiscReg(MISCREG_VSSTATUS)).ms == 0)) {
+            if (status.ms == 0) {
                 return std::make_shared<IllegalInstFault>(
                     "Matrix CSR access with MS off", machInst);
+            }
+            if (xc->readMiscReg(MISCREG_VIRMODE)) {
+                STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                if (vsstatus.ms == 0) {
+                    return std::make_shared<IllegalInstFault>(
+                        "Matrix CSR access with guest MS off", machInst);
+                }
+                // CSRRW[I] writes even when rs1 or zimm is zero.
+                if (bits(machInst, 13, 12) == 1 || machInst.rs1 != 0) {
+                    vsstatus.ms = 3;
+                    xc->setMiscReg(MISCREG_VSSTATUS, vsstatus);
+                }
             }
             break;
           }
