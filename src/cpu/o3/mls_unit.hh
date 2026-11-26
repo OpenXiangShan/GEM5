@@ -70,6 +70,9 @@ class MlsVirtualQueue
 class MlsReplayQueue
 {
   public:
+    // One mask per cache line, with a bit for each byte in the tile.
+    using PageByteMasks = std::array<uint64_t, 64>;
+
     struct TranslationContext
     {
         RequestPtr request;
@@ -77,8 +80,7 @@ class MlsReplayQueue
         bool finished = false;
         bool squashed = false;
         std::vector<RequestPtr> pageRequests;
-        // First accessed byte on each 64-byte backend beat, or 64 if unused.
-        std::vector<std::array<uint8_t, 64>> pageLines;
+        std::vector<PageByteMasks> pageByteMasks;
         size_t nextPage = 0;
         std::shared_ptr<matrix::MatrixPageMappings> pageMappings =
             std::make_shared<matrix::MatrixPageMappings>();

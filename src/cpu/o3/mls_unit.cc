@@ -51,7 +51,9 @@
 #include "arch/riscv/insts/static_inst.hh"
 #include "arch/riscv/isa.hh"
 #include "arch/riscv/mmu.hh"
+#include "arch/riscv/pmp.hh"
 #include "arch/riscv/regs/misc.hh"
+#include "base/bitfield.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "cpu/exec_context.hh"
@@ -111,13 +113,8 @@ class MlsTranslation : public BaseMMU::Translation
         Fault access_fault = fault;
         if (access_fault == NoFault) {
             assert(req->hasPaddr());
-            const auto &lines = context->pageLines[context->nextPage];
-            if (auto addr = unsupportedAddress(req, tc, lines)) {
-                const auto code = mode == BaseMMU::Read ?
-                    RiscvISA::LOAD_ACCESS : RiscvISA::STORE_ACCESS;
-                access_fault = std::make_shared<RiscvISA::AddressFault>(
-                    *addr, 0, code);
-            }
+            access_fault = checkPageAccess(
+                req, tc, mode, context->pageByteMasks[context->nextPage]);
         }
         if (access_fault == NoFault) {
             constexpr Addr page_mask = 4095;
@@ -156,29 +153,39 @@ class MlsTranslation : public BaseMMU::Translation
     }
 
   private:
-    static std::optional<Addr>
-    unsupportedAddress(const RequestPtr &req, gem5::ThreadContext *tc,
-                       const std::array<uint8_t, 64> &lines)
+    static Fault
+    checkPageAccess(const RequestPtr &req, gem5::ThreadContext *tc,
+                    BaseMMU::Mode mode,
+                    const MlsReplayQueue::PageByteMasks &lines)
     {
+        const auto code = mode == BaseMMU::Read ?
+            RiscvISA::LOAD_ACCESS : RiscvISA::STORE_ACCESS;
         if (req->isUncacheable() || req->isStrictlyOrdered()) {
-            return req->getVaddr();
+            return std::make_shared<RiscvISA::AddressFault>(
+                req->getVaddr(), 0, code);
         }
 
         // The backend sends whole cache lines, even for a partial tile.
         constexpr size_t line_size = matrix::timing_load_detail::CacheLineBytes;
         const auto &ram = tc->getSystemPtr()->params().mem_ranges;
-        const auto *pma = static_cast<RiscvISA::MMU *>(tc->getMMUPtr())->pma;
+        auto *mmu = static_cast<RiscvISA::MMU *>(tc->getMMUPtr());
+        const auto &uncacheable = mmu->pma->uncacheable;
+        const auto priv = mmu->getMemPriv(tc, mode);
+        const Addr vpage = req->getVaddr() & ~(RiscvISA::PageBytes - 1);
+        const Addr ppage = req->getPaddr() & ~(RiscvISA::PageBytes - 1);
+        auto probe = std::make_shared<Request>(
+            ppage, 1, Request::Flags{}, req->requestorId());
         for (size_t i = 0; i < lines.size(); ++i) {
-            if (lines[i] == line_size) {
+            uint64_t bytes = lines[i];
+            if (!bytes) {
                 continue;
             }
             const Addr offset = i * line_size;
-            const AddrRange beat = RangeSize(
-                (req->getPaddr() & ~Addr(4095)) + offset, line_size);
+            const AddrRange beat = RangeSize(ppage + offset, line_size);
             const bool in_ram = std::any_of(ram.begin(), ram.end(),
                 [&](const auto &r) { return beat.isSubset(r); });
             const bool uncached = std::any_of(
-                pma->uncacheable.begin(), pma->uncacheable.end(),
+                uncacheable.begin(), uncacheable.end(),
                 [&](const auto &r) {
                     if (!r.interleaved()) {
                         return beat.intersects(r);
@@ -191,10 +198,26 @@ class MlsTranslation : public BaseMMU::Translation
                     return false;
                 });
             if (!in_ram || uncached) {
-                return (req->getVaddr() & ~Addr(4095)) + offset + lines[i];
+                return std::make_shared<RiscvISA::AddressFault>(
+                    vpage + offset + findLsbSet(bytes), 0, code);
+            }
+
+            // PMP addresses are encoded in four-byte units. Check each
+            // touched unit once and report its first tensor byte on a fault.
+            constexpr unsigned pmp_grain = 4;
+            while (bytes) {
+                const unsigned byte = findLsbSet(bytes);
+                const unsigned word = byte & ~(pmp_grain - 1);
+                probe->setPaddr(beat.start() + word);
+                Fault fault = mmu->getPMP()->pmpCheck(
+                    probe, mode, priv, tc, vpage + offset + byte);
+                if (fault != NoFault) {
+                    return fault;
+                }
+                bytes &= ~(mask(pmp_grain) << word);
             }
         }
-        return std::nullopt;
+        return NoFault;
     }
 
     CPU *cpu;
@@ -615,7 +638,7 @@ MlsUnit::prepareTranslation(const DynInstPtr &inst,
 
     if (!state.request) {
         state.request = std::make_shared<Request>(
-            state.vaddr, access_size, Request::Flags{},
+            state.vaddr, 1, Request::Flags{},
             cpu->dataRequestorId(), inst->pcState().instAddr(),
             inst->contextId());
         state.request->taskId(cpu->taskId());
@@ -641,34 +664,31 @@ MlsUnit::prepareTranslation(const DynInstPtr &inst,
         desc.isB = info.lsuIsB;
         desc.elemType = toMatrixElemType(matrix.lsuElemKind);
         constexpr size_t line_size = matrix::timing_load_detail::CacheLineBytes;
-        static_assert(4096 / line_size == 64);
-        std::map<Addr, std::array<uint8_t, 64>> pages;
+        static_assert(line_size == 64 && RiscvISA::PageBytes / line_size == 64);
+        std::map<Addr, MlsReplayQueue::PageByteMasks> pages;
         matrix::timing_load_detail::forEachTensorByte(
             desc, {}, [&](Addr line, size_t offset, size_t, size_t) {
-                auto [page, inserted] = pages.try_emplace(line & ~Addr(4095));
-                if (inserted) {
-                    page->second.fill(line_size);
-                }
-                auto &first = page->second[(line & 4095) / line_size];
-                first = std::min(first, static_cast<uint8_t>(offset));
+                auto &lines = pages[line & ~Addr(4095)];
+                lines[(line & 4095) / line_size] |= uint64_t{1} << offset;
             });
         const Addr first_page = state.vaddr & ~Addr(4095);
         ctx.pageRequests.push_back(state.request);
-        ctx.pageLines.push_back(pages.at(first_page));
+        ctx.pageByteMasks.push_back(pages.at(first_page));
         for (const auto &[page, lines] : pages) {
             if (page == first_page) {
                 continue;
             }
             const auto first = std::find_if(lines.begin(), lines.end(),
-                [](uint8_t offset) { return offset < line_size; });
-            const Addr addr = page + (first - lines.begin()) * line_size + *first;
+                [](uint64_t bytes) { return bytes != 0; });
+            const Addr addr = page + (first - lines.begin()) * line_size +
+                              findLsbSet(*first);
             auto request = std::make_shared<Request>(
                 addr, 1, Request::Flags{}, cpu->dataRequestorId(),
                 inst->pcState().instAddr(), inst->contextId());
             request->taskId(cpu->taskId());
             request->setReqInstSeqNum(inst->seqNum);
             ctx.pageRequests.push_back(std::move(request));
-            ctx.pageLines.push_back(lines);
+            ctx.pageByteMasks.push_back(lines);
         }
         cpu->mmu->translateTiming(
             state.request, inst->tcBase(),
