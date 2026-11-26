@@ -59,7 +59,7 @@
 
 采用 fake MainPipe 的 L1D 让已就绪的 PFQ 队首直接参与 LSQ 仲裁。回填、预取和 StoreBuffer 按这个顺序竞争入口；检查 tag 写入、同 set 冲突和 S1 空间后，预取才从 PFQ 出队。预取在 S2 查 tag 和可读权限，命中到 S3 结束，不写数据。已有同块 MSHR 或写缓冲时丢弃重复请求；新的 miss 通过现有 MSHR 门槛后，由经典缓存发送。
 
-普通 load 的 tag 查询额度和现有回填路径不变；硬件预取不再扣除这个额度。昆明湖配置独立开启 MainPipe 预取，可以关闭 refill 建模。GEM5 沿用一个按需就绪事件处理 O3 空闲停 tick；fake MainPipe 不模拟 RTL 的共享 skid 或 S1 tag 响应锁存。
+可写 L1 绑定 O3 LSQ 后，支持队首借看的预取器自动接入 MainPipe，不依赖配置或 refill 开关。MainPipe 预取不扣 load 的 tag 查询额度；未接入时沿用经典路径。GEM5 使用一个按需事件处理 O3 空闲停 tick；fake MainPipe 不模拟 RTL 的共享 skid 或 S1 tag 响应锁存。
 
 ## lsq向cache发送读请求流程
 ### **1. 指令被插入 Load Queue**

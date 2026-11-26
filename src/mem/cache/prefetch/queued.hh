@@ -384,6 +384,7 @@ class Queued : public Base
     virtual void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
                                    PrefetchSourceType source, bool miss_repeat);
     PacketPtr getPacket() override;
+    bool supportsPacketPeek() const override { return true; }
     const Packet *peekPacket() const override
     {
         return !pfq.empty() && pfq.front().tick <= curTick() ?

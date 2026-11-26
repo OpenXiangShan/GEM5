@@ -189,7 +189,6 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       cacheLevel(p.cache_level),
       forceHit(p.force_hit),
       simulateDcacheRefill(p.simulate_dcache_refill),
-      prefetchViaMainPipe(p.prefetch_via_mainpipe),
       dcachePrefetchReadyEvent([this] { wakeDcacheMainPipePrefetch(); },
                                p.name + ".dcache_prefetch_ready"),
       doFastWriteline(p.do_fast_writeline),
@@ -983,7 +982,7 @@ void
 BaseCache::registerDcacheMainPipeLSQ(o3::LSQ *lsq)
 {
     if (!lsq || cacheLevel != 1 ||
-        (!simulateDcacheRefill && !usesDcachePrefetchMainPipe())) {
+        (!simulateDcacheRefill && !canBindDcachePrefetch())) {
         return;
     }
 
@@ -992,7 +991,7 @@ BaseCache::registerDcacheMainPipeLSQ(o3::LSQ *lsq)
              name().c_str());
     const bool first_binding = !dcacheMainPipeLSQ;
     dcacheMainPipeLSQ = lsq;
-    if (first_binding && prefetcher && usesDcachePrefetchMainPipe()) {
+    if (first_binding && usesDcachePrefetchMainPipe()) {
         lsq->setDcachePrefetchSource(
             [this] { return prefetcher->peekPacket(); },
             [this](const Packet *candidate) {
@@ -1024,7 +1023,7 @@ BaseCache::drainResume()
 void
 BaseCache::notifyPrefetchReady(Tick ready)
 {
-    if (!usesDcachePrefetchMainPipe() || !dcacheMainPipeLSQ || ready == MaxTick)
+    if (!usesDcachePrefetchMainPipe() || ready == MaxTick)
         return;
 
     // O3 can stop ticking when idle. Notify it when a queued packet is ready.
@@ -1681,8 +1680,16 @@ BaseCache::getNextQueueEntry()
     assert(!miss_mshr && !wq_entry);
     if (prefetcher && !usesDcachePrefetchMainPipe() &&
         dcacheMainPipeCanPrefetch() && !isBlocked()) {
-        // If we have a miss queue slot, we can try a prefetch
-        if (auto *pkt = prefetcher->getPacket()) {
+        PacketPtr pkt = nullptr;
+        if (cacheLevel != 1) {
+            pkt = prefetcher->getPacket();
+        } else if (prefetcher->hasPendingPacket()) {
+            if (tagAccessCheck())
+                pkt = prefetcher->getPacket();
+            else
+                stats.prefetchTagReadFails++;
+        }
+        if (pkt) {
             bool hit = false;
             if (auto *mshr = handlePrefetch(pkt, hit))
                 return mshr;

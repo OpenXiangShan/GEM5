@@ -1581,11 +1581,15 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
     Tick nextPrefetchReadyTime() const
     {
-        // L1D first-lookup admission is driven by LSQ, independently of the
-        // downstream request queue and the legacy tag-query budget.
         if (usesDcachePrefetchMainPipe())
             return MaxTick;
-        return prefetcher->nextPrefetchReadyTime();
+
+        const Tick ready = prefetcher->nextPrefetchReadyTime();
+        if (cacheLevel == 1 && curTick() >= ready && freeTagLoadReadPorts == 0) {
+            stats.prefetchTagReadFails++;
+            return nextCycle();
+        }
+        return ready;
     }
 
     bool tagAccessCheck()
@@ -1662,13 +1666,16 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
     const bool forceHit;
     const bool simulateDcacheRefill;
-    const bool prefetchViaMainPipe;
     o3::LSQ *dcacheMainPipeLSQ = nullptr;
     EventFunctionWrapper dcachePrefetchReadyEvent;
     bool usesDcachePrefetchMainPipe() const
     {
-        return (prefetchViaMainPipe || simulateDcacheRefill) &&
-            cacheLevel == 1 && !isReadOnly;
+        return dcacheMainPipeLSQ && canBindDcachePrefetch();
+    }
+    bool canBindDcachePrefetch() const
+    {
+        return cacheLevel == 1 && !isReadOnly && prefetcher &&
+            prefetcher->supportsPacketPeek();
     }
     void notifyPrefetchReady(Tick ready) override;
     void wakeDcacheMainPipePrefetch();

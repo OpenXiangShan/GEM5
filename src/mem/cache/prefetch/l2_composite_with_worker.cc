@@ -182,14 +182,6 @@ L2CompositeWithWorkerPrefetcher::hasPendingPacket()
         (enableLLDP && lldp->hasPendingPacket());
 }
 
-const Packet *
-L2CompositeWithWorkerPrefetcher::peekPacket() const
-{
-    const auto *pending = Queued::peekPacket();
-    const auto *lldp_pending = enableLLDP ? lldp->peekPacket() : nullptr;
-    return lldp_pending && (!pending || preferLLDP) ? lldp_pending : pending;
-}
-
 PacketPtr
 L2CompositeWithWorkerPrefetcher::getPacket()
 {
