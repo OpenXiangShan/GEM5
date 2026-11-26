@@ -58,6 +58,7 @@ CHECKPOINT_MODES = {
         (
             "--difftest-ref-so={ref}",
             "--maxinsts=40000000",
+            "--mem-size=16GB",
             "--dramsim3-ini={repo}/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
         ),
     ),
@@ -79,7 +80,7 @@ GCC16 = PROFILES / "spec06_gcc16_rva23_novec_260820"
 SPEC17 = PROFILES / "spec17_rate_gcc16_rva23_novec_260904"
 XSCC = PROFILES / "spec06_xscc_rv64gcb_261013"
 SPEC17_SMT = PROFILES / "spec17_gcc16_rva23_novec_2harts_260911"
-H = CI / "spec06_cpts/h_spec06"
+H = PROFILES / "spec06_gcc16_rv64gcb_h_260822"
 RVV = SHARE / "wujiabin/checkpoint-trigger/spec06_gcc15_rva23u64_lmul8_260723"
 RVV_INT = Path(
     "/nfs/home/xutongqiao/GEM5-CI/spec06_gcc15_rv64gcbv_O3_lto_base_nemu_"
@@ -136,15 +137,15 @@ CATALOG = {
             archive_subdir=f"custom/{SPEC17_SMT.name}",
         ),
         BenchmarkProfile(
-            "h-spec06-0.5c",
-            H / "checkpoint-0-0-0",
-            H / "h_spec06_0.5c_h_profile_insts.json",
+            "h-spec06-0.3c",
+            H / "checkpoint",
+            H / "json/checkpoints_cov0.3.json",
             mode="h",
         ),
         BenchmarkProfile(
             "h-spec06-1.0c",
-            H / "checkpoint-0-0-0",
-            H / "h_spec06_1.0c_h_profile_insts.json",
+            H / "checkpoint",
+            H / "json/checkpoints_all.json",
             mode="h",
         ),
         BenchmarkProfile(
