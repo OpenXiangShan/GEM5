@@ -106,7 +106,7 @@
                             (static_cast<uint64_t>(RS2) << 5) | RS1;
                         xc->setMiscReg(MISCREG_MTILEK, atx);
                         Mtilek = atx;
-                    }}, IsSerializeAfter, IsNonSpeculative, MatrixIntOp);
+                    }}, MatrixIntOp);
                 }
                 0x1: MatrixLsuOp::mlb(
                     'MatrixRenamedTileKReg', 'MatrixRenamedTileNReg',
@@ -118,7 +118,7 @@
                         0x0: MatrixConfOp::msettilek({{
                             xc->setMiscReg(MISCREG_MTILEK, Rs1_ud);
                             Mtilek = Rs1_ud;
-                        }}, IsSerializeAfter, IsNonSpeculative, MatrixIntOp);
+                        }}, MatrixIntOp);
                     }
                 }
             }
@@ -129,7 +129,7 @@
                             (static_cast<uint64_t>(RS2) << 5) | RS1;
                         xc->setMiscReg(MISCREG_MTILEM, atx);
                         Mtilem = atx;
-                    }}, IsSerializeAfter, IsNonSpeculative, MatrixIntOp);
+                    }}, MatrixIntOp);
                 }
                 0x1: MatrixLsuOp::mlc(
                     'MatrixRenamedTileMReg', 'MatrixRenamedTileNReg',
@@ -141,7 +141,7 @@
                         0x0: MatrixConfOp::msettilem({{
                             xc->setMiscReg(MISCREG_MTILEM, Rs1_ud);
                             Mtilem = Rs1_ud;
-                        }}, IsSerializeAfter, IsNonSpeculative, MatrixIntOp);
+                        }}, MatrixIntOp);
                     }
                 }
                 0x1: MatrixLsuOp::msc(
@@ -155,7 +155,7 @@
                             (static_cast<uint64_t>(RS2) << 5) | RS1;
                         xc->setMiscReg(MISCREG_MTILEN, atx);
                         Mtilen = atx;
-                    }}, IsSerializeAfter, IsNonSpeculative, MatrixIntOp);
+                    }}, MatrixIntOp);
                 }
             }
             0x19: decode RS2 {
@@ -164,7 +164,7 @@
                         0x0: MatrixConfOp::msettilen({{
                             xc->setMiscReg(MISCREG_MTILEN, Rs1_ud);
                             Mtilen = Rs1_ud;
-                        }}, IsSerializeAfter, IsNonSpeculative, MatrixIntOp);
+                        }}, MatrixIntOp);
                     }
                 }
             }
