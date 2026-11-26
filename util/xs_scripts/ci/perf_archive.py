@@ -12,6 +12,7 @@ ARCHIVES = Path("/nfs/home/share/gem5_ci/performance_data")
 ARTIFACTS = {
     "kmhv2": "score",
     "kmhv3": "score",
+    "ideal": "score-upperbound",
     "idealkmhv3": "score-ideal",
     "smt_idealkmhv3": "score-smt-ideal",
 }

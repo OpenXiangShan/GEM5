@@ -39,7 +39,7 @@ for config in kmhv3 ideal; do
   GCBV_REF_SO="$gem5_ref" build/RISCV/gem5.opt \
     --outdir="/tmp/ideal-coremark/$config" "configs/example/$config.py" \
     --generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin \
-    --raw-cpt --enable-mem-dedup --disable-tea \
+    --raw-cpt --enable-mem-dedup \
     --warmup-insts-no-switch=0 --maxinsts=300000
 done
 ```
@@ -48,9 +48,9 @@ done
 
 `--param` 在 preset 之后应用，例如 `--param='system.cpu[0].numROBEntries=352'`、`--param='system.cpu[0].idealInstructionFetch=False'`、`--param='system.cpu[0].branchPred.idealPredictionsPerCycle=1'`。修改 issue 延迟或共享 leaf TLB 几何不在本次验证范围内。
 
-完整测量可在 `manual-perf.yml` 分别选择 `kmhv3.py` 和 `ideal.py`，固定同一 source ref、benchmark profile、REF 和参数；正式计分显式加 `--disable-tea`。新入口产物为 `score-upperbound-<benchmark_type>`，与 `score-*` 和既有 `score-ideal-*` 区分。0.3c 和 1c 各使用自己的采样点与权重。
+完整测量可在 `manual-perf.yml` 分别选择 `kmhv3.py` 和 `ideal.py`，固定同一 source ref、benchmark profile、REF 和参数；本轮保留两个入口默认开启的 TEA 和 DIP。新入口产物为 `score-upperbound-<benchmark_type>`，与 `score-*` 和既有 `score-ideal-*` 区分。0.3c 和 1c 各使用自己的采样点与权重。
 
-## 验证与性能记录
+## 移植前的验证与性能记录
 
 最终运行源码为`d379cf29cde13636c7c891806327a1f5044df65b`，已同步`xs-dev`至`14fcdbab13`。后续文档更新不改变被测运行代码。RISCV `gem5.opt`构建、默认/ideal CoreMark、namd短FP切片，以及PR的Clang构建、单测与smoke检查均通过；临时权限/边界探针不随PR提交。
 
