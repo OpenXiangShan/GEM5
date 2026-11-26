@@ -57,7 +57,7 @@
 
 香山 [RTL PR #5997](https://github.com/OpenXiangShan/XiangShan/pull/5997) 将硬件预取的 L1D 查询从 LoadPipe 迁到 MainPipe。原 GEM5 在下层发送仲裁中取预取包，和普通 load 共用每拍 tag 查询额度；即使最终在 L1 命中，也要先通过 MSHR 门槛。
 
-采用 fake MainPipe 的 L1D 让已就绪的 PFQ 队首直接参与 LSQ 仲裁。回填、预取和 StoreBuffer 按这个顺序竞争入口；检查 tag 写入、同 set 冲突和 S1 空间后，预取才从 PFQ 出队。预取在 S2 查 tag 和可读权限，命中到 S3 结束，不写数据。已有同块 MSHR 或写缓冲时丢弃重复请求；新的 miss 通过现有 MSHR 门槛后，由经典缓存发送。
+采用 fake MainPipe 的 L1D 复用原取包接口，把已就绪的预取交给 LSQ 的单项暂存。回填、预取和 StoreBuffer 按这个顺序竞争入口；tag 写入、同 set 冲突或 S1 无空间时，已取出的包留在暂存等待。预取在 S2 查 tag 和可读权限，命中到 S3 结束，不写数据。已有同块 MSHR 或写缓冲时丢弃重复请求；新的 miss 通过现有 MSHR 门槛后，由经典缓存发送。
 
 可写 L1 的 timing 预取由 O3 LSQ MainPipe 消费，不依赖 refill 开关。绑定前的请求留在 PFQ，绑定后参与仲裁。L1D 预取不扣 load 的 tag 查询额度；其他缓存仍由自己的发送器消费预取。GEM5 使用一个按需事件处理 O3 空闲停 tick；fake MainPipe 不模拟 RTL 的共享 skid 或 S1 tag 响应锁存。
 

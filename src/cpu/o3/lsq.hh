@@ -1494,15 +1494,16 @@ class LSQ
         DcacheMainPipeCompleteCallback on_complete = {});
 
     void setDcachePrefetchSource(
-        std::function<const Packet *()> peek,
-        std::function<DcacheMainPipeS2Callback(const Packet *)> take);
+        std::function<bool()> ready,
+        std::function<DcacheMainPipeRequest()> take);
     void wakeDcachePrefetch();
-    const Packet *readyDcachePrefetch() const;
+    bool readyDcachePrefetch() const;
 
     std::queue<DcacheMainPipeRequest> dcacheMainPipeRefillQ;
     DcacheMainPipeBufferedPipe dcacheMainPipe = {};
-    std::function<const Packet *()> peekDcachePrefetch;
-    std::function<DcacheMainPipeS2Callback(const Packet *)> takeDcachePrefetch;
+    DcacheMainPipeSlot dcachePrefetchEntry;
+    std::function<bool()> dcachePrefetchReady;
+    std::function<DcacheMainPipeRequest()> takeDcachePrefetch;
 
     bool isDcacheRefillTagWrite() const
     {

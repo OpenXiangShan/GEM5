@@ -159,12 +159,6 @@ PrefetcherForwarder::hasPendingPacket()
     return !prefetch_queue.empty();
 }
 
-const Packet *
-PrefetcherForwarder::peekPacket() const
-{
-    return prefetch_queue.empty() ? nullptr : prefetch_queue.front();
-}
-
 Tick
 PrefetcherForwarder::nextPrefetchReadyTime() const
 {

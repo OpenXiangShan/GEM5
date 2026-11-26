@@ -992,21 +992,27 @@ BaseCache::registerDcacheMainPipeLSQ(o3::LSQ *lsq)
     dcacheMainPipeLSQ = lsq;
     if (prefetcher && usesDcachePrefetchMainPipe()) {
         lsq->setDcachePrefetchSource(
-            [this] { return prefetcher->peekPacket(); },
-            [this](const Packet *candidate) {
+            [this] {
+                return prefetcher->nextPrefetchReadyTime() <= curTick();
+            },
+            [this] {
                 PacketPtr pkt = prefetcher->getPacket();
-                panic_if(pkt != candidate,
-                         "%s: L1D prefetch candidate changed at admission",
+                panic_if(!pkt, "%s: ready L1D prefetch source returned no packet",
                          name());
                 notifyPrefetchReady(prefetcher->nextPrefetchReadyTime());
+                o3::LSQ::DcacheMainPipeRequest req;
+                req.source = o3::LSQ::DcacheMainPipeSource::Prefetch;
+                req.addr = pkt->req->hasVaddr() ?
+                    pkt->req->getVaddr() : pkt->getAddr();
                 // Pipeline slots copy the callback, not the packet.
                 auto packet = std::make_shared<std::unique_ptr<Packet>>(pkt);
-                return [this, packet](Tick) {
+                req.onS2Issue = [this, packet](Tick) {
                     using Result = o3::LSQ::DcacheMainPipeS2Result;
                     bool hit = false;
                     handlePrefetch(packet->release(), hit);
                     return hit ? Result::GoToS3 : Result::ExitPipe;
                 };
+                return req;
             });
         notifyPrefetchReady(prefetcher->nextPrefetchReadyTime());
     }

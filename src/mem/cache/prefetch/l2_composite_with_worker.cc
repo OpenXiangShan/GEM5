@@ -199,14 +199,6 @@ L2CompositeWithWorkerPrefetcher::getPacket()
     return nullptr;
 }
 
-const Packet *
-L2CompositeWithWorkerPrefetcher::peekPacket() const
-{
-    const auto *queued = Queued::peekPacket();
-    const auto *child = enableLLDP ? lldp->peekPacket() : nullptr;
-    return child && (!queued || preferLLDP) ? child : queued;
-}
-
 Tick
 L2CompositeWithWorkerPrefetcher::nextPrefetchReadyTime() const
 {
