@@ -2,7 +2,7 @@
 <!-- What problem does this change solve? -->
 
 ## Design
-<!-- Explain the behavior change and the decisions reviewers should understand. -->
+<!-- Why did you choose this approach? Mention a constraint or alternative that shaped it and what the choice means for behavior or maintenance. -->
 
 ## Validation
 <!-- Summarize actual checks and results, and mention anything still unverified. -->

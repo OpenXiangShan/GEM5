@@ -88,7 +88,8 @@ Use an imperative verb, prefer an existing gem5 scope (`bpu`, `cpu-o3`, `mem-cac
 Types: `feat`, `fix`, `perf`, `refactor`, `ci`, `test`, `build`, `docs`, `chore`, `style`.
 Use `feat` for new capabilities, `fix` for defects, `perf` for tuning existing policies or parameters, and `refactor` for behavior-preserving restructuring.
 
-Use the default PR template (Motivation, Design, Validation). Explain the problem, key decisions, behavior changes, actual results, and untested cases. Scale detail to the change and omit inapplicable sections.
+Use the default PR template (Motivation, Design, Validation). Carry the agreed rationale from design discussions into the PR so a reviewer can understand the choice from the body alone.
+For a consequential decision, explain which requirement, reference, or alternative shaped it and what tradeoff follows. Scale the detail to the change, omit inapplicable sections, and report actual results and untested cases.
 For fixes, include the cause and regression check. For refactors, explain why and how you checked behavior.
 
 Use these labels when applicable. Routine maintenance needs neither.
