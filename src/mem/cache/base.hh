@@ -1369,7 +1369,6 @@ class BaseCache : public ClockedObject, public CacheAccessor
         statistics::Scalar FindHitInWriteBuffer;
 
         /** Number of prefetch req Tag read fail because of load. */
-        mutable statistics::Scalar prefetchTagReadFails;
 
         /** Number of data expansions. */
         statistics::Scalar dataExpansions;
@@ -1579,19 +1578,6 @@ class BaseCache : public ClockedObject, public CacheAccessor
         }
     }
 
-    Tick nextPrefetchReadyTime() const
-    {
-        if (usesDcachePrefetchMainPipe())
-            return MaxTick;
-
-        const Tick ready = prefetcher->nextPrefetchReadyTime();
-        if (cacheLevel == 1 && curTick() >= ready && freeTagLoadReadPorts == 0) {
-            stats.prefetchTagReadFails++;
-            return nextCycle();
-        }
-        return ready;
-    }
-
     bool tagAccessCheck()
     {
         Cycles currentCycle = curCycle();
@@ -1670,12 +1656,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
     EventFunctionWrapper dcachePrefetchReadyEvent;
     bool usesDcachePrefetchMainPipe() const
     {
-        return dcacheMainPipeLSQ && canBindDcachePrefetch();
-    }
-    bool canBindDcachePrefetch() const
-    {
-        return cacheLevel == 1 && !isReadOnly && prefetcher &&
-            prefetcher->supportsPacketPeek();
+        return cacheLevel == 1 && !isReadOnly;
     }
     void notifyPrefetchReady(Tick ready) override;
     void wakeDcacheMainPipePrefetch();

@@ -944,9 +944,9 @@ BaseCache::recvTimingReq(PacketPtr pkt)
     }
 
 
-    if (prefetcher) {
+    if (prefetcher && !usesDcachePrefetchMainPipe()) {
         // track time of availability of next prefetch, if any
-        Tick next_pf_time = nextPrefetchReadyTime();
+        Tick next_pf_time = prefetcher->nextPrefetchReadyTime();
         if (next_pf_time != MaxTick) {
             schedMemSideSendEvent(next_pf_time);
         }
@@ -981,17 +981,16 @@ BaseCache::dcacheMainPipeCanPrefetch() const
 void
 BaseCache::registerDcacheMainPipeLSQ(o3::LSQ *lsq)
 {
-    if (!lsq || cacheLevel != 1 ||
-        (!simulateDcacheRefill && !canBindDcachePrefetch())) {
+    if (!lsq || dcacheMainPipeLSQ == lsq || cacheLevel != 1 ||
+        !(simulateDcacheRefill || (prefetcher && usesDcachePrefetchMainPipe()))) {
         return;
     }
 
     panic_if(dcacheMainPipeLSQ && dcacheMainPipeLSQ != lsq,
              "%s: DCache fake mainpipe LSQ owner already set\n",
              name().c_str());
-    const bool first_binding = !dcacheMainPipeLSQ;
     dcacheMainPipeLSQ = lsq;
-    if (first_binding && usesDcachePrefetchMainPipe()) {
+    if (prefetcher && usesDcachePrefetchMainPipe()) {
         lsq->setDcachePrefetchSource(
             [this] { return prefetcher->peekPacket(); },
             [this](const Packet *candidate) {
@@ -1023,7 +1022,7 @@ BaseCache::drainResume()
 void
 BaseCache::notifyPrefetchReady(Tick ready)
 {
-    if (!usesDcachePrefetchMainPipe() || ready == MaxTick)
+    if (!usesDcachePrefetchMainPipe() || !dcacheMainPipeLSQ || ready == MaxTick)
         return;
 
     // O3 can stop ticking when idle. Notify it when a queued packet is ready.
@@ -1111,14 +1110,6 @@ BaseCache::releaseDcacheMainPipeMSHRCredit()
 
     if (was_full && !dcacheMainPipeEffectiveMSHRFull()) {
         clearBlocked(Blocked_NoMSHRs);
-    }
-
-    if (prefetcher && !usesDcachePrefetchMainPipe() &&
-        dcacheMainPipeCanPrefetch() && !isBlocked()) {
-        Tick next_pf_time = std::max(nextPrefetchReadyTime(), clockEdge());
-        if (next_pf_time != MaxTick) {
-            schedMemSideSendEvent(next_pf_time);
-        }
     }
 }
 
@@ -1334,7 +1325,8 @@ BaseCache::recvTimingResp(PacketPtr pkt)
             // MSHRs for a prefetch to take place
             if (prefetcher && !usesDcachePrefetchMainPipe() &&
                 dcacheMainPipeCanPrefetch() && !isBlocked()) {
-                Tick next_pf_time = std::max(nextPrefetchReadyTime(), clockEdge());
+                Tick next_pf_time =
+                    std::max(prefetcher->nextPrefetchReadyTime(), clockEdge());
                 if (next_pf_time != MaxTick)
                     schedMemSideSendEvent(next_pf_time);
             }
@@ -1680,16 +1672,7 @@ BaseCache::getNextQueueEntry()
     assert(!miss_mshr && !wq_entry);
     if (prefetcher && !usesDcachePrefetchMainPipe() &&
         dcacheMainPipeCanPrefetch() && !isBlocked()) {
-        PacketPtr pkt = nullptr;
-        if (cacheLevel != 1) {
-            pkt = prefetcher->getPacket();
-        } else if (prefetcher->hasPendingPacket()) {
-            if (tagAccessCheck())
-                pkt = prefetcher->getPacket();
-            else
-                stats.prefetchTagReadFails++;
-        }
-        if (pkt) {
+        if (auto *pkt = prefetcher->getPacket()) {
             bool hit = false;
             if (auto *mshr = handlePrefetch(pkt, hit))
                 return mshr;
@@ -2825,7 +2808,7 @@ BaseCache::nextQueueReadyTime() const
     // Will signal once enoguh MSHRs are deallocated
     if (prefetcher && !usesDcachePrefetchMainPipe() &&
         dcacheMainPipeCanPrefetch() && !isBlocked()) {
-        nextReady = std::min(nextReady, nextPrefetchReadyTime());
+        nextReady = std::min(nextReady, prefetcher->nextPrefetchReadyTime());
     }
 
     return nextReady;
@@ -3319,8 +3302,6 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of MSHR Alias fails (VA diff)"),
     ADD_STAT(FindHitInWriteBuffer, statistics::units::Count::get(),
              "number of hits in write buffer when missing in cache"),
-    ADD_STAT(prefetchTagReadFails, statistics::units::Count::get(),
-             "number of prefetch req Tag read fail because of load"),
     ADD_STAT(dataExpansions, statistics::units::Count::get(),
              "number of data expansions"),
     ADD_STAT(dataContractions, statistics::units::Count::get(),

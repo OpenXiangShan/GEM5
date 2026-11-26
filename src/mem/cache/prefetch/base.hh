@@ -1042,9 +1042,8 @@ class Base : public ClockedObject
     }
 
     virtual PacketPtr getPacket() = 0;
-    // Sources that can expose the exact ready packet getPacket() will take.
-    virtual bool supportsPacketPeek() const { return false; }
-    virtual const Packet *peekPacket() const { return nullptr; }
+    // Borrow the ready packet getPacket() would dequeue.
+    virtual const Packet *peekPacket() const = 0;
 
     virtual bool hasPendingPacket() = 0;
 

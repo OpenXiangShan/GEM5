@@ -48,8 +48,7 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     void setPacketReadyCallback(std::function<void(Tick)> callback) override;
     bool hasPendingPacket() override;
     PacketPtr getPacket() override;
-    // getPacket() also selects from a worker queue.
-    bool supportsPacketPeek() const override { return false; }
+    const Packet *peekPacket() const override;
     Tick nextPrefetchReadyTime() const override;
     lldp::Hint loadTrain(const PacketPtr &pkt, bool miss) override;
     void hintData(const lldp::Hint &hint, const PacketPtr &demand,
