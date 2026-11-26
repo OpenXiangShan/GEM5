@@ -189,7 +189,8 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       cacheLevel(p.cache_level),
       forceHit(p.force_hit),
       simulateDcacheRefill(p.simulate_dcache_refill),
-      dcachePrefetchReadyEvent([this] { offerDcacheMainPipePrefetch(); },
+      prefetchViaMainPipe(p.prefetch_via_mainpipe),
+      dcachePrefetchReadyEvent([this] { wakeDcacheMainPipePrefetch(); },
                                p.name + ".dcache_prefetch_ready"),
       doFastWriteline(p.do_fast_writeline),
       Prefetch_CanOffload(p.prefetch_can_offload)
@@ -981,7 +982,8 @@ BaseCache::dcacheMainPipeCanPrefetch() const
 void
 BaseCache::registerDcacheMainPipeLSQ(o3::LSQ *lsq)
 {
-    if (!lsq || !simulateDcacheRefill || cacheLevel != 1) {
+    if (!lsq || cacheLevel != 1 ||
+        (!simulateDcacheRefill && !usesDcachePrefetchMainPipe())) {
         return;
     }
 
@@ -990,8 +992,26 @@ BaseCache::registerDcacheMainPipeLSQ(o3::LSQ *lsq)
              name().c_str());
     const bool first_binding = !dcacheMainPipeLSQ;
     dcacheMainPipeLSQ = lsq;
-    if (first_binding && prefetcher)
+    if (first_binding && prefetcher && usesDcachePrefetchMainPipe()) {
+        lsq->setDcachePrefetchSource(
+            [this] { return prefetcher->peekPacket(); },
+            [this](const Packet *candidate) {
+                PacketPtr pkt = prefetcher->getPacket();
+                panic_if(pkt != candidate,
+                         "%s: L1D prefetch candidate changed at admission",
+                         name());
+                notifyPrefetchReady(prefetcher->nextPrefetchReadyTime());
+                // Pipeline slots copy the callback, not the packet.
+                auto packet = std::make_shared<std::unique_ptr<Packet>>(pkt);
+                return [this, packet](Tick) {
+                    using Result = o3::LSQ::DcacheMainPipeS2Result;
+                    bool hit = false;
+                    handlePrefetch(packet->release(), hit);
+                    return hit ? Result::GoToS3 : Result::ExitPipe;
+                };
+            });
         notifyPrefetchReady(prefetcher->nextPrefetchReadyTime());
+    }
 }
 
 void
@@ -1016,35 +1036,15 @@ BaseCache::notifyPrefetchReady(Tick ready)
 }
 
 void
-BaseCache::offerDcacheMainPipePrefetch()
+BaseCache::wakeDcacheMainPipePrefetch()
 {
-    auto *lsq = dcacheMainPipeLSQ;
-    if (!lsq->canQueueDcachePrefetch())
-        return; // Admission or drain resume will rearm the event.
-
     const Tick ready = prefetcher->nextPrefetchReadyTime();
     if (ready > curTick()) {
         // A demand access may have squashed the former queue head.
         notifyPrefetchReady(ready);
         return;
     }
-
-    PacketPtr pkt = prefetcher->getPacket();
-    assert(pkt);
-    const Addr addr = pkt->req->hasVaddr() ?
-        pkt->req->getVaddr() : pkt->getAddr();
-    // The pipeline copies slots; only the miss path transfers the packet.
-    auto packet = std::make_shared<std::unique_ptr<Packet>>(pkt);
-    lsq->queueDcachePrefetch(addr,
-        [this, packet](Tick) {
-            using Result = o3::LSQ::DcacheMainPipeS2Result;
-            bool hit = false;
-            handlePrefetch(packet->release(), hit);
-            return hit ? Result::GoToS3 : Result::ExitPipe;
-        },
-        [this] {
-            notifyPrefetchReady(prefetcher->nextPrefetchReadyTime());
-        });
+    dcacheMainPipeLSQ->wakeDcachePrefetch();
 }
 
 MSHR *
@@ -1114,7 +1114,8 @@ BaseCache::releaseDcacheMainPipeMSHRCredit()
         clearBlocked(Blocked_NoMSHRs);
     }
 
-    if (prefetcher && dcacheMainPipeCanPrefetch() && !isBlocked()) {
+    if (prefetcher && !usesDcachePrefetchMainPipe() &&
+        dcacheMainPipeCanPrefetch() && !isBlocked()) {
         Tick next_pf_time = std::max(nextPrefetchReadyTime(), clockEdge());
         if (next_pf_time != MaxTick) {
             schedMemSideSendEvent(next_pf_time);
@@ -1332,7 +1333,8 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 
             // Request the bus for a prefetch if this deallocation freed enough
             // MSHRs for a prefetch to take place
-            if (prefetcher && dcacheMainPipeCanPrefetch() && !isBlocked()) {
+            if (prefetcher && !usesDcachePrefetchMainPipe() &&
+                dcacheMainPipeCanPrefetch() && !isBlocked()) {
                 Tick next_pf_time = std::max(nextPrefetchReadyTime(), clockEdge());
                 if (next_pf_time != MaxTick)
                     schedMemSideSendEvent(next_pf_time);
@@ -1680,19 +1682,7 @@ BaseCache::getNextQueueEntry()
     if (prefetcher && !usesDcachePrefetchMainPipe() &&
         dcacheMainPipeCanPrefetch() && !isBlocked()) {
         // If we have a miss queue slot, we can try a prefetch
-        bool has_pending_pkt = prefetcher->hasPendingPacket();
-        PacketPtr pkt = nullptr;
-        if (cacheLevel == 1) {
-            // load & prefetch share a limited number of cache tag read ports
-            if (has_pending_pkt && tagAccessCheck()) {
-                pkt = prefetcher->getPacket();
-            } else if (has_pending_pkt) {
-                stats.prefetchTagReadFails++;
-            }
-        } else {
-            pkt = prefetcher->getPacket();
-        }
-        if (pkt) {
+        if (auto *pkt = prefetcher->getPacket()) {
             bool hit = false;
             if (auto *mshr = handlePrefetch(pkt, hit))
                 return mshr;
@@ -1701,7 +1691,8 @@ BaseCache::getNextQueueEntry()
         }
     }
 
-    if (prefetcher && (!dcacheMainPipeCanPrefetch() || isBlocked()) &&
+    if (prefetcher && !usesDcachePrefetchMainPipe() &&
+        (!dcacheMainPipeCanPrefetch() || isBlocked()) &&
         prefetcher->hasHintDownStream() && Prefetch_CanOffload) {
         DPRINTF(HWPrefetch, "Offloading prefetch to downstream cache\n");
         prefetcher->offloadToDownStream();
@@ -2825,7 +2816,8 @@ BaseCache::nextQueueReadyTime() const
 
     // Don't signal prefetch ready time if no MSHRs available
     // Will signal once enoguh MSHRs are deallocated
-    if (prefetcher && dcacheMainPipeCanPrefetch() && !isBlocked()) {
+    if (prefetcher && !usesDcachePrefetchMainPipe() &&
+        dcacheMainPipeCanPrefetch() && !isBlocked()) {
         nextReady = std::min(nextReady, nextPrefetchReadyTime());
     }
 

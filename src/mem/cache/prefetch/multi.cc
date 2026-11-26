@@ -121,6 +121,18 @@ Multi::hasPendingPacket()
     return false;
 }
 
+const Packet *
+Multi::peekPacket() const
+{
+    for (size_t i = 0; i < prefetchers.size(); ++i) {
+        const auto *pf =
+            prefetchers[(lastChosenPf + 1 + i) % prefetchers.size()];
+        if (pf->nextPrefetchReadyTime() <= curTick())
+            return pf->peekPacket();
+    }
+    return nullptr;
+}
+
 PacketPtr
 Multi::getPacket()
 {

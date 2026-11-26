@@ -1493,14 +1493,16 @@ class LSQ
         Addr addr, bool need_data_read = true,
         DcacheMainPipeCompleteCallback on_complete = {});
 
-    bool canQueueDcachePrefetch() const;
-    void queueDcachePrefetch(Addr addr, DcacheMainPipeS2Callback issue,
-                            std::function<void()> on_admit);
+    void setDcachePrefetchSource(
+        std::function<const Packet *()> peek,
+        std::function<DcacheMainPipeS2Callback(const Packet *)> take);
+    void wakeDcachePrefetch();
+    const Packet *readyDcachePrefetch() const;
 
     std::queue<DcacheMainPipeRequest> dcacheMainPipeRefillQ;
     DcacheMainPipeBufferedPipe dcacheMainPipe = {};
-    DcacheMainPipeSlot dcacheMainPipePrefetch;
-    std::function<void()> dcacheMainPipePrefetchAdmitted;
+    std::function<const Packet *()> peekDcachePrefetch;
+    std::function<DcacheMainPipeS2Callback(const Packet *)> takeDcachePrefetch;
 
     bool isDcacheRefillTagWrite() const
     {

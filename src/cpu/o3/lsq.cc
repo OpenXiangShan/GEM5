@@ -68,6 +68,7 @@
 #include "debug/Drain.hh"
 #include "debug/Fetch.hh"
 #include "debug/Hint.hh"
+#include "debug/HWPrefetch.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/LSQ.hh"
 #include "debug/PacketSender.hh"
@@ -907,7 +908,7 @@ LSQ::isDrained() const
         drained = false;
     }
 
-    return drained && !dcacheMainPipePrefetch.valid &&
+    return drained &&
         std::none_of(dcacheMainPipe.begin(), dcacheMainPipe.end(),
                      [](const auto &slot) {
                          return slot.valid && slot.req.isPrefetch();
@@ -1079,10 +1080,19 @@ LSQ::advanceDcacheMainPipe()
             ++stats.dcacheMainPipeRefillBlocked;
             ++stats.dcacheMainPipeRefillBlockedByPipeResource;
         }
-    } else if (dcacheMainPipePrefetch.valid &&
-               canEnterDcacheMainPipe(dcacheMainPipePrefetch.req, next_pipe)) {
-        next_s1_data_read = std::exchange(dcacheMainPipePrefetch, {});
-        std::exchange(dcacheMainPipePrefetchAdmitted, {})();
+    } else if (const auto *pkt = readyDcachePrefetch()) {
+        DcacheMainPipeRequest req;
+        req.source = DcacheMainPipeSource::Prefetch;
+        req.addr = pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->getAddr();
+        req.setKey = getDcacheSetKey(req.addr);
+        if (canEnterDcacheMainPipe(req, next_pipe)) {
+            // S0 accepted this candidate; only now may it leave the PFQ.
+            DPRINTF(HWPrefetch, "MainPipe S0 accepted %#x\n", pkt->getAddr());
+            req.onS2Issue = takeDcachePrefetch(pkt);
+            next_s1_data_read = {true, std::move(req)};
+        } else {
+            DPRINTF(HWPrefetch, "MainPipe S0 held %#x in PFQ\n", pkt->getAddr());
+        }
     }
 
     dcacheMainPipe = next_pipe;
@@ -1347,7 +1357,7 @@ LSQ::canEnterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry)
         ++stats.dcacheMainPipeStoreBlockedByRefill;
         return false;
     }
-    if (dcacheMainPipePrefetch.valid)
+    if (readyDcachePrefetch())
         return false;
 
     bool blocked = false;
@@ -1479,25 +1489,30 @@ LSQ::notifyDcacheRefill(
     cpu->activityThisCycle();
 }
 
-bool
-LSQ::canQueueDcachePrefetch() const
+const Packet *
+LSQ::readyDcachePrefetch() const
 {
-    return !dcacheMainPipePrefetch.valid && !cpu->switchedOut() &&
-           cpu->drainState() == DrainState::Running;
+    if (!peekDcachePrefetch || cpu->switchedOut() ||
+        cpu->drainState() != DrainState::Running)
+        return nullptr;
+    return peekDcachePrefetch();
 }
 
 void
-LSQ::queueDcachePrefetch(Addr addr, DcacheMainPipeS2Callback issue,
-                        std::function<void()> on_admit)
+LSQ::setDcachePrefetchSource(
+    std::function<const Packet *()> peek,
+    std::function<DcacheMainPipeS2Callback(const Packet *)> take)
 {
-    assert(canQueueDcachePrefetch());
-    auto &slot = dcacheMainPipePrefetch;
-    slot.valid = true;
-    slot.req.source = DcacheMainPipeSource::Prefetch;
-    slot.req.addr = addr;
-    slot.req.setKey = getDcacheSetKey(addr);
-    slot.req.onS2Issue = std::move(issue);
-    dcacheMainPipePrefetchAdmitted = std::move(on_admit);
+    panic_if(peekDcachePrefetch, "LSQ already has an L1D prefetch source");
+    peekDcachePrefetch = std::move(peek);
+    takeDcachePrefetch = std::move(take);
+}
+
+void
+LSQ::wakeDcachePrefetch()
+{
+    if (!readyDcachePrefetch())
+        return;
     cpu->wakeCPU();
     cpu->activityThisCycle();
 }
@@ -3275,7 +3290,7 @@ LSQ::numStoresToSbuffer(ThreadID tid)
 bool
 LSQ::willWB()
 {
-    if (dcacheMainPipePrefetch.valid || !dcacheMainPipeRefillQ.empty()) {
+    if (readyDcachePrefetch() || !dcacheMainPipeRefillQ.empty()) {
         return true;
     }
     for (const auto &stage : dcacheMainPipe) {

@@ -193,6 +193,9 @@ class BaseCache(ClockedObject):
         False,
         "If true, simulate Dcache refill behavior (LSQ pending flag/stats) on L1 fills",
     )
+    prefetch_via_mainpipe = Param.Bool(
+        False, "Route L1D hardware prefetch lookups through the O3 MainPipe"
+    )
 
 class Cache(BaseCache):
     type = 'Cache'

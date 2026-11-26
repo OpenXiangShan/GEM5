@@ -139,6 +139,12 @@ PrefetcherForwarder::recvPrefetchFromCache(const PacketPtr &pkt)
     prefetch_queue.push(pkt);
 }
 
+const Packet *
+PrefetcherForwarder::peekPacket() const
+{
+    return prefetch_queue.empty() ? nullptr : prefetch_queue.front();
+}
+
 PacketPtr
 PrefetcherForwarder::getPacket()
 {

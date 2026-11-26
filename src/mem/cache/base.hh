@@ -1585,18 +1585,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
         // downstream request queue and the legacy tag-query budget.
         if (usesDcachePrefetchMainPipe())
             return MaxTick;
-        Tick rdy_time = prefetcher->nextPrefetchReadyTime();
-        if (cacheLevel == 1) {
-            if (curTick() >= rdy_time && freeTagLoadReadPorts == 0) {
-                // no free tag read ports for prefetcher this cycle, try in next cycle.
-                stats.prefetchTagReadFails++;
-                return nextCycle();
-            } else {
-                return rdy_time;
-            }
-        } else {
-            return rdy_time;
-        }
+        return prefetcher->nextPrefetchReadyTime();
     }
 
     bool tagAccessCheck()
@@ -1673,12 +1662,16 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
     const bool forceHit;
     const bool simulateDcacheRefill;
+    const bool prefetchViaMainPipe;
     o3::LSQ *dcacheMainPipeLSQ = nullptr;
     EventFunctionWrapper dcachePrefetchReadyEvent;
     bool usesDcachePrefetchMainPipe() const
-    { return simulateDcacheRefill && cacheLevel == 1 && !isReadOnly; }
+    {
+        return (prefetchViaMainPipe || simulateDcacheRefill) &&
+            cacheLevel == 1 && !isReadOnly;
+    }
     void notifyPrefetchReady(Tick ready) override;
-    void offerDcacheMainPipePrefetch();
+    void wakeDcacheMainPipePrefetch();
     // Takes ownership of pkt. hit reports a local cache hit.
     MSHR *handlePrefetch(PacketPtr pkt, bool &hit);
 
