@@ -72,6 +72,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       ftq(p.numThreads, p.ftq_size),
       resolveBlockThreshold(p.resolveBlockThreshold),
       twoTakenMaxRunAhead(p.twoTakenMaxRunAhead),
+      twoTakenFilterIndirectCallsAndReturns(
+          p.twoTakenFilterIndirectCallsAndReturns),
       dbpBtbStats(this, p.numStages, p.ftq_size, p.predictWidth, maxInstsNum, p.numThreads),
       profiler(p.enableBpuProfiler
                    ? std::make_unique<BPUProfiler>(name(), maxInstsNum)
@@ -643,6 +645,15 @@ DecoupledBPUWithBTB::enqueueSecondBlock(ThreadID tid)
         ftqFull(tid)) {
         dbpBtbStats.secondBlockFtqBlocked++;
         return;
+    }
+
+    // Leave these target predictions to RAS and ITTAGE in the normal phase.
+    if (twoTakenFilterIndirectCallsAndReturns && !secondPred.btbEntries.empty()) {
+        const auto &branch = secondPred.btbEntries.front().branch;
+        if (branch.isReturn || (branch.isIndirect && branch.isCall)) {
+            dbpBtbStats.secondBlockTypeFiltered++;
+            return;
+        }
     }
 
     // Every component records the meta the second block recovers from

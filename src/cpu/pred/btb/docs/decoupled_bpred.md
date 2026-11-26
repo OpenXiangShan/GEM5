@@ -56,6 +56,11 @@ for override bubbles and FTQ space before enqueuing a FetchTarget and updating
 speculative histories. The optional PairTAGE second block uses the same metadata,
 FTQ-capacity and history-update paths as before.
 
+`twoTakenFilterIndirectCallsAndReturns` defaults to `True`. A second block
+whose predicted exit is an indirect call or return follows the normal second
+phase, where ITTAGE or RAS can refine its target. `secondBlockTypeFiltered`
+counts these blocks after the FTQ run-ahead and capacity checks.
+
 ## PairTAGE Statistics
 
 Under `system.cpu.branchPred`, `pairtageFirstBlockEnqueued` counts every FTQ

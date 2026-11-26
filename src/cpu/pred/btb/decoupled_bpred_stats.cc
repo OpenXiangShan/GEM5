@@ -309,6 +309,8 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
              "second blocks enqueued in the same cycle as their first block"),
     ADD_STAT(secondBlockFtqBlocked, statistics::units::Count::get(),
              "available second blocks not enqueued due to FTQ capacity or run-ahead"),
+    ADD_STAT(secondBlockTypeFiltered, statistics::units::Count::get(),
+             "available second blocks left to the normal predictor by exit type"),
     ADD_STAT(pairtageBlockEnqueuedByType, statistics::units::Count::get(),
              "PairTAGE pair blocks enqueued, by role and predicted exit type"),
     ADD_STAT(pairtageBlockEvaluatedByType, statistics::units::Count::get(),

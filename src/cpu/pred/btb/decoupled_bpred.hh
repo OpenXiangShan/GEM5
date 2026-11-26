@@ -150,6 +150,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     const unsigned resolveBlockThreshold;
 
     const unsigned twoTakenMaxRunAhead;
+    const bool twoTakenFilterIndirectCallsAndReturns;
 
     bool sharedFTQMode() const;
     unsigned activeFTQThreads() const;
@@ -284,6 +285,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar pairtageFirstBlockEnqueued;
         statistics::Scalar secondBlockEnqueued;
         statistics::Scalar secondBlockFtqBlocked;
+        statistics::Scalar secondBlockTypeFiltered;
         statistics::Vector2d pairtageBlockEnqueuedByType;
         statistics::Vector2d pairtageBlockEvaluatedByType;
         statistics::Vector2d pairtageBlockCorrectByType;
