@@ -115,6 +115,8 @@ class BaseSetAssoc : public BaseTags
         return sdbpPolicy ? sdbpPolicy->victimClass(blk->replacementData) : 0;
     }
 
+    void recordReplacement(const CacheBlk &victim);
+
     /**
      * This function updates the tags when a block is invalidated. It also
      * updates the replacement data.

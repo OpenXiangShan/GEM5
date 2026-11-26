@@ -5,7 +5,9 @@
 
 #include "mem/cache/replacement_policies/sdbp_rp.hh"
 
+#include <algorithm>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 #include "base/logging.hh"
@@ -66,11 +68,19 @@ SDBP::SDBP(const Params &p)
 }
 
 void
-SDBP::bindCache(unsigned num_sets)
+SDBP::bindCache(unsigned num_sets, unsigned assoc)
 {
     fatal_if(bound, "%s: SDBP cannot be shared by tag stores", name());
     fatal_if(num_sets != core.numSets(), "%s: num_sets=%u does not match cache sets=%u", name(), core.numSets(),
              num_sets);
+    evictedBlocks.resize(num_sets, std::vector<EvictedBlock>(assoc));
+    for (auto *stat : {&stats.trackedDeadReusesByAge,
+                       &stats.trackedDeadDemandReusesByAge}) {
+        stat->init(assoc);
+        stat->flags(statistics::total | statistics::nozero);
+        for (unsigned age = 0; age < assoc; ++age)
+            stat->subname(age, "age" + std::to_string(age));
+    }
     bound = true;
 }
 
@@ -197,12 +207,72 @@ SDBP::sample(const PacketPtr pkt, unsigned set, Addr tag)
 }
 
 void
+SDBP::recordReplacement(const ReplaceableEntry &victim, Addr tag, bool secure,
+                        const ReplacementCandidates &set)
+{
+    auto &history = evictedBlocks[victim.getSet()];
+    const unsigned assoc = history.size();
+    assert(set.size() == assoc);
+
+    EvictedBlock *slot = nullptr;
+    for (auto &entry : history) {
+        if (entry.valid && ++entry.age == assoc)
+            entry.valid = false;
+        if (!entry.valid && !slot)
+            slot = &entry;
+    }
+
+    const auto &data =
+        *std::static_pointer_cast<SDBPReplData>(victim.replacementData);
+    if (!data.dead)
+        return;
+
+    // Inserting the new MRU pushes the evicted block one position older.
+    const unsigned age = 1 + std::count_if(
+        set.begin(), set.end(), [&data](const ReplaceableEntry *way) {
+            const auto &other =
+                *std::static_pointer_cast<SDBPReplData>(way->replacementData);
+            return other.valid && other.lastUse > data.lastUse;
+        });
+    if (age < assoc) {
+        assert(slot);
+        *slot = {tag, age, secure, true};
+        ++stats.trackedDeadEvictions;
+    }
+}
+
+std::optional<unsigned>
+SDBP::consumeEvictedBlock(unsigned set, Addr tag, bool secure)
+{
+    if (!bound)
+        return std::nullopt;
+
+    for (auto &entry : evictedBlocks[set]) {
+        if (entry.valid && entry.tag == tag && entry.secure == secure) {
+            entry.valid = false;
+            return entry.age;
+        }
+    }
+    return std::nullopt;
+}
+
+void
 SDBP::observe(const PacketPtr pkt, unsigned set, Addr tag, bool hit)
 {
     ++stats.lookups;
     if (!eligible(pkt)) {
         ++stats.excludedAccesses;
         return;
+    }
+    if (!hit) {
+        if (const auto age = consumeEvictedBlock(set, tag, pkt->isSecure())) {
+            ++stats.trackedDeadReuses;
+            ++stats.trackedDeadReusesByAge[*age];
+            if (isDemand(pkt)) {
+                ++stats.trackedDeadDemandReuses;
+                ++stats.trackedDeadDemandReusesByAge[*age];
+            }
+        }
     }
     if (!hasPc(pkt)) {
         ++stats.noPcAccesses;
@@ -217,9 +287,11 @@ SDBP::observe(const PacketPtr pkt, unsigned set, Addr tag, bool hit)
 }
 
 void
-SDBP::observeFill(const PacketPtr pkt, unsigned set, Addr tag)
+SDBP::observeFill(const PacketPtr pkt, unsigned set, Addr tag, bool installed)
 {
     ++stats.lookups;
+    if (installed && pkt)
+        consumeEvictedBlock(set, tag, pkt->isSecure());
     if (!eligible(pkt)) {
         ++stats.excludedAccesses;
         return;
@@ -392,11 +464,21 @@ SDBP::SDBPStats::SDBPStats(statistics::Group *parent)
       ADD_STAT(invalidVictims, "Victim selections using an invalid entry"),
       ADD_STAT(deadVictims, "Victim selections using a predicted-dead entry"),
       ADD_STAT(nonLruDeadVictims, "Dead victims different from the LRU victim"),
+      ADD_STAT(trackedDeadEvictions,
+               "Committed non-LRU dead evictions entered into the history"),
+      ADD_STAT(trackedDeadReuses,
+               "Tracked evictions first reused by a demand or hardware prefetch tag miss before aging out"),
+      ADD_STAT(trackedDeadDemandReuses,
+               "Tracked evictions whose first matching tag miss was demand"),
       ADD_STAT(lruVictims, "Victim selections falling back to LRU"),
       ADD_STAT(bypasses, "Predicted-dead data refills bypassed by SDBP"),
       ADD_STAT(l1CopyChecks, "Dead candidates checked for resident L1 copies"),
       ADD_STAT(l1CopyProtectedDead, "Dead candidates skipped due to resident L1 copies"),
       ADD_STAT(l1CopyLruFallbacks, "Selections using LRU because every dead candidate has an L1 copy"),
+      ADD_STAT(trackedDeadReusesByAge, statistics::units::Count::get(),
+               "First reuse of tracked evictions by history age at tag miss"),
+      ADD_STAT(trackedDeadDemandReusesByAge, statistics::units::Count::get(),
+               "First demand reuse of tracked evictions by history age at tag miss"),
       ADD_STAT(samplerAccessesBySource, statistics::units::Count::get(),
                "Sampled accesses by incoming request source"),
       ADD_STAT(samplerHitsBySource, statistics::units::Count::get(),

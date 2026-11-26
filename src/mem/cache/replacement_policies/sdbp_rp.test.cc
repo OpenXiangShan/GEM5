@@ -291,6 +291,127 @@ TEST_F(SDBPInterface, DeadVictimCanOverrideLru)
     EXPECT_EQ(snoop.replacementProbeMask, 0);
 }
 
+TEST_F(SDBPInterface, TracksCommittedNonLruDeadEvictionUntilFirstReuse)
+{
+    SDBP policy(testParams(false, 0));
+    policy.bindCache(64, 2);
+    ReplaceableEntry lru, dead;
+    lru.replacementData = policy.instantiateEntry();
+    dead.replacementData = policy.instantiateEntry();
+    auto demand = packet();
+    auto demand_no_pc = packet(MemCmd::ReadReq, false);
+    auto prefetch = sourcedPacket(Request::L2RequestSource::L2Prefetch, 0x100);
+    const ReplacementCandidates set{&lru, &dead};
+
+    policy.reset(lru.replacementData);
+    policy.reset(dead.replacementData, demand.get());
+    ASSERT_EQ(policy.getVictim(set), &dead);
+    policy.observe(demand.get(), 0, 7, false);
+    EXPECT_EQ(stat(policy, "trackedDeadEvictions"), 0);
+    EXPECT_EQ(stat(policy, "trackedDeadReuses"), 0);
+
+    policy.recordReplacement(dead, 7, false, set);
+    policy.reset(dead.replacementData, demand.get());
+    policy.observe(demand.get(), 1, 7, false);
+    policy.observe(demand.get(), 0, 7, true);
+    EXPECT_EQ(stat(policy, "trackedDeadReuses"), 0);
+    policy.observe(demand_no_pc.get(), 0, 7, false);
+    policy.observe(demand.get(), 0, 7, false);
+    EXPECT_EQ(stat(policy, "trackedDeadEvictions"), 1);
+    EXPECT_EQ(stat(policy, "trackedDeadReuses"), 1);
+    EXPECT_EQ(stat(policy, "trackedDeadDemandReuses"), 1);
+
+    policy.recordReplacement(dead, 8, false, set);
+    policy.observe(prefetch.get(), 0, 8, false);
+    policy.observe(demand.get(), 0, 8, false);
+    EXPECT_EQ(stat(policy, "trackedDeadEvictions"), 2);
+    EXPECT_EQ(stat(policy, "trackedDeadReuses"), 2);
+    EXPECT_EQ(stat(policy, "trackedDeadDemandReuses"), 1);
+}
+
+TEST_F(SDBPInterface, EvictionHistoryAgesByStackRankOnReplacement)
+{
+    SDBP policy(testParams(false, 0));
+    policy.bindCache(64, 4);
+    auto demand = packet();
+    std::array<ReplaceableEntry, 4> ways;
+    ReplacementCandidates set;
+    for (auto &way : ways) {
+        way.replacementData = policy.instantiateEntry();
+        policy.reset(way.replacementData);
+        set.push_back(&way);
+    }
+
+    // Predict both ways dead while preserving a two-position rank difference.
+    policy.touch(ways[1].replacementData, demand.get());
+    policy.touch(ways[2].replacementData);
+    policy.touch(ways[3].replacementData, demand.get());
+    ASSERT_EQ(policy.getVictim(set), &ways[1]);
+    policy.recordReplacement(ways[1], 7, false, set); // Rank 2, age 3.
+    policy.reset(ways[1].replacementData);
+    ASSERT_EQ(policy.getVictim(set), &ways[3]);
+    policy.recordReplacement(ways[3], 8, false, set); // Rank 1, age 2.
+    policy.reset(ways[3].replacementData);
+
+    policy.observe(demand.get(), 0, 7, false);
+    EXPECT_EQ(stat(policy, "trackedDeadReuses"), 0);
+    // Even a normal LRU replacement ages the history.
+    ASSERT_EQ(policy.getVictim(set), &ways[0]);
+    policy.recordReplacement(ways[0], 9, false, set);
+    policy.reset(ways[0].replacementData);
+    policy.observe(demand.get(), 0, 9, false);
+    EXPECT_EQ(stat(policy, "trackedDeadReuses"), 0);
+    policy.observe(demand.get(), 0, 8, false);
+    EXPECT_EQ(stat(policy, "trackedDeadEvictions"), 2);
+    EXPECT_EQ(stat(policy, "trackedDeadReuses"), 1);
+
+    auto prefetch = sourcedPacket(Request::L2RequestSource::L2Prefetch, 0x100);
+    policy.touch(ways[0].replacementData, demand.get());
+    ASSERT_EQ(policy.getVictim(set), &ways[0]);
+    policy.recordReplacement(ways[0], 10, false, set); // Rank 0, age 1.
+    policy.reset(ways[0].replacementData);
+    policy.observe(prefetch.get(), 0, 10, false);
+
+    const auto *all_by_age = dynamic_cast<const statistics::VectorInfo *>(
+        policy.resolveStat("trackedDeadReusesByAge"));
+    const auto *demand_by_age = dynamic_cast<const statistics::VectorInfo *>(
+        policy.resolveStat("trackedDeadDemandReusesByAge"));
+    ASSERT_NE(all_by_age, nullptr);
+    ASSERT_NE(demand_by_age, nullptr);
+    EXPECT_EQ(all_by_age->result(), (statistics::VResult{0, 1, 0, 1}));
+    EXPECT_EQ(demand_by_age->result(), (statistics::VResult{0, 0, 0, 1}));
+    EXPECT_EQ(stat(policy, "trackedDeadReuses"), 2);
+    EXPECT_EQ(stat(policy, "trackedDeadDemandReuses"), 1);
+}
+
+TEST_F(SDBPInterface, EvictionHistoryKeepsSecurityAndClearsOnInstallation)
+{
+    SDBP policy(testParams(false, 0));
+    policy.bindCache(64, 2);
+    auto demand = packet();
+    auto req = std::make_shared<Request>(0x1000, 64, Request::SECURE, 0);
+    Packet secure_demand(req, MemCmd::ReadReq);
+    ReplaceableEntry lru, dead;
+    lru.replacementData = policy.instantiateEntry();
+    dead.replacementData = policy.instantiateEntry();
+    policy.reset(lru.replacementData);
+    policy.reset(dead.replacementData, demand.get());
+    const ReplacementCandidates set{&lru, &dead};
+
+    policy.recordReplacement(dead, 7, true, set);
+    policy.observe(demand.get(), 0, 7, false);
+    policy.observeFill(&secure_demand, 0, 7, false);
+    EXPECT_EQ(stat(policy, "trackedDeadReuses"), 0);
+    policy.observe(&secure_demand, 0, 7, false);
+    EXPECT_EQ(stat(policy, "trackedDeadReuses"), 1);
+
+    policy.recordReplacement(dead, 8, true, set);
+    policy.observeFill(&secure_demand, 0, 8);
+    policy.observe(&secure_demand, 0, 8, false);
+    EXPECT_EQ(stat(policy, "trackedDeadEvictions"), 2);
+    EXPECT_EQ(stat(policy, "trackedDeadReuses"), 1);
+}
+
 TEST_F(SDBPInterface, DisabledL1GuardRetainsL2DeadFirst)
 {
     auto params = testParams(false, 0);

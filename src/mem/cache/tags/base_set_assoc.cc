@@ -75,7 +75,7 @@ BaseSetAssoc::tagsInit()
         fatal_if(typeid(*this) != typeid(BaseSetAssoc) ||
                  typeid(*indexingPolicy) != typeid(SetAssociative),
                  "SDBP requires BaseSetAssoc with SetAssociative indexing");
-        sdbpPolicy->bindCache(numBlocks / allocAssoc);
+        sdbpPolicy->bindCache(numBlocks / allocAssoc, allocAssoc);
     }
     // Initialize all blocks
     for (unsigned blk_index = 0; blk_index < numBlocks; blk_index++) {
@@ -109,9 +109,19 @@ BaseSetAssoc::findVictim(PacketPtr pkt, const bool is_secure,
         // Bypassing real tags must not remove the miss from the independent
         // sampler, or a dead PC could never recover when it starts reusing.
         sdbpPolicy->observeFill(pkt, indexingPolicy->extractSet(pkt->getAddr()),
-                                extractTag(pkt->getAddr()));
+                                extractTag(pkt->getAddr()), false);
     }
     return victim;
+}
+
+void
+BaseSetAssoc::recordReplacement(const CacheBlk &victim)
+{
+    if (sdbpPolicy) {
+        sdbpPolicy->recordReplacement(
+            victim, victim.getTag(), victim.isSecure(),
+            indexingPolicy->getPossibleEntries(regenerateBlkAddr(&victim)));
+    }
 }
 
 void

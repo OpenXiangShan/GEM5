@@ -1863,9 +1863,11 @@ BaseCache::handleEvictions(std::vector<CacheBlk*> &evict_blks,
                     }
                 }
                 // Snapshot before invalidateBlock clears replacement metadata.
-                const auto *set_assoc = dynamic_cast<BaseSetAssoc *>(tags);
+                auto *set_assoc = dynamic_cast<BaseSetAssoc *>(tags);
                 const unsigned victim_class = set_assoc ?
                     set_assoc->replacementVictimClass(blk) : 0;
+                if (cacheLevel == 2 && set_assoc)
+                    set_assoc->recordReplacement(*blk);
                 const auto previous_size = writebacks.size();
                 ++stats.committedReplacementBlocks;
                 evictBlock(blk, writebacks, evicted_dirty);
