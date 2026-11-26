@@ -1,3 +1,13 @@
+For OpenXiangShan/GEM5, follow the [commit and PR guidelines](AGENTS.md#commit-messages-and-pull-requests).
+For patches submitted to upstream gem5, follow its [current contribution guide](https://github.com/gem5/gem5/blob/develop/CONTRIBUTING.md).
+
+**Existing Git hooks.** A SCons hook linked to this checkout picks up the change automatically.
+If you installed the former gem5 title check with pre-commit, run `pre-commit uninstall --hook-type commit-msg`.
+If a commit reports a missing `util/git-commit-msg.py`, inspect the hook at the path printed by `git rev-parse --git-path hooks/commit-msg`.
+For a stock gem5 hook copied or linked from an older checkout, replace the hook itself with a copy of `ext/git-commit-msg` to keep Gerrit `Change-Id` generation. Linked worktrees share this hook. For a custom hook, remove only the call to the deleted script.
+
+The historical upstream instructions follow below.
+
 If you've made changes to gem5 that might benefit others, we strongly encourage
 you to contribute those changes to the public gem5 repository. There are
 several reasons to do this:
@@ -136,28 +146,8 @@ rebasing and git, see the [git book].
 
 [git book]: https://git-scm.com/book/en/v2/Git-Branching-Rebasing
 
-Requirements for change descriptions
-------------------------------------
-To help reviewers and future contributors more easily understand and track
-changes, we require all change descriptions be strictly formatted.
-
-A canonical commit message consists of three parts:
- * A short summary line describing the change. This line starts with one or
-   more keywords (found in the MAINTAINERS file) separated by commas followed
-   by a colon and a description of the change. This short description is
-   written in the imperative mood, and should say what happens when the patch
-   is applied. Keep it short and simple. Write it in sentence case preferably
-   not ending in a period. This line should be no more than 65 characters long
-   since version control systems usually add a prefix that causes line-wrapping
-   for longer lines.
- * (Optional, but highly recommended) A detailed description. This describes
-   what you have done and why. If the change isn't obvious, you might want to
-   motivate why it is needed. Lines need to be wrapped to 72 characters or
-   less. Leave a blank line between the first short summary line and this
-   detailed description.
- * Tags describing patch metadata. You are highly recommended to use
-   tags to acknowledge reviewers for their work. Gerrit will automatically add
-   most tags.
+Patch metadata for upstream Gerrit
+---------------------------------
 
 Tags are an optional mechanism to store additional metadata about a patch and
 acknowledge people who reported a bug or reviewed that patch. Tags are
@@ -211,16 +201,6 @@ who has contributed a significant amount of code to the file). The
 `util/update-copyright.py` helper script can help to keep your copyright dates
 up-to-date when you make further changes to files which already have your
 copyright but with older dates.
-
-Note: If you do not follow these guidelines, the gerrit review site will
-automatically reject your patch.
-If this happens, update your changeset descriptions to match the required style
-and resubmit. The following is a useful git command to update the most recent
-commit (HEAD).
-
-```
- git commit --amend
-```
 
 Running tests
 =============
