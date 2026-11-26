@@ -34,7 +34,6 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 minimum_pre_commit_version: "2.18"
-default_install_hook_types: [pre-commit, commit-msg]
 default_stages: [commit, push, manual]
 
 default_language_version:
@@ -52,9 +51,10 @@ exclude: |
 repos:
 - repo: local
   hooks:
+  # Optional: pre-commit install --hook-type commit-msg
   - id: commit-subject
     name: Check Conventional Commit subject
-    entry: util/git-commit-msg.py
+    entry: util/git-commit-msg.py --check
     language: system
     stages: [commit-msg]
 - repo: https://github.com/pre-commit/pre-commit-hooks

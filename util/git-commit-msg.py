@@ -26,6 +26,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import argparse
 import re
 import sys
 from pathlib import Path
@@ -54,4 +55,14 @@ def main(message_file):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    parser = argparse.ArgumentParser(
+        description="Check a gem5 commit subject."
+    )
+    parser.add_argument(
+        "--check", action="store_true", help="enable title checks"
+    )
+    parser.add_argument("message_file")
+    args = parser.parse_args()
+    # Older SCons wrappers shared by linked worktrees pass only the filename.
+    if args.check:
+        main(args.message_file)
