@@ -199,6 +199,10 @@ class Cache(BaseCache):
     cxx_header = 'mem/cache/cache.hh'
     cxx_class = 'gem5::Cache'
 
+    retain_dirty_on_l1_grant = Param.Bool(False,
+        "Retain dirty ownership when granting a read-only copy to an "
+        "upstream cache")
+
 class NoncoherentCache(BaseCache):
     type = 'NoncoherentCache'
     cxx_header = 'mem/cache/noncoherent_cache.hh'

@@ -102,6 +102,10 @@ class L2Cache(Cache):
     # always writeback clean when lower level is exclusive
     writeback_clean = True
 
+    # Match CoupledL2: GrantData/toB gives L1 only a shared copy while L2
+    # remains responsible for the dirty line until a writable acquire.
+    retain_dirty_on_l1_grant = True
+
     # aligned latency:
     tag_latency = 1
     data_latency = 2

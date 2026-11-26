@@ -70,7 +70,8 @@ namespace gem5
 {
 
 Cache::Cache(const CacheParams &p)
-    : BaseCache(p, p.system->cacheLineSize())
+    : BaseCache(p, p.system->cacheLineSize()),
+      retainDirtyOnL1Grant(p.retain_dirty_on_l1_grant)
 {
     assert(p.tags);
     assert(p.replacement_policy);
@@ -86,6 +87,23 @@ Cache::satisfyRequest(PacketPtr pkt, CacheBlk *blk,
         // determine if this read is from a (coherent) cache or not
         if (pkt->fromCache()) {
             assert(pkt->getSize() == blkSize);
+
+            // XiangShan's L2 retains dirty ownership when it grants an
+            // ordinary read as GrantData/toB. The requester only receives a
+            // shared copy, so a later write must acquire ownership from L2.
+            // This keeps L2 able to service a competing ReadEx even when the
+            // first response has not reached its requester yet.
+            const bool retain_dirty = retainDirtyOnL1Grant &&
+                blk->isSet(CacheBlk::DirtyBit) && !pkt->needsWritable() &&
+                !pkt->req->isUncacheable() && !pkt->req->isInstFetch();
+            if (retain_dirty) {
+                assert(!pkt->hasSharers());
+                pkt->setHasSharers();
+                DPRINTF(CacheVerbose,
+                        "%s retains dirty ownership while granting %s\n",
+                        __func__, pkt->print());
+            }
+
             // special handling for coherent block requests from
             // upper-level caches
             if (pkt->needsWritable()) {

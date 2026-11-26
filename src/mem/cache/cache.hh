@@ -69,6 +69,13 @@ class Cache : public BaseCache
   protected:
 
     /**
+     * Retain dirty ownership in this cache while granting a shared copy to
+     * an upstream cache. A later request for write permission transfers the
+     * ownership normally.
+     */
+    const bool retainDirtyOnL1Grant;
+
+    /**
      * Store the outstanding requests that we are expecting snoop
      * responses from so we can determine which snoop responses we
      * generated and which ones were merely forwarded.
