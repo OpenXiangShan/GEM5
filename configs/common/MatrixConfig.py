@@ -83,6 +83,9 @@ if buildEnv['GEM5_ENABLE_MATRIX']:
             if not self.enableMatrixMemPort:
                 return
             if not hasattr(self, 'matrix_cache'):
+                # This small classic cache keeps Matrix accesses coherent
+                # with the CPU DCache through the existing L2. It serves
+                # hits and absorbs writes, affecting latency and L2 traffic.
                 self.matrix_cache = Cache(
                     size='1KiB', assoc=2, tag_latency=1, data_latency=1,
                     response_latency=1, mshrs=16, demand_mshr_reserve=0,
