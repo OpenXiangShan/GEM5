@@ -176,7 +176,7 @@ def run(args):
             "--listener-mode=off",
             "-d",
             str(case_dir / "m5out"),
-            str(REPO / "configs/example/kmhv2_matrix.py"),
+            str(REPO / "configs/example/kmhv2.py"),
             "--matrix",
             "--classic-l2",
             "--enable-difftest",
