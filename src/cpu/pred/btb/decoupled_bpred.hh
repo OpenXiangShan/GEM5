@@ -71,6 +71,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     CPU *cpu;
     ThreadID nextPredictTid = 0;
     const unsigned numPredictingThreads;
+    const unsigned idealPredictionsPerCycle;
+    const bool idealNoOverrideBubbles;
     unsigned predictWidth;  // Prediction block width in bytes
     unsigned maxInstsNum;
 
@@ -310,6 +312,9 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar redirectPendingPredictionSkips;
         statistics::Distribution predictionsStartedPerCycle;
         statistics::Vector predictionsStartedByThread;
+        statistics::Scalar idealSecondPredictionRequests;
+        statistics::Scalar idealSecondPredictionEnqueues;
+        statistics::Scalar idealOverrideBubblesSaved;
 
         statistics::Scalar s1PredWrongFallthrough;
         statistics::Scalar s1PredWrongUbtb;
@@ -323,7 +328,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
         DBPBTBStats(statistics::Group* parent, unsigned numStages,
                     unsigned ftqSize, unsigned predictWidth, unsigned maxInstsNum,
-                    unsigned numThreads);
+                    unsigned numThreads, unsigned maxPredictionsPerCycle);
     } dbpBtbStats;
 
     std::unique_ptr<BPUProfiler> profiler;

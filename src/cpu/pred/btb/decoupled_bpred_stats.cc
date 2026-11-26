@@ -236,7 +236,8 @@ classifyBranchImpl(const InstPtr &inst)
 
 DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     statistics::Group* parent, unsigned numStages, unsigned ftqSize,
-    unsigned predictWidth, unsigned maxInstsNum, unsigned numThreads):
+    unsigned predictWidth, unsigned maxInstsNum, unsigned numThreads,
+    unsigned maxPredictionsPerCycle):
     statistics::Group(parent),
     ADD_STAT(condNum, statistics::units::Count::get(), "the number of cond branches"),
     ADD_STAT(uncondNum, statistics::units::Count::get(), "the number of uncond branches"),
@@ -313,6 +314,12 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     "number of distinct SMT thread predictions started in one cycle"),
     ADD_STAT(predictionsStartedByThread, statistics::units::Count::get(),
     "number of predictions started for each SMT thread"),
+    ADD_STAT(idealSecondPredictionRequests, statistics::units::Count::get(),
+             "second serial predictor lookups in the same CPU cycle"),
+    ADD_STAT(idealSecondPredictionEnqueues, statistics::units::Count::get(),
+             "second serial targets enqueued in the same CPU cycle"),
+    ADD_STAT(idealOverrideBubblesSaved, statistics::units::Count::get(),
+             "override latency removed by the explicit upper-bound mode"),
     ADD_STAT(s1PredWrongFallthrough, statistics::units::Count::get(), "S1pred wrong full throughs"),
     ADD_STAT(s1PredWrongUbtb, statistics::units::Count::get(),"S1pred wrong using ubtb "),
     ADD_STAT(s1PredWrongAbtb, statistics::units::Count::get(), "S1pred wrong using abtb "),
@@ -335,7 +342,7 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     commitFtqEntryFetchedInsts.init(0, maxInstsNum >> 1, 1);
     s1PredWrongBySourceAndReason.init(NumS1SourceBuckets, NumOverrideReasonBuckets);
     branchClassCounts.init(NumBranchClasses);
-    predictionsStartedPerCycle.init(0, numThreads, 1);
+    predictionsStartedPerCycle.init(0, maxPredictionsPerCycle, 1);
     predictionsStartedByThread.init(numThreads);
     branchClassMisses.init(NumBranchClasses);
     controlSquashByClass.init(NumBranchClasses);
