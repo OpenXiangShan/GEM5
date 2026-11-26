@@ -1800,12 +1800,22 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                             "read_num_pre%#x read_num %#x\n",
                             nextRead, tlbppn, read_num_pre, read_num);
 
-                    if ((read_num_pre == read_num) && (nextlineLevel == 0) && timing && openNextline &&
-                        autoNextlineSign && (!entry.fromForwardPreReq) && (!entry.fromBackPreReq)) {
+                    const bool can_prefetch =
+                        read_num_pre == read_num && nextlineLevel == 0 &&
+                        timing && openNextline && autoNextlineSign &&
+                        !entry.fromForwardPreReq && !entry.fromBackPreReq;
+                    const Addr nextline_base =
+                        nextlineVaddr & ~mask(PageShift + L2TLB_BLK_OFFSET);
+
+                    // A resident L0 PTE line needs no additional read.
+                    if (can_prefetch &&
+                        !walker->l2tlb->lookupL2TLB(
+                            nextline_base, satp.asid, BaseMMU::Read,
+                            /*hidden=*/true, L_L2L0, /*sign_used=*/false,
+                            direct)) {
                         nextline = true;
                         nextState = Translate;
-                        nextlineEntry.vaddr =
-                            entry.vaddr + (l2tlbLineSize << (nextlineLevel * LEVEL_BITS + PageShift));
+                        nextlineEntry.vaddr = nextlineVaddr;
 
                         RequestPtr request = std::make_shared<Request>(
                             nextRead, oldRead->getSize(), flags,
