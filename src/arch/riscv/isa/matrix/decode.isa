@@ -85,8 +85,6 @@
                     xc->stageMatrixRequest(request);
                 }}, MatrixMmaOp);
                 0x3: MatrixConfOp::mzero_rtl({{
-                    auto mtilem = Mtilem;
-                    auto mtilen = Mtilen;
                     if (RD < 4 || RD >= 8 || RS1 != 0 || RS2 != 0) {
                         return std::make_shared<IllegalInstFault>(
                             "unsupported mzero register or reserved fields", machInst);
