@@ -45,63 +45,29 @@ import gem5_scons.util
 import SCons.Script
 
 git_style_message = """
-You're missing the gem5 style or commit message hook. These hooks help
-to ensure that your code follows gem5's style rules on git commit.
-This script will now install the hook in your .git/hooks/ directory.
+Install the gem5 pre-commit hook to check code style before each commit.
 Press enter to continue, or ctrl-c to abort: """
+
 
 def install_style_hooks(env):
     try:
-        gitdir = env.Dir(gem5_scons.util.readCommand(
-            ["git", "rev-parse", "--git-dir"]).strip("\n"))
+        gitdir = env.Dir(
+            gem5_scons.util.readCommand(
+                ["git", "rev-parse", "--git-dir"]
+            ).strip()
+        )
     except Exception as e:
         print("Warning: Failed to find git repo directory: %s" % e)
         return
 
     git_hooks = gitdir.Dir("hooks")
-    def hook_exists(hook_name):
-        hook = git_hooks.File(hook_name)
-        return hook.exists()
-
-    def hook_install(hook_name, script):
-        hook = git_hooks.File(hook_name)
-        if hook.exists():
-            print("Warning: Can't install %s, hook already exists." %
-                    hook_name)
-            return
-
-        if hook.islink():
-            print("Warning: Removing broken symlink for hook %s." % hook_name)
-            os.unlink(hook.get_abspath())
-
-        if not git_hooks.exists():
-            os.mkdir(git_hooks.get_abspath())
-            git_hooks.clear()
-
-        abs_symlink_hooks = git_hooks.islink() and \
-            os.path.isabs(os.readlink(git_hooks.get_abspath()))
-
-        # Use a relative symlink if the hooks live in the source directory,
-        # and the hooks directory is not a symlink to an absolute path.
-        if hook.is_under(env.Dir("#")) and not abs_symlink_hooks:
-            script_path = os.path.relpath(
-                os.path.realpath(script.get_abspath()),
-                os.path.realpath(hook.Dir(".").get_abspath()))
-        else:
-            script_path = script.get_abspath()
-
-        try:
-            os.symlink(script_path, hook.get_abspath())
-        except:
-            print("Error updating git %s hook" % hook_name)
-            raise
-
-    if hook_exists("pre-commit") and hook_exists("commit-msg"):
+    hook = git_hooks.File("pre-commit")
+    if hook.exists():
         return
 
-    print(git_style_message, end=' ')
-    if SCons.Script.GetOption('install_hooks'):
-        print("Installing revision control hooks automatically.")
+    print(git_style_message, end=" ")
+    if SCons.Script.GetOption("install_hooks"):
+        print("Installing the pre-commit hook automatically.")
     else:
         try:
             input()
@@ -109,15 +75,30 @@ def install_style_hooks(env):
             print("Input exception, exiting scons.\n")
             sys.exit(1)
 
-    git_style_script = env.Dir("#util").File("git-pre-commit.py")
-    git_msg_script = env.Dir("#ext").File("git-commit-msg")
+    if hook.islink():
+        print("Warning: Removing broken symlink for hook pre-commit.")
+        os.unlink(hook.get_abspath())
+    if not git_hooks.exists():
+        os.mkdir(git_hooks.get_abspath())
+        git_hooks.clear()
 
-    hook_install("pre-commit", git_style_script)
-    hook_install("commit-msg", git_msg_script)
+    script_path = env.Dir("#util").File("git-pre-commit.py").get_abspath()
+    # Keep the link relative when the hooks directory moves with the checkout.
+    if hook.is_under(env.Dir("#")) and not (
+        git_hooks.islink()
+        and os.path.isabs(os.readlink(git_hooks.get_abspath()))
+    ):
+        script_path = os.path.relpath(
+            os.path.realpath(script_path),
+            os.path.realpath(git_hooks.get_abspath()),
+        )
+    os.symlink(script_path, hook.get_abspath())
+
 
 def generate(env):
     if exists(env) and not gem5_scons.util.ignore_style():
         install_style_hooks(env)
 
+
 def exists(env):
-    return env.Entry('#.git').exists()
+    return env.Entry("#.git").exists()
