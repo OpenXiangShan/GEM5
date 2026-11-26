@@ -26,114 +26,32 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-# If your commit has been canceled because of this file, do not panic: a
-# copy of it has been stored in ./.git/COMMIT_EDITMSG
-
-import os
 import re
 import sys
-from maint.lib import maintainers
+from pathlib import Path
 
-from style.repo import GitRepo
 
-def _printErrorQuit(error_message):
-    """
-        Print an error message, followed my a help message and inform failure.
+# Git prefixes the target subject when preparing commits for autosquash.
+subject_pattern = re.compile(
+    r"(?:(?:fixup|squash|amend)! )?"
+    r"(?P<subject>(?:feat|fix|perf|refactor|ci|test|build|docs|chore|style)"
+    r"\([\w][\w.-]*\)!?: \S(?:.*\S)?)"
+)
 
-        @param error_message A message describing the error that caused the
-            failure.
-    """
-    print(error_message)
 
-    print("The commit has been cancelled, but a copy of it can be found in "
-          + sys.argv[1] + " : ")
+def main(message_file):
+    lines = Path(message_file).read_text(encoding="utf-8").splitlines()
+    match = subject_pattern.fullmatch(lines[0]) if lines else None
+    if not match:
+        sys.exit(
+            "Expected type(scope): description, e.g. "
+            "fix(cpu-o3): Correct integer divide latency (see AGENTS.md)"
+        )
+    if len(match["subject"]) > 65:
+        sys.exit("Keep the commit subject within 65 characters.")
+    if len(lines) > 1 and lines[1]:
+        sys.exit("Leave a blank line between the subject and body.")
 
-    print("""
---------------------------------------------------------------------------
-    """)
-    print(open(sys.argv[1], "r").read())
-    print("""
---------------------------------------------------------------------------
-    """)
 
-    print("""
-The first line of a commit must contain one or more gem5 tags separated by
-commas (see MAINTAINERS.yaml for the possible tags), followed by a colon and
-a commit title. There must be no leading nor trailing whitespaces.
-
-This header line must then be followed by an empty line. A detailed message,
-although highly recommended, is not mandatory and can follow that empty line.
-
-e.g.:
-    cpu: Refactor branch predictors
-
-    Refactor branch predictor code to improve its readability, moving functions
-    X and Y to the base class...
-
-e.g.:
-    mem,mem-cache: Improve packet class readability
-
-    The packet class...
-""")
-    sys.exit(1)
-
-def _validateTags(commit_header):
-    """
-        Check if all tags in the commit header belong to the list of valid
-        gem5 tags.
-
-        @param commit_header The first line of the commit message.
-    """
-
-    # List of valid tags
-    maintainer_dict = maintainers.Maintainers.from_file()
-    valid_tags = [tag for tag, _ in maintainer_dict]
-
-    # Remove non-tag 'pmc' and add special tags not in MAINTAINERS.yaml
-    valid_tags.remove('pmc')
-    valid_tags.extend(['RFC', 'WIP'])
-
-    tags = ''.join(commit_header.split(':')[0].split()).split(',')
-    if (any(tag not in valid_tags for tag in tags)):
-        invalid_tag = next((tag for tag in tags if tag not in valid_tags))
-        _printErrorQuit("Invalid Gem5 tag: " + invalid_tag)
-
-# Go to git directory
-os.chdir(GitRepo().repo_base())
-
-# Get the commit message
-commit_message = open(sys.argv[1]).read()
-
-# The first line of a commit must contain at least one valid gem5 tag, and
-# a commit title
-commit_message_lines = commit_message.splitlines()
-commit_header = commit_message_lines[0]
-commit_header_match = \
-    re.search("^(fixup! )?(\S[\w\-][,\s*[\w\-]+]*:.+\S$)", commit_header)
-if ((commit_header_match is None)):
-    _printErrorQuit("Invalid commit header")
-if commit_header_match.group(1) == "fixup! ":
-    sys.exit(0)
-_validateTags(commit_header_match.group(2))
-
-# Make sure commit title does not exceed threshold. This line is limited to
-# a smaller number because version control systems may add a prefix, causing
-# line-wrapping for longer lines
-commit_title = commit_header.split(':')[1]
-max_header_size = 65
-if (len(commit_header) > max_header_size):
-    _printErrorQuit("The commit header (tags + title) is too long (" + \
-        str(len(commit_header)) + " > " + str(max_header_size) + ")")
-
-# Then there must be at least one empty line between the commit header and
-# the commit description
-if (commit_message_lines[1] != ""):
-    _printErrorQuit("Please add an empty line between the commit title and " \
-        "its description")
-
-# Encourage providing descriptions
-if (re.search("^(Signed-off-by|Change-Id|Reviewed-by):",
-    commit_message_lines[2])):
-    print("Warning: Commit does not have a description")
-
-sys.exit(0)
+if __name__ == "__main__":
+    main(sys.argv[1])

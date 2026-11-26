@@ -1,3 +1,7 @@
+For OpenXiangShan/GEM5, follow the [commit and PR guidelines](AGENTS.md#commit-messages-and-pull-requests).
+For patches submitted to upstream gem5, follow its [current contribution guide](https://github.com/gem5/gem5/blob/develop/CONTRIBUTING.md).
+The historical upstream instructions follow below.
+
 If you've made changes to gem5 that might benefit others, we strongly encourage
 you to contribute those changes to the public gem5 repository. There are
 several reasons to do this:

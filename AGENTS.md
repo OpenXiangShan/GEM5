@@ -80,17 +80,21 @@ Once relevant checks pass, broaden or repeat them only for new changes, failures
 
 For already-authorized local work, continue through inspection, edits, and affected checks without repeated confirmation. Ask when missing information materially changes the task; continue independent work while it is unresolved.
 
-## Commit and PR Expectations
+## Commit messages and pull requests
 
-- Use imperative English in commit messages
-- Prefer module-prefixed commit titles focused on a single change, for example:
-  `cpu-o3: Fix tage allocation`
-- PRs should explain:
-  - motivation
-  - approach
-  - scope of impact
-  - validation method and results
-- Run the repository's style checks and required tests before submission
+Write commits and PRs in English. Use `type(scope): description` for both titles, e.g. `refactor(bpu): Separate prediction from training`.
+Use an imperative verb, prefer an existing gem5 scope (`bpu`, `cpu-o3`, `mem-cache`, `arch-riscv`), and keep commit subjects within 65 characters.
+
+Types: `feat`, `fix`, `perf`, `refactor`, `ci`, `test`, `build`, `docs`, `chore`, `style`.
+Use `feat` for new capabilities, `fix` for defects, `perf` for tuning existing policies or parameters, and `refactor` for behavior-preserving restructuring.
+
+Use the default PR template (Motivation, Design, Validation). Explain the problem, key decisions, behavior changes, actual results, and untested cases. Scale detail to the change and omit inapplicable sections.
+For fixes, include the cause and regression check. For refactors, explain why and how you checked behavior.
+
+Use these labels when applicable. Routine maintenance needs neither.
+
+- `rtl-alignment`: Link the relevant RTL PR, design document, or commit. Explain what gem5 models, simplifies, or still omits.
+- `exploration`: Describe the bottleneck, hypothesis, prior work, design, baseline, and measured results. Explain what supports the attribution and what remains uncertain.
 
 ## Repository Skills
 
