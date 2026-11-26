@@ -15,12 +15,12 @@ scons build/RISCV_MATRIX/gem5.opt --default=RISCV --enable-matrix --linker=gold 
 ```bash
 image=/absolute/path/to/matrix-workload.bin
 ./build/RISCV_MATRIX/gem5.opt -r -d m5out/matrix \
-    configs/example/kmhv2_matrix.py --classic-l2 \
+    configs/example/kmhv2.py --matrix --classic-l2 \
     --raw-cpt --generic-rv-cpt="$image" --warmup-insts-no-switch=0 \
     --mem-type=SimpleMemory --mem-size=512MB --disable-difftest
 ```
 
-`kmhv2.py --matrix --classic-l2` 也可启用同一配置。Matrix 的私有 Cache 当前需要接入 classic L2。`--raw-cpt` 用于平坦的 `.bin` 镜像，运行 GCPT 切片时去掉该参数。示例使用 512 MiB SimpleMemory。使用 DRAMsim3 时，先构建 DRAMsim3 并重编 GEM5，再选择 `--mem-type=DRAMsim3` 和镜像所需的内存容量。比较性能时应使用相同的镜像、CPU 和 DDR 配置。
+Matrix 的私有 Cache 当前需要接入 classic L2。`--raw-cpt` 用于平坦的 `.bin` 镜像，运行 GCPT 切片时去掉该参数。示例使用 512 MiB SimpleMemory。使用 DRAMsim3 时，先构建 DRAMsim3 并重编 GEM5，再选择 `--mem-type=DRAMsim3` 和镜像所需的内存容量。比较性能时应使用相同的镜像、CPU 和 DDR 配置。
 
 ## 用 NEMU 对拍
 
@@ -29,7 +29,7 @@ Matrix 版本的 GEM5 使用 1544 字节寄存器布局的 NEMU REF，即使运�
 ```bash
 export GCBV_REF_SO=/nfs/share/gem5_ci/ref/matrix/af9d4ce51fc2/riscv64-nemu-interpreter-so
 ./build/RISCV_MATRIX/gem5.opt -r -d m5out/matrix-difftest \
-    configs/example/kmhv2_matrix.py --classic-l2 \
+    configs/example/kmhv2.py --matrix --classic-l2 \
     --raw-cpt --generic-rv-cpt="$image" --warmup-insts-no-switch=0 \
     --mem-type=SimpleMemory --mem-size=512MB \
     --enable-difftest --difftest-ref-so="$GCBV_REF_SO"
