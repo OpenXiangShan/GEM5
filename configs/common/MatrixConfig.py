@@ -178,6 +178,8 @@ def config_matrix(options, system):
             not options.l2cache or options.num_cpus != 1 or
             options.external_memory_system or options.memchecker):
         fatal("Matrix memory requires the single-core L1/shared-L2 topology")
+    if not options.classic_l2:
+        fatal("Matrix memory requires --classic-l2")
     if options.cacheline_size != 64:
         fatal("Matrix memory plans require 64-byte cache lines")
     for cpu in system.cpu:
