@@ -1418,11 +1418,12 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
     const AddrRangeList &getAddrRanges() const { return addrRanges; }
 
-    MSHR *allocateMissBuffer(PacketPtr pkt, Tick time, bool sched_send = true)
+    MSHR *allocateMissBuffer(PacketPtr pkt, Tick time, bool sched_send = true,
+                             bool use_prefetch_entries = false)
     {
         MSHR *mshr = mshrQueue.allocate(pkt->getBlockAddr(blkSize), blkSize,
                                         pkt, time, order++,
-                                        allocOnFill(pkt->cmd));
+                                        allocOnFill(pkt->cmd), use_prefetch_entries);
 
         if (dcacheMainPipeEffectiveMSHRFull()) {
             setBlocked((BlockedCause)MSHRQueue_MSHRs);

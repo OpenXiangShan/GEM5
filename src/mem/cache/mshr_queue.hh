@@ -76,6 +76,7 @@ class MSHRQueue : public Queue<MSHR>
     Counter occupancyEntryTicks;
 
     void updateOccupancyStats(Tick now);
+    MSHR::Iterator findFreePrefetchEntry();
 
   public:
 
@@ -106,7 +107,8 @@ class MSHRQueue : public Queue<MSHR>
      * @pre There are free entries.
      */
     MSHR *allocate(Addr blk_addr, unsigned blk_size, PacketPtr pkt,
-                   Tick when_ready, Counter order, bool alloc_on_fill);
+                   Tick when_ready, Counter order, bool alloc_on_fill,
+                   bool use_prefetch_entries = false);
 
     /**
      * Deallocate a MSHR and its targets
@@ -131,6 +133,8 @@ class MSHRQueue : public Queue<MSHR>
     {
         return allocated + extra >= numEntries - numReserve;
     }
+
+    bool canAllocateMainPipePrefetch(int held_credits);
 
     bool canPrefetchWithExtraAllocated(int extra) const
     {

@@ -1076,7 +1076,8 @@ BaseCache::handlePrefetch(PacketPtr pkt, bool &hit)
             prefetcher->streamPflate();
         DPRINTF(HWPrefetch, "%s prefetch %#x hit in %s\n",
                 main_pipe ? "MainPipe" : "Classic", addr, late);
-    } else if (!main_pipe || dcacheMainPipeCanPrefetch()) {
+    } else if (!main_pipe || mshrQueue.canAllocateMainPipePrefetch(
+                   dcacheMainPipeHeldMSHRCredits)) {
         // MainPipe checks its own miss admission, not CPU-side retry state.
         DPRINTF(HWPrefetch, "%s prefetch %#x allocated MSHR\n",
                 main_pipe ? "MainPipe" : "Classic", addr);
@@ -1085,7 +1086,7 @@ BaseCache::handlePrefetch(PacketPtr pkt, bool &hit)
         // S2 is outside the send arbiter, so schedule the outbound request.
         return allocateMissBuffer(packet.release(),
                                   main_pipe ? clockEdge() : curTick(),
-                                  main_pipe);
+                                  main_pipe, main_pipe);
     } else {
         DPRINTF(HWPrefetch, "MainPipe prefetch %#x rejected\n", addr);
     }

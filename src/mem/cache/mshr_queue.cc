@@ -44,6 +44,7 @@
 
 #include "mem/cache/mshr_queue.hh"
 
+#include <algorithm>
 #include <cassert>
 
 #include "debug/MSHR.hh"
@@ -74,14 +75,44 @@ MSHRQueue::updateOccupancyStats(Tick now)
     occupancyLastUpdate = now;
 }
 
+MSHR::Iterator
+MSHRQueue::findFreePrefetchEntry()
+{
+    // RTL reserves the first two MissQueue IDs for non-prefetch requests
+    // under its default policy. Exclude GEM5's overflow entries as well.
+    constexpr int demand_only_entries = 2;
+    const int effective_entries = numEntries - numReserve;
+    return std::find_if(freeList.begin(), freeList.end(), [&](MSHR *entry) {
+        const auto id = entry - entries.data();
+        return id >= demand_only_entries && id < effective_entries;
+    });
+}
+
+bool
+MSHRQueue::canAllocateMainPipePrefetch(int held_credits)
+{
+    // Refill credits account for entries logically occupied by the pipeline.
+    // MainPipe prefetches use the RTL-eligible MSHR IDs. The free-ID check
+    // itself preserves the demand-only entries.
+    return allocated + held_credits < numEntries - numReserve &&
+        findFreePrefetchEntry() != freeList.end();
+}
+
 MSHR *
 MSHRQueue::allocate(Addr blk_addr, unsigned blk_size, PacketPtr pkt,
-                    Tick when_ready, Counter order, bool alloc_on_fill)
+                    Tick when_ready, Counter order, bool alloc_on_fill,
+                    bool use_prefetch_entries)
 {
-    assert(!freeList.empty());
-    MSHR *mshr = freeList.front();
+    auto free = use_prefetch_entries ? findFreePrefetchEntry() :
+        freeList.begin();
+    assert(free != freeList.end());
+    MSHR *mshr = *free;
     assert(mshr->getNumTargets() == 0);
-    freeList.pop_front();
+    freeList.erase(free);
+    if (use_prefetch_entries) {
+        DPRINTF(MSHR, "MainPipe prefetch allocated entry %lu\n",
+                static_cast<unsigned long>(mshr - entries.data()));
+    }
 
     DPRINTF(MSHR, "Allocating new MSHR. Number in use will be %lu/%lu\n",
             allocatedList.size() + 1, numEntries);
