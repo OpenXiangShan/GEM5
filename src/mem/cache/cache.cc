@@ -83,6 +83,16 @@ Cache::satisfyRequest(PacketPtr pkt, CacheBlk *blk,
     BaseCache::satisfyRequest(pkt, blk);
 
     if (pkt->isRead()) {
+        auto *mshr = pkt->fromCache() ? pkt->findNextSenderState<MSHR>() :
+                                      nullptr;
+        // A buffered hit can reach here after the receiving MSHR entered
+        // service without knowing whether dirty ownership would be transferred.
+        // Reuse the deferred-response path to retain dirty ownership for shared
+        // reads. Requests needing writable already record pendingModified.
+        if (mshr && mshr->inService) {
+            deferred_response = true;
+        }
+
         // determine if this read is from a (coherent) cache or not
         if (pkt->fromCache()) {
             assert(pkt->getSize() == blkSize);
