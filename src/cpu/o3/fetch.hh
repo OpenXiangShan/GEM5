@@ -844,7 +844,7 @@ class Fetch
      */
     struct CacheRequest
     {
-        /** Vector of packet pointers for multiple cache line requests */
+        /** Returned packets owned here until merged or reset. */
         std::vector<PacketPtr> packets;
 
         /** Vector of corresponding request pointers */
@@ -909,6 +909,9 @@ class Fetch
 
         /** Reset the cache request state */
         void reset() {
+            for (auto pkt : packets) {
+                delete pkt;
+            }
             packets.clear();
             requests.clear();
             requestStatus.clear();

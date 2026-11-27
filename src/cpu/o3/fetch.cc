@@ -945,6 +945,7 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
             DPRINTF(Fetch, "req[%d]=0x%lx ", i, threads[tid].cacheReq.requests[i]->getVaddr());
         }
         DPRINTF(Fetch, "\n");
+        delete pkt;
         return false;
     }
 
@@ -1019,8 +1020,10 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
     threads[tid].valid = true;
 
     // Clean up the packets
-    delete firstPkt;
-    delete secondPkt;
+    for (auto &completed : threads[tid].cacheReq.packets) {
+        delete completed;
+        completed = nullptr;
+    }
 
     DPRINTF(Fetch, "[tid:%i] Dual cacheline fetch completion processed successfully.\n", tid);
     return true;
