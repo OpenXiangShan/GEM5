@@ -360,6 +360,9 @@ struct TimeStruct
         /// retired or squashed sequence number.
         InstSeqNum doneSeqNum; // *F, I
 
+        /// Youngest instruction retired this cycle, even on a squash.
+        InstSeqNum retiredSeqNum = 0; // *R
+
         InstSeqNum doneMemSeqNum;
 
         InstSeqNum robheadSeqNum;

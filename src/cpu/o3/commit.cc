@@ -1858,6 +1858,7 @@ Commit::commitInsts()
 
                     // Set the doneSeqNum to the youngest committed instruction.
                     toIEW->commitInfo[tid].doneSeqNum = head_inst->seqNum;
+                    toIEW->commitInfo[tid].retiredSeqNum = head_inst->seqNum;
 
                     if (head_inst->getFtqId() > 1) {
                         toIEW->commitInfo[tid].doneFtqId = head_inst->getFtqId() - 1;

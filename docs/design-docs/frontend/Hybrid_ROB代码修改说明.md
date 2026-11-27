@@ -96,9 +96,13 @@ ROB trace 记录分配 id、成员 slot、移除原因、保留边界及降级�
 
 ## 6. 建模边界
 
-当前实现还通过 Rename history buffer 建模单线程 RAB 总容量：所有 KMHV3 单线程 ROB 策略默认 `numRABEntries=352`，设为 `0` 可关闭容量限制；多线程配置保持原有行为。按整数、浮点和向量目的映射计费，包含 move elimination、同映射写和内部临时映射；零寄存器、Misc、RMisc（包括 VL/VTYPE）和 CC 记录不计费。Rename 按当前整组实际需求准入，空间不足时以 `RABFull` 阻塞整组；容量小于整组需求时明确报错。
+`BaseO3CPU` 的单线程 RAB 默认 `numRABEntries=352`，`kmhv3.py` 和 `idealkmhv3.py` 均继承此默认值。设为 `0` 会同时绕过 RAB 容量准入和映射写口宽度限制，但仍保留单线程映射占用及峰值统计；因此与 `0` 对比不能只归因于容量。研究容量影响时，应使用足够大的正容量作为参照，保留写口宽度模型和注册许可。SMT 不限制容量，也不记录 RAB 映射。
 
-计费项随原有提交或 squash 删除 history 记录而释放；容量检查为 O(renameWidth × 每条指令目的数)，占用更新为 O(1)。分配、提交释放、squash 释放及当前占用可按区间初末值检查守恒，满周期独立于 Preg 不足统计。该限制沿用 gem5 的分配位置和回收时序，没有加入 RTL 的流水预留、严格每拍 RAB 回收带宽或 forward walk。
+Rename 统计整数、浮点和向量目的映射，ROB 实际接收指令时才计入占用；包含 move elimination、重复物理映射和内部临时映射，写零寄存器、Misc、RMisc（包括 VL/VTYPE）和 CC 不计入。正容量按昆明湖 V3 `Rab.scala` 的两级准入规则，本拍入队后、回收前采样空位，许可下一拍使用。ROB 入队至少留 `renameWidth` 个空位，向 ROB 发出新一批指令至少留 `2 * renameWidth` 个；等于门槛可通过，门关闭时零写入指令也不能绕过。正容量小于两组宽度会在启动时报错。
+
+gem5 在 Rename 输出端使用 Dispatch 许可，在 ROB 插入端使用普通入队许可。Rename 可暂存一组已重命名指令等待许可，先发送暂存组，再接收替换组；暂存映射仍到 ROB 接收时才计入占用。正容量下，多目的指令按映射数占用写口，必要时按指令边界拆批；单条不可拆分且超过写口宽度的指令须独占一批，且映射必须放得下。沿用原有 commit/squash 序号边界回收；ROB 恢复时不入队，未复刻独立 RAB walk 状态机或严格的每拍回收带宽。
+
+`rename.rabPeakOccupancy` 记录统计窗口内的最大实际占用（含窗口起点）。有 Rename 输入等待且最终停顿原因归为 `RABFull` 时，`rename.stallEvents::RABFull` 每周期最多计一次，同时记录线程 0 的分布项；单线程运行的 `rename.smtStallEvents_RABFull::0` 与总计数相等。该停顿原因包含 RAB 准入和映射写口宽度反压。Rename debug trace 记录 ROB 入队时的映射数和占用。
 
 本改动明确建模 entry 占用、提交带宽和 slot 恢复选择，没有引入向量状态、flag tracker 或新流水级。值预测复用已有 load 预测、结果检查、训练和恢复路径。内部数据通路和每拍信号仍采用 gem5 原有抽象，不声称与 RTL 周期级等价。SPEC 大规模性能测试和专项中断压力验证不属于此次结果。
 

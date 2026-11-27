@@ -1715,13 +1715,16 @@ IEW::dispatchInsts()
             DPRINTF(IEW, "Processing [tid:%i]\n", tid);
             blockReason = StallReason::NoStall;
             unsigned width = renameWidth;
+            DynInstPtr rab_blocker;
             if (stallSig->iewBlockReason[tid] == StallReason::RABFull) {
                 // Drain older ROB residents so they can execute and release
                 // space. Do not send the rejected ROB input to the scheduler.
                 width = 0;
                 for (const auto &inst : fixedbuffer[tid]) {
-                    if (!inst->isInROB() && !inst->isSquashed())
+                    if (!inst->isInROB() && !inst->isSquashed()) {
+                        rab_blocker = inst;
                         break;
+                    }
                     if (!inst->isSquashed() && ++width == renameWidth)
                         break;
                 }
@@ -1736,6 +1739,10 @@ IEW::dispatchInsts()
             if (!fixedbuffer[tid].empty()) {
                 // Hitting the RAB limit does not exhaust dispatch bandwidth.
                 if (width < renameWidth && dispatched == width) {
+                    // All older residents dispatched, so RAB is the blocker.
+                    if (auto *dip = cpu->getDip(); dip && rab_blocker) {
+                        dip->block(rab_blocker, Dip::REN);
+                    }
                     // Mark waiting slots only; count squashes separately.
                     const auto count = std::min<size_t>(
                         renameWidth - dispatched, fixedbuffer[tid].size());

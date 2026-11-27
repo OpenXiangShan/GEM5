@@ -525,8 +525,10 @@ Rename::tick()
             block_reason = StallReason::RABFull;
         }
 
-        if (block_reason == StallReason::RABFull && !fixedbuffer[i].empty())
+        if (block_reason == StallReason::RABFull && !fixedbuffer[i].empty()) {
             ++stats.stallEvents[RABFull];
+            stats.smtStallEvents[RABFull].sample(i);
+        }
 
         if (block_reason == StallReason::ROBFull) {
             stats.smtStallEvents[ROBFull].sample(i);
@@ -681,14 +683,9 @@ Rename::releasePhysRegs()
         removeFromHistory(releaseSeq[tid], tid);
         if (ratSnapshotActive)
             commitSnapshot(finalCommitSeq[tid], tid);
-        // doneSeqNum is also reused as a squash-progress marker while the
-        // ROB is walking younger entries. Only real commit progress should
-        // release physical registers.
-        if (fromCommit->commitInfo[tid].doneSeqNum != 0 &&
-            !fromCommit->commitInfo[tid].squash &&
-            !fromCommit->commitInfo[tid].robSquashing) {
-
-            finalCommitSeq[tid] = fromCommit->commitInfo[tid].doneSeqNum;
+        const InstSeqNum retired_seq = fromCommit->commitInfo[tid].retiredSeqNum;
+        if (retired_seq != 0) {
+            finalCommitSeq[tid] = retired_seq;
             releaseSeq[tid] =
                 historyBuffer[tid].empty() ? 0 : historyBuffer[tid].back().instSeqNum;
         }

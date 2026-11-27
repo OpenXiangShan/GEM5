@@ -88,34 +88,46 @@ sequence prefix is propagated consistently to Rename, IQ, and LSQ.
 
 ## Single-thread RAB capacity
 
-KMHV3 defaults to `numRABEntries=352` for every single-thread ROB policy,
-including Hybrid. `BaseO3CPU` defaults to zero, which disables the capacity
-limit. Use `--param='system.cpu[0].numRABEntries=16'` for capacity pressure,
-or set it to zero for an unlimited-capacity comparison. The parameter only
-applies when `numThreads == 1`.
+`BaseO3CPU` defaults to `numRABEntries=352`. Both `kmhv3.py` and
+`idealkmhv3.py` inherit this default for every single-thread ROB policy,
+including Hybrid. With `renameWidth=8`, use
+`--param='system.cpu[0].numRABEntries=16'` for capacity pressure. Zero
+bypasses both the capacity and mapping write-width limits while preserving
+single-thread occupancy accounting. To isolate capacity effects, compare
+against a large positive capacity so both runs enforce the same write width.
+SMT runs do not track RAB mappings.
 
 Each integer, floating-point, or vector destination mapping consumes one
 entry, including move elimination, repeated physical mappings, and internal
 temporaries. Zero/invalid, Misc, RMisc (including VL/VTYPE), and CC destinations
-keep their existing history records without consuming RAB capacity. A bundle
-checks the actual charged demand in the next `renameWidth` positions, skipping
-squashed instructions. Insufficient space stalls the whole bundle with
-`RABFull`; a zero-demand bundle can proceed. A bundle larger than a positive
-capacity terminates with a configuration error instead of waiting forever.
+keep their existing history records without consuming RAB capacity. With a
+positive capacity, as in Kunminghu-v3 `Rab.scala`, the ROB needs at least
+`renameWidth` free entries and upstream dispatch needs `2 * renameWidth`.
+Both grants use occupancy sampled after ROB enqueue and before release in the
+previous cycle. Equality passes. A closed gate also stops zero-write bundles. A
+positive capacity smaller than two rename widths is a configuration error.
 
-Entries are released when the existing commit or squash paths remove their
-history records. `phyregReleaseWidth` retains its sequence-based release
-behavior. This models total capacity, without adding RTL pipeline reservations,
-a strict RAB commit bandwidth, or RTL forward-walk recovery. Gem5 mappings and
-RTL uops are not necessarily one-to-one.
+Rename counts destinations but only ROB insertion charges them. In gem5,
+Rename's output feeds both ROB and IEW; the dispatch grant gates that output,
+not older work already accepted by the ROB. Rename can hold one renamed group
+while waiting for this grant and sends it before a replacement group; held
+mappings are charged only when the ROB accepts them. With a positive capacity,
+the ROB splits a multi-mapping batch at instruction boundaries to respect its
+write width; an indivisible instruction wider than the port group goes alone
+if its mappings fit.
+Rename releases committed mappings through the youngest retired sequence
+number, even if a younger load triggers an MDP squash in the same cycle.
+The squash boundary discards younger mappings. ROB recovery inhibits
+admission; no independent RTL RAB walk state machine or
+`RabCommitWidth` release bandwidth is modeled.
 
-`rename.rabAllocatedEntries`, `rabCommittedEntries`, and `rabSquashedEntries`
-count charged mappings; `rabOccupancy` reports current occupancy,
-`rabPeakOccupancy` records its maximum since the last statistics reset, and
-`rabFullCycles` counts capacity stalls once per cycle. Across a measurement
-window, initial occupancy plus allocations minus commit and squash releases
-must equal final occupancy. Rename debug traces report every charged allocation,
-release, and capacity stall for checking this invariant.
+`rename.rabPeakOccupancy` records the maximum charged mapping occupancy
+since the last statistics reset, including the occupancy at the start of the
+measurement window. `rename.stallEvents::RABFull` counts cycles with waiting
+Rename input whose selected stall reason is `RABFull`, at most once per cycle.
+`rename.smtStallEvents_RABFull::0` records the same events for thread 0.
+These stalls include RAB admission and mapping write-width backpressure.
+Rename debug traces report the mapping count and occupancy at ROB enqueue.
 
 ## Build
 
@@ -129,6 +141,12 @@ Build and run the RAB accounting boundary tests with:
 scons build/RISCV/cpu/o3/rename_rab.test.opt --unit-test -j16
 build/RISCV/cpu/o3/rename_rab.test.opt
 ```
+
+The bare-metal regression `tests/test-progs/riscv-rab/retire-squash.S` checks
+forward progress with 16 RAB entries and `mdp_violation_timing="atCommit"`.
+Link at `0x80000000` and run the raw image with `kmhv3.py --raw-cpt` and
+`--mem-type=SimpleMemory`. The load should replay once
+(`commit.mdpViolationSquashes=1`) and reach `m5_exit`.
 
 Planner and slot boundary tests are retained locally as development aids
 and are not registered in the project build or included in the PR.
@@ -182,8 +200,8 @@ uncovered instruction classes remain N according to visible flags/faults and
 the conservative default. Only enqueue-time faults affect classification;
 later faults use the existing precise per-DynInst recovery path.
 
-RAB capacity is accounted through Rename history records, without a separate
-RAB pipeline stage. Physical ROB entry and slot metadata model allocation,
+RAB occupancy counts mappings accepted by the ROB, independently of its
+physical entry compression. Physical ROB entry and slot metadata model allocation,
 retirement bandwidth, and redirect selection;
 architectural side effects and precise faults remain per DynInst. A fused DynInst can represent two architectural
 instructions, so allocation and quota statistics differ from `committedInsts`.
