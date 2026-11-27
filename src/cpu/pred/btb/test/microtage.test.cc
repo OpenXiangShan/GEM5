@@ -226,6 +226,113 @@ TEST_F(MicroTAGES3UpdateTest, S3AllocationFailureAndResetCountersStaySplit)
     EXPECT_EQ(tage->tageStats.updateAllocFailureNoValidTable, 0ULL);
 }
 
+TEST_F(MicroTAGES3UpdateTest, AllocationPrefersEmptyThenWeakWay)
+{
+    auto two_way_tage = std::make_unique<MicroTAGE>(4, 2, 32, 4);
+    const auto entry = makeCondEntry(0x4000);
+    const auto seed = makeStagePred(0x4000, {entry}, {});
+    primePrediction(two_way_tage.get(), seed);
+
+    auto meta = two_way_tage->threadMeta[0];
+    const Addr index = two_way_tage->getTageIndex(
+        seed.bbStart, 0, meta->indexFoldedHist[0].get(), seed.asidHash);
+    auto &set = two_way_tage->tageTable[0][index];
+    set[0] = MicroTAGE::TageEntry(0x55, 0, 0x5000);
+
+    uint64_t allocated_table = 0;
+    uint64_t allocated_index = 0;
+    uint64_t allocated_way = 0;
+    ASSERT_TRUE(two_way_tage->handleNewEntryAllocation(
+        seed.bbStart, entry, true, 0, meta, seed.asidHash,
+        MicroTAGE::TrainingMode::S3Update,
+        allocated_table, allocated_index, allocated_way));
+    EXPECT_EQ(allocated_table, 0);
+    EXPECT_EQ(allocated_way, 1);
+    EXPECT_EQ(set[0].pc, 0x5000);
+
+    set[0].counter = 2;
+    const auto next_entry = makeCondEntry(0x4004);
+    ASSERT_TRUE(two_way_tage->handleNewEntryAllocation(
+        seed.bbStart, next_entry, false, 0, meta, seed.asidHash,
+        MicroTAGE::TrainingMode::S3Update,
+        allocated_table, allocated_index, allocated_way));
+    EXPECT_EQ(allocated_table, 0);
+    EXPECT_EQ(allocated_way, 1);
+    EXPECT_EQ(set[0].counter, 2);
+    EXPECT_EQ(set[1].pc, next_entry.branch.pc);
+    EXPECT_EQ(set[1].counter, -1);
+    EXPECT_FALSE(set[1].useful);
+}
+
+TEST_F(MicroTAGES3UpdateTest, AllocationReplacesStrongNotUsefulWay)
+{
+    const auto entry = makeCondEntry(0x4000);
+    const auto seed = makeStagePred(0x4000, {entry}, {});
+    primePrediction(tage.get(), seed);
+
+    auto meta = tage->threadMeta[0];
+    const Addr index = tage->getTageIndex(
+        seed.bbStart, 0, meta->indexFoldedHist[0].get(), seed.asidHash);
+    auto &way = tage->tageTable[0][index][0];
+    way = MicroTAGE::TageEntry(0x55, 3, 0x5000);
+
+    uint64_t allocated_table = 0;
+    uint64_t allocated_index = 0;
+    uint64_t allocated_way = 0;
+    ASSERT_TRUE(tage->handleNewEntryAllocation(
+        seed.bbStart, entry, true, 0, meta, seed.asidHash,
+        MicroTAGE::TrainingMode::S3Update,
+        allocated_table, allocated_index, allocated_way));
+    EXPECT_EQ(allocated_table, 0);
+    EXPECT_EQ(way.pc, entry.branch.pc);
+    EXPECT_EQ(way.counter, 0);
+    EXPECT_FALSE(way.useful);
+    EXPECT_EQ(tage->tageStats.s3UpdateAllocFailure, 0ULL);
+}
+
+TEST_F(MicroTAGES3UpdateTest, HighestTableProviderKeepsUsefulWhenWeakened)
+{
+    const auto entry = makeCondEntry(0x4000);
+    const auto seed = makeStagePred(0x4000, {entry}, {});
+    primePrediction(tage.get(), seed);
+
+    auto meta = tage->threadMeta[0];
+    const unsigned highest_table = tage->numPredictors - 1;
+    uint64_t allocated_table = 0;
+    uint64_t allocated_index = 0;
+    uint64_t allocated_way = 0;
+    ASSERT_TRUE(tage->handleNewEntryAllocation(
+        seed.bbStart, entry, true, highest_table, meta, seed.asidHash,
+        MicroTAGE::TrainingMode::S3Update,
+        allocated_table, allocated_index, allocated_way));
+    auto &provider = tage->tageTable[allocated_table][allocated_index][allocated_way];
+    provider.counter = 1;
+    provider.useful = true;
+    primePrediction(tage.get(), seed);
+
+    auto teacher = makeStagePred(seed.bbStart, {entry}, {});
+    tage->updateUsingS3Pred(teacher);
+    EXPECT_EQ(provider.counter, 0);
+    EXPECT_TRUE(provider.useful);
+    EXPECT_EQ(tage->tageStats.s3UpdateAllocFailureNoValidTable, 0ULL);
+
+    tage->usingS3Pred = false;
+    tage->setTrainingStage(PredictorTrainingStage::Resolve);
+    provider.counter = 1;
+
+    FetchTarget stream;
+    stream.startPC = seed.bbStart;
+    stream.predMetas[tage->getComponentIdx()] = tage->getPredictionMeta(0);
+    const PredictionUpdateContext context(stream);
+    const PreparedUpdate update(
+        std::vector<BranchOutcome>{makeBranchOutcome(entry, false, true)});
+    tage->doResolveUpdate(context, update);
+    EXPECT_EQ(provider.counter, 0);
+    EXPECT_TRUE(provider.useful);
+    EXPECT_EQ(tage->tageStats.updateAllocSuccess, 0ULL);
+    EXPECT_EQ(tage->tageStats.updateAllocFailureNoValidTable, 0ULL);
+}
+
 } // namespace test
 
 } // namespace btb_pred

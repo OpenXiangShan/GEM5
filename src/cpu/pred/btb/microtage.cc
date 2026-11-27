@@ -517,16 +517,10 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BranchPrediction &entry,
         // Update prediction counter
         updateCounter(actual_taken, 3, way.counter);
 
-        // Update useful bit based on several conditions
+        // Protect providers that improve on the aBTB direction.
         bool main_is_correct = main_info.taken() == actual_taken;
         if (main_info.taken() != base_taken && main_is_correct) {
             way.useful = 1;
-        }
-
-        // Reset useful when the provider counter becomes weak.
-        if (way.counter == 0 || way.counter == -1) {
-            way.useful = 0;
-            DPRINTF(TAGEUseful, "useful bit reset to 0 due to weak counter\n");
         }
         DPRINTF(UTAGE, "useful bit is now %d\n", way.useful);
 
@@ -557,6 +551,11 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BranchPrediction &entry,
     // A control redirect can also come from a target/BTB miss.  Allocate
     // direction state only when the stored direction itself was wrong.
     if (!this_fb_mispred || pred.taken == actual_taken) {
+        return false;
+    }
+
+    // A provider in the highest table has no longer history to allocate.
+    if (main_info.found && main_info.table == numPredictors - 1) {
         return false;
     }
 
@@ -604,11 +603,6 @@ MicroTAGE::updatePredictorStateAndCheckAllocationS3(const BranchPrediction &entr
         bool main_is_correct = main_info.taken() == actual_taken;
         if (main_info.taken() != base_taken && main_is_correct) {
             way.useful = 1;
-        }
-
-        if (way.counter == 0 || way.counter == -1) {
-            way.useful = 0;
-            DPRINTF(TAGEUseful, "useful bit reset to 0 due to weak counter\n");
         }
         DPRINTF(UTAGE, "useful bit is now %d\n", way.useful);
 
@@ -667,10 +661,8 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
                                  ThreadID tid) {
     int &resetCnt = usesTidPartitionedStorage() ?
         usefulResetCntByThread[tid] : usefulResetCnt;
-    // Simple set-associative allocation (no LFSR, no per-way table gating):
-    // - For each table from start_table upward, check the set at computed index.
-    // - Prefer invalid ways; else choose any way with useful==0 and weak counter.
-    // - If none, apply a one-step age penalty to a strong, not-useful way (no allocation).
+    // Match BTBTAGE's priority within each candidate set:
+    // invalid, then weak and not useful, then any not-useful way.
     const bool isS3Update = mode == TrainingMode::S3Update;
     auto count_alloc_success = [&]() {
         if (isS3Update) {
@@ -713,34 +705,46 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
 
         auto &set = tageTable[ti][newIndex];
 
-        // Allocate into invalid way or not-useful and weak way
+        int selected_way = -1;
         for (unsigned way = 0; way < numWays; ++way) {
-            auto &cand = set[way];
-            const bool weakish = std::abs(cand.counter * 2 + 1) <= 3; // -3,-2,-1,0,1,2
-            if (!cand.valid || (!cand.useful && weakish)) {
-                short newCounter = actual_taken ? 0 : -1;
-                DPRINTF(UTAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
-                        ti, newIndex, way, newTag, position, newCounter, entry.branch.pc);
-                cand = TageEntry(newTag, newCounter, entry.branch.pc); // u = 0 default
-                count_alloc_success();
-                allocated_table = ti;
-                allocated_index = newIndex;
-                allocated_way = way;
-                resetCnt = resetCnt <= 0 ? 0 : resetCnt - 1;
-                return true;
+            if (!set[way].valid) {
+                selected_way = way;
+                break;
             }
         }
 
-        // 3) Apply age penalty to one strong, not-useful way to make it replaceable later
-        for (unsigned way = 0; way < numWays; ++way) {
-            auto &cand = set[way];
-            const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
-            if (!cand.useful && !weakish) {
-                if (cand.counter > 0) cand.counter--; else cand.counter++;
-                DPRINTF(UTAGE, "age penalty applied on table %d[%lu][%u], new ctr %d\n",
-                        ti, newIndex, way, cand.counter);
-                break; // one penalty per table per update
+        if (selected_way == -1) {
+            for (unsigned way = 0; way < numWays; ++way) {
+                const auto &cand = set[way];
+                const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
+                if (!cand.useful && weakish) {
+                    selected_way = way;
+                    break;
+                }
             }
+        }
+
+        if (selected_way == -1) {
+            for (unsigned way = 0; way < numWays; ++way) {
+                if (!set[way].useful) {
+                    selected_way = way;
+                    break;
+                }
+            }
+        }
+
+        if (selected_way != -1) {
+            short newCounter = actual_taken ? 0 : -1;
+            DPRINTF(UTAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
+                    ti, newIndex, selected_way, newTag, position, newCounter,
+                    entry.branch.pc);
+            set[selected_way] = TageEntry(newTag, newCounter, entry.branch.pc);
+            count_alloc_success();
+            allocated_table = ti;
+            allocated_index = newIndex;
+            allocated_way = selected_way;
+            resetCnt = resetCnt <= 0 ? 0 : resetCnt - 1;
+            return true;
         }
 
         count_alloc_failure();
