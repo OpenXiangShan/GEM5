@@ -276,9 +276,9 @@ class BaseO3CPU(BaseCPU):
             8, "Number of matrix MLS virtual queue entries")
         matrixMlsReplayQueueEntries = Param.Unsigned(
             8, "Number of matrix MLS replay queue entries")
-        matrixMlsReplaySelectLatency = Param.Unsigned(
-            10000,
-            "Ticks to wait before a ready matrix MLS replay entry becomes schedulable")
+        # XSAI registers the TLB wakeup before selecting a replay.
+        matrixMlsReplaySelectLatency = Param.Cycles(
+            1, "CPU cycles from translation wakeup to Matrix replay selection")
     LSQDepCheckShift = Param.Unsigned(0,
             "Number of places to shift addr before check")
     LSQCheckLoads = Param.Bool(True,
