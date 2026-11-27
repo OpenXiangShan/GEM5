@@ -44,6 +44,7 @@ from pathlib import Path
 from os import getcwd
 from os.path import join as joinpath
 
+from common import CacheConfig
 from common import CpuConfig
 from common import ObjectList
 
@@ -689,7 +690,7 @@ def run(options, root, testsys, cpu_class):
     checkpoint_dir = None
     if options.checkpoint_restore:
         cpt_starttick, checkpoint_dir = findCptDir(options, cptdir, testsys)
-    root.apply_config(options.param)
+    CacheConfig.apply_config_and_configure(root, options, testsys)
     validate_dip_ruby_compatibility(testsys)
     m5.instantiate(checkpoint_dir)
 
@@ -865,7 +866,7 @@ def run_vanilla(options, root, testsys, cpu_class):
             testsys.cpu[i].warmupInstCount = options.warmup_insts_no_switch
 
     checkpoint_dir = None
-    root.apply_config(options.param)
+    CacheConfig.apply_config_and_configure(root, options, testsys)
     validate_dip_ruby_compatibility(testsys)
     m5.instantiate(checkpoint_dir)
 
