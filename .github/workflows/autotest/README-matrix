@@ -1,0 +1,62 @@
+Matrix operator regression
+==========================
+
+The full-system workflow runs two xsai-blas operators at three sizes each.
+GEMM dimensions are M/K/N. FlashAttention dimensions are query length,
+key/value length and head dimension.
+
+    gemm_i8_f32       128/64/128     256/256/256    512/256/512
+    flash_attention   8/130/70       32/256/64      256/512/128
+
+Build DRAMsim3 as described in docs/quick_start.md. From the GEM5 root,
+build GEM5 and run the small FlashAttention case.
+
+    scons build/RISCV_MATRIX/gem5.opt --default=RISCV --enable-matrix --linker=gold -j64
+    python3 .github/workflows/autotest/script/matrix_ci.py run \
+        --case flash_attention-q8-kv130-d70 --output matrix-ci-results
+
+Use --case gemm_i8_f32 or --case flash_attention to run all three sizes of
+one operator. Omit --case to run all six images. The summary is in
+matrix-ci-results/validation-results.json. Each entry includes the shape,
+operator cycles, retired instructions and Matrix difftest counts. For a
+failure, open runs/<case>/sim.log under the output directory. The exact
+command is in command.json alongside it.
+
+Inputs
+------
+
+    /nfs/share/gem5_ci/matrix/<case>-ci.bin
+    /nfs/share/gem5_ci/ref/matrix/af9d4ce51fc2/riscv64-nemu-interpreter-so
+
+script/matrix_ci.py lists the six case IDs. Use --image-dir, --reference
+and --gem5 to select other inputs or a different binary. The Matrix REF uses
+a 1544-byte register layout.
+
+What CI checks
+--------------
+
+gem5-matrix.yml runs on pushes to xs-dev and on manual dispatch. It builds
+GEM5 once and runs all six cases in parallel, with a 30-minute timeout per
+case. It uploads the logs and summary as matrix-correctness-results.
+
+Each guest runs the optimized Matrix and RVV implementation once and compares
+the output against an embedded reference computed on the host. The guest must
+reach m5_exit with NEMU difftest enabled. Every shape must have a checked
+MMA and a completed Matrix memory request. At exit, submitted, completed and
+checked commands must balance, every sent memory request must have a response,
+and pendingChecks, pendingOwners and pendingMemory must all be zero.
+
+The guest reads cycle and instret around xsai_op_plan_execute. This measures
+one operator invocation with zero warmups. Plan creation, the host-reference
+comparison and guest startup are outside the measured interval. The runner
+requires one positive sample tagged with the requested shape and records it
+in the performance field. There is no cycle threshold.
+
+All six images use DRAMsim3 and --classic-l2. The large FlashAttention case
+hits an express-snoop assertion in CoherentXBar::recvTimingSnoopResp with
+the default XiangShan L2. FlashAttention also uses the SEW=16 RVV widening
+conversion from #1372.
+
+Run the result-parser tests with
+
+    python3 -m unittest discover -s .github/workflows/autotest/script -p test_matrix_ci.py
