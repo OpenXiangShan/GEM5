@@ -601,18 +601,24 @@ class RunnerTest(unittest.TestCase):
                     "--smt",
                     {"GCBV_REF_SO": str(ref)},
                 ),
-                ("h-spec06-0.5c", config.name, "", {"GCBH_REF_SO": str(ref)}),
+                ("h-spec06-0.3c", config.name, "", {"GCBH_REF_SO": str(ref)}),
+                ("h-spec06-1.0c", config.name, "", {"GCBH_REF_SO": str(ref)}),
                 ("gcc12-spec06-smt-0.3c", config.name, "", multi),
                 ("gcc12-spec06-1.0c", "smt_idealkmhv3.py", "", multi),
             ]:
                 args.config_path = config_name
                 args.extra_args = extra
-                _, _, env, _ = prepare_command(
+                _, flags, env, _ = prepare_command(
                     self.root, MODULE.resolve_benchmark(profile), args
                 )
                 self.assertEqual(
                     {k: env[k] for k in CHECKPOINT_ENV if k in env}, active
                 )
+                if "GCBH_REF_SO" in active:
+                    self.assertIn("--mem-size=16GB", flags)
+                    self.assertFalse(
+                        any(f.startswith("--gcpt-restorer") for f in flags)
+                    )
 
     def test_weekly_profiles_keep_ref_and_memory_paired(self):
         config = self.root / "kmhv3.py"

@@ -30,7 +30,7 @@ on:
           - gcc12-spec06-smt-0.3c
           - gcc12-spec06-smt-1.0c
           - gcc12-spec06-smt-int-1.0c
-          - h-spec06-0.5c
+          - h-spec06-0.3c
           - h-spec06-1.0c
           - gcc12-spec06-0.8c
           - gcc12-spec06-1.0c
