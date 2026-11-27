@@ -145,7 +145,7 @@ BRRIP::getVictim(const ReplacementCandidates& candidates) const
 std::shared_ptr<ReplacementData>
 BRRIP::instantiateEntry()
 {
-    return std::shared_ptr<ReplacementData>(new BRRIPReplData(numRRPVBits));
+    return std::make_shared<BRRIPReplData>(numRRPVBits);
 }
 
 } // namespace replacement_policy
