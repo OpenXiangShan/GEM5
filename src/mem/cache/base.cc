@@ -163,7 +163,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       Judgmentcycle(0),
       sliceAddr(8),
       cacheblkAddr(8),
-      wayPreTable(size/assoc/64),
+      wayPreTable(size / assoc / blkSize),
       lookupLatency(p.tag_latency),
       dataLatency(p.data_latency),
       forwardLatency(p.tag_latency),
