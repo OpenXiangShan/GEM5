@@ -50,6 +50,7 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <optional>
 #include <queue>
 #include <set>
 #include <string>
@@ -1475,13 +1476,13 @@ class LSQ
                                const DcacheBankMask &rhs) const;
 
     bool hasDcacheMainPipeDataArrayConflict() const;
-    bool isDcacheMainPipeSetBlocked(uint64_t set_key) const;
     bool canEnterDcacheMainPipe(
         const DcacheMainPipeRequest &request,
         const DcacheMainPipeBufferedPipe &next_pipe);
-    bool canEnterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry);
+    void tryIssueDcacheMainPipeSkid(DcacheMainPipeBufferedPipe &pipe,
+                                   bool buffered);
 
-    // Put a StoreBuffer request into fake S1 and attach its fake S2 issue hook.
+    // Accept a StoreBuffer request at the shared input and attach its S2 hook.
     void enterStoreBufferDcacheMainPipe(StoreBufferEntry &entry,
                                         PacketPtr data_pkt);
 
@@ -1501,7 +1502,11 @@ class LSQ
 
     std::queue<DcacheMainPipeRequest> dcacheMainPipeRefillQ;
     DcacheMainPipeBufferedPipe dcacheMainPipe = {};
-    DcacheMainPipeSlot dcachePrefetchEntry;
+    DcacheMainPipeSlot dcacheMainPipeSkid;
+    bool dcacheMainPipeInputOpen = false;
+    bool dcacheMainPipeS0TagWrite = false;
+    // StoreBuffer offers its request after advanceDcacheMainPipe().
+    std::array<std::optional<uint64_t>, 3> dcacheMainPipeS0BusySets;
     std::function<bool()> dcachePrefetchReady;
     std::function<DcacheMainPipeRequest()> takeDcachePrefetch;
 
