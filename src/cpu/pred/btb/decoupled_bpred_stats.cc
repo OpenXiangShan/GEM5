@@ -246,6 +246,44 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(uncondMiss, statistics::units::Count::get(), "the number of uncond branch misses"),
     ADD_STAT(returnMiss, statistics::units::Count::get(), "the number of return branch misses"),
     ADD_STAT(otherMiss, statistics::units::Count::get(), "the number of other branch misses"),
+    ADD_STAT(h2pTableTruePositive, statistics::units::Count::get(),
+             "PC-only H2P-marked conditional branches that mispredicted"),
+    ADD_STAT(h2pTableFalsePositive, statistics::units::Count::get(),
+             "PC-only H2P-marked conditional branches that were correct"),
+    ADD_STAT(h2pTableFalseNegative, statistics::units::Count::get(),
+             "PC-only H2P-unmarked conditional branches that mispredicted"),
+    ADD_STAT(h2pTableCoverage, statistics::units::Ratio::get(),
+             "PC-only H2P coverage: TP / (TP + FN)",
+             h2pTableTruePositive /
+                 (h2pTableTruePositive + h2pTableFalseNegative)),
+    ADD_STAT(h2pTablePrecision, statistics::units::Ratio::get(),
+             "PC-only H2P precision: TP / (TP + FP)",
+             h2pTableTruePositive /
+                 (h2pTableTruePositive + h2pTableFalsePositive)),
+    ADD_STAT(h2pTruePositive, statistics::units::Count::get(),
+             "H2P-marked committed conditional branches that mispredicted"),
+    ADD_STAT(h2pFalsePositive, statistics::units::Count::get(),
+             "H2P-marked committed conditional branches that were correct"),
+    ADD_STAT(h2pFalseNegative, statistics::units::Count::get(),
+             "unmarked committed conditional branches that mispredicted"),
+    ADD_STAT(h2pCoverage, statistics::units::Ratio::get(),
+             "H2P misprediction coverage: TP / (TP + FN)",
+             h2pTruePositive / (h2pTruePositive + h2pFalseNegative)),
+    ADD_STAT(h2pPrecision, statistics::units::Ratio::get(),
+             "H2P precision: TP / (TP + FP)",
+             h2pTruePositive / (h2pTruePositive + h2pFalsePositive)),
+    ADD_STAT(h2pTrainMispredicts, statistics::units::Count::get(),
+             "committed conditional mispredictions used to allocate or increment H2P entries"),
+    ADD_STAT(h2pTrainProviderRejected, statistics::units::Count::get(),
+             "new H2P allocations rejected by the configured final TAGE provider filter"),
+    ADD_STAT(h2pAllocations, statistics::units::Count::get(),
+             "new H2P branch slots allocated"),
+    ADD_STAT(h2pCounterAges, statistics::units::Count::get(),
+             "H2P branch slots decremented by aging"),
+    ADD_STAT(h2pReplacements, statistics::units::Count::get(),
+             "H2P cache-line entries replaced"),
+    ADD_STAT(h2pAllocationDrops, statistics::units::Count::get(),
+             "H2P allocations dropped because a line has two live slots"),
     ADD_STAT(branchClassCounts, statistics::units::Count::get(), "branch counts by fine-grained class"),
     ADD_STAT(branchClassMisses, statistics::units::Count::get(), "branch mispredictions by fine-grained class"),
     ADD_STAT(branchClassCountsTotal, statistics::units::Count::get(), "total number of classified branches"),
@@ -334,6 +372,8 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     commitFtqEntryHasInsts.init(0, maxInstsNum >> 1, 1);
     commitFtqEntryFetchedInsts.init(0, maxInstsNum >> 1, 1);
     s1PredWrongBySourceAndReason.init(NumS1SourceBuckets, NumOverrideReasonBuckets);
+    h2pCoverage.precision(6);
+    h2pPrecision.precision(6);
     branchClassCounts.init(NumBranchClasses);
     predictionsStartedPerCycle.init(0, numThreads, 1);
     predictionsStartedByThread.init(numThreads);
