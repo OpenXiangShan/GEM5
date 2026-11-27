@@ -1,0 +1,246 @@
+// -*- mode:c++ -*-
+
+// Copyright (c) 2015 RISC-V Foundation
+// Copyright (c) 2017 The University of Virginia
+// Copyright (c) 2020 Barkhausen Institut
+// Copyright (c) 2021 StreamComputing Corp
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met: redistributions of source code must retain the above copyright
+// notice, this list of conditions and the following disclaimer;
+// redistributions in binary form must reproduce the above copyright
+// notice, this list of conditions and the following disclaimer in the
+// documentation and/or other materials provided with the distribution;
+// neither the name of the copyright holders nor the names of its
+// contributors may be used to endorse or promote products derived from
+// this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+        0x0a: decode FUNCT7 {
+            0x00: decode FUNCT3 {
+                0x0: decode RS2 {
+                    0x0: decode RS1 {
+                        0x0: decode RD {
+                            0x0: MatrixConfOp::minit({{
+                                if (xc->readMiscReg(MISCREG_PRV) != PRV_M) {
+                                    return std::make_shared<IllegalInstFault>(
+                                        "minit requires M-mode", machInst);
+                                }
+                                STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                                status.ms = 1;
+                                xc->setMiscReg(MISCREG_STATUS, status);
+                            }}, IsSerializeAfter, IsNonSpeculative, MatrixIntOp);
+                        }
+                    }
+                }
+                0x1: MatrixLsuOp::mla(
+                    'MatrixRenamedTileMReg', 'MatrixRenamedTileKReg',
+                    'MatrixRowNum', 'MatrixTrLenE8Max', 0, 0, 0, 0);
+                0x2: MatrixConfOp::mmacc({{
+                    auto mtilem = Mtilem;
+                    auto mtilen = Mtilen;
+                    auto mtilek = Mtilek;
+                    if (RD < 4 || RD >= 8 || RS1 >= 4 || RS2 >= 4 ||
+                        mtilem > RiscvISA::MatrixRowNum ||
+                        mtilen > RiscvISA::MatrixAccE32Max ||
+                        mtilek > RiscvISA::MatrixTrLenE8Max) {
+                        return std::make_shared<IllegalInstFault>(
+                            "mmacc parameter check failed", machInst);
+                    }
+                    auto request = matrix::CuteRequest::makeMma(
+                        0, RD & 7, RS1 & 7, RS2 & 7, mtilem, mtilen, mtilek);
+                    auto &mma = request.mma;
+                    mma.rm = xc->readMiscReg(MISCREG_XMXRM);
+                    const auto lhs_config = xc->readMatrixConfig(RS1);
+                    const auto rhs_config = xc->readMatrixConfig(RS2);
+                    const auto dst_config = xc->readMatrixConfig(RD);
+                    if (((lhs_config & 0xff) != 2 &&
+                         (lhs_config & 0xff) != 3) ||
+                        ((rhs_config & 0xff) != 2 &&
+                         (rhs_config & 0xff) != 3) ||
+                        (dst_config & 0xff) != 4) {
+                        return std::make_shared<IllegalInstFault>(
+                            "unsupported matrix MMA types", machInst);
+                    }
+                    mma.types1 = (lhs_config & 0xf) == 2 ? 4 : 0;
+                    mma.types2 = (rhs_config & 0xf) == 2 ? 4 : 0;
+                    mma.typed = 2;
+                    mma.lhsElemType = matrix::MatrixElemType::Int8;
+                    mma.rhsElemType = matrix::MatrixElemType::Int8;
+                    mma.dstElemType = matrix::MatrixElemType::Int32;
+                    mma.sat = xc->readMiscReg(MISCREG_XMSATEN);
+                    xc->stageMatrixRequest(request);
+                }}, MatrixMmaOp);
+                0x3: MatrixConfOp::mzero_rtl({{
+                    if (RD < 4 || RD >= 8 || RS1 != 0 || RS2 != 0) {
+                        return std::make_shared<IllegalInstFault>(
+                            "unsupported mzero register or reserved fields", machInst);
+                    }
+                    const auto request = matrix::CuteRequest::makeArithZero(
+                        0, matrix::MatrixBankKind::C, RD & 7,
+                        RiscvISA::MatrixRowNum,
+                        RiscvISA::MatrixAccE32Max,
+                        matrix::MatrixElemType::Int32);
+                    xc->stageMatrixRequest(request);
+                }}, MatrixArithOp);
+            }
+            0x08: decode FUNCT3 {
+                0x0: decode RD {
+                    0x0: MatrixConfOp::msettileki({{
+                        uint64_t atx =
+                            (static_cast<uint64_t>(RS2) << 5) | RS1;
+                        xc->setMiscReg(MISCREG_MTILEK, atx);
+                        Mtilek = atx;
+                    }}, MatrixIntOp);
+                }
+                0x1: MatrixLsuOp::mlb(
+                    'MatrixRenamedTileKReg', 'MatrixRenamedTileNReg',
+                    'MatrixTrLenE8Max', 'MatrixRowNum', 1, 0, 0, 0);
+            }
+            0x09: decode RS2 {
+                0x0: decode FUNCT3 {
+                    0x0: decode RD {
+                        0x0: MatrixConfOp::msettilek({{
+                            xc->setMiscReg(MISCREG_MTILEK, Rs1_ud);
+                            Mtilek = Rs1_ud;
+                        }}, MatrixIntOp);
+                    }
+                }
+            }
+            0x10: decode FUNCT3 {
+                0x0: decode RD {
+                    0x0: MatrixConfOp::msettilemi({{
+                        uint64_t atx =
+                            (static_cast<uint64_t>(RS2) << 5) | RS1;
+                        xc->setMiscReg(MISCREG_MTILEM, atx);
+                        Mtilem = atx;
+                    }}, MatrixIntOp);
+                }
+                0x1: MatrixLsuOp::mlc(
+                    'MatrixRenamedTileMReg', 'MatrixRenamedTileNReg',
+                    'MatrixRowNum', 'MatrixAccE32Max', 0, 1, 0, 0);
+            }
+            0x11: decode FUNCT3 {
+                0x0: decode RS2 {
+                    0x0: decode RD {
+                        0x0: MatrixConfOp::msettilem({{
+                            xc->setMiscReg(MISCREG_MTILEM, Rs1_ud);
+                            Mtilem = Rs1_ud;
+                        }}, MatrixIntOp);
+                    }
+                }
+                0x1: MatrixLsuOp::msc(
+                    'MatrixRenamedTileMReg', 'MatrixRenamedTileNReg',
+                    'MatrixRowNum', 'MatrixAccE32Max', 0, 1, 1, 0);
+            }
+            0x18: decode FUNCT3 {
+                0x0: decode RD {
+                    0x0: MatrixConfOp::msettileni({{
+                        uint64_t atx =
+                            (static_cast<uint64_t>(RS2) << 5) | RS1;
+                        xc->setMiscReg(MISCREG_MTILEN, atx);
+                        Mtilen = atx;
+                    }}, MatrixIntOp);
+                }
+            }
+            0x19: decode RS2 {
+                0x0: decode FUNCT3 {
+                    0x0: decode RD {
+                        0x0: MatrixConfOp::msettilen({{
+                            xc->setMiscReg(MISCREG_MTILEN, Rs1_ud);
+                            Mtilen = Rs1_ud;
+                        }}, MatrixIntOp);
+                    }
+                }
+            }
+            0x21: decode RS2 {
+                0x0: decode FUNCT3 {
+                    0x0: MatrixConfOp::msetcfg({{
+                        if (RD >= 8 || (Rs1_ud & 0xf0) != 0 ||
+                            (Rs1_ud & 0xf) > 12) {
+                            return std::make_shared<IllegalInstFault>(
+                                "unsupported matrix configuration", machInst);
+                        }
+                        // O3 records misc writes on this DynInst and applies
+                        // them at commit. Upper reserved bits are preserved.
+                        xc->setMiscReg(MISCREG_MCFG0 + RD, Rs1_ud);
+                    }}, IsSerializeBefore, IsSerializeAfter,
+                        IsNonSpeculative, MatrixIntOp);
+                }
+            }
+            0x28: decode RS2 {
+                0x0: decode FUNCT3 {
+                    0x0: MatrixConfOp::mgetcfg({{
+                        // XSAI DecodeUnit uses RS1[2:0]. Its MGETCFG
+                        // BitPat leaves RS1[4:3] unconstrained.
+                        Rd = xc->readMiscReg(MISCREG_MCFG0 + (RS1 & 7));
+                    }}, IsSerializeBefore, IsSerializeAfter,
+                        IsNonSpeculative, MatrixIntOp);
+                }
+            }
+            0x31: decode FUNCT3 {
+                0x1: MatrixLsuOp::msct(
+                    'MatrixRenamedTileMReg', 'MatrixRenamedTileNReg',
+                    'MatrixRowNum', 'MatrixAccE32Max', 0, 1, 1, 1);
+            }
+            0x40: decode RS1 {
+                0x0: decode FUNCT3 {
+                    0x4: decode RD {
+                        0x0: MatrixConfOp::msyncregreset({{
+                            if (!xc->stageMatrixTokenReset(RS2)) {
+                                auto *isa = static_cast<RiscvISA::ISA *>(
+                                    xc->tcBase()->getIsaPtr());
+                                isa->resetMatrixToken(RS2);
+                            }
+                        }}, IsSerializeAfter, MatrixSyncOp);
+                    }
+                }
+            }
+            0x48: decode RS1 {
+                0x0: decode FUNCT3 {
+                    0x4: decode RD {
+                        0x0: MatrixConfOp::mrelease({{
+                            const auto request =
+                                matrix::CuteRequest::makeRelease(0, RS2);
+                            if (!xc->stageMatrixRequest(request)) {
+                                auto *isa = static_cast<RiscvISA::ISA *>(
+                                    xc->tcBase()->getIsaPtr());
+                                isa->releaseMatrixToken(RS2);
+                            }
+                        }}, IsSerializeAfter, MatrixReleaseOp);
+                    }
+                }
+            }
+            0x50: decode FUNCT3 {
+                0x4: decode RD {
+                    0x0: MatrixConfOp::macquire({{
+                        bool ready = false;
+                        if (xc->readStagedMatrixTokenReady(
+                                RS2, Rs1_ud, ready)) {
+                            if (!ready) {
+                                return std::make_shared<ReExec>();
+                            }
+                        } else {
+                            auto *isa = static_cast<RiscvISA::ISA *>(
+                                xc->tcBase()->getIsaPtr());
+                            if (!isa->matrixTokenReady(RS2, Rs1_ud)) {
+                                return std::make_shared<ReExec>();
+                            }
+                        }
+                    }}, IsSerializeAfter, MatrixSyncOp);
+                }
+            }
+        }

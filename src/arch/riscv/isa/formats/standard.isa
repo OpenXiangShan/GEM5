@@ -410,6 +410,33 @@ def template CSRExecute {{
             }
             break;
           }
+#if GEM5_ENABLE_MATRIX
+          case CSR_XMCSR:
+          case CSR_XMXRM:
+          case CSR_XMSAT:
+          case CSR_XMFFLAGS:
+          case CSR_XMFRM:
+          case CSR_XMSATEN: {
+            const STATUS status = xc->readMiscReg(MISCREG_STATUS);
+            if (status.ms == 0) {
+                return std::make_shared<IllegalInstFault>(
+                    "Matrix CSR access with MS off", machInst);
+            }
+            if (xc->readMiscReg(MISCREG_VIRMODE)) {
+                STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                if (vsstatus.ms == 0) {
+                    return std::make_shared<IllegalInstFault>(
+                        "Matrix CSR access with guest MS off", machInst);
+                }
+                // CSRRW[I] writes even when rs1 or zimm is zero.
+                if (bits(machInst, 13, 12) == 1 || machInst.rs1 != 0) {
+                    vsstatus.ms = 3;
+                    xc->setMiscReg(MISCREG_VSSTATUS, vsstatus);
+                }
+            }
+            break;
+          }
+#endif
           case CSR_SATP: {
             STATUS status = xc->readMiscReg(MISCREG_STATUS);
             HSTATUS hstatus = xc->readMiscReg(MISCREG_HSTATUS);
@@ -474,7 +501,16 @@ def template CSRExecute {{
             (csr == CSR_SIE || csr == CSR_SIP) &&
             xc->readMiscReg(MISCREG_VIRMODE) == 1;
 
-        if (guestInterruptCsr) {
+        if (csr == CSR_SSTATUS) {
+            if (xc->readMiscReg(MISCREG_VIRMODE)) {
+                effectiveMiscReg = MISCREG_VSSTATUS;
+                visibleMask = NEMU_SSTATUS_RMASK;
+            }
+#if GEM5_ENABLE_MATRIX
+            if (machInst.matrixEnabled)
+                visibleMask |= NEMU_MSTATUS_WMASK_RV_AME;
+#endif
+        } else if (guestInterruptCsr) {
             effectiveMiscReg =
                 (csr == CSR_SIE) ? MISCREG_VSIE : MISCREG_VSIP;
             visibleMask = SI_MASK;

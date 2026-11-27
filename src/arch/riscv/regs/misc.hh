@@ -54,6 +54,7 @@
 #include "arch/generic/vec_reg.hh"
 #include "base/bitunion.hh"
 #include "base/types.hh"
+#include "config/gem5_enable_matrix.hh"
 
 namespace gem5
 {
@@ -229,6 +230,22 @@ enum MiscRegIndex
     MISCREG_VL,
     MISCREG_VTYPE,
     MISCREG_VLENB,
+#if GEM5_ENABLE_MATRIX
+    MISCREG_XMCSR,
+    MISCREG_XMXRM,
+    MISCREG_XMSAT,
+    MISCREG_XMFFLAGS,
+    MISCREG_XMFRM,
+    MISCREG_XMSATEN,
+    MISCREG_XMISA, // Reserved for the version 1 checkpoint layout.
+    MISCREG_XTLENB,
+    MISCREG_XTRLENB,
+    MISCREG_XALENB,
+    MISCREG_MSYNC,
+    MISCREG_MTILEM,
+    MISCREG_MTILEN,
+    MISCREG_MTILEK,
+#endif
 
     MISCREG_HSTATUS,
     MISCREG_HEDELEG,
@@ -281,6 +298,17 @@ enum MiscRegIndex
     MISCREG_HSTATEEN2,
     MISCREG_HSTATEEN3,
 
+#if GEM5_ENABLE_MATRIX
+    // Internal architectural slots, accessed by msetcfg/mgetcfg, not CSRs.
+    MISCREG_MCFG0,
+    MISCREG_MCFG1,
+    MISCREG_MCFG2,
+    MISCREG_MCFG3,
+    MISCREG_MCFG4,
+    MISCREG_MCFG5,
+    MISCREG_MCFG6,
+    MISCREG_MCFG7,
+#endif
     MISCREG_STIMECMP,
     // stimecmph rv32 only
     MISCREG_VSTIMECMP,
@@ -504,6 +532,21 @@ enum CSRIndex
     CSR_VL           = 0xC20,
     CSR_VTYPE        = 0xC21,
     CSR_VLENB        = 0xC22,
+#if GEM5_ENABLE_MATRIX
+    CSR_XMCSR        = 0x802,
+    CSR_XMXRM        = 0x806,
+    CSR_XMSAT        = 0x807,
+    CSR_XMFFLAGS     = 0x808,
+    CSR_XMFRM        = 0x809,
+    CSR_XMSATEN      = 0x80A,
+    CSR_XTLENB       = 0xCC1,
+    CSR_XTRLENB      = 0xCC2,
+    CSR_XALENB       = 0xCC3,
+    CSR_MTILEM       = 0xCC4,
+    CSR_MTILEN       = 0xCC5,
+    CSR_MTILEK       = 0xCC6,
+    CSR_MSYNC        = 0xCC7,
+#endif
 
     CSR_HSTATUS     = 0x600,
     CSR_HEDELEG     = 0x602,
@@ -749,6 +792,21 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_VL,           {"vl"    , MISCREG_VL}},
     {CSR_VTYPE,        {"vtype" , MISCREG_VTYPE}},
     {CSR_VLENB,        {"VLENB" , MISCREG_VLENB}},
+#if GEM5_ENABLE_MATRIX
+    {CSR_XMCSR,        {"xmcsr", MISCREG_XMCSR}},
+    {CSR_XMXRM,        {"xmxrm", MISCREG_XMXRM}},
+    {CSR_XMSAT,        {"xmsat", MISCREG_XMSAT}},
+    {CSR_XMFFLAGS,     {"xmfflags", MISCREG_XMFFLAGS}},
+    {CSR_XMFRM,        {"xmfrm", MISCREG_XMFRM}},
+    {CSR_XMSATEN,      {"xmsaten", MISCREG_XMSATEN}},
+    {CSR_XTLENB,       {"xtlenb", MISCREG_XTLENB}},
+    {CSR_XTRLENB,      {"xtrlenb", MISCREG_XTRLENB}},
+    {CSR_XALENB,       {"xalenb", MISCREG_XALENB}},
+    {CSR_MTILEM,       {"mtilem", MISCREG_MTILEM}},
+    {CSR_MTILEN,       {"mtilen", MISCREG_MTILEN}},
+    {CSR_MTILEK,       {"mtilek", MISCREG_MTILEK}},
+    {CSR_MSYNC,        {"msync", MISCREG_MSYNC}},
+#endif
 
     {CSR_HSTATUS, {"hstatus", MISCREG_HSTATUS}},
     {CSR_HEDELEG, {"hedeleg", MISCREG_HEDELEG}},
@@ -798,6 +856,7 @@ BitUnion64(STATUS)
     Bitfield<36> sbe;
     Bitfield<35, 34> sxl;
     Bitfield<33, 32> uxl;
+    Bitfield<26, 25> ms;
     Bitfield<22> tsr;
     Bitfield<21> tw;
     Bitfield<20> tvm;
@@ -929,8 +988,12 @@ const uint64_t NEMU_MSTATUS_WMASK_BASE = (0x7e19aaUL);
 const uint64_t NEMU_MSTATUS_WMASK_RVH = (3UL << 38);
 const uint64_t NEMU_MSTATUS_WMASK_FS = (0x3UL << 13);
 const uint64_t NEMU_MSTATUS_WMASK_RVV = (3UL << 9);
+#if GEM5_ENABLE_MATRIX
+const uint64_t NEMU_MSTATUS_WMASK_RV_AME = (3UL << 25);
+#endif
 const uint64_t NEMU_MSTATUS_WMASK =
-    (NEMU_MSTATUS_WMASK_BASE | NEMU_MSTATUS_WMASK_FS | NEMU_MSTATUS_WMASK_RVH | NEMU_MSTATUS_WMASK_RVV);
+    (NEMU_MSTATUS_WMASK_BASE | NEMU_MSTATUS_WMASK_FS |
+     NEMU_MSTATUS_WMASK_RVH | NEMU_MSTATUS_WMASK_RVV);
 const uint64_t NEMU_SSTATUS_WMASK = NEMU_MSTATUS_WMASK & (0x80000003000de762UL);
 // const uint64_t NEMU_COUNTER_MASK = 0xffffffffULL;
 // const uint64_t NEMU_SSTATUS_WMASK = ((1 << 19) | (1 << 18) | (0x3 << 13) | (1 << 8) | (1 << 5) | (1 << 1) |(0x3
@@ -971,7 +1034,8 @@ const RegVal STATUS_SIE_MASK = 1ULL << 1;
 const RegVal MSTATUS_WMASK_FS = 0x3UL << 13;
 const RegVal MSTATUS_WMASK_RVH = 3UL << 38;
 const RegVal MSTATUS_WMASK_RVV = 3UL << 9;
-const RegVal MSTATUS_MASK = (0x7e79aaUL) | MSTATUS_WMASK_FS | MSTATUS_WMASK_RVH | MSTATUS_WMASK_RVV;
+const RegVal MSTATUS_MASK = (0x7e79aaUL) | MSTATUS_WMASK_FS |
+                            MSTATUS_WMASK_RVH | MSTATUS_WMASK_RVV;
 const RegVal HSTATUS_MASK = ((1 << 22) | (1 << 21) | (1 << 20) | (1 << 18) | (0x3f << 12) | (1 << 9) | (1 << 8) |
                              (1 << 7) | (1 << 6) | (1 << 5));
 const RegVal SSTATUS_MASK = STATUS_SD_MASK | STATUS_UXL_MASK |

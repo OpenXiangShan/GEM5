@@ -125,10 +125,10 @@ CSROp::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
         ss << data->second.name;
     else
         ss << "?? (" << std::hex << "0x" << csr << std::dec << ")";
-    if (_numSrcRegs > 0)
-        ss << ", " << registerName(srcRegIdx(0));
+    if (machInst.funct3 & 4)
+        ss << ", " << uimm;
     else
-        ss << uimm;
+        ss << ", " << registerName(RegId(IntRegClass, machInst.rs1));
     return ss.str();
 }
 

@@ -1,0 +1,158 @@
+// Matrix-specific operands, instruction classes and CSR execution.
+// Keep this template independent of formats/standard.isa.
+
+let {{
+    # The existing RMiscRegOp implements vector VL's special source handling.
+    # Tiles use ordinary parser-managed RegVal reads and writes in RMisc.
+    class MatrixTileReg(IntRegOp):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.attrs['reg_class'] = 'RMiscRegClass'
+
+}};
+
+def operands {{
+    'Mtilem': MatrixTileReg('ud', 'rmisc_reg::_MtilemIdx', None, 11),
+    'Mtilen': MatrixTileReg('ud', 'rmisc_reg::_MtilenIdx', None, 12),
+    'Mtilek': MatrixTileReg('ud', 'rmisc_reg::_MtilekIdx', None, 13),
+
+}};
+
+def template MatrixBasicDeclare {{
+    class %(class_name)s : public %(base_class)s
+    {
+      private:
+        RegId srcRegIdxArr[8];
+        RegId destRegIdxArr[4];
+
+      public:
+        %(class_name)s(ExtMachInst machInst);
+        Fault execute(ExecContext *, Trace::InstRecord *) const override;
+        std::string generateDisassembly(
+            Addr pc, const loader::SymbolTable *symtab) const override;
+    };
+}};
+
+def template MatrixBasicConstructor {{
+    %(class_name)s::%(class_name)s(ExtMachInst machInst)
+        : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s)
+    {
+        %(set_reg_idx_arr)s;
+        %(constructor)s;
+        %(extra_ctor)s;
+    }
+}};
+
+def template MatrixBasicDisasm {{
+    std::string
+    %(class_name)s::generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const
+    {
+        return mnemonic;
+    }
+}};
+
+let {{
+def matrixBasicOutputs(name, Name, code, extra_ctor, flags):
+    iop = InstObjParams(name, Name, 'MatrixStaticInst',
+        {'code': code, 'extra_ctor': extra_ctor}, flags)
+    decode = 'if (!machInst.matrixEnabled) return new Unknown(machInst);\n'
+    return (MatrixBasicDeclare.subst(iop), MatrixBasicConstructor.subst(iop),
+            decode + BasicDecode.subst(iop),
+            BasicExecute.subst(iop) + MatrixBasicDisasm.subst(iop))
+}};
+
+def format MatrixConfOp(code, *flags) {{
+    extra_ctor = """
+        matrixStaticInfo_.valid = true;
+        matrixStaticInfo_.funct7 = machInst.funct7;
+        matrixStaticInfo_.rd = machInst.rd;
+    """
+    if set(flags) & {'MatrixMmaOp', 'MatrixArithOp', 'MatrixReleaseOp'}:
+        extra_ctor += 'matrixStaticInfo_.needAmuCtrlCandidate = true;'
+    (header_output, decoder_output, decode_block, exec_output) = \
+        matrixBasicOutputs(name, Name, code, extra_ctor, flags)
+}};
+
+def format MatrixLsuOp(tile0, tile1, limit0, limit1,
+                       is_b, is_acc, is_store, transpose) {{
+    code = """
+        const auto tile0 = xc->getRegOperand(this, 2);
+        const auto tile1 = xc->getRegOperand(this, 3);
+        if ((RD & 0x18) != 0 || tile0 == 0 || tile1 == 0 ||
+            tile0 > RiscvISA::%(limit0)s ||
+            tile1 > RiscvISA::%(limit1)s) {
+            return std::make_shared<IllegalInstFault>(
+                "%(name)s parameter check failed", machInst);
+        }
+    """ % {'limit0': limit0, 'limit1': limit1, 'name': name}
+    # MLS consumes address/stride/tile0/tile1 by index. Preserve this order,
+    # including K,N for MLB, rather than imposing global tile operand order.
+    extra_ctor = """
+        setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, machInst.rs1));
+        setSrcRegIdx(_numSrcRegs++, RegId(IntRegClass, machInst.rs2));
+        setSrcRegIdx(_numSrcRegs++, %(tile0)s);
+        setSrcRegIdx(_numSrcRegs++, %(tile1)s);
+        matrixStaticInfo_.valid = true;
+        matrixStaticInfo_.funct7 = machInst.funct7;
+        matrixStaticInfo_.rd = machInst.rd;
+        matrixStaticInfo_.needAmuCtrlCandidate = true;
+        matrixStaticInfo_.loadLike = %(load)d;
+        matrixStaticInfo_.storeLike = %(store)d;
+        matrixStaticInfo_.lsuIsA = %(is_a)d;
+        matrixStaticInfo_.lsuIsB = %(is_b)d;
+        matrixStaticInfo_.lsuIsAcc = %(is_acc)d;
+        matrixStaticInfo_.lsuTranspose = %(transpose)d;
+    """ % {'tile0': tile0, 'tile1': tile1, 'load': not is_store,
+           'store': is_store, 'is_a': not is_b and not is_acc,
+           'is_b': is_b, 'is_acc': is_acc, 'transpose': transpose}
+    (header_output, decoder_output, decode_block, exec_output) = \
+        matrixBasicOutputs(name, Name, code, extra_ctor, ['MatrixMemOp'])
+}};
+
+// Ordinary CSR instructions keep their original implementation. Only the
+// default decode path selects the Matrix variant for a renamed tile CSR.
+def format MatrixCSRDispatch(code, *flags) {{
+    iop = InstObjParams(name, Name, 'CSROp', code, flags)
+    header_output = BasicDeclare.subst(iop)
+    decoder_output = BasicConstructor.subst(iop)
+    exec_output = CSRExecute.subst(iop)
+    # All seven XSAI identification/size CSRs are read-only. CSRRW[I]
+    # always writes. For the other four forms rs1 and zimm share a field.
+    exchange = name in ('csrrw', 'csrrwi')
+    guard = '' if exchange else ' && machInst.rs1 != 0'
+    decode_block = """
+#if GEM5_ENABLE_MATRIX
+    const unsigned csr = machInst.funct12;
+    if (!machInst.matrixEnabled &&
+        (csr == CSR_XMCSR || (csr >= CSR_XMXRM && csr <= CSR_XMSATEN) ||
+         (csr >= CSR_XTLENB && csr <= CSR_MSYNC))) {
+        return new Unknown(machInst);
+    }
+    if (csr >= CSR_XTLENB && csr <= CSR_MSYNC%s) {
+        return new Unknown(machInst);
+    }
+""" % guard
+    if not exchange:
+        decode_block += 'switch (machInst.funct12) {\n'
+        matrix_header = matrix_decoder = matrix_exec = ''
+        for suffix in ('m', 'n', 'k'):
+            matrix_iop = InstObjParams(
+                name + '_mtile' + suffix, Name + '_mtile' + suffix,
+                'MatrixCSROp', {'code': 'Rd = Mtile%s;' % suffix,
+                                'extra_ctor': """
+                    matrixStaticInfo_.valid = true;
+                    matrixStaticInfo_.funct7 = machInst.funct7;
+                    matrixStaticInfo_.rd = machInst.rd;
+                """}, ['MatrixCsrOp'])
+            matrix_header += BasicDeclare.subst(matrix_iop)
+            matrix_decoder += MatrixBasicConstructor.subst(matrix_iop)
+            matrix_exec += BasicExecute.subst(matrix_iop)
+            decode_block += 'case CSR_MTILE%s: ' % suffix.upper()
+            decode_block += BasicDecode.subst(matrix_iop)
+        decode_block += '}\n'
+        header_output += '#if GEM5_ENABLE_MATRIX\n' + matrix_header + '#endif\n'
+        decoder_output += '#if GEM5_ENABLE_MATRIX\n' + matrix_decoder + '#endif\n'
+        exec_output += '#if GEM5_ENABLE_MATRIX\n' + matrix_exec + '#endif\n'
+    decode_block += '#endif\n' + BasicDecode.subst(iop)
+}};
