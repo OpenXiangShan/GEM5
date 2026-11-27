@@ -95,11 +95,12 @@ class SnoopFilter : public SimObject
 
     typedef std::vector<QueuedResponsePort*> SnoopList;
 
-    SnoopFilter (const SnoopFilterParams &p) :
-        SimObject(p), reqLookupResult(cachedLocations.end()),
-        linesize(p.system->cacheLineSize()), lookupLatency(p.lookup_latency),
-        maxEntryCount(p.max_capacity / p.system->cacheLineSize()),
-        stats(this)
+    SnoopFilter(const SnoopFilterParams &p)
+        : SimObject(p),
+          linesize(p.system->cacheLineSize()),
+          lookupLatency(p.lookup_latency),
+          maxEntryCount(p.max_capacity / p.system->cacheLineSize()),
+          stats(this)
     {
     }
 
@@ -125,6 +126,7 @@ class SnoopFilter : public SimObject
         fatal_if(id > SNOOP_MASK_SIZE,
                  "Snoop filter only supports %d snooping ports, got %d\n",
                  SNOOP_MASK_SIZE, id);
+        smallPorts = id <= 64;
     }
 
     /**
@@ -215,15 +217,26 @@ class SnoopFilter : public SimObject
     * outstanding request to this line (requested) or already share a
     * cache line with this address (holder).
     */
-    struct SnoopItem
+    template<size_t Bits>
+    struct SnoopItemFor
     {
-        SnoopMask requested;
-        SnoopMask holder;
+        std::bitset<Bits> requested;
+        std::bitset<Bits> holder;
     };
-    /**
-     * HashMap of SnoopItems indexed by line address
-     */
-    typedef std::unordered_map<Addr, SnoopItem> SnoopFilterCache;
+
+    template<size_t Bits>
+    struct SnoopState
+    {
+        using Cache = std::unordered_map<Addr, SnoopItemFor<Bits>>;
+        Cache cachedLocations;
+        struct ReqLookupResult
+        {
+            typename Cache::iterator it;
+            SnoopItemFor<Bits> retryItem;
+        } reqLookupResult;
+
+        SnoopState() : reqLookupResult{cachedLocations.end(), {0, 0}} {}
+    };
 
     /**
      * Simple factory methods for standard return values.
@@ -248,54 +261,50 @@ class SnoopFilter : public SimObject
      * @param port ResponsePort that should be converted.
      * @return One-hot bitmask corresponding to the port.
      */
-    SnoopMask portToMask(const ResponsePort& port) const;
+    template<size_t Bits>
+    std::bitset<Bits> portToMask(const ResponsePort &port) const;
     /**
      * Converts a bitmask of ports into the corresponing list of ports
      * @param ports SnoopMask of the requested ports
      * @return SnoopList containing all the requested ResponsePorts
      */
-    SnoopList maskToPortList(SnoopMask ports) const;
+    template<size_t Bits>
+    SnoopList maskToPortList(std::bitset<Bits> ports) const;
 
   private:
+    template<size_t Bits>
+    void eraseIfNullEntry(SnoopState<Bits> &state, typename SnoopState<Bits>::Cache::iterator &it);
 
-    /**
-     * Removes snoop filter items which have no requestors and no holders.
-     */
-    void eraseIfNullEntry(SnoopFilterCache::iterator& sf_it);
+    template<size_t Bits>
+    std::pair<SnoopList, Cycles> lookupRequest(SnoopState<Bits> &state, const Packet *cpkt,
+                                               const ResponsePort &cpu_side_port);
+    template<size_t Bits>
+    void finishRequest(SnoopState<Bits> &state, bool will_retry, Addr addr, bool is_secure);
+    template<size_t Bits>
+    std::pair<SnoopList, Cycles> lookupSnoop(SnoopState<Bits> &state, Packet *cpkt);
+    template<size_t Bits>
+    void updateSnoopResponse(SnoopState<Bits> &state, const Packet *cpkt, const ResponsePort &rsp_port,
+                             const ResponsePort &req_port);
+    template<size_t Bits>
+    void updateSnoopForward(SnoopState<Bits> &state, const Packet *cpkt, const ResponsePort &rsp_port,
+                            const RequestPort &req_port);
+    template<size_t Bits>
+    void updateResponse(SnoopState<Bits> &state, const Packet *cpkt, const ResponsePort &cpu_side_port);
 
-    /** Simple hash set of cached addresses. */
-    SnoopFilterCache cachedLocations;
+    // Select once during port initialization; the unused map has no entries.
+    bool smallPorts = true;
+    SnoopState<64> smallState;
+    SnoopState<SNOOP_MASK_SIZE> largeState;
 
-    /**
-     * A request lookup must be followed by a call to finishRequest to inform
-     * the operation's success. If a retry is needed, however, all changes
-     * made to the snoop filter while performing the lookup must be undone.
-     * This structure keeps track of the state previous to such changes.
-     */
-    struct ReqLookupResult
+    template<size_t Bits>
+    static SnoopMask traceMask(std::bitset<Bits> mask)
     {
-        /** Iterator used to store the result from lookupRequest. */
-        SnoopFilterCache::iterator it;
-
-        /**
-         * Variable to temporarily store value of snoopfilter entry
-         * in case finishRequest needs to undo changes made in lookupRequest
-         * (because of crossbar retry)
-         */
-        SnoopItem retryItem;
-
-        /**
-         * The constructor must be informed of the internal cache's end
-         * iterator, so do not allow the compiler to implictly define it.
-         *
-         * @param end_it Iterator to the end of the internal cache.
-         */
-        ReqLookupResult(SnoopFilterCache::iterator end_it)
-            : it(end_it), retryItem{0, 0}
-        {
+        if constexpr (Bits == SNOOP_MASK_SIZE) {
+            return mask;
+        } else {
+            return SnoopMask(mask.to_ullong());
         }
-        ReqLookupResult() = delete;
-    } reqLookupResult;
+    }
 
     /** List of all attached snooping CPU-side ports. */
     SnoopList cpuSidePorts;
@@ -332,21 +341,22 @@ class SnoopFilter : public SimObject
     } stats;
 };
 
-inline SnoopFilter::SnoopMask
-SnoopFilter::portToMask(const ResponsePort& port) const
+template<size_t Bits>
+inline std::bitset<Bits>
+SnoopFilter::portToMask(const ResponsePort &port) const
 {
     assert(port.getId() != InvalidPortID);
     // if this is not a snooping port, return a zero mask
-    return !port.isSnooping() ? 0 :
-        ((SnoopMask)1) << localResponsePortIds[port.getId()];
+    return !port.isSnooping() ? 0 : std::bitset<Bits>(1) << localResponsePortIds[port.getId()];
 }
 
+template<size_t Bits>
 inline SnoopFilter::SnoopList
-SnoopFilter::maskToPortList(SnoopMask port_mask) const
+SnoopFilter::maskToPortList(std::bitset<Bits> port_mask) const
 {
     SnoopList res;
     for (const auto& p : cpuSidePorts)
-        if ((port_mask & portToMask(*p)).any())
+        if ((port_mask & portToMask<Bits>(*p)).any())
             res.push_back(p);
     return res;
 }
