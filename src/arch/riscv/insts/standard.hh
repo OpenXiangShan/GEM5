@@ -109,6 +109,8 @@ class CSROp : public RiscvStaticInst
   protected:
     enum class Ordering { Serialized, WaitForOlder, Unordered };
     Ordering ordering() const;
+    bool isVectorLengthRead() const;
+    RegVal readVectorLength(ExecContext *xc) const;
 
     uint64_t csr;
     uint64_t uimm;

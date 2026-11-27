@@ -36,6 +36,7 @@
 #include "arch/riscv/insts/static_inst.hh"
 #include "arch/riscv/regs/misc.hh"
 #include "arch/riscv/utility.hh"
+#include "cpu/o3/dyn_inst.hh"
 #include "cpu/static_inst.hh"
 
 namespace gem5
@@ -75,6 +76,26 @@ MopOp::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
     return ss.str();
 }
 
+bool
+CSROp::isVectorLengthRead() const
+{
+    // Bit 1 of funct3 selects CSRRS/CSRRC in both operand forms.
+    return (csr == CSR_VL || csr == CSR_VLENB) &&
+        (machInst.funct3 & 0x2) != 0 && uimm == 0;
+}
+
+RegVal
+CSROp::readVectorLength(ExecContext *xc) const
+{
+    if (csr == CSR_VLENB)
+        return VLENB;
+
+    if (dynamic_cast<o3::DynInst *>(xc))
+        return xc->getRegOperand(this, 0);
+
+    return xc->readMiscReg(MISCREG_VL);
+}
+
 CSROp::Ordering
 CSROp::ordering() const
 {
@@ -97,8 +118,6 @@ CSROp::ordering() const
       case CSR_MTOPEI: case CSR_STOPEI: case CSR_VSTOPEI:
       case CSR_MIP: case CSR_SIP: case CSR_VSIP:
       case CSR_HIP: case CSR_HVIP: case CSR_MVIP:
-      // Keep vector length reads on their existing serialized path.
-      case CSR_VL: case CSR_VLENB:
         return Ordering::Serialized;
       case CSR_FFLAGS: case CSR_FCSR:
       case CSR_VXSAT: case CSR_VCSR: case CSR_VSTART:
@@ -125,10 +144,10 @@ CSROp::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
         ss << data->second.name;
     else
         ss << "?? (" << std::hex << "0x" << csr << std::dec << ")";
-    if (_numSrcRegs > 0)
-        ss << ", " << registerName(srcRegIdx(0));
+    if (bits(machInst, 14))
+        ss << ", " << uimm;
     else
-        ss << uimm;
+        ss << ", " << registerName(RegId(IntRegClass, machInst.rs1));
     return ss.str();
 }
 

@@ -334,6 +334,16 @@ def template CSRConstructor {{
     {
         %(set_reg_idx_arr)s;
         %(constructor)s;
+        if (isVectorLengthRead()) {
+            resetOpClass(IntAluOp);
+            flags[IsSerializeAfter] = false;
+            flags[IsNonSpeculative] = false;
+            _numSrcRegs = 0;
+            if (csr == CSR_VL)
+                setSrcRegIdx(_numSrcRegs++, VecRenamedVLReg);
+            return;
+        }
+
         // Apply the CSR policy after the decoder initializes the flags.
         const auto policy = ordering();
         if (policy != Ordering::Serialized) {
@@ -356,7 +366,6 @@ def template CSRExecute {{
         DPRINTF(RiscvMisc, "Executing inst: %s\n", disassemble(0));
 
         %(op_decl)s;
-        %(op_rd)s;
 
         RegVal data, olddata;
         auto lowestAllowedMode = (PrivilegeMode)bits(csr, 9, 8);
@@ -468,6 +477,13 @@ def template CSRExecute {{
             break;
         }
 
+        if (isVectorLengthRead()) {
+            Rd = readVectorLength(xc);
+            %(op_wb)s;
+            return NoFault;
+        }
+
+        %(op_rd)s;
         RegIndex effectiveMiscReg = midx;
         RegVal visibleMask = maskVal;
         const bool guestInterruptCsr =
@@ -663,6 +679,8 @@ def format SystemOp(code, *opt_flags) {{
 
 def format CSROp(code, *opt_flags) {{
     iop = InstObjParams(name, Name, 'CSROp', code, opt_flags)
+    if iop.operands.numSrcRegs == 0:
+        iop.padSrcRegIdx(1)
     header_output = BasicDeclare.subst(iop)
     decoder_output = CSRConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)

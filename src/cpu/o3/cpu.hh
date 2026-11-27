@@ -190,6 +190,8 @@ class CPU : public BaseCPU
     /** Check if a system is in a drained state. */
     bool isCpuDrained() const;
 
+    void setRenamedVL(ThreadID tid, RegVal vl);
+
   public:
     /** Constructs a CPU with the given parameters. */
     CPU(const BaseO3CPUParams &params);

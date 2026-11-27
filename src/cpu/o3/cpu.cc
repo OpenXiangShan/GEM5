@@ -47,6 +47,7 @@
 #include <limits>
 
 #include "arch/riscv/regs/misc.hh"
+#include "arch/riscv/regs/vector.hh"
 #include "config/the_isa.hh"
 #include "cpu/activity.hh"
 #include "cpu/checker/cpu.hh"
@@ -719,12 +720,24 @@ CPU::startup()
 {
     BaseCPU::startup();
 
+    // Checkpoints store the architectural CSR, so rebuild its physical value.
+    for (ThreadID tid = 0; tid < numThreads; ++tid)
+        setRenamedVL(tid, readMiscRegNoEffect(RiscvISA::MISCREG_VL, tid));
+
     fetch.startupStage();
     decode.startupStage();
     iew.startupStage();
     rename.startupStage();
     commit.startupStage();
     freeList.resetEntries();
+}
+
+void
+CPU::setRenamedVL(ThreadID tid, RegVal vl)
+{
+    const auto &reg = RiscvISA::VecRenamedVLReg;
+    if (commitRenameMap[tid].lookup(reg).PhyReg())
+        setArchReg(reg, vl, tid);
 }
 
 void
@@ -1186,6 +1199,13 @@ void
 CPU::takeOverFrom(BaseCPU *oldCPU)
 {
     BaseCPU::takeOverFrom(oldCPU);
+
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        const RegVal vl = oldCPU->getContext(tid)->readMiscRegNoEffect(
+            RiscvISA::MISCREG_VL);
+        setMiscRegNoEffect(RiscvISA::MISCREG_VL, vl, tid);
+        setRenamedVL(tid, vl);
+    }
 
     fetch.takeOverFrom();
     decode.takeOverFrom();

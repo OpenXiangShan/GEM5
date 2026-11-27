@@ -383,7 +383,7 @@ class VleffEndMicroInst : public VectorMicroInst
 {
 private:
     RegId srcRegIdxArr[8];   // vle tmp target, used to keep RAW sequence
-    RegId destRegIdxArr[1];  // vstart
+    RegId destRegIdxArr[1];
     uint8_t numSrcs;
 public:
     VleffEndMicroInst(ExtMachInst extMachInst, uint8_t _numSrcs);
