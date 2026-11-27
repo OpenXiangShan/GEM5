@@ -460,9 +460,9 @@ public:
     typedef struct TageMeta
     {
         std::unordered_map<Addr, TagePrediction> preds;
-        std::vector<TageFoldedHist> tagFoldedHist;
-        std::vector<TageFoldedHist> altTagFoldedHist;
-        std::vector<TageFoldedHist> indexFoldedHist;
+        std::vector<uint64_t> tagFoldedHist;
+        std::vector<uint64_t> altTagFoldedHist;
+        std::vector<uint64_t> indexFoldedHist;
         bitset history;     // for viewing
         TageMeta() {}
     } TageMeta;

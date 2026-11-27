@@ -55,6 +55,13 @@ FoldedHistBase::recover(const FoldedHistBase &other)
     _folded = other._folded;
 }
 
+void
+FoldedHistBase::recover(uint64_t folded)
+{
+    assert((folded >> foldedLen) == 0);
+    _folded = folded;
+}
+
 /**
  * Verify that folded history matches with what would be computed from GHR.
  *
@@ -295,6 +302,16 @@ TageFoldedHist::recover(const TageFoldedHist &other)
         pathHist.recover(other.pathHist);
     } else {
         directionHist.recover(other.directionHist);
+    }
+}
+
+void
+TageFoldedHist::recover(uint64_t folded)
+{
+    if (isPathBased()) {
+        pathHist.recover(folded);
+    } else {
+        directionHist.recover(folded);
     }
 }
 

@@ -432,3 +432,54 @@ TEST_F(FoldedHistTest, ChainedRecovery) {
     EXPECT_NO_THROW(hist2.check(ghr));
     EXPECT_NO_THROW(hist3.check(ghr));
 }
+
+// Restore after further speculative updates, then validate against raw history.
+TEST_F(FoldedHistTest, CompactSnapshotRecovery)
+{
+    for (auto type : {HistoryType::GLOBAL, HistoryType::PATH}) {
+        std::vector<TageFoldedHist> histories;
+        histories.emplace_back(32, 9, 2, type);
+        histories.emplace_back(64, 11, 2, type);
+        boost::dynamic_bitset<> history(64);
+        auto update = [&](unsigned step) {
+            const bool taken = step % 3 != 0;
+            const gem5::Addr pc = 0x80000000 + step * 6;
+            const gem5::Addr target = pc + 0x146;
+            for (auto &folded : histories) {
+                folded.update(history, type == HistoryType::PATH ? 2 : 1, taken, pc, target);
+            }
+            if (type == HistoryType::GLOBAL) {
+                history <<= 1;
+                history[0] = taken;
+            } else if (taken) {
+                history <<= 2;
+                history ^= boost::dynamic_bitset<>(64, pathHash(pc, target));
+            }
+        };
+        for (unsigned i = 0; i < 97; ++i) {
+            update(i);
+        }
+        const auto snapshot = snapshotFoldedHist(histories);
+        const auto saved = history;
+        for (unsigned i = 97; i < 149; ++i) {
+            update(i);
+        }
+        for (unsigned i = 0; i < histories.size(); ++i) {
+            histories[i].recover(snapshot[i]);
+            EXPECT_EQ(histories[i].get(), foldReference(saved, i ? 64 : 32, i ? 11 : 9));
+            histories[i].check(saved);
+        }
+    }
+
+    ImliFoldedHist imli(8, 8, 1);
+    boost::dynamic_bitset<> unused;
+    for (int i = 0; i < 37; ++i) {
+        imli.update(unused, 1, true);
+    }
+    const auto snapshot = imli.get();
+    imli.update(unused, 1, false);
+    imli.recover(snapshot);
+    EXPECT_EQ(imli.get(), 37);
+    imli.update(unused, 1, true);
+    EXPECT_EQ(imli.get(), 38);
+}
