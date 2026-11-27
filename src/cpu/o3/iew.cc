@@ -160,6 +160,9 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
     skidBufferMax = (renameToIEWDelay + 1) * params.renameWidth * 2;
 
     dispatchStalls.resize(renameWidth, StallReason::NoStall);
+#if GEM5_ENABLE_MATRIX
+    initMatrix(params);
+#endif
 
     if (valuePred) {
         valuePred->setLatePredictReadyCallback(
@@ -942,6 +945,11 @@ IEW::squash(ThreadID tid)
     // Tell the LDSTQ to start squashing.
     ldstQueue.squash(fromCommit->commitInfo[tid].doneSeqNum, tid);
     squashDelayedVectorMemCompletions(tid);
+#if GEM5_ENABLE_MATRIX
+    if (matrixMem) {
+        matrixMem->squash(tid, fromCommit->commitInfo[tid].doneSeqNum);
+    }
+#endif
     updatedQueues = true;
 
     // Selectively remove only instructions younger than squash boundary
@@ -1658,6 +1666,11 @@ IEW::dispatchInsts()
         iew_info.iqCount = scheduler->getIQInsts(i);
 
         bool ldst_block = !canInsertLDSTQue(i);
+#if GEM5_ENABLE_MATRIX
+        if (ldst_block && matrixMem) {
+            ldst_block = !cpu->getRename()->onlyMatrixMemToRename(i);
+        }
+#endif
         bool rename_block = stallSig->blockIEW[i] || ldst_block;
         // LDST queue reservation gates new rename input, but the already
         // buffered tail must still drain through per-instruction LSQ checks.
@@ -1803,6 +1816,17 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
             break;
         }
 
+#if GEM5_ENABLE_MATRIX
+        if (matrixMem && inst->opClass() == MatrixMemOp &&
+            !matrixMem->canAllocate(tid)) {
+            ++iewStats.stallEvents[LSQFull];
+            ++iewStats.lsqFullEvents;
+            dispatch_stalls.push(checkDispatchStall(tid, NumDQ, inst, disp_seq));
+            blockReason = breakDispatch = dispatch_stalls.back();
+            break;
+        }
+#endif
+
         // Check LSQ if inst is LD/ST
         if ((inst->isAtomic() && ldstQueue.sqFull(tid)) || (inst->isLoad() && ldstQueue.lqFull(tid)) ||
             (inst->isStore() && ldstQueue.sqFull(tid))) {
@@ -1853,6 +1877,11 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
             inst->clearHtmTransactionalState();
         }
 
+#if GEM5_ENABLE_MATRIX
+        if (matrixMem && inst->opClass() == MatrixMemOp) {
+            panic_if(!matrixMem->allocate(inst), "MLSQ allocation failed");
+        }
+#endif
         setDispatchAgeCtr(inst, dispatch_offset + dispatched);
 
         if (!inst->isNop() && !inst->isEliminated()) {
@@ -2036,6 +2065,18 @@ IEW::classifyInstToDispQue(ThreadID tid, unsigned max_insts,
                 DPRINTF(IEW, "[tid:%i] [sn:%llu] Dispatch: Serialize instruction encountered.\n", tid, inst->seqNum);
                 break;
             }
+
+#if GEM5_ENABLE_MATRIX
+            // Reserve in program order, before dispatch queues can reorder.
+            if (matrixMem && inst->opClass() == MatrixMemOp &&
+                !matrixMem->allocate(inst)) {
+                ++iewStats.stallEvents[LSQFull];
+                ++iewStats.lsqFullEvents;
+                dispatch_stalls.push(checkDispatchStall(tid, id, inst, -1));
+                blockReason = breakDispatch = dispatch_stalls.back();
+                break;
+            }
+#endif
 
             // hardware transactional memory
             // CPU needs to track transactional state in program order.
@@ -2556,6 +2597,16 @@ IEW::executeInsts()
                 panic("Unexpected memory type!\n");
             }
 
+#if GEM5_ENABLE_MATRIX
+        } else if (matrixMem && inst->opClass() == MatrixMemOp) {
+            if (!matrixMem->issue(inst)) {
+                if (inst->getFault() == NoFault) {
+                    notifyExecuted(inst);
+                }
+                inst->setExecuted();
+                readyToFinish(inst);
+            }
+#endif
         } else {
             // If the instruction has already faulted, then skip executing it.
             // Such case can happen when it faulted during ITLB translation.
@@ -2826,6 +2877,12 @@ IEW::tick()
         writebackInsts();
     }
     scheduler->issueAndSelect();
+#if GEM5_ENABLE_MATRIX
+    if (matrixMem) {
+        // A selected MLS replay enters issue arbitration on the next cycle.
+        matrixMem->scheduleReplay(*activeThreads);
+    }
+#endif
 
     bool broadcast_free_entries = false;
 
@@ -2871,6 +2928,12 @@ IEW::tick()
             updateLSQNextCycle = true;
 
             instQueue.commit(fromCommit->commitInfo[tid].doneSeqNum,tid);
+#if GEM5_ENABLE_MATRIX
+            if (matrixMem) {
+                matrixMem->retireCommitted(
+                    tid, fromCommit->commitInfo[tid].doneSeqNum);
+            }
+#endif
         }
 
         if (fromCommit->commitInfo[tid].nonSpecSeqNum != 0) {
@@ -3112,6 +3175,8 @@ IEW::getInstDQType(const DynInstPtr &inst)
 #if GEM5_ENABLE_MATRIX
     if (inst->isMatrixInst()) {
         switch (inst->opClass()) {
+          case MatrixMemOp:
+            return MemDQ;
           case MatrixIntOp:
           case MatrixReleaseOp:
           case MatrixSyncOp:

@@ -46,6 +46,7 @@
 #include <utility>
 
 #include "base/statistics.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/commit.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
@@ -208,6 +209,9 @@ class Rename
     void tick();
 
     void markTeaStoreQueueStall(ThreadID tid);
+#if GEM5_ENABLE_MATRIX
+    bool onlyMatrixMemToRename(ThreadID tid) const;
+#endif
 
     /** Debugging function used to dump history buffer of renamings. */
     void dumpHistory();

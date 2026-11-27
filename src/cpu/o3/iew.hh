@@ -45,6 +45,7 @@
 #include <cstdint>
 #include <deque>
 #include <map>
+#include <memory>
 #include <queue>
 #include <set>
 #include <tuple>
@@ -53,11 +54,17 @@
 #include <boost/circular_buffer.hpp>
 
 #include "base/statistics.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/inst_queue.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
+
+#if GEM5_ENABLE_MATRIX
+#include "cpu/o3/mls_unit.hh"
+
+#endif
 #include "cpu/o3/rob.hh"
 #include "cpu/o3/scoreboard.hh"
 #include "cpu/timebuf.hh"
@@ -481,6 +488,11 @@ class IEW
     CPU *cpu;
 
     Scheduler* scheduler;
+
+#if GEM5_ENABLE_MATRIX
+    void initMatrix(const BaseO3CPUParams &params);
+    std::unique_ptr<MlsUnit> matrixMem;
+#endif
 
     /** Records if IEW has written to the time buffer this cycle, so that the
      * CPU can deschedule itself if there is no activity.

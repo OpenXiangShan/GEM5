@@ -117,6 +117,8 @@
 #include "base/logging.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
+#include "cpu/o3/iew.hh"
+#include "cpu/o3/rename.hh"
 #include "cpu/o3/rob.hh"
 #include "debug/Commit.hh"
 #include "matrix/MatrixTypes.hh"
@@ -127,6 +129,50 @@ namespace gem5
 
 namespace o3
 {
+
+void
+IEW::initMatrix(const BaseO3CPUParams &params)
+{
+    if (params.enableMatrixBackend) {
+        matrixMem = std::make_unique<MlsUnit>(cpu, params);
+    }
+}
+
+bool
+Rename::onlyMatrixMemToRename(ThreadID tid) const
+{
+    // IEW runs before Rename::moveInstsToBuffer(). Include this cycle's
+    // decode input in the group which uses the LSQ reservation.
+    if (fromCommit->commitInfo[tid].squash) {
+        return false;
+    }
+    unsigned count = 0;
+    const auto check = [&](const DynInstPtr &inst) {
+        if (inst->threadNumber == tid && !inst->isSquashed()) {
+            if (inst->opClass() != MatrixMemOp) {
+                return false;
+            }
+            ++count;
+        }
+        return true;
+    };
+    for (const auto &inst : fixedbuffer[tid]) {
+        if (!check(inst)) {
+            return false;
+        }
+        if (count == renameWidth) {
+            return true;
+        }
+    }
+    for (int i = 0; i < fromDecode->size && count < renameWidth; ++i) {
+        const auto &inst = fromDecode->insts[i];
+        if (!localSquashVer[tid].largerThan(inst->getVersion()) &&
+            !check(inst)) {
+            return false;
+        }
+    }
+    return count != 0;
+}
 
 void
 DynInst::initMatrixInstInfo()
@@ -153,6 +199,18 @@ DynInst::freezeMatrixConfig()
         matrixState.config[i] = readMiscReg(RiscvISA::MISCREG_MCFG0 + i);
     }
     matrixState.configFrozen = true;
+    auto &info = matrixState.matrixInst;
+    if (!info.loadLike && !info.storeLike) {
+        return;
+    }
+    const auto raw = matrixState.config[info.rd & 7];
+    const unsigned type = raw & 0xff;
+    matrixState.lsuWidths = type == 4 ? 2 : type == 9 ? 1 : 0;
+    matrixState.lsuAccessSize = 1U << matrixState.lsuWidths;
+    matrixState.lsuElemKind = type == 4 ? RiscvISA::MatrixElemKind::Int32 :
+        type == 9 ? RiscvISA::MatrixElemKind::Fp16 :
+        (type == 2 || type == 3) ? RiscvISA::MatrixElemKind::Int8 :
+        RiscvISA::MatrixElemKind::None;
 }
 
 RegVal
