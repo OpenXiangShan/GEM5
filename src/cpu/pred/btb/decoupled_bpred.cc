@@ -75,6 +75,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       enableH2PWeakConfidence(p.enable_h2p_weak_confidence),
       enableH2PProviderFilter(p.enable_h2p_provider_filter),
       h2pMinProviderTable(p.h2p_min_provider_table),
+      enableAPFMTBResourceConflict(p.enable_apf_mbtb_resource_conflict),
+      enableAPFTAGEResourceConflict(p.enable_apf_tage_resource_conflict),
       h2pAgeInsts(p.h2p_age_insts),
       h2pTable(p.h2p_table_entries, p.h2p_table_line_bytes, p.h2p_table_ways,
                p.h2p_branches_per_entry, p.h2p_counter_bits,
@@ -268,7 +270,7 @@ bool
 DecoupledBPUWithBTB::canStartPrediction(ThreadID tid) const
 {
     const auto &thread = threads[tid];
-    return isThreadActive(tid) &&
+    return !alternateReplay && isThreadActive(tid) &&
            !thread.squashing &&
            !thread.redirectPending &&
            !thread.validprediction &&
@@ -317,6 +319,13 @@ DecoupledBPUWithBTB::tick()
 {
     DPRINTF(Override, "DecoupledBPUWithBTB::tick()\n");
 
+    // The primary prediction request below has priority over the APF shadow
+    // query, which runs later in Fetch::tickAPF().
+    if (tage)
+        tage->beginResourceCycle();
+    if (mbtb)
+        mbtb->beginResourceCycle();
+
     const auto scheduledTids = scheduleThreads();
     bool anyActiveThread = false;
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
@@ -356,7 +365,8 @@ DecoupledBPUWithBTB::tick()
     dbpBtbStats.predictionsStartedPerCycle.sample(predictionsStarted);
 
     for (int tid = 0; tid < numThreads; tid++) {
-        processNewPrediction(tid);
+        if (!alternateReplay)
+            processNewPrediction(tid);
 
         // Decrement override bubbles counter
         auto& numOverrideBubbles = threads[tid].numOverrideBubbles;
@@ -368,6 +378,27 @@ DecoupledBPUWithBTB::tick()
     }
 
     DPRINTF(Override, "Prediction cycle complete\n");
+}
+
+bool
+DecoupledBPUWithBTB::tryReserveAlternateResources(Addr pc)
+{
+    const bool tageEnabled = enableAPFTAGEResourceConflict &&
+                             tage && tage->isEnabled();
+    const bool mbtbEnabled = enableAPFMTBResourceConflict &&
+                             mbtb && mbtb->isEnabled();
+    const bool tageReserved = !tageEnabled || tage->tryReserveShadowBank(pc);
+    const bool mbtbReserved = !mbtbEnabled || mbtb->tryReserveShadow(pc);
+    if (tageReserved && mbtbReserved)
+        return true;
+
+    // Make the reservation transactional: a conflict in one predictor must
+    // not consume a port in another predictor for a query that did not run.
+    if (tageReserved && tageEnabled)
+        tage->releaseShadowBank(pc);
+    if (mbtbReserved && mbtbEnabled)
+        mbtb->releaseShadow(pc);
+    return false;
 }
 
 /**
@@ -1135,7 +1166,7 @@ DecoupledBPUWithBTB::pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<>
     if (shamt == 0) {
         return;
     }
-    if(taken){
+    if (taken) {
         // Calculate path hash
         uint64_t hash = pathHash(pc, target);
 
@@ -1246,6 +1277,8 @@ DecoupledBPUWithBTB::classifyH2PBranches(
                     (hasInfo && info->second.isLowConfidenceForAPF());
                 if (accepted) {
                     target.h2pBranchPCs.push_back(branch.pc);
+                    if (alternateEnabled)
+                        target.apfBranches.push_back(branch);
                 }
             }
         }
@@ -1359,18 +1392,25 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry,
     const auto bwhist_update = pred.getBwHistUpdate();
     const auto phist_update = pred.getPHistUpdate();
 
-    // RAS updates its speculative stack, not folded history.
-    if (ras->isEnabled()) {
+    // RAS is part of the normal prediction path only.
+    if (!alternateQuery && ras->isEnabled()) {
         ras->specUpdateState(pred);
     }
 
-    // Update component-local folded histories.
-    for (int i = 0; i < numComponents; i++) {
-        // use old histories to update predictor-local folded histories
-        components[i]->specUpdateGHist(s0History, pred, ghist_update);
-        components[i]->specUpdatePHist(s0PHistory, pred, phist_update);
+    // The alternate path uses only TAGE; the normal path updates all
+    // predictor components.
+    if (alternateQuery) {
+        if (tage->isEnabled()) {
+            tage->specUpdateGHist(s0History, pred, ghist_update);
+            tage->specUpdatePHist(s0PHistory, pred, phist_update);
+        }
+    } else {
+        for (auto *component : components) {
+            component->specUpdateGHist(s0History, pred, ghist_update);
+            component->specUpdatePHist(s0PHistory, pred, phist_update);
+        }
     }
-    if (mgsc->isEnabled()) {
+    if (!alternateQuery && mgsc->isEnabled()) {
         mgsc->specUpdateBwHist(s0BwHistory, pred, bwhist_update);
         mgsc->specUpdateIHist(pred, bwhist_update);
         mgsc->specUpdateLHist(s0LHistory, pred, ghist_update);
@@ -1380,24 +1420,28 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry,
     histShiftIn(ghist_update.shamt, ghist_update.taken, s0History);
 
     // Update history manager and verify TAGE folded history
-    historyManagers[tid].addSpeculativeHist(
-        entry.startPC, entry.history, entry.phistory, ghist_update,
-        phist_update, entry.predBranchInfo, ftq.backId(tid) + 1);
+    if (!alternateQuery)
+        historyManagers[tid].addSpeculativeHist(
+            entry.startPC, entry.history, entry.phistory, ghist_update,
+            phist_update, entry.predBranchInfo, ftq.backId(tid) + 1);
 
-    // Update global backward history
-    histShiftIn(bwhist_update.shamt, bwhist_update.taken, s0BwHistory);
+    // MGSC uses backward and local histories on the normal path only.
+    if (!alternateQuery)
+        histShiftIn(bwhist_update.shamt, bwhist_update.taken, s0BwHistory);
 
     // Update path history
     pHistShiftIn(phist_update.shamt, phist_update.taken, s0PHistory,
                  phist_update.pc, phist_update.target);
 
     // Update local history
-    const Addr localHistoryIndex =
-        mgsc->getPcIndex(pred.bbStart,
-                         log2(mgsc->getNumEntriesFirstLocalHistories()),
-                         pred.asidHash);
-    histShiftIn(ghist_update.shamt, ghist_update.taken,
-        s0LHistory[localHistoryIndex]);
+    if (!alternateQuery) {
+        const Addr localHistoryIndex =
+            mgsc->getPcIndex(pred.bbStart,
+                             log2(mgsc->getNumEntriesFirstLocalHistories()),
+                             pred.asidHash);
+        histShiftIn(ghist_update.shamt, ghist_update.taken,
+            s0LHistory[localHistoryIndex]);
+    }
 
 #ifndef NDEBUG
     checkFoldedHistories(tid, "speculative update");
@@ -1430,23 +1474,33 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     // Restore history from the target
     s0History = context.history;
     s0PHistory = context.phistory;
-    s0BwHistory = context.bwhistory;
-    s0LHistory = context.lhistory;
+    if (!alternateQuery) {
+        s0BwHistory = context.bwhistory;
+        s0LHistory = context.lhistory;
+    }
 
-    // RAS recovers its speculative stack, not folded history.
-    if (ras->isEnabled()) {
+    // RAS recovery belongs to the normal squash path.
+    if (!alternateQuery && ras->isEnabled()) {
         ras->recoverState(context, recoveryBranch, actuallyTaken);
     }
-    if (abtb->isEnabled()) {
+    if (!alternateQuery && abtb->isEnabled()) {
         abtb->recoverState(tid);
     }
 
-    // Recover component-local folded histories.
-    for (int i = 0; i < numComponents; ++i) {
-        components[i]->recoverHist(s0History, context, ghistUpdate);
-        components[i]->recoverPHist(s0PHistory, context, phistUpdate);
+    // The alternate path recovers only TAGE; the normal path recovers all
+    // predictor components.
+    if (alternateQuery) {
+        if (tage->isEnabled()) {
+            tage->recoverHist(s0History, context, ghistUpdate);
+            tage->recoverPHist(s0PHistory, context, phistUpdate);
+        }
+    } else {
+        for (auto *component : components) {
+            component->recoverHist(s0History, context, ghistUpdate);
+            component->recoverPHist(s0PHistory, context, phistUpdate);
+        }
     }
-    if (mgsc->isEnabled()) {
+    if (!alternateQuery && mgsc->isEnabled()) {
         mgsc->recoverBwHist(s0BwHistory, context, bwhistUpdate);
         mgsc->recoverIHist(context, bwhistUpdate);
         mgsc->recoverLHist(s0LHistory, context, ghistUpdate);
@@ -1459,29 +1513,30 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     pHistShiftIn(phistUpdate.shamt, phistUpdate.taken, s0PHistory,
                  phistUpdate.pc, phistUpdate.target);
 
-    // Update global backward history with actual outcome
-    histShiftIn(bwhistUpdate.shamt, bwhistUpdate.taken, s0BwHistory);
+    if (!alternateQuery)
+        histShiftIn(bwhistUpdate.shamt, bwhistUpdate.taken, s0BwHistory);
 
     // Update local history with actual outcome
-    const Addr localHistoryIndex =
-        mgsc->getPcIndex(context.startPC,
-                         log2(mgsc->getNumEntriesFirstLocalHistories()),
-                         context.asidHash);
-    histShiftIn(ghistUpdate.shamt, ghistUpdate.taken,
-                s0LHistory[localHistoryIndex]);
+    if (!alternateQuery) {
+        const Addr localHistoryIndex =
+            mgsc->getPcIndex(context.startPC,
+                             log2(mgsc->getNumEntriesFirstLocalHistories()),
+                             context.asidHash);
+        histShiftIn(ghistUpdate.shamt, ghistUpdate.taken,
+                    s0LHistory[localHistoryIndex]);
+    }
 
     // Update history manager with appropriate branch info
-    if (squashType == SQUASH_CTRL) {
-        historyManagers[tid].squash(targetId, ghistUpdate,
-                                    phistUpdate, recoveryBranch);
-    } else {
-        historyManagers[tid].squash(targetId, ghistUpdate,
-                                    phistUpdate, BranchInfo());
+    // Shadow work has no FTQ identity until promotion.
+    if (!alternateQuery) {
+        historyManagers[tid].squash(targetId, ghistUpdate, phistUpdate,
+            squashType == SQUASH_CTRL ? recoveryBranch : BranchInfo());
     }
 
     // Perform history consistency checks when not a fast build variant
 #ifndef NDEBUG
-    checkHistories(s0History, s0PHistory, tid);
+    if (!alternateQuery)
+        checkHistories(s0History, s0PHistory, tid);
     const char *reason = squashType == SQUASH_CTRL ? "control squash" :
                          squashType == SQUASH_OTHER ? "non control squash" :
                                                      "trap squash";
@@ -1502,22 +1557,195 @@ DecoupledBPUWithBTB::checkFoldedHistories(ThreadID tid, const char *reason)
             tage->usesPathHistory() ? s0PHistory : s0History, tid,
             reason);
     }
-    if (ittage->isEnabled()) {
+    if (!alternateQuery && ittage->isEnabled()) {
         ittage->checkFoldedHist(s0PHistory, tid, reason);
     }
-    if (microtage->isEnabled()) {
+    if (!alternateQuery && microtage->isEnabled()) {
         microtage->checkFoldedHist(s0PHistory, tid, reason);
     }
-    if (pairtage->isEnabled()) {
+    if (!alternateQuery && pairtage->isEnabled()) {
         pairtage->checkFoldedHist(s0PHistory, tid, reason);
     }
-    if (mgsc->isEnabled()) {
+    if (!alternateQuery && mgsc->isEnabled()) {
         mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory, tid,
                               reason);
     }
 }
 #endif
 
+
+AlternateCheckpoint
+DecoupledBPUWithBTB::checkpointAlternateState()
+{
+    // Shadow queries consume histories, not the main prediction pipeline.
+    auto &thread = threads[0];
+    const std::vector<TimedBaseBTBPredictor::SpeculativeCheckpoint> states{
+        TimedBaseBTBPredictor::checkpointState(thread.s0History,
+            thread.s0PHistory),
+        mbtb->saveSpeculativeState(0),
+        tage->saveSpeculativeState(0)};
+    return [states] {
+        for (const auto &restore : states)
+            restore();
+    };
+}
+
+AlternateCheckpoint
+DecoupledBPUWithBTB::enterAlternate(const AlternateCheckpoint &state)
+{
+    auto restore = checkpointAlternateState();
+    if (state)
+        state();
+    alternateQuery = true;
+    return [this, restore] {
+        restore();
+        alternateQuery = false;
+    };
+}
+
+bool
+DecoupledBPUWithBTB::alternateSourceLive(
+    const AlternateCandidate &candidate) const
+{
+    return ftq.hasTarget(candidate.ftqId, 0);
+}
+
+void
+DecoupledBPUWithBTB::resolveAlternateCandidate(const BranchOutcome &branch)
+{
+    if (!alternateEnabled || !branch.branch.isCond ||
+        !ftq.hasTarget(branch.ftqId, branch.tid))
+        return;
+    auto &resolved = ftq.get(branch.ftqId, branch.tid).apfResolvedPCs;
+    if (std::find(resolved.begin(), resolved.end(), branch.branch.pc) == resolved.end())
+        resolved.push_back(branch.branch.pc);
+}
+
+bool
+DecoupledBPUWithBTB::nextAlternateCandidate(AlternateCandidate &candidate)
+{
+    if (!alternateEnabled || ftq.empty(0))
+        return false;
+    for (auto id = ftq.frontId(0); id <= ftq.backId(0); ++id) {
+        auto &target = ftq.get(id, 0);
+        for (const auto &branch : target.apfBranches) {
+            if (target.predTaken && branch.pc > target.predBranchInfo.pc)
+                break;
+            const auto contains = [&](const auto &pcs) {
+                return std::find(pcs.begin(), pcs.end(), branch.pc) != pcs.end();
+            };
+            if (contains(target.apfAttemptedPCs) ||
+                contains(target.apfResolvedPCs))
+                continue;
+            target.apfAttemptedPCs.push_back(branch.pc);
+            candidate = {id, branch, target.predTaken &&
+                         target.predBranchInfo.pc == branch.pc};
+            return true;
+        }
+    }
+    return false;
+}
+
+AlternateCheckpoint
+DecoupledBPUWithBTB::startAlternate(const AlternateCandidate &candidate)
+{
+    if (!ftq.hasTarget(candidate.ftqId, 0))
+        return {};
+    auto restore = enterAlternate();
+    const auto &target = ftq.get(candidate.ftqId, 0);
+    const auto &branch = candidate.branch;
+    const bool taken = !candidate.predictedTaken;
+    const Addr next = taken ? branch.target : branch.pc + branch.size;
+    PathHistoryUpdate phist;
+    phist.taken = taken;
+    phist.pc = branch.pc;
+    phist.target = next;
+    // Reuse squash recovery to fork the alternate history. The checkpoint
+    // restores the live main-path context after this temporary switch.
+    recoverHistoryForSquash(HistoryRecoveryContext(target), candidate.ftqId,
+        target.getGHistUpdateDuringSquash(branch.pc, true, taken),
+        target.getBwHistUpdateDuringSquash(branch.pc, true, taken, next),
+        phist, branch, taken, SQUASH_CTRL);
+    auto shadow = checkpointAlternateState();
+    restore();
+    return shadow;
+}
+
+AlternatePrediction
+DecoupledBPUWithBTB::predictAlternate(const AlternateCheckpoint &state,
+                                      Addr pc)
+{
+    AlternatePrediction result;
+    if (!tryReserveAlternateResources(pc)) {
+        result.resourceBlocked = true;
+        return result;
+    }
+    auto restore = enterAlternate(state);
+    auto &pred = result.prediction;
+    pred.bbStart = pc;
+    pred.tid = 0;
+    pred.asidHash = getThreadAsidHash(0);
+    pred.predTick = curTick();
+    pred.predSource = numStages - 1;
+    // Ideal final-stage query: bypass early-stage timing/teacher updates.
+    if (mbtb->isEnabled())
+        mbtb->predictShadow(pc, threads[0].s0History, pred);
+    if (tage->isEnabled())
+        tage->predictShadow(pc, threads[0].s0History, pred);
+    restore();
+    return result;
+}
+
+void
+DecoupledBPUWithBTB::applyAlternatePrediction(AlternatePrediction &prediction,
+                                             FetchTarget &target)
+{
+    updateHistoryForPrediction(target, prediction.prediction);
+    if (!alternateQuery) {
+        threads[0].s0PC = prediction.nextPC;
+    }
+}
+
+void
+DecoupledBPUWithBTB::advanceAlternate(AlternateCheckpoint &state,
+                                     AlternatePrediction &prediction)
+{
+    auto restore = enterAlternate(state);
+    FetchTarget target;
+    applyAlternatePrediction(prediction, target);
+    state = checkpointAlternateState();
+    restore();
+}
+
+bool
+DecoupledBPUWithBTB::canPromoteAlternate(unsigned targets) const
+{
+    return logicalFreeFTQEntries(0) >= targets;
+}
+
+FetchTargetId
+DecoupledBPUWithBTB::promoteAlternate(AlternatePrediction &prediction)
+{
+    // Rebuild metadata from the live post-squash context. Cached uops supply
+    // branch outcomes and the restart PC, not saved predictor checkpoints.
+    auto &pred = prediction.prediction;
+    for (auto *component : components)
+        component->refreshPredictionMeta(pred.bbStart, threads[0].s0History, pred);
+    auto target = createFetchTargetEntry(0, pred.bbStart, pred);
+    target.predEndPC = prediction.predEndPC;
+    target.fetchInstNum = prediction.fetchInstNum;
+    if (target.predTaken)
+        target.predBranchInfo.target = prediction.nextPC;
+    const auto id = ftq.backId(0) + 1;
+    applyAlternatePrediction(prediction, target);
+    clearPreds(0);
+    threads[0].validprediction = false;
+    threads[0].numOverrideBubbles = 0;
+    ftq.insert(std::move(target));
+    ftq.finishTarget(0);
+    dbpBtbStats.ftqEntryEnqueued++;
+    return id;
+}
 
 }  // namespace btb_pred
 

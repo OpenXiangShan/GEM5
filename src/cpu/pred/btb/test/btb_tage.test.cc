@@ -605,6 +605,29 @@ protected:
     std::vector<FullBTBPrediction> stagePreds;
 };
 
+TEST_F(BTBTAGETest, ShadowRestorePreservesMainStateAndTableTraining)
+{
+    const auto entry = createBTBEntry(0x1000, true, true, 1, 0x2000);
+    predictTAGE(tage, entry.branch.pc, {entry}, history, stagePreds);
+    const auto mainMeta = tage->getPredictionMeta();
+    auto restore = tage->saveSpeculativeState(0);
+    auto shadow = stagePreds[1];
+    specUpdateSelectedHistory(tage, history, shadow);
+    auto shadowHistory = history;
+    applyPredictedHistory(tage, shadowHistory, shadow);
+    tage->predictShadow(entry.branch.pc, shadowHistory, shadow);
+    EXPECT_NE(tage->getPredictionMeta(), mainMeta);
+    restore();
+    EXPECT_EQ(tage->getPredictionMeta(), mainMeta);
+    tage->checkFoldedHist(history, "APF restored main history");
+
+    setupTageEntry(tage, entry.branch.pc, 3, -4);
+    restore();
+    tage->predictShadow(entry.branch.pc, history, shadow);
+    ASSERT_EQ(shadow.btbEntries.size(), 1u);
+    EXPECT_FALSE(shadow.btbEntries.front().taken);
+}
+
 // Test basic prediction functionality
 TEST_F(BTBTAGETest, BasicPrediction) {
     // Create a conditional branch entry biased towards taken
@@ -622,6 +645,38 @@ TEST_F(BTBTAGETest, BasicPrediction) {
     // Verify at least one table has an entry allocated
     int table = findTableWithEntry(tage, 0x1000, 0x1000);
     EXPECT_GE(table, 0) << "No TAGE table entry was allocated";
+}
+
+TEST_F(BTBTAGETest, APFConfidencePreservesSCFlagsAndMissingProviderPolicy)
+{
+    const Addr pc = 0x1000;
+    const auto entry = createBTBEntry(pc);
+    EXPECT_FALSE(TageInfoForMGSC{}.isLowConfidenceForAPF());
+    // -5 denotes missing provider; -4..3 covers every signed counter value.
+    for (int counter = -5; counter <= 3; ++counter) {
+        SCOPED_TRACE(counter);
+        if (counter >= -4)
+            setupTageEntry(tage, pc, 3, counter);
+        predictTAGE(tage, pc, {entry}, history, stagePreds);
+        FullBTBPrediction shadow;
+        shadow.bbStart = pc;
+        shadow.btbEntries = {entry};
+        tage->predictShadow(pc, history, shadow);
+        for (const auto *pred : {&stagePreds[1], &shadow}) {
+            const auto &info = pred->tageInfoForMgscs.at(pc);
+            if (counter == -5) {
+                EXPECT_EQ(info.tage_final_provider_table, -1);
+            }
+            EXPECT_EQ(info.isLowConfidenceForAPF(), counter != -4 && counter != 3);
+            EXPECT_EQ(info.tage_pred_conf_low, counter == -5 || counter == -1 || counter == 0);
+            EXPECT_EQ(info.tage_pred_conf_mid,
+                      counter == -3 || counter == -2 || counter == 1 || counter == 2);
+            EXPECT_EQ(info.tage_pred_conf_high, counter == -4 || counter == 3);
+            if (counter == -4 || counter == 3) {
+                EXPECT_EQ(info.tage_final_provider_table, 3);
+            }
+        }
+    }
 }
 
 // Test basic history update functionality (PHR semantics)
@@ -1459,6 +1514,45 @@ TEST_F(BTBTAGETest, BankConflict) {
         // No conflict even with same bank
         EXPECT_EQ(bankTage->tageStats.updateBankConflict, conflicts_before);
     }
+}
+
+TEST_F(BTBTAGETest, AcceptedUpdateBlocksShadowQuery)
+{
+    BTBTAGE bankTage(4, 2, 1024, 4);
+    bankTage.enableBankConflict = true;
+    bankTage.setTrainingStage(PredictorTrainingStage::Resolve);
+    boost::dynamic_bitset<> testHistory(128);
+    std::vector<FullBTBPrediction> testStagePreds(5);
+    testStagePreds[1].btbEntries = {createBTBEntry(0x100)};
+    bankTage.putPCHistory(0x100, testHistory, testStagePreds);
+    auto restore = bankTage.saveSpeculativeState(0);
+
+    // The registered primary prediction uses bank 0; update uses bank 2.
+    const auto entry = createBTBEntry(0x104);
+    auto stream = createStream(0x104, entry, bankTage.getPredictionMeta());
+    auto update = createPreparedUpdate(stream, entry, true);
+    ASSERT_TRUE(bankTage.canResolveUpdate(
+        PredictionUpdateContext(stream), update));
+    bankTage.doResolveUpdate(PredictionUpdateContext(stream), update);
+
+    // Fetch applies the update before beginning the BPU resource cycle.
+    bankTage.beginResourceCycle();
+    bankTage.putPCHistory(0x100, testHistory, testStagePreds);
+    ASSERT_TRUE(bankTage.tryReserveShadowBank(0x102));
+    EXPECT_FALSE(bankTage.tryReserveShadowBank(0x10a));
+    bankTage.releaseShadowBank(0x102);
+    EXPECT_TRUE(bankTage.tryReserveShadowBank(0x10a));
+    restore();
+
+    // Restoring a path or releasing another bank cannot cancel a write port.
+    EXPECT_FALSE(bankTage.tryReserveShadowBank(0x104));
+    EXPECT_EQ(bankTage.tageStats.shadowUpdateBankConflicts, 1);
+    EXPECT_FALSE(bankTage.tryReserveShadowBank(0x100));
+    EXPECT_EQ(bankTage.tageStats.shadowUpdateBankConflicts, 1);
+
+    // Accepted updates hold their bank for exactly one resource cycle.
+    bankTage.beginResourceCycle();
+    EXPECT_TRUE(bankTage.tryReserveShadowBank(0x104));
 }
 
 class BTBTAGEUpperBoundTest : public ::testing::Test

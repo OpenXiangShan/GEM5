@@ -207,6 +207,8 @@ def setKmhV3Params(args, system):
 
             cpu.branchPred.mbtb.trainingStage = "Resolve"
             cpu.branchPred.tage.trainingStage = "Resolve"
+            cpu.branchPred.tage.useBankedIndex = True
+            cpu.branchPred.tage.enableBankConflict = True
             cpu.branchPred.ittage.trainingStage = "Resolve"
 
             cpu.branchPred.ubtb.enabled = True

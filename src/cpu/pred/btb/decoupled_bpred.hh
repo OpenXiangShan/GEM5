@@ -15,6 +15,7 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/btb/abtb.hh"
+#include "cpu/pred/btb/alternate_path.hh"
 #include "cpu/pred/btb/bpu_profiler.hh"
 #include "cpu/pred/btb/btb_ittage.hh"
 #include "cpu/pred/btb/btb_mgsc.hh"
@@ -153,9 +154,15 @@ class DecoupledBPUWithBTB : public BPredUnit
     const bool enableH2PWeakConfidence;
     const bool enableH2PProviderFilter;
     const unsigned h2pMinProviderTable;
+    const bool enableAPFMTBResourceConflict;
+    const bool enableAPFTAGEResourceConflict;
     const uint64_t h2pAgeInsts;
+
     H2PTable h2pTable;
-    uint64_t h2pAgeRemaining;
+    uint64_t h2pAgeRemaining = 0;
+    bool alternateQuery = false;
+    bool alternateReplay = false;
+    bool alternateEnabled = false;
 
     const unsigned twoTakenMaxRunAhead;
 
@@ -166,8 +173,12 @@ class DecoupledBPUWithBTB : public BPredUnit
     unsigned logicalMaxFTQEntries(ThreadID tid) const;
     unsigned logicalFreeFTQEntries(ThreadID tid) const;
     bool ftqFull(ThreadID tid) const;
-    void classifyH2PBranches(FetchTarget &target, FullBTBPrediction &prediction);
+    void classifyH2PBranches(FetchTarget &target,
+                            FullBTBPrediction &prediction);
     void trainH2P(const BranchOutcome &branch, const FetchTarget &target);
+    void applyAlternatePrediction(AlternatePrediction &prediction,
+                                  FetchTarget &target);
+    AlternateCheckpoint enterAlternate(const AlternateCheckpoint &state = {});
 
     bool isThreadActive(ThreadID tid) const;
     bool canStartPrediction(ThreadID tid) const;
@@ -366,6 +377,22 @@ class DecoupledBPUWithBTB : public BPredUnit
      * - Statistics collection
      */
     void tick();
+
+    void enableAlternatePaths() { alternateEnabled = true; }
+    void holdForAlternateReplay(bool hold) { alternateReplay = hold; }
+    unsigned alternatePredictWidth() const { return predictWidth; }
+    bool alternateSourceLive(const AlternateCandidate &candidate) const;
+    void resolveAlternateCandidate(const BranchOutcome &branch);
+    bool nextAlternateCandidate(AlternateCandidate &candidate);
+    AlternateCheckpoint checkpointAlternateState();
+    AlternateCheckpoint startAlternate(const AlternateCandidate &candidate);
+    AlternatePrediction predictAlternate(const AlternateCheckpoint &state,
+                                          Addr pc);
+    bool tryReserveAlternateResources(Addr pc);
+    void advanceAlternate(AlternateCheckpoint &state,
+                          AlternatePrediction &prediction);
+    bool canPromoteAlternate(unsigned targets) const;
+    FetchTargetId promoteAlternate(AlternatePrediction &prediction);
 
     void squash(const InstSeqNum &squashed_sn, ThreadID tid)
     {

@@ -2,6 +2,9 @@
 #define __CPU_PRED_BTB_TIMED_BASE_PRED_HH__
 
 
+#include <functional>
+#include <tuple>
+
 #include <boost/dynamic_bitset.hpp>
 
 // Conditional includes based on build mode
@@ -62,6 +65,24 @@ class TimedBaseBTBPredictor: public SimObject
 
     TimedBaseBTBPredictor(const Params &params);
 #endif
+
+    // The callback restores query-local/speculative state, never trained tables.
+    using SpeculativeCheckpoint = std::function<void()>;
+
+    // Capture stable state holders by reference and their values by copy.
+    // Keep the copies intact so a checkpoint can be restored repeatedly.
+    template <typename... States>
+    static SpeculativeCheckpoint checkpointState(States &...states)
+    {
+        return [dest = std::tie(states...), saved = std::make_tuple(states...)]
+            () mutable { dest = saved; };
+    }
+    virtual SpeculativeCheckpoint saveSpeculativeState(ThreadID tid)
+    { return [] {}; }
+    virtual void predictShadow(Addr pc,
+                               const boost::dynamic_bitset<> &history,
+                               FullBTBPrediction &pred)
+    { refreshPredictionMeta(pc, history, pred); }
 
     virtual void tickStart() {}
     virtual void tick() {}

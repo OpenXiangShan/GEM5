@@ -1067,7 +1067,10 @@ class BTBTAGE(TimedBaseBTBPredictor):
     useAltOnNaSize = Param.Unsigned(128, "Size of the useAltOnNa table")
     useAltOnNaWidth = Param.Unsigned(7, "Width of the useAltOnNa table")
     numBanks = Param.Unsigned(4, "Number of banks for bank conflict simulation")
-    enableBankConflict = Param.Bool(False, "Enable bank conflict simulation")
+    useBankedIndex = Param.Bool(False,
+        "Exclude bank-selection bits from TAGE index and tag PC bits")
+    enableBankConflict = Param.Bool(False,
+        "Model prediction/update bank conflicts without changing index/tag mapping")
     numDelay = 1
 
 class BTBTAGEUpperBound(BTBTAGE):
@@ -1249,6 +1252,12 @@ class DecoupledBPUWithBTB(BranchPredictor):
     )
     h2p_age_insts = Param.Unsigned(
         20000, "Committed instructions between H2P counter aging passes"
+    )
+    enable_apf_mbtb_resource_conflict = Param.Bool(
+        True, "Model MBTB resource conflicts for APF shadow queries"
+    )
+    enable_apf_tage_resource_conflict = Param.Bool(
+        True, "Model TAGE bank conflicts for APF shadow queries"
     )
 
     predictWidth = Param.Unsigned(64, "Maximum range in bytes that a single prediction can cover")

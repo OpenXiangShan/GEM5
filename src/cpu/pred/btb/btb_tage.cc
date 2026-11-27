@@ -93,6 +93,7 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWaysPerTable,
       blockWidth(floorLog2(blockSize)),
       bankBaseShift(instShiftAmt),
       indexShift(bankBaseShift + ceilLog2(numBanks)),
+      useBankedIndex(false),
       enableBankConflict(false),
       lastPredBankId(0),
       predBankValid(false)
@@ -134,6 +135,7 @@ bankIdWidth(ceilLog2(p.numBanks)),
 blockWidth(floorLog2(blockSize)),
 bankBaseShift(instShiftAmt), // strip instruction alignment bits before indexing
 indexShift(bankBaseShift + ceilLog2(p.numBanks)),
+useBankedIndex(p.useBankedIndex),
 enableBankConflict(p.enableBankConflict),
 lastPredBankId(0),
 predBankValid(false),
@@ -144,6 +146,7 @@ tageStats(this, p.numPredictors, p.numBanks)
         warn("BTBTAGE: Bank simulation works better with updateOnRead=true");
     }
 #endif
+    resourceBankBusy.assign(numBanks, false);
     if (numWays.size() == 1 && numPredictors > 1) {
         numWays.resize(numPredictors, numWays.front());
     }
@@ -285,7 +288,40 @@ void
 BTBTAGE::tick() {}
 
 void
-BTBTAGE::tickStart() {}
+BTBTAGE::tickStart()
+{
+    beginResourceCycle();
+}
+
+void
+BTBTAGE::beginResourceCycle()
+{
+    resourceBankBusy.assign(numBanks, false);
+    resourceUpdateBank = pendingUpdateBank;
+    pendingUpdateBank.reset();
+    if (resourceUpdateBank)
+        resourceBankBusy[*resourceUpdateBank] = true;
+}
+
+bool
+BTBTAGE::tryReserveShadowBank(Addr startAddr)
+{
+    const unsigned bank = getBankId(startAddr);
+    if (resourceBankBusy[bank]) {
+        ++tageStats.shadowBankConflicts;
+        if (resourceUpdateBank && bank == *resourceUpdateBank)
+            ++tageStats.shadowUpdateBankConflicts;
+        return false;
+    }
+    resourceBankBusy[bank] = true;
+    return true;
+}
+
+void
+BTBTAGE::releaseShadowBank(Addr startAddr)
+{
+    resourceBankBusy[getBankId(startAddr)] = false;
+}
 
 /**
  * @brief Generate prediction for a single BTB entry by searching TAGE tables
@@ -413,6 +449,21 @@ BTBTAGE::generateSinglePrediction(const BranchInfo &btb_entry,
         use_alt_idx, use_alt_ctr, hit_table_mask);
 }
 
+TageInfoForMGSC
+BTBTAGE::TagePrediction::getTageInfo() const
+{
+    TageInfoForMGSC info;
+    const int confidence = abs(mainInfo.entry.counter * 2 + 1);
+    info.tage_pred_taken = taken;
+    info.tage_main_taken = mainInfo.found && mainInfo.taken();
+    info.tage_pred_conf_high = mainInfo.found && confidence == 7;
+    info.tage_pred_conf_mid = mainInfo.found && confidence > 1 && confidence < 7;
+    info.tage_pred_conf_low = !mainInfo.found || confidence <= 1;
+    info.tage_pred_alt_diff = mainInfo.found && mainInfo.taken() != altPred;
+    info.tage_final_provider_table = finalProviderTable;
+    return info;
+}
+
 /**
  * @brief Look up predictions in TAGE tables for a stream of instructions
  * 
@@ -436,20 +487,7 @@ BTBTAGE::lookupHelper(const Addr &startPC, std::vector<BranchPrediction> &btbEnt
             threadMeta[tid]->preds[btb_entry.branch.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
             btb_entry.taken = pred.taken;
-            tageInfoForMgscs[btb_entry.branch.pc].tage_final_provider_table = pred.finalProviderTable;
-            tageInfoForMgscs[btb_entry.branch.pc].tage_pred_taken = pred.taken;
-            tageInfoForMgscs[btb_entry.branch.pc].tage_main_taken =
-                pred.mainInfo.found ? pred.mainInfo.taken() : false;
-            tageInfoForMgscs[btb_entry.branch.pc].tage_pred_conf_high = pred.mainInfo.found &&
-                                         abs(pred.mainInfo.entry.counter*2 + 1) == 7; // counter saturated, -4 or 3
-            tageInfoForMgscs[btb_entry.branch.pc].tage_pred_conf_mid = pred.mainInfo.found &&
-                                         (abs(pred.mainInfo.entry.counter*2 + 1) < 7 &&
-                                         abs(pred.mainInfo.entry.counter*2 + 1) > 1); // counter not saturated, -3, -2, 1, 2
-            tageInfoForMgscs[btb_entry.branch.pc].tage_pred_conf_low = !pred.mainInfo.found ||
-                                         (abs(pred.mainInfo.entry.counter*2 + 1) <= 1); // counter initialized, -1 or 0
-            // main predict is different from alt predict/base predict
-            tageInfoForMgscs[btb_entry.branch.pc].tage_pred_alt_diff =
-                pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
+            tageInfoForMgscs[btb_entry.branch.pc] = pred.getTageInfo();
         }
     }
 }
@@ -499,6 +537,7 @@ BTBTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPr
     // Record prediction bank for next tick's conflict detection
     lastPredBankId = getBankId(startPC);
     predBankValid = true;
+    resourceBankBusy[lastPredBankId] = true;
 
     // Record prediction access per bank
     tageStats.predAccessPerBank[lastPredBankId]++;
@@ -557,20 +596,7 @@ BTBTAGE::refreshPredictionMeta(Addr startPC,
             btb_entry.branch, startPC, btb_entry.baseTaken, nullptr, pred.tid, pred.asidHash);
         meta->preds[btb_entry.branch.pc] = tage_pred;
 
-        auto &tage_info = pred.tageInfoForMgscs[btb_entry.branch.pc];
-        tage_info.tage_final_provider_table = tage_pred.finalProviderTable;
-        tage_info.tage_pred_taken = tage_pred.taken;
-        tage_info.tage_main_taken =
-            tage_pred.mainInfo.found ? tage_pred.mainInfo.taken() : false;
-        tage_info.tage_pred_conf_high = tage_pred.mainInfo.found &&
-            abs(tage_pred.mainInfo.entry.counter * 2 + 1) == 7;
-        tage_info.tage_pred_conf_mid = tage_pred.mainInfo.found &&
-            (abs(tage_pred.mainInfo.entry.counter * 2 + 1) < 7 &&
-             abs(tage_pred.mainInfo.entry.counter * 2 + 1) > 1);
-        tage_info.tage_pred_conf_low = !tage_pred.mainInfo.found ||
-            (abs(tage_pred.mainInfo.entry.counter * 2 + 1) <= 1);
-        tage_info.tage_pred_alt_diff = tage_pred.mainInfo.found &&
-            tage_pred.mainInfo.taken() != tage_pred.altPred;
+        pred.tageInfoForMgscs[btb_entry.branch.pc] = tage_pred.getTageInfo();
     }
 }
 
@@ -881,6 +907,8 @@ void
 BTBTAGE::doResolveUpdate(
     const PredictionUpdateContext &stream, const PreparedUpdate &update)
 {
+    if (enableBankConflict)
+        pendingUpdateBank = getBankId(stream.getRealStartPC());
     if (enableBankConflict && predBankValid) {
         // Prediction consumed; clear bank tag for next cycle
         predBankValid = false;
@@ -1089,7 +1117,7 @@ BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist,
     // Create mask for tableTagBits[t] to limit result size
     Addr mask = (1ULL << tableTagBits[t]) - 1;
 
-    unsigned pcShift = enableBankConflict ? indexShift : bankBaseShift;
+    unsigned pcShift = useBankedIndex ? indexShift : bankBaseShift;
     pcShift += partitionIndexBits(tableIndexBits[t]) - 1;
     Addr pcBits = (pc >> pcShift) & mask;
 
@@ -1119,7 +1147,7 @@ BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist,
     const unsigned localIndexBits = partitionIndexBits(tableIndexBits[t]);
     Addr mask = (1ULL << localIndexBits) - 1;
 
-    const unsigned pcShift = enableBankConflict ? indexShift : bankBaseShift;
+    const unsigned pcShift = useBankedIndex ? indexShift : bankBaseShift;
     Addr pcBits = (pc >> pcShift) & mask;
     Addr foldedBits = foldedHist & mask;
 
@@ -1394,6 +1422,10 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateBankConflictPerBank, statistics::units::Count::get(), "bank conflicts per bank"),
     ADD_STAT(updateAccessPerBank, statistics::units::Count::get(), "update accesses per bank"),
     ADD_STAT(predAccessPerBank, statistics::units::Count::get(), "prediction accesses per bank"),
+    ADD_STAT(shadowBankConflicts, statistics::units::Count::get(),
+        "APF shadow TAGE queries blocked by a bank conflict"),
+    ADD_STAT(shadowUpdateBankConflicts, statistics::units::Count::get(),
+        "APF shadow TAGE queries blocked by an accepted resolve update"),
     ADD_STAT(resolveProviderTable, statistics::units::Count::get(),
         "resolved conditional branches grouped by provider table"),
     ADD_STAT(resolveAltTable, statistics::units::Count::get(),

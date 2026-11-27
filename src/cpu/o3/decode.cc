@@ -744,6 +744,7 @@ Decode::checkSquash()
 void
 Decode::tick()
 {
+    apfDecodeSlotsClaimed = 0;
     if (compactionEnabled) {
         tickCompaction();
         return;
@@ -1182,9 +1183,22 @@ Decode::tickCompaction()
     }
 }
 
+unsigned
+Decode::reserveAPFDecodeSlots(unsigned requested)
+{
+    const unsigned normalUsed = toRenameIndex;
+    const unsigned used = normalUsed + apfDecodeSlotsClaimed;
+    const unsigned available = used < decodeWidth ? decodeWidth - used : 0;
+    const unsigned granted = std::min(requested, available);
+    apfDecodeSlotsClaimed += granted;
+    return granted;
+}
+
 void
 Decode::decodeInsts(ThreadID tid, unsigned max_insts)
 {
+    if (fetch_ptr->apfReplayPending())
+        return;
     // Instructions can come either from the skid buffer or the list of
     // instructions coming from fetch, depending on decode's status.
     int insts_available = fixedbuffer[tid].size();
@@ -1447,21 +1461,23 @@ Decode::processInstControl(const DynInstPtr &inst, ThreadID tid)
         inst->setPredTarg(*npc);
     }
 
+    recordAPFBranch(inst);
+    return StallReason::NoStall;
+}
+
+void
+Decode::recordAPFBranch(const DynInstPtr &inst)
+{
     if (inst->isControl() &&
         !(inst->isDirectCtrl() && inst->isUncondCtrl())) {
-        branchInfo branch_info = {
-            inst->isIndirectCtrl(),
-            inst->readPredTaken(),
-            inst->readPredTarg().instAddr(),
-            inst->seqNum,
-            inst->pcState().instAddr(),
-        };
-        decodedBranchHistory[tid].push_front(branch_info);
-        if (decodedBranchHistory[tid].size() > MAX_BRANCH_HISTORY) {
-            decodedBranchHistory[tid].pop_back();
-        }
+        branchInfo info = {inst->isIndirectCtrl(), inst->readPredTaken(),
+            inst->readPredTarg().instAddr(), inst->seqNum,
+            inst->pcState().instAddr()};
+        auto &history = decodedBranchHistory[inst->threadNumber];
+        history.push_front(info);
+        if (history.size() > MAX_BRANCH_HISTORY)
+            history.pop_back();
     }
-    return StallReason::NoStall;
 }
 
 void
