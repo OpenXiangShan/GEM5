@@ -204,10 +204,18 @@ class InstructionQueue
      */
     DynInstPtr getCacheMissInstToExecute();
 
-    /** Gets a load instruction that was referred due to data unready store
-     *  if it is now ready to execute.  NULL if none available.
+    /**
+     * Retry loads waiting for store data (C_FF) in queue order.
+     * With early_only, skip loads queued this cycle or missing an STD hint.
      */
-    DynInstPtr getSTLFFailInstToExecute();
+    void retrySTLFFailLoads(bool early_only = false);
+
+    /** Return whether any C_FF load has been waiting since a prior cycle. */
+    bool hasResidentSTLFFailLoads() const
+    {
+        return !stlfFailLdInsts.empty() &&
+               stlfFailLdInsts.front().enqueueTick < curTick();
+    }
 
     /** Notify instruction queue that a previous block has been resolved */
     void resolveSTLFFailInst(const InstSeqNum &store_seq_num);
@@ -220,7 +228,8 @@ class InstructionQueue
     void mdpAddrReplayRegister(const DynInstPtr &load_inst,
                               const std::vector<InstSeqNum> &store_seq_nums);
     void mdpAddrReplayRegisterStrict(const DynInstPtr &load_inst,
-                                    size_t required_store_completed_idx);
+                                    size_t required_store_completed_idx,
+                                    InstSeqNum store_seq_num);
     void mdpAddrReplayPipeDone(const DynInstPtr &load_inst);
     void mdpAddrReplayUpdateStoreCompletedIdx(ThreadID tid,
                                               size_t store_completed_idx);
@@ -315,11 +324,26 @@ class InstructionQueue
 
     void notifyExecuted(const DynInstPtr &inst);
 
+    /**
+     * Make a split store's issue hint visible after delay cycles to loads
+     * waiting for its address (C_MA) or data (C_FF).
+     */
+    void notifyStoreIssue(const DynInstPtr &inst, Cycles delay);
+
   private:
     /** Does the actual squashing. */
     void doSquash(ThreadID tid);
 
     void resolveMdpAddrReplayStoreAddr(const DynInstPtr &store_inst);
+
+    /** Mark loads waiting for this store's data as eligible for early retry. */
+    void wakeStoreDataWaiters(const DynInstPtr &store);
+
+    /**
+     * Apply this cycle's store issue hints and retry early-woken C_MA loads
+     * once they have left the load pipeline.
+     */
+    void processStoreReplayWakeups();
 
     /////////////////////////
     // Various pointers
@@ -386,7 +410,9 @@ class InstructionQueue
     {
       DynInstPtr inst; // load inst
       InstSeqNum storeSeqNum; // the store waiting for
+      Tick enqueueTick = curTick();
       bool resolved; // store data ready or not
+      bool earlyReady = false;
 
       STLFFailLdInst(DynInstPtr inst, InstSeqNum storeSeqNum, bool resolved);
     };
@@ -397,6 +423,8 @@ class InstructionQueue
     {
       DynInstPtr inst; // load inst
       bool pipeDone = false; // reached loadWhenToReplay
+      bool earlyReady = false;
+      InstSeqNum earlyStoreSeqNum = 0;
 
       // Non-strict: wait for a specific set of stores to become addrReady.
       std::unordered_set<InstSeqNum> storeSeqNums;
@@ -408,9 +436,19 @@ class InstructionQueue
       MdpAddrReplayLdInst(const DynInstPtr &inst,
                           const std::vector<InstSeqNum> &store_seq_nums);
       MdpAddrReplayLdInst(const DynInstPtr &inst,
-                          size_t required_store_completed_idx);
+                          size_t required_store_completed_idx,
+                          InstSeqNum store_seq_num);
     };
     std::array<std::list<MdpAddrReplayLdInst>, MaxThreads> mdpAddrReplayLdInsts;
+
+    struct StoreReplayWakeup
+    {
+        DynInstPtr store;
+        Tick visibleTick;
+        bool data;
+    };
+    // Retain only pending pulses and this cycle's C_FF enqueue bypass.
+    std::list<StoreReplayWakeup> storeReplayWakeups;
 
     size_t mdpStoreCompletedIdx[MaxThreads] = {};
 

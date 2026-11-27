@@ -931,6 +931,8 @@ IssueQue::issueToFu()
             issuedStore++;
         }
 
+        // Both store halves wake replaying loads one cycle after reissue.
+        inst->instQueue->notifyStoreIssue(inst, Cycles(1));
         scheduler->addToFU(inst);
         DPRINTF(Schedule, "[sn:%llu] replayed to FU\n", inst->seqNum);
         replayQ.pop();
@@ -979,6 +981,14 @@ IssueQue::issueToFu()
             issuedStore++;
         }
         addToFu(inst);
+        if (inst->isSplitStoreData()) {
+            // OG0 is visible one cycle after scheduling, subject to admission.
+            const Cycles delay(scheduleToExecDelay == 1 ? 1 : 0);
+            inst->instQueue->notifyStoreIssue(inst, delay);
+        } else if (inst->isSplitStoreAddr()) {
+            // The OG1 address hint follows the STA that won the issue port.
+            inst->instQueue->notifyStoreIssue(inst, Cycles(1));
+        }
         cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueReadReg);
         issued++;
     }
@@ -2058,8 +2068,24 @@ Scheduler::issueAndSelect()
     }
     std::fill(wrRfPortOccupancy.begin(), wrRfPortOccupancy.end(), std::make_tuple(nullptr, 0, 0));
 
-    for (auto iq : issueQues)
+    bool stdArbitrated = false;
+    for (auto *iq : issueQues) {
+        if (stdArbitrated && iq->isStoreDataQueue()) {
+            continue;
+        }
+        if (iq->loadPipeId == 0 && iew->instQueue.hasResidentSTLFFailLoads()) {
+            // Resolve the STD ports that follow the first load port before
+            // giving resident C_FF loads their chance to replay this cycle.
+            for (size_t i = iq->getId() + 1; i < issueQues.size(); ++i) {
+                if (issueQues[i]->isStoreDataQueue()) {
+                    issueQues[i]->issueToFu();
+                }
+            }
+            iew->instQueue.retrySTLFFailLoads(true);
+            stdArbitrated = true;
+        }
         iq->issueToFu();
+    }
     if (instsToFu.size() < intel_fewops) {
         stats.exec_stall_cycle++;
     }

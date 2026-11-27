@@ -2573,8 +2573,10 @@ IEW::executeInsts()
                 readyToFinish(inst);
             } else {
                 DPRINTF(IEW, "Execute: Split store data, [sn:%lli]\n", inst->seqNum);
-                // STD is ready, wake up corresponding load if any
-                instQueue.resolveSTLFFailInst(inst->seqNum);
+                // An STD deferred by the physical SQ has not written data.
+                if (inst->sqIt->dataReady()) {
+                    instQueue.resolveSTLFFailInst(inst->seqNum);
+                }
                 if (inst->sqIt->splitStoreFinish()) {
                     readyToFinish(inst->sqIt->instruction());
                 }
@@ -2996,9 +2998,11 @@ IEW::mdpAddrReplayRegister(const DynInstPtr &inst,
 
 void
 IEW::mdpAddrReplayRegisterStrict(const DynInstPtr &inst,
-                                 size_t required_store_completed_idx)
+                                 size_t required_store_completed_idx,
+                                 InstSeqNum store_seq_num)
 {
-    instQueue.mdpAddrReplayRegisterStrict(inst, required_store_completed_idx);
+    instQueue.mdpAddrReplayRegisterStrict(inst, required_store_completed_idx,
+                                        store_seq_num);
 }
 
 void

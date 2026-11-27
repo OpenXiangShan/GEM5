@@ -301,7 +301,8 @@ class IEW
     void mdpAddrReplayRegister(const DynInstPtr &inst,
                                const std::vector<InstSeqNum> &store_seq_nums);
     void mdpAddrReplayRegisterStrict(const DynInstPtr &inst,
-                                     size_t required_store_completed_idx);
+                                     size_t required_store_completed_idx,
+                                     InstSeqNum store_seq_num);
     void mdpAddrReplayPipeDone(const DynInstPtr &inst);
     void mdpAddrReplayUpdateStoreCompletedIdx(ThreadID tid,
                                               size_t store_completed_idx);

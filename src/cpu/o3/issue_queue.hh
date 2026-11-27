@@ -136,6 +136,9 @@ class IssueQue : public SimObject
     int numStorePipe = 0;
     int loadPipeId = -1;
 
+    /** Return whether this queue issues the data half of a split store. */
+    bool isStoreDataQueue() const { return readyQclassify[StoreDataOp]; }
+
     enum class VectorSplitKind
     {
         Load,
