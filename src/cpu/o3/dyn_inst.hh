@@ -56,6 +56,7 @@
 #include "base/refcnt.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "config/the_isa.hh"
 #include "cpu/checker/cpu.hh"
 #include "cpu/exec_context.hh"
@@ -66,6 +67,11 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/dyn_inst_xsmeta.hh"
 #include "cpu/o3/lsq_unit.hh"
+
+#if GEM5_ENABLE_MATRIX
+#include "cpu/o3/matrix_pipeline.hh"
+
+#endif
 #include "cpu/o3/replay_events.hh"
 #include "cpu/op_class.hh"
 #include "cpu/reg_class.hh"
@@ -289,6 +295,10 @@ class DynInst : public ExecContext, public RefCounted
     /** The status of this BaseDynInst.  Several bits can be set. */
     std::bitset<NumStatus> status;
 
+#if GEM5_ENABLE_MATRIX
+    MatrixDynInstState matrixState;
+
+#endif
     /* replay type of this instruction */
     std::optional<LdStReplayType> replayType;
     std::bitset<LdStReplayTypeCount> replayFlags;
@@ -298,6 +308,10 @@ class DynInst : public ExecContext, public RefCounted
     bool _hasProducerStorePC = false;
     Addr _producerStorePC = 0;
 
+#if GEM5_ENABLE_MATRIX
+    void initMatrixInstInfo();
+
+#endif
   protected:
     /** The result of the instruction; assumes an instruction can have many
      *  destination registers.
@@ -883,12 +897,16 @@ class DynInst : public ExecContext, public RefCounted
     bool isInteger()      const { return staticInst->isInteger(); }
     bool isFloating()     const { return staticInst->isFloating(); }
     bool isVector()       const { return staticInst->isVector(); }
+#if GEM5_ENABLE_MATRIX
+    bool isMatrixInst()   const { return matrixState.matrixInst.valid; }
+#endif
 
     /** TEA hooks are called only when CPU::getTea() is non-null. */
     void teaSetEvent(TeaEvent::Event event);
     uint16_t teaPSV() const { return teaPsv; }
     std::array<DynInst *, 2> teaFusionMembers() const;
     const DynInst *teaFirstMember() const;
+
     bool isControl()      const
     {
         return traceBranchInfoValid || staticInst->isControl();
@@ -959,6 +977,11 @@ class DynInst : public ExecContext, public RefCounted
     bool isHtmStop() const { return staticInst->isHtmStop(); }
     bool isHtmCancel() const { return staticInst->isHtmCancel(); }
     bool isHtmCmd() const { return staticInst->isHtmCmd(); }
+#if GEM5_ENABLE_MATRIX
+    MatrixDynInstState &matrixData() { return matrixState; }
+    const MatrixDynInstState &matrixData() const
+    { return matrixState; }
+#endif
 
     uint64_t
     getHtmTransactionUid() const override
@@ -1670,6 +1693,15 @@ class DynInst : public ExecContext, public RefCounted
         _destMiscRegVal.push_back(val);
     }
 
+#if GEM5_ENABLE_MATRIX
+    RegVal readMatrixConfig(unsigned index) override;
+    void freezeMatrixConfig();
+    bool stageMatrixRequest(const matrix::CuteRequest &request) override;
+    bool stageMatrixTokenReset(RegVal token_idx) override;
+    bool readStagedMatrixTokenReady(RegVal token_idx, RegVal threshold,
+                                   bool &ready) override;
+
+#endif
     /** Reads a misc. register, including any side-effects the read
      * might have as defined by the architecture.
      */

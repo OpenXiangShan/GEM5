@@ -44,6 +44,7 @@
 #include <list>
 
 #include "base/logging.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "cpu/o3/commit.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
@@ -140,6 +141,10 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
       hybrid(params.RobCompressPolicy == ROBCompressPolicy::hybrid),
       cpu(_cpu),
       numEntries(params.numROBEntries),
+#if GEM5_ENABLE_MATRIX
+      matrixAmuBufferEntries(params.enableMatrixBackend ?
+          params.numROBEntries : 0),
+#endif
       instsPerGroup(params.CROB_instPerGroup),
       rollbackWidth(params.squashWidth),
       replayWidth(params.squashWidth),
@@ -152,6 +157,11 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
     if (isHybrid()) {
         validateHybridConfig(params);
     }
+#if GEM5_ENABLE_MATRIX
+    if (params.enableMatrixBackend) {
+        matrixAmuBuffers = std::make_unique<MatrixAmuBuffer[]>(MaxThreads);
+    }
+#endif
     for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
         borrowingDonor[tid] = false;
         borrowingStateHoldCycle[tid] = 0;
@@ -237,6 +247,11 @@ ROB::resetState()
     for (ThreadID tid = 0; tid  < MaxThreads; tid++) {
         threadGroups[tid].clear();
         hybridEntries[tid].clear();
+#if GEM5_ENABLE_MATRIX
+        if (matrixAmuBuffers) {
+            matrixAmuBuffers[tid].reset(matrixAmuBufferEntries);
+        }
+#endif
         squashIt[tid] = instList[tid].end();
         squashedSeqNum[tid] = 0;
         doneSquashing[tid] = true;
@@ -557,6 +572,9 @@ ROB::insertInstWithGroup(const DynInstPtr &inst, bool new_group)
     if (auto *tea = cpu->getTea()) {
         tea->allocate(inst);
     }
+#if GEM5_ENABLE_MATRIX
+    insertMatrixAmuEntry(inst);
+#endif
 
     ++numInstsInROB;
 
@@ -764,6 +782,9 @@ ROB::doSquash(ThreadID tid)
         if (auto *tea = cpu->getTea()) {
             tea->squash(*squashIt[tid]);
         }
+#if GEM5_ENABLE_MATRIX
+        squashMatrixAmuEntry(tid, (*squashIt[tid])->seqNum);
+#endif
 
         (*squashIt[tid])->setCanCommit();
 

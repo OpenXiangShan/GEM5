@@ -16,6 +16,7 @@
 #include "base/stats/info.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
+#include "config/gem5_enable_matrix.hh"
 #include "cpu/func_unit.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/cpu.hh"
@@ -66,6 +67,9 @@
 
 #define RF_INTID 0
 #define RF_FPID 1
+#if GEM5_ENABLE_MATRIX
+#define RF_RMISCID 2
+#endif
 
 namespace gem5
 {
@@ -379,7 +383,13 @@ IssueQue::IssueQue(const IssueQueParams& params)
 
     intRdRfTPI.resize(outports);
     fpRdRfTPI.resize(outports);
+#if GEM5_ENABLE_MATRIX
+    rMiscRdRfTPI.resize(outports);
+#endif
     intWrRfTPI.resize(outports);
+#if GEM5_ENABLE_MATRIX
+    rMiscWrRfTPI.resize(outports);
+#endif
 
     readyQs.resize(outports, nullptr);
 
@@ -406,6 +416,10 @@ IssueQue::IssueQue(const IssueQueParams& params)
             if (is_wr) {
                 if (rf_type == RF_INTID) {
                     intWrRfTPI[i].push_back(rf_typeportid_pair);
+#if GEM5_ENABLE_MATRIX
+                } else if (rf_type == RF_RMISCID) {
+                    rMiscWrRfTPI[i].push_back(rf_typeportid_pair);
+#endif
                 } else {
                     panic("%s: Unknown write RF type %d\n", iqname, rf_type);
                 }
@@ -419,6 +433,10 @@ IssueQue::IssueQue(const IssueQueParams& params)
                     intRdRfTPI[i].push_back(rf_typeportid_pair);
                 } else if (rf_type == RF_FPID) {
                     fpRdRfTPI[i].push_back(rf_typeportid_pair);
+#if GEM5_ENABLE_MATRIX
+                } else if (rf_type == RF_RMISCID) {
+                    rMiscRdRfTPI[i].push_back(rf_typeportid_pair);
+#endif
                 } else {
                     panic("%s: Unknown RF type %d\n", iqname, rf_type);
                 }
@@ -1246,6 +1264,9 @@ IssueQue::selectInst()
             if (!(portBusy[pi] & busy_bit)) {
                 DPRINTF(Schedule, "[sn %ld] was selected\n", inst->seqNum);
                 // get regfile write port
+#if GEM5_ENABLE_MATRIX
+                unsigned rMiscWrIdx = 0;
+#endif
                 for (int i = 0; i < inst->numDestRegs(); i++) {
                     auto pdst = inst->renamedDestIdx(i);
                     if (pdst->isFixedMapping()) [[unlikely]]
@@ -1255,11 +1276,21 @@ IssueQue::selectInst()
                     if (pdst->isIntReg() && intWrRfTPI[pi].size() > i) {
                         rfTypePortId = intWrRfTPI[pi][i];
                         scheduler->useRfWrPort(inst, pdst, rfTypePortId.first, rfTypePortId.second);
+#if GEM5_ENABLE_MATRIX
+                    } else if (pdst->is(RMiscRegClass) &&
+                               rMiscWrRfTPI[pi].size() > rMiscWrIdx) {
+                        rfTypePortId = rMiscWrRfTPI[pi][rMiscWrIdx++];
+                        scheduler->useRfWrPort(
+                            inst, pdst, rfTypePortId.first, rfTypePortId.second);
+#endif
                     }
                 }
 
 
                 // get regfile read port
+#if GEM5_ENABLE_MATRIX
+                unsigned rMiscRdIdx = 0;
+#endif
                 for (int i = 0; i < inst->numSrcRegs(); i++) {
                     PhysRegIdPtr psrc = inst->renamedSrcIdx(i);
                     if (psrc->isFixedMapping())
@@ -1279,6 +1310,13 @@ IssueQue::selectInst()
                     } else if (psrc->isFloatReg() && fpRdRfTPI[pi].size() > i) {
                         rfTypePortId = fpRdRfTPI[pi][i];
                         scheduler->useRfRdPort(inst, psrc, rfTypePortId.first, rfTypePortId.second);
+#if GEM5_ENABLE_MATRIX
+                    } else if (psrc->is(RMiscRegClass) &&
+                               rMiscRdRfTPI[pi].size() > rMiscRdIdx) {
+                        rfTypePortId = rMiscRdRfTPI[pi][rMiscRdIdx++];
+                        scheduler->useRfRdPort(
+                            inst, psrc, rfTypePortId.first, rfTypePortId.second);
+#endif
                     }
                 }
 
@@ -1770,6 +1808,14 @@ Scheduler::Scheduler(const SchedulerParams& params)
                 rdRfportChecker[typePortId.first] += 1;
             }
         }
+#if GEM5_ENABLE_MATRIX
+        for (auto& rfTypePortId : issueQues[i]->rMiscRdRfTPI) {
+            for (auto& typePortId : rfTypePortId) {
+                maxRdTypePortId = std::max(maxRdTypePortId, typePortId.first);
+                rdRfportChecker[typePortId.first] += 1;
+            }
+        }
+#endif
 
         // write port check
         for (auto& rfTypePortId : issueQues[i]->intWrRfTPI) {
@@ -1778,6 +1824,14 @@ Scheduler::Scheduler(const SchedulerParams& params)
                 wrRfportChecker[typePortId.first] += 1;
             }
         }
+#if GEM5_ENABLE_MATRIX
+        for (auto& rfTypePortId : issueQues[i]->rMiscWrRfTPI) {
+            for (auto& typePortId : rfTypePortId) {
+                maxWrTypePortId = std::max(maxWrTypePortId, typePortId.first);
+                wrRfportChecker[typePortId.first] += 1;
+            }
+        }
+#endif
     }
 
     // check whether equality
@@ -1936,6 +1990,17 @@ Scheduler::setCPU(CPU* cpu, LSQ* lsq, IEW* iew)
     this->iew = iew;
     const auto& cpuParams =
         dynamic_cast<const BaseO3CPUParams&>(cpu->params());
+#if GEM5_ENABLE_MATRIX
+    if (cpuParams.enableMatrixBackend) {
+        for (OpClass op : {MatrixIntOp, MatrixReleaseOp, MatrixCsrOp,
+                           MatrixMmaOp, MatrixArithOp, MatrixSyncOp,
+                           MatrixMemOp}) {
+            fatal_if(dispTable[0][op].empty(),
+                     "Matrix backend requires an issue queue for %s",
+                     enums::OpClassStrings[op]);
+        }
+    }
+#endif
     smtIQPolicy = cpuParams.smtIQPolicy;
     enableSpMT = cpuParams.enableSpMT;
     if (enableSpMT) {
