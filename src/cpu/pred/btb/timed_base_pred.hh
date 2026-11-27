@@ -181,6 +181,15 @@ class TimedBaseBTBPredictor: public SimObject
 
     bool usesTidPartitionedStorage() const { return smtTidPartitioned; }
 
+    /**
+     * TID-partitioned predictors use PC/history within each thread's storage.
+     * ASID hashing remains available to predictors using shared storage.
+     */
+    uint8_t storageAsidHash(uint8_t asidHash) const
+    {
+        return smtTidPartitioned ? 0 : asidHash;
+    }
+
 private:
     unsigned numDelay;
     PredictorTrainingStage trainingStage;

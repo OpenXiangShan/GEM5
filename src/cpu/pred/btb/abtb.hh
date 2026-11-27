@@ -265,7 +265,7 @@ class AheadBTB : public TimedBaseBTBPredictor
         Addr baseIndex = (instPC >> idxShiftAmt) & idxMask;
         baseIndex ^= phrHash & idxMask;
         Addr index = xorAsidHashIntoIndex(
-            baseIndex, floorLog2(numSets), asidHash);
+            baseIndex, floorLog2(numSets), storageAsidHash(asidHash));
         return partitionIndex(index, numSets, tid);
     }
 
@@ -279,7 +279,8 @@ class AheadBTB : public TimedBaseBTBPredictor
         const unsigned shift = tagShiftAmt -
             (usesTidPartitionedStorage() ? 1 : 0);
         Addr baseTag = (instPC >> shift) & tagMask;
-        return injectAsidHashIntoTag(baseTag, tagBits, asidHash);
+        return injectAsidHashIntoTag(
+            baseTag, tagBits, storageAsidHash(asidHash));
     }
 
     /** Update the 2-bit saturating counter for conditional branches

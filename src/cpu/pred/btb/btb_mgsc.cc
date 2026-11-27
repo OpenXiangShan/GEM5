@@ -357,7 +357,8 @@ BTBMGSC::findWeight(const std::vector<int16_t> &weightTable, Addr pc,
 {
     auto mask = (1 << weightTableIdxWidth) - 1;
     auto pcHash = ((pc >> instShiftAmt) ^ ((pc >> instShiftAmt) >> 2)) & mask;
-    pcHash = xorAsidHashIntoIndex(pcHash, weightTableIdxWidth, asidHash);
+    pcHash = xorAsidHashIntoIndex(
+        pcHash, weightTableIdxWidth, storageAsidHash(asidHash));
     auto &entry = weightTable[pcHash];
     return entry;
 }
@@ -383,7 +384,8 @@ BTBMGSC::findThreshold(const std::vector<int16_t> &thresholdTable, Addr pc,
 {
     auto mask = (1 << thresholdTablelogSize) - 1;
     auto pcHash = ((pc >> instShiftAmt) ^ ((pc >> instShiftAmt) >> 2)) & mask;
-    pcHash = xorAsidHashIntoIndex(pcHash, thresholdTablelogSize, asidHash);
+    pcHash = xorAsidHashIntoIndex(
+        pcHash, thresholdTablelogSize, storageAsidHash(asidHash));
     auto &entry = thresholdTable[pcHash];
     return entry;
 }
@@ -745,7 +747,8 @@ BTBMGSC::updatePCThresholdTable(Addr pc, uint8_t asidHash, bool update_direction
 {
     auto mask = (1 << thresholdTablelogSize) - 1;
     auto pcHash = ((pc >> instShiftAmt) ^ ((pc >> instShiftAmt) >> 2)) & mask;
-    pcHash = xorAsidHashIntoIndex(pcHash, thresholdTablelogSize, asidHash);
+    pcHash = xorAsidHashIntoIndex(
+        pcHash, thresholdTablelogSize, storageAsidHash(asidHash));
     auto &entry = pUpdateThreshold[pcHash];
     updateCounter(update_direction, pUpdateThresholdWidth, entry);
 }
@@ -1059,7 +1062,7 @@ BTBMGSC::getHistIndex(Addr pc, unsigned tableIndexBits, uint64_t foldedHist,
     Addr foldedBits = foldedHist & mask;
 
     const Addr localIndex = xorAsidHashIntoIndex(
-        pcBits ^ foldedBits, localIndexBits, asidHash);
+        pcBits ^ foldedBits, localIndexBits, storageAsidHash(asidHash));
     return partitionIndex(localIndex, 1ULL << tableIndexBits, tid);
 }
 
@@ -1075,7 +1078,7 @@ BTBMGSC::getBiasIndex(Addr pc, unsigned tableIndexBits, bool lowbit0,
     Addr pcBits = (pc >> floorLog2(blockSize)) & mask;
     unsigned index = (pcBits << 2) + (lowbit1 << 1) + lowbit0;
     const Addr localIndex = xorAsidHashIntoIndex(
-        index, localIndexBits, asidHash);
+        index, localIndexBits, storageAsidHash(asidHash));
     return partitionIndex(localIndex, 1ULL << tableIndexBits, tid);
 }
 
@@ -1087,7 +1090,8 @@ BTBMGSC::getPcIndex(Addr pc, unsigned tableIndexBits, uint8_t asidHash)
 
     // Extract lower bits of PC directly without bitset
     Addr baseIndex = (pc >> floorLog2(blockSize)) & mask;
-    return xorAsidHashIntoIndex(baseIndex, tableIndexBits, asidHash);
+    return xorAsidHashIntoIndex(
+        baseIndex, tableIndexBits, storageAsidHash(asidHash));
 }
 
 template<typename T>

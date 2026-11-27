@@ -420,6 +420,31 @@ TEST_F(ABTBTest, ResolveUpdateOnlyTrainsExplicitBranch)
     EXPECT_EQ(abtb->predictionStorageEntries()[1].ctr, 0);
 }
 
+TEST_F(ABTBTest, TidPartitionsRetainAheadEntriesAcrossAsidChanges)
+{
+    AheadBTB predictor(1024, 20, 1, 0, 2);
+    predictor.setSmtTidPartitioned(true);
+    constexpr Addr previous = 0x1000;
+    constexpr Addr start = 0x2000;
+    for (ThreadID tid = 0; tid < 2; ++tid) {
+        auto pred = makePrediction(start, &predictor, tid, tid + 1);
+        auto stream = createStream(start, pred, &predictor);
+        stream.previousPCs.push(previous);
+        updateABTB(stream, &predictor, makeBranchOutcome(
+            true, start + 4, 0x3000 + tid * 0x1000, true));
+    }
+    for (ThreadID tid = 0; tid < 2; ++tid) {
+        for (uint8_t asid = 0; asid < 16; ++asid) {
+            clearAheadPipeline(&predictor, tid);
+            makePrediction(previous, &predictor, tid, asid);
+            const auto pred = makePrediction(start, &predictor, tid, asid);
+            ASSERT_EQ(pred.btbEntries.size(), 1);
+            EXPECT_EQ(pred.btbEntries[0].branch.target,
+                      0x3000 + tid * 0x1000);
+        }
+    }
+}
+
 } // namespace test
 } // namespace btb_pred
 } // namespace branch_prediction

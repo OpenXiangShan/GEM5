@@ -226,6 +226,28 @@ TEST_F(MicroTAGES3UpdateTest, S3AllocationFailureAndResetCountersStaySplit)
     EXPECT_EQ(tage->tageStats.updateAllocFailureNoValidTable, 0ULL);
 }
 
+TEST_F(MicroTAGES3UpdateTest, TidPartitionIndexAndTagIgnoreAsid)
+{
+    tage->setSmtTidPartitioned(true);
+    constexpr Addr pc = 0x1000;
+    constexpr uint64_t folded = 0x35;
+    for (int table = 0; table < 4; ++table) {
+        for (ThreadID tid = 0; tid < 2; ++tid) {
+            const auto index = tage->getTageIndex(
+                pc, table, folded, 0, tid);
+            const auto tag = tage->getTageTag(pc, table, folded, 0, 2, 0);
+            for (uint8_t asid = 0; asid < 16; ++asid) {
+                EXPECT_EQ(tage->getTageIndex(pc, table, folded, asid, tid),
+                          index);
+                EXPECT_EQ(tage->getTageTag(
+                    pc, table, folded, 0, 2, asid), tag);
+            }
+            EXPECT_NE(index, tage->getTageIndex(
+                pc, table, folded, 0, 1 - tid));
+        }
+    }
+}
+
 } // namespace test
 
 } // namespace btb_pred

@@ -1089,7 +1089,7 @@ MicroTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHis
 
     // XOR all components together, including position (like RTL)
     return injectAsidHashIntoTag(pcBits ^ foldedBits ^ position ^ altTagBits,
-                                 tableTagBits[t], asidHash);
+                                 tableTagBits[t], storageAsidHash(asidHash));
 }
 
 Addr
@@ -1104,7 +1104,7 @@ MicroTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist,
     Addr foldedBits = foldedHist & mask;
 
     Addr localIndex = xorAsidHashIntoIndex(
-        pcBits ^ foldedBits, localIndexBits, asidHash);
+        pcBits ^ foldedBits, localIndexBits, storageAsidHash(asidHash));
     return partitionIndex(localIndex, tableSizes[t], tid);
 }
 

@@ -567,14 +567,21 @@ class BTBMGSC : public TimedBaseBTBPredictor
         static auto &updateThreshold(BTBMGSC &mgsc) { return mgsc.updateThreshold; }
         static auto &pUpdateThreshold(BTBMGSC &mgsc) { return mgsc.pUpdateThreshold; }
 
-        static Addr getHistIndex(BTBMGSC &mgsc, Addr pc, unsigned tableIndexBits, uint64_t foldedHist)
+        static Addr getHistIndex(BTBMGSC &mgsc, Addr pc,
+                                 unsigned tableIndexBits, uint64_t foldedHist,
+                                 uint8_t asidHash = 0, ThreadID tid = 0)
         {
-            return mgsc.getHistIndex(pc, tableIndexBits, foldedHist);
+            return mgsc.getHistIndex(pc, tableIndexBits, foldedHist,
+                                     asidHash, tid);
         }
 
-        static Addr getBiasIndex(BTBMGSC &mgsc, Addr pc, unsigned tableIndexBits, bool lowbit0, bool lowbit1)
+        static Addr getBiasIndex(BTBMGSC &mgsc, Addr pc,
+                                 unsigned tableIndexBits, bool lowbit0,
+                                 bool lowbit1, uint8_t asidHash = 0,
+                                 ThreadID tid = 0)
         {
-            return mgsc.getBiasIndex(pc, tableIndexBits, lowbit0, lowbit1);
+            return mgsc.getBiasIndex(pc, tableIndexBits, lowbit0, lowbit1,
+                                     asidHash, tid);
         }
 
         static std::tuple<unsigned, unsigned> posHash(BTBMGSC &mgsc, Addr pc, unsigned tableIdx)
