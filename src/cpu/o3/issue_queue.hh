@@ -217,6 +217,7 @@ class IssueQue : public SimObject
     EventFunctionWrapper vectorReadyQEvent;
 
     CPU* cpu = nullptr;
+    bool orderedDispatch = false;
     Scheduler* scheduler = nullptr;
     BaseSelector* selector = nullptr;
 

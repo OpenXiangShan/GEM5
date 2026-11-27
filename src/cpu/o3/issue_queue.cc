@@ -484,6 +484,7 @@ void
 IssueQue::setCPU(CPU* cpu)
 {
     this->cpu = cpu;
+    orderedDispatch = !dynamic_cast<const BaseO3CPUParams&>(cpu->params()).enableDispatchStage;
     _name = cpu->name() + ".scheduler." + getName();
     iqstats = new IssueQueStats(cpu, this, "scheduler." + this->getName());
     iqstats->instsNum.init(cpu->numThreads);
@@ -1507,6 +1508,10 @@ IssueQue::doCommit(const InstSeqNum seqNum, ThreadID tid)
 {
     for (auto it = instList.begin(); it != instList.end();) {
         const auto &inst = *it;
+        // Without the dispatch stage, insertion order is monotonic per thread.
+        if (orderedDispatch && inst->threadNumber == tid && inst->seqNum > seqNum) {
+            break;
+        }
         if (inst->threadNumber == tid && inst->seqNum <= seqNum) {
             assert(inst->isIssued());
             scheduler->fpForget(inst);
