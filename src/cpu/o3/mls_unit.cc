@@ -428,7 +428,7 @@ MlsVirtualQueue::size(ThreadID tid) const
 }
 
 MlsReplayQueue::MlsReplayQueue(unsigned num_threads, unsigned capacity,
-                               Tick replay_select_latency)
+                               Cycles replay_select_latency)
     : replaySelectLatency(replay_select_latency),
       entries(num_threads, std::vector<Entry>(capacity))
 {
@@ -456,7 +456,7 @@ MlsReplayQueue::reserve(const DynInstPtr &inst)
 }
 
 bool
-MlsReplayQueue::scheduleNext(ThreadID tid, DynInstPtr &inst_out)
+MlsReplayQueue::scheduleNext(ThreadID tid, Cycles now, DynInstPtr &inst_out)
 {
     panic_if(tid >= entries.size(), "Invalid thread id %u for MlsReplayQueue", tid);
 
@@ -469,9 +469,9 @@ MlsReplayQueue::scheduleNext(ThreadID tid, DynInstPtr &inst_out)
         }
         if (!entry.ready) {
             entry.ready = true;
-            entry.availableTick = curTick() + replaySelectLatency;
+            entry.availableCycle = now + replaySelectLatency;
         }
-        if (entry.availableTick > curTick()) {
+        if (entry.availableCycle > now) {
             continue;
         }
         if (!selected || entry.robSeqNum < selected->robSeqNum) {
@@ -817,9 +817,10 @@ void
 MlsUnit::scheduleReplay(
     const std::list<ThreadID> &active_threads)
 {
+    const Cycles now = cpu->curCycle();
     for (auto tid : active_threads) {
         DynInstPtr replay_inst;
-        if (!replayQueue.scheduleNext(tid, replay_inst)) {
+        if (!replayQueue.scheduleNext(tid, now, replay_inst)) {
             continue;
         }
 
