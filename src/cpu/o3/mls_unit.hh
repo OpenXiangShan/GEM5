@@ -15,7 +15,6 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "matrix/MatrixTypes.hh"
 #include "mem/request.hh"
-#include "sim/cur_tick.hh"
 #include "sim/faults.hh"
 
 namespace gem5
@@ -102,23 +101,23 @@ class MlsReplayQueue
         bool allocated = false;
         bool scheduled = false;
         bool ready = false;
-        Tick availableTick = 0;
+        Cycles availableCycle{0};
         DynInstPtr inst;
         ReplayState state;
     };
 
-    MlsReplayQueue(unsigned num_threads, unsigned capacity = 8,
-                   Tick replay_select_latency = 10000);
+    MlsReplayQueue(unsigned num_threads, unsigned capacity,
+                   Cycles replay_select_latency);
 
     ReplayState *reserve(const DynInstPtr &inst);
-    bool scheduleNext(ThreadID tid, DynInstPtr &inst_out);
+    bool scheduleNext(ThreadID tid, Cycles now, DynInstPtr &inst_out);
     void complete(const DynInstPtr &inst);
     unsigned squash(ThreadID tid, InstSeqNum squash_seq);
 
   private:
     void freeEntry(Entry &entry);
 
-    const Tick replaySelectLatency;
+    const Cycles replaySelectLatency;
     std::vector<std::vector<Entry>> entries;
 };
 
