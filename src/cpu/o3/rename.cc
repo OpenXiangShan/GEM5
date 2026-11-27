@@ -43,6 +43,7 @@
 
 #include <algorithm>
 #include <list>
+#include <limits>
 
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
@@ -1218,21 +1219,23 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
             DPRINTF(Rename, "[sn:%llu] Inst is nop: %i, is move: %i\n", inst->seqNum, inst->isNop(),
                     inst->isMov());
             stats.moveEliminated++;
-        } else if (inst->isAddImm() &&
+        } else if (!inst->isFusion() && inst->isAddImm() &&
             (cpu->enableConstantFolding || (cpu->enableMovImmElimination && inst->srcRegIdx(0).isZeroReg()))) {
-            // Constant folding
-            bypass_reg =
+            const auto source =
                 map->lookup(tc->flattenRegId(inst->srcRegIdx(0)));
+            const auto &source_op = source.IEOper();
+            const int64_t imm = inst->staticInst->getImm();
+            const int64_t offset = imm + (source_op ? source_op->imm : 0);
 
-            if (!bypass_reg.IEOper() || bypass_reg.IEOper()->type == IEOperand::Type::ADD) {
-                if (bypass_reg.IEOper()) {
-                    IEOperPtr ie_op = new IEOperand(IEOperand::Type::ADD,
-                        bypass_reg.IEOper()->imm + inst->staticInst->getImm());
-                    bypass_reg.setIEOper(ie_op);
-                } else {
-                    IEOperPtr ie_op = new IEOperand(IEOperand::Type::ADD, inst->staticInst->getImm());
-                    bypass_reg.setIEOper(ie_op);
-                }
+            // Keep zero-immediate encodings on the execution path so
+            // compressed instructions can perform their legality checks.
+            if (imm != 0 &&
+                (!source_op || source_op->type == IEOperand::Type::ADD) &&
+                offset >= std::numeric_limits<int16_t>::min() &&
+                offset <= std::numeric_limits<int16_t>::max()) {
+                bypass_reg = source;
+                bypass_reg.setIEOper(
+                    new IEOperand(IEOperand::Type::ADD, offset));
                 inc_ref_of_last_dest_phy_reg = true;
 
                 inst->setConstantFolded();
