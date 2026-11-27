@@ -326,16 +326,21 @@ template<> struct double_width<uint32_t>    { using type = uint64_t;};
 template<> struct double_width<int8_t>      { using type = int16_t; };
 template<> struct double_width<int16_t>     { using type = int32_t; };
 template<> struct double_width<int32_t>     { using type = int64_t; };
+template<> struct double_width<float16_t>   { using type = float32_t;};
 template<> struct double_width<float32_t>   { using type = float64_t;};
 
 template<typename Type> struct double_widthf;
+template<> struct double_widthf<uint16_t>    { using type = float32_t;};
+template<> struct double_widthf<int16_t>     { using type = float32_t;};
 template<> struct double_widthf<uint32_t>    { using type = float64_t;};
 template<> struct double_widthf<int32_t>     { using type = float64_t;};
 
 template<typename FloatType, typename IntType = decltype(FloatType::v)> auto
 ftype(IntType a) -> FloatType
 {
-    if constexpr(std::is_same_v<uint32_t, IntType>)
+    if constexpr(std::is_same_v<uint16_t, IntType>)
+        return float16_t{a};
+    else if constexpr(std::is_same_v<uint32_t, IntType>)
         return f32(a);
     else if constexpr(std::is_same_v<uint64_t, IntType>)
         return f64(a);
@@ -538,7 +543,9 @@ template<
 > IntType
 f_to_wui(FloatType a, uint_fast8_t mode)
 {
-    if constexpr(std::is_same_v<float32_t, FloatType>)
+    if constexpr(std::is_same_v<float16_t, FloatType>)
+        return f16_to_ui32(a, mode, true);
+    else if constexpr(std::is_same_v<float32_t, FloatType>)
         return f32_to_ui64(a, mode, true);
     GEM5_UNREACHABLE;
 }
@@ -570,7 +577,9 @@ template<
 > IntType
 f_to_wi(FloatType a, uint_fast8_t mode)
 {
-    if constexpr(std::is_same_v<float32_t, FloatType>)
+    if constexpr(std::is_same_v<float16_t, FloatType>)
+        return (uint32_t)f16_to_i32(a, mode, true);
+    else if constexpr(std::is_same_v<float32_t, FloatType>)
         return (uint64_t)f32_to_i64(a, mode, true);
     GEM5_UNREACHABLE;
 }
@@ -603,7 +612,9 @@ template<
 > FloatType
 ui_to_wf(IntType a)
 {
-    if constexpr(std::is_same_v<float64_t, FloatType>)
+    if constexpr(std::is_same_v<float32_t, FloatType>)
+        return ui32_to_f32(static_cast<uint16_t>(a));
+    else if constexpr(std::is_same_v<float64_t, FloatType>)
         return ui32_to_f64(a);
     GEM5_UNREACHABLE;
 }
@@ -636,7 +647,9 @@ template<
 > FloatType
 i_to_wf(IntType a)
 {
-    if constexpr(std::is_same_v<float64_t, FloatType>)
+    if constexpr(std::is_same_v<float32_t, FloatType>)
+        return i32_to_f32(static_cast<int16_t>(a));
+    else if constexpr(std::is_same_v<float64_t, FloatType>)
         return i32_to_f64((int32_t)a);
     GEM5_UNREACHABLE;
 }
@@ -660,7 +673,9 @@ template<
 > FloatWType
 f_to_wf(FloatType a)
 {
-    if constexpr(std::is_same_v<float32_t, FloatType>)
+    if constexpr(std::is_same_v<float16_t, FloatType>)
+        return f16_to_f32(a);
+    else if constexpr(std::is_same_v<float32_t, FloatType>)
         return f32_to_f64(a);
     GEM5_UNREACHABLE;
 }

@@ -908,7 +908,7 @@ def format VectorFloatWideningCvtFormat(code, category, *flags) {{
         VectorFloatCvtMacroDeclare.subst(iop) + \
         VectorIntWideningMacroConstructor.subst(iop)
 
-    decode_block = VectorFloatWideningDecodeBlock.subst(iop)
+    decode_block = VectorFloatWideningCvtDecodeBlock.subst(iop)
 }};
 
 def format VectorFloatNarrowingCvtFormat(code, category, *flags) {{
