@@ -59,6 +59,9 @@ struct CacheAccessor
     // cache level, l1 is 1, l2 is 2, etc.
     virtual unsigned level() const = 0;
 
+    // Notify the cache when the prefetch queue has a ready time.
+    virtual void notifyPrefetchReady(Tick ready) {}
+
     /** Determine if address has been prefetched */
     virtual bool hasBeenPrefetched(Addr addr, bool is_secure) const = 0;
 

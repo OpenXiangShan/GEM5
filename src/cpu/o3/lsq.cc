@@ -68,6 +68,7 @@
 #include "debug/Drain.hh"
 #include "debug/Fetch.hh"
 #include "debug/Hint.hh"
+#include "debug/HWPrefetch.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/LSQ.hh"
 #include "debug/PacketSender.hh"
@@ -907,7 +908,11 @@ LSQ::isDrained() const
         drained = false;
     }
 
-    return drained;
+    return drained && !dcachePrefetchEntry.valid &&
+        std::none_of(dcacheMainPipe.begin(), dcacheMainPipe.end(),
+                     [](const auto &slot) {
+                         return slot.valid && slot.req.isPrefetch();
+                     });
 }
 
 void
@@ -1044,7 +1049,7 @@ LSQ::advanceDcacheMainPipe()
 
     if (s3_tag_write.valid && !s3_can_go) {
         next_s3_tag_write = s3_tag_write;
-    } else if (s3_tag_write.valid) {
+    } else if (s3_tag_write.valid && !s3_tag_write.req.isPrefetch()) {
         next_s4_data_write = s3_tag_write;
     }
 
@@ -1074,6 +1079,23 @@ LSQ::advanceDcacheMainPipe()
         } else {
             ++stats.dcacheMainPipeRefillBlocked;
             ++stats.dcacheMainPipeRefillBlockedByPipeResource;
+        }
+    } else {
+        auto &entry = dcachePrefetchEntry;
+        if (!entry.valid && readyDcachePrefetch()) {
+            entry = {true, takeDcachePrefetch()};
+            entry.req.setKey = getDcacheSetKey(entry.req.addr);
+            DPRINTF(HWPrefetch, "MainPipe entry received %#x\n", entry.req.addr);
+        }
+        if (entry.valid) {
+            if (canEnterDcacheMainPipe(entry.req, next_pipe)) {
+                DPRINTF(HWPrefetch, "MainPipe S0 accepted %#x\n", entry.req.addr);
+                next_s1_data_read = std::move(entry);
+                entry = {};
+            } else {
+                DPRINTF(HWPrefetch, "MainPipe S0 held %#x at entry\n",
+                        entry.req.addr);
+            }
         }
     }
 
@@ -1278,7 +1300,8 @@ LSQ::isDcacheMainPipeSetBlocked(uint64_t set_key) const
          ++stage) {
         const auto &pipe_stage =
             dcacheMainPipeStage(static_cast<DcacheMainPipeStage>(stage));
-        if (pipe_stage.valid && pipe_stage.req.setKey == set_key) {
+        if (pipe_stage.valid && !pipe_stage.req.isPrefetch() &&
+            pipe_stage.req.setKey == set_key) {
             return true;
         }
     }
@@ -1338,6 +1361,8 @@ LSQ::canEnterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry)
         ++stats.dcacheMainPipeStoreBlockedByRefill;
         return false;
     }
+    if (dcachePrefetchEntry.valid || readyDcachePrefetch())
+        return false;
 
     bool blocked = false;
     if (s1_backpressured) {
@@ -1464,6 +1489,31 @@ LSQ::notifyDcacheRefill(
     dcacheMainPipeRefillQ.push(
         makeDcacheRefillMainPipeRequest(
             addr, need_data_read, std::move(on_complete)));
+    cpu->wakeCPU();
+    cpu->activityThisCycle();
+}
+
+bool
+LSQ::readyDcachePrefetch() const
+{
+    return dcachePrefetchReady && !cpu->switchedOut() &&
+        cpu->drainState() == DrainState::Running && dcachePrefetchReady();
+}
+
+void
+LSQ::setDcachePrefetchSource(
+    std::function<bool()> ready, std::function<DcacheMainPipeRequest()> take)
+{
+    panic_if(dcachePrefetchReady, "LSQ already has an L1D prefetch source");
+    dcachePrefetchReady = std::move(ready);
+    takeDcachePrefetch = std::move(take);
+}
+
+void
+LSQ::wakeDcachePrefetch()
+{
+    if (!readyDcachePrefetch())
+        return;
     cpu->wakeCPU();
     cpu->activityThisCycle();
 }
@@ -3262,7 +3312,8 @@ LSQ::numStoresToSbuffer(ThreadID tid)
 bool
 LSQ::willWB()
 {
-    if (!dcacheMainPipeRefillQ.empty()) {
+    if (dcachePrefetchEntry.valid || readyDcachePrefetch() ||
+        !dcacheMainPipeRefillQ.empty()) {
         return true;
     }
     for (const auto &stage : dcacheMainPipe) {

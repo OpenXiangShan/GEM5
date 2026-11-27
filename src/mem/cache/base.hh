@@ -1372,7 +1372,6 @@ class BaseCache : public ClockedObject, public CacheAccessor
         statistics::Scalar FindHitInWriteBuffer;
 
         /** Number of prefetch req Tag read fail because of load. */
-        mutable statistics::Scalar prefetchTagReadFails;
 
         /** Number of data expansions. */
         statistics::Scalar dataExpansions;
@@ -1396,6 +1395,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
     void init() override;
     void resetStats() override;
+
+    void drainResume() override;
 
     Port &getPort(const std::string &if_name,
                   PortID idx=InvalidPortID) override;
@@ -1580,22 +1581,6 @@ class BaseCache : public ClockedObject, public CacheAccessor
         }
     }
 
-    Tick nextPrefetchReadyTime() const
-    {
-        Tick rdy_time = prefetcher->nextPrefetchReadyTime();
-        if (cacheLevel == 1) {
-            if (curTick() >= rdy_time && freeTagLoadReadPorts == 0) {
-                // no free tag read ports for prefetcher this cycle, try in next cycle.
-                stats.prefetchTagReadFails++;
-                return nextCycle();
-            } else {
-                return rdy_time;
-            }
-        } else {
-            return rdy_time;
-        }
-    }
-
     bool tagAccessCheck()
     {
         Cycles currentCycle = curCycle();
@@ -1671,6 +1656,15 @@ class BaseCache : public ClockedObject, public CacheAccessor
     const bool forceHit;
     const bool simulateDcacheRefill;
     o3::LSQ *dcacheMainPipeLSQ = nullptr;
+    EventFunctionWrapper dcachePrefetchReadyEvent;
+    bool usesDcachePrefetchMainPipe() const
+    {
+        return cacheLevel == 1 && !isReadOnly;
+    }
+    void notifyPrefetchReady(Tick ready) override;
+    void wakeDcacheMainPipePrefetch();
+    // Takes ownership of pkt. hit reports a local cache hit.
+    MSHR *handlePrefetch(PacketPtr pkt, bool &hit);
 
 public:
     /**
