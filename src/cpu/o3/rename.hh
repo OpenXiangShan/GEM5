@@ -44,6 +44,7 @@
 
 #include <list>
 #include <utility>
+#include <vector>
 
 #include "base/statistics.hh"
 #include "cpu/o3/comm.hh"
@@ -52,6 +53,7 @@
 #include "cpu/o3/free_list.hh"
 #include "cpu/o3/iew.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/rename_rab.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/valuepred/valuepred_unit.hh"
 #include "enums/ROBWalkPolicy.hh"
@@ -118,6 +120,7 @@ class Rename
         RegFull,
         SerializeInst,
         BWFull,
+        RABFull,
         StallEventCount
     };
 
@@ -207,6 +210,9 @@ class Rename
      */
     void tick();
 
+    const RenameRAB &getRAB() const { return rab; }
+    void enqueueRAB(const DynInstPtr &inst);
+
     void markTeaStoreQueueStall(ThreadID tid);
 
     /** Debugging function used to dump history buffer of renamings. */
@@ -221,9 +227,9 @@ class Rename
     /** Renames instructions for the given thread. Also handles serializing
      * instructions.
      */
-    unsigned renameInsts(ThreadID tid, unsigned max_insts);
+    unsigned renameInsts(ThreadID tid, unsigned max_insts, bool hold_output);
 
-    /** Checks if the rename map can rename all the given number of instructions this cycle. */
+    /** Check physical register space for this rename bundle. */
     bool canRename(ThreadID tid);
 
     /** Whether any non-squashed, buffered instruction for this thread still
@@ -419,6 +425,11 @@ class Rename
     /** The number of threads active in rename. */
     ThreadID numThreads;
 
+    /** Single-thread capacity; history records own the charged entries. */
+    RenameRAB rab;
+    /** One renamed group waiting for the single-thread RAB dispatch grant. */
+    std::vector<DynInstPtr> heldRenameGroup;
+
     /** Whether a thread stalled on ROB/dispatch-queue-bandwidth backpressure
      *  (a resource other than Preg itself) should also be treated as a Preg
      *  borrowing donor. When false, only hasPregDemand() drives donor status. */
@@ -449,6 +460,10 @@ class Rename
     {
         // RenameStats(statistics::Group *parent);
         RenameStats(CPU *cpu, Rename *rename);
+        void resetStats() override;
+
+        Rename &owner;
+        statistics::Scalar rabPeakOccupancy;
 
         /** Stat for total number of cycles spent squashing. */
         statistics::Scalar squashCycles;

@@ -111,6 +111,7 @@ enum StallReason {
     ROBFull,  // B
     RegFull,  // B
     OtherStall,  // B
+    RABFull,  // B
     NumStallReasons
 };
 
@@ -358,6 +359,9 @@ struct TimeStruct
         /// squashed.  Similar to having a single bus that broadcasts the
         /// retired or squashed sequence number.
         InstSeqNum doneSeqNum; // *F, I
+
+        /// Youngest instruction retired this cycle, even on a squash.
+        InstSeqNum retiredSeqNum = 0; // *R
 
         InstSeqNum doneMemSeqNum;
 

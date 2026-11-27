@@ -40,6 +40,9 @@ Each accepted uop tentatively receives one Base slot. Unused slots blocked by
 an instruction belong to the oldest blocked instruction, with the actual
 admission gate recorded as the cause. Upstream ROB and queue reservations and
 physical-register exhaustion retain the blocked rename instruction's identity.
+When the RAB rejects a whole group or its suffix, IEW attributes unused slots
+to the first rejected uop as S_REN once all older ROB residents have dispatched.
+If an older resident stalls at dispatch, its cause takes precedence.
 Empty frontend slots wait for the next admitted uop, whose supplying instruction
 cache/TLB events distinguish a miss from a bubble.
 
@@ -108,7 +111,7 @@ interrupts or claim the paper's BOOM hardware area, storage, or runtime overhead
 | 1 | S_ISB | Issue/dispatch queue capacity or admission bandwidth is blocked |
 | 2 | S_LDQ | Load queue capacity/reservation is blocked |
 | 3 | S_STQ | Store queue capacity/reservation is blocked |
-| 4 | S_REN | Physical register rename is blocked |
+| 4 | S_REN | Insufficient physical registers or RAB backpressure |
 | 5 | S_SER | A serializing instruction cannot enter |
 | 6 | F_BUB | Frontend bubble without an instruction cache/TLB miss event |
 | 7 | F_CTM | The next uop carries an instruction cache/TLB miss event |

@@ -409,6 +409,7 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         {StallReason::TrapRecovery, "TrapRecovery"},
         {StallReason::ROBFull, "ROBFull"},
         {StallReason::RegFull, "RegFull"},
+        {StallReason::RABFull, "RABFull"},
         {StallReason::OtherStall, "OtherStall"},
         {StallReason::OtherFetchStall, "OtherFetchStall"},
         {StallReason::FTQBubble, "FTQBubble"},
@@ -1660,7 +1661,9 @@ IEW::dispatchInsts()
         bool rename_block = stallSig->blockIEW[i] || ldst_block;
         // LDST queue reservation gates new rename input, but the already
         // buffered tail must still drain through per-instruction LSQ checks.
-        bool active = !stallSig->blockIEW[i] && !fixedbuffer[i].empty();
+        bool active = (!stallSig->blockIEW[i] ||
+                       stallSig->iewBlockReason[i] == StallReason::RABFull) &&
+                      !fixedbuffer[i].empty();
         StallReason block_reason = StallReason::NoStall;
         if (stallSig->blockIEW[i]) {
             block_reason = stallSig->iewBlockReason[i];
@@ -1711,20 +1714,58 @@ IEW::dispatchInsts()
         for (const ThreadID tid : selected_tids) {
             DPRINTF(IEW, "Processing [tid:%i]\n", tid);
             blockReason = StallReason::NoStall;
+            unsigned width = renameWidth;
+            DynInstPtr rab_blocker;
+            if (stallSig->iewBlockReason[tid] == StallReason::RABFull) {
+                // Drain older ROB residents so they can execute and release
+                // space. Do not send the rejected ROB input to the scheduler.
+                width = 0;
+                for (const auto &inst : fixedbuffer[tid]) {
+                    if (!inst->isInROB() && !inst->isSquashed()) {
+                        rab_blocker = inst;
+                        break;
+                    }
+                    if (!inst->isSquashed() && ++width == renameWidth)
+                        break;
+                }
+                blockReason = StallReason::RABFull;
+            }
             const unsigned dispatched = enableDispatchStage ?
-                classifyInstToDispQue(tid, renameWidth, dispatched_total) :
-                dispatchInstFromRename(tid, renameWidth, dispatched_total);
+                classifyInstToDispQue(tid, width, dispatched_total) :
+                dispatchInstFromRename(tid, width, dispatched_total);
             dispatched_total += dispatched;
             threads_dispatched += dispatched != 0;
 
             if (!fixedbuffer[tid].empty()) {
+                // Hitting the RAB limit does not exhaust dispatch bandwidth.
+                if (width < renameWidth && dispatched == width) {
+                    // All older residents dispatched, so RAB is the blocker.
+                    if (auto *dip = cpu->getDip(); dip && rab_blocker) {
+                        dip->block(rab_blocker, Dip::REN);
+                    }
+                    // Mark waiting slots only; count squashes separately.
+                    const auto count = std::min<size_t>(
+                        renameWidth - dispatched, fixedbuffer[tid].size());
+                    for (size_t i = 0; i < count; ++i) {
+                        dispatchStalls[dispatched + i] =
+                            fixedbuffer[tid][i]->isSquashed() ?
+                            StallReason::InstSquashed : StallReason::RABFull;
+                    }
+                } else {
+                    DPRINTF(IEW, "[tid:%i] Dispatch: Bandwidth Full. Blocking.\n", tid);
+                    iewStats.stallEvents[DispBWFull]++;
+                    iewStats.smtStallEvents[DispBWFull].sample(tid);
+                }
                 stallSig->blockRename[tid] = true;
                 stallSig->renameBlockReason[tid] =
                     blockReason == StallReason::NoStall ?
                         StallReason::OtherFragStall : blockReason;
                 DPRINTF(IEW,
-                        "Dispatch bandwidth full, blocking thread %i\n", tid);
+                        "Dispatch input remains, blocking thread %i\n", tid);
             }
+            for (int i = 0; i < dispatchStalls.size(); ++i)
+                DPRINTF(IEW, "[tid:%i] dispatchStalls[%d]=%d\n",
+                        tid, i, dispatchStalls[i]);
 
             auto &iew_info = toRename->iewInfo[tid];
             iew_info.robHeadStallReason =
@@ -1979,20 +2020,6 @@ IEW::dispatchInstFromRename(ThreadID tid, unsigned max_insts,
             }
         }
     }
-
-
-    for (int i = 0;i < dispatchStalls.size();i++) {
-        DPRINTF(IEW,"[tid:%i] dispatchStalls[%d]=%d\n", tid, i, dispatchStalls.at(i));
-    }
-
-    if (!insts_to_dispatch.empty()) {
-        DPRINTF(IEW,"[tid:%i] Dispatch: Bandwidth Full. Blocking.\n", tid);
-
-        iewStats.stallEvents[DispBWFull]++;
-        iewStats.smtStallEvents[DispBWFull].sample(tid);
-        
-    }
-
     return dispatched;
 }
 
@@ -2130,17 +2157,6 @@ IEW::classifyInstToDispQue(ThreadID tid, unsigned max_insts,
                 }
             }
         }
-    }
-
-
-    for (int i = 0;i < dispatchStalls.size();i++) {
-        DPRINTF(IEW,"[tid:%i] dispatchStalls[%d]=%d\n", tid, i, dispatchStalls.at(i));
-    }
-
-    if (!insts_to_dispatch.empty()) {
-        DPRINTF(IEW,"[tid:%i] Dispatch: Bandwidth Full. Blocking.\n", tid);
-        iewStats.stallEvents[DispBWFull]++;
-        iewStats.smtStallEvents[DispBWFull].sample(tid);
     }
     return dispatched;
 }
