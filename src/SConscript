@@ -703,7 +703,8 @@ elif env['CLANG']:
             ])
     else:
         for target in ['opt', 'fast']:
-            envs[target].Append(CCFLAGS=['-O3'])
+            envs[target].Append(CCFLAGS=['-O3', '${LTO_CCFLAGS}'])
+            envs[target].Append(LINKFLAGS=['-O3', '${LTO_LINKFLAGS}'])
 
     for target in ['opt', 'fast']:
         if GetOption('pgo_prof'):
