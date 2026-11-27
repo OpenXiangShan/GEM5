@@ -11,7 +11,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include <boost/compute/detail/lru_cache.hpp>
 #include <boost/dynamic_bitset/dynamic_bitset.hpp>
 #include <boost/heap/priority_queue.hpp>
 
@@ -21,6 +20,7 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/fp_wakeup.hh"
+#include "cpu/o3/reg_cache.hh"
 #include "cpu/o3/smt_sched.hh"
 #include "cpu/reg_class.hh"
 #include "cpu/timebuf.hh"
@@ -466,9 +466,7 @@ class Scheduler : public SimObject
     // typePortId : [inst : priority : time]
     std::vector<std::tuple<DynInstPtr, int, uint32_t>> wrRfPortOccupancy;
 
-    struct NullStruct {};
-
-    using RegCache = boost::compute::detail::lru_cache<int, NullStruct>;
+    using RegCache = o3::RegCache;
     static constexpr unsigned RegCacheEntries = 28;
 
     // Legacy SMT shares one cache. Strict SpMT statically splits its total

@@ -2470,7 +2470,7 @@ void
 Scheduler::insertRegCache(const DynInstPtr& inst, PhysRegIdPtr reg)
 {
     if (!enableSpMT || reg->isIntReg())
-        regCacheFor(inst->threadNumber).insert(reg->flatIndex(), {});
+        regCacheFor(inst->threadNumber).insert(reg->flatIndex());
 }
 
 bool
@@ -2485,10 +2485,7 @@ bool
 Scheduler::accessRegCache(const DynInstPtr& inst, PhysRegIdPtr reg)
 {
     auto &cache = regCacheFor(inst->threadNumber);
-    if (!cache.contains(reg->flatIndex()))
-        return false;
-    cache.get(reg->flatIndex());
-    return true;
+    return cache.get(reg->flatIndex());
 }
 
 void
