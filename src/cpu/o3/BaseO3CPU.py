@@ -108,6 +108,8 @@ class BaseO3CPU(BaseCPU):
     type = 'BaseO3CPU'
     cxx_class = 'gem5::o3::CPU'
     cxx_header = 'cpu/o3/dyn_inst.hh'
+    if buildEnv['GEM5_ENABLE_MATRIX']:
+        matrix_mem_port = RequestPort("Matrix memory timing port")
     cxx_exports = [
         PyBindMethod("addHintDownStream"),
     ]
@@ -193,6 +195,15 @@ class BaseO3CPU(BaseCPU):
     numDQEntries = VectorParam.Unsigned([32, 16, 16], "Number of entries in the dispQue, (Int, Float/Vector, Mem)")
     dispWidth = VectorParam.Unsigned([8, 6, 6], "Each DispQue dispatch width")
 
+    if buildEnv['GEM5_ENABLE_MATRIX']:
+        enableMatrixBackend = Param.Bool(
+            False,
+            "Enable matrix backend timing, AMU shadow admission, and toAMU proxy")
+        enableMatrixMemPort = Param.Bool(
+            False, "Expose and connect the matrix memory timing port")
+        matrixCZeroLoadLatency = Param.Unsigned(
+            256, "CUTE C zero-load CML occupancy cycles")
+
     wbWidth = Param.Unsigned(20, "Writeback width")
     vectorMemCompletionDelay = Param.Cycles(0,
         "Extra delay from vector memory completion to IEW writeback")
@@ -263,6 +274,14 @@ class BaseO3CPU(BaseCPU):
 
     StoreWbStage = Param.Unsigned(4, "Which PipeLine Stage store instruction writeback, 4 means S4")
 
+    if buildEnv['GEM5_ENABLE_MATRIX']:
+        matrixMlsVirtualQueueEntries = Param.Unsigned(
+            8, "Number of matrix MLS virtual queue entries")
+        matrixMlsReplayQueueEntries = Param.Unsigned(
+            8, "Number of matrix MLS replay queue entries")
+        # XSAI registers the TLB wakeup before selecting a replay.
+        matrixMlsReplaySelectLatency = Param.Cycles(
+            1, "CPU cycles from translation wakeup to Matrix replay selection")
     LSQDepCheckShift = Param.Unsigned(0,
             "Number of places to shift addr before check")
     LSQCheckLoads = Param.Bool(True,

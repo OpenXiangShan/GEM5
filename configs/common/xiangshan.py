@@ -325,6 +325,13 @@ def resolve_xiangshan_ref_so(args: argparse.Namespace):
 
 
 def get_xiangshan_cpu_class(args: argparse.Namespace):
+    if getattr(args, 'matrix', False):
+        if not buildEnv['GEM5_ENABLE_MATRIX']:
+            fatal("Matrix configuration requires a build with --enable-matrix")
+        if args.xiangshan_ecore:
+            fatal("Matrix configuration requires the Kunminghu O3 preset")
+        from common.MatrixConfig import MatrixXiangshanCore
+        return MatrixXiangshanCore
     if args.xiangshan_ecore:
         args.cpu_clock = '2.4GHz'
         return XiangshanECore
@@ -581,6 +588,9 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
 
     # ruby will overwrite the store_prefetch_train
     if ruby:
+        if getattr(args, 'matrix', False):
+            from common.MatrixConfig import config_matrix
+            config_matrix(args, test_sys)
         test_sys._dma_ports = []
         bootmem = getattr(test_sys, '_bootmem', None)
         Ruby.create_system(args, True, test_sys, test_sys.iobus,
@@ -661,6 +671,10 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
             for opt in ['l3cache', 'l2_to_l3_pf_hint']:
                 if hasattr(args, opt) and not getattr(args, opt):
                     setattr(args, opt, True)
+
+        if getattr(args, 'matrix', False):
+            from common.MatrixConfig import config_matrix
+            config_matrix(args, test_sys)
 
         if args.xiangshan_ecore and args.no_l3cache:
             args.l2_size = '4MB'
