@@ -337,6 +337,11 @@ class MSHR : public QueueEntry, public Printable
     /** True if we need to get a writable copy of the block. */
     bool needsWritable() const { return targets.needsWritable; }
 
+    /** True if any active or deferred target needs write permission. */
+    bool hasWritableTarget() const {
+        return targets.needsWritable || deferredTargets.needsWritable;
+    }
+
     bool isCleaning() const {
         PacketPtr pkt = targets.front().pkt;
         return pkt->isClean();

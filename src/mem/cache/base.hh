@@ -66,6 +66,7 @@
 #include "enums/Clusivity.hh"
 #include "mem/cache/cache_blk.hh"
 #include "mem/cache/cache_probe_arg.hh"
+#include "mem/cache/clean_wb_preserve.hh"
 #include "mem/cache/compressors/base.hh"
 #include "mem/cache/mshr_queue.hh"
 #include "mem/cache/prefetch/associative_set.hh"
@@ -800,6 +801,13 @@ class BaseCache : public ClockedObject, public CacheAccessor
     const bool writebackClean;
 
     /**
+     * When true, preserve WritebackClean evictions with BLOCK_CACHED when no
+     * upper cache holds dirty/opaque state and at least one
+     * writeback_clean=False upper cache retains a clean copy.
+     */
+    const bool preserveCleanWbForExclL3;
+
+    /**
      * Writebacks from the tempBlock, resulting on the response path
      * in atomic mode, must happen after the call to recvAtomic has
      * finished (for the right ordering of the packets). We therefore
@@ -933,6 +941,43 @@ class BaseCache : public ClockedObject, public CacheAccessor
         const PacketPtr pkt, PacketList &writebacks,
         PrefetchSourceType prefetch_fill_source = PrefetchSourceType::PF_NONE,
         bool *evicted_dirty = nullptr);
+    std::array<std::unique_ptr<statistics::Scalar>, cleanWbStatCount>
+        cleanWbStats{};
+
+    void
+    recordCleanWbDecision(const CleanWbDecision &decision)
+    {
+        if (!preserveCleanWbForExclL3)
+            return;
+
+        size_t idx = cleanWbStatCount;
+        switch (decision.kind) {
+          case CleanWbProbeKind::L1IOnly:
+            idx = cleanWbPreservedL1IOnly;
+            break;
+          case CleanWbProbeKind::L1IAndL1DClean:
+            idx = cleanWbPreservedL1IAndL1DClean;
+            break;
+          case CleanWbProbeKind::L1DCleanOnly:
+            idx = cleanWbPreservedL1DCleanOnly;
+            break;
+          case CleanWbProbeKind::DirtyAbove:
+            idx = cleanWbDroppedDirtyAbove;
+            break;
+          case CleanWbProbeKind::WbCleanOnly:
+            idx = cleanWbDroppedWbCleanOnly;
+            break;
+          case CleanWbProbeKind::OpaqueCachedAbove:
+            idx = cleanWbDroppedOpaque;
+            break;
+          case CleanWbProbeKind::NotCachedAbove:
+          default:
+            return;
+        }
+        if (idx < cleanWbStatCount && cleanWbStats[idx])
+            (*cleanWbStats[idx])++;
+    }
+
     /**
      * Evict a cache block.
      *

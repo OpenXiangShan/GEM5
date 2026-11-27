@@ -140,6 +140,12 @@ class BaseCache(ClockedObject):
     # cache.
     writeback_clean = Param.Bool(False, "Writeback clean lines")
 
+    preserve_clean_wb_for_excl_l3 = Param.Bool(
+        False,
+        "Preserve WritebackClean packets to mostly_excl lower caches when "
+        "cleanly held in non-writeback_clean upper caches (e.g. L1I)",
+    )
+
     # Control whether this cache should be mostly inclusive or mostly
     # exclusive with respect to upstream caches. The behaviour on a
     # fill is determined accordingly. For a mostly inclusive cache,

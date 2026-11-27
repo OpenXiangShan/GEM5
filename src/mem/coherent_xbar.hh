@@ -314,6 +314,9 @@ class CoherentXBar : public BaseXBar
     /** Is this crossbar the point of unification? **/
     const bool pointOfUnification;
 
+    /** Drop WritebackClean packets that carry BLOCK_CACHED. */
+    const bool sinkCachedWritebackClean;
+
     /** How many Cycles to send Hint in advance with TimingResp.*/
     const Cycles hintWakeUpAheadCycles;
 

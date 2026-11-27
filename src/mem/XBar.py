@@ -145,6 +145,14 @@ class CoherentXBar(BaseXBar):
     point_of_unification = Param.Bool(False, "Consider this crossbar the " \
                                       "point of unification")
 
+    # Drop WritebackClean packets carrying BLOCK_CACHED (default GEM5 behaviour).
+    # Disable on interconnects feeding a mostly_excl LLC when preserving
+    # clean L2 writebacks for non-writeback_clean upper caches such as L1I.
+    sink_cached_writeback_clean = Param.Bool(
+        True,
+        "Sink WritebackClean packets with BLOCK_CACHED set",
+    )
+
     system = Param.System(Parent.any, "System that the crossbar belongs to.")
 
 class SnoopFilter(SimObject):

@@ -50,6 +50,7 @@
 #include "base/trace.hh"
 #include "debug/AddrRanges.hh"
 #include "debug/CoherentXBar.hh"
+#include "mem/cache/clean_wb_preserve.hh"
 #include "mem/layer_bandwidth_config.hh"
 #include "mem/request.hh"
 #include "sim/system.hh"
@@ -64,6 +65,7 @@ CoherentXBar::CoherentXBar(const CoherentXBarParams &p)
       maxRoutingTableSizeCheck(p.max_routing_table_size),
       pointOfCoherency(p.point_of_coherency),
       pointOfUnification(p.point_of_unification),
+      sinkCachedWritebackClean(p.sink_cached_writeback_clean),
       hintWakeUpAheadCycles(p.hint_wakeup_ahead_cycles),
 
       ADD_STAT(snoops, statistics::units::Count::get(), "Total snoops"),
@@ -211,8 +213,9 @@ CoherentXBar::recvTimingReq(PacketPtr pkt, PortID cpu_side_port_id)
     unsigned int pkt_size = pkt->hasData() ? pkt->getSize() : 0;
     unsigned int pkt_cmd = pkt->cmdToIndex();
 
-    // store the old header delay so we can restore it if needed
+    // store the old header delay and block-cached bit so retry restores them
     Tick old_header_delay = pkt->headerDelay;
+    const bool old_block_cached = pkt->isBlockCached();
 
     // a request sees the frontend and forward latency
     Tick xbar_delay = (frontendLatency + forwardLatency) * clockPeriod();
@@ -347,8 +350,10 @@ CoherentXBar::recvTimingReq(PacketPtr pkt, PortID cpu_side_port_id)
         // express snoops should never be forced to retry
         assert(!is_express_snoop);
 
-        // restore the header delay
+        // restore the header delay and crossbar-injected BLOCK_CACHED bit
         pkt->headerDelay = old_header_delay;
+        if (!old_block_cached)
+            pkt->clearBlockCached();
 
         DPRINTF(CoherentXBar, "%s: src %s packet %s RETRY\n", __func__,
                 src_port->name(), pkt->print());
@@ -1164,10 +1169,15 @@ CoherentXBar::sinkPacket(const PacketPtr pkt) const
             pkt->isBlockCached(), pkt->needsWritable(),
             pkt->responderHadWritable());
 
+    const bool sink_clean_eviction = shouldSinkCleanEviction(
+        pkt->isBlockCached(), pkt->cmd == MemCmd::CleanEvict,
+        pkt->cmd == MemCmd::WritebackClean, pkt->isPreserveCleanWb(),
+        sinkCachedWritebackClean);
+
     return (pointOfCoherency && pkt->cacheResponding()) ||
         (pointOfCoherency && !(pkt->isRead() || pkt->isWrite()) &&
          !pkt->needsResponse()) ||
-        (pkt->isCleanEviction() && pkt->isBlockCached()) ||
+        sink_clean_eviction ||
         (pkt->cacheResponding() &&
          (!pkt->needsWritable() || pkt->responderHadWritable()));
 }

@@ -147,6 +147,20 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--no-l3cache", action="store_true")
     parser.add_argument("--l1-to-l2-pf-hint", action="store_true")
     parser.add_argument("--l2-to-l3-pf-hint", action="store_true")
+    parser.add_argument(
+        "--l2-preserve-clean-wb-for-excl-l3",
+        action="store_true",
+        dest="l2_preserve_clean_wb_for_excl_l3",
+        default=True,
+        help="Preserve clean L2 WritebackClean packets to mostly_excl L3 when "
+        "held cleanly in non-writeback_clean upper caches (default: enabled)",
+    )
+    parser.add_argument(
+        "--no-l2-preserve-clean-wb-for-excl-l3",
+        action="store_false",
+        dest="l2_preserve_clean_wb_for_excl_l3",
+        help="Disable L2-to-exclusive-L3 clean writeback preservation",
+    )
 
     parser.add_argument("--num-dirs", type=int, default=1)
     parser.add_argument("--num-l2caches", type=int, default=1)

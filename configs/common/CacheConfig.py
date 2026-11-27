@@ -198,6 +198,97 @@ def config_aligned_l2(options, system, l2_cache_class):
         # Connect the wrapper to the L1-L2 bus
         l2_wrapper.cpu_side = system.tol2bus_list[i].mem_side_ports
 
+def apply_config_and_configure(root, options, system):
+    """Apply CLI --param overrides once and reconcile clean-WB defaults.
+
+    Wraps SimObject.__setattr__ only during root.apply_config() so explicit
+    overrides (including slice and loop assignments on unwrapped SimObjects)
+    are recorded in a single pass without re-executing --param expressions.
+    """
+    recorded = set()
+    params = getattr(options, "param", None)
+    if params:
+        simobj_cls = m5.SimObject.SimObject
+        orig_setattr = simobj_cls.__setattr__
+
+        def recording_setattr(self, attr, value):
+            orig_setattr(self, attr, value)
+            if not attr.startswith("_"):
+                params_dict = getattr(self, "_params", None)
+                param = params_dict.get(attr) if params_dict else None
+                if param is not None and param.isCmdLineSettable():
+                    recorded.add((id(self), attr))
+
+        simobj_cls.__setattr__ = recording_setattr
+        try:
+            root.apply_config(params)
+        finally:
+            simobj_cls.__setattr__ = orig_setattr
+    elif params is not None:
+        root.apply_config(params)
+
+    configure_clean_wb_preserve(options, system, overridden=recorded)
+
+
+def configure_clean_wb_preserve(options, system, overridden=None):
+    """Derive L2 clean-writeback preservation after final SimObject params.
+
+    Called during initial CacheConfig setup and after root.apply_config() so
+    --param overrides on l3.clusivity or l2.writeback_clean stay consistent
+    unless preservation parameters themselves were explicitly overridden on
+    that specific SimObject.
+    """
+    if getattr(options, "ruby", False) or not getattr(options, "l2cache", False):
+        return
+
+    if overridden is None:
+        overridden = set()
+
+    has_l3 = bool(getattr(options, "l3cache", False)) and hasattr(system, "l3")
+    excl_l3 = has_l3 and str(system.l3.clusivity) == "mostly_excl"
+    preserve_clean_wb = excl_l3 and getattr(
+        options, "l2_preserve_clean_wb_for_excl_l3", True
+    )
+    has_preserved_l2 = False
+
+    if getattr(options, "classic_l2", False) and hasattr(system, "l2_caches"):
+        for cache in system.l2_caches:
+            enabled = preserve_clean_wb and bool(cache.writeback_clean)
+            if (id(cache), "preserve_clean_wb_for_excl_l3") not in overridden:
+                cache.preserve_clean_wb_for_excl_l3 = enabled
+            has_preserved_l2 = has_preserved_l2 or bool(
+                cache.preserve_clean_wb_for_excl_l3
+            )
+    elif hasattr(system, "l2_wrappers"):
+        for l2_wrapper in system.l2_wrappers:
+            l2_has_preserved = False
+            for slice_cfg in l2_wrapper.slices:
+                inner_cache = slice_cfg.inner_cache
+                enabled = preserve_clean_wb and bool(
+                    inner_cache.writeback_clean
+                )
+                if (
+                    id(inner_cache),
+                    "preserve_clean_wb_for_excl_l3",
+                ) not in overridden:
+                    inner_cache.preserve_clean_wb_for_excl_l3 = enabled
+                l2_has_preserved = l2_has_preserved or bool(
+                    inner_cache.preserve_clean_wb_for_excl_l3
+                )
+            xbar = l2_wrapper.xbar
+            if (id(xbar), "sink_cached_writeback_clean") not in overridden:
+                xbar.sink_cached_writeback_clean = not l2_has_preserved
+            has_preserved_l2 = has_preserved_l2 or l2_has_preserved
+
+    if (
+        has_l3
+        and hasattr(system, "tol3bus")
+        and (id(system.tol3bus), "sink_cached_writeback_clean")
+        not in overridden
+    ):
+        system.tol3bus.sink_cached_writeback_clean = not has_preserved_l2
+
+
 def config_cache(options, system):
     if options.external_memory_system and (options.caches or options.l2cache):
         print("External caches and internal caches are exclusive options.\n")
@@ -295,6 +386,8 @@ def config_cache(options, system):
                     system.l2_caches[i].mem_side = system.membus.cpu_side_ports
                 else:
                     system.l2_wrappers[i].xbar.mem_side_ports = system.membus.cpu_side_ports
+
+        configure_clean_wb_preserve(options, system)
 
     if options.memchecker:
         system.memchecker = MemChecker()

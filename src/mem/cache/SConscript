@@ -41,6 +41,9 @@ Source('noncoherent_cache.cc')
 Source('write_queue.cc')
 Source('write_queue_entry.cc')
 
+GTest('l2_clean_wb_preserve.test', 'l2_clean_wb_preserve.test.cc',
+      '../../base/debug.cc', '../../sim/cur_tick.cc')
+
 DebugFlag('Cache')
 DebugFlag('CacheComp')
 DebugFlag('CachePort')
