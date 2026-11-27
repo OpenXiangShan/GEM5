@@ -2876,12 +2876,13 @@ IEW::tick()
 
         writebackInsts();
     }
+    scheduler->issueAndSelect();
 #if GEM5_ENABLE_MATRIX
     if (matrixMem) {
+        // A selected MLS replay enters issue arbitration on the next cycle.
         matrixMem->scheduleReplay(*activeThreads);
     }
 #endif
-    scheduler->issueAndSelect();
 
     bool broadcast_free_entries = false;
 
