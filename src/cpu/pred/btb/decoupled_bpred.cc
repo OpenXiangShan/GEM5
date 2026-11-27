@@ -72,6 +72,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       ftq(p.numThreads, p.ftq_size),
       resolveBlockThreshold(p.resolveBlockThreshold),
       twoTakenMaxRunAhead(p.twoTakenMaxRunAhead),
+      twoTakenFilterIndirectCallsAndReturns(
+          p.twoTakenFilterIndirectCallsAndReturns),
       dbpBtbStats(this, p.numStages, p.ftq_size, p.predictWidth, maxInstsNum, p.numThreads),
       profiler(p.enableBpuProfiler
                    ? std::make_unique<BPUProfiler>(name(), maxInstsNum)
@@ -589,6 +591,8 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
 
     DPRINTF(DecoupleBP, "Creating new prediction for PC %#lx\n", s0PC);
 
+    const bool pairtageEnabled = pairtage->isEnabled();
+    const bool pairtageFirst = pairtageEnabled && pairtage->inFirstPhase(tid);
     enqueuePrediction(tid, threads[tid].finalPred);
     threads[tid].nextPredictionAfterSquash = false;
     threads[tid].validprediction = false;
@@ -599,6 +603,12 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
 
     printTarget(ftq.back(tid));
     dbpBtbStats.ftqEntryEnqueued++;
+    if (pairtageFirst) {
+        dbpBtbStats.pairtageFirstBlockEnqueued++;
+    } else if (pairtageEnabled) {
+        recordPairTAGEBlockEnqueue(ftq.back(tid),
+                                  PairTAGEBlockKind::OrdinarySecond);
+    }
 
     // A second block may follow the first in the same cycle.
     enqueueSecondBlock(tid);
@@ -628,19 +638,22 @@ DecoupledBPUWithBTB::enqueueSecondBlock(ThreadID tid)
         return;
     }
 
-    // Not enqueue 2 Taken when FTQ has enough entries since the second block
-    // cause MPKI increase and no improvement in this circumstance.
+    // Enqueue the second block only if the FTQ needs it and has room.
     assert(ftq.fetchId(tid) <= ftq.backId(tid) + 1);
     const unsigned runAhead = ftq.backId(tid) + 1 - ftq.fetchId(tid);
-    if (twoTakenMaxRunAhead && runAhead > twoTakenMaxRunAhead) {
-        dbpBtbStats.secondBlockRunAhead++;
+    if ((twoTakenMaxRunAhead && runAhead > twoTakenMaxRunAhead) ||
+        ftqFull(tid)) {
+        dbpBtbStats.secondBlockFtqBlocked++;
         return;
     }
 
-    // Without room for both, the second block waits for the next cycle
-    if (ftqFull(tid)) {
-        dbpBtbStats.secondBlockFtqFull++;
-        return;
+    // Leave these target predictions to RAS and ITTAGE in the normal phase.
+    if (twoTakenFilterIndirectCallsAndReturns && !secondPred.btbEntries.empty()) {
+        const auto &branch = secondPred.btbEntries.front().branch;
+        if (branch.isReturn || (branch.isIndirect && branch.isCall)) {
+            dbpBtbStats.secondBlockTypeFiltered++;
+            return;
+        }
     }
 
     // Every component records the meta the second block recovers from
@@ -651,8 +664,10 @@ DecoupledBPUWithBTB::enqueueSecondBlock(ThreadID tid)
 
     // TODO: Currently the ABTB's ahead history is not updated for the second
     // which maybe a expected behavior due to the physical timing constraints.
+    recordPairTAGEBlockEnqueue(ftq.back(tid), PairTAGEBlockKind::TwoTakenFirst);
     enqueuePrediction(tid, secondPred);
     ftq.back(tid).isTwoTakenBlock = true;
+    recordPairTAGEBlockEnqueue(ftq.back(tid), PairTAGEBlockKind::TwoTakenSecond);
     DPRINTF(DecoupleBP, "Inserted second block %lu starting at PC %#lx\n",
             ftq.backId(tid), ftq.back(tid).startPC);
     printTarget(ftq.back(tid));
@@ -851,6 +866,10 @@ DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
     auto &target = ftq.get(inst->ftqId, inst->threadNumber);
     target.commitInstNum++;
     target.commitInstBytes += inst->getInstBytes();
+    if (target.pairtageBlockKind != PairTAGEBlockKind::None &&
+        (!inst->isMicroop() || inst->isLastMicroop())) {
+        target.committedEndPC = inst->getNPC();
+    }
 
     DPRINTF(Profiling, "notifyInstCommit, inst=%s, commitInstNum=%d\n",
             inst->staticInst->disassemble(inst->pcState().instAddr()),

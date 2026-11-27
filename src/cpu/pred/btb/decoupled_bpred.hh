@@ -150,6 +150,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     const unsigned resolveBlockThreshold;
 
     const unsigned twoTakenMaxRunAhead;
+    const bool twoTakenFilterIndirectCallsAndReturns;
 
     bool sharedFTQMode() const;
     unsigned activeFTQThreads() const;
@@ -165,6 +166,10 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void processNewPrediction(ThreadID tid);
     void enqueueSecondBlock(ThreadID tid);
+    void recordPairTAGEBlockEnqueue(FetchTarget &target,
+                                  PairTAGEBlockKind kind);
+    void recordPairTAGEBlockOutcome(const FetchTarget &target,
+                                  const PreparedUpdate &update);
 
     void enqueuePrediction(ThreadID tid, FullBTBPrediction &pred);
     FetchTarget createFetchTargetEntry(ThreadID tid, Addr startPC, FullBTBPrediction &pred);
@@ -277,9 +282,13 @@ class DecoupledBPUWithBTB : public BPredUnit
 
         statistics::Distribution ftqEntryDist;
         statistics::Scalar ftqEntryEnqueued;
+        statistics::Scalar pairtageFirstBlockEnqueued;
         statistics::Scalar secondBlockEnqueued;
-        statistics::Scalar secondBlockFtqFull;
-        statistics::Scalar secondBlockRunAhead;
+        statistics::Scalar secondBlockFtqBlocked;
+        statistics::Scalar secondBlockTypeFiltered;
+        statistics::Vector2d pairtageBlockEnqueuedByType;
+        statistics::Vector2d pairtageBlockEvaluatedByType;
+        statistics::Vector2d pairtageBlockCorrectByType;
         statistics::Scalar ftqEntryCommitted;
         statistics::Scalar controlSquashFromDecode;
         statistics::Scalar controlSquashFromCommit;
