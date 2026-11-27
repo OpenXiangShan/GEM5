@@ -68,6 +68,13 @@ bool
 WriteQueueEntry::TargetList::trySatisfyFunctional(PacketPtr pkt)
 {
     for (auto& t : *this) {
+        if (pkt->isRead() && t.pkt->isPreserveCleanWb()) {
+            // Skip preserved clean snapshots on functional reads so neither
+            // read bytes nor Packet::bytesValid are polluted by stale clean
+            // data; downstream memory keeps the clean fallback and functional
+            // writes still update t.pkt below.
+            continue;
+        }
         if (pkt->trySatisfyFunctional(t.pkt)) {
             return true;
         }

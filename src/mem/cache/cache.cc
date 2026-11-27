@@ -201,9 +201,14 @@ Cache::doWritebacks(PacketList& writebacks, Tick forward_time)
         // We use forwardLatency here because we are copying writebacks to
         // write buffer.
 
+        CleanWbProbeState probe;
+        CleanWbProbeState *probe_ptr =
+            (preserveCleanWbForExclL3 && writebackClean &&
+             wbPkt->cmd == MemCmd::WritebackClean) ? &probe : nullptr;
+
         // Call isCachedAbove for Writebacks, CleanEvicts and
         // WriteCleans to discover if the block is cached above.
-        if (isCachedAbove(wbPkt)) {
+        if (isCachedAbove(wbPkt, true, probe_ptr)) {
             if (wbPkt->cmd == MemCmd::CleanEvict) {
                 // Delete CleanEvict because cached copies exist above. The
                 // packet destructor will delete the request object because
@@ -211,10 +216,20 @@ Cache::doWritebacks(PacketList& writebacks, Tick forward_time)
                 // response.
                 delete wbPkt;
             } else if (wbPkt->cmd == MemCmd::WritebackClean) {
-                // clean writeback, do not send since the block is
-                // still cached above
                 assert(writebackClean);
-                delete wbPkt;
+                const auto decision = decidePreservedWritebackClean(
+                    preserveCleanWbForExclL3, true, probe_ptr);
+                recordCleanWbDecision(decision);
+                if (decision.action ==
+                    CleanWbAction::SendPreservedBlockCached) {
+                    wbPkt->setBlockCached();
+                    wbPkt->setPreserveCleanWb();
+                    allocateWriteBuffer(wbPkt, forward_time);
+                } else {
+                    // Clean writeback discarded when disabled, dirty above,
+                    // opaque, or held only in writeback_clean=True caches.
+                    delete wbPkt;
+                }
             } else {
                 assert(wbPkt->cmd == MemCmd::WritebackDirty ||
                        wbPkt->cmd == MemCmd::WriteClean);
@@ -240,10 +255,14 @@ Cache::doWritebacksAtomic(PacketList& writebacks)
 {
     while (!writebacks.empty()) {
         PacketPtr wbPkt = writebacks.front();
+        CleanWbProbeState probe;
+        CleanWbProbeState *probe_ptr =
+            (preserveCleanWbForExclL3 && writebackClean &&
+             wbPkt->cmd == MemCmd::WritebackClean) ? &probe : nullptr;
         // Call isCachedAbove for both Writebacks and CleanEvicts. If
         // isCachedAbove returns true we set BLOCK_CACHED flag in Writebacks
         // and discard CleanEvicts.
-        if (isCachedAbove(wbPkt, false)) {
+        if (isCachedAbove(wbPkt, false, probe_ptr)) {
             if (wbPkt->cmd == MemCmd::WritebackDirty ||
                 wbPkt->cmd == MemCmd::WriteClean) {
                 // Set BLOCK_CACHED flag in Writeback and send below,
@@ -253,6 +272,16 @@ Cache::doWritebacksAtomic(PacketList& writebacks)
                 // copies exist above. Atomic mode isCachedAbove
                 // modifies packet to set BLOCK_CACHED flag
                 memSidePort.sendAtomic(wbPkt);
+            } else if (wbPkt->cmd == MemCmd::WritebackClean) {
+                const auto decision = decidePreservedWritebackClean(
+                    preserveCleanWbForExclL3, true, probe_ptr);
+                recordCleanWbDecision(decision);
+                if (decision.action ==
+                    CleanWbAction::SendPreservedBlockCached) {
+                    wbPkt->setBlockCached();
+                    wbPkt->setPreserveCleanWb();
+                    memSidePort.sendAtomic(wbPkt);
+                }
             }
         } else {
             // If the block is not cached above, send packet below. Both
@@ -1341,6 +1370,11 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
         DPRINTF(Cache, "Found addr %#llx in upper level cache for snoop %s "
                 "from lower cache\n", pkt->getAddr(), pkt->print());
         pkt->setBlockCached();
+        if (auto *probe =
+            dynamic_cast<CleanWbProbeState *>(pkt->senderState)) {
+            probe->recordUpperHit(level() == 1 && isReadOnly, writebackClean,
+                                  blk->isSet(CacheBlk::DirtyBit));
+        }
         return snoop_delay;
     }
 
@@ -1453,6 +1487,32 @@ Cache::recvTimingSnoopReq(PacketPtr pkt)
         DPRINTF(Cache, "Setting block cached for %s from lower cache on "
                 "mshr hit\n", pkt->print());
         pkt->setBlockCached();
+        if (auto *probe =
+            dynamic_cast<CleanWbProbeState *>(pkt->senderState)) {
+            WriteQueueEntry *wb_entry =
+                writeBuffer.findMatch(blk_addr, is_secure);
+            bool dirty_wb = false;
+            if (wb_entry) {
+                assert(wb_entry->getNumTargets() == 1);
+                PacketPtr wb_pkt = wb_entry->getTarget()->pkt;
+                dirty_wb = wb_pkt->cmd == MemCmd::WritebackDirty ||
+                    wb_pkt->cmd == MemCmd::WriteClean;
+            }
+            const bool dirty_or_pending_write =
+                (blk && blk->isValid() && blk->isSet(CacheBlk::DirtyBit)) ||
+                dirty_wb ||
+                mshr->hasWritableTarget() ||
+                (mshr->inService && mshr->isPendingModified()) ||
+                mshr->isCleaning();
+            if (!dirty_or_pending_write && forwardSnoops) {
+                // Early return omits snooping caches above this intermediate
+                // cache, so treat residual upper state conservatively.
+                probe->recordOpaqueHit();
+            } else {
+                probe->recordUpperHit(level() == 1 && isReadOnly,
+                                      writebackClean, dirty_or_pending_write);
+            }
+        }
         return;
     }
 
@@ -1488,6 +1548,20 @@ Cache::recvTimingSnoopReq(PacketPtr pkt)
             // propagate the BLOCK_CACHED flag in Writeback packets and prevent
             // any CleanEvicts from travelling down the memory hierarchy.
             pkt->setBlockCached();
+            if (auto *probe =
+                dynamic_cast<CleanWbProbeState *>(pkt->senderState)) {
+                const bool dirty_wb =
+                    (blk && blk->isValid() &&
+                     blk->isSet(CacheBlk::DirtyBit)) ||
+                    wb_pkt->cmd == MemCmd::WritebackDirty ||
+                    wb_pkt->cmd == MemCmd::WriteClean;
+                if (!dirty_wb && forwardSnoops) {
+                    probe->recordOpaqueHit();
+                } else {
+                    probe->recordUpperHit(level() == 1 && isReadOnly,
+                                          writebackClean, dirty_wb);
+                }
+            }
             DPRINTF(Cache, "%s: Squashing %s from lower cache on writequeue "
                     "hit\n", __func__, pkt->print());
             return;
@@ -1557,7 +1631,7 @@ Cache::recvAtomicSnoop(PacketPtr pkt)
 }
 
 bool
-Cache::isCachedAbove(PacketPtr pkt, bool is_timing)
+Cache::isCachedAbove(PacketPtr pkt, bool is_timing, CleanWbProbeState *probe)
 {
     if (!forwardSnoops)
         return false;
@@ -1573,13 +1647,17 @@ Cache::isCachedAbove(PacketPtr pkt, bool is_timing)
         // prefetch request because prefetch requests need an MSHR and may
         // generate a snoop response.
         assert(pkt->isEviction() || pkt->cmd == MemCmd::WriteClean);
-        snoop_pkt.senderState = nullptr;
+        snoop_pkt.senderState = probe;
         cpuSidePort.sendTimingSnoopReq(&snoop_pkt);
         // Writeback/CleanEvict snoops do not generate a snoop response.
         assert(!(snoop_pkt.cacheResponding()));
         return snoop_pkt.isBlockCached();
     } else {
+        auto *saved_sender_state = pkt->senderState;
+        if (probe)
+            pkt->senderState = probe;
         cpuSidePort.sendAtomicSnoop(pkt);
+        pkt->senderState = saved_sender_state;
         return pkt->isBlockCached();
     }
 }

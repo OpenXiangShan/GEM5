@@ -152,6 +152,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       prefetcher(p.prefetcher),
       writeAllocator(p.write_allocator),
       writebackClean(p.writeback_clean),
+      preserveCleanWbForExclL3(p.preserve_clean_wb_for_excl_l3),
       tempBlockWriteback(nullptr),
       writebackTempBlockAtomicEvent([this]{ writebackTempBlockAtomic(); },
                                     name(), false,
@@ -204,6 +205,13 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
     // whether the connected requestor is actually snooping or not
 
     tempBlock = new TempCacheBlk(blkSize);
+    if (preserveCleanWbForExclL3) {
+        for (unsigned i = 0; i < cleanWbStatCount; ++i) {
+            cleanWbStats[i] = std::make_unique<statistics::Scalar>(
+                this, CleanWbStatNames[i], statistics::units::Count::get(),
+                CleanWbStatNames[i]);
+        }
+    }
     tags->tagsInit();
     for (int i = 0; i < size / assoc / blkSize; i++) {
         for (int j = 0; j < assoc; j++)
@@ -1315,6 +1323,10 @@ BaseCache::recvAtomic(PacketPtr pkt)
     doWritebacksAtomic(writebacks);
     assert(writebacks.empty());
 
+    if (satisfied && blk && blk->isValid() && blk->needInvalidate()) {
+        invalidateBlock(blk);
+    }
+
     if (!satisfied) {
         lat += handleAtomicReqMiss(pkt, blk, writebacks);
     }
@@ -2091,18 +2103,69 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         if (wb_entry) {
             assert(wb_entry->getNumTargets() == 1);
             PacketPtr wbPkt = wb_entry->getTarget()->pkt;
-            assert(wbPkt->isWriteback());
+            assert(wbPkt->isEviction() || wbPkt->cmd == MemCmd::WriteClean);
 
-            if (pkt->isCleanEviction()) {
-                // The CleanEvict and WritebackClean snoops into other
-                // peer caches of the same level while traversing the
-                // crossbar. If a copy of the block is found, the
-                // packet is deleted in the crossbar. Hence, none of
-                // the other upper level caches connected to this
-                // cache have the block, so we can clear the
-                // BLOCK_CACHED flag in the Writeback if set and
-                // discard the CleanEvict by returning true.
+            if (wbPkt->cmd == MemCmd::CleanEvict) {
+                if (pkt->isWriteback()) {
+                    // Incoming Writeback carries payload and supersedes the
+                    // stale queued CleanEvict so clean/dirty data installs.
+                    markInService(wb_entry);
+                    delete wbPkt;
+                } else {
+                    assert(pkt->cmd == MemCmd::CleanEvict);
+                    if (!pkt->isBlockCached())
+                        wbPkt->clearBlockCached();
+                    lat = calculateTagOnlyLatency(pkt->headerDelay,
+                                                  tag_latency);
+                    return true;
+                }
+            } else if (wbPkt->cmd == MemCmd::WriteClean) {
+                // Keep queued WriteClean and its PacketId intact so a
+                // downstream crossbar can pair it with the in-flight CMO.
+                if (pkt->cmd == MemCmd::WritebackDirty) {
+                    assert(wbPkt->getSize() == blkSize &&
+                           pkt->getSize() == blkSize);
+                    wbPkt->setDataFromBlock(pkt->getConstPtr<uint8_t>(),
+                                            blkSize);
+                    if (compressor) {
+                        wbPkt->payloadDelay = std::max(
+                            wbPkt->payloadDelay, pkt->payloadDelay);
+                    }
+                } else if (pkt->cmd == MemCmd::WritebackClean &&
+                           pkt->isPreserveCleanWb()) {
+                    if (pkt->isBlockCached())
+                        wbPkt->setBlockCached();
+                    lat = calculateTagOnlyLatency(pkt->headerDelay,
+                                                  tag_latency);
+                    return true;
+                } else {
+                    assert(pkt->isCleanEviction());
+                    wbPkt->clearBlockCached();
+                    lat = calculateTagOnlyLatency(pkt->headerDelay,
+                                                  tag_latency);
+                    return true;
+                }
+            } else if (pkt->cmd == MemCmd::WritebackClean &&
+                       pkt->isPreserveCleanWb()) {
+                // Preserved clean writeback sent while upper
+                // non-writeback_clean caches still hold the line: keep newer
+                // queued Writeback, and preserve BLOCK_CACHED so it does not
+                // clear downstream snoop-filter holder bits.
+                if (pkt->isBlockCached())
+                    wbPkt->setBlockCached();
+                lat = calculateTagOnlyLatency(pkt->headerDelay, tag_latency);
+                return true;
+            } else if (pkt->isCleanEviction()) {
+                // The CleanEvict and unpreserved WritebackClean snoops into
+                // other peer caches of the same level while traversing the
+                // crossbar. If a copy of the block is found, the packet is
+                // deleted in the crossbar. Hence, none of the other upper
+                // level caches connected to this cache have the block, so we
+                // can clear BLOCK_CACHED (and any stale PRESERVE_CLEAN_WB
+                // tag) in the queued packet and discard the incoming clean
+                // eviction by returning true.
                 wbPkt->clearBlockCached();
+                wbPkt->clearPreserveCleanWb();
 
                 // A clean evict does not need to access the data array
                 lat = calculateTagOnlyLatency(pkt->headerDelay, tag_latency);
@@ -2110,8 +2173,8 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
                 return true;
             } else {
                 assert(pkt->cmd == MemCmd::WritebackDirty);
-                // Dirty writeback from above trumps our clean
-                // writeback... discard here
+                // Dirty writeback from above trumps our queued clean or dirty
+                // writeback... discard here.
                 // Note: markInService will remove entry from writeback buffer.
                 markInService(wb_entry);
                 delete wbPkt;

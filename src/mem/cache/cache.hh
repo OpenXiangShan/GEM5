@@ -150,9 +150,11 @@ class Cache : public BaseCache
 
     /**
      * Send up a snoop request and find cached copies. If cached copies are
-     * found, set the BLOCK_CACHED flag in pkt.
+     * found, set the BLOCK_CACHED flag in pkt, and optionally populate
+     * CleanWbProbeState when distinguishing upper holders.
      */
-    bool isCachedAbove(PacketPtr pkt, bool is_timing = true);
+    bool isCachedAbove(PacketPtr pkt, bool is_timing = true,
+                       CleanWbProbeState *probe = nullptr);
 
   public:
     /** Instantiates a basic cache object. */

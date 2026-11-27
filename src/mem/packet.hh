@@ -387,7 +387,11 @@ class Packet : public Printable
 
         // L1-local write notification, delivered only to the owning CPU.
         LOCAL_WRITE_SNOOP = 0x00400000,
-        LOCAL_WRITE_SNOOP_SENT = 0x00800000
+        LOCAL_WRITE_SNOOP_SENT = 0x00800000,
+
+        // WritebackClean preserved with BLOCK_CACHED while clean copies
+        // remain in non-writeback_clean upper caches.
+        PRESERVE_CLEAN_WB = 0x02000000
 
     };
 
@@ -818,6 +822,10 @@ class Packet : public Printable
     void setBlockCached()          { flags.set(BLOCK_CACHED); }
     bool isBlockCached() const     { return flags.isSet(BLOCK_CACHED); }
     void clearBlockCached()        { flags.clear(BLOCK_CACHED); }
+
+    void setPreserveCleanWb()      { flags.set(PRESERVE_CLEAN_WB); }
+    void clearPreserveCleanWb()    { flags.clear(PRESERVE_CLEAN_WB); }
+    bool isPreserveCleanWb() const { return flags.isSet(PRESERVE_CLEAN_WB); }
 
     //MSHR arbiter failure flag handle
     void setMshrArbFailed() { flags.set(MSHR_ARB_FAILED); }
