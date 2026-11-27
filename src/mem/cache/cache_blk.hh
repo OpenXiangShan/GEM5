@@ -50,6 +50,7 @@
 #include <cstdint>
 #include <iosfwd>
 #include <list>
+#include <memory>
 #include <string>
 
 #include "base/printable.hh"
@@ -149,7 +150,7 @@ class CacheBlk : public TaggedEntry
 
     /** List of thread contexts that have performed a load-locked (LL)
      * on the block since the last store. */
-    std::list<Lock> lockList;
+    std::unique_ptr<std::list<Lock>> lockList;
 
   public:
     CacheBlk()
@@ -216,7 +217,7 @@ class CacheBlk : public TaggedEntry
         setRefCount(0);
         setDemandHits(0);
         setSrcRequestorId(Request::invldRequestorId);
-        lockList.clear();
+        lockList.reset();
     }
 
     /**
@@ -374,15 +375,18 @@ class CacheBlk : public TaggedEntry
     void trackLoadLocked(PacketPtr pkt)
     {
         assert(pkt->isLLSC());
-        auto l = lockList.begin();
-        while (l != lockList.end()) {
+        if (!lockList) {
+            lockList = std::make_unique<std::list<Lock>>();
+        }
+        auto l = lockList->begin();
+        while (l != lockList->end()) {
             if (l->matches(pkt->req))
-                l = lockList.erase(l);
+                l = lockList->erase(l);
             else
                 ++l;
         }
 
-        lockList.emplace_front(pkt->req);
+        lockList->emplace_front(pkt->req);
     }
 
     /**
@@ -391,10 +395,13 @@ class CacheBlk : public TaggedEntry
      */
     void clearLoadLocks(const RequestPtr &req)
     {
-        auto l = lockList.begin();
-        while (l != lockList.end()) {
+        if (!lockList) {
+            return;
+        }
+        auto l = lockList->begin();
+        while (l != lockList->end()) {
             if (l->intersects(req) && l->contextId != req->contextId()) {
-                l = lockList.erase(l);
+                l = lockList->erase(l);
             } else {
                 ++l;
             }
@@ -460,8 +467,16 @@ class CacheBlk : public TaggedEntry
     {
         assert(pkt->isWrite());
 
+        if (!lockList) {
+            if (pkt->isLLSC()) {
+                pkt->req->setExtraData(0);
+                return false;
+            }
+            return true;
+        }
+
         // common case
-        if (!pkt->isLLSC() && lockList.empty())
+        if (!pkt->isLLSC() && lockList->empty())
             return true;
 
         const RequestPtr &req = pkt->req;
@@ -471,14 +486,14 @@ class CacheBlk : public TaggedEntry
             // load locked.
             bool success = false;
 
-            auto l = lockList.begin();
-            while (!success && l != lockList.end()) {
+            auto l = lockList->begin();
+            while (!success && l != lockList->end()) {
                 if (l->matches(pkt->req)) {
                     // it's a store conditional, and as far as the
                     // memory system can tell, the requesting
                     // context's lock is still valid.
                     success = true;
-                    lockList.erase(l);
+                    lockList->erase(l);
                 } else {
                     ++l;
                 }

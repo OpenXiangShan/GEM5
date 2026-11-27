@@ -35,6 +35,8 @@ SimObject('Cache.py', sim_objects=[
 Source('base.cc')
 Source('cache.cc')
 Source('cache_blk.cc')
+GTest('cache_blk.test', 'cache_blk.test.cc',
+      '../packet.cc', '../../sim/bufval.cc', with_tag('gem5 trace'))
 Source('mshr.cc')
 Source('mshr_queue.cc')
 Source('noncoherent_cache.cc')
