@@ -2129,6 +2129,9 @@ Commit::diffInst(ThreadID tid, const DynInstPtr &inst) {
                     inst->getAmoOldGoldenValuePtr(), size);
     }
     cpu->difftestStep(tid, inst->seqNum);
+#if GEM5_ENABLE_MATRIX
+    cpu->checkMatrixCommit(tid, inst);
+#endif
 }
 
 

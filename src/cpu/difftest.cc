@@ -102,8 +102,8 @@ NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bo
              "NEMU REF %s does not export DIFFTEST_REG_SIZE", ref_so);
     fatal_if(*reg_size != sizeof(riscv64_CPU_regfile),
              "NEMU REF register size %u does not match GEM5 (%u). "
-             "Rebuild with the pinned util/nemu_ref configuration, "
-             "including CONFIG_DIFFTEST_CHECK_FCSR=y",
+             "Use a reference with the matching register layout, "
+             "including FCSR and any compiled Matrix CSR state",
              *reg_size, sizeof(riscv64_CPU_regfile));
     // The separate Spike backend does not implement this NEMU CSR layout.
     refHasFcsr = true;
@@ -153,6 +153,19 @@ NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bo
         handle, "difftest_store_commit");
     assert(store_commit);
 
+#if GEM5_ENABLE_MATRIX
+    amu_ctrl = (int (*)(void *))dlsym(handle, "difftest_amu_ctrl");
+    amu_exec = (int (*)(void *, void *))dlsym(handle, "difftest_amu_exec");
+    get_mreg_row_addr = reinterpret_cast<decltype(get_mreg_row_addr)>(
+        dlsym(handle, "get_mreg_row_addr"));
+    amu_lazy = (void (*)(void *, void *, void *, void *, void *))dlsym(
+        handle, "difftest_amu_lazy");
+    msync_event = (int (*)(void *))dlsym(handle, "difftest_msync_event");
+    matrix_store_commit =
+        (int (*)(uint64_t *, uint64_t *, uint32_t *, uint32_t *, uint32_t *,
+                 bool *))dlsym(handle, "difftest_matrix_store_commit");
+#endif // GEM5_ENABLE_MATRIX
+
     raise_intr = (void (*)(uint64_t))dlsym(handle, "difftest_raise_intr");
     assert(raise_intr);
     // Optional: older NEMU references and Spike do not expose this API.
@@ -187,6 +200,17 @@ NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bo
     assert(nemu_init);
 
     nemu_init();
+#if GEM5_ENABLE_MATRIX
+    // Inspect REF-owned geometry before the first DUT_TO_REF register copy
+    // can overwrite CSR shadows. Lazy exports full physical registers.
+    riscv64_CPU_regfile initial = {};
+    regcpy(&initial, REF_TO_DUT);
+    fatal_if(initial.tlenb != 8192 || initial.trlenb != 64 ||
+             initial.alenb != 65536 || initial.msync != 32,
+             "Incompatible Matrix reference geometry before state sync: "
+             "TLENB=%llu TRLENB=%llu ALENB=%llu MSYNC=%llu", initial.tlenb,
+             initial.trlenb, initial.alenb, initial.msync);
+#endif
     fatal_if(!enable_mem_dedup && refGetPmem && !refGetPmem(),
              "NEMU REF requires external memory; enable memory deduplication "
              "or select a non-dedup REF");

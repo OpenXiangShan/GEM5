@@ -54,6 +54,11 @@
 #include "arch/generic/pcstate.hh"
 #include "base/statistics.hh"
 #include "config/gem5_enable_matrix.hh"
+
+#if GEM5_ENABLE_MATRIX
+#include "matrix/MatrixTypes.hh"
+
+#endif
 #include "config/the_isa.hh"
 #include "cpu/activity.hh"
 #include "cpu/base.hh"
@@ -389,8 +394,13 @@ class CPU : public BaseCPU
     bool tryIssueMatrixAmu(ThreadID tid, MatrixAmuBuffer &buffer);
     void serviceMatrixBackend();
     void checkMatrixResults();
+    void checkMatrixCommit(ThreadID tid, const DynInstPtr &inst);
+    void recordMatrixResponse(
+        const matrix::MatrixTimingMemoryAdapter::Request &request);
+    void finishMatrixDifftest();
     bool matrixHasLiveState() const;
     bool matrixHasPendingWork() const;
+    void readMatrixRegs(ThreadID tid);
     void checkMatrixCheckpoint(ThreadID tid) const;
     void checkMatrixDrain() const;
     void checkMatrixSwitchOut() const;
