@@ -267,7 +267,7 @@ XSDRRIP::getVictim(const ReplacementCandidates& candidates) const
 std::shared_ptr<ReplacementData>
 XSDRRIP::instantiateEntry()
 {
-    XSDRRIPReplData* repl_data = new XSDRRIPReplData();
+    auto repl_data = std::make_shared<XSDRRIPReplData>();
 
     // Allocate set ID
     // entryCount / numWays = set index
@@ -292,7 +292,7 @@ XSDRRIP::instantiateEntry()
         }
     }
 
-    return std::shared_ptr<ReplacementData>(repl_data);
+    return repl_data;
 }
 
 XSDRRIP::XSDRRIPStats::XSDRRIPStats(statistics::Group* parent)

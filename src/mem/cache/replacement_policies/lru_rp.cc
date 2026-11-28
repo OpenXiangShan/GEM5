@@ -94,7 +94,7 @@ LRU::getVictim(const ReplacementCandidates& candidates) const
 std::shared_ptr<ReplacementData>
 LRU::instantiateEntry()
 {
-    return std::shared_ptr<ReplacementData>(new LRUReplData());
+    return std::make_shared<LRUReplData>();
 }
 
 } // namespace replacement_policy
