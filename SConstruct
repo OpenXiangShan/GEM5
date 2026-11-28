@@ -524,7 +524,7 @@ for variant_path in variant_paths:
         # Set the Link-Time Optimization (LTO) flags if enabled.
         if GetOption('with_lto'):
             for var in 'LTO_CCFLAGS', 'LTO_LINKFLAGS':
-                env[var] = ['-flto']
+                env[var] = ['-flto=thin']
 
         # clang has a few additional warnings that we disable.
         with gem5_scons.Configure(env) as conf:
