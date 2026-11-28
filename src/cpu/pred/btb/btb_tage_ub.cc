@@ -267,6 +267,7 @@ BTBTAGEUpperBound::notePredictionResult(
     std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs) const
 {
     btbEntry.taken = pred.taken;
+    tageInfoForMgscs[btbEntry.branch.pc].tage_final_provider_table = pred.finalProviderTable;
     tageInfoForMgscs[btbEntry.branch.pc].tage_pred_taken = pred.taken;
     tageInfoForMgscs[btbEntry.branch.pc].tage_main_taken =
         pred.mainInfo.found ? pred.mainInfo.taken() : false;

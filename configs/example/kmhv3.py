@@ -186,6 +186,8 @@ def setKmhV3Params(args, system):
             cpu.branchPred.ftq_size = 64
             cpu.branchPred.fsq_size = 64
 
+            cpu.branchPred.enable_h2p_table = True
+
             if args.btb_tage_upper_bound:
                 cpu.branchPred.tage = BTBTAGEUpperBound(
                     usePathHashHistory=True)
