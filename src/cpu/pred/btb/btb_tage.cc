@@ -56,12 +56,12 @@ hashBitset(const boost::dynamic_bitset<> &bits)
 }
 
 uint64_t
-hashFoldedHistVec(const std::vector<TageFoldedHist> &folded)
+hashFoldedHistVec(const std::vector<uint64_t> &folded, HistoryType historyType)
 {
     uint64_t seed = mixTraceHash(folded.size());
     for (size_t i = 0; i < folded.size(); ++i) {
-        uint64_t value = folded[i].get();
-        value ^= static_cast<uint64_t>(folded[i].getHistoryType()) << 56;
+        uint64_t value = folded[i];
+        value ^= static_cast<uint64_t>(historyType) << 56;
         seed ^= mixTraceHash(value + static_cast<uint64_t>(i) * 0x9e3779b97f4a7c15ULL +
                              (seed << 6) + (seed >> 2));
     }
@@ -320,15 +320,12 @@ BTBTAGE::generateSinglePrediction(const BranchInfo &btb_entry,
     for (int i = numPredictors - 1; i >= 0; --i) {
         // Calculate index and tag: use snapshot if provided, otherwise use current folded history
         // Tag includes position XOR (like RTL: tag = tempTag ^ cfiPosition)
-        Addr index = predMeta ? getTageIndex(
-            startPC, i, predMeta->indexFoldedHist[i].get(), asidHash, tid)
-                              : getTageIndex(
-            startPC, i, state.indexFoldedHist[i].get(), asidHash, tid);
-        Addr tag = predMeta ? getTageTag(startPC, i,
-                            predMeta->tagFoldedHist[i].get(), predMeta->altTagFoldedHist[i].get(),
-                            position, asidHash)
-                        : getTageTag(startPC, i, state.tagFoldedHist[i].get(),
-                                     state.altTagFoldedHist[i].get(), position, asidHash);
+        Addr index = predMeta ? getTageIndex(startPC, i, predMeta->indexFoldedHist[i], asidHash, tid)
+                              : getTageIndex(startPC, i, state.indexFoldedHist[i].get(), asidHash, tid);
+        Addr tag = predMeta ? getTageTag(startPC, i, predMeta->tagFoldedHist[i], predMeta->altTagFoldedHist[i],
+                                         position, asidHash)
+                            : getTageTag(startPC, i, state.tagFoldedHist[i].get(), state.altTagFoldedHist[i].get(),
+                                         position, asidHash);
 
         bool match = false; // for each table, only one way can be matched
         TageEntry matching_entry;
@@ -511,9 +508,9 @@ BTBTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPr
 
     // Clear old prediction metadata and save current history state
     threadMeta[tid] = std::make_shared<TageMeta>();
-    threadMeta[tid]->tagFoldedHist = state.tagFoldedHist;
-    threadMeta[tid]->altTagFoldedHist = state.altTagFoldedHist;
-    threadMeta[tid]->indexFoldedHist = state.indexFoldedHist;
+    threadMeta[tid]->tagFoldedHist = snapshotFoldedHist(state.tagFoldedHist);
+    threadMeta[tid]->altTagFoldedHist = snapshotFoldedHist(state.altTagFoldedHist);
+    threadMeta[tid]->indexFoldedHist = snapshotFoldedHist(state.indexFoldedHist);
     threadMeta[tid]->history = history;
 
     for (int s = getDelay(); s < stagePreds.size(); s++) {
@@ -541,9 +538,9 @@ BTBTAGE::refreshPredictionMeta(Addr startPC,
     auto &state = historyState(pred.tid);
     threadMeta[pred.tid] = std::make_shared<TageMeta>();
     auto &meta = threadMeta[pred.tid];
-    meta->tagFoldedHist = state.tagFoldedHist;
-    meta->altTagFoldedHist = state.altTagFoldedHist;
-    meta->indexFoldedHist = state.indexFoldedHist;
+    meta->tagFoldedHist = snapshotFoldedHist(state.tagFoldedHist);
+    meta->altTagFoldedHist = snapshotFoldedHist(state.altTagFoldedHist);
+    meta->indexFoldedHist = snapshotFoldedHist(state.indexFoldedHist);
     meta->history = history;
 
     pred.tageInfoForMgscs.clear();
@@ -763,10 +760,8 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
     unsigned position = getBranchIndexInBlock(entry.pc, startPC);
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
-        Addr newIndex = getTageIndex(
-            startPC, ti, meta->indexFoldedHist[ti].get(), asidHash, tid);
-        Addr newTag = getTageTag(startPC, ti,
-            meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position, asidHash);
+        Addr newIndex = getTageIndex(startPC, ti, meta->indexFoldedHist[ti], asidHash, tid);
+        Addr newTag = getTageTag(startPC, ti, meta->tagFoldedHist[ti], meta->altTagFoldedHist[ti], position, asidHash);
 
         auto &set = tageTable[ti][newIndex];
 
@@ -994,29 +989,19 @@ BTBTAGE::update(
             auto alt_info = trace_pred.altInfo;
             const uint64_t history_hash = hashBitset(predMeta->history);
             const uint64_t phistory_hash = hashBitset(stream.phistory);
-            const uint64_t index_folded_hist_hash =
-                hashFoldedHistVec(predMeta->indexFoldedHist);
-            const uint64_t tag_folded_hist_hash =
-                hashFoldedHistVec(predMeta->tagFoldedHist);
-            const uint64_t alt_tag_folded_hist_hash =
-                hashFoldedHistVec(predMeta->altTagFoldedHist);
-            t.set(startAddr, btb_entry.pc, main_info.way,
-                main_info.found, main_info.entry.counter, main_info.entry.useful,
-                main_info.table, main_info.index, main_info.entry.tag,
-                alt_info.found, alt_info.entry.counter, alt_info.entry.useful,
-                alt_info.table, alt_info.index, alt_info.entry.tag,
-                trace_pred.useAlt, trace_pred.taken, actual_taken, allocInfo.success,
-                allocInfo.table, allocInfo.index, allocInfo.way, allocInfo.tag,
-                allocInfo.victimValid, allocInfo.victimTag,
-                allocInfo.victimCounter, allocInfo.victimUseful,
-                allocInfo.victimPC,
-                history_str, phistory_str,
-                predMeta->indexFoldedHist[main_info.table].get(),
-                trace_pred.useAltIdx, trace_pred.useAltCtr,
-                trace_pred.hitTableMask, trace_pred.finalProviderTable,
-                trace_pred.finalProviderIsAlt, history_hash, phistory_hash,
-                index_folded_hist_hash, tag_folded_hist_hash,
-                alt_tag_folded_hist_hash);
+            const auto history_type = usePathHistory ? HistoryType::PATH : HistoryType::GLOBAL;
+            const uint64_t index_folded_hist_hash = hashFoldedHistVec(predMeta->indexFoldedHist, history_type);
+            const uint64_t tag_folded_hist_hash = hashFoldedHistVec(predMeta->tagFoldedHist, history_type);
+            const uint64_t alt_tag_folded_hist_hash = hashFoldedHistVec(predMeta->altTagFoldedHist, history_type);
+            t.set(startAddr, btb_entry.pc, main_info.way, main_info.found, main_info.entry.counter,
+                  main_info.entry.useful, main_info.table, main_info.index, main_info.entry.tag, alt_info.found,
+                  alt_info.entry.counter, alt_info.entry.useful, alt_info.table, alt_info.index, alt_info.entry.tag,
+                  trace_pred.useAlt, trace_pred.taken, actual_taken, allocInfo.success, allocInfo.table,
+                  allocInfo.index, allocInfo.way, allocInfo.tag, allocInfo.victimValid, allocInfo.victimTag,
+                  allocInfo.victimCounter, allocInfo.victimUseful, allocInfo.victimPC, history_str, phistory_str,
+                  predMeta->indexFoldedHist[main_info.table], trace_pred.useAltIdx, trace_pred.useAltCtr,
+                  trace_pred.hitTableMask, trace_pred.finalProviderTable, trace_pred.finalProviderIsAlt, history_hash,
+                  phistory_hash, index_folded_hist_hash, tag_folded_hist_hash, alt_tag_folded_hist_hash);
             tageMissTrace->write_record(t);
         }
 #endif
@@ -1262,6 +1247,9 @@ BTBTAGE::recoverFoldedHist(const HistoryRecoveryContext &context)
     auto predMeta =
         std::static_pointer_cast<TageMeta>(
             context.predMetas[getComponentIdx()]);
+    assert(predMeta->tagFoldedHist.size() == numPredictors);
+    assert(predMeta->altTagFoldedHist.size() == numPredictors);
+    assert(predMeta->indexFoldedHist.size() == numPredictors);
     for (int i = 0; i < numPredictors; i++) {
         threadHistory[context.tid].tagFoldedHist[i].recover(
             predMeta->tagFoldedHist[i]);

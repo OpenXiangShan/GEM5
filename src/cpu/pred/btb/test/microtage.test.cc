@@ -200,9 +200,8 @@ TEST_F(MicroTAGES3UpdateTest, S3AllocationFailureAndResetCountersStaySplit)
     ASSERT_NE(meta, nullptr);
 
     const unsigned blocked_table = tage->numPredictors - 1;
-    Addr blocked_index = tage->getTageIndex(
-        seed.bbStart, blocked_table, meta->indexFoldedHist[blocked_table].get(),
-        seed.asidHash);
+    Addr blocked_index =
+        tage->getTageIndex(seed.bbStart, blocked_table, meta->indexFoldedHist[blocked_table], seed.asidHash);
     auto &blocked_way = tage->tageTable[blocked_table][blocked_index][0];
     blocked_way = MicroTAGE::TageEntry(0x55, 3, entry.branch.pc);
     blocked_way.useful = true;
@@ -224,6 +223,53 @@ TEST_F(MicroTAGES3UpdateTest, S3AllocationFailureAndResetCountersStaySplit)
     EXPECT_EQ(tage->tageStats.updateResetU, 0ULL);
     EXPECT_EQ(tage->tageStats.s3UpdateAllocFailureNoValidTable, 1ULL);
     EXPECT_EQ(tage->tageStats.updateAllocFailureNoValidTable, 0ULL);
+}
+
+TEST_F(MicroTAGES3UpdateTest, CompactRecoveryPreservesDelayedIndex)
+{
+    boost::dynamic_bitset<> history(128);
+    FullBTBPrediction pred;
+    pred.tid = 0;
+    pred.asidHash = 7;
+    auto advance = [&](bool taken, Addr pc) {
+        PathHistoryUpdate update;
+        update.taken = taken;
+        update.pc = pc;
+        update.target = pc + 0x146;
+        tage->specUpdatePHist(history, pred, update);
+        if (taken) {
+            history <<= 2;
+            history ^= boost::dynamic_bitset<>(history.size(), pathHash(pc, update.target));
+        }
+    };
+    // Cover both the initial empty queue and a delayed taken-path value.
+    for (unsigned pass = 0; pass < 2; ++pass) {
+        tage->refreshPredictionMeta(0x1000, history, pred);
+        auto meta = std::static_pointer_cast<MicroTAGE::TageMeta>(tage->getPredictionMeta());
+        const auto savedHistory = history;
+        advance(true, 0x1040);
+        advance(false, 0x1050);
+        advance(true, 0x1060);
+
+        FetchTarget stream;
+        stream.startPC = 0x1000;
+        stream.asidHash = pred.asidHash;
+        stream.predMetas[tage->getComponentIdx()] = meta;
+        PathHistoryUpdate corrected;
+        corrected.taken = false;
+        tage->recoverPHist(savedHistory, HistoryRecoveryContext(stream), corrected);
+        history = savedHistory;
+        tage->checkFoldedHist(history, "compact recovery");
+        tage->refreshPredictionMeta(0x1000, history, pred);
+        auto restored = std::static_pointer_cast<MicroTAGE::TageMeta>(tage->getPredictionMeta());
+        EXPECT_EQ(restored->tagFoldedHist, meta->tagFoldedHist);
+        EXPECT_EQ(restored->altTagFoldedHist, meta->altTagFoldedHist);
+        EXPECT_EQ(restored->aheadIndexFoldedHistValid, meta->aheadIndexFoldedHistValid);
+        EXPECT_EQ(restored->aheadIndexFoldedHist, meta->aheadIndexFoldedHist);
+        EXPECT_EQ(restored->indexFoldedHist,
+                  meta->aheadIndexFoldedHistValid ? meta->aheadIndexFoldedHist : meta->indexFoldedHist);
+        advance(true, 0x1080);
+    }
 }
 
 } // namespace test

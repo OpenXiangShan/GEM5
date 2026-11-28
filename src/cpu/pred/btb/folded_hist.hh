@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdint>
+#include <vector>
 
 #include <boost/dynamic_bitset.hpp>
 
@@ -120,6 +121,7 @@ class FoldedHistBase
      * @param other The FoldedHistBase to recover from
      */
     void recover(const FoldedHistBase &other);
+    void recover(uint64_t folded);
 
     /**
      * Verify that the folded history is consistent with the global history
@@ -188,6 +190,7 @@ class TageFoldedHist
     void update(const boost::dynamic_bitset<> &history, int shamt, bool taken,
                 Addr pc = 0, Addr target = 0);
     void recover(const TageFoldedHist &other);
+    void recover(uint64_t folded);
     void check(const boost::dynamic_bitset<> &history) const;
     HistoryType getHistoryType() const { return historyType; }
     bool isPathBased() const { return historyType == HistoryType::PATH; }
@@ -197,6 +200,31 @@ class TageFoldedHist
     DirectionFoldedHist directionHist;
     PathFoldedHist pathHist;
 };
+
+// Snapshots retain only mutable values; configuration belongs to live histories.
+template<class History>
+std::vector<uint64_t>
+snapshotFoldedHist(const std::vector<History> &histories)
+{
+    std::vector<uint64_t> snapshot;
+    snapshot.reserve(histories.size());
+    for (const auto &history : histories) {
+        snapshot.push_back(history.get());
+    }
+    return snapshot;
+}
+
+template<class History>
+std::vector<std::vector<uint64_t>>
+snapshotFoldedHist(const std::vector<std::vector<History>> &histories)
+{
+    std::vector<std::vector<uint64_t>> snapshot;
+    snapshot.reserve(histories.size());
+    for (const auto &history : histories) {
+        snapshot.push_back(snapshotFoldedHist(history));
+    }
+    return snapshot;
+}
 
 }  // namespace btb_pred
 

@@ -364,12 +364,12 @@ public:
     typedef struct TageMeta
     {
         std::unordered_map<Addr, TagePrediction> preds;
-        std::vector<PathFoldedHist> tagFoldedHist;
-        std::vector<PathFoldedHist> indexFoldedHist;
-        std::vector<PathFoldedHist> altTagFoldedHist;
+        std::vector<uint64_t> tagFoldedHist;
+        std::vector<uint64_t> indexFoldedHist;
+        std::vector<uint64_t> altTagFoldedHist;
         std::vector<BranchPrediction> abtbEntries;
         bool aheadIndexFoldedHistValid;
-        std::vector<PathFoldedHist> aheadIndexFoldedHist;
+        std::vector<uint64_t> aheadIndexFoldedHist;
         bitset history;     // for viewing
         TageMeta() : aheadIndexFoldedHistValid(false) {}
     } TageMeta;

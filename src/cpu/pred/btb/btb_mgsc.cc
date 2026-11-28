@@ -606,11 +606,11 @@ BTBMGSC::putPCHistory(Addr stream_start, const boost::dynamic_bitset<> &history,
 
     // Clear old prediction metadata and save current history state
     threadMeta[tid] = std::make_shared<MgscMeta>();
-    threadMeta[tid]->indexBwFoldedHist = state.indexBwFoldedHist;
-    threadMeta[tid]->indexLFoldedHist = state.indexLFoldedHist;
-    threadMeta[tid]->indexIFoldedHist = state.indexIFoldedHist;
-    threadMeta[tid]->indexGFoldedHist = state.indexGFoldedHist;
-    threadMeta[tid]->indexPFoldedHist = state.indexPFoldedHist;
+    threadMeta[tid]->indexBwFoldedHist = snapshotFoldedHist(state.indexBwFoldedHist);
+    threadMeta[tid]->indexLFoldedHist = snapshotFoldedHist(state.indexLFoldedHist);
+    threadMeta[tid]->indexIFoldedHist = snapshotFoldedHist(state.indexIFoldedHist);
+    threadMeta[tid]->indexGFoldedHist = snapshotFoldedHist(state.indexGFoldedHist);
+    threadMeta[tid]->indexPFoldedHist = snapshotFoldedHist(state.indexPFoldedHist);
 
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
@@ -644,11 +644,11 @@ BTBMGSC::refreshPredictionMeta(Addr startAddr,
     auto &state = historyState(pred.tid);
     threadMeta[pred.tid] = std::make_shared<MgscMeta>();
     auto &meta = threadMeta[pred.tid];
-    meta->indexBwFoldedHist = state.indexBwFoldedHist;
-    meta->indexLFoldedHist = state.indexLFoldedHist;
-    meta->indexIFoldedHist = state.indexIFoldedHist;
-    meta->indexGFoldedHist = state.indexGFoldedHist;
-    meta->indexPFoldedHist = state.indexPFoldedHist;
+    meta->indexBwFoldedHist = snapshotFoldedHist(state.indexBwFoldedHist);
+    meta->indexLFoldedHist = snapshotFoldedHist(state.indexLFoldedHist);
+    meta->indexIFoldedHist = snapshotFoldedHist(state.indexIFoldedHist);
+    meta->indexGFoldedHist = snapshotFoldedHist(state.indexGFoldedHist);
+    meta->indexPFoldedHist = snapshotFoldedHist(state.indexPFoldedHist);
 
     for (const auto &btb_entry : pred.btbEntries) {
         if (!(btb_entry.branch.isCond && btb_entry.valid)) {
@@ -1277,6 +1277,7 @@ BTBMGSC::recoverHist(const boost::dynamic_bitset<> &history,
     std::shared_ptr<MgscMeta> predMeta =
         std::static_pointer_cast<MgscMeta>(
             context.predMetas[getComponentIdx()]);
+    assert(predMeta->indexGFoldedHist.size() == gTableNum);
     for (int i = 0; i < gTableNum; i++) {
         state.indexGFoldedHist[i].recover(predMeta->indexGFoldedHist[i]);
     }
@@ -1309,6 +1310,7 @@ BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history,
     std::shared_ptr<MgscMeta> predMeta =
         std::static_pointer_cast<MgscMeta>(
             context.predMetas[getComponentIdx()]);
+    assert(predMeta->indexPFoldedHist.size() == pTableNum);
     for (int i = 0; i < pTableNum; i++) {
         state.indexPFoldedHist[i].recover(predMeta->indexPFoldedHist[i]);
     }
@@ -1372,6 +1374,7 @@ BTBMGSC::recoverIHist(const HistoryRecoveryContext &context,
     std::shared_ptr<MgscMeta> predMeta =
         std::static_pointer_cast<MgscMeta>(
             context.predMetas[getComponentIdx()]);
+    assert(predMeta->indexIFoldedHist.size() == iTableNum);
     for (int i = 0; i < iTableNum; i++) {
         state.indexIFoldedHist[i].recover(predMeta->indexIFoldedHist[i]);
     }
@@ -1407,7 +1410,9 @@ BTBMGSC::recoverLHist(
     std::shared_ptr<MgscMeta> predMeta =
         std::static_pointer_cast<MgscMeta>(
             context.predMetas[getComponentIdx()]);
+    assert(predMeta->indexLFoldedHist.size() == numEntriesFirstLocalHistories);
     for (unsigned int k = 0; k < numEntriesFirstLocalHistories; ++k) {
+        assert(predMeta->indexLFoldedHist[k].size() == lTableNum);
         for (int i = 0; i < lTableNum; i++) {
             state.indexLFoldedHist[k][i].recover(predMeta->indexLFoldedHist[k][i]);
         }

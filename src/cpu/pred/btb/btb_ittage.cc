@@ -202,9 +202,9 @@ BTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
     // clear old metas
     threadMeta[tid] = std::make_shared<TageMeta>();
     // assign history for meta
-    threadMeta[tid]->tagFoldedHist = state.tagFoldedHist;
-    threadMeta[tid]->altTagFoldedHist = state.altTagFoldedHist;
-    threadMeta[tid]->indexFoldedHist = state.indexFoldedHist;
+    threadMeta[tid]->tagFoldedHist = snapshotFoldedHist(state.tagFoldedHist);
+    threadMeta[tid]->altTagFoldedHist = snapshotFoldedHist(state.altTagFoldedHist);
+    threadMeta[tid]->indexFoldedHist = snapshotFoldedHist(state.indexFoldedHist);
 
     lookupEntries.clear();
     lookupIndices.clear();
@@ -254,9 +254,9 @@ BTBITTAGE::refreshPredictionMeta(Addr stream_start,
 
     threadMeta[pred.tid] = std::make_shared<TageMeta>();
     auto &meta = threadMeta[pred.tid];
-    meta->tagFoldedHist = state.tagFoldedHist;
-    meta->altTagFoldedHist = state.altTagFoldedHist;
-    meta->indexFoldedHist = state.indexFoldedHist;
+    meta->tagFoldedHist = snapshotFoldedHist(state.tagFoldedHist);
+    meta->altTagFoldedHist = snapshotFoldedHist(state.altTagFoldedHist);
+    meta->indexFoldedHist = snapshotFoldedHist(state.indexFoldedHist);
 
     lookupEntries.clear();
     lookupIndices.clear();
@@ -462,11 +462,10 @@ BTBITTAGE::update(
                 unsigned startTable = main_found ? main_info.table + 1 : 0;
 
                 for (int ti = startTable; ti < numPredictors; ti++) {
-                    Addr newIndex = getTageIndex(
-                        startAddr, ti, updateIndexFoldedHist[ti].get(),
-                        stream.asidHash, stream.tid);
-                    Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti].get(),
-                                             updateAltTagFoldedHist[ti].get(), stream.asidHash);
+                    Addr newIndex =
+                        getTageIndex(startAddr, ti, updateIndexFoldedHist[ti], stream.asidHash, stream.tid);
+                    Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti], updateAltTagFoldedHist[ti],
+                                             stream.asidHash);
                     assert(newIndex < tageTable[ti].size());
                     auto &newEntry = tageTable[ti][newIndex];
 
@@ -661,6 +660,9 @@ BTBITTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
     std::shared_ptr<TageMeta> predMeta =
         std::static_pointer_cast<TageMeta>(
             context.predMetas[getComponentIdx()]);
+    assert(predMeta->tagFoldedHist.size() == numPredictors);
+    assert(predMeta->altTagFoldedHist.size() == numPredictors);
+    assert(predMeta->indexFoldedHist.size() == numPredictors);
     for (int i = 0; i < numPredictors; i++) {
         state.tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
         state.altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
