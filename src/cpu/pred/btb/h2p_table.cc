@@ -9,7 +9,7 @@ namespace gem5::branch_prediction::btb_pred
 H2PTable::H2PTable(unsigned entries, unsigned lineBytes, unsigned ways,
                    unsigned branchesPerEntry, unsigned counterBits,
                    unsigned counterThreshold)
-    : numEntries(entries), lineBytes(lineBytes),
+    : lineBytes(lineBytes),
       counterMax(counterBits >= 1 && counterBits <= 8 ?
                  (1u << counterBits) - 1 : 0),
       counterThreshold(counterThreshold),
@@ -57,17 +57,6 @@ H2PTable::findLine(Addr pc)
     return nullptr;
 }
 
-const H2PTable::SetEntry *
-H2PTable::findLine(Addr pc) const
-{
-    const Addr line = pc / lineBytes;
-    for (const auto &entry : table[setIndex(pc)]) {
-        if (entry.valid && entry.line == line)
-            return &entry;
-    }
-    return nullptr;
-}
-
 H2PTable::LookupResult
 H2PTable::lookup(Addr pc)
 {
@@ -85,18 +74,6 @@ H2PTable::lookup(Addr pc)
     return {};
 }
 
-H2PTable::LookupResult
-H2PTable::peek(Addr pc) const
-{
-    const auto *line = findLine(pc);
-    if (!line)
-        return {};
-    for (const auto &branch : line->branches)
-        if (branch.valid && branch.pc == pc)
-            return {branch.counter >= counterThreshold, true};
-    return {};
-}
-
 H2PTable::TrainResult
 H2PTable::trainMispred(Addr pc, bool allowAllocate)
 {
@@ -109,7 +86,6 @@ H2PTable::trainMispred(Addr pc, bool allowAllocate)
             if (branch.valid && branch.pc == pc) {
                 branch.counter = std::min<unsigned>(
                     counterMax, unsigned(branch.counter) + 1);
-                result.incremented = true;
                 return result;
             }
         }
@@ -160,10 +136,9 @@ H2PTable::trainMispred(Addr pc, bool allowAllocate)
     return result;
 }
 
-unsigned
+void
 H2PTable::age()
 {
-    unsigned aged = 0;
     for (auto &set : table) {
         for (auto &line : set) {
             if (!line.valid)
@@ -172,13 +147,11 @@ H2PTable::age()
                 if (!branch.valid || branch.counter == 0)
                     continue;
                 --branch.counter;
-                ++aged;
                 if (branch.counter == 0)
                     branch.valid = false;
             }
         }
     }
-    return aged;
 }
 
 } // namespace gem5::branch_prediction::btb_pred

@@ -263,21 +263,12 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar returnMiss;   ///< Return mispredictions
         statistics::Scalar otherMiss;    ///< Other control mispredictions
 
-        statistics::Scalar h2pTableTruePositive;
-        statistics::Scalar h2pTableFalsePositive;
-        statistics::Scalar h2pTableFalseNegative;
-        statistics::Formula h2pTableCoverage;
-        statistics::Formula h2pTablePrecision;
         statistics::Scalar h2pTruePositive;
         statistics::Scalar h2pFalsePositive;
         statistics::Scalar h2pFalseNegative;
         statistics::Formula h2pCoverage;
         statistics::Formula h2pPrecision;
-        statistics::Scalar h2pTrainMispredicts;
-        statistics::Scalar h2pTrainProviderRejected;
         statistics::Scalar h2pAllocations;
-        statistics::Scalar h2pCounterAges;
-        statistics::Scalar h2pReplacements;
         statistics::Scalar h2pAllocationDrops;
 
         // Fine-grained branch classification statistics

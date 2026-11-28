@@ -29,20 +29,16 @@ class H2PTable
                       unsigned counterBits = 3, unsigned counterThreshold = 3);
 
     LookupResult lookup(Addr pc);
-    LookupResult peek(Addr pc) const;
     struct TrainResult
     {
         bool allocated = false;
-        bool incremented = false;
         bool replaced = false;
         bool dropped = false;
         bool allocationFiltered = false;
     };
 
     TrainResult trainMispred(Addr pc, bool allowAllocate = true);
-    unsigned age();
-
-    unsigned entries() const { return numEntries; }
+    void age();
 
   private:
     struct BranchEntry
@@ -60,7 +56,6 @@ class H2PTable
         uint64_t lastUse = 0;
     };
 
-    const unsigned numEntries;
     const unsigned lineBytes;
     const unsigned counterMax;
     const unsigned counterThreshold;
@@ -70,7 +65,6 @@ class H2PTable
 
     unsigned setIndex(Addr pc) const;
     SetEntry *findLine(Addr pc);
-    const SetEntry *findLine(Addr pc) const;
 };
 
 } // namespace gem5::branch_prediction::btb_pred

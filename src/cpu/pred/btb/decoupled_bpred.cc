@@ -864,7 +864,7 @@ DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
     target.commitInstBytes += inst->getInstBytes();
 
     if (enableH2PTable && --h2pAgeRemaining == 0) {
-        dbpBtbStats.h2pCounterAges += h2pTable.age();
+        h2pTable.age();
         h2pAgeRemaining = h2pAgeInsts;
     }
 
@@ -992,19 +992,9 @@ DecoupledBPUWithBTB::commit(
                 for (const auto &branch : block.branches) {
                     if (!branch.branch.isCond)
                         continue;
-                    const bool tableMarked = std::find(
-                        target.h2pTableBranchPCs.begin(),
-                        target.h2pTableBranchPCs.end(), branch.branch.pc) !=
-                        target.h2pTableBranchPCs.end();
                     const bool marked = std::find(
                         target.h2pBranchPCs.begin(), target.h2pBranchPCs.end(),
                         branch.branch.pc) != target.h2pBranchPCs.end();
-                    dbpBtbStats.h2pTableTruePositive +=
-                        tableMarked && branch.mispredicted;
-                    dbpBtbStats.h2pTableFalsePositive +=
-                        tableMarked && !branch.mispredicted;
-                    dbpBtbStats.h2pTableFalseNegative +=
-                        !tableMarked && branch.mispredicted;
                     dbpBtbStats.h2pTruePositive += marked && branch.mispredicted;
                     dbpBtbStats.h2pFalsePositive += marked && !branch.mispredicted;
                     dbpBtbStats.h2pFalseNegative += !marked && branch.mispredicted;
@@ -1241,9 +1231,9 @@ DecoupledBPUWithBTB::classifyH2PBranches(
 
             const auto result = h2pTable.lookup(branch.pc);
             if (result.h2p) {
-                target.h2pTableBranchPCs.push_back(branch.pc);
                 const bool accepted = !enableH2PWeakConfidence ||
-                    (hasInfo && info->second.isLowConfidenceForAPF());
+                    (hasInfo && (info->second.tage_pred_conf_low ||
+                                 info->second.tage_pred_conf_mid));
                 if (accepted) {
                     target.h2pBranchPCs.push_back(branch.pc);
                 }
@@ -1268,14 +1258,7 @@ DecoupledBPUWithBTB::trainH2P(
                   target.h2pAllocateBranchPCs.end(), branch.branch.pc) !=
             target.h2pAllocateBranchPCs.end();
     const auto result = h2pTable.trainMispred(branch.branch.pc, allowAllocate);
-    if (result.allocationFiltered) {
-        dbpBtbStats.h2pTrainProviderRejected++;
-        return;
-    }
-
-    dbpBtbStats.h2pTrainMispredicts++;
     dbpBtbStats.h2pAllocations += result.allocated;
-    dbpBtbStats.h2pReplacements += result.replaced;
     dbpBtbStats.h2pAllocationDrops += result.dropped;
 }
 

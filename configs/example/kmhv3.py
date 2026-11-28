@@ -186,20 +186,7 @@ def setKmhV3Params(args, system):
             cpu.branchPred.ftq_size = 64
             cpu.branchPred.fsq_size = 64
 
-            # H2P classification and admission policy
             cpu.branchPred.enable_h2p_table = True
-            cpu.branchPred.enable_h2p_provider_filter = True
-            cpu.branchPred.h2p_min_provider_table = 2
-            cpu.branchPred.enable_h2p_weak_confidence = False
-
-            # H2P table geometry, counters, and aging
-            cpu.branchPred.h2p_table_entries = 128
-            cpu.branchPred.h2p_table_line_bytes = 32
-            cpu.branchPred.h2p_table_ways = 2
-            cpu.branchPred.h2p_branches_per_entry = 2
-            cpu.branchPred.h2p_counter_bits = 3
-            cpu.branchPred.h2p_counter_threshold = 3
-            cpu.branchPred.h2p_age_insts = 20000
 
             if args.btb_tage_upper_bound:
                 cpu.branchPred.tage = BTBTAGEUpperBound(
