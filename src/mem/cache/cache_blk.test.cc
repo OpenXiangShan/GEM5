@@ -27,7 +27,7 @@ class CacheBlkLocks : public ::testing::Test
 RequestPtr
 request(ContextID context, Addr address, unsigned size, bool llsc = true)
 {
-    auto req = std::make_shared<Request>(address, size, Request::Flags(llsc ? Request::LLSC : 0), 0);
+    auto req = std::make_shared<Request>(address, size, llsc ? Request::Flags(Request::LLSC) : Request::Flags(), 0);
     req->setContext(context);
     return req;
 }
